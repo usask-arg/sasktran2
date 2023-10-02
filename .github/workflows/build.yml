@@ -48,13 +48,13 @@ jobs:
           channels: conda-forge
           auto-activate-base: false
 
-      - name: Build Conda package
+      - name: Build Conda package (x86_64)
         shell: bash -el {0}
         if: matrix.target_plat == 'x86_64'
         run: |
           conda-build -c conda-forge conda.recipe --output-folder pkgs/
 
-      - name: Build Conda package
+      - name: Build Conda package (arm)
         shell: bash -el {0}
         if: matrix.target_plat == 'arm'
         run: |
@@ -109,7 +109,7 @@ jobs:
       - name: Build Conda package
         shell: bash -el {0}
         run: |
-          conda-build -c conda-forge -c file:/${{steps.download.outputs.download-path}} pysasktran2/conda-recipe --output-folder pkgs/
+          conda-build -c conda-forge -c file:/${{steps.download.outputs.download-path}} pysasktran2/conda.recipe --output-folder pkgs/
 
       - name: Save conda package
         uses: actions/upload-artifact@v3
@@ -133,11 +133,11 @@ jobs:
       - run: git config --global --add safe.directory /__w/sasktran2/sasktran2
       - run: |
           cd python
-          /opt/python/cp37-cp37m/bin/python -m pip wheel . -d ../wheelhouse
-          /opt/python/cp38-cp38/bin/python -m pip wheel . -d ../wheelhouse
-          /opt/python/cp39-cp39/bin/python -m pip wheel . -d ../wheelhouse
-          /opt/python/cp310-cp310/bin/python -m pip wheel . -d ../wheelhouse
-          /opt/python/cp311-cp311/bin/python -m pip wheel . -d ../wheelhouse
+          /opt/python/cp37-cp37m/bin/python -m pip wheel . --wheel-dir ../wheelhouse
+          /opt/python/cp38-cp38/bin/python -m pip wheel . --wheel-dir ../wheelhouse
+          /opt/python/cp39-cp39/bin/python -m pip wheel . --wheel-dir ../wheelhouse
+          /opt/python/cp310-cp310/bin/python -m pip wheel . --wheel-dir ../wheelhouse
+          /opt/python/cp311-cp311/bin/python -m pip wheel . --wheel-dir ../wheelhouse
       - run: |
           cd ../wheelhouse
           find . -name "*.whl" -type f -exec auditwheel show '{}' \;
