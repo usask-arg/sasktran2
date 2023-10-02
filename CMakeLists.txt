@@ -136,21 +136,20 @@ install (TARGETS sasktran2BuildProperties
         INCLUDES DESTINATION ${INCLUDE_INSTALL_DIR})
 
 
-write_basic_package_version_file( "${CMAKE_BINARY_DIR}/sasktran2ConfigVersion.cmake"
-        VERSION ${SASKTRAN2_VERSION}
-        COMPATIBILITY SameMajorVersion
-        )
-
-
-install(EXPORT ${EXPORT_NAME}
-        FILE sasktran2Targets.cmake
-        NAMESPACE sasktran2::
-        DESTINATION lib/cmake/sasktran2
-        )
-
-install( FILES "cmake/sasktran2Config.cmake" "${CMAKE_BINARY_DIR}/sasktran2ConfigVersion.cmake"
-        DESTINATION lib/cmake/sasktran2)
-
 if(PROJECT_IS_TOP_LEVEL)
+    write_basic_package_version_file( "${CMAKE_BINARY_DIR}/sasktran2ConfigVersion.cmake"
+            VERSION ${SASKTRAN2_VERSION}
+            COMPATIBILITY SameMajorVersion
+            )
+
+    install(EXPORT ${EXPORT_NAME}
+            FILE sasktran2Targets.cmake
+            NAMESPACE sasktran2::
+            DESTINATION lib/cmake/sasktran2
+            )
+
+    install( FILES "cmake/sasktran2Config.cmake" "${CMAKE_BINARY_DIR}/sasktran2ConfigVersion.cmake"
+            DESTINATION lib/cmake/sasktran2)
+
     add_subdirectory(python)
 endif()

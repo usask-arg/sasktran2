@@ -50,13 +50,13 @@ jobs:
 
       - name: Build Conda package
         shell: bash -el {0}
-        if: ${{ matrix.target_plat }} == 'x86_64'
+        if: matrix.target_plat == 'x86_64'
         run: |
           conda-build -c conda-forge conda.recipe --output-folder pkgs/
 
       - name: Build Conda package
         shell: bash -el {0}
-        if: ${{ matrix.target_plat }} == 'arm'
+        if: matrix.target_plat == 'arm'
         run: |
           conda-build -c conda-forge conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/ --no-test
 
@@ -120,6 +120,10 @@ jobs:
   build-wheels-manylinux2014:
     runs-on: ubuntu-latest
     container: ghcr.io/usask-arg/sasktran-manylinux2014-build-container:main
+
+    permissions:
+      packages: read
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
