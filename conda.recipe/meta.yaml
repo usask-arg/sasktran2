@@ -1,13 +1,16 @@
+{% set version = environ.get('GIT_DESCRIBE_TAG', '0.0.0.dev').lstrip('v') %}
+{% set py_version = environ['CONDA_PY'] %}
+
 package:
   name: libsasktran2
-  version: {{ GIT_DESCRIBE_TAG }}
+  version: {{ version }}
 
 source:
   git_url: ../ # this can be changed to git-url
 
 build:
   number: {{ GIT_DESCRIBE_NUMBER }}
-  string: {{ GIT_BUILD_STR }}
+  string: py{{ py_version }}_{{ GIT_DESCRIBE_HASH }}
   binary_relocation: true
   script:
     - cmake ${CMAKE_ARGS} -H. -Bbuild_conda -G "${CMAKE_GENERATOR}" -DCMAKE_INSTALL_PREFIX=${PREFIX} -DFORCE_BOOST_STATIC=OFF -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DSKTRAN_BLAS_VENDOR=Generic # [not win]
