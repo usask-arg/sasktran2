@@ -1,4 +1,6 @@
 {% set version = environ.get('GIT_DESCRIBE_TAG', '0.0.0.dev').lstrip('v') %}
+{% set describe_number = environ.get('GIT_DESCRIBE_NUMBER', '0') %}
+
 {% set py_version = environ['CONDA_PY'] %}
 
 package:
@@ -9,7 +11,7 @@ source:
   git_url: ../ # this can be changed to git-url
 
 build:
-  number: {{ GIT_DESCRIBE_NUMBER }}
+  number: {{ describe_number }}
   string: py{{ py_version }}_{{ GIT_DESCRIBE_HASH }}
   binary_relocation: true
   script:
