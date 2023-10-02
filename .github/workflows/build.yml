@@ -1,0 +1,147 @@
+name: 'build'
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [ opened, reopened, synchronize, labeled ]
+  release:
+    types:
+      - published
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+
+jobs:
+  build-cpp-libsasktran2:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target_plat: x86_64
+          - os: windows-latest
+            target_plat: x86_64
+          - os: macos-11
+            target_plat: x86_64
+          - os: macos-11
+            target_plat: arm
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: Setup Conda build environment
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          activate-environment: conda_build
+          environment-file: ci/conda-envs/build.yml
+          channels: conda-forge
+          auto-activate-base: false
+
+      - name: Build Conda package
+        shell: bash -el {0}
+        if: ${{ matrix.target_plat }} == 'x86_64'
+        run: |
+          conda-build -c conda-forge conda.recipe --output-folder pkgs/
+
+      - name: Build Conda package
+        shell: bash -el {0}
+        if: ${{ matrix.target_plat }} == 'arm'
+        run: |
+          conda-build -c conda-forge conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/ --no-test
+
+      - name: Save conda package
+        uses: actions/upload-artifact@v3
+        with:
+          name: libsasktran2-conda-${{ matrix.os }}-${{ matrix.target_plat }}
+          path: pkgs
+
+
+  build-conda-pysasktran2:
+    needs: build-cpp-libsasktran2
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target_plat: x86_64
+          - os: windows-latest
+            target_plat: x86_64
+          - os: macos-11
+            target_plat: x86_64
+          - os: macos-11
+            target_plat: arm
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: Setup Conda build environment
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          activate-environment: conda_build
+          environment-file: ci/conda-envs/build.yml
+          channels: conda-forge
+          auto-activate-base: false
+
+      - name: Download libsasktran2
+        id: download
+        uses: actions/download-artifact@v3
+        with:
+          name: libsasktran2-conda-${{ matrix.os }}-${{ matrix.target_plat }}
+          path: deps
+
+      - name: Build Conda package
+        shell: bash -el {0}
+        run: |
+          conda-build -c conda-forge -c file:/${{steps.download.outputs.download-path}} pysasktran2/conda-recipe --output-folder pkgs/
+
+      - name: Save conda package
+        uses: actions/upload-artifact@v3
+        with:
+          name: pysasktran2-conda-${{ matrix.os }}-${{ matrix.target_plat }}
+          path: pkgs
+
+  build-wheels-manylinux2014:
+    runs-on: ubuntu-latest
+    container: ghcr.io/usask-arg/sasktran-manylinux2014-build-container:main
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - run: git config --global --add safe.directory /__w/sasktran2/sasktran2
+      - run: |
+          cd python
+          /opt/python/cp37-cp37m/bin/python -m pip wheel . -d ../wheelhouse
+          /opt/python/cp38-cp38/bin/python -m pip wheel . -d ../wheelhouse
+          /opt/python/cp39-cp39/bin/python -m pip wheel . -d ../wheelhouse
+          /opt/python/cp310-cp310/bin/python -m pip wheel . -d ../wheelhouse
+          /opt/python/cp311-cp311/bin/python -m pip wheel . -d ../wheelhouse
+      - run: |
+          cd ../wheelhouse
+          find . -name "*.whl" -type f -exec auditwheel show '{}' \;
+          find . -name "*.whl" -type f -exec auditwheel repair '{}' \; -exec rm '{}' \;
+          cd ..
+          ls wheelhouse/
+
+      - name: Save wheel artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: wheels-linux
+          path: wheelhouse
