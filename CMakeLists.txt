@@ -151,5 +151,8 @@ if(PROJECT_IS_TOP_LEVEL)
     install( FILES "cmake/sasktran2Config.cmake" "${CMAKE_BINARY_DIR}/sasktran2ConfigVersion.cmake"
             DESTINATION lib/cmake/sasktran2)
 
-    add_subdirectory(python)
+    # We basically just include this for clion help
+    if(BUILD_PYTHON)
+        add_subdirectory(python)
+    endif()
 endif()
