@@ -8,4 +8,6 @@ find_dependency(Eigen3)
 
 find_dependency(BLAS)
 find_dependency(LAPACK)
-find_dependency(LAPACKE)
+
+# optional
+find_package(LAPACKE CONFIG)

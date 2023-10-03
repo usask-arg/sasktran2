@@ -1,4 +1,4 @@
-name: build_py37
+name: build_py38
 channels:
   - conda-forge
 dependencies:
