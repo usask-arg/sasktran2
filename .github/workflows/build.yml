@@ -144,7 +144,7 @@ jobs:
 
       - name: Build libsasktran2
         run: |
-          cmake ${CMAKE_ARGS} -H. -Bbuild -G -DFORCE_BOOST_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DSKTRAN_BLAS_VENDOR=OpenBLAS
+          cmake ${CMAKE_ARGS} -H. -Bbuild -DFORCE_BOOST_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DSKTRAN_BLAS_VENDOR=OpenBLAS
           cmake --build build --config Release --target install
 
       - name: Build wheels
@@ -174,7 +174,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, macos-latest]
-        py_version: [py37]
+        py_version: [py38]
         target_plat: [x86_64]
 
     env:

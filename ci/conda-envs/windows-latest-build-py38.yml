@@ -2,7 +2,7 @@ name: build_py37
 channels:
   - conda-forge
 dependencies:
-  - python=3.7
+  - python=3.8
   - numpy=1.22.4
   - boost=1.82.0
   - catch2=3.3.2
