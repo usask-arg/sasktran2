@@ -144,8 +144,8 @@ jobs:
 
       - name: Build libsasktran2
         run: |
-          - cmake ${CMAKE_ARGS} -H. -Bbuild -G -DFORCE_BOOST_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DSKTRAN_BLAS_VENDOR=OpenBLAS
-          - cmake --build build --config Release --target install
+          cmake ${CMAKE_ARGS} -H. -Bbuild -G -DFORCE_BOOST_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DSKTRAN_BLAS_VENDOR=OpenBLAS
+          cmake --build build --config Release --target install
 
       - name: Build wheels
         run: |
@@ -216,7 +216,7 @@ jobs:
       - name: install libsasktran2
         shell: bash -el {0}
         run: |
-          conda install -c conda-forge -c file:/"${{steps.download.outputs.download-path}}" libsasktran2
+          conda install -c conda-forge -c file:/deps/ libsasktran2
 
       - name: build wheel
         shell: bash -el {0}
