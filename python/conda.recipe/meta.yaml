@@ -1,13 +1,20 @@
+{% set version = environ.get('GIT_DESCRIBE_TAG', '0.0.0.dev').lstrip('v') %}
+{% set describe_number = environ.get('GIT_DESCRIBE_NUMBER', '0') %}
+{% set describe_hash = environ.get('GIT_DESCRIBE_HASH', 'untagged') %}
+{% set py_version = environ['CONDA_PY'] %}
+
+
 package:
   name: sasktran2
-  version: "0.0.0"
+  version: {{ version }}
 
 source:
   path: ../
 
 build:
-  number: 0
   binary_relocation: true
+  number: {{ describe_number }}
+  string: {{ describe_hash }}
   script:
     - {{ PYTHON }} -m pip install . -vvv
 
@@ -17,11 +24,13 @@ requirements:
     - python                                 # [build_platform != target_platform]
     - cross-python_{{ target_platform }}     # [build_platform != target_platform]
     - {{ compiler('cxx') }}
-    - libsasktran2
   host:
     - python {{ python }}
+    - libsasktran2
+    - eigen
   run:
     - python {{ python }}
+    - numpy
 
 
 test:

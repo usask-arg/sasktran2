@@ -106,10 +106,18 @@ jobs:
           name: libsasktran2-conda-${{ matrix.os }}-${{ matrix.target_plat }}
           path: deps
 
-      - name: Build Conda package
+
+      - name: Build Conda package (x86_64)
         shell: bash -el {0}
+        if: matrix.target_plat == 'x86_64'
         run: |
           conda-build -c conda-forge -c file:/${{steps.download.outputs.download-path}} python/conda.recipe --output-folder pkgs/
+
+      - name: Build Conda package (arm)
+        shell: bash -el {0}
+        if: matrix.target_plat == 'arm'
+        run: |
+          conda-build -c conda-forge -c file:/${{steps.download.outputs.download-path}} python/conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/
 
       - name: Save conda package
         uses: actions/upload-artifact@v3
@@ -125,7 +133,7 @@ jobs:
       packages: read
 
     env:
-      cmake_args: "-DFORCE_BOOST_STATIC=ON"
+      CMAKE_ARGS: "-DFORCE_BOOST_STATIC=ON"
 
     steps:
       - name: Checkout repository
@@ -152,4 +160,65 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: wheels-linux
+          path: wheelhouse
+
+  build-wheels-mac-windows:
+    needs: build-cpp-libsasktran2
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+        py_version: [py37]
+
+    env:
+      CONDA_BUILD_SYSROOT: "/tmp/MacOSX10.9.sdk"
+      SDKROOT: "/tmp/MacOSX10.9.sdk"
+      MACOSX_DEPLOYMENT_TARGET: "10.9"
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: Get 10.9 SDK
+        if: matrix.os == 'macos-latest'
+        run: |
+          curl -L -O https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX10.9.sdk.tar.xz
+          mkdir -p /tmp
+          tar -xf MacOSX10.9.sdk.tar.xz -C /tmp
+
+      - name: Setup Conda build environment
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          activate-environment: build_${{ matrix.py_version }}
+          environment-file: ci/conda-envs/${{ matrix.os }}-build-${{ matrix.py_version }}.yml
+          channels: conda-forge
+          auto-activate-base: false
+
+      - name: Download libsasktran2
+        id: download
+        uses: actions/download-artifact@v3
+        with:
+          name: libsasktran2-conda-${{ matrix.os }}-${{ matrix.target_plat }}
+          path: deps
+
+      - name: install libsasktran2
+        shell: bash -el {0}
+        run: |
+          conda install -c conda-forge -c file:/${{steps.download.outputs.download-path}} libsasktran2
+
+      - name: build wheel
+        shell: bash -el {0}
+        run: |
+          cd python
+          python  -m pip wheel . --wheel-dir ../wheelhouse
+
+      - name: Save wheel artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: wheels-${{ matrix.os }}-${{ matrix.py_version }}
           path: wheelhouse

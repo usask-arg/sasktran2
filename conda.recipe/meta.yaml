@@ -12,7 +12,7 @@ source:
 
 build:
   number: {{ describe_number }}
-  string: py{{ py_version }}_{{ describe_hash }}
+  string: {{ describe_hash }}
   binary_relocation: true
   script:
     - cmake ${CMAKE_ARGS} -H. -Bbuild_conda -G "${CMAKE_GENERATOR}" -DCMAKE_INSTALL_PREFIX=${PREFIX} -DFORCE_BOOST_STATIC=OFF -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DSKTRAN_BLAS_VENDOR=Generic # [not win]
