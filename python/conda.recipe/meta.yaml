@@ -28,6 +28,15 @@ requirements:
     - python {{ python }}
     - libsasktran2
     - eigen
+    - boost-cpp
+    - libblas=*=*netlib
+    - libcblas=*=*netlib
+    - liblapack=*=*netlib
+    - liblapacke=*=*netlib
+    - libtmglib=*=*netlib
+    - catch2
+    - llvm-openmp # [mac]
+    - zlib
   run:
     - python {{ python }}
     - numpy

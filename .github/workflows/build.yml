@@ -111,13 +111,13 @@ jobs:
         shell: bash -el {0}
         if: matrix.target_plat == 'x86_64'
         run: |
-          conda-build -c conda-forge -c file:/${{steps.download.outputs.download-path}} python/conda.recipe --output-folder pkgs/
+          conda-build -c conda-forge -c file:/"${{steps.download.outputs.download-path}}" python/conda.recipe --output-folder pkgs/
 
       - name: Build Conda package (arm)
         shell: bash -el {0}
         if: matrix.target_plat == 'arm'
         run: |
-          conda-build -c conda-forge -c file:/${{steps.download.outputs.download-path}} python/conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/
+          conda-build -c conda-forge -c file:/"${{steps.download.outputs.download-path}}" python/conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/
 
       - name: Save conda package
         uses: actions/upload-artifact@v3
@@ -141,8 +141,14 @@ jobs:
         with:
           fetch-depth: 0
           submodules: true
-      - run: git config --global --add safe.directory /__w/sasktran2/sasktran2
-      - run: |
+
+      - name: Build libsasktran2
+        run: |
+          - cmake ${CMAKE_ARGS} -H. -Bbuild -G -DFORCE_BOOST_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DSKTRAN_BLAS_VENDOR=OpenBLAS
+          - cmake --build build --config Release --target install
+
+      - name: Build wheels
+        run: |
           cd python
           /opt/python/cp37-cp37m/bin/python -m pip wheel . --wheel-dir ../wheelhouse
           /opt/python/cp38-cp38/bin/python -m pip wheel . --wheel-dir ../wheelhouse
@@ -150,7 +156,7 @@ jobs:
           /opt/python/cp310-cp310/bin/python -m pip wheel . --wheel-dir ../wheelhouse
           /opt/python/cp311-cp311/bin/python -m pip wheel . --wheel-dir ../wheelhouse
       - run: |
-          cd ../wheelhouse
+          cd wheelhouse
           find . -name "*.whl" -type f -exec auditwheel show '{}' \;
           find . -name "*.whl" -type f -exec auditwheel repair '{}' \; -exec rm '{}' \;
           cd ..
@@ -169,6 +175,7 @@ jobs:
       matrix:
         os: [windows-latest, macos-latest]
         py_version: [py37]
+        target_plat: [x86_64]
 
     env:
       CONDA_BUILD_SYSROOT: "/tmp/MacOSX10.9.sdk"
@@ -209,7 +216,7 @@ jobs:
       - name: install libsasktran2
         shell: bash -el {0}
         run: |
-          conda install -c conda-forge -c file:/${{steps.download.outputs.download-path}} libsasktran2
+          conda install -c conda-forge -c file:/"${{steps.download.outputs.download-path}}" libsasktran2
 
       - name: build wheel
         shell: bash -el {0}

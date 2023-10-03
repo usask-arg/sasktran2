@@ -8,3 +8,4 @@ dependencies:
   - catch2=3.3.2
   - openblas=0.3.23
   - eigen=3.4.0
+  - delocate=0.10.4
