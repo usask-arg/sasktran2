@@ -39,6 +39,10 @@ requirements:
     - boost-cpp
     - llvm-openmp # [mac]
     - zlib
+    - libblas
+    - libcblas
+    - liblapack
+    - liblapacke
 
 about:
   home: http://www.example.com
