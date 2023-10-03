@@ -48,7 +48,7 @@ test:
   imports:
     - sasktran2
   source_files:
-    - pysasktran2/tests
+    - tests
   commands:
     - python -m pytest
 

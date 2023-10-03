@@ -107,15 +107,21 @@ jobs:
           path: deps
 
 
-      - name: Build Conda package (x86_64)
+      - name: Build Conda package
         shell: bash -el {0}
-        if: matrix.target_plat == 'x86_64'
+        if: (matrix.target_plat == 'x86_64') && ((matrix.os == 'macos-11') || (matrix.os == 'ubuntu-latest'))
         run: |
           conda-build -c conda-forge -c file:/"${{steps.download.outputs.download-path}}" python/conda.recipe --output-folder pkgs/
 
-      - name: Build Conda package (arm)
+      - name: Build Conda package
         shell: bash -el {0}
-        if: matrix.target_plat == 'arm'
+        if: (matrix.target_plat == 'x86_64') && (matrix.os == 'windows-latest')
+        run: |
+          conda-build -c conda-forge -c "${{steps.download.outputs.download-path}}" python/conda.recipe --output-folder pkgs/
+
+      - name: Build Conda package (cross mac arm)
+        shell: bash -el {0}
+        if: (matrix.target_plat == 'arm') && (matrix.os == 'macos-11')
         run: |
           conda-build -c conda-forge -c file:/"${{steps.download.outputs.download-path}}" python/conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/
 
@@ -206,24 +212,11 @@ jobs:
           channels: conda-forge
           auto-activate-base: false
 
-      - name: Download libsasktran2
-        id: download
-        uses: actions/download-artifact@v3
-        with:
-          name: libsasktran2-conda-${{ matrix.os }}-${{ matrix.target_plat }}
-          path: deps
-
-      - name: install libsasktran2
+      - name: build libsasktran2
         shell: bash -el {0}
-        if: matrix.os == 'macos-11'
         run: |
-          conda install -c conda-forge -c file:/"${{steps.download.outputs.download-path}}" libsasktran2
-
-      - name: install libsasktran2
-        shell: bash -el {0}
-        if: matrix.os == 'windows-latest'
-        run: |
-          conda install -c conda-forge -c "${{steps.download.outputs.download-path}}" libsasktran2
+          cmake ${CMAKE_ARGS} -H. -Bbuild -DFORCE_BOOST_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DSKTRAN_BLAS_VENDOR=OpenBLAS
+          cmake --build build --config Release --target install
 
       - name: build wheel
         shell: bash -el {0}
