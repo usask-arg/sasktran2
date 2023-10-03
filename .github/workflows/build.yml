@@ -178,14 +178,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-11]
         py_version: [py38]
-        target_plat: [x86_64]
+        include:
+          - os: windows-latest
+            target_plat: x86_64
+          - os: macos-11
+            target_plat: x86_64
+          - os: macos-11
+            target_plat: arm
 
-    env:
-      CONDA_BUILD_SYSROOT: "/tmp/MacOSX10.9.sdk"
-      SDKROOT: "/tmp/MacOSX10.9.sdk"
-      MACOSX_DEPLOYMENT_TARGET: "10.9"
+
 
     runs-on: ${{ matrix.os }}
 
@@ -197,7 +199,7 @@ jobs:
           submodules: true
 
       - name: Get 10.9 SDK
-        if: matrix.os == 'macos-11'
+        if: (matrix.os == 'macos-11') && (matrix.target_plat == 'x86_64')
         run: |
           curl -L -O https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX10.9.sdk.tar.xz
           mkdir -p /tmp
@@ -207,17 +209,23 @@ jobs:
         uses: conda-incubator/setup-miniconda@v2
         with:
           activate-environment: build_${{ matrix.py_version }}
-          environment-file: ci/conda-envs/${{ matrix.os }}-build-${{ matrix.py_version }}.yml
+          environment-file: ci/conda-envs/${{ matrix.os }}-${{ matrix.target_plat }}-build-${{ matrix.py_version }}.yml
           channels: conda-forge
           auto-activate-base: false
 
-      - name: build libsasktran2
+      - name: build wheel
+        if: (matrix.target_plat == 'x86_64')
+        env:
+          CONDA_BUILD_SYSROOT: "/tmp/MacOSX10.9.sdk"
+          SDKROOT: "/tmp/MacOSX10.9.sdk"
+          MACOSX_DEPLOYMENT_TARGET: "10.9"
         shell: bash -el {0}
         run: |
-          cmake ${CMAKE_ARGS} -H. -Bbuild -DFORCE_BOOST_STATIC=OFF -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DSKTRAN_BLAS_VENDOR=OpenBLAS
-          cmake --build build --config Release --target install
+          cd python
+          python  -m pip wheel . --wheel-dir ../wheelhouse
 
       - name: build wheel
+        if: (matrix.target_plat == 'arm')
         shell: bash -el {0}
         run: |
           cd python
