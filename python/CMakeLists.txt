@@ -32,7 +32,6 @@ else()
     # Alternatively we include sasktran2 directly and build it along side pysasktran2
     # This lets us just call pip install from the Python folder
     if(PROJECT_IS_TOP_LEVEL)
-        set(FORCE_BOOST_STATIC OFF CACHE BOOL "Disable Boost forced static" FORCE)
         add_subdirectory(../ ${CMAKE_CURRENT_BINARY_DIR}/sasktran2)
     endif()
     target_link_libraries(_pysasktran2 PRIVATE sasktran2)

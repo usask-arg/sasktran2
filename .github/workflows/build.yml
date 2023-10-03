@@ -109,7 +109,7 @@ jobs:
       - name: Build Conda package
         shell: bash -el {0}
         run: |
-          conda-build -c conda-forge -c file:/${{steps.download.outputs.download-path}} pysasktran2/conda.recipe --output-folder pkgs/
+          conda-build -c conda-forge -c file:/${{steps.download.outputs.download-path}} python/conda.recipe --output-folder pkgs/
 
       - name: Save conda package
         uses: actions/upload-artifact@v3
@@ -123,6 +123,9 @@ jobs:
 
     permissions:
       packages: read
+
+    env:
+      cmake_args: "-DFORCE_BOOST_STATIC=ON"
 
     steps:
       - name: Checkout repository
