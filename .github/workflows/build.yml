@@ -173,7 +173,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        os: [windows-latest, macos-11]
         py_version: [py38]
         target_plat: [x86_64]
 
@@ -192,7 +192,7 @@ jobs:
           submodules: true
 
       - name: Get 10.9 SDK
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-11'
         run: |
           curl -L -O https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX10.9.sdk.tar.xz
           mkdir -p /tmp
@@ -215,8 +215,15 @@ jobs:
 
       - name: install libsasktran2
         shell: bash -el {0}
+        if: matrix.os == 'macos-11'
         run: |
-          conda install -c conda-forge -c file:/deps/ libsasktran2
+          conda install -c conda-forge -c file:/"${{steps.download.outputs.download-path}}" libsasktran2
+
+      - name: install libsasktran2
+        shell: bash -el {0}
+        if: matrix.os == 'windows-latest'
+        run: |
+          conda install -c conda-forge -c "${{steps.download.outputs.download-path}}" libsasktran2
 
       - name: build wheel
         shell: bash -el {0}
