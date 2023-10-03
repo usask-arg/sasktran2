@@ -214,7 +214,7 @@ jobs:
       - name: build libsasktran2
         shell: bash -el {0}
         run: |
-          cmake ${CMAKE_ARGS} -H. -Bbuild -DFORCE_BOOST_STATIC=ON -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DSKTRAN_BLAS_VENDOR=OpenBLAS
+          cmake ${CMAKE_ARGS} -H. -Bbuild -DFORCE_BOOST_STATIC=OFF -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DSKTRAN_BLAS_VENDOR=OpenBLAS
           cmake --build build --config Release --target install
 
       - name: build wheel

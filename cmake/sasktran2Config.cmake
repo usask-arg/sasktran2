@@ -8,3 +8,4 @@ find_dependency(Eigen3)
 
 find_dependency(BLAS)
 find_dependency(LAPACK)
+find_dependency(LAPACKE)
