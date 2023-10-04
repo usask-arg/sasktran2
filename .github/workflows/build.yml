@@ -211,3 +211,30 @@ jobs:
           ls wheelhouse
           pip install sasktran2 --no-index -f wheelhouse/
           py.test sasktran
+          
+          
+  build_wheels_cibuildwheel:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ ubuntu-latest ]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.16.2
+        env:
+          CIBW_ENVIRONMENT: CMAKE_ARGS="-DFORCE_BOOST_STATIC=ON"
+          CIBW_MANYLINUX_X86_64_IMAGE: ghcr.io/usask-arg/sasktran-manylinux2014-build-container:main
+        with:
+          package-dir: python
+          output-dir: wheelhouse
+          config-file: "{package}/pyproject.toml"
+
+      - uses: actions/upload-artifact@v3
+        with:
+          path: ./wheelhouse/*.whl

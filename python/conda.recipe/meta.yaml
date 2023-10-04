@@ -9,14 +9,14 @@ package:
   version: {{ version }}
 
 source:
-  path: ../
+  git_url: ../
 
 build:
   binary_relocation: true
   number: {{ describe_number }}
   string: {{ describe_hash }}
   script:
-    - {{ PYTHON }} -m pip install . -vvv
+    - {{ PYTHON }} -m pip install python/. -vvv
 
 requirements:
   build:
@@ -54,7 +54,7 @@ test:
   imports:
     - sasktran2
   source_files:
-    - tests
+    - python/tests
   commands:
     - python -m pytest
 
