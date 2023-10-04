@@ -15,9 +15,8 @@ build:
   binary_relocation: true
   number: {{ describe_number }}
   string: {{ describe_hash }}
-  script_env:
-    - CMAKE_ARGS_EXTRA
   script:
+    - export CMAKE_ARGS=${CMAKE_ARGS};-DSKTRAN_BLAS_VENDOR=Generic
     - {{ PYTHON }} -m pip install . -vvv
 
 requirements:

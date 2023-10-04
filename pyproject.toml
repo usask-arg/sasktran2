@@ -67,7 +67,7 @@ environment = {CFLAGS="-fno-strict-aliasing -DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS
 
 [tool.cibuildwheel.windows]
 archs = "native"
-environment = {CFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", CXXFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", LDFLAGS="", PKG_CONFIG_PATH="C:/opt/64/lib/pkgconfig", CMAKE_ARGS="-DCMAKE_PREFIX_PATH=%CMAKE_PREFIX_PATH%;C:/opt/64/", CMAKE_BUILD_PARALLEL_LEVEL="2"}
+environment = {CFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", CXXFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", LDFLAGS="", PKG_CONFIG_PATH="C:/opt/64/lib/pkgconfig", CMAKE_PREFIX_PATH="C:/opt/64/", CMAKE_BUILD_PARALLEL_LEVEL="2"}
 #config-settings = "setup-args=--vsenv"
 repair-wheel-command = "bash {project}/ci/cibw/repair_windows.sh {wheel} {dest_dir}"
 
