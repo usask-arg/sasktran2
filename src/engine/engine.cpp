@@ -1,5 +1,7 @@
 #include <sasktran2.h>
+#ifdef SKTRAN_OPENMP_SUPPORT
 #include <omp.h>
+#endif
 
 template <int NSTOKES>
 void Sasktran2<NSTOKES>::construct_raytracer() {
@@ -129,7 +131,9 @@ void Sasktran2<NSTOKES>::validate_input_atmosphere(const sasktran2::atmosphere::
 
 template <int NSTOKES>
 void Sasktran2<NSTOKES>::calculate_radiance(const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere, sasktran2::Output<NSTOKES>& output) const {
+    #ifdef SKTRAN_OPENMP_SUPPORT
     omp_set_num_threads(m_config.num_threads());
+    #endif
 
     validate_input_atmosphere(atmosphere);
 
@@ -149,7 +153,11 @@ void Sasktran2<NSTOKES>::calculate_radiance(const sasktran2::atmosphere::Atmosph
 
     #pragma omp parallel for
     for(int w = 0; w < atmosphere.num_wavel(); ++w) {
+        #ifdef SKTRAN_OPENMP_SUPPORT
         int thread_idx = omp_get_thread_num();
+        #else
+        int thread_idx = 0;
+        #endif
 
         // Trigger source term generation for this wavelength
         for(auto& source : m_source_terms) {

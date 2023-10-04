@@ -33,9 +33,6 @@ jobs:
           - os: macos-11
             target_plat: arm
 
-    env:
-      CMAKE_ARGS_EXTRA: "-DSKTRAN_BLAS_VENDOR=Generic"
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3

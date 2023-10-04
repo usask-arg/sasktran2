@@ -120,13 +120,24 @@ else()
     set(BLA_SIZEOF_INTEGER 4)
     target_compile_definitions(sasktran2BuildProperties INTERFACE EIGEN_USE_BLAS)
 endif()
-#if(NOT (SKTRAN_BLAS_VENDOR MATCHES "Generic"))
-    set(BLA_VENDOR ${SKTRAN_BLAS_VENDOR})
-#endif()
+set(BLA_VENDOR ${SKTRAN_BLAS_VENDOR})
+
 set(CMAKE_FIND_LIBRARY_PREFIXES "" lib)  # openblas include a "lib" prefix in it's names
-find_package(BLAS REQUIRED)
-find_package(LAPACK REQUIRED)
-target_link_libraries(sasktran2BuildProperties INTERFACE BLAS::BLAS LAPACK::LAPACK)
+find_package(BLAS)
+
+if(BLAS_FOUND)
+    find_package(LAPACK REQUIRED)
+    target_link_libraries(sasktran2BuildProperties INTERFACE BLAS::BLAS LAPACK::LAPACK)
+else()
+    if(SKTRAN_BLAS_VENDOR MATCHES "OpenBLAS")
+        # Try searching for openblas directly
+        # This path should only be taken with the numpy precompiled openblas...
+        find_package(OpenBLAS REQUIRED)
+        target_link_libraries(sasktran2BuildProperties INTERFACE ${OpenBLAS_LIBRARIES})
+        target_include_directories(sasktran2BuildProperties INTERFACE ${OpenBLAS_INCLUDE_DIRS})
+    endif()
+endif()
+
 target_compile_definitions(sasktran2BuildProperties INTERFACE
         $<$<AND:$<PLATFORM_ID:Windows>,$<STREQUAL:${BLA_VENDOR},OpenBLAS>>:__WIN64__>   # for compatibility with Eigen/src/misc/blas.h
         )
@@ -139,6 +150,7 @@ else()
     if(WIN32)
         # OpenBlas can give warnings about std::complex linkage on windows/visual studio, but we don't use any complex lapack functions anyway so just disable the warning
         target_compile_options(sasktran2BuildProperties INTERFACE /wd4190)
+        target_compile_options(sasktran2BuildProperties INTERFACE /wd4005)
     endif()
 
     if(SKTRAN_BLAS_VENDOR MATCHES "Generic")
@@ -161,23 +173,22 @@ install (TARGETS sasktran2BuildProperties
         INCLUDES DESTINATION ${INCLUDE_INSTALL_DIR})
 
 
-if(PROJECT_IS_TOP_LEVEL)
-    write_basic_package_version_file( "${CMAKE_BINARY_DIR}/sasktran2ConfigVersion.cmake"
-            VERSION ${SASKTRAN2_VERSION}
-            COMPATIBILITY SameMajorVersion
-            )
+write_basic_package_version_file( "${CMAKE_BINARY_DIR}/sasktran2ConfigVersion.cmake"
+        VERSION ${SASKTRAN2_VERSION}
+        COMPATIBILITY SameMajorVersion
+        )
 
-    install(EXPORT ${EXPORT_NAME}
-            FILE sasktran2Targets.cmake
-            NAMESPACE sasktran2::
-            DESTINATION lib/cmake/sasktran2
-            )
+install(EXPORT ${EXPORT_NAME}
+        FILE sasktran2Targets.cmake
+        NAMESPACE sasktran2::
+        DESTINATION lib/cmake/sasktran2
+        )
 
-    install( FILES "cmake/sasktran2Config.cmake" "${CMAKE_BINARY_DIR}/sasktran2ConfigVersion.cmake"
-            DESTINATION lib/cmake/sasktran2)
+install( FILES "cmake/sasktran2Config.cmake" "${CMAKE_BINARY_DIR}/sasktran2ConfigVersion.cmake"
+        DESTINATION lib/cmake/sasktran2)
 
-    # We basically just include this for clion help
-    if(BUILD_PYTHON)
-        add_subdirectory(python)
-    endif()
+OPTION(BUILD_PYTHON "True if Building Python Files" ON)
+# We basically just include this for clion help
+if(BUILD_PYTHON)
+    add_subdirectory(python)
 endif()

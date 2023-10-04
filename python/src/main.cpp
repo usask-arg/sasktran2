@@ -13,7 +13,7 @@ void init_output(py::module_ &);
 void init_engine(py::module_ &);
 
 
-PYBIND11_MODULE(_pysasktran2, m) {
+PYBIND11_MODULE(_core, m) {
     init_config(m);
     init_grids(m);
     init_coordinates(m);
