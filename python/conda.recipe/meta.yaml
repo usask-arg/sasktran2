@@ -15,6 +15,8 @@ build:
   binary_relocation: true
   number: {{ describe_number }}
   string: {{ describe_hash }}
+  script_env:
+    - CMAKE_ARGS_EXTRA
   script:
     - {{ PYTHON }} -m pip install python/. -vvv
 

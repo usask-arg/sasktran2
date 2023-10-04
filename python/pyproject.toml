@@ -45,10 +45,10 @@ environment = { CFLAGS="-fno-strict-aliasing -DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLA
 archs = "x86_64 arm64"
 test-skip = "*_universal2:arm64"
 # MACOS linker doesn't support stripping symbols
-environment = {CFLAGS="-fno-strict-aliasing -DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", CXXFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64",  CC="clang", CXX = "clang++", RUNNER_OS="macOS"}
+environment = {CFLAGS="-fno-strict-aliasing -DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", CXXFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64",  CC="clang", CXX = "clang++", RUNNER_OS="macOS", CMAKE_ARGS="-DUSE_OPENMP=OFF"}
 
 [tool.cibuildwheel.windows]
-environment = {CFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", CXXFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", LDFLAGS="", PKG_CONFIG_PATH="C:/opt/32/lib/pkgconfig"}
+environment = {CFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", CXXFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", LDFLAGS="", PKG_CONFIG_PATH="C:/opt/32/lib/pkgconfig", CMAKE_ARGS="-DCMAKE_PREFIX_PATH=C:/opt/32/"}
 config-settings = "setup-args=--vsenv"
 repair-wheel-command = "bash {project}/ci/cibw/repair_windows.sh {wheel} {dest_dir}"
 

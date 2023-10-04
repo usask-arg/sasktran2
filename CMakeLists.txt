@@ -39,8 +39,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# Try to find OpenMP
-find_package(OpenMP REQUIRED)
 find_package(Eigen3 CONFIG)
 
 # Add an interface target for storing build properties common to all sasktran modules
@@ -88,8 +86,14 @@ set (STATIC_LIB_INSTALL_DIR lib)
 set (INCLUDE_INSTALL_DIR include)
 set (EXPORT_NAME sasktran2Targets)
 
+# Try to find OpenMP
+OPTION(USE_OMP "Enables OPENMP support in SASKTRAN" ON)
 
-target_link_libraries(sasktran2BuildProperties INTERFACE OpenMP::OpenMP_CXX)
+if(USE_OMP)
+    find_package(OpenMP REQUIRED)
+    target_link_libraries(sasktran2BuildProperties INTERFACE OpenMP::OpenMP_CXX)
+    target_compile_definitions(sasktran2BuildProperties INTERFACE SKTRAN_OPENMP_SUPPORT)
+endif()
 
 # -------- LAPACK FINDING -----------
 # We support multiple blas vendors, but these can require some funny options
