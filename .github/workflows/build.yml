@@ -51,13 +51,13 @@ jobs:
       - name: Build Conda package
         shell: bash -el {0}
         run: |
-          conda-build -c conda-forge python/conda.recipe --output-folder pkgs/
+          conda-build -c conda-forge conda.recipe --output-folder pkgs/
 
       - name: Build Conda package (cross mac arm)
         shell: bash -el {0}
         if: (matrix.target_plat == 'arm') && (matrix.os == 'macos-11')
         run: |
-          conda-build -c conda-forge python/conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/
+          conda-build -c conda-forge conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/
 
       - name: Save conda package
         uses: actions/upload-artifact@v3
