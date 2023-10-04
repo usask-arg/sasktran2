@@ -25,7 +25,7 @@ target_link_libraries(_core PRIVATE pybind11::headers)
 target_link_libraries(_core PRIVATE sasktran2)
 target_compile_definitions(_core PRIVATE VERSION_INFO=${PROJECT_VERSION})
 
-install(TARGETS _core DESTINATION skretrieval)
+install(TARGETS _core DESTINATION sasktran2)
 
 
 

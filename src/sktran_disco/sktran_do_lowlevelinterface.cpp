@@ -104,7 +104,11 @@ namespace sasktran_disco_lowlevel {
 
         #pragma omp parallel for schedule(guided) num_threads(nthreads)
         for(int i = 0; i < config->nwavel; ++i) {
+            #ifdef SKTRAN_OPENMP_SUPPORT
             int thread_id = omp_get_thread_num();
+            #else
+            int thread_id = 0
+            #endif
             const auto& thread_data = persistent_config.pool().thread_data(thread_id);
 
             int wavoffset = NSTOKES * geometry->nlos;

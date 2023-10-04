@@ -9,7 +9,7 @@ package:
   version: {{ version }}
 
 source:
-  git_url: ../../
+  git_url: ../
 
 build:
   binary_relocation: true
