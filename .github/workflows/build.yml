@@ -17,58 +17,7 @@ concurrency:
 
 
 jobs:
-  build-cpp-libsasktran2:
-    runs-on: ${{ matrix.os }}
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target_plat: x86_64
-          - os: windows-latest
-            target_plat: x86_64
-          - os: macos-11
-            target_plat: x86_64
-          - os: macos-11
-            target_plat: arm
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-          submodules: true
-
-      - name: Setup Conda build environment
-        uses: conda-incubator/setup-miniconda@v2
-        with:
-          activate-environment: conda_build
-          environment-file: ci/conda-envs/build.yml
-          channels: conda-forge
-          auto-activate-base: false
-
-      - name: Build Conda package (x86_64)
-        shell: bash -el {0}
-        if: matrix.target_plat == 'x86_64'
-        run: |
-          conda-build -c conda-forge conda.recipe --output-folder pkgs/
-
-      - name: Build Conda package (arm)
-        shell: bash -el {0}
-        if: matrix.target_plat == 'arm'
-        run: |
-          conda-build -c conda-forge conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/ --no-test
-
-      - name: Save conda package
-        uses: actions/upload-artifact@v3
-        with:
-          name: libsasktran2-conda-${{ matrix.os }}-${{ matrix.target_plat }}
-          path: pkgs
-
-
   build-conda-pysasktran2:
-    needs: build-cpp-libsasktran2
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -83,6 +32,9 @@ jobs:
             target_plat: x86_64
           - os: macos-11
             target_plat: arm
+
+    env:
+      CMAKE_ARGS_EXTRA: "-DSKTRAN_BLAS_VENDOR=Generic"
 
     steps:
       - name: Checkout repository
@@ -99,36 +51,21 @@ jobs:
           channels: conda-forge
           auto-activate-base: false
 
-      - name: Download libsasktran2
-        id: download
-        uses: actions/download-artifact@v3
-        with:
-          name: libsasktran2-conda-${{ matrix.os }}-${{ matrix.target_plat }}
-          path: deps
-
-
       - name: Build Conda package
         shell: bash -el {0}
-        if: (matrix.target_plat == 'x86_64') && ((matrix.os == 'macos-11') || (matrix.os == 'ubuntu-latest'))
         run: |
-          conda-build -c conda-forge -c file:/"${{steps.download.outputs.download-path}}" python/conda.recipe --output-folder pkgs/
-
-      - name: Build Conda package
-        shell: bash -el {0}
-        if: (matrix.target_plat == 'x86_64') && (matrix.os == 'windows-latest')
-        run: |
-          conda-build -c conda-forge -c "${{steps.download.outputs.download-path}}" python/conda.recipe --output-folder pkgs/
+          conda-build -c conda-forge python/conda.recipe --output-folder pkgs/
 
       - name: Build Conda package (cross mac arm)
         shell: bash -el {0}
         if: (matrix.target_plat == 'arm') && (matrix.os == 'macos-11')
         run: |
-          conda-build -c conda-forge -c file:/"${{steps.download.outputs.download-path}}" python/conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/
+          conda-build -c conda-forge python/conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/
 
       - name: Save conda package
         uses: actions/upload-artifact@v3
         with:
-          name: pysasktran2-conda-${{ matrix.os }}-${{ matrix.target_plat }}
+          name: sasktran2-conda-${{ matrix.os }}-${{ matrix.target_plat }}
           path: pkgs
 
   build-wheels-manylinux2014:
@@ -179,15 +116,11 @@ jobs:
       fail-fast: false
       matrix:
         py_version: [py38]
+        os: [windows-latest, macos-11]
+        target_plat: [x86_64]
         include:
-          - os: windows-latest
-            target_plat: x86_64
-          - os: macos-11
-            target_plat: x86_64
           - os: macos-11
             target_plat: arm
-
-
 
     runs-on: ${{ matrix.os }}
 
@@ -236,3 +169,45 @@ jobs:
         with:
           name: wheels-${{ matrix.os }}-${{ matrix.target_plat }}-${{ matrix.py_version }}
           path: wheelhouse
+
+  test-wheels:
+    needs: [build-wheels-mac-windows, build-wheels-linux]
+    strategy:
+      fail-fast: false
+      matrix:
+        py_version: [ py38 ]
+        os: [ windows-latest, macos-11, ubuntu-latest ]
+        target_plat: [ x86_64 ]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - uses: conda-incubator/setup-miniconda@v2
+        with:
+          activate-environment: ${{ matrix.py_version }}
+          environment-file: ci/${{ matrix.os }}-${{ matrix.target_plat }}-test-${{ matrix.py_version }}.yml
+          auto-activate-base: false
+
+      - name: Download wheel artifacts
+        if: (matrix.os == 'macos-11') || (matrix.os == 'windows-latest')
+        uses: actions/download-artifact@v3
+        with:
+          name: wheels-${{ matrix.os }}-${{ matrix.target_plat }}-${{ matrix.py_version }}
+          path: wheelhouse
+
+      - name: Download wheel artifacts
+        if: (matrix.os == 'ubuntu-latest')
+        uses: actions/download-artifact@v3
+        with:
+          name: wheels-linux
+          path: wheelhouse
+
+      - name: Test wheel
+        shell: bash -el {0}
+        run: |
+          ls wheelhouse
+          pip install sasktran2 --no-index -f wheelhouse/
+          py.test sasktran

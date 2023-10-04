@@ -26,6 +26,5 @@ class OutputIdeal(Output):
     def internal_output(self):
         return self._output
 
-    @abc.abstractmethod
     def post_process(self):
         return self._output

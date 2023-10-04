@@ -6,9 +6,9 @@ class Atmosphere:
         self._nstokes = nstokes
 
         if nstokes == 1:
-            self._atmosphere = sk.AtmosphereStokes_1(numwavel, model_geometry, config)
+            self._atmosphere = sk.AtmosphereStokes_1(numwavel, model_geometry, config, True)
         elif nstokes == 3:
-            self._atmosphere = sk.AtmosphereStokes_3(numwavel, model_geometry, config)
+            self._atmosphere = sk.AtmosphereStokes_3(numwavel, model_geometry, config, True)
 
     @property
     def storage(self):
