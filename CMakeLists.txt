@@ -104,6 +104,11 @@ set(SKTRAN_BLAS_VENDOR "OpenBLAS" CACHE STRING
         "Sets the BLAS/LAPACK vendor. See https://cmake.org/cmake/help/latest/module/FindBLAS.html#blas-lapack-vendors.")
 set_property(CACHE SKTRAN_BLAS_VENDOR PROPERTY STRINGS OpenBLAS Intel10_64lp Apple Generic)
 
+if(DEFINED ENV{CONDA_BUILD_STATE})
+    # we are inside conda build, force SKTRAN_BLAS_VENDOR to be Generic
+    set(SKTRAN_BLAS_VENDOR "Generic")
+endif()
+
 if(SKTRAN_BLAS_VENDOR MATCHES "Intel")
     set(BLA_STATIC FALSE)
     set(BLA_SIZEOF_INTEGER 4)
@@ -133,7 +138,7 @@ else()
         # Try searching for openblas directly
         # This path should only be taken with the numpy precompiled openblas...
         find_package(OpenBLAS REQUIRED)
-        target_link_libraries(sasktran2BuildProperties INTERFACE ${OpenBLAS_LIBRARIES})
+        target_link_libraries(sasktran2BuildProperties INTERFACE OpenBLAS)
         target_include_directories(sasktran2BuildProperties INTERFACE ${OpenBLAS_INCLUDE_DIRS})
     endif()
 endif()

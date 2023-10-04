@@ -16,7 +16,6 @@ build:
   number: {{ describe_number }}
   string: {{ describe_hash }}
   script:
-    - export CMAKE_ARGS=${CMAKE_ARGS};-DSKTRAN_BLAS_VENDOR=Generic
     - {{ PYTHON }} -m pip install . -vvv
 
 requirements:
