@@ -56,7 +56,7 @@ test:
   imports:
     - sasktran2
   source_files:
-    - python/tests
+    - tests
   commands:
     - python -m pytest
 

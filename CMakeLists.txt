@@ -165,7 +165,7 @@ message(STATUS "Lapack Configuration Complete")
 
 
 
-add_subdirectory (src)
+add_subdirectory (lib)
 
 install (TARGETS sasktran2BuildProperties
         EXPORT ${EXPORT_NAME}
@@ -190,5 +190,31 @@ install( FILES "cmake/sasktran2Config.cmake" "${CMAKE_BINARY_DIR}/sasktran2Confi
 OPTION(BUILD_PYTHON "True if Building Python Files" ON)
 # We basically just include this for clion help
 if(BUILD_PYTHON)
-    add_subdirectory(python)
+    project(
+            ${SKBUILD_PROJECT_NAME}
+            VERSION ${SKBUILD_PROJECT_VERSION}
+            LANGUAGES CXX)
+
+    set(CMAKE_CXX_STANDARD 17)
+
+    find_package(Python REQUIRED COMPONENTS Interpreter Development.Module)
+    find_package(pybind11 CONFIG REQUIRED)
+
+    python_add_library(_core MODULE
+            src/main.cpp
+            src/config.cpp
+            src/coordinates.cpp
+            src/geometry.cpp
+            src/grids.cpp
+            src/atmosphere.cpp
+            src/viewing_geometry.cpp
+            src/engine.cpp
+            src/output.cpp
+            WITH_SOABI)
+
+    target_link_libraries(_core PRIVATE pybind11::headers)
+    target_link_libraries(_core PRIVATE sasktran2)
+    target_compile_definitions(_core PRIVATE VERSION_INFO=${PROJECT_VERSION})
+
+    install(TARGETS _core DESTINATION sasktran2)
 endif()
