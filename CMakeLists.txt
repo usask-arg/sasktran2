@@ -98,7 +98,7 @@ else()
     add_dependencies(spdloglib spdlog)
 
     set_target_properties(spdloglib PROPERTIES
-            INTERFACE_INCLUDE_DIRECTORIES ${SPDLOG_INSTALL_DIR}/include/spdlog
+            INTERFACE_INCLUDE_DIRECTORIES ${SPDLOG_INSTALL_DIR}/include/
             )
 
     target_link_libraries(sasktran2BuildProperties INTERFACE spdloglib)
