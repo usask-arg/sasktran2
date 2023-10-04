@@ -62,5 +62,5 @@ test:
 
 about:
   home: http://www.example.com
-  license: MIT
+  license: ../license.md
   summary: "Summary in here ..."
