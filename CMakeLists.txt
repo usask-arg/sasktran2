@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.20.0)
 include(CMakePackageConfigHelpers)# Provides function/macro write_basic_package_version_file
+include(ExternalProject)
 
 # Convenience
 if(UNIX AND NOT APPLE)
@@ -39,16 +40,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-find_package(Eigen3 CONFIG)
-
 # Add an interface target for storing build properties common to all sasktran modules
 add_library(sasktran2BuildProperties INTERFACE)
+
+find_package(Eigen3 CONFIG)
 
 if(Eigen3_FOUND)
     target_link_libraries(sasktran2BuildProperties INTERFACE Eigen3::Eigen)
 else()
-    include(ExternalProject)
-
     set(EIGEN_INSTALL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/eigen-install/")
 
     ExternalProject_Add(
@@ -73,6 +72,38 @@ else()
 
     target_link_libraries(sasktran2BuildProperties INTERFACE eigenlib)
 endif()
+
+
+find_package(spdlog CONFIG)
+
+if(spdlog_FOUND)
+    target_link_libraries(sasktran2BuildProperties INTERFACE spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
+else()
+    set(SPDLOG_INSTALL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/spdlog-install/")
+
+    ExternalProject_Add(
+            spdlog
+            URL  https://github.com/gabime/spdlog/archive/refs/tags/v1.12.0.tar.gz
+            SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/spdlog-src"
+            BINARY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/spdlog-build"
+            INSTALL_DIR "${SPDLOG_INSTALL_DIR}"
+            CMAKE_ARGS
+            -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
+            -DCMAKE_BUILD_TYPE=Release
+    )
+
+    file(MAKE_DIRECTORY ${SPDLOG_INSTALL_DIR}/include)  # avoid race condition
+
+    add_library(spdloglib INTERFACE IMPORTED GLOBAL)
+    add_dependencies(spdloglib spdlog)
+
+    set_target_properties(spdloglib PROPERTIES
+            INTERFACE_INCLUDE_DIRECTORIES ${SPDLOG_INSTALL_DIR}/include/spdlog
+            )
+
+    target_link_libraries(sasktran2BuildProperties INTERFACE spdloglib)
+endif()
+
 
 # add the additional compiler flags
 set (CMAKE_CXX_FLAGS " ${CompilerFlags} ${OpenMP_CXX_FLAGS} ${CMAKE_CXX_FLAGS}")
@@ -138,7 +169,9 @@ else()
         # Try searching for openblas directly
         # This path should only be taken with the numpy precompiled openblas...
         find_package(OpenBLAS REQUIRED)
-        target_link_libraries(sasktran2BuildProperties INTERFACE OpenBLAS)
+        if(NOT WIN32)
+            target_link_libraries(sasktran2BuildProperties INTERFACE ${OpenBLAS_LIBRARIES})
+        endif()
         target_include_directories(sasktran2BuildProperties INTERFACE ${OpenBLAS_INCLUDE_DIRS})
     endif()
 endif()

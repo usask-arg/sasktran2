@@ -37,10 +37,12 @@ requirements:
     - llvm-openmp # [mac]
     - zlib
     - pybind11
+    - spdlog
     - scikit-build-core
   run:
     - python {{ python }}
     - numpy
+    - spdlog
     - libblas=*=*netlib
     - libcblas=*=*netlib
     - liblapack=*=*netlib
