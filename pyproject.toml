@@ -52,9 +52,6 @@ test-skip = ["*universal2:arm64"]
 # before-build = "rm -rf {project}/build"
 before-build = "bash {project}/ci/cibw/cibw_before_build.sh {project}"
 
-[[tool.cibuildwheel.overrides]]
-select = "cp36-*"
-
 [tool.cibuildwheel.linux]
 archs = "native"
 environment = { CFLAGS="-fno-strict-aliasing -DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", LDFLAGS="-Wl,--strip-debug", CXXFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", RUNNER_OS="Linux", CMAKE_BUILD_PARALLEL_LEVEL="2"}

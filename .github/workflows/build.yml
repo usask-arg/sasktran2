@@ -82,6 +82,7 @@ jobs:
         uses: pypa/cibuildwheel@v2.16.2
         with:
           output-dir: wheelhouse
+          CIBW_SKIP: pp*
 
       - uses: actions/upload-artifact@v3
         with:
