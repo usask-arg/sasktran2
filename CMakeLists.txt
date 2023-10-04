@@ -90,9 +90,12 @@ set (EXPORT_NAME sasktran2Targets)
 OPTION(USE_OMP "Enables OPENMP support in SASKTRAN" ON)
 
 if(USE_OMP)
-    find_package(OpenMP REQUIRED)
-    target_link_libraries(sasktran2BuildProperties INTERFACE OpenMP::OpenMP_CXX)
-    target_compile_definitions(sasktran2BuildProperties INTERFACE SKTRAN_OPENMP_SUPPORT)
+    find_package(OpenMP)
+
+    if(OpenMP_FOUND)
+        target_link_libraries(sasktran2BuildProperties INTERFACE OpenMP::OpenMP_CXX)
+        target_compile_definitions(sasktran2BuildProperties INTERFACE SKTRAN_OPENMP_SUPPORT)
+    endif()
 endif()
 
 # -------- LAPACK FINDING -----------
