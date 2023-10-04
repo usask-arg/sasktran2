@@ -87,7 +87,7 @@ void sasktran_disco::LPTripleProduct<NSTOKES, CNSTR>::negations_derivative_empla
         }
     }
     else {
-        BOOST_LOG_TRIVIAL(error) << "LPTripleProduct<NSTOKES, CNSTR>::negations_derivative_emplace has no implementation for NSTOKES == " << NSTOKES;
+        spdlog::error("LPTripleProduct<NSTOKES, CNSTR>::negations_derivative_emplace has no implementation for NSTOKES == {}", NSTOKES);
     }
     
 }
@@ -155,7 +155,7 @@ void sasktran_disco::LPTripleProduct<NSTOKES, CNSTR>::calculate_and_emplace(
         holder_1_negation.a3deriv *= 0.5 * ssa;
         holder_1_negation.b1deriv *= 0.5 * ssa;
     } else {
-        BOOST_LOG_TRIVIAL(error) << "LPTripleProduct<NSTOKES, CNSTR>::calculate_and_emplace has no implementation for NSTOKES == " << NSTOKES;
+        spdlog::error("LPTripleProduct<NSTOKES, CNSTR>::calculate_and_emplace has no implementation for NSTOKES == {}", NSTOKES);
     }
 }
 

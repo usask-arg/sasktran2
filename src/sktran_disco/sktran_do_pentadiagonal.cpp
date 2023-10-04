@@ -76,7 +76,7 @@ int sasktran_disco::la::dgbsv_pentadiagonal(int N, int NRHS, double* AB, double*
     // order anyways
 
     if(y.hasNaN()) {
-        BOOST_LOG_TRIVIAL(warning) << "Pentadiagonal solver failed";
+        spdlog::warn("Pentadiagonal solver failed");
         y.setZero();
     }
 

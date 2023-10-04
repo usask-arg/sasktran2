@@ -46,7 +46,7 @@ namespace sasktran2::atmosphere {
     template<int NSTOKES>
     void Atmosphere<NSTOKES>::apply_delta_m_scaling(int order) {
         if(order >= m_storage.phase[0].max_stored_legendre()) {
-            BOOST_LOG_TRIVIAL(warning) << "Trying to delta scale without the correct number of legendre orders";
+            spdlog::warn("Trying to delta scale without the correct number of legendre orders");
             return;
         }
 

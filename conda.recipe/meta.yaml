@@ -25,7 +25,6 @@ requirements:
     - {{ compiler('cxx') }}
     - {{ compiler('fortran') }} # [not win]
   host:
-    - boost-cpp
     - libblas=*=*netlib
     - libcblas=*=*netlib
     - liblapack=*=*netlib
@@ -36,7 +35,6 @@ requirements:
     - llvm-openmp # [mac]
     - zlib
   run:
-    - boost-cpp
     - llvm-openmp # [mac]
     - zlib
     - libblas

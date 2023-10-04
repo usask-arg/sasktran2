@@ -89,7 +89,7 @@ namespace sasktran2::math::unitsphere::lebedev {
         } else if(npoints == 3890) {
             result = Eigen::Map<Eigen::MatrixXd>(g_lebedev_xyzw_3890, 4, 3890);
         } else {
-            BOOST_LOG_TRIVIAL(error) << "Requested number of Lebedev quadrature points does not exist";
+            spdlog::error("Requested number of Lebedev quadrature points does not exist");
             throw std::runtime_error("Requested number of Lebedev quadrature points does not exist");
         }
     };

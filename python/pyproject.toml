@@ -31,11 +31,12 @@ filterwarnings = [
 testpaths = ["tests"]
 
 [tool.cibuildwheel]
-test-command = "pytest {project}/tests"
+test-command = "pytest {project}/python/tests"
 test-extras = ["test"]
 test-skip = ["*universal2:arm64"]
 # Setuptools bug causes collision between pypy and cpython artifacts
-before-build = "rm -rf {project}/build"
+# before-build = "rm -rf {project}/build"
+before-build = "bash {project}/ci/cibw/cibw_before_build.sh {project}"
 
 [tool.ruff]
 extend-select = [

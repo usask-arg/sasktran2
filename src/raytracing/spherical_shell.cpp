@@ -219,7 +219,7 @@ namespace sasktran2::raytracing {
         layer.type = LayerType::tangent;
 
         if (direction == ViewingDirection::up) {
-            BOOST_LOG_TRIVIAL(error) << "Trying to construct a partial tangent layer looking up, this shouldn't be a thing";
+            spdlog::error("Trying to construct a partial tangent layer looking up, this shouldn't be a thing");
             throw std::runtime_error("critical raytracing error");
         }
         else {

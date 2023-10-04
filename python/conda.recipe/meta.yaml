@@ -27,7 +27,6 @@ requirements:
   host:
     - python {{ python }}
     - eigen
-    - boost-cpp
     - libblas=*=*netlib
     - libcblas=*=*netlib
     - liblapack=*=*netlib
@@ -44,9 +43,7 @@ requirements:
     - liblapack=*=*netlib
     - liblapacke=*=*netlib
     - libtmglib=*=*netlib
-    - boost-cpp
     - llvm-openmp # [mac]
-
 
 test:
   requires:

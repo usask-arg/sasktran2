@@ -10,7 +10,7 @@ namespace sasktran2::viewinggeometry {
                     std::make_unique<sasktran2::viewinggeometry::TangentAltitudeSolar>(*dynamic_cast<const sasktran2::viewinggeometry::TangentAltitudeSolar*>(&ray))
                     );
         } else {
-            BOOST_LOG_TRIVIAL(error) << "Unsupported viewing ray type";
+            spdlog::error("Unsupported viewing ray type");
         }
 
     }

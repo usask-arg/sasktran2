@@ -7,7 +7,6 @@
 #include <sktran_disco/sktran_do.h>
 #include <sasktran2/math/wigner.h>
 #include <sasktran2/math/trig.h>
-#include <boost/math/quadrature/gauss.hpp>
 #include <sktran_disco/sktran_do_specs.h>
 
 namespace sasktran2 {

@@ -123,7 +123,7 @@ void Sasktran2<NSTOKES>::validate_input_atmosphere(const sasktran2::atmosphere::
     
     // Check that the atmosphere geometry matches the global geometry
     if (atmosphere.num_wavel() != atmosphere.surface().albedo().size()) {
-        BOOST_LOG_TRIVIAL(error) << "Atmosphere albedo does not have the correct dimensions";
+        spdlog::error("Atmosphere albedo does not have the correct dimensions");
     }
 }
 

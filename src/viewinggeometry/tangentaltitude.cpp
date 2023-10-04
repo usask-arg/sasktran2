@@ -15,7 +15,7 @@ namespace sasktran2::viewinggeometry {
     ViewingRay TangentAltitude::construct_ray(const sasktran2::Coordinates &geometry) {
         if(geometry.geometry_type() != sasktran2::geometrytype::spherical) {
             auto msg = "Error constructing ray in TangentAltitude::construct_ray, TangentAltitude ray construction can only be used in spherical geometry mode.";
-            BOOST_LOG_TRIVIAL(error) << msg;
+            spdlog::error(msg);
             throw std::invalid_argument(msg);
         }
         ViewingRay ray;

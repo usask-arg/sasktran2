@@ -50,5 +50,4 @@
 
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
-
-#include <boost/log/trivial.hpp>
+#include <spdlog/spdlog.h>

@@ -3,7 +3,6 @@
 #include <sasktran2/config.h>
 #include <sasktran2/atmosphere/atmosphere.h>
 #include <sasktran2/math/trig.h>
-#include <boost/math/quadrature/gauss.hpp>
 
 namespace sasktran2::solartransmission {
     template<typename S, int NSTOKES>

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20.0)
-include(CMakePackageConfigHelpers )# Provides function/macro write_basic_package_version_file
+include(CMakePackageConfigHelpers)# Provides function/macro write_basic_package_version_file
 
 # Convenience
 if(UNIX AND NOT APPLE)
@@ -39,15 +39,42 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-option(FORCE_BOOST_STATIC "Force the use of boost static libraries" OFF)
-# Try to find boost 1.6 or greater
-set(Boost_USE_STATIC_LIBS ${FORCE_BOOST_STATIC})
-find_package(Boost REQUIRED COMPONENTS log)
-
 # Try to find OpenMP
 find_package(OpenMP REQUIRED)
+find_package(Eigen3 CONFIG)
 
-find_package(Eigen3 REQUIRED)
+# Add an interface target for storing build properties common to all sasktran modules
+add_library(sasktran2BuildProperties INTERFACE)
+
+if(Eigen3_FOUND)
+    target_link_libraries(sasktran2BuildProperties INTERFACE Eigen3::Eigen)
+else()
+    include(ExternalProject)
+
+    set(EIGEN_INSTALL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/eigen-install/")
+
+    ExternalProject_Add(
+            eigen
+            URL  https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz
+            SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/eigen-src"
+            BINARY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/eigen-build"
+            INSTALL_DIR "${EIGEN_INSTALL_DIR}"
+            CMAKE_ARGS
+            -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
+            -DCMAKE_BUILD_TYPE=Release
+    )
+
+    file(MAKE_DIRECTORY ${EIGEN_INSTALL_DIR}/include)  # avoid race condition
+
+    add_library(eigenlib INTERFACE IMPORTED GLOBAL)
+    add_dependencies(eigenlib eigen)
+
+    set_target_properties(eigenlib PROPERTIES
+            INTERFACE_INCLUDE_DIRECTORIES ${EIGEN_INSTALL_DIR}/include/eigen3
+            )
+
+    target_link_libraries(sasktran2BuildProperties INTERFACE eigenlib)
+endif()
 
 # add the additional compiler flags
 set (CMAKE_CXX_FLAGS " ${CompilerFlags} ${OpenMP_CXX_FLAGS} ${CMAKE_CXX_FLAGS}")
@@ -62,16 +89,7 @@ set (INCLUDE_INSTALL_DIR include)
 set (EXPORT_NAME sasktran2Targets)
 
 
-# Add an interface target for storing build properties common to all sasktran modules
-add_library(sasktran2BuildProperties INTERFACE)
-
 target_link_libraries(sasktran2BuildProperties INTERFACE OpenMP::OpenMP_CXX)
-target_link_libraries(sasktran2BuildProperties INTERFACE Eigen3::Eigen)
-target_link_libraries(sasktran2BuildProperties INTERFACE Boost::log)
-
-if(WIN32)
-    target_compile_definitions(sasktran2BuildProperties INTERFACE BOOST_USE_WINAPI_VERSION=BOOST_WINAPI_VERSION_WIN7)
-endif()
 
 # -------- LAPACK FINDING -----------
 # We support multiple blas vendors, but these can require some funny options

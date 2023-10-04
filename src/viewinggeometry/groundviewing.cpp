@@ -36,7 +36,7 @@ namespace sasktran2::viewinggeometry {
             distance_from_ground = (-b + sqrt(b*b - 4*c)) / 2;
 
         } else {
-            BOOST_LOG_TRIVIAL(error) << "GroundViewingSolar does not support the given geometry type";
+            spdlog::error("GroundViewingSolar does not support the given geometry type");
         }
 
         result.observer.position = ground_vector - result.look_away * distance_from_ground;

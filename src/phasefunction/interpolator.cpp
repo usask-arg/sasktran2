@@ -140,7 +140,7 @@ namespace sasktran2::atmosphere {
                     }
                 }
             } else {
-                BOOST_LOG_TRIVIAL(warning) << "Phase derivatives with an input sparse source derivative is not supported";
+                spdlog::warn("Phase derivatives with an input sparse source derivative is not supported");
             }
 
             // Have to interpolate the phase

@@ -89,7 +89,7 @@ namespace sasktran2::raytracing {
         } else if (geo == sasktran2::geometrytype::planeparallel) {
 
         } else {
-            BOOST_LOG_TRIVIAL(error) << "calculate_csz_saz does not support this geometry type";
+            spdlog::error("calculate_csz_saz does not support this geometry type");
         }
 
         csz = local_up.dot(sun_unit);

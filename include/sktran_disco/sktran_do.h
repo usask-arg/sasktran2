@@ -11,9 +11,7 @@
 #include <list>
 #include <map>
 #include <limits>
-
-// Boost dependencies
-#include <boost/math/special_functions/legendre.hpp>
+#include <complex>
 
 // Eigen settings
 

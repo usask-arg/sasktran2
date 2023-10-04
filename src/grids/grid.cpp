@@ -29,7 +29,7 @@ namespace sasktran2::grids {
         }
 
         if(m_interp_method != interpolation::linear) {
-            BOOST_LOG_TRIVIAL(warning) << "Requested interpolation mode is not implemented, falling back to linear interpolation";
+            spdlog::error("Requested interpolation mode is not implemented, falling back to linear interpolation");
         }
 
         if(m_grid_spacing == gridspacing::constant) {
