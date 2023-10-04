@@ -57,7 +57,7 @@ class CMakeBuild(build_ext):
 
         # Added for additional arguments beyond conda-forge
         if "CMAKE_ARGS_EXTRA" in os.environ:
-            cmake_args += [item for item in os.environ["CMAKE_ARGS"].split(" ") if item]
+            cmake_args += [item for item in os.environ["CMAKE_ARGS_EXTRA"].split(" ") if item]
 
         # In this example, we pass in the version to C++. You might not need to.
         cmake_args += [f"-DEXAMPLE_VERSION_INFO={self.distribution.get_version()}"]
@@ -140,6 +140,7 @@ setup(
     packages=['sasktran2'],
     cmdclass={"build_ext": CMakeBuild},
     zip_safe=False,
+    install_requires=['numpy'],
     extras_require={"test": ["pytest>=6.0"]},
     python_requires=">=3.7",
 )

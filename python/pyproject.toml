@@ -48,7 +48,7 @@ test-skip = "*_universal2:arm64"
 environment = {CFLAGS="-fno-strict-aliasing -DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", CXXFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64",  CC="clang", CXX = "clang++", RUNNER_OS="macOS"}
 
 [tool.cibuildwheel.windows]
-environment = {CFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", CXXFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", LDFLAGS="", PKG_CONFIG_PATH="C:/opt/64/lib/pkgconfig"}
+environment = {CFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", CXXFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", LDFLAGS="", PKG_CONFIG_PATH="C:/opt/32/lib/pkgconfig"}
 config-settings = "setup-args=--vsenv"
 repair-wheel-command = "bash {project}/ci/cibw/repair_windows.sh {wheel} {dest_dir}"
 
