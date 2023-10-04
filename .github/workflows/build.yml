@@ -171,7 +171,7 @@ jobs:
           path: wheelhouse
 
   test-wheels:
-    needs: [build-wheels-mac-windows, build-wheels-linux]
+    needs: [build-wheels-mac-windows, build-wheels-manylinux2014]
     strategy:
       fail-fast: false
       matrix:

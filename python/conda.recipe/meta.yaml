@@ -26,7 +26,6 @@ requirements:
     - {{ compiler('cxx') }}
   host:
     - python {{ python }}
-    - libsasktran2
     - eigen
     - boost-cpp
     - libblas=*=*netlib
@@ -40,7 +39,13 @@ requirements:
   run:
     - python {{ python }}
     - numpy
-    - libsasktran2
+    - libblas=*=*netlib
+    - libcblas=*=*netlib
+    - liblapack=*=*netlib
+    - liblapacke=*=*netlib
+    - libtmglib=*=*netlib
+    - boost-cpp
+    - llvm-openmp # [mac]
 
 
 test:
