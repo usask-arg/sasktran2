@@ -38,6 +38,21 @@ test-skip = ["*universal2:arm64"]
 # before-build = "rm -rf {project}/build"
 before-build = "bash {project}/ci/cibw/cibw_before_build.sh {project}"
 
+[tool.cibuildwheel.linux]
+environment = { CFLAGS="-fno-strict-aliasing -DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", LDFLAGS="-Wl,--strip-debug", CXXFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", RUNNER_OS="Linux"}
+
+[tool.cibuildwheel.macos]
+archs = "x86_64 arm64"
+test-skip = "*_universal2:arm64"
+# MACOS linker doesn't support stripping symbols
+environment = {CFLAGS="-fno-strict-aliasing -DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", CXXFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64",  CC="clang", CXX = "clang++", RUNNER_OS="macOS"}
+
+[tool.cibuildwheel.windows]
+environment = {CFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", CXXFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", LDFLAGS="", PKG_CONFIG_PATH="C:/opt/64/lib/pkgconfig"}
+config-settings = "setup-args=--vsenv"
+repair-wheel-command = "bash {project}/ci/cibw/repair_windows.sh {wheel} {dest_dir}"
+
+
 [tool.ruff]
 extend-select = [
     "B",    # flake8-bugbear
