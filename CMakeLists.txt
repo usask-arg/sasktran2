@@ -48,13 +48,13 @@ find_package(Eigen3 CONFIG)
 if(Eigen3_FOUND)
     target_link_libraries(sasktran2BuildProperties INTERFACE Eigen3::Eigen)
 else()
-    set(EIGEN_INSTALL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/eigen-install/")
+    set(EIGEN_INSTALL_DIR "${CMAKE_BINARY_DIR}/eigen-install/")
 
     ExternalProject_Add(
             eigen
             URL  https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz
-            SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/eigen-src"
-            BINARY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/eigen-build"
+            SOURCE_DIR "${CMAKE_BINARY_DIR}/eigen-src"
+            BINARY_DIR "${CMAKE_BINARY_DIR}/eigen-build"
             INSTALL_DIR "${EIGEN_INSTALL_DIR}"
             CMAKE_ARGS
             -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
@@ -79,13 +79,13 @@ find_package(spdlog CONFIG)
 if(spdlog_FOUND)
     target_link_libraries(sasktran2BuildProperties INTERFACE spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
 else()
-    set(SPDLOG_INSTALL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/spdlog-install/")
+    set(SPDLOG_INSTALL_DIR "${CMAKE_BINARY_DIR}/spdlog-install/")
 
     ExternalProject_Add(
             spdlog
             URL  https://github.com/gabime/spdlog/archive/refs/tags/v1.12.0.tar.gz
-            SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/spdlog-src"
-            BINARY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/spdlog-build"
+            SOURCE_DIR "${CMAKE_BINARY_DIR}/spdlog-src"
+            BINARY_DIR "${CMAKE_BINARY_DIR}/spdlog-build"
             INSTALL_DIR "${SPDLOG_INSTALL_DIR}"
             CMAKE_ARGS
             -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
