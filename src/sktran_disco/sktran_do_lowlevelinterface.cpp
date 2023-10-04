@@ -107,7 +107,7 @@ namespace sasktran_disco_lowlevel {
             #ifdef SKTRAN_OPENMP_SUPPORT
             int thread_id = omp_get_thread_num();
             #else
-            int thread_id = 0
+            int thread_id = 0;
             #endif
             const auto& thread_data = persistent_config.pool().thread_data(thread_id);
 

@@ -39,6 +39,7 @@ requirements:
     - llvm-openmp # [mac]
     - zlib
     - pybind11
+    - scikit-build-core
   run:
     - python {{ python }}
     - numpy
