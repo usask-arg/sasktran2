@@ -173,7 +173,9 @@ else()
             target_link_libraries(sasktran2BuildProperties INTERFACE ${OpenBLAS_LIBRARIES})
         else()
             string(REGEX REPLACE "[.]dll$" ".lib" OpenBLAS_LIBS_TEMP ${OpenBLAS_LIBRARIES})
-            string(REGEX REPLACE "/c/" "c:/" OpenBLAS_LIBS ${OpenBLAS_LIBS_TEMP})
+            string(REGEX REPLACE "/c/" "c:/" OpenBLAS_LIBS_TEMP2 ${OpenBLAS_LIBS_TEMP})
+            string(REGEX REPLACE "bin" "lib" OpenBLAS_LIBS ${OpenBLAS_LIBS_TEMP2})
+
 
             target_link_libraries(sasktran2BuildProperties INTERFACE ${OpenBLAS_LIBS})
         endif()
