@@ -1,6 +1,9 @@
 #pragma once
 #include "sktran_disco/sktran_do.h"
+
+#ifdef SKTRAN_OPENMP_SUPPORT
 #include "omp.h"
+#endif
 
 namespace sasktran_disco {
     // Temporaries needed during PostProcessing, create one for each layer even though some of it could be
@@ -215,7 +218,11 @@ namespace sasktran_disco {
         }
 
         void init(uint NLYR, uint NSTR) {
+            #ifdef SKTRAN_OPENMP_SUPPORT
             int num_threads = omp_get_max_threads();
+            #else
+            int num_threads = 1;
+            #endif
 
             m_nlyr = NLYR;
             m_nstr = NSTR;
@@ -226,7 +233,11 @@ namespace sasktran_disco {
         }
 
         ThreadData<NSTOKES, CNSTR>& thread_data() const {
+            #ifdef SKTRAN_OPENMP_SUPPORT
             int thread_num = omp_get_thread_num();
+            #else
+            int thread_num = 0;
+            #endif
 
             auto it = m_threaddata.find(thread_num);
             if( it == m_threaddata.end()) {
