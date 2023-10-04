@@ -57,7 +57,7 @@ jobs:
         shell: bash -el {0}
         if: (matrix.target_plat == 'arm') && (matrix.os == 'macos-11')
         run: |
-          conda-build -c conda-forge conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/
+          conda-build -c conda-forge conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/ --no-test
 
       - name: Save conda package
         uses: actions/upload-artifact@v3
