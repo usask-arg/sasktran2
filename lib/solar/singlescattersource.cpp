@@ -28,7 +28,7 @@ namespace sasktran2::solartransmission {
             const auto& ray = (*m_los_rays)[i];
             for(int j = 0; j < ray.layers.size(); ++j) {
                 const auto& layer = ray.layers[j];
-                m_phase_interp[m_phase_index_map[i][j]].load_scattering_angle(m_atmosphere->storage().phase[0], m_geometry.coordinates().sun_unit(), layer.average_look_away);
+                m_phase_interp[m_phase_index_map[i][j]].load_scattering_angle(m_atmosphere->storage().max_stored_legendre(), m_geometry.coordinates().sun_unit(), layer.average_look_away);
             }
         }
 
@@ -305,8 +305,8 @@ namespace sasktran2::solartransmission {
         start_phase.value(0) = ssa_start * entrance_factor;
         end_phase.value(0) = ssa_end * exit_factor;
 
-        phase_interp.scatter(m_atmosphere->storage().phase[wavelidx], layer.entrance.interpolation_weights, start_phase);
-        phase_interp.scatter(m_atmosphere->storage().phase[wavelidx], layer.exit.interpolation_weights, end_phase);
+        phase_interp.scatter(m_atmosphere->storage(), wavelidx, layer.entrance.interpolation_weights, start_phase);
+        phase_interp.scatter(m_atmosphere->storage(), wavelidx, layer.exit.interpolation_weights, end_phase);
 
         if(calculate_derivative) {
             if constexpr (std::is_same_v<S, SolarTransmissionExact>) {

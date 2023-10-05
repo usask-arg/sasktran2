@@ -25,7 +25,8 @@ namespace sasktran2::hr {
         IncomingOutgoingSpherePair(int nlegendre, std::unique_ptr<const sasktran2::math::UnitSphere>&& incoming_sphere, std::unique_ptr<const sasktran2::math::UnitSphere>&& outgoing_sphere);
 
 
-        void calculate_scattering_matrix(const sasktran2::atmosphere::PhaseStorage<NSTOKES>& phase,
+        void calculate_scattering_matrix(const sasktran2::atmosphere::AtmosphereGridStorageFull<NSTOKES>& phase,
+                                         int wavelidx,
                                          const std::vector<std::pair<int, double>>& index_weights,
                                          double* phase_storage_location) const;
 

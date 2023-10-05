@@ -107,9 +107,9 @@ namespace sasktran2::atmosphere {
         // TODO: refactor the below functions into a derivative handler class of some kind
         int ssa_deriv_start_index() const { return (int)m_storage.total_extinction.rows();}
         int scat_deriv_start_index() const { return (int)m_storage.total_extinction.rows() * 2;}
-        int surface_deriv_start_index() const { return scat_deriv_start_index() + m_storage.phase[0].num_deriv()*m_storage.total_extinction.rows(); }
+        int surface_deriv_start_index() const { return scat_deriv_start_index() + m_storage.numscatderiv*m_storage.total_extinction.rows(); }
 
         int num_deriv() const;
-        int num_scattering_deriv_groups() const { return m_storage.phase[0].num_deriv(); }
+        int num_scattering_deriv_groups() const { return m_storage.numscatderiv; }
     };
 }

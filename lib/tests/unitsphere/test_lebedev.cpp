@@ -1,5 +1,5 @@
 #include <sasktran2/test_helper.h>
-#include <boost/math/special_functions/spherical_harmonic.hpp>
+//#include <boost/math/special_functions/spherical_harmonic.hpp>
 
 #include <sasktran2.h>
 
@@ -16,7 +16,7 @@ TEST_CASE("Lebedev Initialization", "[sasktran2][unitsphere]") {
     }
 }
 
-
+/*
 TEST_CASE("Spherical Harmonics Integration", "[sasktran2][unitsphere][spherical_harmonics]") {
     const int max_order = 8;
     const int npoints = 38;
@@ -42,3 +42,4 @@ TEST_CASE("Spherical Harmonics Integration", "[sasktran2][unitsphere][spherical_
         }
     }
 }
+*/

@@ -164,7 +164,8 @@ namespace sasktran2::hr {
 
     template<>
     void IncomingOutgoingSpherePair<1>::calculate_scattering_matrix(
-            const sasktran2::atmosphere::PhaseStorage<1> &phase,
+            const sasktran2::atmosphere::AtmosphereGridStorageFull<1> &phase,
+            int wavelidx,
             const std::vector<std::pair<int, double>>& index_weights,
             double* phase_storage_location) const {
         Eigen::Map<Eigen::MatrixXd> phase_matrix(phase_storage_location, m_legendre_scat_mats[0][0].rows(), m_legendre_scat_mats[0][0].cols());
@@ -177,7 +178,7 @@ namespace sasktran2::hr {
             double leg_coeff = 0.0;
 
             for(const auto& ele : index_weights) {
-                leg_coeff += ele.second * (phase.storage()(l, ele.first));
+                leg_coeff += ele.second * (phase.leg_coeff(l, ele.first, wavelidx));
             }
             phase_matrix += leg_coeff * m_legendre_scat_mats[l][0];
         }
@@ -185,7 +186,8 @@ namespace sasktran2::hr {
 
     template<>
     void IncomingOutgoingSpherePair<3>::calculate_scattering_matrix(
-            const sasktran2::atmosphere::PhaseStorage<3> &phase,
+            const sasktran2::atmosphere::AtmosphereGridStorageFull<3> &phase,
+            int wavelidx,
             const std::vector<std::pair<int, double>>& index_weights,
             double* phase_storage_location) const {
         Eigen::Map<Eigen::MatrixXd> phase_matrix(phase_storage_location, m_legendre_scat_mats[0][0].rows(), m_legendre_scat_mats[0][0].cols());
@@ -199,13 +201,11 @@ namespace sasktran2::hr {
 
             for(const auto& ele : index_weights) {
                 for(int i = 0; i < 4; ++i) {
-                    leg_coeff[i] += ele.second * (phase.storage()(l*4 + i, ele.first));
+                    leg_coeff[i] += ele.second * (phase.leg_coeff(l*4 + i, ele.first, wavelidx));
 
                     #ifdef SASKTRAN_DEBUG_ASSERTS
                     if(leg_coeff[i] != leg_coeff[i]) {
-                        BOOST_LOG_TRIVIAL(error) << l << " " << i << " " << ele.second << " " << ele.first << " " << (phase.storage()(l*4 + i, ele.first));
-                        BOOST_LOG_TRIVIAL(error) << phase.storage()(Eigen::all, ele.first);
-
+                        BOOST_LOG_TRIVIAL(error) << l << " " << i << " " << ele.second << " " << ele.first << " " << (phase.leg_coeff(l*4 + i, ele.first, wavelidx));
                     }
                     #endif
                 }

@@ -408,7 +408,8 @@ namespace sasktran2::hr {
 
             const auto& point = m_diffuse_points[i];
 
-            point->sphere_pair().calculate_scattering_matrix(m_atmosphere->storage().phase[wavelidx],
+            point->sphere_pair().calculate_scattering_matrix(m_atmosphere->storage(),
+                                                             wavelidx,
                                                              m_diffuse_point_interpolation_weights[i],
                                                              storage.point_scattering_matrices[i].data()
                                                              );

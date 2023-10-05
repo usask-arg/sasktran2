@@ -11,12 +11,13 @@ class Engine(object):
         elif nstokes == 3:
             self._engine = sk.EngineStokes_3(config, model_geometry, viewing_geo)
 
+        self._model_geometry = model_geometry
+        self._viewing_geometry = viewing_geo
+
     def calculate_radiance(self, atmosphere: sk.Atmosphere, output: sk.Output = None):
-        if output is None:
-            engine_output = sk.OutputIdeal(self._nstokes)
-        else:
-            engine_output = output
+        engine_output = sk.OutputIdeal(self._nstokes) if output is None else output
 
-        self._engine.calculate_radiance(atmosphere._atmosphere, engine_output.internal_output())
+        self._engine.calculate_radiance(atmosphere.internal_object(), engine_output.internal_output())
+        print('Calculation done')
 
-        return engine_output.post_process()
+        return engine_output.post_process(atmosphere, self._model_geometry, self._viewing_geometry)

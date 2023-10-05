@@ -50,4 +50,5 @@
 
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
+#include <unsupported/Eigen/CXX11/Tensor>
 #include <spdlog/spdlog.h>

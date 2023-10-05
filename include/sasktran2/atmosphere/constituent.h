@@ -6,8 +6,6 @@
 #include <sasktran2/atmosphere/grid_storage.h>
 
 namespace sasktran2::atmosphere {
-
-
     class Constituent {
     private:
         std::unique_ptr<AtmosphereGridStorage> m_storage;

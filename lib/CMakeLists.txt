@@ -68,6 +68,7 @@ add_library(sasktran2
 			sktran_disco/sktran_do_dll_expose.cpp)
 
 
+OPTION(BUILD_DOXYGEN "Build Doxygen Docs" ON)
 # Doxygen document build
 find_package(Doxygen)
 if (DOXYGEN_FOUND)
@@ -90,7 +91,6 @@ if (DOXYGEN_FOUND)
 else()
 	message("Doxygen need to be installed to generate the doxygen documentation")
 endif()
-
 
 target_link_libraries(sasktran2 PUBLIC sasktran2BuildProperties)
 

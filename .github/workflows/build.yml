@@ -50,6 +50,7 @@ jobs:
 
       - name: Build Conda package
         shell: bash -el {0}
+        if: (matrix.target_plat == 'x86_64')
         run: |
           conda-build -c conda-forge conda.recipe --output-folder pkgs/
 

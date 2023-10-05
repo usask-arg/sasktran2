@@ -221,8 +221,9 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
         std::unique_ptr<VectorDim1<sasktran_disco::LegendreCoefficient<NSTOKES>>> lephasef(new VectorDim1<sasktran_disco::LegendreCoefficient<NSTOKES>>);
 
         lephasef->resize(this->M_NSTR);
+        const auto& d = atmosphere.storage().leg_coeff.dimensions();
 
-        const auto& phase = atmosphere.storage().phase[wavelidx].storage();
+        Eigen::Map<const Eigen::MatrixXd> phase(&atmosphere.storage().leg_coeff(0, 0, wavelidx), d[0], d[1] );
 
         for (uint k = 0; k < this->M_NSTR; ++k) {
             auto& temp = (*lephasef)[k];
@@ -386,11 +387,10 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
                         double f = atmosphere.storage().f(atmo_index, wavelidx);
 
                         for(int l = 0; l < (int)this->M_NSTR; ++l) {
-                            deriv.d_legendre_coeff[l].a1 = atmosphere.storage().phase[wavelidx].deriv_storage(
-                                    group_index)(l, atmo_index);
+                            deriv.d_legendre_coeff[l].a1 = atmosphere.storage().d_leg_coeff(l, atmo_index, wavelidx, group_index);
 
                             if(atmosphere.storage().applied_f_order > 0) {
-                                deriv.d_legendre_coeff[l].a1 += -(2*l+1) / (1-f) / (1-f) * atmosphere.storage().phase[wavelidx].f_deriv_storage(group_index)(atmo_index);
+                                deriv.d_legendre_coeff[l].a1 += -(2*l+1) / (1-f) / (1-f) * atmosphere.storage().d_f(atmo_index, wavelidx, group_index);
                             }
                         }
 

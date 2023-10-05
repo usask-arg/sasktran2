@@ -36,7 +36,11 @@ void declareAtmosphereStorage(py::module_ & m, const std::string & suffix) {
                           [](AtmosphereGridStorage& storage) -> Eigen::MatrixXd& { return storage.total_extinction; },
                           [](AtmosphereGridStorage& storage, const Eigen::MatrixXd& total_extinction) { storage.total_extinction = total_extinction; }
             )
-            .def_readwrite("phase", &AtmosphereGridStorage::phase);
+            .def_property("leg_coeff",
+                          [](AtmosphereGridStorage& storage) -> Eigen::Tensor<double, 3>& { return storage.leg_coeff; },
+                          [](AtmosphereGridStorage& storage, const Eigen::Tensor<double, 3>& leg_coeff) { storage.leg_coeff = leg_coeff; }
+            )
+            ;
 
 }
 
@@ -55,23 +59,5 @@ void init_atmosphere(py::module_ &  m) {
                       [](sasktran2::atmosphere::Surface& surface) -> Eigen::VectorXd& { return surface.albedo(); },
                       [](sasktran2::atmosphere::Surface& surface, const Eigen::VectorXd& albedo) { surface.albedo() = albedo; }
         );
-
-
-    // For Phase Storage we declare manually because leg_coeff has a different number of dimensions
-    py::class_<sasktran2::atmosphere::PhaseStorage<1>>(m, "PhaseStorageStokes_1")
-        .def(py::init<>())
-        .def_property("leg_coeff",
-                      [](sasktran2::atmosphere::PhaseStorage<1>& storage) -> Eigen::MatrixXd& { return storage.storage(); },
-                      [](sasktran2::atmosphere::PhaseStorage<1>& storage, const Eigen::MatrixXd& lc) { storage.storage() = lc; }
-        )
-        ;
-
-    py::class_<sasktran2::atmosphere::PhaseStorage<3>>(m, "PhaseStorageStokes_3")
-            .def(py::init<>())
-            .def_property("leg_coeff",
-                          [](sasktran2::atmosphere::PhaseStorage<3>& storage) -> Eigen::TensorMap<Eigen::Tensor<double, 3>> { return Eigen::TensorMap<Eigen::Tensor<double, 3>>(storage.storage().data(), storage.storage().rows() / 4, 4, storage.storage().cols()); },
-                          nullptr
-            )
-            ;
 }
 

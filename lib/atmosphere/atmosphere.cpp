@@ -37,7 +37,7 @@ namespace sasktran2::atmosphere {
     template<int NSTOKES>
     int Atmosphere<NSTOKES>::num_deriv() const {
         if(m_calculate_derivatives) {
-            return (int)(m_storage.total_extinction.rows() * (2 + m_storage.phase[0].num_deriv()) + m_surface.num_deriv());
+            return (int)(m_storage.total_extinction.rows() * (2 + m_storage.numscatderiv) + m_surface.num_deriv());
         } else {
             return 0;
         }
@@ -45,7 +45,7 @@ namespace sasktran2::atmosphere {
 
     template<int NSTOKES>
     void Atmosphere<NSTOKES>::apply_delta_m_scaling(int order) {
-        if(order >= m_storage.phase[0].max_stored_legendre()) {
+        if(order >= m_storage.max_stored_legendre()) {
             spdlog::warn("Trying to delta scale without the correct number of legendre orders");
             return;
         }
@@ -61,8 +61,11 @@ namespace sasktran2::atmosphere {
         m_storage.applied_f_order = order;
 
         // First copy the requested order into the f storage
-        for(int w = 0; w < m_storage.phase.size(); ++w) {
-            m_storage.f(Eigen::all, w) = m_storage.phase[w].storage()(m_storage.applied_f_location, Eigen::all) / (2*order + 1);
+        // TODO: Figure out how to do this with eigen operations?
+        for(int i = 0; i < m_storage.f.rows(); ++i) {
+            for(int j = 0; j < m_storage.f.cols(); ++j) {
+                m_storage.f(i, j) = m_storage.leg_coeff(m_storage.applied_f_location, i, j) / (2*order + 1);
+            }
         }
 
         // Now scale k* = (1-wf) k
@@ -73,19 +76,25 @@ namespace sasktran2::atmosphere {
 
         // Lastly we need to scale the legendre coefficients, b = b / (1-f)
         // Note that this is the scaling for single scatter TMS correction, we still have to subtract f/1-f for multiple scatter
-        for(int w = 0; w < m_storage.phase.size(); ++w) {
-            m_storage.phase[w].storage().array().rowwise() /= (1 - m_storage.f(Eigen::all, w).transpose().array());
+        for(int w = 0; w < m_storage.f.cols(); ++w) { // wavel loop
+            for(int i = 0 ; i < m_storage.f.rows(); ++i) { // location loop
+                for(int j = 0; j < m_storage.max_stored_legendre(); ++j) { // legendre loop
+                    m_storage.leg_coeff(j, i, w) /= (1 - m_storage.f(i, w));
 
-            // Also have to scale the derivatives
-            for(int d = 0; d < m_storage.phase[w].num_deriv(); ++d) {
-                // Set the f derivative
-                m_storage.phase[w].f_deriv_storage(d).array() = m_storage.phase[w].deriv_storage(d)(m_storage.applied_f_location, Eigen::all).array() / (2*order + 1);
+                                // Also have to scale the derivatives
+                    for(int d = 0; d < m_storage.numscatderiv; ++d) { // deriv loop
+                        // Set the f derivative
+                        m_storage.d_f(i, w, d) = m_storage.d_leg_coeff(m_storage.applied_f_location, i, w, d) / (2*order + 1);
 
-                // db* = db / 1-f + (b*) * df / (1-f)
-                m_storage.phase[w].deriv_storage(d).array() += m_storage.phase[w].storage().array().rowwise() * (m_storage.phase[w].f_deriv_storage(d).array().transpose());
-                m_storage.phase[w].deriv_storage(d).array().rowwise() /= (1 - m_storage.f(Eigen::all, w).transpose().array());
+                        // db* = db / 1-f + (b*) * df / (1-f)
+                        m_storage.d_leg_coeff(j, i, w, d) += m_storage.leg_coeff(j, i, w) * m_storage.d_f(i, w, d);
+                        m_storage.d_leg_coeff(j, i, w, d) /= 1 - m_storage.f(i, w);
+
+                    }
+                }
             }
         }
+        
     }
 
 

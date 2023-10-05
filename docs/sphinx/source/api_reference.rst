@@ -10,4 +10,5 @@ API Reference
    api/engine
    api/model_geometry
    api/atmosphere
+   api/optical
    api/viewing_geometry
