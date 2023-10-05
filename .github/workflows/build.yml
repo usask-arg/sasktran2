@@ -81,7 +81,7 @@ jobs:
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.16.2
         env:
-          CIBW_SKIP: pp*
+          CIBW_SKIP: "pp* *musllinux*"
         with:
           output-dir: wheelhouse
 
