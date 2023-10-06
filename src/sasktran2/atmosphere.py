@@ -1,9 +1,37 @@
 import abc
 
 import numpy as np
+from copy import copy
 
 import sasktran2 as sk
 from sasktran2.units import wavlength_nm_to_wavenumber_cminv, wavenumber_cminv_to_wavlength_nm
+from dataclasses import dataclass
+
+
+
+@dataclass
+class NativeGridDerivative:
+    d_extinction: np.ndarray
+    d_ssa: np.ndarray
+    d_leg_coeff: np.ndarray = None
+
+
+class DerivativeMapping:
+    def __init__(self, native_grid_mapping: NativeGridDerivative, summable: bool = False):
+        self._native_grid_mapping = native_grid_mapping
+        self._summable = summable
+
+    @property
+    def native_grid_mapping(self):
+        return self._native_grid_mapping
+
+    @property
+    def summable(self):
+        return self._summable
+
+    def map_derivative(self):
+        pass
+
 
 
 class Atmosphere:
@@ -26,7 +54,10 @@ class Atmosphere:
         self._model_geometry = model_geometry
         self._config = config
 
-        self._constituents = dict()
+        self._constituents = {}
+        self._derivs = {}
+        self._unscaled_ssa = None
+        self._unscaled_extinction = None
 
     @property
     def model_geometry(self):
@@ -77,11 +108,21 @@ class Atmosphere:
     def _zero_storage(self):
         self.storage.ssa[:] = 0
         self.storage.total_extinction[:] = 0
-        for phase in self.storage.phase:
-            phase.leg_coeff[:] = 0
+        self.storage.leg_coeff[:] = 0
+
+    @property
+    def deriv_mappings(self):
+        return self._derivs
+    
+    @property
+    def unscaled_ssa(self):
+        return self._unscaled_ssa
+    
+    @property
+    def unscaled_extinction(self):
+        return self._unscaled_extinction
 
     def internal_object(self):
-        print('making atmo')
         if len(self._constituents) > 0:
             # Using the constituent interface
             if self._storage_needs_reset:
@@ -93,8 +134,14 @@ class Atmosphere:
 
             self.storage.ssa /= self.storage.total_extinction
 
+            self._derivs = {}
+            for name, constituent in self._constituents.items():
+                self._derivs[name] = constituent.register_derivative(self)
+
+            self._unscaled_ssa = copy(self.storage.ssa)
+            self._unscaled_extinction = copy(self.storage.total_extinction)
+
         self._storage_needs_reset = True
-        print('atmo made')
         return self._atmosphere
 
     def __setitem__(self, item, value):
@@ -102,6 +149,3 @@ class Atmosphere:
 
     def __getitem__(self, item):
         return self._constituents.get(item)
-
-    def register_derivative(self):
-        pass

@@ -36,6 +36,10 @@ void declareAtmosphereStorage(py::module_ & m, const std::string & suffix) {
                           [](AtmosphereGridStorage& storage) -> Eigen::MatrixXd& { return storage.total_extinction; },
                           [](AtmosphereGridStorage& storage, const Eigen::MatrixXd& total_extinction) { storage.total_extinction = total_extinction; }
             )
+            .def_property("f",
+                          [](AtmosphereGridStorage& storage) -> const Eigen::MatrixXd& { return storage.f; },
+                          nullptr
+            )
             .def_property("leg_coeff",
                           [](AtmosphereGridStorage& storage) -> Eigen::Tensor<double, 3>& { return storage.leg_coeff; },
                           [](AtmosphereGridStorage& storage, const Eigen::Tensor<double, 3>& leg_coeff) { storage.leg_coeff = leg_coeff; }

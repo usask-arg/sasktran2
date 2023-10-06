@@ -25,8 +25,6 @@ namespace sasktran2::atmosphere {
         int applied_f_order;                // Order of the delta_m scaling
         int applied_f_location;             // Index to the phase moment that defines the legendre scaling f
 
-        // std::vector<PhaseStorage<NSTOKES>> phase;
-
         int scatderivstart;
         Eigen::Tensor<double, 3> leg_coeff; // legendre order (polarized stacked), location, wavel
         Eigen::Tensor<double, 4> d_leg_coeff; // (legendre order, location, wavel, deriv)

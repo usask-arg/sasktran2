@@ -43,6 +43,9 @@ requirements:
     - python {{ python }}
     - numpy
     - spdlog
+    - appdirs
+    - pyyaml
+    - xarray
     - libblas=*=*netlib
     - libcblas=*=*netlib
     - liblapack=*=*netlib

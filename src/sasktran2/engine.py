@@ -18,6 +18,5 @@ class Engine(object):
         engine_output = sk.OutputIdeal(self._nstokes) if output is None else output
 
         self._engine.calculate_radiance(atmosphere.internal_object(), engine_output.internal_output())
-        print('Calculation done')
 
         return engine_output.post_process(atmosphere, self._model_geometry, self._viewing_geometry)

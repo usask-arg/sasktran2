@@ -1,5 +1,4 @@
 import numpy as np
-import sasktran2 as sk
 
 from sasktran2.optical import pressure_temperature_to_numberdensity
 from sasktran2.units import celsius_to_kelvin

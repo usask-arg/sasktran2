@@ -6,7 +6,7 @@ build-backend = "scikit_build_core.build"
 [project]
 name = "sasktran2"
 version = "0.0.1"
-dependencies = ['numpy']
+dependencies = ['numpy', 'appdirs', 'pyyaml', 'xarray']
 include = ['python/src/sasktran2/*']
 description="A minimal example package (with pybind11)"
 readme = "README.md"

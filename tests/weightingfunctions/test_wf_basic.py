@@ -6,8 +6,9 @@ from sasktran2.constituent.vmraltitudeabsorber import VMRAltitudeAbsorber
 from sasktran2.optical import O3DBM
 
 
-def test_scalar_full_chain():
+def test_wf_basic():
     config = sk.Config()
+    config.num_threads = 8
 
     altitude_grid = np.arange(0, 65001, 1000.0)
 
@@ -15,12 +16,12 @@ def test_scalar_full_chain():
 
     viewing_geo = sk.ViewingGeometry()
 
-    viewing_geo.add_ray(sk.TangentAltitudeSolar(10000, 0, 600000, 0.6))
-    viewing_geo.add_ray(sk.TangentAltitudeSolar(15000, 0, 600000, 0.6))
+    for tan_alt in np.arange(10000, 60000, 2000):
+        viewing_geo.add_ray(sk.TangentAltitudeSolar(tan_alt, 0, 600000, 0.6))
 
     engine = sk.Engine(config, geometry, viewing_geo, 1)
 
-    wavel = np.arange(280.0, 350.0, 0.1)
+    wavel = np.arange(280.0, 800.0, 1)
 
     atmosphere = sk.Atmosphere(len(wavel), geometry, config, 1)
     atmosphere.wavelengths_nm = wavel
@@ -34,4 +35,13 @@ def test_scalar_full_chain():
                                               np.ones_like(altitude_grid)*1e-6
                                               )
 
-    radiance = engine.calculate_radiance(atmosphere)
+    radiance_base = engine.calculate_radiance(atmosphere)
+
+    #dvmr = 0.001e-6
+    #atmosphere['ozone'].vmr[30] += dvmr
+
+    #radiance_perturb = engine.calculate_radiance(atmosphere)
+
+    #wf_numeric = (radiance_perturb['radiance'] - radiance_base['radiance']) / dvmr
+
+    #pass
