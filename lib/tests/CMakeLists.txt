@@ -33,7 +33,7 @@ target_link_libraries(sasktran2_tests PRIVATE
                         sasktran2
                         $<$<PLATFORM_ID:Windows>:bcrypt>
                         $<$<PLATFORM_ID:Linux,Darwin>:dl>
-                        $<$<PLATFORM_ID:Linux,Darwin>:gfortran>
+                        $<$<PLATFORM_ID:Linux>:gfortran>
                         $<$<PLATFORM_ID:Linux>:rt>
                         $<$<PLATFORM_ID:Linux>:z>
                         )

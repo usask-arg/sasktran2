@@ -59,13 +59,12 @@ TEST_CASE("do_wf_bench", "[sasktran2][engine]") {
 
     for(int i = 0; i < nwavel; ++i) {
         atmo.storage().total_extinction(Eigen::all, i) = Eigen::Map<Eigen::MatrixXd>(&extinction[0], 101, 1);
-
-        atmo.storage().phase[i].storage().setZero();
-        atmo.storage().phase[i].resize_derivative(101, 16, 1, 202);
-
-        atmo.storage().phase[i].storage()(0, Eigen::all).setConstant(1);
-        atmo.storage().phase[i].storage()(2, Eigen::all).setConstant(0.5);
     }
+
+    atmo.storage().leg_coeff.chip(0, 0).setConstant(1);
+    atmo.storage().leg_coeff.chip(2, 0).setConstant(0.5);
+
+    atmo.storage().resize_derivatives(nwavel, 101, 16, 1, 202);
 
     atmo.storage().ssa.setConstant(0.3);
 

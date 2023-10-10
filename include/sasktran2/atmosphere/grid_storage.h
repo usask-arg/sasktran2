@@ -45,6 +45,8 @@ namespace sasktran2::atmosphere {
 
             ssa.setZero();
             total_extinction.setZero();
+            leg_coeff.setZero();
+            f.setZero();
 
             applied_f_location = -1;
             applied_f_order = -1;

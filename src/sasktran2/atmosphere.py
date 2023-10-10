@@ -1,16 +1,20 @@
-import abc
-
-import numpy as np
 from copy import copy
-
-import sasktran2 as sk
-from sasktran2.units import wavlength_nm_to_wavenumber_cminv, wavenumber_cminv_to_wavlength_nm
 from dataclasses import dataclass
 
+import numpy as np
+
+import sasktran2 as sk
+from sasktran2.units import (
+    wavenumber_cminv_to_wavlength_nm,
+    wavlength_nm_to_wavenumber_cminv,
+)
 
 
 @dataclass
 class NativeGridDerivative:
+    """
+    
+    """
     d_extinction: np.ndarray
     d_ssa: np.ndarray
     d_leg_coeff: np.ndarray = None
@@ -35,13 +39,14 @@ class DerivativeMapping:
 
 
 class Atmosphere:
-    def __init__(self, numwavel: int, model_geometry: sk.Geometry1D, config: sk.Config, nstokes: int = 1):
-        self._nstokes = nstokes
+    def __init__(self, numwavel: int, model_geometry: sk.Geometry1D, config: sk.Config, calculate_derivatives: bool = True):
+        self._nstokes = config.num_stokes
+        self._calculate_derivatives = calculate_derivatives
 
-        if nstokes == 1:
-            self._atmosphere = sk.AtmosphereStokes_1(numwavel, model_geometry, config, True)
-        elif nstokes == 3:
-            self._atmosphere = sk.AtmosphereStokes_3(numwavel, model_geometry, config, True)
+        if self._nstokes == 1:
+            self._atmosphere = sk.AtmosphereStokes_1(numwavel, model_geometry, config, calculate_derivatives)
+        elif self._nstokes == 3:
+            self._atmosphere = sk.AtmosphereStokes_3(numwavel, model_geometry, config, calculate_derivatives)
 
         self._storage_needs_reset = False
 
@@ -113,11 +118,11 @@ class Atmosphere:
     @property
     def deriv_mappings(self):
         return self._derivs
-    
+
     @property
     def unscaled_ssa(self):
         return self._unscaled_ssa
-    
+
     @property
     def unscaled_extinction(self):
         return self._unscaled_extinction
@@ -127,7 +132,7 @@ class Atmosphere:
             # Using the constituent interface
             if self._storage_needs_reset:
                 self._zero_storage()
-            for name, constituent in self._constituents.items():
+            for _, constituent in self._constituents.items():
                 constituent.add_to_atmosphere(self)
 
             self.storage.leg_coeff /= self.storage.ssa[np.newaxis, :, :]
@@ -135,11 +140,23 @@ class Atmosphere:
             self.storage.ssa /= self.storage.total_extinction
 
             self._derivs = {}
-            for name, constituent in self._constituents.items():
-                self._derivs[name] = constituent.register_derivative(self)
+            if self._calculate_derivatives:
+                for name, constituent in self._constituents.items():
+                    self._derivs[name] = constituent.register_derivative(self)
+        else:
+            # using the raw interface
+            if self._calculate_derivatives and len(self._derivs) == 0:
+                self._derivs['raw'] = {}
+                self._derivs['raw']['extinction'] = DerivativeMapping(NativeGridDerivative(d_extinction=np.ones_like(self.storage.total_extinction),
+                                                                                            d_ssa=np.zeros_like(self.storage.ssa)), summable=True)
+                self._derivs['raw']['ssa'] = DerivativeMapping(NativeGridDerivative(d_extinction=np.zeros_like(self.storage.total_extinction),
+                                                                                    d_ssa=np.ones_like(self.storage.ssa)), summable=True)
 
-            self._unscaled_ssa = copy(self.storage.ssa)
-            self._unscaled_extinction = copy(self.storage.total_extinction)
+                # TODO: Also calculate dlegendre for raw? probably...
+
+        # Store the unscaled optical properties for use in the derivative mappings
+        self._unscaled_ssa = copy(self.storage.ssa)
+        self._unscaled_extinction = copy(self.storage.total_extinction)
 
         self._storage_needs_reset = True
         return self._atmosphere

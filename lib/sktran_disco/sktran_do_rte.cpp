@@ -922,7 +922,8 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveBVP(AEOrder m)
 
                 for(int i = 0; i < b.size(); ++i) {
                     if(isnan(b(i))) {
-                        spdlog::error("BVP RHS contains a nan in spot {}", i);
+                        // spdlog::error("BVP RHS contains a nan in spot {}", i);
+                        spdlog::error("BVP RHS contains a nan ");
                     }
                 }
             }

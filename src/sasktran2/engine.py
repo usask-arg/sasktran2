@@ -2,13 +2,13 @@ import sasktran2 as sk
 
 
 class Engine(object):
-    def __init__(self, config: sk.Config, model_geometry: sk.Geometry1D, viewing_geo: sk.ViewingGeometry, nstokes: int = 1
+    def __init__(self, config: sk.Config, model_geometry: sk.Geometry1D, viewing_geo: sk.ViewingGeometry
                  ):
-        self._nstokes = nstokes
+        self._nstokes = config.num_stokes
 
-        if nstokes == 1:
+        if self._nstokes == 1:
             self._engine = sk.EngineStokes_1(config, model_geometry, viewing_geo)
-        elif nstokes == 3:
+        elif self._nstokes == 3:
             self._engine = sk.EngineStokes_3(config, model_geometry, viewing_geo)
 
         self._model_geometry = model_geometry
