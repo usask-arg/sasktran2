@@ -1,6 +1,6 @@
 
-import sasktran2 as sk
 import numpy as np
+import sasktran2 as sk
 
 
 def test_viewing_container():
@@ -9,4 +9,3 @@ def test_viewing_container():
     ray = sk.TangentAltitudeSolar(10000, 0, 600000, 0.6)
 
     viewing_geo.add_ray(ray)
-    

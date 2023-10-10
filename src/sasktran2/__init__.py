@@ -4,6 +4,7 @@ from ._core import Geometry1D
 from ._core import ViewingGeometry
 from ._core import TangentAltitudeSolar
 
+from ._core import AtmosphereStorageStokes_1, AtmosphereStorageStokes_3
 from ._core import AtmosphereStokes_1, AtmosphereStokes_3
 from .atmosphere import Atmosphere
 

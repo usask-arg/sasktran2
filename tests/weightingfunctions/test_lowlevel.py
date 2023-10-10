@@ -42,7 +42,7 @@ def test_wf_extinction():
             scen['atmosphere'].storage.total_extinction[i] += dk
             radiance_above = engine.calculate_radiance(scen['atmosphere'])
 
-            scen['atmosphere'].storage.total_extinction[i] -= 2*dk 
+            scen['atmosphere'].storage.total_extinction[i] -= 2*dk
             radiance_below = engine.calculate_radiance(scen['atmosphere'])
 
             scen['atmosphere'].storage.total_extinction[i] += dk

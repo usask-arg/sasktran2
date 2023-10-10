@@ -1,5 +1,6 @@
 from copy import copy
 from dataclasses import dataclass
+from typing import Union
 
 import numpy as np
 
@@ -13,7 +14,8 @@ from sasktran2.units import (
 @dataclass
 class NativeGridDerivative:
     """
-    
+    Internal input object that defines the model input quantities necessary to calculate a derivative.
+    This mapping is from the native model grid to the native grid, it does not change the gridding.
     """
     d_extinction: np.ndarray
     d_ssa: np.ndarray
@@ -22,15 +24,41 @@ class NativeGridDerivative:
 
 class DerivativeMapping:
     def __init__(self, native_grid_mapping: NativeGridDerivative, summable: bool = False):
+        """
+        A class which defines a mapping from the internal model derivative quantities (derivatives with respect to,
+        extinction, single scatter albedo, legendre coefficients) and user input quantities (e.g. VMR at a specific level).
+
+        Parameters
+        ----------
+        native_grid_mapping : NativeGridDerivative
+            A mapping from the native atmospheric grid to the same grid.
+        summable : bool, optional
+            True if this quantity should be accumulated and summed across each constituent. For example, each constituent may have a derivative with respect
+            to a quantity like atmospheric temperature or pressure, by default False
+        """
         self._native_grid_mapping = native_grid_mapping
         self._summable = summable
 
     @property
-    def native_grid_mapping(self):
+    def native_grid_mapping(self) -> NativeGridDerivative:
+        """
+        The mapping on the native grid.
+
+        Returns
+        -------
+        NativeGridDerivative
+        """
         return self._native_grid_mapping
 
     @property
-    def summable(self):
+    def summable(self) -> bool:
+        """
+        True if the mapping should be summed and accumulated.
+
+        Returns
+        -------
+        bool
+        """
         return self._summable
 
     def map_derivative(self):
@@ -40,6 +68,21 @@ class DerivativeMapping:
 
 class Atmosphere:
     def __init__(self, numwavel: int, model_geometry: sk.Geometry1D, config: sk.Config, calculate_derivatives: bool = True):
+        """
+        The main specification for the atmospheric state.
+
+        Parameters
+        ----------
+        numwavel : int
+            Number of wavelengths to include in the calculation.  Note that wavelength is a dummy variable, this dimension can be
+            anaything.
+        model_geometry : sk.Geometry1D
+            The geometry defining where the atmospheric quantities are specified on.
+        config : sk.Config
+            Main configuration object.
+        calculate_derivatives : bool, optional
+            Whether or not the model should calculate derivatives with respect to atmospheric quantities., by default True
+        """
         self._nstokes = config.num_stokes
         self._calculate_derivatives = calculate_derivatives
 
@@ -65,19 +108,47 @@ class Atmosphere:
         self._unscaled_extinction = None
 
     @property
-    def model_geometry(self):
+    def model_geometry(self) -> sk.Geometry1D:
+        """
+        The model geometry object
+
+        Returns
+        -------
+        sk.Geometry1D
+        """        
         return self._model_geometry
 
     @property
-    def nstokes(self):
+    def nstokes(self) -> int:
+        """
+        The number of stokes parameters the atmosphere contains information to calculate
+
+        Returns
+        -------
+        int
+        """
         return self._nstokes
 
     @property
-    def storage(self):
+    def storage(self) -> Union[sk.AtmosphereStorageStokes_1, sk.AtmosphereStorageStokes_3]:
+        """
+        The internal object which contains the atmosphere extinction, single scatter albedo, and legendre coefficients.
+
+        Returns
+        -------
+        Union[sk.AtmosphereGridStorageStokes_1, sk.AtmosphereGridStorageStokes_3]
+        """
         return self._atmosphere.storage
 
     @property
-    def temperature_k(self):
+    def temperature_k(self) -> np.array:
+        """
+        Atmospheric temperature in [K] on the same grid as :py:property:model_geometry
+
+        Returns
+        -------
+        np.array
+        """
         return self._temperature_k
 
     @temperature_k.setter
