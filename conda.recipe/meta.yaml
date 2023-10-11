@@ -46,6 +46,7 @@ requirements:
     - appdirs
     - pyyaml
     - xarray
+    - scipy
     - libblas=*=*netlib
     - libcblas=*=*netlib
     - liblapack=*=*netlib
