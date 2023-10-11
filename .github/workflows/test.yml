@@ -14,7 +14,7 @@ concurrency:
 
 
 jobs:
-  test-all-ubuntu:
+  test-cpp-ubuntu:
     runs-on: ubuntu-latest
 
     steps:
@@ -37,5 +37,10 @@ jobs:
         shell: bash -el {0}
         run: |
           cmake -S . -B build  -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
-          cmake --build build --config Release --target install -j 2
-          
+          cmake --build build --config Release --target sasktran2_tests -j 2
+    
+      - name: test
+        shell: bash -el {0}
+        run: |
+          cd build
+          ctest
