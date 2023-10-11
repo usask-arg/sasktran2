@@ -209,10 +209,9 @@ namespace sasktran2::raytracing {
 
         #ifdef SASKTRAN_DEBUG_ASSERTS
             if(std::isnan(layer.od_quad_start) || std::isnan(layer.od_quad_end) || std::isnan(layer.od_quad_end_fraction) || std::isnan(layer.od_quad_end_fraction)) {
-                BOOST_LOG_TRIVIAL(error) << "One of layer quadrature parameters was nan";
+                spdlog::error("One of layer quadrature parameters was nan");
 
-                BOOST_LOG_TRIVIAL(error) << "od_quad_start: " << layer.od_quad_start << " od_quad_end: " << layer.od_quad_end;
-                BOOST_LOG_TRIVIAL(error) << "r0: " << r0 << " r1:" << r1 << " look_vector:" << layer.average_look_away;
+                spdlog::error("od_quad_start: {}, od_quad_end: {}", layer.od_quad_start, layer.od_quad_end);
             }
         #endif
     }
@@ -446,7 +445,7 @@ namespace sasktran2::raytracing {
 
             #ifdef SASKTRAN_DEBUG_ASSERTS
             if(std::isnan(tangent_distance) || std::isnan(dist_from_tangent)) {
-                BOOST_LOG_TRIVIAL(error) << "Error computing tangent distances";
+                spdlog::error("Error computing tangent distances");
             }
             #endif
 

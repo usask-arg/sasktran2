@@ -22,4 +22,3 @@ The standard one, and the one you probably want, is :py:class:`sasktran2.Geometr
                                    interpolation_method=sk.InterpolationMethod.LinearInterpolation,
                                    geometry_type=sk.GeometryType.Spherical)
 
-

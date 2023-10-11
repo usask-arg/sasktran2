@@ -1,4 +1,4 @@
-from sasktran2.constituent import Constituent
+from .base import Constituent
 from sasktran2.optical.rayleigh import rayleigh_cross_section_bates
 import sasktran2 as sk
 from sasktran2.optical import pressure_temperature_to_numberdensity
@@ -8,6 +8,28 @@ import numpy as np
 
 class Rayleigh(Constituent):
     def __init__(self, method: str ='bates', name='rayleigh'):
+        """
+        An implementation of Rayleigh scattering.  Cross sections (and depolarization factors) can be
+        calculated multiple ways, with the default method being that of 'bates'.  
+
+        Rayleigh scattering number density is estimated through the ideal gas law.
+
+        This Constituent requires that the atmosphere object have `temperature_k`, `pressure_pa`, and
+        `wavelength_nm` are all defined inside the :py:class:`sasktran2.Atmosphere` object.
+
+        Parameters
+        ----------
+        method : str, optional
+            Method to use to calculate the cross section.  Supported methods are
+            ['bates'], by default 'bates'
+        name : str, optional
+            Name to give the constituent, by default 'rayleigh'
+
+        Raises
+        ------
+        ValueError
+            If input method is not supported
+        """
         if method.lower() == 'bates':
             self._rayleigh_cross_fn = rayleigh_cross_section_bates
         else:
@@ -20,6 +42,14 @@ class Rayleigh(Constituent):
         return self._name
 
     def add_to_atmosphere(self, atmo: sk.Atmosphere):
+        """
+        Parameters
+        ----------
+        atmo : sk.Atmosphere
+
+ 
+        :meta private:
+        """
         if atmo.wavelengths_nm is None:
             msg = 'It is required to give the Atmosphere object wavelengths to use the Rayleigh constituent'
             raise ValueError(msg)

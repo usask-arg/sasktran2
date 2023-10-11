@@ -18,6 +18,10 @@ void declareAtmosphere(py::module_ & m, const std::string & suffix) {
                           [](Atmosphere& atmo) -> sasktran2::atmosphere::AtmosphereGridStorageFull<NSTOKES>& { return atmo.storage(); },
                           [](Atmosphere& atmo, const sasktran2::atmosphere::AtmosphereGridStorageFull<NSTOKES>& storage) { return atmo.storage() = storage; }
             )
+            .def_property("surface",
+                          [](Atmosphere& atmo) -> sasktran2::atmosphere::Surface& { return atmo.surface(); },
+                          nullptr
+            )
             ;
 
 }

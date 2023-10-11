@@ -47,6 +47,7 @@ Viewing Policies
 .. autosummary::
 
     sasktran2.TangentAltitudeSolar
+    sasktran2.GroundViewingSolar
 
 Flux Output
 -----------

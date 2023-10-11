@@ -205,7 +205,7 @@ namespace sasktran2::hr {
 
                     #ifdef SASKTRAN_DEBUG_ASSERTS
                     if(leg_coeff[i] != leg_coeff[i]) {
-                        BOOST_LOG_TRIVIAL(error) << l << " " << i << " " << ele.second << " " << ele.first << " " << (phase.leg_coeff(l*4 + i, ele.first, wavelidx));
+                        spdlog::error("{} {} {} {} {}", l, i, ele.second,  ele.first, (phase.leg_coeff(l*4 + i, ele.first, wavelidx)));
                     }
                     #endif
                 }

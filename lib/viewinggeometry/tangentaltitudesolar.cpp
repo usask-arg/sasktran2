@@ -12,19 +12,19 @@ namespace sasktran2::viewinggeometry {
                                                {
         #ifdef SASKTRAN_DEBUG_ASSERTS
             if(std::isnan(tangentaltitude) || tangentaltitude < 0) {
-                BOOST_LOG_TRIVIAL(error) << "Invalid Tangent Altitude in TangentAltitudeSolar: " << tangentaltitude;
+                spdlog::error("Invalid Tangent Altitude in TangentAltitudeSolar: {}", tangentaltitude);
             }
 
             if(std::isnan(relative_azimuth_angle)) {
-                BOOST_LOG_TRIVIAL(error) << "NaN Relative Azimuth Angle in TangentAltitudeSolar";
+                spdlog::error("NaN Relative Azimuth Angle in TangentAltitudeSolar");
             }
 
             if(std::isnan(observeraltitude)) {
-                BOOST_LOG_TRIVIAL(error) << "NaN Observer Altitude in TangentAltitudeSolar";
+                spdlog::error("NaN Observer Altitude in TangentAltitudeSolar");
             }
 
             if(std::isnan(cos_sza) || std::abs(cos_sza) > 1) {
-                BOOST_LOG_TRIVIAL(error) << "Invalid cos_sza in TangentAltitudeSolar: " << cos_sza;
+                spdlog::error("Invalid cos_sza in TangentAltitudeSolar: ", cos_sza);
             }
         #endif
 
@@ -52,20 +52,15 @@ namespace sasktran2::viewinggeometry {
 
         #ifdef SASKTRAN_DEBUG_ASSERTS
             if(!tangent_point.allFinite()) {
-                BOOST_LOG_TRIVIAL(error) << "Error calculating tangent point from cos_sza: " << m_cos_sza << " tangent_alt: " << m_tangentaltitude;
+                spdlog::error("Error calculating tangent point from cos_sza: {} tangent_alt: {}", m_cos_sza, m_tangentaltitude);
             }
 
             if(!ray.look_away.allFinite()) {
-                BOOST_LOG_TRIVIAL(error) << "Error calculating the look vector from tangent point: " << tangent_point << " rel_az: " << m_relative_azimuth_angle;
+                //spdlog::error("Error calculating the look vector from tangent point: {} rel_az: {}", tangent_point, m_relative_azimuth_angle);
             }
 
             if(!ray.observer.position.allFinite()) {
-                BOOST_LOG_TRIVIAL(error) << "Error estimating the observer position from: ";
-                BOOST_LOG_TRIVIAL(error) << "tangent_point: " << tangent_point;
-                BOOST_LOG_TRIVIAL(error) << "look_away: " << ray.look_away;
-                BOOST_LOG_TRIVIAL(error) << "obs_alt: " << m_observeraltitude;
-                BOOST_LOG_TRIVIAL(error) << "tangent_alt: " << m_tangentaltitude;
-                BOOST_LOG_TRIVIAL(error) << "s: " << s;
+                spdlog::error("Error estimating the observer position");
             }
         #endif
 

@@ -30,6 +30,29 @@ void init_viewing_geometry(py::module_ &  m) {
                  )",
                  "tangent_altitude_m"_a, "relative_azimuth"_a, "observer_altitude_m"_a, "cos_sza"_a
                  );
+    
+    py::class_<sasktran2::viewinggeometry::GroundViewingSolar, sasktran2::viewinggeometry::ViewingGeometryBase>(m, "GroundViewingSolar")
+            .def(py::init<double, double, double, double>(),
+            R"(
+                Defines a viewing ray that is looking at the ground from angles defined at the ground location. Note that
+                all of these parameters assumes straight line paths (i.e. no atmospheric refraction)
+
+                Parameters
+                ----------
+                cos_sza: float
+                    Cosine of solar zenith angle at the ground point [unitless]
+                relative_azimuth: float
+                    Relative azimuth angle to the sun [rad] at the ground point
+                observer_altitude_m: float
+                    Observer altitude relative to the earth [m]
+                cos_viewing_zenith: float
+                    Cosine of the viewing zenith angle at the ground point [unitless] 
+            )",
+            "cos_sza"_a,
+            "relative_azimuth"_a,
+            "cos_viewing_zenith"_a,
+            "observer_altitude_m"_a
+            );
 
 
     py::class_<sasktran2::viewinggeometry::ViewingGeometryContainer>(m, "ViewingGeometry")

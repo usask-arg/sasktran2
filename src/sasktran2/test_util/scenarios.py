@@ -40,7 +40,7 @@ def default_pure_scattering_atmosphere(config: Config, geometry: Geometry1D, ssa
 
     extinction = np.interp(new_alt_grid, alt_grid, extinction).reshape(len(new_alt_grid), 1)
 
-    atmo = Atmosphere(1, geometry, config)
+    atmo = Atmosphere(geometry, config, numwavel=1)
 
     atmo.storage.total_extinction = extinction
     atmo.storage.ssa = np.ones_like(extinction) * ssa

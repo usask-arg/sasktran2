@@ -178,7 +178,7 @@ namespace sasktran2::atmosphere {
 
             #ifdef SASKTRAN_DEBUG_ASSERTS
             if(source.value.hasNaN()) {
-                BOOST_LOG_TRIVIAL(error) << Eigen::Map<Eigen::Matrix<double, NSTOKES, NSTOKES>>(phase_result.data(), NSTOKES, NSTOKES);
+                spdlog::error("Error scattering");
             }
             #endif
 

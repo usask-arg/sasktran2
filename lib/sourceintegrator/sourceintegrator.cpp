@@ -33,7 +33,7 @@ namespace sasktran2 {
 
             #ifdef SASKTRAN_DEBUG_ASSERTS
                 if(!m_shell_od[i].allFinite()) {
-                    BOOST_LOG_TRIVIAL(error) << "Error calculating Layer OD for ray: " << i;
+                    spdlog::error("Error calculating Layer OD for ray: ", i);
                 }
             #endif
         }
@@ -87,7 +87,7 @@ namespace sasktran2 {
             if(radiance.value.hasNaN()) {
                 static bool message = false;
                 if(!message) {
-                    BOOST_LOG_TRIVIAL(error) << "One of the sources was  NaN" << " Ray:" << rayidx << "layer: " << j << "Layer od: " << local_shell_od.od << "Layer Atten Factor: " << local_shell_od.exp_minus_od;
+                    spdlog::error("One of the sources was  NaN Ray: {} layer: {} Layer od: {} Layer Atten Factor: {}", rayidx, j, local_shell_od.od, local_shell_od.exp_minus_od);
                     message = true;
                 }
             }

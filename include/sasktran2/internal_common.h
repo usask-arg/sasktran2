@@ -1,5 +1,7 @@
 #pragma once
 
+#define SASKTRAN_DEBUG_ASSERTS
+
 #include <algorithm>
 #include <numeric>
 #include <mutex>
@@ -51,4 +53,5 @@
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
 #include <unsupported/Eigen/CXX11/Tensor>
+#include <spdlog/fmt/ostr.h>
 #include <spdlog/spdlog.h>

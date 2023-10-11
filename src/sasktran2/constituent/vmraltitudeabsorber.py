@@ -1,7 +1,7 @@
 from sasktran2 import Atmosphere
 from sasktran2.atmosphere import NativeGridDerivative, DerivativeMapping
 import numpy as np
-from . import Constituent
+from .base import Constituent
 from sasktran2.optical.base import OpticalProperty
 from sasktran2.optical import pressure_temperature_to_numberdensity
 
@@ -13,6 +13,26 @@ class VMRAltitudeAbsorber(Constituent):
                  vmr: np.array,
                  out_of_bounds_mode: str = 'zero'
                  ) -> None:
+        """
+        An atmospheric constituent that is specified through volume mixing ratio (VMR) on an altitude grid.
+        The altitude grid need not match the global atmospheric grid, in the case they are different the VMRs
+        will be linearly interpolated to the atmospheric grid locations.
+
+        The constituent has an associated OpticalProperty that defines the absorption cross section as a function
+        of wavelength.
+
+        Parameters
+        ----------
+        optical_property : OpticalProperty
+            An object that provides absorption cross sections as a function of wavelength
+        altitudes_m : np.array
+            Altitudes in [m] that the VMR is specified on 
+        vmr : np.array
+            Volume mixing ratio
+        out_of_bounds_mode : str, optional
+            One of ['zero', 'extend'], 'zero' will set the VMR to be 0 on any altitudes that are
+            out of bounds.  'extend' will extend the last or first VMR value.  By default 'zero'
+        """
         super().__init__()
 
         self._out_of_bounds_mode = out_of_bounds_mode

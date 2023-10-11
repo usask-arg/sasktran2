@@ -233,24 +233,24 @@ namespace sasktran2::math {
         if(C1 != C1 || C2 != C2 || S1 != S1 || S2 != S2 || abs(C2*C2 + S2*S2 - 1) > 1e-8 || abs(cos_scatter - cos_scat2) > 1e-8) {
             static bool message = true;
             if(message) {
-                BOOST_LOG_TRIVIAL(error) << "Error generating scattering matrix elements";
+                spdlog::error("Error generating scattering matrix elements");
 
-                BOOST_LOG_TRIVIAL(error) << "S1: " << S1;
-                BOOST_LOG_TRIVIAL(error) << "S2: " << S2;
-                BOOST_LOG_TRIVIAL(error) << "C1: " << C1;
-                BOOST_LOG_TRIVIAL(error) << "C2: " << C2;
+                spdlog::error("S1: {f}", S1);
+                spdlog::error("S2: {f}", S2);
+                spdlog::error("C1: {f}", C1);
+                spdlog::error("C2: {f}", C2);
 
-                BOOST_LOG_TRIVIAL(error) << "incoming: " << incoming;
-                BOOST_LOG_TRIVIAL(error) << "outgoing: " << outgoing;
+                //spdlog::error("incoming: {f}", incoming);
+                //spdlog::error("outgoing: {f}", outgoing);
 
-                BOOST_LOG_TRIVIAL(error) << "costh1: " << costh1;
-                BOOST_LOG_TRIVIAL(error) << "costh2: " << costh2;
+                spdlog::error("costh1: {f}", costh1);
+                spdlog::error("costh2: {f}", costh2);
 
-                BOOST_LOG_TRIVIAL(error) << "sin_scatter: " << sin_scatter;
-                BOOST_LOG_TRIVIAL(error) << "cos_scatter: " << cos_scatter;
+                spdlog::error("sin_scatter: {f}", sin_scatter);
+                spdlog::error("cos_scatter: {f}", cos_scatter);
 
-                BOOST_LOG_TRIVIAL(error) << "phi_inc: " << phi_inc;
-                BOOST_LOG_TRIVIAL(error) << "phi_scat: " << phi_scat;
+                spdlog::error("phi_inc: {f}", phi_inc);
+                spdlog::error("phi_scat: {f}", phi_scat);
             }
             message = false;
         }

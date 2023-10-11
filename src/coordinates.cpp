@@ -15,4 +15,3 @@ void init_coordinates(py::module_ &  m) {
     py::class_<sasktran2::Coordinates>(m, "Coordinates")
             .def(py::init<double, double, double, sasktran2::geometrytype, bool>());
 }
-

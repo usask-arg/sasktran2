@@ -21,11 +21,8 @@ def test_dbm():
 
     wavel = np.arange(280.0, 350.0, 0.001)
 
-    atmosphere = sk.Atmosphere(len(wavel), geometry, config, 1)
-    atmosphere.wavelengths_nm = wavel
+    atmosphere = sk.Atmosphere(geometry, config, wavelengths_nm=wavel)
 
-    add_us76_standard_atmosphere(atmosphere)
+    sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
 
-    o3_quantities = dbm.atmosphere_quantities(atmo=atmosphere)
-
-    pass
+    dbm.atmosphere_quantities(atmo=atmosphere)

@@ -10,10 +10,10 @@ from . import database
 class O3DBM(database.OpticalDatabaseGenericAbsorber):
     def __init__(self, version: str = None) -> None:
         if version is not None:
-            dbm_file = sk.config.database_root().joinpath('cross_sections/o3/dbm_v{}'.format(version))
+            dbm_file = sk.appconfig.database_root().joinpath('cross_sections/o3/dbm_v{}'.format(version))
         else:
             # Take the last version
-            dbm_file = list(sk.config.database_root().joinpath('cross_sections/o3').glob('dbm_*'))[-1]
+            dbm_file = list(sk.appconfig.database_root().joinpath('cross_sections/o3').glob('dbm_*'))[-1]
 
         if dbm_file.exists():
             super().__init__(dbm_file)

@@ -96,12 +96,12 @@ void Sasktran2<NSTOKES>::calculate_geometry() {
 
         #ifdef SASKTRAN_DEBUG_ASSERTS
             if(!ray.look_away.allFinite() || !ray.observer.position.allFinite()) {
-                BOOST_LOG_TRIVIAL(error) << "Error constructing LOS ray: " << i;
+                spdlog::error("Error constructing LOS ray: {}", i);
 
-                BOOST_LOG_TRIVIAL(error) << "ray look: " << ray.look_away;
-                BOOST_LOG_TRIVIAL(error) << "obs: " << ray.observer.position;
+                //spdlog::error("ray look: {}", ray.look_away);
+                //spdlog::error("obs: {}", ray.observer.position);
 
-                BOOST_LOG_TRIVIAL(error) << "LOS Type: " << typeid(viewing_ray).name();
+                spdlog::error("LOS Type: {}", typeid(viewing_ray).name());
             }
         #endif
 
@@ -139,10 +139,13 @@ void Sasktran2<NSTOKES>::calculate_radiance(const sasktran2::atmosphere::Atmosph
 
     // Use this method for observer geometries and make a different method for interior fluxes?
 
+    spdlog::error("Sources starting");
     // Initialize each source term with the atmosphere
     for(auto& source : m_source_terms) {
         source->initialize_atmosphere(atmosphere);
     }
+
+    spdlog::error("Sources initialized");
 
     m_source_integrator->initialize_atmosphere(atmosphere);
 

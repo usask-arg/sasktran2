@@ -1,5 +1,5 @@
 from sasktran2 import Atmosphere
-from . import Constituent
+from .base import Constituent
 from sasktran2.optical.base import OpticalProperty
 
 

@@ -347,7 +347,7 @@ namespace sasktran2::hr {
                     for(int diridx = 0; diridx < num_direction; ++diridx) {
                         #ifdef SASKTRAN_DEBUG_ASSERTS
                         if(m_diffuse_outgoing_index_map[temp_location_storage[locidx].first] + temp_direction_storage[diridx].first > m_diffuse_outgoing_index_map.back() + m_config->num_hr_outgoing()) {
-                            BOOST_LOG_TRIVIAL(error) << "BAD INDEX " << temp_location_storage[locidx].first << " " << temp_direction_storage[diridx].first;
+                            spdlog::error("BAD INDEX {} {}", temp_location_storage[locidx].first, temp_direction_storage[diridx].first);
                         }
                         #endif
 
@@ -480,7 +480,7 @@ namespace sasktran2::hr {
 
                 #ifdef SASKTRAN_DEBUG_ASSERTS
                 if(storage.m_outgoing_sources.value(outgoing_seq).hasNaN()) {
-                    BOOST_LOG_TRIVIAL(error) << "NaN in outgoing point: " << i;
+                    spdlog::error("NaN in outgoing point: {}", i);
                 }
                 #endif
             }
@@ -586,7 +586,7 @@ namespace sasktran2::hr {
 
             #ifdef SASKTRAN_DEBUG_ASSERTS
             if(temp_result.value.hasNaN()) {
-                BOOST_LOG_TRIVIAL(error) << "Incoming Ray: " << rayidx << " has NaN";
+                spdlog::error("Incoming Ray: {} has NaN", rayidx);
             }
             #endif
 

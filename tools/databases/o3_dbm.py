@@ -32,9 +32,21 @@ for dbm_file in Path(DBM_DIR).iterdir():
 
 combined_wv = np.sort(np.unique(np.hstack(all_wv)))
 
-combined_xs = np.zeros((len(all_T), len(combined_wv)))
+
+idx_min_T = np.argmin(all_T)
+idx_max_T = np.argmax(all_T)
+
+all_T.append(0)
+all_xs.append(all_xs[idx_min_T])
+all_wv.append(all_wv[idx_min_T])
+all_T.append(1000)
+all_xs.append(all_xs[idx_max_T])
+all_wv.append(all_wv[idx_max_T])
 
 T_sort = np.argsort(all_T)
+
+combined_xs = np.zeros((len(all_T), len(combined_wv)))
+
 
 for i in range(len(all_T)):
     idx = T_sort[i]

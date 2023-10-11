@@ -356,9 +356,7 @@ namespace sasktran2::solartransmission {
         if(source.value.hasNaN()) {
             static bool message = false;
             if(!message) {
-                BOOST_LOG_TRIVIAL(error) << "SS Source Nan" << source_factor1 << " " << start_phase.value << " " << layer.od_quad_start_fraction;
-                BOOST_LOG_TRIVIAL(error) << "SS Source Nan" << source_factor1 << " " << end_phase.value << " " << layer.od_quad_end_fraction;
-
+                spdlog::error("SS Source NaN {} {}", source_factor1, layer.od_quad_start_fraction);
                 message = true;
             }
         }

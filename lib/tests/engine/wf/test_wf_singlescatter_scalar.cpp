@@ -83,7 +83,7 @@ TEST_CASE("Verify SSA WF", "[sasktran2][engine][wf]") {
     sasktran2::OutputIdealDense<1> output, output_perturb_above, output_perturb_below;
     engine.calculate_radiance(atmo, output);
 
-    double dssa = 0.0001;
+    double dssa = 0.001;
     for(int i = 0; i < geo.size(); ++i) {
         // Perturb SSA, calculate derivative
 

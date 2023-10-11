@@ -61,6 +61,7 @@ test:
   source_files:
     - tests
   commands:
+    - python -c "import sasktran2 as sk; sk.appconfig.download_standard_databases()"
     - python -m pytest
 
 about:
