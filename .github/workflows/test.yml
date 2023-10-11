@@ -31,7 +31,6 @@ jobs:
           environment-file: conda/dev_env.yml
           channels: conda-forge
           auto-activate-base: false
-          mamba-version: "*"
           python-version: 3.11
 
       - name: build
