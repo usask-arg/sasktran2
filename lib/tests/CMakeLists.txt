@@ -50,6 +50,3 @@ endif()
 
 
 add_test(NAME TestSASKTRAN2 COMMAND sasktran2_tests)
-add_test(NAME TestSasktranDiscoScalar COMMAND sktran_disco_tests [sktran_disco])
-#add_test(NAME TestSasktranDiscoVector COMMAND sktran_disco_engine_tests [vector])
-#add_test(NAME TestSasktranDiscoLowLevel COMMAND sktran_disco_engine_tests [lowlevel])

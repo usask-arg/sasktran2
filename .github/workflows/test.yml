@@ -42,5 +42,5 @@ jobs:
       - name: test
         shell: bash -el {0}
         run: |
-          cd build
+          cd build/lib
           ctest
