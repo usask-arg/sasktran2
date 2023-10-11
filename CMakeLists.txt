@@ -90,8 +90,6 @@ else()
             CMAKE_ARGS
             -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
             -DCMAKE_BUILD_TYPE=Release
-            -DSPDLOG_BUILD_PIC=ON
-            -DSPDLOG_BUILD_SHARED=ON
     )
 
     file(MAKE_DIRECTORY ${SPDLOG_INSTALL_DIR}/include)  # avoid race condition
