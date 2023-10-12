@@ -20,5 +20,9 @@ dependencies:
   - doxygen
   - pip
   - ipython
+  - compilers
+  - c-compiler
+  - cxx-compiler
+  - fortran-compiler
   - pip:
     - sphinx_rtd_theme
