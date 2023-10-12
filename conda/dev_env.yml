@@ -17,6 +17,7 @@ dependencies:
   - esbonio
   - sphinx
   - doxygen
+  - pip
   - ipython
   - pip:
     - sphinx_rtd_theme

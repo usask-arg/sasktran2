@@ -8,10 +8,9 @@ name = "sasktran2"
 version = "0.0.1"
 dependencies = ['numpy', 'appdirs', 'pyyaml', 'xarray>=2023.0.0', 'dask', 'scipy', 'netcdf4']
 include = ['python/src/sasktran2/*']
-description="The SASKTRAN radiative transfer model Version 2"
+description= "The SASKTRAN radiative transfer model Version 2"
 readme = "README.md"
 authors = [
-    { name = "USASK-ARG},
     { name = "Daniel Zawada", email = "daniel.zawada@usask.ca" },
 ]
 requires-python = ">=3.7"
