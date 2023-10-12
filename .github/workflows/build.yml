@@ -54,6 +54,12 @@ jobs:
           channels: conda-forge
           auto-activate-base: false
 
+      - name: Set release python envs
+        shell: bash -el {0}
+        if: (github.event_name == 'release')
+        run: |
+          rm conda.recipe/conda_build_config.yaml
+          cp ci/conda_build_config_release.yaml conda.recipe/conda_build_config.yaml
 
       - name: Set anaconda upload
         shell: bash -el {0}
@@ -110,13 +116,22 @@ jobs:
           fetch-depth: 0
           submodules: true
 
-      - name: Build wheels
+      - name: Build wheels all
         uses: pypa/cibuildwheel@v2.16.2
+        if: (github.event_name == 'release')
         env:
           CIBW_SKIP: "pp* *musllinux* cp37-*"
         with:
           output-dir: wheelhouse
-
+      
+      - name: Build wheels single version
+        uses: pypa/cibuildwheel@v2.16.2
+        if: (github.event_name != 'release')
+        env:
+          CIBW_SKIP: "pp* *musllinux* cp37-*"
+          CIBW_BUILD: "cp311-*"
+        with:
+          output-dir: wheelhouse
 
       - uses: actions/upload-artifact@v3
         with:
