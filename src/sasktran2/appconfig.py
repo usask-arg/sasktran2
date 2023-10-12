@@ -1,5 +1,4 @@
 import logging
-import os
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -32,7 +31,7 @@ def load_user_config():
                 config = yaml.load(f, Loader=yaml.FullLoader)
             else:
                 config = yaml.load(f)
-        
+
         if config is not None:
             return config
         else:

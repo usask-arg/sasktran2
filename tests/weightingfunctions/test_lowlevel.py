@@ -57,9 +57,9 @@ def _raw_scenarios() -> list:
         for geometry in geometrys:
             for viewing_geo in viewing_geos:
                 scen.append({'config': config,
-                            'geometry': geometry,
-                            'viewing_geo': viewing_geo,
-                            'atmosphere': sk.test_util.scenarios.default_pure_scattering_atmosphere(config, geometry, 0.8)})
+                             'geometry': geometry,
+                             'viewing_geo': viewing_geo,
+                             'atmosphere': sk.test_util.scenarios.default_pure_scattering_atmosphere(config, geometry, 0.8)})
 
     return scen
 

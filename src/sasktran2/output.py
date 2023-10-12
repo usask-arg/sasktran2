@@ -1,8 +1,10 @@
 import abc
-import sasktran2 as sk
 from typing import Union
+
 import numpy as np
 import xarray as xr
+
+import sasktran2 as sk
 
 
 class Output(abc.ABC):
