@@ -39,6 +39,7 @@ requirements:
     - pybind11>=2.10.2
     - spdlog
     - scikit-build-core
+    - setuptools-scm
   run:
     - python {{ python }}
     - numpy
@@ -66,6 +67,6 @@ test:
     - python -m pytest
 
 about:
-  home: http://www.example.com
+  home: https://github.com/usask-arg/sasktran2
   license: ../license.md
-  summary: "Summary in here ..."
+  summary: "The SASKTRAN radiative transfer model Version 2"

@@ -30,7 +30,6 @@ jobs:
           activate-environment: sasktran2-dev-env
           environment-file: conda/dev_env.yml
           channels: conda-forge
-          mamba-version: "*"
           auto-activate-base: false
           python-version: 3.11
 
