@@ -128,7 +128,7 @@ jobs:
       - name: Build wheels all
         uses: pypa/cibuildwheel@v2.16.2
         env:
-          CIBW_SKIP: "pp* *musllinux* cp37-*"
+          CIBW_SKIP: "pp* *musllinux* cp37-* cp312-*"
         with:
           output-dir: wheelhouse
       
@@ -236,14 +236,6 @@ jobs:
         with:
           name: sasktran2-py-docs
           path: docs
-
-      - name: Deploy dev docs
-        uses: peaceiris/actions-gh-pages@v3
-        if: (github.event_name == 'push') && (github.ref == 'refs/heads/main')
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: docs
-          destination_dir: dev
 
       - name: Deploy release docs
         uses: peaceiris/actions-gh-pages@v3
