@@ -67,11 +67,11 @@ jobs:
         run: |
           conda-build -c conda-forge conda.recipe --output-folder pkgs/ --user usask-arg --token ${{ secrets.TOKEN }}
 
-      - name: Build Conda package (cross mac arm)ß
+      - name: Build Conda package (cross mac arm)
         shell: bash -el {0}
         if: (matrix.target_plat == 'arm') && (matrix.os == 'macos-11')
         run: |
-          conda-build -c conda-forge conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/ --no-test --user usask-arg -- token ${{ secrets.TOKEN }}
+          conda-build -c conda-forge conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/ --no-test --user usask-arg --token ${{ secrets.TOKEN }}
 
       - name: Save conda package
         uses: actions/upload-artifact@v3
@@ -189,6 +189,7 @@ jobs:
           channels: conda-forge
           mamba-version: "*"
           auto-activate-base: false
+          python-version: 3.11
 
       - name: Install Wheel
         shell: bash -el {0}
