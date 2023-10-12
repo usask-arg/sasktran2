@@ -2,3 +2,4 @@ name: conda_build
 dependencies:
   - python=3.8
   - conda-build
+  - anaconda-client
