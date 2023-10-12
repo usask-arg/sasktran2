@@ -5,8 +5,6 @@ on:
   push:
     branches:
       - main
-  pull_request:
-    types: [ opened, reopened, synchronize, labeled ]
   release:
     types:
       - published
@@ -56,9 +54,9 @@ jobs:
 
       - name: Set release python envs
         shell: bash -el {0}
-        if: (github.event_name == 'release')
         run: |
           cp ci/conda_build_config_release.yaml conda.recipe/conda_build_config.yaml
+          conda config --set anaconda_upload no
 
       - name: Set anaconda upload
         shell: bash -el {0}
@@ -66,24 +64,29 @@ jobs:
         run: |
           conda config --set anaconda_upload yes
       
-      - name: Set anaconda upload
-        shell: bash -el {0}
-        if: (github.event_name != 'release')
-        run: |
-          cp ci/conda_build_config_test.yaml conda.recipe/conda_build_config.yaml
-          conda config --set anaconda_upload no
-
       - name: Build Conda package
         shell: bash -el {0}
-        if: (matrix.target_plat == 'x86_64')
+        if: (matrix.target_plat == 'x86_64') && (github.event_name == 'release') && (!github.event.release.prerelease) 
         run: |
           conda-build -c conda-forge conda.recipe --output-folder pkgs/ --user usask-arg --token ${{ secrets.TOKEN }}
 
+      - name: Build Conda package
+        shell: bash -el {0}
+        if: (matrix.target_plat == 'x86_64') && !((github.event_name == 'release') && (!github.event.release.prerelease))
+        run: |
+          conda-build -c conda-forge conda.recipe --output-folder pkgs/
+
       - name: Build Conda package (cross mac arm)
         shell: bash -el {0}
-        if: (matrix.target_plat == 'arm') && (matrix.os == 'macos-11')
+        if: (matrix.target_plat == 'arm') && (matrix.os == 'macos-11') && (github.event_name == 'release') && (!github.event.release.prerelease) 
         run: |
           conda-build -c conda-forge conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/ --no-test --user usask-arg --token ${{ secrets.TOKEN }}
+      
+      - name: Build Conda package (cross mac arm)
+        shell: bash -el {0}
+        if: (matrix.target_plat == 'arm') && (matrix.os == 'macos-11') && !((github.event_name == 'release') && (!github.event.release.prerelease)) 
+        run: |
+          conda-build -c conda-forge conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/ --no-test
 
       - name: Save conda package
         uses: actions/upload-artifact@v3
@@ -124,21 +127,11 @@ jobs:
 
       - name: Build wheels all
         uses: pypa/cibuildwheel@v2.16.2
-        if: (github.event_name == 'release')
         env:
           CIBW_SKIP: "pp* *musllinux* cp37-*"
         with:
           output-dir: wheelhouse
       
-      - name: Build wheels single version
-        uses: pypa/cibuildwheel@v2.16.2
-        if: (github.event_name != 'release')
-        env:
-          CIBW_SKIP: "pp* *musllinux* cp37-*"
-          CIBW_BUILD: "cp311-*"
-        with:
-          output-dir: wheelhouse
-
       - uses: actions/upload-artifact@v3
         with:
           path: ./wheelhouse/*.whl

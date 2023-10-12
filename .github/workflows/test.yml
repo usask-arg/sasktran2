@@ -44,3 +44,119 @@ jobs:
         run: |
           cd build/lib
           ctest --verbose
+
+  test-conda-pysasktran2:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target_plat: x86_64
+          - os: windows-latest
+            target_plat: x86_64
+          - os: macos-11
+            target_plat: x86_64
+          - os: macos-11
+            target_plat: arm
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: Setup Conda build environment
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          activate-environment: conda_build
+          environment-file: ci/conda-envs/build.yml
+          channels: conda-forge
+          auto-activate-base: false
+
+      - name: Set anaconda upload
+        shell: bash -el {0}
+        run: |
+          cp ci/conda_build_config_test.yaml conda.recipe/conda_build_config.yaml
+          conda config --set anaconda_upload no
+
+      - name: Build Conda package
+        shell: bash -el {0}
+        if: (matrix.target_plat == 'x86_64')
+        run: |
+          conda-build -c conda-forge conda.recipe --output-folder pkgs/
+
+      - name: Build Conda package (cross mac arm)
+        shell: bash -el {0}
+        if: (matrix.target_plat == 'arm') && (matrix.os == 'macos-11')
+        run: |
+          conda-build -c conda-forge conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/ --no-test
+
+      - name: Save conda package
+        uses: actions/upload-artifact@v3
+        with:
+          name: sasktran2-conda-${{ matrix.os }}-${{ matrix.target_plat }}
+          path: pkgs
+
+  test_wheels_cibuildwheel:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, macos-11, windows-latest ]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: Build wheels single version
+        uses: pypa/cibuildwheel@v2.16.2
+        env:
+          CIBW_SKIP: "pp* *musllinux* cp37-*"
+          CIBW_BUILD: "cp311-*"
+        with:
+          output-dir: wheelhouse
+
+      - uses: actions/upload-artifact@v3
+        with:
+          path: ./wheelhouse/*.whl
+
+  test_doc_build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: Setup Conda build environment
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          activate-environment: sasktran2-dev-build
+          environment-file: conda/dev_env.yml
+          channels: conda-forge
+          auto-activate-base: false
+          python-version: 3.11
+
+      - name: Install Wheel
+        shell: bash -el {0}
+        run: |
+          pip install .
+          python -c "import sasktran2 as sk; sk.appconfig.download_standard_databases()"
+
+      - name: Build sphinx
+        shell: bash -el {0}
+        run: |
+          cd docs/sphinx
+          make html
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: sasktran2-py-docs
+          path: docs/sphinx/build/html
