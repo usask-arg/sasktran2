@@ -10,6 +10,12 @@ project = 'sasktran2'
 copyright = '2023, USask-ARG'
 author = 'USask-ARG'
 
+from importlib.metadata import version as get_version
+
+release: str = get_version('sasktran2')
+# for example take major/minor
+version: str = ".".join(release.split('.')[:2])
+
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 

@@ -107,12 +107,14 @@ jobs:
           activate-environment: sasktran2-dev-build
           environment-file: conda/dev_env.yml
           channels: conda-forge
+          mamba-version: "*"
           auto-activate-base: false
 
       - name: Install Wheel
         shell: bash -el {0}
         run: |
           pip install .
+          python -c "import sasktran2 as sk; sk.appconfig.download_standard_databases()"
 
       - name: Build sphinx
         shell: bash -el {0}

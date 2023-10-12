@@ -5,7 +5,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "sasktran2"
-version = "0.0.1"
+dynamic = ["version"]
 dependencies = ['numpy', 'appdirs', 'pyyaml', 'xarray>=2023.0.0', 'dask', 'scipy', 'netcdf4']
 include = ['python/src/sasktran2/*']
 description= "The SASKTRAN radiative transfer model Version 2"
@@ -28,9 +28,13 @@ classifiers = [
 [project.optional-dependencies]
 test = ["pytest"]
 
-
 [tool.scikit-build]
 wheel.expand-macos-universal-tags = true
+metadata.version.provider = "scikit_build_core.metadata.setuptools_scm"
+sdist.include = ["src/sasktran2/_version.py"]
+
+[tool.setuptools_scm]
+write_to = "src/sasktran2/_version.py"
 
 
 [tool.pytest.ini_options]

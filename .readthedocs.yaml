@@ -8,6 +8,7 @@ build:
   jobs:
     pre_build:
       - pip install .
+      - python -c "import sasktran2 as sk; sk.appconfig.download_standard_databases()"
 
 sphinx:
    configuration: docs/sphinx/source/conf.py

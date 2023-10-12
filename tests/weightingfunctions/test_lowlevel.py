@@ -8,7 +8,7 @@ def _raw_scenarios() -> list:
     Defines the set of scenarios that we later on test dI/dk, dI/dssa, dI/dleg_coeff, dI/dalbedo on
 
     Right now we test for
-     
+
     Configurations
 
     - Single scatter only

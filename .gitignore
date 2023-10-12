@@ -40,3 +40,5 @@ cmake-build*
 out/
 build2/
 make_vs_sln.bat
+docs/sphinx/source/savefig
+src/sasktran2/_version.py

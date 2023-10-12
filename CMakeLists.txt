@@ -237,7 +237,6 @@ OPTION(BUILD_PYTHON "True if Building Python Files" ON)
 if(BUILD_PYTHON)
     project(
             ${SKBUILD_PROJECT_NAME}
-            VERSION ${SKBUILD_PROJECT_VERSION}
             LANGUAGES CXX)
 
     set(CMAKE_CXX_STANDARD 17)
@@ -259,7 +258,6 @@ if(BUILD_PYTHON)
 
     target_link_libraries(_core PRIVATE pybind11::headers)
     target_link_libraries(_core PRIVATE sasktran2)
-    target_compile_definitions(_core PRIVATE VERSION_INFO=${PROJECT_VERSION})
 
     install(TARGETS _core DESTINATION sasktran2)
 endif()
