@@ -14,8 +14,9 @@ concurrency:
 
 
 jobs:
-  build-conda-pysasktran2:
+  build-upload-conda-pysasktran2:
     runs-on: ${{ matrix.os }}
+    if: (github.event_name == 'release') && (!github.event.release.prerelease)
 
     environment:
       name: conda
@@ -55,44 +56,82 @@ jobs:
         shell: bash -el {0}
         run: |
           cp ci/conda_build_config_release.yaml conda.recipe/conda_build_config.yaml
-          conda config --set anaconda_upload no
-
-      - name: Set anaconda upload
-        shell: bash -el {0}
-        if: (github.event_name == 'release') && (!github.event.release.prerelease)
-        run: |
           conda config --set anaconda_upload yes
       
       - name: Build Conda package
         shell: bash -el {0}
-        if: (matrix.target_plat == 'x86_64') && (github.event_name == 'release') && (!github.event.release.prerelease) 
+        if: (matrix.target_plat == 'x86_64')
         run: |
           conda-build -c conda-forge conda.recipe --output-folder pkgs/ --user usask-arg --token ${{ secrets.TOKEN }}
 
-      - name: Build Conda package
-        shell: bash -el {0}
-        if: (matrix.target_plat == 'x86_64') && !((github.event_name == 'release') && (!github.event.release.prerelease))
-        run: |
-          conda-build -c conda-forge conda.recipe --output-folder pkgs/
-
       - name: Build Conda package (cross mac arm)
         shell: bash -el {0}
-        if: (matrix.target_plat == 'arm') && (matrix.os == 'macos-11') && (github.event_name == 'release') && (!github.event.release.prerelease) 
+        if: (matrix.target_plat == 'arm') && (matrix.os == 'macos-11')
         run: |
           conda-build -c conda-forge conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/ --no-test --user usask-arg --token ${{ secrets.TOKEN }}
       
-      - name: Build Conda package (cross mac arm)
-        shell: bash -el {0}
-        if: (matrix.target_plat == 'arm') && (matrix.os == 'macos-11') && !((github.event_name == 'release') && (!github.event.release.prerelease)) 
-        run: |
-          conda-build -c conda-forge conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/ --no-test
-
       - name: Save conda package
         uses: actions/upload-artifact@v3
         with:
           name: sasktran2-conda-${{ matrix.os }}-${{ matrix.target_plat }}
           path: pkgs
-  
+
+  build-conda-pysasktran2:
+    runs-on: ${{ matrix.os }}
+    if: ((github.event_name == 'release') && (github.event.release.prerelease)) || (github.event_name == 'schedule')
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target_plat: x86_64
+          - os: windows-latest
+            target_plat: x86_64
+          - os: macos-11
+            target_plat: x86_64
+          - os: macos-11
+            target_plat: arm
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: Setup Conda build environment
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          activate-environment: conda_build
+          environment-file: ci/conda-envs/build.yml
+          channels: conda-forge
+          auto-activate-base: false
+
+      - name: Set release python envs
+        shell: bash -el {0}
+        run: |
+          cp ci/conda_build_config_release.yaml conda.recipe/conda_build_config.yaml
+          conda config --set anaconda_upload no
+      
+      - name: Build Conda package
+        shell: bash -el {0}
+        if: (matrix.target_plat == 'x86_64')
+        run: |
+          conda-build -c conda-forge conda.recipe --output-folder pkgs/
+
+      - name: Build Conda package (cross mac arm)
+        shell: bash -el {0}
+        if: (matrix.target_plat == 'arm') && (matrix.os == 'macos-11')
+        run: |
+          conda-build -c conda-forge conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/ --no-test
+      
+      - name: Save conda package
+        uses: actions/upload-artifact@v3
+        with:
+          name: sasktran2-conda-${{ matrix.os }}-${{ matrix.target_plat }}
+          path: pkgs
+        
   build_sdist:
     name: Build SDist
     runs-on: ubuntu-latest
