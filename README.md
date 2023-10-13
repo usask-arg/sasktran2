@@ -30,10 +30,20 @@ pip install .
 
 When building from source it is required that a Blas/LAPACK implementation is findable by CMake.
 
-We also provide an example `conda` environment that can be used to build the code
+We also provide an example `conda` environment that can be used to build the code.  For Mac/Linux
+we recommend,
 
 ```
-conda create -f conda/dev_env.yml
+conda env create -f conda/dev_env.yml
+```
+
+For Windows you need to first install Visual Studio 2022, and then 
+```
+conda env create -f conda/dev_env_windows.yml
+```
+
+Then the package can be installed with.
+```
 conda activate sasktran2-dev-env
 pip install .
 ```
