@@ -24,14 +24,12 @@ jobs:
           fetch-depth: 0
           submodules: true
 
-      - name: Setup Conda build environment
-        uses: conda-incubator/setup-miniconda@v2
+      - name: Setup mamba build environment
+        uses: mamba-org/setup-micromamba@v1
         with:
-          activate-environment: sasktran2-dev-env
           environment-file: conda/dev_env.yml
-          channels: conda-forge
-          auto-activate-base: false
-          python-version: 3.11
+          create-args: >-
+            python=3.10
 
       - name: build
         shell: bash -el {0}
