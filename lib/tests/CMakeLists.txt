@@ -50,3 +50,17 @@ endif()
 
 
 add_test(NAME TestSASKTRAN2 COMMAND sasktran2_tests)
+
+# This is just a hack to copy dependent DLLs on windows when building inside a
+# conda environment.  We copy all the DLLs in CMAKE_PREFIX_PATH/bin over to the tests
+# directory if this option is set.
+option(COPY_TESTING_DLLS "Test to on to copy DLLs to the testing directory" OFF)
+
+if(COPY_TESTING_DLLS)
+    file(GLOB DLLS "${CMAKE_PREFIX_PATH}/bin/*.dll")
+    foreach(DLL IN LISTS DLLS)
+        add_custom_command(
+                    TARGET sasktran2_tests POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${DLL} $<TARGET_FILE_DIR:sasktran2_tests>)
+    endforeach()
+endif()
