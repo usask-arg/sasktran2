@@ -71,5 +71,6 @@ test:
 
 about:
   home: https://github.com/usask-arg/sasktran2
-  license: ../license.md
+  license_file:
+    - ../license.md
   summary: "The SASKTRAN radiative transfer model Version 2"
