@@ -1,4 +1,9 @@
-# SASKTRAN2
+# SASKTRAN
+[![Anaconda-Server Badge](https://anaconda.org/usask-arg/sasktran2/badges/version.svg)](https://anaconda.org/usask-arg/sasktran2)
+[![Available on pypi](https://img.shields.io/pypi/v/sasktran2.svg)](https://pypi.python.org/pypi/sasktran2/)
+[![Documentation Status](https://readthedocs.org/projects/sasktran2/badge/?version=latest)](https://sasktran2.readthedocs.io/en/latest/?badge=latest)
+
+
 The SASKTRAN radiative transfer framework is a radiative transfer tool developed at the University of Saskatchewan. Originally designed for use with the OSIRIS instrument (https://research-groups.usask.ca/osiris/) it has since evolved to be applicable to a large variety of applications. SASKTRAN is a full framework and not just a radiative transfer model, as such it contains databases or interfaces to standard climatologies and species optical properties.
 
 SASKTRAN2 is a full re-implementation of the original SASKTRAN framework with large computational efficiency
@@ -25,8 +30,16 @@ pip install .
 
 When building from source it is required that a Blas/LAPACK implementation is findable by CMake.
 
+We also provide an example `conda` environment that can be used to build the code
+
+```
+conda create -f conda/dev_env.yml
+conda activate sasktran2-dev-env
+pip install .
+```
+
 ## Usage
-Documentation can be found at https://usask-arg.github.io/sasktran2/
+Documentation can be found at https://sasktran2.readthedocs.io/
 
 ## License
 SASKTRAN2 is made available under the MIT license subject to the Commons Clause condition (see license.md). Effectively this is a MIT license restricted for academic and educational use, for commercial use please contact the package authors. Commerical level support may also be available for specific applications.
