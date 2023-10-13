@@ -179,7 +179,7 @@ jobs:
     needs: [build_wheels_cibuildwheel, build_sdist]
     environment:
       name: testpypi
-      url: https://test.pypi.org/p/sasktran
+      url: https://test.pypi.org/p/sasktran2
     permissions:
       id-token: write
     if: (github.event_name == 'release') && (github.event.release.prerelease)
@@ -204,7 +204,7 @@ jobs:
     needs: [build_wheels_cibuildwheel, build_sdist]
     environment:
       name: pypi
-      url: https://pypi.org/p/sasktran
+      url: https://pypi.org/p/sasktran2
     permissions:
       id-token: write
     if: (github.event_name == 'release') && (!github.event.release.prerelease)
