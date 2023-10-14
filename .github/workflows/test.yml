@@ -65,30 +65,21 @@ jobs:
           submodules: true
 
       - name: Setup Conda build environment
-        uses: conda-incubator/setup-miniconda@v2
+        uses: mamba-org/setup-micromamba@v1
         with:
-          activate-environment: conda_build
-          environment-file: ci/conda-envs/build.yml
-          channels: conda-forge
-          auto-activate-base: false
-
-      - name: Set anaconda upload
-        shell: bash -el {0}
-        run: |
-          cp ci/conda_build_config_test.yaml conda.recipe/conda_build_config.yaml
-          conda config --set anaconda_upload no
+          environment-file: ci/conda-envs/mamba-build.yml
 
       - name: Build Conda package
         shell: bash -el {0}
         if: (matrix.target_plat == 'x86_64')
         run: |
-          conda-build -c conda-forge conda.recipe --output-folder pkgs/
+          conda mambabuild conda.recipe --output-folder pkgs/
 
       - name: Build Conda package (cross mac arm)
         shell: bash -el {0}
         if: (matrix.target_plat == 'arm') && (matrix.os == 'macos-11')
         run: |
-          conda-build -c conda-forge conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/ --no-test
+          conda mambabuild conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/ --no-test
 
       - name: Save conda package
         uses: actions/upload-artifact@v3
