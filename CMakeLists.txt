@@ -253,6 +253,7 @@ if(BUILD_PYTHON)
             src/atmosphere.cpp
             src/viewing_geometry.cpp
             src/engine.cpp
+            src/mie.cpp
             src/output.cpp
             WITH_SOABI)
 

@@ -43,6 +43,8 @@ add_library(sasktran2
 		    hr/diffuse_point.cpp
 		    hr/diffuse_table.cpp
 
+			mie/linearized_mie.cpp
+
 			sktran_disco/sktran_do.cpp
 			sktran_disco/sktran_do_geometrylayerarray.cpp
 			sktran_disco/sktran_do_layerarray.cpp
