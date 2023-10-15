@@ -64,10 +64,6 @@ jobs:
           fetch-depth: 0
           submodules: true
 
-      - name: Provide gfortran (Windows)
-        if: runner.os == 'Windows'
-        uses: msys2/setup-msys2@v2
-
       - name: Setup Conda build environment
         uses: mamba-org/setup-micromamba@v1
         with:
@@ -107,6 +103,11 @@ jobs:
       - name: Provide gfortran (Windows)
         if: runner.os == 'Windows'
         uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          path-type: inherit
+          install: >-
+            mingw-w64-x86_64-gcc-fortran
 
       - name: Build wheels single version
         uses: pypa/cibuildwheel@v2.16.2

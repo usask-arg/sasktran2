@@ -64,7 +64,7 @@ environment = { CFLAGS="-fno-strict-aliasing -DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLA
 archs = "x86_64 arm64"
 test-skip = "*_universal2:arm64"
 # MACOS linker doesn't support stripping symbols
-environment = {CFLAGS="-fno-strict-aliasing -DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", CXXFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64",  CC="clang", CXX = "clang++", RUNNER_OS="macOS", CMAKE_ARGS="-DUSE_OPENMP=OFF", CMAKE_BUILD_PARALLEL_LEVEL="3"}
+environment = {CFLAGS="-fno-strict-aliasing -DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", CXXFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64",  CC="clang", CXX = "clang++", RUNNER_OS="macOS", CMAKE_ARGS="-DUSE_OPENMP=OFF", CMAKE_BUILD_PARALLEL_LEVEL="3", FC="/opt/gfortran-darwin-arm64-cross/bin/arm64-apple-darwin20.0.0-gfortran"}
 
 [tool.cibuildwheel.windows]
 archs = "native"
