@@ -100,14 +100,12 @@ jobs:
           fetch-depth: 0
           submodules: true
       
-      - name: Provide gfortran (Windows)
-        if: runner.os == 'Windows'
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: MINGW64
-          path-type: inherit
-          install: >-
-            mingw-w64-x86_64-gcc-fortran
+      - name: win_amd64 - install rtools
+        run: |
+          # mingw-w64
+          choco install rtools -y --no-progress --force --version=4.0.0.20220206
+          echo "c:\rtools40\ucrt64\bin;" >> $env:GITHUB_PATH
+        if: ${{ runner.os == 'Windows' }}
 
       - name: Build wheels single version
         uses: pypa/cibuildwheel@v2.16.2

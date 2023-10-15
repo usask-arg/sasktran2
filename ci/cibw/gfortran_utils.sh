@@ -145,14 +145,12 @@ if [ "$(uname)" == "Darwin" ]; then
             sudo tar -xvf gfortran-darwin-${arch}-${type}.tar.gz
             sudo rm gfortran-darwin-${arch}-${type}.tar.gz
         popd
-	if [[ "${type}" == "native" ]]; then
-	    # Link these into /usr/local so that there's no need to add rpath or -L
-	    for f in libgfortran.dylib libgfortran.5.dylib libgcc_s.1.dylib libgcc_s.1.1.dylib libquadmath.dylib libquadmath.0.dylib; do
-                sudo ln -sf /opt/gfortran-darwin-${arch}-${type}/lib/$f /usr/local/lib/$f
-            done
-	    # Add it to PATH
-	    sudo ln -sf /opt/gfortran-darwin-${arch}-${type}/bin/gfortran /usr/local/bin/gfortran
-	fi
+    # Link these into /usr/local so that there's no need to add rpath or -L
+    for f in libgfortran.dylib libgfortran.5.dylib libgcc_s.1.dylib libgcc_s.1.1.dylib libquadmath.dylib libquadmath.0.dylib; do
+            sudo ln -sf /opt/gfortran-darwin-${arch}-${type}/lib/$f /usr/local/lib/$f
+        done
+    # Add it to PATH
+    sudo ln -sf /opt/gfortran-darwin-${arch}-${type}/bin/gfortran /usr/local/bin/gfortran
     }
 
     function install_arm64_cross_gfortran {
@@ -167,10 +165,11 @@ if [ "$(uname)" == "Darwin" ]; then
         fi
     }
     function install_gfortran {
-        download_and_unpack_gfortran $(uname -m) native
-        check_gfortran
         if [[ "${PLAT:-}" == "universal2" || "${PLAT:-}" == "arm64" ]]; then
             install_arm64_cross_gfortran
+        else
+            download_and_unpack_gfortran $(uname -m) native
+            check_gfortran
         fi
     }
 
