@@ -27,7 +27,7 @@ requirements:
     - python                                 # [build_platform != target_platform]
     - cross-python_{{ target_platform }}     # [build_platform != target_platform]
     - {{ compiler('cxx') }}
-    - {{ compiler('fortran') }} # [not win]
+    - {{ compiler('fortran') }}
   host:
     - python {{ python }}
     - eigen
