@@ -3,6 +3,16 @@ target_include_directories(sasktran2BuildProperties INTERFACE
 		$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
 		$<INSTALL_INTERFACE:include>)
 
+
+set(WISCOMBE_SOURCES
+	mie/wiscombe/ErrPack.f 
+	mie/wiscombe/MIEV0.f 
+	mie/wiscombe/RDI1MACHmodule.F90
+	mie/wiscombe.cpp
+	)
+
+TARGET_COMPILE_DEFINITIONS(sasktran2BuildProperties INTERFACE INCLUDE_WISCOMBE_MIE)
+
 # Add sub libraries
 add_library(sasktran2
 		    config/config.cpp
@@ -65,7 +75,9 @@ add_library(sasktran2
 			sktran_disco/source_term/do_source_diffuse_storage.cpp
         	sktran_disco/source_term/do_source.cpp
 			sktran_disco/source_term/do_source_interpolated_pp.cpp
-			sktran_disco/sktran_do_dll_expose.cpp)
+			sktran_disco/sktran_do_dll_expose.cpp
+			${WISCOMBE_SOURCES}
+			)
 
 
 OPTION(BUILD_DOXYGEN "Build Doxygen Docs" ON)

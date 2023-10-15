@@ -13,6 +13,8 @@ add_executable(sasktran2_tests
 
     engine/hr/test_hr_basic.cpp
 
+    mie/wiscombe.cpp
+
     sktran_disco/test_util.cpp
     sktran_disco/tests_lowlevel.cpp
 

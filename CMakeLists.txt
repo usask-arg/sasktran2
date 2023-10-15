@@ -12,8 +12,9 @@ set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
 if(UNIX)
     add_definitions("-Wno-inconsistent-missing-override -Wno-suggest-override -Wno-comment -Wno-deprecated-declarations -Wno-psabi")
-    enable_language(Fortran)
 endif()
+enable_language(Fortran)
+set(FORTRAN_ENABLED)
 
 execute_process(COMMAND git describe --tags
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
