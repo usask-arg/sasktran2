@@ -99,6 +99,26 @@ class InterpolatedDerivativeMapping(DerivativeMapping):
         summable: bool = False,
         log_radiance_space: bool = False,
     ):
+        """
+        A class which defines a mapping from internal model derivative quantities to user input quantities
+        that are not on the native model grid
+
+        Parameters
+        ----------
+        native_grid_mapping : NativeGridDerivative
+            Mapping of the quantity in question from the native grid to the native grid
+        interpolating_matrix : np.ndarray
+            An interpolating matrix such that user quantity on the native grid can be calculated by multiplying
+            the matrix by the user input quantity
+        interp_dim : str, optional
+            Dimension in the native mapping the interpolation is done over, by default "altitude"
+        result_dim : str, optional
+            string to name the resulting dimension, by default "interp_altitude"
+        summable : bool, optional
+            See :py:class:`DerivativeMapping`, by default False
+        log_radiance_space : bool, optional
+            See :py:class:`DerivativeMapping`, by default False
+        """
         super().__init__(native_grid_mapping, summable, log_radiance_space)
 
         self._xr_interpolator = xr.DataArray(
