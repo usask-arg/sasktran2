@@ -3,15 +3,12 @@
 
 namespace sasktran2::mie {
 
-        LinearizedMie::LinearizedMie() {
-        }
+    LinearizedMie::LinearizedMie() {}
 
-        void LinearizedMie::internal_calculate(const Eigen::VectorXd& size_param,
-                                               const std::complex<double>& refractive_index,
-                                               const Eigen::VectorXd& cos_angles,
-                                               bool calculate_derivative,
-                                               MieOutput& output) {
+    void LinearizedMie::internal_calculate(
+        const Eigen::VectorXd& size_param,
+        const std::complex<double>& refractive_index,
+        const Eigen::VectorXd& cos_angles, bool calculate_derivative,
+        MieOutput& output) {}
 
-        }
-
-}
+} // namespace sasktran2::mie

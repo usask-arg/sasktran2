@@ -5,4 +5,4 @@ namespace sasktran2 {
     template class Output<1>;
     template class Output<3>;
 
-}
+} // namespace sasktran2

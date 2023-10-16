@@ -2,7 +2,8 @@
 #include "sktran_disco/sktran_do_testing.h"
 
 template <int NSTOKES, int CNSTR>
-void sasktran_disco::testing::TestLayer<NSTOKES, CNSTR>::assignHGLayer(uint NSTR, const TestLayerSpecHG& spec) {
+void sasktran_disco::testing::TestLayer<NSTOKES, CNSTR>::assignHGLayer(
+    uint NSTR, const TestLayerSpecHG& spec) {
     optical_depth = spec.optical_depth;
     ssa = spec.ssa;
     lephasef.resize(NSTR);
@@ -12,7 +13,8 @@ void sasktran_disco::testing::TestLayer<NSTOKES, CNSTR>::assignHGLayer(uint NSTR
 }
 
 template <>
-void sasktran_disco::testing::TestLayer<1>::assignRayleighLayer(uint NSTR, const TestLayerSpecRayleigh& spec) {
+void sasktran_disco::testing::TestLayer<1>::assignRayleighLayer(
+    uint NSTR, const TestLayerSpecRayleigh& spec) {
     lephasef.resize(NSTR);
 
     double d = spec.depol;
@@ -25,22 +27,8 @@ void sasktran_disco::testing::TestLayer<1>::assignRayleighLayer(uint NSTR, const
 }
 
 template <>
-void sasktran_disco::testing::TestLayer<3>::assignRayleighLayer(uint NSTR, const TestLayerSpecRayleigh& spec) {
-    lephasef.resize(NSTR);
-
-    double d = spec.depol;
-
-    optical_depth = spec.optical_depth;
-    ssa = spec.ssa;
-
-    lephasef[0].a1 = 1;
-    lephasef[2].a2 = 6 * (1 - d) / (2 + d);
-    lephasef[2].a1 = (1 - d) / (2 + d);
-    lephasef[2].b1 = sqrt(6.0) * (1 - d) / (2 + d);
-}
-
-template <>
-void sasktran_disco::testing::TestLayer<4>::assignRayleighLayer(uint NSTR, const TestLayerSpecRayleigh& spec) {
+void sasktran_disco::testing::TestLayer<3>::assignRayleighLayer(
+    uint NSTR, const TestLayerSpecRayleigh& spec) {
     lephasef.resize(NSTR);
 
     double d = spec.depol;
@@ -52,17 +40,33 @@ void sasktran_disco::testing::TestLayer<4>::assignRayleighLayer(uint NSTR, const
     lephasef[2].a2 = 6 * (1 - d) / (2 + d);
     lephasef[2].a1 = (1 - d) / (2 + d);
     lephasef[2].b1 = sqrt(6.0) * (1 - d) / (2 + d);
-
-    lephasef[1].a4 = 3 * (1-2*d) / (2+d);
-}
-
-
-template <>
-void sasktran_disco::testing::TestLayer<1>::assignSiewertLayer(uint NSTR, const TestLayerSpecSiewert& spec) {
 }
 
 template <>
-void sasktran_disco::testing::TestLayer<3>::assignSiewertLayer(uint NSTR, const TestLayerSpecSiewert& spec) {
+void sasktran_disco::testing::TestLayer<4>::assignRayleighLayer(
+    uint NSTR, const TestLayerSpecRayleigh& spec) {
+    lephasef.resize(NSTR);
+
+    double d = spec.depol;
+
+    optical_depth = spec.optical_depth;
+    ssa = spec.ssa;
+
+    lephasef[0].a1 = 1;
+    lephasef[2].a2 = 6 * (1 - d) / (2 + d);
+    lephasef[2].a1 = (1 - d) / (2 + d);
+    lephasef[2].b1 = sqrt(6.0) * (1 - d) / (2 + d);
+
+    lephasef[1].a4 = 3 * (1 - 2 * d) / (2 + d);
+}
+
+template <>
+void sasktran_disco::testing::TestLayer<1>::assignSiewertLayer(
+    uint NSTR, const TestLayerSpecSiewert& spec) {}
+
+template <>
+void sasktran_disco::testing::TestLayer<3>::assignSiewertLayer(
+    uint NSTR, const TestLayerSpecSiewert& spec) {
     lephasef.resize(NSTR);
 
     std::vector<LegendreCoefficient<3>> temp;
@@ -129,7 +133,8 @@ void sasktran_disco::testing::TestLayer<3>::assignSiewertLayer(uint NSTR, const 
 }
 
 template <>
-void sasktran_disco::testing::TestLayer<4>::assignSiewertLayer(uint NSTR, const TestLayerSpecSiewert& spec) {
+void sasktran_disco::testing::TestLayer<4>::assignSiewertLayer(
+    uint NSTR, const TestLayerSpecSiewert& spec) {
     lephasef.resize(NSTR);
 
     std::vector<LegendreCoefficient<4>> temp;
@@ -206,7 +211,6 @@ void sasktran_disco::testing::TestLayer<4>::assignSiewertLayer(uint NSTR, const 
     for (int i = 0; i < std::min(int(NSTR), int(12)); ++i) {
         lephasef[i] = temp[i];
     }
-
 }
 
 template class sasktran_disco::testing::TestLayer<1>;

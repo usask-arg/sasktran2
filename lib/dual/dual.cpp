@@ -1,5 +1,3 @@
 #include <sasktran2.h>
 
-namespace sasktran2 {
-
-}
+namespace sasktran2 {}
