@@ -15,3 +15,4 @@ API Reference
    api/optical
    api/output
    api/viewing_geometry
+   api/util
