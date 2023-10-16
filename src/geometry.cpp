@@ -5,11 +5,12 @@
 namespace py = pybind11;
 using namespace pybind11::literals;
 
-
-void init_geometry(py::module_ &  m) {
+void init_geometry(py::module_& m) {
     py::class_<sasktran2::Geometry1D>(m, "Geometry1D")
-            .def(py::init<double, double, double, Eigen::VectorXd&&, sasktran2::grids::interpolation, sasktran2::geometrytype>(),
-                 R"(
+        .def(py::init<double, double, double, Eigen::VectorXd&&,
+                      sasktran2::grids::interpolation,
+                      sasktran2::geometrytype>(),
+             R"(
                    Initializes a geometry where the atmosphere varies only in 1 dimension (altitude).  The reference point
                    is defined by solar angles at the reference point.
 
@@ -28,17 +29,9 @@ void init_geometry(py::module_ &  m) {
                    geometry_type: sasktran2.GeometryType
                        One of sasktran2.GeometryType.Spherical or sasktran2.GeometryType.PlaneParallel
                  )",
-                 "cos_sza"_a,
-                 "solar_azimuth"_a,
-                 "earth_radius_m"_a,
-                 "altitude_grid_m"_a,
-                 "interpolation_method"_a,
-                 "geometry_type"_a
-                 )
-            .def("altitudes",
-                 [](const sasktran2::Geometry1D& geo) {
-                      return geo.altitude_grid().grid();
-            })
-            ;
+             "cos_sza"_a, "solar_azimuth"_a, "earth_radius_m"_a,
+             "altitude_grid_m"_a, "interpolation_method"_a, "geometry_type"_a)
+        .def("altitudes", [](const sasktran2::Geometry1D& geo) {
+            return geo.altitude_grid().grid();
+        });
 }
-

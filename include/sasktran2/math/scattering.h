@@ -3,19 +3,18 @@
 #include "sasktran2/internal_common.h"
 #include <sasktran2/math/wigner.h>
 
-
 namespace sasktran2::math {
-    #define SCATTERING_EPSILSON 1e-8
+#define SCATTERING_EPSILSON 1e-8
 
     inline void relative_azimuth(const Eigen::Vector3d& incoming,
                                  const Eigen::Vector3d& outgoing,
                                  double& rel_az) {
         double cos_scatter = incoming.dot(outgoing);
 
-        if(cos_scatter > 1) {
+        if (cos_scatter > 1) {
             cos_scatter = 1;
         }
-        if(cos_scatter < -1) {
+        if (cos_scatter < -1) {
             cos_scatter = -1;
         }
 
@@ -30,17 +29,17 @@ namespace sasktran2::math {
         double costh_scat = outgoing.z();
 
         // Also can get slight rounding errors here
-        if(costh_inc > 1) {
+        if (costh_inc > 1) {
             costh_inc = 1;
         }
-        if(costh_inc < -1) {
+        if (costh_inc < -1) {
             costh_inc = -1;
         }
 
-        if(costh_scat > 1) {
+        if (costh_scat > 1) {
             costh_scat = 1;
         }
-        if(costh_scat < -1) {
+        if (costh_scat < -1) {
             costh_scat = -1;
         }
 
@@ -52,10 +51,10 @@ namespace sasktran2::math {
 
         // If the incoming direction is the z-direction, then sinth_inc = 0
 
-
         double phi_inc, phi_scat, phi_diff;
 
-        costh1 = (costh_scat - costh_inc * cos_scatter) / (sinth_inc * sin_scatter);
+        costh1 =
+            (costh_scat - costh_inc * cos_scatter) / (sinth_inc * sin_scatter);
 
         Eigen::Vector3d horiz_inc = incoming;
         horiz_inc.z() = 0;
@@ -63,7 +62,8 @@ namespace sasktran2::math {
 
         phi_inc = atan2(horiz_inc.y(), horiz_inc.x());
 
-        costh2 = (costh_inc - costh_scat * cos_scatter) / (sinth_scat * sin_scatter);
+        costh2 =
+            (costh_inc - costh_scat * cos_scatter) / (sinth_scat * sin_scatter);
 
         Eigen::Vector3d horiz_scat = outgoing;
         horiz_scat.z() = 0;
@@ -76,24 +76,20 @@ namespace sasktran2::math {
 
     inline void stokes_scattering_factors(const Eigen::Vector3d& incoming,
                                           const Eigen::Vector3d& outgoing,
-                                          double& theta,
-                                          double& C1,
-                                          double& C2,
-                                          double& S1,
-                                          double& S2,
-                                          int& negation
-                                          ) {
+                                          double& theta, double& C1, double& C2,
+                                          double& S1, double& S2,
+                                          int& negation) {
         // Follows Mishchenko section 4.3, Hovenier 3.2
 
         // Start by calculating the scattering angle and cos/sin of it
-        // Note that if the incoming and outgoing directions are the same, the scattering angle is 0 since
-        // These are both propagation directions
+        // Note that if the incoming and outgoing directions are the same, the
+        // scattering angle is 0 since These are both propagation directions
         double cos_scatter = incoming.dot(outgoing);
 
-        if(cos_scatter > 1) {
+        if (cos_scatter > 1) {
             cos_scatter = 1;
         }
-        if(cos_scatter < -1) {
+        if (cos_scatter < -1) {
             cos_scatter = -1;
         }
 
@@ -104,7 +100,7 @@ namespace sasktran2::math {
         negation = 1;
 
         // Special case if sin of the scattering angle is 0, or 180 degrees
-        if(abs(sin_scatter) < SCATTERING_EPSILSON) {
+        if (abs(sin_scatter) < SCATTERING_EPSILSON) {
             // then there is no rotation, so cos angles are 1, sin angles ar 0
             C1 = 1;
             C2 = 1;
@@ -123,17 +119,17 @@ namespace sasktran2::math {
         double costh_scat = outgoing.z();
 
         // Also can get slight rounding errors here
-        if(costh_inc > 1) {
+        if (costh_inc > 1) {
             costh_inc = 1;
         }
-        if(costh_inc < -1) {
+        if (costh_inc < -1) {
             costh_inc = -1;
         }
 
-        if(costh_scat > 1) {
+        if (costh_scat > 1) {
             costh_scat = 1;
         }
-        if(costh_scat < -1) {
+        if (costh_scat < -1) {
             costh_scat = -1;
         }
 
@@ -145,10 +141,9 @@ namespace sasktran2::math {
 
         // If the incoming direction is the z-direction, then sinth_inc = 0
 
-
         double phi_inc, phi_scat, phi_diff;
 
-        if(abs(sinth_inc) < SCATTERING_EPSILSON) {
+        if (abs(sinth_inc) < SCATTERING_EPSILSON) {
             // In this case th1 is 180 degrees, so
             costh1 = -1;
             phi_inc = 0;
@@ -161,18 +156,18 @@ namespace sasktran2::math {
             return;
 
         } else {
-            costh1 = (costh_scat - costh_inc * cos_scatter) / (sinth_inc * sin_scatter);
+            costh1 = (costh_scat - costh_inc * cos_scatter) /
+                     (sinth_inc * sin_scatter);
 
             Eigen::Vector3d horiz_inc = incoming;
             horiz_inc.z() = 0;
             horiz_inc = horiz_inc.normalized();
 
             phi_inc = atan2(horiz_inc.y(), horiz_inc.x());
-
         }
 
         // or if the scattering direction is the z-direction then sinth_scat = 0
-        if(abs(sinth_scat) < SCATTERING_EPSILSON) {
+        if (abs(sinth_scat) < SCATTERING_EPSILSON) {
             // Here theta2 is 180 degrees, so
             costh2 = -1;
             phi_scat = 0;
@@ -184,9 +179,9 @@ namespace sasktran2::math {
 
             return;
 
-
         } else {
-            costh2 = (costh_inc - costh_scat * cos_scatter) / (sinth_scat * sin_scatter);
+            costh2 = (costh_inc - costh_scat * cos_scatter) /
+                     (sinth_scat * sin_scatter);
 
             Eigen::Vector3d horiz_scat = outgoing;
             horiz_scat.z() = 0;
@@ -196,43 +191,47 @@ namespace sasktran2::math {
         }
 
         phi_diff = phi_inc - phi_scat;
-        if(phi_diff < 0) {
-            phi_diff += 2*EIGEN_PI;
+        if (phi_diff < 0) {
+            phi_diff += 2 * EIGEN_PI;
         }
 
         // Can get rounding errors here
-        if(costh1 > 1) {
+        if (costh1 > 1) {
             costh1 = 1;
         }
-        if(costh1 < -1) {
+        if (costh1 < -1) {
             costh1 = -1;
         }
 
-        if(costh2 > 1) {
+        if (costh2 > 1) {
             costh2 = 1;
         }
-        if(costh2 < -1) {
+        if (costh2 < -1) {
             costh2 = -1;
         }
 
-        C1 = 2*costh1*costh1 - 1;
-        C2 = 2*costh2*costh2 - 1;
+        C1 = 2 * costh1 * costh1 - 1;
+        C2 = 2 * costh2 * costh2 - 1;
 
-        S1 = 2 * sqrt(1 - costh1*costh1) * costh1;
-        S2 = 2 * sqrt(1 - costh2*costh2) * costh2;
+        S1 = 2 * sqrt(1 - costh1 * costh1) * costh1;
+        S2 = 2 * sqrt(1 - costh2 * costh2) * costh2;
 
-        // We now have to adjust S1,S2 based on the azimuthal differences of the incoming
-        if(phi_diff < EIGEN_PI) {
+        // We now have to adjust S1,S2 based on the azimuthal differences of the
+        // incoming
+        if (phi_diff < EIGEN_PI) {
             S1 *= -1;
             S2 *= -1;
         }
 
-        double cos_scat2 = costh_inc*costh_scat + sinth_inc*sinth_scat*cos(phi_inc - phi_scat);
+        double cos_scat2 = costh_inc * costh_scat +
+                           sinth_inc * sinth_scat * cos(phi_inc - phi_scat);
 
-        #ifdef SASKTRAN_DEBUG_ASSERTS
-        if(C1 != C1 || C2 != C2 || S1 != S1 || S2 != S2 || abs(C2*C2 + S2*S2 - 1) > 1e-8 || abs(cos_scatter - cos_scat2) > 1e-8) {
+#ifdef SASKTRAN_DEBUG_ASSERTS
+        if (C1 != C1 || C2 != C2 || S1 != S1 || S2 != S2 ||
+            abs(C2 * C2 + S2 * S2 - 1) > 1e-8 ||
+            abs(cos_scatter - cos_scat2) > 1e-8) {
             static bool message = true;
-            if(message) {
+            if (message) {
                 spdlog::error("Error generating scattering matrix elements");
 
                 spdlog::error("S1: {f}", S1);
@@ -240,8 +239,8 @@ namespace sasktran2::math {
                 spdlog::error("C1: {f}", C1);
                 spdlog::error("C2: {f}", C2);
 
-                //spdlog::error("incoming: {f}", incoming);
-                //spdlog::error("outgoing: {f}", outgoing);
+                // spdlog::error("incoming: {f}", incoming);
+                // spdlog::error("outgoing: {f}", outgoing);
 
                 spdlog::error("costh1: {f}", costh1);
                 spdlog::error("costh2: {f}", costh2);
@@ -254,8 +253,7 @@ namespace sasktran2::math {
             }
             message = false;
         }
-        #endif
-
+#endif
     }
 
-}
+} // namespace sasktran2::math

@@ -17,13 +17,19 @@ class NativeGridDerivative:
     Internal input object that defines the model input quantities necessary to calculate a derivative.
     This mapping is from the native model grid to the native grid, it does not change the gridding.
     """
+
     d_extinction: np.ndarray
     d_ssa: np.ndarray
     d_leg_coeff: np.ndarray = None
 
 
 class DerivativeMapping:
-    def __init__(self, native_grid_mapping: NativeGridDerivative, summable: bool = False, log_radiance_space: bool = False):
+    def __init__(
+        self,
+        native_grid_mapping: NativeGridDerivative,
+        summable: bool = False,
+        log_radiance_space: bool = False,
+    ):
         """
         A class which defines a mapping from the internal model derivative quantities (derivatives with respect to,
         extinction, single scatter albedo, legendre coefficients) and user input quantities (e.g. VMR at a specific level).
@@ -79,9 +85,16 @@ class DerivativeMapping:
         pass
 
 
-
 class Atmosphere:
-    def __init__(self, model_geometry: sk.Geometry1D, config: sk.Config, wavelengths_nm: np.array = None, wavenumber_cminv: np.array = None, numwavel: int = None, calculate_derivatives: bool = True):
+    def __init__(
+        self,
+        model_geometry: sk.Geometry1D,
+        config: sk.Config,
+        wavelengths_nm: np.array = None,
+        wavenumber_cminv: np.array = None,
+        numwavel: Optional[int] = None,
+        calculate_derivatives: bool = True,
+    ):
         """
         The main specification for the atmospheric state.
 
@@ -109,8 +122,12 @@ class Atmosphere:
         self._wavenumbers_cminv = None
 
         # Set wavelengths
-        if (wavelengths_nm is None) and (wavenumber_cminv is None) and (numwavel is None):
-            msg = 'One of wavelengths_nm, wavenumber_cminv, numwavel must be set when constructing the Atmosphere object'
+        if (
+            (wavelengths_nm is None)
+            and (wavenumber_cminv is None)
+            and (numwavel is None)
+        ):
+            msg = "One of wavelengths_nm, wavenumber_cminv, numwavel must be set when constructing the Atmosphere object"
             raise ValueError(msg)
 
         if wavelengths_nm is not None:
@@ -125,9 +142,13 @@ class Atmosphere:
         self._calculate_derivatives = calculate_derivatives
 
         if self._nstokes == 1:
-            self._atmosphere = sk.AtmosphereStokes_1(nwavel, model_geometry, config, calculate_derivatives)
+            self._atmosphere = sk.AtmosphereStokes_1(
+                nwavel, model_geometry, config, calculate_derivatives
+            )
         elif self._nstokes == 3:
-            self._atmosphere = sk.AtmosphereStokes_3(nwavel, model_geometry, config, calculate_derivatives)
+            self._atmosphere = sk.AtmosphereStokes_3(
+                nwavel, model_geometry, config, calculate_derivatives
+            )
 
         self.surface.albedo = np.zeros(nwavel)
 
@@ -152,7 +173,7 @@ class Atmosphere:
         Returns
         -------
         sk.Geometry1D
-        """        
+        """
         return self._model_geometry
 
     @property
@@ -167,7 +188,9 @@ class Atmosphere:
         return self._nstokes
 
     @property
-    def storage(self) -> Union[sk.AtmosphereStorageStokes_1, sk.AtmosphereStorageStokes_3]:
+    def storage(
+        self,
+    ) -> Union[sk.AtmosphereStorageStokes_1, sk.AtmosphereStorageStokes_3]:
         """
         The internal object which contains the atmosphere extinction, single scatter albedo, and legendre coefficients.
 
@@ -287,7 +310,7 @@ class Atmosphere:
     @property
     def unscaled_extinction(self) -> np.ndarray:
         """
-        The unscaled extinction. After performing the calculation, `storage.total_extinction` may be 
+        The unscaled extinction. After performing the calculation, `storage.total_extinction` may be
         modified because of the delta-m scaling. This property stores the original unscaled single
         scatter albedo.
 
@@ -325,11 +348,21 @@ class Atmosphere:
         else:
             # using the raw interface
             if self._calculate_derivatives and len(self._derivs) == 0:
-                self._derivs['raw'] = {}
-                self._derivs['raw']['extinction'] = DerivativeMapping(NativeGridDerivative(d_extinction=np.ones_like(self.storage.total_extinction),
-                                                                                            d_ssa=np.zeros_like(self.storage.ssa)), summable=True)
-                self._derivs['raw']['ssa'] = DerivativeMapping(NativeGridDerivative(d_extinction=np.zeros_like(self.storage.total_extinction),
-                                                                                    d_ssa=np.ones_like(self.storage.ssa)), summable=True)
+                self._derivs["raw"] = {}
+                self._derivs["raw"]["extinction"] = DerivativeMapping(
+                    NativeGridDerivative(
+                        d_extinction=np.ones_like(self.storage.total_extinction),
+                        d_ssa=np.zeros_like(self.storage.ssa),
+                    ),
+                    summable=True,
+                )
+                self._derivs["raw"]["ssa"] = DerivativeMapping(
+                    NativeGridDerivative(
+                        d_extinction=np.zeros_like(self.storage.total_extinction),
+                        d_ssa=np.ones_like(self.storage.ssa),
+                    ),
+                    summable=True,
+                )
 
                 # TODO: Also calculate dlegendre for raw? probably...
 

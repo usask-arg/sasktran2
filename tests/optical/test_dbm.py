@@ -1,7 +1,5 @@
-import sasktran2 as sk
 import numpy as np
-from sasktran2.climatology.us76 import add_us76_standard_atmosphere
-
+import sasktran2 as sk
 
 
 def test_dbm():
@@ -11,7 +9,14 @@ def test_dbm():
 
     altitude_grid = np.arange(0, 65001, 1000)
 
-    geometry = sk.Geometry1D(0.6, 0, 6327000, altitude_grid, sk.InterpolationMethod.LinearInterpolation, sk.GeometryType.Spherical)
+    geometry = sk.Geometry1D(
+        0.6,
+        0,
+        6327000,
+        altitude_grid,
+        sk.InterpolationMethod.LinearInterpolation,
+        sk.GeometryType.Spherical,
+    )
 
     viewing_geo = sk.ViewingGeometry()
 

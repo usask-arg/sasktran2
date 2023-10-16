@@ -1,16 +1,17 @@
-from .base import Constituent
-from sasktran2.optical.rayleigh import rayleigh_cross_section_bates
+import numpy as np
+
 import sasktran2 as sk
 from sasktran2.optical import pressure_temperature_to_numberdensity
-from sasktran2.units import celsius_to_kelvin
-import numpy as np
+from sasktran2.optical.rayleigh import rayleigh_cross_section_bates
+
+from .base import Constituent
 
 
 class Rayleigh(Constituent):
-    def __init__(self, method: str ='bates', name='rayleigh'):
+    def __init__(self, method: str = "bates", name="rayleigh"):
         """
         An implementation of Rayleigh scattering.  Cross sections (and depolarization factors) can be
-        calculated multiple ways, with the default method being that of 'bates'.  
+        calculated multiple ways, with the default method being that of 'bates'.
 
         Rayleigh scattering number density is estimated through the ideal gas law.
 
@@ -30,10 +31,10 @@ class Rayleigh(Constituent):
         ValueError
             If input method is not supported
         """
-        if method.lower() == 'bates':
+        if method.lower() == "bates":
             self._rayleigh_cross_fn = rayleigh_cross_section_bates
         else:
-            msg = 'Method must be bates'
+            msg = "Method must be bates"
             raise ValueError(msg)
 
         self._name = name
@@ -47,23 +48,25 @@ class Rayleigh(Constituent):
         ----------
         atmo : sk.Atmosphere
 
- 
+
         :meta private:
         """
         if atmo.wavelengths_nm is None:
-            msg = 'It is required to give the Atmosphere object wavelengths to use the Rayleigh constituent'
+            msg = "It is required to give the Atmosphere object wavelengths to use the Rayleigh constituent"
             raise ValueError(msg)
 
         if atmo.pressure_pa is None:
-            msg = 'It is required to set the pressure_pa property in the Atmosphere object to use the Rayleigh Constituent'
+            msg = "It is required to set the pressure_pa property in the Atmosphere object to use the Rayleigh Constituent"
             raise ValueError(msg)
 
         if atmo.temperature_k is None:
-            msg = 'It is required to set the temperature_k property in the Atmosphere object to use the Rayleigh Constituent'
+            msg = "It is required to set the temperature_k property in the Atmosphere object to use the Rayleigh Constituent"
             raise ValueError(msg)
 
         # Get the number density from the atmosphere object at the grid points
-        num_dens = pressure_temperature_to_numberdensity(atmo.pressure_pa, atmo.temperature_k)
+        num_dens = pressure_temperature_to_numberdensity(
+            atmo.pressure_pa, atmo.temperature_k
+        )
 
         scattering_xs, king_factor = self._rayleigh_cross_fn(atmo.wavelengths_nm / 1000)
 
@@ -82,11 +85,16 @@ class Rayleigh(Constituent):
 
         if atmo.nstokes == 1:
             atmo.storage.leg_coeff[0] += ray_ext
-            atmo.storage.leg_coeff[2] += ray_ext * ((1 - delta) / (2 + delta))[np.newaxis, :]
+            atmo.storage.leg_coeff[2] += (
+                ray_ext * ((1 - delta) / (2 + delta))[np.newaxis, :]
+            )
         else:
-            msg = 'NSTOKES={} not currently implemented for Rayleigh constituent'.format(atmo.nstokes)
+            msg = (
+                "NSTOKES={} not currently implemented for Rayleigh constituent".format(
+                    atmo.nstokes
+                )
+            )
             raise ValueError(msg)
-
 
     def register_derivative(self, atmo: sk.Atmosphere):
         pass

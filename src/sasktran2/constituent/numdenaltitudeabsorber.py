@@ -1,6 +1,7 @@
 from sasktran2 import Atmosphere
-from .base import Constituent
 from sasktran2.optical.base import OpticalProperty
+
+from .base import Constituent
 
 
 class AltitudeAbsorber(Constituent):
@@ -8,15 +9,12 @@ class AltitudeAbsorber(Constituent):
         super().__init__()
 
         self._optical_property = optical_property
-    
+
     def name(self) -> str:
         return super().name()
-    
-    def add_to_atmosphere(self, atmo: Atmosphere):
-        optical_quants = self._optical_property.atmosphere_quantities(atmo)
 
+    def add_to_atmosphere(self, atmo: Atmosphere):
         return super().add_to_atmosphere(atmo)
-    
+
     def register_derivative(self, atmo: Atmosphere):
         return super().register_derivative(atmo)
-    

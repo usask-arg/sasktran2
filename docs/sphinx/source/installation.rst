@@ -10,4 +10,3 @@ SASKTRAN2 can be installed either through `pip`::
 or through `conda`::
 
     conda install -c usask-arg -c conda-forge sasktran2
-

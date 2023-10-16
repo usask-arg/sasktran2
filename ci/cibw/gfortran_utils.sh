@@ -118,23 +118,23 @@ if [ "$(uname)" == "Darwin" ]; then
     export SDKROOT=${SDKROOT:-$(xcrun --show-sdk-path)}
 
     function download_and_unpack_gfortran {
-	local arch=$1
-	local type=$2
+    local arch=$1
+    local type=$2
         curl -L -O https://github.com/isuruf/gcc/releases/download/gcc-11.3.0-2/gfortran-darwin-${arch}-${type}.tar.gz
-	case ${arch}-${type} in
-	    arm64-native)
-	        export GFORTRAN_SHA=0d5c118e5966d0fb9e7ddb49321f63cac1397ce8
-		;;
-	    arm64-cross)
-		export GFORTRAN_SHA=527232845abc5af21f21ceacc46fb19c190fe804
-		;;
-	    x86_64-native)
-		export GFORTRAN_SHA=c469a420d2d003112749dcdcbe3c684eef42127e
-		;;
-	    x86_64-cross)
-		export GFORTRAN_SHA=107604e57db97a0ae3e7ca7f5dd722959752f0b3
-		;;
-	esac
+    case ${arch}-${type} in
+        arm64-native)
+            export GFORTRAN_SHA=0d5c118e5966d0fb9e7ddb49321f63cac1397ce8
+        ;;
+        arm64-cross)
+        export GFORTRAN_SHA=527232845abc5af21f21ceacc46fb19c190fe804
+        ;;
+        x86_64-native)
+        export GFORTRAN_SHA=c469a420d2d003112749dcdcbe3c684eef42127e
+        ;;
+        x86_64-cross)
+        export GFORTRAN_SHA=107604e57db97a0ae3e7ca7f5dd722959752f0b3
+        ;;
+    esac
         if [[ "$(shasum gfortran-darwin-${arch}-${type}.tar.gz)" != "${GFORTRAN_SHA}  gfortran-darwin-${arch}-${type}.tar.gz" ]]; then
             echo "shasum mismatch for gfortran-darwin-${arch}-${type}"
             exit 1
@@ -145,18 +145,18 @@ if [ "$(uname)" == "Darwin" ]; then
             sudo tar -xvf gfortran-darwin-${arch}-${type}.tar.gz
             sudo rm gfortran-darwin-${arch}-${type}.tar.gz
         popd
-	if [[ "${type}" == "native" ]]; then
-	    # Link these into /usr/local so that there's no need to add rpath or -L
-	    for f in libgfortran.dylib libgfortran.5.dylib libgcc_s.1.dylib libgcc_s.1.1.dylib libquadmath.dylib libquadmath.0.dylib; do
+    if [[ "${type}" == "native" ]]; then
+        # Link these into /usr/local so that there's no need to add rpath or -L
+        for f in libgfortran.dylib libgfortran.5.dylib libgcc_s.1.dylib libgcc_s.1.1.dylib libquadmath.dylib libquadmath.0.dylib; do
                 sudo ln -sf /opt/gfortran-darwin-${arch}-${type}/lib/$f /usr/local/lib/$f
             done
-	    # Add it to PATH
-	    sudo ln -sf /opt/gfortran-darwin-${arch}-${type}/bin/gfortran /usr/local/bin/gfortran
-	fi
+        # Add it to PATH
+        sudo ln -sf /opt/gfortran-darwin-${arch}-${type}/bin/gfortran /usr/local/bin/gfortran
+    fi
     }
 
     function install_arm64_cross_gfortran {
-	download_and_unpack_gfortran arm64 cross
+    download_and_unpack_gfortran arm64 cross
         export FC_ARM64="$(find /opt/gfortran-darwin-arm64-cross/bin -name "*-gfortran")"
         local libgfortran="$(find /opt/gfortran-darwin-arm64-cross/lib -name libgfortran.dylib)"
         local libdir=$(dirname $libgfortran)

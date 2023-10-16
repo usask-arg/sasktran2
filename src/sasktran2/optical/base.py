@@ -1,7 +1,7 @@
 import abc
-import numpy as np
 from dataclasses import dataclass
 
+import numpy as np
 
 from sasktran2.atmosphere import Atmosphere
 

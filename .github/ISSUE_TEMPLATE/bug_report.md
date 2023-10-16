@@ -16,7 +16,7 @@ Ideally a small script that reproduces the problem
 
 **Platform(please complete the following information):**
  - OS: [e.g. mac, windows, linux, arm or x86_64]
- - SASKTRAN2 version: 
+ - SASKTRAN2 version:
  - Installation Source: [e.g. conda, pip, or from source]
 
 **Additional context**

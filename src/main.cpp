@@ -2,17 +2,15 @@
 
 namespace py = pybind11;
 
-
-void init_coordinates(py::module_ &);
-void init_geometry(py::module_ &);
-void init_grids(py::module_ &);
-void init_config(py::module_ &);
-void init_atmosphere(py::module_ &);
-void init_viewing_geometry(py::module_ &);
-void init_output(py::module_ &);
-void init_engine(py::module_ &);
-void init_mie(py::module_ &);
-
+void init_coordinates(py::module_&);
+void init_geometry(py::module_&);
+void init_grids(py::module_&);
+void init_config(py::module_&);
+void init_atmosphere(py::module_&);
+void init_viewing_geometry(py::module_&);
+void init_output(py::module_&);
+void init_engine(py::module_&);
+void init_mie(py::module_&);
 
 PYBIND11_MODULE(_core, m) {
     init_config(m);
@@ -25,4 +23,3 @@ PYBIND11_MODULE(_core, m) {
     init_engine(m);
     init_mie(m);
 }
-

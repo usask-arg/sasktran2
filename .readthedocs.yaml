@@ -15,4 +15,3 @@ sphinx:
 
 conda:
   environment: conda/dev_env.yml
-
