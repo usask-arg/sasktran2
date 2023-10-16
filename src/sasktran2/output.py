@@ -144,12 +144,13 @@ class OutputIdeal(Output):
                 if mapping.log_radiance_space:
                     np_deriv /= radiance[:, :, :, np.newaxis]
 
+                mapped_derivative = mapping.map_derivative(
+                    np_deriv, ["stokes", "wavelength", "los", "altitude"]
+                )
+
                 if name_to_place_result in result:
-                    result[name_to_place_result].values += np_deriv
+                    result[name_to_place_result] += mapped_derivative
                 else:
-                    result[name_to_place_result] = (
-                        ["stokes", "wavelength", "los", "altitude"],
-                        np_deriv,
-                    )
+                    result[name_to_place_result] = mapped_derivative
 
         return result

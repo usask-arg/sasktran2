@@ -16,13 +16,10 @@ class AirMassFactor(Constituent):
         """
         super().__init__()
 
-    def name(self) -> str:
-        return "air_mass_factor"
-
     def add_to_atmosphere(self, atmo: Atmosphere):
         pass
 
-    def register_derivative(self, atmo: Atmosphere):
+    def register_derivative(self, atmo: Atmosphere, name: str):  # noqa: ARG002
         altitudes = atmo.model_geometry.altitudes()
 
         alt_factors = -1 / np.gradient(altitudes)

@@ -24,4 +24,4 @@ from .atmosphere import Atmosphere
 from .output import Output, OutputIdeal
 from .engine import Engine
 
-from . import appconfig, climatology, constituent, mie, optical, test_util
+from . import appconfig, climatology, constituent, mie, optical, test_util, util
