@@ -13,10 +13,10 @@ namespace sasktran2::math {
         1.5707963267948966192313215; //@define Value of PI to 24 decimal places
     const double ONE_DEGREE =
         0.017453292519943295769237; //@define One degree expressed as radians to
-                                    //24 decomal places
+                                    // 24 decomal places
     const double ONE_RADIAN =
         57.295779513082320876798155; //@define One radian expressed in degrees
-                                     //to 24 decimal places
+                                     // to 24 decimal places
 
     inline double TRUNC(double x) {
         return floor(x);
