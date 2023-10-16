@@ -2,6 +2,8 @@
 [![Anaconda-Server Badge](https://anaconda.org/usask-arg/sasktran2/badges/version.svg)](https://anaconda.org/usask-arg/sasktran2)
 [![Available on pypi](https://img.shields.io/pypi/v/sasktran2.svg)](https://pypi.python.org/pypi/sasktran2/)
 [![Documentation Status](https://readthedocs.org/projects/sasktran2/badge/?version=latest)](https://sasktran2.readthedocs.io/en/latest/?badge=latest)
+[![pre-commit.ci status](https://results.pre-commit.ci/badge/github/usask-arg/sasktran2/main.svg)](https://results.pre-commit.ci/latest/github/usask-arg/sasktran2/main)
+
 
 
 The SASKTRAN radiative transfer framework is a radiative transfer tool developed at the University of Saskatchewan. Originally designed for use with the OSIRIS instrument (https://research-groups.usask.ca/osiris/) it has since evolved to be applicable to a large variety of applications. SASKTRAN is a full framework and not just a radiative transfer model, as such it contains databases or interfaces to standard climatologies and species optical properties.
