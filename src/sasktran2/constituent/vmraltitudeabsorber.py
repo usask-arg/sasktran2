@@ -1,9 +1,13 @@
 import numpy as np
 
 from sasktran2 import Atmosphere
-from sasktran2.atmosphere import DerivativeMapping, NativeGridDerivative
+from sasktran2.atmosphere import (
+    InterpolatedDerivativeMapping,
+    NativeGridDerivative,
+)
 from sasktran2.optical import pressure_temperature_to_numberdensity
 from sasktran2.optical.base import OpticalProperty
+from sasktran2.util.interpolation import linear_interpolating_matrix
 
 from .base import Constituent
 
@@ -51,9 +55,6 @@ class VMRAltitudeAbsorber(Constituent):
     def vmr(self, vmr: np.array):
         self._vmr = vmr
 
-    def name(self) -> str:
-        return super().name()
-
     def add_to_atmosphere(self, atmo: Atmosphere):
         self._optical_quants = self._optical_property.atmosphere_quantities(atmo)
 
@@ -65,35 +66,31 @@ class VMRAltitudeAbsorber(Constituent):
             atmo.pressure_pa, atmo.temperature_k
         )
 
-        if self._out_of_bounds_mode.lower() == "zero":
-            interp_vmr = np.interp(
-                atmo.model_geometry.altitudes(),
-                self._altitudes_m,
-                self._vmr,
-                left=0,
-                right=0,
-            )
-        elif self._out_of_bounds_mode.lower() == "extend":
-            interp_vmr = np.interp(
-                atmo.model_geometry.altitudes(),
-                self._altitudes_m,
-                self._vmr,
-                left=self._vmr[0],
-                right=self._vmr[-1],
-            )
+        interp_matrix = linear_interpolating_matrix(
+            self._altitudes_m,
+            atmo.model_geometry.altitudes(),
+            self._out_of_bounds_mode.lower(),
+        )
+
+        interp_vmr = interp_matrix @ self._vmr
 
         atmo.storage.total_extinction += (
             self._optical_quants.extinction
             * (number_density * interp_vmr)[:, np.newaxis]
         )
 
-    def register_derivative(self, atmo: Atmosphere):
+    def register_derivative(self, atmo: Atmosphere, name: str):
         number_density = pressure_temperature_to_numberdensity(
             atmo.pressure_pa, atmo.temperature_k
         )
+        interp_matrix = linear_interpolating_matrix(
+            self._altitudes_m,
+            atmo.model_geometry.altitudes(),
+            self._out_of_bounds_mode.lower(),
+        )
         derivs = {}
 
-        derivs["vmr"] = DerivativeMapping(
+        derivs["vmr"] = InterpolatedDerivativeMapping(
             NativeGridDerivative(
                 d_extinction=self._optical_quants.extinction
                 * number_density[:, np.newaxis],
@@ -101,7 +98,10 @@ class VMRAltitudeAbsorber(Constituent):
                 * (self._optical_quants.ssa - atmo.storage.ssa)
                 / atmo.storage.total_extinction
                 * number_density[:, np.newaxis],
-            )
+            ),
+            interpolating_matrix=interp_matrix,
+            interp_dim="altitude",
+            result_dim=f"{name}_altitude",
         )
 
         return derivs

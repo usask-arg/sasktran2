@@ -10,11 +10,8 @@ class AltitudeAbsorber(Constituent):
 
         self._optical_property = optical_property
 
-    def name(self) -> str:
-        return super().name()
-
     def add_to_atmosphere(self, atmo: Atmosphere):
         return super().add_to_atmosphere(atmo)
 
-    def register_derivative(self, atmo: Atmosphere):
+    def register_derivative(self, atmo: Atmosphere, name: str):  # noqa: ARG002
         return super().register_derivative(atmo)

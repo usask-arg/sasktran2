@@ -8,7 +8,7 @@ from .base import Constituent
 
 
 class Rayleigh(Constituent):
-    def __init__(self, method: str = "bates", name="rayleigh"):
+    def __init__(self, method: str = "bates"):
         """
         An implementation of Rayleigh scattering.  Cross sections (and depolarization factors) can be
         calculated multiple ways, with the default method being that of 'bates'.
@@ -23,8 +23,6 @@ class Rayleigh(Constituent):
         method : str, optional
             Method to use to calculate the cross section.  Supported methods are
             ['bates'], by default 'bates'
-        name : str, optional
-            Name to give the constituent, by default 'rayleigh'
 
         Raises
         ------
@@ -36,11 +34,6 @@ class Rayleigh(Constituent):
         else:
             msg = "Method must be bates"
             raise ValueError(msg)
-
-        self._name = name
-
-    def name(self) -> str:
-        return self._name
 
     def add_to_atmosphere(self, atmo: sk.Atmosphere):
         """
@@ -96,5 +89,5 @@ class Rayleigh(Constituent):
             )
             raise ValueError(msg)
 
-    def register_derivative(self, atmo: sk.Atmosphere):
+    def register_derivative(self, atmo: sk.Atmosphere, name: str):
         pass
