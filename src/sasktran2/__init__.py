@@ -1,7 +1,6 @@
 # ruff: noqa: F401
 
-from . import appconfig, climatology, constituent, mie, optical, test_util
-from ._core import (
+from ._core import (  # noqa: I001
     AtmosphereStokes_1,
     AtmosphereStokes_3,
     AtmosphereStorageStokes_1,
@@ -22,5 +21,7 @@ from ._core import (
 )
 from ._version import __version__
 from .atmosphere import Atmosphere
-from .engine import Engine
 from .output import Output, OutputIdeal
+from .engine import Engine
+
+from . import appconfig, climatology, constituent, mie, optical, test_util
