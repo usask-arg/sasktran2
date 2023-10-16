@@ -228,6 +228,10 @@ else()
   endif()
 endif()
 
+if(WIN32)
+  target_compile_options(sasktran2BuildProperties INTERFACE /bigobj)
+endif()
+
 # -------- END LAPACK FINDING -------
 
 message(STATUS "Lapack Configuration Complete")
