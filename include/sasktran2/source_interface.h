@@ -61,4 +61,3 @@ public:
      */
     virtual void end_of_ray_source(int wavelidx, int losidx, int threadidx, sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source) const = 0;
 };
-

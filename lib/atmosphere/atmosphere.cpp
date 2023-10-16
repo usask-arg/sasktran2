@@ -16,14 +16,14 @@ namespace sasktran2::atmosphere {
 
     }
 
-	template<int NSTOKES>
-	Atmosphere<NSTOKES>::Atmosphere(AtmosphereGridStorageFull<NSTOKES>&& storage, Surface&& surface, bool calculate_derivatives):
-		m_storage(storage),
-		m_surface(surface),
+    template<int NSTOKES>
+    Atmosphere<NSTOKES>::Atmosphere(AtmosphereGridStorageFull<NSTOKES>&& storage, Surface&& surface, bool calculate_derivatives):
+        m_storage(storage),
+        m_surface(surface),
         m_calculate_derivatives(calculate_derivatives)
-	{
+    {
 
-	}
+    }
 
     template<int NSTOKES>
     Atmosphere<NSTOKES>::Atmosphere(int nwavel, const sasktran2::Geometry1D &geometry, const sasktran2::Config &config,
@@ -94,7 +94,7 @@ namespace sasktran2::atmosphere {
                 }
             }
         }
-        
+
     }
 
 

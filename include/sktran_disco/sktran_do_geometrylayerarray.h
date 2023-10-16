@@ -16,7 +16,7 @@ namespace sasktran_disco {
     class GeometryLayerArray : public GeometryLayerArrayROP<NSTOKES>, public AzimuthDependencyCascade {
     protected:
         const PersistentConfiguration<NSTOKES, CNSTR>& m_config;
-        Eigen::MatrixXd								   m_chapman_factors;
+        Eigen::MatrixXd                                m_chapman_factors;
         Eigen::MatrixXd                                m_optical_interpolator;
         Eigen::VectorXd                                m_floor_h;
         Eigen::VectorXd                                m_ceiling_h;

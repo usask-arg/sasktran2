@@ -56,7 +56,7 @@ namespace sasktran_disco_lowlevel {
 
         std::vector<sasktran_disco::LineOfSight> los;
 
-        sasktran_disco::VectorDim3<sasktran_disco::LegendrePhaseContainer<NSTOKES>> lp_coszen(geometry->nlos);		//< Legendre polynomials evaluated at LOS coszen
+        sasktran_disco::VectorDim3<sasktran_disco::LegendrePhaseContainer<NSTOKES>> lp_coszen(geometry->nlos);      //< Legendre polynomials evaluated at LOS coszen
         los.resize(geometry->nlos);
 
         for(int i = 0; i < geometry->nlos; ++i) {

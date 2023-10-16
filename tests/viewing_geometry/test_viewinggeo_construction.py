@@ -1,5 +1,3 @@
-
-import numpy as np
 import sasktran2 as sk
 
 
@@ -17,4 +15,4 @@ def test_viewing_container():
 
     viewing_geo.add_ray(ray)
 
-    assert(len(viewing_geo.observer_rays) == 2)
+    assert len(viewing_geo.observer_rays) == 2

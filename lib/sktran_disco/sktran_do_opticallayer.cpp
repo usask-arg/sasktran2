@@ -67,30 +67,30 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>
 template <int NSTOKES, int CNSTR>
 sasktran_disco::OpticalLayer<NSTOKES, CNSTR>
 ::OpticalLayer(const PersistentConfiguration<NSTOKES, CNSTR>& config,
-			   LayerIndex index,
-			   double scat_ext,
-			   double tot_ext,
-			   std::unique_ptr<VectorDim1<sasktran_disco::LegendreCoefficient<NSTOKES>>> phasef_expansion,
-			   double optical_depth_ceiling,
-			   double optical_depth_floor,
-			   double altitude_ceiling,
-	           double altitude_floor,
-	           const InputDerivatives<NSTOKES>& input_derivatives):
-	OpticalLayerROP<NSTOKES>(config),
-	M_SSA(scat_ext/tot_ext),
-	M_SCAT_EXT(scat_ext),
-	M_TOT_EXT(tot_ext),
-	M_OPTICALDEPTH_CEILING(optical_depth_ceiling),
-	M_OPTICALDEPTH_FLOOR(optical_depth_floor),
-	M_OPTICAL_THICKNESS(optical_depth_floor - optical_depth_ceiling),
-	M_ALT_CEILING(altitude_ceiling),
-	M_ALT_FLOOR(altitude_floor),
-	m_lephasef(std::move(phasef_expansion)),
-	M_INDEX(index),
-	m_legendre_sum(config.nstr(), M_SSA, *this->M_LP_MU, *m_lephasef, config.pool().thread_data().legendre_sum_storage(index)),
-	m_solutions(config.pool().thread_data().rte_solution(index)),
-	m_compute_deriv(false),
-	m_input_derivs(input_derivatives),
+               LayerIndex index,
+               double scat_ext,
+               double tot_ext,
+               std::unique_ptr<VectorDim1<sasktran_disco::LegendreCoefficient<NSTOKES>>> phasef_expansion,
+               double optical_depth_ceiling,
+               double optical_depth_floor,
+               double altitude_ceiling,
+               double altitude_floor,
+               const InputDerivatives<NSTOKES>& input_derivatives):
+    OpticalLayerROP<NSTOKES>(config),
+    M_SSA(scat_ext/tot_ext),
+    M_SCAT_EXT(scat_ext),
+    M_TOT_EXT(tot_ext),
+    M_OPTICALDEPTH_CEILING(optical_depth_ceiling),
+    M_OPTICALDEPTH_FLOOR(optical_depth_floor),
+    M_OPTICAL_THICKNESS(optical_depth_floor - optical_depth_ceiling),
+    M_ALT_CEILING(altitude_ceiling),
+    M_ALT_FLOOR(altitude_floor),
+    m_lephasef(std::move(phasef_expansion)),
+    M_INDEX(index),
+    m_legendre_sum(config.nstr(), M_SSA, *this->M_LP_MU, *m_lephasef, config.pool().thread_data().legendre_sum_storage(index)),
+    m_solutions(config.pool().thread_data().rte_solution(index)),
+    m_compute_deriv(false),
+    m_input_derivs(input_derivatives),
     m_layercache(config.pool().thread_data().layer_cache(index)),
     m_postprocessing_cache(config.pool().thread_data().postprocessing_cache(index)),
     m_triple_product_holder_0(m_layercache.triple_product_holder),
@@ -102,30 +102,30 @@ sasktran_disco::OpticalLayer<NSTOKES, CNSTR>
     m_dual_bt_ceiling(m_layercache.dual_bt_ceiling),
     m_dual_bt_floor(m_layercache.dual_bt_floor)
 {
-	// Check that SSA is not approximately zero. If so then emit warning once and then dither SSA.
-	double ssa_dither = this->m_userspec->getSSAEqual1Dither();
-	if(1 - M_SSA < ssa_dither) {
-		const_cast<double&>(M_SSA) = 1 - ssa_dither;
-		m_legendre_sum.adjustSSA(M_SSA);
-	}
-	// Configure azimuthal expansion 
-	registerAzimuthDependency(m_legendre_sum);
+    // Check that SSA is not approximately zero. If so then emit warning once and then dither SSA.
+    double ssa_dither = this->m_userspec->getSSAEqual1Dither();
+    if(1 - M_SSA < ssa_dither) {
+        const_cast<double&>(M_SSA) = 1 - ssa_dither;
+        m_legendre_sum.adjustSSA(M_SSA);
+    }
+    // Configure azimuthal expansion
+    registerAzimuthDependency(m_legendre_sum);
 }
 
 template <int NSTOKES, int CNSTR>
 void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::configureDerivative() {
-	m_dual_thickness.resize(m_input_derivs.numDerivativeLayer(M_INDEX));
-	m_dual_thickness.layer_index = M_INDEX;
-	m_dual_thickness.layer_start = (uint)m_input_derivs.layerStartIndex(M_INDEX);
+    m_dual_thickness.resize(m_input_derivs.numDerivativeLayer(M_INDEX));
+    m_dual_thickness.layer_index = M_INDEX;
+    m_dual_thickness.layer_start = (uint)m_input_derivs.layerStartIndex(M_INDEX);
 
     m_dual_ssa.resize(m_input_derivs.numDerivativeLayer(M_INDEX));
     m_dual_ssa.layer_index = M_INDEX;
     m_dual_ssa.layer_start = (uint)m_input_derivs.layerStartIndex(M_INDEX);
 
-	m_dual_thickness.value = M_OPTICAL_THICKNESS;
+    m_dual_thickness.value = M_OPTICAL_THICKNESS;
     m_dual_ssa.value = M_SSA;
-	for (uint i = 0; i < m_input_derivs.numDerivativeLayer(M_INDEX); ++i) {
-		m_dual_thickness.deriv(i) = m_input_derivs.layerDerivatives()[m_dual_thickness.layer_start + i].d_optical_depth;
+    for (uint i = 0; i < m_input_derivs.numDerivativeLayer(M_INDEX); ++i) {
+        m_dual_thickness.deriv(i) = m_input_derivs.layerDerivatives()[m_dual_thickness.layer_start + i].d_optical_depth;
         m_dual_ssa.deriv(i) = m_input_derivs.layerDerivatives()[m_dual_ssa.layer_start + i].d_SSA;
     }
 
@@ -138,20 +138,20 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::configureDerivative() {
 
 template <int NSTOKES, int CNSTR>
 void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::configurePseudoSpherical(const Dual<double>& od_top, const Dual<double>& od_bottom) {
-	m_dual_bt_ceiling.resize(od_top.deriv.size(), false);
-	m_dual_bt_floor.resize(od_bottom.deriv.size(), false);
-	m_average_secant.resize(od_top.deriv.size(), false);
+    m_dual_bt_ceiling.resize(od_top.deriv.size(), false);
+    m_dual_bt_floor.resize(od_bottom.deriv.size(), false);
+    m_average_secant.resize(od_top.deriv.size(), false);
 
-	m_dual_bt_ceiling.value = std::exp(-1*od_top.value);
-	m_dual_bt_ceiling.deriv = m_dual_bt_ceiling.value * -1 * od_top.deriv;
+    m_dual_bt_ceiling.value = std::exp(-1*od_top.value);
+    m_dual_bt_ceiling.deriv = m_dual_bt_ceiling.value * -1 * od_top.deriv;
 
-	m_dual_bt_floor.value = std::exp(-1 * od_bottom.value);
-	m_dual_bt_floor.deriv = m_dual_bt_floor.value * -1 * od_bottom.deriv;
+    m_dual_bt_floor.value = std::exp(-1 * od_bottom.value);
+    m_dual_bt_floor.deriv = m_dual_bt_floor.value * -1 * od_bottom.deriv;
 
-	m_average_secant.value = (od_bottom.value - od_top.value) / m_dual_thickness.value;
-	m_average_secant.deriv = (od_bottom.deriv - od_top.deriv) / m_dual_thickness.value;
+    m_average_secant.value = (od_bottom.value - od_top.value) / m_dual_thickness.value;
+    m_average_secant.deriv = (od_bottom.deriv - od_top.deriv) / m_dual_thickness.value;
 
-	const auto seq = Eigen::seq(m_dual_thickness.layer_start, m_dual_thickness.layer_start + m_dual_thickness.deriv.size() - 1);
+    const auto seq = Eigen::seq(m_dual_thickness.layer_start, m_dual_thickness.layer_start + m_dual_thickness.deriv.size() - 1);
 
     if (m_dual_thickness.deriv.size() > 0) {
         m_average_secant.deriv(seq) += m_dual_thickness.deriv * od_top.value / (m_dual_thickness.value * m_dual_thickness.value) -
@@ -163,7 +163,7 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::configurePseudoSpherical(cons
 template <int NSTOKES, int CNSTR>
 void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::takeDerivative(bool take_deriv)
 {
-	m_compute_deriv = take_deriv;
+    m_compute_deriv = take_deriv;
 }
 
 template <int NSTOKES, int CNSTR>

@@ -41,4 +41,3 @@ void init_geometry(py::module_ &  m) {
             })
             ;
 }
-

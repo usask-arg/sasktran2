@@ -34,7 +34,7 @@ __pycache__
 cmake-build*
 .vscode
 *.dylib
-*.so 
+*.so
 *.dll
 .DS_store
 out/

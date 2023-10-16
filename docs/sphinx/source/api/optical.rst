@@ -13,4 +13,3 @@ Special Modules
 ---------------
 
 .. automodule:: sasktran2.optical.rayleigh
-

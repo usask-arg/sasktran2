@@ -7,7 +7,7 @@
 
 
 namespace sasktran2::atmosphere {
-    /** Class to represent the surface within the atmosphere.  Right now we just have a lambertian surface, plan to 
+    /** Class to represent the surface within the atmosphere.  Right now we just have a lambertian surface, plan to
      *  upgrade this later
      *
      */

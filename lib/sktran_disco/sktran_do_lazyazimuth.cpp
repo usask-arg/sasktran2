@@ -8,11 +8,11 @@ void sasktran_disco::LegendrePolynomials<1>::calculateAEOrder(AEOrder m, std::ve
 
     double theta = acos(m_value);
 
-	// Evaluate the associated Legendre polynomial ( order m, degree l=[0:M_NSTR) ) at m_value.
-	lepolys.resize(this->M_NSTR);
-	for(LPOrder l = 0; l < this->M_NSTR; ++l) {
+    // Evaluate the associated Legendre polynomial ( order m, degree l=[0:M_NSTR) ) at m_value.
+    lepolys.resize(this->M_NSTR);
+    for(LPOrder l = 0; l < this->M_NSTR; ++l) {
         lepolys[l].value = calculator.d(theta, l);
-	}
+    }
 }
 
 template <int NSTOKES, int CNSTR>
@@ -38,32 +38,32 @@ template <int NSTOKES, int CNSTR>
 void sasktran_disco::LegendreSumMatrix<NSTOKES, CNSTR>::calculateAEOrder(AEOrder m, LegendreSumMatrixStorage<NSTOKES>& sum_matrix)
 {
 
-	// Compute scattering matrix from streams to streams.
-	sum_matrix.M_SSA = M_SSA;
-	sum_matrix.resize(this->M_NSTR);
+    // Compute scattering matrix from streams to streams.
+    sum_matrix.M_SSA = M_SSA;
+    sum_matrix.resize(this->M_NSTR);
 
-	const auto& le_phasef = *M_LPE_PHASEF;
+    const auto& le_phasef = *M_LPE_PHASEF;
 
-	LPTripleProduct<NSTOKES> triple_product(m, (uint)le_phasef.size());
+    LPTripleProduct<NSTOKES> triple_product(m, (uint)le_phasef.size());
     sasktran_disco::TripleProductDerivativeHolder<NSTOKES> holder(this->M_NSTR);
 
-	const uint N = this->M_NSTR / 2;
-	for(StreamIndex i = 0; i < N; ++i) {
-		const auto& lp_out = M_LP_MU[m][i];
-		for(StreamIndex j = 0; j <= i; ++j) {
-			const uint linear_index_0 = sum_matrix.linear_index(i, j);
-			const uint linear_index_1 = sum_matrix.linear_index(i, j + N);
+    const uint N = this->M_NSTR / 2;
+    for(StreamIndex i = 0; i < N; ++i) {
+        const auto& lp_out = M_LP_MU[m][i];
+        for(StreamIndex j = 0; j <= i; ++j) {
+            const uint linear_index_0 = sum_matrix.linear_index(i, j);
+            const uint linear_index_1 = sum_matrix.linear_index(i, j + N);
 
-			const auto& lp_in = M_LP_MU[m][j];
-			triple_product.calculate(le_phasef, lp_out, lp_in);
+            const auto& lp_in = M_LP_MU[m][j];
+            triple_product.calculate(le_phasef, lp_out, lp_in);
 
             triple_product.negations_derivative_emplace(0, holder);
-			assign(linear_index_0, holder, sum_matrix);
+            assign(linear_index_0, holder, sum_matrix);
 
             triple_product.negations_derivative_emplace(1, holder);
             assign(linear_index_1, holder, sum_matrix);
-		}
-	}
+        }
+    }
 }
 
 template <>
@@ -177,8 +177,8 @@ void sasktran_disco::LegendreSumMatrix<4>::assign(int linear_index, const sasktr
 
 void sasktran_disco::AlbedoExpansion::calculateAEOrder(AEOrder m, sasktran_disco::Albedo& albedo)
 {
-	// Configure the BRDF object for the current order of the azimuth expansion.
-	albedo.configure(m, M_LOS, M_MU, M_CSZ, m_brdf.get(), m_nterms);
+    // Configure the BRDF object for the current order of the azimuth expansion.
+    albedo.configure(m, M_LOS, M_MU, M_CSZ, m_brdf.get(), m_nterms);
 }
 
 template class sasktran_disco::LegendrePolynomials<1>;

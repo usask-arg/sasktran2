@@ -29,15 +29,15 @@ namespace sasktran2 {
      * @tparam CSIZE -1 if the value storage is dynamically sized, else set to the constant size of the values
      */
     template<typename T, dualstorage DerivStorageE=dualstorage::dense, int CSIZE=-1>
-	class Dual {
-	private:
+    class Dual {
+    private:
         using DerivStorage = typename std::conditional<DerivStorageE==dualstorage::dense,
                 Eigen::Matrix<T, CSIZE, -1>, typename std::conditional<DerivStorageE==dualstorage::denseRowMajor,
                 Eigen::Matrix<T, CSIZE, -1, Eigen::RowMajor>,
                 typename std::conditional<DerivStorageE==dualstorage::sparse,
                 Eigen::SparseMatrix<T>, Eigen::SparseMatrix<T>>::type>::type>::type;
 
-	public:
+    public:
         Eigen::Vector<T, CSIZE> value; /**< values */
         DerivStorage deriv; /**< Derivative matrix of size (num_values, num_deriv) */
 
@@ -158,4 +158,3 @@ namespace sasktran2 {
     };
 
 }
-

@@ -1,6 +1,6 @@
 #pragma once
 
-// STL dependencies 
+// STL dependencies
 #include <algorithm>
 #include <memory>
 #include <numeric>
@@ -112,4 +112,3 @@
 #include "sktran_disco/sktran_do_postprocessing.h"
 #include "sktran_disco/sktran_do_layerarray.h"
 #include "sktran_disco/sktran_do_rte.h"
-

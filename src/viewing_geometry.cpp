@@ -30,7 +30,7 @@ void init_viewing_geometry(py::module_ &  m) {
                  )",
                  "tangent_altitude_m"_a, "relative_azimuth"_a, "observer_altitude_m"_a, "cos_sza"_a
                  );
-    
+
     py::class_<sasktran2::viewinggeometry::GroundViewingSolar, sasktran2::viewinggeometry::ViewingGeometryBase>(m, "GroundViewingSolar")
             .def(py::init<double, double, double, double>(),
             R"(
@@ -46,7 +46,7 @@ void init_viewing_geometry(py::module_ &  m) {
                 observer_altitude_m: float
                     Observer altitude relative to the earth [m]
                 cos_viewing_zenith: float
-                    Cosine of the viewing zenith angle at the ground point [unitless] 
+                    Cosine of the viewing zenith angle at the ground point [unitless]
             )",
             "cos_sza"_a,
             "relative_azimuth"_a,

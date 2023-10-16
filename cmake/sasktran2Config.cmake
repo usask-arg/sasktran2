@@ -1,6 +1,6 @@
-include( "${CMAKE_CURRENT_LIST_DIR}/sasktran2Targets.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/sasktran2Targets.cmake")
 
-include (CMakeFindDependencyMacro)
+include(CMakeFindDependencyMacro)
 
 find_dependency(OpenMP)
 find_dependency(Eigen3)

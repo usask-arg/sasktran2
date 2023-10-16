@@ -37,7 +37,7 @@ we recommend,
 conda env create -f conda/dev_env.yml
 ```
 
-For Windows you need to first install Visual Studio 2022, and then 
+For Windows you need to first install Visual Studio 2022, and then
 ```
 conda env create -f conda/dev_env_windows.yml
 ```

@@ -8,9 +8,7 @@ def test_vmr_altitude_construction():
     """
     alts = np.arange(0, 100001, 1000)
 
-    sk.constituent.VMRAltitudeAbsorber(sk.optical.O3DBM(),
-                                       alts,
-                                       np.ones_like(alts))
+    sk.constituent.VMRAltitudeAbsorber(sk.optical.O3DBM(), alts, np.ones_like(alts))
 
 
 def test_vmr_altitude_wf():
@@ -23,7 +21,14 @@ def test_vmr_altitude_wf():
 
     altitude_grid = np.arange(0, 65001, 1000.0)
 
-    geometry = sk.Geometry1D(0.6, 0, 6327000, altitude_grid, sk.InterpolationMethod.LinearInterpolation, sk.GeometryType.Spherical)
+    geometry = sk.Geometry1D(
+        0.6,
+        0,
+        6327000,
+        altitude_grid,
+        sk.InterpolationMethod.LinearInterpolation,
+        sk.GeometryType.Spherical,
+    )
 
     viewing_geo = sk.ViewingGeometry()
 
@@ -38,10 +43,9 @@ def test_vmr_altitude_wf():
 
     sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
 
-    atmosphere['rayleigh'] = sk.constituent.Rayleigh()
-    atmosphere['ozone'] = sk.constituent.VMRAltitudeAbsorber(sk.optical.O3DBM(),
-                                                            altitude_grid,
-                                                            np.ones_like(altitude_grid)*1e-6
-                                                           )
+    atmosphere["rayleigh"] = sk.constituent.Rayleigh()
+    atmosphere["ozone"] = sk.constituent.VMRAltitudeAbsorber(
+        sk.optical.O3DBM(), altitude_grid, np.ones_like(altitude_grid) * 1e-6
+    )
 
     engine.calculate_radiance(atmosphere)

@@ -21,4 +21,3 @@ The standard one, and the one you probably want, is :py:class:`sasktran2.Geometr
                                    altitude_grid_m=np.arange(0, 100001, 1000),
                                    interpolation_method=sk.InterpolationMethod.LinearInterpolation,
                                    geometry_type=sk.GeometryType.Spherical)
-

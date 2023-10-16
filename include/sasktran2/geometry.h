@@ -7,11 +7,11 @@ namespace sasktran2 {
      *  and ellipsoidal.  Note that currently only spherical is implemented for most classes, this is only included
      *  at the moment for future extensibility.
      */
-	enum geometrytype {
-		planeparallel,
-		spherical,
-		ellipsoidal
-	};
+    enum geometrytype {
+        planeparallel,
+        spherical,
+        ellipsoidal
+    };
 
     /** Struct defining a single location inside the atmosphere.  The core of this is a x,y,z position coordinate,
      *  and helper functions for things like radius.  The location can also hold optional information to aid in

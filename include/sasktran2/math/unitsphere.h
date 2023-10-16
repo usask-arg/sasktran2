@@ -113,4 +113,3 @@ namespace sasktran2::math {
         ) const override;
     };
 }
-

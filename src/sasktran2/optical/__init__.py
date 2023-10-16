@@ -1,29 +1,35 @@
-from pathlib import Path
-import sasktran2 as sk
+from typing import Optional
+
 import numpy as np
+
+import sasktran2 as sk
 from sasktran2.constants import K_BOLTZMANN
 
-from . import base
 from . import database
 
 
 class O3DBM(database.OpticalDatabaseGenericAbsorber):
-    def __init__(self, version: str = None) -> None:
+    def __init__(self, version: Optional[str] = None) -> None:
         if version is not None:
-            dbm_file = sk.appconfig.database_root().joinpath('cross_sections/o3/dbm_v{}'.format(version))
+            dbm_file = sk.appconfig.database_root().joinpath(
+                f"cross_sections/o3/dbm_v{version}"
+            )
         else:
             # Take the last version
-            dbm_file = list(sk.appconfig.database_root().joinpath('cross_sections/o3').glob('dbm_*'))[-1]
+            dbm_file = list(
+                sk.appconfig.database_root().joinpath("cross_sections/o3").glob("dbm_*")
+            )[-1]
 
         if dbm_file.exists():
             super().__init__(dbm_file)
         else:
-            msg = 'Could not find DBM file'
+            msg = "Could not find DBM file"
             raise OSError(msg)
 
 
-
-def pressure_temperature_to_numberdensity(pressure_pa: np.array, temperature_k: np.array):
+def pressure_temperature_to_numberdensity(
+    pressure_pa: np.array, temperature_k: np.array
+):
     """_summary_
 
     Parameters

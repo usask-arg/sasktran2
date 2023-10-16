@@ -113,7 +113,7 @@ void sasktran_disco::Radiance<1>::apply_transmission_factor(const Dual<double>& 
 template <int NSTOKES, int CNSTR>
 void sasktran_disco::Radiance<NSTOKES, CNSTR>::apply_transmission_factor(const Dual<double>& transmission) {
     deriv *= transmission.value;
-    
+
     if (transmission.deriv.size() > 0) {
         for (int s = 0; s < NSTOKES; ++s) {
             for (int k = 0; k < transmission.deriv.size(); ++k) {

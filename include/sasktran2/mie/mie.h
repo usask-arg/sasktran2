@@ -6,7 +6,7 @@ namespace sasktran2::mie {
     struct MieData {
         Eigen::VectorXd Qext; // Extinction efficiency [nsize]
         Eigen::VectorXd Qsca; // Scattering efficiency [nsize]
-        
+
         Eigen::MatrixXcd S1; // Scattering amplitude1 [nsize, nangles]
         Eigen::MatrixXcd S2; // Scattering amplitude2 [nsize, nangles]
 
@@ -44,7 +44,7 @@ namespace sasktran2::mie {
 
             /**
              * Performs the Mie computation for an array of size parameters, a single refractive index
-             * 
+             *
              * @param size_param Mie size parameter
              * @param refractive_index Mie refractive index
              * @param cos_angles Cosine of angles to calculate the scattering amplitide at

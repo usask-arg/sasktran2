@@ -89,7 +89,7 @@ void sasktran_disco::LPTripleProduct<NSTOKES, CNSTR>::negations_derivative_empla
     else {
         spdlog::error("LPTripleProduct<NSTOKES, CNSTR>::negations_derivative_emplace has no implementation for NSTOKES == {}", NSTOKES);
     }
-    
+
 }
 
 
@@ -136,7 +136,7 @@ void sasktran_disco::LPTripleProduct<NSTOKES, CNSTR>::calculate_and_emplace(
             holder_1_negation.d_by_legendre_coeff[l] -= lp_factor;
         }
     } else if constexpr (NSTOKES == 3) {
-        // Implementation for NSTOKES == 3, standard calculation 
+        // Implementation for NSTOKES == 3, standard calculation
 
         this->calculate(m, lephase, lp1, lp2);
         this->negations_derivative_emplace(0, holder_0_negation);

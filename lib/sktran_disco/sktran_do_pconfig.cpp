@@ -7,7 +7,7 @@ template <int NSTOKES, int CNSTR>
 void sasktran_disco::PersistentConfiguration<NSTOKES, CNSTR>::configureLowLevel(SKTRAN_DO_UserSpec& userspecmemory, const sasktran_disco_lowlevel::Config& config, const sasktran_disco_lowlevel::ViewingGeometry& geometry) {
     m_opticalpropertiesmutex = &m_no_mutex_given_mutex;
 
-	m_userspec = &userspecmemory;
+    m_userspec = &userspecmemory;
 
     const_cast<double&>(this->M_CSZ) = geometry.cos_sza;
     const_cast<double&>(this->M_SAZ) = 0;
@@ -24,19 +24,19 @@ void sasktran_disco::PersistentConfiguration<NSTOKES, CNSTR>::configureLowLevel(
     const_cast<uint&>(this->M_NSTR) = config.nstr;
     const_cast<uint&>(this->M_NLYR) = config.nlyr;
 
-	userspecmemory.configure(config.nstr, config.nlyr);
+    userspecmemory.configure(config.nstr, config.nlyr);
 
     this->M_MU = m_userspec->getStreamAbscissae();
     this->M_WT = m_userspec->getStreamWeights();
     configureLP(m_userspec);
 
-	// TODO: Do we have to do anything here for weighting functions?
+    // TODO: Do we have to do anything here for weighting functions?
     // m_perturb_quantities = m_userspec->perturbations();
-	const_cast<bool&>(this->M_USE_PSEUDO_SPHERICAL) = config.usepseudospherical;
+    const_cast<bool&>(this->M_USE_PSEUDO_SPHERICAL) = config.usepseudospherical;
 
-	const_cast<bool&>(this->M_USE_LOS_SPHERICAL) = false;
-	const_cast<bool&>(this->M_SS_ONLY) = false;
-	const_cast<size_t&>(this->M_NUM_SZA) = 1;
+    const_cast<bool&>(this->M_USE_LOS_SPHERICAL) = false;
+    const_cast<bool&>(this->M_SS_ONLY) = false;
+    const_cast<size_t&>(this->M_NUM_SZA) = 1;
 
     m_lp_csz_storage.resize(1);
     m_lp_csz_storage[0] = std::unique_ptr<LegendrePolynomials<NSTOKES>>(new LegendrePolynomials<NSTOKES>(this->M_NSTR, this->M_CSZ));
@@ -44,11 +44,11 @@ void sasktran_disco::PersistentConfiguration<NSTOKES, CNSTR>::configureLowLevel(
     m_pool.init(this->M_NLYR, this->M_NSTR);
     m_poolindex = 0;
 
-	for (auto& lp_csz : m_lp_csz_storage) {
-		for (int m = 0; m < (int)this->M_NSTR; ++m) {
-			lp_csz->configureAEOrder(m);
-		}
-	}
+    for (auto& lp_csz : m_lp_csz_storage) {
+        for (int m = 0; m < (int)this->M_NSTR; ++m) {
+            lp_csz->configureAEOrder(m);
+        }
+    }
 
 }
 
@@ -111,26 +111,26 @@ void sasktran_disco::PersistentConfiguration<NSTOKES, CNSTR>::configure(SKTRAN_D
 template <int NSTOKES, int CNSTR>
 void sasktran_disco::PersistentConfiguration<NSTOKES, CNSTR>::configureModelSpecs(const SKTRAN_DO_UserSpec* userspec)
 {
-	m_userspec = userspec;
-	const_cast<uint&>(this->M_NSTR) = m_userspec->getNumberOfStreams();
-	const_cast<uint&>(this->M_NLYR) = m_userspec->getNumberOfLayers();
-	this->M_MU = m_userspec->getStreamAbscissae();
-	this->M_WT = m_userspec->getStreamWeights();
+    m_userspec = userspec;
+    const_cast<uint&>(this->M_NSTR) = m_userspec->getNumberOfStreams();
+    const_cast<uint&>(this->M_NLYR) = m_userspec->getNumberOfLayers();
+    this->M_MU = m_userspec->getStreamAbscissae();
+    this->M_WT = m_userspec->getStreamWeights();
     configureLP(userspec);
-	m_perturb_quantities = m_userspec->perturbations();
-	const_cast<bool&>(this->M_USE_PSEUDO_SPHERICAL) = m_userspec->getUsePseudoSpherical();
-	const_cast<SKTRAN_DO_UserSpec::LayerConstructionMethod&>(this->M_LAYER_CONSTRUCTION) = m_userspec->getLayerConstructionMethod();
+    m_perturb_quantities = m_userspec->perturbations();
+    const_cast<bool&>(this->M_USE_PSEUDO_SPHERICAL) = m_userspec->getUsePseudoSpherical();
+    const_cast<SKTRAN_DO_UserSpec::LayerConstructionMethod&>(this->M_LAYER_CONSTRUCTION) = m_userspec->getLayerConstructionMethod();
 
-	const_cast<bool&>(this->M_USE_LOS_SPHERICAL) = m_userspec->getUseLOSSpherical();
-	const_cast<bool&>(this->M_SS_ONLY) = m_userspec->getSSOnly();
-	const_cast<size_t&>(this->M_NUM_SZA) = m_userspec->getNumSZA();
+    const_cast<bool&>(this->M_USE_LOS_SPHERICAL) = m_userspec->getUseLOSSpherical();
+    const_cast<bool&>(this->M_SS_ONLY) = m_userspec->getSSOnly();
+    const_cast<size_t&>(this->M_NUM_SZA) = m_userspec->getNumSZA();
     const_cast<double&>(this->M_SZA_REL_SEP) = m_userspec->getSZARelSep();
     const_cast<bool&>(this->M_USE_GREENS_FUNCTION) = m_userspec->getUseGreensFunction();
 
 
-	if(m_userspec->getForcedNumberAzimuthTerms() > this->M_NSTR) {
-		throw InvalidConfiguration("Forced number of azimuth terms must be less than or equal to the number of streams!");
-	}
+    if(m_userspec->getForcedNumberAzimuthTerms() > this->M_NSTR) {
+        throw InvalidConfiguration("Forced number of azimuth terms must be less than or equal to the number of streams!");
+    }
 }
 
 template <int NSTOKES, int CNSTR>
@@ -145,4 +145,3 @@ void sasktran_disco::PersistentConfiguration<NSTOKES, CNSTR>::configureLP(const 
 
 
 SASKTRAN_DISCO_INSTANTIATE_TEMPLATE(sasktran_disco::PersistentConfiguration);
-

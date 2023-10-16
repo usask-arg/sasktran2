@@ -100,4 +100,3 @@ TEST_CASE("Spherical Shell Raytracer - Observer Inside Limb Viewing", "[sasktran
     REQUIRE(fabs(tangent_altitude - min_alt) < 1e-8);
 
 }
-

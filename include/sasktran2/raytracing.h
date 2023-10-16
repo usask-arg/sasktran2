@@ -60,7 +60,7 @@ namespace sasktran2::raytracing {
         sasktran2::viewinggeometry::ViewingRay observer_and_look; /**< The observer location and look direction */
 
         bool is_straight; /**< True if the ray is straight, i.e., the look vector does not change along the ray */
-        bool ground_is_hit;	/**< True if the ground is hit by the ray */
+        bool ground_is_hit; /**< True if the ground is hit by the ray */
 
         std::vector<SphericalLayer> layers; /**< Set of traced ray layers, starting from the end of the ray moving towards the observer */
 
@@ -107,10 +107,10 @@ namespace sasktran2::raytracing {
             proj = -1;
         }
         // TODO: Check this, is this right?
-        
+
         saa = -1*acos(proj);
          */
-        
+
         // Take sun to by the x axis, then the y axis is up cross sun
         Eigen::Vector3d y_axis = local_up.cross(sun_projceted);
 

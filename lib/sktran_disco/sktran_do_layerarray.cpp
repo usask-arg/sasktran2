@@ -78,7 +78,7 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::computeReflectedIntensit
             // LCoeffs have full derivatives, for some reason stream transmittance is a full dual even though it should be layer?
             for(uint k = 0; k < input_deriv.numDerivative(); ++k) {
                 stream_contrib.deriv(k, s1) += solution.boundary.L_coeffs.deriv(k, j) * solution.value.dual_homog_plus().value(homogIndex) * stream_transmittance.value;
-				stream_contrib.deriv(k, s1) += solution.boundary.L_coeffs.value(j) * solution.value.dual_homog_plus().value(homogIndex) * stream_transmittance.deriv(k);
+                stream_contrib.deriv(k, s1) += solution.boundary.L_coeffs.value(j) * solution.value.dual_homog_plus().value(homogIndex) * stream_transmittance.deriv(k);
             }
             // Homog only have layer derivs
             for(int k = 0; k < numLayerDeriv; ++k) {
@@ -755,7 +755,7 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(const saskt
         // Start by telling each layer to calculate the derivative of thickness
         layer->configureDerivative();
     }
-    
+
     configureTransmission();
 
     // Configure azimuthal dependencies
@@ -886,9 +886,9 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::assignLegendreDerivative
                                                                                  double species_ssa,
                                                                                  double layer_ssa,
                                                                                  double thickness) const {
-	for (uint l = 0; l < this->M_NSTR; ++l)
-	{
-		d_legendre[l].a1 = species_ssa / (thickness * layer_ssa) * (species_legendre(l, 0) - layer_legendre[l].a1);
+    for (uint l = 0; l < this->M_NSTR; ++l)
+    {
+        d_legendre[l].a1 = species_ssa / (thickness * layer_ssa) * (species_legendre(l, 0) - layer_legendre[l].a1);
 
         if constexpr(NSTOKES > 2) {
             d_legendre[l].a2 = species_ssa / (thickness * layer_ssa) * (species_legendre(l, 1) - layer_legendre[l].a2);
@@ -900,7 +900,7 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::assignLegendreDerivative
             d_legendre[l].a4 = species_ssa / (thickness * layer_ssa) * (species_legendre(l, 3) - layer_legendre[l].a4);
             d_legendre[l].b2 = species_ssa / (thickness * layer_ssa) * (species_legendre(l, 5) - layer_legendre[l].b1);
         }
-	}
+    }
 }
 
 
@@ -916,40 +916,40 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::assignLegendreDerivative
 template <int NSTOKES, int CNSTR>
 void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::configureTest(const PersistentConfiguration<NSTOKES, CNSTR>& config, const std::vector<testing::TestLayer<NSTOKES>>& testlayers)
 {
-	m_chapman_factors.resize(this->M_NLYR, this->M_NLYR);
+    m_chapman_factors.resize(this->M_NLYR, this->M_NLYR);
 
     // TODO: if heights are given as part of the layer interface we could calculate real chapman factors
-	m_chapman_factors.setConstant(1 / this->M_CSZ);
+    m_chapman_factors.setConstant(1 / this->M_CSZ);
 
-	m_layers.reserve(this->M_NLYR);
-	double od_ceil = 0;
-	for(LayerIndex lidx = 0; lidx < this->M_NLYR; ++lidx) {
+    m_layers.reserve(this->M_NLYR);
+    double od_ceil = 0;
+    for(LayerIndex lidx = 0; lidx < this->M_NLYR; ++lidx) {
 
         // Copy the legendre coefficients to a new vector
         std::unique_ptr<VectorDim1<sasktran_disco::LegendreCoefficient<NSTOKES>>> lephasef(new VectorDim1<sasktran_disco::LegendreCoefficient<NSTOKES>>);
 
         lephasef->resize(this->M_NSTR);
         for( int i = 0; i < (int)this->M_NSTR; ++i) {
-			(*lephasef)[i] = testlayers[lidx].lephasef[i];
+            (*lephasef)[i] = testlayers[lidx].lephasef[i];
         }
 
-		m_layers.push_back(
-			std::unique_ptr<OpticalLayer<NSTOKES, CNSTR>>(new OpticalLayer<NSTOKES, CNSTR>(config,
-										   lidx,
-										   testlayers[lidx].ssa,
-										   1.0,
-										   std::move(lephasef),
-										   od_ceil,
-										   od_ceil + testlayers[lidx].optical_depth,
-				-1, -1,
-										   m_input_derivatives)));
-		od_ceil += testlayers[lidx].optical_depth;
-	}
-	// Configure azimuthal dependencies
-	for(auto& layer : m_layers) {
-		registerAzimuthDependency(*layer);
-	}
-	registerAzimuthDependency(m_albedo);
+        m_layers.push_back(
+            std::unique_ptr<OpticalLayer<NSTOKES, CNSTR>>(new OpticalLayer<NSTOKES, CNSTR>(config,
+                                           lidx,
+                                           testlayers[lidx].ssa,
+                                           1.0,
+                                           std::move(lephasef),
+                                           od_ceil,
+                                           od_ceil + testlayers[lidx].optical_depth,
+                -1, -1,
+                                           m_input_derivatives)));
+        od_ceil += testlayers[lidx].optical_depth;
+    }
+    // Configure azimuthal dependencies
+    for(auto& layer : m_layers) {
+        registerAzimuthDependency(*layer);
+    }
+    registerAzimuthDependency(m_albedo);
 }
 
 SASKTRAN_DISCO_INSTANTIATE_TEMPLATE(sasktran_disco::OpticalLayerArray);

@@ -2,7 +2,7 @@
 #include <sasktran2/mie/linearized_mie.h>
 
 namespace sasktran2::mie {
-    
+
         LinearizedMie::LinearizedMie() {
         }
 
@@ -13,5 +13,5 @@ namespace sasktran2::mie {
                                                MieOutput& output) {
 
         }
-    
+
 }

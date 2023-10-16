@@ -148,9 +148,9 @@ namespace sasktran_disco {
          * Set the altitude grid where SASKTRAN will poll optical properties
          * before  caching.
          *
-         *	@param[in] altitudes The altitudes in meters, and in ascending order.
-         *	The first element in this array will become the ground altitude and the
-         *	last element will become the TOA altitude.
+         *  @param[in] altitudes The altitudes in meters, and in ascending order.
+         *  The first element in this array will become the ground altitude and the
+         *  last element will become the TOA altitude.
          */
         SKTRAN_DO_UserSpec* setAltitudeGrid(const std::vector<double>& altitudes);
 

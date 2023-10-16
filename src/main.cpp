@@ -25,4 +25,3 @@ PYBIND11_MODULE(_core, m) {
     init_engine(m);
     init_mie(m);
 }
-

@@ -334,4 +334,3 @@ namespace sasktran_disco_lowlevel {
     };
 
 }
-

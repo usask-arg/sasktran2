@@ -38,4 +38,3 @@ void init_config(py::module_ &  m) {
             .def_property("num_streams", &sasktran2::Config::num_do_streams, &sasktran2::Config::set_num_do_streams)
             ;
 }
-

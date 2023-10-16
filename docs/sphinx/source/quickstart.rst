@@ -12,7 +12,7 @@ SASKTRAN2 requires four things in order to perform the radiative transfer calcul
  * A specification of the model geometry, and a global grid where atmospheric parameters are specified on.  This is handled by the :py:class:`sasktran2.Geometry1D` object
  * A :py:class:`sasktran2.ViewingGeometry` object that specifies the viewing conditions we want output at.
  * A :py:class:`sasktran2.Atmosphere` class that defines the atmospheric state
-  
+
 The Configuration object
 ------------------------
 The :py:class:`sasktran2.Config` object stores all of the user configuration options that are necessary for the calculation,
@@ -62,7 +62,7 @@ We can add a set of four limb viewing lines of sight through,
                                       cos_sza=0.6)
         viewing_geo.add_ray(ray)
 
-The Atmospheric State 
+The Atmospheric State
 ---------------------
 We start by constructing our :py:class:`sasktran2.Atmosphere` object,
 
@@ -96,7 +96,7 @@ The radiative transfer calculation is done through the :py:class:`sasktran2.Engi
     engine = sk.Engine(config, model_geometry, viewing_geo)
 
 Upon construction, all of the geometry information is calculated and cached. In order to do the actual
-calculation, we pass in the :py:class:`sasktran2.Atmosphere` object 
+calculation, we pass in the :py:class:`sasktran2.Atmosphere` object
 
 .. ipython:: python
 

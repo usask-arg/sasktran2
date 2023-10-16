@@ -68,4 +68,3 @@ void init_atmosphere(py::module_ &  m) {
                       [](sasktran2::atmosphere::Surface& surface, const Eigen::VectorXd& albedo) { surface.albedo() = albedo; }
         );
 }
-

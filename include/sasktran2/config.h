@@ -6,7 +6,7 @@ namespace sasktran2 {
 
     /** User Configuration object for the SASKTRAN2 model, all values have default options.
      */
-	class Config {
+    class Config {
 
     public:
         /** Enum determining the type of single scatter source used within the model.
@@ -308,5 +308,5 @@ namespace sasktran2 {
         WeightingFunctionPrecision m_wf_precision;
 
         bool m_initialize_hr_with_do_solution;
-	};
+    };
 }
