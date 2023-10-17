@@ -83,7 +83,18 @@ class O3DBM(database.OpticalDatabaseGenericAbsorber):
 
 class NO2Vandaele(database.OpticalDatabaseGenericAbsorber):
     def __init__(self) -> None:
-        """ """
+        """
+        Calculates the absorption cross section of NO2 molecules from 230 nm to 1000 nm at 220 K to 294 K following [1]
+
+        .. [1] Vandaele, Ann Carine, et al. "Measurements of the NO2 absorption cross-section from 42 000 cm-1 to
+            10 000 cm-1 (238-1000 nm) at 220 K and 294 K." Journal of Quantitative Spectroscopy and Radiative Transfer
+            59.3-5 (1998): 171-184.
+
+        Raises
+        ------
+        OSError
+            If the Vandaele file cannot be found
+        """
         v_file = sk.appconfig.database_root().joinpath("cross_sections/no2/vandaele.nc")
 
         if v_file.exists():
