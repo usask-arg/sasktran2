@@ -5,35 +5,28 @@ import pandas as pd
 import xarray as xr
 import sasktran2 as sk
 
-DBM_DIR = "/Users/dannyz/OneDrive - University of Saskatchewan/sasktran_databases/input/cross_sections/o3/dbm/"
-OUT_DIR = "/Users/dannyz/OneDrive - University of Saskatchewan/sasktran_databases/dist/cross_sections/o3/"
+V_DIR = "/Users/dannyz/OneDrive - University of Saskatchewan/sasktran_databases/input/cross_sections/no2/vandaele/"
+OUT_DIR = "/Users/dannyz/OneDrive - University of Saskatchewan/sasktran_databases/dist/cross_sections/no2/"
 
 
 all_wv = []
 all_xs = []
 all_T = []
-for dbm_file in Path(DBM_DIR).iterdir():
-    data = pd.read_csv(
-        dbm_file,
-        header=3,
-        converters={
-            0: lambda x: float(x.replace("{", "").replace("}", "").replace(" ", ""))
-            if x is not None
-            else 0,
-            1: lambda x: float(x.replace("{", "").replace("}", "").replace(" ", ""))
-            if x is not None
-            else 0,
-        },
-        skipfooter=1,
-    )
+for no2_file in Path(V_DIR).iterdir():
+    data = pd.read_csv(no2_file.as_posix(), header=0, sep="\s+")
 
-    wavelength_nm = data.values[:, 0].astype("float")
-    xs_cm2 = data.values[:, 1].astype("float")
+    wavelength_nm = 1e7 / data.values[:, 1].astype("float")
+    xs_cm2 = data.values[:, 2].astype("float")
 
-    temp_k = float(dbm_file.stem[7:10])
+    sort_idx = np.argsort(wavelength_nm)
 
-    all_wv.append(wavelength_nm)
-    all_xs.append(xs_cm2)
+    if "c" in no2_file.stem:
+        temp_k = 220
+    else:
+        temp_k = 294
+
+    all_wv.append(wavelength_nm[sort_idx])
+    all_xs.append(xs_cm2[sort_idx])
     all_T.append(temp_k)
 
 combined_wv = np.sort(np.unique(np.hstack(all_wv)))
@@ -76,10 +69,7 @@ for i in range(len(combined_wv)):
 
 ds = xr.Dataset(
     {"xs": (["temperature", "wavelength_nm"], combined_xs / 1e4)},
-    coords={
-        "temperature": all_T,
-        "wavelength_nm": sk.optical.air_wavelength_to_vacuum_wavelength(combined_wv),
-    },
+    coords={"temperature": all_T, "wavelength_nm": combined_wv},
 )
 
-ds.to_netcdf(Path(OUT_DIR).joinpath("dbm.nc").as_posix())
+ds.to_netcdf(Path(OUT_DIR).joinpath("vandaele.nc").as_posix())
