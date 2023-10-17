@@ -103,7 +103,7 @@ def test_vmr_altitude_wf_interpolated_grid():
         engine = sk.Engine(scen["config"], scen["geometry"], scen["viewing_geo"])
 
         radiance = sk.test_util.wf.numeric_wf(
-            atmosphere["ozone"].vmr, 0.0001, engine, atmosphere, "wf_ozone_vmr"
+            atmosphere["ozone"].vmr, 0.0051, engine, atmosphere, "wf_ozone_vmr"
         )
 
         sk.test_util.wf.validate_wf(
