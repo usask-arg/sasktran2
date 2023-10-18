@@ -82,10 +82,8 @@ We start by constructing our :py:class:`sasktran2.Atmosphere` object,
 
 .. ipython:: python
 
-    atmosphere['ozone'] = sk.constituent.VMRAltitudeAbsorber(sk.optical.O3DBM(),
-                                                             model_geometry.altitudes(),
-                                                             np.ones_like(model_geometry.altitudes())*1e-6
-                                                             )
+    atmosphere['ozone'] = sk.climatology.mipas.constituent("O3", sk.optical.O3DBM())
+    atmosphere['no2'] = sk.climatology.mipas.constituent("NO2", sk.optical.NO2Vandaele())
 
 Performing the Calculation
 --------------------------

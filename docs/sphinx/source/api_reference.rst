@@ -15,4 +15,5 @@ API Reference
    api/optical
    api/output
    api/viewing_geometry
+   api/climatology
    api/util
