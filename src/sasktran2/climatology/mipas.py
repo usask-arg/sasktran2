@@ -95,22 +95,6 @@ def constituent(
 
     Note: Species in the "Minor" category do not have a climatology associated VMR.  Instead they have single VMR profile
 
-    Parameters
-    ----------
-    species : str
-        The species to include, see the table below for supported species
-    optical_property : OpticalProperty
-        The optical property to use for the given species
-    dataset : str, optional
-        Dataset to use, see table below for options, by default "fascode"
-    climatology : str, optional
-        Climatology to use, see table below for options, by default "std"
-
-    Returns
-    -------
-    sk.constituent.VMRAltitudeAbsorber
-        The resulting constituent for the given species and profile
-
     The following table lists the species supported by each climatology.
     Each dataset contains several different climatologies. Each climatology contains unique profiles of temperature,
     pressure, and VMRs of the major species. The VMRs for the minor species are the same for all climatologies in each
@@ -139,6 +123,23 @@ def constituent(
     |            | sum (Polar Summer)              | F11, F12, F14, F22, CCl4, COF2, |                                 |
     |            | equ (Equatorial Day)            | H2O2, C2H2, C2H6, OCS, SO2, SF6 |                                 |
     +------------+---------------------------------+---------------------------------+---------------------------------+
+
+    Parameters
+    ----------
+    species : str
+        The species to include, see the table below for supported species
+    optical_property : OpticalProperty
+        The optical property to use for the given species
+    dataset : str, optional
+        Dataset to use, see table below for options, by default "fascode"
+    climatology : str, optional
+        Climatology to use, see table below for options, by default "std"
+
+
+    Returns
+    -------
+    sk.constituent.VMRAltitudeAbsorber
+        The resulting constituent for the given species and profile
     """
     atm_file = climatology if climatology.endswith(".atm") else climatology + ".atm"
     file_path = _atm_file_path(dataset, atm_file)
