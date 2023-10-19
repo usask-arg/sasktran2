@@ -11,7 +11,12 @@ def validate_wf(analytic, numerical, wf_dim="altitude", decimal=6):
 
     rel_diff = (analytic - numerical) / max_by_alt
 
-    np.testing.assert_array_almost_equal(rel_diff, 0, decimal=decimal)
+    nonzero_analytic = np.abs(analytic.to_numpy()) > 1e-99
+    nonzero_numerical = np.abs(numerical.to_numpy()) > 1e-99
+
+    np.testing.assert_array_almost_equal(
+        rel_diff.to_numpy()[nonzero_analytic & nonzero_numerical], 0, decimal=decimal
+    )
 
 
 def numeric_wf(

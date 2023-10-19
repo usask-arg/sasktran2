@@ -70,7 +70,7 @@ TEST_CASE("do_wf_bench", "[sasktran2][engine]") {
     atmo.storage().leg_coeff.chip(0, 0).setConstant(1);
     atmo.storage().leg_coeff.chip(2, 0).setConstant(0.5);
 
-    atmo.storage().resize_derivatives(nwavel, 101, 16, 1, 202);
+    atmo.storage().resize_derivatives(1);
 
     atmo.storage().ssa.setConstant(0.3);
 

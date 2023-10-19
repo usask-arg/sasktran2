@@ -152,3 +152,49 @@ def test_wf_ssa():
             numeric_wf,
         )
         validate_wf(radiance["wf_ssa"], radiance["wf_ssa_numeric"], decimal=6)
+
+
+def test_wf_legendre():
+    """
+    Verifies that the legendre coefficient derivatives are accurate to some decimal places
+    """
+    D_L = 1e-5
+    NDERIV_CHECK = 4
+    test_scens = _raw_scenarios()
+
+    for scen in test_scens:
+        engine = sk.Engine(scen["config"], scen["geometry"], scen["viewing_geo"])
+
+        radiance = engine.calculate_radiance(scen["atmosphere"])
+
+        for i in range(scen["atmosphere"].storage.leg_coeff.shape[0]):
+            if i == 0:
+                continue
+            if i > NDERIV_CHECK:
+                break
+
+            numeric_wf = np.zeros_like(radiance[f"wf_leg_coeff_{i}"].values)
+
+            for j in range(len(radiance["altitude"])):
+                scen["atmosphere"].storage.leg_coeff[i, j] += D_L
+                radiance_above = engine.calculate_radiance(scen["atmosphere"])
+
+                scen["atmosphere"].storage.leg_coeff[i, j] -= 2 * D_L
+                radiance_below = engine.calculate_radiance(scen["atmosphere"])
+
+                scen["atmosphere"].storage.leg_coeff[i, j] += D_L
+
+                numeric_wf[:, :, :, j] = (
+                    radiance_above["radiance"].to_numpy()
+                    - radiance_below["radiance"].to_numpy()
+                ) / (2 * D_L)
+
+            radiance[f"wf_leg_coeff_{i}_numeric"] = (
+                ["stokes", "wavelength", "los", "altitude"],
+                numeric_wf,
+            )
+            validate_wf(
+                radiance[f"wf_leg_coeff_{i}"],
+                radiance[f"wf_leg_coeff_{i}_numeric"],
+                decimal=6,
+            )

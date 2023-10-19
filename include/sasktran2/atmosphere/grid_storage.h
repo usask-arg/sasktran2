@@ -58,9 +58,11 @@ namespace sasktran2::atmosphere {
             scatderivstart = 0;
         }
 
-        void resize_derivatives(int nwavel, int numgeo, int legendre,
-                                int numderiv, int derivstart) {
-            scatderivstart = derivstart;
+        void resize_derivatives(int numderiv) {
+            int legendre = leg_coeff.dimension(0);
+            int numgeo = leg_coeff.dimension(1);
+            int nwavel = leg_coeff.dimension(2);
+            scatderivstart = 2 * numgeo;
 
             d_leg_coeff.resize(legendre, numgeo, nwavel, numderiv);
             d_f.resize(numgeo, nwavel, numderiv);
