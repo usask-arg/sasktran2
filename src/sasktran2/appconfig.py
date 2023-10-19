@@ -59,6 +59,15 @@ def database_root() -> Path:
     return Path(dir)
 
 
+def are_extended_db_downloaded() -> bool:
+    """
+    Checks if the extended databases are downloaded
+    """
+    if database_root() is None:
+        return False
+    return database_root().joinpath("cross_sections/h2o/hitran_01nm_res.nc").exists()
+
+
 def download_standard_databases(version: str = "latest"):
     user_config = load_user_config()
 
@@ -92,5 +101,27 @@ def download_standard_databases(version: str = "latest"):
     save_user_config(user_config)
 
 
-if __name__ == "__main__":
-    download_standard_databases()
+def download_extended_databases(version: str = "latest"):
+    db_root = database_root()
+
+    if db_root is None:
+        msg = "Database root not set"
+        raise OSError(msg)
+
+    output_file_temp = db_root.joinpath(f"v_{version}_extended.zip")
+
+    if output_file_temp.exists():
+        output_file_temp.unlink()
+
+    try:
+        urllib.request.urlretrieve(
+            f"https://arg.usask.ca/sasktranfiles/sasktran2_db/v_{version}_extended.zip",
+            filename=output_file_temp.as_posix(),
+        )
+        with zipfile.ZipFile(output_file_temp.as_posix(), "r") as zip_ref:
+            zip_ref.extractall(db_root)
+    except Exception as e:
+        logging.exception(e)
+
+    if output_file_temp.exists():
+        output_file_temp.unlink()

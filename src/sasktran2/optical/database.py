@@ -34,14 +34,14 @@ class OpticalDatabaseGenericAbsorber(OpticalProperty):
                 msg = "temperature_k must be specified in Atmosphere to use OpticalDatabaseGenericAbsorber"
                 raise ValueError(msg)
 
-            interp_handler["temperature"] = atmo.temperature_k
+            interp_handler["temperature"] = ("z", atmo.temperature_k)
 
         if "pressure" in coords:
             if atmo.pressure_pa is None:
                 msg = "pressure_pa must be specified in Atmosphere to use OpticalDatabaseGenericAbsorber"
                 raise ValueError(msg)
 
-            interp_handler["pressure"] = atmo.pressure_pa
+            interp_handler["pressure"] = ("z", atmo.pressure_pa)
 
         if "wavelength_nm" in coords:
             if atmo.wavelengths_nm is None:
