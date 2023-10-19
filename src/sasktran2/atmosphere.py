@@ -1,3 +1,4 @@
+import logging
 from copy import copy
 from dataclasses import dataclass
 from typing import List, Optional, Union
@@ -375,6 +376,7 @@ class Atmosphere:
         Union[sk.AtmosphereStokes_1, sk.AtmosphereStokes_3]
         """
         if len(self._constituents) > 0:
+            logging.debug("Setting atmosphere from constituents")
             # Using the constituent interface
             if self._storage_needs_reset:
                 self._zero_storage()
@@ -389,6 +391,7 @@ class Atmosphere:
             if self._calculate_derivatives:
                 for name, constituent in self._constituents.items():
                     self._derivs[name] = constituent.register_derivative(self, name)
+            logging.debug("Finished setting atmosphere from constituents")
         else:
             # using the raw interface
             if self._calculate_derivatives and len(self._derivs) == 0:
@@ -409,7 +412,6 @@ class Atmosphere:
                 )
 
                 # TODO: Also calculate dlegendre for raw? probably...
-
         # Store the unscaled optical properties for use in the derivative mappings
         self._unscaled_ssa = copy(self.storage.ssa)
         self._unscaled_extinction = copy(self.storage.total_extinction)

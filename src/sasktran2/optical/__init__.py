@@ -146,17 +146,59 @@ class HITRANUV(database.OpticalDatabaseGenericAbsorber):
             raise OSError(msg)
 
 
+class HITRANTabulated(database.OpticalDatabaseGenericAbsorber):
+    def __init__(self, name: str, res="01nm") -> None:
+        """
+        Loads in a database tabulated from HITRAN line entries as a function of pressure/temperature that have been
+        reduced to a given resolution.
+
+        This requires the extended databases to be downloaded, e.g. by running sk.appconfig.download_extended_databases()
+
+        Currently supported species and resolutions are:
+
+            | H2O : 01nm
+            | O2 : 01nm
+
+        Parameters
+        ----------
+        name : str
+            Species name
+        res : str, optional
+            Resolution of the database to load in, by default "01nm"
+
+        Raises
+        ------
+        OSError
+            If the specified file cannot be found
+        """
+        data_file = sk.appconfig.database_root().joinpath(
+            f"cross_sections/{name.lower()}/hitran_{res}_res.nc"
+        )
+
+        if data_file.exists():
+            super().__init__(data_file)
+        else:
+            msg = f"Could not find HITRAN database for {name} at {data_file}"
+            raise OSError(msg)
+
+
 def pressure_temperature_to_numberdensity(
     pressure_pa: np.array, temperature_k: np.array
-):
-    """_summary_
+) -> np.array:
+    """
+    Converts pressure and temperature to number density using the ideal gas law
 
     Parameters
     ----------
     pressure_pa : np.array
-        _description_
+        Pressure in [Pa]
     temperature_k : np.array
-        _description_
+        Temperature in [K]
+
+    Returns
+    -------
+    np.array
+        Number density in [molecules / m^3]
     """
     # Ideal gas law is PV = N k T
     # Or (N/V) = P / (k T)
