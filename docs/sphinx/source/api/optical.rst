@@ -12,6 +12,8 @@ Class Objects
 
 .. autoclass:: sasktran2.optical.HITRANUV
 
+.. autoclass:: sasktran2.optical.HITRANTabulated
+
 
 Special Modules
 ---------------
