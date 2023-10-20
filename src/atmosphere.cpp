@@ -6,6 +6,7 @@
 #include <sasktran2.h>
 
 namespace py = pybind11;
+using namespace pybind11::literals;
 
 template <int NSTOKES>
 void declareAtmosphere(py::module_& m, const std::string& suffix) {
@@ -38,6 +39,8 @@ void declareAtmosphereStorage(py::module_& m, const std::string& suffix) {
 
     py::class_<AtmosphereGridStorage>(m, ("AtmosphereStorage" + suffix).c_str())
         .def(py::init<int, int, int>())
+        .def("resize_derivatives", &AtmosphereGridStorage::resize_derivatives,
+             "num_deriv"_a)
         .def_property(
             "ssa",
             [](AtmosphereGridStorage& storage) -> Eigen::MatrixXd& {
@@ -69,6 +72,15 @@ void declareAtmosphereStorage(py::module_& m, const std::string& suffix) {
             [](AtmosphereGridStorage& storage,
                const Eigen::Tensor<double, 3>& leg_coeff) {
                 storage.leg_coeff = leg_coeff;
+            })
+        .def_property(
+            "d_leg_coeff",
+            [](AtmosphereGridStorage& storage) -> Eigen::Tensor<double, 4>& {
+                return storage.d_leg_coeff;
+            },
+            [](AtmosphereGridStorage& storage,
+               const Eigen::Tensor<double, 4>& d_leg_coeff) {
+                storage.d_leg_coeff = d_leg_coeff;
             });
 }
 

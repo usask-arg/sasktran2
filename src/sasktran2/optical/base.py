@@ -20,5 +20,11 @@ class OpticalQuantities:
 
 class OpticalProperty(abc.ABC):
     @abc.abstractmethod
-    def atmosphere_quantities(self, atmo: Atmosphere) -> OpticalQuantities:
+    def atmosphere_quantities(self, atmo: Atmosphere, **kwargs) -> OpticalQuantities:
         pass
+
+    def cross_sections(
+        self, wavelengths_nm: np.array, altitudes_m: np.array, **kwargs  # noqa: ARG002
+    ) -> OpticalQuantities:
+        msg = "Not Supported"
+        raise NotImplementedError(msg)

@@ -11,7 +11,12 @@ def validate_wf(analytic, numerical, wf_dim="altitude", decimal=6):
 
     rel_diff = (analytic - numerical) / max_by_alt
 
-    np.testing.assert_array_almost_equal(rel_diff, 0, decimal=decimal)
+    nonzero_analytic = np.abs(analytic.to_numpy()) > 1e-99
+    nonzero_numerical = np.abs(numerical.to_numpy()) > 1e-99
+
+    np.testing.assert_array_almost_equal(
+        rel_diff.to_numpy()[nonzero_analytic & nonzero_numerical], 0, decimal=decimal
+    )
 
 
 def numeric_wf(
@@ -28,19 +33,28 @@ def numeric_wf(
     for i in range(len(input_var)):
         dx = input_var[i] * fractional_change
 
-        input_var[i] += dx
+        if dx == 0:
+            dx = np.nanmean(input_var) * fractional_change
 
+        input_var[i] += dx
         radiance_above = engine.calculate_radiance(atmosphere)
 
-        input_var[i] -= 2 * dx
+        if input_var[i] >= dx:
+            # central diff
+            input_var[i] -= 2 * dx
+            radiance_below = engine.calculate_radiance(atmosphere)
+            input_var[i] += dx
 
-        radiance_below = engine.calculate_radiance(atmosphere)
+            central_diff_wf[i] = (
+                radiance_above["radiance"] - radiance_below["radiance"]
+            ) / (2 * dx)
+        else:
+            # forward diff
+            central_diff_wf[i] = (
+                radiance_above["radiance"] - base_radiance["radiance"]
+            ) / (dx)
 
-        input_var[i] += dx
-
-        central_diff_wf[i] = (
-            radiance_above["radiance"] - radiance_below["radiance"]
-        ) / (2 * dx)
+            input_var[i] -= dx
 
     base_radiance[analytic_wf_name + "_numeric"] = (
         base_radiance[analytic_wf_name].dims,

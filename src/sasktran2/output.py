@@ -141,6 +141,25 @@ class OutputIdeal(Output):
                     np.newaxis, :, np.newaxis, :
                 ] * d_radiance_ssa
 
+                if mapping.native_grid_mapping.scat_deriv_index is not None:
+                    d_radiance_scat = d_radiance_raw[
+                        :,
+                        :,
+                        :,
+                        (2 + mapping.native_grid_mapping.scat_deriv_index)
+                        * natmo_grid : (
+                            3 + mapping.native_grid_mapping.scat_deriv_index
+                        )
+                        * natmo_grid,
+                    ]
+
+                    np_deriv += (
+                        d_radiance_scat
+                        * mapping.native_grid_mapping.scat_factor.transpose([0, 2, 1])[
+                            :, :, np.newaxis, :
+                        ]
+                    )
+
                 if mapping.log_radiance_space:
                     np_deriv /= radiance[:, :, :, np.newaxis]
 

@@ -36,6 +36,12 @@ void init_config(py::module_& m) {
                       R"(
 
             )")
+        .def_property("delta_m_scaling",
+                      &sasktran2::Config::apply_delta_scaling,
+                      &sasktran2::Config::set_apply_delta_scaling,
+                      R"(
+                Controls whether the delta-M scaling is applied to the calculation.  Defaults to true.
+            )")
         .def_property("num_streams", &sasktran2::Config::num_do_streams,
                       &sasktran2::Config::set_num_do_streams);
 }
