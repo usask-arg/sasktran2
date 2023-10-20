@@ -33,19 +33,28 @@ def numeric_wf(
     for i in range(len(input_var)):
         dx = input_var[i] * fractional_change
 
-        input_var[i] += dx
+        if dx == 0:
+            dx = np.nanmean(input_var) * fractional_change
 
+        input_var[i] += dx
         radiance_above = engine.calculate_radiance(atmosphere)
 
-        input_var[i] -= 2 * dx
+        if input_var[i] >= dx:
+            # central diff
+            input_var[i] -= 2 * dx
+            radiance_below = engine.calculate_radiance(atmosphere)
+            input_var[i] += dx
 
-        radiance_below = engine.calculate_radiance(atmosphere)
+            central_diff_wf[i] = (
+                radiance_above["radiance"] - radiance_below["radiance"]
+            ) / (2 * dx)
+        else:
+            # forward diff
+            central_diff_wf[i] = (
+                radiance_above["radiance"] - base_radiance["radiance"]
+            ) / (dx)
 
-        input_var[i] += dx
-
-        central_diff_wf[i] = (
-            radiance_above["radiance"] - radiance_below["radiance"]
-        ) / (2 * dx)
+            input_var[i] -= dx
 
     base_radiance[analytic_wf_name + "_numeric"] = (
         base_radiance[analytic_wf_name].dims,

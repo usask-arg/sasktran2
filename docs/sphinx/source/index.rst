@@ -13,6 +13,7 @@ The SASKTRAN Radiative Transfer Framework (Version 2)
    installation
    quickstart
    required_components
+   examples/examples
    api_reference
 
 

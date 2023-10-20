@@ -14,6 +14,12 @@ Class Objects
 
 .. autoclass:: sasktran2.optical.HITRANTabulated
 
+.. autoclass:: sasktran2.optical.OpticalDatabase
+
+.. autoclass:: sasktran2.optical.OpticalDatabaseGenericAbsorber
+
+.. autoclass:: sasktran2.optical.OpticalDatabaseGenericScatterer
+
 
 Special Modules
 ---------------

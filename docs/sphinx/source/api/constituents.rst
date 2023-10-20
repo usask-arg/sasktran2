@@ -6,3 +6,7 @@ Constituents
 .. autoclass:: sasktran2.constituent.Rayleigh
 
 .. autoclass:: sasktran2.constituent.VMRAltitudeAbsorber
+
+.. autoclass:: sasktran2.constituent.NumberDensityScatterer
+
+.. autoclass:: sasktran2.constituent.ExtinctionScatterer

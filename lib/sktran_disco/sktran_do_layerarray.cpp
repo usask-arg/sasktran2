@@ -397,16 +397,6 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
                                     num_atmo_grid * scatidx + i,
                                 atmosphere_mapping(p, i));
                             deriv_scat.extinctions.emplace_back(1);
-
-                            // How d atmosphere ssa influences layer legendre?
-                            // deriv_scat.group_and_triangle_fraction.emplace_back(atmosphere.ssa_deriv_start_index()
-                            // + i, atmosphere_mapping(p, i));
-                            // deriv_scat.extinctions.emplace_back(1);
-
-                            // How d atmosphere k influences layer legendre?
-                            // deriv_scat.group_and_triangle_fraction.emplace_back(i,
-                            // atmosphere_mapping(p, i));
-                            // deriv_scat.extinctions.emplace_back(1);
                         }
                     }
                 }
@@ -506,20 +496,29 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
                      ++l) {
                     auto& group = deriv.group_and_triangle_fraction[l];
                     auto& extinction = deriv.extinctions[l];
+                    int atmo_index = group.first % num_atmo_grid;
 
                     if (group.first >= 2 * num_atmo_grid) {
                         // Layer legendre contribution to dI / d atmosphere
                         // legendre
                         int group_index = (group.first - 2 * num_atmo_grid) /
                                           int(num_atmo_grid);
-                        int atmo_index = group.first % num_atmo_grid;
 
                         double f = atmosphere.storage().f(atmo_index, wavelidx);
+                        extinction =
+                            atmosphere.storage().ssa(atmo_index, wavelidx) *
+                            atmosphere.storage().total_extinction(atmo_index,
+                                                                  wavelidx) /
+                            layer->scatExt();
 
                         for (int l = 0; l < (int)this->M_NSTR; ++l) {
                             deriv.d_legendre_coeff[l].a1 =
                                 atmosphere.storage().d_leg_coeff(
-                                    l, atmo_index, wavelidx, group_index);
+                                    l, atmo_index, wavelidx, group_index) +
+                                (atmosphere.storage().leg_coeff(l, atmo_index,
+                                                                wavelidx) -
+                                 layer->legendre_coeff()[l].a1) /
+                                    extinction;
 
                             if (atmosphere.storage().applied_f_order > 0) {
                                 deriv.d_legendre_coeff[l].a1 +=
@@ -529,11 +528,6 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
                             }
                         }
 
-                        extinction =
-                            atmosphere.storage().ssa(atmo_index, wavelidx) *
-                            atmosphere.storage().total_extinction(atmo_index,
-                                                                  wavelidx) /
-                            layer->scatExt();
                     } else if (group.first >= num_atmo_grid) {
                         // Layer legendre contribution to dI / dssa ?
                     } else {

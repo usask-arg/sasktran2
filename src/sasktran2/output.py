@@ -153,7 +153,12 @@ class OutputIdeal(Output):
                         * natmo_grid,
                     ]
 
-                    np_deriv += d_radiance_scat
+                    np_deriv += (
+                        d_radiance_scat
+                        * mapping.native_grid_mapping.scat_factor.transpose([0, 2, 1])[
+                            :, :, np.newaxis, :
+                        ]
+                    )
 
                 if mapping.log_radiance_space:
                     np_deriv /= radiance[:, :, :, np.newaxis]

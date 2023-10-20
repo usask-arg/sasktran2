@@ -1,5 +1,6 @@
 import numpy as np
 
+import sasktran2 as sk
 from sasktran2 import Config, Geometry1D
 from sasktran2.atmosphere import Atmosphere
 from sasktran2.climatology.us76 import add_us76_standard_atmosphere
@@ -131,3 +132,75 @@ def default_pure_scattering_atmosphere(config: Config, geometry: Geometry1D, ssa
     add_us76_standard_atmosphere(atmo)
 
     return atmo
+
+
+def test_aerosol_constituent(altitude_grid: np.array, extinction_space=True):
+    alts = np.arange(0, 40000, 1000.0)
+
+    ext = np.array(
+        [
+            0.00000000e00,
+            0.00000000e00,
+            0.00000000e00,
+            0.00000000e00,
+            0.00000000e00,
+            0.00000000e00,
+            0.00000000e00,
+            0.00000000e00,
+            0.00000000e00,
+            0.00000000e00,
+            0.00000000e00,
+            0.00000000e00,
+            0.00000000e00,
+            0.00000000e00,
+            0.00000000e00,
+            2.88027019e-07,
+            3.69604997e-07,
+            3.10548639e-07,
+            2.75319733e-07,
+            2.43405259e-07,
+            2.64027971e-07,
+            2.57261097e-07,
+            2.50073674e-07,
+            2.45212374e-07,
+            2.09064034e-07,
+            1.71399035e-07,
+            1.57256087e-07,
+            1.51544489e-07,
+            1.49381653e-07,
+            1.48309802e-07,
+            1.28552798e-07,
+            1.03291371e-07,
+            8.03122894e-08,
+            6.15167010e-08,
+            3.81730206e-08,
+            2.27081327e-08,
+            7.19716081e-09,
+            7.79190668e-09,
+            6.16738043e-09,
+            4.63396327e-09,
+        ]
+    )
+
+    ext = np.interp(altitude_grid, alts, ext)
+
+    ext_wavel = 525
+
+    ext_profile = sk.climatology.glossac.stratospheric_background(
+        5, 20, altitude_grid, ext_wavel
+    )
+
+    mie = sk.optical.database.OpticalDatabaseGenericScatterer(
+        sk.appconfig.database_root().joinpath("cross_sections/mie/sulfate_test.nc")
+    )
+    radius = np.ones_like(altitude_grid) * 105
+    const = sk.constituent.ExtinctionScatterer(
+        mie, altitude_grid, ext_profile, ext_wavel, lognormal_median_radius=radius
+    )
+
+    if extinction_space:
+        return const
+
+    return sk.constituent.NumberDensityScatterer(
+        mie, altitude_grid, const.number_density, lognormal_median_radius=radius
+    )

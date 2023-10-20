@@ -23,6 +23,7 @@ class NativeGridDerivative:
     d_extinction: np.ndarray
     d_ssa: np.ndarray
     d_leg_coeff: np.ndarray = None
+    scat_factor: np.ndarray = None
     scat_deriv_index: int = None
 
 
@@ -394,6 +395,11 @@ class Atmosphere:
             if self._calculate_derivatives:
                 for name, constituent in self._constituents.items():
                     self._derivs[name] = constituent.register_derivative(self, name)
+
+                    if self._derivs[name] is not None:
+                        for _, deriv in self._derivs[name].items():
+                            if deriv.native_grid_mapping.d_leg_coeff is not None:
+                                num_scat_derivs += 1
             logging.debug("Finished setting atmosphere from constituents")
         else:
             # using the raw interface
@@ -426,6 +432,9 @@ class Atmosphere:
                             d_extinction=np.zeros_like(self.storage.total_extinction),
                             d_ssa=np.zeros_like(self.storage.ssa),
                             d_leg_coeff=d_leg_coeff,
+                            scat_factor=np.ones_like(self.storage.ssa)[
+                                np.newaxis, :, :
+                            ],
                         ),
                         summable=True,
                     )
@@ -437,13 +446,17 @@ class Atmosphere:
 
             scat_index = 0
             for _, mappings in self._derivs.items():
-                for _, mapping in mappings.items():
-                    if mapping.native_grid_mapping.d_leg_coeff is not None:
-                        self.storage.d_leg_coeff[
-                            :, :, :, scat_index
-                        ] = mapping.native_grid_mapping.d_leg_coeff
-                        mapping.native_grid_mapping.scat_deriv_index = scat_index
-                        scat_index += 1
+                if mappings is not None:
+                    for _, mapping in mappings.items():
+                        if (
+                            mapping is not None
+                            and mapping.native_grid_mapping.d_leg_coeff is not None
+                        ):
+                            self.storage.d_leg_coeff[
+                                :, :, :, scat_index
+                            ] = mapping.native_grid_mapping.d_leg_coeff
+                            mapping.native_grid_mapping.scat_deriv_index = scat_index
+                            scat_index += 1
 
         # Store the unscaled optical properties for use in the derivative mappings
         self._unscaled_ssa = copy(self.storage.ssa)
