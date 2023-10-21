@@ -186,16 +186,12 @@ def test_aerosol_constituent(altitude_grid: np.array, extinction_space=True):
 
     ext_wavel = 525
 
-    ext_profile = sk.climatology.glossac.stratospheric_background(
-        5, 20, altitude_grid, ext_wavel
-    )
-
     mie = sk.optical.database.OpticalDatabaseGenericScatterer(
         sk.appconfig.database_root().joinpath("cross_sections/mie/sulfate_test.nc")
     )
     radius = np.ones_like(altitude_grid) * 105
     const = sk.constituent.ExtinctionScatterer(
-        mie, altitude_grid, ext_profile, ext_wavel, lognormal_median_radius=radius
+        mie, altitude_grid, ext, ext_wavel, lognormal_median_radius=radius
     )
 
     if extinction_space:
