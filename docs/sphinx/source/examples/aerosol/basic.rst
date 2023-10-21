@@ -41,15 +41,9 @@ Now we add in aerosol
 
 .. ipython:: python
 
-    ext_wavel = 525
-
-    ext_profile = sk.climatology.glossac.stratospheric_background(5, 20, model_geometry.altitudes(), ext_wavel)
-
-    mie = sk.optical.database.OpticalDatabaseGenericScatterer(sk.appconfig.database_root().joinpath('cross_sections/mie/sulfate_test.nc'))
-    radius = np.ones_like(model_geometry.altitudes()) * 105
-    const = sk.constituent.ExtinctionScatterer(mie, model_geometry.altitudes(), ext_profile, ext_wavel, lognormal_median_radius=radius)
-
-    atmosphere["strat_aerosol"] = const
+    atmosphere["strat_aerosol"] = sk.test_util.scenarios.test_aerosol_constituent(
+        model_geometry.altitudes()
+    )
 
     output_with_aerosol = engine.calculate_radiance(atmosphere)
 
