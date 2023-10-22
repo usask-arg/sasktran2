@@ -77,6 +77,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     if: ((github.event_name == 'release') && (github.event.release.prerelease)) || (github.event_name == 'schedule')
 
+    environment:
+      name: conda-nightly
+      url: https://anaconda.org/usask-arg-nightly/sasktran2
+    permissions:
+      id-token: write
+
     strategy:
       fail-fast: false
       matrix:
@@ -112,13 +118,13 @@ jobs:
         shell: bash -el {0}
         if: (matrix.target_plat == 'x86_64')
         run: |
-          conda mambabuild conda.recipe --output-folder pkgs/
+          conda mambabuild conda.recipe --output-folder pkgs/ --user usask-arg-nightly --token ${{ secrets.TOKEN }}
 
       - name: Build Conda package (cross mac arm)
         shell: bash -el {0}
         if: (matrix.target_plat == 'arm') && (matrix.os == 'macos-11')
         run: |
-          conda mambabuild conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/ --no-test
+          conda mambabuild conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/ --no-test --user usask-arg-nightly --token ${{ secrets.TOKEN }}
 
       - name: Save conda package
         uses: actions/upload-artifact@v3
@@ -275,3 +281,44 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: docs
+
+  upload-nightly-wheels:
+    needs: build_wheels_cibuildwheel
+    runs-on: ubuntu-latest
+
+    if: (github.event_name == 'schedule')
+
+    environment:
+      name: conda-nightly-wheels
+      url: https://anaconda.org/usask-arg-nightly/sasktran2
+
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: Setup Conda build environment
+        uses: mamba-org/setup-micromamba@v1
+        with:
+          environment-file: ci/conda-envs/mamba-build.yml
+
+      - uses: actions/download-artifact@v3
+        with:
+          name: artifact
+          path: dist
+
+      - name: Install anaconda CLI
+        shell: bash -el {0}
+        run: |
+          conda install -c conda-forge anaconda-client
+
+      - name: Upload Wheels
+        shell: bash -el {0}
+        run: |
+          anaconda --token ${{ secrets.TOKEN }} upload \
+          --force \
+          --user "usask-arg-nightly" \
+          dist/*.whl
