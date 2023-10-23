@@ -112,7 +112,7 @@ jobs:
         shell: bash -el {0}
         run: |
           cp ci/conda_build_config_release.yaml conda.recipe/conda_build_config.yaml
-          conda config --set anaconda_upload no
+          conda config --set anaconda_upload yes
 
       - name: Build Conda package
         shell: bash -el {0}
@@ -276,10 +276,9 @@ jobs:
           submodules: true
 
       - name: Setup Conda build environment
-        uses: conda-incubator/setup-miniconda@v2
+        uses: mamba-org/setup-micromamba@v1
         with:
-          environment-file: ci/conda-envs/build.yml
-          activate-environment: conda_build
+          environment-file: ci/conda-envs/mamba-build.yml
 
       - uses: actions/download-artifact@v3
         with:

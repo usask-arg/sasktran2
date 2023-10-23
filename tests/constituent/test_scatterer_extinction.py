@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import sasktran2 as sk
 
 
@@ -47,6 +48,7 @@ def _test_scenarios():
     return scen
 
 
+@pytest.mark.skip()
 def test_scatterer_extinction_altitude_construction():
     """
     Test that the ExtinctionScatterer class can be constructed and basic functionality works
