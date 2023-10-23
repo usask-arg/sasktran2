@@ -16,7 +16,7 @@ concurrency:
 jobs:
   build-upload-conda-pysasktran2:
     runs-on: ${{ matrix.os }}
-    if: (github.event_name == 'release') && (!github.event.release.prerelease)
+    if: (github.event_name == 'release')
 
     environment:
       name: conda
@@ -75,7 +75,7 @@ jobs:
 
   build-conda-pysasktran2:
     runs-on: ${{ matrix.os }}
-    if: ((github.event_name == 'release') && (github.event.release.prerelease)) || (github.event_name == 'schedule')
+    if: (github.event_name != 'release')
 
     environment:
       name: conda-nightly
@@ -174,31 +174,6 @@ jobs:
         with:
           path: ./wheelhouse/*.whl
 
-  upload_wheels_test:
-    runs-on: ubuntu-latest
-    needs: [build_wheels_cibuildwheel, build_sdist]
-    environment:
-      name: testpypi
-      url: https://test.pypi.org/p/sasktran2
-    permissions:
-      id-token: write
-    if: (github.event_name == 'release') && (github.event.release.prerelease)
-    steps:
-      - uses: actions/setup-python@v4
-        with:
-          python-version: "3.x"
-
-      - uses: actions/download-artifact@v3
-        with:
-          name: artifact
-          path: dist
-
-      - name: Publish package to TestPyPI
-        uses: pypa/gh-action-pypi-publish@v1.8.7
-        with:
-          repository-url: https://test.pypi.org/legacy/
-          verbose: true
-
   upload_wheels:
     runs-on: ubuntu-latest
     needs: [build_wheels_cibuildwheel, build_sdist]
@@ -207,7 +182,7 @@ jobs:
       url: https://pypi.org/p/sasktran2
     permissions:
       id-token: write
-    if: (github.event_name == 'release') && (!github.event.release.prerelease)
+    if: (github.event_name == 'release')
     steps:
       - uses: actions/setup-python@v4
         with:
@@ -286,7 +261,7 @@ jobs:
     needs: build_wheels_cibuildwheel
     runs-on: ubuntu-latest
 
-    if: (github.event_name == 'schedule')
+    if: (github.event_name != 'release')
 
     environment:
       name: conda-nightly-wheels
@@ -301,19 +276,15 @@ jobs:
           submodules: true
 
       - name: Setup Conda build environment
-        uses: mamba-org/setup-micromamba@v1
+        uses: conda-incubator/setup-miniconda@v2
         with:
-          environment-file: ci/conda-envs/mamba-build.yml
+          environment-file: ci/conda-envs/build.yml
+          activate-environment: conda_build
 
       - uses: actions/download-artifact@v3
         with:
           name: artifact
           path: dist
-
-      - name: Install anaconda CLI
-        shell: bash -el {0}
-        run: |
-          conda install -c conda-forge anaconda-client
 
       - name: Upload Wheels
         shell: bash -el {0}
