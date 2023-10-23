@@ -20,11 +20,12 @@ class NativeGridDerivative:
     This mapping is from the native model grid to the native grid, it does not change the gridding.
     """
 
-    d_extinction: np.ndarray
-    d_ssa: np.ndarray
+    d_extinction: np.ndarray = None
+    d_ssa: np.ndarray = None
     d_leg_coeff: np.ndarray = None
     scat_factor: np.ndarray = None
     scat_deriv_index: int = None
+    d_albedo: np.ndarray = None
 
 
 class DerivativeMapping:
@@ -62,6 +63,10 @@ class DerivativeMapping:
         NativeGridDerivative
         """
         return self._native_grid_mapping
+
+    @property
+    def is_surface_derivative(self) -> bool:
+        return self._native_grid_mapping.d_albedo is not None
 
     @property
     def summable(self) -> bool:
@@ -132,6 +137,62 @@ class InterpolatedDerivativeMapping(DerivativeMapping):
         return self._xr_interpolator @ super().map_derivative(data, dimensions)
 
 
+class SurfaceDerivativeMapping(DerivativeMapping):
+    def __init__(
+        self,
+        native_grid_mapping: NativeGridDerivative,
+        interpolating_matrix: np.ndarray,
+        interp_dim="wavelength",
+        result_dim="interp_wavelength",
+        summable: bool = False,
+        log_radiance_space: bool = False,
+    ):
+        """
+        A class which defines a mapping from internal model surface derivative quantities to user input quantities
+        that are not on the native model grid
+
+        Parameters
+        ----------
+        native_grid_mapping : NativeGridDerivative
+            Mapping of the quantity in question from the native grid to the native grid
+        interpolating_matrix : np.ndarray
+            An interpolating matrix such that user quantity on the native grid can be calculated by multiplying
+            the matrix by the user input quantity
+        interp_dim : str, optional
+            Dimension in the native mapping the interpolation is done over, by default "wavelength"
+        result_dim : str, optional
+            string to name the resulting dimension, by default "interp_wavelength"
+        summable : bool, optional
+            See :py:class:`DerivativeMapping`, by default False
+        log_radiance_space : bool, optional
+            See :py:class:`DerivativeMapping`, by default False
+        """
+        super().__init__(native_grid_mapping, summable, log_radiance_space)
+
+        self._interp_dim = interp_dim
+        self._result_dim = result_dim
+
+        self._xr_interpolator = xr.DataArray(
+            interpolating_matrix, dims=["tempDIM", result_dim]
+        )
+
+    def map_derivative(self, data: np.ndarray, dimensions: List[str]):
+        # Have a few annoying edge cases to deal with here
+        # For albedo, we need to expand the interpolating dimension,
+        index = dimensions.index(self._interp_dim)
+
+        new_data = np.zeros(np.concatenate((data.shape, [data.shape[index]])))
+
+        for i in range(data.shape[index]):
+            new_data[:, i, :, i] = data[:, i, :]
+
+        dim2 = copy(dimensions)
+        dim2.append("tempDIM")
+        ds = super().map_derivative(new_data, dim2)
+
+        return self._xr_interpolator @ ds
+
+
 class Atmosphere:
     def __init__(
         self,
@@ -181,7 +242,7 @@ class Atmosphere:
             self.wavelengths_nm = wavelengths_nm
 
         if wavenumber_cminv is not None:
-            self.wavenumber_cminv = wavenumber_cminv
+            self.wavenumbers_cminv = wavenumber_cminv
 
         nwavel = len(self.wavelengths_nm) if numwavel is None else numwavel
 
@@ -306,7 +367,7 @@ class Atmosphere:
         self._wavenumbers_cminv = wavlength_nm_to_wavenumber_cminv(wav)
 
     @property
-    def wavenumber_cminv(self) -> Optional[np.array]:
+    def wavenumbers_cminv(self) -> Optional[np.array]:
         """
         The wavenumbers in [:math:`\\text{cm}^{-1}`].  This is an optional property, it may be set to None
 
@@ -314,11 +375,11 @@ class Atmosphere:
         -------
         Optional[np.array]
         """
-        return self._wavenumber_cminv
+        return self._wavenumbers_cminv
 
-    @wavenumber_cminv.setter
-    def wavenumber_cminv(self, wav: np.array):
-        self._wavenumber_cminv = wav
+    @wavenumbers_cminv.setter
+    def wavenumbers_cminv(self, wav: np.array):
+        self._wavenumbers_cminv = wav
         self._wavelengths_nm = wavenumber_cminv_to_wavlength_nm(wav)
 
     def _zero_storage(self):
