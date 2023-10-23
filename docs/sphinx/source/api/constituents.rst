@@ -10,3 +10,8 @@ Constituents
 .. autoclass:: sasktran2.constituent.NumberDensityScatterer
 
 .. autoclass:: sasktran2.constituent.ExtinctionScatterer
+
+Surfaces
+--------
+
+.. autoclass:: sasktran2.constituent.LambertianSurface

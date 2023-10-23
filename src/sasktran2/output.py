@@ -90,7 +90,9 @@ class OutputIdeal(Output):
         -------
         xr.Dataset
         """
-        # TODO: A lot of this reshaping and organizing should be done inside C++
+        # TODO: A lot of this reshaping and organizing should be done inside C++, not here
+        # Maybe some of this should go into the derivative mapping classes too...
+        # Have to be a little careful since this can be a slow part of the code
 
         # Reshape and organize output
         result = xr.Dataset()
@@ -113,6 +115,7 @@ class OutputIdeal(Output):
         )
         d_radiance_k = d_radiance_raw[:, :, :, :natmo_grid]
         d_radiance_ssa = d_radiance_raw[:, :, :, natmo_grid : 2 * natmo_grid]
+        d_radiance_albedo = d_radiance_raw[:, :, :, -1:]
 
         dk_scaled_by_dk = 1 - atmo.storage.f * atmo.unscaled_ssa
         dssa_scaled_by_dssa = (
@@ -130,42 +133,55 @@ class OutputIdeal(Output):
                     name_to_place_result = "wf_" + constituent_name + "_" + deriv_name
 
                 # Start by calculating the derivative with respect to the quantity on the native grid
-                np_deriv = (
-                    mapping.native_grid_mapping.d_extinction * dk_scaled_by_dk
-                    - atmo.storage.f
-                    * mapping.native_grid_mapping.d_ssa
-                    * atmo.unscaled_extinction
-                ).T[np.newaxis, :, np.newaxis, :] * d_radiance_k + (
-                    mapping.native_grid_mapping.d_ssa * dssa_scaled_by_dssa
-                ).T[
-                    np.newaxis, :, np.newaxis, :
-                ] * d_radiance_ssa
-
-                if mapping.native_grid_mapping.scat_deriv_index is not None:
-                    d_radiance_scat = d_radiance_raw[
-                        :,
-                        :,
-                        :,
-                        (2 + mapping.native_grid_mapping.scat_deriv_index)
-                        * natmo_grid : (
-                            3 + mapping.native_grid_mapping.scat_deriv_index
-                        )
-                        * natmo_grid,
-                    ]
-
-                    np_deriv += (
-                        d_radiance_scat
-                        * mapping.native_grid_mapping.scat_factor.transpose([0, 2, 1])[
-                            :, :, np.newaxis, :
+                if mapping.is_surface_derivative:
+                    np_deriv = (
+                        d_radiance_albedo
+                        * mapping.native_grid_mapping.d_albedo[
+                            np.newaxis, :, np.newaxis, np.newaxis
                         ]
                     )
+                else:
+                    np_deriv = (
+                        mapping.native_grid_mapping.d_extinction * dk_scaled_by_dk
+                        - atmo.storage.f
+                        * mapping.native_grid_mapping.d_ssa
+                        * atmo.unscaled_extinction
+                    ).T[np.newaxis, :, np.newaxis, :] * d_radiance_k + (
+                        mapping.native_grid_mapping.d_ssa * dssa_scaled_by_dssa
+                    ).T[
+                        np.newaxis, :, np.newaxis, :
+                    ] * d_radiance_ssa
+
+                    if mapping.native_grid_mapping.scat_deriv_index is not None:
+                        d_radiance_scat = d_radiance_raw[
+                            :,
+                            :,
+                            :,
+                            (2 + mapping.native_grid_mapping.scat_deriv_index)
+                            * natmo_grid : (
+                                3 + mapping.native_grid_mapping.scat_deriv_index
+                            )
+                            * natmo_grid,
+                        ]
+
+                        np_deriv += (
+                            d_radiance_scat
+                            * mapping.native_grid_mapping.scat_factor.transpose(
+                                [0, 2, 1]
+                            )[:, :, np.newaxis, :]
+                        )
 
                 if mapping.log_radiance_space:
                     np_deriv /= radiance[:, :, :, np.newaxis]
 
-                mapped_derivative = mapping.map_derivative(
-                    np_deriv, ["stokes", "wavelength", "los", "altitude"]
-                )
+                if mapping.is_surface_derivative:
+                    mapped_derivative = mapping.map_derivative(
+                        np_deriv[:, :, :, 0], ["stokes", "wavelength", "los"]
+                    )
+                else:
+                    mapped_derivative = mapping.map_derivative(
+                        np_deriv, ["stokes", "wavelength", "los", "altitude"]
+                    )
 
                 if name_to_place_result in result:
                     result[name_to_place_result] += mapped_derivative
