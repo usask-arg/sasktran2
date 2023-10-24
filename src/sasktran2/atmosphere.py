@@ -129,12 +129,21 @@ class InterpolatedDerivativeMapping(DerivativeMapping):
         """
         super().__init__(native_grid_mapping, summable, log_radiance_space)
 
-        self._xr_interpolator = xr.DataArray(
-            interpolating_matrix, dims=[interp_dim, result_dim]
-        )
+        if interp_dim != result_dim:
+            self._xr_interpolator = xr.DataArray(
+                interpolating_matrix, dims=[interp_dim, result_dim]
+            )
+            self._rename_map = {}
+        else:
+            self._xr_interpolator = xr.DataArray(
+                interpolating_matrix, dims=["tempDIM", result_dim]
+            )
+            self._rename_map = {interp_dim: "tempDIM"}
 
     def map_derivative(self, data: np.ndarray, dimensions: List[str]):
-        return self._xr_interpolator @ super().map_derivative(data, dimensions)
+        return self._xr_interpolator @ super().map_derivative(data, dimensions).rename(
+            **self._rename_map
+        )
 
 
 class SurfaceDerivativeMapping(DerivativeMapping):

@@ -183,7 +183,7 @@ class HITRANTabulated(database.OpticalDatabaseGenericAbsorber):
 
 
 def pressure_temperature_to_numberdensity(
-    pressure_pa: np.array, temperature_k: np.array
+    pressure_pa: np.array, temperature_k: np.array, include_derivatives=False
 ) -> np.array:
     """
     Converts pressure and temperature to number density using the ideal gas law
@@ -194,16 +194,30 @@ def pressure_temperature_to_numberdensity(
         Pressure in [Pa]
     temperature_k : np.array
         Temperature in [K]
+    include_derivatives: bool, optional
+        If set to true, the derivative of the number density with respect to pressure and temperature will be returned
+        alongside the numberdensity.  The return signature is then np.array, np.array, np.array
 
     Returns
     -------
-    np.array
+    np.array, if include_derivatives is False
         Number density in [molecules / m^3]
+
+    np.array, np.array, np.array if include_derivatives is True
+        Number density, dN/dP, dN/dT in [molecules / m^3], [molecules / m^3 / Pa], [molecules / m^3 / K]
     """
     # Ideal gas law is PV = N k T
     # Or (N/V) = P / (k T)
 
-    return pressure_pa / (K_BOLTZMANN * temperature_k)
+    N = pressure_pa / (K_BOLTZMANN * temperature_k)
+
+    if not include_derivatives:
+        return N
+
+    dN_dP = 1 / (K_BOLTZMANN * temperature_k)
+    dN_dT = -pressure_pa / (K_BOLTZMANN * temperature_k**2)
+
+    return N, dN_dP, dN_dT
 
 
 def air_wavelength_to_vacuum_wavelength(wavelength_nm: np.array) -> np.array:
