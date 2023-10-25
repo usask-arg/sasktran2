@@ -126,7 +126,12 @@ class OutputIdeal(Output):
             if deriv_mapping is None:
                 continue
 
-            for deriv_name, mapping in deriv_mapping.items():
+            for deriv_name_raw, mapping in deriv_mapping.items():
+                if mapping.name() is not None:
+                    deriv_name = mapping.name()
+                else:
+                    deriv_name = deriv_name_raw
+
                 if mapping.summable:
                     name_to_place_result = "wf_" + deriv_name
                 else:

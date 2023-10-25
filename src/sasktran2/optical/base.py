@@ -23,6 +23,9 @@ class OpticalProperty(abc.ABC):
     def atmosphere_quantities(self, atmo: Atmosphere, **kwargs) -> OpticalQuantities:
         pass
 
+    def optical_derivatives(self, atmo: Atmosphere, **kwargs) -> dict:  # noqa: ARG002
+        return {}
+
     def cross_sections(
         self, wavelengths_nm: np.array, altitudes_m: np.array, **kwargs  # noqa: ARG002
     ) -> OpticalQuantities:

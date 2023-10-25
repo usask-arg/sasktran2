@@ -80,8 +80,8 @@ class VMRAltitudeAbsorber(Constituent):
         )
 
     def register_derivative(self, atmo: Atmosphere, name: str):
-        number_density = pressure_temperature_to_numberdensity(
-            atmo.pressure_pa, atmo.temperature_k
+        number_density, dN_dP, dN_dT = pressure_temperature_to_numberdensity(
+            atmo.pressure_pa, atmo.temperature_k, include_derivatives=True
         )
         interp_matrix = linear_interpolating_matrix(
             self._altitudes_m,
@@ -103,5 +103,48 @@ class VMRAltitudeAbsorber(Constituent):
             interp_dim="altitude",
             result_dim=f"{name}_altitude",
         )
+
+        interp_vmr = interp_matrix @ self._vmr
+
+        # Contributions from the change in number density due to a constant
+        # VMR and changing pressure/temperature
+        for deriv_name, vert_factor in zip(
+            ["pressure_pa", "temperature_k"], [dN_dP, dN_dT]
+        ):
+            derivs[deriv_name] = InterpolatedDerivativeMapping(
+                NativeGridDerivative(
+                    d_extinction=self._optical_quants.extinction,
+                    d_ssa=self._optical_quants.extinction
+                    * (self._optical_quants.ssa - atmo.storage.ssa)
+                    / atmo.storage.total_extinction,
+                ),
+                interpolating_matrix=np.eye(len(number_density))
+                * (vert_factor * interp_vmr)[np.newaxis, :],
+                interp_dim="altitude",
+                result_dim="altitude",
+                summable=True,
+            )
+
+        optical_derivs = self._optical_property.optical_derivatives(atmo=atmo)
+
+        for key, val in optical_derivs.items():
+            # We only get d_extinction from the optical property, have to set d_ssa accordingly
+            val.d_ssa = (
+                val.d_extinction
+                * (self._optical_quants.ssa - atmo.storage.ssa)
+                / atmo.storage.total_extinction
+            )
+
+            # Assume that all optical derivs are summable, I can't think of any that aren't right now.
+            # Give it a unique key to help with the summing
+            derivs[f"{key}_xs"] = InterpolatedDerivativeMapping(
+                val,
+                interpolating_matrix=np.eye(len(number_density))
+                * (number_density * interp_vmr)[np.newaxis, :],
+                interp_dim="altitude",
+                result_dim="altitude",
+                summable=True,
+                name=key,
+            )
 
         return derivs

@@ -25,26 +25,40 @@ def _test_scenarios():
 
     wavel = np.array([310, 330, 350, 600])
 
+    atmos = []
+
     atmosphere = sk.Atmosphere(geometry, config, wavelengths_nm=wavel)
 
     sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
 
     atmosphere["rayleigh"] = sk.constituent.Rayleigh()
-    # vmr_altitude_grid = np.array([10000.0, 30000.0, 60000.0])
-    # atmosphere["ozone"] = sk.constituent.VMRAltitudeAbsorber(
-    #    sk.optical.O3DBM(), vmr_altitude_grid, np.ones_like(vmr_altitude_grid) * 1e-6
-    # )
+
+    atmos.append(atmosphere)
+
+    atmosphere = sk.Atmosphere(geometry, config, wavelengths_nm=wavel)
+
+    sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
+
+    atmosphere["rayleigh"] = sk.constituent.Rayleigh()
+
+    vmr_altitude_grid = np.array([10000.0, 30000.0, 60000.0])
+    atmosphere["ozone"] = sk.constituent.VMRAltitudeAbsorber(
+        sk.optical.O3DBM(), vmr_altitude_grid, np.ones_like(vmr_altitude_grid) * 1e-6
+    )
+
+    atmos.append(atmosphere)
 
     scen = []
 
-    scen.append(
-        {
-            "config": config,
-            "geometry": geometry,
-            "viewing_geo": viewing_geo,
-            "atmosphere": atmosphere,
-        }
-    )
+    for atmo in atmos:
+        scen.append(
+            {
+                "config": config,
+                "geometry": geometry,
+                "viewing_geo": viewing_geo,
+                "atmosphere": atmo,
+            }
+        )
 
     return scen
 
@@ -86,7 +100,7 @@ def test_temperature_wf():
         engine = sk.Engine(scen["config"], scen["geometry"], scen["viewing_geo"])
 
         radiance = sk.test_util.wf.numeric_wf(
-            atmosphere.temperature_k, 0.01, engine, atmosphere, "wf_temperature_k"
+            atmosphere.temperature_k, 0.0001, engine, atmosphere, "wf_temperature_k"
         )
 
         sk.test_util.wf.validate_wf(

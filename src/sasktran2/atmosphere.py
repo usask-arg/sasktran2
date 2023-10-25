@@ -96,6 +96,9 @@ class DerivativeMapping:
             dims=dimensions,
         )
 
+    def name() -> Optional[str]:
+        return None
+
 
 class InterpolatedDerivativeMapping(DerivativeMapping):
     def __init__(
@@ -106,6 +109,7 @@ class InterpolatedDerivativeMapping(DerivativeMapping):
         result_dim="interp_altitude",
         summable: bool = False,
         log_radiance_space: bool = False,
+        name: Optional[str] = None,
     ):
         """
         A class which defines a mapping from internal model derivative quantities to user input quantities
@@ -126,8 +130,13 @@ class InterpolatedDerivativeMapping(DerivativeMapping):
             See :py:class:`DerivativeMapping`, by default False
         log_radiance_space : bool, optional
             See :py:class:`DerivativeMapping`, by default False
+        name : Optional[str], optional
+            A name for the derivative mapping, if set to None then the name is inferred from the key
+            the mapping resides in.  This is only useful if you have two derivatives with the same key
+            that should be summed together, by default None
         """
         super().__init__(native_grid_mapping, summable, log_radiance_space)
+        self._name = name
 
         if interp_dim != result_dim:
             self._xr_interpolator = xr.DataArray(
@@ -141,9 +150,14 @@ class InterpolatedDerivativeMapping(DerivativeMapping):
             self._rename_map = {interp_dim: "tempDIM"}
 
     def map_derivative(self, data: np.ndarray, dimensions: List[str]):
-        return self._xr_interpolator @ super().map_derivative(data, dimensions).rename(
-            **self._rename_map
+        return xr.dot(
+            self._xr_interpolator,
+            super().map_derivative(data, dimensions).rename(**self._rename_map),
+            optimize=True,
         )
+
+    def name(self) -> Optional[str]:
+        return self._name
 
 
 class SurfaceDerivativeMapping(DerivativeMapping):
