@@ -31,3 +31,8 @@ class OpticalProperty(abc.ABC):
     ) -> OpticalQuantities:
         msg = "Not Supported"
         raise NotImplementedError(msg)
+
+    def cross_section_derivatives(
+        self, wavelengths_nm: np.array, altitudes_m: np.array, **kwargs  # noqa: ARG002
+    ) -> dict:
+        return {}
