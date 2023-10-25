@@ -176,8 +176,32 @@ class OpticalDatabaseGenericScatterer(OpticalDatabase):
         """
         super().__init__(db_filepath)
 
+        self._validate_db()
+
     def _validate_db(self):
-        pass
+        self._database["lm_a1"] /= self._database["lm_a1"].isel(legendre=0)
+
+    def _construct_interp_handler(self, atmo: Atmosphere, **kwargs) -> dict:
+        coords = self._database["xs_total"].coords
+        interp_handler = {}
+
+        if "wavelength_nm" in coords:
+            if atmo.wavelengths_nm is None:
+                msg = "wavelengths_nm must be specified in Atmosphere to use OpticalDatabaseGenericScatterer"
+                raise ValueError(msg)
+            interp_handler["wavelength_nm"] = atmo.wavelengths_nm
+
+        if "wavenumber_cminv" in coords:
+            if atmo.wavenumber_cminv is None:
+                msg = "wavenumber_cminv must be specified in Atmosphere to use OpticalDatabaseGenericScatterer"
+                raise ValueError(msg)
+            interp_handler["wavenumber_cminv"] = atmo.wavenumber_cminv
+
+        for name, vals in kwargs.items():
+            if name in coords:
+                interp_handler[name] = ("z", vals)
+
+        return interp_handler
 
     def cross_sections(
         self, wavelengths_nm: np.array, altitudes_m: np.array, **kwargs  # noqa: ARG002
@@ -185,7 +209,6 @@ class OpticalDatabaseGenericScatterer(OpticalDatabase):
         quants = OpticalQuantities()
 
         coords = self._database["xs_total"].coords
-
         interp_handler = {}
 
         interp_handler["wavelength_nm"] = wavelengths_nm
@@ -207,25 +230,7 @@ class OpticalDatabaseGenericScatterer(OpticalDatabase):
     def atmosphere_quantities(self, atmo: Atmosphere, **kwargs) -> OpticalQuantities:
         quants = OpticalQuantities()
 
-        coords = self._database["xs_total"].coords
-
-        interp_handler = {}
-
-        if "wavelength_nm" in coords:
-            if atmo.wavelengths_nm is None:
-                msg = "wavelengths_nm must be specified in Atmosphere to use OpticalDatabaseGenericScatterer"
-                raise ValueError(msg)
-            interp_handler["wavelength_nm"] = atmo.wavelengths_nm
-
-        if "wavenumber_cminv" in coords:
-            if atmo.wavenumber_cminv is None:
-                msg = "wavenumber_cminv must be specified in Atmosphere to use OpticalDatabaseGenericScatterer"
-                raise ValueError(msg)
-            interp_handler["wavenumber_cminv"] = atmo.wavenumber_cminv
-
-        for name, vals in kwargs.items():
-            if name in coords:
-                interp_handler[name] = ("z", vals)
+        interp_handler = self._construct_interp_handler(atmo, **kwargs)
 
         ds_interp = self._database.interp(**interp_handler)
 
@@ -254,3 +259,60 @@ class OpticalDatabaseGenericScatterer(OpticalDatabase):
             pass
 
         return quants
+
+    def optical_derivatives(self, atmo: Atmosphere, **kwargs) -> dict:
+        derivs = {}
+
+        interp_handler = self._construct_interp_handler(atmo, **kwargs)
+
+        # Split the interpolators into ones that are 'z' dependent and ones that are not
+
+        interp_handler_z = {}
+        interp_handler_noz = {}
+
+        for key, val in interp_handler.items():
+            if val[0] == "z":
+                interp_handler_z[key] = val
+            else:
+                interp_handler_noz[key] = val
+
+        # Get the derivatives of the cross section with respect to the z dependent variables
+        partial_interp = self._database.interp(**interp_handler_noz)
+
+        num_assign_legendre = min(
+            atmo.storage.leg_coeff.shape[0], len(partial_interp["legendre"])
+        )
+
+        for key, val in interp_handler_z.items():
+            # Interpolate over the other variables
+            new_interpolants = {k: v for k, v in interp_handler_z.items() if k != key}
+
+            partial_interp2 = partial_interp.interp(**new_interpolants)
+
+            dT = partial_interp2.diff(key) / partial_interp2[key].diff(key)
+
+            interp_index = np.argmax(dT[key].to_numpy() > val[1][:, np.newaxis], axis=1)
+
+            if "z" in dT.dims:
+                dT = dT.isel(
+                    {
+                        "z": xr.DataArray(list(range(len(interp_index))), dims="z"),
+                        key: xr.DataArray(interp_index, dims="z"),
+                    }
+                )
+            else:
+                dT = dT.isel({key: xr.DataArray(interp_index, dims="z")})
+
+            derivs[key] = NativeGridDerivative(
+                d_extinction=dT["xs_total"].to_numpy(),
+                d_ssa=dT["xs_scattering"].to_numpy(),
+                d_leg_coeff=dT["lm_a1"]
+                .transpose("legendre", "z", "wavelength_nm")
+                .to_numpy()[:num_assign_legendre],
+            )
+
+            derivs[key].d_extinction[np.isnan(derivs[key].d_extinction)] = 0
+            derivs[key].d_ssa[np.isnan(derivs[key].d_ssa)] = 0
+            derivs[key].d_leg_coeff[np.isnan(derivs[key].d_leg_coeff)] = 0
+
+        return derivs

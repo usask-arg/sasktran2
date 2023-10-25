@@ -1,3 +1,5 @@
+from typing import Any
+
 import numpy as np
 
 from sasktran2 import Atmosphere
@@ -48,6 +50,11 @@ class NumberDensityScatterer(Constituent):
 
         self._kwargs = kwargs
 
+    def __getattr__(self, __name: str) -> Any:
+        if __name in self._kwargs:
+            return self._kwargs[__name]
+        return None
+
     @property
     def number_density(self):
         return self._number_density
@@ -86,6 +93,7 @@ class NumberDensityScatterer(Constituent):
 
         # Convert back to SSA for ease of use later in the derivatives
         self._optical_quants.ssa /= self._optical_quants.extinction
+        self._optical_quants.ssa[~np.isfinite(self._optical_quants.ssa)] = 0
 
     def register_derivative(self, atmo: Atmosphere, name: str):
         interp_matrix = linear_interpolating_matrix(
@@ -93,6 +101,8 @@ class NumberDensityScatterer(Constituent):
             atmo.model_geometry.altitudes(),
             self._out_of_bounds_mode.lower(),
         )
+        interped_kwargs = {k: interp_matrix @ v for k, v in self._kwargs.items()}
+
         derivs = {}
 
         # Factor to apply to legendre derivatives is
@@ -115,6 +125,41 @@ class NumberDensityScatterer(Constituent):
             interp_dim="altitude",
             result_dim=f"{name}_altitude",
         )
+
+        optical_derivs = self._optical_property.optical_derivatives(
+            atmo, **interped_kwargs
+        )
+
+        for key, val in optical_derivs.items():
+            # Start with leg_coeff
+            val.scat_factor = (
+                (self._optical_quants.ssa * self._optical_quants.extinction)
+                / (atmo.storage.ssa * atmo.storage.total_extinction)
+            )[np.newaxis, :, :]
+            val.d_leg_coeff += (
+                val.d_ssa / (self._optical_quants.ssa * self._optical_quants.extinction)
+            )[np.newaxis, :, :] * (
+                self._optical_quants.leg_coeff - atmo.storage.leg_coeff
+            )
+
+            val.d_leg_coeff[~np.isfinite(val.d_leg_coeff)] = 0
+
+            val.d_ssa -= atmo.storage.ssa * val.d_extinction
+            val.d_ssa /= atmo.storage.total_extinction
+
+            # TODO: The model should probably handle this
+            norm_factor = val.d_leg_coeff.max(axis=0)
+            norm_factor[norm_factor == 0] = 1
+
+            val.d_leg_coeff /= norm_factor[np.newaxis, :, :]
+            val.scat_factor *= norm_factor[np.newaxis, :, :]
+
+            derivs[key] = InterpolatedDerivativeMapping(
+                val,
+                interpolating_matrix=interp_matrix * self.number_density[np.newaxis, :],
+                interp_dim="altitude",
+                result_dim=f"{name}_altitude",
+            )
 
         return derivs
 
