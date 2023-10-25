@@ -146,8 +146,10 @@ class NumberDensityScatterer(Constituent):
                 # The change in extinction is adjusted
                 val.d_extinction += (
                     self._optical_quants.extinction
-                    / self._vertical_deriv_factor[:, np.newaxis]
-                    * self._d_vertical_deriv_factor[key][:, np.newaxis]
+                    / (interp_matrix @ self._vertical_deriv_factor)[:, np.newaxis]
+                    * (interp_matrix @ self._d_vertical_deriv_factor[key])[
+                        :, np.newaxis
+                    ]
                 )
 
                 # Change in single scatter albedo should be invariant whether or not we are
