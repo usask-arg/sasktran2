@@ -96,7 +96,7 @@ class NumberDensityScatterer(Constituent):
 
         # Convert back to SSA for ease of use later in the derivatives
         self._optical_quants.ssa /= self._optical_quants.extinction
-        self._optical_quants.ssa[~np.isfinite(self._optical_quants.ssa)] = 0
+        self._optical_quants.ssa[~np.isfinite(self._optical_quants.ssa)] = 1
 
     def register_derivative(self, atmo: Atmosphere, name: str):
         interp_matrix = linear_interpolating_matrix(
@@ -134,35 +134,50 @@ class NumberDensityScatterer(Constituent):
         )
 
         for key, val in optical_derivs.items():
+            # First, the optical property returns back d_scattering extinction in the d_ssa container,
+            # convert this to d_ssa
+
+            val.d_ssa -= val.d_extinction * self._optical_quants.ssa
+            val.d_ssa /= self._optical_quants.extinction
+
             if key in self._d_vertical_deriv_factor:
                 # Have to make some adjustments
 
-                # First, adjust the change in extinction
+                # The change in extinction is adjusted
                 val.d_extinction += (
                     self._optical_quants.extinction
                     / self._vertical_deriv_factor[:, np.newaxis]
                     * self._d_vertical_deriv_factor[key][:, np.newaxis]
                 )
 
+                # Change in single scatter albedo should be invariant whether or not we are
+                # in extinction space or number density space
+
             # Start with leg_coeff
-            val.scat_factor = (
-                (self._optical_quants.ssa * self._optical_quants.extinction)
-                / (atmo.storage.ssa * atmo.storage.total_extinction)
-            )[np.newaxis, :, :]
             val.d_leg_coeff += (
-                val.d_ssa / (self._optical_quants.ssa * self._optical_quants.extinction)
-            )[np.newaxis, :, :] * (
                 self._optical_quants.leg_coeff - atmo.storage.leg_coeff
+            ) * (
+                1 / self._optical_quants.ssa * val.d_ssa
+                + 1 / self._optical_quants.extinction * val.d_extinction
+            )[
+                np.newaxis, :, :
+            ]
+
+            # Then adjust d_ssa
+            val.d_ssa *= self._optical_quants.extinction
+            val.d_ssa += val.d_extinction * (
+                self._optical_quants.ssa - atmo.storage.ssa
             )
-
-            val.d_leg_coeff[~np.isfinite(val.d_leg_coeff)] = 0
-
-            val.d_ssa -= atmo.storage.ssa * val.d_extinction
             val.d_ssa /= atmo.storage.total_extinction
 
             # TODO: The model should probably handle this
             norm_factor = val.d_leg_coeff.max(axis=0)
             norm_factor[norm_factor == 0] = 1
+
+            val.scat_factor = (
+                (self._optical_quants.ssa * self._optical_quants.extinction)
+                / (atmo.storage.ssa * atmo.storage.total_extinction)
+            )[np.newaxis, :, :]
 
             val.d_leg_coeff /= norm_factor[np.newaxis, :, :]
             val.scat_factor *= norm_factor[np.newaxis, :, :]

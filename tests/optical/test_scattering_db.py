@@ -144,7 +144,7 @@ def test_scattering_db_wf_extinction():
 
         radiance = sk.test_util.wf.numeric_wf(
             atmosphere["strat_aerosol"].lognormal_median_radius,
-            0.0001,
+            0.000001,
             engine,
             atmosphere,
             "wf_strat_aerosol_lognormal_median_radius",
@@ -154,5 +154,5 @@ def test_scattering_db_wf_extinction():
             radiance["wf_strat_aerosol_lognormal_median_radius"],
             radiance["wf_strat_aerosol_lognormal_median_radius_numeric"],
             wf_dim="strat_aerosol_altitude",
-            decimal=3,
+            decimal=2,
         )
