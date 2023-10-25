@@ -96,7 +96,7 @@ class DerivativeMapping:
             dims=dimensions,
         )
 
-    def name() -> Optional[str]:
+    def name(self) -> Optional[str]:
         return None
 
 
