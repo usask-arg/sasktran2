@@ -316,3 +316,54 @@ class OpticalDatabaseGenericScatterer(OpticalDatabase):
             derivs[key].d_leg_coeff[np.isnan(derivs[key].d_leg_coeff)] = 0
 
         return derivs
+
+    def cross_section_derivatives(
+        self, wavelengths_nm: np.array, altitudes_m: np.array, **kwargs  # noqa: ARG002
+    ) -> dict:
+        derivs = {}
+        coords = self._database["xs_total"].coords
+        interp_handler = {}
+
+        interp_handler["wavelength_nm"] = wavelengths_nm
+
+        for name, vals in kwargs.items():
+            if name in coords:
+                interp_handler[name] = ("z", vals)
+
+        # Split the interpolators into ones that are 'z' dependent and ones that are not
+
+        interp_handler_z = {}
+        interp_handler_noz = {}
+
+        for key, val in interp_handler.items():
+            if val[0] == "z":
+                interp_handler_z[key] = val
+            else:
+                interp_handler_noz[key] = val
+
+        # Get the derivatives of the cross section with respect to the z dependent variables
+        partial_interp = self._database["xs_total"].interp(**interp_handler_noz)
+
+        for key, val in interp_handler_z.items():
+            # Interpolate over the other variables
+            new_interpolants = {k: v for k, v in interp_handler_z.items() if k != key}
+
+            partial_interp2 = partial_interp.interp(**new_interpolants)
+
+            dT = partial_interp2.diff(key) / partial_interp2[key].diff(key)
+
+            interp_index = np.argmax(dT[key].to_numpy() > val[1][:, np.newaxis], axis=1)
+
+            if "z" in dT.dims:
+                dT = dT.isel(
+                    {
+                        "z": xr.DataArray(list(range(len(interp_index))), dims="z"),
+                        key: xr.DataArray(interp_index, dims="z"),
+                    }
+                )
+            else:
+                dT = dT.isel({key: xr.DataArray(interp_index, dims="z")})
+
+            derivs[key] = dT.to_numpy().flatten()
+
+        return derivs

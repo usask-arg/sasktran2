@@ -48,6 +48,9 @@ class NumberDensityScatterer(Constituent):
         # Extra factor to apply to the vertical derivatives, used by the derived Extinction class
         self._vertical_deriv_factor = np.ones_like(number_density)
 
+        # Optical derivatives can also have derivatives to this factor
+        self._d_vertical_deriv_factor = {}
+
         self._kwargs = kwargs
 
     def __getattr__(self, __name: str) -> Any:
@@ -131,6 +134,16 @@ class NumberDensityScatterer(Constituent):
         )
 
         for key, val in optical_derivs.items():
+            if key in self._d_vertical_deriv_factor:
+                # Have to make some adjustments
+
+                # First, adjust the change in extinction
+                val.d_extinction += (
+                    self._optical_quants.extinction
+                    / self._vertical_deriv_factor[:, np.newaxis]
+                    * self._d_vertical_deriv_factor[key][:, np.newaxis]
+                )
+
             # Start with leg_coeff
             val.scat_factor = (
                 (self._optical_quants.ssa * self._optical_quants.extinction)
@@ -156,7 +169,8 @@ class NumberDensityScatterer(Constituent):
 
             derivs[key] = InterpolatedDerivativeMapping(
                 val,
-                interpolating_matrix=interp_matrix * self.number_density[np.newaxis, :],
+                interpolating_matrix=interp_matrix
+                * self._number_density[np.newaxis, :],
                 interp_dim="altitude",
                 result_dim=f"{name}_altitude",
             )
@@ -212,6 +226,18 @@ class ExtinctionScatterer(NumberDensityScatterer):
         self.number_density = (
             self._extinction_per_m / self._extinction_to_numden_factors
         )
+
+        self._d_vertical_deriv_factor = (
+            self._optical_property.cross_section_derivatives(
+                np.array([self._extinction_wavelength_nm]),
+                altitudes_m=self._altitudes_m,
+                **self._kwargs,
+            )
+        )
+
+        for _, val in self._d_vertical_deriv_factor.items():
+            # convert from derivative of x to derivative of 1/x
+            val *= -1 * self._vertical_deriv_factor**2  # noqa: PLW2901
 
     @property
     def extinction_per_m(self):

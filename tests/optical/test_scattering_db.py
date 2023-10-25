@@ -120,3 +120,39 @@ def test_scattering_db_wf():
             wf_dim="strat_aerosol_altitude",
             decimal=3,
         )
+
+
+def test_scattering_db_wf_extinction():
+    """
+    Tests that weighting functions with respect to the scattering DB auxillary variables (e.g. particle size)
+    is working correctly
+
+    The precision of these weighting functions can be quite poor
+    """
+    scens = _test_scenarios()
+
+    for scen in scens:
+        atmosphere = scen["atmosphere"]
+
+        atmosphere["strat_aerosol"] = sk.test_util.scenarios.test_aerosol_constituent(
+            atmosphere.model_geometry.altitudes(), extinction_space=True
+        )
+
+        engine = sk.Engine(scen["config"], scen["geometry"], scen["viewing_geo"])
+
+        atmosphere["strat_aerosol"].lognormal_median_radius[:] = 107
+
+        radiance = sk.test_util.wf.numeric_wf(
+            atmosphere["strat_aerosol"].lognormal_median_radius,
+            0.0001,
+            engine,
+            atmosphere,
+            "wf_strat_aerosol_lognormal_median_radius",
+        )
+
+        sk.test_util.wf.validate_wf(
+            radiance["wf_strat_aerosol_lognormal_median_radius"],
+            radiance["wf_strat_aerosol_lognormal_median_radius_numeric"],
+            wf_dim="strat_aerosol_altitude",
+            decimal=3,
+        )
