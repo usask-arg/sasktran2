@@ -1,6 +1,10 @@
 import numpy as np
 
 import sasktran2 as sk
+from sasktran2.atmosphere import (
+    InterpolatedDerivativeMapping,
+    NativeGridDerivative,
+)
 from sasktran2.optical import pressure_temperature_to_numberdensity
 from sasktran2.optical.rayleigh import rayleigh_cross_section_bates
 
@@ -35,6 +39,9 @@ class Rayleigh(Constituent):
             msg = "Method must be bates"
             raise ValueError(msg)
 
+        self._ray_ext = None
+        self._delta = None
+
     def add_to_atmosphere(self, atmo: sk.Atmosphere):
         """
         Parameters
@@ -67,19 +74,19 @@ class Rayleigh(Constituent):
         # So then (6 - 7 d) * F = 6 + 3 d
         # d (3 + 7 F) = 6(F - 1)
         # d = 6 (F - 1) / (3 + 7 F)
-        delta = 6 * (king_factor - 1) / (3 + 7 * king_factor)
+        self._delta = 6 * (king_factor - 1) / (3 + 7 * king_factor)
 
-        ray_ext = np.outer(num_dens, scattering_xs)
+        self._ray_ext = np.outer(num_dens, scattering_xs)
         # Start by adding in the extinction
-        atmo.storage.total_extinction += ray_ext
+        atmo.storage.total_extinction += self._ray_ext
 
         # SSA temporarily stores the scattering extinction
-        atmo.storage.ssa += ray_ext
+        atmo.storage.ssa += self._ray_ext
 
         if atmo.nstokes == 1:
-            atmo.storage.leg_coeff[0] += ray_ext
+            atmo.storage.leg_coeff[0] += self._ray_ext
             atmo.storage.leg_coeff[2] += (
-                ray_ext * ((1 - delta) / (2 + delta))[np.newaxis, :]
+                self._ray_ext * ((1 - self._delta) / (2 + self._delta))[np.newaxis, :]
             )
         else:
             msg = (
@@ -89,5 +96,40 @@ class Rayleigh(Constituent):
             )
             raise ValueError(msg)
 
-    def register_derivative(self, atmo: sk.Atmosphere, name: str):
-        pass
+    def register_derivative(self, atmo: sk.Atmosphere, name: str):  # noqa: ARG002
+        N, dN_dP, dN_dT = pressure_temperature_to_numberdensity(
+            atmo.pressure_pa, atmo.temperature_k, include_derivatives=True
+        )
+
+        derivs = {}
+
+        # dI/dP = dI/dN * dN/dP, and dI/dN is the extinction
+        # It's easier to just treat this as a number density derivative using the Interpolated Derivative Mapping
+        # and an Identity matrix as the mapping matrix
+
+        xs = self._ray_ext / N[:, np.newaxis]
+
+        for deriv_name, vert_factor in zip(
+            ["pressure_pa", "temperature_k"], [dN_dP, dN_dT]
+        ):
+            derivs[deriv_name] = InterpolatedDerivativeMapping(
+                NativeGridDerivative(
+                    d_extinction=xs,
+                    d_ssa=xs * (1 - atmo.storage.ssa) / atmo.storage.total_extinction,
+                    d_leg_coeff=-atmo.storage.leg_coeff,
+                    scat_factor=(
+                        xs / (atmo.storage.ssa * atmo.storage.total_extinction)
+                    )[np.newaxis, :, :],
+                ),
+                summable=True,
+                interp_dim="altitude",
+                result_dim="altitude",
+                interpolating_matrix=np.eye(len(N)) * vert_factor[np.newaxis, :],
+            )
+
+            derivs[deriv_name].native_grid_mapping.d_leg_coeff[0] += 1
+            derivs[deriv_name].native_grid_mapping.d_leg_coeff[2] += (
+                (1 - self._delta) / (2 + self._delta)
+            )[np.newaxis, :]
+
+        return derivs
