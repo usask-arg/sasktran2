@@ -52,11 +52,8 @@ requirements:
     - xarray
     - netcdf4
     - scipy
-    - libblas=*=*netlib
-    - libcblas=*=*netlib
-    - liblapack=*=*netlib
-    - liblapacke=*=*netlib
-    - libtmglib=*=*netlib
+    - libblas
+    - liblapacke
     - llvm-openmp # [mac]
 
 test:
