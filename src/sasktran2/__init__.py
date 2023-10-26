@@ -18,6 +18,7 @@ from ._core import (  # noqa: I001
     Surface,
     TangentAltitudeSolar,
     ViewingGeometry,
+    ViewingGeometryBase,
 )
 from ._version import __version__
 from .atmosphere import Atmosphere
