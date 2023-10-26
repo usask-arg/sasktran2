@@ -52,6 +52,8 @@ requirements:
     - xarray
     - netcdf4
     - scipy
+    - libblas
+    - liblapacke
     - llvm-openmp # [mac]
 
 test:
