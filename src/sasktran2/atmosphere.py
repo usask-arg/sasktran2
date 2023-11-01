@@ -213,7 +213,7 @@ class SurfaceDerivativeMapping(DerivativeMapping):
         dim2.append("tempDIM")
         ds = super().map_derivative(new_data, dim2)
 
-        return self._xr_interpolator @ ds
+        return xr.dot(self._xr_interpolator, ds, optimize=True)
 
 
 class Atmosphere:
