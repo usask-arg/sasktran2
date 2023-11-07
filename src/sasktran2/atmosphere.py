@@ -5,6 +5,7 @@ from typing import List, Optional, Union
 
 import numpy as np
 import xarray as xr
+from scipy import sparse
 
 import sasktran2 as sk
 from sasktran2.units import (
@@ -149,12 +150,18 @@ class InterpolatedDerivativeMapping(DerivativeMapping):
             )
             self._rename_map = {interp_dim: "tempDIM"}
 
+        self._sparse_mapping = sparse.csc_matrix(self._xr_interpolator.to_numpy())
+
     def map_derivative(self, data: np.ndarray, dimensions: List[str]):
-        return xr.dot(
-            self._xr_interpolator,
-            super().map_derivative(data, dimensions).rename(**self._rename_map),
-            optimize=True,
-        )
+        new_dims = copy(dimensions)
+        new_dims[-1] = self._xr_interpolator.dims[-1]
+
+        return xr.DataArray(
+            (data.reshape(-1, data.shape[-1]) @ self._sparse_mapping).reshape(
+                np.concatenate((data.shape[:-1], [-1]))
+            ),
+            dims=new_dims,
+        ).transpose(*[new_dims[-1], *new_dims[:-1]])
 
     def name(self) -> Optional[str]:
         return self._name
@@ -200,20 +207,12 @@ class SurfaceDerivativeMapping(DerivativeMapping):
         )
 
     def map_derivative(self, data: np.ndarray, dimensions: List[str]):
-        # Have a few annoying edge cases to deal with here
-        # For albedo, we need to expand the interpolating dimension,
-        index = dimensions.index(self._interp_dim)
-
-        new_data = np.zeros(np.concatenate((data.shape, [data.shape[index]])))
-
-        for i in range(data.shape[index]):
-            new_data[:, i, :, i] = data[:, i, :]
-
-        dim2 = copy(dimensions)
-        dim2.append("tempDIM")
-        ds = super().map_derivative(new_data, dim2)
-
-        return xr.dot(self._xr_interpolator, ds, optimize=True)
+        return xr.DataArray(
+            np.einsum(
+                "ijk, jl->lijk", data, self._xr_interpolator.to_numpy(), optimize=True
+            ),
+            dims=[self._result_dim, *dimensions],
+        )
 
 
 class Atmosphere:
@@ -225,6 +224,8 @@ class Atmosphere:
         wavenumber_cminv: np.array = None,
         numwavel: Optional[int] = None,
         calculate_derivatives: bool = True,
+        pressure_derivative: bool = True,
+        temperature_derivative: bool = True,
     ):
         """
         The main specification for the atmospheric state.
@@ -248,6 +249,10 @@ class Atmosphere:
             anaything. One of wavelengths_nm, wavenumber_cminv, numwavel must be set.
         calculate_derivatives : bool, optional
             Whether or not the model should calculate derivatives with respect to atmospheric quantities., by default True
+        pressure_derivative: bool, optional
+            Whether or not the model should calculate derivatives with respect to pressure., by default True
+        temperature_derivative: bool, optional
+            Whether or not the model should calculate derivatives with respect to temperature., by default True
         """
         self._wavelengths_nm = None
         self._wavenumbers_cminv = None
@@ -271,6 +276,8 @@ class Atmosphere:
 
         self._nstokes = config.num_stokes
         self._calculate_derivatives = calculate_derivatives
+        self._pressure_derivative = pressure_derivative
+        self._temperature_derivative = temperature_derivative
 
         if self._nstokes == 1:
             self._atmosphere = sk.AtmosphereStokes_1(
@@ -317,6 +324,28 @@ class Atmosphere:
         int
         """
         return self._nstokes
+
+    @property
+    def calculate_temperature_derivative(self) -> bool:
+        """
+        True if we are calculating the derivative with respect to temperature
+
+        Returns
+        -------
+        bool
+        """
+        return self._temperature_derivative
+
+    @property
+    def calculate_pressure_derivative(self) -> bool:
+        """
+        True if we are calculating the derivative with respect to pressure
+
+        Returns
+        -------
+        bool
+        """
+        return self._pressure_derivative
 
     @property
     def storage(
