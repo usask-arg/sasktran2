@@ -232,14 +232,18 @@ class OpticalDatabaseGenericScatterer(OpticalDatabase):
 
         interp_handler = self._construct_interp_handler(atmo, **kwargs)
 
-        ds_interp = self._database.interp(**interp_handler)
+        num_assign_legendre = min(
+            atmo.storage.leg_coeff.shape[0], len(self._database["legendre"])
+        )
+
+        ds_interp = (
+            self._database.isel(legendre=slice(0, num_assign_legendre))
+            .drop(["lm_a2", "lm_a3", "lm_a4", "lm_b1", "lm_b2"])
+            .interp(**interp_handler)
+        )
 
         quants.extinction = ds_interp["xs_total"].to_numpy()
         quants.ssa = ds_interp["xs_scattering"].to_numpy()
-
-        num_assign_legendre = min(
-            atmo.storage.leg_coeff.shape[0], len(ds_interp["legendre"])
-        )
 
         quants.leg_coeff = (
             (ds_interp["lm_a1"])
@@ -275,12 +279,14 @@ class OpticalDatabaseGenericScatterer(OpticalDatabase):
                 interp_handler_z[key] = val
             else:
                 interp_handler_noz[key] = val
-
-        # Get the derivatives of the cross section with respect to the z dependent variables
-        partial_interp = self._database.interp(**interp_handler_noz)
-
         num_assign_legendre = min(
-            atmo.storage.leg_coeff.shape[0], len(partial_interp["legendre"])
+            atmo.storage.leg_coeff.shape[0], len(self._database["legendre"])
+        )
+        # Get the derivatives of the cross section with respect to the z dependent variables
+        partial_interp = (
+            self._database.isel(legendre=slice(0, num_assign_legendre))
+            .drop(["lm_a2", "lm_a3", "lm_a4", "lm_b1", "lm_b2"])
+            .interp(**interp_handler_noz)
         )
 
         for key, val in interp_handler_z.items():

@@ -106,11 +106,15 @@ class VMRAltitudeAbsorber(Constituent):
 
         interp_vmr = interp_matrix @ self._vmr
 
+        deriv_names = []
+        if atmo.calculate_pressure_derivative:
+            deriv_names.append("pressure_pa")
+        if atmo.calculate_temperature_derivative:
+            deriv_names.append("temperature_k")
+
         # Contributions from the change in number density due to a constant
         # VMR and changing pressure/temperature
-        for deriv_name, vert_factor in zip(
-            ["pressure_pa", "temperature_k"], [dN_dP, dN_dT]
-        ):
+        for deriv_name, vert_factor in zip(deriv_names, [dN_dP, dN_dT]):
             derivs[deriv_name] = InterpolatedDerivativeMapping(
                 NativeGridDerivative(
                     d_extinction=self._optical_quants.extinction,
@@ -125,26 +129,27 @@ class VMRAltitudeAbsorber(Constituent):
                 summable=True,
             )
 
-        optical_derivs = self._optical_property.optical_derivatives(atmo=atmo)
+        if len(deriv_names) > 0:
+            optical_derivs = self._optical_property.optical_derivatives(atmo=atmo)
 
-        for key, val in optical_derivs.items():
-            # We only get d_extinction from the optical property, have to set d_ssa accordingly
-            val.d_ssa = (
-                val.d_extinction
-                * (self._optical_quants.ssa - atmo.storage.ssa)
-                / atmo.storage.total_extinction
-            )
+            for key, val in optical_derivs.items():
+                # We only get d_extinction from the optical property, have to set d_ssa accordingly
+                val.d_ssa = (
+                    val.d_extinction
+                    * (self._optical_quants.ssa - atmo.storage.ssa)
+                    / atmo.storage.total_extinction
+                )
 
-            # Assume that all optical derivs are summable, I can't think of any that aren't right now.
-            # Give it a unique key to help with the summing
-            derivs[f"{key}_xs"] = InterpolatedDerivativeMapping(
-                val,
-                interpolating_matrix=np.eye(len(number_density))
-                * (number_density * interp_vmr)[np.newaxis, :],
-                interp_dim="altitude",
-                result_dim="altitude",
-                summable=True,
-                name=key,
-            )
+                # Assume that all optical derivs are summable, I can't think of any that aren't right now.
+                # Give it a unique key to help with the summing
+                derivs[f"{key}_xs"] = InterpolatedDerivativeMapping(
+                    val,
+                    interpolating_matrix=np.eye(len(number_density))
+                    * (number_density * interp_vmr)[np.newaxis, :],
+                    interp_dim="altitude",
+                    result_dim="altitude",
+                    summable=True,
+                    name=key,
+                )
 
         return derivs

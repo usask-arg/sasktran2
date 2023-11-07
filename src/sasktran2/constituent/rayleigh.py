@@ -109,9 +109,13 @@ class Rayleigh(Constituent):
 
         xs = self._ray_ext / N[:, np.newaxis]
 
-        for deriv_name, vert_factor in zip(
-            ["pressure_pa", "temperature_k"], [dN_dP, dN_dT]
-        ):
+        deriv_names = []
+        if atmo.calculate_pressure_derivative:
+            deriv_names.append("pressure_pa")
+        if atmo.calculate_temperature_derivative:
+            deriv_names.append("temperature_k")
+
+        for deriv_name, vert_factor in zip(deriv_names, [dN_dP, dN_dT]):
             derivs[deriv_name] = InterpolatedDerivativeMapping(
                 NativeGridDerivative(
                     d_extinction=xs,
