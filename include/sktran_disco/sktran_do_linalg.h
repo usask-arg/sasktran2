@@ -164,8 +164,10 @@ namespace sasktran_disco {
             std::unique_ptr<double[]> m_data;
         };
 
-        int dgbsv_pentadiagonal(int N, int NRHS, double* AB, double* B,
-                                int LDB);
+        int dgbsv_pentadiagonal(int N, int NRHS, double* AB, double* B, int LDB,
+                                Eigen::VectorXd alpha, Eigen::VectorXd beta,
+                                Eigen::MatrixXd z, Eigen::VectorXd gamma,
+                                Eigen::VectorXd mu);
 
     } // namespace la
 

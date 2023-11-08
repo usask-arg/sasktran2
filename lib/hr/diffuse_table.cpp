@@ -614,39 +614,6 @@ namespace sasktran2::hr {
                     old_outgoing_vals.array();
             }
         }
-
-        /*
-        std::ofstream file("/Users/dannyz/incoming.txt");
-        std::ofstream file2("/Users/dannyz/outgoing.txt");
-        if (file.is_open())
-        {
-            for(int i = 0; i < m_diffuse_points.size(); ++i) {
-                for(int j = 0; j < m_config->num_hr_incoming(); ++j) {
-                    auto xyz =
-        m_diffuse_points[i]->sphere_pair().incoming_sphere().get_quad_position(j);
-                    file << xyz(0) << " " << xyz(1) << " " << xyz(2);
-                    for(int s = 0; s < NSTOKES; ++s) {
-                        file << " " <<
-        storage.m_incoming_radiances.value[(m_diffuse_incoming_index_map[i] +
-        j)*NSTOKES + s];
-                    }
-                    file << std::endl;
-                }
-
-                for(int j = 0; j < m_config->num_hr_outgoing(); ++j) {
-                    auto xyz =
-        m_diffuse_points[i]->sphere_pair().outgoing_sphere().get_quad_position(j);
-                    file2 << xyz(0) << " " << xyz(1) << " " << xyz(2);
-                    for(int s = 0; s < NSTOKES; ++s) {
-                        file2 << " " <<
-        storage.m_outgoing_sources.value[(m_diffuse_outgoing_index_map[i] +
-        j)*NSTOKES + s];
-                    }
-                    file2 << std::endl;
-                }
-            }
-        }
-         */
     }
 
     template <int NSTOKES>
@@ -718,43 +685,46 @@ namespace sasktran2::hr {
             source->calculate(wavelidx, threadidx);
         }
 
-        // Calculate the first order incoming signal
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>
-            temp_result;
-        std::vector<Eigen::Triplet<double>> triplets;
+        if (m_config->num_hr_spherical_iterations() > 0) {
+            // Calculate the first order incoming signal
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>
+                temp_result;
+            std::vector<Eigen::Triplet<double>> triplets;
 
-        triplets.reserve(m_total_num_diffuse_weights);
+            triplets.reserve(m_total_num_diffuse_weights);
 
-        for (int rayidx = 0; rayidx < m_incoming_traced_rays.size(); ++rayidx) {
-            temp_result.value.setZero();
+            for (int rayidx = 0; rayidx < m_incoming_traced_rays.size();
+                 ++rayidx) {
+                temp_result.value.setZero();
 
-            m_integrator.integrate_and_emplace_accumulation_triplets(
-                temp_result, m_initial_sources, wavelidx, rayidx, threadidx,
-                m_diffuse_source_weights, triplets);
+                m_integrator.integrate_and_emplace_accumulation_triplets(
+                    temp_result, m_initial_sources, wavelidx, rayidx, threadidx,
+                    m_diffuse_source_weights, triplets);
 
-            m_thread_storage[threadidx].m_firstorder_radiances.value(
-                Eigen::seq(rayidx * NSTOKES, rayidx * NSTOKES + NSTOKES - 1)) =
-                temp_result.value;
+                m_thread_storage[threadidx].m_firstorder_radiances.value(
+                    Eigen::seq(rayidx * NSTOKES, rayidx * NSTOKES + NSTOKES -
+                                                     1)) = temp_result.value;
 
 #ifdef SASKTRAN_DEBUG_ASSERTS
-            if (temp_result.value.hasNaN()) {
-                spdlog::error("Incoming Ray: {} has NaN", rayidx);
-            }
+                if (temp_result.value.hasNaN()) {
+                    spdlog::error("Incoming Ray: {} has NaN", rayidx);
+                }
 #endif
+            }
+            auto& matrix = m_thread_storage[threadidx].accumulation_matrix;
+
+            matrix.setFromTriplets(triplets.begin(), triplets.end());
+
+            // Optional: Intialize total incoming with DO solution
+
+            // Else, start with total first order incoming
+            m_thread_storage[threadidx].m_incoming_radiances.value =
+                m_thread_storage[threadidx].m_firstorder_radiances.value;
+
+            // Generate the scattering and accumulation matrices
+            generate_scattering_matrices(wavelidx, threadidx);
+            generate_accumulation_matrix(wavelidx, threadidx);
         }
-        auto& matrix = m_thread_storage[threadidx].accumulation_matrix;
-
-        matrix.setFromTriplets(triplets.begin(), triplets.end());
-
-        // Optional: Intialize total incoming with DO solution
-
-        // Else, start with total first order incoming
-        m_thread_storage[threadidx].m_incoming_radiances.value =
-            m_thread_storage[threadidx].m_firstorder_radiances.value;
-
-        // Generate the scattering and accumulation matrices
-        generate_scattering_matrices(wavelidx, threadidx);
-        generate_accumulation_matrix(wavelidx, threadidx);
 
         // Iterate to the solution
         iterate_to_solution(wavelidx, threadidx);
