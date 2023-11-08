@@ -159,6 +159,14 @@ namespace sasktran_disco {
         Eigen::VectorXd bvp_b;
         Eigen::VectorXd bvp_temp;
         Eigen::MatrixXd bvp_d_rhs;
+
+        // 2 Stream pentadiagonal cache, only allocated if in 2stream mode
+        Eigen::VectorXd bvp_pd_alpha;
+        Eigen::VectorXd bvp_pd_beta;
+        Eigen::MatrixXd bvp_pd_d_z;
+        Eigen::MatrixXd bvp_pd_z;
+        Eigen::VectorXd bvp_pd_gamma;
+        Eigen::VectorXd bvp_pd_mu;
     };
 
     // Data that each thread will need, reused across wavelengths.

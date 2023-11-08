@@ -82,6 +82,13 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::configureCache() {
 
     m_cache.bvp_d_rhs.resize(m_cache.bvp_mat->N(), numDeriv);
     m_cache.bvp_temp.resize(m_cache.bvp_b.size());
+
+    m_cache.bvp_pd_alpha.resize(m_cache.bvp_mat->N());
+    m_cache.bvp_pd_beta.resize(m_cache.bvp_mat->N());
+    m_cache.bvp_pd_d_z.resize(m_cache.bvp_mat->N(), numDeriv);
+    m_cache.bvp_pd_z.resize(m_cache.bvp_mat->N(), 1);
+    m_cache.bvp_pd_gamma.resize(m_cache.bvp_mat->N());
+    m_cache.bvp_pd_mu.resize(m_cache.bvp_mat->N());
 }
 
 template <int NSTOKES, int CNSTR>
@@ -1179,7 +1186,10 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveBVP(AEOrder m) {
 
     if constexpr (CNSTR == 2 && NSTOKES == 1 &&
                   SASKTRAN_DISCO_ENABLE_PENTADIAGONAL) {
-        errorcode = la::dgbsv_pentadiagonal(N, 1, mat.data(), b.data(), N);
+        errorcode = la::dgbsv_pentadiagonal(
+            N, 1, mat.data(), b.data(), N, m_cache.bvp_pd_alpha,
+            m_cache.bvp_pd_beta, m_cache.bvp_pd_z, m_cache.bvp_pd_gamma,
+            m_cache.bvp_pd_mu);
     } else {
 #ifdef SKTRAN_USE_ACCELERATE
         int one = 1;
@@ -1250,8 +1260,10 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveBVP(AEOrder m) {
 
     if constexpr (NSTOKES == 1 && CNSTR == 2 &&
                   SASKTRAN_DISCO_ENABLE_PENTADIAGONAL) {
-        errorcode =
-            la::dgbsv_pentadiagonal(N, numDeriv, mat.data(), rhs.data(), N);
+        errorcode = la::dgbsv_pentadiagonal(
+            N, numDeriv, mat.data(), rhs.data(), N, m_cache.bvp_pd_alpha,
+            m_cache.bvp_pd_beta, m_cache.bvp_pd_d_z, m_cache.bvp_pd_gamma,
+            m_cache.bvp_pd_mu);
     } else {
         // Solve using the same LHS as above
 #ifdef SKTRAN_USE_ACCELERATE
