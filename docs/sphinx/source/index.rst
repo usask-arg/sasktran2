@@ -7,12 +7,13 @@ The SASKTRAN Radiative Transfer Framework (Version 2)
 =====================================================
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 4
    :caption: Contents:
 
    installation
    quickstart
    required_components
+   weighting_functions
    examples/examples
    api_reference
 

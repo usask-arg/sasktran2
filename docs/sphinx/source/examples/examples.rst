@@ -8,3 +8,4 @@ Examples
    :maxdepth: 2
 
    aerosol/basic
+   wf/amf

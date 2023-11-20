@@ -14,7 +14,7 @@ Class Objects
 
 .. autoclass:: sasktran2.optical.HITRANTabulated
 
-.. autoclass:: sasktran2.optical.datbase.OpticalDatabase
+.. autoclass:: sasktran2.optical.database.OpticalDatabase
 
 .. autoclass:: sasktran2.optical.database.OpticalDatabaseGenericAbsorber
 

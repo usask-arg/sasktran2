@@ -10,3 +10,4 @@ Setting up the Calculation
    components/model_geometry
    components/viewing_geometry
    components/sources
+   components/atmosphere
