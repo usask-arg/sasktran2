@@ -49,3 +49,5 @@ autoclass_content = 'both'
 
 html_theme = "sphinx_book_theme"
 html_static_path = ['_static']
+
+nb_execution_timeout = 300
