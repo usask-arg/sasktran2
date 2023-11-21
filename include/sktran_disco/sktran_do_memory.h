@@ -158,7 +158,6 @@ namespace sasktran_disco {
         std::unique_ptr<la::BVPMatrix<NSTOKES>> bvp_mat;
         Eigen::VectorXd bvp_b;
         Eigen::VectorXd bvp_temp;
-        Eigen::MatrixXd bvp_d_rhs;
 
         // 2 Stream pentadiagonal cache, only allocated if in 2stream mode
         Eigen::VectorXd bvp_pd_alpha;

@@ -78,7 +78,6 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::configureCache() {
     m_cache.bvp_mat =
         std::make_unique<la::BVPMatrix<NSTOKES>>(this->M_NSTR, this->M_NLYR);
 
-    m_cache.bvp_d_rhs.resize(m_cache.bvp_mat->N(), numDeriv);
     m_cache.bvp_temp.resize(m_cache.bvp_b.size());
 
     m_cache.bvp_pd_alpha.resize(m_cache.bvp_mat->N());
@@ -1180,7 +1179,6 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveBVP(AEOrder m) {
     lapack_int NCD = mat.NCD();
     lapack_int LDA = mat.LD();
     lapack_int errorcode;
-    Eigen::VectorXi ipiv(this->M_NSTR * NSTOKES * this->M_NLYR);
 
     if constexpr (CNSTR == 2 && NSTOKES == 1 &&
                   SASKTRAN_DISCO_ENABLE_PENTADIAGONAL) {
@@ -1190,6 +1188,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveBVP(AEOrder m) {
             m_cache.bvp_pd_mu);
     } else {
 #ifdef SKTRAN_USE_ACCELERATE
+        Eigen::VectorXi ipiv(this->M_NSTR * NSTOKES * this->M_NLYR);
         int one = 1;
         dgbsv_(&N, &NCD, &NCD, &one, mat.data(), &LDA, ipiv.data(), b.data(),
                &N, &errorcode);
@@ -1243,13 +1242,11 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveBVP(AEOrder m) {
         return;
     }
 
-    Eigen::VectorXd& temp = m_cache.bvp_temp;
     // Compute the linearizations of the boundary coefficients
-    // Create an RHS matrix to store all of the RHS
-
-    Eigen::MatrixXd& rhs = m_cache.bvp_d_rhs;
+    // Store the RHS in d_b
+    auto& rhs = d_b;
     for (uint i = 0; i < numDeriv; ++i) {
-        d_mat[i].assign_rhs_d_bvp(rhs, i, d_b, b);
+        d_mat[i].assign_rhs_d_bvp(i, d_b, b);
     }
 
     if constexpr (NSTOKES == 1 && CNSTR == 2 &&
@@ -1263,6 +1260,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveBVP(AEOrder m) {
 #ifdef SKTRAN_USE_ACCELERATE
         char trans = 'N';
         int intnderiv = numDeriv;
+        Eigen::VectorXi ipiv(this->M_NSTR * NSTOKES * this->M_NLYR);
         dgbtrs_(&trans, &N, &NCD, &NCD, &intnderiv, mat.data(), &LDA,
                 ipiv.data(), rhs.data(), &N, &errorcode);
 #else
@@ -1581,13 +1579,15 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC2(
         b[loc + N * NSTOKES] = -upper.solution.dual_Gplus_bottom().value(i) +
                                lower.solution.dual_Gplus_top().value(i);
 
-        d_b(Eigen::all, loc + N * NSTOKES).noalias() =
-            lower.solution.dual_Gplus_top().deriv(Eigen::all, i) -
-            upper.solution.dual_Gplus_bottom().deriv(Eigen::all, i);
+        if (numderiv > 0) {
+            d_b(Eigen::all, loc + N * NSTOKES).noalias() =
+                lower.solution.dual_Gplus_top().deriv(Eigen::all, i) -
+                upper.solution.dual_Gplus_bottom().deriv(Eigen::all, i);
 
-        d_b(Eigen::all, loc).noalias() =
-            lower.solution.dual_Gminus_top().deriv(Eigen::all, i) -
-            upper.solution.dual_Gminus_bottom().deriv(Eigen::all, i);
+            d_b(Eigen::all, loc).noalias() =
+                lower.solution.dual_Gminus_top().deriv(Eigen::all, i) -
+                upper.solution.dual_Gminus_bottom().deriv(Eigen::all, i);
+        }
 
         loc++;
     }
