@@ -101,13 +101,13 @@ namespace sasktran_disco {
         // Boundary conditions for the RHS of the boundary value problem
         void bvpCouplingCondition_BC1(AEOrder m, BoundaryIndex p, uint& loc,
                                       Eigen::VectorXd& b,
-                                      VectorDim1<Eigen::VectorXd>& d_b) const;
+                                      Eigen::MatrixXd& d_b) const;
         void bvpCouplingCondition_BC2(AEOrder m, BoundaryIndex p, uint& loc,
                                       Eigen::VectorXd& b,
-                                      VectorDim1<Eigen::VectorXd>& d_b) const;
+                                      Eigen::MatrixXd& d_b) const;
         void bvpCouplingCondition_BC3(AEOrder m, BoundaryIndex p, uint& loc,
                                       Eigen::VectorXd& b,
-                                      VectorDim1<Eigen::VectorXd>& d_b) const;
+                                      Eigen::MatrixXd& d_b) const;
 
         inline HomogType v_plus(AEOrder m,
                                 const OpticalLayer<NSTOKES, CNSTR>& layer,

@@ -225,10 +225,10 @@ namespace sasktran_disco {
         }
 
         inline void assign_rhs_d_bvp(Eigen::MatrixXd& rhs, int colindex,
-                                     const Eigen::VectorXd& d_b,
+                                     const Eigen::MatrixXd& d_b,
                                      const Eigen::VectorXd& b) {
             // First assign the column to d_b
-            rhs(Eigen::all, colindex) = d_b;
+            rhs(Eigen::all, colindex) = d_b(Eigen::all, colindex);
 
             // Then subtract off the multiplication terms
             for (uint i = 0; i < m_data.rows(); ++i) {
