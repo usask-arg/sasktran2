@@ -27,3 +27,4 @@ dependencies:
   - pip:
     - sphinx_book_theme
     - myst-nb
+    - sphinx_design
