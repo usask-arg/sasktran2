@@ -24,9 +24,13 @@ class AirMassFactor(Constituent):
 
         alt_factors = -1 / np.gradient(altitudes)
 
+        # Need to adjust bottom of atmosphere and top to match AMF definition
+        alt_factors[0] *= 2
+        alt_factors[-1] *= 2
+
         derivs = {}
 
-        derivs["amf"] = DerivativeMapping(
+        derivs["air_mass_factor"] = DerivativeMapping(
             NativeGridDerivative(
                 d_extinction=alt_factors[:, np.newaxis],
                 d_ssa=alt_factors[:, np.newaxis]
@@ -35,6 +39,7 @@ class AirMassFactor(Constituent):
             ),
             summable=True,
             log_radiance_space=True,
+            name_prefix="",
         )
 
         return derivs

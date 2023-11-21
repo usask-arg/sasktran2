@@ -59,7 +59,7 @@ At this point we have a nadir viewing scene setup with Rayleigh scattering, and 
 We have added nothing specific to calculating AMFs.  To enable the calculation of AMFs, we add
 
 ```{code-cell}
-atmosphere["amf"] = sk.constituent.AirMassFactor()
+atmosphere["air_mass_factor"] = sk.constituent.AirMassFactor()
 ```
 
 The {py:class}`sasktran2.constituent.AirMassFactor` is a dummy constituent that does not actually modify the atmospheric state,
@@ -71,12 +71,12 @@ radiance = engine.calculate_radiance(atmosphere)
 
 print(radiance)
 ```
-We see that there is a `wf_amf` field that contains the air mass factors, we can look at a few of them
+We see that there is a `air_mass_factor` field that contains the air mass factors, we can look at a few of them
 
 ```{code-cell}
-radiance["wf_amf"].isel(stokes=0, los=0).sel(wavelength=310).plot(y="altitude")
-radiance["wf_amf"].isel(stokes=0, los=0).sel(wavelength=350).plot(y="altitude")
-radiance["wf_amf"].isel(stokes=0, los=0).sel(wavelength=600).plot(y="altitude")
+radiance["air_mass_factor"].isel(stokes=0, los=0).sel(wavelength=310).plot(y="altitude")
+radiance["air_mass_factor"].isel(stokes=0, los=0).sel(wavelength=350).plot(y="altitude")
+radiance["air_mass_factor"].isel(stokes=0, los=0).sel(wavelength=600).plot(y="altitude")
 
 plt.legend(["310 nm", "350 nm", "600 nm"])
 plt.ylabel("Altitude [m]")
