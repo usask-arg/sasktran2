@@ -1585,19 +1585,9 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC2(
             lower.solution.dual_Gplus_top().deriv(Eigen::all, i) -
             upper.solution.dual_Gplus_bottom().deriv(Eigen::all, i);
 
-        d_b(Eigen::all, loc) =
+        d_b(Eigen::all, loc).noalias() =
             lower.solution.dual_Gminus_top().deriv(Eigen::all, i) -
             upper.solution.dual_Gminus_bottom().deriv(Eigen::all, i);
-
-        /*
-        for (uint j = 0; j < input_deriv.size(); ++j) {
-            d_b(j, loc + N * NSTOKES) =
-                lower.solution.dual_Gplus_top().deriv(j, i) -
-                upper.solution.dual_Gplus_bottom().deriv(j, i);
-            d_b(j, loc) = lower.solution.dual_Gminus_top().deriv(j, i) -
-                          upper.solution.dual_Gminus_bottom().deriv(j, i);
-        }
-        */
 
         loc++;
     }
