@@ -26,8 +26,19 @@ extensions = [
     'sphinx.ext.coverage',
     'sphinx.ext.mathjax',
     'sphinx.ext.napoleon',
-    'IPython.sphinxext.ipython_console_highlighting',
-    'IPython.sphinxext.ipython_directive'
+    'myst_nb',
+    "sphinx.ext.viewcode",
+    "sphinx.ext.intersphinx",
+    #"sphinx_copybutton",
+    "sphinx_design",
+    #"sphinx_examples",
+    #"sphinx_tabs.tabs",
+    #"sphinx_thebe",
+    #"sphinx_togglebutton",
+    #"sphinxcontrib.bibtex",
+    #"sphinxext.opengraph",
+    # For the kitchen sink
+    "sphinx.ext.todo",
 ]
 
 templates_path = ['_templates']
@@ -46,5 +57,50 @@ autoclass_content = 'both'
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = "sphinx_rtd_theme"
+html_theme = "sphinx_book_theme"
 html_static_path = ['_static']
+html_css_files = ["locals.css"]
+
+html_theme_options = {
+    "home_page_in_toc": True,
+    "github_url": "https://github.com/usask-arg/sasktran2",
+    "repository_url": "https://github.com/usask-arg/sasktran2",
+    "repository_branch": "main",
+    "path_to_docs": "docs/sphinx/source",
+    "use_repository_button": True,
+    "use_edit_page_button": True,
+    "use_issues_button": True,
+    "logo": {
+      "image_light": "_static/sasktran-dark.png",
+      "image_dark": "_static/sasktran-light.png",
+   }
+}
+
+nb_execution_timeout = 300
+
+
+myst_enable_extensions = [
+    "dollarmath",
+    "amsmath",
+    "deflist",
+    # "html_admonition",
+    # "html_image",
+    "colon_fence",
+    # "smartquotes",
+    # "replacements",
+    # "linkify",
+    # "substitution",
+]
+
+intersphinx_mapping = {
+    "python": ("https://docs.python.org/3/", None),
+    "pandas": ("https://pandas.pydata.org/pandas-docs/stable", None),
+    "numpy": ("https://numpy.org/doc/stable", None),
+    "scipy": ("https://docs.scipy.org/doc/scipy", None),
+    "matplotlib": ("https://matplotlib.org/stable/", None),
+    "dask": ("https://docs.dask.org/en/latest", None),
+    "sparse": ("https://sparse.pydata.org/en/latest/", None),
+    "xarray-tutorial": ("https://tutorial.xarray.dev/", None),
+    "xarray": ("https://docs.xarray.dev/en/stable/", None)
+    # "opt_einsum": ("https://dgasmith.github.io/opt_einsum/", None),
+}

@@ -115,7 +115,7 @@ PRESSURE_GRID = (
     * 100
 )
 TEMP_GRID = np.arange(190, 311, 10)
-HIRES_WAVEL_GRID = np.arange(200.0, 1000.0, 0.001)
+HIRES_WAVEL_GRID = np.arange(200.0, 1200.0, 0.001)
 
 NUM_COMBINE = 100
 

@@ -133,9 +133,11 @@ class OutputIdeal(Output):
                     deriv_name = deriv_name_raw
 
                 if mapping.summable:
-                    name_to_place_result = "wf_" + deriv_name
+                    name_to_place_result = mapping.name_prefix + deriv_name
                 else:
-                    name_to_place_result = "wf_" + constituent_name + "_" + deriv_name
+                    name_to_place_result = (
+                        mapping.name_prefix + constituent_name + "_" + deriv_name
+                    )
 
                 # Start by calculating the derivative with respect to the quantity on the native grid
                 if mapping.is_surface_derivative:

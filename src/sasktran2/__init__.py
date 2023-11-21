@@ -13,6 +13,8 @@ from ._core import (  # noqa: I001
     GroundViewingSolar,
     InterpolationMethod,
     MultipleScatterSource,
+    SingleScatterSource,
+    OccultationSource,
     OutputIdealStokes_1,
     OutputIdealStokes_3,
     Surface,

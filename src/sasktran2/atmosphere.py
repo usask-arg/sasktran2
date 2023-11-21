@@ -35,6 +35,7 @@ class DerivativeMapping:
         native_grid_mapping: NativeGridDerivative,
         summable: bool = False,
         log_radiance_space: bool = False,
+        name_prefix: str = "wf_",
     ):
         """
         A class which defines a mapping from the internal model derivative quantities (derivatives with respect to,
@@ -49,10 +50,13 @@ class DerivativeMapping:
             to a quantity like atmospheric temperature or pressure, by default False
         log_radiance_space : bool, optional
             True if the derivative should be returned in log_radiance space, i.e. if we should divide the absolute derivative by the radiance
+        name_prefix: str, optional
+            Prefix to put infront of the variable in the output dataset, default is "wf_".
         """
         self._native_grid_mapping = native_grid_mapping
         self._summable = summable
         self._log_radiance_space = log_radiance_space
+        self._name_prefix = name_prefix
 
     @property
     def native_grid_mapping(self) -> NativeGridDerivative:
@@ -90,6 +94,10 @@ class DerivativeMapping:
         bool
         """
         return self._log_radiance_space
+
+    @property
+    def name_prefix(self) -> str:
+        return self._name_prefix
 
     def map_derivative(self, data: np.ndarray, dimensions: List[str]):
         return xr.DataArray(

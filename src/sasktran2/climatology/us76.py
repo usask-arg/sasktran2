@@ -85,8 +85,8 @@ _PRESSURE = np.array(
 def add_us76_standard_atmosphere(atmo: sk.Atmosphere):
     geo = atmo.model_geometry
 
-    atmo.pressure_pa = np.interp(
-        geo.altitudes(), _ALTS, _PRESSURE * 1e4, left=0, right=0
+    atmo.pressure_pa = np.exp(
+        np.interp(geo.altitudes(), _ALTS, np.log(_PRESSURE * 1e4), left=0, right=0)
     )
     atmo.temperature_k = np.interp(
         geo.altitudes(),
