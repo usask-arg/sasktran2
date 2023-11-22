@@ -142,3 +142,8 @@ We can plot the output directly,
 ```{code-cell}
 output['radiance'].isel(los=0).plot()
 ```
+
+```{note}
+All calculations in SASKTRAN2 unless explicitly stated assume an incident solar irradiance of 1.  Therefore the
+output units of radiance are [/steradian]
+```
