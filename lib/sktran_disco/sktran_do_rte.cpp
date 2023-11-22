@@ -66,22 +66,21 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::configureCache() {
 
     if (m_cache.d_mat.size() == 0) {
         m_cache.d_mat.reserve(numDeriv);
-        m_cache.d_b.reserve(numDeriv);
         for (uint i = 0; i < numDeriv; ++i) {
             m_cache.d_mat.emplace_back(BVPMatrixDenseBlock<NSTOKES>(
                 m_layers.inputDerivatives().layerDerivatives()[i].layer_index,
                 this->M_NSTR, this->M_NLYR));
-            m_cache.d_b.emplace_back(
-                Eigen::VectorXd(this->M_NSTR * NSTOKES * this->M_NLYR));
         }
+        m_cache.d_b.resize(this->M_NSTR * NSTOKES * this->M_NLYR, numDeriv);
     }
 
     m_cache.bvp_b.resize(this->M_NSTR * NSTOKES * this->M_NLYR);
     m_cache.bvp_mat =
         std::make_unique<la::BVPMatrix<NSTOKES>>(this->M_NSTR, this->M_NLYR);
 
-    m_cache.bvp_d_rhs.resize(m_cache.bvp_mat->N(), numDeriv);
     m_cache.bvp_temp.resize(m_cache.bvp_b.size());
+
+    m_cache.ipiv.resize(this->M_NSTR * NSTOKES * this->M_NLYR);
 
     m_cache.bvp_pd_alpha.resize(m_cache.bvp_mat->N());
     m_cache.bvp_pd_beta.resize(m_cache.bvp_mat->N());
@@ -1164,8 +1163,8 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveBVP(AEOrder m) {
 
     for (uint i = 0; i < numDeriv; ++i) {
         d_mat[i].setZero();
-        d_b[i].setZero();
     }
+    d_b.setZero();
 
     // Build the S.O.E for unperturbed system
     bvpTOACondition(m, 0, mat, d_mat); // TOA Coefficients
@@ -1182,7 +1181,8 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveBVP(AEOrder m) {
     lapack_int NCD = mat.NCD();
     lapack_int LDA = mat.LD();
     lapack_int errorcode;
-    Eigen::VectorXi ipiv(this->M_NSTR * NSTOKES * this->M_NLYR);
+
+    auto& ipiv = m_cache.ipiv;
 
     if constexpr (CNSTR == 2 && NSTOKES == 1 &&
                   SASKTRAN_DISCO_ENABLE_PENTADIAGONAL) {
@@ -1245,17 +1245,11 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveBVP(AEOrder m) {
         return;
     }
 
-    Eigen::VectorXd& temp = m_cache.bvp_temp;
     // Compute the linearizations of the boundary coefficients
-    // Create an RHS matrix to store all of the RHS
-
-    Eigen::MatrixXd& rhs = m_cache.bvp_d_rhs;
+    // Store the RHS in d_b
+    auto& rhs = d_b;
     for (uint i = 0; i < numDeriv; ++i) {
-        /*
-        d_mat[i].multiplyVector(b, temp);
-        rhs(Eigen::all, i) = d_b[i] - temp;
-         */
-        d_mat[i].assign_rhs_d_bvp(rhs, i, d_b[i], b);
+        d_mat[i].assign_rhs_d_bvp(i, d_b, b);
     }
 
     if constexpr (NSTOKES == 1 && CNSTR == 2 &&
@@ -1535,7 +1529,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpGroundCondition(
 template <int NSTOKES, int CNSTR>
 void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC1(
     AEOrder m, BoundaryIndex p, uint& loc, Eigen::VectorXd& b,
-    VectorDim1<Eigen::VectorXd>& d_b) const {
+    Eigen::MatrixXd& d_b) const {
 
     // Setup enviroment
     assert(p == 0);
@@ -1549,7 +1543,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC1(
         b[loc] = -solution.dual_Gplus_top().value(i);
 
         for (uint k = 0; k < numDeriv; ++k) {
-            d_b[k][loc] = -solution.dual_Gplus_top().deriv(k, i);
+            d_b(loc, k) = -solution.dual_Gplus_top().deriv(k, i);
         }
         loc++;
     }
@@ -1558,7 +1552,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC1(
 template <int NSTOKES, int CNSTR>
 void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC2(
     AEOrder m, BoundaryIndex p, uint& loc, Eigen::VectorXd& b,
-    VectorDim1<Eigen::VectorXd>& d_b) const {
+    Eigen::MatrixXd& d_b) const {
     // Setup enviroment
     assert(p != 0 && p != this->M_NLYR);
     const uint N = this->M_NSTR / 2;
@@ -1587,12 +1581,14 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC2(
         b[loc + N * NSTOKES] = -upper.solution.dual_Gplus_bottom().value(i) +
                                lower.solution.dual_Gplus_top().value(i);
 
-        for (uint j = 0; j < input_deriv.size(); ++j) {
-            d_b[j][loc + N * NSTOKES] =
-                lower.solution.dual_Gplus_top().deriv(j, i) -
-                upper.solution.dual_Gplus_bottom().deriv(j, i);
-            d_b[j][loc] = lower.solution.dual_Gminus_top().deriv(j, i) -
-                          upper.solution.dual_Gminus_bottom().deriv(j, i);
+        if (numderiv > 0) {
+            d_b(loc + N * NSTOKES, Eigen::all).noalias() =
+                lower.solution.dual_Gplus_top().deriv(Eigen::all, i) -
+                upper.solution.dual_Gplus_bottom().deriv(Eigen::all, i);
+
+            d_b(loc, Eigen::all).noalias() =
+                lower.solution.dual_Gminus_top().deriv(Eigen::all, i) -
+                upper.solution.dual_Gminus_bottom().deriv(Eigen::all, i);
         }
 
         loc++;
@@ -1603,7 +1599,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC2(
 template <int NSTOKES, int CNSTR>
 void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC3(
     AEOrder m, BoundaryIndex p, uint& loc, Eigen::VectorXd& b,
-    VectorDim1<Eigen::VectorXd>& d_b) const {
+    Eigen::MatrixXd& d_b) const {
     // Configure
     assert(p == this->M_NLYR);
     RTEGeneralSolution<NSTOKES, CNSTR>& solution =
@@ -1617,7 +1613,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC3(
 
         // We have cross derivatives
         for (uint j = 0; j < input_deriv.size(); ++j) {
-            d_b[j][loc] = d_ground_direct_sun(m, layer, i, input_deriv[j], j) -
+            d_b(loc, j) = d_ground_direct_sun(m, layer, i, input_deriv[j], j) -
                           d_u_minus(m, layer, i, j, input_deriv[j]);
         }
 

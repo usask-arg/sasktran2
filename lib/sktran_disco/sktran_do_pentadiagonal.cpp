@@ -89,11 +89,12 @@ int sasktran_disco::la::dgbsv_pentadiagonal(
     // computationally efficient just to solve the system, then if the resulting
     // coefficients are nan just set everything to 0 since there will be 0
     // contribution from this order anyways
-
+#ifdef SASKTRAN_DEBUG_ASSERTS
     if (y.hasNaN()) {
         spdlog::warn("Pentadiagonal solver failed");
         y.setZero();
     }
+#endif
 
     return 0;
 }
