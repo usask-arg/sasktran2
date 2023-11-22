@@ -1,11 +1,10 @@
-.. _api_optical:
 
-Optical Properties
-==================
+(_api_optical)=
+# Optical Properties
 
-Class Objects
--------------
+## Class Objects
 
+```{eval-rst}
 .. autoclass:: sasktran2.optical.O3DBM
 
 .. autoclass:: sasktran2.optical.NO2Vandaele
@@ -19,9 +18,10 @@ Class Objects
 .. autoclass:: sasktran2.optical.database.OpticalDatabaseGenericAbsorber
 
 .. autoclass:: sasktran2.optical.database.OpticalDatabaseGenericScatterer
+```
 
+## Special Modules
 
-Special Modules
----------------
-
+```{eval-rst}
 .. automodule:: sasktran2.optical.rayleigh
+```

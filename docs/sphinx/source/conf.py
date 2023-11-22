@@ -62,7 +62,6 @@ html_static_path = ['_static']
 html_css_files = ["locals.css"]
 
 html_theme_options = {
-    "home_page_in_toc": True,
     "github_url": "https://github.com/usask-arg/sasktran2",
     "repository_url": "https://github.com/usask-arg/sasktran2",
     "repository_branch": "main",

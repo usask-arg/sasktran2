@@ -22,6 +22,18 @@ The {py:class}`sasktran2.Config` object stores all of the user configuration opt
 config = sk.Config()
 ```
 
+The default configuration object contains setting for a single scattering atmosphere. Let's add a multiple scattering
+source
+
+```{code-cell}
+config.multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
+```
+
+To speed up the calculation let's also adjust some accuracy settings
+```{code-cell}
+config.num_streams = 2
+```
+
 ## The Model Geometry
 The model geometry is the grid that the radiative transfer calculation is actually performed on.
 Usually this involves specifying the coordinates (spherical, plane parallel, etc.) the number of dimensions the
@@ -70,17 +82,38 @@ wavel = np.arange(280.0, 800.0, 0.1)
 atmosphere = sk.Atmosphere(model_geometry, config, wavelengths_nm=wavel)
 ```
 
-```{code-cell}
-sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
-```
+In SASKTRAN2 calculations are most efficiently performed over a spectral dimension,
+here we have specified wavelength, but in practice this can be any dimension we want to vectorize
+the calculation over.
+
+The easiest way to specify the atmosphere is through what we call the constituent interface, essentially
+the atmosphere is composed of discrete constituents each providing their own input to the atmospheric state.
+
+To add Rayleigh scattering we can do,
 
 ```{code-cell}
 atmosphere['rayleigh'] = sk.constituent.Rayleigh()
 ```
 
+SASKTRAN2 contains built in climatologies [(`sasktran2.climatology.*`)](api/climatology.rst) of some atmospheric constituents to aid in setting up
+calculations quickly.  Here we add absorption due to ozone and nitrogen dioxide,
+
 ```{code-cell}
 atmosphere['ozone'] = sk.climatology.mipas.constituent("O3", sk.optical.O3DBM())
 atmosphere['no2'] = sk.climatology.mipas.constituent("NO2", sk.optical.NO2Vandaele())
+```
+
+many atmospheric constituents require databases of cross sections and optionally scattering properties,
+in SASKTRAN2 we refer to these as optical properties, and they are contained in the
+[`sasktran2.optical`](api/optical.md) namespace.
+
+Lastly, many constituents require that the pressure and temperature of the atmosphere be known to compute
+background number density and evaluate cross sections at the appropriate atmospheric conditions.  These can be
+set directly with the {py:attr}`sasktran2.Atmosphere.pressure_pa` and {py:attr}`sasktran2.Atmosphere.temperature_k`
+properties, or they can be set through built in climatologies such as
+
+```{code-cell}
+sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
 ```
 
 ## Performing the Calculation
@@ -96,6 +129,15 @@ calculation, we pass in the {py:class}`sasktran2.Atmosphere` object
 ```{code-cell}
 output = engine.calculate_radiance(atmosphere)
 ```
+
+The default output format is an {py:class}`xarray.Dataset` object containing relevant fields including
+`radiance` and derivatives of the radiance with respect to atmospheric parameters.
+
+```{code-cell}
+print(output)
+```
+
+We can plot the output directly,
 
 ```{code-cell}
 output['radiance'].isel(los=0).plot()
