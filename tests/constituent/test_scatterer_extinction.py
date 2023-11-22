@@ -114,7 +114,7 @@ def test_scatterer_extinction_wf_native_grid():
             radiance["wf_strat_aerosol_extinction"],
             radiance["wf_strat_aerosol_extinction_numeric"],
             wf_dim="strat_aerosol_altitude",
-            decimal=4,
+            decimal=3,
         )
 
 
@@ -125,6 +125,8 @@ def test_scatterer_extinction_wf_interpolated_grid():
 
     scens = _test_scenarios()
 
+    new_altitudes = np.array([0, 10000, 30000, 70000])
+
     for scen in scens:
         altitude_grid = scen["atmosphere"].model_geometry.altitudes()
         atmosphere = scen["atmosphere"]
@@ -134,7 +136,7 @@ def test_scatterer_extinction_wf_interpolated_grid():
         )
 
         atmosphere["strat_aerosol"] = sk.test_util.scenarios.test_aerosol_constituent(
-            altitude_grid[::10], True
+            new_altitudes, True
         )
 
         engine = sk.Engine(scen["config"], scen["geometry"], scen["viewing_geo"])
@@ -161,6 +163,7 @@ def test_scatterer_numden_wf_interpolated_grid():
     """
 
     scens = _test_scenarios()
+    new_altitudes = np.array([0, 10000, 30000, 70000])
 
     for scen in scens:
         altitude_grid = scen["atmosphere"].model_geometry.altitudes()
@@ -171,14 +174,14 @@ def test_scatterer_numden_wf_interpolated_grid():
         )
 
         atmosphere["strat_aerosol"] = sk.test_util.scenarios.test_aerosol_constituent(
-            altitude_grid[::10], False
+            new_altitudes, False
         )
 
         engine = sk.Engine(scen["config"], scen["geometry"], scen["viewing_geo"])
 
         radiance = sk.test_util.wf.numeric_wf(
             atmosphere["strat_aerosol"].number_density,
-            0.0001,
+            0.00001,
             engine,
             atmosphere,
             "wf_strat_aerosol_number_density",

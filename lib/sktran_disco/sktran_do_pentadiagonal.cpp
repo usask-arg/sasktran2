@@ -1,8 +1,10 @@
 #include "sktran_disco/sktran_do.h"
 #include "sktran_disco/sktran_do_linalg.h"
 
-int sasktran_disco::la::dgbsv_pentadiagonal(int N, int NRHS, double* AB,
-                                            double* B, int LDB) {
+int sasktran_disco::la::dgbsv_pentadiagonal(
+    int N, int NRHS, double* AB, double* B, int LDB, Eigen::VectorXd alpha,
+    Eigen::VectorXd beta, Eigen::MatrixXd z, Eigen::VectorXd gamma,
+    Eigen::VectorXd mu) {
     Eigen::Map<Eigen::MatrixXd> eigen_AB(AB, 7, N);
 
     // Rows 2-7 contain the diagonals of the pentadiagonal matrix, rows 0 and 1
@@ -25,12 +27,6 @@ int sasktran_disco::la::dgbsv_pentadiagonal(int N, int NRHS, double* AB,
 
     Eigen::Map<Eigen::VectorXd, 0, Eigen::InnerStride<7>> b(
         eigen_AB.data() + 16, N);
-
-    Eigen::VectorXd alpha(N);
-    Eigen::VectorXd beta(N);
-    Eigen::MatrixXd z(N, NRHS);
-    Eigen::VectorXd gamma(N);
-    Eigen::VectorXd mu(N);
 
     Eigen::Map<Eigen::MatrixXd> y(B, N, NRHS);
 
@@ -93,11 +89,12 @@ int sasktran_disco::la::dgbsv_pentadiagonal(int N, int NRHS, double* AB,
     // computationally efficient just to solve the system, then if the resulting
     // coefficients are nan just set everything to 0 since there will be 0
     // contribution from this order anyways
-
+#ifdef SASKTRAN_DEBUG_ASSERTS
     if (y.hasNaN()) {
         spdlog::warn("Pentadiagonal solver failed");
         y.setZero();
     }
+#endif
 
     return 0;
 }

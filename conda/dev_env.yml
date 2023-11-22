@@ -25,4 +25,6 @@ dependencies:
   - cxx-compiler
   - fortran-compiler
   - pip:
-    - sphinx_rtd_theme
+    - sphinx_book_theme
+    - myst-nb
+    - sphinx_design

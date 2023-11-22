@@ -13,11 +13,14 @@ from ._core import (  # noqa: I001
     GroundViewingSolar,
     InterpolationMethod,
     MultipleScatterSource,
+    SingleScatterSource,
+    OccultationSource,
     OutputIdealStokes_1,
     OutputIdealStokes_3,
     Surface,
     TangentAltitudeSolar,
     ViewingGeometry,
+    ViewingGeometryBase,
 )
 from ._version import __version__
 from .atmosphere import Atmosphere

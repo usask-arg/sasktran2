@@ -3,6 +3,7 @@
 /obj
 deps/
 ipch
+*.austin
 .vs
 *.db
 *.user
@@ -44,3 +45,4 @@ docs/sphinx/source/savefig
 src/sasktran2/_version.py
 conda.recipe/conda_build_config.yaml
 local_scripts
+typings

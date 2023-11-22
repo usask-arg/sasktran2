@@ -1,3 +1,5 @@
+from typing import Any
+
 import numpy as np
 
 from sasktran2 import Atmosphere
@@ -46,7 +48,15 @@ class NumberDensityScatterer(Constituent):
         # Extra factor to apply to the vertical derivatives, used by the derived Extinction class
         self._vertical_deriv_factor = np.ones_like(number_density)
 
+        # Optical derivatives can also have derivatives to this factor
+        self._d_vertical_deriv_factor = {}
+
         self._kwargs = kwargs
+
+    def __getattr__(self, __name: str) -> Any:
+        if __name in self._kwargs:
+            return self._kwargs[__name]
+        return None
 
     @property
     def number_density(self):
@@ -86,6 +96,7 @@ class NumberDensityScatterer(Constituent):
 
         # Convert back to SSA for ease of use later in the derivatives
         self._optical_quants.ssa /= self._optical_quants.extinction
+        self._optical_quants.ssa[~np.isfinite(self._optical_quants.ssa)] = 1
 
     def register_derivative(self, atmo: Atmosphere, name: str):
         interp_matrix = linear_interpolating_matrix(
@@ -93,6 +104,8 @@ class NumberDensityScatterer(Constituent):
             atmo.model_geometry.altitudes(),
             self._out_of_bounds_mode.lower(),
         )
+        interped_kwargs = {k: interp_matrix @ v for k, v in self._kwargs.items()}
+
         derivs = {}
 
         # Factor to apply to legendre derivatives is
@@ -115,6 +128,69 @@ class NumberDensityScatterer(Constituent):
             interp_dim="altitude",
             result_dim=f"{name}_altitude",
         )
+
+        optical_derivs = self._optical_property.optical_derivatives(
+            atmo, **interped_kwargs
+        )
+
+        for key, val in optical_derivs.items():
+            # First, the optical property returns back d_scattering extinction in the d_ssa container,
+            # convert this to d_ssa
+
+            val.d_ssa -= val.d_extinction * self._optical_quants.ssa
+            val.d_ssa /= self._optical_quants.extinction
+
+            if key in self._d_vertical_deriv_factor:
+                # Have to make some adjustments
+
+                # The change in extinction is adjusted
+                val.d_extinction += (
+                    self._optical_quants.extinction
+                    / (interp_matrix @ self._vertical_deriv_factor)[:, np.newaxis]
+                    * (interp_matrix @ self._d_vertical_deriv_factor[key])[
+                        :, np.newaxis
+                    ]
+                )
+
+                # Change in single scatter albedo should be invariant whether or not we are
+                # in extinction space or number density space
+
+            # Start with leg_coeff
+            val.d_leg_coeff += (
+                self._optical_quants.leg_coeff - atmo.storage.leg_coeff
+            ) * (
+                1 / self._optical_quants.ssa * val.d_ssa
+                + 1 / self._optical_quants.extinction * val.d_extinction
+            )[
+                np.newaxis, :, :
+            ]
+
+            # Then adjust d_ssa
+            val.d_ssa *= self._optical_quants.extinction
+            val.d_ssa += val.d_extinction * (
+                self._optical_quants.ssa - atmo.storage.ssa
+            )
+            val.d_ssa /= atmo.storage.total_extinction
+
+            # TODO: The model should probably handle this
+            norm_factor = val.d_leg_coeff.max(axis=0)
+            norm_factor[norm_factor == 0] = 1
+
+            val.scat_factor = (
+                (self._optical_quants.ssa * self._optical_quants.extinction)
+                / (atmo.storage.ssa * atmo.storage.total_extinction)
+            )[np.newaxis, :, :]
+
+            val.d_leg_coeff /= norm_factor[np.newaxis, :, :]
+            val.scat_factor *= norm_factor[np.newaxis, :, :]
+
+            derivs[key] = InterpolatedDerivativeMapping(
+                val,
+                interpolating_matrix=interp_matrix
+                * self._number_density[np.newaxis, :],
+                interp_dim="altitude",
+                result_dim=f"{name}_altitude",
+            )
 
         return derivs
 
@@ -167,6 +243,18 @@ class ExtinctionScatterer(NumberDensityScatterer):
         self.number_density = (
             self._extinction_per_m / self._extinction_to_numden_factors
         )
+
+        self._d_vertical_deriv_factor = (
+            self._optical_property.cross_section_derivatives(
+                np.array([self._extinction_wavelength_nm]),
+                altitudes_m=self._altitudes_m,
+                **self._kwargs,
+            )
+        )
+
+        for _, val in self._d_vertical_deriv_factor.items():
+            # convert from derivative of x to derivative of 1/x
+            val *= -1 * self._vertical_deriv_factor**2  # noqa: PLW2901
 
     @property
     def extinction_per_m(self):

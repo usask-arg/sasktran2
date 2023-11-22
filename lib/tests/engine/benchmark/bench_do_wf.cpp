@@ -23,7 +23,7 @@ TEST_CASE("do_wf_bench", "[sasktran2][engine]") {
     sasktran2::Geometry1D geo(std::move(coords), std::move(grid));
 
     // Construct the Atmosphere
-    int nwavel = 100;
+    int nwavel = 1000;
     sasktran2::atmosphere::AtmosphereGridStorageFull<1> storage(nwavel,
                                                                 geo.size(), 16);
     sasktran2::atmosphere::Surface surface;
@@ -78,7 +78,7 @@ TEST_CASE("do_wf_bench", "[sasktran2][engine]") {
     sasktran2::viewinggeometry::ViewingGeometryContainer viewing_geometry;
     auto& los = viewing_geometry.observer_rays();
 
-    int nlos = 250;
+    int nlos = 30;
     for (int i = 0; i < nlos; ++i) {
         los.emplace_back(
             std::make_unique<sasktran2::viewinggeometry::TangentAltitude>(
@@ -95,6 +95,7 @@ TEST_CASE("do_wf_bench", "[sasktran2][engine]") {
     config.set_multiple_scatter_source(
         sasktran2::Config::MultipleScatterSource::discrete_ordinates);
     config.set_initialize_hr_with_do(true);
+    config.set_num_hr_spherical_iterations(0);
 
     // Make the engine
     Sasktran2<1> engine(config, &geo, viewing_geometry);
