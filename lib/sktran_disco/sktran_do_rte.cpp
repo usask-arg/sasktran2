@@ -80,6 +80,8 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::configureCache() {
 
     m_cache.bvp_temp.resize(m_cache.bvp_b.size());
 
+    m_cache.ipiv(this->M_NSTR * NSTOKES * this->M_NLYR);
+
     m_cache.bvp_pd_alpha.resize(m_cache.bvp_mat->N());
     m_cache.bvp_pd_beta.resize(m_cache.bvp_mat->N());
     m_cache.bvp_pd_d_z.resize(m_cache.bvp_mat->N(), numDeriv);
@@ -1180,6 +1182,8 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveBVP(AEOrder m) {
     lapack_int LDA = mat.LD();
     lapack_int errorcode;
 
+    auto& ipiv = m_cache.ipiv;
+
     if constexpr (CNSTR == 2 && NSTOKES == 1 &&
                   SASKTRAN_DISCO_ENABLE_PENTADIAGONAL) {
         errorcode = la::dgbsv_pentadiagonal(
@@ -1188,7 +1192,6 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveBVP(AEOrder m) {
             m_cache.bvp_pd_mu);
     } else {
 #ifdef SKTRAN_USE_ACCELERATE
-        Eigen::VectorXi ipiv(this->M_NSTR * NSTOKES * this->M_NLYR);
         int one = 1;
         dgbsv_(&N, &NCD, &NCD, &one, mat.data(), &LDA, ipiv.data(), b.data(),
                &N, &errorcode);
@@ -1260,7 +1263,6 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveBVP(AEOrder m) {
 #ifdef SKTRAN_USE_ACCELERATE
         char trans = 'N';
         int intnderiv = numDeriv;
-        Eigen::VectorXi ipiv(this->M_NSTR * NSTOKES * this->M_NLYR);
         dgbtrs_(&trans, &N, &NCD, &NCD, &intnderiv, mat.data(), &LDA,
                 ipiv.data(), rhs.data(), &N, &errorcode);
 #else
