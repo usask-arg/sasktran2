@@ -108,9 +108,27 @@ Bourassa, A. E., Degenstein, D. A., and Llewellyn, E. J.: SASKTRAN: A Spherical 
 ```{toctree}
 :maxdepth: 4
 :hidden:
+:caption: For Users
 
 installation
 quickstart
 users_guide
 api_reference
+```
+
+```{toctree}
+:maxdepth: 4
+:hidden:
+:caption: Extending SASKTRAN2
+
+extending/constituent.md
+```
+
+```{toctree}
+:maxdepth: 4
+:hidden:
+:caption: Developer Documentation
+
+developer/compiling.md
+developer/contributing.md
 ```

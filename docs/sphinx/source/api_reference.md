@@ -13,7 +13,7 @@
 [Constituents](api/constituents.rst)
 : All of the available atmospheric constituents in `sasktran2.constituents.*`
 
-[Optical Properties](api/optical.rst)
+[Optical Properties](api/optical.md)
 : The optical properties in `sasktran2.optical.*`
 
 [Output](api/output.rst)
