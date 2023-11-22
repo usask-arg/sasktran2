@@ -71,7 +71,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::configureCache() {
                 m_layers.inputDerivatives().layerDerivatives()[i].layer_index,
                 this->M_NSTR, this->M_NLYR));
         }
-        m_cache.d_b.resize(numDeriv, this->M_NSTR * NSTOKES * this->M_NLYR);
+        m_cache.d_b.resize(this->M_NSTR * NSTOKES * this->M_NLYR, numDeriv);
     }
 
     m_cache.bvp_b.resize(this->M_NSTR * NSTOKES * this->M_NLYR);
@@ -1543,7 +1543,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC1(
         b[loc] = -solution.dual_Gplus_top().value(i);
 
         for (uint k = 0; k < numDeriv; ++k) {
-            d_b(k, loc) = -solution.dual_Gplus_top().deriv(k, i);
+            d_b(loc, k) = -solution.dual_Gplus_top().deriv(k, i);
         }
         loc++;
     }
@@ -1582,11 +1582,11 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC2(
                                lower.solution.dual_Gplus_top().value(i);
 
         if (numderiv > 0) {
-            d_b(Eigen::all, loc + N * NSTOKES).noalias() =
+            d_b(loc + N * NSTOKES, Eigen::all).noalias() =
                 lower.solution.dual_Gplus_top().deriv(Eigen::all, i) -
                 upper.solution.dual_Gplus_bottom().deriv(Eigen::all, i);
 
-            d_b(Eigen::all, loc).noalias() =
+            d_b(loc, Eigen::all).noalias() =
                 lower.solution.dual_Gminus_top().deriv(Eigen::all, i) -
                 upper.solution.dual_Gminus_bottom().deriv(Eigen::all, i);
         }
@@ -1613,7 +1613,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC3(
 
         // We have cross derivatives
         for (uint j = 0; j < input_deriv.size(); ++j) {
-            d_b(j, loc) = d_ground_direct_sun(m, layer, i, input_deriv[j], j) -
+            d_b(loc, j) = d_ground_direct_sun(m, layer, i, input_deriv[j], j) -
                           d_u_minus(m, layer, i, j, input_deriv[j]);
         }
 
