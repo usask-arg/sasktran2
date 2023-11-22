@@ -80,7 +80,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::configureCache() {
 
     m_cache.bvp_temp.resize(m_cache.bvp_b.size());
 
-    m_cache.ipiv(this->M_NSTR * NSTOKES * this->M_NLYR);
+    m_cache.ipiv.resize(this->M_NSTR * NSTOKES * this->M_NLYR);
 
     m_cache.bvp_pd_alpha.resize(m_cache.bvp_mat->N());
     m_cache.bvp_pd_beta.resize(m_cache.bvp_mat->N());
