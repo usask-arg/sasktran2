@@ -6,6 +6,22 @@
 static const double MACHINE_PRECISION = 100.0 * DBL_EPSILON;
 
 namespace sasktran2::math::geodetic {
+    class HeightOffsetEvaluator {
+        Geodetic* m_geoid;              // The geoid used for calculations
+        Eigen::Vector3d m_tangentpoint; // The location of the tangent point of
+                                        // this look vector
+        Eigen::Vector3d
+            m_look; // The look direction as a unit vector (from the satellite).
+        double m_H;
+
+      public:
+        HeightOffsetEvaluator(Geodetic* geoid, const Eigen::Vector3d& tanpoint,
+                              const Eigen::Vector3d& look, double H);
+        bool FindCrossingPoint(double lmin, double lmax,
+                               Eigen::Vector3d* entrypoint);
+        double operator()(double x);
+    };
+
     Geodetic::Geodetic(double Re, double F)
         : m_geoid_Re(Re), m_geoid_F(F), m_is_valid(false),
           m_geodetic_altitude(std::numeric_limits<double>::quiet_NaN()),
@@ -47,9 +63,66 @@ namespace sasktran2::math::geodetic {
     std::pair<Eigen::Vector3d, Eigen::Vector3d>
     Geodetic::altitude_intercepts(double altitude,
                                   const Eigen::Vector3d& observer,
-                                  const Eigen::Vector3d& look_vector) const {
-        spdlog::warn(
-            "Geodetic::altitude_intercepts is not currently implemented");
+                                  const Eigen::Vector3d& look_vector) {
+        Eigen::Vector3d entrypoint, exitpoint;
+
+        Eigen::Vector3d tangentpoint; // The location of the tangent point of
+                                      // this look vector
+        double Ht;
+        double Rmin;
+        double Rmax;
+        bool ok;
+        bool ok1, ok2;
+        double lmin, lmax;
+
+        this->from_tangent_point(observer, look_vector);
+        tangentpoint = location();
+        Ht = this->altitude();
+        ok = (altitude > Ht); // and make sure their is a valid solution
+        if (ok)               // if there is then
+        {
+            if (m_geoid_F == 0) // If we have a pure sphere
+            {                   // then the solution
+                lmax = sqrt((2 * m_geoid_Re + altitude + Ht) *
+                            (altitude - Ht)); // is considerably simplified
+                Eigen::Vector3d d = look_vector.normalized();
+                entrypoint = tangentpoint - lmax * d;
+                exitpoint = tangentpoint + lmax * d;
+            } else {
+                HeightOffsetEvaluator evaluator(
+                    this, tangentpoint, look_vector,
+                    altitude); // Create the height offset evaluator object
+
+                Rmin =
+                    m_geoid_Re * (1.0 - m_geoid_F); // Get the Semi Minor axis
+                Rmax = m_geoid_Re;                  // Get the Semi major axis
+                lmin = 0.9 * sqrt((altitude - Ht) *
+                                  (altitude + Ht +
+                                   2 * Rmin)); // Minimum distance from tangent
+                                               // point to shell height
+                lmax = 1.1 * sqrt((altitude - Ht) *
+                                  (altitude + Ht +
+                                   2 * Rmax)); // Maximum distance from tangent
+                                               // point to intersection
+
+                ok1 = evaluator.FindCrossingPoint(
+                    lmin, lmax, &entrypoint); // Find the shell from tangent
+                                              // point towards observer
+                ok2 = evaluator.FindCrossingPoint(
+                    -lmin, -lmax, &exitpoint); // Find the shell from tangent
+                                               // point away from observer
+            }
+            ok = ok1 && ok2;
+            if (!ok) {
+                spdlog::warn("Geodetic::altitude_intercepts, Error retrieving "
+                             "entry and exit points for for height (%f)",
+                             (double)altitude);
+            }
+        }
+        if (!ok) {
+            entrypoint.setZero();
+            exitpoint.setZero();
+        }
     }
 
     Eigen::Vector3d Geodetic::local_south() const {
@@ -474,6 +547,131 @@ namespace sasktran2::math::geodetic {
                 *fi = -(*fi); // reverse the geodetic latitude if z was
                               // originally negative.
         }
+    }
+
+    template <class T>
+    double zbrent(T func, double x1, double x2, double tol, int* status) {
+        const int ITMAX = 500;
+        const double EPS = 3.0e-8;
+        int iter;
+        double a = x1;
+        double b = x2;
+        double c = 0;
+        double d = 0;
+        double e = 0;
+        double min1, min2;
+        double fa = func(a);
+        double fb = func(b);
+        double fc, p, q, r, s, tol1, xm;
+
+        *status = 0;
+        if (fb * fa > 0.0)
+            *status = 1;
+        fc = fb;
+        for (iter = 1; iter <= ITMAX; iter++) {
+            if (fb * fc > 0.0) {
+                c = a;
+                fc = fa;
+                e = d = b - a;
+            }
+            if (fabs(fc) < fabs(fb)) {
+                a = b;
+                b = c;
+                c = a;
+                fa = fb;
+                fb = fc;
+                fc = fa;
+            }
+            tol1 = 2.0 * EPS * fabs(b) + 0.5 * tol;
+            xm = 0.5 * (c - b);
+            if (fabs(xm) <= tol1 || fb == 0.0)
+                return b;
+            if (fabs(e) >= tol1 && fabs(fa) > fabs(fb)) {
+                s = fb / fa;
+                if (a == c) {
+                    p = 2.0 * xm * s;
+                    q = 1.0 - s;
+                } else {
+                    q = fa / fc;
+                    r = fb / fc;
+                    p = s * (2.0 * xm * q * (q - r) - (b - a) * (r - 1.0));
+                    q = (q - 1.0) * (r - 1.0) * (s - 1.0);
+                }
+                if (p > 0.0)
+                    q = -q;
+                p = fabs(p);
+                min1 = 3.0 * xm * q - fabs(tol1 * q);
+                min2 = fabs(e * q);
+                if (2.0 * p < (min1 < min2 ? min1 : min2)) {
+                    e = d;
+                    d = p / q;
+                } else {
+                    d = xm;
+                    e = d;
+                }
+            } else {
+                d = xm;
+                e = d;
+            }
+            a = b;
+            fa = fb;
+            if (fabs(d) > tol1)
+                b += d;
+            else
+                b += (xm > 0.0 ? fabs(tol1) : -fabs(tol1));
+            fb = func(b);
+        }
+        *status = 1;
+        return -9999.00; // nrerror("Maximum number of iterations exceeded in
+                         // ZBRENT");
+    }
+
+    HeightOffsetEvaluator::HeightOffsetEvaluator(
+        Geodetic* geoid, const Eigen::Vector3d& tanpoint,
+        const Eigen::Vector3d& look, double H) {
+        m_geoid = geoid;
+        m_tangentpoint = tanpoint;
+        m_look = look;
+        m_H = H;
+    }
+
+    double HeightOffsetEvaluator::operator()(double x) {
+        Eigen::Vector3d location;
+
+        location = m_tangentpoint - m_look * x;
+        m_geoid->from_xyz(location);
+        return (m_geoid->altitude() - m_H);
+    }
+
+    bool HeightOffsetEvaluator::FindCrossingPoint(double lmin, double lmax,
+                                                  Eigen::Vector3d* entrypoint) {
+        double delta = 0.05 * lmin;
+        double answer;
+        int status;
+        HeightOffsetEvaluator& evaluator = *this;
+
+        answer =
+            evaluator(lmin);  // Get the height offset closest to tangent point
+        while (answer >= 0.0) // if
+        {
+            lmin -= delta;
+            answer = evaluator(lmin);
+        }
+
+        answer = evaluator(lmax);
+        while (answer <= 0.0) {
+            lmax += 0.05 * lmax;
+            answer = evaluator(lmax);
+        }
+        answer = zbrent(evaluator, lmin, lmax, 0.1,
+                        &status); /* An estimate to the min location*/
+        if (status == 0) {
+            evaluator(answer);
+            *entrypoint = m_geoid->location();
+        } else {
+            entrypoint->setZero();
+        }
+        return (status == 0);
     }
 
 } // namespace sasktran2::math::geodetic

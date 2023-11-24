@@ -168,7 +168,7 @@ namespace sasktran2::math::geodetic {
          */
         std::pair<Eigen::Vector3d, Eigen::Vector3d>
         altitude_intercepts(double altitude, const Eigen::Vector3d& observer,
-                            const Eigen::Vector3d& look_vector) const;
+                            const Eigen::Vector3d& look_vector);
 
         /**
          * @brief Initializes the geodetic from a give latitude, longitude, and
