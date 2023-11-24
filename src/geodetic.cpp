@@ -55,7 +55,39 @@ void init_geodetic(py::module_& m) {
                                 A unit vector pointing in the local west direction
                                )")
         .def("altitude_intercepts",
-             &sasktran2::math::geodetic::Geodetic::altitude_intercepts, R"()",
+             &sasktran2::math::geodetic::Geodetic::altitude_intercepts, R"(
+                Calculate the two intersections of a line of sight and an altitude.
+
+                Parameters
+                ----------
+                altitude : float
+                    Altitude in meters.
+                observer : np.ndarray
+                    Three element array containing the obsever position in geocentric coordinates.
+                look_vector : np.ndarray
+                    Three element array containing a normalized look vector.
+
+                Returns
+                -------
+                np.ndarray
+                    Three element array containing the first (entering) intercept in geocentric coordinates.
+                np.ndarray
+                    Three element array containing the second (exiting) intercept in geocentric coordinates.
+
+                Examples
+                --------
+                >>> import sasktran2 as sk
+                >>> import numpy as np
+                >>> geodetic = sk.WGS84()
+                >>> look = geodetic.from_tangent_altitude(15322, [3.676013154788849600e+005, 1.009976313640051500e+006, \
+                                                            -6.871601202127538600e+006], [0, 0, 1])
+                >>> obs = geodetic.location
+                >>> intercept1, intercept2 = geodetic.altitude_intercepts(16000, obs, look)
+                >>> print(np.array_str(intercept1, precision=3))
+                [ 1147302.059  3152186.5   -5425360.027]
+                >>> print(np.array_str(intercept2, precision=3))
+                [ 1201098.489  3299990.978 -5325574.803]
+             )",
              "altitude"_a, "observer"_a, "look_vector"_a)
         .def("from_lat_lon_alt",
              &sasktran2::math::geodetic::Geodetic::from_lat_lon_alt, R"(

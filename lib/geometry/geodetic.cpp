@@ -123,6 +123,7 @@ namespace sasktran2::math::geodetic {
             entrypoint.setZero();
             exitpoint.setZero();
         }
+        return std::make_pair(entrypoint, exitpoint);
     }
 
     Eigen::Vector3d Geodetic::local_south() const {
