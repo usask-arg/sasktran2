@@ -23,6 +23,7 @@ add_library(
   sourceintegrator/sourceintegrator.cpp
   geometry/geometry.cpp
   geometry/geometry1d.cpp
+  geometry/geodetic.cpp
   viewinggeometry/tangentaltitude.cpp
   viewinggeometry/groundviewing.cpp
   viewinggeometry/tangentaltitudesolar.cpp

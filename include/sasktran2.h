@@ -6,6 +6,7 @@
 #include <sasktran2/math/vector.h>
 #include <sasktran2/math/wigner.h>
 #include <sasktran2/math/unitsphere.h>
+#include <sasktran2/math/geodetic.h>
 
 #include <sasktran2/core.h>
 #include <sasktran2/config.h>

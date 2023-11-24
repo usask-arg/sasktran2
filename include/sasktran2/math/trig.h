@@ -50,9 +50,9 @@ namespace sasktran2::math {
         return atan2(y, x) * ONE_RADIAN;
     }
 
-    inline double DegreesToRadians(double x) { return x * ONE_DEGREE; }
+    inline double degrees_to_radians(double x) { return x * ONE_DEGREE; }
 
-    inline double RadiansToDegrees(double x) { return x * ONE_RADIAN; }
+    inline double radians_to_degrees(double x) { return x * ONE_RADIAN; }
 
     inline double inrange(double x, double r) {
         if (r == 0)

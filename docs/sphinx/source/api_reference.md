@@ -25,6 +25,9 @@
 [Climatology](api/climatology.rst)
 : The built in climatologies in `sasktran2.climatology.*`
 
+[Geodesy](api/geodetic.md)
+: Tools to deal with geodetic reference systems such as WGS84
+
 [Utility](api/util.rst)
 : Utility functionality in `sasktran2.util.*`
 
@@ -41,5 +44,6 @@ api/optical
 api/output
 api/viewing_geometry
 api/climatology
+api/geodetic
 api/util
 ```

@@ -9,6 +9,9 @@
 [Calculating Weighting Functions](weighting_functions.md)
 : How to calculate derivatives (weighting functions) of output quantities with respect to input quantities
 
+[Built in Geodesy Tools](users_guide/geodetic.md)
+: Methods to work with datums such as WGS84
+
 [More Examples](examples/examples.rst)
 : Miscallaneous examples of model usage
 
@@ -19,5 +22,6 @@
 
 required_components
 weighting_functions
+users_guide/geodetic.md
 examples/examples
 ```
