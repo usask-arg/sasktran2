@@ -121,7 +121,7 @@ class NumberDensityScatterer(Constituent):
                 scat_factor=(
                     (self._optical_quants.ssa * self._optical_quants.extinction)
                     / (atmo.storage.ssa * atmo.storage.total_extinction)
-                )[np.newaxis, :, :],
+                ),
             ),
             interpolating_matrix=interp_matrix
             * self._vertical_deriv_factor[np.newaxis, :],
@@ -177,12 +177,11 @@ class NumberDensityScatterer(Constituent):
             norm_factor[norm_factor == 0] = 1
 
             val.scat_factor = (
-                (self._optical_quants.ssa * self._optical_quants.extinction)
-                / (atmo.storage.ssa * atmo.storage.total_extinction)
-            )[np.newaxis, :, :]
+                self._optical_quants.ssa * self._optical_quants.extinction
+            ) / (atmo.storage.ssa * atmo.storage.total_extinction)
 
             val.d_leg_coeff /= norm_factor[np.newaxis, :, :]
-            val.scat_factor *= norm_factor[np.newaxis, :, :]
+            val.scat_factor *= norm_factor
 
             derivs[key] = InterpolatedDerivativeMapping(
                 val,

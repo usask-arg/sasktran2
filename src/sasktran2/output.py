@@ -103,15 +103,15 @@ class OutputIdeal(Output):
         result.coords["altitude"] = geometry.altitudes()
 
         radiance = self._output.radiance.reshape(
-            atmo.nstokes, -1, len(viewing_geo.observer_rays)
+            -1, len(viewing_geo.observer_rays), atmo.nstokes
         )
-        result["radiance"] = (["stokes", "wavelength", "los"], radiance)
+        result["radiance"] = (["wavelength", "los", "stokes"], radiance)
 
         natmo_grid = atmo.storage.total_extinction.shape[0]
-        nwavel = radiance.shape[1]
+        nwavel = radiance.shape[0]
 
         d_radiance_raw = self._output.d_radiance.reshape(
-            atmo.nstokes, nwavel, len(viewing_geo.observer_rays), -1
+            nwavel, len(viewing_geo.observer_rays), atmo.nstokes, -1
         )
         d_radiance_k = d_radiance_raw[:, :, :, :natmo_grid]
         d_radiance_ssa = d_radiance_raw[:, :, :, natmo_grid : 2 * natmo_grid]
@@ -144,7 +144,7 @@ class OutputIdeal(Output):
                     np_deriv = (
                         d_radiance_albedo
                         * mapping.native_grid_mapping.d_albedo[
-                            np.newaxis, :, np.newaxis, np.newaxis
+                            :, np.newaxis, np.newaxis, np.newaxis
                         ]
                     )
                 else:
@@ -153,10 +153,10 @@ class OutputIdeal(Output):
                         - atmo.storage.f
                         * mapping.native_grid_mapping.d_ssa
                         * atmo.unscaled_extinction
-                    ).T[np.newaxis, :, np.newaxis, :] * d_radiance_k + (
+                    ).T[:, np.newaxis, np.newaxis, :] * d_radiance_k + (
                         mapping.native_grid_mapping.d_ssa * dssa_scaled_by_dssa
                     ).T[
-                        np.newaxis, :, np.newaxis, :
+                        :, np.newaxis, np.newaxis, :
                     ] * d_radiance_ssa
 
                     if mapping.native_grid_mapping.scat_deriv_index is not None:
@@ -173,9 +173,9 @@ class OutputIdeal(Output):
 
                         np_deriv += (
                             d_radiance_scat
-                            * mapping.native_grid_mapping.scat_factor.transpose(
-                                [0, 2, 1]
-                            )[:, :, np.newaxis, :]
+                            * mapping.native_grid_mapping.scat_factor.T[
+                                :, np.newaxis, np.newaxis, :
+                            ]
                         )
 
                 if mapping.log_radiance_space:
@@ -183,11 +183,11 @@ class OutputIdeal(Output):
 
                 if mapping.is_surface_derivative:
                     mapped_derivative = mapping.map_derivative(
-                        np_deriv[:, :, :, 0], ["stokes", "wavelength", "los"]
+                        np_deriv[:, :, :, 0], ["wavelength", "los", "stokes"]
                     )
                 else:
                     mapped_derivative = mapping.map_derivative(
-                        np_deriv, ["stokes", "wavelength", "los", "altitude"]
+                        np_deriv, ["wavelength", "los", "stokes", "altitude"]
                     )
 
                 if name_to_place_result in result:

@@ -8,6 +8,7 @@ import xarray as xr
 from scipy import sparse
 
 import sasktran2 as sk
+from sasktran2.polarization import LegendreStorageView
 from sasktran2.units import (
     wavenumber_cminv_to_wavlength_nm,
     wavlength_nm_to_wavenumber_cminv,
@@ -217,7 +218,7 @@ class SurfaceDerivativeMapping(DerivativeMapping):
     def map_derivative(self, data: np.ndarray, dimensions: List[str]):
         return xr.DataArray(
             np.einsum(
-                "ijk, jl->lijk", data, self._xr_interpolator.to_numpy(), optimize=True
+                "ijk, il->lijk", data, self._xr_interpolator.to_numpy(), optimize=True
             ),
             dims=[self._result_dim, *dimensions],
         )
@@ -295,6 +296,10 @@ class Atmosphere:
             self._atmosphere = sk.AtmosphereStokes_3(
                 nwavel, model_geometry, config, calculate_derivatives
             )
+
+        self._leg_coeff = LegendreStorageView(
+            self._atmosphere.storage.leg_coeff, self._nstokes
+        )
 
         self.surface.albedo = np.zeros(nwavel)
 
@@ -488,6 +493,10 @@ class Atmosphere:
         """
         return self._unscaled_extinction
 
+    @property
+    def leg_coeff(self) -> LegendreStorageView:
+        return self._leg_coeff
+
     def internal_object(self) -> Union[sk.AtmosphereStokes_1, sk.AtmosphereStokes_3]:
         """
         The internal `pybind11` object that can be used to perform the radiative transfer calculation.
@@ -553,9 +562,7 @@ class Atmosphere:
                             d_extinction=np.zeros_like(self.storage.total_extinction),
                             d_ssa=np.zeros_like(self.storage.ssa),
                             d_leg_coeff=d_leg_coeff,
-                            scat_factor=np.ones_like(self.storage.ssa)[
-                                np.newaxis, :, :
-                            ],
+                            scat_factor=np.ones_like(self.storage.ssa),
                         ),
                         summable=True,
                     )

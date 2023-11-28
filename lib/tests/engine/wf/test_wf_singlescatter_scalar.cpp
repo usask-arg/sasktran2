@@ -83,6 +83,9 @@ TEST_CASE("Verify SSA WF", "[sasktran2][engine][wf]") {
 
     // Construct the config
     sasktran2::Config config;
+    config.set_multiple_scatter_source(
+        sasktran2::Config::MultipleScatterSource::discrete_ordinates);
+    config.set_num_do_streams(4);
 
     // Make the engine
     Sasktran2<1> engine(config, &geo, viewing_geometry);
@@ -105,6 +108,7 @@ TEST_CASE("Verify SSA WF", "[sasktran2][engine][wf]") {
 
         // We will have nlos wf's to check
         for (int j = 0; j < nlos; ++j) {
+            double radiance = output.radiance().value(j);
             double numeric_wf = (output_perturb_above.radiance().value(j) -
                                  output_perturb_below.radiance().value(j)) /
                                 (2 * dssa);

@@ -18,6 +18,7 @@ from ._core import (  # noqa: I001
     OccultationSource,
     OutputIdealStokes_1,
     OutputIdealStokes_3,
+    StokesBasis,
     Surface,
     TangentAltitudeSolar,
     ViewingGeometry,

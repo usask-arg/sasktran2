@@ -299,7 +299,8 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::singleScatST(
             m_triple_product_holder_0.b1deriv(Eigen::all, 0);
         result_negative_coszenith.d_by_b1_second =
             m_triple_product_holder_0.b1deriv(Eigen::all, 1);
-        result.d_by_ssa = result.value / M_SSA;
+        result_negative_coszenith.d_by_ssa =
+            result_negative_coszenith.value / M_SSA;
     }
 }
 

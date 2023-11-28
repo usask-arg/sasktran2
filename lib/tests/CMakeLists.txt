@@ -11,6 +11,7 @@ add_executable(
   raytracing/test_plane_parallel.cpp
   engine/test_engine_basic.cpp
   engine/wf/test_wf_singlescatter_scalar.cpp
+  engine/wf/test_wf_vector.cpp
   engine/hr/test_hr_basic.cpp
   mie/linearized_mie.cpp
   sktran_disco/test_util.cpp

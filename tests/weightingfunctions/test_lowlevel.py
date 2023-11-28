@@ -109,7 +109,7 @@ def test_wf_extinction():
             ) / (2 * dk)
 
         radiance["wf_extinction_numeric"] = (
-            ["stokes", "wavelength", "los", "altitude"],
+            ["wavelength", "los", "stokes", "altitude"],
             numeric_wf,
         )
         validate_wf(
@@ -148,7 +148,7 @@ def test_wf_ssa():
             ) / (2 * d_ssa)
 
         radiance["wf_ssa_numeric"] = (
-            ["stokes", "wavelength", "los", "altitude"],
+            ["wavelength", "los", "stokes", "altitude"],
             numeric_wf,
         )
         validate_wf(radiance["wf_ssa"], radiance["wf_ssa_numeric"], decimal=6)
@@ -190,7 +190,7 @@ def test_wf_legendre():
                 ) / (2 * D_L)
 
             radiance[f"wf_leg_coeff_{i}_numeric"] = (
-                ["stokes", "wavelength", "los", "altitude"],
+                ["wavelength", "los", "stokes", "altitude"],
                 numeric_wf,
             )
             validate_wf(

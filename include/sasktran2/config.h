@@ -65,6 +65,23 @@ namespace sasktran2 {
          */
         enum class OccultationSource { standard, none };
 
+        /** Enum determining what basis to return back the Stokes vectors
+         * components in
+         *
+         *   'standard' Is the implicit basis defined by most textbooks where
+         * the implicit meridian plane (formed ) through the propagation
+         * direction and z-axis is the plane of reference for the stokes
+         * parameters
+         *
+         *   'solar' Is a special case of standard, where the solar direction is
+         * assumed to be in in the z-axis
+         *
+         *   'observer' Defines the reference plane by the plane spanned by the
+         * look vector and observer position
+         *
+         */
+        enum class StokesBasis { standard, solar, observer };
+
         Config();
 
         /**
@@ -308,6 +325,19 @@ namespace sasktran2 {
 
         /**
          *
+         * @return The reference basis for the Stokes vectors
+         */
+        StokesBasis stokes_basis() const { return m_stokes_basis; }
+
+        /**
+         * @brief Set the stokes basis
+         *
+         * @param basis
+         */
+        void set_stokes_basis(StokesBasis basis) { m_stokes_basis = basis; }
+
+        /**
+         *
          * @return Then number of points (per diffuse profile) that we calculate
          * the incoming signal on.  Can be set to -1 to use all the points
          */
@@ -350,6 +380,8 @@ namespace sasktran2 {
         OccultationSource m_occultation_source;
 
         WeightingFunctionPrecision m_wf_precision;
+
+        StokesBasis m_stokes_basis;
 
         bool m_initialize_hr_with_do_solution;
     };

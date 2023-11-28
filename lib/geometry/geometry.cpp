@@ -28,6 +28,8 @@ namespace sasktran2 {
 
             m_x_unit = m_y_unit.cross(m_z_unit);
         }
+
+        m_force_sun_z = force_sun_z;
     }
 
     Coordinates::Coordinates(Eigen::Vector3d ref_point_unit,

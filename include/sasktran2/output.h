@@ -1,5 +1,8 @@
 #pragma once
 
+#include "sasktran2/config.h"
+#include "sasktran2/geometry.h"
+#include "sasktran2/raytracing.h"
 #include <sasktran2/internal_common.h>
 #include <sasktran2/dual.h>
 
@@ -31,9 +34,17 @@ namespace sasktran2 {
         int m_nwavel;
         int m_nderiv;
 
+        Eigen::VectorXd m_stokes_C;
+        Eigen::VectorXd m_stokes_S;
+
       public:
         Output(){};
         virtual ~Output() {}
+
+        virtual void
+        initialize(const sasktran2::Config& config,
+                   const sasktran2::Geometry1D& geometry,
+                   const std::vector<sasktran2::raytracing::TracedRay>& rays);
 
         /** Method called by the Sasktran2 engine which specifies the native
          * number of lines of sight, wavelength batches, and derivatives.  These

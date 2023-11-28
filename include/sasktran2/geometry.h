@@ -80,6 +80,8 @@ namespace sasktran2 {
         geometrytype m_geotype; /**< Enum indicating the type of geometry
                                    (spherical or plane parallel) */
 
+        bool m_force_sun_z; /**< True if the sun is forced to be the z-axis */
+
       public:
         /** Constructs the Coordinates from a set of solar angles at the
          * reference point, this is the preferred and default method of
@@ -199,6 +201,11 @@ namespace sasktran2 {
         double cos_sza_at_reference() const {
             return solar_angles_at_location(m_z_unit).first;
         }
+
+        /**
+         * @return true  if the sun is forced to be along the z-axis
+         */
+        bool sun_forced_z() const { return m_force_sun_z; }
 
         /** Constructs a look vector at a given location with a specified
          * relative azimuth angle to the sun
