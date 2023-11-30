@@ -33,11 +33,20 @@ def _raw_scenarios() -> list:
     configs.append(sk.Config())
     configs[-1].multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
     configs[-1].num_streams = 4
+    configs[-1].single_scatter_source = sk.SingleScatterSource.NoSource
+    configs[-1].num_stokes = 3
+
+    configs.append(sk.Config())
+    configs[-1].multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
+    configs[-1].num_streams = 4
 
     configs.append(sk.Config())
 
+    for config in configs:
+        config.num_singlescatter_moments = 4
+
     geometrys = []
-    altitude_grid = np.arange(0, 65001, 1000.0)
+    altitude_grid = np.arange(0, 65001, 5000.0)
 
     geometrys.append(
         sk.Geometry1D(
@@ -158,8 +167,7 @@ def test_wf_legendre():
     """
     Verifies that the legendre coefficient derivatives are accurate to some decimal places
     """
-    D_L = 1e-5
-    NDERIV_CHECK = 4
+    D_L = 1e-4
     test_scens = _raw_scenarios()
 
     for scen in test_scens:
@@ -170,8 +178,6 @@ def test_wf_legendre():
         for i in range(scen["atmosphere"].storage.leg_coeff.shape[0]):
             if i == 0:
                 continue
-            if i > NDERIV_CHECK:
-                break
 
             numeric_wf = np.zeros_like(radiance[f"wf_leg_coeff_{i}"].values)
 

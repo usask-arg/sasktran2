@@ -9,6 +9,7 @@ from sasktran2.atmosphere import (
 )
 from sasktran2.optical import pressure_temperature_to_numberdensity
 from sasktran2.optical.rayleigh import rayleigh_cross_section_bates
+from sasktran2.polarization import LegendreStorageView
 
 from .base import Constituent
 
@@ -152,12 +153,15 @@ class Rayleigh(Constituent):
         xs = self._ray_ext / N[:, np.newaxis]
 
         deriv_names = []
+        d_vals = []
         if atmo.calculate_pressure_derivative:
             deriv_names.append("pressure_pa")
+            d_vals.append(dN_dP)
         if atmo.calculate_temperature_derivative:
             deriv_names.append("temperature_k")
+            d_vals.append(dN_dT)
 
-        for deriv_name, vert_factor in zip(deriv_names, [dN_dP, dN_dT]):
+        for deriv_name, vert_factor in zip(deriv_names, d_vals):
             derivs[deriv_name] = InterpolatedDerivativeMapping(
                 NativeGridDerivative(
                     d_extinction=xs,
@@ -173,9 +177,21 @@ class Rayleigh(Constituent):
                 interpolating_matrix=np.eye(len(N)) * vert_factor[np.newaxis, :],
             )
 
-            derivs[deriv_name].native_grid_mapping.d_leg_coeff[0] += 1
-            derivs[deriv_name].native_grid_mapping.d_leg_coeff[2] += (
-                (1 - self._delta) / (2 + self._delta)
-            )[np.newaxis, :]
+            d_leg_coeff = LegendreStorageView(
+                derivs[deriv_name].native_grid_mapping.d_leg_coeff, atmo.nstokes
+            )
+
+            d_leg_coeff.a1[0] += 1
+            d_leg_coeff.a1[2] += ((1 - self._delta) / (2 + self._delta))[np.newaxis, :]
+
+            if atmo.nstokes >= 3:
+                d_leg_coeff.a2[2] += (
+                    6 * ((1 - self._delta) / (2 + self._delta))[np.newaxis, :]
+                )
+
+                d_leg_coeff.b1[2] += (
+                    np.sqrt(6.0)
+                    * ((1 - self._delta) / (2 + self._delta))[np.newaxis, :]
+                )
 
         return derivs

@@ -134,5 +134,12 @@ void init_config(py::module_& m) {
                 The number of streams to use in the discrete ordinates method. This is the number of streams
                 in full space, i.e. each hemisphere has num_streams / 2 angular discretizations.  Must
                 be an even number. Default to 16.
+            )")
+        .def_property("num_singlescatter_moments",
+                      &sasktran2::Config::num_singlescatter_moments,
+                      &sasktran2::Config::set_num_singlescatter_moments,
+                      R"(
+                The number of Legendre expansion moments to use in the single scatter calculation.
+                Must be greater or equal to num_streams. Default to 16.
             )");
 }

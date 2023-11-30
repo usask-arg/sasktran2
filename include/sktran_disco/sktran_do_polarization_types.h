@@ -546,15 +546,6 @@ namespace sasktran_disco {
             a2deriv.resize(nstr, 4);
             a3deriv.resize(nstr, 4);
             b1deriv.resize(nstr, 4);
-
-            // Used to set these to 0 and then sum from l=m to NSTR, but now we
-            // reuse memory from this class across calculations and so we would
-            // have to re-zero everytime calculate is called Instead we just sum
-            // from l=0 to nstr everytime and this handles the zeroing
-            // a1deriv.setZero();
-            // a2deriv.setZero();
-            // a3deriv.setZero();
-            // b1deriv.setZero();
         }
 
         void calculate(const std::vector<LegendreCoefficient<3>>& coeffs,
@@ -563,7 +554,14 @@ namespace sasktran_disco {
                        bool negation, int m) {
 
             value.setZero();
-            for (int l = 0; l < nstr; ++l) {
+            for (int l = 0; l < m; ++l) {
+                a1deriv(l) = 0.0;
+                a2deriv(l, Eigen::all).setZero();
+                a3deriv(l, Eigen::all).setZero();
+                b1deriv(l, Eigen::all).setZero();
+            }
+
+            for (int l = m; l < nstr; ++l) {
                 const auto& coeff = coeffs[l];
                 const auto& lp1 = lp1s[l];
                 const auto& lp2 = lp2s[l];

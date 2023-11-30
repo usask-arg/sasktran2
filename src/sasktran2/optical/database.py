@@ -6,6 +6,7 @@ import xarray as xr
 import sasktran2 as sk
 from sasktran2.atmosphere import Atmosphere, NativeGridDerivative
 from sasktran2.optical.base import OpticalProperty, OpticalQuantities
+from sasktran2.polarization import LegendreStorageView
 
 
 class OpticalDatabase(OpticalProperty):
@@ -233,34 +234,63 @@ class OpticalDatabaseGenericScatterer(OpticalDatabase):
         interp_handler = self._construct_interp_handler(atmo, **kwargs)
 
         num_assign_legendre = min(
-            atmo.storage.leg_coeff.shape[0], len(self._database["legendre"])
+            atmo.leg_coeff.a1.shape[0], len(self._database["legendre"])
         )
+
+        if atmo.nstokes == 1:
+            drop_vars = ["lm_a2", "lm_a3", "lm_a4", "lm_b1", "lm_b2"]
+        elif atmo.nstokes == 3:
+            drop_vars = ["lm_a4", "lm_b2"]
+        else:
+            drop_vars = []
 
         ds_interp = (
             self._database.isel(legendre=slice(0, num_assign_legendre))
-            .drop(["lm_a2", "lm_a3", "lm_a4", "lm_b1", "lm_b2"])
+            .drop(drop_vars)
             .interp(**interp_handler)
         )
 
         quants.extinction = ds_interp["xs_total"].to_numpy()
         quants.ssa = ds_interp["xs_scattering"].to_numpy()
 
-        quants.leg_coeff = (
+        quants.leg_coeff = np.zeros_like(atmo.storage.leg_coeff)
+
+        leg_coeff = LegendreStorageView(quants.leg_coeff, atmo.nstokes)
+
+        leg_coeff.a1[:] = (
             (ds_interp["lm_a1"])
             .transpose("legendre", "z", "wavelength_nm")
             .to_numpy()[:num_assign_legendre]
         )
 
         # Renormalize leg_coeffs so a1 is always 1
-        quants.leg_coeff /= quants.leg_coeff[0, :, :][np.newaxis, :, :]
+        leg_coeff.a1[:] /= quants.leg_coeff[0, :, :][np.newaxis, :, :]
 
         quants.extinction[np.isnan(quants.extinction)] = 0
         quants.ssa[np.isnan(quants.ssa)] = 0
-        quants.leg_coeff[np.isnan(quants.leg_coeff)] = 0
 
-        if atmo.nstokes > 1:
+        if atmo.nstokes == 3:
             # TODO: add pol properties
-            pass
+
+            leg_coeff.a2[:] = (
+                (ds_interp["lm_a2"])
+                .transpose("legendre", "z", "wavelength_nm")
+                .to_numpy()[:num_assign_legendre]
+            )
+
+            leg_coeff.a3[:] = (
+                (ds_interp["lm_a3"])
+                .transpose("legendre", "z", "wavelength_nm")
+                .to_numpy()[:num_assign_legendre]
+            )
+
+            leg_coeff.b1[:] = (
+                (ds_interp["lm_b1"])
+                .transpose("legendre", "z", "wavelength_nm")
+                .to_numpy()[:num_assign_legendre]
+            )
+
+        quants.leg_coeff[np.isnan(quants.leg_coeff)] = 0
 
         return quants
 
@@ -280,12 +310,20 @@ class OpticalDatabaseGenericScatterer(OpticalDatabase):
             else:
                 interp_handler_noz[key] = val
         num_assign_legendre = min(
-            atmo.storage.leg_coeff.shape[0], len(self._database["legendre"])
+            atmo.leg_coeff.a1.shape[0], len(self._database["legendre"])
         )
+
+        if atmo.nstokes == 1:
+            drop_vars = ["lm_a2", "lm_a3", "lm_a4", "lm_b1", "lm_b2"]
+        elif atmo.nstokes == 3:
+            drop_vars = ["lm_a4", "lm_b2"]
+        else:
+            drop_vars = []
+
         # Get the derivatives of the cross section with respect to the z dependent variables
         partial_interp = (
             self._database.isel(legendre=slice(0, num_assign_legendre))
-            .drop(["lm_a2", "lm_a3", "lm_a4", "lm_b1", "lm_b2"])
+            .drop(drop_vars)
             .interp(**interp_handler_noz)
         )
 
@@ -312,10 +350,33 @@ class OpticalDatabaseGenericScatterer(OpticalDatabase):
             derivs[key] = NativeGridDerivative(
                 d_extinction=dT["xs_total"].to_numpy(),
                 d_ssa=dT["xs_scattering"].to_numpy(),
-                d_leg_coeff=dT["lm_a1"]
-                .transpose("legendre", "z", "wavelength_nm")
-                .to_numpy()[:num_assign_legendre],
+                d_leg_coeff=np.zeros_like(atmo.storage.leg_coeff),
             )
+
+            d_leg_coeff = LegendreStorageView(derivs[key].d_leg_coeff, atmo.nstokes)
+
+            d_leg_coeff.a1[:] = (
+                dT["lm_a1"]
+                .transpose("legendre", "z", "wavelength_nm")
+                .to_numpy()[:num_assign_legendre]
+            )
+
+            if atmo.nstokes == 3:
+                d_leg_coeff.a2[:] = (
+                    dT["lm_a2"]
+                    .transpose("legendre", "z", "wavelength_nm")
+                    .to_numpy()[:num_assign_legendre]
+                )
+                d_leg_coeff.a3[:] = (
+                    dT["lm_a3"]
+                    .transpose("legendre", "z", "wavelength_nm")
+                    .to_numpy()[:num_assign_legendre]
+                )
+                d_leg_coeff.b1[:] = (
+                    dT["lm_b1"]
+                    .transpose("legendre", "z", "wavelength_nm")
+                    .to_numpy()[:num_assign_legendre]
+                )
 
             derivs[key].d_extinction[np.isnan(derivs[key].d_extinction)] = 0
             derivs[key].d_ssa[np.isnan(derivs[key].d_ssa)] = 0

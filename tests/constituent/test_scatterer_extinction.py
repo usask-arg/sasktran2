@@ -114,7 +114,7 @@ def test_scatterer_extinction_wf_native_grid():
             radiance["wf_strat_aerosol_extinction"],
             radiance["wf_strat_aerosol_extinction_numeric"],
             wf_dim="strat_aerosol_altitude",
-            decimal=3,
+            decimal=5,
         )
 
 

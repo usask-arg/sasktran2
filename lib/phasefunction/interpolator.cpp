@@ -191,6 +191,32 @@ namespace sasktran2::atmosphere {
             // Apply the phase function
             source.value(0) *= phase_result;
         } else {
+            // Apply phase derivatives
+            // Only apply phase derivatives in the single scatter case
+            if constexpr (ssonly) {
+                if constexpr (S == sasktran2::dualstorage::dense) {
+                    if (source.deriv.size() > 0) {
+                        for (const auto& ele : index_weights) {
+                            for (int i = 0; i < numscatderiv; ++i) {
+                                Eigen::Map<const Eigen::MatrixXd>
+                                    d_phase_matrix(&phase_storage.d_leg_coeff(
+                                                       0, 0, wavelidx, i),
+                                                   d[0], d[1]);
+
+                                source
+                                    .deriv(Eigen::all,
+                                           derivstart + i * d[1] + ele.first)
+                                    .array() +=
+                                    source.value(0) *
+                                    (ele.second *
+                                     (m_scattering_weights *
+                                      d_phase_matrix(Eigen::all, ele.first))
+                                         .array());
+                            }
+                        }
+                    }
+                }
+            }
             PhaseResult phase_result;
             phase_result.setZero();
 
