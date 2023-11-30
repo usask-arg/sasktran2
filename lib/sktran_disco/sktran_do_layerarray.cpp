@@ -512,26 +512,60 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
                             layer->scatExt();
 
                         for (int l = 0; l < (int)this->M_NSTR; ++l) {
-                            deriv.d_legendre_coeff[l].a1 =
-                                atmosphere.storage().d_leg_coeff(
-                                    l, atmo_index, wavelidx, group_index) +
-                                (atmosphere.storage().leg_coeff(l, atmo_index,
-                                                                wavelidx) -
-                                 layer->legendre_coeff()[l].a1) /
-                                    extinction;
+                            if constexpr (NSTOKES == 1) {
+                                deriv.d_legendre_coeff[l].a1 =
+                                    atmosphere.storage().d_leg_coeff(
+                                        l, atmo_index, wavelidx, group_index) +
+                                    (atmosphere.storage().leg_coeff(
+                                         l, atmo_index, wavelidx) -
+                                     layer->legendre_coeff()[l].a1);
 
-                            if (atmosphere.storage().applied_f_order > 0) {
-                                deriv.d_legendre_coeff[l].a1 +=
-                                    -(2 * l + 1) / (1 - f) / (1 - f) *
-                                    atmosphere.storage().d_f(
-                                        atmo_index, wavelidx, group_index);
+                                if (atmosphere.storage().applied_f_order > 0) {
+                                    deriv.d_legendre_coeff[l].a1 +=
+                                        -(2 * l + 1) / (1 - f) / (1 - f) *
+                                        atmosphere.storage().d_f(
+                                            atmo_index, wavelidx, group_index);
+                                }
+                            }
+
+                            if constexpr (NSTOKES == 3) {
+                                deriv.d_legendre_coeff[l].a1 =
+                                    atmosphere.storage().d_leg_coeff(
+                                        l * 4, atmo_index, wavelidx,
+                                        group_index) +
+                                    (atmosphere.storage().leg_coeff(
+                                         l * 4, atmo_index, wavelidx) -
+                                     layer->legendre_coeff()[l].a1);
+
+                                deriv.d_legendre_coeff[l].a2 =
+                                    atmosphere.storage().d_leg_coeff(
+                                        l * 4 + 1, atmo_index, wavelidx,
+                                        group_index) +
+                                    (atmosphere.storage().leg_coeff(
+                                         l * 4 + 1, atmo_index, wavelidx) -
+                                     layer->legendre_coeff()[l].a2);
+
+                                deriv.d_legendre_coeff[l].a3 =
+                                    atmosphere.storage().d_leg_coeff(
+                                        l * 4 + 2, atmo_index, wavelidx,
+                                        group_index) +
+                                    (atmosphere.storage().leg_coeff(
+                                         l * 4 + 2, atmo_index, wavelidx) -
+                                     layer->legendre_coeff()[l].a3);
+
+                                deriv.d_legendre_coeff[l].b1 =
+                                    (-1) * atmosphere.storage().d_leg_coeff(
+                                               l * 4 + 3, atmo_index, wavelidx,
+                                               group_index) +
+                                    ((-1) *
+                                         atmosphere.storage().leg_coeff(
+                                             l * 4 + 3, atmo_index, wavelidx) -
+                                     layer->legendre_coeff()[l].b1);
                             }
                         }
 
                     } else if (group.first >= num_atmo_grid) {
-                        // Layer legendre contribution to dI / dssa ?
                     } else {
-                        // Layer legendre contribution to dI / dk ?
                     }
                 }
             }

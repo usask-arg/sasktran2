@@ -56,5 +56,6 @@ applications usually somewhere in the range 1-7 is good enough.
   sasktran2.Config.multiple_scatter_source
   sasktran2.Config.num_streams
   sasktran2.Config.num_sza
+  sasktran2.Config.num_stokes
 
 ```

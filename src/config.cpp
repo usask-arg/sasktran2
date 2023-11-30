@@ -1,3 +1,4 @@
+#include "sasktran2/config.h"
 #include <pybind11/pybind11.h>
 #include <sasktran2.h>
 
@@ -21,6 +22,12 @@ void init_config(py::module_& m) {
     py::enum_<sasktran2::Config::OccultationSource>(m, "OccultationSource")
         .value("NoSource", sasktran2::Config::OccultationSource::none)
         .value("Standard", sasktran2::Config::OccultationSource::standard)
+        .export_values();
+
+    py::enum_<sasktran2::Config::StokesBasis>(m, "StokesBasis")
+        .value("Standard", sasktran2::Config::StokesBasis::standard)
+        .value("Solar", sasktran2::Config::StokesBasis::solar)
+        .value("Observer", sasktran2::Config::StokesBasis::observer)
         .export_values();
 
     py::class_<sasktran2::Config>(m, "Config")
@@ -87,6 +94,11 @@ void init_config(py::module_& m) {
                     signal
 
             )")
+        .def_property("stokes_basis", &sasktran2::Config::stokes_basis,
+                      &sasktran2::Config::set_stokes_basis,
+                      R"(
+
+                      )")
         .def_property("delta_m_scaling",
                       &sasktran2::Config::apply_delta_scaling,
                       &sasktran2::Config::set_apply_delta_scaling,
@@ -122,5 +134,12 @@ void init_config(py::module_& m) {
                 The number of streams to use in the discrete ordinates method. This is the number of streams
                 in full space, i.e. each hemisphere has num_streams / 2 angular discretizations.  Must
                 be an even number. Default to 16.
+            )")
+        .def_property("num_singlescatter_moments",
+                      &sasktran2::Config::num_singlescatter_moments,
+                      &sasktran2::Config::set_num_singlescatter_moments,
+                      R"(
+                The number of Legendre expansion moments to use in the single scatter calculation.
+                Must be greater or equal to num_streams. Default to 16.
             )");
 }

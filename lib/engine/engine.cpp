@@ -60,6 +60,12 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
                         sasktran2::DOSourceInterpolatedPostProcessing<NSTOKES,
                                                                       2>>(
                         *m_geometry, *m_raytracer));
+            } else if (m_config.num_do_streams() == 4) {
+                m_source_terms.emplace_back(
+                    std::make_unique<
+                        sasktran2::DOSourceInterpolatedPostProcessing<NSTOKES,
+                                                                      4>>(
+                        *m_geometry, *m_raytracer));
             } else {
                 m_source_terms.emplace_back(
                     std::make_unique<
@@ -170,6 +176,7 @@ void Sasktran2<NSTOKES>::calculate_radiance(
 
     output.resize((int)m_traced_rays.size(), atmosphere.num_wavel(),
                   atmosphere.num_deriv());
+    output.initialize(m_config, *m_geometry, m_traced_rays);
 
 #pragma omp parallel for
     for (int w = 0; w < atmosphere.num_wavel(); ++w) {

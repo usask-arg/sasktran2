@@ -126,8 +126,12 @@ def default_pure_scattering_atmosphere(config: Config, geometry: Geometry1D, ssa
     atmo.storage.total_extinction = extinction
     atmo.storage.ssa = np.ones_like(extinction) * ssa
 
-    atmo.storage.leg_coeff[0, :, 0] = 1
-    atmo.storage.leg_coeff[2, :, 0] = 0.5
+    atmo.leg_coeff.a1[0, :, 0] = 1
+    atmo.leg_coeff.a1[2, :, 0] = 0.5
+
+    if atmo.nstokes == 3:
+        atmo.leg_coeff.a2[2] = 3
+        atmo.leg_coeff.b1[2] = np.sqrt(6.0) / 2
 
     add_us76_standard_atmosphere(atmo)
 
