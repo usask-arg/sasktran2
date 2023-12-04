@@ -199,4 +199,43 @@ namespace sasktran2 {
         return result;
     }
 
+    std::pair<double, double> Coordinates::stokes_standard_to_observer(
+        const Eigen::Vector3d& look_vector,
+        const Eigen::Vector3d& position) const {
+        // Project the z-unit and the observer into perpindicular
+        // componets to the look vector
+
+        if ((abs(position.normalized().dot(look_vector)) >= 1) ||
+            (abs(m_z_unit.dot(look_vector)) >= 1)) {
+            // Parallel, not sure what to do...
+            // TODO: CHeck this
+            return std::make_pair(1.0, 0.0);
+        }
+
+        auto perp_z =
+            (m_z_unit - m_z_unit.dot(look_vector) * look_vector).normalized();
+        auto perp_obs = (position.normalized() -
+                         position.normalized().dot(look_vector) * look_vector)
+                            .normalized();
+
+        // Find the angle between them and use that as the Stokes rotation angle
+        double cos_angle = perp_z.dot(position.normalized());
+
+        if (cos_angle > 1) {
+            cos_angle = 1;
+        }
+        if (cos_angle < -1) {
+            cos_angle = -1;
+        }
+
+        double rot_rangle = acos(cos_angle);
+
+        std::pair<double, double> result;
+
+        result.first = cos(2 * rot_rangle);
+        result.second = sin(2 * rot_rangle);
+
+        return result;
+    }
+
 } // namespace sasktran2
