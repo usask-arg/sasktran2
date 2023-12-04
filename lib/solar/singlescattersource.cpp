@@ -163,15 +163,15 @@ namespace sasktran2::solartransmission {
 
         // Set up storage for each thread
         // m_solar_trans.resize(config.num_threads());
-        m_thread_index_cache_one.resize(config.num_threads());
-        m_thread_index_cache_two.resize(config.num_threads());
+        m_thread_index_cache_one.resize(config.num_wavelength_threads());
+        m_thread_index_cache_two.resize(config.num_wavelength_threads());
 
-        m_solar_trans.resize(config.num_threads());
+        m_solar_trans.resize(config.num_wavelength_threads());
 
-        m_start_source_cache.resize(config.num_threads());
-        m_end_source_cache.resize(config.num_threads());
+        m_start_source_cache.resize(config.num_wavelength_threads());
+        m_end_source_cache.resize(config.num_wavelength_threads());
 
-        m_phase_interp.resize(config.num_threads());
+        m_phase_interp.resize(config.num_wavelength_threads());
     }
 
     template <typename S, int NSTOKES>

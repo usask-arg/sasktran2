@@ -21,6 +21,7 @@ from ._core import (  # noqa: I001
     StokesBasis,
     Surface,
     TangentAltitudeSolar,
+    ThreadingModel,
     ViewingGeometry,
     ViewingGeometryBase,
 )

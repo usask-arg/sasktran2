@@ -30,6 +30,11 @@ void init_config(py::module_& m) {
         .value("Observer", sasktran2::Config::StokesBasis::observer)
         .export_values();
 
+    py::enum_<sasktran2::Config::ThreadingModel>(m, "ThreadingModel")
+        .value("Wavelength", sasktran2::Config::ThreadingModel::wavelength)
+        .value("Source", sasktran2::Config::ThreadingModel::source)
+        .export_values();
+
     py::class_<sasktran2::Config>(m, "Config")
         .def(py::init<>(),
              R"(
@@ -41,6 +46,21 @@ void init_config(py::module_& m) {
                 Controls the number of threads used in the calculation.  For maximum performance it is
                 recommended to set this to the number of physical cores on your machine.  Defaults to
                 1
+            )")
+        .def_property("threading_model", &sasktran2::Config::threading_model,
+                      &sasktran2::Config::set_threading_model,
+                      R"(
+                Sets the multi-threading mode to use in the calculation.
+
+                `sasktran2.ThreadingModel.Wavelength` (Default)
+                    Calculation is multi-threaded over the wavelength (batch) dimension only. This method
+                    works very well when this dimension is large, but may increase memory usage. It also
+                    is not very effective for a small number of wavelengths.
+
+                `sasktran2.ThreadingModel.Source`
+                    Calculation is multi-threaded individually by each source function for each wavelength.
+                    This method is recommended when memory is a concern, or when the number of wavelengths
+                    is small.
             )")
         .def_property("num_stokes", &sasktran2::Config::num_stokes,
                       &sasktran2::Config::set_num_stokes,

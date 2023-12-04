@@ -1,3 +1,4 @@
+#include <omp.h>
 #include <sasktran2/hr/diffuse_source.h>
 #include <sasktran2/math/unitsphere.h>
 #include <sasktran2/math/scattering.h>
@@ -325,7 +326,7 @@ namespace sasktran2::hr {
     DiffuseTable<NSTOKES>::initialize_config(const sasktran2::Config& config) {
         m_config = &config;
 
-        m_thread_storage.resize(m_config->num_threads());
+        m_thread_storage.resize(m_config->num_wavelength_threads());
 
         m_initial_owned_sources.emplace_back(
             std::make_unique<sasktran2::solartransmission::SingleScatterSource<
@@ -575,6 +576,7 @@ namespace sasktran2::hr {
             old_outgoing_vals =
                 m_thread_storage[threadidx].m_outgoing_sources.value;
 
+#pragma omp parallel for num_threads(m_config->num_source_threads())
             for (int i = 0; i < m_diffuse_points.size(); ++i) {
                 if (!m_diffuse_point_full_calculation[i]) {
                     continue;

@@ -155,6 +155,11 @@ void Sasktran2<NSTOKES>::calculate_radiance(
     sasktran2::Output<NSTOKES>& output) const {
 #ifdef SKTRAN_OPENMP_SUPPORT
     omp_set_num_threads(m_config.num_threads());
+    Eigen::setNbThreads(m_config.num_source_threads());
+
+    if (m_config.num_source_threads() > 1) {
+        omp_set_max_active_levels(8);
+    }
 #endif
 
     validate_input_atmosphere(atmosphere);
@@ -171,14 +176,14 @@ void Sasktran2<NSTOKES>::calculate_radiance(
 
     // Allocate memory, should be moved to thread storage?
     std::vector<sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>>
-        radiance(m_config.num_threads(),
+        radiance(m_config.num_wavelength_threads(),
                  {NSTOKES, atmosphere.num_deriv(), true});
 
     output.resize((int)m_traced_rays.size(), atmosphere.num_wavel(),
                   atmosphere.num_deriv());
     output.initialize(m_config, *m_geometry, m_traced_rays);
 
-#pragma omp parallel for
+#pragma omp parallel for num_threads(m_config.num_wavelength_threads())
     for (int w = 0; w < atmosphere.num_wavel(); ++w) {
 #ifdef SKTRAN_OPENMP_SUPPORT
         int thread_idx = omp_get_thread_num();

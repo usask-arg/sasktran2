@@ -101,7 +101,8 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::configureCache() {
 }
 
 template <int NSTOKES, int CNSTR>
-void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solve(AEOrder m) {
+void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solve(AEOrder m,
+                                                      int num_threads) {
     // Environment setup
     using namespace sasktran_disco;
     // Check if its already solved. If so then return true
