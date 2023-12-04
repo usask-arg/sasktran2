@@ -22,14 +22,14 @@ namespace sasktran2::grids {
         int csz_index = (int)(location_index / m_altitude_grid.grid().size());
 
         return coords.solar_coordinate_vector(
-            m_cos_sza_grid.grid()(csz_index), EIGEN_PI,
+            m_cos_sza_grid.grid()(csz_index), 0.0,
             m_altitude_grid.grid()(alt_index));
     }
 
     Eigen::Vector3d AltitudeSZASourceLocationInterpolator::ground_location(
         const sasktran2::Coordinates& coords, int ground_index) const {
         return coords.solar_coordinate_vector(
-            m_cos_sza_grid.grid()(ground_index), EIGEN_PI, 0);
+            m_cos_sza_grid.grid()(ground_index), 0.0, 0);
     }
 
     int AltitudeSZASourceLocationInterpolator::interior_linear_index(

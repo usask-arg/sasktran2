@@ -50,8 +50,8 @@ namespace sasktran2::hr {
 
         // Incoming ray is opposite the propagation direction, outgoing ray is
         // in the direction of propagation
-        math::stokes_scattering_factors(-1 * incoming_ray, outgoing_ray, theta,
-                                        C1, C2, S1, S2, negation);
+        math::stokes_scattering_factors(-1 * incoming_ray, -1 * outgoing_ray,
+                                        theta, C1, C2, S1, S2, negation);
 
         // We have 4 greek coefficients (a1, a2, a3, b1), and we use the
         // expansion (sum over legendre poly assumed) P11 = a1 d_{0, 0} P12 = b1
