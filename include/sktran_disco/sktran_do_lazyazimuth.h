@@ -53,7 +53,7 @@ namespace sasktran_disco {
         AzimuthDependentCache() = delete;
         AzimuthDependentCache(uint NSTR)
             : M_NSTR(NSTR), m_cached(M_NSTR, false), m_localdata(M_NSTR),
-              m_data(m_localdata) {}
+              m_data(m_localdata), m_reuse_memory_for_all_azimuth(false) {}
         AzimuthDependentCache(uint NSTR, std::vector<CachedDataType>& data)
             : M_NSTR(NSTR), m_cached(M_NSTR, false), m_data(data) {
             if (data.size() == 1) {
