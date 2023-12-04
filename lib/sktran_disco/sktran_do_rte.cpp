@@ -60,6 +60,10 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::configureCache() {
     m_cache.h_l_downwelling.resize(this->M_NSTR);
     m_cache.h_l_upwelling.resize(this->M_NSTR);
 
+#ifdef SKTRAN_USE_ACCELERATE
+    m_cache.homog_work.resize(N * NSTOKES * 4);
+#endif
+
     m_cache.p_d_temp.resize(this->M_NSTR);
     m_cache.p_d_temp2.resize(this->M_NSTR);
 
@@ -482,7 +486,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveHomogeneous(
         lapack_int errorcode;
 
 #ifdef SKTRAN_USE_ACCELERATE
-        Eigen::VectorXd work(N * NSTOKES * 4);
+        Eigen::VectorXd& work = m_cache.homog_work;
         int worksize = N * NSTOKES * 4;
         char jobvl = 'N';
         char jobvr = 'V';

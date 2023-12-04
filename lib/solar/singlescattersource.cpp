@@ -187,12 +187,12 @@ namespace sasktran2::solartransmission {
             if (double(m_geometry_sparse.nonZeros()) /
                     double(m_geometry_matrix.size()) >
                 1) {
-                m_solar_trans[threadidx] =
+                m_solar_trans[threadidx].noalias() =
                     m_geometry_matrix *
                     m_atmosphere->storage().total_extinction(Eigen::all,
                                                              wavelidx);
             } else {
-                m_solar_trans[threadidx] =
+                m_solar_trans[threadidx].noalias() =
                     m_geometry_sparse *
                     m_atmosphere->storage().total_extinction(Eigen::all,
                                                              wavelidx);
@@ -200,7 +200,7 @@ namespace sasktran2::solartransmission {
         }
 
         if constexpr (std::is_same_v<S, SolarTransmissionTable>) {
-            m_solar_trans[threadidx] =
+            m_solar_trans[threadidx].noalias() =
                 m_geometry_sparse * (m_solar_transmission.geometry_matrix() *
                                      m_atmosphere->storage().total_extinction(
                                          Eigen::all, wavelidx));

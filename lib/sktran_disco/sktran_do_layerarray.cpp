@@ -254,6 +254,7 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
       m_direct_toa(this->M_SOLAR_DIRECT_INTENSITY), m_config(config),
       m_include_direct_bounce(false), m_surfaceemission(0.0),
       m_num_los(los.size()),
+      m_chapman_factors(geometry_layers.chapman_factors()),
       m_input_derivatives(config.pool().thread_data().input_derivatives()),
       m_albedo(los, *this->M_MU, this->M_CSZ, std::move(brdf),
                config.userSpec()
@@ -262,8 +263,6 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
     m_wavel_index = wavelidx;
     // Allocations
     m_layers.reserve(this->M_NLYR);
-    m_chapman_factors.resize(this->M_NLYR, this->M_NLYR);
-    m_chapman_factors.setZero();
 
     // Accumulation quantities for the layers
     double ceiling_depth = 0;
@@ -350,7 +349,6 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
 
         ceiling_depth = floor_depth;
     }
-    m_chapman_factors = geometry_layers.chapman_factors();
 
     if (atmosphere.num_deriv() > 0 &&
         sk_config.wf_precision() ==
@@ -611,6 +609,7 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
       m_direct_toa(this->M_SOLAR_DIRECT_INTENSITY), m_config(config),
       m_include_direct_bounce(true), m_surfaceemission(0.0),
       m_num_los(los.size()),
+      m_chapman_factors(geometry_layers.chapman_factors()),
       m_input_derivatives(thread_data.input_derivatives()),
       m_albedo(los, *this->M_MU, this->M_CSZ, nullptr,
                config.userSpec()
@@ -628,8 +627,6 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
             new OpticalLayer<NSTOKES, CNSTR>(
                 config, p, ceil_h, floor_h, m_input_derivatives, thread_data)));
     }
-    m_chapman_factors = geometry_layers.chapman_factors();
-
     // Configure azimuthal dependencies
     for (auto& layer : m_layers) {
         registerAzimuthDependency(*layer);
@@ -842,8 +839,6 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
 
     // Allocations
     m_layers.reserve(this->M_NLYR);
-    m_chapman_factors.resize(this->M_NLYR, this->M_NLYR);
-    m_chapman_factors.setZero();
 
     // Map the low level atmosphere memory to eigen matrices
     int stream_independent_offset = this->M_NLYR * wavelidx;
@@ -933,7 +928,6 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
 
         ceiling_depth = floor_depth;
     }
-    m_chapman_factors = geometry_layers.chapman_factors();
 
     if (weightingfunctions != nullptr) {
         int numderiv = weightingfunctions->numderiv;
@@ -1210,12 +1204,6 @@ template <int NSTOKES, int CNSTR>
 void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::configureTest(
     const PersistentConfiguration<NSTOKES, CNSTR>& config,
     const std::vector<testing::TestLayer<NSTOKES>>& testlayers) {
-    m_chapman_factors.resize(this->M_NLYR, this->M_NLYR);
-
-    // TODO: if heights are given as part of the layer interface we could
-    // calculate real chapman factors
-    m_chapman_factors.setConstant(1 / this->M_CSZ);
-
     m_layers.reserve(this->M_NLYR);
     double od_ceil = 0;
     for (LayerIndex lidx = 0; lidx < this->M_NLYR; ++lidx) {
