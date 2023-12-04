@@ -219,8 +219,26 @@ namespace sasktran2 {
         look_vector_from_azimuth(const Eigen::Vector3d& location, double saa,
                                  double cos_viewing) const;
 
+        /**
+         * @brief Calculates the Stokes rotation factors (cos(2theta),
+         * sin(2theta)) to convert from the standard basis to the solar basis
+         *
+         * @param look_vector
+         * @return std::pair<double, double>
+         */
         std::pair<double, double>
         stokes_standard_to_solar(const Eigen::Vector3d& look_vector) const;
+
+        /**
+         * @brief Calculates the Stokes rotation factors (cos(2theta),
+         * sin(2theta)) to convert from the standard basis to the observer
+         *
+         * @param look_vector
+         * @return std::pair<double, double>
+         */
+        std::pair<double, double>
+        stokes_standard_to_observer(const Eigen::Vector3d& look_vector,
+                                    const Eigen::Vector3d& position) const;
     };
 
     /** Base class that defines the Geometry for the calculation.  The Geometry

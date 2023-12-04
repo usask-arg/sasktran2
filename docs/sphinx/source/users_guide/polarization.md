@@ -5,12 +5,6 @@ file_format: mystnb
 (_users_polarization)=
 # Polarized Calculations
 
-```{note}
-Polarization support is a work in progress, some features may not be available and some
-radiance calculations may not be correct. Only trust the results after consultation with
-the package authors.
-```
-
 ```{code-cell}
 import sasktran2 as sk
 ```
