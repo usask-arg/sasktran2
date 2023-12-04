@@ -1,3 +1,4 @@
+#include "sasktran2/output.h"
 #include <sasktran2/geometry.h>
 #include <sasktran2/math/trig.h>
 
@@ -158,6 +159,44 @@ namespace sasktran2 {
             viewing_angle, location.normalized().cross(horiz_look));
 
         return vertical_transform.matrix() * horiz_look;
+    }
+
+    std::pair<double, double> Coordinates::stokes_standard_to_solar(
+        const Eigen::Vector3d& look_vector) const {
+        // Project the z-unit and the *unrotated* sun into perpindicular
+        // componets to the look vector
+
+        if ((abs(m_sun_unit.dot(look_vector)) >= 1) ||
+            (abs(m_z_unit.dot(look_vector)) >= 1)) {
+            // Parallel sun, not sure what to do...
+            // TODO: CHeck this
+            return std::make_pair(1.0, 0.0);
+        }
+
+        auto perp_z =
+            (m_z_unit - m_z_unit.dot(look_vector) * look_vector).normalized();
+        auto perp_true_sun =
+            (m_sun_unit - m_sun_unit.dot(look_vector) * look_vector)
+                .normalized();
+
+        // Find the angle between them and use that as the Stokes rotation angle
+        double cos_angle = perp_z.dot(perp_true_sun);
+
+        if (cos_angle > 1) {
+            cos_angle = 1;
+        }
+        if (cos_angle < -1) {
+            cos_angle = -1;
+        }
+
+        double rot_rangle = acos(cos_angle);
+
+        std::pair<double, double> result;
+
+        result.first = cos(2 * rot_rangle);
+        result.second = -1 * sin(2 * rot_rangle);
+
+        return result;
     }
 
 } // namespace sasktran2
