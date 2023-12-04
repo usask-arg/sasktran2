@@ -6,7 +6,7 @@ namespace sasktran2 {
                            Eigen::VectorXd&& grid_values,
                            sasktran2::grids::interpolation interp_method,
                            geometrytype geotype)
-        : Geometry(Coordinates(cos_sza, saa, earth_radius, geotype, true)),
+        : Geometry(Coordinates(cos_sza, saa, earth_radius, geotype, false)),
           m_alt_grid(std::move(grid_values),
                      sasktran2::grids::gridspacing::automatic,
                      sasktran2::grids::outofbounds::extend, interp_method) {}

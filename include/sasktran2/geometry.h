@@ -218,6 +218,9 @@ namespace sasktran2 {
         Eigen::Vector3d
         look_vector_from_azimuth(const Eigen::Vector3d& location, double saa,
                                  double cos_viewing) const;
+
+        std::pair<double, double>
+        stokes_standard_to_solar(const Eigen::Vector3d& look_vector) const;
     };
 
     /** Base class that defines the Geometry for the calculation.  The Geometry

@@ -364,7 +364,7 @@ namespace sasktran2::hr {
             saa_initial);
 
         return m_geometry.coordinates().look_vector_from_azimuth(
-            new_position, saa_initial, temp.cos_zenith_angle(vector));
+            new_position, -saa_initial, temp.cos_zenith_angle(vector));
     }
 
     template <int NSTOKES>
