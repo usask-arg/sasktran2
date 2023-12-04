@@ -53,15 +53,25 @@ namespace sasktran_disco {
         AzimuthDependentCache() = delete;
         AzimuthDependentCache(uint NSTR)
             : M_NSTR(NSTR), m_cached(M_NSTR, false), m_localdata(M_NSTR),
-              m_data(m_localdata) {}
+              m_data(m_localdata), m_reuse_memory_for_all_azimuth(false) {}
         AzimuthDependentCache(uint NSTR, std::vector<CachedDataType>& data)
-            : M_NSTR(NSTR), m_cached(M_NSTR, false), m_data(data) {}
+            : M_NSTR(NSTR), m_cached(M_NSTR, false), m_data(data) {
+            if (data.size() == 1) {
+                m_reuse_memory_for_all_azimuth = true;
+            } else {
+                m_reuse_memory_for_all_azimuth = false;
+            }
+        }
 
         // Cache the requested azimuth expansion order if it has not already
         // been calculated.
         void configureAEOrder(AEOrder m) override {
             if (m_cached[m] == false) {
-                calculateAEOrder(m, m_data[m]);
+                if (m_reuse_memory_for_all_azimuth) {
+                    calculateAEOrder(m, m_data[0]);
+                } else {
+                    calculateAEOrder(m, m_data[m]);
+                }
                 m_cached[m] = true;
             }
         }
@@ -75,7 +85,11 @@ namespace sasktran_disco {
         // Cached value accessor.
         inline const CachedDataType& operator[](AEOrder m) const {
             assert(m_cached[m]);
-            return m_data[m];
+            if (m_reuse_memory_for_all_azimuth) {
+                return m_data[0];
+            } else {
+                return m_data[m];
+            }
         }
         // Calculation which is performed when an new order of the cache needs
         // to be calculated.
@@ -88,6 +102,8 @@ namespace sasktran_disco {
         std::vector<CachedDataType> m_localdata;
         std::vector<CachedDataType>& m_data;
         std::vector<bool> m_cached;
+
+        bool m_reuse_memory_for_all_azimuth;
     };
 
     // Pure virtual base class which manages the lazy caching of a azimuth

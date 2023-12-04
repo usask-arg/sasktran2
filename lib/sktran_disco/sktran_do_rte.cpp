@@ -21,6 +21,10 @@ sasktran_disco::RTESolver<NSTOKES, CNSTR>::RTESolver(
 
 template <int NSTOKES, int CNSTR>
 void sasktran_disco::RTESolver<NSTOKES, CNSTR>::configureCache() {
+    if (m_cache.has_been_configured_by_rte_solver) {
+        return;
+    }
+
     const uint N = this->M_NSTR / 2;
     m_cache.h_eigmtx_destroy.resize(N * NSTOKES, N * NSTOKES);
     m_cache.h_MX_minus.resize(N * NSTOKES, N * NSTOKES);
@@ -56,6 +60,10 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::configureCache() {
     m_cache.h_l_downwelling.resize(this->M_NSTR);
     m_cache.h_l_upwelling.resize(this->M_NSTR);
 
+#ifdef SKTRAN_USE_ACCELERATE
+    m_cache.homog_work.resize(N * NSTOKES * 4);
+#endif
+
     m_cache.p_d_temp.resize(this->M_NSTR);
     m_cache.p_d_temp2.resize(this->M_NSTR);
 
@@ -88,6 +96,8 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::configureCache() {
     m_cache.bvp_pd_z.resize(m_cache.bvp_mat->N(), 1);
     m_cache.bvp_pd_gamma.resize(m_cache.bvp_mat->N());
     m_cache.bvp_pd_mu.resize(m_cache.bvp_mat->N());
+
+    m_cache.has_been_configured_by_rte_solver = true;
 }
 
 template <int NSTOKES, int CNSTR>
@@ -476,7 +486,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveHomogeneous(
         lapack_int errorcode;
 
 #ifdef SKTRAN_USE_ACCELERATE
-        Eigen::VectorXd work(N * NSTOKES * 4);
+        Eigen::VectorXd& work = m_cache.homog_work;
         int worksize = N * NSTOKES * 4;
         char jobvl = 'N';
         char jobvr = 'V';
@@ -508,7 +518,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveHomogeneous(
 
     // MX_minus = S_plus * MX_plus * inv{diag{eigenvalues}} from eq (14). Do
     // S_plus * MX_plus here
-    MX_minus = S_plus * MX_plus;
+    MX_minus.noalias() = S_plus * MX_plus;
 
     VectorViewH eigval(solution.value.eigval().data(), N * NSTOKES, 1);
     MatrixViewH homog_plus(solution.value.homog_plus().data(), N * NSTOKES,

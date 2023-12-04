@@ -167,6 +167,12 @@ namespace sasktran_disco {
         Eigen::MatrixXd bvp_pd_z;
         Eigen::VectorXd bvp_pd_gamma;
         Eigen::VectorXd bvp_pd_mu;
+
+#ifdef SKTRAN_USE_ACCELERATE
+        Eigen::VectorXd homog_work;
+#endif
+
+        bool has_been_configured_by_rte_solver;
     };
 
     // Data that each thread will need, reused across wavelengths.
@@ -188,11 +194,13 @@ namespace sasktran_disco {
             }
             m_legendre_sum_storage.resize(NLYR);
             for (auto& leg : m_legendre_sum_storage) {
-                leg.resize(NSTR);
+                leg.resize(1);
             }
 
             m_postprocessing_cache.resize(NLYR);
             m_layer_cache.resize(NLYR, NSTR);
+
+            m_rte_cache.has_been_configured_by_rte_solver = false;
         }
 
         std::vector<LayerSolution<NSTOKES, CNSTR>>&
