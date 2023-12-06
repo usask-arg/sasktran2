@@ -27,7 +27,7 @@ namespace sasktran2::hr {
         std::vector<Eigen::MatrixXd>
             point_scattering_matrices; /** For each point, outgoing source =
                                           scattering matrix @ incoming */
-        Eigen::SparseMatrix<double, Eigen::ColMajor>
+        Eigen::SparseMatrix<double, Eigen::RowMajor>
             accumulation_matrix; /** incoming_radiance = accumulation_matrix @
                                     outgoing_sources */
     };
@@ -121,6 +121,9 @@ namespace sasktran2::hr {
         int m_total_num_diffuse_weights; /** Total number of diffuse weights,
                                             used to help memory allocs */
 
+        std::vector<std::vector<Eigen::Triplet<double>>>
+            m_diffuse_weight_triplets; /** Used to store diffuse triplets */
+
         Eigen::SparseMatrix<double, Eigen::RowMajor>
             m_do_to_diffuse_outgoing_interpolator; /** Mapping from the DO
                                                       source terms to the
@@ -190,12 +193,12 @@ namespace sasktran2::hr {
          * @param layer The layer that we are integrating over
          * @param source The returned source term
          */
-        virtual void
-        integrated_source(int wavelidx, int losidx, int layeridx, int threadidx,
-                          const sasktran2::raytracing::SphericalLayer& layer,
-                          const sasktran2::SparseODDualView& shell_od,
-                          sasktran2::Dual<double, sasktran2::dualstorage::dense,
-                                          NSTOKES>& source) const;
+        virtual void integrated_source(
+            int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+            int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
+            const sasktran2::SparseODDualView& shell_od,
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+                source) const;
 
         /** Calculates the source term at the end of the ray.  Common examples
          * of this are ground scattering, ground emission, or the solar radiance
@@ -206,9 +209,9 @@ namespace sasktran2::hr {
          * passed in initialize_geometry
          * @param source The returned source term
          */
-        virtual void
-        end_of_ray_source(int wavelidx, int losidx, int threadidx,
-                          sasktran2::Dual<double, sasktran2::dualstorage::dense,
-                                          NSTOKES>& source) const;
+        virtual void end_of_ray_source(
+            int wavelidx, int losidx, int wavel_threadidx, int threadidx,
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+                source) const;
     };
 } // namespace sasktran2::hr

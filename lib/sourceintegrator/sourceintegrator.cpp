@@ -55,11 +55,12 @@ namespace sasktran2 {
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
             radiance,
         std::vector<SourceTermInterface<NSTOKES>*> source_terms, int wavelidx,
-        int rayidx, int threadidx) {
+        int rayidx, int wavel_threadidx, int threadidx) {
         const auto& ray = (*m_traced_rays)[rayidx];
         // Add source at the end of the ray
         for (const auto& source : source_terms) {
-            source->end_of_ray_source(wavelidx, rayidx, threadidx, radiance);
+            source->end_of_ray_source(wavelidx, rayidx, wavel_threadidx,
+                                      threadidx, radiance);
         }
 
         // Iterate through each layer from the end of the ray to the observer
@@ -90,8 +91,9 @@ namespace sasktran2 {
 
             // Calculate all of the layer sources
             for (const auto& source : source_terms) {
-                source->integrated_source(wavelidx, rayidx, j, threadidx, layer,
-                                          local_shell_od, radiance);
+                source->integrated_source(wavelidx, rayidx, j, wavel_threadidx,
+                                          threadidx, layer, local_shell_od,
+                                          radiance);
             }
 
 #ifdef SASKTRAN_DEBUG_ASSERTS
@@ -113,7 +115,7 @@ namespace sasktran2 {
     void SourceIntegrator<NSTOKES>::integrate_optical_depth(
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
             radiance,
-        int wavelidx, int rayidx, int threadidx) {
+        int wavelidx, int rayidx, int wavel_threadidx, int threadidx) {
         radiance.value(0) =
             m_shell_od[rayidx](Eigen::all, wavelidx).array().sum();
     }
@@ -123,7 +125,8 @@ namespace sasktran2 {
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
             radiance,
         std::vector<SourceTermInterface<NSTOKES>*> source_terms, int wavelidx,
-        int rayidx, int threadidx, const SInterpolator& source_interpolator,
+        int rayidx, int wavel_threadidx, int threadidx,
+        const SInterpolator& source_interpolator,
         std::vector<Eigen::Triplet<double>>& triplets) {
         const auto& ray = (*m_traced_rays)[rayidx];
         const auto& interpolator = source_interpolator[rayidx];
@@ -149,8 +152,9 @@ namespace sasktran2 {
             // Calculate all of the layer sources
             layer_source.value.setZero();
             for (const auto& source : source_terms) {
-                source->integrated_source(wavelidx, rayidx, j, threadidx, layer,
-                                          local_shell_od, layer_source);
+                source->integrated_source(wavelidx, rayidx, j, wavel_threadidx,
+                                          threadidx, layer, local_shell_od,
+                                          layer_source);
             }
 
             radiance.value += layer_source.value * atten_factor;
@@ -180,8 +184,8 @@ namespace sasktran2 {
         // Add source at the end of the ray
         layer_source.value.setZero();
         for (const auto& source : source_terms) {
-            source->end_of_ray_source(wavelidx, rayidx, threadidx,
-                                      layer_source);
+            source->end_of_ray_source(wavelidx, rayidx, wavel_threadidx,
+                                      threadidx, layer_source);
         }
 
         radiance.value += layer_source.value * std::exp(-1 * current_od);

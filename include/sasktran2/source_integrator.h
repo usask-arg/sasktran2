@@ -90,19 +90,21 @@ namespace sasktran2 {
          * @param radiance
          * @param source_terms
          * @param wavelidx
+         * @param wavel_threadidx
          * @param threadidx
          * @param rayidx
          */
         void integrate(sasktran2::Dual<double, sasktran2::dualstorage::dense,
                                        NSTOKES>& radiance,
                        std::vector<SourceTermInterface<NSTOKES>*> source_terms,
-                       int wavelidx, int rayidx, int threadidx);
+                       int wavelidx, int rayidx, int wavel_threadidx,
+                       int threadidx);
 
         void integrate_and_emplace_accumulation_triplets(
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
                 radiance,
             std::vector<SourceTermInterface<NSTOKES>*> source_terms,
-            int wavelidx, int rayidx, int threadidx,
+            int wavelidx, int rayidx, int wavel_threadidx, int threadidx,
             const SInterpolator& source_interpolator,
             std::vector<Eigen::Triplet<double>>& triplets);
 
@@ -110,6 +112,6 @@ namespace sasktran2 {
         void integrate_optical_depth(
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
                 radiance,
-            int wavelidx, int rayidx, int threadidx);
+            int wavelidx, int rayidx, int wavel_threadidx, int threadidx);
     };
 } // namespace sasktran2

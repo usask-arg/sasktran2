@@ -217,9 +217,14 @@ namespace sasktran2::hr {
     }
 
     template <int NSTOKES> void DiffuseTable<NSTOKES>::trace_incoming_rays() {
-        sasktran2::viewinggeometry::ViewingRay viewing_ray;
+        int nthreads = m_config->num_threads();
 
+        std::vector<sasktran2::viewinggeometry::ViewingRay> thread_viewing_ray;
+        thread_viewing_ray.resize(nthreads);
+
+#pragma omp parallel for num_threads(nthreads)
         for (int i = 0; i < m_diffuse_points.size(); ++i) {
+            auto& viewing_ray = thread_viewing_ray[omp_get_thread_num()];
             if (!m_diffuse_point_full_calculation[i]) {
                 continue;
             }
@@ -277,6 +282,12 @@ namespace sasktran2::hr {
         generate_source_interpolation_weights(m_incoming_traced_rays,
                                               m_diffuse_source_weights,
                                               m_total_num_diffuse_weights);
+
+        m_diffuse_weight_triplets.resize(m_config->num_source_threads());
+        for (auto& triplet : m_diffuse_weight_triplets) {
+            triplet.reserve(m_total_num_diffuse_weights /
+                            m_config->num_source_threads() * 1.1);
+        }
 
         generate_source_interpolation_weights(los_rays, m_los_source_weights,
                                               temp);
@@ -376,8 +387,15 @@ namespace sasktran2::hr {
 
         interpolator.resize(rays.size());
 
-        std::vector<std::pair<int, double>> temp_location_storage;
-        std::vector<std::pair<int, double>> temp_direction_storage;
+        int nthreads = m_config->num_threads();
+
+        std::vector<std::vector<std::pair<int, double>>>
+            thread_temp_location_storage;
+        std::vector<std::vector<std::pair<int, double>>>
+            thread_temp_direction_storage;
+
+        thread_temp_location_storage.resize(nthreads);
+        thread_temp_direction_storage.resize(nthreads);
 
         int num_location, num_direction;
 
@@ -385,7 +403,16 @@ namespace sasktran2::hr {
 
         sasktran2::Location temp_location;
 
+#pragma omp parallel for num_threads(nthreads) private(                        \
+    num_location, num_direction, rotated_los, temp_location)
         for (int rayidx = 0; rayidx < rays.size(); ++rayidx) {
+            int threadidx = omp_get_thread_num();
+
+            auto& temp_location_storage =
+                thread_temp_location_storage[threadidx];
+            auto& temp_direction_storage =
+                thread_temp_direction_storage[threadidx];
+
             auto& ray_interpolator = interpolator[rayidx];
             const auto& ray = rays[rayidx];
 
@@ -489,6 +516,8 @@ namespace sasktran2::hr {
                                                              int threadidx) {
         auto& storage = m_thread_storage[threadidx];
 
+#pragma omp parallel for num_threads(m_config->num_source_threads())           \
+    schedule(dynamic)
         for (int i = 0; i < m_location_interpolator->num_interior_points();
              ++i) {
             if (!m_diffuse_point_full_calculation[i]) {
@@ -503,6 +532,8 @@ namespace sasktran2::hr {
                 storage.point_scattering_matrices[i].data());
         }
 
+#pragma omp parallel for num_threads(m_config->num_source_threads())           \
+    schedule(dynamic)
         for (int i = 0; i < m_location_interpolator->num_ground_points(); ++i) {
             if (!m_diffuse_point_full_calculation
                     [i + m_location_interpolator->num_interior_points()]) {
@@ -576,7 +607,8 @@ namespace sasktran2::hr {
             old_outgoing_vals =
                 m_thread_storage[threadidx].m_outgoing_sources.value;
 
-#pragma omp parallel for num_threads(m_config->num_source_threads())
+#pragma omp parallel for num_threads(m_config->num_source_threads())           \
+    schedule(dynamic)
             for (int i = 0; i < m_diffuse_points.size(); ++i) {
                 if (!m_diffuse_point_full_calculation[i]) {
                     continue;
@@ -687,25 +719,35 @@ namespace sasktran2::hr {
             source->calculate(wavelidx, threadidx);
         }
 
+        int nthreads = m_config->num_source_threads();
+
         if (m_config->num_hr_spherical_iterations() > 0) {
             // Calculate the first order incoming signal
-            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>
+            std::vector<
+                sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>>
                 temp_result;
-            std::vector<Eigen::Triplet<double>> triplets;
+            temp_result.resize(nthreads);
 
-            triplets.reserve(m_total_num_diffuse_weights);
+            for (auto& triplet : m_diffuse_weight_triplets) {
+                triplet.clear();
+            }
 
+#pragma omp parallel for num_threads(nthreads)
             for (int rayidx = 0; rayidx < m_incoming_traced_rays.size();
                  ++rayidx) {
-                temp_result.value.setZero();
+
+                int ray_threadidx = omp_get_thread_num();
+                temp_result[ray_threadidx].value.setZero();
 
                 m_integrator.integrate_and_emplace_accumulation_triplets(
-                    temp_result, m_initial_sources, wavelidx, rayidx, threadidx,
-                    m_diffuse_source_weights, triplets);
+                    temp_result[ray_threadidx], m_initial_sources, wavelidx,
+                    rayidx, threadidx, ray_threadidx, m_diffuse_source_weights,
+                    m_diffuse_weight_triplets[ray_threadidx]);
 
                 m_thread_storage[threadidx].m_firstorder_radiances.value(
-                    Eigen::seq(rayidx * NSTOKES, rayidx * NSTOKES + NSTOKES -
-                                                     1)) = temp_result.value;
+                    Eigen::seq(rayidx * NSTOKES,
+                               rayidx * NSTOKES + NSTOKES - 1)) =
+                    temp_result[ray_threadidx].value;
 
 #ifdef SASKTRAN_DEBUG_ASSERTS
                 if (temp_result.value.hasNaN()) {
@@ -715,9 +757,26 @@ namespace sasktran2::hr {
             }
             auto& matrix = m_thread_storage[threadidx].accumulation_matrix;
 
-            matrix.setFromTriplets(triplets.begin(), triplets.end());
-
-            // Optional: Intialize total incoming with DO solution
+            if (nthreads == 1) {
+                matrix.setFromTriplets(m_diffuse_weight_triplets[0].begin(),
+                                       m_diffuse_weight_triplets[0].end());
+            } else {
+                std::vector<Eigen::Triplet<double>> all_triplets;
+                int fullsize = 0;
+                for (const auto& triplet : m_diffuse_weight_triplets) {
+                    fullsize += triplet.size();
+                }
+                all_triplets.resize(fullsize);
+                int curidx = 0;
+                for (const auto& triplet : m_diffuse_weight_triplets) {
+                    for (int i = 0; i < triplet.size(); ++i) {
+                        all_triplets[curidx + i] = triplet[i];
+                    }
+                    curidx += triplet.size();
+                }
+                matrix.setFromTriplets(all_triplets.begin(),
+                                       all_triplets.end());
+            }
 
             // Else, start with total first order incoming
             m_thread_storage[threadidx].m_incoming_radiances.value =
@@ -734,12 +793,12 @@ namespace sasktran2::hr {
 
     template <int NSTOKES>
     void DiffuseTable<NSTOKES>::integrated_source(
-        int wavelidx, int losidx, int layeridx, int threadidx,
-        const sasktran2::raytracing::SphericalLayer& layer,
+        int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+        int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
         const sasktran2::SparseODDualView& shell_od,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
-        auto& storage = m_thread_storage[threadidx];
+        auto& storage = m_thread_storage[wavel_threadidx];
 
         auto& interpolator =
             m_los_source_weights[losidx].interior_weights[layeridx];
@@ -795,7 +854,7 @@ namespace sasktran2::hr {
 
     template <int NSTOKES>
     void DiffuseTable<NSTOKES>::end_of_ray_source(
-        int wavelidx, int losidx, int threadidx,
+        int wavelidx, int losidx, int wavel_threadidx, int threadidx,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
         // TODO: Only necessary for nadir viewing ground?

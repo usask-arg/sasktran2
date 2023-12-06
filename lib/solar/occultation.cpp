@@ -14,8 +14,8 @@ namespace sasktran2::solartransmission {
 
     template <int NSTOKES>
     void OccultationSource<NSTOKES>::integrated_source(
-        int wavelidx, int losidx, int layeridx, int threadidx,
-        const sasktran2::raytracing::SphericalLayer& layer,
+        int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+        int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
         const sasktran2::SparseODDualView& shell_od,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {}
@@ -29,7 +29,7 @@ namespace sasktran2::solartransmission {
 
     template <int NSTOKES>
     void OccultationSource<NSTOKES>::end_of_ray_source(
-        int wavelidx, int losidx, int threadidx,
+        int wavelidx, int losidx, int wavel_threadidx, int threadidx,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
         if constexpr (NSTOKES == 1) {

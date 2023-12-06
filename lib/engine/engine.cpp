@@ -158,7 +158,9 @@ void Sasktran2<NSTOKES>::calculate_radiance(
     Eigen::setNbThreads(m_config.num_source_threads());
 
     if (m_config.num_source_threads() > 1) {
-        omp_set_max_active_levels(8);
+        omp_set_max_active_levels(2);
+    } else {
+        omp_set_max_active_levels(2);
     }
 #endif
 
@@ -196,14 +198,19 @@ void Sasktran2<NSTOKES>::calculate_radiance(
             source->calculate(w, thread_idx);
         }
 
+#pragma parallel for num_threads(m_config.num_source_threads())                \
+    schedule(dynamic)
         for (int i = 0; i < m_traced_rays.size(); ++i) {
+            int ray_threadidx = omp_get_thread_num();
+
             // Set the radiance thread storage to 0
             radiance[thread_idx].value.setZero();
             radiance[thread_idx].deriv.setZero();
 
             // Integrate all of the sources for the ray
-            m_source_integrator->integrate(
-                radiance[thread_idx], m_los_source_terms, w, i, thread_idx);
+            m_source_integrator->integrate(radiance[thread_idx],
+                                           m_los_source_terms, w, i, thread_idx,
+                                           ray_threadidx);
 
             // And assign it to the output
             output.assign(radiance[thread_idx], i, w);
