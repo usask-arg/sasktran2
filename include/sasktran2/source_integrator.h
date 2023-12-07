@@ -6,11 +6,13 @@
 
 namespace sasktran2 {
 
-    struct RaySourceInterpolationWeights {
-        std::vector<std::pair<std::vector<std::pair<int, double>>,
-                              std::vector<std::pair<int, double>>>>
+    template <int NSTOKES> struct RaySourceInterpolationWeights {
+        std::vector<std::pair<
+            std::vector<std::pair<int, double>>,
+            std::vector<std::tuple<int, double, std::array<int, NSTOKES>>>>>
             interior_weights;
-        std::vector<std::pair<int, double>> ground_weights;
+        std::vector<std::tuple<int, double, std::array<int, NSTOKES>>>
+            ground_weights;
         bool ground_is_hit;
     };
 
@@ -32,7 +34,8 @@ namespace sasktran2 {
      * @tparam NSTOKES
      */
     template <int NSTOKES> class SourceIntegrator {
-        using SInterpolator = std::vector<RaySourceInterpolationWeights>;
+        using SInterpolator =
+            std::vector<RaySourceInterpolationWeights<NSTOKES>>;
 
       private:
         bool m_calculate_derivatives; /**< True if we are calculating
@@ -106,7 +109,7 @@ namespace sasktran2 {
             std::vector<SourceTermInterface<NSTOKES>*> source_terms,
             int wavelidx, int rayidx, int wavel_threadidx, int threadidx,
             const SInterpolator& source_interpolator,
-            std::vector<Eigen::Triplet<double>>& triplets);
+            Eigen::VectorXd& accumulation_values);
 
         /** Calculates the Optical Depth for each ray */
         void integrate_optical_depth(

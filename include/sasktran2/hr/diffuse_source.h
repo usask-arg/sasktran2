@@ -27,9 +27,9 @@ namespace sasktran2::hr {
         std::vector<Eigen::MatrixXd>
             point_scattering_matrices; /** For each point, outgoing source =
                                           scattering matrix @ incoming */
-        Eigen::SparseMatrix<double, Eigen::RowMajor>
-            accumulation_matrix; /** incoming_radiance = accumulation_matrix @
-                                    outgoing_sources */
+
+        std::vector<Eigen::VectorXd> accumulation_value_storage;
+        Eigen::VectorXd accumulation_summed_values;
     };
 
     /** An implementation of the successive orders of scattering technique.  We
@@ -42,7 +42,8 @@ namespace sasktran2::hr {
      */
     template <int NSTOKES>
     class DiffuseTable : public SourceTermInterface<NSTOKES> {
-        using SInterpolator = std::vector<RaySourceInterpolationWeights>;
+        using SInterpolator =
+            std::vector<RaySourceInterpolationWeights<NSTOKES>>;
 
       private:
         std::vector<DiffuseTableThreadStorage<NSTOKES>>
@@ -121,15 +122,17 @@ namespace sasktran2::hr {
         int m_total_num_diffuse_weights; /** Total number of diffuse weights,
                                             used to help memory allocs */
 
-        std::vector<std::vector<Eigen::Triplet<double>>>
-            m_diffuse_weight_triplets; /** Used to store diffuse triplets */
-
         Eigen::SparseMatrix<double, Eigen::RowMajor>
             m_do_to_diffuse_outgoing_interpolator; /** Mapping from the DO
                                                       source terms to the
                                                       outgoing sphere sources */
         DOSourceInterpolatedPostProcessing<NSTOKES, -1>*
             m_do_source; /** Reference to the DO source */
+
+        // Accumulation matrix sparsity
+        Eigen::VectorXi m_inner_indicies;
+        Eigen::VectorXi m_outer_starts;
+        Eigen::VectorXi m_inner_nnz;
 
       private:
         sasktran2::grids::Grid generate_cos_sza_grid(double min_cos_sza,
@@ -146,6 +149,8 @@ namespace sasktran2::hr {
         void generate_source_interpolation_weights(
             const std::vector<sasktran2::raytracing::TracedRay>& rays,
             SInterpolator& interpolator, int& total_num_weights) const;
+
+        void construct_accumulation_sparsity();
 
         Eigen::Vector3d
         rotate_unit_vector(const Eigen::Vector3d& vector,

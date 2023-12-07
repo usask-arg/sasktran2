@@ -127,7 +127,7 @@ namespace sasktran2 {
         std::vector<SourceTermInterface<NSTOKES>*> source_terms, int wavelidx,
         int rayidx, int wavel_threadidx, int threadidx,
         const SInterpolator& source_interpolator,
-        std::vector<Eigen::Triplet<double>>& triplets) {
+        Eigen::VectorXd& accumulation_values) {
         const auto& ray = (*m_traced_rays)[rayidx];
         const auto& interpolator = source_interpolator[rayidx];
 
@@ -172,9 +172,8 @@ namespace sasktran2 {
 
             for (const auto& ele : layer_interpolator.second) {
                 for (int s = 0; s < NSTOKES; ++s) {
-                    triplets.emplace_back(rayidx * NSTOKES + s,
-                                          ele.first * NSTOKES + s,
-                                          ele.second * source_factor);
+                    accumulation_values(std::get<2>(ele)[s]) +=
+                        std::get<1>(ele) * source_factor;
                 }
             }
 
@@ -196,9 +195,8 @@ namespace sasktran2 {
 
             for (const auto& ele : ground_interpolator) {
                 for (int s = 0; s < NSTOKES; ++s) {
-                    triplets.emplace_back(Eigen::Triplet<double>(
-                        rayidx * NSTOKES + s, ele.first * NSTOKES + s,
-                        ele.second * std::exp(-1 * current_od)));
+                    accumulation_values(std::get<2>(ele)[s]) +=
+                        std::get<1>(ele) * std::exp(-1 * current_od);
                 }
             }
         }

@@ -155,6 +155,14 @@ void init_config(py::module_& m) {
                 in full space, i.e. each hemisphere has num_streams / 2 angular discretizations.  Must
                 be an even number. Default to 16.
             )")
+        .def_property("num_successive_orders_points",
+                      &sasktran2::Config::num_hr_full_incoming_points,
+                      &sasktran2::Config::set_num_hr_full_incoming_points,
+                      R"(
+                The number of incoming points to use in the successive orders calculation for each solar
+                zenith angle.  Must be equal to or less than the number of atmosphere altitude grid points.
+                Default is -1 which means to use every altitude grid point.
+            )")
         .def_property("num_singlescatter_moments",
                       &sasktran2::Config::num_singlescatter_moments,
                       &sasktran2::Config::set_num_singlescatter_moments,

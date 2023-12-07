@@ -178,7 +178,7 @@ void Sasktran2<NSTOKES>::calculate_radiance(
 
     // Allocate memory, should be moved to thread storage?
     std::vector<sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>>
-        radiance(m_config.num_wavelength_threads(),
+        radiance(m_config.num_threads(),
                  {NSTOKES, atmosphere.num_deriv(), true});
 
     output.resize((int)m_traced_rays.size(), atmosphere.num_wavel(),
@@ -198,22 +198,22 @@ void Sasktran2<NSTOKES>::calculate_radiance(
             source->calculate(w, thread_idx);
         }
 
-#pragma parallel for num_threads(m_config.num_source_threads())                \
+#pragma omp parallel for num_threads(m_config.num_source_threads())            \
     schedule(dynamic)
         for (int i = 0; i < m_traced_rays.size(); ++i) {
-            int ray_threadidx = omp_get_thread_num();
+            int ray_threadidx = omp_get_thread_num() + thread_idx;
 
             // Set the radiance thread storage to 0
-            radiance[thread_idx].value.setZero();
-            radiance[thread_idx].deriv.setZero();
+            radiance[ray_threadidx].value.setZero();
+            radiance[ray_threadidx].deriv.setZero();
 
             // Integrate all of the sources for the ray
-            m_source_integrator->integrate(radiance[thread_idx],
+            m_source_integrator->integrate(radiance[ray_threadidx],
                                            m_los_source_terms, w, i, thread_idx,
                                            ray_threadidx);
 
             // And assign it to the output
-            output.assign(radiance[thread_idx], i, w);
+            output.assign(radiance[ray_threadidx], i, w);
         }
 
         // TODO: Is this where we should generate fluxes or other quantities

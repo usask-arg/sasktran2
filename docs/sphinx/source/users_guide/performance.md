@@ -36,9 +36,8 @@ multi-threading, but has the advantage that it works well for a small number of 
 may use significantly less RAM.
 
 ```{note}
-The `sk.ThreadingModel.Source` option is currently being developed, and performance may vary
-significantly depending on what platform you are on as well as the exact calculation being
-performed.
+The `sk.ThreadingModel.Source` works well for the `sk.MultipleScatterSource.SuccessiveOrders` source,
+but may not offer much improvement for the `sk.MultipleScatterSource.DiscreteOrdinates` source.
 ```
 
 ## Installation Method
@@ -46,4 +45,6 @@ For maximum performance, we recommend installing SASKTRAN2 through the `conda` p
 the `pip` wheels.  The conda packages are able to use accelerated LAPACK/BLAS libraries for your system
 rather than the bundled OpenBLAS library in the wheels.  You can check what BLAS vendor you have installed
 by running `conda list | grep libblas` from inside your conda environment.  You should see something
-like `20_osxarm64_accelerate`.
+like `20_osxarm64_accelerate`.  Which BLAS library offers the best performance is very dependent on what
+platform you are on as well as the specific calculation you are performing.  If you want the absolute best
+performance we recommend trying a few different one.
