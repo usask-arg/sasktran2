@@ -869,7 +869,11 @@ namespace sasktran2::hr {
                 if (nthreads == 1) {
                     ray_threadidx = 0;
                 } else {
+#ifdef SKTRAN_OPENMP_SUPPORT
                     ray_threadidx = omp_get_thread_num();
+#else
+                    ray_threadidx = 0;
+#endif
                 }
 
                 temp_result[ray_threadidx].value.setZero();

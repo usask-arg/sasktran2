@@ -157,11 +157,7 @@ void Sasktran2<NSTOKES>::calculate_radiance(
     omp_set_num_threads(m_config.num_threads());
     Eigen::setNbThreads(m_config.num_source_threads());
 
-    if (m_config.num_source_threads() > 1) {
-        omp_set_max_active_levels(2);
-    } else {
-        omp_set_max_active_levels(2);
-    }
+    omp_set_max_active_levels(2);
 #endif
 
     validate_input_atmosphere(atmosphere);
@@ -201,7 +197,11 @@ void Sasktran2<NSTOKES>::calculate_radiance(
 #pragma omp parallel for num_threads(m_config.num_source_threads())            \
     schedule(dynamic)
         for (int i = 0; i < m_traced_rays.size(); ++i) {
+#ifdef SKTRAN_OPENMP_SUPPORT
             int ray_threadidx = omp_get_thread_num() + thread_idx;
+#else
+            int ray_threadidx = 0;
+#endif
 
             // Set the radiance thread storage to 0
             radiance[ray_threadidx].value.setZero();
