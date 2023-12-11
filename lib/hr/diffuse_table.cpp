@@ -1,5 +1,7 @@
 #include <algorithm>
+#ifdef SKTRAN_OPENMP_SUPPORT
 #include <omp.h>
+#endif
 #include <sasktran2/hr/diffuse_source.h>
 #include <sasktran2/math/unitsphere.h>
 #include <sasktran2/math/scattering.h>

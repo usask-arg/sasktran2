@@ -156,8 +156,6 @@ void Sasktran2<NSTOKES>::calculate_radiance(
 #ifdef SKTRAN_OPENMP_SUPPORT
     omp_set_num_threads(m_config.num_threads());
     Eigen::setNbThreads(m_config.num_source_threads());
-
-    omp_set_max_active_levels(2);
 #endif
 
     validate_input_atmosphere(atmosphere);
