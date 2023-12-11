@@ -225,7 +225,11 @@ namespace sasktran2::hr {
 
 #pragma omp parallel for num_threads(nthreads)
         for (int i = 0; i < m_diffuse_points.size(); ++i) {
+#ifdef SKTRAN_OPENMP_SUPPORT
             auto& viewing_ray = thread_viewing_ray[omp_get_thread_num()];
+#else
+            auto& viewing_ray = thread_viewing_ray[0];
+#endif
             if (!m_diffuse_point_full_calculation[i]) {
                 continue;
             }
@@ -529,7 +533,11 @@ namespace sasktran2::hr {
 #pragma omp parallel for num_threads(nthreads) private(                        \
     num_location, num_direction, rotated_los, temp_location)
         for (int rayidx = 0; rayidx < rays.size(); ++rayidx) {
+#ifdef SKTRAN_OPENMP_SUPPORT
             int threadidx = omp_get_thread_num();
+#else
+            int threadidx = 0;
+#endif
 
             auto& temp_location_storage =
                 thread_temp_location_storage[threadidx];
