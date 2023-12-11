@@ -11,10 +11,6 @@
 
 #include <sasktran2/types.h>
 
-#ifndef EIGEN_DONT_PARALLELIZE
-#define EIGEN_DONT_PARALLELIZE
-#endif
-
 #define MINIMUM_SHELL_SIZE_M 0.0001
 
 // Setup dependening on what linear algebra package is being linked

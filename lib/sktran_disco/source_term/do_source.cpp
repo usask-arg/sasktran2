@@ -177,7 +177,7 @@ namespace sasktran2 {
 
     template <int NSTOKES, int CNSTR>
     void DOSource<NSTOKES, CNSTR>::end_of_ray_source(
-        int wavelidx, int losidx, int threadidx,
+        int wavelidx, int losidx, int wavel_threadidx, int threadidx,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
         // Postprocessing for ground source

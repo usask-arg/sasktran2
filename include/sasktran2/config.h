@@ -82,6 +82,17 @@ namespace sasktran2 {
          */
         enum class StokesBasis { standard, solar, observer };
 
+        /** Enum determining how to multithread the calculation.
+         *
+         *    'wavelength' is the default which disables all parallelization
+         * except for things over the wavelength dimension
+         *
+         *     'source' Allows each source term to do their own parallelization
+         * one wavelength at a time
+         *
+         */
+        enum class ThreadingModel { wavelength, source };
+
         Config();
 
         /**
@@ -89,6 +100,33 @@ namespace sasktran2 {
          * @return The number of threads used for the calculation
          */
         int num_threads() const { return m_nthreads; }
+
+        /**
+         * @brief The number of threads to use over the wavelength dimension
+         *
+         * @return int
+         */
+        int num_wavelength_threads() const {
+            if (m_threading_model == ThreadingModel::wavelength) {
+                return num_threads();
+            } else {
+                return 1;
+            }
+        }
+
+        /**
+         * @brief The number of threads to use in calculation of the sources at
+         * each wavelength
+         *
+         * @return int
+         */
+        int num_source_threads() const {
+            if (m_threading_model == ThreadingModel::source) {
+                return num_threads();
+            } else {
+                return 1;
+            }
+        }
 
         /** Sets the maximum number of threads used in the calculation.
          *
@@ -337,6 +375,22 @@ namespace sasktran2 {
         void set_stokes_basis(StokesBasis basis) { m_stokes_basis = basis; }
 
         /**
+         * @brief The threading model to use
+         *
+         * @return ThreadingModel
+         */
+        ThreadingModel threading_model() const { return m_threading_model; }
+
+        /**
+         * @brief Set the threading model
+         *
+         * @param model
+         */
+        void set_threading_model(ThreadingModel model) {
+            m_threading_model = model;
+        }
+
+        /**
          *
          * @return Then number of points (per diffuse profile) that we calculate
          * the incoming signal on.  Can be set to -1 to use all the points
@@ -382,6 +436,8 @@ namespace sasktran2 {
         WeightingFunctionPrecision m_wf_precision;
 
         StokesBasis m_stokes_basis;
+
+        ThreadingModel m_threading_model;
 
         bool m_initialize_hr_with_do_solution;
     };

@@ -54,9 +54,15 @@ class NumberDensityScatterer(Constituent):
         self._kwargs = kwargs
 
     def __getattr__(self, __name: str) -> Any:
-        if __name in self._kwargs:
+        if __name in self.__dict__.get("_kwargs", {}):
             return self._kwargs[__name]
         return None
+
+    def __setattr__(self, __name: str, __value: Any) -> None:
+        if __name in self.__dict__.get("_kwargs", {}):
+            self._kwargs[__name] = __value
+        else:
+            super().__setattr__(__name, __value)
 
     @property
     def number_density(self):

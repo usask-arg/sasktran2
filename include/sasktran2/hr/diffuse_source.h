@@ -27,9 +27,9 @@ namespace sasktran2::hr {
         std::vector<Eigen::MatrixXd>
             point_scattering_matrices; /** For each point, outgoing source =
                                           scattering matrix @ incoming */
-        Eigen::SparseMatrix<double, Eigen::ColMajor>
-            accumulation_matrix; /** incoming_radiance = accumulation_matrix @
-                                    outgoing_sources */
+
+        std::vector<Eigen::VectorXd> accumulation_value_storage;
+        Eigen::VectorXd accumulation_summed_values;
     };
 
     /** An implementation of the successive orders of scattering technique.  We
@@ -42,7 +42,8 @@ namespace sasktran2::hr {
      */
     template <int NSTOKES>
     class DiffuseTable : public SourceTermInterface<NSTOKES> {
-        using SInterpolator = std::vector<RaySourceInterpolationWeights>;
+        using SInterpolator =
+            std::vector<RaySourceInterpolationWeights<NSTOKES>>;
 
       private:
         std::vector<DiffuseTableThreadStorage<NSTOKES>>
@@ -128,6 +129,11 @@ namespace sasktran2::hr {
         DOSourceInterpolatedPostProcessing<NSTOKES, -1>*
             m_do_source; /** Reference to the DO source */
 
+        // Accumulation matrix sparsity
+        Eigen::VectorXi m_inner_indicies;
+        Eigen::VectorXi m_outer_starts;
+        Eigen::VectorXi m_inner_nnz;
+
       private:
         sasktran2::grids::Grid generate_cos_sza_grid(double min_cos_sza,
                                                      double max_cos_sza);
@@ -143,6 +149,8 @@ namespace sasktran2::hr {
         void generate_source_interpolation_weights(
             const std::vector<sasktran2::raytracing::TracedRay>& rays,
             SInterpolator& interpolator, int& total_num_weights) const;
+
+        void construct_accumulation_sparsity();
 
         Eigen::Vector3d
         rotate_unit_vector(const Eigen::Vector3d& vector,
@@ -190,12 +198,12 @@ namespace sasktran2::hr {
          * @param layer The layer that we are integrating over
          * @param source The returned source term
          */
-        virtual void
-        integrated_source(int wavelidx, int losidx, int layeridx, int threadidx,
-                          const sasktran2::raytracing::SphericalLayer& layer,
-                          const sasktran2::SparseODDualView& shell_od,
-                          sasktran2::Dual<double, sasktran2::dualstorage::dense,
-                                          NSTOKES>& source) const;
+        virtual void integrated_source(
+            int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+            int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
+            const sasktran2::SparseODDualView& shell_od,
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+                source) const;
 
         /** Calculates the source term at the end of the ray.  Common examples
          * of this are ground scattering, ground emission, or the solar radiance
@@ -206,9 +214,9 @@ namespace sasktran2::hr {
          * passed in initialize_geometry
          * @param source The returned source term
          */
-        virtual void
-        end_of_ray_source(int wavelidx, int losidx, int threadidx,
-                          sasktran2::Dual<double, sasktran2::dualstorage::dense,
-                                          NSTOKES>& source) const;
+        virtual void end_of_ray_source(
+            int wavelidx, int losidx, int wavel_threadidx, int threadidx,
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+                source) const;
     };
 } // namespace sasktran2::hr

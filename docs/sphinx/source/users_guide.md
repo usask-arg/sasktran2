@@ -23,6 +23,7 @@
 required_components
 weighting_functions
 users_guide/polarization.md
+users_guide/performance.md
 users_guide/geodetic.md
 examples/examples
 ```

@@ -68,8 +68,8 @@ namespace sasktran2 {
 
     template <int NSTOKES, int CNSTR>
     void DOSourceInterpolatedPostProcessing<NSTOKES, CNSTR>::integrated_source(
-        int wavelidx, int losidx, int layeridx, int threadidx,
-        const sasktran2::raytracing::SphericalLayer& layer,
+        int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+        int ray_threadidx, const sasktran2::raytracing::SphericalLayer& layer,
         const sasktran2::SparseODDualView& shell_od,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
@@ -96,7 +96,7 @@ namespace sasktran2 {
             // Need some temporaries
             double source_value =
                 (*m_source_interpolator_view)[losidx][layeridx][s].dot(
-                    m_diffuse_storage->linear_source(threadidx).value);
+                    m_diffuse_storage->linear_source(wavel_threadidx).value);
 
             source.value(s) += omega * source_factor * source_value;
 
@@ -124,8 +124,8 @@ namespace sasktran2 {
                          it; ++it) {
                         source.deriv(s, Eigen::all) +=
                             omega * source_factor * it.value() *
-                            m_diffuse_storage->linear_source(threadidx).deriv(
-                                it.index(), Eigen::all);
+                            m_diffuse_storage->linear_source(wavel_threadidx)
+                                .deriv(it.index(), Eigen::all);
                     }
                 }
             }

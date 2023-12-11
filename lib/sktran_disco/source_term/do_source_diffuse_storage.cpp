@@ -32,7 +32,7 @@ namespace sasktran2 {
 
         m_num_azi = do_config.nstr();
 
-        m_storage.resize(config.num_threads());
+        m_storage.resize(config.num_wavelength_threads());
 
         m_ground_start = (int)m_altitude_grid->grid().size() *
                          (int)m_cos_angle_grid->grid().size() * m_num_azi *

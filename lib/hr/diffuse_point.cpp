@@ -246,7 +246,9 @@ namespace sasktran2::hr {
                 }
             }
             for (int i = 0; i < 4; ++i) {
-                phase_matrix += leg_coeff[i] * m_legendre_scat_mats[l][i];
+                if (leg_coeff[i] != 0) {
+                    phase_matrix += leg_coeff[i] * m_legendre_scat_mats[l][i];
+                }
             }
         }
     }
