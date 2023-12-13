@@ -312,24 +312,41 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
             if constexpr (NSTOKES == 1) {
                 double avg_p = (kbot * ssa_bot *
                                     (phase(k, bot_atmosphere_idx) -
-                                     f_bot * (2 * k + 1) / (1 - f_bot)) +
+                                     (2 * k + 1) * f_bot / (1 - f_bot)) +
                                 ktop * ssa_top *
                                     (phase(k, top_atmosphere_idx) -
-                                     f_top * (2 * k + 1) / (1 - f_top))) /
+                                     (2 * k + 1) * f_top / (1 - f_top))) /
                                (kbot * ssa_bot + ktop * ssa_top);
 
                 temp.a1 = avg_p;
             } else if constexpr (NSTOKES == 3) {
                 auto stokes_seq = Eigen::seq(k * 4, (k + 1) * 4 - 1);
-                Eigen::Vector<sasktran2::types::leg_coeff, 4> avg_p =
-                    (kbot * ssa_bot * phase(stokes_seq, bot_atmosphere_idx) +
-                     ktop * ssa_top * phase(stokes_seq, top_atmosphere_idx)) /
-                    (kbot * ssa_bot + ktop * ssa_top);
-                temp.a1 = avg_p(0) - f * (2 * k + 1) / (1 - f);
-                temp.a2 = avg_p(1) - f * (2 * k + 1) / (1 - f);
-                temp.a3 = avg_p(2) - f * (2 * k + 1) / (1 - f);
-                temp.b1 =
-                    -(avg_p(3) - f * (2 * k + 1) / (1 - f)); // TODO: Check
+                double norm = kbot * ssa_bot + ktop * ssa_top;
+                Eigen::Vector<double, 4> p_top =
+                    phase(stokes_seq, top_atmosphere_idx);
+                Eigen::Vector<double, 4> p_bot =
+                    phase(stokes_seq, bot_atmosphere_idx);
+
+                // a's have the f subtraction and b's don't
+                temp.a1 = (kbot * ssa_bot *
+                               (p_bot(0) - f_bot * (2 * k + 1) / (1 - f_bot)) +
+                           ktop * ssa_top *
+                               (p_top(0) - f_top * (2 * k + 1) / (1 - f_top))) /
+                          norm;
+                temp.a2 = (kbot * ssa_bot *
+                               (p_bot(1) - f_bot * (2 * k + 1) / (1 - f_bot)) +
+                           ktop * ssa_top *
+                               (p_top(1) - f_top * (2 * k + 1) / (1 - f_top))) /
+                          norm;
+                temp.a3 = (kbot * ssa_bot *
+                               (p_bot(2) - f_bot * (2 * k + 1) / (1 - f_bot)) +
+                           ktop * ssa_top *
+                               (p_top(2) - f_top * (2 * k + 1) / (1 - f_top))) /
+                          norm;
+                temp.b1 = -(kbot * ssa_bot * (p_bot(3)) +
+                            ktop * ssa_top * (p_top(3))) /
+                          norm;
+
             } else {
             }
         }
@@ -516,6 +533,7 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
                                         l, atmo_index, wavelidx, group_index) +
                                     (atmosphere.storage().leg_coeff(
                                          l, atmo_index, wavelidx) -
+                                     (2 * l + 1) * f / (1 - f) -
                                      layer->legendre_coeff()[l].a1);
 
                                 if (atmosphere.storage().applied_f_order > 0) {
@@ -533,6 +551,7 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
                                         group_index) +
                                     (atmosphere.storage().leg_coeff(
                                          l * 4, atmo_index, wavelidx) -
+                                     (2 * l + 1) * f / (1 - f) -
                                      layer->legendre_coeff()[l].a1);
 
                                 deriv.d_legendre_coeff[l].a2 =
@@ -541,6 +560,7 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
                                         group_index) +
                                     (atmosphere.storage().leg_coeff(
                                          l * 4 + 1, atmo_index, wavelidx) -
+                                     (2 * l + 1) * f / (1 - f) -
                                      layer->legendre_coeff()[l].a2);
 
                                 deriv.d_legendre_coeff[l].a3 =
@@ -549,7 +569,25 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
                                         group_index) +
                                     (atmosphere.storage().leg_coeff(
                                          l * 4 + 2, atmo_index, wavelidx) -
+                                     (2 * l + 1) * f / (1 - f) -
                                      layer->legendre_coeff()[l].a3);
+
+                                if (atmosphere.storage().applied_f_order > 0) {
+                                    deriv.d_legendre_coeff[l].a1 +=
+                                        -(2 * l + 1) / (1 - f) / (1 - f) *
+                                        atmosphere.storage().d_f(
+                                            atmo_index, wavelidx, group_index);
+
+                                    deriv.d_legendre_coeff[l].a2 +=
+                                        -(2 * l + 1) / (1 - f) / (1 - f) *
+                                        atmosphere.storage().d_f(
+                                            atmo_index, wavelidx, group_index);
+
+                                    deriv.d_legendre_coeff[l].a3 +=
+                                        -(2 * l + 1) / (1 - f) / (1 - f) *
+                                        atmosphere.storage().d_f(
+                                            atmo_index, wavelidx, group_index);
+                                }
 
                                 deriv.d_legendre_coeff[l].b1 =
                                     (-1) * atmosphere.storage().d_leg_coeff(

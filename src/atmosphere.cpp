@@ -15,6 +15,7 @@ void declareAtmosphere(py::module_& m, const std::string& suffix) {
     py::class_<Atmosphere>(m, ("Atmosphere" + suffix).c_str())
         .def(py::init<int, const sasktran2::Geometry1D&,
                       const sasktran2::Config&, bool>())
+        .def("apply_delta_m_scaling", &Atmosphere::apply_delta_m_scaling)
         .def_property(
             "storage",
             [](Atmosphere& atmo)
@@ -63,6 +64,11 @@ void declareAtmosphereStorage(py::module_& m, const std::string& suffix) {
             [](AtmosphereGridStorage& storage) -> const Eigen::MatrixXd& {
                 return storage.f;
             },
+            nullptr)
+        .def_property(
+            "d_f",
+            [](AtmosphereGridStorage& storage)
+                -> const Eigen::Tensor<double, 3>& { return storage.d_f; },
             nullptr)
         .def_property(
             "leg_coeff",

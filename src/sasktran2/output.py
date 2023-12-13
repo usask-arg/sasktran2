@@ -178,6 +178,28 @@ class OutputIdeal(Output):
                             ]
                         )
 
+                        if atmo.applied_delta_m_order:
+                            # Change in f for the scatterer
+                            d_f = (
+                                atmo.storage.d_f[
+                                    :, :, mapping.native_grid_mapping.scat_deriv_index
+                                ]
+                                * mapping.native_grid_mapping.scat_factor
+                            )
+
+                            # Change in k* due to a change in f
+                            np_deriv -= (
+                                d_f * atmo.unscaled_ssa * atmo.unscaled_extinction
+                            ).T[:, np.newaxis, np.newaxis, :] * d_radiance_k
+
+                            # Change in ssa* due to a change in f
+                            np_deriv += (
+                                d_f
+                                * atmo.unscaled_ssa
+                                / (1 - atmo.unscaled_ssa * atmo.storage.f)
+                                * (atmo.storage.ssa - 1)
+                            ).T[:, np.newaxis, np.newaxis, :] * d_radiance_ssa
+
                 if mapping.log_radiance_space:
                     np_deriv /= radiance[:, :, :, np.newaxis]
 

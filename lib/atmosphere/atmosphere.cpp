@@ -79,6 +79,18 @@ namespace sasktran2::atmosphere {
                      m_storage.f.template cast<double>().array()) *
             m_storage.ssa.array();
 
+        // Start by assignind d_f
+        for (int w = 0; w < m_storage.f.cols(); ++w) {     // wavel loop
+            for (int i = 0; i < m_storage.f.rows(); ++i) { // location loop
+                for (int d = 0; d < m_storage.numscatderiv; ++d) { // deriv loop
+                    m_storage.d_f(i, w, d) =
+                        m_storage.d_leg_coeff(m_storage.applied_f_location, i,
+                                              w, d) /
+                        (2 * order + 1);
+                }
+            }
+        }
+
         // Lastly we need to scale the legendre coefficients, b = b / (1-f)
         // Note that this is the scaling for single scatter TMS correction, we
         // still have to subtract f/1-f for multiple scatter
@@ -91,11 +103,6 @@ namespace sasktran2::atmosphere {
                     // Also have to scale the derivatives
                     for (int d = 0; d < m_storage.numscatderiv;
                          ++d) { // deriv loop
-                        // Set the f derivative
-                        m_storage.d_f(i, w, d) =
-                            m_storage.d_leg_coeff(m_storage.applied_f_location,
-                                                  i, w, d) /
-                            (2 * order + 1);
 
                         // db* = db / 1-f + (b*) * df / (1-f)
                         m_storage.d_leg_coeff(j, i, w, d) +=

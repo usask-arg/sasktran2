@@ -123,7 +123,7 @@ void init_config(py::module_& m) {
                       &sasktran2::Config::apply_delta_scaling,
                       &sasktran2::Config::set_apply_delta_scaling,
                       R"(
-                Controls whether the delta-M scaling is applied to the calculation.  Defaults to true.
+                Controls whether the delta-M scaling is applied to the calculation.  Defaults to False.
             )")
         .def_property("num_sza", &sasktran2::Config::num_do_sza,
                       &sasktran2::Config::set_num_do_sza,
