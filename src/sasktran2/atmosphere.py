@@ -315,6 +315,7 @@ class Atmosphere:
         self._derivs = {}
         self._unscaled_ssa = None
         self._unscaled_extinction = None
+        self._applied_delta_m_order = None
 
     @property
     def model_geometry(self) -> sk.Geometry1D:
@@ -326,6 +327,13 @@ class Atmosphere:
         sk.Geometry1D
         """
         return self._model_geometry
+
+    @property
+    def applied_delta_m_order(self) -> Optional[int]:
+        """
+        The order of the applied delta_m scaling. Can be None if no scaling has been applied
+        """
+        return self._applied_delta_m_order
 
     @property
     def nstokes(self) -> int:
@@ -589,6 +597,18 @@ class Atmosphere:
         # Store the unscaled optical properties for use in the derivative mappings
         self._unscaled_ssa = copy(self.storage.ssa)
         self._unscaled_extinction = copy(self.storage.total_extinction)
+
+        # Apply delta scaling if required
+        if self._config.delta_m_scaling:
+            # Find the order of the scaling
+            if self._config.num_streams == self._leg_coeff.a1.shape[0]:
+                # Can't apply scaling
+                logging.info(
+                    "Delta-m Scaling NOT applied since the number of MS streams is equal to the number of user input legendre coefficients"
+                )
+            else:
+                self._atmosphere.apply_delta_m_scaling(self._config.num_streams)
+                self._applied_delta_m_order = self._config.num_streams
 
         self._storage_needs_reset = True
         return self._atmosphere

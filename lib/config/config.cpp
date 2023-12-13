@@ -3,7 +3,7 @@
 namespace sasktran2 {
     Config::Config()
         : m_nstokes(1), m_nthreads(1), m_ndostreams(16), m_enable_wfs(true),
-          m_apply_delta_scaling(true),
+          m_apply_delta_scaling(false),
           m_wf_precision(WeightingFunctionPrecision::full),
           m_nsinglescatter_moments(16), m_ndosza(1),
           m_ndosphericaliterations(0), m_hr_nincoming(110), m_hr_noutgoing(110),
