@@ -1,0 +1,827 @@
+
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+    <title>Geodetic &#8212; sasktran2 2023.12.0 documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "light";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../_static/styles/theme.css?digest=5b4479735964841361fd" rel="stylesheet" />
+<link href="../_static/styles/bootstrap.css?digest=5b4479735964841361fd" rel="stylesheet" />
+<link href="../_static/styles/pydata-sphinx-theme.css?digest=5b4479735964841361fd" rel="stylesheet" />
+
+  
+  <link href="../_static/vendor/fontawesome/6.1.2/css/all.min.css?digest=5b4479735964841361fd" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.1.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.1.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.1.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
+    <link rel="stylesheet" href="../_static/styles/sphinx-book-theme.css?digest=14f4ca6b54d191a8c7657f6c759bf11a5fb86285" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="../_static/mystnb.4510f1fc1dee50b3e5859aac5469c37c29e427902b24a333a5f9fcb2f0b3ac41.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/locals.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=5b4479735964841361fd" />
+<link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=5b4479735964841361fd" />
+  <script src="../_static/vendor/fontawesome/6.1.2/js/all.min.js?digest=5b4479735964841361fd"></script>
+
+    <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+    <script src="../_static/doctools.js"></script>
+    <script src="../_static/sphinx_highlight.js"></script>
+    <script src="../_static/scripts/sphinx-book-theme.js?digest=5a5c038af52cf7bc1a1ec88eea08e6366ee68824"></script>
+    <script src="../_static/design-tabs.js"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'api/geodetic';</script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Utility" href="util.html" />
+    <link rel="prev" title="Climatologies" href="climatology.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>
+    Back to top
+  </button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          name="__primary"
+          id="__primary"/>
+  <label class="overlay overlay-primary" for="__primary"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          name="__secondary"
+          id="__secondary"/>
+  <label class="overlay overlay-secondary" for="__secondary"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search..."
+         aria-label="Search..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+  
+    <nav class="bd-header navbar navbar-expand-lg bd-navbar">
+    </nav>
+  
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      <div class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+
+<a class="navbar-brand logo" href="../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../_static/sasktran-dark.png" class="logo__image only-light" alt="sasktran2 2023.12.0 documentation - Home"/>
+    <script>document.write(`<img src="../_static/sasktran-light.png" class="logo__image only-dark" alt="sasktran2 2023.12.0 documentation - Home"/>`);</script>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item"><ul class="navbar-icon-links navbar-nav"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/usask-arg/sasktran2" title="GitHub" class="nav-link" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><span><i class="fa-brands fa-square-github fa-lg" aria-hidden="true"></i></span>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+</ul></div>
+        <div class="sidebar-primary-item"><nav class="bd-links" id="bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">For Users</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+
+
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../users_guide.html">Users Guide</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-1"><i class="fa-solid fa-chevron-down"></i></label><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../required_components.html">Setting up the Calculation</a><input class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-2"><i class="fa-solid fa-chevron-down"></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../components/model_geometry.html">The Model Geometry</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../components/viewing_geometry.html">The Viewing Geometry</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../components/sources.html">Source Terms</a><input class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-3"><i class="fa-solid fa-chevron-down"></i></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../components/source_terms/singlescatter.html">Single Scatter Sources</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../components/source_terms/discrete_ordinates.html">The Discrete Ordinates Source</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../components/source_terms/occultation.html">Occultation Sources</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../components/source_terms/successive_orders.html">The Successive Orders of Scattering Source</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../components/atmosphere.html">The Atmospheric State</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../weighting_functions.html">Weighting Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../users_guide/polarization.html">Polarized Calculations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../users_guide/performance.html">Performance Tips</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../users_guide/phase.html">Phase Function Specification</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../users_guide/geodetic.html">Geodesy Tools</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../examples/examples.html">More Examples</a><input class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-4"><i class="fa-solid fa-chevron-down"></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../examples/aerosol/basic.html">Basic Aerosol Inclusion</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../examples/wf/amf.html">Calculating Air Mass Factors</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="../api_reference.html">API Reference</a><input checked="" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-5"><i class="fa-solid fa-chevron-down"></i></label><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="config.html">Config</a></li>
+<li class="toctree-l2"><a class="reference internal" href="engine.html">Engine</a></li>
+<li class="toctree-l2"><a class="reference internal" href="model_geometry.html">Model Geometry</a></li>
+<li class="toctree-l2"><a class="reference internal" href="atmosphere.html">Atmosphere</a></li>
+<li class="toctree-l2"><a class="reference internal" href="constituents.html">Constituents</a></li>
+<li class="toctree-l2"><a class="reference internal" href="optical.html">Optical Properties</a></li>
+<li class="toctree-l2"><a class="reference internal" href="output.html">Output</a></li>
+<li class="toctree-l2"><a class="reference internal" href="viewing_geometry.html">Viewing Geometry</a></li>
+<li class="toctree-l2"><a class="reference internal" href="climatology.html">Climatologies</a></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">Geodetic</a></li>
+<li class="toctree-l2"><a class="reference internal" href="util.html">Utility</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../changelog.html">Changelog</a></li>
+
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Extending SASKTRAN2</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../extending/constituent.html">Adding Constituents</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Developer Documentation</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../developer/compiling.html">Compiling from Source</a><input class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-6"><i class="fa-solid fa-chevron-down"></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../developer/windows.html">Local Windows Development</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../developer/ide/vscode.html">Visual Studio Code Configuration</a></li>
+</ul>
+</li>
+
+<li class="toctree-l1"><a class="reference internal" href="../developer/contributing.html">Contributing</a></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><label class="sidebar-toggle primary-toggle btn btn-sm" for="__primary" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</label></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/usask-arg/sasktran2" target="_blank"
+   class="btn btn-sm btn-source-repository-button dropdown-item"
+   title="Source repository"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="btn__text-container">Repository</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/usask-arg/sasktran2/edit/main/docs/sphinx/source/api/geodetic.md" target="_blank"
+   class="btn btn-sm btn-source-edit-button dropdown-item"
+   title="Suggest edit"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-pencil-alt"></i>
+  </span>
+<span class="btn__text-container">Suggest edit</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/usask-arg/sasktran2/issues/new?title=Issue%20on%20page%20%2Fapi/geodetic.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="../_sources/api/geodetic.md" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.md</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm navbar-btn theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="theme-switch nav-link" data-mode="light"><i class="fa-solid fa-sun fa-lg"></i></span>
+    <span class="theme-switch nav-link" data-mode="dark"><i class="fa-solid fa-moon fa-lg"></i></span>
+    <span class="theme-switch nav-link" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg"></i></span>
+  </button>
+`);
+</script>
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm navbar-btn search-button search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+  </button>
+`);
+</script>
+<label class="sidebar-toggle secondary-toggle btn btn-sm" for="__secondary"title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="fa-solid fa-list"></span>
+</label>
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>Geodetic</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+            <div>
+                <h2> Contents </h2>
+            </div>
+            <nav aria-label="Page">
+                <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#specialized-instances">Specialized Instances</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.WGS84"><code class="docutils literal notranslate"><span class="pre">WGS84</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.SphericalGeoid"><code class="docutils literal notranslate"><span class="pre">SphericalGeoid</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#sk-geodetic">sk.Geodetic</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.Geodetic"><code class="docutils literal notranslate"><span class="pre">Geodetic</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.Geodetic.altitude"><code class="docutils literal notranslate"><span class="pre">Geodetic.altitude</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.Geodetic.altitude_intercepts"><code class="docutils literal notranslate"><span class="pre">Geodetic.altitude_intercepts()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.Geodetic.from_lat_lon_alt"><code class="docutils literal notranslate"><span class="pre">Geodetic.from_lat_lon_alt()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.Geodetic.from_tangent_altitude"><code class="docutils literal notranslate"><span class="pre">Geodetic.from_tangent_altitude()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.Geodetic.from_tangent_point"><code class="docutils literal notranslate"><span class="pre">Geodetic.from_tangent_point()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.Geodetic.from_xyz"><code class="docutils literal notranslate"><span class="pre">Geodetic.from_xyz()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.Geodetic.latitude"><code class="docutils literal notranslate"><span class="pre">Geodetic.latitude</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.Geodetic.local_south"><code class="docutils literal notranslate"><span class="pre">Geodetic.local_south</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.Geodetic.local_up"><code class="docutils literal notranslate"><span class="pre">Geodetic.local_up</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.Geodetic.local_west"><code class="docutils literal notranslate"><span class="pre">Geodetic.local_west</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.Geodetic.location"><code class="docutils literal notranslate"><span class="pre">Geodetic.location</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.Geodetic.longitude"><code class="docutils literal notranslate"><span class="pre">Geodetic.longitude</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.Geodetic.valid"><code class="docutils literal notranslate"><span class="pre">Geodetic.valid</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article" role="main">
+                  
+  <section class="tex2jax_ignore mathjax_ignore" id="geodetic">
+<span id="api-geodetic"></span><h1>Geodetic<a class="headerlink" href="#geodetic" title="Permalink to this heading">#</a></h1>
+<section id="specialized-instances">
+<h2>Specialized Instances<a class="headerlink" href="#specialized-instances" title="Permalink to this heading">#</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="sasktran2.WGS84">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">sasktran2.</span></span><span class="sig-name descname"><span class="pre">WGS84</span></span><a class="reference internal" href="../_modules/sasktran2/geodetic.html#WGS84"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#sasktran2.WGS84" title="Permalink to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#sasktran2.Geodetic" title="sasktran2._core.Geodetic"><code class="xref py py-class docutils literal notranslate"><span class="pre">Geodetic</span></code></a></p>
+<p>A geodetic object based upon the standard WGS84 ellipsoid. See
+<a class="reference internal" href="#sasktran2.Geodetic" title="sasktran2.Geodetic"><code class="xref py py-class docutils literal notranslate"><span class="pre">sasktran2.Geodetic</span></code></a> for more information and usage.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="sasktran2.SphericalGeoid">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">sasktran2.</span></span><span class="sig-name descname"><span class="pre">SphericalGeoid</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">radius</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.12)"><span class="pre">float</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/sasktran2/geodetic.html#SphericalGeoid"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#sasktran2.SphericalGeoid" title="Permalink to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#sasktran2.Geodetic" title="sasktran2._core.Geodetic"><code class="xref py py-class docutils literal notranslate"><span class="pre">Geodetic</span></code></a></p>
+<p>A geoid that is represented as a perfect sphere. See
+<a class="reference internal" href="#sasktran2.Geodetic" title="sasktran2.Geodetic"><code class="xref py py-class docutils literal notranslate"><span class="pre">sasktran2.Geodetic</span></code></a> for more information and usage.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>radius</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.12)"><em>float</em></a>) – Radius of the sphere in [m]</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="sk-geodetic">
+<h2>sk.Geodetic<a class="headerlink" href="#sk-geodetic" title="Permalink to this heading">#</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="sasktran2.Geodetic">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">sasktran2.</span></span><span class="sig-name descname"><span class="pre">Geodetic</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#sasktran2.Geodetic" title="sasktran2._core.Geodetic"><span class="pre">sasktran2._core.Geodetic</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">equatorial_radius</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.12)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">flattening_factor</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.12)"><span class="pre">float</span></a></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sasktran2.Geodetic" title="Permalink to this definition">#</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">pybind11_object</span></code></p>
+<p>A geodetic object based on a given equatorial (semi-major) radius and flattening factor.</p>
+<p>Standard usage is to create a geodetic object, and then initialize it through one of the
+<cite>from_*</cite> methods.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>equatorial_radius</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.12)"><em>float</em></a>) – Radius at the equator (semi-major) of the ellipsoid.</p></li>
+<li><p><strong>flattening_factor</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.12)"><em>float</em></a>) – Flattening factor of the ellipsoid. This is defined as (a-b)/a, where a is the semi-major axis
+and b is the semi-minor radius</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py property">
+<dt class="sig sig-object py" id="sasktran2.Geodetic.altitude">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">altitude</span></span><a class="headerlink" href="#sasktran2.Geodetic.altitude" title="Permalink to this definition">#</a></dt>
+<dd><p>Altitude in [m] above the surface of the ellipsoid.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sasktran2.Geodetic.altitude_intercepts">
+<span class="sig-name descname"><span class="pre">altitude_intercepts</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#sasktran2.Geodetic" title="sasktran2._core.Geodetic"><span class="pre">sasktran2._core.Geodetic</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">altitude</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.12)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">observer</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v1.26)"><span class="pre">numpy.ndarray</span></a><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="m"><span class="pre">3</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="m"><span class="pre">1</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">look_vector</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v1.26)"><span class="pre">numpy.ndarray</span></a><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="m"><span class="pre">3</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="m"><span class="pre">1</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v1.26)"><span class="pre">numpy.ndarray</span></a><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="m"><span class="pre">3</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="m"><span class="pre">1</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v1.26)"><span class="pre">numpy.ndarray</span></a><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="m"><span class="pre">3</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="m"><span class="pre">1</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#sasktran2.Geodetic.altitude_intercepts" title="Permalink to this definition">#</a></dt>
+<dd><p>Calculate the two intersections of a line of sight and an altitude.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>altitude</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.12)"><em>float</em></a>) – Altitude in meters.</p></li>
+<li><p><strong>observer</strong> (<em>np.ndarray</em>) – Three element array containing the obsever position in geocentric coordinates.</p></li>
+<li><p><strong>look_vector</strong> (<em>np.ndarray</em>) – Three element array containing a normalized look vector.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><em>np.ndarray</em> – Three element array containing the first (entering) intercept in geocentric coordinates.</p></li>
+<li><p><em>np.ndarray</em> – Three element array containing the second (exiting) intercept in geocentric coordinates.</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span> <span class="nn">sasktran2</span> <span class="k">as</span> <span class="nn">sk</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">geodetic</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">WGS84</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">look</span> <span class="o">=</span> <span class="n">geodetic</span><span class="o">.</span><span class="n">from_tangent_altitude</span><span class="p">(</span><span class="mi">15322</span><span class="p">,</span> <span class="p">[</span><span class="mf">3.676013154788849600e+005</span><span class="p">,</span> <span class="mf">1.009976313640051500e+006</span><span class="p">,</span> \
+<span class="go">                                            -6.871601202127538600e+006], [0, 0, 1])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">obs</span> <span class="o">=</span> <span class="n">geodetic</span><span class="o">.</span><span class="n">location</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">intercept1</span><span class="p">,</span> <span class="n">intercept2</span> <span class="o">=</span> <span class="n">geodetic</span><span class="o">.</span><span class="n">altitude_intercepts</span><span class="p">(</span><span class="mi">16000</span><span class="p">,</span> <span class="n">obs</span><span class="p">,</span> <span class="n">look</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array_str</span><span class="p">(</span><span class="n">intercept1</span><span class="p">,</span> <span class="n">precision</span><span class="o">=</span><span class="mi">3</span><span class="p">))</span>
+<span class="go">[ 1147302.059  3152186.5   -5425360.027]</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array_str</span><span class="p">(</span><span class="n">intercept2</span><span class="p">,</span> <span class="n">precision</span><span class="o">=</span><span class="mi">3</span><span class="p">))</span>
+<span class="go">[ 1201098.489  3299990.978 -5325574.803]</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sasktran2.Geodetic.from_lat_lon_alt">
+<span class="sig-name descname"><span class="pre">from_lat_lon_alt</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#sasktran2.Geodetic" title="sasktran2._core.Geodetic"><span class="pre">sasktran2._core.Geodetic</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">latitude</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.12)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">longitude</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.12)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">altitude</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.12)"><span class="pre">float</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.12)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#sasktran2.Geodetic.from_lat_lon_alt" title="Permalink to this definition">#</a></dt>
+<dd><p>Initializes the Geodetic based on a specifiec latitude, longitude, and altitude.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>latitude</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.12)"><em>float</em></a>) – Latitude in degrees (-90 to 90)</p></li>
+<li><p><strong>longitude</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.12)"><em>float</em></a>) – Longitude in degrees (0 to 360 or -180 to 180)</p></li>
+<li><p><strong>altitude</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.12)"><em>float</em></a>) – Altitude above the geoid in metres</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span> <span class="nn">sasktran2</span> <span class="k">as</span> <span class="nn">sk</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">geodetic</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">WGS84</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">geodetic</span><span class="o">.</span><span class="n">from_lat_lon_alt</span><span class="p">(</span><span class="n">latitude</span><span class="o">=-</span><span class="mi">15</span><span class="p">,</span> <span class="n">longitude</span><span class="o">=-</span><span class="mi">20</span><span class="p">,</span> <span class="n">altitude</span><span class="o">=</span><span class="mi">7342</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">geodetic</span><span class="p">)</span>
+<span class="go">WGS84 Location:</span>
+<span class="go">Latitude: -15.0, Longitude: 340.0, Altitude: 7342.0</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sasktran2.Geodetic.from_tangent_altitude">
+<span class="sig-name descname"><span class="pre">from_tangent_altitude</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#sasktran2.Geodetic" title="sasktran2._core.Geodetic"><span class="pre">sasktran2._core.Geodetic</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">altitude</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.12)"><span class="pre">float</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">observer</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v1.26)"><span class="pre">numpy.ndarray</span></a><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="m"><span class="pre">3</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="m"><span class="pre">1</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">boresight</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v1.26)"><span class="pre">numpy.ndarray</span></a><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="m"><span class="pre">3</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="m"><span class="pre">1</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v1.26)"><span class="pre">numpy.ndarray</span></a><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="m"><span class="pre">3</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="m"><span class="pre">1</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#sasktran2.Geodetic.from_tangent_altitude" title="Permalink to this definition">#</a></dt>
+<dd><p>Initialized the Geodetic from a specified tangent altitude, obsever location, and bore sight plane.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>altitude</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.12)"><em>float</em></a>) – Tangent altitude in meters</p></li>
+<li><p><strong>observer</strong> (<em>np.ndarray</em>) – Three element array containing the obsever position in geocentric coordinates</p></li>
+<li><p><strong>boresight</strong> (<em>np.ndarray</em>) – Three element array containing a normalized look vector that is within the bore sight plane.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Three element array containing the normalized look vector to the tangent point.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span> <span class="nn">sasktran2</span> <span class="k">as</span> <span class="nn">sk</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">geodetic</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">WGS84</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">look</span> <span class="o">=</span> <span class="n">geodetic</span><span class="o">.</span><span class="n">from_tangent_altitude</span><span class="p">(</span><span class="mi">15322</span><span class="p">,</span> <span class="p">[</span> <span class="mf">3.676013154788849600e+005</span><span class="p">,</span> <span class="mf">1.009976313640051500e+006</span><span class="p">,</span>\
+<span class="go">                                                  -6.871601202127538600e+006], [0, 0, 1])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">look</span><span class="p">)</span>
+<span class="go">[0.28880556 0.79348676 0.53569591]</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">geodetic</span><span class="p">)</span>
+<span class="go">WGS84 Location:</span>
+<span class="go">Latitude: -57.60888188776806, Longitude: 70.00000000000001, Altitude: 15321.971935882739</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sasktran2.Geodetic.from_tangent_point">
+<span class="sig-name descname"><span class="pre">from_tangent_point</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#sasktran2.Geodetic" title="sasktran2._core.Geodetic"><span class="pre">sasktran2._core.Geodetic</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">observer</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v1.26)"><span class="pre">numpy.ndarray</span></a><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="m"><span class="pre">3</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="m"><span class="pre">1</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">look_vector</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v1.26)"><span class="pre">numpy.ndarray</span></a><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="m"><span class="pre">3</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="m"><span class="pre">1</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.12)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#sasktran2.Geodetic.from_tangent_point" title="Permalink to this definition">#</a></dt>
+<dd><p>Initializes  the Geodetic by calculating the tangent point from an observer position and look vector</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>observer</strong> (<em>np.ndarray</em>) – Three element array containing the observer position in geocentric coordinates</p></li>
+<li><p><strong>look_vector</strong> (<em>np.ndarray</em>) – Three element array containing a normalized look vector</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span> <span class="nn">sasktran2</span> <span class="k">as</span> <span class="nn">sk</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">geodetic</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">WGS84</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">geodetic</span><span class="o">.</span><span class="n">from_tangent_point</span><span class="p">([</span> <span class="mf">3.676013154788849600e+005</span><span class="p">,</span> <span class="mf">1.009976313640051500e+006</span><span class="p">,</span>\
+<span class="go">                                 -6.871601202127538600e+006], [ 2.884568631765662100e-001,\</span>
+<span class="go">                                  7.925287180643269000e-001,  5.372996083468238900e-001])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">geodetic</span><span class="p">)</span>
+<span class="go">WGS84 Location:</span>
+<span class="go">Latitude: -57.500000192733594, Longitude: 70.0, Altitude: 10002.99586173162</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="sasktran2.Geodetic.from_xyz">
+<span class="sig-name descname"><span class="pre">from_xyz</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#sasktran2.Geodetic" title="sasktran2._core.Geodetic"><span class="pre">sasktran2._core.Geodetic</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">location</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v1.26)"><span class="pre">numpy.ndarray</span></a><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="m"><span class="pre">3</span></span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="m"><span class="pre">1</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.12)"><span class="pre">None</span></a></span></span><a class="headerlink" href="#sasktran2.Geodetic.from_xyz" title="Permalink to this definition">#</a></dt>
+<dd><p>Initializes the Geodetic from a geocentric location</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>location</strong> (<em>np.ndarray</em>) – Three element vector containing a location in geocentric coordinates</p>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="kn">import</span> <span class="nn">sasktran2</span> <span class="k">as</span> <span class="nn">sk</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">geodetic</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">WGS84</span><span class="p">()</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">geodetic</span><span class="o">.</span><span class="n">from_xyz</span><span class="p">([</span> <span class="mf">5797230.47518212</span><span class="p">,</span> <span class="o">-</span><span class="mf">2110019.3341472</span><span class="p">,</span> <span class="o">-</span><span class="mf">1642001.16317228</span><span class="p">])</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">geodetic</span><span class="p">)</span>
+<span class="go">WGS84 Location:</span>
+<span class="go">Latitude: -14.999999973747736, Longitude: 340.00000000000006, Altitude: 7344.999610390202</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="sasktran2.Geodetic.latitude">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">latitude</span></span><a class="headerlink" href="#sasktran2.Geodetic.latitude" title="Permalink to this definition">#</a></dt>
+<dd><p>Geodetic latitude in degrees</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="sasktran2.Geodetic.local_south">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">local_south</span></span><a class="headerlink" href="#sasktran2.Geodetic.local_south" title="Permalink to this definition">#</a></dt>
+<dd><p>A unit vector pointing in the local south direction</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="sasktran2.Geodetic.local_up">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">local_up</span></span><a class="headerlink" href="#sasktran2.Geodetic.local_up" title="Permalink to this definition">#</a></dt>
+<dd><p>A unit vector pointing up (perpindicular to the ellipsoidal surface)</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="sasktran2.Geodetic.local_west">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">local_west</span></span><a class="headerlink" href="#sasktran2.Geodetic.local_west" title="Permalink to this definition">#</a></dt>
+<dd><p>A unit vector pointing in the local west direction</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="sasktran2.Geodetic.location">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">location</span></span><a class="headerlink" href="#sasktran2.Geodetic.location" title="Permalink to this definition">#</a></dt>
+<dd><p>Geocentric location in cartesian coordinates</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="sasktran2.Geodetic.longitude">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">longitude</span></span><a class="headerlink" href="#sasktran2.Geodetic.longitude" title="Permalink to this definition">#</a></dt>
+<dd><p>Geodetic longitude in degrees</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="sasktran2.Geodetic.valid">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">valid</span></span><a class="headerlink" href="#sasktran2.Geodetic.valid" title="Permalink to this definition">#</a></dt>
+<dd><p>True if the geodetic object has been initialized, False otherwise.</p>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+</section>
+
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="climatology.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Climatologies</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="util.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Utility</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <div class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+  <div class="sidebar-secondary-item">
+  <div class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> Contents
+  </div>
+  <nav class="bd-toc-nav page-toc">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#specialized-instances">Specialized Instances</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.WGS84"><code class="docutils literal notranslate"><span class="pre">WGS84</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.SphericalGeoid"><code class="docutils literal notranslate"><span class="pre">SphericalGeoid</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#sk-geodetic">sk.Geodetic</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.Geodetic"><code class="docutils literal notranslate"><span class="pre">Geodetic</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.Geodetic.altitude"><code class="docutils literal notranslate"><span class="pre">Geodetic.altitude</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.Geodetic.altitude_intercepts"><code class="docutils literal notranslate"><span class="pre">Geodetic.altitude_intercepts()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.Geodetic.from_lat_lon_alt"><code class="docutils literal notranslate"><span class="pre">Geodetic.from_lat_lon_alt()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.Geodetic.from_tangent_altitude"><code class="docutils literal notranslate"><span class="pre">Geodetic.from_tangent_altitude()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.Geodetic.from_tangent_point"><code class="docutils literal notranslate"><span class="pre">Geodetic.from_tangent_point()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.Geodetic.from_xyz"><code class="docutils literal notranslate"><span class="pre">Geodetic.from_xyz()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.Geodetic.latitude"><code class="docutils literal notranslate"><span class="pre">Geodetic.latitude</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.Geodetic.local_south"><code class="docutils literal notranslate"><span class="pre">Geodetic.local_south</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.Geodetic.local_up"><code class="docutils literal notranslate"><span class="pre">Geodetic.local_up</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.Geodetic.local_west"><code class="docutils literal notranslate"><span class="pre">Geodetic.local_west</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.Geodetic.location"><code class="docutils literal notranslate"><span class="pre">Geodetic.location</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.Geodetic.longitude"><code class="docutils literal notranslate"><span class="pre">Geodetic.longitude</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.Geodetic.valid"><code class="docutils literal notranslate"><span class="pre">Geodetic.valid</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By USask-ARG
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2023, USask-ARG.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="../_static/scripts/bootstrap.js?digest=5b4479735964841361fd"></script>
+<script src="../_static/scripts/pydata-sphinx-theme.js?digest=5b4479735964841361fd"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>

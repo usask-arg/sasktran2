@@ -1,0 +1,1058 @@
+
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>sasktran2.atmosphere &#8212; sasktran2 2023.12.0 documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "light";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../_static/styles/theme.css?digest=5b4479735964841361fd" rel="stylesheet" />
+<link href="../../_static/styles/bootstrap.css?digest=5b4479735964841361fd" rel="stylesheet" />
+<link href="../../_static/styles/pydata-sphinx-theme.css?digest=5b4479735964841361fd" rel="stylesheet" />
+
+  
+  <link href="../../_static/vendor/fontawesome/6.1.2/css/all.min.css?digest=5b4479735964841361fd" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.1.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.1.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.1.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+    <link rel="stylesheet" href="../../_static/styles/sphinx-book-theme.css?digest=14f4ca6b54d191a8c7657f6c759bf11a5fb86285" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/mystnb.4510f1fc1dee50b3e5859aac5469c37c29e427902b24a333a5f9fcb2f0b3ac41.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/locals.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../_static/scripts/bootstrap.js?digest=5b4479735964841361fd" />
+<link rel="preload" as="script" href="../../_static/scripts/pydata-sphinx-theme.js?digest=5b4479735964841361fd" />
+  <script src="../../_static/vendor/fontawesome/6.1.2/js/all.min.js?digest=5b4479735964841361fd"></script>
+
+    <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+    <script src="../../_static/doctools.js"></script>
+    <script src="../../_static/sphinx_highlight.js"></script>
+    <script src="../../_static/scripts/sphinx-book-theme.js?digest=5a5c038af52cf7bc1a1ec88eea08e6366ee68824"></script>
+    <script src="../../_static/design-tabs.js"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = '_modules/sasktran2/atmosphere';</script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>
+    Back to top
+  </button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          name="__primary"
+          id="__primary"/>
+  <label class="overlay overlay-primary" for="__primary"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          name="__secondary"
+          id="__secondary"/>
+  <label class="overlay overlay-secondary" for="__secondary"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search..."
+         aria-label="Search..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+  
+    <nav class="bd-header navbar navbar-expand-lg bd-navbar">
+    </nav>
+  
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      <div class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+
+<a class="navbar-brand logo" href="../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../_static/sasktran-dark.png" class="logo__image only-light" alt="sasktran2 2023.12.0 documentation - Home"/>
+    <script>document.write(`<img src="../../_static/sasktran-light.png" class="logo__image only-dark" alt="sasktran2 2023.12.0 documentation - Home"/>`);</script>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item"><ul class="navbar-icon-links navbar-nav"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/usask-arg/sasktran2" title="GitHub" class="nav-link" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><span><i class="fa-brands fa-square-github fa-lg" aria-hidden="true"></i></span>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+</ul></div>
+        <div class="sidebar-primary-item"><nav class="bd-links" id="bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">For Users</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
+
+
+<li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../users_guide.html">Users Guide</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-1"><i class="fa-solid fa-chevron-down"></i></label><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../required_components.html">Setting up the Calculation</a><input class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-2"><i class="fa-solid fa-chevron-down"></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../components/model_geometry.html">The Model Geometry</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../components/viewing_geometry.html">The Viewing Geometry</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../../components/sources.html">Source Terms</a><input class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-3"><i class="fa-solid fa-chevron-down"></i></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../components/source_terms/singlescatter.html">Single Scatter Sources</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../components/source_terms/discrete_ordinates.html">The Discrete Ordinates Source</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../components/source_terms/occultation.html">Occultation Sources</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../components/source_terms/successive_orders.html">The Successive Orders of Scattering Source</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../../components/atmosphere.html">The Atmospheric State</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../../weighting_functions.html">Weighting Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../users_guide/polarization.html">Polarized Calculations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../users_guide/performance.html">Performance Tips</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../users_guide/phase.html">Phase Function Specification</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../users_guide/geodetic.html">Geodesy Tools</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../examples/examples.html">More Examples</a><input class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-4"><i class="fa-solid fa-chevron-down"></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../examples/aerosol/basic.html">Basic Aerosol Inclusion</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../examples/wf/amf.html">Calculating Air Mass Factors</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../api_reference.html">API Reference</a><input class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-5"><i class="fa-solid fa-chevron-down"></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../api/config.html">Config</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/engine.html">Engine</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/model_geometry.html">Model Geometry</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/atmosphere.html">Atmosphere</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/constituents.html">Constituents</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/optical.html">Optical Properties</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/output.html">Output</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/viewing_geometry.html">Viewing Geometry</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/climatology.html">Climatologies</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/geodetic.html">Geodetic</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/util.html">Utility</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../../changelog.html">Changelog</a></li>
+
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Extending SASKTRAN2</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../extending/constituent.html">Adding Constituents</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Developer Documentation</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../developer/compiling.html">Compiling from Source</a><input class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-6"><i class="fa-solid fa-chevron-down"></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../developer/windows.html">Local Windows Development</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../developer/ide/vscode.html">Visual Studio Code Configuration</a></li>
+</ul>
+</li>
+
+<li class="toctree-l1"><a class="reference internal" href="../../developer/contributing.html">Contributing</a></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><label class="sidebar-toggle primary-toggle btn btn-sm" for="__primary" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</label></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/usask-arg/sasktran2" target="_blank"
+   class="btn btn-sm btn-source-repository-button dropdown-item"
+   title="Source repository"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="btn__text-container">Repository</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/usask-arg/sasktran2/issues/new?title=Issue%20on%20page%20%2F_modules/sasktran2/atmosphere.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm navbar-btn theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="theme-switch nav-link" data-mode="light"><i class="fa-solid fa-sun fa-lg"></i></span>
+    <span class="theme-switch nav-link" data-mode="dark"><i class="fa-solid fa-moon fa-lg"></i></span>
+    <span class="theme-switch nav-link" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg"></i></span>
+  </button>
+`);
+</script>
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm navbar-btn search-button search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+  </button>
+`);
+</script>
+
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1></h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article" role="main">
+                  
+  <h1>Source code for sasktran2.atmosphere</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">from</span> <span class="nn">copy</span> <span class="kn">import</span> <span class="n">copy</span>
+<span class="kn">from</span> <span class="nn">dataclasses</span> <span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Union</span>
+
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">xarray</span> <span class="k">as</span> <span class="nn">xr</span>
+<span class="kn">from</span> <span class="nn">scipy</span> <span class="kn">import</span> <span class="n">sparse</span>
+
+<span class="kn">import</span> <span class="nn">sasktran2</span> <span class="k">as</span> <span class="nn">sk</span>
+<span class="kn">from</span> <span class="nn">sasktran2.polarization</span> <span class="kn">import</span> <span class="n">LegendreStorageView</span>
+<span class="kn">from</span> <span class="nn">sasktran2.units</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">wavenumber_cminv_to_wavlength_nm</span><span class="p">,</span>
+    <span class="n">wavlength_nm_to_wavenumber_cminv</span><span class="p">,</span>
+<span class="p">)</span>
+
+
+<span class="nd">@dataclass</span>
+<span class="k">class</span> <span class="nc">NativeGridDerivative</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Internal input object that defines the model input quantities necessary to calculate a derivative.</span>
+<span class="sd">    This mapping is from the native model grid to the native grid, it does not change the gridding.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">d_extinction</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">d_ssa</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">d_leg_coeff</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">scat_factor</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">scat_deriv_index</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">d_albedo</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">=</span> <span class="kc">None</span>
+
+
+<span class="k">class</span> <span class="nc">DerivativeMapping</span><span class="p">:</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">native_grid_mapping</span><span class="p">:</span> <span class="n">NativeGridDerivative</span><span class="p">,</span>
+        <span class="n">summable</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">log_radiance_space</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">name_prefix</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;wf_&quot;</span><span class="p">,</span>
+    <span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        A class which defines a mapping from the internal model derivative quantities (derivatives with respect to,</span>
+<span class="sd">        extinction, single scatter albedo, legendre coefficients) and user input quantities (e.g. VMR at a specific level).</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        native_grid_mapping : NativeGridDerivative</span>
+<span class="sd">            A mapping from the native atmospheric grid to the same grid.</span>
+<span class="sd">        summable : bool, optional</span>
+<span class="sd">            True if this quantity should be accumulated and summed across each constituent. For example, each constituent may have a derivative with respect</span>
+<span class="sd">            to a quantity like atmospheric temperature or pressure, by default False</span>
+<span class="sd">        log_radiance_space : bool, optional</span>
+<span class="sd">            True if the derivative should be returned in log_radiance space, i.e. if we should divide the absolute derivative by the radiance</span>
+<span class="sd">        name_prefix: str, optional</span>
+<span class="sd">            Prefix to put infront of the variable in the output dataset, default is &quot;wf_&quot;.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_native_grid_mapping</span> <span class="o">=</span> <span class="n">native_grid_mapping</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_summable</span> <span class="o">=</span> <span class="n">summable</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_log_radiance_space</span> <span class="o">=</span> <span class="n">log_radiance_space</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_name_prefix</span> <span class="o">=</span> <span class="n">name_prefix</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">native_grid_mapping</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">NativeGridDerivative</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The mapping on the native grid.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        NativeGridDerivative</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_native_grid_mapping</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">is_surface_derivative</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_native_grid_mapping</span><span class="o">.</span><span class="n">d_albedo</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">summable</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        True if the mapping should be summed and accumulated.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        bool</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_summable</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">log_radiance_space</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        True if the derivative should be returned in log_radiance space, i.e. if we should divide the absolute derivative by the radiance</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        bool</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_log_radiance_space</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">name_prefix</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_name_prefix</span>
+
+    <span class="k">def</span> <span class="nf">map_derivative</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">dimensions</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+        <span class="k">return</span> <span class="n">xr</span><span class="o">.</span><span class="n">DataArray</span><span class="p">(</span>
+            <span class="n">data</span><span class="p">,</span>
+            <span class="n">dims</span><span class="o">=</span><span class="n">dimensions</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">name</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+
+<span class="k">class</span> <span class="nc">InterpolatedDerivativeMapping</span><span class="p">(</span><span class="n">DerivativeMapping</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">native_grid_mapping</span><span class="p">:</span> <span class="n">NativeGridDerivative</span><span class="p">,</span>
+        <span class="n">interpolating_matrix</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">interp_dim</span><span class="o">=</span><span class="s2">&quot;altitude&quot;</span><span class="p">,</span>
+        <span class="n">result_dim</span><span class="o">=</span><span class="s2">&quot;interp_altitude&quot;</span><span class="p">,</span>
+        <span class="n">summable</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">log_radiance_space</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        A class which defines a mapping from internal model derivative quantities to user input quantities</span>
+<span class="sd">        that are not on the native model grid</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        native_grid_mapping : NativeGridDerivative</span>
+<span class="sd">            Mapping of the quantity in question from the native grid to the native grid</span>
+<span class="sd">        interpolating_matrix : np.ndarray</span>
+<span class="sd">            An interpolating matrix such that user quantity on the native grid can be calculated by multiplying</span>
+<span class="sd">            the matrix by the user input quantity</span>
+<span class="sd">        interp_dim : str, optional</span>
+<span class="sd">            Dimension in the native mapping the interpolation is done over, by default &quot;altitude&quot;</span>
+<span class="sd">        result_dim : str, optional</span>
+<span class="sd">            string to name the resulting dimension, by default &quot;interp_altitude&quot;</span>
+<span class="sd">        summable : bool, optional</span>
+<span class="sd">            See :py:class:`DerivativeMapping`, by default False</span>
+<span class="sd">        log_radiance_space : bool, optional</span>
+<span class="sd">            See :py:class:`DerivativeMapping`, by default False</span>
+<span class="sd">        name : Optional[str], optional</span>
+<span class="sd">            A name for the derivative mapping, if set to None then the name is inferred from the key</span>
+<span class="sd">            the mapping resides in.  This is only useful if you have two derivatives with the same key</span>
+<span class="sd">            that should be summed together, by default None</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">native_grid_mapping</span><span class="p">,</span> <span class="n">summable</span><span class="p">,</span> <span class="n">log_radiance_space</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_name</span> <span class="o">=</span> <span class="n">name</span>
+
+        <span class="k">if</span> <span class="n">interp_dim</span> <span class="o">!=</span> <span class="n">result_dim</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_xr_interpolator</span> <span class="o">=</span> <span class="n">xr</span><span class="o">.</span><span class="n">DataArray</span><span class="p">(</span>
+                <span class="n">interpolating_matrix</span><span class="p">,</span> <span class="n">dims</span><span class="o">=</span><span class="p">[</span><span class="n">interp_dim</span><span class="p">,</span> <span class="n">result_dim</span><span class="p">]</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_rename_map</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_xr_interpolator</span> <span class="o">=</span> <span class="n">xr</span><span class="o">.</span><span class="n">DataArray</span><span class="p">(</span>
+                <span class="n">interpolating_matrix</span><span class="p">,</span> <span class="n">dims</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;tempDIM&quot;</span><span class="p">,</span> <span class="n">result_dim</span><span class="p">]</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_rename_map</span> <span class="o">=</span> <span class="p">{</span><span class="n">interp_dim</span><span class="p">:</span> <span class="s2">&quot;tempDIM&quot;</span><span class="p">}</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sparse_mapping</span> <span class="o">=</span> <span class="n">sparse</span><span class="o">.</span><span class="n">csc_matrix</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_xr_interpolator</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">())</span>
+
+    <span class="k">def</span> <span class="nf">map_derivative</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">dimensions</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+        <span class="n">new_dims</span> <span class="o">=</span> <span class="n">copy</span><span class="p">(</span><span class="n">dimensions</span><span class="p">)</span>
+        <span class="n">new_dims</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_xr_interpolator</span><span class="o">.</span><span class="n">dims</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="k">return</span> <span class="n">xr</span><span class="o">.</span><span class="n">DataArray</span><span class="p">(</span>
+            <span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">data</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span> <span class="o">@</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sparse_mapping</span><span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span>
+                <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="n">data</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]))</span>
+            <span class="p">),</span>
+            <span class="n">dims</span><span class="o">=</span><span class="n">new_dims</span><span class="p">,</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">transpose</span><span class="p">(</span><span class="o">*</span><span class="p">[</span><span class="n">new_dims</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="o">*</span><span class="n">new_dims</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]])</span>
+
+    <span class="k">def</span> <span class="nf">name</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_name</span>
+
+
+<span class="k">class</span> <span class="nc">SurfaceDerivativeMapping</span><span class="p">(</span><span class="n">DerivativeMapping</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">native_grid_mapping</span><span class="p">:</span> <span class="n">NativeGridDerivative</span><span class="p">,</span>
+        <span class="n">interpolating_matrix</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+        <span class="n">interp_dim</span><span class="o">=</span><span class="s2">&quot;wavelength&quot;</span><span class="p">,</span>
+        <span class="n">result_dim</span><span class="o">=</span><span class="s2">&quot;interp_wavelength&quot;</span><span class="p">,</span>
+        <span class="n">summable</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">log_radiance_space</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        A class which defines a mapping from internal model surface derivative quantities to user input quantities</span>
+<span class="sd">        that are not on the native model grid</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        native_grid_mapping : NativeGridDerivative</span>
+<span class="sd">            Mapping of the quantity in question from the native grid to the native grid</span>
+<span class="sd">        interpolating_matrix : np.ndarray</span>
+<span class="sd">            An interpolating matrix such that user quantity on the native grid can be calculated by multiplying</span>
+<span class="sd">            the matrix by the user input quantity</span>
+<span class="sd">        interp_dim : str, optional</span>
+<span class="sd">            Dimension in the native mapping the interpolation is done over, by default &quot;wavelength&quot;</span>
+<span class="sd">        result_dim : str, optional</span>
+<span class="sd">            string to name the resulting dimension, by default &quot;interp_wavelength&quot;</span>
+<span class="sd">        summable : bool, optional</span>
+<span class="sd">            See :py:class:`DerivativeMapping`, by default False</span>
+<span class="sd">        log_radiance_space : bool, optional</span>
+<span class="sd">            See :py:class:`DerivativeMapping`, by default False</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">native_grid_mapping</span><span class="p">,</span> <span class="n">summable</span><span class="p">,</span> <span class="n">log_radiance_space</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_interp_dim</span> <span class="o">=</span> <span class="n">interp_dim</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_result_dim</span> <span class="o">=</span> <span class="n">result_dim</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_xr_interpolator</span> <span class="o">=</span> <span class="n">xr</span><span class="o">.</span><span class="n">DataArray</span><span class="p">(</span>
+            <span class="n">interpolating_matrix</span><span class="p">,</span> <span class="n">dims</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;tempDIM&quot;</span><span class="p">,</span> <span class="n">result_dim</span><span class="p">]</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">map_derivative</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">dimensions</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]):</span>
+        <span class="k">return</span> <span class="n">xr</span><span class="o">.</span><span class="n">DataArray</span><span class="p">(</span>
+            <span class="n">np</span><span class="o">.</span><span class="n">einsum</span><span class="p">(</span>
+                <span class="s2">&quot;ijk, il-&gt;lijk&quot;</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_xr_interpolator</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(),</span> <span class="n">optimize</span><span class="o">=</span><span class="kc">True</span>
+            <span class="p">),</span>
+            <span class="n">dims</span><span class="o">=</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_result_dim</span><span class="p">,</span> <span class="o">*</span><span class="n">dimensions</span><span class="p">],</span>
+        <span class="p">)</span>
+
+
+<div class="viewcode-block" id="Atmosphere"><a class="viewcode-back" href="../../api/atmosphere.html#sasktran2.Atmosphere">[docs]</a><span class="k">class</span> <span class="nc">Atmosphere</span><span class="p">:</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">model_geometry</span><span class="p">:</span> <span class="n">sk</span><span class="o">.</span><span class="n">Geometry1D</span><span class="p">,</span>
+        <span class="n">config</span><span class="p">:</span> <span class="n">sk</span><span class="o">.</span><span class="n">Config</span><span class="p">,</span>
+        <span class="n">wavelengths_nm</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">wavenumber_cminv</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">numwavel</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">calculate_derivatives</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">pressure_derivative</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">temperature_derivative</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The main specification for the atmospheric state.</span>
+
+<span class="sd">        See :py:attr:`~storage` for details on how the atmospheric state parameters are stored.</span>
+
+<span class="sd">        See :py:attr:`~surface` for details on how the surface parameters are stored.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        model_geometry : sk.Geometry1D</span>
+<span class="sd">            The geometry defining where the atmospheric quantities are specified on.</span>
+<span class="sd">        config : sk.Config</span>
+<span class="sd">            Main configuration object.</span>
+<span class="sd">        wavelengths_nm : np.array, optional</span>
+<span class="sd">            Array of wavelengths to specify the atmosphere at in [nm].  One of wavelengths_nm, wavenumber_cminv, numwavel must be set.</span>
+<span class="sd">        wavenumber_cminv : np.array, optional</span>
+<span class="sd">            Array of wavenumbers to specify the atmosphere at in [:math:`\\text{cm}^{-1}`]. One of wavelengths_nm, wavenumber_cminv, numwavel must be set.</span>
+<span class="sd">        numwavel : int, optional</span>
+<span class="sd">            Number of wavelengths to include in the calculation.  Note that wavelength is a dummy variable, this dimension can be</span>
+<span class="sd">            anaything. One of wavelengths_nm, wavenumber_cminv, numwavel must be set.</span>
+<span class="sd">        calculate_derivatives : bool, optional</span>
+<span class="sd">            Whether or not the model should calculate derivatives with respect to atmospheric quantities., by default True</span>
+<span class="sd">        pressure_derivative: bool, optional</span>
+<span class="sd">            Whether or not the model should calculate derivatives with respect to pressure., by default True</span>
+<span class="sd">        temperature_derivative: bool, optional</span>
+<span class="sd">            Whether or not the model should calculate derivatives with respect to temperature., by default True</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_wavelengths_nm</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_wavenumbers_cminv</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="c1"># Set wavelengths</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="p">(</span><span class="n">wavelengths_nm</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="ow">and</span> <span class="p">(</span><span class="n">wavenumber_cminv</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="ow">and</span> <span class="p">(</span><span class="n">numwavel</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">)</span>
+        <span class="p">):</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;One of wavelengths_nm, wavenumber_cminv, numwavel must be set when constructing the Atmosphere object&quot;</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">wavelengths_nm</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">wavelengths_nm</span> <span class="o">=</span> <span class="n">wavelengths_nm</span>
+
+        <span class="k">if</span> <span class="n">wavenumber_cminv</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">wavenumbers_cminv</span> <span class="o">=</span> <span class="n">wavenumber_cminv</span>
+
+        <span class="n">nwavel</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">wavelengths_nm</span><span class="p">)</span> <span class="k">if</span> <span class="n">numwavel</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">numwavel</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_nstokes</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">num_stokes</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_calculate_derivatives</span> <span class="o">=</span> <span class="n">calculate_derivatives</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pressure_derivative</span> <span class="o">=</span> <span class="n">pressure_derivative</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_temperature_derivative</span> <span class="o">=</span> <span class="n">temperature_derivative</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nstokes</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_atmosphere</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">AtmosphereStokes_1</span><span class="p">(</span>
+                <span class="n">nwavel</span><span class="p">,</span> <span class="n">model_geometry</span><span class="p">,</span> <span class="n">config</span><span class="p">,</span> <span class="n">calculate_derivatives</span>
+            <span class="p">)</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nstokes</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_atmosphere</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">AtmosphereStokes_3</span><span class="p">(</span>
+                <span class="n">nwavel</span><span class="p">,</span> <span class="n">model_geometry</span><span class="p">,</span> <span class="n">config</span><span class="p">,</span> <span class="n">calculate_derivatives</span>
+            <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_leg_coeff</span> <span class="o">=</span> <span class="n">LegendreStorageView</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_atmosphere</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">leg_coeff</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nstokes</span>
+        <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">surface</span><span class="o">.</span><span class="n">albedo</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">(</span><span class="n">nwavel</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_storage_needs_reset</span> <span class="o">=</span> <span class="kc">False</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pressure_pa</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_temperature_k</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_model_geometry</span> <span class="o">=</span> <span class="n">model_geometry</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_config</span> <span class="o">=</span> <span class="n">config</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_constituents</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_derivs</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_unscaled_ssa</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_unscaled_extinction</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_applied_delta_m_order</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">model_geometry</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">sk</span><span class="o">.</span><span class="n">Geometry1D</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The model geometry object</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        sk.Geometry1D</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_model_geometry</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">applied_delta_m_order</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The order of the applied delta_m scaling. Can be None if no scaling has been applied</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_applied_delta_m_order</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">nstokes</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The number of stokes parameters the atmosphere contains information to calculate</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        int</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_nstokes</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">calculate_temperature_derivative</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        True if we are calculating the derivative with respect to temperature</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        bool</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_temperature_derivative</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">calculate_pressure_derivative</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        True if we are calculating the derivative with respect to pressure</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        bool</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pressure_derivative</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">storage</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="n">sk</span><span class="o">.</span><span class="n">AtmosphereStorageStokes_1</span><span class="p">,</span> <span class="n">sk</span><span class="o">.</span><span class="n">AtmosphereStorageStokes_3</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The internal object which contains the atmosphere extinction, single scatter albedo, and legendre coefficients.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        Union[sk.AtmosphereGridStorageStokes_1, sk.AtmosphereGridStorageStokes_3]</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_atmosphere</span><span class="o">.</span><span class="n">storage</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">surface</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">sk</span><span class="o">.</span><span class="n">Surface</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The surface object</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        sk.Surface</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_atmosphere</span><span class="o">.</span><span class="n">surface</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">temperature_k</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Atmospheric temperature in [K] on the same grid as :py:attr:`~model_geometry`</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        np.array</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_temperature_k</span>
+
+    <span class="nd">@temperature_k</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span> <span class="nf">temperature_k</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">temp</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_temperature_k</span> <span class="o">=</span> <span class="n">temp</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">pressure_pa</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Pressure in [Pa] on the same grid as :py:attr:`~model_geometry`</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        np.array</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pressure_pa</span>
+
+    <span class="nd">@pressure_pa</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span> <span class="nf">pressure_pa</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pres</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pressure_pa</span> <span class="o">=</span> <span class="n">pres</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">wavelengths_nm</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The wavelengths in [nm] the atmosphere is specified at.  This is an</span>
+<span class="sd">        optional property, it may be None.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        Optional[np.array]</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_wavelengths_nm</span>
+
+    <span class="nd">@wavelengths_nm</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span> <span class="nf">wavelengths_nm</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wav</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_wavelengths_nm</span> <span class="o">=</span> <span class="n">wav</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_wavenumbers_cminv</span> <span class="o">=</span> <span class="n">wavlength_nm_to_wavenumber_cminv</span><span class="p">(</span><span class="n">wav</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">wavenumbers_cminv</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The wavenumbers in [:math:`\\text{cm}^{-1}`].  This is an optional property, it may be set to None</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        Optional[np.array]</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_wavenumbers_cminv</span>
+
+    <span class="nd">@wavenumbers_cminv</span><span class="o">.</span><span class="n">setter</span>
+    <span class="k">def</span> <span class="nf">wavenumbers_cminv</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wav</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_wavenumbers_cminv</span> <span class="o">=</span> <span class="n">wav</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_wavelengths_nm</span> <span class="o">=</span> <span class="n">wavenumber_cminv_to_wavlength_nm</span><span class="p">(</span><span class="n">wav</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_zero_storage</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Sets the internal storage object to 0.  Typically used in-between calculations to reset the</span>
+<span class="sd">        atmosphere without reconstructing it.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">ssa</span><span class="p">[:]</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">total_extinction</span><span class="p">[:]</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">leg_coeff</span><span class="p">[:]</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">deriv_mappings</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        A nested dictionary of :py:class:`sasktran2.atmosphere.DerivativeMapping` objects.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        dict</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_derivs</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">unscaled_ssa</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The unscaled single scatter albedo.  After performing the calculation, `storage.ssa` may be</span>
+<span class="sd">        modified because of the delta-m scaling.  This property stores the original unscaled single</span>
+<span class="sd">        scatter albedo.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        np.ndarray</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_unscaled_ssa</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">unscaled_extinction</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The unscaled extinction. After performing the calculation, `storage.total_extinction` may be</span>
+<span class="sd">        modified because of the delta-m scaling. This property stores the original unscaled single</span>
+<span class="sd">        scatter albedo.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        np.ndarray</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_unscaled_extinction</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">leg_coeff</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">LegendreStorageView</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_leg_coeff</span>
+
+<div class="viewcode-block" id="Atmosphere.internal_object"><a class="viewcode-back" href="../../api/atmosphere.html#sasktran2.Atmosphere.internal_object">[docs]</a>    <span class="k">def</span> <span class="nf">internal_object</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="n">sk</span><span class="o">.</span><span class="n">AtmosphereStokes_1</span><span class="p">,</span> <span class="n">sk</span><span class="o">.</span><span class="n">AtmosphereStokes_3</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The internal `pybind11` object that can be used to perform the radiative transfer calculation.</span>
+<span class="sd">        Calling this method will trigger a construction of the atmosphere object if necessary, and then</span>
+<span class="sd">        return back the internal object.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        Union[sk.AtmosphereStokes_1, sk.AtmosphereStokes_3]</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">num_scat_derivs</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_constituents</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Setting atmosphere from constituents&quot;</span><span class="p">)</span>
+            <span class="c1"># Using the constituent interface</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_storage_needs_reset</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_zero_storage</span><span class="p">()</span>
+            <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">constituent</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_constituents</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">constituent</span><span class="o">.</span><span class="n">add_to_atmosphere</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">leg_coeff</span> <span class="o">/=</span> <span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">ssa</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:,</span> <span class="p">:]</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">ssa</span> <span class="o">/=</span> <span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">total_extinction</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">_derivs</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_calculate_derivatives</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">constituent</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_constituents</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_derivs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">constituent</span><span class="o">.</span><span class="n">register_derivative</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+
+                    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_derivs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">deriv</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_derivs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                            <span class="k">if</span> <span class="n">deriv</span><span class="o">.</span><span class="n">native_grid_mapping</span><span class="o">.</span><span class="n">d_leg_coeff</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                                <span class="n">num_scat_derivs</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;Finished setting atmosphere from constituents&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># using the raw interface</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_calculate_derivatives</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_derivs</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_derivs</span><span class="p">[</span><span class="s2">&quot;raw&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_derivs</span><span class="p">[</span><span class="s2">&quot;raw&quot;</span><span class="p">][</span><span class="s2">&quot;extinction&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">DerivativeMapping</span><span class="p">(</span>
+                    <span class="n">NativeGridDerivative</span><span class="p">(</span>
+                        <span class="n">d_extinction</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">total_extinction</span><span class="p">),</span>
+                        <span class="n">d_ssa</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">ssa</span><span class="p">),</span>
+                    <span class="p">),</span>
+                    <span class="n">summable</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_derivs</span><span class="p">[</span><span class="s2">&quot;raw&quot;</span><span class="p">][</span><span class="s2">&quot;ssa&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">DerivativeMapping</span><span class="p">(</span>
+                    <span class="n">NativeGridDerivative</span><span class="p">(</span>
+                        <span class="n">d_extinction</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">total_extinction</span><span class="p">),</span>
+                        <span class="n">d_ssa</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">ssa</span><span class="p">),</span>
+                    <span class="p">),</span>
+                    <span class="n">summable</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                <span class="p">)</span>
+
+                <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">leg_coeff</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
+                    <span class="k">if</span> <span class="n">i</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                        <span class="c1"># No derivative for the first leg_coeff</span>
+                        <span class="k">continue</span>
+
+                    <span class="n">d_leg_coeff</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">leg_coeff</span><span class="p">)</span>
+                    <span class="n">d_leg_coeff</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="p">:]</span> <span class="o">=</span> <span class="mi">1</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_derivs</span><span class="p">[</span><span class="s2">&quot;raw&quot;</span><span class="p">][</span><span class="sa">f</span><span class="s2">&quot;leg_coeff_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">DerivativeMapping</span><span class="p">(</span>
+                        <span class="n">NativeGridDerivative</span><span class="p">(</span>
+                            <span class="n">d_extinction</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">total_extinction</span><span class="p">),</span>
+                            <span class="n">d_ssa</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">ssa</span><span class="p">),</span>
+                            <span class="n">d_leg_coeff</span><span class="o">=</span><span class="n">d_leg_coeff</span><span class="p">,</span>
+                            <span class="n">scat_factor</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">ones_like</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">ssa</span><span class="p">),</span>
+                        <span class="p">),</span>
+                        <span class="n">summable</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                    <span class="p">)</span>
+                    <span class="n">num_scat_derivs</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="c1"># Now we need to resize the phase derivative storage if necessary, and set the scattering derivatives</span>
+        <span class="k">if</span> <span class="n">num_scat_derivs</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">resize_derivatives</span><span class="p">(</span><span class="n">num_scat_derivs</span><span class="p">)</span>
+
+            <span class="n">scat_index</span> <span class="o">=</span> <span class="mi">0</span>
+            <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">mappings</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_derivs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="k">if</span> <span class="n">mappings</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="k">for</span> <span class="n">_</span><span class="p">,</span> <span class="n">mapping</span> <span class="ow">in</span> <span class="n">mappings</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                        <span class="k">if</span> <span class="p">(</span>
+                            <span class="n">mapping</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                            <span class="ow">and</span> <span class="n">mapping</span><span class="o">.</span><span class="n">native_grid_mapping</span><span class="o">.</span><span class="n">d_leg_coeff</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                        <span class="p">):</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">d_leg_coeff</span><span class="p">[</span>
+                                <span class="p">:,</span> <span class="p">:,</span> <span class="p">:,</span> <span class="n">scat_index</span>
+                            <span class="p">]</span> <span class="o">=</span> <span class="n">mapping</span><span class="o">.</span><span class="n">native_grid_mapping</span><span class="o">.</span><span class="n">d_leg_coeff</span>
+                            <span class="n">mapping</span><span class="o">.</span><span class="n">native_grid_mapping</span><span class="o">.</span><span class="n">scat_deriv_index</span> <span class="o">=</span> <span class="n">scat_index</span>
+                            <span class="n">scat_index</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="c1"># Store the unscaled optical properties for use in the derivative mappings</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_unscaled_ssa</span> <span class="o">=</span> <span class="n">copy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">ssa</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_unscaled_extinction</span> <span class="o">=</span> <span class="n">copy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">total_extinction</span><span class="p">)</span>
+
+        <span class="c1"># Apply delta scaling if required</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_config</span><span class="o">.</span><span class="n">delta_m_scaling</span><span class="p">:</span>
+            <span class="c1"># Find the order of the scaling</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_config</span><span class="o">.</span><span class="n">num_streams</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">_leg_coeff</span><span class="o">.</span><span class="n">a1</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+                <span class="c1"># Can&#39;t apply scaling</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                    <span class="s2">&quot;Delta-m Scaling NOT applied since the number of MS streams is equal to the number of user input legendre coefficients&quot;</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_atmosphere</span><span class="o">.</span><span class="n">apply_delta_m_scaling</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_config</span><span class="o">.</span><span class="n">num_streams</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_applied_delta_m_order</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_config</span><span class="o">.</span><span class="n">num_streams</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_storage_needs_reset</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_atmosphere</span></div>
+
+    <span class="k">def</span> <span class="fm">__setitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_constituents</span><span class="p">[</span><span class="n">item</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+
+    <span class="k">def</span> <span class="fm">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_constituents</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">item</span><span class="p">)</span></div>
+</pre></div>
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer">
+                  
+<div class="prev-next-area">
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By USask-ARG
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2023, USask-ARG.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="../../_static/scripts/bootstrap.js?digest=5b4479735964841361fd"></script>
+<script src="../../_static/scripts/pydata-sphinx-theme.js?digest=5b4479735964841361fd"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>

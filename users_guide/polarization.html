@@ -1,0 +1,796 @@
+
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+    <title>Polarized Calculations &#8212; sasktran2 2023.12.0 documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "light";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../_static/styles/theme.css?digest=5b4479735964841361fd" rel="stylesheet" />
+<link href="../_static/styles/bootstrap.css?digest=5b4479735964841361fd" rel="stylesheet" />
+<link href="../_static/styles/pydata-sphinx-theme.css?digest=5b4479735964841361fd" rel="stylesheet" />
+
+  
+  <link href="../_static/vendor/fontawesome/6.1.2/css/all.min.css?digest=5b4479735964841361fd" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.1.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.1.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.1.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
+    <link rel="stylesheet" href="../_static/styles/sphinx-book-theme.css?digest=14f4ca6b54d191a8c7657f6c759bf11a5fb86285" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="../_static/mystnb.4510f1fc1dee50b3e5859aac5469c37c29e427902b24a333a5f9fcb2f0b3ac41.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/locals.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=5b4479735964841361fd" />
+<link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=5b4479735964841361fd" />
+  <script src="../_static/vendor/fontawesome/6.1.2/js/all.min.js?digest=5b4479735964841361fd"></script>
+
+    <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+    <script src="../_static/doctools.js"></script>
+    <script src="../_static/sphinx_highlight.js"></script>
+    <script src="../_static/scripts/sphinx-book-theme.js?digest=5a5c038af52cf7bc1a1ec88eea08e6366ee68824"></script>
+    <script src="../_static/design-tabs.js"></script>
+    <script>window.MathJax = {"options": {"processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'users_guide/polarization';</script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Performance Tips" href="performance.html" />
+    <link rel="prev" title="Weighting Functions" href="../weighting_functions.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>
+    Back to top
+  </button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          name="__primary"
+          id="__primary"/>
+  <label class="overlay overlay-primary" for="__primary"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          name="__secondary"
+          id="__secondary"/>
+  <label class="overlay overlay-secondary" for="__secondary"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search..."
+         aria-label="Search..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+  
+    <nav class="bd-header navbar navbar-expand-lg bd-navbar">
+    </nav>
+  
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      <div class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+
+<a class="navbar-brand logo" href="../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../_static/sasktran-dark.png" class="logo__image only-light" alt="sasktran2 2023.12.0 documentation - Home"/>
+    <script>document.write(`<img src="../_static/sasktran-light.png" class="logo__image only-dark" alt="sasktran2 2023.12.0 documentation - Home"/>`);</script>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item"><ul class="navbar-icon-links navbar-nav"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/usask-arg/sasktran2" title="GitHub" class="nav-link" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><span><i class="fa-brands fa-square-github fa-lg" aria-hidden="true"></i></span>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+</ul></div>
+        <div class="sidebar-primary-item"><nav class="bd-links" id="bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">For Users</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+
+
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="../users_guide.html">Users Guide</a><input checked="" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-1"><i class="fa-solid fa-chevron-down"></i></label><ul class="current">
+<li class="toctree-l2 has-children"><a class="reference internal" href="../required_components.html">Setting up the Calculation</a><input class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-2"><i class="fa-solid fa-chevron-down"></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../components/model_geometry.html">The Model Geometry</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../components/viewing_geometry.html">The Viewing Geometry</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../components/sources.html">Source Terms</a><input class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-3"><i class="fa-solid fa-chevron-down"></i></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../components/source_terms/singlescatter.html">Single Scatter Sources</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../components/source_terms/discrete_ordinates.html">The Discrete Ordinates Source</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../components/source_terms/occultation.html">Occultation Sources</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../components/source_terms/successive_orders.html">The Successive Orders of Scattering Source</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../components/atmosphere.html">The Atmospheric State</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../weighting_functions.html">Weighting Functions</a></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">Polarized Calculations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="performance.html">Performance Tips</a></li>
+<li class="toctree-l2"><a class="reference internal" href="phase.html">Phase Function Specification</a></li>
+<li class="toctree-l2"><a class="reference internal" href="geodetic.html">Geodesy Tools</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../examples/examples.html">More Examples</a><input class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-4"><i class="fa-solid fa-chevron-down"></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../examples/aerosol/basic.html">Basic Aerosol Inclusion</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../examples/wf/amf.html">Calculating Air Mass Factors</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../api_reference.html">API Reference</a><input class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-5"><i class="fa-solid fa-chevron-down"></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../api/config.html">Config</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/engine.html">Engine</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/model_geometry.html">Model Geometry</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/atmosphere.html">Atmosphere</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/constituents.html">Constituents</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/optical.html">Optical Properties</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/output.html">Output</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/viewing_geometry.html">Viewing Geometry</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/climatology.html">Climatologies</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/geodetic.html">Geodetic</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/util.html">Utility</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../changelog.html">Changelog</a></li>
+
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Extending SASKTRAN2</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../extending/constituent.html">Adding Constituents</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Developer Documentation</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../developer/compiling.html">Compiling from Source</a><input class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-6"><i class="fa-solid fa-chevron-down"></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../developer/windows.html">Local Windows Development</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../developer/ide/vscode.html">Visual Studio Code Configuration</a></li>
+</ul>
+</li>
+
+<li class="toctree-l1"><a class="reference internal" href="../developer/contributing.html">Contributing</a></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><label class="sidebar-toggle primary-toggle btn btn-sm" for="__primary" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</label></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/usask-arg/sasktran2" target="_blank"
+   class="btn btn-sm btn-source-repository-button dropdown-item"
+   title="Source repository"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="btn__text-container">Repository</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/usask-arg/sasktran2/edit/main/docs/sphinx/source/users_guide/polarization.md" target="_blank"
+   class="btn btn-sm btn-source-edit-button dropdown-item"
+   title="Suggest edit"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-pencil-alt"></i>
+  </span>
+<span class="btn__text-container">Suggest edit</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/usask-arg/sasktran2/issues/new?title=Issue%20on%20page%20%2Fusers_guide/polarization.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="../_sources/users_guide/polarization.md" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.md</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm navbar-btn theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="theme-switch nav-link" data-mode="light"><i class="fa-solid fa-sun fa-lg"></i></span>
+    <span class="theme-switch nav-link" data-mode="dark"><i class="fa-solid fa-moon fa-lg"></i></span>
+    <span class="theme-switch nav-link" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg"></i></span>
+  </button>
+`);
+</script>
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm navbar-btn search-button search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+  </button>
+`);
+</script>
+<label class="sidebar-toggle secondary-toggle btn btn-sm" for="__secondary"title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="fa-solid fa-list"></span>
+</label>
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>Polarized Calculations</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+            <div>
+                <h2> Contents </h2>
+            </div>
+            <nav aria-label="Page">
+                <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#running-a-calculation">Running a Calculation</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#stokes-conventions-and-basis">Stokes Conventions and Basis</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#stokes-basis">Stokes Basis</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#basis-summary">Basis Summary</a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#stokes-conventions">Stokes Conventions</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#supported-number-of-stokes-parameters">Supported Number of Stokes Parameters</a></li>
+</ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article" role="main">
+                  
+  <section class="tex2jax_ignore mathjax_ignore" id="polarized-calculations">
+<span id="users-polarization"></span><h1>Polarized Calculations<a class="headerlink" href="#polarized-calculations" title="Permalink to this heading">#</a></h1>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">sasktran2</span> <span class="k">as</span> <span class="nn">sk</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p>SASKTRAN2 supports polarization through changing the <a class="reference internal" href="../api/config.html#sasktran2.Config.num_stokes" title="sasktran2.Config.num_stokes"><code class="xref py py-attr docutils literal notranslate"><span class="pre">sasktran2.Config.num_stokes</span></code></a> parameter which
+controls the number of Stokes parameters used in the calculation.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">config</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">Config</span><span class="p">()</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">num_stokes</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>1
+</pre></div>
+</div>
+</div>
+</div>
+<p>By default this parameter is set to 1.</p>
+<p>Setting,</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">config</span><span class="o">.</span><span class="n">num_stokes</span> <span class="o">=</span> <span class="mi">3</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p>is the recommended way to enable the polarization calculation.  <code class="docutils literal notranslate"><span class="pre">num_stokes=3</span></code> is an approximation
+where the <code class="docutils literal notranslate"><span class="pre">V</span></code> (circular polarization) component is assumed to be 0, which is generally a very good
+approximation for Earth’s atmosphere.</p>
+<section id="running-a-calculation">
+<h2>Running a Calculation<a class="headerlink" href="#running-a-calculation" title="Permalink to this heading">#</a></h2>
+<p>Generally the only thing that has to be changed to run a polarized calculation is to set the
+<a class="reference internal" href="../api/config.html#sasktran2.Config.num_stokes" title="sasktran2.Config.num_stokes"><code class="xref py py-attr docutils literal notranslate"><span class="pre">sasktran2.Config.num_stokes</span></code></a> setting.  Here we repeat the same example done in the quickstart
+guide but with polarization enabled</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
+
+<span class="n">config</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">Config</span><span class="p">()</span>
+<span class="n">config</span><span class="o">.</span><span class="n">num_stokes</span> <span class="o">=</span> <span class="mi">3</span>
+<span class="n">config</span><span class="o">.</span><span class="n">multiple_scatter_source</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">MultipleScatterSource</span><span class="o">.</span><span class="n">DiscreteOrdinates</span>
+<span class="n">config</span><span class="o">.</span><span class="n">num_streams</span> <span class="o">=</span> <span class="mi">4</span>
+
+<span class="n">model_geometry</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">Geometry1D</span><span class="p">(</span><span class="n">cos_sza</span><span class="o">=</span><span class="mf">0.6</span><span class="p">,</span>
+                                <span class="n">solar_azimuth</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+                                <span class="n">earth_radius_m</span><span class="o">=</span><span class="mi">6372000</span><span class="p">,</span>
+                                <span class="n">altitude_grid_m</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">65001</span><span class="p">,</span> <span class="mi">1000</span><span class="p">),</span>
+                                <span class="n">interpolation_method</span><span class="o">=</span><span class="n">sk</span><span class="o">.</span><span class="n">InterpolationMethod</span><span class="o">.</span><span class="n">LinearInterpolation</span><span class="p">,</span>
+                                <span class="n">geometry_type</span><span class="o">=</span><span class="n">sk</span><span class="o">.</span><span class="n">GeometryType</span><span class="o">.</span><span class="n">Spherical</span><span class="p">)</span>
+
+<span class="n">viewing_geo</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">ViewingGeometry</span><span class="p">()</span>
+
+<span class="k">for</span> <span class="n">alt</span> <span class="ow">in</span> <span class="p">[</span><span class="mi">10000</span><span class="p">,</span> <span class="mi">20000</span><span class="p">,</span> <span class="mi">30000</span><span class="p">,</span> <span class="mi">40000</span><span class="p">]:</span>
+    <span class="n">ray</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">TangentAltitudeSolar</span><span class="p">(</span><span class="n">tangent_altitude_m</span><span class="o">=</span><span class="n">alt</span><span class="p">,</span>
+                                    <span class="n">relative_azimuth</span><span class="o">=</span><span class="mi">45</span><span class="o">*</span><span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="o">/</span><span class="mi">180</span><span class="p">,</span>
+                                    <span class="n">observer_altitude_m</span><span class="o">=</span><span class="mi">200000</span><span class="p">,</span>
+                                    <span class="n">cos_sza</span><span class="o">=</span><span class="mf">0.6</span><span class="p">)</span>
+    <span class="n">viewing_geo</span><span class="o">.</span><span class="n">add_ray</span><span class="p">(</span><span class="n">ray</span><span class="p">)</span>
+
+<span class="n">wavel</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mf">280.0</span><span class="p">,</span> <span class="mf">800.0</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+
+<span class="n">atmosphere</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">Atmosphere</span><span class="p">(</span><span class="n">model_geometry</span><span class="p">,</span> <span class="n">config</span><span class="p">,</span> <span class="n">wavelengths_nm</span><span class="o">=</span><span class="n">wavel</span><span class="p">)</span>
+
+<span class="n">sk</span><span class="o">.</span><span class="n">climatology</span><span class="o">.</span><span class="n">us76</span><span class="o">.</span><span class="n">add_us76_standard_atmosphere</span><span class="p">(</span><span class="n">atmosphere</span><span class="p">)</span>
+
+<span class="n">atmosphere</span><span class="p">[</span><span class="s1">&#39;rayleigh&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">constituent</span><span class="o">.</span><span class="n">Rayleigh</span><span class="p">()</span>
+
+<span class="n">atmosphere</span><span class="p">[</span><span class="s1">&#39;ozone&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">climatology</span><span class="o">.</span><span class="n">mipas</span><span class="o">.</span><span class="n">constituent</span><span class="p">(</span><span class="s2">&quot;O3&quot;</span><span class="p">,</span> <span class="n">sk</span><span class="o">.</span><span class="n">optical</span><span class="o">.</span><span class="n">O3DBM</span><span class="p">())</span>
+
+<span class="n">atmosphere</span><span class="p">[</span><span class="s1">&#39;no2&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">climatology</span><span class="o">.</span><span class="n">mipas</span><span class="o">.</span><span class="n">constituent</span><span class="p">(</span><span class="s2">&quot;NO2&quot;</span><span class="p">,</span> <span class="n">sk</span><span class="o">.</span><span class="n">optical</span><span class="o">.</span><span class="n">NO2Vandaele</span><span class="p">())</span>
+
+<span class="n">engine</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">Engine</span><span class="p">(</span><span class="n">config</span><span class="p">,</span> <span class="n">model_geometry</span><span class="p">,</span> <span class="n">viewing_geo</span><span class="p">)</span>
+
+<span class="n">radiance</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">calculate_radiance</span><span class="p">(</span><span class="n">atmosphere</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p>Then if we look at the output,</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">radiance</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>&lt;xarray.Dataset&gt;
+Dimensions:           (wavelength: 520, stokes: 3, altitude: 66, los: 4,
+                       ozone_altitude: 50, no2_altitude: 50)
+Coordinates:
+  * wavelength        (wavelength) float64 280.0 281.0 282.0 ... 798.0 799.0
+  * stokes            (stokes) &lt;U1 &#39;I&#39; &#39;Q&#39; &#39;U&#39;
+  * altitude          (altitude) float64 0.0 1e+03 2e+03 ... 6.4e+04 6.5e+04
+Dimensions without coordinates: los, ozone_altitude, no2_altitude
+Data variables:
+    radiance          (wavelength, los, stokes) float64 0.0005898 ... 0.0001776
+    wf_pressure_pa    (altitude, wavelength, los, stokes) float64 2.675e-54 ....
+    wf_temperature_k  (altitude, wavelength, los, stokes) float64 -9.897e-52 ...
+    wf_ozone_vmr      (ozone_altitude, wavelength, los, stokes) float64 -5.76...
+    wf_no2_vmr        (no2_altitude, wavelength, los, stokes) float64 -7.747e...
+</pre></div>
+</div>
+</div>
+</div>
+<p>we see that the radiance, as well as the weighting functions, contain 3 Stokes vector elements.
+We can look at them,</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">radiance</span><span class="p">[</span><span class="s2">&quot;radiance&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">sel</span><span class="p">(</span><span class="n">stokes</span><span class="o">=</span><span class="s2">&quot;I&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">isel</span><span class="p">(</span><span class="n">los</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">plot</span><span class="p">()</span>
+<span class="n">radiance</span><span class="p">[</span><span class="s2">&quot;radiance&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">sel</span><span class="p">(</span><span class="n">stokes</span><span class="o">=</span><span class="s2">&quot;Q&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">isel</span><span class="p">(</span><span class="n">los</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">plot</span><span class="p">()</span>
+<span class="n">radiance</span><span class="p">[</span><span class="s2">&quot;radiance&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">sel</span><span class="p">(</span><span class="n">stokes</span><span class="o">=</span><span class="s2">&quot;U&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">isel</span><span class="p">(</span><span class="n">los</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">plot</span><span class="p">()</span>
+
+<span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">([</span><span class="s2">&quot;I&quot;</span><span class="p">,</span> <span class="s2">&quot;Q&quot;</span><span class="p">,</span> <span class="s2">&quot;U&quot;</span><span class="p">])</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_plain highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>&lt;matplotlib.legend.Legend at 0x7faf4dad0990&gt;
+</pre></div>
+</div>
+<img alt="../_images/cd41795ce8539b2f904332da390b1bf5bdfc88b4c157f19073faedd53cf9bfdf.png" src="../_images/cd41795ce8539b2f904332da390b1bf5bdfc88b4c157f19073faedd53cf9bfdf.png" />
+</div>
+</div>
+</section>
+<section id="stokes-conventions-and-basis">
+<h2>Stokes Conventions and Basis<a class="headerlink" href="#stokes-conventions-and-basis" title="Permalink to this heading">#</a></h2>
+<p>If you only care about the intensity, <span class="math notranslate nohighlight">\(I\)</span>, or the degree of linear polarization,
+<span class="math notranslate nohighlight">\(\frac{\sqrt{Q^2 + U^2}}{I}\)</span>, then you can stop reading this section as these quantities
+do not depend on the Stokes basis.</p>
+<p>However, if you need the Stokes parameters <span class="math notranslate nohighlight">\(Q\)</span>, <span class="math notranslate nohighlight">\(U\)</span> directly to calculate things
+like the linearly polarized component <span class="math notranslate nohighlight">\(\frac{I \pm Q}{2}\)</span> then unfortunately you have to
+read on as the Stokes parameters <span class="math notranslate nohighlight">\(Q\)</span> and <span class="math notranslate nohighlight">\(U\)</span> are only unique when a reference basis has
+been specified.</p>
+<section id="stokes-basis">
+<h3>Stokes Basis<a class="headerlink" href="#stokes-basis" title="Permalink to this heading">#</a></h3>
+<p>By default SASKTRAN2 returns back Stokes vectors in what can only be described as the “standard” basis.
+This is the basis that every textbook on polarized radiative transfer uses, and extreme amounts of detail
+can be found in Section 4.3 of</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>Mishchenko, Michael I., Larry D. Travis, and Andrew A. Lacis. Scattering, absorption, and emission of light by small particles. Cambridge university press, 2002.
+</pre></div>
+</div>
+<p>or Section 3.2 of</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>Hovenier, Joop W., Cornelis VM Van der Mee, and Helmut Domke. Transfer of polarized light in planetary atmospheres: basic concepts and practical methods. Vol. 318. Springer Science &amp; Business Media, 2004.
+</pre></div>
+</div>
+<p>Briefly what this means is that the Stokes reference is implicitly formed from the <span class="math notranslate nohighlight">\(z\)</span>-axis and the look vector.
+Therefore, if you oriented a horizontal polarizer with the plane formed by the <span class="math notranslate nohighlight">\(z\)</span>-axis and the look vector you would measure,
+<span class="math notranslate nohighlight">\(\frac{I+Q}{2}\)</span>, and likewise a vertical polarizer would measure <span class="math notranslate nohighlight">\(\frac{I-Q}{2}\)</span>.  This is the default
+basis mode, but it can be explicitly set with</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">config</span><span class="o">.</span><span class="n">stokes_basis</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">StokesBasis</span><span class="o">.</span><span class="n">Standard</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p>SASKTRAN2 also supports two other Stokes basis conventions.  The first is the “observer” basis, set with</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">config</span><span class="o">.</span><span class="n">stokes_basis</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">StokesBasis</span><span class="o">.</span><span class="n">Observer</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p>Here the Stokes reference is in the plane formed by the observer position and the look vector.
+I.e. if you orient a polarizer in this plane you will measure <span class="math notranslate nohighlight">\(\frac{I \pm Q}{2}\)</span>.
+Often this is a convenient basis when working with instruments since the polarization orientation
+is often known relative to the observer position vector.  However sometimes care must be taken
+since the observer position in the model may not be exactly what you expect due to conversions
+between “true” coordinates and the coordinate system used internally in the model.</p>
+<p>The last supported basis is the “solar” basis,</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">config</span><span class="o">.</span><span class="n">stokes_basis</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">StokesBasis</span><span class="o">.</span><span class="n">Solar</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p>where the reference plane is defined by the plane spanned by the look vector and the solar vector.
+This has the advantage that in single scatter, all of the polarization information is stored inside
+<span class="math notranslate nohighlight">\(Q\)</span>, and <span class="math notranslate nohighlight">\(U\)</span> is identically 0.  The solar basis can be useful for theoretical calculations.</p>
+<section id="basis-summary">
+<h4>Basis Summary<a class="headerlink" href="#basis-summary" title="Permalink to this heading">#</a></h4>
+<dl class="simple myst">
+<dt><code class="docutils literal notranslate"><span class="pre">sasktran2.StokesBasis.Standard</span></code></dt><dd><p>Polarization reference oriented in the global <code class="docutils literal notranslate"><span class="pre">z</span></code>-axis and look vector plane</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">sasktran2.StokesBasis.Observer</span></code></dt><dd><p>Polarization reference oriented in the observer position and look vector plane</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">sasktran2.StokesBasis.Solar</span></code></dt><dd><p>Polarization reference oriented in the solar vector and look vector plane</p>
+</dd>
+</dl>
+</section>
+</section>
+<section id="stokes-conventions">
+<h3>Stokes Conventions<a class="headerlink" href="#stokes-conventions" title="Permalink to this heading">#</a></h3>
+<p>It is somewhat well-known that even if radiative transfer models state that they use the same Stokes vector basis,
+they often differ in the sign of <span class="math notranslate nohighlight">\(Q, U, \)</span> or <span class="math notranslate nohighlight">\(V\)</span>. The sign of <span class="math notranslate nohighlight">\(V\)</span> is ambiguous, and often different
+between authors because it can change depending on how the time dependence of the electric field is handled.
+However every textbook the SASKTRAN2 authors have analyzed uses the same Stokes vector conventions for <span class="math notranslate nohighlight">\(Q\)</span> and <span class="math notranslate nohighlight">\(U\)</span>.
+Typically the sign differences are a result of misunderstandings, for example, the Stokes vector rotation matrix is usually written
+in terms of angle ``measured clockwise when looking in the direction of propagation’’. It is very easy to make a sign mistake
+since angles are usually measured counter-clockwise, and also the direction of propagation may be negative of what is internally
+used inside the model.  To further emphasize how easy it is to make a sign-error, in SASKTRAN version 1 <span class="math notranslate nohighlight">\(Q\)</span> was negative that of most other models,
+and this was eventually traced back to two separate misinterpretations of the Stokes vector equations.</p>
+<p>We are very confident that SASKTRAN2 has the correct sign for the <span class="math notranslate nohighlight">\(Q\)</span> and <span class="math notranslate nohighlight">\(U\)</span> components, and agrees with other models
+that have extensively checked this such as SCIATRAN.  The sign of <span class="math notranslate nohighlight">\(Q\)</span> and <span class="math notranslate nohighlight">\(U\)</span> also agree with classic benchmark sources
+such as the Coulsen tables.</p>
+</section>
+</section>
+<section id="supported-number-of-stokes-parameters">
+<h2>Supported Number of Stokes Parameters<a class="headerlink" href="#supported-number-of-stokes-parameters" title="Permalink to this heading">#</a></h2>
+<p>Currently SASKTRAN2 supports</p>
+<dl class="simple myst">
+<dt><code class="docutils literal notranslate"><span class="pre">num_stokes=1</span></code></dt><dd><p>Scalar mode, only the <span class="math notranslate nohighlight">\(I\)</span> component of the Stokes vector is calculated. Default.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">num_stokes=3</span></code></dt><dd><p>Vector mode, the [<span class="math notranslate nohighlight">\(I\)</span>, <span class="math notranslate nohighlight">\(Q\)</span>, <span class="math notranslate nohighlight">\(U\)</span>] components of the Stokes vector is calculated. Default.</p>
+</dd>
+</dl>
+</section>
+</section>
+
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="../weighting_functions.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Weighting Functions</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="performance.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Performance Tips</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <div class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+  <div class="sidebar-secondary-item">
+  <div class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> Contents
+  </div>
+  <nav class="bd-toc-nav page-toc">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#running-a-calculation">Running a Calculation</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#stokes-conventions-and-basis">Stokes Conventions and Basis</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#stokes-basis">Stokes Basis</a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#basis-summary">Basis Summary</a></li>
+</ul>
+</li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#stokes-conventions">Stokes Conventions</a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#supported-number-of-stokes-parameters">Supported Number of Stokes Parameters</a></li>
+</ul>
+  </nav></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By USask-ARG
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2023, USask-ARG.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="../_static/scripts/bootstrap.js?digest=5b4479735964841361fd"></script>
+<script src="../_static/scripts/pydata-sphinx-theme.js?digest=5b4479735964841361fd"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>

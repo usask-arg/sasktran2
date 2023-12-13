@@ -1,0 +1,639 @@
+
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+    <title>Calculating Air Mass Factors &#8212; sasktran2 2023.12.0 documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "light";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../_static/styles/theme.css?digest=5b4479735964841361fd" rel="stylesheet" />
+<link href="../../_static/styles/bootstrap.css?digest=5b4479735964841361fd" rel="stylesheet" />
+<link href="../../_static/styles/pydata-sphinx-theme.css?digest=5b4479735964841361fd" rel="stylesheet" />
+
+  
+  <link href="../../_static/vendor/fontawesome/6.1.2/css/all.min.css?digest=5b4479735964841361fd" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.1.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.1.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.1.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+    <link rel="stylesheet" href="../../_static/styles/sphinx-book-theme.css?digest=14f4ca6b54d191a8c7657f6c759bf11a5fb86285" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/mystnb.4510f1fc1dee50b3e5859aac5469c37c29e427902b24a333a5f9fcb2f0b3ac41.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/locals.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../_static/scripts/bootstrap.js?digest=5b4479735964841361fd" />
+<link rel="preload" as="script" href="../../_static/scripts/pydata-sphinx-theme.js?digest=5b4479735964841361fd" />
+  <script src="../../_static/vendor/fontawesome/6.1.2/js/all.min.js?digest=5b4479735964841361fd"></script>
+
+    <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+    <script src="../../_static/doctools.js"></script>
+    <script src="../../_static/sphinx_highlight.js"></script>
+    <script src="../../_static/scripts/sphinx-book-theme.js?digest=5a5c038af52cf7bc1a1ec88eea08e6366ee68824"></script>
+    <script src="../../_static/design-tabs.js"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'examples/wf/amf';</script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="API Reference" href="../../api_reference.html" />
+    <link rel="prev" title="Basic Aerosol Inclusion" href="../aerosol/basic.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>
+    Back to top
+  </button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          name="__primary"
+          id="__primary"/>
+  <label class="overlay overlay-primary" for="__primary"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          name="__secondary"
+          id="__secondary"/>
+  <label class="overlay overlay-secondary" for="__secondary"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search..."
+         aria-label="Search..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+  
+    <nav class="bd-header navbar navbar-expand-lg bd-navbar">
+    </nav>
+  
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      <div class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+
+<a class="navbar-brand logo" href="../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../_static/sasktran-dark.png" class="logo__image only-light" alt="sasktran2 2023.12.0 documentation - Home"/>
+    <script>document.write(`<img src="../../_static/sasktran-light.png" class="logo__image only-dark" alt="sasktran2 2023.12.0 documentation - Home"/>`);</script>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item"><ul class="navbar-icon-links navbar-nav"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/usask-arg/sasktran2" title="GitHub" class="nav-link" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><span><i class="fa-brands fa-square-github fa-lg" aria-hidden="true"></i></span>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+</ul></div>
+        <div class="sidebar-primary-item"><nav class="bd-links" id="bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">For Users</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
+
+
+<li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="../../users_guide.html">Users Guide</a><input checked="" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-1"><i class="fa-solid fa-chevron-down"></i></label><ul class="current">
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../required_components.html">Setting up the Calculation</a><input class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-2"><i class="fa-solid fa-chevron-down"></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../components/model_geometry.html">The Model Geometry</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../components/viewing_geometry.html">The Viewing Geometry</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../../components/sources.html">Source Terms</a><input class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-3"><i class="fa-solid fa-chevron-down"></i></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../components/source_terms/singlescatter.html">Single Scatter Sources</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../components/source_terms/discrete_ordinates.html">The Discrete Ordinates Source</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../components/source_terms/occultation.html">Occultation Sources</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../components/source_terms/successive_orders.html">The Successive Orders of Scattering Source</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../../components/atmosphere.html">The Atmospheric State</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../../weighting_functions.html">Weighting Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../users_guide/polarization.html">Polarized Calculations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../users_guide/performance.html">Performance Tips</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../users_guide/phase.html">Phase Function Specification</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../users_guide/geodetic.html">Geodesy Tools</a></li>
+<li class="toctree-l2 current active has-children"><a class="reference internal" href="../examples.html">More Examples</a><input checked="" class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-4"><i class="fa-solid fa-chevron-down"></i></label><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="../aerosol/basic.html">Basic Aerosol Inclusion</a></li>
+<li class="toctree-l3 current active"><a class="current reference internal" href="#">Calculating Air Mass Factors</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../api_reference.html">API Reference</a><input class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-5"><i class="fa-solid fa-chevron-down"></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../api/config.html">Config</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/engine.html">Engine</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/model_geometry.html">Model Geometry</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/atmosphere.html">Atmosphere</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/constituents.html">Constituents</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/optical.html">Optical Properties</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/output.html">Output</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/viewing_geometry.html">Viewing Geometry</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/climatology.html">Climatologies</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/geodetic.html">Geodetic</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/util.html">Utility</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../../changelog.html">Changelog</a></li>
+
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Extending SASKTRAN2</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../extending/constituent.html">Adding Constituents</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Developer Documentation</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../developer/compiling.html">Compiling from Source</a><input class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-6"><i class="fa-solid fa-chevron-down"></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../developer/windows.html">Local Windows Development</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../developer/ide/vscode.html">Visual Studio Code Configuration</a></li>
+</ul>
+</li>
+
+<li class="toctree-l1"><a class="reference internal" href="../../developer/contributing.html">Contributing</a></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><label class="sidebar-toggle primary-toggle btn btn-sm" for="__primary" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</label></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/usask-arg/sasktran2" target="_blank"
+   class="btn btn-sm btn-source-repository-button dropdown-item"
+   title="Source repository"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="btn__text-container">Repository</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/usask-arg/sasktran2/edit/main/docs/sphinx/source/examples/wf/amf.md" target="_blank"
+   class="btn btn-sm btn-source-edit-button dropdown-item"
+   title="Suggest edit"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-pencil-alt"></i>
+  </span>
+<span class="btn__text-container">Suggest edit</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/usask-arg/sasktran2/issues/new?title=Issue%20on%20page%20%2Fexamples/wf/amf.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="../../_sources/examples/wf/amf.md" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.md</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm navbar-btn theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="theme-switch nav-link" data-mode="light"><i class="fa-solid fa-sun fa-lg"></i></span>
+    <span class="theme-switch nav-link" data-mode="dark"><i class="fa-solid fa-moon fa-lg"></i></span>
+    <span class="theme-switch nav-link" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg"></i></span>
+  </button>
+`);
+</script>
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm navbar-btn search-button search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+  </button>
+`);
+</script>
+
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>Calculating Air Mass Factors</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article" role="main">
+                  
+  <section class="tex2jax_ignore mathjax_ignore" id="calculating-air-mass-factors">
+<span id="example-amf"></span><h1>Calculating Air Mass Factors<a class="headerlink" href="#calculating-air-mass-factors" title="Permalink to this heading">#</a></h1>
+<p>SASKTRAN2 contains built in capability to calculate box air mass factors.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Air mass factors in SASKTRAN2 are estimated using the analytic weighting function capability implemented inside the model.
+This means they are exact as long as the sources you are using are linearized, which is currently all sources except for
+<code class="docutils literal notranslate"><span class="pre">sk.MultipleScatterSource.SuccessiveOrders</span></code>.  If you use the successive orders source the AMFs are only approximate.</p>
+</div>
+<p>We can set up a standard nadir viewing
+calculation</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">sasktran2</span> <span class="k">as</span> <span class="nn">sk</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
+
+<span class="n">config</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">Config</span><span class="p">()</span>
+<span class="n">config</span><span class="o">.</span><span class="n">multiple_scatter_source</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">MultipleScatterSource</span><span class="o">.</span><span class="n">DiscreteOrdinates</span>
+
+<span class="n">model_geometry</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">Geometry1D</span><span class="p">(</span><span class="n">cos_sza</span><span class="o">=</span><span class="mf">0.6</span><span class="p">,</span>
+                               <span class="n">solar_azimuth</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+                               <span class="n">earth_radius_m</span><span class="o">=</span><span class="mi">6372000</span><span class="p">,</span>
+                               <span class="n">altitude_grid_m</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">65001</span><span class="p">,</span> <span class="mi">1000</span><span class="p">),</span>
+                               <span class="n">interpolation_method</span><span class="o">=</span><span class="n">sk</span><span class="o">.</span><span class="n">InterpolationMethod</span><span class="o">.</span><span class="n">LinearInterpolation</span><span class="p">,</span>
+                               <span class="n">geometry_type</span><span class="o">=</span><span class="n">sk</span><span class="o">.</span><span class="n">GeometryType</span><span class="o">.</span><span class="n">Spherical</span><span class="p">)</span>
+
+<span class="n">viewing_geo</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">ViewingGeometry</span><span class="p">()</span>
+
+<span class="n">viewing_geo</span><span class="o">.</span><span class="n">add_ray</span><span class="p">(</span>
+    <span class="n">sk</span><span class="o">.</span><span class="n">GroundViewingSolar</span><span class="p">(</span>
+        <span class="n">cos_sza</span><span class="o">=</span><span class="mf">0.6</span><span class="p">,</span>
+        <span class="n">relative_azimuth</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+        <span class="n">cos_viewing_zenith</span><span class="o">=-</span><span class="mf">0.8</span><span class="p">,</span>
+        <span class="n">observer_altitude_m</span><span class="o">=</span><span class="mi">200000</span><span class="p">,</span>
+    <span class="p">)</span>
+<span class="p">)</span>
+
+<span class="n">wavel</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">290</span><span class="p">,</span> <span class="mi">310</span><span class="p">,</span> <span class="mi">330</span><span class="p">,</span> <span class="mi">350</span><span class="p">,</span> <span class="mi">400</span><span class="p">,</span> <span class="mi">600</span><span class="p">])</span>
+<span class="n">atmosphere</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">Atmosphere</span><span class="p">(</span><span class="n">model_geometry</span><span class="p">,</span> <span class="n">config</span><span class="p">,</span> <span class="n">wavelengths_nm</span><span class="o">=</span><span class="n">wavel</span><span class="p">)</span>
+
+<span class="n">atmosphere</span><span class="o">.</span><span class="n">surface</span><span class="o">.</span><span class="n">albedo</span><span class="p">[:]</span> <span class="o">=</span> <span class="mf">0.3</span>
+
+<span class="n">sk</span><span class="o">.</span><span class="n">climatology</span><span class="o">.</span><span class="n">us76</span><span class="o">.</span><span class="n">add_us76_standard_atmosphere</span><span class="p">(</span><span class="n">atmosphere</span><span class="p">)</span>
+
+<span class="n">atmosphere</span><span class="p">[</span><span class="s2">&quot;rayleigh&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">constituent</span><span class="o">.</span><span class="n">Rayleigh</span><span class="p">()</span>
+<span class="n">atmosphere</span><span class="p">[</span><span class="s1">&#39;ozone&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">climatology</span><span class="o">.</span><span class="n">mipas</span><span class="o">.</span><span class="n">constituent</span><span class="p">(</span><span class="s2">&quot;O3&quot;</span><span class="p">,</span> <span class="n">sk</span><span class="o">.</span><span class="n">optical</span><span class="o">.</span><span class="n">O3DBM</span><span class="p">())</span>
+<span class="n">atmosphere</span><span class="p">[</span><span class="s1">&#39;no2&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">climatology</span><span class="o">.</span><span class="n">mipas</span><span class="o">.</span><span class="n">constituent</span><span class="p">(</span><span class="s2">&quot;NO2&quot;</span><span class="p">,</span> <span class="n">sk</span><span class="o">.</span><span class="n">optical</span><span class="o">.</span><span class="n">NO2Vandaele</span><span class="p">())</span>
+
+<span class="n">engine</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">Engine</span><span class="p">(</span><span class="n">config</span><span class="p">,</span> <span class="n">model_geometry</span><span class="p">,</span> <span class="n">viewing_geo</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p>At this point we have a nadir viewing scene setup with Rayleigh scattering, and Ozone + NO2 absorption.
+We have added nothing specific to calculating AMFs.  To enable the calculation of AMFs, we add</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">atmosphere</span><span class="p">[</span><span class="s2">&quot;air_mass_factor&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">constituent</span><span class="o">.</span><span class="n">AirMassFactor</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p>The <a class="reference internal" href="../../api/constituents.html#sasktran2.constituent.AirMassFactor" title="sasktran2.constituent.AirMassFactor"><code class="xref py py-class docutils literal notranslate"><span class="pre">sasktran2.constituent.AirMassFactor</span></code></a> is a dummy constituent that does not actually modify the atmospheric state,
+but it provides the necessary configuration to enable the calculation of air mass factors.  If we then do the calculation and
+look at the results,</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">radiance</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">calculate_radiance</span><span class="p">(</span><span class="n">atmosphere</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="n">radiance</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>&lt;xarray.Dataset&gt;
+Dimensions:           (wavelength: 6, stokes: 1, altitude: 66, los: 1,
+                       ozone_altitude: 50, no2_altitude: 50)
+Coordinates:
+  * wavelength        (wavelength) int64 290 310 330 350 400 600
+  * stokes            (stokes) &lt;U1 &#39;I&#39;
+  * altitude          (altitude) float64 0.0 1e+03 2e+03 ... 6.4e+04 6.5e+04
+Dimensions without coordinates: los, ozone_altitude, no2_altitude
+Data variables:
+    radiance          (wavelength, los, stokes) float64 0.0002548 ... 0.0475
+    wf_pressure_pa    (altitude, wavelength, los, stokes) float64 1.831e-24 ....
+    wf_temperature_k  (altitude, wavelength, los, stokes) float64 -1.056e-21 ...
+    wf_ozone_vmr      (ozone_altitude, wavelength, los, stokes) float64 -2.00...
+    wf_no2_vmr        (no2_altitude, wavelength, los, stokes) float64 -1.226e...
+    air_mass_factor   (wavelength, los, stokes, altitude) float64 4.381e-14 ....
+</pre></div>
+</div>
+</div>
+</div>
+<p>We see that there is a <code class="docutils literal notranslate"><span class="pre">air_mass_factor</span></code> field that contains the air mass factors, we can look at a few of them</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">radiance</span><span class="p">[</span><span class="s2">&quot;air_mass_factor&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">isel</span><span class="p">(</span><span class="n">stokes</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">los</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">sel</span><span class="p">(</span><span class="n">wavelength</span><span class="o">=</span><span class="mi">310</span><span class="p">)</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="s2">&quot;altitude&quot;</span><span class="p">)</span>
+<span class="n">radiance</span><span class="p">[</span><span class="s2">&quot;air_mass_factor&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">isel</span><span class="p">(</span><span class="n">stokes</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">los</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">sel</span><span class="p">(</span><span class="n">wavelength</span><span class="o">=</span><span class="mi">350</span><span class="p">)</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="s2">&quot;altitude&quot;</span><span class="p">)</span>
+<span class="n">radiance</span><span class="p">[</span><span class="s2">&quot;air_mass_factor&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">isel</span><span class="p">(</span><span class="n">stokes</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">los</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">sel</span><span class="p">(</span><span class="n">wavelength</span><span class="o">=</span><span class="mi">600</span><span class="p">)</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">y</span><span class="o">=</span><span class="s2">&quot;altitude&quot;</span><span class="p">)</span>
+
+<span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">([</span><span class="s2">&quot;310 nm&quot;</span><span class="p">,</span> <span class="s2">&quot;350 nm&quot;</span><span class="p">,</span> <span class="s2">&quot;600 nm&quot;</span><span class="p">])</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s2">&quot;Altitude [m]&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s2">&quot;Air Mass Factor&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_plain highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>Text(0.5, 1.0, &#39;&#39;)
+</pre></div>
+</div>
+<img alt="../../_images/0f83c6186c12516c24db020486af29b796675d3415982f2c5977e4fe40a7d9fc.png" src="../../_images/0f83c6186c12516c24db020486af29b796675d3415982f2c5977e4fe40a7d9fc.png" />
+</div>
+</div>
+</section>
+
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="../aerosol/basic.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Basic Aerosol Inclusion</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="../../api_reference.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">API Reference</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By USask-ARG
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2023, USask-ARG.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="../../_static/scripts/bootstrap.js?digest=5b4479735964841361fd"></script>
+<script src="../../_static/scripts/pydata-sphinx-theme.js?digest=5b4479735964841361fd"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>

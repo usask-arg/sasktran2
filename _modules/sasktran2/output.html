@@ -1,0 +1,658 @@
+
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>sasktran2.output &#8212; sasktran2 2023.12.0 documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "light";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../../_static/styles/theme.css?digest=5b4479735964841361fd" rel="stylesheet" />
+<link href="../../_static/styles/bootstrap.css?digest=5b4479735964841361fd" rel="stylesheet" />
+<link href="../../_static/styles/pydata-sphinx-theme.css?digest=5b4479735964841361fd" rel="stylesheet" />
+
+  
+  <link href="../../_static/vendor/fontawesome/6.1.2/css/all.min.css?digest=5b4479735964841361fd" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.1.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.1.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../../_static/vendor/fontawesome/6.1.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+    <link rel="stylesheet" href="../../_static/styles/sphinx-book-theme.css?digest=14f4ca6b54d191a8c7657f6c759bf11a5fb86285" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/mystnb.4510f1fc1dee50b3e5859aac5469c37c29e427902b24a333a5f9fcb2f0b3ac41.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/locals.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../../_static/scripts/bootstrap.js?digest=5b4479735964841361fd" />
+<link rel="preload" as="script" href="../../_static/scripts/pydata-sphinx-theme.js?digest=5b4479735964841361fd" />
+  <script src="../../_static/vendor/fontawesome/6.1.2/js/all.min.js?digest=5b4479735964841361fd"></script>
+
+    <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+    <script src="../../_static/doctools.js"></script>
+    <script src="../../_static/sphinx_highlight.js"></script>
+    <script src="../../_static/scripts/sphinx-book-theme.js?digest=5a5c038af52cf7bc1a1ec88eea08e6366ee68824"></script>
+    <script src="../../_static/design-tabs.js"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = '_modules/sasktran2/output';</script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>
+    Back to top
+  </button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          name="__primary"
+          id="__primary"/>
+  <label class="overlay overlay-primary" for="__primary"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          name="__secondary"
+          id="__secondary"/>
+  <label class="overlay overlay-secondary" for="__secondary"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="../../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search..."
+         aria-label="Search..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+  
+    <nav class="bd-header navbar navbar-expand-lg bd-navbar">
+    </nav>
+  
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      <div class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+
+<a class="navbar-brand logo" href="../../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../../_static/sasktran-dark.png" class="logo__image only-light" alt="sasktran2 2023.12.0 documentation - Home"/>
+    <script>document.write(`<img src="../../_static/sasktran-light.png" class="logo__image only-dark" alt="sasktran2 2023.12.0 documentation - Home"/>`);</script>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item"><ul class="navbar-icon-links navbar-nav"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/usask-arg/sasktran2" title="GitHub" class="nav-link" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><span><i class="fa-brands fa-square-github fa-lg" aria-hidden="true"></i></span>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+</ul></div>
+        <div class="sidebar-primary-item"><nav class="bd-links" id="bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">For Users</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
+
+
+<li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../users_guide.html">Users Guide</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-1"><i class="fa-solid fa-chevron-down"></i></label><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../required_components.html">Setting up the Calculation</a><input class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-2"><i class="fa-solid fa-chevron-down"></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../components/model_geometry.html">The Model Geometry</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../components/viewing_geometry.html">The Viewing Geometry</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../../components/sources.html">Source Terms</a><input class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-3"><i class="fa-solid fa-chevron-down"></i></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../../components/source_terms/singlescatter.html">Single Scatter Sources</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../components/source_terms/discrete_ordinates.html">The Discrete Ordinates Source</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../components/source_terms/occultation.html">Occultation Sources</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../../components/source_terms/successive_orders.html">The Successive Orders of Scattering Source</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../../components/atmosphere.html">The Atmospheric State</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../../weighting_functions.html">Weighting Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../users_guide/polarization.html">Polarized Calculations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../users_guide/performance.html">Performance Tips</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../users_guide/phase.html">Phase Function Specification</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../users_guide/geodetic.html">Geodesy Tools</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../examples/examples.html">More Examples</a><input class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-4"><i class="fa-solid fa-chevron-down"></i></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../examples/aerosol/basic.html">Basic Aerosol Inclusion</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../examples/wf/amf.html">Calculating Air Mass Factors</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../api_reference.html">API Reference</a><input class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-5"><i class="fa-solid fa-chevron-down"></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../api/config.html">Config</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/engine.html">Engine</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/model_geometry.html">Model Geometry</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/atmosphere.html">Atmosphere</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/constituents.html">Constituents</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/optical.html">Optical Properties</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/output.html">Output</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/viewing_geometry.html">Viewing Geometry</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/climatology.html">Climatologies</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/geodetic.html">Geodetic</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/util.html">Utility</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../../changelog.html">Changelog</a></li>
+
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Extending SASKTRAN2</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../../extending/constituent.html">Adding Constituents</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Developer Documentation</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../developer/compiling.html">Compiling from Source</a><input class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-6"><i class="fa-solid fa-chevron-down"></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../developer/windows.html">Local Windows Development</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../developer/ide/vscode.html">Visual Studio Code Configuration</a></li>
+</ul>
+</li>
+
+<li class="toctree-l1"><a class="reference internal" href="../../developer/contributing.html">Contributing</a></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><label class="sidebar-toggle primary-toggle btn btn-sm" for="__primary" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</label></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/usask-arg/sasktran2" target="_blank"
+   class="btn btn-sm btn-source-repository-button dropdown-item"
+   title="Source repository"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="btn__text-container">Repository</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/usask-arg/sasktran2/issues/new?title=Issue%20on%20page%20%2F_modules/sasktran2/output.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm navbar-btn theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="theme-switch nav-link" data-mode="light"><i class="fa-solid fa-sun fa-lg"></i></span>
+    <span class="theme-switch nav-link" data-mode="dark"><i class="fa-solid fa-moon fa-lg"></i></span>
+    <span class="theme-switch nav-link" data-mode="auto"><i class="fa-solid fa-circle-half-stroke fa-lg"></i></span>
+  </button>
+`);
+</script>
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm navbar-btn search-button search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+  </button>
+`);
+</script>
+
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1></h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article" role="main">
+                  
+  <h1>Source code for sasktran2.output</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">abc</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Union</span>
+
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">xarray</span> <span class="k">as</span> <span class="nn">xr</span>
+
+<span class="kn">import</span> <span class="nn">sasktran2</span> <span class="k">as</span> <span class="nn">sk</span>
+
+
+<div class="viewcode-block" id="Output"><a class="viewcode-back" href="../../api/output.html#sasktran2.Output">[docs]</a><span class="k">class</span> <span class="nc">Output</span><span class="p">(</span><span class="n">abc</span><span class="o">.</span><span class="n">ABC</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    An abstract class which defines how output from the radiative transfer Engine is handled.</span>
+
+<span class="sd">    The Engine first calls :py:meth:`~internal_output` to get a `pybind11` object which can be passed</span>
+<span class="sd">    to the internal radiative transfer model. After the calculation is completed, :py:meth:`~post_process`</span>
+<span class="sd">    is called to get the exact output container that is passed back to the user.</span>
+
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="nd">@abc</span><span class="o">.</span><span class="n">abstractmethod</span>
+    <span class="k">def</span> <span class="nf">internal_output</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">pass</span>
+
+    <span class="nd">@abc</span><span class="o">.</span><span class="n">abstractmethod</span>
+    <span class="k">def</span> <span class="nf">post_process</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">atmo</span><span class="p">:</span> <span class="n">sk</span><span class="o">.</span><span class="n">Atmosphere</span><span class="p">,</span>
+        <span class="n">geometry</span><span class="p">:</span> <span class="n">sk</span><span class="o">.</span><span class="n">Geometry1D</span><span class="p">,</span>
+        <span class="n">viewing_geo</span><span class="p">:</span> <span class="n">sk</span><span class="o">.</span><span class="n">ViewingGeometry</span><span class="p">,</span>
+    <span class="p">):</span>
+        <span class="k">pass</span></div>
+
+
+<div class="viewcode-block" id="OutputIdeal"><a class="viewcode-back" href="../../api/output.html#sasktran2.OutputIdeal">[docs]</a><span class="k">class</span> <span class="nc">OutputIdeal</span><span class="p">(</span><span class="n">Output</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">nstokes</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The default output container used by SASKTRAN2.  Here radiances (and derivatives) are returned</span>
+<span class="sd">        back densely for every input line of sight and wavelength without modification.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        nstokes : int</span>
+<span class="sd">            Number of stokes parameters to store for the output quantities</span>
+
+<span class="sd">        Raises</span>
+<span class="sd">        ------</span>
+<span class="sd">        ValueError</span>
+<span class="sd">            If nstokes is not 1 or 3</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_nstokes</span> <span class="o">=</span> <span class="n">nstokes</span>
+
+        <span class="k">if</span> <span class="n">nstokes</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_output</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">OutputIdealStokes_1</span><span class="p">()</span>
+        <span class="k">elif</span> <span class="n">nstokes</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_output</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">OutputIdealStokes_3</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s2">&quot;nstokes must be 1 or 3&quot;</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+<div class="viewcode-block" id="OutputIdeal.internal_output"><a class="viewcode-back" href="../../api/output.html#sasktran2.OutputIdeal.internal_output">[docs]</a>    <span class="k">def</span> <span class="nf">internal_output</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="n">sk</span><span class="o">.</span><span class="n">OutputIdealStokes_1</span><span class="p">,</span> <span class="n">sk</span><span class="o">.</span><span class="n">OutputIdealStokes_3</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        The internal output object that can be passed to the internal engine</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        Union[sk.OutputIdealStokes_1, sk.OutputIdealStokes_3]</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_output</span></div>
+
+<div class="viewcode-block" id="OutputIdeal.post_process"><a class="viewcode-back" href="../../api/output.html#sasktran2.OutputIdeal.post_process">[docs]</a>    <span class="k">def</span> <span class="nf">post_process</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">atmo</span><span class="p">:</span> <span class="n">sk</span><span class="o">.</span><span class="n">Atmosphere</span><span class="p">,</span>
+        <span class="n">geometry</span><span class="p">:</span> <span class="n">sk</span><span class="o">.</span><span class="n">Geometry1D</span><span class="p">,</span>
+        <span class="n">viewing_geo</span><span class="p">:</span> <span class="n">sk</span><span class="o">.</span><span class="n">ViewingGeometry</span><span class="p">,</span>
+    <span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Converts the raw output values to a more usable format.  Also performs the mapping of raw model</span>
+<span class="sd">        derivatives to derivatives of the constituent input quantities.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        atmo : sk.Atmosphere</span>
+<span class="sd">            Atmosphere object after calculation has been performed</span>
+<span class="sd">        geometry : sk.Geometry1D</span>
+<span class="sd">            Geometry object</span>
+<span class="sd">        viewing_geo : sk.ViewingGeometry</span>
+<span class="sd">            Viewing geometry</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        xr.Dataset</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># TODO: A lot of this reshaping and organizing should be done inside C++, not here</span>
+        <span class="c1"># Maybe some of this should go into the derivative mapping classes too...</span>
+        <span class="c1"># Have to be a little careful since this can be a slow part of the code</span>
+
+        <span class="c1"># Reshape and organize output</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">xr</span><span class="o">.</span><span class="n">Dataset</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">atmo</span><span class="o">.</span><span class="n">wavelengths_nm</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">result</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span><span class="s2">&quot;wavelength&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">atmo</span><span class="o">.</span><span class="n">wavelengths_nm</span>
+
+        <span class="n">result</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span><span class="s2">&quot;stokes&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;I&quot;</span><span class="p">,</span> <span class="s2">&quot;Q&quot;</span><span class="p">,</span> <span class="s2">&quot;U&quot;</span><span class="p">,</span> <span class="s2">&quot;V&quot;</span><span class="p">][:</span> <span class="n">atmo</span><span class="o">.</span><span class="n">nstokes</span><span class="p">]</span>
+        <span class="n">result</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span><span class="s2">&quot;altitude&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">geometry</span><span class="o">.</span><span class="n">altitudes</span><span class="p">()</span>
+
+        <span class="n">radiance</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_output</span><span class="o">.</span><span class="n">radiance</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span>
+            <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">viewing_geo</span><span class="o">.</span><span class="n">observer_rays</span><span class="p">),</span> <span class="n">atmo</span><span class="o">.</span><span class="n">nstokes</span>
+        <span class="p">)</span>
+        <span class="n">result</span><span class="p">[</span><span class="s2">&quot;radiance&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">([</span><span class="s2">&quot;wavelength&quot;</span><span class="p">,</span> <span class="s2">&quot;los&quot;</span><span class="p">,</span> <span class="s2">&quot;stokes&quot;</span><span class="p">],</span> <span class="n">radiance</span><span class="p">)</span>
+
+        <span class="n">natmo_grid</span> <span class="o">=</span> <span class="n">atmo</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">total_extinction</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">nwavel</span> <span class="o">=</span> <span class="n">radiance</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="n">d_radiance_raw</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_output</span><span class="o">.</span><span class="n">d_radiance</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span>
+            <span class="n">nwavel</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">viewing_geo</span><span class="o">.</span><span class="n">observer_rays</span><span class="p">),</span> <span class="n">atmo</span><span class="o">.</span><span class="n">nstokes</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span>
+        <span class="p">)</span>
+        <span class="n">d_radiance_k</span> <span class="o">=</span> <span class="n">d_radiance_raw</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:,</span> <span class="p">:</span><span class="n">natmo_grid</span><span class="p">]</span>
+        <span class="n">d_radiance_ssa</span> <span class="o">=</span> <span class="n">d_radiance_raw</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:,</span> <span class="n">natmo_grid</span> <span class="p">:</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">natmo_grid</span><span class="p">]</span>
+        <span class="n">d_radiance_albedo</span> <span class="o">=</span> <span class="n">d_radiance_raw</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:,</span> <span class="o">-</span><span class="mi">1</span><span class="p">:]</span>
+
+        <span class="n">dk_scaled_by_dk</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">atmo</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">f</span> <span class="o">*</span> <span class="n">atmo</span><span class="o">.</span><span class="n">unscaled_ssa</span>
+        <span class="n">dssa_scaled_by_dssa</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="mi">1</span> <span class="o">-</span> <span class="n">atmo</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">f</span>
+        <span class="p">)</span> <span class="o">/</span> <span class="n">dk_scaled_by_dk</span> <span class="o">+</span> <span class="n">atmo</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">f</span> <span class="o">*</span> <span class="n">atmo</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">ssa</span> <span class="o">/</span> <span class="n">dk_scaled_by_dk</span>
+
+        <span class="k">for</span> <span class="n">constituent_name</span><span class="p">,</span> <span class="n">deriv_mapping</span> <span class="ow">in</span> <span class="n">atmo</span><span class="o">.</span><span class="n">deriv_mappings</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">deriv_mapping</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">continue</span>
+
+            <span class="k">for</span> <span class="n">deriv_name_raw</span><span class="p">,</span> <span class="n">mapping</span> <span class="ow">in</span> <span class="n">deriv_mapping</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="k">if</span> <span class="n">mapping</span><span class="o">.</span><span class="n">name</span><span class="p">()</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                    <span class="n">deriv_name</span> <span class="o">=</span> <span class="n">mapping</span><span class="o">.</span><span class="n">name</span><span class="p">()</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">deriv_name</span> <span class="o">=</span> <span class="n">deriv_name_raw</span>
+
+                <span class="k">if</span> <span class="n">mapping</span><span class="o">.</span><span class="n">summable</span><span class="p">:</span>
+                    <span class="n">name_to_place_result</span> <span class="o">=</span> <span class="n">mapping</span><span class="o">.</span><span class="n">name_prefix</span> <span class="o">+</span> <span class="n">deriv_name</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">name_to_place_result</span> <span class="o">=</span> <span class="p">(</span>
+                        <span class="n">mapping</span><span class="o">.</span><span class="n">name_prefix</span> <span class="o">+</span> <span class="n">constituent_name</span> <span class="o">+</span> <span class="s2">&quot;_&quot;</span> <span class="o">+</span> <span class="n">deriv_name</span>
+                    <span class="p">)</span>
+
+                <span class="c1"># Start by calculating the derivative with respect to the quantity on the native grid</span>
+                <span class="k">if</span> <span class="n">mapping</span><span class="o">.</span><span class="n">is_surface_derivative</span><span class="p">:</span>
+                    <span class="n">np_deriv</span> <span class="o">=</span> <span class="p">(</span>
+                        <span class="n">d_radiance_albedo</span>
+                        <span class="o">*</span> <span class="n">mapping</span><span class="o">.</span><span class="n">native_grid_mapping</span><span class="o">.</span><span class="n">d_albedo</span><span class="p">[</span>
+                            <span class="p">:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span>
+                        <span class="p">]</span>
+                    <span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">np_deriv</span> <span class="o">=</span> <span class="p">(</span>
+                        <span class="n">mapping</span><span class="o">.</span><span class="n">native_grid_mapping</span><span class="o">.</span><span class="n">d_extinction</span> <span class="o">*</span> <span class="n">dk_scaled_by_dk</span>
+                        <span class="o">-</span> <span class="n">atmo</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">f</span>
+                        <span class="o">*</span> <span class="n">mapping</span><span class="o">.</span><span class="n">native_grid_mapping</span><span class="o">.</span><span class="n">d_ssa</span>
+                        <span class="o">*</span> <span class="n">atmo</span><span class="o">.</span><span class="n">unscaled_extinction</span>
+                    <span class="p">)</span><span class="o">.</span><span class="n">T</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:]</span> <span class="o">*</span> <span class="n">d_radiance_k</span> <span class="o">+</span> <span class="p">(</span>
+                        <span class="n">mapping</span><span class="o">.</span><span class="n">native_grid_mapping</span><span class="o">.</span><span class="n">d_ssa</span> <span class="o">*</span> <span class="n">dssa_scaled_by_dssa</span>
+                    <span class="p">)</span><span class="o">.</span><span class="n">T</span><span class="p">[</span>
+                        <span class="p">:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:</span>
+                    <span class="p">]</span> <span class="o">*</span> <span class="n">d_radiance_ssa</span>
+
+                    <span class="k">if</span> <span class="n">mapping</span><span class="o">.</span><span class="n">native_grid_mapping</span><span class="o">.</span><span class="n">scat_deriv_index</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                        <span class="n">d_radiance_scat</span> <span class="o">=</span> <span class="n">d_radiance_raw</span><span class="p">[</span>
+                            <span class="p">:,</span>
+                            <span class="p">:,</span>
+                            <span class="p">:,</span>
+                            <span class="p">(</span><span class="mi">2</span> <span class="o">+</span> <span class="n">mapping</span><span class="o">.</span><span class="n">native_grid_mapping</span><span class="o">.</span><span class="n">scat_deriv_index</span><span class="p">)</span>
+                            <span class="o">*</span> <span class="n">natmo_grid</span> <span class="p">:</span> <span class="p">(</span>
+                                <span class="mi">3</span> <span class="o">+</span> <span class="n">mapping</span><span class="o">.</span><span class="n">native_grid_mapping</span><span class="o">.</span><span class="n">scat_deriv_index</span>
+                            <span class="p">)</span>
+                            <span class="o">*</span> <span class="n">natmo_grid</span><span class="p">,</span>
+                        <span class="p">]</span>
+
+                        <span class="n">np_deriv</span> <span class="o">+=</span> <span class="p">(</span>
+                            <span class="n">d_radiance_scat</span>
+                            <span class="o">*</span> <span class="n">mapping</span><span class="o">.</span><span class="n">native_grid_mapping</span><span class="o">.</span><span class="n">scat_factor</span><span class="o">.</span><span class="n">T</span><span class="p">[</span>
+                                <span class="p">:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:</span>
+                            <span class="p">]</span>
+                        <span class="p">)</span>
+
+                        <span class="k">if</span> <span class="n">atmo</span><span class="o">.</span><span class="n">applied_delta_m_order</span><span class="p">:</span>
+                            <span class="c1"># Change in f for the scatterer</span>
+                            <span class="n">d_f</span> <span class="o">=</span> <span class="p">(</span>
+                                <span class="n">atmo</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">d_f</span><span class="p">[</span>
+                                    <span class="p">:,</span> <span class="p">:,</span> <span class="n">mapping</span><span class="o">.</span><span class="n">native_grid_mapping</span><span class="o">.</span><span class="n">scat_deriv_index</span>
+                                <span class="p">]</span>
+                                <span class="o">*</span> <span class="n">mapping</span><span class="o">.</span><span class="n">native_grid_mapping</span><span class="o">.</span><span class="n">scat_factor</span>
+                            <span class="p">)</span>
+
+                            <span class="c1"># Change in k* due to a change in f</span>
+                            <span class="n">np_deriv</span> <span class="o">-=</span> <span class="p">(</span>
+                                <span class="n">d_f</span> <span class="o">*</span> <span class="n">atmo</span><span class="o">.</span><span class="n">unscaled_ssa</span> <span class="o">*</span> <span class="n">atmo</span><span class="o">.</span><span class="n">unscaled_extinction</span>
+                            <span class="p">)</span><span class="o">.</span><span class="n">T</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:]</span> <span class="o">*</span> <span class="n">d_radiance_k</span>
+
+                            <span class="c1"># Change in ssa* due to a change in f</span>
+                            <span class="n">np_deriv</span> <span class="o">+=</span> <span class="p">(</span>
+                                <span class="n">d_f</span>
+                                <span class="o">*</span> <span class="n">atmo</span><span class="o">.</span><span class="n">unscaled_ssa</span>
+                                <span class="o">/</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">atmo</span><span class="o">.</span><span class="n">unscaled_ssa</span> <span class="o">*</span> <span class="n">atmo</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">f</span><span class="p">)</span>
+                                <span class="o">*</span> <span class="p">(</span><span class="n">atmo</span><span class="o">.</span><span class="n">storage</span><span class="o">.</span><span class="n">ssa</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>
+                            <span class="p">)</span><span class="o">.</span><span class="n">T</span><span class="p">[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">,</span> <span class="p">:]</span> <span class="o">*</span> <span class="n">d_radiance_ssa</span>
+
+                <span class="k">if</span> <span class="n">mapping</span><span class="o">.</span><span class="n">log_radiance_space</span><span class="p">:</span>
+                    <span class="n">np_deriv</span> <span class="o">/=</span> <span class="n">radiance</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span>
+
+                <span class="k">if</span> <span class="n">mapping</span><span class="o">.</span><span class="n">is_surface_derivative</span><span class="p">:</span>
+                    <span class="n">mapped_derivative</span> <span class="o">=</span> <span class="n">mapping</span><span class="o">.</span><span class="n">map_derivative</span><span class="p">(</span>
+                        <span class="n">np_deriv</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:,</span> <span class="mi">0</span><span class="p">],</span> <span class="p">[</span><span class="s2">&quot;wavelength&quot;</span><span class="p">,</span> <span class="s2">&quot;los&quot;</span><span class="p">,</span> <span class="s2">&quot;stokes&quot;</span><span class="p">]</span>
+                    <span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">mapped_derivative</span> <span class="o">=</span> <span class="n">mapping</span><span class="o">.</span><span class="n">map_derivative</span><span class="p">(</span>
+                        <span class="n">np_deriv</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;wavelength&quot;</span><span class="p">,</span> <span class="s2">&quot;los&quot;</span><span class="p">,</span> <span class="s2">&quot;stokes&quot;</span><span class="p">,</span> <span class="s2">&quot;altitude&quot;</span><span class="p">]</span>
+                    <span class="p">)</span>
+
+                <span class="k">if</span> <span class="n">name_to_place_result</span> <span class="ow">in</span> <span class="n">result</span><span class="p">:</span>
+                    <span class="n">result</span><span class="p">[</span><span class="n">name_to_place_result</span><span class="p">]</span> <span class="o">+=</span> <span class="n">mapped_derivative</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">result</span><span class="p">[</span><span class="n">name_to_place_result</span><span class="p">]</span> <span class="o">=</span> <span class="n">mapped_derivative</span>
+
+        <span class="k">return</span> <span class="n">result</span></div></div>
+</pre></div>
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer">
+                  
+<div class="prev-next-area">
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By USask-ARG
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2023, USask-ARG.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="../../_static/scripts/bootstrap.js?digest=5b4479735964841361fd"></script>
+<script src="../../_static/scripts/pydata-sphinx-theme.js?digest=5b4479735964841361fd"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>
