@@ -22,7 +22,7 @@ The latest nightly version of SASKTRAN2 is made available through::
 |---------------|----|-----|-----|-----|
 | Pip CPython 3.10  | ✅¹ | ✅¹  | ✅  | ✅  |
 | Pip CPython 3.11  | ✅¹ | ✅¹  | ✅  | ✅  |
-| Pip CPython 3.12  | ❌ | ❌  | ❌  | ❌  |
+| Pip CPython 3.12  | ✅¹ | ✅¹  | ✅  | ✅  |
 | conda-forge Py 3.10  | ✅ | ✅  | ✅  | ✅  |
 | conda-forge Py 3.11  | ✅ | ✅  | ✅  | ✅  |
 | conda-forge Py 3.12  | ✅ | ✅  | ✅  | ✅  |
