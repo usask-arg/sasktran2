@@ -12,7 +12,8 @@ The atmospheric state at it's fundamental core is:
  - (optional) Scattering parameters (Legendre coefficients, phase functions) specified at the model geometry grid points
  - A representation of surface scattering (e.g. Lambertian surface)
 
-It is possible to directly specify these quantities
+It is possible to directly specify these quantities, however the easier way to use the model
+is through what we refer to as constituents.
 
 ```{note}
 SASKTRAN2 is designed to perform efficient calculations for a static geometry and

@@ -114,6 +114,7 @@ installation
 quickstart
 users_guide
 api_reference
+changelog
 ```
 
 ```{toctree}
