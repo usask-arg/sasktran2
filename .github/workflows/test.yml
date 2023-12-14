@@ -104,7 +104,7 @@ jobs:
         uses: pypa/cibuildwheel@v2.16.2
         env:
           CIBW_SKIP: "pp* *musllinux* cp37-*"
-          CIBW_BUILD: "cp311-*"
+          CIBW_BUILD: "cp312-*"
         with:
           output-dir: wheelhouse
 
