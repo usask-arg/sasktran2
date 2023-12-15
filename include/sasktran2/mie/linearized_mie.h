@@ -24,11 +24,15 @@ namespace sasktran2::mie {
 
         void Regular_Q_S(const std::complex<double>& refractive_index,
                          const Eigen::VectorXd& size_param,
-                         Eigen::VectorXd& Qext, Eigen::VectorXd& Qsca);
+                         const Eigen::VectorXd& cos_angles,
+                         Eigen::VectorXd& Qext, Eigen::VectorXd& Qsca,
+                         Eigen::MatrixXcd& S1, Eigen::MatrixXcd& S2);
 
         void Small_Q_S(const std::complex<double>& refractive_index,
-                       const Eigen::VectorXd& size_param, Eigen::VectorXd& Qext,
-                       Eigen::VectorXd& Qsca);
+                       const Eigen::VectorXd& size_param,
+                       const Eigen::VectorXd& cos_angles, Eigen::VectorXd& Qext,
+                       Eigen::VectorXd& Qsca, Eigen::MatrixXcd& S1,
+                       Eigen::MatrixXcd& S2);
 
       public:
         LinearizedMie();
@@ -39,5 +43,9 @@ namespace sasktran2::mie {
         void An_Bn(const std::complex<double>& refractive_index,
                    const Eigen::VectorXd& size_param, const int N,
                    Eigen::MatrixXcd& An_matrix, Eigen::MatrixXcd& Bn_matrix);
+        void Tau_Pi(const Eigen::VectorXd& size_param,
+                    const Eigen::VectorXd& cos_angles, const int N,
+                    Eigen::Tensor<double, 3>& tau_tensor,
+                    Eigen::Tensor<double, 3>& pi_tensor);
     };
 } // namespace sasktran2::mie

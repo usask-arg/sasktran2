@@ -29,10 +29,12 @@ namespace sasktran2::mie {
         auto iterator = std::find(res.begin(), res.end(), false);
         int index;
         if (iterator == res.end() || refractive_index.real() <= 0.0) {
-            Small_Q_S(refractive_index, size_param, Qext, Qsca);
+            Small_Q_S(refractive_index, size_param, cos_angles, Qext, Qsca, S1,
+                      S2);
             // small mie for all
         } else if (iterator == res.begin()) {
-            Regular_Q_S(refractive_index, size_param, Qext, Qsca);
+            Regular_Q_S(refractive_index, size_param, cos_angles, Qext, Qsca,
+                        S1, S2);
             // regular method
         } else {
             // we need to split it
@@ -44,11 +46,17 @@ namespace sasktran2::mie {
             // regular
             Eigen::VectorXd Qext_reg;
             Eigen::VectorXd Qsca_reg;
-            Regular_Q_S(refractive_index, reg_array, Qext_reg, Qsca_reg);
+            Eigen::MatrixXcd S1_reg;
+            Eigen::MatrixXcd S2_reg;
+            Regular_Q_S(refractive_index, reg_array, cos_angles, Qext_reg,
+                        Qsca_reg, S1_reg, S2_reg);
             // small
             Eigen::VectorXd Qext_small;
             Eigen::VectorXd Qsca_small;
-            Small_Q_S(refractive_index, small_array, Qext_small, Qsca_small);
+            Eigen::MatrixXcd S1_small;
+            Eigen::MatrixXcd S2_small;
+            Small_Q_S(refractive_index, small_array, cos_angles, Qext_small,
+                      Qsca_small, S1_small, S2_small);
             // rejoin down here
 
             Qext.resize(size_param.size());
@@ -62,6 +70,8 @@ namespace sasktran2::mie {
 
         data_values.Qext = Qext;
         data_values.Qsca = Qsca;
+        data_values.S1 = S1;
+        data_values.S2 = S2;
 
         // S1 S2 calculation
 
@@ -82,12 +92,14 @@ namespace sasktran2::mie {
     void
     LinearizedMie::Regular_Q_S(const std::complex<double>& refractive_index,
                                const Eigen::VectorXd& size_param,
-                               Eigen::VectorXd& Qext, Eigen::VectorXd& Qsca) {
+                               const Eigen::VectorXd& cos_angles,
+                               Eigen::VectorXd& Qext, Eigen::VectorXd& Qsca,
+                               Eigen::MatrixXcd& S1, Eigen::MatrixXcd& S2) {
 
         // An Bn calculation - need for both
         double x = size_param.maxCoeff(); // largest size parameter, use to do
                                           // the calculations for highest N
-        int N = int(x + 4.05 * pow(x, 0.33333) + 2.0) + 1;
+        int N = int(x + 4.05 * pow(x, 0.33333) + 2.0) + 2;
         Eigen::MatrixXcd An_matrix;
         Eigen::MatrixXcd Bn_matrix;
         An_Bn(refractive_index, size_param, N, An_matrix, Bn_matrix);
@@ -113,12 +125,65 @@ namespace sasktran2::mie {
             (abs(An_matrix.array()).square() + abs(Bn_matrix.array()).square());
         Qsca = qsca_temp_matrix.colwise().sum();
         Qsca.array() *= 2.0 / size_param.array().square();
+
+        // S1 S2 calculation
+        Eigen::Tensor<std::complex<double>, 3> S1_temp_tensor;
+        S1_temp_tensor.resize(N, size_param.size(), cos_angles.size());
+        Eigen::Tensor<std::complex<double>, 3> S2_temp_tensor;
+        S2_temp_tensor.resize(N, size_param.size(), cos_angles.size());
+
+        Eigen::Tensor<double, 3> n_tensor;
+        n_tensor.resize(N, size_param.size(), cos_angles.size());
+        Eigen::Tensor<std::complex<double>, 3> an_tensor;
+        an_tensor.resize(N, size_param.size(), cos_angles.size());
+        Eigen::Tensor<std::complex<double>, 3> bn_tensor;
+        bn_tensor.resize(N, size_param.size(), cos_angles.size());
+
+        Eigen::VectorXd n = Eigen::VectorXd::LinSpaced(N, 1, N);
+        n.array() = (2.0 * n.array() + 1.0) / n.array() / (n.array() + 1.0);
+        Eigen::MatrixXd temp = n.rowwise().replicate(size_param.size());
+
+        Eigen::TensorMap<Eigen::Tensor<double, 2>> n_matrix(temp.data(), N,
+                                                            size_param.size());
+        Eigen::TensorMap<Eigen::Tensor<std::complex<double>, 2>> An_matrix_map(
+            An_matrix.data(), N, size_param.size());
+        Eigen::TensorMap<Eigen::Tensor<std::complex<double>, 2>> Bn_matrix_map(
+            Bn_matrix.data(), N, size_param.size());
+        for (int i = 0; i < cos_angles.size(); i++) {
+            n_tensor.chip(i, 2) = n_matrix;
+            an_tensor.chip(i, 2) = An_matrix_map;
+            bn_tensor.chip(i, 2) = Bn_matrix_map;
+        }
+
+        Eigen::Tensor<double, 3> tau_tensor;
+        tau_tensor.resize(N, size_param.size(), cos_angles.size());
+        Eigen::Tensor<double, 3> pi_tensor;
+        pi_tensor.resize(N, size_param.size(), cos_angles.size());
+        Tau_Pi(size_param, cos_angles, N, tau_tensor, pi_tensor);
+
+        S1_temp_tensor =
+            (an_tensor * pi_tensor + bn_tensor * tau_tensor); //*n_tensor;
+        S2_temp_tensor =
+            (an_tensor * tau_tensor + bn_tensor * pi_tensor); //*n_tensor;
+        S1_temp_tensor = S1_temp_tensor * n_tensor;
+        S2_temp_tensor = S2_temp_tensor * n_tensor;
+
+        // adding up along the N dimension
+        Eigen::Tensor<std::complex<double>, 2> S1_matrix =
+            S1_temp_tensor.sum(Eigen::array<int, 1>({0}));
+        Eigen::Tensor<std::complex<double>, 2> S2_matrix =
+            S2_temp_tensor.sum(Eigen::array<int, 1>({0}));
+        S1 = Eigen::Map<Eigen::MatrixXcd>(S1_matrix.data(), size_param.size(),
+                                          cos_angles.size());
+        S2 = Eigen::Map<Eigen::MatrixXcd>(S2_matrix.data(), size_param.size(),
+                                          cos_angles.size());
     }
 
     void LinearizedMie::Small_Q_S(const std::complex<double>& refractive_index,
                                   const Eigen::VectorXd& size_param,
-                                  Eigen::VectorXd& Qext,
-                                  Eigen::VectorXd& Qsca) {
+                                  const Eigen::VectorXd& cos_angles,
+                                  Eigen::VectorXd& Qext, Eigen::VectorXd& Qsca,
+                                  Eigen::MatrixXcd& S1, Eigen::MatrixXcd& S2) {
         // Mie Scattering Calculations: Advances in Technique and Fast,
         // Vector-Speed Computer Codes, Section 4 for small spheres
 
@@ -163,6 +228,33 @@ namespace sasktran2::mie {
                    ((a_hat1.array() + b_hat1.array()).real() +
                     5.0 / 3.0 * a_hat2.array().real());
         }
+
+        // need to deal with matrices here
+        // S1 and S2 are of size size_param.size x cos_angles size
+        S1.resize(size_param.size(), cos_angles.size());
+        S2.resize(size_param.size(), cos_angles.size());
+
+        Eigen::MatrixXd size_param_matrix =
+            size_param.rowwise().replicate(cos_angles.size());
+        Eigen::MatrixXcd a_hat1_matrix =
+            a_hat1.rowwise().replicate(cos_angles.size());
+        Eigen::MatrixXcd a_hat2_matrix =
+            a_hat2.rowwise().replicate(cos_angles.size());
+        Eigen::MatrixXcd b_hat1_matrix =
+            b_hat1.rowwise().replicate(cos_angles.size());
+        Eigen::MatrixXd mu_matrix =
+            cos_angles.rowwise().replicate(size_param.size());
+        mu_matrix.array() = mu_matrix.transpose();
+
+        S1 = 3.0 / 2.0 * pow(size_param_matrix.array(), 3) *
+             (a_hat1_matrix.array() +
+              mu_matrix.array() *
+                  (b_hat1_matrix.array() + 5.0 / 3.0 * a_hat2_matrix.array()));
+        S2 =
+            3.0 / 2.0 * pow(size_param_matrix.array(), 3) *
+            (b_hat1_matrix.array() + a_hat1_matrix.array() * mu_matrix.array() +
+             5.0 / 3.0 * a_hat2_matrix.array() *
+                 (2.0 * pow(mu_matrix.array(), 2) - 1.0));
     }
 
     void LinearizedMie::An_Bn(const std::complex<double>& refractive_index,
@@ -254,6 +346,53 @@ namespace sasktran2::mie {
 
             psi_n_1 = psi_n;
             psi_n = xi_n.real(); // allowed since xi_n = psi_n + i*X_n
+        }
+    }
+
+    void LinearizedMie::Tau_Pi(const Eigen::VectorXd& size_param,
+                               const Eigen::VectorXd& cos_angles, const int N,
+                               Eigen::Tensor<double, 3>& tau_tensor,
+                               Eigen::Tensor<double, 3>& pi_tensor) {
+
+        Eigen::MatrixXd Pi_matrix;
+        Eigen::MatrixXd Tau_matrix;
+        Pi_matrix.resize(N, cos_angles.size());
+        Tau_matrix.resize(N, cos_angles.size());
+
+        // have to start at 0, and then make our way up all the way to N
+        Eigen::VectorXd temp;
+        Eigen::VectorXd pi_n_1 =
+            Eigen::VectorXd::Constant(cos_angles.size(), 0); // n=0
+        Eigen::VectorXd pi_n =
+            Eigen::VectorXd::Constant(cos_angles.size(), 1); // n=1
+        Eigen::VectorXd tau_n = 1 * cos_angles.array() * pi_n.array() -
+                                (1 + 1) * pi_n_1.array(); // n=1
+
+        Pi_matrix(0, Eigen::all) = pi_n;   // this is for n=1, stored in row 0
+        Tau_matrix(0, Eigen::all) = tau_n; // this is for n=1, stored in row 0
+
+        for (int n = 2; n < N + 1; n++) {
+            temp = pi_n;
+            pi_n = ((2 * n - 1) * cos_angles.array() * pi_n.array() -
+                    n * pi_n_1.array()) /
+                   (n - 1);
+            pi_n_1 = temp;
+            tau_n = n * cos_angles.array() * pi_n.array() -
+                    (n + 1) * pi_n_1.array();
+            Pi_matrix(n - 1, Eigen::all) =
+                pi_n; // this is for n, stored in row n-1
+            Tau_matrix(n - 1, Eigen::all) =
+                tau_n; // this is for n, stored in row n-1
+        }
+
+        Eigen::TensorMap<Eigen::Tensor<double, 2>> tau_map(Tau_matrix.data(), N,
+                                                           cos_angles.size());
+        Eigen::TensorMap<Eigen::Tensor<double, 2>> pi_map(Pi_matrix.data(), N,
+                                                          cos_angles.size());
+
+        for (int i = 0; i < size_param.size(); i++) {
+            tau_tensor.chip(i, 1) = tau_map;
+            pi_tensor.chip(i, 1) = pi_map;
         }
     }
 
