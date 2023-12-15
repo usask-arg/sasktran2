@@ -51,5 +51,6 @@ config.single_scatter_source = sk.SingleScatterSource.NoSource
 .. autosummary::
 
   sasktran2.Config.single_scatter_source
+  sasktran2.Config.num_stokes
 
 ```

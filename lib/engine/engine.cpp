@@ -60,6 +60,12 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
                         sasktran2::DOSourceInterpolatedPostProcessing<NSTOKES,
                                                                       2>>(
                         *m_geometry, *m_raytracer));
+            } else if (m_config.num_do_streams() == 4) {
+                m_source_terms.emplace_back(
+                    std::make_unique<
+                        sasktran2::DOSourceInterpolatedPostProcessing<NSTOKES,
+                                                                      4>>(
+                        *m_geometry, *m_raytracer));
             } else {
                 m_source_terms.emplace_back(
                     std::make_unique<
@@ -149,6 +155,7 @@ void Sasktran2<NSTOKES>::calculate_radiance(
     sasktran2::Output<NSTOKES>& output) const {
 #ifdef SKTRAN_OPENMP_SUPPORT
     omp_set_num_threads(m_config.num_threads());
+    Eigen::setNbThreads(m_config.num_source_threads());
 #endif
 
     validate_input_atmosphere(atmosphere);
@@ -170,8 +177,9 @@ void Sasktran2<NSTOKES>::calculate_radiance(
 
     output.resize((int)m_traced_rays.size(), atmosphere.num_wavel(),
                   atmosphere.num_deriv());
+    output.initialize(m_config, *m_geometry, m_traced_rays);
 
-#pragma omp parallel for
+#pragma omp parallel for num_threads(m_config.num_wavelength_threads())
     for (int w = 0; w < atmosphere.num_wavel(); ++w) {
 #ifdef SKTRAN_OPENMP_SUPPORT
         int thread_idx = omp_get_thread_num();
@@ -184,17 +192,26 @@ void Sasktran2<NSTOKES>::calculate_radiance(
             source->calculate(w, thread_idx);
         }
 
+#pragma omp parallel for num_threads(m_config.num_source_threads())            \
+    schedule(dynamic)
         for (int i = 0; i < m_traced_rays.size(); ++i) {
+#ifdef SKTRAN_OPENMP_SUPPORT
+            int ray_threadidx = omp_get_thread_num() + thread_idx;
+#else
+            int ray_threadidx = 0;
+#endif
+
             // Set the radiance thread storage to 0
-            radiance[thread_idx].value.setZero();
-            radiance[thread_idx].deriv.setZero();
+            radiance[ray_threadidx].value.setZero();
+            radiance[ray_threadidx].deriv.setZero();
 
             // Integrate all of the sources for the ray
-            m_source_integrator->integrate(
-                radiance[thread_idx], m_los_source_terms, w, i, thread_idx);
+            m_source_integrator->integrate(radiance[ray_threadidx],
+                                           m_los_source_terms, w, i, thread_idx,
+                                           ray_threadidx);
 
             // And assign it to the output
-            output.assign(radiance[thread_idx], i, w);
+            output.assign(radiance[ray_threadidx], i, w);
         }
 
         // TODO: Is this where we should generate fluxes or other quantities

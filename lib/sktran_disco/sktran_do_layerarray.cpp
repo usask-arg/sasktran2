@@ -254,6 +254,7 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
       m_direct_toa(this->M_SOLAR_DIRECT_INTENSITY), m_config(config),
       m_include_direct_bounce(false), m_surfaceemission(0.0),
       m_num_los(los.size()),
+      m_chapman_factors(geometry_layers.chapman_factors()),
       m_input_derivatives(config.pool().thread_data().input_derivatives()),
       m_albedo(los, *this->M_MU, this->M_CSZ, std::move(brdf),
                config.userSpec()
@@ -262,8 +263,6 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
     m_wavel_index = wavelidx;
     // Allocations
     m_layers.reserve(this->M_NLYR);
-    m_chapman_factors.resize(this->M_NLYR, this->M_NLYR);
-    m_chapman_factors.setZero();
 
     // Accumulation quantities for the layers
     double ceiling_depth = 0;
@@ -313,24 +312,41 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
             if constexpr (NSTOKES == 1) {
                 double avg_p = (kbot * ssa_bot *
                                     (phase(k, bot_atmosphere_idx) -
-                                     f_bot * (2 * k + 1) / (1 - f_bot)) +
+                                     (2 * k + 1) * f_bot / (1 - f_bot)) +
                                 ktop * ssa_top *
                                     (phase(k, top_atmosphere_idx) -
-                                     f_top * (2 * k + 1) / (1 - f_top))) /
+                                     (2 * k + 1) * f_top / (1 - f_top))) /
                                (kbot * ssa_bot + ktop * ssa_top);
 
                 temp.a1 = avg_p;
             } else if constexpr (NSTOKES == 3) {
                 auto stokes_seq = Eigen::seq(k * 4, (k + 1) * 4 - 1);
-                Eigen::Vector<sasktran2::types::leg_coeff, 4> avg_p =
-                    (kbot * ssa_bot * phase(stokes_seq, bot_atmosphere_idx) +
-                     ktop * ssa_top * phase(stokes_seq, top_atmosphere_idx)) /
-                    (kbot * ssa_bot + ktop * ssa_top);
-                temp.a1 = avg_p(0) - f * (2 * k + 1) / (1 - f);
-                temp.a2 = avg_p(1) - f * (2 * k + 1) / (1 - f);
-                temp.a3 = avg_p(2) - f * (2 * k + 1) / (1 - f);
-                temp.b1 =
-                    -(avg_p(3) - f * (2 * k + 1) / (1 - f)); // TODO: Check
+                double norm = kbot * ssa_bot + ktop * ssa_top;
+                Eigen::Vector<double, 4> p_top =
+                    phase(stokes_seq, top_atmosphere_idx);
+                Eigen::Vector<double, 4> p_bot =
+                    phase(stokes_seq, bot_atmosphere_idx);
+
+                // a's have the f subtraction and b's don't
+                temp.a1 = (kbot * ssa_bot *
+                               (p_bot(0) - f_bot * (2 * k + 1) / (1 - f_bot)) +
+                           ktop * ssa_top *
+                               (p_top(0) - f_top * (2 * k + 1) / (1 - f_top))) /
+                          norm;
+                temp.a2 = (kbot * ssa_bot *
+                               (p_bot(1) - f_bot * (2 * k + 1) / (1 - f_bot)) +
+                           ktop * ssa_top *
+                               (p_top(1) - f_top * (2 * k + 1) / (1 - f_top))) /
+                          norm;
+                temp.a3 = (kbot * ssa_bot *
+                               (p_bot(2) - f_bot * (2 * k + 1) / (1 - f_bot)) +
+                           ktop * ssa_top *
+                               (p_top(2) - f_top * (2 * k + 1) / (1 - f_top))) /
+                          norm;
+                temp.b1 = -(kbot * ssa_bot * (p_bot(3)) +
+                            ktop * ssa_top * (p_top(3))) /
+                          norm;
+
             } else {
             }
         }
@@ -350,7 +366,6 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
 
         ceiling_depth = floor_depth;
     }
-    m_chapman_factors = geometry_layers.chapman_factors();
 
     if (atmosphere.num_deriv() > 0 &&
         sk_config.wf_precision() ==
@@ -512,26 +527,81 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
                             layer->scatExt();
 
                         for (int l = 0; l < (int)this->M_NSTR; ++l) {
-                            deriv.d_legendre_coeff[l].a1 =
-                                atmosphere.storage().d_leg_coeff(
-                                    l, atmo_index, wavelidx, group_index) +
-                                (atmosphere.storage().leg_coeff(l, atmo_index,
-                                                                wavelidx) -
-                                 layer->legendre_coeff()[l].a1) /
-                                    extinction;
+                            if constexpr (NSTOKES == 1) {
+                                deriv.d_legendre_coeff[l].a1 =
+                                    atmosphere.storage().d_leg_coeff(
+                                        l, atmo_index, wavelidx, group_index) +
+                                    (atmosphere.storage().leg_coeff(
+                                         l, atmo_index, wavelidx) -
+                                     (2 * l + 1) * f / (1 - f) -
+                                     layer->legendre_coeff()[l].a1);
 
-                            if (atmosphere.storage().applied_f_order > 0) {
-                                deriv.d_legendre_coeff[l].a1 +=
-                                    -(2 * l + 1) / (1 - f) / (1 - f) *
-                                    atmosphere.storage().d_f(
-                                        atmo_index, wavelidx, group_index);
+                                if (atmosphere.storage().applied_f_order > 0) {
+                                    deriv.d_legendre_coeff[l].a1 +=
+                                        -(2 * l + 1) / (1 - f) / (1 - f) *
+                                        atmosphere.storage().d_f(
+                                            atmo_index, wavelidx, group_index);
+                                }
+                            }
+
+                            if constexpr (NSTOKES == 3) {
+                                deriv.d_legendre_coeff[l].a1 =
+                                    atmosphere.storage().d_leg_coeff(
+                                        l * 4, atmo_index, wavelidx,
+                                        group_index) +
+                                    (atmosphere.storage().leg_coeff(
+                                         l * 4, atmo_index, wavelidx) -
+                                     (2 * l + 1) * f / (1 - f) -
+                                     layer->legendre_coeff()[l].a1);
+
+                                deriv.d_legendre_coeff[l].a2 =
+                                    atmosphere.storage().d_leg_coeff(
+                                        l * 4 + 1, atmo_index, wavelidx,
+                                        group_index) +
+                                    (atmosphere.storage().leg_coeff(
+                                         l * 4 + 1, atmo_index, wavelidx) -
+                                     (2 * l + 1) * f / (1 - f) -
+                                     layer->legendre_coeff()[l].a2);
+
+                                deriv.d_legendre_coeff[l].a3 =
+                                    atmosphere.storage().d_leg_coeff(
+                                        l * 4 + 2, atmo_index, wavelidx,
+                                        group_index) +
+                                    (atmosphere.storage().leg_coeff(
+                                         l * 4 + 2, atmo_index, wavelidx) -
+                                     (2 * l + 1) * f / (1 - f) -
+                                     layer->legendre_coeff()[l].a3);
+
+                                if (atmosphere.storage().applied_f_order > 0) {
+                                    deriv.d_legendre_coeff[l].a1 +=
+                                        -(2 * l + 1) / (1 - f) / (1 - f) *
+                                        atmosphere.storage().d_f(
+                                            atmo_index, wavelidx, group_index);
+
+                                    deriv.d_legendre_coeff[l].a2 +=
+                                        -(2 * l + 1) / (1 - f) / (1 - f) *
+                                        atmosphere.storage().d_f(
+                                            atmo_index, wavelidx, group_index);
+
+                                    deriv.d_legendre_coeff[l].a3 +=
+                                        -(2 * l + 1) / (1 - f) / (1 - f) *
+                                        atmosphere.storage().d_f(
+                                            atmo_index, wavelidx, group_index);
+                                }
+
+                                deriv.d_legendre_coeff[l].b1 =
+                                    (-1) * atmosphere.storage().d_leg_coeff(
+                                               l * 4 + 3, atmo_index, wavelidx,
+                                               group_index) +
+                                    ((-1) *
+                                         atmosphere.storage().leg_coeff(
+                                             l * 4 + 3, atmo_index, wavelidx) -
+                                     layer->legendre_coeff()[l].b1);
                             }
                         }
 
                     } else if (group.first >= num_atmo_grid) {
-                        // Layer legendre contribution to dI / dssa ?
                     } else {
-                        // Layer legendre contribution to dI / dk ?
                     }
                 }
             }
@@ -577,6 +647,7 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
       m_direct_toa(this->M_SOLAR_DIRECT_INTENSITY), m_config(config),
       m_include_direct_bounce(true), m_surfaceemission(0.0),
       m_num_los(los.size()),
+      m_chapman_factors(geometry_layers.chapman_factors()),
       m_input_derivatives(thread_data.input_derivatives()),
       m_albedo(los, *this->M_MU, this->M_CSZ, nullptr,
                config.userSpec()
@@ -594,8 +665,6 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
             new OpticalLayer<NSTOKES, CNSTR>(
                 config, p, ceil_h, floor_h, m_input_derivatives, thread_data)));
     }
-    m_chapman_factors = geometry_layers.chapman_factors();
-
     // Configure azimuthal dependencies
     for (auto& layer : m_layers) {
         registerAzimuthDependency(*layer);
@@ -808,8 +877,6 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
 
     // Allocations
     m_layers.reserve(this->M_NLYR);
-    m_chapman_factors.resize(this->M_NLYR, this->M_NLYR);
-    m_chapman_factors.setZero();
 
     // Map the low level atmosphere memory to eigen matrices
     int stream_independent_offset = this->M_NLYR * wavelidx;
@@ -899,7 +966,6 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
 
         ceiling_depth = floor_depth;
     }
-    m_chapman_factors = geometry_layers.chapman_factors();
 
     if (weightingfunctions != nullptr) {
         int numderiv = weightingfunctions->numderiv;
@@ -1176,12 +1242,6 @@ template <int NSTOKES, int CNSTR>
 void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::configureTest(
     const PersistentConfiguration<NSTOKES, CNSTR>& config,
     const std::vector<testing::TestLayer<NSTOKES>>& testlayers) {
-    m_chapman_factors.resize(this->M_NLYR, this->M_NLYR);
-
-    // TODO: if heights are given as part of the layer interface we could
-    // calculate real chapman factors
-    m_chapman_factors.setConstant(1 / this->M_CSZ);
-
     m_layers.reserve(this->M_NLYR);
     double od_ceil = 0;
     for (LayerIndex lidx = 0; lidx < this->M_NLYR; ++lidx) {

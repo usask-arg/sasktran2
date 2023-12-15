@@ -277,6 +277,7 @@ if(BUILD_PYTHON)
     src/config.cpp
     src/coordinates.cpp
     src/geometry.cpp
+    src/geodetic.cpp
     src/grids.cpp
     src/atmosphere.cpp
     src/viewing_geometry.cpp

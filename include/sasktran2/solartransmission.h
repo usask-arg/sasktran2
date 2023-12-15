@@ -152,15 +152,15 @@ namespace sasktran2::solartransmission {
                 source) const;
 
         void integrated_source_constant(
-            int wavelidx, int losidx, int layeridx, int threadidx,
-            const sasktran2::raytracing::SphericalLayer& layer,
+            int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+            int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
             const sasktran2::SparseODDualView& shell_od,
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
                 source) const;
 
         void integrated_source_linear(
-            int wavelidx, int losidx, int layeridx, int threadidx,
-            const sasktran2::raytracing::SphericalLayer& layer,
+            int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+            int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
             const sasktran2::SparseODDualView& shell_od,
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
                 source) const;
@@ -206,12 +206,12 @@ namespace sasktran2::solartransmission {
          * @param layer The layer that we are integrating over
          * @param source The returned source term
          */
-        void
-        integrated_source(int wavelidx, int losidx, int layeridx, int threadidx,
-                          const sasktran2::raytracing::SphericalLayer& layer,
-                          const sasktran2::SparseODDualView& shell_od,
-                          sasktran2::Dual<double, sasktran2::dualstorage::dense,
-                                          NSTOKES>& source) const override;
+        void integrated_source(
+            int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+            int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
+            const sasktran2::SparseODDualView& shell_od,
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+                source) const override;
 
         /** Calculates the source term at the end of the ray.  Common examples
          * of this are ground scattering, ground emission, or the solar radiance
@@ -222,10 +222,10 @@ namespace sasktran2::solartransmission {
          * @param surface The surface object
          * @param source The returned source term
          */
-        void
-        end_of_ray_source(int wavelidx, int losidx, int threadidx,
-                          sasktran2::Dual<double, sasktran2::dualstorage::dense,
-                                          NSTOKES>& source) const override;
+        void end_of_ray_source(
+            int wavelidx, int losidx, int wavel_threadidx, int threadidx,
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+                source) const override;
     };
 
     template <int NSTOKES>
@@ -267,12 +267,12 @@ namespace sasktran2::solartransmission {
          * @param layer The layer that we are integrating over
          * @param source The returned source term
          */
-        void
-        integrated_source(int wavelidx, int losidx, int layeridx, int threadidx,
-                          const sasktran2::raytracing::SphericalLayer& layer,
-                          const sasktran2::SparseODDualView& shell_od,
-                          sasktran2::Dual<double, sasktran2::dualstorage::dense,
-                                          NSTOKES>& source) const override;
+        void integrated_source(
+            int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+            int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
+            const sasktran2::SparseODDualView& shell_od,
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+                source) const override;
 
         /** Calculates the source term at the end of the ray.  Common examples
          * of this are ground scattering, ground emission, or the solar radiance
@@ -283,10 +283,10 @@ namespace sasktran2::solartransmission {
          * passed in initialize_geometry
          * @param source The returned source term
          */
-        void
-        end_of_ray_source(int wavelidx, int losidx, int threadidx,
-                          sasktran2::Dual<double, sasktran2::dualstorage::dense,
-                                          NSTOKES>& source) const override;
+        void end_of_ray_source(
+            int wavelidx, int losidx, int wavel_threadidx, int threadidx,
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+                source) const override;
     };
 
 } // namespace sasktran2::solartransmission

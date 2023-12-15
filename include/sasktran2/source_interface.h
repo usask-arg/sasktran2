@@ -52,8 +52,8 @@ template <int NSTOKES> class SourceTermInterface {
      * @param source The returned source term
      */
     virtual void integrated_source(
-        int wavelidx, int losidx, int layeridx, int threadidx,
-        const sasktran2::raytracing::SphericalLayer& layer,
+        int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+        int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
         const sasktran2::SparseODDualView& shell_od,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const = 0;
@@ -68,7 +68,7 @@ template <int NSTOKES> class SourceTermInterface {
      * @param source The returned source term
      */
     virtual void end_of_ray_source(
-        int wavelidx, int losidx, int threadidx,
+        int wavelidx, int losidx, int wavel_threadidx, int threadidx,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const = 0;
 };

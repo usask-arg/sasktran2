@@ -46,3 +46,5 @@ src/sasktran2/_version.py
 conda.recipe/conda_build_config.yaml
 local_scripts
 typings
+.cache
+*._cache

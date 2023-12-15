@@ -1,3 +1,4 @@
+#include "sasktran2/config.h"
 #include <pybind11/pybind11.h>
 #include <sasktran2.h>
 
@@ -23,6 +24,17 @@ void init_config(py::module_& m) {
         .value("Standard", sasktran2::Config::OccultationSource::standard)
         .export_values();
 
+    py::enum_<sasktran2::Config::StokesBasis>(m, "StokesBasis")
+        .value("Standard", sasktran2::Config::StokesBasis::standard)
+        .value("Solar", sasktran2::Config::StokesBasis::solar)
+        .value("Observer", sasktran2::Config::StokesBasis::observer)
+        .export_values();
+
+    py::enum_<sasktran2::Config::ThreadingModel>(m, "ThreadingModel")
+        .value("Wavelength", sasktran2::Config::ThreadingModel::wavelength)
+        .value("Source", sasktran2::Config::ThreadingModel::source)
+        .export_values();
+
     py::class_<sasktran2::Config>(m, "Config")
         .def(py::init<>(),
              R"(
@@ -34,6 +46,21 @@ void init_config(py::module_& m) {
                 Controls the number of threads used in the calculation.  For maximum performance it is
                 recommended to set this to the number of physical cores on your machine.  Defaults to
                 1
+            )")
+        .def_property("threading_model", &sasktran2::Config::threading_model,
+                      &sasktran2::Config::set_threading_model,
+                      R"(
+                Sets the multi-threading mode to use in the calculation.
+
+                `sasktran2.ThreadingModel.Wavelength` (Default)
+                    Calculation is multi-threaded over the wavelength (batch) dimension only. This method
+                    works very well when this dimension is large, but may increase memory usage. It also
+                    is not very effective for a small number of wavelengths.
+
+                `sasktran2.ThreadingModel.Source`
+                    Calculation is multi-threaded individually by each source function for each wavelength.
+                    This method is recommended when memory is a concern, or when the number of wavelengths
+                    is small.
             )")
         .def_property("num_stokes", &sasktran2::Config::num_stokes,
                       &sasktran2::Config::set_num_stokes,
@@ -87,11 +114,16 @@ void init_config(py::module_& m) {
                     signal
 
             )")
+        .def_property("stokes_basis", &sasktran2::Config::stokes_basis,
+                      &sasktran2::Config::set_stokes_basis,
+                      R"(
+
+                      )")
         .def_property("delta_m_scaling",
                       &sasktran2::Config::apply_delta_scaling,
                       &sasktran2::Config::set_apply_delta_scaling,
                       R"(
-                Controls whether the delta-M scaling is applied to the calculation.  Defaults to true.
+                Controls whether the delta-M scaling is applied to the calculation.  Defaults to False.
             )")
         .def_property("num_sza", &sasktran2::Config::num_do_sza,
                       &sasktran2::Config::set_num_do_sza,
@@ -122,5 +154,20 @@ void init_config(py::module_& m) {
                 The number of streams to use in the discrete ordinates method. This is the number of streams
                 in full space, i.e. each hemisphere has num_streams / 2 angular discretizations.  Must
                 be an even number. Default to 16.
+            )")
+        .def_property("num_successive_orders_points",
+                      &sasktran2::Config::num_hr_full_incoming_points,
+                      &sasktran2::Config::set_num_hr_full_incoming_points,
+                      R"(
+                The number of incoming points to use in the successive orders calculation for each solar
+                zenith angle.  Must be equal to or less than the number of atmosphere altitude grid points.
+                Default is -1 which means to use every altitude grid point.
+            )")
+        .def_property("num_singlescatter_moments",
+                      &sasktran2::Config::num_singlescatter_moments,
+                      &sasktran2::Config::set_num_singlescatter_moments,
+                      R"(
+                The number of Legendre expansion moments to use in the single scatter calculation.
+                Must be greater or equal to num_streams. Default to 16.
             )");
 }

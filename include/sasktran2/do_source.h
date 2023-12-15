@@ -306,10 +306,10 @@ namespace sasktran2 {
          */
         virtual void calculate(int wavelidx, int threadidx);
 
-        void
-        end_of_ray_source(int wavelidx, int losidx, int threadidx,
-                          sasktran2::Dual<double, sasktran2::dualstorage::dense,
-                                          NSTOKES>& source) const;
+        void end_of_ray_source(
+            int wavelidx, int losidx, int wavel_threadidx, int threadidx,
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+                source) const;
     };
 
     template <int NSTOKES, int CNSTR = -1>
@@ -351,12 +351,12 @@ namespace sasktran2 {
         virtual void
         initialize_config(const sasktran2::Config& config) override;
 
-        void
-        integrated_source(int wavelidx, int losidx, int layeridx, int threadidx,
-                          const sasktran2::raytracing::SphericalLayer& layer,
-                          const sasktran2::SparseODDualView& shell_od,
-                          sasktran2::Dual<double, sasktran2::dualstorage::dense,
-                                          NSTOKES>& source) const;
+        void integrated_source(
+            int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+            int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
+            const sasktran2::SparseODDualView& shell_od,
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+                source) const;
 
         DOSourceDiffuseStorage<NSTOKES, CNSTR>& storage() const {
             return *m_diffuse_storage;

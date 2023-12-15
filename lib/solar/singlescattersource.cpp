@@ -24,7 +24,8 @@ namespace sasktran2::solartransmission {
         int num_phase = max_index + 1;
 
         m_phase_interp.resize(num_phase);
-#pragma omp parallel for
+
+#pragma omp parallel for num_threads(m_config->num_threads())
         for (int i = 0; i < (*m_los_rays).size(); ++i) {
             const auto& ray = (*m_los_rays)[i];
             for (int j = 0; j < ray.layers.size(); ++j) {
@@ -166,7 +167,7 @@ namespace sasktran2::solartransmission {
         m_thread_index_cache_one.resize(config.num_threads());
         m_thread_index_cache_two.resize(config.num_threads());
 
-        m_solar_trans.resize(config.num_threads());
+        m_solar_trans.resize(config.num_wavelength_threads());
 
         m_start_source_cache.resize(config.num_threads());
         m_end_source_cache.resize(config.num_threads());
@@ -187,12 +188,12 @@ namespace sasktran2::solartransmission {
             if (double(m_geometry_sparse.nonZeros()) /
                     double(m_geometry_matrix.size()) >
                 1) {
-                m_solar_trans[threadidx] =
+                m_solar_trans[threadidx].noalias() =
                     m_geometry_matrix *
                     m_atmosphere->storage().total_extinction(Eigen::all,
                                                              wavelidx);
             } else {
-                m_solar_trans[threadidx] =
+                m_solar_trans[threadidx].noalias() =
                     m_geometry_sparse *
                     m_atmosphere->storage().total_extinction(Eigen::all,
                                                              wavelidx);
@@ -200,7 +201,7 @@ namespace sasktran2::solartransmission {
         }
 
         if constexpr (std::is_same_v<S, SolarTransmissionTable>) {
-            m_solar_trans[threadidx] =
+            m_solar_trans[threadidx].noalias() =
                 m_geometry_sparse * (m_solar_transmission.geometry_matrix() *
                                      m_atmosphere->storage().total_extinction(
                                          Eigen::all, wavelidx));
@@ -216,7 +217,7 @@ namespace sasktran2::solartransmission {
 
     template <typename S, int NSTOKES>
     void SingleScatterSource<S, NSTOKES>::end_of_ray_source(
-        int wavelidx, int losidx, int threadidx,
+        int wavelidx, int losidx, int wavel_threadidx, int threadidx,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
         // TODO: BRDF
@@ -228,7 +229,7 @@ namespace sasktran2::solartransmission {
             // pi
             int exit_index = m_index_map[losidx][0];
 
-            double solar_trans = m_solar_trans[threadidx](exit_index);
+            double solar_trans = m_solar_trans[wavel_threadidx](exit_index);
 
             double cos_theta =
                 m_los_rays->at(losidx).layers[0].exit.cos_zenith_angle(
@@ -311,8 +312,8 @@ namespace sasktran2::solartransmission {
 
     template <typename S, int NSTOKES>
     void SingleScatterSource<S, NSTOKES>::integrated_source_constant(
-        int wavelidx, int losidx, int layeridx, int threadidx,
-        const sasktran2::raytracing::SphericalLayer& layer,
+        int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+        int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
         const sasktran2::SparseODDualView& shell_od,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
@@ -323,8 +324,9 @@ namespace sasktran2::solartransmission {
         int exit_index = m_index_map[losidx][layeridx];
         int entrance_index = m_index_map[losidx][layeridx] + 1;
 
-        double solar_trans_exit = m_solar_trans[threadidx](exit_index);
-        double solar_trans_entrance = m_solar_trans[threadidx](entrance_index);
+        double solar_trans_exit = m_solar_trans[wavel_threadidx](exit_index);
+        double solar_trans_entrance =
+            m_solar_trans[wavel_threadidx](entrance_index);
 
         auto& phase_interp =
             m_phase_interp[m_phase_index_map[losidx][layeridx]];
@@ -447,8 +449,8 @@ namespace sasktran2::solartransmission {
 
     template <typename S, int NSTOKES>
     void SingleScatterSource<S, NSTOKES>::integrated_source_linear(
-        int wavelidx, int losidx, int layeridx, int threadidx,
-        const sasktran2::raytracing::SphericalLayer& layer,
+        int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+        int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
         const sasktran2::SparseODDualView& shell_od,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
@@ -457,8 +459,8 @@ namespace sasktran2::solartransmission {
 
     template <typename S, int NSTOKES>
     void SingleScatterSource<S, NSTOKES>::integrated_source(
-        int wavelidx, int losidx, int layeridx, int threadidx,
-        const sasktran2::raytracing::SphericalLayer& layer,
+        int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+        int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
         const sasktran2::SparseODDualView& shell_od,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
@@ -468,8 +470,8 @@ namespace sasktran2::solartransmission {
             return;
         }
 
-        integrated_source_constant(wavelidx, losidx, layeridx, threadidx, layer,
-                                   shell_od, source);
+        integrated_source_constant(wavelidx, losidx, layeridx, wavel_threadidx,
+                                   threadidx, layer, shell_od, source);
     }
 
     template class SingleScatterSource<SolarTransmissionExact, 1>;

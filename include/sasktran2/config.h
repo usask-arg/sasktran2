@@ -65,6 +65,34 @@ namespace sasktran2 {
          */
         enum class OccultationSource { standard, none };
 
+        /** Enum determining what basis to return back the Stokes vectors
+         * components in
+         *
+         *   'standard' Is the implicit basis defined by most textbooks where
+         * the implicit meridian plane (formed ) through the propagation
+         * direction and z-axis is the plane of reference for the stokes
+         * parameters
+         *
+         *   'solar' Is a special case of standard, where the solar direction is
+         * assumed to be in in the z-axis
+         *
+         *   'observer' Defines the reference plane by the plane spanned by the
+         * look vector and observer position
+         *
+         */
+        enum class StokesBasis { standard, solar, observer };
+
+        /** Enum determining how to multithread the calculation.
+         *
+         *    'wavelength' is the default which disables all parallelization
+         * except for things over the wavelength dimension
+         *
+         *     'source' Allows each source term to do their own parallelization
+         * one wavelength at a time
+         *
+         */
+        enum class ThreadingModel { wavelength, source };
+
         Config();
 
         /**
@@ -72,6 +100,33 @@ namespace sasktran2 {
          * @return The number of threads used for the calculation
          */
         int num_threads() const { return m_nthreads; }
+
+        /**
+         * @brief The number of threads to use over the wavelength dimension
+         *
+         * @return int
+         */
+        int num_wavelength_threads() const {
+            if (m_threading_model == ThreadingModel::wavelength) {
+                return num_threads();
+            } else {
+                return 1;
+            }
+        }
+
+        /**
+         * @brief The number of threads to use in calculation of the sources at
+         * each wavelength
+         *
+         * @return int
+         */
+        int num_source_threads() const {
+            if (m_threading_model == ThreadingModel::source) {
+                return num_threads();
+            } else {
+                return 1;
+            }
+        }
 
         /** Sets the maximum number of threads used in the calculation.
          *
@@ -308,6 +363,35 @@ namespace sasktran2 {
 
         /**
          *
+         * @return The reference basis for the Stokes vectors
+         */
+        StokesBasis stokes_basis() const { return m_stokes_basis; }
+
+        /**
+         * @brief Set the stokes basis
+         *
+         * @param basis
+         */
+        void set_stokes_basis(StokesBasis basis) { m_stokes_basis = basis; }
+
+        /**
+         * @brief The threading model to use
+         *
+         * @return ThreadingModel
+         */
+        ThreadingModel threading_model() const { return m_threading_model; }
+
+        /**
+         * @brief Set the threading model
+         *
+         * @param model
+         */
+        void set_threading_model(ThreadingModel model) {
+            m_threading_model = model;
+        }
+
+        /**
+         *
          * @return Then number of points (per diffuse profile) that we calculate
          * the incoming signal on.  Can be set to -1 to use all the points
          */
@@ -350,6 +434,10 @@ namespace sasktran2 {
         OccultationSource m_occultation_source;
 
         WeightingFunctionPrecision m_wf_precision;
+
+        StokesBasis m_stokes_basis;
+
+        ThreadingModel m_threading_model;
 
         bool m_initialize_hr_with_do_solution;
     };

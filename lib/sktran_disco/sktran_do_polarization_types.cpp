@@ -36,8 +36,8 @@ void sasktran_disco::TripleProductDerivativeHolder<3>::reduce(
         deriv(0, 2) += dl.b1 * b1deriv(l, 1);
 
         deriv(1, 0) += dl.b1 * b1deriv(l, 2);
-        deriv(1, 1) += dl.a2 * a2deriv(l, 0) * dl.a3 * a3deriv(l, 0);
-        deriv(1, 2) += dl.a2 * a2deriv(l, 1) * dl.a3 * a3deriv(l, 1);
+        deriv(1, 1) += dl.a2 * a2deriv(l, 0) + dl.a3 * a3deriv(l, 0);
+        deriv(1, 2) += dl.a2 * a2deriv(l, 1) + dl.a3 * a3deriv(l, 1);
 
         deriv(2, 0) += dl.b1 * b1deriv(l, 3);
         deriv(2, 1) += dl.a2 * a2deriv(l, 2) + dl.a3 * a3deriv(l, 2);

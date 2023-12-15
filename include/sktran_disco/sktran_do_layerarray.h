@@ -269,7 +269,7 @@ namespace sasktran_disco {
         const Eigen::VectorXd* m_cell_depths;
 
         // Pseudo-spherical beam transmittances
-        Eigen::MatrixXd m_chapman_factors;
+        const Eigen::MatrixXd& m_chapman_factors;
 
         const PersistentConfiguration<NSTOKES, CNSTR>& m_config;
 

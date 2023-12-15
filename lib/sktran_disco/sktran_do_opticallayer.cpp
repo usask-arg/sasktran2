@@ -287,19 +287,20 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::singleScatST(
     } else {
         result.value = m_triple_product_holder_1.value(Eigen::all, 0);
         result.d_by_a1 = m_triple_product_holder_1.a1deriv;
-        result.d_by_b1_first = m_triple_product_holder_1.b1deriv(Eigen::all, 0);
+        result.d_by_b1_first = m_triple_product_holder_1.b1deriv(Eigen::all, 2);
         result.d_by_b1_second =
-            m_triple_product_holder_1.b1deriv(Eigen::all, 1);
+            m_triple_product_holder_1.b1deriv(Eigen::all, 3);
         result.d_by_ssa = result.value / M_SSA;
 
         result_negative_coszenith.value =
             m_triple_product_holder_0.value(Eigen::all, 0);
         result_negative_coszenith.d_by_a1 = m_triple_product_holder_0.a1deriv;
         result_negative_coszenith.d_by_b1_first =
-            m_triple_product_holder_0.b1deriv(Eigen::all, 0);
+            m_triple_product_holder_0.b1deriv(Eigen::all, 2);
         result_negative_coszenith.d_by_b1_second =
-            m_triple_product_holder_0.b1deriv(Eigen::all, 1);
-        result.d_by_ssa = result.value / M_SSA;
+            m_triple_product_holder_0.b1deriv(Eigen::all, 3);
+        result_negative_coszenith.d_by_ssa =
+            result_negative_coszenith.value / M_SSA;
     }
 }
 

@@ -51,5 +51,6 @@ all of the standard discrete ordinates options apply to the source used to initi
   sasktran2.Config.num_sza
   sasktran2.Config.num_successive_orders_iterations
   sasktran2.Config.init_successive_orders_with_discrete_ordinates
+  sasktran2.Config.num_stokes
 
 ```

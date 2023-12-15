@@ -21,6 +21,7 @@ dependencies:
   - pip
   - ipython
   - compilers
+  - seaborn
   - c-compiler
   - cxx-compiler
   - fortran-compiler

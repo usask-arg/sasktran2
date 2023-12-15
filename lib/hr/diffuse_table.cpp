@@ -1,3 +1,7 @@
+#include <algorithm>
+#ifdef SKTRAN_OPENMP_SUPPORT
+#include <omp.h>
+#endif
 #include <sasktran2/hr/diffuse_source.h>
 #include <sasktran2/math/unitsphere.h>
 #include <sasktran2/math/scattering.h>
@@ -201,8 +205,6 @@ namespace sasktran2::hr {
                                                   0, false);
             storage.m_outgoing_sources.resize(start_outgoing_idx * NSTOKES, 0,
                                               false);
-            storage.accumulation_matrix.resize(start_incoming_idx * NSTOKES,
-                                               start_outgoing_idx * NSTOKES);
 
             storage.point_scattering_matrices.resize(m_diffuse_points.size());
             for (int i = 0; i < m_diffuse_points.size(); ++i) {
@@ -216,9 +218,18 @@ namespace sasktran2::hr {
     }
 
     template <int NSTOKES> void DiffuseTable<NSTOKES>::trace_incoming_rays() {
-        sasktran2::viewinggeometry::ViewingRay viewing_ray;
+        int nthreads = m_config->num_threads();
 
+        std::vector<sasktran2::viewinggeometry::ViewingRay> thread_viewing_ray;
+        thread_viewing_ray.resize(nthreads);
+
+#pragma omp parallel for num_threads(nthreads)
         for (int i = 0; i < m_diffuse_points.size(); ++i) {
+#ifdef SKTRAN_OPENMP_SUPPORT
+            auto& viewing_ray = thread_viewing_ray[omp_get_thread_num()];
+#else
+            auto& viewing_ray = thread_viewing_ray[0];
+#endif
             if (!m_diffuse_point_full_calculation[i]) {
                 continue;
             }
@@ -277,6 +288,8 @@ namespace sasktran2::hr {
                                               m_diffuse_source_weights,
                                               m_total_num_diffuse_weights);
 
+        construct_accumulation_sparsity();
+
         generate_source_interpolation_weights(los_rays, m_los_source_weights,
                                               temp);
 
@@ -321,11 +334,137 @@ namespace sasktran2::hr {
     }
 
     template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::construct_accumulation_sparsity() {
+        // These are the length of the rows
+        m_outer_starts.resize(NSTOKES * m_diffuse_source_weights.size() + 1);
+        m_inner_nnz.resize(NSTOKES * m_diffuse_source_weights.size());
+
+        std::vector<Eigen::VectorXi> inner_indicies;
+
+        inner_indicies.resize(NSTOKES * m_diffuse_source_weights.size());
+
+        std::vector<
+            std::tuple<int, std::tuple<int, double, std::array<int, NSTOKES>>*>>
+            sorting_helper;
+
+        int total_nnz = 0;
+        // Construct the matrix NSTOKES rows at a time
+        for (int row = 0; row < m_diffuse_source_weights.size(); ++row) {
+            sorting_helper.clear();
+            auto& weights = m_diffuse_source_weights[row];
+
+            // Start by setting the index storage to be equal to the weight
+            // index
+            for (int i = 0; i < weights.interior_weights.size(); ++i) {
+                auto& weight = weights.interior_weights[i].second;
+
+                for (int j = 0; j < weight.size(); ++j) {
+                    sorting_helper.push_back(
+                        std::make_tuple(std::get<0>(weight[j]), &weight[j]));
+                }
+            }
+            // And for the ground weights
+            for (int i = 0; i < weights.ground_weights.size(); ++i) {
+                auto& weight = weights.ground_weights[i];
+
+                sorting_helper.push_back(
+                    std::make_tuple(std::get<0>(weight), &weight));
+            }
+
+            // Now we have to sort on the column indices
+            std::stable_sort(
+                std::begin(sorting_helper), std::end(sorting_helper),
+                [](const std::tuple<
+                       int, std::tuple<int, double, std::array<int, NSTOKES>>*>&
+                       left,
+                   const std::tuple<
+                       int, std::tuple<int, double, std::array<int, NSTOKES>>*>&
+                       right) {
+                    return std::get<0>(left) < std::get<0>(right);
+                });
+
+            if (sorting_helper.size() == 0) {
+                // 0 Elements in this row, not sure what this means? Probably
+                // never actually happens
+                for (int s = 0; s < NSTOKES; ++s) {
+                    m_inner_nnz(row * NSTOKES + s) = 0;
+                }
+                continue;
+            }
+
+            // Now we have to do a first pass through the sorted list to find
+            // the number of unique elements (nnz)
+            int nnz = 1;
+            for (int i = 1; i < sorting_helper.size(); ++i) {
+                if (std::get<0>(sorting_helper[i]) !=
+                    std::get<0>(sorting_helper[i - 1])) {
+                    ++nnz;
+                }
+            }
+
+            // Go through our NSTOKES rows
+            for (int s = 0; s < NSTOKES; ++s) {
+                auto& inner = inner_indicies[row * NSTOKES + s];
+                // First assign nnz
+                m_inner_nnz(row * NSTOKES + s) = nnz;
+
+                inner.resize(nnz);
+
+                int inner_index = 0;
+                // Now go through the sorting helper and assign our indicies
+                for (int i = 0; i < sorting_helper.size(); ++i) {
+                    if (i > 0) {
+                        if (std::get<0>(sorting_helper[i]) !=
+                            std::get<0>(sorting_helper[i - 1])) {
+                            ++inner_index;
+                        }
+                    }
+                    inner[inner_index] =
+                        std::get<0>(*std::get<1>(sorting_helper[i])) * NSTOKES +
+                        s;
+
+                    std::get<2>(*std::get<1>(sorting_helper[i]))[s] =
+                        inner_index + total_nnz;
+                }
+                total_nnz += nnz;
+            }
+        }
+
+        // Now we have to copy our row inner indicies to the full matrix
+        m_inner_indicies.resize(total_nnz);
+        int current_index = 0;
+        for (auto& index : inner_indicies) {
+            for (int i = 0; i < index.size(); ++i) {
+                m_inner_indicies[current_index] = index[i];
+                ++current_index;
+            }
+        }
+
+        // Lastly set the outerstarts vector
+        m_outer_starts(0) = 0;
+        for (int i = 0; i < inner_indicies.size(); ++i) {
+            m_outer_starts(i + 1) =
+                m_outer_starts(i) + inner_indicies[i].size();
+        }
+
+        // And we can now resize our value storage
+        for (auto& storage : m_thread_storage) {
+            storage.accumulation_value_storage.resize(
+                m_config->num_source_threads());
+
+            for (auto& vec : storage.accumulation_value_storage) {
+                vec.resize(total_nnz);
+            }
+            storage.accumulation_summed_values.resize(total_nnz);
+        }
+    }
+
+    template <int NSTOKES>
     void
     DiffuseTable<NSTOKES>::initialize_config(const sasktran2::Config& config) {
         m_config = &config;
 
-        m_thread_storage.resize(m_config->num_threads());
+        m_thread_storage.resize(m_config->num_wavelength_threads());
 
         m_initial_owned_sources.emplace_back(
             std::make_unique<sasktran2::solartransmission::SingleScatterSource<
@@ -364,7 +503,7 @@ namespace sasktran2::hr {
             saa_initial);
 
         return m_geometry.coordinates().look_vector_from_azimuth(
-            new_position, saa_initial, temp.cos_zenith_angle(vector));
+            new_position, -saa_initial, temp.cos_zenith_angle(vector));
     }
 
     template <int NSTOKES>
@@ -375,8 +514,15 @@ namespace sasktran2::hr {
 
         interpolator.resize(rays.size());
 
-        std::vector<std::pair<int, double>> temp_location_storage;
-        std::vector<std::pair<int, double>> temp_direction_storage;
+        int nthreads = m_config->num_threads();
+
+        std::vector<std::vector<std::pair<int, double>>>
+            thread_temp_location_storage;
+        std::vector<std::vector<std::pair<int, double>>>
+            thread_temp_direction_storage;
+
+        thread_temp_location_storage.resize(nthreads);
+        thread_temp_direction_storage.resize(nthreads);
 
         int num_location, num_direction;
 
@@ -384,7 +530,20 @@ namespace sasktran2::hr {
 
         sasktran2::Location temp_location;
 
+#pragma omp parallel for num_threads(nthreads) private(                        \
+    num_location, num_direction, rotated_los, temp_location)
         for (int rayidx = 0; rayidx < rays.size(); ++rayidx) {
+#ifdef SKTRAN_OPENMP_SUPPORT
+            int threadidx = omp_get_thread_num();
+#else
+            int threadidx = 0;
+#endif
+
+            auto& temp_location_storage =
+                thread_temp_location_storage[threadidx];
+            auto& temp_direction_storage =
+                thread_temp_direction_storage[threadidx];
+
             auto& ray_interpolator = interpolator[rayidx];
             const auto& ray = rays[rayidx];
 
@@ -433,12 +592,13 @@ namespace sasktran2::hr {
                         }
 #endif
 
-                        layer_interpolator.emplace_back(std::make_pair(
+                        layer_interpolator.emplace_back(std::make_tuple(
                             m_diffuse_outgoing_index_map
                                     [temp_location_storage[locidx].first] +
                                 temp_direction_storage[diridx].first,
                             temp_location_storage[locidx].second *
-                                temp_direction_storage[diridx].second));
+                                temp_direction_storage[diridx].second,
+                            std::array<int, NSTOKES>{}));
                     }
                 }
                 total_num_weights += num_location * num_direction;
@@ -470,12 +630,13 @@ namespace sasktran2::hr {
 
                     for (int diridx = 0; diridx < num_direction; ++diridx) {
                         ray_interpolator.ground_weights.emplace_back(
-                            std::make_pair(
+                            std::make_tuple(
                                 m_diffuse_outgoing_index_map
                                         [temp_location_storage[locidx].first] +
                                     temp_direction_storage[diridx].first,
                                 temp_location_storage[locidx].second *
-                                    temp_direction_storage[diridx].second));
+                                    temp_direction_storage[diridx].second,
+                                std::array<int, NSTOKES>{}));
                     }
                 }
                 total_num_weights += num_location * num_direction;
@@ -488,6 +649,8 @@ namespace sasktran2::hr {
                                                              int threadidx) {
         auto& storage = m_thread_storage[threadidx];
 
+#pragma omp parallel for num_threads(m_config->num_source_threads())           \
+    schedule(dynamic)
         for (int i = 0; i < m_location_interpolator->num_interior_points();
              ++i) {
             if (!m_diffuse_point_full_calculation[i]) {
@@ -502,6 +665,8 @@ namespace sasktran2::hr {
                 storage.point_scattering_matrices[i].data());
         }
 
+#pragma omp parallel for num_threads(m_config->num_source_threads())           \
+    schedule(dynamic)
         for (int i = 0; i < m_location_interpolator->num_ground_points(); ++i) {
             if (!m_diffuse_point_full_calculation
                     [i + m_location_interpolator->num_interior_points()]) {
@@ -526,14 +691,20 @@ namespace sasktran2::hr {
 
     template <int NSTOKES>
     void DiffuseTable<NSTOKES>::generate_accumulation_matrix(int wavelidx,
-                                                             int threadidx) {
-        auto& matrix = m_thread_storage[threadidx].accumulation_matrix;
-    }
+                                                             int threadidx) {}
 
     template <int NSTOKES>
     void DiffuseTable<NSTOKES>::iterate_to_solution(int wavelidx,
                                                     int threadidx) {
         auto& storage = m_thread_storage[threadidx];
+
+        Eigen::Map<Eigen::SparseMatrix<double, Eigen::RowMajor>>
+            accumulation_matrix(
+                m_thread_storage[threadidx].m_incoming_radiances.value.size(),
+                m_thread_storage[threadidx].m_outgoing_sources.value.size(),
+                m_inner_indicies.size(), m_outer_starts.data(),
+                m_inner_indicies.data(),
+                m_thread_storage[threadidx].accumulation_summed_values.data());
 
         Eigen::VectorXd old_outgoing_vals;
 
@@ -558,8 +729,7 @@ namespace sasktran2::hr {
                 if (m_config->initialize_hr_with_do()) {
                     // Apply the accumulation matrix
                     storage.m_incoming_radiances.value =
-                        storage.accumulation_matrix *
-                            storage.m_outgoing_sources.value +
+                        accumulation_matrix * storage.m_outgoing_sources.value +
                         storage.m_firstorder_radiances.value;
                 } else {
                     storage.m_incoming_radiances.value =
@@ -567,14 +737,15 @@ namespace sasktran2::hr {
                 }
             } else {
                 storage.m_incoming_radiances.value.noalias() =
-                    storage.accumulation_matrix *
-                        storage.m_outgoing_sources.value +
+                    accumulation_matrix * storage.m_outgoing_sources.value +
                     storage.m_firstorder_radiances.value;
             }
 
             old_outgoing_vals =
                 m_thread_storage[threadidx].m_outgoing_sources.value;
 
+#pragma omp parallel for num_threads(m_config->num_source_threads())           \
+    schedule(dynamic)
             for (int i = 0; i < m_diffuse_points.size(); ++i) {
                 if (!m_diffuse_point_full_calculation[i]) {
                     continue;
@@ -685,25 +856,49 @@ namespace sasktran2::hr {
             source->calculate(wavelidx, threadidx);
         }
 
+        int nthreads = m_config->num_source_threads();
+
         if (m_config->num_hr_spherical_iterations() > 0) {
             // Calculate the first order incoming signal
-            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>
+            std::vector<
+                sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>>
                 temp_result;
-            std::vector<Eigen::Triplet<double>> triplets;
+            temp_result.resize(nthreads);
 
-            triplets.reserve(m_total_num_diffuse_weights);
+            for (int i = 0; i < nthreads; ++i) {
+                m_thread_storage[threadidx]
+                    .accumulation_value_storage[i]
+                    .setZero();
+            }
 
+#pragma omp parallel for num_threads(nthreads)
             for (int rayidx = 0; rayidx < m_incoming_traced_rays.size();
                  ++rayidx) {
-                temp_result.value.setZero();
+                int ray_threadidx;
+
+                if (nthreads == 1) {
+                    ray_threadidx = 0;
+                } else {
+#ifdef SKTRAN_OPENMP_SUPPORT
+                    ray_threadidx = omp_get_thread_num();
+#else
+                    ray_threadidx = 0;
+#endif
+                }
+
+                temp_result[ray_threadidx].value.setZero();
 
                 m_integrator.integrate_and_emplace_accumulation_triplets(
-                    temp_result, m_initial_sources, wavelidx, rayidx, threadidx,
-                    m_diffuse_source_weights, triplets);
+                    temp_result[ray_threadidx], m_initial_sources, wavelidx,
+                    rayidx, threadidx, ray_threadidx + threadidx,
+                    m_diffuse_source_weights,
+                    m_thread_storage[threadidx]
+                        .accumulation_value_storage[ray_threadidx]);
 
                 m_thread_storage[threadidx].m_firstorder_radiances.value(
-                    Eigen::seq(rayidx * NSTOKES, rayidx * NSTOKES + NSTOKES -
-                                                     1)) = temp_result.value;
+                    Eigen::seq(rayidx * NSTOKES,
+                               rayidx * NSTOKES + NSTOKES - 1)) =
+                    temp_result[ray_threadidx].value;
 
 #ifdef SASKTRAN_DEBUG_ASSERTS
                 if (temp_result.value.hasNaN()) {
@@ -711,11 +906,12 @@ namespace sasktran2::hr {
                 }
 #endif
             }
-            auto& matrix = m_thread_storage[threadidx].accumulation_matrix;
 
-            matrix.setFromTriplets(triplets.begin(), triplets.end());
-
-            // Optional: Intialize total incoming with DO solution
+            m_thread_storage[threadidx].accumulation_summed_values.setZero();
+            for (int i = 0; i < nthreads; ++i) {
+                m_thread_storage[threadidx].accumulation_summed_values +=
+                    m_thread_storage[threadidx].accumulation_value_storage[i];
+            }
 
             // Else, start with total first order incoming
             m_thread_storage[threadidx].m_incoming_radiances.value =
@@ -732,12 +928,12 @@ namespace sasktran2::hr {
 
     template <int NSTOKES>
     void DiffuseTable<NSTOKES>::integrated_source(
-        int wavelidx, int losidx, int layeridx, int threadidx,
-        const sasktran2::raytracing::SphericalLayer& layer,
+        int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+        int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
         const sasktran2::SparseODDualView& shell_od,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
-        auto& storage = m_thread_storage[threadidx];
+        auto& storage = m_thread_storage[wavel_threadidx];
 
         auto& interpolator =
             m_los_source_weights[losidx].interior_weights[layeridx];
@@ -756,9 +952,10 @@ namespace sasktran2::hr {
             auto& index_weight = interpolator.second[i];
 
             for (int s = 0; s < NSTOKES; ++s) {
-                double source_value = storage.m_outgoing_sources.value(
-                                          index_weight.first * NSTOKES + s) *
-                                      index_weight.second;
+                double source_value =
+                    storage.m_outgoing_sources.value(
+                        (std::get<0>(index_weight) * NSTOKES + s)) *
+                    std::get<1>(index_weight);
 
                 source.value(s) += omega * source_factor * source_value;
 
@@ -782,9 +979,10 @@ namespace sasktran2::hr {
                                 full &&
                         m_config->initialize_hr_with_do()) {
                         source.deriv(s, Eigen::all) +=
-                            omega * source_factor * index_weight.second *
+                            omega * source_factor * std::get<1>(index_weight) *
                             storage.m_outgoing_sources.deriv(
-                                index_weight.first * NSTOKES + s, Eigen::all);
+                                std::get<0>(index_weight) * NSTOKES + s,
+                                Eigen::all);
                     }
                 }
             }
@@ -793,7 +991,7 @@ namespace sasktran2::hr {
 
     template <int NSTOKES>
     void DiffuseTable<NSTOKES>::end_of_ray_source(
-        int wavelidx, int losidx, int threadidx,
+        int wavelidx, int losidx, int wavel_threadidx, int threadidx,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
         // TODO: Only necessary for nadir viewing ground?

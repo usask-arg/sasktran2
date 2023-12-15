@@ -54,9 +54,15 @@ class NumberDensityScatterer(Constituent):
         self._kwargs = kwargs
 
     def __getattr__(self, __name: str) -> Any:
-        if __name in self._kwargs:
+        if __name in self.__dict__.get("_kwargs", {}):
             return self._kwargs[__name]
         return None
+
+    def __setattr__(self, __name: str, __value: Any) -> None:
+        if __name in self.__dict__.get("_kwargs", {}):
+            self._kwargs[__name] = __value
+        else:
+            super().__setattr__(__name, __value)
 
     @property
     def number_density(self):
@@ -121,7 +127,7 @@ class NumberDensityScatterer(Constituent):
                 scat_factor=(
                     (self._optical_quants.ssa * self._optical_quants.extinction)
                     / (atmo.storage.ssa * atmo.storage.total_extinction)
-                )[np.newaxis, :, :],
+                ),
             ),
             interpolating_matrix=interp_matrix
             * self._vertical_deriv_factor[np.newaxis, :],
@@ -177,12 +183,11 @@ class NumberDensityScatterer(Constituent):
             norm_factor[norm_factor == 0] = 1
 
             val.scat_factor = (
-                (self._optical_quants.ssa * self._optical_quants.extinction)
-                / (atmo.storage.ssa * atmo.storage.total_extinction)
-            )[np.newaxis, :, :]
+                self._optical_quants.ssa * self._optical_quants.extinction
+            ) / (atmo.storage.ssa * atmo.storage.total_extinction)
 
             val.d_leg_coeff /= norm_factor[np.newaxis, :, :]
-            val.scat_factor *= norm_factor[np.newaxis, :, :]
+            val.scat_factor *= norm_factor
 
             derivs[key] = InterpolatedDerivativeMapping(
                 val,

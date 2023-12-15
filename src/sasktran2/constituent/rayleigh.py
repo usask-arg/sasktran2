@@ -1,3 +1,5 @@
+from typing import Optional
+
 import numpy as np
 
 import sasktran2 as sk
@@ -7,12 +9,13 @@ from sasktran2.atmosphere import (
 )
 from sasktran2.optical import pressure_temperature_to_numberdensity
 from sasktran2.optical.rayleigh import rayleigh_cross_section_bates
+from sasktran2.polarization import LegendreStorageView
 
 from .base import Constituent
 
 
 class Rayleigh(Constituent):
-    def __init__(self, method: str = "bates"):
+    def __init__(self, method: str = "bates", method_kwargs: Optional[dict] = None):
         """
         An implementation of Rayleigh scattering.  Cross sections (and depolarization factors) can be
         calculated multiple ways, with the default method being that of 'bates'.
@@ -28,15 +31,41 @@ class Rayleigh(Constituent):
             Method to use to calculate the cross section.  Supported methods are
             ['bates'], by default 'bates'
 
+        method_kwargs: dict, optional
+            kwargs that can be passed to the method
+
         Raises
         ------
         ValueError
             If input method is not supported
         """
+        self._method_kwargs = method_kwargs
         if method.lower() == "bates":
             self._rayleigh_cross_fn = rayleigh_cross_section_bates
+            if self._method_kwargs is not None:
+                self._fn_kwargs = self._method_kwargs
+            else:
+                self._fn_kwargs = {}
+        elif method.lower() == "manual":
+
+            def temp_fn(wv_micron: np.array):
+                xs = np.interp(
+                    wv_micron * 1000,
+                    self._method_kwargs["wavelength_nm"],
+                    self._method_kwargs["xs"],
+                )
+                king = np.interp(
+                    wv_micron * 1000,
+                    self._method_kwargs["wavelength_nm"],
+                    self._method_kwargs["king_factor"],
+                )
+
+                return xs, king
+
+            self._rayleigh_cross_fn = temp_fn
+            self._fn_kwargs = {}
         else:
-            msg = "Method must be bates"
+            msg = "Method must be bates or manual"
             raise ValueError(msg)
 
         self._ray_ext = None
@@ -68,7 +97,9 @@ class Rayleigh(Constituent):
             atmo.pressure_pa, atmo.temperature_k
         )
 
-        scattering_xs, king_factor = self._rayleigh_cross_fn(atmo.wavelengths_nm / 1000)
+        scattering_xs, king_factor = self._rayleigh_cross_fn(
+            atmo.wavelengths_nm / 1000, **self._fn_kwargs
+        )
 
         # King factor F = (6 + 3 d) / (6 - 7 d)
         # So then (6 - 7 d) * F = 6 + 3 d
@@ -83,12 +114,24 @@ class Rayleigh(Constituent):
         # SSA temporarily stores the scattering extinction
         atmo.storage.ssa += self._ray_ext
 
-        if atmo.nstokes == 1:
-            atmo.storage.leg_coeff[0] += self._ray_ext
-            atmo.storage.leg_coeff[2] += (
-                self._ray_ext * ((1 - self._delta) / (2 + self._delta))[np.newaxis, :]
+        atmo.leg_coeff.a1[0] += self._ray_ext
+        atmo.leg_coeff.a1[2] += (
+            self._ray_ext * ((1 - self._delta) / (2 + self._delta))[np.newaxis, :]
+        )
+
+        if atmo.nstokes == 3:
+            atmo.leg_coeff.a2[2] += (
+                self._ray_ext
+                * 6
+                * ((1 - self._delta) / (2 + self._delta))[np.newaxis, :]
             )
-        else:
+
+            atmo.leg_coeff.b1[2] += (
+                self._ray_ext
+                * np.sqrt(6.0)
+                * ((1 - self._delta) / (2 + self._delta))[np.newaxis, :]
+            )
+        elif atmo.nstokes == 4:
             msg = (
                 "NSTOKES={} not currently implemented for Rayleigh constituent".format(
                     atmo.nstokes
@@ -110,12 +153,15 @@ class Rayleigh(Constituent):
         xs = self._ray_ext / N[:, np.newaxis]
 
         deriv_names = []
+        d_vals = []
         if atmo.calculate_pressure_derivative:
             deriv_names.append("pressure_pa")
+            d_vals.append(dN_dP)
         if atmo.calculate_temperature_derivative:
             deriv_names.append("temperature_k")
+            d_vals.append(dN_dT)
 
-        for deriv_name, vert_factor in zip(deriv_names, [dN_dP, dN_dT]):
+        for deriv_name, vert_factor in zip(deriv_names, d_vals):
             derivs[deriv_name] = InterpolatedDerivativeMapping(
                 NativeGridDerivative(
                     d_extinction=xs,
@@ -123,7 +169,7 @@ class Rayleigh(Constituent):
                     d_leg_coeff=-atmo.storage.leg_coeff,
                     scat_factor=(
                         xs / (atmo.storage.ssa * atmo.storage.total_extinction)
-                    )[np.newaxis, :, :],
+                    ),
                 ),
                 summable=True,
                 interp_dim="altitude",
@@ -131,9 +177,21 @@ class Rayleigh(Constituent):
                 interpolating_matrix=np.eye(len(N)) * vert_factor[np.newaxis, :],
             )
 
-            derivs[deriv_name].native_grid_mapping.d_leg_coeff[0] += 1
-            derivs[deriv_name].native_grid_mapping.d_leg_coeff[2] += (
-                (1 - self._delta) / (2 + self._delta)
-            )[np.newaxis, :]
+            d_leg_coeff = LegendreStorageView(
+                derivs[deriv_name].native_grid_mapping.d_leg_coeff, atmo.nstokes
+            )
+
+            d_leg_coeff.a1[0] += 1
+            d_leg_coeff.a1[2] += ((1 - self._delta) / (2 + self._delta))[np.newaxis, :]
+
+            if atmo.nstokes >= 3:
+                d_leg_coeff.a2[2] += (
+                    6 * ((1 - self._delta) / (2 + self._delta))[np.newaxis, :]
+                )
+
+                d_leg_coeff.b1[2] += (
+                    np.sqrt(6.0)
+                    * ((1 - self._delta) / (2 + self._delta))[np.newaxis, :]
+                )
 
         return derivs
