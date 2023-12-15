@@ -47,6 +47,8 @@ requirements:
     - python {{ python }}
     - numpy
     - spdlog
+    - fmt
+    - dask
     - appdirs
     - pyyaml
     - xarray
@@ -72,3 +74,4 @@ about:
   license_file:
     - license.md
   summary: "The SASKTRAN radiative transfer model Version 2"
+  doc_url: https://sasktran2.readthedocs.io/
