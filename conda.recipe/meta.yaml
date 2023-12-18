@@ -54,6 +54,8 @@ requirements:
     - xarray
     - netcdf4
     - scipy
+    - liblapacke
+    - libblas
 
 test:
   requires:
