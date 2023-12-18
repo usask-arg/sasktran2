@@ -37,7 +37,7 @@ requirements:
     - liblapacke=*=*netlib
     - libtmglib=*=*netlib
     - catch2
-    - llvm-openmp # [mac]
+    - llvm-openmp # [osx]
     - zlib
     - pybind11>=2.10.2
     - spdlog
@@ -54,9 +54,6 @@ requirements:
     - xarray
     - netcdf4
     - scipy
-    - libblas
-    - liblapacke
-    - llvm-openmp # [mac]
 
 test:
   requires:
