@@ -20,5 +20,6 @@ dependencies:
   - doxygen
   - pip
   - ipython
+  - cmake>=3.28
   - pip:
     - sphinx_rtd_theme
