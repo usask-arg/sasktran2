@@ -59,7 +59,7 @@ jobs:
       - name: build
         shell: bash -el {0}
         run: |
-          pip install -e .
+          pip install -e . -v
 
       - name: printenv
         shell: bash -el {0}
