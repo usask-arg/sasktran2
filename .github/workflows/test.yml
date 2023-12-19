@@ -56,6 +56,11 @@ jobs:
         with:
           environment-file: conda/dev_env_windows.yml
 
+      - name: cmake configure debug
+        shell: bash -el {0}
+        run: |
+          cmake -S. -B build -DCMAKE_BUILD_TYPE=Release --debug-find
+
       - name: build
         shell: bash -el {0}
         run: |
