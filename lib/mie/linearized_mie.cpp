@@ -66,6 +66,11 @@ namespace sasktran2::mie {
             Qsca.resize(size_param.size());
             ;
             Qsca << Qsca_small, Qsca_reg;
+
+            S1.resize(size_param.size(), cos_angles.size());
+            S1 << S1_small, S1_reg;
+            S2.resize(size_param.size(), cos_angles.size());
+            S2 << S2_small, S2_reg;
         }
 
         data_values.Qext = Qext;

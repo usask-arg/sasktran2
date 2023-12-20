@@ -28,6 +28,9 @@
 [Geodesy](api/geodetic.md)
 : Tools to deal with geodetic reference systems such as WGS84
 
+[Mie](api/mie.md)
+: Tools to calculate Mie parameters
+
 [Utility](api/util.rst)
 : Utility functionality in `sasktran2.util.*`
 
@@ -46,4 +49,5 @@ api/viewing_geometry
 api/climatology
 api/geodetic
 api/util
+api/mie
 ```

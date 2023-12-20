@@ -103,6 +103,7 @@ extend-ignore = [
     "PLR",    # Design related pylint codes
     "E501",   # Line too long
     "I002",   # Future annotations
+    "PD011", # wanting to use to_numpy instead of values
 ]
 src = ["python"]
 unfixable = [

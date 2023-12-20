@@ -66,6 +66,24 @@ TEST_CASE("LinMie An Bn test", "[sasktran2][mie]") {
     REQUIRE(fabs(Bn_matrix(1, 0).imag() + 0.236805417045) < 0.0001);
 }
 
+TEST_CASE("LinMie multiple size_params", "[sasktran2][mie]") {
+    auto mie = sasktran2::mie::LinearizedMie();
+
+    auto size_param = Eigen::VectorXd::LinSpaced(2, 0.101, 0.2);
+    auto refractive_index = std::complex<double>(0.75, 0.0);
+    Eigen::VectorXd angles = Eigen::VectorXd::LinSpaced(7, 0, 180.0);
+    Eigen::VectorXd cos_angles = cos(angles.array() * EIGEN_PI / 180.0);
+
+    auto result = mie.calculate(size_param, refractive_index, cos_angles, true);
+    REQUIRE(fabs(result.values.Qext.size() - 2) < 0.0001);
+    REQUIRE(fabs(result.values.Qsca.size() - 2) < 0.0001);
+
+    REQUIRE(fabs(result.values.S1.cols() - 7) < 0.0001);
+    REQUIRE(fabs(result.values.S1.rows() - 2) < 0.0001);
+    REQUIRE(fabs(result.values.S2.cols() - 7) < 0.0001);
+    REQUIRE(fabs(result.values.S2.rows() - 2) < 0.0001);
+}
+
 TEST_CASE("LinMie Qext Qsca test non absorbing (miepython)",
           "[sasktran2][mie]") {
     auto mie = sasktran2::mie::LinearizedMie();
