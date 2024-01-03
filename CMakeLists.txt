@@ -284,6 +284,7 @@ if(BUILD_PYTHON)
     src/engine.cpp
     src/mie.cpp
     src/output.cpp
+    src/math.cpp
     WITH_SOABI)
 
   target_link_libraries(_core PRIVATE pybind11::headers)
