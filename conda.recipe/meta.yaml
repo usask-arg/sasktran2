@@ -37,7 +37,7 @@ requirements:
     - liblapacke=*=*netlib
     - libtmglib=*=*netlib
     - catch2
-    - llvm-openmp # [mac]
+    - llvm-openmp # [osx]
     - zlib
     - pybind11>=2.10.2
     - spdlog
@@ -47,14 +47,15 @@ requirements:
     - python {{ python }}
     - numpy
     - spdlog
+    - fmt
+    - dask
     - appdirs
     - pyyaml
     - xarray
     - netcdf4
     - scipy
-    - libblas
     - liblapacke
-    - llvm-openmp # [mac]
+    - libblas
 
 test:
   requires:
@@ -70,5 +71,6 @@ test:
 about:
   home: https://github.com/usask-arg/sasktran2
   license_file:
-    - ../license.md
+    - license.md
   summary: "The SASKTRAN radiative transfer model Version 2"
+  doc_url: https://sasktran2.readthedocs.io/
