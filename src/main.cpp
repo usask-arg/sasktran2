@@ -12,6 +12,7 @@ void init_viewing_geometry(py::module_&);
 void init_output(py::module_&);
 void init_engine(py::module_&);
 void init_mie(py::module_&);
+void init_math(py::module_&);
 
 PYBIND11_MODULE(_core, m) {
     init_config(m);
@@ -23,5 +24,6 @@ PYBIND11_MODULE(_core, m) {
     init_viewing_geometry(m);
     init_output(m);
     init_engine(m);
+    init_math(m);
     init_mie(m);
 }
