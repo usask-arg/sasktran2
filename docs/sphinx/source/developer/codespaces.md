@@ -38,3 +38,8 @@ make html
 
 Then, on the explorer on the left, go to `docs/sphinx/build` and right click on `index.html` and press "Show Preview". A button
 should appear prompting you to open a web browser.  On this page you may have to navigate to `docs/sphinx/build` again.
+
+## Making Changes
+To do development inside the codespace, press the "Main" button on the bottom left, and choose "Create new branch".  Here you can make
+a new branch.  Then once you are done making changes, press the "Source Control" button on the left and commit your changes.  Make sure to
+publish the changes to your fork after committing.  Then you can make a pull request as normal.
