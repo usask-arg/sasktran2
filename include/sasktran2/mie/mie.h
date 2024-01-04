@@ -61,7 +61,7 @@ namespace sasktran2::mie {
         const MieOutput& calculate(const Eigen::VectorXd& size_param,
                                    const std::complex<double>& refractive_index,
                                    const Eigen::VectorXd& cos_angles,
-                                   bool calculate_derivative) {
+                                   bool calculate_derivative = false) {
 
             m_output.size_param = size_param;
             m_output.refractive_index = refractive_index;
