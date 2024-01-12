@@ -218,5 +218,19 @@ namespace sasktran2::hr {
             int wavelidx, int losidx, int wavel_threadidx, int threadidx,
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
                 source) const;
+
+        /**
+         * @brief Not used for the HR source.
+         *
+         * @param wavelidx
+         * @param losidx
+         * @param wavel_threadidx
+         * @param threadidx
+         * @param source
+         */
+        virtual void start_of_ray_source(
+            int wavelidx, int losidx, int wavel_threadidx, int threadidx,
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+                source) const override{};
     };
 } // namespace sasktran2::hr

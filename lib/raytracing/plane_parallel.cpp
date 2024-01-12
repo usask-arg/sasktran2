@@ -1,3 +1,4 @@
+#include "sasktran2/geometry.h"
 #include <sasktran2/raytracing.h>
 
 namespace sasktran2::raytracing {
@@ -7,10 +8,15 @@ namespace sasktran2::raytracing {
         // Set the ray to 0
         result.reset();
 
-        if (ray.observer.radius() - m_earth_radius >=
+        if (ray.look_away.z() == 0) {
+            spdlog::error(
+                "Trying to trace a horizontal ray in plane parallel mode");
+        }
+
+        if (ray.observer.position.z() - m_earth_radius >=
             m_alt_grid.grid()(Eigen::last)) {
             // Outside atmosphere, probably
-            if (ray.cos_viewing() > 0) {
+            if (ray.look_away.z() > 0) {
                 // We are looking up, so this is just an empty ray
                 result.observer_and_look = ray;
                 result.ground_is_hit = false;
@@ -20,7 +26,7 @@ namespace sasktran2::raytracing {
             trace_ray_observer_outside_looking_ground(ray, result);
         } else {
             // We are inside the atmosphere
-            if (ray.cos_viewing() > 0) {
+            if (ray.look_away.z() > 0) {
                 // Looking up
                 trace_ray_observer_inside_looking_up(ray, result);
             } else {
@@ -30,11 +36,12 @@ namespace sasktran2::raytracing {
 
         // For each layer, we go through and add in the computed solar angles
         for (auto& layer : result.layers) {
-            add_solar_parameters(m_geometry.coordinates().sun_unit(), layer);
+            add_solar_parameters(m_geometry.coordinates().sun_unit(), layer,
+                                 sasktran2::geometrytype::planeparallel);
         }
     }
 
-    void PlaneParallelRayTracer::trace_ray_observer_inside_looking_ground(
+    void PlaneParallelRayTracer::trace_ray_observer_outside_looking_ground(
         const sasktran2::viewinggeometry::ViewingRay& ray,
         TracedRay& tracedray) const {
         // We have len(altitudes) - 1 spherical layers, starting from the ground
@@ -55,7 +62,7 @@ namespace sasktran2::raytracing {
         // Find the index to the first altitude ABOVE the observer
         auto it =
             std::upper_bound(m_alt_grid.grid().begin(), m_alt_grid.grid().end(),
-                             ray.observer.radius() - m_earth_radius);
+                             ray.observer.position.z() - m_earth_radius);
         size_t start_index = std::distance(m_alt_grid.grid().begin(), it);
 
         auto& result = tracedray;
@@ -75,17 +82,18 @@ namespace sasktran2::raytracing {
                       ViewingDirection::up);
 
         for (int i = 0; i < result.layers.size() - 1; ++i) {
-            assert(result.layers[i + 1].exit.radius() ==
-                   result.layers[i].entrance.radius());
+            assert(result.layers[i + 1].exit.position.z() ==
+                   result.layers[i].entrance.position.z());
         }
 
-        assert(abs(result.layers[0].exit.radius() -
+        assert(abs(result.layers[0].exit.position.z() -
                    m_alt_grid.grid()(Eigen::last) - m_earth_radius) < 1e-8);
-        assert(abs(result.layers[result.layers.size() - 1].entrance.radius() -
-                   ray.observer.radius()) < 1e-8);
+        assert(
+            abs(result.layers[result.layers.size() - 1].entrance.position.z() -
+                ray.observer.position.z()) < 1e-8);
     }
 
-    void PlaneParallelRayTracer::trace_ray_observer_outside_looking_ground(
+    void PlaneParallelRayTracer::trace_ray_observer_inside_looking_ground(
         const sasktran2::viewinggeometry::ViewingRay& ray,
         TracedRay& tracedray) const {
         auto& result = tracedray;
@@ -137,14 +145,17 @@ namespace sasktran2::raytracing {
         layer.layer_distance = abs(s_entrance - s_exit);
 
         layer.entrance.position =
-            ray.observer.position + ray.look_away * s_entrance;
-        layer.exit.position = ray.observer.position + ray.look_away * s_exit;
+            ray.observer.position + ray.look_away * s_entrance * direction;
+        layer.exit.position =
+            ray.observer.position + ray.look_away * s_exit * direction;
 
         layer.curvature_factor = 1;
 
         layer.average_look_away = ray.look_away;
 
-        add_od_quadrature(layer, sasktran2::geometrytype::planeparallel);
+        add_od_quadrature(layer, sasktran2::geometrytype::planeparallel,
+                          m_alt_grid.interpolation_method());
+        add_interpolation_weights(layer, m_geometry);
     }
 
     void PlaneParallelRayTracer::partial_layer(
@@ -153,7 +164,7 @@ namespace sasktran2::raytracing {
         ViewingDirection direction) const {
         layer.type = LayerType::partial;
 
-        double entrance_altitude = ray.observer.radius() - m_earth_radius;
+        double entrance_altitude = ray.observer.position.z() - m_earth_radius;
         double exit_altitude = m_alt_grid.grid()(start_index);
 
         layer.exit.on_exact_altitude = true;
@@ -170,21 +181,24 @@ namespace sasktran2::raytracing {
         layer.layer_distance = abs(s_entrance - s_exit);
 
         layer.entrance.position =
-            ray.observer.position + ray.look_away * s_entrance;
-        layer.exit.position = ray.observer.position + ray.look_away * s_exit;
+            ray.observer.position + ray.look_away * s_entrance * direction;
+        layer.exit.position =
+            ray.observer.position + ray.look_away * s_exit * direction;
 
         layer.curvature_factor = 1;
         layer.average_look_away = ray.look_away;
 
-        add_od_quadrature(layer, sasktran2::geometrytype::planeparallel);
+        add_od_quadrature(layer, sasktran2::geometrytype::planeparallel,
+                          m_alt_grid.interpolation_method());
+        add_interpolation_weights(layer, m_geometry);
     }
 
     double PlaneParallelRayTracer::distance_to_altitude(
         const sasktran2::viewinggeometry::ViewingRay& ray, double altitude,
         ViewingDirection direction) const {
-        double mu_viewing = ray.cos_viewing();
+        double mu_viewing = ray.look_away.z();
 
-        double observer_altitude = ray.observer.radius() - m_earth_radius;
+        double observer_altitude = ray.observer.position.z() - m_earth_radius;
 
         return direction * (altitude - observer_altitude) / mu_viewing;
     }

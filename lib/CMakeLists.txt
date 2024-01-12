@@ -21,6 +21,7 @@ add_library(
   atmosphere/userdefined1d_constituent.cpp
   phasefunction/interpolator.cpp
   sourceintegrator/sourceintegrator.cpp
+  sourceintegrator/source_algorithms.cpp
   geometry/geometry.cpp
   geometry/geometry1d.cpp
   geometry/geodetic.cpp
@@ -62,6 +63,7 @@ add_library(
   sktran_disco/source_term/do_source_diffuse_storage.cpp
   sktran_disco/source_term/do_source.cpp
   sktran_disco/source_term/do_source_interpolated_pp.cpp
+  sktran_disco/source_term/do_source_planeparallel.cpp
   sktran_disco/sktran_do_dll_expose.cpp)
 
 option(BUILD_DOXYGEN "Build Doxygen Docs" ON)

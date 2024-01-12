@@ -1,3 +1,4 @@
+#include "sasktran2/geometry.h"
 #include <algorithm>
 #ifdef SKTRAN_OPENMP_SUPPORT
 #include <omp.h>
@@ -569,10 +570,17 @@ namespace sasktran2::hr {
                     const auto& contributing_point =
                         m_diffuse_points[temp_location_storage[locidx].first];
 
-                    // Multiply by -1 to get the propagation direction
-                    rotated_los = rotate_unit_vector(
-                        -1 * layer.average_look_away, temp_location.position,
-                        contributing_point->location().position);
+                    if (m_geometry.coordinates().geometry_type() ==
+                        sasktran2::geometrytype::spherical) {
+                        // Multiply by -1 to get the propagation direction
+                        rotated_los = rotate_unit_vector(
+                            -1 * layer.average_look_away,
+                            temp_location.position,
+                            contributing_point->location().position);
+                    } else {
+                        // Don't need to rotate in plane parallel geometry
+                        rotated_los = -1 * layer.average_look_away;
+                    }
 
                     contributing_point->sphere_pair()
                         .outgoing_sphere()
@@ -618,10 +626,16 @@ namespace sasktran2::hr {
                     const auto& contributing_point =
                         m_diffuse_points[temp_location_storage[locidx].first];
 
-                    // Multiply by -1 to get the propagation direction
-                    rotated_los = rotate_unit_vector(
-                        -1 * layer.average_look_away, temp_location.position,
-                        contributing_point->location().position);
+                    if (m_geometry.coordinates().geometry_type() ==
+                        sasktran2::geometrytype::spherical) {
+                        // Multiply by -1 to get the propagation direction
+                        rotated_los = rotate_unit_vector(
+                            -1 * layer.average_look_away,
+                            temp_location.position,
+                            contributing_point->location().position);
+                    } else {
+                        rotated_los = -1 * layer.average_look_away;
+                    }
 
                     contributing_point->sphere_pair()
                         .outgoing_sphere()

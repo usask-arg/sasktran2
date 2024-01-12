@@ -1,4 +1,5 @@
 #include <sasktran2.h>
+#include "sasktran2/geometry.h"
 #include "sasktran2/viewinggeometry.h"
 
 namespace sasktran2::viewinggeometry {
@@ -26,7 +27,9 @@ namespace sasktran2::viewinggeometry {
         double distance_from_ground = 0.0;
 
         if (geometry.geometry_type() ==
-            sasktran2::geometrytype::planeparallel) {
+                sasktran2::geometrytype::planeparallel ||
+            geometry.geometry_type() ==
+                sasktran2::geometrytype::pseudospherical) {
             // Distance from ground is a simple scaling of the observer altitude
             distance_from_ground = m_observer_altitude / m_cos_viewing_zenith;
 

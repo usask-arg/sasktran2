@@ -1,4 +1,6 @@
 #include "sasktran2/do_source.h"
+#include "sasktran2/geometry.h"
+#include "sktran_disco/sktran_do_types.h"
 
 namespace sasktran2 {
     template <int NSTOKES, int CNSTR>
@@ -64,8 +66,10 @@ namespace sasktran2 {
         double ref_cos_sza = m_geometry.coordinates().cos_sza_at_reference();
         Eigen::VectorXd sza_grid;
 
-        if (num_sza == 1) {
+        if (num_sza == 1 || (m_geometry.coordinates().geometry_type() !=
+                             sasktran2::geometrytype::spherical)) {
             // Special case where we just want the SZA at the tangent point
+            // Or we are in plane parallel geometry and we only need one SZA
 
             sza_grid.resize(1);
             sza_grid(0) = ref_cos_sza;

@@ -97,6 +97,11 @@ namespace sasktran2 {
     Eigen::Vector3d
     Coordinates::solar_coordinate_vector(double cos_sza, double saa,
                                          double altitude) const {
+        if (m_geotype == sasktran2::geometrytype::planeparallel ||
+            m_geotype == sasktran2::geometrytype::pseudospherical) {
+            return m_z_unit * (altitude + m_earth_radius);
+        }
+
         // First find the plane to rotate the sun vector around
 
         Eigen::Vector3d normal = m_sun_unit.cross(m_z_unit);
@@ -136,9 +141,15 @@ namespace sasktran2 {
         const Eigen::Vector3d& location, double saa, double cos_viewing) const {
         // Calculate the normalized sun vector at the location
 
+        Eigen::Vector3d local_up;
+        if (m_geotype == sasktran2::geometrytype::spherical) {
+            local_up = location.normalized();
+        } else {
+            local_up = m_z_unit;
+        }
+
         Eigen::Vector3d sun_horiz =
-            m_sun_unit -
-            location.normalized() * (location.normalized().dot(m_sun_unit));
+            m_sun_unit - local_up * (local_up.dot(m_sun_unit));
 
         if (sun_horiz.norm() == 0) {
             // sun azimuth is ambiguous, and so we define? the x vector as
@@ -149,14 +160,14 @@ namespace sasktran2 {
         sun_horiz = sun_horiz.normalized();
 
         // Rotate the horizontal sun vector around SAA
-        Eigen::AngleAxis<double> azimuth_transform(saa, location.normalized());
+        Eigen::AngleAxis<double> azimuth_transform(-saa, local_up);
 
         Eigen::Vector3d horiz_look = azimuth_transform.matrix() * sun_horiz;
 
         double viewing_angle = sasktran2::math::PiOver2 - acos(-cos_viewing);
 
-        Eigen::AngleAxis<double> vertical_transform(
-            viewing_angle, location.normalized().cross(horiz_look));
+        Eigen::AngleAxis<double> vertical_transform(viewing_angle,
+                                                    local_up.cross(horiz_look));
 
         return vertical_transform.matrix() * horiz_look;
     }

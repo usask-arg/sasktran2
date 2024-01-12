@@ -1,3 +1,4 @@
+#include "sasktran2/geometry.h"
 #include "sktran_disco/sktran_do.h"
 #include "sktran_disco/sktran_do_geometrylayerarray.h"
 
@@ -51,8 +52,13 @@ sasktran_disco::GeometryLayerArray<NSTOKES, CNSTR>::GeometryLayerArray(
         }
     }
 
-    // Now we have the layer locations, we can calculate the chapman factors
-    calculate_chapman_factors(geometry.coordinates().earth_radius());
+    if (geometry.coordinates().geometry_type() ==
+        sasktran2::geometrytype::planeparallel) {
+        m_chapman_factors.setConstant(1 / this->M_CSZ);
+    } else {
+        // Now we have the layer locations, we can calculate the chapman factors
+        calculate_chapman_factors(geometry.coordinates().earth_radius());
+    }
 }
 
 template <int NSTOKES, int CNSTR>
