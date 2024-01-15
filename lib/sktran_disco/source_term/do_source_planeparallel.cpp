@@ -15,8 +15,6 @@ namespace sasktran2 {
     template <int NSTOKES, int CNSTR>
     void DOSourcePlaneParallelPostProcessing<NSTOKES, CNSTR>::calculate(
         int wavelidx, int threadidx) {
-        // Set ray radiances to 0
-
         bool include_single_scatter =
             m_config->single_scatter_source() ==
             sasktran2::Config::SingleScatterSource::discrete_ordinates;
@@ -34,6 +32,20 @@ namespace sasktran2 {
 
         sasktran_disco::RTESolver<NSTOKES, CNSTR> rte(*solver.persistent_config,
                                                       optical_layer);
+
+        const auto& input_derivatives = optical_layer.inputDerivatives();
+
+        // Have to set storage to 0 for each ray
+        for (int j = 0; j < m_do_los.size(); ++j) {
+            m_radiances[threadidx][j].value.setZero();
+
+            if (m_radiances[threadidx][j].deriv.size() == 0) {
+                m_radiances[threadidx][j].deriv.resize(
+                    NSTOKES, m_atmosphere->num_deriv());
+            }
+
+            m_radiances[threadidx][j].deriv.setZero();
+        }
 
         int num_azi = m_config->num_do_streams();
         for (int m = 0; m < num_azi; ++m) {
@@ -54,6 +66,9 @@ namespace sasktran2 {
                 // ground
                 auto& ground_radiance =
                     optical_layer.reflectedIntensity(m, m_do_los[j]);
+
+                m_component[threadidx].value = ground_radiance.value;
+                m_component[threadidx].deriv = ground_radiance.deriv;
 
                 // Calculate radiance recursively upwards through atmosphere
                 for (auto layer = optical_layer.template iteratorAcross<
@@ -111,9 +126,33 @@ namespace sasktran2 {
                 }
 
                 if constexpr (NSTOKES == 1) {
+                    double azimuthal_factor = cos(m * m_do_los[j].azimuth);
+
                     m_radiances[threadidx][j].value(0) +=
-                        m_component[threadidx].value *
-                        cos(m * m_do_los[j].azimuth);
+                        m_component[threadidx].value * azimuthal_factor;
+
+                    for (int k = 0; k < m_component[threadidx].deriv.size();
+                         ++k) {
+                        for (int l = 0;
+                             l < input_derivatives.layerDerivatives()[k]
+                                     .group_and_triangle_fraction.size();
+                             ++l) {
+                            const std::pair<sasktran_disco::uint, double>&
+                                group_fraction =
+                                    input_derivatives.layerDerivatives()[k]
+                                        .group_and_triangle_fraction[l];
+                            const auto& extinction =
+                                input_derivatives.layerDerivatives()[k]
+                                    .extinctions[l];
+
+                            m_radiances[threadidx][j].deriv(
+                                group_fraction.first) +=
+                                group_fraction.second *
+                                m_component[threadidx].deriv(k) * extinction *
+                                azimuthal_factor;
+                        }
+                    }
+
                 } else {
                     for (int k = 0; k < NSTOKES; ++k) {
                         double azimuthal_factor;
@@ -239,6 +278,7 @@ namespace sasktran2 {
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
         source.value += m_radiances[threadidx][losidx].value;
+        source.deriv += m_radiances[threadidx][losidx].deriv;
     }
 
     SASKTRAN_DISCO_INSTANTIATE_TEMPLATE(DOSourcePlaneParallelPostProcessing);
