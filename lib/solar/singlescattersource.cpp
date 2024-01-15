@@ -1,3 +1,5 @@
+#include "sasktran2/raytracing.h"
+#include "sasktran2/source_algorithms.h"
 #include <sasktran2/solartransmission.h>
 #include <sasktran2/dual.h>
 #include <sasktran2/config.h>
@@ -405,6 +407,16 @@ namespace sasktran2::solartransmission {
                     ele.second * end_phase.value / ssa_end;
             }
         }
+
+        // if(layer.type == raytracing::tangent) {
+        //     sasktran2::sourcealgo::add_integrated_constant_source(shell_od,
+        //     start_phase, end_phase, layer.od_quad_start_fraction,
+        //     layer.od_quad_end_fraction, source);
+        // } else {
+        //     sasktran2::sourcealgo::add_integrated_exponential_source(shell_od,
+        //     start_phase, end_phase, source);
+        // }
+        // return;
 
         double source_factor1 = (1 - shell_od.exp_minus_od);
         // Note dsource_factor = d_od * (1 - source_factor)

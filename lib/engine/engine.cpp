@@ -1,13 +1,29 @@
+#include "sasktran2/do_source.h"
+#include "sasktran2/geometry.h"
+#include "sasktran2/raytracing.h"
+#include "sasktran2/source_interface.h"
+#include <memory>
 #include <sasktran2.h>
 #ifdef SKTRAN_OPENMP_SUPPORT
 #include <omp.h>
 #endif
 
 template <int NSTOKES> void Sasktran2<NSTOKES>::construct_raytracer() {
-    // TODO: Use config to determine what type of raytracer we are going to use
-    m_raytracer =
-        std::make_unique<sasktran2::raytracing::SphericalShellRayTracer>(
-            *m_geometry);
+    if (m_geometry->coordinates().geometry_type() ==
+        sasktran2::geometrytype::spherical) {
+        m_raytracer =
+            std::make_unique<sasktran2::raytracing::SphericalShellRayTracer>(
+                *m_geometry);
+    } else if (m_geometry->coordinates().geometry_type() ==
+                   sasktran2::geometrytype::planeparallel ||
+               m_geometry->coordinates().geometry_type() ==
+                   sasktran2::geometrytype::pseudospherical) {
+        m_raytracer =
+            std::make_unique<sasktran2::raytracing::PlaneParallelRayTracer>(
+                *m_geometry);
+    } else {
+        spdlog::error("Requested geometry type is not yet supported.");
+    }
 }
 
 template <int NSTOKES> void Sasktran2<NSTOKES>::construct_integrator() {
@@ -80,10 +96,17 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
                     *m_geometry, *m_raytracer));
         }
 #else
-        m_source_terms.emplace_back(
-            std::make_unique<
-                sasktran2::DOSourceInterpolatedPostProcessing<NSTOKES, -1>>(
-                *m_geometry, *m_raytracer));
+        if (m_geometry->coordinates().geometry_type() ==
+            sasktran2::geometrytype::spherical) {
+            m_source_terms.emplace_back(
+                std::make_unique<
+                    sasktran2::DOSourceInterpolatedPostProcessing<NSTOKES, -1>>(
+                    *m_geometry, *m_raytracer));
+        } else {
+            m_source_terms.emplace_back(
+                std::make_unique<sasktran2::DOSourcePlaneParallelPostProcessing<
+                    NSTOKES, -1>>(*m_geometry));
+        }
 
 #endif
 
@@ -209,6 +232,13 @@ void Sasktran2<NSTOKES>::calculate_radiance(
             m_source_integrator->integrate(radiance[ray_threadidx],
                                            m_los_source_terms, w, i, thread_idx,
                                            ray_threadidx);
+
+            // Add on any start of ray sources
+            for (const SourceTermInterface<NSTOKES>* source :
+                 m_los_source_terms) {
+                source->start_of_ray_source(w, i, thread_idx, ray_threadidx,
+                                            radiance[ray_threadidx]);
+            }
 
             // And assign it to the output
             output.assign(radiance[ray_threadidx], i, w);

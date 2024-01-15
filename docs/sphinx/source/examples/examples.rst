@@ -9,3 +9,4 @@ More Examples
 
    aerosol/basic
    wf/amf
+   validation/coulson

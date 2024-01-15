@@ -1,3 +1,4 @@
+#include "sasktran2/geometry.h"
 #include <sasktran2/solartransmission.h>
 
 namespace sasktran2::solartransmission {
@@ -11,9 +12,16 @@ namespace sasktran2::solartransmission {
 
         Eigen::VectorXd cos_sza_grid_values;
 
-        // TODO: configure this resolution
-        cos_sza_grid_values.setLinSpaced(100, min_max_cos_sza.first,
-                                         min_max_cos_sza.second);
+        if (m_geometry.coordinates().geometry_type() ==
+            sasktran2::geometrytype::spherical) {
+            // TODO: configure this resolution
+            cos_sza_grid_values.setLinSpaced(100, min_max_cos_sza.first,
+                                             min_max_cos_sza.second);
+        } else {
+            // TODO: Can we handle pseudo-spherical here?
+            cos_sza_grid_values.resize(1);
+            cos_sza_grid_values(0) = min_max_cos_sza.first;
+        }
 
         Eigen::VectorXd alt_values = m_geometry.altitude_grid().grid();
 

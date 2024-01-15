@@ -66,7 +66,7 @@ def _raw_scenarios() -> list:
         viewing_geos[-1].add_ray(sk.TangentAltitudeSolar(tan_alt, 0, 600000, 0.6))
 
     viewing_geos.append(sk.ViewingGeometry())
-    viewing_geos[-1].add_ray(sk.GroundViewingSolar(0.6, 0, -0.8, 200000))
+    viewing_geos[-1].add_ray(sk.GroundViewingSolar(0.6, 0, 0.8, 200000))
 
     scen = []
 
@@ -83,6 +83,31 @@ def _raw_scenarios() -> list:
                         ),
                     }
                 )
+
+    # Add an additional scenario that is for plane parallel geometry and the DO source
+    config = sk.Config()
+    config.multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
+    config.single_scatter_source = sk.SingleScatterSource.DiscreteOrdinates
+
+    geometry = sk.Geometry1D(
+        0.6,
+        0,
+        6372000,
+        altitude_grid,
+        sk.InterpolationMethod.LinearInterpolation,
+        sk.GeometryType.PlaneParallel,
+    )
+
+    scen.append(
+        {
+            "config": config,
+            "geometry": geometry,
+            "viewing_geo": viewing_geos[-1],
+            "atmosphere": sk.test_util.scenarios.default_pure_scattering_atmosphere(
+                config, geometry, 0.8
+            ),
+        }
+    )
 
     return scen
 

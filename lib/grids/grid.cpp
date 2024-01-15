@@ -25,11 +25,6 @@ namespace sasktran2::grids {
             }
         }
 
-        if (m_interp_method != interpolation::linear) {
-            spdlog::error("Requested interpolation mode is not implemented, "
-                          "falling back to linear interpolation");
-        }
-
         if (m_grid_spacing == gridspacing::constant) {
             if (grid_values.size() > 1) {
                 m_x0 = m_grid_values(0);
@@ -92,15 +87,25 @@ namespace sasktran2::grids {
                     return;
                 }
             } else {
-                // Perform linear interpolation
                 index[0] = i;
                 index[1] = i + 1;
+                if (m_interp_method == interpolation::linear) {
+                    // Perform linear interpolation
+                    weight[1] = (x - m_grid_values(i)) / m_dx;
+                    weight[0] = 1 - weight[1];
 
-                weight[1] = (x - m_grid_values(i)) / m_dx;
-                weight[0] = 1 - weight[1];
+                    num_contributing = 2;
+                    return;
+                }
 
-                num_contributing = 2;
-                return;
+                if (m_interp_method == interpolation::shell) {
+                    weight[0] = 0.5;
+                    weight[1] = 0.5;
+
+                    num_contributing = 2;
+
+                    return;
+                }
             }
         }
     }
@@ -165,13 +170,19 @@ namespace sasktran2::grids {
         // indexes are i and i-1
         index[0] = i - 1;
         index[1] = i;
-        // Perform linear interpolation
+        if (m_interp_method == interpolation::shell) {
+            weight[0] = 0.5;
+            weight[1] = 0.5;
+            num_contributing = 2;
+        } else {
+            // Perform linear interpolation
 
-        weight[1] = (x - m_grid_values(i - 1)) /
-                    (m_grid_values(i) - m_grid_values(i - 1));
-        weight[0] = 1 - weight[1];
+            weight[1] = (x - m_grid_values(i - 1)) /
+                        (m_grid_values(i) - m_grid_values(i - 1));
+            weight[0] = 1 - weight[1];
 
-        num_contributing = 2;
+            num_contributing = 2;
+        }
     }
 
     void Grid::calculate_interpolation_weights(double x,

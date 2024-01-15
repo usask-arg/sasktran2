@@ -19,6 +19,8 @@ namespace sasktran2::viewinggeometry {
          * @return Cosine of the local viewing angle
          */
         double cos_viewing() const {
+            // TODO: This is just spherical geometry right? how to handle this
+            // properly
             return observer.cos_zenith_angle(look_away);
         }
     };

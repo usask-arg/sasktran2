@@ -17,10 +17,20 @@ namespace sasktran2 {
          * 'solartable' Creates a solar transmission table at a set of grid
          * points.  NOT YET IMPLEMENTED.
          *
+         * 'discrete_ordinates' Lets the discrete ordinates solution include the
+         * single scatter term.  Only has an effect in Plane Parallel or
+         * PseudoSpherical geometry where the multiple scatter source is also
+         * discrete_ordinates
+         *
          * 'none' Removes the single scatter source from the integration.
          *
          */
-        enum class SingleScatterSource { exact, solartable, none };
+        enum class SingleScatterSource {
+            exact,
+            solartable,
+            discrete_ordinates,
+            none
+        };
 
         /** Enum determining the type of multiple scatter source to be included
          * within the model.

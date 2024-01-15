@@ -1,5 +1,10 @@
 #pragma once
 
+#include "sasktran2/atmosphere/atmosphere.h"
+#include "sasktran2/config.h"
+#include "sasktran2/dual.h"
+#include "sasktran2/geometry.h"
+#include "sasktran2/raytracing.h"
 #include <sasktran2/internal_common.h>
 #include <sasktran2/source_interface.h>
 #include <sasktran2/solartransmission.h>
@@ -358,8 +363,96 @@ namespace sasktran2 {
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
                 source) const;
 
+        /**
+         * @brief Not used for the DO Interpolated Post Processing source.
+         *
+         * @param wavelidx
+         * @param losidx
+         * @param wavel_threadidx
+         * @param threadidx
+         * @param source
+         */
+        virtual void start_of_ray_source(
+            int wavelidx, int losidx, int wavel_threadidx, int threadidx,
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+                source) const override{};
+
         DOSourceDiffuseStorage<NSTOKES, CNSTR>& storage() const {
             return *m_diffuse_storage;
         }
     };
+
+    template <int NSTOKES, int CNSTR = -1>
+    class DOSourcePlaneParallelPostProcessing
+        : public SourceTermInterface<NSTOKES> {
+      private:
+        const sasktran2::Geometry1D& m_geometry;
+        const sasktran2::Config* m_config;
+        const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere;
+
+        std::vector<sasktran_disco::LineOfSight>
+            m_do_los; /**< Lines of sight converted to the LOS objects the DO
+                         engine needs */
+
+        sasktran_disco::VectorDim3<
+            sasktran_disco::LegendrePhaseContainer<NSTOKES>>
+            m_lp_coszen; //< Legendre polynomials evaluated at LOS coszen
+
+        std::vector<DOSourceThreadStorage<NSTOKES, CNSTR>>
+            m_thread_storage; /**< Internal thread storage */
+
+        // Temporaries
+        sasktran_disco::VectorDim1<sasktran_disco::Radiance<NSTOKES>>
+            m_component;
+        std::vector<sasktran_disco::Radiance<NSTOKES>> m_integral;
+
+        // Output
+        sasktran_disco::VectorDim2<
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>>
+            m_radiances;
+
+        int m_nstr;
+
+      public:
+        DOSourcePlaneParallelPostProcessing(
+            const sasktran2::Geometry1D& geometry);
+
+        virtual void calculate(int wavelidx, int threadidx);
+
+        virtual void initialize_geometry(
+            const std::vector<sasktran2::raytracing::TracedRay>& los_rays)
+            override;
+        virtual void initialize_atmosphere(
+            const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere)
+            override;
+        virtual void
+        initialize_config(const sasktran2::Config& config) override;
+
+        void integrated_source(
+            int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+            int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
+            const sasktran2::SparseODDualView& shell_od,
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+                source) const {};
+
+        void end_of_ray_source(
+            int wavelidx, int losidx, int wavel_threadidx, int threadidx,
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+                source) const {};
+
+        /**
+         *
+         *
+         * @param wavelidx
+         * @param losidx
+         * @param wavel_threadidx
+         * @param threadidx
+         * @param source
+         */
+        virtual void start_of_ray_source(
+            int wavelidx, int losidx, int wavel_threadidx, int threadidx,
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+                source) const override;
+    };
+
 } // namespace sasktran2

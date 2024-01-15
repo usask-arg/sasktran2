@@ -17,6 +17,8 @@ void init_config(py::module_& m) {
         .value("NoSource", sasktran2::Config::SingleScatterSource::none)
         .value("Exact", sasktran2::Config::SingleScatterSource::exact)
         .value("Table", sasktran2::Config::SingleScatterSource::solartable)
+        .value("DiscreteOrdinates",
+               sasktran2::Config::SingleScatterSource::discrete_ordinates)
         .export_values();
 
     py::enum_<sasktran2::Config::OccultationSource>(m, "OccultationSource")
@@ -81,6 +83,11 @@ void init_config(py::module_& m) {
                 `sasktran2.SingleScatterSource.Table`
                     A single scatter source where a pre-computed table is used to calculate solar
                     transmission to quadrature points along the line of sight.
+
+                `sasktran2.SingleScatterSource.DiscreteOrdinates`
+                    Lets the discrete ordinates source function calculate the single scatter source. Only
+                    has an effect if the geometry mode is set to PlaneParallel or PseudoSpherical, and
+                    if the DiscreteOrdinates source function is also used for multiple scatter.
 
                 `sasktran2.SingleScatterSource.NoSource`
                     Disables the single scatter source
@@ -169,5 +176,21 @@ void init_config(py::module_& m) {
                       R"(
                 The number of Legendre expansion moments to use in the single scatter calculation.
                 Must be greater or equal to num_streams. Default to 16.
+            )")
+        .def_property("num_successive_orders_incoming",
+                      &sasktran2::Config::num_hr_incoming,
+                      &sasktran2::Config::set_num_hr_incoming,
+                      R"(
+                The number of integration nodes to use in the successive orders algorithm when calculating the incoming
+                radiance at each grid point.  Must be one of [6, 14, 26, 38, 50, 74, 86, 110, 146, 170, 194, 230, 266, 302, 350,
+                434, 590, 770, 974, 1202, 1454, 1730, 2030, 2354, 2702, 3074, 3470, 3890]. Default is 110.
+            )")
+        .def_property("num_successive_orders_outgoing",
+                      &sasktran2::Config::num_hr_outgoing,
+                      &sasktran2::Config::set_num_hr_outgoing,
+                      R"(
+                The number of sample points to use in the successive orders algorithm to calculate the outgoing source function on
+                radiance at each grid point.  Must be one of [6, 14, 26, 38, 50, 74, 86, 110, 146, 170, 194, 230, 266, 302, 350,
+                434, 590, 770, 974, 1202, 1454, 1730, 2030, 2354, 2702, 3074, 3470, 3890]. Default is 110.
             )");
 }

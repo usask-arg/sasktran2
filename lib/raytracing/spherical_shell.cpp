@@ -72,7 +72,7 @@ namespace sasktran2::raytracing {
         result.observer_and_look = ray;
         result.ground_is_hit = true;
 
-        result.layers.resize(m_alt_grid.grid().size());
+        result.layers.resize(m_alt_grid.grid().size() - 1);
 
         for (int i = 0; i < m_alt_grid.grid().size() - 1; ++i) {
             complete_layer(result.layers[i], ray, i, ViewingDirection::down,

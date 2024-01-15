@@ -1,4 +1,5 @@
 #pragma once
+#include "sasktran2/grids.h"
 #include <sasktran2/internal_common.h>
 #include <sasktran2/math/scattering.h>
 
@@ -107,8 +108,10 @@ namespace sasktran2::raytracing {
 
         if (geo == sasktran2::geometrytype::spherical) {
             local_up = loc.position.normalized();
-        } else if (geo == sasktran2::geometrytype::planeparallel) {
-
+        } else if (geo == sasktran2::geometrytype::planeparallel ||
+                   geo == sasktran2::geometrytype::pseudospherical) {
+            // TODO: Is this correct?
+            local_up = Eigen::Vector3d(0, 0, 1);
         } else {
             spdlog::error(
                 "calculate_csz_saz does not support this geometry type");
@@ -173,9 +176,11 @@ namespace sasktran2::raytracing {
      *
      * @param layer layer to populate
      */
-    inline void add_od_quadrature(SphericalLayer& layer,
-                                  sasktran2::geometrytype geometry_type =
-                                      sasktran2::geometrytype::spherical) {
+    inline void add_od_quadrature(
+        SphericalLayer& layer,
+        sasktran2::geometrytype geometry_type =
+            sasktran2::geometrytype::spherical,
+        grids::interpolation interpolation = grids::interpolation::linear) {
         double r0 = layer.entrance.radius();
         double r1 = layer.exit.radius();
         double dr = r1 - r0;
@@ -184,7 +189,8 @@ namespace sasktran2::raytracing {
             (layer.exit.position - layer.entrance.position).normalized();
 
         if (abs(dr) < 0.001 ||
-            geometry_type == sasktran2::geometrytype::planeparallel) {
+            geometry_type == sasktran2::geometrytype::planeparallel ||
+            interpolation == grids::interpolation::shell) {
             // Tiny layer, we can just use the average of the extinctions
             // Or we are doing shell interpolation
             layer.od_quad_start =

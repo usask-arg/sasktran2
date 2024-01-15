@@ -1,4 +1,5 @@
 #include "sasktran2/do_source.h"
+#include "sasktran2/geometry.h"
 
 namespace sasktran2 {
     template <int NSTOKES, int CNSTR>
@@ -109,17 +110,32 @@ namespace sasktran2 {
                             m_num_azi);
                     }
                 }
+                double altitude, cos_angle, azi, cos_sza;
 
-                double altitude =
-                    (layer.entrance.radius() + layer.exit.radius()) / 2.0 -
-                    earth_radius;
-                double cos_angle =
-                    (layer.entrance.cos_zenith_angle(layer.average_look_away) +
-                     layer.exit.cos_zenith_angle(layer.average_look_away)) /
-                    2.0;
-                double azi = (layer.saz_entrance + layer.saz_exit) / 2.0;
-                double cos_sza =
-                    (layer.cos_sza_entrance + layer.cos_sza_exit) / 2.0;
+                if (m_geometry.coordinates().geometry_type() ==
+                    sasktran2::geometrytype::spherical) {
+                    altitude =
+                        (layer.entrance.radius() + layer.exit.radius()) / 2.0 -
+                        earth_radius;
+                    cos_angle =
+                        (layer.entrance.cos_zenith_angle(
+                             layer.average_look_away) +
+                         layer.exit.cos_zenith_angle(layer.average_look_away)) /
+                        2.0;
+                    azi = (layer.saz_entrance + layer.saz_exit) / 2.0;
+                    cos_sza =
+                        (layer.cos_sza_entrance + layer.cos_sza_exit) / 2.0;
+                } else {
+                    altitude = (layer.entrance.position.z() +
+                                layer.exit.position.z()) /
+                                   2.0 -
+                               earth_radius;
+                    cos_angle = layer.average_look_away.z();
+
+                    azi = (layer.saz_entrance + layer.saz_exit) / 2.0;
+                    cos_sza =
+                        (layer.cos_sza_entrance + layer.cos_sza_exit) / 2.0;
+                }
 
                 m_altitude_grid->calculate_interpolation_weights(
                     altitude, alt_index, alt_weight, num_alt_contrib);
@@ -222,8 +238,16 @@ namespace sasktran2 {
             sasktran2::raytracing::calculate_csz_saz(
                 m_geometry.coordinates().sun_unit(), temp, direction, csz, saa);
 
-            double cos_angle = temp.cos_zenith_angle(-1 * direction);
-            double altitude = temp.radius() - earth_radius;
+            double cos_angle, altitude;
+
+            if (m_geometry.coordinates().geometry_type() ==
+                sasktran2::geometrytype::spherical) {
+                cos_angle = temp.cos_zenith_angle(-1 * direction);
+                altitude = temp.radius() - earth_radius;
+            } else {
+                cos_angle = direction.z();
+                altitude = temp.position.z() - earth_radius;
+            }
 
             m_sza_grid.calculate_interpolation_weights(
                 csz, sza_index, sza_weight, num_sza_contrib);

@@ -114,6 +114,14 @@ namespace sasktran2::grids {
          * @return  The internal grid
          */
         const Eigen::VectorXd& grid() const { return m_grid_values; }
+
+        /**
+         *
+         * @return const interpolation
+         */
+        const interpolation interpolation_method() const {
+            return m_interp_method;
+        }
     };
 
     /** An AltitudeGrid is essentially the same as a Grid except we give it a
