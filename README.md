@@ -1,5 +1,5 @@
 # SASKTRAN
-[![Anaconda-Server Badge](https://anaconda.org/usask-arg/sasktran2/badges/version.svg)](https://anaconda.org/usask-arg/sasktran2)
+[![Anaconda-Server Badge](https://anaconda.org/conda-forge/sasktran2/badges/version.svg)](https://anaconda.org/conda-forge/sasktran2)
 [![Available on pypi](https://img.shields.io/pypi/v/sasktran2.svg)](https://pypi.python.org/pypi/sasktran2/)
 [![Documentation Status](https://readthedocs.org/projects/sasktran2/badge/?version=latest)](https://sasktran2.readthedocs.io/en/latest/?badge=latest)
 [![pre-commit.ci status](https://results.pre-commit.ci/badge/github/usask-arg/sasktran2/main.svg)](https://results.pre-commit.ci/latest/github/usask-arg/sasktran2/main)
@@ -15,9 +15,9 @@ improvements, full linearizations of atmospheric input properties, and an improv
 The preferred method to install SASKTRAN2 is through the pre-compiled Conda package
 
 ```
-conda install -c usask-arg -c conda-forge sasktran2
+conda install -c conda-forge sasktran2
 ```
-these packages are made available for Python versions 3.8, 3.9, 3.10, 3.11, 3.12 on Windows/Linux/Mac platforms.
+these packages are made available for Python versions 3.10, 3.11, 3.12 on Windows/Linux/Mac platforms.
 For Mac, both x86_64 and Arm packages are available.
 
 Wheels are also built for the same platforms and can be installed through,
