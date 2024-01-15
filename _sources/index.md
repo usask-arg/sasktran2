@@ -132,4 +132,5 @@ extending/constituent.md
 
 developer/compiling.md
 developer/contributing.md
+developer/codespaces.md
 ```

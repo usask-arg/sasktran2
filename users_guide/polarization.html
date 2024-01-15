@@ -1,15 +1,14 @@
 
-
 <!DOCTYPE html>
 
 
-<html lang="en" data-content_root="" >
+<html lang="en" data-content_root="../" >
 
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Polarized Calculations &#8212; sasktran2 2023.12.0 documentation</title>
+    <title>Polarized Calculations &#8212; sasktran2 2024.1.0 documentation</title>
   
   
   
@@ -19,32 +18,32 @@
   </script>
   
   <!-- Loaded before other Sphinx assets -->
-  <link href="../_static/styles/theme.css?digest=5b4479735964841361fd" rel="stylesheet" />
-<link href="../_static/styles/bootstrap.css?digest=5b4479735964841361fd" rel="stylesheet" />
-<link href="../_static/styles/pydata-sphinx-theme.css?digest=5b4479735964841361fd" rel="stylesheet" />
+  <link href="../_static/styles/theme.css?digest=bd9e20870c6007c4c509" rel="stylesheet" />
+<link href="../_static/styles/bootstrap.css?digest=bd9e20870c6007c4c509" rel="stylesheet" />
+<link href="../_static/styles/pydata-sphinx-theme.css?digest=bd9e20870c6007c4c509" rel="stylesheet" />
 
   
-  <link href="../_static/vendor/fontawesome/6.1.2/css/all.min.css?digest=5b4479735964841361fd" rel="stylesheet" />
-  <link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.1.2/webfonts/fa-solid-900.woff2" />
-<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.1.2/webfonts/fa-brands-400.woff2" />
-<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.1.2/webfonts/fa-regular-400.woff2" />
+  <link href="../_static/vendor/fontawesome/6.5.1/css/all.min.css?digest=bd9e20870c6007c4c509" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.1/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.1/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.1/webfonts/fa-regular-400.woff2" />
 
-    <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
-    <link rel="stylesheet" href="../_static/styles/sphinx-book-theme.css?digest=14f4ca6b54d191a8c7657f6c759bf11a5fb86285" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=a746c00c" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/sphinx-book-theme.css?v=384b581d" />
     <link rel="stylesheet" type="text/css" href="../_static/mystnb.4510f1fc1dee50b3e5859aac5469c37c29e427902b24a333a5f9fcb2f0b3ac41.css" />
-    <link rel="stylesheet" type="text/css" href="../_static/locals.css" />
-    <link rel="stylesheet" type="text/css" href="../_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css?v=0a3b3ea7" />
+    <link rel="stylesheet" type="text/css" href="../_static/locals.css?v=12481bcd" />
   
   <!-- Pre-loaded scripts that we'll load fully later -->
-  <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=5b4479735964841361fd" />
-<link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=5b4479735964841361fd" />
-  <script src="../_static/vendor/fontawesome/6.1.2/js/all.min.js?digest=5b4479735964841361fd"></script>
+  <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=bd9e20870c6007c4c509" />
+<link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=bd9e20870c6007c4c509" />
+  <script src="../_static/vendor/fontawesome/6.5.1/js/all.min.js?digest=bd9e20870c6007c4c509"></script>
 
-    <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
-    <script src="../_static/doctools.js"></script>
-    <script src="../_static/sphinx_highlight.js"></script>
-    <script src="../_static/scripts/sphinx-book-theme.js?digest=5a5c038af52cf7bc1a1ec88eea08e6366ee68824"></script>
-    <script src="../_static/design-tabs.js"></script>
+    <script src="../_static/documentation_options.js?v=4352e0a9"></script>
+    <script src="../_static/doctools.js?v=888ff710"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/scripts/sphinx-book-theme.js?v=efea14e4"></script>
+    <script src="../_static/design-tabs.js?v=36754332"></script>
     <script>window.MathJax = {"options": {"processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
     <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script>DOCUMENTATION_OPTIONS.pagename = 'users_guide/polarization';</script>
@@ -61,7 +60,7 @@
 
   
   
-  <a class="skip-link" href="#main-content">Skip to main content</a>
+  <a id="pst-skip-link" class="skip-link" href="#main-content">Skip to main content</a>
   
   <div id="pst-scroll-pixel-helper"></div>
 
@@ -104,12 +103,20 @@
   <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
 </form></div>
   </div>
+
+  <header>
   
-    <nav class="bd-header navbar navbar-expand-lg bd-navbar">
-    </nav>
+    <div class="bd-header navbar navbar-expand-lg bd-navbar">
+    </div>
   
+  </header>
+
   <div class="bd-container">
     <div class="bd-container__inner bd-page-width">
+      
+      
+      
+        
       
       <div class="bd-sidebar-primary bd-sidebar">
         
@@ -138,8 +145,8 @@
       
     
     
-    <img src="../_static/sasktran-dark.png" class="logo__image only-light" alt="sasktran2 2023.12.0 documentation - Home"/>
-    <script>document.write(`<img src="../_static/sasktran-light.png" class="logo__image only-dark" alt="sasktran2 2023.12.0 documentation - Home"/>`);</script>
+    <img src="../_static/sasktran-dark.png" class="logo__image only-light" alt="sasktran2 2024.1.0 documentation - Home"/>
+    <script>document.write(`<img src="../_static/sasktran-light.png" class="logo__image only-dark" alt="sasktran2 2024.1.0 documentation - Home"/>`);</script>
   
   
 </a></div>
@@ -158,7 +165,18 @@
             <span class="sr-only">GitHub</span></a>
         </li>
 </ul></div>
-        <div class="sidebar-primary-item"><nav class="bd-links" id="bd-docs-nav" aria-label="Main">
+        <div class="sidebar-primary-item">
+
+ <script>
+ document.write(`
+   <button class="btn navbar-btn search-button-field search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass"></i>
+    <span class="search-button__default-text">Search</span>
+    <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+   </button>
+ `);
+ </script></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
     <div class="bd-toc-item navbar-nav active">
         <p aria-level="2" class="caption" role="heading"><span class="caption-text">For Users</span></p>
 <ul class="current nav bd-sidenav">
@@ -188,6 +206,7 @@
 <li class="toctree-l2 has-children"><a class="reference internal" href="../examples/examples.html">More Examples</a><input class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-4"><i class="fa-solid fa-chevron-down"></i></label><ul>
 <li class="toctree-l3"><a class="reference internal" href="../examples/aerosol/basic.html">Basic Aerosol Inclusion</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../examples/wf/amf.html">Calculating Air Mass Factors</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../examples/validation/coulson.html">Reproducing the Coulson Tables</a></li>
 </ul>
 </li>
 </ul>
@@ -204,10 +223,10 @@
 <li class="toctree-l2"><a class="reference internal" href="../api/climatology.html">Climatologies</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/geodetic.html">Geodetic</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/util.html">Utility</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/mie.html">Mie</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="../changelog.html">Changelog</a></li>
-
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Extending SASKTRAN2</span></p>
 <ul class="nav bd-sidenav">
@@ -222,6 +241,7 @@
 </li>
 
 <li class="toctree-l1"><a class="reference internal" href="../developer/contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../developer/codespaces.html">Using GitHub Codespaces</a></li>
 </ul>
 
     </div>
@@ -453,10 +473,10 @@ document.write(`
               
                 
 <div id="searchbox"></div>
-                <article class="bd-article" role="main">
+                <article class="bd-article">
                   
   <section class="tex2jax_ignore mathjax_ignore" id="polarized-calculations">
-<span id="users-polarization"></span><h1>Polarized Calculations<a class="headerlink" href="#polarized-calculations" title="Permalink to this heading">#</a></h1>
+<span id="users-polarization"></span><h1>Polarized Calculations<a class="headerlink" href="#polarized-calculations" title="Link to this heading">#</a></h1>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
 <div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">sasktran2</span> <span class="k">as</span> <span class="nn">sk</span>
@@ -493,7 +513,7 @@ controls the number of Stokes parameters used in the calculation.</p>
 where the <code class="docutils literal notranslate"><span class="pre">V</span></code> (circular polarization) component is assumed to be 0, which is generally a very good
 approximation for Earth’s atmosphere.</p>
 <section id="running-a-calculation">
-<h2>Running a Calculation<a class="headerlink" href="#running-a-calculation" title="Permalink to this heading">#</a></h2>
+<h2>Running a Calculation<a class="headerlink" href="#running-a-calculation" title="Link to this heading">#</a></h2>
 <p>Generally the only thing that has to be changed to run a polarized calculation is to set the
 <a class="reference internal" href="../api/config.html#sasktran2.Config.num_stokes" title="sasktran2.Config.num_stokes"><code class="xref py py-attr docutils literal notranslate"><span class="pre">sasktran2.Config.num_stokes</span></code></a> setting.  Here we repeat the same example done in the quickstart
 guide but with polarization enabled</p>
@@ -559,7 +579,7 @@ Coordinates:
   * altitude          (altitude) float64 0.0 1e+03 2e+03 ... 6.4e+04 6.5e+04
 Dimensions without coordinates: los, ozone_altitude, no2_altitude
 Data variables:
-    radiance          (wavelength, los, stokes) float64 0.0005898 ... 0.0001776
+    radiance          (wavelength, los, stokes) float64 0.0005898 ... -0.0001776
     wf_pressure_pa    (altitude, wavelength, los, stokes) float64 2.675e-54 ....
     wf_temperature_k  (altitude, wavelength, los, stokes) float64 -9.897e-52 ...
     wf_ozone_vmr      (ozone_altitude, wavelength, los, stokes) float64 -5.76...
@@ -581,15 +601,15 @@ We can look at them,</p>
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output text_plain highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>&lt;matplotlib.legend.Legend at 0x7faf4dad0990&gt;
+<div class="output text_plain highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>&lt;matplotlib.legend.Legend at 0x7fe945314fd0&gt;
 </pre></div>
 </div>
-<img alt="../_images/cd41795ce8539b2f904332da390b1bf5bdfc88b4c157f19073faedd53cf9bfdf.png" src="../_images/cd41795ce8539b2f904332da390b1bf5bdfc88b4c157f19073faedd53cf9bfdf.png" />
+<img alt="../_images/d420a1811c370086d00a5b90c87091a48f1e12399fd7915721b2de09082c2872.png" src="../_images/d420a1811c370086d00a5b90c87091a48f1e12399fd7915721b2de09082c2872.png" />
 </div>
 </div>
 </section>
 <section id="stokes-conventions-and-basis">
-<h2>Stokes Conventions and Basis<a class="headerlink" href="#stokes-conventions-and-basis" title="Permalink to this heading">#</a></h2>
+<h2>Stokes Conventions and Basis<a class="headerlink" href="#stokes-conventions-and-basis" title="Link to this heading">#</a></h2>
 <p>If you only care about the intensity, <span class="math notranslate nohighlight">\(I\)</span>, or the degree of linear polarization,
 <span class="math notranslate nohighlight">\(\frac{\sqrt{Q^2 + U^2}}{I}\)</span>, then you can stop reading this section as these quantities
 do not depend on the Stokes basis.</p>
@@ -598,7 +618,7 @@ like the linearly polarized component <span class="math notranslate nohighlight"
 read on as the Stokes parameters <span class="math notranslate nohighlight">\(Q\)</span> and <span class="math notranslate nohighlight">\(U\)</span> are only unique when a reference basis has
 been specified.</p>
 <section id="stokes-basis">
-<h3>Stokes Basis<a class="headerlink" href="#stokes-basis" title="Permalink to this heading">#</a></h3>
+<h3>Stokes Basis<a class="headerlink" href="#stokes-basis" title="Link to this heading">#</a></h3>
 <p>By default SASKTRAN2 returns back Stokes vectors in what can only be described as the “standard” basis.
 This is the basis that every textbook on polarized radiative transfer uses, and extreme amounts of detail
 can be found in Section 4.3 of</p>
@@ -646,7 +666,7 @@ between “true” coordinates and the coordinate system used internally in the 
 This has the advantage that in single scatter, all of the polarization information is stored inside
 <span class="math notranslate nohighlight">\(Q\)</span>, and <span class="math notranslate nohighlight">\(U\)</span> is identically 0.  The solar basis can be useful for theoretical calculations.</p>
 <section id="basis-summary">
-<h4>Basis Summary<a class="headerlink" href="#basis-summary" title="Permalink to this heading">#</a></h4>
+<h4>Basis Summary<a class="headerlink" href="#basis-summary" title="Link to this heading">#</a></h4>
 <dl class="simple myst">
 <dt><code class="docutils literal notranslate"><span class="pre">sasktran2.StokesBasis.Standard</span></code></dt><dd><p>Polarization reference oriented in the global <code class="docutils literal notranslate"><span class="pre">z</span></code>-axis and look vector plane</p>
 </dd>
@@ -658,7 +678,7 @@ This has the advantage that in single scatter, all of the polarization informati
 </section>
 </section>
 <section id="stokes-conventions">
-<h3>Stokes Conventions<a class="headerlink" href="#stokes-conventions" title="Permalink to this heading">#</a></h3>
+<h3>Stokes Conventions<a class="headerlink" href="#stokes-conventions" title="Link to this heading">#</a></h3>
 <p>It is somewhat well-known that even if radiative transfer models state that they use the same Stokes vector basis,
 they often differ in the sign of <span class="math notranslate nohighlight">\(Q, U, \)</span> or <span class="math notranslate nohighlight">\(V\)</span>. The sign of <span class="math notranslate nohighlight">\(V\)</span> is ambiguous, and often different
 between authors because it can change depending on how the time dependence of the electric field is handled.
@@ -674,7 +694,7 @@ such as the Coulsen tables.</p>
 </section>
 </section>
 <section id="supported-number-of-stokes-parameters">
-<h2>Supported Number of Stokes Parameters<a class="headerlink" href="#supported-number-of-stokes-parameters" title="Permalink to this heading">#</a></h2>
+<h2>Supported Number of Stokes Parameters<a class="headerlink" href="#supported-number-of-stokes-parameters" title="Link to this heading">#</a></h2>
 <p>Currently SASKTRAN2 supports</p>
 <dl class="simple myst">
 <dt><code class="docutils literal notranslate"><span class="pre">num_stokes=1</span></code></dt><dd><p>Scalar mode, only the <span class="math notranslate nohighlight">\(I\)</span> component of the Stokes vector is calculated. Default.</p>
@@ -723,6 +743,7 @@ such as the Coulsen tables.</p>
               
                 <div class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
 
+
   <div class="sidebar-secondary-item">
   <div class="page-toc tocsection onthispage">
     <i class="fa-solid fa-list"></i> Contents
@@ -763,7 +784,7 @@ By USask-ARG
 
   <p class="copyright">
     
-      © Copyright 2023, USask-ARG.
+      © Copyright 2024, USask-ARG.
       <br/>
     
   </p>
@@ -787,8 +808,8 @@ By USask-ARG
   </div>
   
   <!-- Scripts loaded after <body> so the DOM is not blocked -->
-  <script src="../_static/scripts/bootstrap.js?digest=5b4479735964841361fd"></script>
-<script src="../_static/scripts/pydata-sphinx-theme.js?digest=5b4479735964841361fd"></script>
+  <script src="../_static/scripts/bootstrap.js?digest=bd9e20870c6007c4c509"></script>
+<script src="../_static/scripts/pydata-sphinx-theme.js?digest=bd9e20870c6007c4c509"></script>
 
   <footer class="bd-footer">
   </footer>
