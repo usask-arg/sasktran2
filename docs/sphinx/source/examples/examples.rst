@@ -5,7 +5,7 @@ More Examples
 
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
 
    aerosol/basic
    wf/amf
