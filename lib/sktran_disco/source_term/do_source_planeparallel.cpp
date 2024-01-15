@@ -4,6 +4,7 @@
 #include "sasktran2/raytracing.h"
 #include "sktran_disco/sktran_do.h"
 #include "sktran_disco/sktran_do_polarization_types.h"
+#include "sktran_disco/sktran_do_types.h"
 
 namespace sasktran2 {
     template <int NSTOKES, int CNSTR>
@@ -154,15 +155,37 @@ namespace sasktran2 {
                     }
 
                 } else {
-                    for (int k = 0; k < NSTOKES; ++k) {
+                    for (int s = 0; s < NSTOKES; ++s) {
                         double azimuthal_factor;
-                        if (k < 2) {
+                        if (s < 2) {
                             azimuthal_factor = cos(m * m_do_los[j].azimuth);
                         } else {
                             azimuthal_factor = sin(m * m_do_los[j].azimuth);
                         }
-                        m_radiances[threadidx][j].value(k) +=
-                            m_component[threadidx].value(k) * azimuthal_factor;
+                        m_radiances[threadidx][j].value(s) +=
+                            m_component[threadidx].value(s) * azimuthal_factor;
+
+                        for (int k = 0; k < m_component[threadidx].deriv.size();
+                             ++k) {
+                            for (int l = 0;
+                                 l < input_derivatives.layerDerivatives()[k]
+                                         .group_and_triangle_fraction.size();
+                                 ++l) {
+                                const std::pair<sasktran_disco::uint, double>&
+                                    group_fraction =
+                                        input_derivatives.layerDerivatives()[k]
+                                            .group_and_triangle_fraction[l];
+                                const auto& extinction =
+                                    input_derivatives.layerDerivatives()[k]
+                                        .extinctions[l];
+
+                                m_radiances[threadidx][j].deriv(
+                                    s, group_fraction.first) +=
+                                    group_fraction.second *
+                                    m_component[threadidx].deriv(k, s) *
+                                    extinction * azimuthal_factor;
+                            }
+                        }
                     }
                 }
             }
@@ -184,10 +207,18 @@ namespace sasktran2 {
 
             do_los.coszenith = -ray.observer_and_look.look_away.z();
 
+            if (do_los.coszenith < 0) {
+                throw sasktran_disco::InternalRuntimeError(
+                    "Error, currently only calculation of upwelling radiances "
+                    "is supported in plane parallel mode");
+            }
+
             sasktran2::raytracing::calculate_csz_saz(
                 m_geometry.coordinates().sun_unit(),
                 ray.observer_and_look.observer, ray.observer_and_look.look_away,
                 temp, do_los.azimuth, sasktran2::geometrytype::planeparallel);
+
+            do_los.azimuth = -(EIGEN_PI - do_los.azimuth);
 
             do_los.cos_scattering_angle =
                 m_geometry.coordinates().sun_unit().dot(
