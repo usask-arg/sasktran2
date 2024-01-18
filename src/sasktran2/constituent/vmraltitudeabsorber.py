@@ -114,7 +114,7 @@ class VMRAltitudeAbsorber(Constituent):
 
         # Contributions from the change in number density due to a constant
         # VMR and changing pressure/temperature
-        for deriv_name, vert_factor in zip(deriv_names, [dN_dP, dN_dT]):
+        for deriv_name, vert_factor in zip(deriv_names, [dN_dP, dN_dT], strict=False):
             derivs[deriv_name] = InterpolatedDerivativeMapping(
                 NativeGridDerivative(
                     d_extinction=self._optical_quants.extinction,

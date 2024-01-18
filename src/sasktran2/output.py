@@ -1,5 +1,4 @@
 import abc
-from typing import Union
 
 import numpy as np
 import xarray as xr

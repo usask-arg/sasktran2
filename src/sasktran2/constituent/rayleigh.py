@@ -1,5 +1,3 @@
-from typing import Optional
-
 import numpy as np
 
 import sasktran2 as sk
@@ -161,7 +159,7 @@ class Rayleigh(Constituent):
             deriv_names.append("temperature_k")
             d_vals.append(dN_dT)
 
-        for deriv_name, vert_factor in zip(deriv_names, d_vals):
+        for deriv_name, vert_factor in zip(deriv_names, d_vals, strict=True):
             derivs[deriv_name] = InterpolatedDerivativeMapping(
                 NativeGridDerivative(
                     d_extinction=xs,
