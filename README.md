@@ -54,7 +54,7 @@ pip install .
 Documentation can be found at https://sasktran2.readthedocs.io/
 
 ## License
-SASKTRAN2 is made available under the MIT license subject to the Commons Clause condition (see license.md). Effectively this is a MIT license restricted for academic and educational use, for commercial use please contact the package authors. Commerical level support may also be available for specific applications.
+SASKTRAN2 is made available under the MIT license.
 
 ## Acknowledgement
 We request that users of the model contact the authors before publishing results using SASKTRAN, and that the following publications are acknowledged:
