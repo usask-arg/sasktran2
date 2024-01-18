@@ -15,7 +15,7 @@ from .base import Constituent
 
 
 class Rayleigh(Constituent):
-    def __init__(self, method: str = "bates", method_kwargs: Optional[dict] = None):
+    def __init__(self, method: str = "bates", method_kwargs: dict | None = None):
         """
         An implementation of Rayleigh scattering.  Cross sections (and depolarization factors) can be
         calculated multiple ways, with the default method being that of 'bates'.

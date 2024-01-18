@@ -100,13 +100,13 @@ class DerivativeMapping:
     def name_prefix(self) -> str:
         return self._name_prefix
 
-    def map_derivative(self, data: np.ndarray, dimensions: List[str]):
+    def map_derivative(self, data: np.ndarray, dimensions: list[str]):
         return xr.DataArray(
             data,
             dims=dimensions,
         )
 
-    def name(self) -> Optional[str]:
+    def name(self) -> str | None:
         return None
 
 
@@ -119,7 +119,7 @@ class InterpolatedDerivativeMapping(DerivativeMapping):
         result_dim="interp_altitude",
         summable: bool = False,
         log_radiance_space: bool = False,
-        name: Optional[str] = None,
+        name: str | None = None,
     ):
         """
         A class which defines a mapping from internal model derivative quantities to user input quantities
@@ -161,7 +161,7 @@ class InterpolatedDerivativeMapping(DerivativeMapping):
 
         self._sparse_mapping = sparse.csc_matrix(self._xr_interpolator.to_numpy())
 
-    def map_derivative(self, data: np.ndarray, dimensions: List[str]):
+    def map_derivative(self, data: np.ndarray, dimensions: list[str]):
         new_dims = copy(dimensions)
         new_dims[-1] = self._xr_interpolator.dims[-1]
 
@@ -172,7 +172,7 @@ class InterpolatedDerivativeMapping(DerivativeMapping):
             dims=new_dims,
         ).transpose(*[new_dims[-1], *new_dims[:-1]])
 
-    def name(self) -> Optional[str]:
+    def name(self) -> str | None:
         return self._name
 
 
@@ -215,7 +215,7 @@ class SurfaceDerivativeMapping(DerivativeMapping):
             interpolating_matrix, dims=["tempDIM", result_dim]
         )
 
-    def map_derivative(self, data: np.ndarray, dimensions: List[str]):
+    def map_derivative(self, data: np.ndarray, dimensions: list[str]):
         return xr.DataArray(
             np.einsum(
                 "ijk, il->lijk", data, self._xr_interpolator.to_numpy(), optimize=True
@@ -231,7 +231,7 @@ class Atmosphere:
         config: sk.Config,
         wavelengths_nm: np.array = None,
         wavenumber_cminv: np.array = None,
-        numwavel: Optional[int] = None,
+        numwavel: int | None = None,
         calculate_derivatives: bool = True,
         pressure_derivative: bool = True,
         temperature_derivative: bool = True,
@@ -329,7 +329,7 @@ class Atmosphere:
         return self._model_geometry
 
     @property
-    def applied_delta_m_order(self) -> Optional[int]:
+    def applied_delta_m_order(self) -> int | None:
         """
         The order of the applied delta_m scaling. Can be None if no scaling has been applied
         """
@@ -371,7 +371,7 @@ class Atmosphere:
     @property
     def storage(
         self,
-    ) -> Union[sk.AtmosphereStorageStokes_1, sk.AtmosphereStorageStokes_3]:
+    ) -> sk.AtmosphereStorageStokes_1 | sk.AtmosphereStorageStokes_3:
         """
         The internal object which contains the atmosphere extinction, single scatter albedo, and legendre coefficients.
 
@@ -423,7 +423,7 @@ class Atmosphere:
         self._pressure_pa = pres
 
     @property
-    def wavelengths_nm(self) -> Optional[np.array]:
+    def wavelengths_nm(self) -> np.array | None:
         """
         The wavelengths in [nm] the atmosphere is specified at.  This is an
         optional property, it may be None.
@@ -440,7 +440,7 @@ class Atmosphere:
         self._wavenumbers_cminv = wavlength_nm_to_wavenumber_cminv(wav)
 
     @property
-    def wavenumbers_cminv(self) -> Optional[np.array]:
+    def wavenumbers_cminv(self) -> np.array | None:
         """
         The wavenumbers in [:math:`\\text{cm}^{-1}`].  This is an optional property, it may be set to None
 
@@ -505,7 +505,7 @@ class Atmosphere:
     def leg_coeff(self) -> LegendreStorageView:
         return self._leg_coeff
 
-    def internal_object(self) -> Union[sk.AtmosphereStokes_1, sk.AtmosphereStokes_3]:
+    def internal_object(self) -> sk.AtmosphereStokes_1 | sk.AtmosphereStokes_3:
         """
         The internal `pybind11` object that can be used to perform the radiative transfer calculation.
         Calling this method will trigger a construction of the atmosphere object if necessary, and then
