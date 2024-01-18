@@ -422,7 +422,7 @@ class Atmosphere:
         self._pressure_pa = pres
 
     @property
-    def wavelengths_nm(self) -> np.array | None:
+    def wavelengths_nm(self) -> np.ndarray | None:
         """
         The wavelengths in [nm] the atmosphere is specified at.  This is an
         optional property, it may be None.
@@ -439,7 +439,7 @@ class Atmosphere:
         self._wavenumbers_cminv = wavlength_nm_to_wavenumber_cminv(wav)
 
     @property
-    def wavenumbers_cminv(self) -> np.array | None:
+    def wavenumbers_cminv(self) -> np.ndarray | None:
         """
         The wavenumbers in [:math:`\\text{cm}^{-1}`].  This is an optional property, it may be set to None
 
