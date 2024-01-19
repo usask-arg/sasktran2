@@ -94,7 +94,7 @@ familiar with the core concepts of the model.
 ::::
 
 ## License
-SASKTRAN2 is made available under the MIT license restricted for academic and non-profit use (see [License](https://github.com/usask-arg/sasktran2/blob/main/license.md))
+SASKTRAN2 is made available under the MIT license (see [License](https://github.com/usask-arg/sasktran2/blob/main/license.md))
 
 We request that users of the model contact the authors before publishing results using SASKTRAN2, and that
 the following publications are acknowledged:
