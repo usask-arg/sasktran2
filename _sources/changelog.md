@@ -4,6 +4,9 @@
 
 ## Unreleased
 
+## 2024.01.1
+- Model has been relicensed under the MIT licenses
+
 ## 2024.01.0
 - Add support for Python 3.12 wheels
 - Remove support for Python versions below 3.10
