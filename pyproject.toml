@@ -8,13 +8,13 @@ name = "sasktran2"
 dynamic = ["version"]
 dependencies = ['numpy', 'appdirs', 'pyyaml', 'xarray>=2023.0.0', 'dask', 'scipy', 'netcdf4']
 include = ['python/src/sasktran2/*']
-license = {text = "Commons clause"}
+license = {text = "MIT"}
 description= "The SASKTRAN radiative transfer model Version 2"
 readme = "README.md"
 authors = [
     { name = "Daniel Zawada", email = "daniel.zawada@usask.ca" },
 ]
-requires-python = ">=3.7"
+requires-python = ">=3.10"
 classifiers = [
     "Development Status :: 4 - Beta",
     "License :: Free for non-commercial use",

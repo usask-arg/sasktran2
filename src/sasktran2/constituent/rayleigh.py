@@ -1,5 +1,3 @@
-from typing import Optional
-
 import numpy as np
 
 import sasktran2 as sk
@@ -15,7 +13,7 @@ from .base import Constituent
 
 
 class Rayleigh(Constituent):
-    def __init__(self, method: str = "bates", method_kwargs: Optional[dict] = None):
+    def __init__(self, method: str = "bates", method_kwargs: dict | None = None):
         """
         An implementation of Rayleigh scattering.  Cross sections (and depolarization factors) can be
         calculated multiple ways, with the default method being that of 'bates'.
@@ -161,7 +159,7 @@ class Rayleigh(Constituent):
             deriv_names.append("temperature_k")
             d_vals.append(dN_dT)
 
-        for deriv_name, vert_factor in zip(deriv_names, d_vals):
+        for deriv_name, vert_factor in zip(deriv_names, d_vals, strict=True):
             derivs[deriv_name] = InterpolatedDerivativeMapping(
                 NativeGridDerivative(
                     d_extinction=xs,
