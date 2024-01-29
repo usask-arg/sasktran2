@@ -6,10 +6,7 @@ from . import parameterized
 nwav = 10000
 
 
-@parameterized(
-    ["nlyr", "calc_deriv"],
-    ([2, False], [2, True], [20, False], [20, True], [100, False], [100, True]),
-)
+@parameterized(["nlyr", "calc_deriv"], ([2, 20, 100], [False, True]))
 class TwoStreamNadirPlaneParallel:
     def setup(self, nlyr, calc_deriv):
         cos_sza = 0.5
