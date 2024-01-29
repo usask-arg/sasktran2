@@ -3,6 +3,7 @@
 {% set describe_hash = environ.get('GIT_DESCRIBE_HASH', 'untagged') %}
 {% set py_version = environ['CONDA_PY'] %}
 {% set cpu_count = environ['CPU_COUNT'] %}
+{% set cmake_args = environ['CMAKE_ARGS'] %}
 
 
 package:
@@ -16,6 +17,7 @@ build:
   binary_relocation: true
   script_env:
     - CMAKE_BUILD_PARALLEL_LEVEL={{ cpu_count }}
+    - CMAKE_ARGS={{ cmake_args }}
   number: {{ describe_number }}
   string: py_{{ py_version }}_{{ describe_hash }}_{{ describe_number }}
   script:

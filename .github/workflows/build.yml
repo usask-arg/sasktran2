@@ -37,6 +37,9 @@ jobs:
           - os: macos-11
             target_plat: arm
 
+    env:
+      CMAKE_ARGS: -DDO_STREAM_TEMPLATES=ON
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
