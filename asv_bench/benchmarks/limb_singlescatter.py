@@ -4,19 +4,19 @@ import sasktran2 as sk
 from . import parameterized
 
 nwav = 1000
+nlyr = 100
+nlos = 50
 
 
-@parameterized(["nlyr", "calc_deriv"], ([2, 20, 100], [False, True]))
-class TwoStreamNadirPlaneParallel:
-    def setup(self, nlyr, calc_deriv):
+@parameterized(["nmoments", "calc_deriv"], ([2, 4, 16], [False, True]))
+class LimbSingleScatter:
+    def setup(self, nmoments, calc_deriv):
         cos_sza = 0.5
 
         config = sk.Config()
-        config.multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
-        config.single_scatter_source = sk.SingleScatterSource.DiscreteOrdinates
+        config.multiple_scatter_source = sk.MultipleScatterSource.NoSource
 
-        config.num_streams = 2
-        config.num_singlescatter_moments = 2
+        config.num_singlescatter_moments = nmoments
         config.num_stokes = 1
 
         model_geometry = sk.Geometry1D(
@@ -25,13 +25,15 @@ class TwoStreamNadirPlaneParallel:
             earth_radius_m=6372000,
             altitude_grid_m=np.linspace(0, 100000, nlyr + 1),
             interpolation_method=sk.InterpolationMethod.LinearInterpolation,
-            geometry_type=sk.GeometryType.PlaneParallel,
+            geometry_type=sk.GeometryType.Spherical,
         )
 
         viewing_geo = sk.ViewingGeometry()
 
-        viewing_geo.add_ray(sk.GroundViewingSolar(cos_sza, np.deg2rad(30), 0.02, 2.0))
-        viewing_geo.add_ray(sk.GroundViewingSolar(cos_sza, np.deg2rad(60), 0.92, 2.0))
+        for i in range(nlos):
+            viewing_geo.add_ray(
+                sk.TangentAltitudeSolar(i * (100000 / (nlos + 1)), 0, 200000, cos_sza)
+            )
 
         self._atmosphere = sk.Atmosphere(
             model_geometry, config, calculate_derivatives=calc_deriv, numwavel=nwav
@@ -47,5 +49,5 @@ class TwoStreamNadirPlaneParallel:
 
         self._engine = sk.Engine(config, model_geometry, viewing_geo)
 
-    def time_two_stream_nadir(self, nlyr, calc_deriv):  # noqa: ARG002
+    def time_limb_single_scatter(self, nmoments, calc_deriv):  # noqa: ARG002
         self._engine.calculate_radiance(self._atmosphere)
