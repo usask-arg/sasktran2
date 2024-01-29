@@ -1,12 +1,17 @@
 import numpy as np
 import sasktran2 as sk
 
-nwav = 500
-nlyr = 20
+from . import parameterized
+
+nwav = 10000
 
 
+@parameterized(
+    ["nlyr", "calc_deriv"],
+    ([2, False], [2, True], [20, False], [20, True], [100, False], [100, True]),
+)
 class TwoStreamNadirPlaneParallel:
-    def setup(self):
+    def setup(self, nlyr, calc_deriv):
         cos_sza = 0.5
 
         config = sk.Config()
@@ -32,7 +37,7 @@ class TwoStreamNadirPlaneParallel:
         viewing_geo.add_ray(sk.GroundViewingSolar(cos_sza, np.deg2rad(60), 0.92, 2.0))
 
         self._atmosphere = sk.Atmosphere(
-            model_geometry, config, calculate_derivatives=False, numwavel=nwav
+            model_geometry, config, calculate_derivatives=calc_deriv, numwavel=nwav
         )
 
         self._atmosphere.storage.total_extinction[:] = 0.5 / 1.0

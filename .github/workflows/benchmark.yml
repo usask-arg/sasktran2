@@ -34,7 +34,7 @@ jobs:
           OPENBLAS_NUM_THREADS: 1
           MKL_NUM_THREADS: 1
           OMP_NUM_THREADS: 1
-          ASV_FACTOR: 1.5
+          ASV_FACTOR: 1.05
           ASV_SKIP_SLOW: 1
         run: |
           set -x
