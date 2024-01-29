@@ -6,8 +6,8 @@ from . import parameterized
 nwav = 10000
 
 
+@parameterized(["nlyr", "calc_deriv"], ([2, 20, 100], [False, True]))
 class TwoStreamNadirPlaneParallel:
-    @parameterized(["nlyr", "calc_deriv"], ([2, 20, 100], [False, True]))
     def setup(self, nlyr, calc_deriv):
         cos_sza = 0.5
 
@@ -47,5 +47,5 @@ class TwoStreamNadirPlaneParallel:
 
         self._engine = sk.Engine(config, model_geometry, viewing_geo)
 
-    def time_two_stream_nadir(self):
+    def time_two_stream_nadir(self, nlyr, calc_deriv):  # noqa: ARG002
         self._engine.calculate_radiance(self._atmosphere)
