@@ -8,7 +8,7 @@ on:
 jobs:
   perf-book-pr:
     if: ${{ contains( github.event.pull_request.labels.*.name, 'build-perf-book') && github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
-    name: Linux
+    name: linux-pr
     runs-on: ubuntu-20.04
     env:
       CONDA_ENV_FILE: conda/dev_env.yml
@@ -43,7 +43,7 @@ jobs:
 
   perf-book-main:
     if: ${{ contains( github.event.pull_request.labels.*.name, 'build-perf-book') && github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
-    name: Linux
+    name: linux-main
     runs-on: ubuntu-20.04
     env:
       CONDA_ENV_FILE: conda/dev_env.yml
@@ -64,6 +64,11 @@ jobs:
         run: |
           pip install .
           python -c "import sasktran2 as sk; sk.appconfig.download_standard_databases()"
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ''
 
       - name: Build Book
         shell: bash -l {0}
