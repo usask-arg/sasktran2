@@ -65,7 +65,16 @@
         "pyyaml": [""],
         "netcdf4": [""],
         "scipy": [""],
-        "dask": [""]
+        "dask": [""],
+        "spdlog": [""],
+        "pybind11": [""],
+        "openblas": [""],
+        "libopenblas": [""],
+        "eigen": [""],
+        "scikit-build-core": [""],
+        "c-compiler": [""],
+        "cxx-compiler": [""],
+        "fortran-compiler": [""]
     },
 
 
