@@ -75,9 +75,6 @@ jobs:
   test-conda-pysasktran2:
     runs-on: ${{ matrix.os }}
 
-    env:
-      CMAKE_ARGS: -DDO_STREAM_TEMPLATES=ON
-
     strategy:
       fail-fast: false
       matrix:
