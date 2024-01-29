@@ -133,6 +133,7 @@ option(DO_STREAM_TEMPLATES
 if(DO_STREAM_TEMPLATES)
   target_compile_definitions(sasktran2BuildProperties
                              INTERFACE SASKTRAN_DISCO_FULL_COMPILE)
+  message(STATUS "Enabling Full DO Stream Template Compilation")
 endif()
 
 # -------- LAPACK FINDING -----------
