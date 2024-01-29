@@ -16,7 +16,7 @@ class TwoStreamNadirPlaneParallel:
         config.single_scatter_source = sk.SingleScatterSource.DiscreteOrdinates
 
         config.num_streams = 2
-        config.num_singlescatter_moments = 2
+        config.num_singlescatter_moments = 4
         config.num_stokes = 1
 
         model_geometry = sk.Geometry1D(

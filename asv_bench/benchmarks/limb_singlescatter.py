@@ -8,7 +8,7 @@ nlyr = 100
 nlos = 50
 
 
-@parameterized(["nmoments", "calc_deriv"], ([2, 4, 16], [False, True]))
+@parameterized(["nmoments", "calc_deriv"], ([4, 16], [False, True]))
 class LimbSingleScatter:
     def setup(self, nmoments, calc_deriv):
         cos_sza = 0.5
