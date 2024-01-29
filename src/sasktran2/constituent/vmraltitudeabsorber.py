@@ -107,14 +107,17 @@ class VMRAltitudeAbsorber(Constituent):
         interp_vmr = interp_matrix @ self._vmr
 
         deriv_names = []
+        d_vals = []
         if atmo.calculate_pressure_derivative:
             deriv_names.append("pressure_pa")
+            d_vals.append(dN_dP)
         if atmo.calculate_temperature_derivative:
             deriv_names.append("temperature_k")
+            d_vals.append(dN_dT)
 
         # Contributions from the change in number density due to a constant
         # VMR and changing pressure/temperature
-        for deriv_name, vert_factor in zip(deriv_names, [dN_dP, dN_dT], strict=False):
+        for deriv_name, vert_factor in zip(deriv_names, d_vals, strict=False):
             derivs[deriv_name] = InterpolatedDerivativeMapping(
                 NativeGridDerivative(
                     d_extinction=self._optical_quants.extinction,
