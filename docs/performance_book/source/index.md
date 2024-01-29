@@ -41,11 +41,17 @@ This sphinx book renders a collection of `.ipynb`
 :maxdepth: 4
 :caption: External Validation
 
+external_validation/coulsen
+external_validation/korkin
+external_validation/limb_vector_zawada_2021
+
 ```
 
 ```{toctree}
 :maxdepth: 4
 :caption: Internal Validation
+
+internal_validation/layering
 
 ```
 
