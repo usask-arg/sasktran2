@@ -149,3 +149,4 @@
     //    "some_benchmark": 0.01,     // Threshold of 1%
     //    "another_benchmark": 0.5,   // Threshold of 50%
     // }
+}
