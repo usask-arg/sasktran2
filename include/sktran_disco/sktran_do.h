@@ -41,9 +41,9 @@
     template class classname<1, 2>;                                            \
     template class classname<3, 2>;                                            \
     template class classname<1, 4>;                                            \
-    template class classname<3, 4>;                                            \
-    template class classname<1, 16>;                                           \
-    template class classname<3, 16>;
+    //    template class classname<3, 4>;                                            \
+//    template class classname<1, 16>;                                           \
+//    template class classname<3, 16>;
 
 #define SASKTRAN_DISCO_INSTANTIATE_TEMPLATE_STRUCT(classname)                  \
     template struct classname<1>;                                              \
@@ -51,9 +51,9 @@
     template struct classname<1, 2>;                                           \
     template struct classname<3, 2>;                                           \
     template struct classname<1, 4>;                                           \
-    template struct classname<3, 4>;                                           \
-    template struct classname<1, 16>;                                          \
-    template struct classname<3, 16>;
+    //    template struct classname<3, 4>;                                           \
+//    template struct classname<1, 16>;                                          \
+//    template struct classname<3, 16>;
 
 #else
 #define SASKTRAN_DISCO_INSTANTIATE_TEMPLATE(classname)                         \
