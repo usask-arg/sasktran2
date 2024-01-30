@@ -110,20 +110,22 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
                                 NSTOKES, -1>>(*m_geometry));
                 }
             }
-        }
-    } else {
-        if (m_geometry->coordinates().geometry_type() ==
-            sasktran2::geometrytype::spherical) {
-            m_source_terms.emplace_back(
-                std::make_unique<
-                    sasktran2::DOSourceInterpolatedPostProcessing<NSTOKES, -1>>(
-                    *m_geometry, *m_raytracer));
         } else {
-            m_source_terms.emplace_back(
-                std::make_unique<sasktran2::DOSourcePlaneParallelPostProcessing<
-                    NSTOKES, -1>>(*m_geometry));
+            if (m_geometry->coordinates().geometry_type() ==
+                sasktran2::geometrytype::spherical) {
+                m_source_terms.emplace_back(
+                    std::make_unique<
+                        sasktran2::DOSourceInterpolatedPostProcessing<NSTOKES,
+                                                                      -1>>(
+                        *m_geometry, *m_raytracer));
+            } else {
+                m_source_terms.emplace_back(
+                    std::make_unique<
+                        sasktran2::DOSourcePlaneParallelPostProcessing<NSTOKES,
+                                                                       -1>>(
+                        *m_geometry));
+            }
         }
-    }
 #else
         if (m_geometry->coordinates().geometry_type() ==
             sasktran2::geometrytype::spherical) {
@@ -139,21 +141,20 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
 
 #endif
 
-    m_los_source_terms.push_back(
-        m_source_terms[m_source_terms.size() - 1].get());
-}
-else if (m_config.multiple_scatter_source() ==
-         sasktran2::Config::MultipleScatterSource::hr) {
-    m_source_terms.emplace_back(
-        std::make_unique<sasktran2::hr::DiffuseTable<NSTOKES>>(*m_raytracer,
-                                                               *m_geometry));
-    m_los_source_terms.push_back(
-        m_source_terms[m_source_terms.size() - 1].get());
-}
+        m_los_source_terms.push_back(
+            m_source_terms[m_source_terms.size() - 1].get());
+    } else if (m_config.multiple_scatter_source() ==
+               sasktran2::Config::MultipleScatterSource::hr) {
+        m_source_terms.emplace_back(
+            std::make_unique<sasktran2::hr::DiffuseTable<NSTOKES>>(
+                *m_raytracer, *m_geometry));
+        m_los_source_terms.push_back(
+            m_source_terms[m_source_terms.size() - 1].get());
+    }
 
-for (auto& source : m_source_terms) {
-    source->initialize_config(m_config);
-}
+    for (auto& source : m_source_terms) {
+        source->initialize_config(m_config);
+    }
 }
 
 template <int NSTOKES> void Sasktran2<NSTOKES>::calculate_geometry() {
