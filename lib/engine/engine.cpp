@@ -71,29 +71,60 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
 #ifdef SASKTRAN_DISCO_FULL_COMPILE
         if constexpr (NSTOKES == 1) {
             if (m_config.num_do_streams() == 2) {
-                m_source_terms.emplace_back(
-                    std::make_unique<
-                        sasktran2::DOSourceInterpolatedPostProcessing<NSTOKES,
-                                                                      2>>(
-                        *m_geometry, *m_raytracer));
+                if (m_geometry->coordinates().geometry_type() ==
+                    sasktran2::geometrytype::spherical) {
+                    m_source_terms.emplace_back(
+                        std::make_unique<
+                            sasktran2::DOSourceInterpolatedPostProcessing<
+                                NSTOKES, 2>>(*m_geometry, *m_raytracer));
+                } else {
+                    m_source_terms.emplace_back(
+                        std::make_unique<
+                            sasktran2::DOSourcePlaneParallelPostProcessing<
+                                NSTOKES, 2>>(*m_geometry));
+                }
             } else if (m_config.num_do_streams() == 4) {
-                m_source_terms.emplace_back(
-                    std::make_unique<
-                        sasktran2::DOSourceInterpolatedPostProcessing<NSTOKES,
-                                                                      4>>(
-                        *m_geometry, *m_raytracer));
+                if (m_geometry->coordinates().geometry_type() ==
+                    sasktran2::geometrytype::spherical) {
+                    m_source_terms.emplace_back(
+                        std::make_unique<
+                            sasktran2::DOSourceInterpolatedPostProcessing<
+                                NSTOKES, 4>>(*m_geometry, *m_raytracer));
+                } else {
+                    m_source_terms.emplace_back(
+                        std::make_unique<
+                            sasktran2::DOSourcePlaneParallelPostProcessing<
+                                NSTOKES, 4>>(*m_geometry));
+                }
             } else {
+                if (m_geometry->coordinates().geometry_type() ==
+                    sasktran2::geometrytype::spherical) {
+                    m_source_terms.emplace_back(
+                        std::make_unique<
+                            sasktran2::DOSourceInterpolatedPostProcessing<
+                                NSTOKES, -1>>(*m_geometry, *m_raytracer));
+                } else {
+                    m_source_terms.emplace_back(
+                        std::make_unique<
+                            sasktran2::DOSourcePlaneParallelPostProcessing<
+                                NSTOKES, -1>>(*m_geometry));
+                }
+            }
+        } else {
+            if (m_geometry->coordinates().geometry_type() ==
+                sasktran2::geometrytype::spherical) {
                 m_source_terms.emplace_back(
                     std::make_unique<
                         sasktran2::DOSourceInterpolatedPostProcessing<NSTOKES,
                                                                       -1>>(
                         *m_geometry, *m_raytracer));
+            } else {
+                m_source_terms.emplace_back(
+                    std::make_unique<
+                        sasktran2::DOSourcePlaneParallelPostProcessing<NSTOKES,
+                                                                       -1>>(
+                        *m_geometry));
             }
-        } else {
-            m_source_terms.emplace_back(
-                std::make_unique<
-                    sasktran2::DOSourceInterpolatedPostProcessing<NSTOKES, -1>>(
-                    *m_geometry, *m_raytracer));
         }
 #else
         if (m_geometry->coordinates().geometry_type() ==
