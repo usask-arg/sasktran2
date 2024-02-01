@@ -5,7 +5,7 @@ from pathlib import Path
 
 import xarray as xr
 
-from . import CachedDatabase
+from .base import CachedDatabase
 
 
 class WebDatabase(CachedDatabase):

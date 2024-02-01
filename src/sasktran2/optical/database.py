@@ -250,8 +250,12 @@ class OpticalDatabaseGenericScatterer(OpticalDatabase):
             .interp(**interp_handler)
         )
 
-        quants.extinction = ds_interp["xs_total"].to_numpy()
-        quants.ssa = ds_interp["xs_scattering"].to_numpy()
+        quants.extinction = (
+            ds_interp["xs_total"].transpose("z", "wavelength_nm").to_numpy()
+        )
+        quants.ssa = (
+            ds_interp["xs_scattering"].transpose("z", "wavelength_nm").to_numpy()
+        )
 
         quants.leg_coeff = np.zeros_like(atmo.storage.leg_coeff)
 
@@ -348,8 +352,8 @@ class OpticalDatabaseGenericScatterer(OpticalDatabase):
                 dT = dT.isel({key: xr.DataArray(interp_index, dims="z")})
 
             derivs[key] = NativeGridDerivative(
-                d_extinction=dT["xs_total"].to_numpy(),
-                d_ssa=dT["xs_scattering"].to_numpy(),
+                d_extinction=dT["xs_total"].transpose("z", "wavelength_nm").to_numpy(),
+                d_ssa=dT["xs_scattering"].transpose("z", "wavelength_nm").to_numpy(),
                 d_leg_coeff=np.zeros_like(atmo.storage.leg_coeff),
             )
 
