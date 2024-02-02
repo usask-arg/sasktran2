@@ -29,4 +29,5 @@ dependencies:
   - pip:
     - sphinx_book_theme
     - myst-nb
+    - sasktran
     - sphinx_design
