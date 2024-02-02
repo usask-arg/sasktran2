@@ -332,6 +332,10 @@ class OpticalDatabaseGenericScatterer(OpticalDatabase):
         )
 
         for key, val in interp_handler_z.items():
+            # If the db only contains one element in the dimension we can't take a derivative
+            if len(self._database[key]) == 1:
+                continue
+
             # Interpolate over the other variables
             new_interpolants = {k: v for k, v in interp_handler_z.items() if k != key}
 
@@ -416,6 +420,10 @@ class OpticalDatabaseGenericScatterer(OpticalDatabase):
         partial_interp = self._database["xs_total"].interp(**interp_handler_noz)
 
         for key, val in interp_handler_z.items():
+            # If the db only contains one element in the dimension we can't take a derivative
+            if len(self._database[key]) == 1:
+                continue
+
             # Interpolate over the other variables
             new_interpolants = {k: v for k, v in interp_handler_z.items() if k != key}
 
