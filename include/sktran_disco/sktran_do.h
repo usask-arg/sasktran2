@@ -19,7 +19,7 @@
 // directly I think the Eigen EigenSolver is faster for small matrices but
 // slower for large ones, and sometimes the Eigen EigenSolver can have precision
 // problems so right now we just disable it
-#define SASKTRAN_DISCO_USE_EIGEN_EIGENSOLVER false
+#define SASKTRAN_DISCO_USE_EIGEN_EIGENSOLVER true
 
 // If set, then the pentadiagonal solver is used for NSTR=2, NSTOKES=1, only
 // enabled if SKTRANDO_FULL_COMPILE is set

@@ -162,6 +162,13 @@ void init_config(py::module_& m) {
                 in full space, i.e. each hemisphere has num_streams / 2 angular discretizations.  Must
                 be an even number. Default to 16.
             )")
+        .def_property("num_forced_azimuth",
+                      &sasktran2::Config::num_do_forced_azimuth,
+                      &sasktran2::Config::set_num_do_forced_azimuth,
+                      R"(
+                             If set to a value greater than 0, the discrete ordinates method will use this number of azimuth terms independent of convergence.
+                             Defaults to -1, which means to use the number of azimuth terms required for convergence.
+                              )")
         .def_property("num_successive_orders_points",
                       &sasktran2::Config::num_hr_full_incoming_points,
                       &sasktran2::Config::set_num_hr_full_incoming_points,

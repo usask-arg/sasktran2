@@ -266,6 +266,20 @@ namespace sasktran2 {
         void set_num_do_sza(int nsza) { m_ndosza = nsza; }
 
         /**
+         * @brief
+         *
+         * @return int
+         */
+        int num_do_forced_azimuth() const { return m_do_forced_azimuth; }
+
+        /**
+         * @brief Set the number of forzed azimuth terms in the DO solution
+         *
+         * @param n
+         */
+        void set_num_do_forced_azimuth(int n) { m_do_forced_azimuth = n; }
+
+        /**
          *
          * @return True if the weighting function calculation is enabled
          */
@@ -426,6 +440,8 @@ namespace sasktran2 {
         int m_ndostreams;
         int m_ndosza;
         int m_ndosphericaliterations;
+
+        int m_do_forced_azimuth;
 
         int m_nsinglescatter_moments;
 

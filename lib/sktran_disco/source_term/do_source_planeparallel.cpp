@@ -49,6 +49,11 @@ namespace sasktran2 {
         }
 
         int num_azi = m_config->num_do_streams();
+
+        if (m_config->num_do_forced_azimuth() > 0) {
+            num_azi = m_config->num_do_forced_azimuth();
+        }
+
         for (int m = 0; m < num_azi; ++m) {
             rte.solve(m);
 

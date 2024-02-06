@@ -1,5 +1,6 @@
 #include "sktran_disco/sktran_do.h"
 #include "sktran_disco/sktran_do_rte.h"
+#include <sasktran2/math/real_eigensolver.h>
 #include <thread>
 
 template <int NSTOKES, int CNSTR>
@@ -469,7 +470,8 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveHomogeneous(
                              // case of NSTOKES=1 or pure Rayleigh scattering
 
     if (SASKTRAN_DISCO_USE_EIGEN_EIGENSOLVER || CNSTR != -1) {
-        Eigen::EigenSolver<Matrix> es(eigmtx_destroyable);
+        // Eigen::SelfAdjointEigenSolver<Matrix> es(eigmtx_destroyable);
+        Eigen::RealEigenSolver<Matrix> es(eigmtx_destroyable);
 
         auto eigeninfo = es.info();
         if (eigeninfo != Eigen::Success) {
