@@ -47,16 +47,16 @@ def _test_scenarios():
 
 def test_o2o2_construction():
     """
-    Test that the ConstantCollisionInducedAbsorber class can be constructed
+    Test that the CollisionInducedAbsorber class can be constructed.
     """
-    sk.constituent.ConstantCollisionInducedAbsorber(
+    sk.constituent.CollisionInducedAbsorber(
         sk.optical.HITRANCollision("O2O2"), name="O2O2"
     )
 
 
 def test_o2o2_wf_temperature():
     """
-    Tests that the ConstantCollisionInducedAbsorber class calculates derivatives with respect to temperature correctly.
+    Tests that the CollisionInducedAbsorber class calculates derivatives with respect to temperature correctly.
     """
 
     scens = _test_scenarios()
@@ -64,7 +64,7 @@ def test_o2o2_wf_temperature():
     for scen in scens:
         atmosphere = scen["atmosphere"]
 
-        atmosphere["o2o2"] = sk.constituent.ConstantCollisionInducedAbsorber(
+        atmosphere["o2o2"] = sk.constituent.CollisionInducedAbsorber(
             sk.optical.HITRANCollision("O2O2"), name="O2O2"
         )
 
@@ -84,7 +84,7 @@ def test_o2o2_wf_temperature():
 
 def test_o2o2_wf_pressure():
     """
-    Tests that the ConstantCollisionInducedAbsorber class calculates derivatives with respect to pressure correctly.
+    Tests that the CollisionInducedAbsorber class calculates derivatives with respect to pressure correctly.
     """
 
     scens = _test_scenarios()
@@ -92,7 +92,7 @@ def test_o2o2_wf_pressure():
     for scen in scens:
         atmosphere = scen["atmosphere"]
 
-        atmosphere["o2o2"] = sk.constituent.ConstantCollisionInducedAbsorber(
+        atmosphere["o2o2"] = sk.constituent.CollisionInducedAbsorber(
             sk.optical.HITRANCollision("O2O2"), name="O2O2"
         )
 
