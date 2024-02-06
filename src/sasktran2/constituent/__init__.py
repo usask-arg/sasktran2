@@ -5,3 +5,4 @@ from .lambertiansurface import LambertianSurface
 from .numdenscatterer import ExtinctionScatterer, NumberDensityScatterer
 from .rayleigh import Rayleigh
 from .vmraltitudeabsorber import VMRAltitudeAbsorber
+from .collisioninducedabsorber import ConstantCollisionInducedAbsorber

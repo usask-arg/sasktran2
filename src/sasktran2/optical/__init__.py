@@ -182,6 +182,34 @@ class HITRANTabulated(database.OpticalDatabaseGenericAbsorber):
             raise OSError(msg)
 
 
+class HITRANCollision(database.OpticalDatabaseGenericAbsorber):
+    def __init__(self, name: str) -> None:
+        """
+        Loads collision induced absorption (CIA) cross sections compiled from data found at https://hitran.org/cia/.
+
+        This requires the extended databases to be downloaded, e.g. by running sk.appconfig.download_extended_databases()
+
+        Currently supported species are:
+
+            | O2O2
+
+        Parameters
+        ----------
+        name : str
+            Species name
+        """
+
+        data_file = sk.appconfig.database_root().joinpath(
+            f"cross_sections/{name.lower()}/hitran_cia.nc"
+        )
+
+        if data_file.exists():
+            super().__init__(data_file)
+        else:
+            msg = f"Could not find HITRAN CIA database for {name} at {data_file}"
+            raise OSError(msg)
+
+
 def pressure_temperature_to_numberdensity(
     pressure_pa: np.array, temperature_k: np.array, include_derivatives=False
 ) -> np.array:
