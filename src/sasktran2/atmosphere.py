@@ -234,6 +234,7 @@ class Atmosphere:
         calculate_derivatives: bool = True,
         pressure_derivative: bool = True,
         temperature_derivative: bool = True,
+        legendre_derivative: bool = True,
     ):
         """
         The main specification for the atmospheric state.
@@ -261,6 +262,8 @@ class Atmosphere:
             Whether or not the model should calculate derivatives with respect to pressure., by default True
         temperature_derivative: bool, optional
             Whether or not the model should calculate derivatives with respect to temperature., by default True
+        legendre_derivative: bool, optional
+            Whether or not the model should calculate derivatives with respect to the legendre coefficients., by default True
         """
         self._wavelengths_nm = None
         self._wavenumbers_cminv = None
@@ -286,6 +289,7 @@ class Atmosphere:
         self._calculate_derivatives = calculate_derivatives
         self._pressure_derivative = pressure_derivative
         self._temperature_derivative = temperature_derivative
+        self._legendre_derivative = legendre_derivative
 
         if self._nstokes == 1:
             self._atmosphere = sk.AtmosphereStokes_1(
@@ -557,23 +561,26 @@ class Atmosphere:
                     summable=True,
                 )
 
-                for i in range(self.storage.leg_coeff.shape[0]):
-                    if i == 0:
-                        # No derivative for the first leg_coeff
-                        continue
+                if self._legendre_derivative:
+                    for i in range(self.storage.leg_coeff.shape[0]):
+                        if i == 0:
+                            # No derivative for the first leg_coeff
+                            continue
 
-                    d_leg_coeff = np.zeros_like(self.storage.leg_coeff)
-                    d_leg_coeff[i, :] = 1
-                    self._derivs["raw"][f"leg_coeff_{i}"] = DerivativeMapping(
-                        NativeGridDerivative(
-                            d_extinction=np.zeros_like(self.storage.total_extinction),
-                            d_ssa=np.zeros_like(self.storage.ssa),
-                            d_leg_coeff=d_leg_coeff,
-                            scat_factor=np.ones_like(self.storage.ssa),
-                        ),
-                        summable=True,
-                    )
-                    num_scat_derivs += 1
+                        d_leg_coeff = np.zeros_like(self.storage.leg_coeff)
+                        d_leg_coeff[i, :] = 1
+                        self._derivs["raw"][f"leg_coeff_{i}"] = DerivativeMapping(
+                            NativeGridDerivative(
+                                d_extinction=np.zeros_like(
+                                    self.storage.total_extinction
+                                ),
+                                d_ssa=np.zeros_like(self.storage.ssa),
+                                d_leg_coeff=d_leg_coeff,
+                                scat_factor=np.ones_like(self.storage.ssa),
+                            ),
+                            summable=True,
+                        )
+                        num_scat_derivs += 1
 
         # Now we need to resize the phase derivative storage if necessary, and set the scattering derivatives
         if num_scat_derivs > 0:
