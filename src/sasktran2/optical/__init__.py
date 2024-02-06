@@ -198,7 +198,7 @@ class HITRANCollision(database.OpticalDatabaseGenericAbsorber):
             Species name
         """
 
-        data_file = sk.appconfig.database_root().joinpath(
+        data_file = StandardDatabase().path(
             f"cross_sections/{name.lower()}/hitran_cia.nc"
         )
 
