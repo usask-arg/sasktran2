@@ -6,20 +6,18 @@ from sasktran2.atmosphere import (
     NativeGridDerivative,
 )
 from sasktran2.optical import pressure_temperature_to_numberdensity
-from sasktran2.optical.rayleigh import rayleigh_cross_section_bates
-from sasktran2.polarization import LegendreStorageView
 
-from .base import Constituent
 from ..optical.base import OpticalProperty
-from ..optical import HITRANCollision
+from .base import Constituent
 
 
-class ConstantCollisionInducedAbsorber(Constituent):
-    def __init__(self, optical_property: OpticalProperty, name: str=None, fraction_product: float=None):
+class CollisionInducedAbsorber(Constituent):
+    def __init__(self, optical_property: OpticalProperty, name: str):
         """
-        An implementation of collision-induced absorption for quantities with constant mole fractions.
+        An implementation of collision-induced absorption for quantities with known constant mole
+        fractions.
 
-        Air number density is estimated through the ideal gas law. Currently applies the mole fraction
+        Air number density is estimated through the ideal gas law. Currently the mole fraction is applied
         to the air number density, though in the future it should be applied to dry air only.
 
         This Constituent requires that the atmosphere object have `temperature_k`, `pressure_pa`, and
@@ -28,25 +26,16 @@ class ConstantCollisionInducedAbsorber(Constituent):
         Parameters
         ----------
         optical_property : OpticalProperty
-            Optical property that computes the O2-O2 cross section.
+            Optical property that computes the collision-induced cross section in [m^5].
         name : str
-            Molecule names to load mole fractions. This or fraction_product must be specified. 
-            Currently supported: O2O2
-        fraction_product : float
-            Product of the mole fractions of the colliding species. This or name must be specified.
-            This takes priority over name if both are given.
+            Molecule names to load mole fractions.  Currently supported: O2O2
         """
         self._optical_property = optical_property
-        if fraction_product is not None:
-            self._fraction_product = fraction_product
-        elif name is not None:
-            if name.lower() == 'o2o2':
-                self._fraction_product = 0.20964**2
-            else:
-                raise ValueError(f"Unknown name '{name}'")
+        if name.lower() == "o2o2":
+            self._fraction_product = 0.20964**2
         else:
-            raise ValueError("One of 'name' or 'fraction_product' must be specified.")
-
+            msg = f"Unknown name '{name}'"
+            raise ValueError(msg)
 
     def add_to_atmosphere(self, atmo: sk.Atmosphere):
         """
@@ -97,11 +86,16 @@ class ConstantCollisionInducedAbsorber(Constituent):
 
         # Contributions from the change in number density via pressure/temperature
         for deriv_name, dN_dX in zip(deriv_names, d_vals, strict=False):
-            dk_dX = 2 * self._fraction_product * (number_density * dN_dX)[:, np.newaxis] * self._optical_quants.extinction
+            dk_dX = (
+                2
+                * self._fraction_product
+                * (number_density * dN_dX)[:, np.newaxis]
+                * self._optical_quants.extinction
+            )
             derivs[deriv_name] = InterpolatedDerivativeMapping(
                 NativeGridDerivative(
                     d_extinction=dk_dX,
-                    d_ssa=dk_dX 
+                    d_ssa=dk_dX
                     * (self._optical_quants.ssa - atmo.storage.ssa)
                     / atmo.storage.total_extinction,
                 ),

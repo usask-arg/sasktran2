@@ -49,9 +49,9 @@ def test_o2o2_construction():
     """
     Test that the ConstantCollisionInducedAbsorber class can be constructed
     """
-    alts = np.arange(0, 100001, 1000)
-
-    sk.constituent.ConstantCollisionInducedAbsorber(sk.optical.HITRANCollision('O2O2'), name='O2O2')
+    sk.constituent.ConstantCollisionInducedAbsorber(
+        sk.optical.HITRANCollision("O2O2"), name="O2O2"
+    )
 
 
 def test_o2o2_wf_temperature():
@@ -65,7 +65,7 @@ def test_o2o2_wf_temperature():
         atmosphere = scen["atmosphere"]
 
         atmosphere["o2o2"] = sk.constituent.ConstantCollisionInducedAbsorber(
-            sk.optical.HITRANCollision('O2O2'), name='O2O2'
+            sk.optical.HITRANCollision("O2O2"), name="O2O2"
         )
 
         engine = sk.Engine(scen["config"], scen["geometry"], scen["viewing_geo"])
@@ -90,11 +90,10 @@ def test_o2o2_wf_pressure():
     scens = _test_scenarios()
 
     for scen in scens:
-        altitude_grid = scen["atmosphere"].model_geometry.altitudes()
         atmosphere = scen["atmosphere"]
 
         atmosphere["o2o2"] = sk.constituent.ConstantCollisionInducedAbsorber(
-            sk.optical.HITRANCollision('O2O2'), name='O2O2'
+            sk.optical.HITRANCollision("O2O2"), name="O2O2"
         )
 
         engine = sk.Engine(scen["config"], scen["geometry"], scen["viewing_geo"])

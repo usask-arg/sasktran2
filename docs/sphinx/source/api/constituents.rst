@@ -11,6 +11,8 @@ Constituents
 
 .. autoclass:: sasktran2.constituent.ExtinctionScatterer
 
+.. autoclass:: sasktran2.constituent.CollisionInducedAbsorber
+
 Surfaces
 --------
 
