@@ -127,6 +127,15 @@ if(USE_OMP)
   endif()
 endif()
 
+option(DO_STREAM_TEMPLATES
+       "Enables Compilation of templated number of streams in DO" OFF)
+
+if(DO_STREAM_TEMPLATES)
+  target_compile_definitions(sasktran2BuildProperties
+                             INTERFACE SASKTRAN_DISCO_FULL_COMPILE)
+  message(STATUS "Enabling Full DO Stream Template Compilation")
+endif()
+
 # -------- LAPACK FINDING -----------
 # We support multiple blas vendors, but these can require some funny options
 set(SKTRAN_BLAS_VENDOR

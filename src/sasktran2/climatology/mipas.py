@@ -5,6 +5,7 @@ import numpy as np
 
 import sasktran2 as sk
 from sasktran2.constituent import VMRAltitudeAbsorber
+from sasktran2.database.web import StandardDatabase
 from sasktran2.optical.base import OpticalProperty
 
 
@@ -25,7 +26,7 @@ def _atm_file_path(folder_name: str, file_name: str) -> Path:
         Absolute path to the file.
     """
 
-    base_path = sk.appconfig.database_root().joinpath("climatology")
+    base_path = StandardDatabase().path("climatology")
 
     path_to_file = (
         folder_name + "/" + file_name

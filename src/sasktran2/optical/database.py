@@ -250,8 +250,12 @@ class OpticalDatabaseGenericScatterer(OpticalDatabase):
             .interp(**interp_handler)
         )
 
-        quants.extinction = ds_interp["xs_total"].to_numpy()
-        quants.ssa = ds_interp["xs_scattering"].to_numpy()
+        quants.extinction = (
+            ds_interp["xs_total"].transpose("z", "wavelength_nm").to_numpy()
+        )
+        quants.ssa = (
+            ds_interp["xs_scattering"].transpose("z", "wavelength_nm").to_numpy()
+        )
 
         quants.leg_coeff = np.zeros_like(atmo.storage.leg_coeff)
 
@@ -328,6 +332,10 @@ class OpticalDatabaseGenericScatterer(OpticalDatabase):
         )
 
         for key, val in interp_handler_z.items():
+            # If the db only contains one element in the dimension we can't take a derivative
+            if len(self._database[key]) == 1:
+                continue
+
             # Interpolate over the other variables
             new_interpolants = {k: v for k, v in interp_handler_z.items() if k != key}
 
@@ -348,8 +356,8 @@ class OpticalDatabaseGenericScatterer(OpticalDatabase):
                 dT = dT.isel({key: xr.DataArray(interp_index, dims="z")})
 
             derivs[key] = NativeGridDerivative(
-                d_extinction=dT["xs_total"].to_numpy(),
-                d_ssa=dT["xs_scattering"].to_numpy(),
+                d_extinction=dT["xs_total"].transpose("z", "wavelength_nm").to_numpy(),
+                d_ssa=dT["xs_scattering"].transpose("z", "wavelength_nm").to_numpy(),
                 d_leg_coeff=np.zeros_like(atmo.storage.leg_coeff),
             )
 
@@ -412,6 +420,10 @@ class OpticalDatabaseGenericScatterer(OpticalDatabase):
         partial_interp = self._database["xs_total"].interp(**interp_handler_noz)
 
         for key, val in interp_handler_z.items():
+            # If the db only contains one element in the dimension we can't take a derivative
+            if len(self._database[key]) == 1:
+                continue
+
             # Interpolate over the other variables
             new_interpolants = {k: v for k, v in interp_handler_z.items() if k != key}
 

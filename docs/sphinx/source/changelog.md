@@ -3,6 +3,7 @@
 # Changelog
 
 ## Unreleased
+- Templated number of streams has been enabled in DO, resulting in large speedups for 2-stream calculations
 
 ## 2024.01.1
 - Model has been relicensed under the MIT licenses

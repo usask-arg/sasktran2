@@ -48,3 +48,4 @@ local_scripts
 typings
 .cache
 *._cache
+asv_bench/.asv/

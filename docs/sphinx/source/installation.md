@@ -28,9 +28,3 @@ The latest nightly version of SASKTRAN2 is made available through::
 | conda-forge Py 3.12  | ✅ | ✅  | ✅  | ✅  |
 
 <sup>¹ Open-MP Support is Disabled</sup><br>
-
-# Database downloads
-SASKTRAN2 can optionally use several databases of optical properties and climatologies.
-All examples on this documentation page require that the standard databases be downloaded with::
-
-    python -c "import sasktran2 as sk; sk.appconfig.download_standard_databases()"
