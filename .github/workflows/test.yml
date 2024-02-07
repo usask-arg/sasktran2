@@ -142,3 +142,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           path: ./wheelhouse/*.whl
+          name: sasktran2-wheel-${{ matrix.os }}
