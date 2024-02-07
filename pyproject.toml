@@ -26,6 +26,7 @@ classifiers = [
 
 [project.optional-dependencies]
 test = ["pytest"]
+hapi = ["hitran-api"]
 
 [tool.scikit-build]
 wheel.expand-macos-universal-tags = true

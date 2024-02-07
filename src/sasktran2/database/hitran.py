@@ -209,6 +209,8 @@ class HITRANDatabase(CachedDatabase, OpticalDatabaseGenericAbsorber):
         self._reduction_factor = reduction_factor
         self._molecule = molecule
         self._ltol = 1e-9
+        self._wavenumber_wing = 50
+        self._wavenumber_margin = 10
 
         CachedDatabase.__init__(
             self,
@@ -299,18 +301,14 @@ class HITRANDatabase(CachedDatabase, OpticalDatabaseGenericAbsorber):
 
         hapi.db_begin(str(line_db._db_root))
 
-        # TODO: let user modify these options
-        wavenumber_wing = 50
-        wavenumber_margin = 10
-
         hapi.select(
             self._molecule,
             DestinationTableName="spectral_window",
             Conditions=(
                 "between",
                 "nu",
-                self._start_wavenumber - wavenumber_margin,
-                self._end_wavenumber + wavenumber_margin,
+                self._start_wavenumber - self._wavenumber_margin,
+                self._end_wavenumber + self._wavenumber_margin,
             ),
         )
 
@@ -327,7 +325,7 @@ class HITRANDatabase(CachedDatabase, OpticalDatabaseGenericAbsorber):
                     SourceTables="spectral_window",
                     Environment={"T": temp, "p": pres / 101325.0},
                     WavenumberGrid=hires_wavenumber_grid.tolist(),
-                    WavenumberWing=wavenumber_wing,
+                    WavenumberWing=self._wavenumber_wing,
                 )
                 xs[idx, idy] = xs_hapi / 1e4
 
