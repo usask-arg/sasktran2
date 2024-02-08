@@ -17,12 +17,13 @@ namespace sasktran2::viewinggeometry {
         ViewingRay result;
 
         // Coordinate of ground point that has the correct angles
-        Eigen::Vector3d ground_vector = geometry.solar_coordinate_vector(
-            m_cos_sza, m_relative_azimuth_angle, 0.0);
+        Eigen::Vector3d ground_vector =
+            geometry.solar_coordinate_vector(m_cos_sza, 0.0, 0.0);
 
-        result.look_away = -1.0 * geometry.look_vector_from_azimuth(
-                                      ground_vector, m_relative_azimuth_angle,
-                                      m_cos_viewing_zenith);
+        result.look_away =
+            -1.0 * geometry.look_vector_from_azimuth(
+                       ground_vector, -(EIGEN_PI - m_relative_azimuth_angle),
+                       m_cos_viewing_zenith);
 
         double distance_from_ground = 0.0;
 
