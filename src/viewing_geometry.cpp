@@ -22,7 +22,7 @@ void init_viewing_geometry(py::module_& m) {
                     tangent_altitude_m: float
                         Tangent altitude in [m]
                     relative_azimuth: float
-                        Relative azimuth angle to the sun [rad]
+                        Relative azimuth angle to the sun. An angle of 0 degrees corresponds to the forward scattering plane. [rad]
                     observer_altitude_m: float
                         Observer altitude relative to the earth [m]
                     cos_sza: float
@@ -45,7 +45,7 @@ void init_viewing_geometry(py::module_& m) {
                 cos_sza: float
                     Cosine of solar zenith angle at the ground point [unitless]
                 relative_azimuth: float
-                    Relative azimuth angle to the sun [rad] at the ground point
+                    Relative azimuth angle to the sun [rad] at the ground point. An angle of 0 degrees corresponds to the forward scattering plane.
                 observer_altitude_m: float
                     Observer altitude relative to the earth [m]
                 cos_viewing_zenith: float
