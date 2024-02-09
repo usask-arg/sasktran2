@@ -153,7 +153,9 @@ class HITRANLineDatabase:
                 iso_ids.append(id)
 
         # Download files
-        hapi.fetch_by_ids(molecule, iso_ids, 0.0, 1.0e6)
+        hapi.fetch_by_ids(
+            molecule, iso_ids, 0.0, 1.0e6, ParameterGroups=["par_line", "sdvoigt", "ht"]
+        )
 
         return
 
@@ -168,6 +170,7 @@ class HITRANDatabase(CachedDatabase, OpticalDatabaseGenericAbsorber):
         reduction_factor: int,
         db_root: Path | None = None,
         backend: str = "sasktran_legacy",
+        profile: str = "voigt",
     ) -> None:
         """
 
@@ -179,6 +182,10 @@ class HITRANDatabase(CachedDatabase, OpticalDatabaseGenericAbsorber):
         backend : str, optional
             The backend to use, by default "sasktran_legacy" which requires the module `sasktran` to be installed. Currently supported
             options are ["sasktran_legacy", "hapi"]. Default is "sasktran_legacy"
+        profile : str, optional
+            The line shape profile to use in the cross section calculation. Currently, only the "hapi" backend supports options other
+            than the default "voigt". Supported options are ["voigt", "sdvoigt", "ht", "priority", "lorentz", "doppler"].
+            Default is "voigt".
         kwargs
             Additional arguments to pass to the particle size distribution, these should match the psize_distribution.args() method
         """
@@ -211,6 +218,7 @@ class HITRANDatabase(CachedDatabase, OpticalDatabaseGenericAbsorber):
         self._ltol = 1e-9
         self._wavenumber_wing = 50
         self._wavenumber_margin = 10
+        self._profile = profile.lower()
 
         CachedDatabase.__init__(
             self,
@@ -299,6 +307,18 @@ class HITRANDatabase(CachedDatabase, OpticalDatabaseGenericAbsorber):
             msg = "HITRAN API is required to use HAPI, try pip install hitran-api"
             raise ImportError(msg) from err
 
+        abs_cal_fn = {
+            "voigt": hapi.absorptionCoefficient_Voigt,
+            "sdvoigt": hapi.absorptionCoefficient_SDVoigt,
+            "ht": hapi.absorptionCoefficient_HT,
+            "priority": hapi.absorptionCoefficient_Priority,
+            "lorentz": hapi.absorptionCoefficient_Lorentz,
+            "doppler": hapi.absorptionCoefficient_Doppler,
+        }
+        if self._profile not in abs_cal_fn:
+            msg = f"Invalid line profile {self._profile}"
+            raise ValueError(msg)
+
         hapi.db_begin(str(line_db._db_root))
 
         hapi.select(
@@ -320,8 +340,7 @@ class HITRANDatabase(CachedDatabase, OpticalDatabaseGenericAbsorber):
 
         for idx, pres in enumerate(PRESSURE_GRID):
             for idy, temp in enumerate(TEMP_GRID):
-                # TODO: add option to use other broadening functions
-                _, xs_hapi = hapi.absorptionCoefficient_Voigt(
+                _, xs_hapi = abs_cal_fn[self._profile](
                     SourceTables="spectral_window",
                     Environment={"T": temp, "p": pres / 101325.0},
                     WavenumberGrid=hires_wavenumber_grid.tolist(),
