@@ -17,12 +17,16 @@ for dbm_file in Path(DBM_DIR).iterdir():
         dbm_file,
         header=3,
         converters={
-            0: lambda x: float(x.replace("{", "").replace("}", "").replace(" ", ""))
-            if x is not None
-            else 0,
-            1: lambda x: float(x.replace("{", "").replace("}", "").replace(" ", ""))
-            if x is not None
-            else 0,
+            0: lambda x: (
+                float(x.replace("{", "").replace("}", "").replace(" ", ""))
+                if x is not None
+                else 0
+            ),
+            1: lambda x: (
+                float(x.replace("{", "").replace("}", "").replace(" ", ""))
+                if x is not None
+                else 0
+            ),
         },
         skipfooter=1,
     )
