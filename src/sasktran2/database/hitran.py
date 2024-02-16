@@ -1,11 +1,11 @@
 import hashlib
 import json
+import logging
 from pathlib import Path
 
 import numpy as np
 import xarray as xr
 
-from sasktran2 import appconfig
 from sasktran2.optical.database import OpticalDatabaseGenericAbsorber
 from sasktran2.units import wavenumber_cminv_to_wavlength_nm
 
@@ -117,11 +117,11 @@ PRESSURE_GRID = (
 TEMP_GRID = np.arange(190, 311, 10)
 
 
-class HITRANLineDatabase:
-    def __init__(self):
-        CachedDatabase.__init__(
-            self, appconfig.database_root().joinpath("hitran_lines")
-        )
+class HITRANLineDatabase(CachedDatabase):
+    def __init__(
+        self, db_root: Path | None = None, rel_path: Path | None = "hitran_lines"
+    ):
+        CachedDatabase.__init__(self, db_root, rel_path=rel_path)
 
     def path(self, key: str, **kwargs) -> Path:
         data_file = self._db_root.joinpath(f"{key}.data")
@@ -131,10 +131,29 @@ class HITRANLineDatabase:
             self._download_line_db(key)
 
     def load_ds(self, key: str, **kwargs) -> xr.Dataset:
-        raise NotImplementedError
+        try:
+            import hapi
+        except ImportError as err:
+            msg = "HITRAN API is required to use HAPI, try pip install hitran-api"
+            raise ImportError(msg) from err
+
+        self.initialize_hapi(key)
+
+        data_vars = {}
+        for param in hapi.PARLIST_ALL:
+            try:
+                param_column = hapi.getColumn(key, param)
+                data_vars[param] = ("line", param_column)
+            except KeyError:  # param does not exist for this molecule
+                continue
+        return xr.Dataset(data_vars=data_vars)
 
     def clear(self):
-        raise NotImplementedError
+        # deletes all .data and .header files in database folder
+        for header_file in self._db_root.glob("*.header"):
+            header_file.unlink()
+        for data_file in self._db_root.glob("*.data"):
+            data_file.unlink()
 
     def _download_line_db(self, molecule):
         try:
@@ -143,7 +162,7 @@ class HITRANLineDatabase:
             msg = "HITRAN API is required to use HAPI, try pip install hitran-api"
             raise ImportError(msg) from err
 
-        hapi.db_begin(str(self._db_root))
+        self.initialize_hapi()
 
         # Get global isotopologue ids for this molecule
         mol_index = hapi.ISO_ID_INDEX["mol_name"]
@@ -156,6 +175,24 @@ class HITRANLineDatabase:
         hapi.fetch_by_ids(
             molecule, iso_ids, 0.0, 1.0e6, ParameterGroups=["par_line", "sdvoigt", "ht"]
         )
+
+        return
+
+    def initialize_hapi(self, table_name: str | None = None):
+        """
+        Initialize the HAPI database with one or no tables. This is to reduce the time and memory that hapi.db_begin
+        uses when it is given a folder with many data files.
+        """
+        try:
+            import hapi
+        except ImportError as err:
+            msg = "HITRAN API is required to use HAPI, try pip install hitran-api"
+            raise ImportError(msg) from err
+
+        hapi.VARIABLES["BACKEND_DATABASE_NAME"] = str(self._db_root)
+        hapi.LOCAL_TABLE_CACHE = {}
+        if table_name is not None:
+            hapi.storage2cache(table_name)
 
         return
 
@@ -196,6 +233,14 @@ class HITRANDatabase(CachedDatabase, OpticalDatabaseGenericAbsorber):
                     return obj.tolist()
                 return json.JSONEncoder.default(self, obj)
 
+        self._profile = profile.lower()
+        if backend == "sasktran_legacy" and self._profile != "voigt":
+            logging.warning(
+                "%s line profile is not supported by sasktran_legacy backend. Switching to voigt",
+                self._profile,
+            )
+            self._profile = "voigt"
+
         hasher = hashlib.sha1()
         encoded = json.dumps(
             {
@@ -203,6 +248,7 @@ class HITRANDatabase(CachedDatabase, OpticalDatabaseGenericAbsorber):
                 "end_wavenumber": end_wavenumber,
                 "wavenumber_resolution": wavenumber_resolution,
                 "reduction_factor": reduction_factor,
+                "profile": self._profile,
             },
             sort_keys=True,
             cls=NumpyEncoder,
@@ -218,7 +264,6 @@ class HITRANDatabase(CachedDatabase, OpticalDatabaseGenericAbsorber):
         self._ltol = 1e-9
         self._wavenumber_wing = 50
         self._wavenumber_margin = 10
-        self._profile = profile.lower()
 
         CachedDatabase.__init__(
             self,
@@ -319,7 +364,7 @@ class HITRANDatabase(CachedDatabase, OpticalDatabaseGenericAbsorber):
             msg = f"Invalid line profile {self._profile}"
             raise ValueError(msg)
 
-        hapi.db_begin(str(line_db._db_root))
+        line_db.initialize_hapi(self._molecule)
 
         hapi.select(
             self._molecule,
