@@ -231,7 +231,7 @@ class HITRANDatabase(CachedDatabase, OpticalDatabaseGenericAbsorber):
                 )
 
         ds = xr.Dataset(
-            {"xs": (["pressure", "temperature", "wavelength_nm"], xs)},
+            {"xs": (["pressure", "temperature", "wavenumber_cminv"], xs)},
             coords={
                 "pressure": PRESSURE_GRID,
                 "temperature": TEMP_GRID,
