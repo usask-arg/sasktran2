@@ -139,9 +139,9 @@ class OpticalDatabaseGenericAbsorber(OpticalDatabase):
             interp_handler["wavelength_nm"] = atmo.wavelengths_nm
 
         if "wavenumber_cminv" in coords:
-            if atmo.wavenumber_cminv is None:
+            if atmo.wavenumbers_cminv is None:
                 msg = "wavenumber_cminv must be specified in Atmosphere to use OpticalDatabaseGenericAbsorber"
-            interp_handler["wavenumber_cminv"] = atmo.wavenumber_cminv
+            interp_handler["wavenumber_cminv"] = atmo.wavenumbers_cminv
 
         return interp_handler
 
