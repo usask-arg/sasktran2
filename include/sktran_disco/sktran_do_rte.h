@@ -1,5 +1,6 @@
 #pragma once
 #include "sktran_disco/sktran_do.h"
+#include "sktran_disco/sktran_do_linearization_types.h"
 
 namespace sasktran_disco {
 
@@ -57,6 +58,9 @@ namespace sasktran_disco {
         // stored in layers are valid for azimuth expansion order m.
         void solve(AEOrder m);
 
+        void backprop(AEOrder m, ReverseLinearizationTrace<NSTOKES>& trace,
+                      sasktran_disco::Radiance<NSTOKES>& component);
+
         // Frees all pooled memory.
         ~RTESolver() {}
 
@@ -100,14 +104,11 @@ namespace sasktran_disco {
 
         // Boundary conditions for the RHS of the boundary value problem
         void bvpCouplingCondition_BC1(AEOrder m, BoundaryIndex p, uint& loc,
-                                      Eigen::VectorXd& b,
-                                      Eigen::MatrixXd& d_b) const;
+                                      Eigen::VectorXd& b, Eigen::MatrixXd& d_b);
         void bvpCouplingCondition_BC2(AEOrder m, BoundaryIndex p, uint& loc,
-                                      Eigen::VectorXd& b,
-                                      Eigen::MatrixXd& d_b) const;
+                                      Eigen::VectorXd& b, Eigen::MatrixXd& d_b);
         void bvpCouplingCondition_BC3(AEOrder m, BoundaryIndex p, uint& loc,
-                                      Eigen::VectorXd& b,
-                                      Eigen::MatrixXd& d_b) const;
+                                      Eigen::VectorXd& b, Eigen::MatrixXd& d_b);
 
         inline HomogType v_plus(AEOrder m,
                                 const OpticalLayer<NSTOKES, CNSTR>& layer,
@@ -253,6 +254,7 @@ namespace sasktran_disco {
                     ? layer.solution(m).value.dual_Gminus_bottom().value
                     : layer.solution(m).value.particular_minus();
             double psi = part_soln_minus(j);
+
             if ((!m_layers.albedo(m).isLambertian() || m == 0) && s1 == 0) {
                 auto& rho =
                     m_layers.albedo(m).streamBDRFromStreams(j / NSTOKES);

@@ -280,6 +280,19 @@ namespace sasktran2 {
         void set_num_do_forced_azimuth(int n) { m_do_forced_azimuth = n; }
 
         /**
+         * @brief Perform backpropogation for relevant terms in the DO solution,
+         * only valid for plane parallel/pesudo spherical geometry
+         */
+        bool do_backprop() const { return m_do_backprop; }
+
+        /**
+         * @brief Set
+         *
+         * @param backprop
+         */
+        void set_do_backprop(bool backprop) { m_do_backprop = backprop; }
+
+        /**
          *
          * @return True if the weighting function calculation is enabled
          */
@@ -442,6 +455,8 @@ namespace sasktran2 {
         int m_ndosphericaliterations;
 
         int m_do_forced_azimuth;
+
+        bool m_do_backprop;
 
         int m_nsinglescatter_moments;
 

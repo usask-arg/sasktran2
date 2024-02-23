@@ -169,6 +169,12 @@ void init_config(py::module_& m) {
                              If set to a value greater than 0, the discrete ordinates method will use this number of azimuth terms independent of convergence.
                              Defaults to -1, which means to use the number of azimuth terms required for convergence.
                               )")
+        .def_property("do_backprop", &sasktran2::Config::do_backprop,
+                      &sasktran2::Config::set_do_backprop,
+                      R"(
+                            Enables backpropagation for the weighting functions when using the DO source in plane parallel or pseudo-spherical geometry.
+                            Can greatly improve the computation speed of the calculation when the number of lines of sight is small. Default to True
+                      )")
         .def_property("num_successive_orders_points",
                       &sasktran2::Config::num_hr_full_incoming_points,
                       &sasktran2::Config::set_num_hr_full_incoming_points,

@@ -168,6 +168,16 @@ namespace sasktran_disco {
         Eigen::VectorXd bvp_pd_gamma;
         Eigen::VectorXd bvp_pd_mu;
 
+        // Reverse Linearization Traces
+        Eigen::MatrixXd m_Cplus_to_b;
+        Eigen::MatrixXd m_Cminus_to_b;
+
+        Eigen::MatrixXd m_trans_to_Cplus;
+        Eigen::MatrixXd m_trans_to_Cminus;
+
+        Eigen::MatrixXd m_secant_to_Cplus;
+        Eigen::MatrixXd m_secant_to_Cminus;
+
 #ifdef SKTRAN_USE_ACCELERATE
         Eigen::VectorXd homog_work;
 #endif
