@@ -7,7 +7,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>sasktran2.optical &#8212; sasktran2 2024.1.1 documentation</title>
+    <title>sasktran2.optical &#8212; sasktran2 2024.2.0 documentation</title>
   
   
   
@@ -38,7 +38,7 @@
 <link rel="preload" as="script" href="../../_static/scripts/pydata-sphinx-theme.js?digest=8d27b9dea8ad943066ae" />
   <script src="../../_static/vendor/fontawesome/6.5.1/js/all.min.js?digest=8d27b9dea8ad943066ae"></script>
 
-    <script src="../../_static/documentation_options.js?v=f8ae62b4"></script>
+    <script src="../../_static/documentation_options.js?v=9d4db8dc"></script>
     <script src="../../_static/doctools.js?v=888ff710"></script>
     <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/scripts/sphinx-book-theme.js?v=efea14e4"></script>
@@ -136,8 +136,8 @@
       
     
     
-    <img src="../../_static/sasktran-dark.png" class="logo__image only-light" alt="sasktran2 2024.1.1 documentation - Home"/>
-    <script>document.write(`<img src="../../_static/sasktran-light.png" class="logo__image only-dark" alt="sasktran2 2024.1.1 documentation - Home"/>`);</script>
+    <img src="../../_static/sasktran-dark.png" class="logo__image only-light" alt="sasktran2 2024.2.0 documentation - Home"/>
+    <script>document.write(`<img src="../../_static/sasktran-light.png" class="logo__image only-dark" alt="sasktran2 2024.2.0 documentation - Home"/>`);</script>
   
   
 </a></div>
@@ -174,7 +174,6 @@
 <li class="toctree-l1"><a class="reference internal" href="../../installation.html">Installation</a></li>
 
 
-
 <li class="toctree-l1"><a class="reference internal" href="../../quickstart.html">Quick Start</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../../users_guide.html">Users Guide</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-1"><i class="fa-solid fa-chevron-down"></i></label><ul>
 <li class="toctree-l2 has-children"><a class="reference internal" href="../../required_components.html">Setting up the Calculation</a><input class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-2"><i class="fa-solid fa-chevron-down"></i></label><ul>
@@ -191,6 +190,7 @@
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="../../weighting_functions.html">Weighting Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../users_guide/mie.html">Mie Scattering Databases</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../users_guide/polarization.html">Polarized Calculations</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../users_guide/performance.html">Performance Tips</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../users_guide/phase.html">Phase Function Specification</a></li>
@@ -214,6 +214,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../../api/viewing_geometry.html">Viewing Geometry</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../api/climatology.html">Climatologies</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../api/geodetic.html">Geodetic</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../api/database.html">Databases</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../api/util.html">Utility</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../../api/mie.html">Mie</a></li>
 </ul>
@@ -388,6 +389,7 @@ document.write(`
 
 <span class="kn">import</span> <span class="nn">sasktran2</span> <span class="k">as</span> <span class="nn">sk</span>
 <span class="kn">from</span> <span class="nn">sasktran2.constants</span> <span class="kn">import</span> <span class="n">K_BOLTZMANN</span>
+<span class="kn">from</span> <span class="nn">sasktran2.database.web</span> <span class="kn">import</span> <span class="n">StandardDatabase</span>
 
 <span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">database</span>
 
@@ -460,7 +462,7 @@ document.write(`
 <span class="sd">        OSError</span>
 <span class="sd">            If the file could not be found</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">dbm_file</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">appconfig</span><span class="o">.</span><span class="n">database_root</span><span class="p">()</span><span class="o">.</span><span class="n">joinpath</span><span class="p">(</span><span class="s2">&quot;cross_sections/o3/dbm.nc&quot;</span><span class="p">)</span>
+        <span class="n">dbm_file</span> <span class="o">=</span> <span class="n">StandardDatabase</span><span class="p">()</span><span class="o">.</span><span class="n">path</span><span class="p">(</span><span class="s2">&quot;cross_sections/o3/dbm.nc&quot;</span><span class="p">)</span>
 
         <span class="k">if</span> <span class="n">dbm_file</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
             <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">dbm_file</span><span class="p">)</span>
@@ -486,7 +488,7 @@ document.write(`
 <span class="sd">        OSError</span>
 <span class="sd">            If the Vandaele file cannot be found</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">v_file</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">appconfig</span><span class="o">.</span><span class="n">database_root</span><span class="p">()</span><span class="o">.</span><span class="n">joinpath</span><span class="p">(</span><span class="s2">&quot;cross_sections/no2/vandaele.nc&quot;</span><span class="p">)</span>
+        <span class="n">v_file</span> <span class="o">=</span> <span class="n">StandardDatabase</span><span class="p">()</span><span class="o">.</span><span class="n">path</span><span class="p">(</span><span class="s2">&quot;cross_sections/no2/vandaele.nc&quot;</span><span class="p">)</span>
 
         <span class="k">if</span> <span class="n">v_file</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
             <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">v_file</span><span class="p">)</span>
@@ -529,9 +531,7 @@ document.write(`
 <span class="sd">        OSError</span>
 <span class="sd">            If the databases are not installed</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="n">data_file</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">appconfig</span><span class="o">.</span><span class="n">database_root</span><span class="p">()</span><span class="o">.</span><span class="n">joinpath</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;cross_sections/</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">/hitran</span><span class="si">{</span><span class="n">version</span><span class="si">}</span><span class="s2">.nc&quot;</span>
-        <span class="p">)</span>
+        <span class="n">data_file</span> <span class="o">=</span> <span class="n">StandardDatabase</span><span class="p">()</span><span class="o">.</span><span class="n">path</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;cross_sections/</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">/hitran</span><span class="si">{</span><span class="n">version</span><span class="si">}</span><span class="s2">.nc&quot;</span><span class="p">)</span>
 
         <span class="k">if</span> <span class="n">data_file</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
             <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">data_file</span><span class="p">)</span>
@@ -576,6 +576,37 @@ document.write(`
             <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">data_file</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="n">msg</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Could not find HITRAN database for </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> at </span><span class="si">{</span><span class="n">data_file</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="k">raise</span> <span class="ne">OSError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="HITRANCollision">
+<a class="viewcode-back" href="../../api/optical.html#sasktran2.optical.HITRANCollision">[docs]</a>
+<span class="k">class</span> <span class="nc">HITRANCollision</span><span class="p">(</span><span class="n">database</span><span class="o">.</span><span class="n">OpticalDatabaseGenericAbsorber</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Loads collision induced absorption (CIA) cross sections compiled from data found at https://hitran.org/cia/.</span>
+
+<span class="sd">        This requires the extended databases to be downloaded, e.g. by running sk.appconfig.download_extended_databases()</span>
+
+<span class="sd">        Currently supported species are:</span>
+
+<span class="sd">            | O2O2</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        name : str</span>
+<span class="sd">            Species name</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">data_file</span> <span class="o">=</span> <span class="n">StandardDatabase</span><span class="p">()</span><span class="o">.</span><span class="n">path</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;cross_sections/</span><span class="si">{</span><span class="n">name</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="si">}</span><span class="s2">/hitran_cia.nc&quot;</span>
+        <span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">data_file</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">data_file</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Could not find HITRAN CIA database for </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> at </span><span class="si">{</span><span class="n">data_file</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="k">raise</span> <span class="ne">OSError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span></div>
 
 

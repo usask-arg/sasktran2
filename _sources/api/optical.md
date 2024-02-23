@@ -13,6 +13,8 @@
 
 .. autoclass:: sasktran2.optical.HITRANTabulated
 
+.. autoclass:: sasktran2.optical.HITRANCollision
+
 .. autoclass:: sasktran2.optical.database.OpticalDatabase
 
 .. autoclass:: sasktran2.optical.database.OpticalDatabaseGenericAbsorber

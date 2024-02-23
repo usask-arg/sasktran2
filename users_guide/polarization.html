@@ -8,7 +8,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Polarized Calculations &#8212; sasktran2 2024.1.1 documentation</title>
+    <title>Polarized Calculations &#8212; sasktran2 2024.2.0 documentation</title>
   
   
   
@@ -39,7 +39,7 @@
 <link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=8d27b9dea8ad943066ae" />
   <script src="../_static/vendor/fontawesome/6.5.1/js/all.min.js?digest=8d27b9dea8ad943066ae"></script>
 
-    <script src="../_static/documentation_options.js?v=f8ae62b4"></script>
+    <script src="../_static/documentation_options.js?v=9d4db8dc"></script>
     <script src="../_static/doctools.js?v=888ff710"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/scripts/sphinx-book-theme.js?v=efea14e4"></script>
@@ -50,7 +50,7 @@
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="Performance Tips" href="performance.html" />
-    <link rel="prev" title="Weighting Functions" href="../weighting_functions.html" />
+    <link rel="prev" title="Mie Scattering Databases" href="mie.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
   </head>
@@ -139,8 +139,8 @@
       
     
     
-    <img src="../_static/sasktran-dark.png" class="logo__image only-light" alt="sasktran2 2024.1.1 documentation - Home"/>
-    <script>document.write(`<img src="../_static/sasktran-light.png" class="logo__image only-dark" alt="sasktran2 2024.1.1 documentation - Home"/>`);</script>
+    <img src="../_static/sasktran-dark.png" class="logo__image only-light" alt="sasktran2 2024.2.0 documentation - Home"/>
+    <script>document.write(`<img src="../_static/sasktran-light.png" class="logo__image only-dark" alt="sasktran2 2024.2.0 documentation - Home"/>`);</script>
   
   
 </a></div>
@@ -177,7 +177,6 @@
 <li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
 
 
-
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quick Start</a></li>
 <li class="toctree-l1 current active has-children"><a class="reference internal" href="../users_guide.html">Users Guide</a><input checked="" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-1"><i class="fa-solid fa-chevron-down"></i></label><ul class="current">
 <li class="toctree-l2 has-children"><a class="reference internal" href="../required_components.html">Setting up the Calculation</a><input class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-2"><i class="fa-solid fa-chevron-down"></i></label><ul>
@@ -194,6 +193,7 @@
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="../weighting_functions.html">Weighting Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mie.html">Mie Scattering Databases</a></li>
 <li class="toctree-l2 current active"><a class="current reference internal" href="#">Polarized Calculations</a></li>
 <li class="toctree-l2"><a class="reference internal" href="performance.html">Performance Tips</a></li>
 <li class="toctree-l2"><a class="reference internal" href="phase.html">Phase Function Specification</a></li>
@@ -217,6 +217,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../api/viewing_geometry.html">Viewing Geometry</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/climatology.html">Climatologies</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/geodetic.html">Geodetic</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/database.html">Databases</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/util.html">Utility</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/mie.html">Mie</a></li>
 </ul>
@@ -565,20 +566,20 @@ guide but with polarization enabled</p>
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>&lt;xarray.Dataset&gt;
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>&lt;xarray.Dataset&gt; Size: 12MB
 Dimensions:           (wavelength: 520, stokes: 3, altitude: 66, los: 4,
                        ozone_altitude: 50, no2_altitude: 50)
 Coordinates:
-  * wavelength        (wavelength) float64 280.0 281.0 282.0 ... 798.0 799.0
-  * stokes            (stokes) &lt;U1 &#39;I&#39; &#39;Q&#39; &#39;U&#39;
-  * altitude          (altitude) float64 0.0 1e+03 2e+03 ... 6.4e+04 6.5e+04
+  * wavelength        (wavelength) float64 4kB 280.0 281.0 282.0 ... 798.0 799.0
+  * stokes            (stokes) &lt;U1 12B &#39;I&#39; &#39;Q&#39; &#39;U&#39;
+  * altitude          (altitude) float64 528B 0.0 1e+03 ... 6.4e+04 6.5e+04
 Dimensions without coordinates: los, ozone_altitude, no2_altitude
 Data variables:
-    radiance          (wavelength, los, stokes) float64 0.0005898 ... -0.0001776
-    wf_pressure_pa    (altitude, wavelength, los, stokes) float64 2.675e-54 ....
-    wf_temperature_k  (altitude, wavelength, los, stokes) float64 -9.897e-52 ...
-    wf_ozone_vmr      (ozone_altitude, wavelength, los, stokes) float64 -5.76...
-    wf_no2_vmr        (no2_altitude, wavelength, los, stokes) float64 -7.747e...
+    radiance          (wavelength, los, stokes) float64 50kB 0.0005898 ... -0...
+    wf_pressure_pa    (altitude, wavelength, los, stokes) float64 3MB 2.675e-...
+    wf_temperature_k  (altitude, wavelength, los, stokes) float64 3MB -9.897e...
+    wf_ozone_vmr      (ozone_altitude, wavelength, los, stokes) float64 2MB -...
+    wf_no2_vmr        (no2_altitude, wavelength, los, stokes) float64 2MB -7....
 </pre></div>
 </div>
 </div>
@@ -596,10 +597,10 @@ We can look at them,</p>
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output text_plain highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>&lt;matplotlib.legend.Legend at 0x7f514ca8fad0&gt;
+<div class="output text_plain highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>&lt;matplotlib.legend.Legend at 0x7f5d9e7d7b50&gt;
 </pre></div>
 </div>
-<img alt="../_images/d420a1811c370086d00a5b90c87091a48f1e12399fd7915721b2de09082c2872.png" src="../_images/d420a1811c370086d00a5b90c87091a48f1e12399fd7915721b2de09082c2872.png" />
+<img alt="../_images/cf913d16d1896fb8f5e38fc9d941c5cbedfce586b54e86780d443816110c75bb.png" src="../_images/cf913d16d1896fb8f5e38fc9d941c5cbedfce586b54e86780d443816110c75bb.png" />
 </div>
 </div>
 </section>
@@ -712,12 +713,12 @@ such as the Coulsen tables.</p>
                   
 <div class="prev-next-area">
     <a class="left-prev"
-       href="../weighting_functions.html"
+       href="mie.html"
        title="previous page">
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Weighting Functions</p>
+        <p class="prev-next-title">Mie Scattering Databases</p>
       </div>
     </a>
     <a class="right-next"

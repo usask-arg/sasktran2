@@ -7,7 +7,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Index &#8212; sasktran2 2024.1.1 documentation</title>
+    <title>Index &#8212; sasktran2 2024.2.0 documentation</title>
   
   
   
@@ -38,7 +38,7 @@
 <link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=8d27b9dea8ad943066ae" />
   <script src="_static/vendor/fontawesome/6.5.1/js/all.min.js?digest=8d27b9dea8ad943066ae"></script>
 
-    <script src="_static/documentation_options.js?v=f8ae62b4"></script>
+    <script src="_static/documentation_options.js?v=9d4db8dc"></script>
     <script src="_static/doctools.js?v=888ff710"></script>
     <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="_static/scripts/sphinx-book-theme.js?v=efea14e4"></script>
@@ -136,8 +136,8 @@
       
     
     
-    <img src="_static/sasktran-dark.png" class="logo__image only-light" alt="sasktran2 2024.1.1 documentation - Home"/>
-    <script>document.write(`<img src="_static/sasktran-light.png" class="logo__image only-dark" alt="sasktran2 2024.1.1 documentation - Home"/>`);</script>
+    <img src="_static/sasktran-dark.png" class="logo__image only-light" alt="sasktran2 2024.2.0 documentation - Home"/>
+    <script>document.write(`<img src="_static/sasktran-light.png" class="logo__image only-dark" alt="sasktran2 2024.2.0 documentation - Home"/>`);</script>
   
   
 </a></div>
@@ -174,7 +174,6 @@
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
 
 
-
 <li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quick Start</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="users_guide.html">Users Guide</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-1"><i class="fa-solid fa-chevron-down"></i></label><ul>
 <li class="toctree-l2 has-children"><a class="reference internal" href="required_components.html">Setting up the Calculation</a><input class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-2"><i class="fa-solid fa-chevron-down"></i></label><ul>
@@ -191,6 +190,7 @@
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="weighting_functions.html">Weighting Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="users_guide/mie.html">Mie Scattering Databases</a></li>
 <li class="toctree-l2"><a class="reference internal" href="users_guide/polarization.html">Polarized Calculations</a></li>
 <li class="toctree-l2"><a class="reference internal" href="users_guide/performance.html">Performance Tips</a></li>
 <li class="toctree-l2"><a class="reference internal" href="users_guide/phase.html">Phase Function Specification</a></li>
@@ -214,6 +214,7 @@
 <li class="toctree-l2"><a class="reference internal" href="api/viewing_geometry.html">Viewing Geometry</a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/climatology.html">Climatologies</a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/geodetic.html">Geodetic</a></li>
+<li class="toctree-l2"><a class="reference internal" href="api/database.html">Databases</a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/util.html">Utility</a></li>
 <li class="toctree-l2"><a class="reference internal" href="api/mie.html">Mie</a></li>
 </ul>
@@ -466,6 +467,10 @@ document.write(`
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/atmosphere.html#sasktran2.Atmosphere.calculate_temperature_derivative">calculate_temperature_derivative (sasktran2.Atmosphere property)</a>
 </li>
+      <li><a href="api/database.html#sasktran2.database.MieDatabase.clear">clear() (sasktran2.database.MieDatabase method)</a>
+</li>
+      <li><a href="api/constituents.html#sasktran2.constituent.CollisionInducedAbsorber">CollisionInducedAbsorber (class in sasktran2.constituent)</a>
+</li>
       <li><a href="api/config.html#sasktran2.Config">Config (class in sasktran2)</a>
 </li>
       <li><a href="api/climatology.html#sasktran2.climatology.mipas.constituent">constituent() (in module sasktran2.climatology.mipas)</a>
@@ -480,11 +485,19 @@ document.write(`
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/util.html#sasktran2.util.WignerD.d">d() (sasktran2.util.WignerD method)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/config.html#sasktran2.Config.delta_m_scaling">delta_m_scaling (sasktran2.Config property)</a>
 </li>
       <li><a href="api/atmosphere.html#sasktran2.Atmosphere.deriv_mappings">deriv_mappings (sasktran2.Atmosphere property)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/mie.html#sasktran2.mie.distribution.LogNormalDistribution.distribution">distribution() (sasktran2.mie.distribution.LogNormalDistribution method)</a>
+
+      <ul>
+        <li><a href="api/mie.html#sasktran2.mie.distribution.ParticleSizeDistribution.distribution">(sasktran2.mie.distribution.ParticleSizeDistribution method)</a>
+</li>
+      </ul></li>
+      <li><a href="api/mie.html#sasktran2.mie.refractive.Dust">Dust (class in sasktran2.mie.refractive)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -538,10 +551,14 @@ document.write(`
 <h2 id="H">H</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/optical.html#sasktran2.optical.HITRANTabulated">HITRANTabulated (class in sasktran2.optical)</a>
+      <li><a href="api/mie.html#sasktran2.mie.refractive.H2SO4">H2SO4 (class in sasktran2.mie.refractive)</a>
+</li>
+      <li><a href="api/optical.html#sasktran2.optical.HITRANCollision">HITRANCollision (class in sasktran2.optical)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/optical.html#sasktran2.optical.HITRANTabulated">HITRANTabulated (class in sasktran2.optical)</a>
+</li>
       <li><a href="api/optical.html#sasktran2.optical.HITRANUV">HITRANUV (class in sasktran2.optical)</a>
 </li>
   </ul></td>
@@ -550,10 +567,18 @@ document.write(`
 <h2 id="I">I</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/config.html#sasktran2.Config.init_successive_orders_with_discrete_ordinates">init_successive_orders_with_discrete_ordinates (sasktran2.Config property)</a>
+      <li><a href="api/mie.html#sasktran2.mie.refractive.Ice">Ice (class in sasktran2.mie.refractive)</a>
 </li>
+      <li><a href="api/mie.html#sasktran2.mie.distribution.ParticleSizeDistribution.identifier">identifier (sasktran2.mie.distribution.ParticleSizeDistribution property)</a>
+
+      <ul>
+        <li><a href="api/mie.html#sasktran2.mie.refractive.RefractiveIndex.identifier">(sasktran2.mie.refractive.RefractiveIndex property)</a>
+</li>
+      </ul></li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/config.html#sasktran2.Config.init_successive_orders_with_discrete_ordinates">init_successive_orders_with_discrete_ordinates (sasktran2.Config property)</a>
+</li>
       <li><a href="api/atmosphere.html#sasktran2.Atmosphere.internal_object">internal_object() (sasktran2.Atmosphere method)</a>
 </li>
       <li><a href="api/output.html#sasktran2.OutputIdeal.internal_output">internal_output() (sasktran2.OutputIdeal method)</a>
@@ -572,15 +597,17 @@ document.write(`
 </li>
       <li><a href="api/mie.html#sasktran2.mie.LinearizedMie">LinearizedMie (class in sasktran2.mie)</a>
 </li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/geodetic.html#sasktran2.Geodetic.local_south">local_south (sasktran2.Geodetic property)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/geodetic.html#sasktran2.Geodetic.local_up">local_up (sasktran2.Geodetic property)</a>
 </li>
       <li><a href="api/geodetic.html#sasktran2.Geodetic.local_west">local_west (sasktran2.Geodetic property)</a>
 </li>
       <li><a href="api/geodetic.html#sasktran2.Geodetic.location">location (sasktran2.Geodetic property)</a>
+</li>
+      <li><a href="api/mie.html#sasktran2.mie.distribution.LogNormalDistribution">LogNormalDistribution (class in sasktran2.mie.distribution)</a>
 </li>
       <li><a href="api/geodetic.html#sasktran2.Geodetic.longitude">longitude (sasktran2.Geodetic property)</a>
 </li>
@@ -591,6 +618,8 @@ document.write(`
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="api/mie.html#sasktran2.mie.MieData">MieData (class in sasktran2.mie)</a>
+</li>
+      <li><a href="api/database.html#sasktran2.database.MieDatabase">MieDatabase (class in sasktran2.database)</a>
 </li>
       <li><a href="api/mie.html#sasktran2.mie.MieOutput">MieOutput (class in sasktran2.mie)</a>
 </li>
@@ -623,16 +652,18 @@ document.write(`
 </li>
       <li><a href="api/atmosphere.html#sasktran2.Atmosphere.nstokes">nstokes (sasktran2.Atmosphere property)</a>
 </li>
+      <li><a href="api/config.html#sasktran2.Config.num_forced_azimuth">num_forced_azimuth (sasktran2.Config property)</a>
+</li>
       <li><a href="api/config.html#sasktran2.Config.num_singlescatter_moments">num_singlescatter_moments (sasktran2.Config property)</a>
 </li>
       <li><a href="api/config.html#sasktran2.Config.num_stokes">num_stokes (sasktran2.Config property)</a>
 </li>
       <li><a href="api/config.html#sasktran2.Config.num_streams">num_streams (sasktran2.Config property)</a>
 </li>
-      <li><a href="api/config.html#sasktran2.Config.num_successive_orders_incoming">num_successive_orders_incoming (sasktran2.Config property)</a>
-</li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/config.html#sasktran2.Config.num_successive_orders_incoming">num_successive_orders_incoming (sasktran2.Config property)</a>
+</li>
       <li><a href="api/config.html#sasktran2.Config.num_successive_orders_iterations">num_successive_orders_iterations (sasktran2.Config property)</a>
 </li>
       <li><a href="api/config.html#sasktran2.Config.num_successive_orders_outgoing">num_successive_orders_outgoing (sasktran2.Config property)</a>
@@ -677,10 +708,12 @@ document.write(`
 <h2 id="P">P</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/output.html#sasktran2.OutputIdeal.post_process">post_process() (sasktran2.OutputIdeal method)</a>
+      <li><a href="api/mie.html#sasktran2.mie.distribution.ParticleSizeDistribution">ParticleSizeDistribution (class in sasktran2.mie.distribution)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/output.html#sasktran2.OutputIdeal.post_process">post_process() (sasktran2.OutputIdeal method)</a>
+</li>
       <li><a href="api/atmosphere.html#sasktran2.Atmosphere.pressure_pa">pressure_pa (sasktran2.Atmosphere property)</a>
 </li>
   </ul></td>
@@ -705,9 +738,15 @@ document.write(`
 </li>
       <li><a href="api/optical.html#sasktran2.optical.rayleigh.rayleigh_cross_section_bates">rayleigh_cross_section_bates() (in module sasktran2.optical.rayleigh)</a>
 </li>
+      <li><a href="api/mie.html#sasktran2.mie.MieOutput.refractive_index">refractive_index (sasktran2.mie.MieOutput property)</a>
+</li>
+      <li><a href="api/mie.html#sasktran2.mie.refractive.RefractiveIndex.refractive_index">refractive_index() (sasktran2.mie.refractive.RefractiveIndex method)</a>
+</li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/mie.html#sasktran2.mie.MieOutput.refractive_index">refractive_index (sasktran2.mie.MieOutput property)</a>
+      <li><a href="api/mie.html#sasktran2.mie.refractive.RefractiveIndex.refractive_index_fn">refractive_index_fn (sasktran2.mie.refractive.RefractiveIndex property)</a>
+</li>
+      <li><a href="api/mie.html#sasktran2.mie.refractive.RefractiveIndex">RefractiveIndex (class in sasktran2.mie.refractive)</a>
 </li>
       <li><a href="api/atmosphere.html#sasktran2.AtmosphereStorageStokes_1.resize_derivatives">resize_derivatives() (sasktran2.AtmosphereStorageStokes_1 method)</a>
 
@@ -760,6 +799,8 @@ document.write(`
       <li><a href="api/mie.html#sasktran2.mie.MieOutput.size_parameter">size_parameter (sasktran2.mie.MieOutput property)</a>
 </li>
       <li><a href="api/geodetic.html#sasktran2.SphericalGeoid">SphericalGeoid (class in sasktran2)</a>
+</li>
+      <li><a href="api/database.html#sasktran2.database.StandardDatabase">StandardDatabase (class in sasktran2.database)</a>
 </li>
       <li><a href="api/config.html#sasktran2.Config.stokes_basis">stokes_basis (sasktran2.Config property)</a>
 </li>
@@ -815,12 +856,14 @@ document.write(`
 <h2 id="W">W</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="api/atmosphere.html#sasktran2.Atmosphere.wavelengths_nm">wavelengths_nm (sasktran2.Atmosphere property)</a>
+      <li><a href="api/mie.html#sasktran2.mie.refractive.Water">Water (class in sasktran2.mie.refractive)</a>
 </li>
-      <li><a href="api/atmosphere.html#sasktran2.Atmosphere.wavenumbers_cminv">wavenumbers_cminv (sasktran2.Atmosphere property)</a>
+      <li><a href="api/atmosphere.html#sasktran2.Atmosphere.wavelengths_nm">wavelengths_nm (sasktran2.Atmosphere property)</a>
 </li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="api/atmosphere.html#sasktran2.Atmosphere.wavenumbers_cminv">wavenumbers_cminv (sasktran2.Atmosphere property)</a>
+</li>
       <li><a href="api/geodetic.html#sasktran2.WGS84">WGS84 (class in sasktran2)</a>
 </li>
       <li><a href="api/util.html#sasktran2.util.WignerD">WignerD (class in sasktran2.util)</a>

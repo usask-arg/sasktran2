@@ -8,7 +8,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Optical Properties &#8212; sasktran2 2024.1.1 documentation</title>
+    <title>Optical Properties &#8212; sasktran2 2024.2.0 documentation</title>
   
   
   
@@ -39,7 +39,7 @@
 <link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=8d27b9dea8ad943066ae" />
   <script src="../_static/vendor/fontawesome/6.5.1/js/all.min.js?digest=8d27b9dea8ad943066ae"></script>
 
-    <script src="../_static/documentation_options.js?v=f8ae62b4"></script>
+    <script src="../_static/documentation_options.js?v=9d4db8dc"></script>
     <script src="../_static/doctools.js?v=888ff710"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/scripts/sphinx-book-theme.js?v=efea14e4"></script>
@@ -137,8 +137,8 @@
       
     
     
-    <img src="../_static/sasktran-dark.png" class="logo__image only-light" alt="sasktran2 2024.1.1 documentation - Home"/>
-    <script>document.write(`<img src="../_static/sasktran-light.png" class="logo__image only-dark" alt="sasktran2 2024.1.1 documentation - Home"/>`);</script>
+    <img src="../_static/sasktran-dark.png" class="logo__image only-light" alt="sasktran2 2024.2.0 documentation - Home"/>
+    <script>document.write(`<img src="../_static/sasktran-light.png" class="logo__image only-dark" alt="sasktran2 2024.2.0 documentation - Home"/>`);</script>
   
   
 </a></div>
@@ -175,7 +175,6 @@
 <li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
 
 
-
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quick Start</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../users_guide.html">Users Guide</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-1"><i class="fa-solid fa-chevron-down"></i></label><ul>
 <li class="toctree-l2 has-children"><a class="reference internal" href="../required_components.html">Setting up the Calculation</a><input class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-2"><i class="fa-solid fa-chevron-down"></i></label><ul>
@@ -192,6 +191,7 @@
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="../weighting_functions.html">Weighting Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../users_guide/mie.html">Mie Scattering Databases</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../users_guide/polarization.html">Polarized Calculations</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../users_guide/performance.html">Performance Tips</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../users_guide/phase.html">Phase Function Specification</a></li>
@@ -215,6 +215,7 @@
 <li class="toctree-l2"><a class="reference internal" href="viewing_geometry.html">Viewing Geometry</a></li>
 <li class="toctree-l2"><a class="reference internal" href="climatology.html">Climatologies</a></li>
 <li class="toctree-l2"><a class="reference internal" href="geodetic.html">Geodetic</a></li>
+<li class="toctree-l2"><a class="reference internal" href="database.html">Databases</a></li>
 <li class="toctree-l2"><a class="reference internal" href="util.html">Utility</a></li>
 <li class="toctree-l2"><a class="reference internal" href="mie.html">Mie</a></li>
 </ul>
@@ -452,6 +453,7 @@ document.write(`
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.optical.NO2Vandaele"><code class="docutils literal notranslate"><span class="pre">NO2Vandaele</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.optical.HITRANUV"><code class="docutils literal notranslate"><span class="pre">HITRANUV</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.optical.HITRANTabulated"><code class="docutils literal notranslate"><span class="pre">HITRANTabulated</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.optical.HITRANCollision"><code class="docutils literal notranslate"><span class="pre">HITRANCollision</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.optical.database.OpticalDatabase"><code class="docutils literal notranslate"><span class="pre">OpticalDatabase</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.optical.database.OpticalDatabaseGenericAbsorber"><code class="docutils literal notranslate"><span class="pre">OpticalDatabaseGenericAbsorber</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.optical.database.OpticalDatabaseGenericScatterer"><code class="docutils literal notranslate"><span class="pre">OpticalDatabaseGenericScatterer</span></code></a></li>
@@ -643,6 +645,25 @@ reduced to a given resolution.</p>
 </dd></dl>
 
 <dl class="py class">
+<dt class="sig sig-object py" id="sasktran2.optical.HITRANCollision">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">sasktran2.optical.</span></span><span class="sig-name descname"><span class="pre">HITRANCollision</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.12)"><span class="pre">str</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/sasktran2/optical.html#HITRANCollision"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#sasktran2.optical.HITRANCollision" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#sasktran2.optical.database.OpticalDatabaseGenericAbsorber" title="sasktran2.optical.database.OpticalDatabaseGenericAbsorber"><code class="xref py py-class docutils literal notranslate"><span class="pre">OpticalDatabaseGenericAbsorber</span></code></a></p>
+<p>Loads collision induced absorption (CIA) cross sections compiled from data found at <a class="reference external" href="https://hitran.org/cia/">https://hitran.org/cia/</a>.</p>
+<p>This requires the extended databases to be downloaded, e.g. by running sk.appconfig.download_extended_databases()</p>
+<p>Currently supported species are:</p>
+<blockquote>
+<div><div class="line-block">
+<div class="line">O2O2</div>
+</div>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>name</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.12)"><em>str</em></a>) – Species name</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class">
 <dt class="sig sig-object py" id="sasktran2.optical.database.OpticalDatabase">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">sasktran2.optical.database.</span></span><span class="sig-name descname"><span class="pre">OpticalDatabase</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">db_filepath</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/pathlib.html#pathlib.Path" title="(in Python v3.12)"><span class="pre">Path</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/sasktran2/optical/database.html#OpticalDatabase"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#sasktran2.optical.database.OpticalDatabase" title="Link to this definition">#</a></dt>
 <dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">OpticalProperty</span></code></p>
@@ -774,6 +795,7 @@ approximation.  Cross section is returned back at (0C, 1013.25 hPa)</p>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.optical.NO2Vandaele"><code class="docutils literal notranslate"><span class="pre">NO2Vandaele</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.optical.HITRANUV"><code class="docutils literal notranslate"><span class="pre">HITRANUV</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.optical.HITRANTabulated"><code class="docutils literal notranslate"><span class="pre">HITRANTabulated</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.optical.HITRANCollision"><code class="docutils literal notranslate"><span class="pre">HITRANCollision</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.optical.database.OpticalDatabase"><code class="docutils literal notranslate"><span class="pre">OpticalDatabase</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.optical.database.OpticalDatabaseGenericAbsorber"><code class="docutils literal notranslate"><span class="pre">OpticalDatabaseGenericAbsorber</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#sasktran2.optical.database.OpticalDatabaseGenericScatterer"><code class="docutils literal notranslate"><span class="pre">OpticalDatabaseGenericScatterer</span></code></a></li>

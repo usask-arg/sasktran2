@@ -7,7 +7,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Overview: module code &#8212; sasktran2 2024.1.1 documentation</title>
+    <title>Overview: module code &#8212; sasktran2 2024.2.0 documentation</title>
   
   
   
@@ -38,7 +38,7 @@
 <link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=8d27b9dea8ad943066ae" />
   <script src="../_static/vendor/fontawesome/6.5.1/js/all.min.js?digest=8d27b9dea8ad943066ae"></script>
 
-    <script src="../_static/documentation_options.js?v=f8ae62b4"></script>
+    <script src="../_static/documentation_options.js?v=9d4db8dc"></script>
     <script src="../_static/doctools.js?v=888ff710"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/scripts/sphinx-book-theme.js?v=efea14e4"></script>
@@ -136,8 +136,8 @@
       
     
     
-    <img src="../_static/sasktran-dark.png" class="logo__image only-light" alt="sasktran2 2024.1.1 documentation - Home"/>
-    <script>document.write(`<img src="../_static/sasktran-light.png" class="logo__image only-dark" alt="sasktran2 2024.1.1 documentation - Home"/>`);</script>
+    <img src="../_static/sasktran-dark.png" class="logo__image only-light" alt="sasktran2 2024.2.0 documentation - Home"/>
+    <script>document.write(`<img src="../_static/sasktran-light.png" class="logo__image only-dark" alt="sasktran2 2024.2.0 documentation - Home"/>`);</script>
   
   
 </a></div>
@@ -174,7 +174,6 @@
 <li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
 
 
-
 <li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quick Start</a></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../users_guide.html">Users Guide</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-1"><i class="fa-solid fa-chevron-down"></i></label><ul>
 <li class="toctree-l2 has-children"><a class="reference internal" href="../required_components.html">Setting up the Calculation</a><input class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" type="checkbox"/><label class="toctree-toggle" for="toctree-checkbox-2"><i class="fa-solid fa-chevron-down"></i></label><ul>
@@ -191,6 +190,7 @@
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="../weighting_functions.html">Weighting Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../users_guide/mie.html">Mie Scattering Databases</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../users_guide/polarization.html">Polarized Calculations</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../users_guide/performance.html">Performance Tips</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../users_guide/phase.html">Phase Function Specification</a></li>
@@ -214,6 +214,7 @@
 <li class="toctree-l2"><a class="reference internal" href="../api/viewing_geometry.html">Viewing Geometry</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/climatology.html">Climatologies</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/geodetic.html">Geodetic</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/database.html">Databases</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/util.html">Utility</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../api/mie.html">Mie</a></li>
 </ul>
@@ -388,12 +389,17 @@ document.write(`
 <li><a href="sasktran2/atmosphere.html">sasktran2.atmosphere</a></li>
 <li><a href="sasktran2/climatology/mipas.html">sasktran2.climatology.mipas</a></li>
 <li><a href="sasktran2/constituent/amf.html">sasktran2.constituent.amf</a></li>
+<li><a href="sasktran2/constituent/collisioninducedabsorber.html">sasktran2.constituent.collisioninducedabsorber</a></li>
 <li><a href="sasktran2/constituent/lambertiansurface.html">sasktran2.constituent.lambertiansurface</a></li>
 <li><a href="sasktran2/constituent/numdenscatterer.html">sasktran2.constituent.numdenscatterer</a></li>
 <li><a href="sasktran2/constituent/rayleigh.html">sasktran2.constituent.rayleigh</a></li>
 <li><a href="sasktran2/constituent/vmraltitudeabsorber.html">sasktran2.constituent.vmraltitudeabsorber</a></li>
+<li><a href="sasktran2/database/mie.html">sasktran2.database.mie</a></li>
+<li><a href="sasktran2/database/web.html">sasktran2.database.web</a></li>
 <li><a href="sasktran2/engine.html">sasktran2.engine</a></li>
 <li><a href="sasktran2/geodetic.html">sasktran2.geodetic</a></li>
+<li><a href="sasktran2/mie/distribution.html">sasktran2.mie.distribution</a></li>
+<li><a href="sasktran2/mie/refractive.html">sasktran2.mie.refractive</a></li>
 <li><a href="sasktran2/optical.html">sasktran2.optical</a></li>
 <ul><li><a href="sasktran2/optical/database.html">sasktran2.optical.database</a></li>
 <li><a href="sasktran2/optical/rayleigh.html">sasktran2.optical.rayleigh</a></li>
