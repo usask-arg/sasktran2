@@ -16,6 +16,7 @@ build:
   binary_relocation: true
   script_env:
     - CMAKE_BUILD_PARALLEL_LEVEL={{ cpu_count }}
+    - DO_STREAM_TEMPLATES=ON
   number: {{ describe_number }}
   string: py_{{ py_version }}_{{ describe_hash }}_{{ describe_number }}
   script:
