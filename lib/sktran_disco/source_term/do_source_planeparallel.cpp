@@ -223,8 +223,6 @@ namespace sasktran2 {
                 ray.observer_and_look.observer, ray.observer_and_look.look_away,
                 temp, do_los.azimuth, sasktran2::geometrytype::planeparallel);
 
-            do_los.azimuth = -(EIGEN_PI - do_los.azimuth);
-
             do_los.cos_scattering_angle =
                 m_geometry.coordinates().sun_unit().dot(
                     ray.observer_and_look.look_away);
