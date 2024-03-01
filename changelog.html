@@ -8,7 +8,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Changelog &#8212; sasktran2 2024.2.2 documentation</title>
+    <title>Changelog &#8212; sasktran2 2024.3.0 documentation</title>
   
   
   
@@ -39,7 +39,7 @@
 <link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=8d27b9dea8ad943066ae" />
   <script src="_static/vendor/fontawesome/6.5.1/js/all.min.js?digest=8d27b9dea8ad943066ae"></script>
 
-    <script src="_static/documentation_options.js?v=31c5baa7"></script>
+    <script src="_static/documentation_options.js?v=61978d30"></script>
     <script src="_static/doctools.js?v=888ff710"></script>
     <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="_static/scripts/sphinx-book-theme.js?v=efea14e4"></script>
@@ -137,8 +137,8 @@
       
     
     
-    <img src="_static/sasktran-dark.png" class="logo__image only-light" alt="sasktran2 2024.2.2 documentation - Home"/>
-    <script>document.write(`<img src="_static/sasktran-light.png" class="logo__image only-dark" alt="sasktran2 2024.2.2 documentation - Home"/>`);</script>
+    <img src="_static/sasktran-dark.png" class="logo__image only-light" alt="sasktran2 2024.3.0 documentation - Home"/>
+    <script>document.write(`<img src="_static/sasktran-light.png" class="logo__image only-dark" alt="sasktran2 2024.3.0 documentation - Home"/>`);</script>
   
   
 </a></div>
@@ -221,6 +221,8 @@
 </ul>
 </li>
 <li class="toctree-l1 current active"><a class="current reference internal" href="#">Changelog</a></li>
+
+
 </ul>
 <p aria-level="2" class="caption" role="heading"><span class="caption-text">Extending SASKTRAN2</span></p>
 <ul class="nav bd-sidenav">
@@ -448,11 +450,17 @@ document.write(`
             </div>
             <nav aria-label="Page">
                 <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id2">2024.02.0</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id3">2024.01.1</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id4">2024.01.0</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id5">2023.12.0</a></li>
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#">Changelog</a></li>
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#id2">2024.03.0</a></li>
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#id3">2024.02.1</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id4">2024.02.0</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id5">2024.01.1</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id6">2024.01.0</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id7">2023.12.0</a></li>
 </ul>
+</li>
+</ul>
+
             </nav>
         </div>
     </div>
@@ -465,22 +473,34 @@ document.write(`
                   
   <section class="tex2jax_ignore mathjax_ignore" id="changelog">
 <span id="id1"></span><h1>Changelog<a class="headerlink" href="#changelog" title="Link to this heading">#</a></h1>
-<section id="id2">
-<h2>2024.02.0<a class="headerlink" href="#id2" title="Link to this heading">#</a></h2>
+</section>
+<section class="tex2jax_ignore mathjax_ignore" id="id2">
+<h1>2024.03.0<a class="headerlink" href="#id2" title="Link to this heading">#</a></h1>
+<ul class="simple">
+<li><p>Fix binary wheel uploads on PyPI</p></li>
+</ul>
+</section>
+<section class="tex2jax_ignore mathjax_ignore" id="id3">
+<h1>2024.02.1<a class="headerlink" href="#id3" title="Link to this heading">#</a></h1>
+<ul class="simple">
+<li><p>Fix the license classifier on PyPI</p></li>
+</ul>
+<section id="id4">
+<h2>2024.02.0<a class="headerlink" href="#id4" title="Link to this heading">#</a></h2>
 <ul class="simple">
 <li><p>Templated number of streams has been enabled in DO, resulting in large speedups for 2-stream calculations</p></li>
 <li><p>Added support for Mie calculations (Using SASKTRAN Legacy)</p></li>
 <li><p>Added support for HITRAN cross sections (Using SASKTRAN Legacy)</p></li>
 </ul>
 </section>
-<section id="id3">
-<h2>2024.01.1<a class="headerlink" href="#id3" title="Link to this heading">#</a></h2>
+<section id="id5">
+<h2>2024.01.1<a class="headerlink" href="#id5" title="Link to this heading">#</a></h2>
 <ul class="simple">
 <li><p>Model has been relicensed under the MIT licenses</p></li>
 </ul>
 </section>
-<section id="id4">
-<h2>2024.01.0<a class="headerlink" href="#id4" title="Link to this heading">#</a></h2>
+<section id="id6">
+<h2>2024.01.0<a class="headerlink" href="#id6" title="Link to this heading">#</a></h2>
 <ul class="simple">
 <li><p>Add support for Python 3.12 wheels</p></li>
 <li><p>Remove support for Python versions below 3.10</p></li>
@@ -489,8 +509,8 @@ document.write(`
 <li><p>Added support for <code class="docutils literal notranslate"><span class="pre">sk.GeometryType.PlaneParallel</span></code> and <code class="docutils literal notranslate"><span class="pre">sk.GeometryType.PseudoSpherical</span></code></p></li>
 </ul>
 </section>
-<section id="id5">
-<h2>2023.12.0<a class="headerlink" href="#id5" title="Link to this heading">#</a></h2>
+<section id="id7">
+<h2>2023.12.0<a class="headerlink" href="#id7" title="Link to this heading">#</a></h2>
 <ul class="simple">
 <li><p>First official release</p></li>
 </ul>
@@ -542,11 +562,17 @@ document.write(`
   </div>
   <nav class="bd-toc-nav page-toc">
     <ul class="visible nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id2">2024.02.0</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id3">2024.01.1</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id4">2024.01.0</a></li>
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id5">2023.12.0</a></li>
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#">Changelog</a></li>
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#id2">2024.03.0</a></li>
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#id3">2024.02.1</a><ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id4">2024.02.0</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id5">2024.01.1</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id6">2024.01.0</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#id7">2023.12.0</a></li>
 </ul>
+</li>
+</ul>
+
   </nav></div>
 
 </div></div>
