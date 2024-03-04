@@ -594,9 +594,9 @@ class Atmosphere:
                             mapping is not None
                             and mapping.native_grid_mapping.d_leg_coeff is not None
                         ):
-                            self.storage.d_leg_coeff[
-                                :, :, :, scat_index
-                            ] = mapping.native_grid_mapping.d_leg_coeff
+                            self.storage.d_leg_coeff[:, :, :, scat_index] = (
+                                mapping.native_grid_mapping.d_leg_coeff
+                            )
                             mapping.native_grid_mapping.scat_deriv_index = scat_index
                             scat_index += 1
 

@@ -532,7 +532,7 @@ namespace sasktran2::hr {
         sasktran2::Location temp_location;
 
 #pragma omp parallel for num_threads(nthreads) private(                        \
-    num_location, num_direction, rotated_los, temp_location)
+        num_location, num_direction, rotated_los, temp_location)
         for (int rayidx = 0; rayidx < rays.size(); ++rayidx) {
 #ifdef SKTRAN_OPENMP_SUPPORT
             int threadidx = omp_get_thread_num();
