@@ -2,8 +2,16 @@
 (_changelog)=
 # Changelog
 
-## Unreleased
+# 2024.03.0
+- Fix binary wheel uploads on PyPI
+
+# 2024.02.1
+- Fix the license classifier on PyPI
+
+## 2024.02.0
 - Templated number of streams has been enabled in DO, resulting in large speedups for 2-stream calculations
+- Added support for Mie calculations (Using SASKTRAN Legacy)
+- Added support for HITRAN cross sections (Using SASKTRAN Legacy)
 
 ## 2024.01.1
 - Model has been relicensed under the MIT licenses
