@@ -1008,7 +1008,31 @@ namespace sasktran2::hr {
         int wavelidx, int losidx, int wavel_threadidx, int threadidx,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
-        // TODO: Only necessary for nadir viewing ground?
+        auto& interpolator = m_los_source_weights[losidx].ground_weights;
+        auto& storage = m_thread_storage[wavel_threadidx];
+
+        for (int i = 0; i < interpolator.size(); ++i) {
+            auto& index_weight = interpolator[i];
+
+            for (int s = 0; s < NSTOKES; ++s) {
+                double source_value =
+                    storage.m_outgoing_sources.value(
+                        (std::get<0>(index_weight) * NSTOKES + s)) *
+                    std::get<1>(index_weight);
+
+                source.value(s) += source_value;
+
+                if (this->m_config->wf_precision() ==
+                        sasktran2::Config::WeightingFunctionPrecision::full &&
+                    m_config->initialize_hr_with_do()) {
+                    source.deriv(s, Eigen::all) +=
+                        std::get<1>(index_weight) *
+                        storage.m_outgoing_sources.deriv(
+                            std::get<0>(index_weight) * NSTOKES + s,
+                            Eigen::all);
+                }
+            }
+        }
     }
 
     template class DiffuseTable<1>;
