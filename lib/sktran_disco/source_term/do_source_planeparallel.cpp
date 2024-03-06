@@ -136,8 +136,10 @@ namespace sasktran2 {
                     m_component[threadidx].deriv += m_integral[threadidx].deriv;
                 }
 
-                rte.backprop(m, input_derivatives.reverse_trace(j),
-                             m_component[threadidx]);
+                if (m_config->do_backprop()) {
+                    rte.backprop(m, input_derivatives.reverse_trace(j),
+                                 m_component[threadidx]);
+                }
 
                 if constexpr (NSTOKES == 1) {
                     double azimuthal_factor = cos(m * m_do_los[j].azimuth);

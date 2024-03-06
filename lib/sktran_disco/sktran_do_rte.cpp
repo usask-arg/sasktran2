@@ -998,6 +998,9 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
                            exp(-thickness.value * average_secant.value)) /
                           (average_secant.value - eigval.value(i));
 
+            // If we are doing backprop, then we don't need the derivatives,
+            // unless we are in the last layer Then we still do the full
+            // calculation for the ground source
             if (this->M_BACKPROP_BVP && SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
                 m_cache.m_trans_to_Cplus(p * N * NSTOKES + i, p) =
                     (exp(-thickness.value * eigval.value(i)) -
@@ -1010,7 +1013,22 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
                      Cplus.value) /
                     (average_secant.value - eigval.value(i));
 
-                Cplus.deriv.setZero();
+                if (p != this->M_NLYR - 1) {
+                    Cplus.deriv.setZero();
+                } else {
+                    Cplus.deriv.noalias() =
+                        (exp(-thickness.value * eigval.value(i)) -
+                         exp(-thickness.value * average_secant.value)) /
+                        (average_secant.value - eigval.value(i)) *
+                        transmission.deriv;
+                    Cplus.deriv.noalias() +=
+                        average_secant.deriv *
+                        (transmission.value * thickness.value *
+                             exp(-1.0 * thickness.value *
+                                 average_secant.value) -
+                         Cplus.value) /
+                        (average_secant.value - eigval.value(i));
+                }
             } else {
                 Cplus.deriv.noalias() =
                     (exp(-thickness.value * eigval.value(i)) -
@@ -1179,6 +1197,14 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
                     negation * Aplus.value(i) * homog_minus.value(h_start + j) *
                     Cplus.deriv;
             } else {
+                // Special case for the ground layer, we keep track of
+                // Gplus_bottom derivatives
+                if (p == this->M_NLYR - 1) {
+                    Gplus_bottom.deriv(Eigen::all, j).noalias() +=
+                        Aplus.value(i) * homog_plus.value(h_start + j) *
+                        Cplus.deriv;
+                }
+
                 for (uint k = 0; k < numLayerDeriv; ++k) {
                     Gplus_top.deriv(layerStart + k, j) +=
                         Aminus.value(i) * homog_minus.value(h_start + j) *
@@ -1187,9 +1213,13 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
                         negation * Aminus.value(i) *
                         homog_plus.value(h_start + j) *
                         Cminus.deriv(layerStart + k);
-                    Gplus_bottom.deriv(layerStart + k, j) +=
-                        Aplus.value(i) * homog_plus.value(h_start + j) *
-                        Cplus.deriv(layerStart + k);
+
+                    if (p != this->M_NLYR - 1) {
+                        Gplus_bottom.deriv(layerStart + k, j) +=
+                            Aplus.value(i) * homog_plus.value(h_start + j) *
+                            Cplus.deriv(layerStart + k);
+                    }
+
                     Gminus_bottom.deriv(layerStart + k, j) +=
                         negation * Aplus.value(i) *
                         homog_minus.value(h_start + j) *
@@ -1445,7 +1475,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::backprop(
                 component.deriv.noalias() +=
                     trans_weights(0, p) * transmission.deriv;
                 // component.deriv.noalias() += secant_weights(0, p) *
-                // average_secant.deriv;
+                //     average_secant.deriv;
             }
         }
     }

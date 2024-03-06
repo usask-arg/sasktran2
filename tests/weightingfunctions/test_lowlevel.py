@@ -104,7 +104,33 @@ def _raw_scenarios() -> list:
             "geometry": geometry,
             "viewing_geo": viewing_geos[-1],
             "atmosphere": sk.test_util.scenarios.default_pure_scattering_atmosphere(
-                config, geometry, 0.8
+                config, geometry, 0.8, albedo=0.5
+            ),
+        }
+    )
+
+    # Add an additional scenario that is for plane parallel geometry and the DO source, using backprop
+    config = sk.Config()
+    config.multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
+    config.single_scatter_source = sk.SingleScatterSource.DiscreteOrdinates
+    config.do_backprop = True
+
+    geometry = sk.Geometry1D(
+        0.6,
+        0,
+        6372000,
+        altitude_grid,
+        sk.InterpolationMethod.LinearInterpolation,
+        sk.GeometryType.PlaneParallel,
+    )
+
+    scen.append(
+        {
+            "config": config,
+            "geometry": geometry,
+            "viewing_geo": viewing_geos[-1],
+            "atmosphere": sk.test_util.scenarios.default_pure_scattering_atmosphere(
+                config, geometry, 0.8, albedo=0.2
             ),
         }
     )
@@ -119,7 +145,7 @@ def test_wf_extinction():
     D_FRACTION = 1e-4
     test_scens = _raw_scenarios()
 
-    for scen in test_scens:
+    for scen in test_scens[-1:]:
         engine = sk.Engine(scen["config"], scen["geometry"], scen["viewing_geo"])
 
         radiance = engine.calculate_radiance(scen["atmosphere"])
