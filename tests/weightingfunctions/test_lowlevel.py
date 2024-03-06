@@ -145,7 +145,7 @@ def test_wf_extinction():
     D_FRACTION = 1e-4
     test_scens = _raw_scenarios()
 
-    for scen in test_scens[-1:]:
+    for scen in test_scens:
         engine = sk.Engine(scen["config"], scen["geometry"], scen["viewing_geo"])
 
         radiance = engine.calculate_radiance(scen["atmosphere"])

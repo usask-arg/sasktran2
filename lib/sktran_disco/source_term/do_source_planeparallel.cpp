@@ -136,7 +136,8 @@ namespace sasktran2 {
                     m_component[threadidx].deriv += m_integral[threadidx].deriv;
                 }
 
-                if (m_config->do_backprop()) {
+                if (m_config->do_backprop() &&
+                    input_derivatives.numDerivative() > 0) {
                     rte.backprop(m, input_derivatives.reverse_trace(j),
                                  m_component[threadidx]);
                 }

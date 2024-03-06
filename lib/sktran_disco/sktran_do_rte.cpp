@@ -333,6 +333,14 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::linearizeHomogeneous(
             auto d_W_plus = solution.value.dual_homog_plus().deriv.row(i);
             auto d_W_minus = solution.value.dual_homog_minus().deriv.row(i);
 
+            if (d_k == 0) {
+                // This is either a trivial solution or a derivative that does
+                // not affect the homogeneous solution (could be thickness)
+                d_W_plus.setZero();
+                d_W_minus.setZero();
+                continue;
+            }
+
             d_W_plus(Eigen::seq(j * N * NSTOKES, (j + 1) * N * NSTOKES - 1))
                 .noalias() =
                 0.5 * ((-d_k / eigvalsq(j)) * S_plus +

@@ -368,6 +368,7 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
         ceiling_depth = floor_depth;
     }
 
+    m_input_derivatives.set_num_los(m_num_los, this->M_NSTR, this->M_NLYR);
     if (atmosphere.num_deriv() > 0 &&
         sk_config.wf_precision() ==
             sasktran2::Config::WeightingFunctionPrecision::full) {
@@ -376,9 +377,6 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
         int num_scattering_groups = atmosphere.num_scattering_deriv_groups();
 
         if (!m_input_derivatives.is_geometry_configured()) {
-            m_input_derivatives.set_num_los(m_num_los, this->M_NSTR,
-                                            this->M_NLYR);
-
             // Construct the matrix that maps atmosphere extinction to layer
             // quantities
             // TODO: In the future we will construct this matrix elsewhere,
