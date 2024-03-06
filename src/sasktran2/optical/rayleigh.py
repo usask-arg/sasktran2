@@ -246,10 +246,6 @@ def rayleigh_cross_section_bates(
     )
 
     return (
-        32
-        * np.pi**3
-        / (3 * num_dens**2 * wavelengths_um**4)
-        * (lorenz_factors)
-        * 1e8,
+        32 * np.pi**3 / (3 * num_dens**2 * wavelengths_um**4) * (lorenz_factors) * 1e8,
         eff_king,
     )

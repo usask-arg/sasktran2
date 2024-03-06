@@ -21,7 +21,7 @@
 #include <mkl_lapacke.h>
 #else
 // Unsure if this is faster or not
-//#define EIGEN_USE_BLAS 1
+// #define EIGEN_USE_BLAS 1
 #ifdef SKTRAN_USE_ACCELERATE
 // Using apple Accelerate for linear algebra, which doesn't have a LAPACKE
 // interface

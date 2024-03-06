@@ -208,6 +208,40 @@ namespace sasktran2 {
 
     template <int NSTOKES, int CNSTR>
     void
+    DOSourceDiffuseStorage<NSTOKES, CNSTR>::create_ground_source_interpolator(
+        const Eigen::Vector3d& location, const Eigen::Vector3d& direction,
+        Eigen::SparseVector<double>& interpolator) {
+        // Used for LOS ray sources
+        // TODO: Fix for non-lambertian BRDF
+        interpolator.resize(m_storage[0].source_terms_linear.value_size());
+
+        std::array<int, 2> sza_index;
+        std::array<double, 2> sza_weight;
+        int num_sza_contrib;
+        double csz, saa;
+
+        sasktran2::Location temp;
+
+        temp.position = location;
+
+        sasktran2::raytracing::calculate_csz_saz(
+            m_geometry.coordinates().sun_unit(), temp, direction, csz, saa);
+
+        m_sza_grid.calculate_interpolation_weights(csz, sza_index, sza_weight,
+                                                   num_sza_contrib);
+
+        // m=0
+        // TODO: CHange when move away from non-lambertian
+        for (int szaidx = 0; szaidx < num_sza_contrib; ++szaidx) {
+            double weight = sza_weight[szaidx];
+            int index = ground_storage_index(0, sza_index[szaidx], 0);
+
+            interpolator.coeffRef(index * NSTOKES) = weight;
+        }
+    }
+
+    template <int NSTOKES, int CNSTR>
+    void
     DOSourceDiffuseStorage<NSTOKES, CNSTR>::create_location_source_interpolator(
         const std::vector<Eigen::Vector3d>& locations,
         const std::vector<Eigen::Vector3d>& directions,

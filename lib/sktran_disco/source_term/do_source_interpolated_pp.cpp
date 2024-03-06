@@ -1,4 +1,5 @@
 #include "sasktran2/do_source.h"
+#include <memory>
 
 namespace sasktran2 {
     template <int NSTOKES, int CNSTR>
@@ -46,6 +47,20 @@ namespace sasktran2 {
             m_los_source_interpolator =
                 m_diffuse_storage->geometry_interpolator(los_rays);
             m_source_interpolator_view = m_los_source_interpolator.get();
+
+            m_los_ground_source_interpolator.resize(los_rays.size());
+
+            for (int i = 0; i < los_rays.size(); ++i) {
+                if (los_rays[i].ground_is_hit) {
+                    m_los_ground_source_interpolator[i] =
+                        std::make_unique<Eigen::SparseVector<double>>();
+
+                    m_diffuse_storage->create_ground_source_interpolator(
+                        los_rays[i].layers[0].entrance.position,
+                        los_rays[i].layers[0].average_look_away,
+                        *m_los_ground_source_interpolator[i]);
+                }
+            }
         }
     }
 
@@ -127,6 +142,35 @@ namespace sasktran2 {
                             m_diffuse_storage->linear_source(wavel_threadidx)
                                 .deriv(it.index(), Eigen::all);
                     }
+                }
+            }
+        }
+    }
+
+    template <int NSTOKES, int CNSTR>
+    void DOSourceInterpolatedPostProcessing<NSTOKES, CNSTR>::end_of_ray_source(
+        int wavelidx, int losidx, int wavel_threadidx, int threadidx,
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
+        const {
+
+        if (m_los_ground_source_interpolator[losidx]) {
+            // Ground is hit
+            const auto& interpolator =
+                *m_los_ground_source_interpolator[losidx];
+
+            // TODO: Only lambertian,
+            source.value(0) += interpolator.dot(
+                m_diffuse_storage->linear_source(wavel_threadidx).value);
+
+            if (this->m_config->wf_precision() ==
+                sasktran2::Config::WeightingFunctionPrecision::full) {
+                for (auto it = Eigen::SparseVector<double>::InnerIterator(
+                         interpolator);
+                     it; ++it) {
+                    source.deriv(0, Eigen::all) +=
+                        it.value() *
+                        m_diffuse_storage->linear_source(wavel_threadidx)
+                            .deriv(it.index(), Eigen::all);
                 }
             }
         }
