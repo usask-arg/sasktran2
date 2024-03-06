@@ -333,14 +333,6 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::linearizeHomogeneous(
             auto d_W_plus = solution.value.dual_homog_plus().deriv.row(i);
             auto d_W_minus = solution.value.dual_homog_minus().deriv.row(i);
 
-            if (d_k == 0) {
-                // This is either a trivial solution or a derivative that does
-                // not affect the homogeneous solution (could be thickness)
-                d_W_plus.setZero();
-                d_W_minus.setZero();
-                continue;
-            }
-
             d_W_plus(Eigen::seq(j * N * NSTOKES, (j + 1) * N * NSTOKES - 1))
                 .noalias() =
                 0.5 * ((-d_k / eigvalsq(j)) * S_plus +
@@ -1461,6 +1453,8 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::backprop(
     }
 
     if (SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
+
+        /*
         Eigen::MatrixXd trans_weights =
             (trace.bvp_coeff_weights().transpose() * m_cache.m_Cminus_to_b *
              m_cache.m_trans_to_Cminus) +
@@ -1471,6 +1465,49 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::backprop(
              m_cache.m_secant_to_Cminus) +
             (trace.bvp_coeff_weights().transpose() * m_cache.m_Cplus_to_b *
              m_cache.m_secant_to_Cplus);
+
+        */
+        Eigen::MatrixXd trans_weights(1, this->M_NLYR);
+        trans_weights.setZero();
+        Eigen::MatrixXd secant_weights(1, this->M_NLYR);
+        trans_weights.setZero();
+
+        // Annoying accumulation of non-zero terms in b
+        int start = 0;
+
+        // First layer gets an extra N/2 contribution from TOA BC
+        int end = this->M_NSTR / 2;
+        for (int p = 0; p < this->M_NLYR; ++p) {
+            end += this->M_NSTR;
+
+            if (p == this->M_NLYR - 1) {
+                // Last layer gets extra contributions from ground BC
+                // start -= this->M_NSTR/2;
+                end -= this->M_NSTR / 2;
+            }
+
+            auto nz = Eigen::seq(p * this->M_NSTR / 2,
+                                 (p + 1) * this->M_NSTR / 2 - 1);
+            auto nz_2 = Eigen::seq(start, end - 1);
+
+            trans_weights(0, p) = trace.bvp_coeff_weights().transpose()(nz_2) *
+                                  m_cache.m_Cminus_to_b(nz_2, nz) *
+                                  m_cache.m_trans_to_Cminus(nz, p);
+            trans_weights(0, p) += trace.bvp_coeff_weights().transpose()(nz_2) *
+                                   m_cache.m_Cplus_to_b(nz_2, nz) *
+                                   m_cache.m_trans_to_Cplus(nz, p);
+
+            secant_weights(0, p) = trace.bvp_coeff_weights().transpose()(nz_2) *
+                                   m_cache.m_Cminus_to_b(nz_2, nz) *
+                                   m_cache.m_secant_to_Cminus(nz, p);
+            secant_weights(0, p) +=
+                trace.bvp_coeff_weights().transpose()(nz_2) *
+                m_cache.m_Cplus_to_b(nz_2, nz) *
+                m_cache.m_secant_to_Cplus(nz, p);
+
+            // Account for overlap in the continuity conditions
+            start = end - this->M_NSTR;
+        }
 
         if constexpr (NSTOKES == 1) {
             // Now we backprop the derivatives with respect to the transmission
