@@ -46,7 +46,7 @@ sasktran_disco::GeometryLayerArray<NSTOKES, CNSTR>::GeometryLayerArray(
         m_ceiling_h(p) = geometry.altitude_grid().grid().reverse()(p);
 
         if (p == this->M_NLYR - 1) {
-            m_floor_h(p) = 0.0;
+            m_floor_h(p) = geometry.altitude_grid().grid()(0);
         } else {
             m_floor_h(p) = geometry.altitude_grid().grid().reverse()(p + 1);
         }
