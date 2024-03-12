@@ -6,7 +6,9 @@ from sasktran2.atmosphere import Atmosphere
 from sasktran2.climatology.us76 import add_us76_standard_atmosphere
 
 
-def default_pure_scattering_atmosphere(config: Config, geometry: Geometry1D, ssa=1):
+def default_pure_scattering_atmosphere(
+    config: Config, geometry: Geometry1D, ssa=1, albedo=0
+):
     new_alt_grid = geometry.altitudes()
 
     alt_grid = np.arange(0, 100001, 1000)
@@ -134,6 +136,8 @@ def default_pure_scattering_atmosphere(config: Config, geometry: Geometry1D, ssa
         atmo.leg_coeff.b1[2] = np.sqrt(6.0) / 2
 
     add_us76_standard_atmosphere(atmo)
+
+    atmo.surface.albedo[:] = albedo
 
     return atmo
 
