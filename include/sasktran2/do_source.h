@@ -190,6 +190,10 @@ namespace sasktran2 {
             const std::vector<Eigen::Vector3d>& directions,
             const std::vector<bool>& ground_hit_flag,
             Eigen::SparseMatrix<double, Eigen::RowMajor>& interpolator);
+
+        void create_ground_source_interpolator(
+            const Eigen::Vector3d& location, const Eigen::Vector3d& direction,
+            Eigen::SparseVector<double>& interpolator);
     };
 
     /** Virtual class that defines common elements to handle the DO source
@@ -328,6 +332,9 @@ namespace sasktran2 {
             std::array<Eigen::SparseVector<double>, NSTOKES>>>
             m_los_source_interpolator;
 
+        sasktran_disco::VectorDim1<std::unique_ptr<Eigen::SparseVector<double>>>
+            m_los_ground_source_interpolator;
+
         sasktran_disco::VectorDim2<
             std::array<Eigen::SparseVector<double>, NSTOKES>>*
             m_source_interpolator_view;
@@ -376,6 +383,11 @@ namespace sasktran2 {
             int wavelidx, int losidx, int wavel_threadidx, int threadidx,
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
                 source) const override{};
+
+        void end_of_ray_source(
+            int wavelidx, int losidx, int wavel_threadidx, int threadidx,
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+                source) const;
 
         DOSourceDiffuseStorage<NSTOKES, CNSTR>& storage() const {
             return *m_diffuse_storage;

@@ -195,8 +195,23 @@ jobs:
           name: artifact
           path: dist
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: sasktran2-wheel-ubuntu-latest
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: sasktran2-wheel-macos-11
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: sasktran2-wheel-windows-latest
+          path: dist
+
       - name: Publish package to PyPI
-        uses: pypa/gh-action-pypi-publish@v1.8.11
+        uses: pypa/gh-action-pypi-publish@v1.8.12
         with:
           verbose: true
 
