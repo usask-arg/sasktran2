@@ -395,6 +395,10 @@ namespace sasktran2 {
         const auto& input_deriv = optical_layer.inputDerivatives();
         int layerStart = (int)input_deriv.layerStartIndex(layer.index());
         int numLayerDeriv = (int)input_deriv.numDerivativeLayer(layer.index());
+        sasktran_disco::uint numtotalderiv =
+            (sasktran_disco::uint)optical_layer.inputDerivatives()
+                .numDerivative();
+        const auto& input_derivatives = optical_layer.inputDerivatives();
 
         sasktran_disco::Radiance<NSTOKES> diffuse_contrib(
             (int)input_deriv.numDerivative()),
@@ -565,6 +569,33 @@ namespace sasktran2 {
         } else {
             storage.source_terms_linear.value(source_index) =
                 diffuse_contrib.value;
+        }
+
+        // And we also have to translate the temporary layer DO
+        // derivatives to atmosphere derivatives
+
+        for (int s = 0; s < NSTOKES; ++s) {
+            if (numtotalderiv > 0) {
+                storage.source_terms_linear
+                    .deriv(source_index * NSTOKES + s, Eigen::all)
+                    .setZero();
+            }
+            for (int k = 0; k < numtotalderiv; ++k) {
+                for (int l = 0; l < input_derivatives.layerDerivatives()[k]
+                                        .group_and_triangle_fraction.size();
+                     ++l) {
+                    const std::pair<sasktran_disco::uint, double>&
+                        group_fraction = input_derivatives.layerDerivatives()[k]
+                                             .group_and_triangle_fraction[l];
+                    const auto& extinction =
+                        input_derivatives.layerDerivatives()[k].extinctions[l];
+
+                    storage.source_terms_linear.deriv(
+                        source_index * NSTOKES + s, group_fraction.first) +=
+                        group_fraction.second * diffuse_contrib.deriv(k, s) *
+                        extinction;
+                }
+            }
         }
     }
 
