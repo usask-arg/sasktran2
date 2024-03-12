@@ -135,6 +135,36 @@ def _raw_scenarios() -> list:
         }
     )
 
+    # Add an additional scenario that is for plane parallel geometry and the DO source, using backprop
+    # And with nstokes=3
+    config = sk.Config()
+    config.multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
+    config.single_scatter_source = sk.SingleScatterSource.DiscreteOrdinates
+    config.do_backprop = True
+    config.num_stokes = 3
+    config.num_streams = 4
+    config.num_singlescatter_moments = 4
+
+    geometry = sk.Geometry1D(
+        0.6,
+        0,
+        6372000,
+        altitude_grid,
+        sk.InterpolationMethod.LinearInterpolation,
+        sk.GeometryType.PlaneParallel,
+    )
+
+    scen.append(
+        {
+            "config": config,
+            "geometry": geometry,
+            "viewing_geo": viewing_geos[-1],
+            "atmosphere": sk.test_util.scenarios.default_pure_scattering_atmosphere(
+                config, geometry, 0.8, albedo=0.2
+            ),
+        }
+    )
+
     return scen
 
 
@@ -172,9 +202,16 @@ def test_wf_extinction():
             ["wavelength", "los", "stokes", "altitude"],
             numeric_wf,
         )
-        validate_wf(
-            radiance["wf_extinction"], radiance["wf_extinction_numeric"], decimal=5
-        )
+        if scen["config"].do_backprop:
+            validate_wf(
+                radiance["wf_extinction"].isel(stokes=0),
+                radiance["wf_extinction_numeric"].isel(stokes=0),
+                decimal=5,
+            )
+        else:
+            validate_wf(
+                radiance["wf_extinction"], radiance["wf_extinction_numeric"], decimal=5
+            )
 
 
 def test_wf_ssa():

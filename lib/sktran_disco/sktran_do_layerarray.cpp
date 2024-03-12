@@ -98,9 +98,11 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::
             }
 
             if (this->M_BACKPROP_BVP) {
-                trace.bvp_coeff_weights()(l_offset + j) +=
-                    solution.value.dual_homog_plus().value(homogIndex) *
-                    stream_transmittance.value * factor * dual_rho.value;
+                if (s1 == 0) {
+                    trace.bvp_coeff_weights()(l_offset + j) +=
+                        solution.value.dual_homog_plus().value(homogIndex) *
+                        stream_transmittance.value * factor * dual_rho.value;
+                }
             } else {
                 // LCoeffs have full derivatives
                 for (uint k = 0; k < input_deriv.numDerivative(); ++k) {
@@ -134,9 +136,11 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::
             }
 
             if (this->M_BACKPROP_BVP) {
-                trace.bvp_coeff_weights()(m_offset + j) +=
-                    solution.value.dual_homog_minus().value(homogIndex) *
-                    factor * dual_rho.value;
+                if (s1 == 0) {
+                    trace.bvp_coeff_weights()(m_offset + j) +=
+                        solution.value.dual_homog_minus().value(homogIndex) *
+                        factor * dual_rho.value;
+                }
             } else {
                 // MCoeffs have full derivatives
                 for (uint k = 0; k < input_deriv.numDerivative(); ++k) {

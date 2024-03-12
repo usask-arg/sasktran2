@@ -181,7 +181,7 @@ namespace sasktran2 {
                         m_radiances[threadidx][j].value(s) +=
                             m_component[threadidx].value(s) * azimuthal_factor;
 
-                        for (int k = 0; k < m_component[threadidx].deriv.size();
+                        for (int k = 0; k < m_component[threadidx].deriv.rows();
                              ++k) {
                             for (int l = 0;
                                  l < input_derivatives.layerDerivatives()[k]

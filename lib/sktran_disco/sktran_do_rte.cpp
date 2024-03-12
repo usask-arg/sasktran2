@@ -1449,24 +1449,11 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::backprop(
     // w is shape (N)
 
     for (int k = 0; k < numDeriv; ++k) {
-        component.deriv(k) += d_b.col(k).dot(trace.bvp_coeff_weights());
+        component.deriv(k, 0) += d_b.col(k).dot(trace.bvp_coeff_weights());
     }
 
     if (SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
 
-        /*
-        Eigen::MatrixXd trans_weights =
-            (trace.bvp_coeff_weights().transpose() * m_cache.m_Cminus_to_b *
-             m_cache.m_trans_to_Cminus) +
-            (trace.bvp_coeff_weights().transpose() * m_cache.m_Cplus_to_b *
-             m_cache.m_trans_to_Cplus);
-        Eigen::MatrixXd secant_weights =
-            (trace.bvp_coeff_weights().transpose() * m_cache.m_Cminus_to_b *
-             m_cache.m_secant_to_Cminus) +
-            (trace.bvp_coeff_weights().transpose() * m_cache.m_Cplus_to_b *
-             m_cache.m_secant_to_Cplus);
-
-        */
         Eigen::MatrixXd trans_weights(1, this->M_NLYR);
         trans_weights.setZero();
         Eigen::MatrixXd secant_weights(1, this->M_NLYR);
@@ -1476,18 +1463,18 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::backprop(
         int start = 0;
 
         // First layer gets an extra N/2 contribution from TOA BC
-        int end = this->M_NSTR / 2;
+        int end = this->M_NSTR * NSTOKES / 2;
         for (int p = 0; p < this->M_NLYR; ++p) {
-            end += this->M_NSTR;
+            end += this->M_NSTR * NSTOKES;
 
             if (p == this->M_NLYR - 1) {
                 // Last layer gets extra contributions from ground BC
                 // start -= this->M_NSTR/2;
-                end -= this->M_NSTR / 2;
+                end -= this->M_NSTR * NSTOKES / 2;
             }
 
-            auto nz = Eigen::seq(p * this->M_NSTR / 2,
-                                 (p + 1) * this->M_NSTR / 2 - 1);
+            auto nz = Eigen::seq(p * this->M_NSTR * NSTOKES / 2,
+                                 (p + 1) * this->M_NSTR * NSTOKES / 2 - 1);
             auto nz_2 = Eigen::seq(start, end - 1);
 
             trans_weights(0, p) = trace.bvp_coeff_weights().transpose()(nz_2) *
@@ -1506,22 +1493,20 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::backprop(
                 m_cache.m_secant_to_Cplus(nz, p);
 
             // Account for overlap in the continuity conditions
-            start = end - this->M_NSTR;
+            start = end - this->M_NSTR * NSTOKES;
         }
 
-        if constexpr (NSTOKES == 1) {
-            // Now we backprop the derivatives with respect to the transmission
-            // and secant values for each layer
-            for (LayerIndex p = 0; p < this->M_NLYR; ++p) {
-                auto& layer = m_layers[p];
-                const auto& average_secant = layer.dual_average_secant();
-                const auto& transmission = layer.ceiling_beam_transmittanc();
+        // Now we backprop the derivatives with respect to the transmission
+        // and secant values for each layer
+        for (LayerIndex p = 0; p < this->M_NLYR; ++p) {
+            auto& layer = m_layers[p];
+            const auto& average_secant = layer.dual_average_secant();
+            const auto& transmission = layer.ceiling_beam_transmittanc();
 
-                component.deriv.noalias() +=
-                    trans_weights(0, p) * transmission.deriv;
-                // component.deriv.noalias() += secant_weights(0, p) *
-                //     average_secant.deriv;
-            }
+            component.deriv(Eigen::all, 0).noalias() +=
+                trans_weights(0, p) * transmission.deriv;
+            component.deriv(Eigen::all, 0).noalias() +=
+                secant_weights(0, p) * average_secant.deriv;
         }
     }
 }
