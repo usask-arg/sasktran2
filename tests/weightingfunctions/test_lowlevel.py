@@ -3,6 +3,66 @@ import sasktran2 as sk
 from sasktran2.test_util.wf import validate_wf
 
 
+def _ground_scenarios() -> list:
+    scens = []
+
+    altitude_grid = np.arange(0, 65001, 5000.0)
+    viewing_geo = sk.ViewingGeometry()
+    viewing_geo.add_ray(sk.GroundViewingSolar(0.6, 0, 0.8, 200000))
+
+    # Single scatter spherical
+    config = sk.Config()
+    config.single_scatter_source = sk.SingleScatterSource.Exact
+
+    geometry = sk.Geometry1D(
+        0.6,
+        0,
+        6372000,
+        altitude_grid,
+        sk.InterpolationMethod.LinearInterpolation,
+        sk.GeometryType.Spherical,
+    )
+
+    scens.append(
+        {
+            "config": config,
+            "geometry": geometry,
+            "viewing_geo": viewing_geo,
+            "atmosphere": sk.test_util.scenarios.default_pure_scattering_atmosphere(
+                config, geometry, 0.8, albedo=0.5
+            ),
+        }
+    )
+
+    # Multiple scatter spherical
+    config = sk.Config()
+    config.single_scatter_source = sk.SingleScatterSource.Exact
+    config.multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
+    config.num_sza = 2
+
+    geometry = sk.Geometry1D(
+        0.6,
+        0,
+        6372000,
+        altitude_grid,
+        sk.InterpolationMethod.LinearInterpolation,
+        sk.GeometryType.Spherical,
+    )
+
+    scens.append(
+        {
+            "config": config,
+            "geometry": geometry,
+            "viewing_geo": viewing_geo,
+            "atmosphere": sk.test_util.scenarios.default_pure_scattering_atmosphere(
+                config, geometry, 0.8, albedo=0.5
+            ),
+        }
+    )
+
+    return scens
+
+
 def _raw_scenarios() -> list:
     """
     Defines the set of scenarios that we later on test dI/dk, dI/dssa, dI/dleg_coeff, dI/dalbedo on
@@ -109,7 +169,7 @@ def _raw_scenarios() -> list:
         }
     )
 
-    return scen
+    return scen + _ground_scenarios()
 
 
 def test_wf_extinction():
@@ -229,3 +289,55 @@ def test_wf_legendre():
                 radiance[f"wf_leg_coeff_{i}_numeric"],
                 decimal=6,
             )
+
+
+def test_wf_albedo():
+    D_ALBEDO = 1e-5
+    test_scens = _raw_scenarios()
+
+    for scen in test_scens:
+        engine = sk.Engine(scen["config"], scen["geometry"], scen["viewing_geo"])
+
+        radiance = engine.calculate_radiance(scen["atmosphere"])
+
+        numeric_wf = np.zeros_like(radiance["wf_albedo"].values)
+
+        if scen["atmosphere"].surface.albedo[0] > D_ALBEDO:
+            # Do central difference
+            scen["atmosphere"].surface.albedo[:] += D_ALBEDO
+            radiance_above = engine.calculate_radiance(scen["atmosphere"])
+
+            scen["atmosphere"].surface.albedo[:] -= 2 * D_ALBEDO
+            radiance_below = engine.calculate_radiance(scen["atmosphere"])
+
+            scen["atmosphere"].surface.albedo[:] += D_ALBEDO
+
+            numeric_wf[:, :, :] = (
+                radiance_above["radiance"].to_numpy()
+                - radiance_below["radiance"].to_numpy()
+            ) / (2 * D_ALBEDO)
+
+            val_decimal = 6
+        else:
+            # Have to do forward difference
+            scen["atmosphere"].surface.albedo[:] += D_ALBEDO
+            radiance_above = engine.calculate_radiance(scen["atmosphere"])
+
+            scen["atmosphere"].surface.albedo[:] -= D_ALBEDO
+
+            numeric_wf[:, :, :] = (
+                radiance_above["radiance"].to_numpy() - radiance["radiance"].to_numpy()
+            ) / (D_ALBEDO)
+
+            val_decimal = 4
+
+        radiance["wf_albedo_numeric"] = (
+            ["wavelength", "los", "stokes"],
+            numeric_wf,
+        )
+        validate_wf(
+            radiance["wf_albedo"],
+            radiance["wf_albedo_numeric"],
+            decimal=val_decimal,
+            wf_dim="wavelength",
+        )
