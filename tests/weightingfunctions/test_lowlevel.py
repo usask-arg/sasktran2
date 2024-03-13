@@ -289,3 +289,55 @@ def test_wf_legendre():
                 radiance[f"wf_leg_coeff_{i}_numeric"],
                 decimal=6,
             )
+
+
+def test_wf_albedo():
+    D_ALBEDO = 1e-5
+    test_scens = _raw_scenarios()
+
+    for scen in test_scens:
+        engine = sk.Engine(scen["config"], scen["geometry"], scen["viewing_geo"])
+
+        radiance = engine.calculate_radiance(scen["atmosphere"])
+
+        numeric_wf = np.zeros_like(radiance["wf_albedo"].values)
+
+        if scen["atmosphere"].surface.albedo[0] > D_ALBEDO:
+            # Do central difference
+            scen["atmosphere"].surface.albedo[:] += D_ALBEDO
+            radiance_above = engine.calculate_radiance(scen["atmosphere"])
+
+            scen["atmosphere"].surface.albedo[:] -= 2 * D_ALBEDO
+            radiance_below = engine.calculate_radiance(scen["atmosphere"])
+
+            scen["atmosphere"].surface.albedo[:] += D_ALBEDO
+
+            numeric_wf[:, :, :] = (
+                radiance_above["radiance"].to_numpy()
+                - radiance_below["radiance"].to_numpy()
+            ) / (2 * D_ALBEDO)
+
+            val_decimal = 6
+        else:
+            # Have to do forward difference
+            scen["atmosphere"].surface.albedo[:] += D_ALBEDO
+            radiance_above = engine.calculate_radiance(scen["atmosphere"])
+
+            scen["atmosphere"].surface.albedo[:] -= D_ALBEDO
+
+            numeric_wf[:, :, :] = (
+                radiance_above["radiance"].to_numpy() - radiance["radiance"].to_numpy()
+            ) / (D_ALBEDO)
+
+            val_decimal = 4
+
+        radiance["wf_albedo_numeric"] = (
+            ["wavelength", "los", "stokes"],
+            numeric_wf,
+        )
+        validate_wf(
+            radiance["wf_albedo"],
+            radiance["wf_albedo_numeric"],
+            decimal=val_decimal,
+            wf_dim="wavelength",
+        )
