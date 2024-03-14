@@ -237,10 +237,31 @@ namespace sasktran2::solartransmission {
                 m_los_rays->at(losidx).layers[0].exit.cos_zenith_angle(
                     m_geometry.coordinates().sun_unit());
 
-            // TODO: Linearization
             double source_value = solar_trans * albedo * cos_theta / EIGEN_PI;
 
             source.value(0) += source_value;
+            if (source.deriv.size() > 0) {
+                // Add on the solar transmission derivative factors
+                if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
+                    if (m_config->wf_precision() !=
+                        sasktran2::Config::WeightingFunctionPrecision::
+                            limited) {
+                        // Have to apply the solar transmission derivative
+                        // factors
+                        for (Eigen::SparseMatrix<double,
+                                                 Eigen::RowMajor>::InnerIterator
+                                 it(m_geometry_sparse, exit_index);
+                             it; ++it) {
+                            source.deriv(0, it.index()) -=
+                                it.value() * source_value;
+                        }
+                    }
+                }
+
+                // And then the albedo derivative factors
+                source.deriv(0, m_atmosphere->surface_deriv_start_index()) +=
+                    solar_trans * cos_theta / EIGEN_PI;
+            }
         }
     }
 

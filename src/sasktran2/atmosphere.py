@@ -561,6 +561,13 @@ class Atmosphere:
                     summable=True,
                 )
 
+                self._derivs["raw"]["albedo"] = DerivativeMapping(
+                    NativeGridDerivative(
+                        d_albedo=np.ones_like(self.surface.albedo),
+                    ),
+                    summable=True,
+                )
+
                 if self._legendre_derivative:
                     for i in range(self.storage.leg_coeff.shape[0]):
                         if i == 0:
