@@ -99,7 +99,7 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::
 
             if (this->M_BACKPROP_BVP) {
                 if (s1 == 0) {
-                    trace.bvp_coeff_weights()(l_offset + j) +=
+                    trace.bvp_coeff_weights()(l_offset + j, s1) +=
                         solution.value.dual_homog_plus().value(homogIndex) *
                         stream_transmittance.value * factor * dual_rho.value;
                 }
@@ -137,7 +137,7 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::
 
             if (this->M_BACKPROP_BVP) {
                 if (s1 == 0) {
-                    trace.bvp_coeff_weights()(m_offset + j) +=
+                    trace.bvp_coeff_weights()(m_offset + j, s1) +=
                         solution.value.dual_homog_minus().value(homogIndex) *
                         factor * dual_rho.value;
                 }

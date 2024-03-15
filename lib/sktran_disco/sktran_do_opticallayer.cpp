@@ -532,11 +532,10 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::integrate_source(
         }
 
         if (this->M_BACKPROP_BVP) {
-            // TODO: Derivatives other than I?
-            reverse_trace.bvp_coeff_weights()(l_offset + i) +=
-                Y_plus_matrix(0, i) * hp.value;
-            reverse_trace.bvp_coeff_weights()(m_offset + i) +=
-                Y_minus_matrix(0, i) * hm.value;
+            reverse_trace.bvp_coeff_weights()(l_offset + i, Eigen::all) +=
+                Y_plus_matrix(Eigen::all, i) * hp.value;
+            reverse_trace.bvp_coeff_weights()(m_offset + i, Eigen::all) +=
+                Y_minus_matrix(Eigen::all, i) * hm.value;
         } else {
             // But L/M have full derivatives
             for (uint k = 0; k < numtotalderiv; ++k) {

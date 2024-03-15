@@ -1203,6 +1203,10 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
                     Gplus_bottom.deriv(Eigen::all, j).noalias() +=
                         Aplus.value(i) * homog_plus.value(h_start + j) *
                         Cplus.deriv;
+
+                    Gminus_bottom.deriv(Eigen::all, j).noalias() +=
+                        negation * Aplus.value(i) *
+                        homog_minus.value(h_start + j) * Cplus.deriv;
                 }
 
                 for (uint k = 0; k < numLayerDeriv; ++k) {
@@ -1214,16 +1218,16 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
                         homog_plus.value(h_start + j) *
                         Cminus.deriv(layerStart + k);
 
+                    // Avoid double counting for the bottom G's
                     if (p != this->M_NLYR - 1) {
                         Gplus_bottom.deriv(layerStart + k, j) +=
                             Aplus.value(i) * homog_plus.value(h_start + j) *
                             Cplus.deriv(layerStart + k);
+                        Gminus_bottom.deriv(layerStart + k, j) +=
+                            negation * Aplus.value(i) *
+                            homog_minus.value(h_start + j) *
+                            Cplus.deriv(layerStart + k);
                     }
-
-                    Gminus_bottom.deriv(layerStart + k, j) +=
-                        negation * Aplus.value(i) *
-                        homog_minus.value(h_start + j) *
-                        Cplus.deriv(layerStart + k);
                 }
             }
 
@@ -1436,7 +1440,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::backprop(
 
     auto& ipiv = m_cache.ipiv;
 
-    int n_rhs = 1;
+    int n_rhs = NSTOKES;
 
     errorcode =
         LAPACKE_dgbtrs(LAPACK_COL_MAJOR, 'T', N, NCD, NCD, n_rhs, mat.data(),
@@ -1448,15 +1452,13 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::backprop(
     // d_b is shape (N, nderiv)
     // w is shape (N)
 
-    for (int k = 0; k < numDeriv; ++k) {
-        component.deriv(k, 0) += d_b.col(k).dot(trace.bvp_coeff_weights());
-    }
+    component.deriv += d_b.transpose() * trace.bvp_coeff_weights();
 
     if (SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
 
-        Eigen::MatrixXd trans_weights(1, this->M_NLYR);
+        Eigen::MatrixXd trans_weights(NSTOKES, this->M_NLYR);
         trans_weights.setZero();
-        Eigen::MatrixXd secant_weights(1, this->M_NLYR);
+        Eigen::MatrixXd secant_weights(NSTOKES, this->M_NLYR);
         trans_weights.setZero();
 
         // Annoying accumulation of non-zero terms in b
@@ -1476,21 +1478,25 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::backprop(
             auto nz = Eigen::seq(p * this->M_NSTR * NSTOKES / 2,
                                  (p + 1) * this->M_NSTR * NSTOKES / 2 - 1);
             auto nz_2 = Eigen::seq(start, end - 1);
+            for (int s = 0; s < NSTOKES; ++s) {
+                trans_weights(s, p) =
+                    trace.bvp_coeff_weights().transpose()(s, nz_2) *
+                    m_cache.m_Cminus_to_b(nz_2, nz) *
+                    m_cache.m_trans_to_Cminus(nz, p);
+                trans_weights(s, p) +=
+                    trace.bvp_coeff_weights().transpose()(s, nz_2) *
+                    m_cache.m_Cplus_to_b(nz_2, nz) *
+                    m_cache.m_trans_to_Cplus(nz, p);
 
-            trans_weights(0, p) = trace.bvp_coeff_weights().transpose()(nz_2) *
-                                  m_cache.m_Cminus_to_b(nz_2, nz) *
-                                  m_cache.m_trans_to_Cminus(nz, p);
-            trans_weights(0, p) += trace.bvp_coeff_weights().transpose()(nz_2) *
-                                   m_cache.m_Cplus_to_b(nz_2, nz) *
-                                   m_cache.m_trans_to_Cplus(nz, p);
-
-            secant_weights(0, p) = trace.bvp_coeff_weights().transpose()(nz_2) *
-                                   m_cache.m_Cminus_to_b(nz_2, nz) *
-                                   m_cache.m_secant_to_Cminus(nz, p);
-            secant_weights(0, p) +=
-                trace.bvp_coeff_weights().transpose()(nz_2) *
-                m_cache.m_Cplus_to_b(nz_2, nz) *
-                m_cache.m_secant_to_Cplus(nz, p);
+                secant_weights(s, p) =
+                    trace.bvp_coeff_weights().transpose()(s, nz_2) *
+                    m_cache.m_Cminus_to_b(nz_2, nz) *
+                    m_cache.m_secant_to_Cminus(nz, p);
+                secant_weights(s, p) +=
+                    trace.bvp_coeff_weights().transpose()(s, nz_2) *
+                    m_cache.m_Cplus_to_b(nz_2, nz) *
+                    m_cache.m_secant_to_Cplus(nz, p);
+            }
 
             // Account for overlap in the continuity conditions
             start = end - this->M_NSTR * NSTOKES;
@@ -1503,10 +1509,12 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::backprop(
             const auto& average_secant = layer.dual_average_secant();
             const auto& transmission = layer.ceiling_beam_transmittanc();
 
-            component.deriv(Eigen::all, 0).noalias() +=
-                trans_weights(0, p) * transmission.deriv;
-            component.deriv(Eigen::all, 0).noalias() +=
-                secant_weights(0, p) * average_secant.deriv;
+            for (int s = 0; s < NSTOKES; ++s) {
+                component.deriv(Eigen::all, s).noalias() +=
+                    trans_weights(s, p) * transmission.deriv;
+                component.deriv(Eigen::all, s).noalias() +=
+                    secant_weights(s, p) * average_secant.deriv;
+            }
         }
     }
 }
@@ -1755,6 +1763,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC1(
 
     // Build TOA condition. See (29)
     for (StreamIndex i = 0; i < N * NSTOKES; ++i) {
+        double negation = sasktran_disco::stokes_negation_factor<NSTOKES>(i);
         b[loc] = -solution.dual_Gplus_top().value(i);
 
         if (this->M_BACKPROP_BVP && SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
@@ -1764,15 +1773,9 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC1(
                     -(solution.dual_green_A_minus().value(j) *
                       solution.dual_homog_minus().value(h_start + i));
             }
-            /*
-            for(int k = 0; k < numLayerDeriv; ++k) {
+            for (int k = 0; k < numLayerDeriv; ++k) {
                 d_b(loc, layerStart + k) =
-            -solution.dual_Gplus_top().deriv(layerStart + k, i);
-            }
-            */
-            if (numDeriv > 0) {
-                d_b(loc, Eigen::all).noalias() +=
-                    -solution.dual_Gplus_top().deriv(Eigen::all, i);
+                    -solution.dual_Gplus_top().deriv(layerStart + k, i);
             }
         } else {
             if (numDeriv > 0) {
@@ -1810,6 +1813,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC2(
 
     // Build coupling condition. See eq 31
     for (StreamIndex i = 0; i < N * NSTOKES; ++i) {
+        double negation = sasktran_disco::stokes_negation_factor<NSTOKES>(i);
         b[loc] = -upper.solution.dual_Gminus_bottom().value(i) +
                  lower.solution.dual_Gminus_top().value(i);
         b[loc + N * NSTOKES] = -upper.solution.dual_Gplus_bottom().value(i) +
@@ -1820,11 +1824,13 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC2(
                 uint h_start = j * N * NSTOKES;
                 // for b[loc]
                 m_cache.m_Cminus_to_b(loc, p * N * NSTOKES + j) +=
+                    negation *
                     (lower.solution.dual_green_A_minus().value(j) *
                      lower.solution.dual_homog_plus().value(h_start + i));
                 m_cache.m_Cplus_to_b(loc, (p - 1) * N * NSTOKES + j) +=
-                    -(upper.solution.dual_green_A_plus().value(j) *
-                      upper.solution.dual_homog_minus().value(h_start + i));
+                    -negation *
+                    (upper.solution.dual_green_A_plus().value(j) *
+                     upper.solution.dual_homog_minus().value(h_start + i));
 
                 // for b[loc + N*NSTOKES]
 
@@ -1887,15 +1893,6 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC3(
     // Build ground condition. See eq (36)
     for (StreamIndex i = 0; i < N * NSTOKES; ++i) {
         b[loc] = ground_direct_sun(m, layer, i) - u_minus(m, layer, i);
-
-        if (this->M_BACKPROP_BVP && SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
-            for (SolutionIndex j = 0; j < N * NSTOKES; ++j) {
-                uint h_start = j * N * NSTOKES;
-                m_cache.m_Cplus_to_b(loc, (p - 1) * N * NSTOKES + j) -=
-                    (solution.dual_green_A_plus().value(j) *
-                     solution.dual_homog_minus().value(h_start + i));
-            }
-        }
 
         // We have cross derivatives
         for (uint j = 0; j < input_deriv.size(); ++j) {

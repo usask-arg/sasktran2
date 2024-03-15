@@ -174,6 +174,8 @@ def _raw_scenarios() -> list:
     config.multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
     config.single_scatter_source = sk.SingleScatterSource.DiscreteOrdinates
     config.do_backprop = True
+    config.num_streams = 4
+    config.num_singlescatter_moments = 4
 
     geometry = sk.Geometry1D(
         0.6,
@@ -262,16 +264,9 @@ def test_wf_extinction():
             ["wavelength", "los", "stokes", "altitude"],
             numeric_wf,
         )
-        if scen["config"].do_backprop:
-            validate_wf(
-                radiance["wf_extinction"].isel(stokes=0),
-                radiance["wf_extinction_numeric"].isel(stokes=0),
-                decimal=5,
-            )
-        else:
-            validate_wf(
-                radiance["wf_extinction"], radiance["wf_extinction_numeric"], decimal=5
-            )
+        validate_wf(
+            radiance["wf_extinction"], radiance["wf_extinction_numeric"], decimal=5
+        )
 
 
 def test_wf_ssa():
