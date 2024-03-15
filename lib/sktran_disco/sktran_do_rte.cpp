@@ -1066,17 +1066,46 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
                           (1 - thickness.value / 2 *
                                    (average_secant.value - eigval.value(i)));
 
-            Cplus.deriv.noalias() =
-                exp(-1.0 * thickness.value * eigval.value(i)) *
-                thickness.value *
-                (1 - thickness.value / 2 *
-                         (average_secant.value - eigval.value(i))) *
-                transmission.deriv;
-            ;
-            Cplus.deriv.noalias() +=
-                -1.0 * average_secant.deriv * thickness.value / 2.0 *
-                thickness.value * transmission.value *
-                exp(-1.0 * thickness.value * eigval.value(i));
+            if (this->M_BACKPROP_BVP && SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
+                m_cache.m_trans_to_Cplus(p * N * NSTOKES + i, p) =
+                    exp(-1.0 * thickness.value * eigval.value(i)) *
+                    thickness.value *
+                    (1 - thickness.value / 2 *
+                             (average_secant.value - eigval.value(i)));
+
+                m_cache.m_secant_to_Cplus(p * N * NSTOKES + i, p) =
+                    -1.0 * thickness.value / 2.0 * thickness.value *
+                    transmission.value *
+                    exp(-1.0 * thickness.value * eigval.value(i));
+
+                if (p != this->M_NLYR - 1) {
+                    Cplus.deriv.setZero();
+                } else {
+                    Cplus.deriv.noalias() =
+                        exp(-1.0 * thickness.value * eigval.value(i)) *
+                        thickness.value *
+                        (1 - thickness.value / 2 *
+                                 (average_secant.value - eigval.value(i))) *
+                        transmission.deriv;
+                    ;
+                    Cplus.deriv.noalias() +=
+                        -1.0 * average_secant.deriv * thickness.value / 2.0 *
+                        thickness.value * transmission.value *
+                        exp(-1.0 * thickness.value * eigval.value(i));
+                }
+            } else {
+                Cplus.deriv.noalias() =
+                    exp(-1.0 * thickness.value * eigval.value(i)) *
+                    thickness.value *
+                    (1 - thickness.value / 2 *
+                             (average_secant.value - eigval.value(i))) *
+                    transmission.deriv;
+                ;
+                Cplus.deriv.noalias() +=
+                    -1.0 * average_secant.deriv * thickness.value / 2.0 *
+                    thickness.value * transmission.value *
+                    exp(-1.0 * thickness.value * eigval.value(i));
+            }
 
             for (uint k = 0; k < numLayerDeriv; ++k) {
                 Cplus.deriv(k + layerStart) +=
@@ -1151,11 +1180,24 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
                            (1 - thickness.value / 2 *
                                     (average_secant.value + eigval.value(i)));
 
-            Cminus.deriv = transmission.deriv * thickness.value *
-                           (1 - thickness.value / 2 *
-                                    (average_secant.value + eigval.value(i)));
-            Cminus.deriv += average_secant.deriv * -1.0 * thickness.value / 2 *
-                            thickness.value * transmission.value;
+            if (this->M_BACKPROP_BVP && SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
+                m_cache.m_trans_to_Cminus(p * N * NSTOKES + i, p) =
+                    thickness.value *
+                    (1 - thickness.value / 2 *
+                             (average_secant.value + eigval.value(i)));
+                m_cache.m_secant_to_Cminus(p * N * NSTOKES + i, p) =
+                    -1.0 * thickness.value / 2 * thickness.value *
+                    transmission.value;
+
+                Cminus.deriv.setZero();
+            } else {
+                Cminus.deriv =
+                    transmission.deriv * thickness.value *
+                    (1 - thickness.value / 2 *
+                             (average_secant.value + eigval.value(i)));
+                Cminus.deriv += average_secant.deriv * -1.0 * thickness.value /
+                                2 * thickness.value * transmission.value;
+            }
 
             for (uint k = 0; k < numLayerDeriv; ++k) {
                 Cminus.deriv(k + layerStart) +=
