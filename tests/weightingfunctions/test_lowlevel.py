@@ -155,7 +155,7 @@ def _raw_scenarios() -> list:
         6372000,
         altitude_grid,
         sk.InterpolationMethod.LinearInterpolation,
-        sk.GeometryType.PlaneParallel,
+        sk.GeometryType.PseudoSpherical,
     )
 
     scen.append(
@@ -183,7 +183,7 @@ def _raw_scenarios() -> list:
         6372000,
         altitude_grid,
         sk.InterpolationMethod.LinearInterpolation,
-        sk.GeometryType.PlaneParallel,
+        sk.GeometryType.PseudoSpherical,
     )
 
     scen.append(
@@ -213,7 +213,7 @@ def _raw_scenarios() -> list:
         6372000,
         altitude_grid,
         sk.InterpolationMethod.LinearInterpolation,
-        sk.GeometryType.PlaneParallel,
+        sk.GeometryType.PseudoSpherical,
     )
 
     scen.append(
@@ -242,7 +242,7 @@ def _raw_scenarios() -> list:
         6372000,
         altitude_grid,
         sk.InterpolationMethod.LinearInterpolation,
-        sk.GeometryType.PlaneParallel,
+        sk.GeometryType.PseudoSpherical,
     )
 
     scen.append(

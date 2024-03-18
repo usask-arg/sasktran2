@@ -2,9 +2,9 @@
 #include "sktran_disco/sktran_do_linalg.h"
 
 int sasktran_disco::la::dgbsv_pentadiagonal(
-    int N, int NRHS, double* AB, double* B, int LDB, Eigen::VectorXd alpha,
-    Eigen::VectorXd beta, Eigen::MatrixXd z, Eigen::VectorXd gamma,
-    Eigen::VectorXd mu, bool transpose) {
+    int N, int NRHS, double* AB, double* B, int LDB, Eigen::VectorXd& alpha,
+    Eigen::VectorXd& beta, Eigen::MatrixXd& z, Eigen::VectorXd& gamma,
+    Eigen::VectorXd& mu, bool transpose) {
     Eigen::Map<Eigen::MatrixXd> eigen_AB(AB, 7, N);
 
     // Rows 2-7 contain the diagonals of the pentadiagonal matrix, rows 0 and 1

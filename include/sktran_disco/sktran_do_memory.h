@@ -178,6 +178,8 @@ namespace sasktran_disco {
         Eigen::MatrixXd m_secant_to_Cplus;
         Eigen::MatrixXd m_secant_to_Cminus;
 
+        Eigen::MatrixXd m_bvp_backprop_z;
+
         Eigen::Matrix<double, NSTOKES, -1> m_secant_weights;
         Eigen::Matrix<double, NSTOKES, -1> m_trans_weights;
 

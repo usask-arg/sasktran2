@@ -115,6 +115,9 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::configureCache() {
 
     m_cache.m_trans_weights.resize(NSTOKES, this->M_NLYR);
     m_cache.m_secant_weights.resize(NSTOKES, this->M_NLYR);
+
+    // Only for 2str
+    m_cache.m_bvp_backprop_z.resize(m_cache.bvp_mat->N(), 1);
 }
 
 template <int NSTOKES, int CNSTR>
@@ -1583,7 +1586,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::backprop(
                   SASKTRAN_DISCO_ENABLE_PENTADIAGONAL) {
         errorcode = la::dgbsv_pentadiagonal(
             N, n_rhs, mat.data(), trace.bvp_coeff_weights().data(), N,
-            m_cache.bvp_pd_alpha, m_cache.bvp_pd_beta, m_cache.bvp_pd_d_z,
+            m_cache.bvp_pd_alpha, m_cache.bvp_pd_beta, m_cache.m_bvp_backprop_z,
             m_cache.bvp_pd_gamma, m_cache.bvp_pd_mu, true);
     } else {
         errorcode = LAPACKE_dgbtrs(LAPACK_COL_MAJOR, 'T', N, NCD, NCD, n_rhs,
