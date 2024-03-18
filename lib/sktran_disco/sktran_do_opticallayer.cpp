@@ -1031,7 +1031,7 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::E(
 
         xform.deriv.noalias() +=
             avg_secant.deriv *
-            ((transmission.value / den * e2 * dual_thickness.value) +
+            ((transmission.value / den * e2 * dual_thickness.value) -
              (xform.value / den * mu) +
              (transmission.value / den * e1 * (-1.0 * x)));
     }
