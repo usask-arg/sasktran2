@@ -4,29 +4,31 @@
 int sasktran_disco::la::dgbsv_pentadiagonal(
     int N, int NRHS, double* AB, double* B, int LDB, Eigen::VectorXd alpha,
     Eigen::VectorXd beta, Eigen::MatrixXd z, Eigen::VectorXd gamma,
-    Eigen::VectorXd mu) {
+    Eigen::VectorXd mu, bool transpose) {
     Eigen::Map<Eigen::MatrixXd> eigen_AB(AB, 7, N);
 
     // Rows 2-7 contain the diagonals of the pentadiagonal matrix, rows 0 and 1
     // are extra storage we can use
 
+    // Matrix diagonals are (e, c, d, a, b)
+
     // c is offset by 1 index
-    Eigen::Map<Eigen::VectorXd, 0, Eigen::InnerStride<7>> c(eigen_AB.data() + 5,
-                                                            N);
+    Eigen::Map<Eigen::VectorXd, 0, Eigen::InnerStride<7>> c(
+        transpose ? eigen_AB.data() + 10 : eigen_AB.data() + 5, N);
     int c_offset = 1;
 
     Eigen::Map<Eigen::VectorXd, 0, Eigen::InnerStride<7>> d(eigen_AB.data() + 4,
                                                             N);
     Eigen::Map<Eigen::VectorXd, 0, Eigen::InnerStride<7>> a(
-        eigen_AB.data() + 10, N);
+        transpose ? eigen_AB.data() + 5 : eigen_AB.data() + 10, N);
 
     // e is offset by 2 indicies
-    Eigen::Map<Eigen::VectorXd, 0, Eigen::InnerStride<7>> e(eigen_AB.data() + 6,
-                                                            N);
+    Eigen::Map<Eigen::VectorXd, 0, Eigen::InnerStride<7>> e(
+        transpose ? eigen_AB.data() + 16 : eigen_AB.data() + 6, N);
     int e_offset = 2;
 
     Eigen::Map<Eigen::VectorXd, 0, Eigen::InnerStride<7>> b(
-        eigen_AB.data() + 16, N);
+        transpose ? eigen_AB.data() + 6 : eigen_AB.data() + 16, N);
 
     Eigen::Map<Eigen::MatrixXd> y(B, N, NRHS);
 

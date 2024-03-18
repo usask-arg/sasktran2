@@ -178,6 +178,9 @@ namespace sasktran_disco {
         Eigen::MatrixXd m_secant_to_Cplus;
         Eigen::MatrixXd m_secant_to_Cminus;
 
+        Eigen::Matrix<double, NSTOKES, -1> m_secant_weights;
+        Eigen::Matrix<double, NSTOKES, -1> m_trans_weights;
+
 #ifdef SKTRAN_USE_ACCELERATE
         Eigen::VectorXd homog_work;
 #endif

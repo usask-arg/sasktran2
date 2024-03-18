@@ -805,10 +805,17 @@ void sasktran_disco::OpticalLayer<1, 2>::integrate_source(
             Y_minus.value(0) * hm.deriv(k) * dual_M.value(0);
     }
 
-    // But L/M have full derivatives
-    for (uint k = 0; k < numtotalderiv; ++k) {
-        J.deriv(k, 0) += Y_plus.value(0) * hp.value * dual_L.deriv(k, 0);
-        J.deriv(k, 0) += Y_minus.value(0) * hm.value * dual_M.deriv(k, 0);
+    if (this->M_BACKPROP_BVP) {
+        reverse_trace.bvp_coeff_weights()(p * 2, 0) +=
+            Y_plus.value(0) * hp.value;
+        reverse_trace.bvp_coeff_weights()(p * 2 + 1, 0) +=
+            Y_minus.value(0) * hm.value;
+    } else {
+        // But L/M have full derivatives
+        for (uint k = 0; k < numtotalderiv; ++k) {
+            J.deriv(k, 0) += Y_plus.value(0) * hp.value * dual_L.deriv(k, 0);
+            J.deriv(k, 0) += Y_minus.value(0) * hm.value * dual_M.deriv(k, 0);
+        }
     }
 
     const auto& eigval = solution.value.dual_eigval();

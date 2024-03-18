@@ -167,7 +167,7 @@ namespace sasktran_disco {
         int dgbsv_pentadiagonal(int N, int NRHS, double* AB, double* B, int LDB,
                                 Eigen::VectorXd alpha, Eigen::VectorXd beta,
                                 Eigen::MatrixXd z, Eigen::VectorXd gamma,
-                                Eigen::VectorXd mu);
+                                Eigen::VectorXd mu, bool transpose);
 
     } // namespace la
 

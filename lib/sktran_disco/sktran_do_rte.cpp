@@ -112,6 +112,9 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::configureCache() {
 
     m_cache.m_secant_to_Cplus.resize(Nd / 2, this->M_NLYR);
     m_cache.m_secant_to_Cminus.resize(Nd / 2, this->M_NLYR);
+
+    m_cache.m_trans_weights.resize(NSTOKES, this->M_NLYR);
+    m_cache.m_secant_weights.resize(NSTOKES, this->M_NLYR);
 }
 
 template <int NSTOKES, int CNSTR>
@@ -720,15 +723,43 @@ void sasktran_disco::RTESolver<1, 2>::solveParticularGreen(
                       (exp_thickness_eigval - exp_thickness_secant) /
                       (average_secant.value - eigval.value(0));
 
-        Cplus.deriv.noalias() = (exp_thickness_eigval - exp_thickness_secant) /
-                                (average_secant.value - eigval.value(0)) *
-                                transmission.deriv;
-        Cplus.deriv.noalias() +=
-            average_secant.deriv *
-            (transmission.value * thickness.value *
-                 exp(-1.0 * thickness.value * average_secant.value) -
-             Cplus.value) /
-            (average_secant.value - eigval.value(0));
+        if (this->M_BACKPROP_BVP && SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
+            m_cache.m_trans_to_Cplus(p, p) =
+                (exp_thickness_eigval - exp_thickness_secant) /
+                (average_secant.value - eigval.value(0));
+
+            m_cache.m_secant_to_Cplus(p, p) =
+                (transmission.value * thickness.value *
+                     exp(-1.0 * thickness.value * average_secant.value) -
+                 Cplus.value) /
+                (average_secant.value - eigval.value(0));
+
+            if (p != this->M_NLYR - 1) {
+                Cplus.deriv.setZero();
+            } else {
+                Cplus.deriv.noalias() =
+                    (exp_thickness_eigval - exp_thickness_secant) /
+                    (average_secant.value - eigval.value(0)) *
+                    transmission.deriv;
+                Cplus.deriv.noalias() +=
+                    average_secant.deriv *
+                    (transmission.value * thickness.value *
+                         exp(-1.0 * thickness.value * average_secant.value) -
+                     Cplus.value) /
+                    (average_secant.value - eigval.value(0));
+            }
+
+        } else {
+            Cplus.deriv.noalias() =
+                (exp_thickness_eigval - exp_thickness_secant) /
+                (average_secant.value - eigval.value(0)) * transmission.deriv;
+            Cplus.deriv.noalias() +=
+                average_secant.deriv *
+                (transmission.value * thickness.value *
+                     exp(-1.0 * thickness.value * average_secant.value) -
+                 Cplus.value) /
+                (average_secant.value - eigval.value(0));
+        }
 
         for (uint k = 0; k < numLayerDeriv; ++k) {
             Cplus.deriv(k + layerStart) +=
@@ -749,15 +780,49 @@ void sasktran_disco::RTESolver<1, 2>::solveParticularGreen(
                       (1 - thickness.value / 2 *
                                (average_secant.value - eigval.value(0)));
 
-        Cplus.deriv.noalias() =
-            exp(-1.0 * thickness.value * eigval.value(0)) * thickness.value *
-            (1 -
-             thickness.value / 2 * (average_secant.value - eigval.value(0))) *
-            transmission.deriv;
-        ;
-        Cplus.deriv.noalias() += -1.0 * average_secant.deriv * thickness.value /
-                                 2.0 * thickness.value * transmission.value *
-                                 exp(-1.0 * thickness.value * eigval.value(0));
+        if (this->M_BACKPROP_BVP && SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
+            m_cache.m_trans_to_Cplus(p, p) =
+                exp(-1.0 * thickness.value * eigval.value(0)) *
+                thickness.value *
+                (1 - thickness.value / 2 *
+                         (average_secant.value - eigval.value(0)));
+
+            m_cache.m_secant_to_Cplus(p, p) =
+                -1.0 * thickness.value / 2.0 * thickness.value *
+                transmission.value *
+                exp(-1.0 * thickness.value * eigval.value(0));
+
+            if (p != this->M_NLYR - 1) {
+                Cplus.deriv.setZero();
+            } else {
+
+                Cplus.deriv.noalias() =
+                    exp(-1.0 * thickness.value * eigval.value(0)) *
+                    thickness.value *
+                    (1 - thickness.value / 2 *
+                             (average_secant.value - eigval.value(0))) *
+                    transmission.deriv;
+                ;
+                Cplus.deriv.noalias() +=
+                    -1.0 * average_secant.deriv * thickness.value / 2.0 *
+                    thickness.value * transmission.value *
+                    exp(-1.0 * thickness.value * eigval.value(0));
+            }
+
+        } else {
+
+            Cplus.deriv.noalias() =
+                exp(-1.0 * thickness.value * eigval.value(0)) *
+                thickness.value *
+                (1 - thickness.value / 2 *
+                         (average_secant.value - eigval.value(0))) *
+                transmission.deriv;
+            ;
+            Cplus.deriv.noalias() +=
+                -1.0 * average_secant.deriv * thickness.value / 2.0 *
+                thickness.value * transmission.value *
+                exp(-1.0 * thickness.value * eigval.value(0));
+        }
 
         for (uint k = 0; k < numLayerDeriv; ++k) {
             Cplus.deriv(k + layerStart) +=
@@ -783,14 +848,29 @@ void sasktran_disco::RTESolver<1, 2>::solveParticularGreen(
                        (1 - exp_thickness_secant * exp_thickness_eigval) /
                        (average_secant.value + eigval.value(0));
 
-        Cminus.deriv.noalias() =
-            (1 - exp_thickness_secant * exp_thickness_eigval) /
-            (average_secant.value + eigval.value(0)) * transmission.deriv;
-        Cminus.deriv.noalias() +=
-            average_secant.deriv / (average_secant.value + eigval.value(0)) *
-            (transmission.value * thickness.value * exp_thickness_eigval *
-                 exp_thickness_secant -
-             Cminus.value);
+        if (this->M_BACKPROP_BVP && SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
+            m_cache.m_trans_to_Cminus(p, p) =
+                (1 - exp_thickness_secant * exp_thickness_eigval) /
+                (average_secant.value + eigval.value(0));
+
+            m_cache.m_secant_to_Cminus(p, p) =
+                1 / (average_secant.value + eigval.value(0)) *
+                (transmission.value * thickness.value * exp_thickness_eigval *
+                     exp_thickness_secant -
+                 Cminus.value);
+
+            Cminus.deriv.setZero();
+        } else {
+            Cminus.deriv.noalias() =
+                (1 - exp_thickness_secant * exp_thickness_eigval) /
+                (average_secant.value + eigval.value(0)) * transmission.deriv;
+            Cminus.deriv.noalias() +=
+                average_secant.deriv /
+                (average_secant.value + eigval.value(0)) *
+                (transmission.value * thickness.value * exp_thickness_eigval *
+                     exp_thickness_secant -
+                 Cminus.value);
+        }
 
         for (uint k = 0; k < numLayerDeriv; ++k) {
             Cminus.deriv(k + layerStart) +=
@@ -808,11 +888,24 @@ void sasktran_disco::RTESolver<1, 2>::solveParticularGreen(
                        (1 - thickness.value / 2 *
                                 (average_secant.value + eigval.value(0)));
 
-        Cminus.deriv = transmission.deriv * thickness.value *
-                       (1 - thickness.value / 2 *
-                                (average_secant.value + eigval.value(0)));
-        Cminus.deriv += average_secant.deriv * -1.0 * thickness.value / 2 *
-                        thickness.value * transmission.value;
+        if (this->M_BACKPROP_BVP && SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
+            m_cache.m_trans_to_Cminus(p, p) =
+                thickness.value *
+                (1 - thickness.value / 2 *
+                         (average_secant.value + eigval.value(0)));
+
+            m_cache.m_secant_to_Cminus(p, p) = -1.0 * thickness.value / 2 *
+                                               thickness.value *
+                                               transmission.value;
+
+            Cminus.deriv.setZero();
+        } else {
+            Cminus.deriv = transmission.deriv * thickness.value *
+                           (1 - thickness.value / 2 *
+                                    (average_secant.value + eigval.value(0)));
+            Cminus.deriv += average_secant.deriv * -1.0 * thickness.value / 2 *
+                            thickness.value * transmission.value;
+        }
 
         for (uint k = 0; k < numLayerDeriv; ++k) {
             Cminus.deriv(k + layerStart) +=
@@ -832,6 +925,8 @@ void sasktran_disco::RTESolver<1, 2>::solveParticularGreen(
     Gminus_bottom.value(0) =
         Aplus.value(0) * Cplus.value * homog_minus.value(0);
 
+    // Normally in backprop we don't copy all of these derivatives, but we would
+    // have to zero memory anyways so probably no benefit?
     Gplus_top.deriv(Eigen::all, 0).noalias() =
         Aminus.value(0) * homog_minus.value(0) * Cminus.deriv;
     Gminus_top.deriv(Eigen::all, 0).noalias() =
@@ -1352,7 +1447,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveBVP(AEOrder m) {
         errorcode = la::dgbsv_pentadiagonal(
             N, 1, mat.data(), b.data(), N, m_cache.bvp_pd_alpha,
             m_cache.bvp_pd_beta, m_cache.bvp_pd_z, m_cache.bvp_pd_gamma,
-            m_cache.bvp_pd_mu);
+            m_cache.bvp_pd_mu, false);
     } else {
 #ifdef SKTRAN_USE_ACCELERATE
         int one = 1;
@@ -1425,7 +1520,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveBVP(AEOrder m) {
         errorcode = la::dgbsv_pentadiagonal(
             N, numDeriv, mat.data(), rhs.data(), N, m_cache.bvp_pd_alpha,
             m_cache.bvp_pd_beta, m_cache.bvp_pd_d_z, m_cache.bvp_pd_gamma,
-            m_cache.bvp_pd_mu);
+            m_cache.bvp_pd_mu, false);
     } else {
         // Solve using the same LHS as above
 #ifdef SKTRAN_USE_ACCELERATE
@@ -1484,9 +1579,17 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::backprop(
 
     int n_rhs = NSTOKES;
 
-    errorcode =
-        LAPACKE_dgbtrs(LAPACK_COL_MAJOR, 'T', N, NCD, NCD, n_rhs, mat.data(),
-                       LDA, ipiv.data(), trace.bvp_coeff_weights().data(), N);
+    if constexpr (NSTOKES == 1 && CNSTR == 2 &&
+                  SASKTRAN_DISCO_ENABLE_PENTADIAGONAL) {
+        errorcode = la::dgbsv_pentadiagonal(
+            N, n_rhs, mat.data(), trace.bvp_coeff_weights().data(), N,
+            m_cache.bvp_pd_alpha, m_cache.bvp_pd_beta, m_cache.bvp_pd_d_z,
+            m_cache.bvp_pd_gamma, m_cache.bvp_pd_mu, true);
+    } else {
+        errorcode = LAPACKE_dgbtrs(LAPACK_COL_MAJOR, 'T', N, NCD, NCD, n_rhs,
+                                   mat.data(), LDA, ipiv.data(),
+                                   trace.bvp_coeff_weights().data(), N);
+    }
 
     const auto& d_b = m_cache.d_b;
 
@@ -1494,15 +1597,9 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::backprop(
     // d_b is shape (N, nderiv)
     // w is shape (N)
 
-    component.deriv += d_b.transpose() * trace.bvp_coeff_weights();
+    component.deriv.noalias() += d_b.transpose() * trace.bvp_coeff_weights();
 
     if (SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
-
-        Eigen::MatrixXd trans_weights(NSTOKES, this->M_NLYR);
-        trans_weights.setZero();
-        Eigen::MatrixXd secant_weights(NSTOKES, this->M_NLYR);
-        trans_weights.setZero();
-
         // Annoying accumulation of non-zero terms in b
         int start = 0;
 
@@ -1521,20 +1618,20 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::backprop(
                                  (p + 1) * this->M_NSTR * NSTOKES / 2 - 1);
             auto nz_2 = Eigen::seq(start, end - 1);
             for (int s = 0; s < NSTOKES; ++s) {
-                trans_weights(s, p) =
+                m_cache.m_trans_weights(s, p) =
                     trace.bvp_coeff_weights().transpose()(s, nz_2) *
                     m_cache.m_Cminus_to_b(nz_2, nz) *
                     m_cache.m_trans_to_Cminus(nz, p);
-                trans_weights(s, p) +=
+                m_cache.m_trans_weights(s, p) +=
                     trace.bvp_coeff_weights().transpose()(s, nz_2) *
                     m_cache.m_Cplus_to_b(nz_2, nz) *
                     m_cache.m_trans_to_Cplus(nz, p);
 
-                secant_weights(s, p) =
+                m_cache.m_secant_weights(s, p) =
                     trace.bvp_coeff_weights().transpose()(s, nz_2) *
                     m_cache.m_Cminus_to_b(nz_2, nz) *
                     m_cache.m_secant_to_Cminus(nz, p);
-                secant_weights(s, p) +=
+                m_cache.m_secant_weights(s, p) +=
                     trace.bvp_coeff_weights().transpose()(s, nz_2) *
                     m_cache.m_Cplus_to_b(nz_2, nz) *
                     m_cache.m_secant_to_Cplus(nz, p);
@@ -1553,9 +1650,9 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::backprop(
 
             for (int s = 0; s < NSTOKES; ++s) {
                 component.deriv(Eigen::all, s).noalias() +=
-                    trans_weights(s, p) * transmission.deriv;
+                    m_cache.m_trans_weights(s, p) * transmission.deriv;
                 component.deriv(Eigen::all, s).noalias() +=
-                    secant_weights(s, p) * average_secant.deriv;
+                    m_cache.m_secant_weights(s, p) * average_secant.deriv;
             }
         }
     }
