@@ -46,8 +46,8 @@ jobs:
           # export CONDA_EXE=$(which mamba)
           export CONDA_EXE=$(which conda)
           # Run benchmarks for current commit against base
-          ASV_OPTIONS="--split --show-stderr --factor $ASV_FACTOR -a rounds=2 --append-samples --interleave-rounds"
-          asv continuous $ASV_OPTIONS ${{ github.event.pull_request.base.sha }} ${GITHUB_SHA} \
+          ASV_OPTIONS="--factor $ASV_FACTOR"
+          asv compare $ASV_OPTIONS ${{ github.event.pull_request.base.sha }} ${GITHUB_SHA} \
               | tee benchmarks.log
         working-directory: ${{ env.ASV_DIR }}
 
