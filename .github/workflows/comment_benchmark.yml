@@ -2,8 +2,10 @@ name: Report CI results to PR
 
 on:
   workflow_run:
-    workflows: [Benchmark]
-    types: [completed]
+    workflows:
+        - Benchmark
+    types:
+        - completed
 
 jobs:
   comment-on-pr:

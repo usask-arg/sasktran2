@@ -61,3 +61,23 @@ jobs:
         with:
           name: asv-benchmark-results-${{ runner.os }}
           path: ${{ env.ASV_DIR }}/benchmarks.log
+
+  save-pr-number:
+    # The comment-on-pr workflow needs the issue number of the PR to be able to
+    # comment so we output that to a file and pass it over as an artifact.
+
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Write PR number to file
+        if: ${{ github.event_name == 'pull_request' }}
+        run: echo -n ${{ github.event.number }} > pr_number.txt
+
+      - name: Write empty file for PR number
+        if: ${{ github.event_name != 'pull_request' }}
+        run: echo -n > pr_number.txt
+
+      - name: Upload results as artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: pr_number
+          path: pr_number.txt
