@@ -47,6 +47,8 @@ jobs:
           export CONDA_EXE=$(which conda)
           # Run benchmarks for current commit against base
           ASV_OPTIONS="--factor $ASV_FACTOR"
+          asv run ${{ github.event.pull_request.base.sha }}
+          asv run ${GITHUB_SHA}
           asv compare $ASV_OPTIONS ${{ github.event.pull_request.base.sha }} ${GITHUB_SHA} \
               | tee benchmarks.log
         working-directory: ${{ env.ASV_DIR }}
