@@ -25,6 +25,9 @@
 // enabled if SKTRANDO_FULL_COMPILE is set
 #define SASKTRAN_DISCO_ENABLE_PENTADIAGONAL true
 
+// Debug settings to enable or di
+#define SASKTRAN_DISCO_ENABLE_FULL_BACKPROP true
+
 // SKTRAN_DO is templated over two main parameters, the first is NSTOKES which
 // we always explicitly instantiate every class over.  DO is also templated over
 // the number of streams, the default is -1 which is "dynamic" and allows for

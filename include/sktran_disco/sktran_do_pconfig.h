@@ -51,6 +51,8 @@ namespace sasktran_disco {
             return this->M_USE_GREENS_FUNCTION;
         }
 
+        inline bool backprop_bvp() const { return this->M_BACKPROP_BVP; }
+
         inline bool ss_only() const { return this->M_SS_ONLY; }
 
         inline bool opticalstate_prefilled() const {

@@ -1,4 +1,5 @@
 #include "sktran_disco/sktran_do.h"
+#include "sktran_disco/sktran_do_linearization_types.h"
 #include "sktran_disco/sktran_do_opticallayer.h"
 
 template <int NSTOKES, int CNSTR>
@@ -309,6 +310,7 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::integrate_source(
     AEOrder m, double mu, double obsod,
     const std::vector<LegendrePhaseContainer<NSTOKES>>& lp_mu,
     Radiance<NSTOKES>& result,
+    ReverseLinearizationTrace<NSTOKES>& reverse_trace,
     const sasktran_disco::Radiance<NSTOKES>* manual_ss_source,
     bool include_ss) const {
     LayerIndex p = index();
@@ -499,6 +501,9 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::integrate_source(
     J.setzero();
     V.setzero();
 
+    int l_offset = p * this->M_NSTR * NSTOKES;
+    int m_offset = l_offset + this->M_NSTR * NSTOKES / 2;
+
     for (SolutionIndex i = 0; i < this->M_NSTR / 2 * NSTOKES; ++i) {
         h_plus(m, mu, x, M_OPTICAL_THICKNESS, i, hp);
         h_minus(m, mu, x, M_OPTICAL_THICKNESS, i, hm);
@@ -525,12 +530,22 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::integrate_source(
             J.deriv(layerStart + k, Eigen::all).noalias() +=
                 Y_minus_matrix(Eigen::all, i) * hm.deriv(k) * dual_M.value(i);
         }
-        // But L/M have full derivatives
-        for (uint k = 0; k < numtotalderiv; ++k) {
-            J.deriv(k, Eigen::all).noalias() +=
-                Y_plus_matrix(Eigen::all, i) * hp.value * dual_L.deriv(k, i);
-            J.deriv(k, Eigen::all).noalias() +=
-                Y_minus_matrix(Eigen::all, i) * hm.value * dual_M.deriv(k, i);
+
+        if (this->M_BACKPROP_BVP) {
+            reverse_trace.bvp_coeff_weights()(l_offset + i, Eigen::all) +=
+                Y_plus_matrix(Eigen::all, i) * hp.value;
+            reverse_trace.bvp_coeff_weights()(m_offset + i, Eigen::all) +=
+                Y_minus_matrix(Eigen::all, i) * hm.value;
+        } else {
+            // But L/M have full derivatives
+            for (uint k = 0; k < numtotalderiv; ++k) {
+                J.deriv(k, Eigen::all).noalias() +=
+                    Y_plus_matrix(Eigen::all, i) * hp.value *
+                    dual_L.deriv(k, i);
+                J.deriv(k, Eigen::all).noalias() +=
+                    Y_minus_matrix(Eigen::all, i) * hm.value *
+                    dual_M.deriv(k, i);
+            }
         }
 
         const auto& eigval = solution.value.dual_eigval();
@@ -636,7 +651,9 @@ template <>
 void sasktran_disco::OpticalLayer<1, 2>::integrate_source(
     AEOrder m, double mu, double obsod,
     const std::vector<LegendrePhaseContainer<1>>& lp_mu, Radiance<1>& result,
+    ReverseLinearizationTrace<1>& reverse_trace,
     const sasktran_disco::Radiance<1>* manual_ss_source,
+
     bool include_ss) const {
     // TODO: Harmonize this with the other integrate_source function, refactor a
     // lot of this calculation
@@ -788,10 +805,17 @@ void sasktran_disco::OpticalLayer<1, 2>::integrate_source(
             Y_minus.value(0) * hm.deriv(k) * dual_M.value(0);
     }
 
-    // But L/M have full derivatives
-    for (uint k = 0; k < numtotalderiv; ++k) {
-        J.deriv(k, 0) += Y_plus.value(0) * hp.value * dual_L.deriv(k, 0);
-        J.deriv(k, 0) += Y_minus.value(0) * hm.value * dual_M.deriv(k, 0);
+    if (this->M_BACKPROP_BVP) {
+        reverse_trace.bvp_coeff_weights()(p * 2, 0) +=
+            Y_plus.value(0) * hp.value;
+        reverse_trace.bvp_coeff_weights()(p * 2 + 1, 0) +=
+            Y_minus.value(0) * hm.value;
+    } else {
+        // But L/M have full derivatives
+        for (uint k = 0; k < numtotalderiv; ++k) {
+            J.deriv(k, 0) += Y_plus.value(0) * hp.value * dual_L.deriv(k, 0);
+            J.deriv(k, 0) += Y_minus.value(0) * hm.value * dual_M.deriv(k, 0);
+        }
     }
 
     const auto& eigval = solution.value.dual_eigval();
@@ -1007,7 +1031,7 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::E(
 
         xform.deriv.noalias() +=
             avg_secant.deriv *
-            ((transmission.value / den * e2 * dual_thickness.value) +
+            ((transmission.value / den * e2 * dual_thickness.value) -
              (xform.value / den * mu) +
              (transmission.value / den * e1 * (-1.0 * x)));
     }

@@ -71,4 +71,29 @@ namespace sasktran_disco {
         return lhs;
     }
 
+    template <int NSTOKES> class ReverseLinearizationTrace {
+      private:
+        // The weights for the BVP coefficients, these are the values so that
+        // the contributions from the BVP coeffs to the radiance are (weights,
+        // bvp_coeffs)
+        Eigen::Matrix<double, -1, NSTOKES> m_bvp_coeff_weights;
+
+      public:
+        ReverseLinearizationTrace() {}
+        ~ReverseLinearizationTrace() {}
+
+        Eigen::Matrix<double, -1, NSTOKES>& bvp_coeff_weights() {
+            return m_bvp_coeff_weights;
+        }
+
+        void multiply_by_constant(double x) { m_bvp_coeff_weights *= x; }
+
+        void resize(int nstr, int nlyr) {
+            int N = nstr * nlyr * NSTOKES;
+            m_bvp_coeff_weights.resize(N, NSTOKES);
+        }
+
+        void set_zero() { m_bvp_coeff_weights.setZero(); }
+    };
+
 } // namespace sasktran_disco

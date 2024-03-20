@@ -46,18 +46,35 @@ jobs:
           # export CONDA_EXE=$(which mamba)
           export CONDA_EXE=$(which conda)
           # Run benchmarks for current commit against base
-          ASV_OPTIONS="--split --show-stderr --factor $ASV_FACTOR -a rounds=2 --append-samples --interleave-rounds"
-          asv continuous $ASV_OPTIONS ${{ github.event.pull_request.base.sha }} ${GITHUB_SHA} \
-              | sed "/Traceback \|failed$\|PERFORMANCE DECREASED/ s/^/::error::/" \
+          ASV_OPTIONS="--factor $ASV_FACTOR"
+          asv run ${{ github.event.pull_request.base.sha }}^!
+          asv run ${GITHUB_SHA}^!
+          asv compare $ASV_OPTIONS ${{ github.event.pull_request.base.sha }} ${GITHUB_SHA} \
               | tee benchmarks.log
-          # Report and export results for subsequent steps
-          if grep "Traceback \|failed\|PERFORMANCE DECREASED" benchmarks.log > /dev/null ; then
-              exit 1
-          fi
         working-directory: ${{ env.ASV_DIR }}
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: asv-benchmark-results-${{ runner.os }}
-          path: ${{ env.ASV_DIR }}/.asv/results
+          path: ${{ env.ASV_DIR }}/benchmarks.log
+
+  save-pr-number:
+    # The comment-on-pr workflow needs the issue number of the PR to be able to
+    # comment so we output that to a file and pass it over as an artifact.
+
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Write PR number to file
+        if: ${{ github.event_name == 'pull_request' }}
+        run: echo -n ${{ github.event.number }} > pr_number.txt
+
+      - name: Write empty file for PR number
+        if: ${{ github.event_name != 'pull_request' }}
+        run: echo -n > pr_number.txt
+
+      - name: Upload results as artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: pr_number
+          path: pr_number.txt

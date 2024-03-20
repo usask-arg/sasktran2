@@ -196,6 +196,14 @@ namespace sasktran_disco_lowlevel {
                             exp(-1.0 * dual_optical_depth.value *
                                 layerfraction / los[j].coszenith);
 
+                        if (config->backprop_bvp) {
+                            optical_layer.inputDerivatives()
+                                .reverse_trace(j)
+                                .multiply_by_constant(
+                                    exp(-1.0 * dual_optical_depth.value *
+                                        layerfraction / los[j].coszenith));
+                        }
+
                         m_component[thread_id].deriv *=
                             exp(-1.0 * dual_optical_depth.value *
                                 layerfraction / los[j].coszenith);
@@ -315,6 +323,7 @@ namespace sasktran_disco_lowlevel {
                         layer.ptr()->integrate_source(
                             m, los[j].coszenith, observer_opticaldepth,
                             lp_coszen[j][m], integral[thread_id],
+                            optical_layer.inputDerivatives().reverse_trace(j),
                             exact_ss_ptr[thread_id],
                             !config->useexactsinglescatter);
 
@@ -322,6 +331,13 @@ namespace sasktran_disco_lowlevel {
                             integral[thread_id].value;
                         m_component[thread_id].deriv +=
                             integral[thread_id].deriv;
+                    }
+
+                    if (config->backprop_bvp) {
+                        rte.backprop(
+                            m,
+                            optical_layer.inputDerivatives().reverse_trace(j),
+                            m_component[thread_id]);
                     }
 
                     if constexpr (NSTOKES == 1) {

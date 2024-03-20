@@ -34,7 +34,7 @@ namespace sasktran2 {
         sasktran_disco::RTESolver<NSTOKES, CNSTR> rte(*solver.persistent_config,
                                                       optical_layer);
 
-        const auto& input_derivatives = optical_layer.inputDerivatives();
+        auto& input_derivatives = optical_layer.inputDerivatives();
 
         // Have to set storage to 0 for each ray
         for (int j = 0; j < m_do_los.size(); ++j) {
@@ -100,6 +100,10 @@ namespace sasktran2 {
                         exp(-1.0 * dual_optical_depth.value * layerfraction /
                             m_do_los[j].coszenith);
 
+                    input_derivatives.reverse_trace(j).multiply_by_constant(
+                        exp(-1.0 * dual_optical_depth.value * layerfraction /
+                            m_do_los[j].coszenith));
+
                     m_component[threadidx].deriv *=
                         exp(-1.0 * dual_optical_depth.value * layerfraction /
                             m_do_los[j].coszenith);
@@ -124,11 +128,18 @@ namespace sasktran2 {
                     // Calculate and add in new source
                     layer.ptr()->integrate_source(
                         m, m_do_los[j].coszenith, observer_opticaldepth,
-                        m_lp_coszen[j][m], m_integral[threadidx], nullptr,
+                        m_lp_coszen[j][m], m_integral[threadidx],
+                        input_derivatives.reverse_trace(j), nullptr,
                         include_single_scatter);
 
                     m_component[threadidx].value += m_integral[threadidx].value;
                     m_component[threadidx].deriv += m_integral[threadidx].deriv;
+                }
+
+                if (m_config->do_backprop() &&
+                    input_derivatives.numDerivative() > 0) {
+                    rte.backprop(m, input_derivatives.reverse_trace(j),
+                                 m_component[threadidx]);
                 }
 
                 if constexpr (NSTOKES == 1) {
@@ -170,7 +181,7 @@ namespace sasktran2 {
                         m_radiances[threadidx][j].value(s) +=
                             m_component[threadidx].value(s) * azimuthal_factor;
 
-                        for (int k = 0; k < m_component[threadidx].deriv.size();
+                        for (int k = 0; k < m_component[threadidx].deriv.rows();
                              ++k) {
                             for (int l = 0;
                                  l < input_derivatives.layerDerivatives()[k]

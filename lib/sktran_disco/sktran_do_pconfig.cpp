@@ -38,6 +38,7 @@ void sasktran_disco::PersistentConfiguration<NSTOKES, CNSTR>::configureLowLevel(
 
     const_cast<bool&>(this->M_USE_LOS_SPHERICAL) = false;
     const_cast<bool&>(this->M_SS_ONLY) = false;
+    const_cast<bool&>(this->M_BACKPROP_BVP) = config.backprop_bvp;
     const_cast<size_t&>(this->M_NUM_SZA) = 1;
 
     m_lp_csz_storage.resize(1);
@@ -96,6 +97,7 @@ void sasktran_disco::PersistentConfiguration<NSTOKES, CNSTR>::configure(
 
     const_cast<bool&>(this->M_USE_LOS_SPHERICAL) = false;
     const_cast<bool&>(this->M_SS_ONLY) = false;
+    const_cast<bool&>(this->M_BACKPROP_BVP) = config.do_backprop();
     const_cast<size_t&>(this->M_NUM_SZA) = 1;
 
     m_lp_csz_storage.resize(1);

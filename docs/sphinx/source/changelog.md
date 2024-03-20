@@ -2,6 +2,9 @@
 (_changelog)=
 # Changelog
 
+# Unreleased
+- Add `config.do_backprop` option for discrete ordinates source
+
 # 2024.03.0
 - Fix binary wheel uploads on PyPI
 

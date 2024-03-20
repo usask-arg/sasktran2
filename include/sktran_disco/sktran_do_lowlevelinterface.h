@@ -55,6 +55,7 @@ namespace sasktran_disco_lowlevel {
 
         bool useexactsinglescatter;
         bool usepseudospherical;
+        bool backprop_bvp;
 
         int numazimuthexpansion;
     };
@@ -229,6 +230,7 @@ namespace sasktran_disco_lowlevel {
             config->useexactsinglescatter = false;
             config->numazimuthexpansion = 0;
             config->usepseudospherical = true;
+            config->backprop_bvp = true;
 
             // Viewing geometry construction
             geometry->cos_sza = m_cos_sza;

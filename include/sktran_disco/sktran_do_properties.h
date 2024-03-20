@@ -30,6 +30,7 @@ namespace sasktran_disco {
               M_USE_PSEUDO_SPHERICAL(other->M_USE_PSEUDO_SPHERICAL),
               M_USE_LOS_SPHERICAL(other->M_USE_LOS_SPHERICAL),
               M_USE_GREENS_FUNCTION(other->M_USE_GREENS_FUNCTION),
+              M_BACKPROP_BVP(other->M_BACKPROP_BVP),
               M_NUM_SZA(other->M_NUM_SZA), M_SS_ONLY(other->M_SS_ONLY),
               M_SZA_REL_SEP(other->M_SZA_REL_SEP) {
             // empty
@@ -42,8 +43,8 @@ namespace sasktran_disco {
               M_LAYER_CONSTRUCTION(SKTRAN_DO_UserSpec::LayerConstructionMethod::
                                        uniform_pressure),
               M_USE_PSEUDO_SPHERICAL(true), M_USE_LOS_SPHERICAL(false),
-              M_USE_GREENS_FUNCTION(false), M_NUM_SZA(2), M_SS_ONLY(false),
-              M_SZA_REL_SEP(0.05) {
+              M_BACKPROP_BVP(false), M_USE_GREENS_FUNCTION(false), M_NUM_SZA(2),
+              M_SS_ONLY(false), M_SZA_REL_SEP(0.05) {
             // empty
         }
         // Number of streams
@@ -64,6 +65,9 @@ namespace sasktran_disco {
         // Whether or not to use the greens function method for the particular
         // solution
         const bool M_USE_GREENS_FUNCTION;
+
+        // Whether to use back proprgation to calculate the BVP derivatives
+        const bool M_BACKPROP_BVP;
 
         // How many SZAs to use in the spherical LOS calculation
         const size_t M_NUM_SZA;

@@ -1,5 +1,6 @@
 #pragma once
 #include "sktran_disco/sktran_do.h"
+#include "sktran_disco/sktran_do_types.h"
 #include <sasktran2/atmosphere/atmosphere.h>
 
 namespace sasktran_disco {
@@ -99,6 +100,10 @@ namespace sasktran_disco {
         inline uint numLayers() const { return this->M_NLYR; }
 
         inline const InputDerivatives<NSTOKES>& inputDerivatives() const {
+            return m_input_derivatives;
+        }
+
+        inline InputDerivatives<NSTOKES>& inputDerivatives() {
             return m_input_derivatives;
         }
 

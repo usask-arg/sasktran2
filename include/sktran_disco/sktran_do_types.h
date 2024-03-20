@@ -1,5 +1,6 @@
 #pragma once
 #include "sktran_disco/sktran_do.h"
+#include "sktran_disco/sktran_do_linearization_types.h"
 
 #ifdef _WIN32
 const double M_PI = 3.14159265358979323846264338327950288419716939937510582;
@@ -161,10 +162,31 @@ namespace sasktran_disco {
         bool is_geometry_configured() const { return m_geometry_configured; }
         void set_geometry_configured() { m_geometry_configured = true; }
 
+        ReverseLinearizationTrace<NSTOKES>& reverse_trace(size_t i) {
+            return m_reverse_linearization_traces[i];
+        }
+
+        void set_num_los(size_t numlos, uint nstr, uint nlyr) {
+            m_reverse_linearization_traces.resize(numlos);
+
+            for (auto& trace : m_reverse_linearization_traces) {
+                trace.resize(nstr, nlyr);
+            }
+        }
+
+        void set_zero_traces() {
+            for (auto& trace : m_reverse_linearization_traces) {
+                trace.set_zero();
+            }
+        }
+
       private:
         VectorDim1<LayerInputDerivative<NSTOKES>> m_layerderivs;
         std::vector<size_t> m_layerstartindex;
         std::vector<size_t> m_numderivlayer;
+
+        std::vector<ReverseLinearizationTrace<NSTOKES>>
+            m_reverse_linearization_traces;
 
         bool m_geometry_configured;
     };

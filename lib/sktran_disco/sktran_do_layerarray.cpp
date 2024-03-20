@@ -9,6 +9,8 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::
     // convention switches compared to the standard sign convention.  +<->- on W
     // and Z
 
+    auto& trace = m_input_derivatives.reverse_trace(los.unsorted_index);
+
     m_reflection_computed[m][los.unsorted_index] = true;
     if (m_albedo[m].isLambertian() && m > 0) {
         return;
@@ -20,6 +22,9 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::
     const auto& input_deriv = m_input_derivatives;
     int layerStart = (int)input_deriv.layerStartIndex(layer.index());
     int numLayerDeriv = (int)input_deriv.numDerivativeLayer(layer.index());
+
+    int l_offset = layer.index() * this->M_NSTR * NSTOKES;
+    int m_offset = l_offset + this->M_NSTR * NSTOKES / 2;
 
     Radiance<NSTOKES> diffuse_contrib((int)input_deriv.numDerivative()),
         direct_contrib((int)input_deriv.numDerivative());
@@ -61,33 +66,19 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::
         }
 
         Radiance<NSTOKES> stream_contrib((int)input_deriv.numDerivative());
-        if (solution.value.use_green_function()) {
-            if constexpr (NSTOKES == 1) {
-                stream_contrib.value =
-                    solution.value.dual_Gplus_bottom().value(i);
-            } else {
-                stream_contrib.value(s1) =
-                    solution.value.dual_Gplus_bottom().value(i);
-            }
-
-            stream_contrib.deriv(Eigen::all, s1) =
-                solution.value.dual_Gplus_bottom().deriv(Eigen::all, i);
+        if constexpr (NSTOKES == 1) {
+            stream_contrib.value = solution.value.dual_Gplus_bottom().value(i);
         } else {
-            if constexpr (NSTOKES == 1) {
-                stream_contrib.value =
-                    solution.value.dual_particular_plus().value(i) *
-                    beam_transmittance.value;
-            } else {
-                stream_contrib.value(s1) =
-                    solution.value.dual_particular_plus().value(i) *
-                    beam_transmittance.value;
-            }
-            stream_contrib.deriv(Eigen::all, s1) =
-                solution.value.dual_particular_plus().value(i) *
-                    beam_transmittance.deriv +
-                beam_transmittance.value *
-                    solution.value.dual_particular_plus().deriv(Eigen::all, i);
+            stream_contrib.value(s1) =
+                solution.value.dual_Gplus_bottom().value(i);
         }
+
+        stream_contrib.deriv(Eigen::all, s1) =
+            solution.value.dual_Gplus_bottom().deriv(Eigen::all, i);
+
+        double factor = (1.0 + kronDelta(m, 0)) * (*this->M_MU)[i / NSTOKES] *
+                        (*this->M_WT)[i / NSTOKES];
+
         // Positive homogeneous solutions
         for (uint j = 0; j < N * NSTOKES; ++j) {
             stream_transmittance = layer.dual_streamTransmittance(
@@ -106,24 +97,32 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::
                     stream_transmittance.value;
             }
 
-            // LCoeffs have full derivatives, for some reason stream
-            // transmittance is a full dual even though it should be layer?
-            for (uint k = 0; k < input_deriv.numDerivative(); ++k) {
-                stream_contrib.deriv(k, s1) +=
-                    solution.boundary.L_coeffs.deriv(k, j) *
-                    solution.value.dual_homog_plus().value(homogIndex) *
-                    stream_transmittance.value;
-                stream_contrib.deriv(k, s1) +=
-                    solution.boundary.L_coeffs.value(j) *
-                    solution.value.dual_homog_plus().value(homogIndex) *
-                    stream_transmittance.deriv(k);
+            if (this->M_BACKPROP_BVP) {
+                if (s1 == 0) {
+                    trace.bvp_coeff_weights()(l_offset + j, s1) +=
+                        solution.value.dual_homog_plus().value(homogIndex) *
+                        stream_transmittance.value * factor * dual_rho.value;
+                }
+            } else {
+                // LCoeffs have full derivatives
+                for (uint k = 0; k < input_deriv.numDerivative(); ++k) {
+                    stream_contrib.deriv(k, s1) +=
+                        solution.boundary.L_coeffs.deriv(k, j) *
+                        solution.value.dual_homog_plus().value(homogIndex) *
+                        stream_transmittance.value;
+                }
             }
+
             // Homog only have layer derivs
             for (int k = 0; k < numLayerDeriv; ++k) {
                 stream_contrib.deriv(k + layerStart, s1) +=
                     solution.boundary.L_coeffs.value(j) *
                     solution.value.dual_homog_plus().deriv(k, homogIndex) *
                     stream_transmittance.value;
+                stream_contrib.deriv(k + layerStart, s1) +=
+                    solution.boundary.L_coeffs.value(j) *
+                    solution.value.dual_homog_plus().value(homogIndex) *
+                    stream_transmittance.deriv(k + layerStart);
             }
 
             if constexpr (NSTOKES == 1) {
@@ -136,11 +135,19 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::
                     solution.value.dual_homog_minus().value(homogIndex);
             }
 
-            // MCoeffs have full derivatives
-            for (uint k = 0; k < input_deriv.numDerivative(); ++k) {
-                stream_contrib.deriv(k, s1) +=
-                    solution.boundary.M_coeffs.deriv(k, j) *
-                    solution.value.dual_homog_minus().value(homogIndex);
+            if (this->M_BACKPROP_BVP) {
+                if (s1 == 0) {
+                    trace.bvp_coeff_weights()(m_offset + j, s1) +=
+                        solution.value.dual_homog_minus().value(homogIndex) *
+                        factor * dual_rho.value;
+                }
+            } else {
+                // MCoeffs have full derivatives
+                for (uint k = 0; k < input_deriv.numDerivative(); ++k) {
+                    stream_contrib.deriv(k, s1) +=
+                        solution.boundary.M_coeffs.deriv(k, j) *
+                        solution.value.dual_homog_minus().value(homogIndex);
+                }
             }
             // Homog only have layer derivs
             for (int k = 0; k < numLayerDeriv; ++k) {
@@ -150,8 +157,6 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::
             }
         }
         // Add stream i contribution
-        double factor = (1.0 + kronDelta(m, 0)) * (*this->M_MU)[i / NSTOKES] *
-                        (*this->M_WT)[i / NSTOKES];
 
         if constexpr (NSTOKES == 1) {
             diffuse_contrib.value +=
@@ -367,6 +372,7 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
         ceiling_depth = floor_depth;
     }
 
+    m_input_derivatives.set_num_los(m_num_los, this->M_NSTR, this->M_NLYR);
     if (atmosphere.num_deriv() > 0 &&
         sk_config.wf_precision() ==
             sasktran2::Config::WeightingFunctionPrecision::full) {
@@ -772,6 +778,8 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::set_optical(
                 deriv.extinctions.emplace_back(1);
             }
             m_input_derivatives.sort(this->M_NLYR);
+            m_input_derivatives.set_num_los(m_num_los, this->M_NSTR,
+                                            this->M_NLYR);
             m_input_derivatives.set_geometry_configured();
         }
 
@@ -979,6 +987,8 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
                 deriv.extinctions.emplace_back(1);
             }
             m_input_derivatives.sort(this->M_NLYR);
+            m_input_derivatives.set_num_los(m_num_los, this->M_NSTR,
+                                            this->M_NLYR);
             m_input_derivatives.set_geometry_configured();
         }
 

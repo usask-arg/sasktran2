@@ -1,5 +1,6 @@
 #pragma once
 #include "sktran_disco/sktran_do.h"
+#include "sktran_disco/sktran_do_linearization_types.h"
 
 namespace sasktran_disco {
     // Provides a concise optical description of a atmospheric layer, caches
@@ -288,6 +289,7 @@ namespace sasktran_disco {
             AEOrder m, double mu, double obsod,
             const std::vector<LegendrePhaseContainer<NSTOKES>>& lp_mu,
             Radiance<NSTOKES>& result,
+            ReverseLinearizationTrace<NSTOKES>& reverse_linearization_trace,
             const sasktran_disco::Radiance<NSTOKES>* manual_ss_source = nullptr,
             bool include_ss = true) const;
 
