@@ -4,6 +4,7 @@
 #include "sasktran2/source_interface.h"
 #include <memory>
 #include <sasktran2.h>
+#include <sasktran2/validation/validation.h>
 #ifdef SKTRAN_OPENMP_SUPPORT
 #include <omp.h>
 #endif
@@ -196,6 +197,49 @@ void Sasktran2<NSTOKES>::validate_input_atmosphere(
     // NSTOKES requested
 
     // Check that the atmosphere parameters have the correct dimensions
+    if (atmosphere.storage().total_extinction.rows() != m_geometry->size()) {
+        spdlog::error(
+            "Atmosphere total extinction does not have the correct dimensions");
+        throw std::runtime_error(
+            "Invalid input. Check log for more information");
+    }
+
+    if (atmosphere.storage().ssa.rows() != m_geometry->size()) {
+        spdlog::error("Atmosphere single scatter albedo does not have the "
+                      "correct dimensions");
+        throw std::runtime_error(
+            "Invalid input. Check log for more information");
+    }
+
+    if (atmosphere.storage().total_extinction.cols() !=
+        atmosphere.num_wavel()) {
+        spdlog::error(
+            "Atmosphere total extinction does not have the correct dimensions");
+        throw std::runtime_error(
+            "Invalid input. Check log for more information");
+    }
+
+    if (atmosphere.storage().ssa.cols() != atmosphere.num_wavel()) {
+        spdlog::error("Atmosphere single scatter albedo does not have the "
+                      "correct dimensions");
+        throw std::runtime_error(
+            "Invalid input. Check log for more information");
+    }
+
+    // Verify that all extinction values are finite and greater than 0
+    sasktran2::validation::verify_finite(atmosphere.storage().total_extinction,
+                                         "Atmosphere total extinction");
+    sasktran2::validation::verify_greater_than(
+        atmosphere.storage().total_extinction, "Atmosphere total extinction",
+        0.0);
+
+    // Verify that the SSA values are finite and betwen 0 and 1
+    sasktran2::validation::verify_finite(atmosphere.storage().ssa,
+                                         "Atmosphere single scatter albedo");
+    sasktran2::validation::verify_greater_than(
+        atmosphere.storage().ssa, "Atmosphere single scatter albedo", 0.0);
+    sasktran2::validation::verify_less_than(
+        atmosphere.storage().ssa, "Atmosphere single scatter albedo", 1.0);
 
     // Check that the atmosphere geometry matches the global geometry
     if (atmosphere.num_wavel() != atmosphere.surface().albedo().size()) {

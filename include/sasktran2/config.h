@@ -103,6 +103,17 @@ namespace sasktran2 {
          */
         enum class ThreadingModel { wavelength, source };
 
+        /** Enum determining the level of input validation to perform
+         *
+         *     'strict' Performs all input validation checks
+         *
+         *     'standard' Performs a reduced set of input validation checks
+         *
+         *     'disabled' Disables all input validation checks
+         *
+         */
+        enum class InputValidationMode { strict, standard, disabled };
+
         Config();
 
         /**
@@ -201,6 +212,24 @@ namespace sasktran2 {
          */
         void set_occultation_source(OccultationSource source) {
             m_occultation_source = source;
+        }
+
+        /**
+         * @brief The level of input validation to perform
+         *
+         * @return InputValidationMode
+         */
+        InputValidationMode input_validation_mode() const {
+            return m_input_validation_mode;
+        }
+
+        /**
+         * @brief Set the level of input validation to perform
+         *
+         * @param mode
+         */
+        void set_input_validation_mode(InputValidationMode mode) {
+            m_input_validation_mode = mode;
         }
 
         /**
@@ -445,6 +474,12 @@ namespace sasktran2 {
             m_hr_num_incoming_points = points;
         }
 
+        /**
+         * @brief Validates that the config is valid
+         *
+         */
+        void validate_config();
+
       private:
         // TODO: Refactor these into individual source configs?
 
@@ -475,6 +510,8 @@ namespace sasktran2 {
         OccultationSource m_occultation_source;
 
         WeightingFunctionPrecision m_wf_precision;
+
+        InputValidationMode m_input_validation_mode;
 
         StokesBasis m_stokes_basis;
 

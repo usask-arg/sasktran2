@@ -13,6 +13,7 @@ from ._core import (  # noqa: I001
     GeometryType,
     GroundViewingSolar,
     InterpolationMethod,
+    InputValidationMode,
     MultipleScatterSource,
     SingleScatterSource,
     OccultationSource,
