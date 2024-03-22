@@ -8,22 +8,34 @@ namespace sasktran_disco {
         ReadOnlyProperties<BasicProperties<NSTOKES>, SolarProperties<NSTOKES>,
                            UserSpecProperties, TestProperties>;
 
-    // Class which calculates and stores the wavelength independent aspects of
-    // constructing the OpticalLayerArray
+    /** Class which calculates and stores the wavelength independent aspects of
+     *   constructing the OpticalLayerArray
+     *
+     *   @tparam NSTOKES Number of stokes components
+     *   @tparam CNSTR Number of constraints
+     */
     template <int NSTOKES, int CNSTR = -1>
     class GeometryLayerArray : public GeometryLayerArrayROP<NSTOKES>,
                                public AzimuthDependencyCascade {
       protected:
-        const PersistentConfiguration<NSTOKES, CNSTR>& m_config;
-        Eigen::MatrixXd m_chapman_factors;
-        Eigen::MatrixXd m_optical_interpolator;
-        Eigen::VectorXd m_floor_h;
-        Eigen::VectorXd m_ceiling_h;
+        const PersistentConfiguration<NSTOKES, CNSTR>&
+            m_config;                      /** config object */
+        Eigen::MatrixXd m_chapman_factors; /** Chapman factors, determines solar
+                                              transmission in layers */
+        Eigen::MatrixXd
+            m_optical_interpolator;  /** Interpolating matrix from the
+                                        sk2.Atmosphere object to layers */
+        Eigen::VectorXd m_floor_h;   /** Floor heights of the layers */
+        Eigen::VectorXd m_ceiling_h; /** Ceiling eights of the layers */
 
         GeometryLayerArray(
             const PersistentConfiguration<NSTOKES, CNSTR>& config)
             : GeometryLayerArrayROP<NSTOKES>(config), m_config(config){};
 
+        /** Calculates the Chapman factors for the layers
+         *
+         *   @param earth_rad Earth radius
+         */
         void calculate_chapman_factors(double earth_rad);
 
       public:
