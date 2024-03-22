@@ -345,6 +345,10 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
                 } else {
                 }
             }
+        } else {
+            // If there is no scattering, we should set a1 to be 1
+            auto& temp = (*lephasef)[0];
+            temp.a1 = 0;
         }
 
         // Convert ssa from scattering extinction to ssa

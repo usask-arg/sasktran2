@@ -193,16 +193,19 @@ namespace sasktran_disco::testing {
             storage.ssa(atmidx, 0) = test_case.layers[l].ssa;
 
             for (int k = 0; k < test_case.nstr; ++k) {
-                storage.leg_coeff(k * 4, atmidx, 0) =
-                    test_case.layers[l].lephasef[k].a1;
 
                 if constexpr (NSTOKES == 3) {
+                    storage.leg_coeff(k * 4, atmidx, 0) =
+                        test_case.layers[l].lephasef[k].a1;
                     storage.leg_coeff(k * 4 + 1, atmidx, 0) =
                         test_case.layers[l].lephasef[k].a2;
                     storage.leg_coeff(k * 4 + 2, atmidx, 0) =
                         test_case.layers[l].lephasef[k].a3;
                     storage.leg_coeff(k * 4 + 3, atmidx, 0) =
                         -test_case.layers[l].lephasef[k].b1;
+                } else {
+                    storage.leg_coeff(k, atmidx, 0) =
+                        test_case.layers[l].lephasef[k].a1;
                 }
             }
         }
