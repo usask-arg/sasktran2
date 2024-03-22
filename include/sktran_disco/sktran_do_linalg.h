@@ -4,38 +4,6 @@
 namespace sasktran_disco {
     // Linear algebra namespace.
     namespace la {
-        // Used to index a submatrix of some larger matrix. Essentially just
-        // calls  mat(i + tl_i, j + tl_j) on any index operation (i, j).
-        template <class MatrixClass> class MatrixBlock {
-          public:
-            MatrixBlock(MatrixClass& mat, uint tl_i, uint tl_j, uint rows,
-                        uint cols)
-                : M_I0(tl_i), M_J0(tl_j), M_ROWS(rows), M_COLS(cols),
-                  M_IS_MATRIX(true), m_mat(mat) {
-                // empty
-            }
-            MatrixBlock(MatrixClass& mat, uint tl_i, uint rows, uint cols)
-                : M_I0(tl_i), M_ROWS(rows), M_COLS(cols), M_IS_MATRIX(false),
-                  m_mat(mat) {
-                // empty
-            }
-            inline double& operator()(StreamIndex i, SolutionIndex j) {
-                return m_mat(M_I0 + i, M_J0 + j);
-            }
-            inline double operator()(StreamIndex i, SolutionIndex j) const {
-                return m_mat(M_I0 + i, M_J0 + j);
-            }
-            inline double& operator[](StreamIndex i) { return m_mat[M_I0 + i]; }
-            inline double operator[](StreamIndex i) const {
-                return m_mat[M_I0 + i];
-            }
-
-          private:
-            const bool M_IS_MATRIX;
-            const uint M_I0, M_J0, M_ROWS, M_COLS;
-            MatrixClass& m_mat;
-        };
-
         // Used for storing the boundary-value-problem (BVP) matrix. This
         // matrix is block-tridiagonal and stored according to the LAPACK
         // band storage scheme.
@@ -62,33 +30,6 @@ namespace sasktran_disco {
             }
             inline void setZero() const {
                 std::fill_n(m_data.get(), M_NCOLS * M_NROWS, 0.0);
-            }
-
-            inline void multiplyVector(const Eigen::VectorXd& rhs,
-                                       Eigen::VectorXd& result) {
-                // TODO: Fix this
-                assert(result.size() == rhs.size());
-                assert(result.size() == (M_NSTR * M_NLYR));
-
-                result.setZero();
-
-                // We go through every non-zero element of the data array
-                for (int i = 2 * M_NCD; i < int(M_NROWS * M_NCOLS); ++i) {
-                    if (m_data[i] == 0) {
-                        continue;
-                    }
-                    // Internal array is a matrix (M_NROWS, M_NCOLS) convert to
-                    // this format
-                    int internal_row = i % M_NROWS;
-                    int internal_col = i / M_NROWS;
-
-                    // Each column in the internal array is a column of the band
-                    // matrix
-                    int external_row = internal_row + internal_col - 2 * M_NCD;
-                    int external_col = internal_col;
-
-                    result[external_row] += rhs[external_col] * m_data[i];
-                }
             }
 
             // Used to wrap a block within a BVPMatrix
@@ -118,12 +59,6 @@ namespace sasktran_disco {
                 uint m_col_offset;
                 BVPMatrix& m_mat;
             };
-
-            // Returns a block to the matrix with a top-left element (i0, j0).
-            inline MatrixBlock<BVPMatrix> block(uint i0, uint j0, uint rows,
-                                                uint cols) {
-                return MatrixBlock<BVPMatrix>(*this, i0, j0, rows, cols);
-            }
 
             // Get the block corresponding to the given boundary index.
             inline Block getBlock(BoundaryIndex b) {
@@ -204,24 +139,6 @@ namespace sasktran_disco {
         inline void setZero() {
             m_data.setZero();
             m_upper_data.setZero();
-        }
-
-        inline void multiplyVector(const Eigen::VectorXd& rhs,
-                                   Eigen::VectorXd& result) {
-            result.setZero();
-            for (uint i = 0; i < m_data.rows(); ++i) {
-                for (uint j = 0; j < m_data.cols(); ++j) {
-                    result[i + m_row_offset] +=
-                        rhs[j + m_col_offset] * m_data(i, j);
-                }
-            }
-
-            for (uint i = 0; i < m_upper_data.rows(); ++i) {
-                for (uint j = 0; j < m_upper_data.cols(); ++j) {
-                    result[i + m_upper_row_offset] +=
-                        rhs[j + m_upper_col_offset] * m_upper_data(i, j);
-                }
-            }
         }
 
         inline void assign_rhs_d_bvp(int colindex, Eigen::MatrixXd& d_b,
