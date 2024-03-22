@@ -8,8 +8,6 @@ namespace sasktran2 {
                              geometrytype geotype, bool force_sun_z)
         : m_geotype(geotype), m_earth_radius(earth_radius) {
 
-        validate();
-
         if (!force_sun_z) {
             // Create the default x,y,z local coordinates
             m_x_unit << 1, 0, 0;
@@ -34,6 +32,7 @@ namespace sasktran2 {
         }
 
         m_force_sun_z = force_sun_z;
+        validate();
     }
 
     Coordinates::Coordinates(Eigen::Vector3d ref_point_unit,
