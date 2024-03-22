@@ -36,5 +36,6 @@ users_guide/polarization.md
 users_guide/performance.md
 users_guide/phase.md
 users_guide/geodetic.md
+users_guide/input_validation.md
 examples/examples
 ```

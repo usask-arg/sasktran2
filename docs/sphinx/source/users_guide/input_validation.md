@@ -3,7 +3,7 @@ file_format: mystnb
 ---
 
 (_users_input_validation)=
-# Geodesy Tools
+# Input validation
 ```{code-cell} ipython3
 import sasktran2 as sk
 ```
