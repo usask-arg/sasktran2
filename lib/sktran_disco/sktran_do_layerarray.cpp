@@ -351,7 +351,7 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
         ssa /= od;
 
         // Then convert od to optical depth
-        od /= layer_dh;
+        od *= layer_dh;
 
         floor_depth += od;
 
