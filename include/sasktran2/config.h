@@ -478,7 +478,7 @@ namespace sasktran2 {
          * @brief Validates that the config is valid
          *
          */
-        void validate_config();
+        void validate_config() const;
 
       private:
         // TODO: Refactor these into individual source configs?

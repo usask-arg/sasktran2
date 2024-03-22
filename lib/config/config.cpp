@@ -19,7 +19,7 @@ namespace sasktran2 {
         set_stokes_basis(StokesBasis::standard);
     }
 
-    void Config::validate_config() {
+    void Config::validate_config() const {
         if (input_validation_mode() == InputValidationMode::disabled) {
             return;
         }
