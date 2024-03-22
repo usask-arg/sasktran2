@@ -388,6 +388,10 @@ namespace sasktran_disco {
         const Eigen::MatrixXd&
             m_chapman_factors; /** Chapman factors for the layers*/
 
+        const Eigen::MatrixXd&
+            m_optical_interpolator; /** Interpolation matrix from the atmosphere
+                                       levels to the layers */
+
         const PersistentConfiguration<NSTOKES, CNSTR>&
             m_config; /** Internal config object */
 

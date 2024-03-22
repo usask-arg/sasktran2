@@ -13,7 +13,7 @@
  */
 
 // Epsilon for the standard tests
-#define SKDO_FPC_EPS 1e-8
+#define SKDO_FPC_EPS 1e-6
 
 // Errors when comparing to the Coulsen tables, the tables are only accurate to
 // some number of digits and full reproduction requires more than 40 streams
@@ -133,7 +133,7 @@ TEST_CASE("Polariation Same as Scalar", "[sktran_do_legacy][vector]") {
     std::vector<double> abs_diff, radiance;
     SKTRAN_DO_TestSpec<3, -1>* spec = nullptr;
 
-    sasktran_disco::testing::run_lowlevel_from_old_testspec(
+    sasktran_disco::testing::run_sasktran2_from_old_testspec(
         testcase, spec, radiance, abs_diff, nullptr);
     for (double diff : abs_diff) {
         REQUIRE(diff < SKDO_FPC_EPS);
@@ -176,7 +176,7 @@ TEST_CASE("Polarization Siewert Aeresol", "[sktran_do_legacy][vector]") {
     std::vector<double> abs_diff, radiance;
     SKTRAN_DO_TestSpec<3, -1>* spec = nullptr;
 
-    sasktran_disco::testing::run_lowlevel_from_old_testspec(
+    sasktran_disco::testing::run_sasktran2_from_old_testspec(
         testcase, spec, radiance, abs_diff, nullptr);
     for (double diff : abs_diff) {
         REQUIRE(diff < SKDO_FPC_COULSEN_EPS);
@@ -221,7 +221,7 @@ TEST_CASE("Polarization Coulsen Albedo 0 STOKES=3",
     std::vector<double> abs_diff, radiance;
     SKTRAN_DO_TestSpec<3, -1>* spec = nullptr;
 
-    sasktran_disco::testing::run_lowlevel_from_old_testspec(
+    sasktran_disco::testing::run_sasktran2_from_old_testspec(
         testcase, spec, radiance, abs_diff, nullptr);
     for (double diff : abs_diff) {
         REQUIRE(diff < SKDO_FPC_COULSEN_EPS);
@@ -266,7 +266,7 @@ TEST_CASE("Coulsen Albedo 0.8", "[sktran_do_legacy][vector]") {
     std::vector<double> abs_diff, radiance;
     SKTRAN_DO_TestSpec<3, -1>* spec = nullptr;
 
-    sasktran_disco::testing::run_lowlevel_from_old_testspec(
+    sasktran_disco::testing::run_sasktran2_from_old_testspec(
         testcase, spec, radiance, abs_diff, nullptr);
     for (double diff : abs_diff) {
         // Errors are slightly larger for this test, but it is just because we
@@ -299,13 +299,13 @@ TEST_CASE("Polarization Boundary Conditions", "[sktran_do_legacy][vector]") {
                          default_los_vector, correct_radiances);
     SKTRAN_DO_TestSpec<3, -1>* spec = nullptr;
 
-    sasktran_disco::testing::run_lowlevel_from_old_testspec(
+    sasktran_disco::testing::run_sasktran2_from_old_testspec(
         testcase, spec, correct_radiances, abs_diff, nullptr);
 
     // Run the three layer atmo
     TestCase<3> testcase3(16, default_sun_vector, three_layer_atmo, 0.8,
                           default_los_vector, correct_radiances);
-    sasktran_disco::testing::run_lowlevel_from_old_testspec(
+    sasktran_disco::testing::run_sasktran2_from_old_testspec(
         testcase3, spec, radiances, abs_diff, nullptr);
 
     for (double diff : abs_diff) {

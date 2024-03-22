@@ -52,6 +52,30 @@ sasktran_disco::GeometryLayerArray<NSTOKES, CNSTR>::GeometryLayerArray(
         }
     }
 
+    // Construct the optical interpolating matrix
+    m_optical_interpolator.resize(this->M_NLYR,
+                                  geometry.altitude_grid().grid().size());
+    m_optical_interpolator.setZero();
+
+    if (this->M_NLYR != geometry.altitude_grid().grid().size() - 1) {
+        throw std::runtime_error(
+            "Number of layers does not match the number of grid points");
+    }
+
+    std::array<int, 2> index;
+    std::array<double, 2> weight;
+    int num_contributing;
+    for (int p = 0; p < this->M_NLYR; p++) {
+        double central_altitude = (m_ceiling_h(p) + m_floor_h(p)) / 2.0;
+
+        geometry.altitude_grid().calculate_interpolation_weights(
+            central_altitude, index, weight, num_contributing);
+
+        for (int q = 0; q < num_contributing; q++) {
+            m_optical_interpolator(p, index[q]) = weight[q];
+        }
+    }
+
     if (geometry.coordinates().geometry_type() ==
         sasktran2::geometrytype::planeparallel) {
         m_chapman_factors.setConstant(1 / this->M_CSZ);

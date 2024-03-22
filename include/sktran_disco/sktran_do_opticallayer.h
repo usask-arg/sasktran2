@@ -3,8 +3,13 @@
 #include "sktran_disco/sktran_do_linearization_types.h"
 
 namespace sasktran_disco {
-    // Provides a concise optical description of a atmospheric layer, caches
-    // some calculations, stores DO solutions to the RTE for this layer.
+
+    /**
+     * @brief A representation of a single layer in the RTE solution
+     *
+     * @tparam NSTOKES
+     * @tparam CNSTR
+     */
     template <int NSTOKES, int CNSTR = -1>
     using OpticalLayerROP =
         ReadOnlyProperties<BasicProperties<NSTOKES>, SolarProperties<NSTOKES>,

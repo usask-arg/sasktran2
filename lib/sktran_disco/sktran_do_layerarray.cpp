@@ -247,8 +247,12 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
     const sasktran2::Config& sk_config)
     : OpticalLayerArrayROP<NSTOKES>(config),
       m_direct_toa(this->M_SOLAR_DIRECT_INTENSITY), m_config(config),
-      m_include_direct_bounce(false), m_num_los(los.size()),
+      m_include_direct_bounce(
+          sk_config.single_scatter_source() ==
+          sasktran2::Config::SingleScatterSource::discrete_ordinates),
+      m_num_los(los.size()),
       m_chapman_factors(geometry_layers.chapman_factors()),
+      m_optical_interpolator(geometry_layers.interpolating_matrix()),
       m_input_derivatives(config.pool().thread_data().input_derivatives()),
       m_albedo(los, *this->M_MU, this->M_CSZ, std::move(brdf),
                config.userSpec()
@@ -262,31 +266,18 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
     double ceiling_depth = 0;
     double floor_depth = 0;
 
+    const auto& d = atmosphere.storage().leg_coeff.dimensions();
+    Eigen::Map<const Eigen::MatrixXd> phase(
+        &atmosphere.storage().leg_coeff(0, 0, wavelidx), d[0], d[1]);
+
     for (LayerIndex p = 0; p < this->M_NLYR; ++p) {
         double ceil_h = geometry_layers.layer_ceiling()(p);
         double floor_h = geometry_layers.layer_floor()(p);
-
-        int top_atmosphere_idx =
-            (int)atmosphere.storage().total_extinction.rows() - p - 1;
-        int bot_atmosphere_idx = top_atmosphere_idx - 1;
-
-        double kbot =
-            atmosphere.storage().total_extinction(bot_atmosphere_idx, wavelidx);
-        double ktop =
-            atmosphere.storage().total_extinction(top_atmosphere_idx, wavelidx);
-
         double layer_dh = ceil_h - floor_h;
-        double ssa_bot = atmosphere.storage().ssa(bot_atmosphere_idx, wavelidx);
-        double ssa_top = atmosphere.storage().ssa(top_atmosphere_idx, wavelidx);
 
-        double f_bot = atmosphere.storage().f(bot_atmosphere_idx, wavelidx);
-        double f_top = atmosphere.storage().f(top_atmosphere_idx, wavelidx);
-
-        double od = (kbot + ktop) / 2 * layer_dh;
-        double ssa = (ssa_bot * kbot + ssa_top * ktop) / (kbot + ktop);
-
-        double f = (ssa_bot * kbot * f_bot + ssa_top * ktop * f_top) /
-                   (kbot * ssa_bot + ktop * ssa_top);
+        double od = 0.0;
+        double ssa = 0.0;
+        double f = 0.0;
 
         // Copy the legendre coefficients to a new vector
         std::unique_ptr<
@@ -295,55 +286,72 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
                 new VectorDim1<sasktran_disco::LegendreCoefficient<NSTOKES>>);
 
         lephasef->resize(this->M_NSTR);
-        const auto& d = atmosphere.storage().leg_coeff.dimensions();
 
-        Eigen::Map<const Eigen::MatrixXd> phase(
-            &atmosphere.storage().leg_coeff(0, 0, wavelidx), d[0], d[1]);
+        for (int q = 0; q < m_optical_interpolator.cols(); ++q) {
+            if (m_optical_interpolator(p, q) > 0) {
+                double weight = m_optical_interpolator(p, q);
 
-        for (uint k = 0; k < this->M_NSTR; ++k) {
-            auto& temp = (*lephasef)[k];
+                double kext =
+                    atmosphere.storage().total_extinction(q, wavelidx);
+                double kscat = atmosphere.storage().ssa(q, wavelidx) * kext;
 
-            if constexpr (NSTOKES == 1) {
-                double avg_p = (kbot * ssa_bot *
-                                    (phase(k, bot_atmosphere_idx) -
-                                     (2 * k + 1) * f_bot / (1 - f_bot)) +
-                                ktop * ssa_top *
-                                    (phase(k, top_atmosphere_idx) -
-                                     (2 * k + 1) * f_top / (1 - f_top))) /
-                               (kbot * ssa_bot + ktop * ssa_top);
+                // Store extinction in od during weighting
+                od += kext * weight;
 
-                temp.a1 = avg_p;
-            } else if constexpr (NSTOKES == 3) {
-                auto stokes_seq = Eigen::seq(k * 4, (k + 1) * 4 - 1);
-                double norm = kbot * ssa_bot + ktop * ssa_top;
-                Eigen::Vector<double, 4> p_top =
-                    phase(stokes_seq, top_atmosphere_idx);
-                Eigen::Vector<double, 4> p_bot =
-                    phase(stokes_seq, bot_atmosphere_idx);
+                // Store scattering extinction in ssa
+                ssa += kscat * weight;
 
-                // a's have the f subtraction and b's don't
-                temp.a1 = (kbot * ssa_bot *
-                               (p_bot(0) - f_bot * (2 * k + 1) / (1 - f_bot)) +
-                           ktop * ssa_top *
-                               (p_top(0) - f_top * (2 * k + 1) / (1 - f_top))) /
-                          norm;
-                temp.a2 = (kbot * ssa_bot *
-                               (p_bot(1) - f_bot * (2 * k + 1) / (1 - f_bot)) +
-                           ktop * ssa_top *
-                               (p_top(1) - f_top * (2 * k + 1) / (1 - f_top))) /
-                          norm;
-                temp.a3 = (kbot * ssa_bot *
-                               (p_bot(2) - f_bot * (2 * k + 1) / (1 - f_bot)) +
-                           ktop * ssa_top *
-                               (p_top(2) - f_top * (2 * k + 1) / (1 - f_top))) /
-                          norm;
-                temp.b1 = -(kbot * ssa_bot * (p_bot(3)) +
-                            ktop * ssa_top * (p_top(3))) /
-                          norm;
+                // Numerator of f
+                f = atmosphere.storage().f(q, wavelidx);
 
-            } else {
+                for (uint k = 0; k < this->M_NSTR; ++k) {
+                    auto& temp = (*lephasef)[k];
+
+                    if constexpr (NSTOKES == 1) {
+                        double test = phase(k, q);
+                        temp.a1 += weight * kscat *
+                                   (phase(k, q) - (2 * k + 1) * f / (1 - f));
+                    } else if constexpr (NSTOKES == 3) {
+                        auto stokes_seq = Eigen::seq(k * 4, (k + 1) * 4 - 1);
+
+                        Eigen::Vector<double, 4> p_bot = phase(stokes_seq, q);
+
+                        // a's have the f subtraction and b's don't
+                        temp.a1 += weight * kscat *
+                                   (p_bot(0) - f * (2 * k + 1) / (1 - f));
+                        temp.a2 += weight * kscat *
+                                   (p_bot(1) - f * (2 * k + 1) / (1 - f));
+                        temp.a3 += weight * kscat *
+                                   (p_bot(2) - f * (2 * k + 1) / (1 - f));
+
+                        temp.b1 += -weight * kscat * p_bot(3);
+                    } else {
+                    }
+                }
             }
         }
+        if (ssa > 0) {
+            // Divide the phase elements by the scattering extinction
+            for (uint k = 0; k < this->M_NSTR; ++k) {
+                auto& temp = (*lephasef)[k];
+
+                if constexpr (NSTOKES == 1) {
+                    temp.a1 /= ssa;
+                } else if constexpr (NSTOKES == 3) {
+                    temp.a1 /= ssa;
+                    temp.a2 /= ssa;
+                    temp.a3 /= ssa;
+                    temp.b1 /= ssa;
+                } else {
+                }
+            }
+        }
+
+        // Convert ssa from scattering extinction to ssa
+        ssa /= od;
+
+        // Then convert od to optical depth
+        od /= layer_dh;
 
         floor_depth += od;
 
@@ -370,22 +378,7 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
         int num_scattering_groups = atmosphere.num_scattering_deriv_groups();
 
         if (!m_input_derivatives.is_geometry_configured()) {
-            // Construct the matrix that maps atmosphere extinction to layer
-            // quantities
-            // TODO: In the future we will construct this matrix elsewhere,
-            // probably in geometry layers, and then use it to construct both
-            // the atmosphere and the derivatives
-            Eigen::MatrixXd atmosphere_mapping(this->M_NLYR, num_atmo_grid);
-            atmosphere_mapping.setZero();
-
-            for (LayerIndex p = 0; p < this->M_NLYR; ++p) {
-                int top_atmosphere_idx =
-                    (int)atmosphere.storage().total_extinction.rows() - p - 1;
-                int bot_atmosphere_idx = top_atmosphere_idx - 1;
-
-                atmosphere_mapping(p, top_atmosphere_idx) = 0.5;
-                atmosphere_mapping(p, bot_atmosphere_idx) = 0.5;
-            }
+            const Eigen::MatrixXd& atmosphere_mapping = m_optical_interpolator;
 
             // Now avg_k in layers = atmosphere_mapping @ atmosphere_extinction
             for (LayerIndex p = 0; p < this->M_NLYR; ++p) {
@@ -638,6 +631,7 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
       m_direct_toa(this->M_SOLAR_DIRECT_INTENSITY), m_config(config),
       m_include_direct_bounce(true), m_num_los(los.size()),
       m_chapman_factors(geometry_layers.chapman_factors()),
+      m_optical_interpolator(geometry_layers.interpolating_matrix()),
       m_input_derivatives(thread_data.input_derivatives()),
       m_albedo(los, *this->M_MU, this->M_CSZ, nullptr,
                config.userSpec()
