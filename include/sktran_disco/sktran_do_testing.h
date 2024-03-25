@@ -4,6 +4,8 @@
 
 namespace sasktran_disco {
     namespace testing {
+        // Most of this is old code to interface with the legacy tests
+
         struct TestLayerSpecBase {
             virtual ~TestLayerSpecBase(){};
         };

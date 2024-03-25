@@ -17,8 +17,6 @@ sasktran_disco::RTESolver<NSTOKES, CNSTR>::RTESolver(
     // Initialize tracker for which orders have been solved
     m_is_solved.resize(this->M_NSTR, false);
 
-    m_use_greens_function = true;
-
     configureCache();
 }
 
@@ -967,8 +965,6 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
     // Setup up calculation enviroment
     LayerIndex p = layer.index();
     auto& solution = layer.solution(m);
-
-    solution.value.set_use_green_function(true);
 
     const uint N = this->M_NSTR / 2;
 

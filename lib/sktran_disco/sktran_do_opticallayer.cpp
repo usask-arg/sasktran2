@@ -354,9 +354,6 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::integrate_source(
         }
     }
 
-    const auto& dual_particular_plus = solution.value.dual_particular_plus();
-    const auto& dual_particular_minus = solution.value.dual_particular_minus();
-
     const auto& dual_Aplus = solution.value.dual_green_A_plus();
     const auto& dual_Aminus = solution.value.dual_green_A_minus();
 

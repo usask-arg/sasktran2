@@ -41,38 +41,6 @@ void sasktran_disco::LegendrePolynomials<NSTOKES, CNSTR>::calculateAEOrder(
     }
 }
 
-template <int NSTOKES, int CNSTR>
-void sasktran_disco::LegendreSumMatrix<NSTOKES, CNSTR>::calculateAEOrder(
-    AEOrder m, LegendreSumMatrixStorage<NSTOKES>& sum_matrix) {
-
-    // Compute scattering matrix from streams to streams.
-    sum_matrix.M_SSA = M_SSA;
-    sum_matrix.resize(this->M_NSTR);
-
-    const auto& le_phasef = *M_LPE_PHASEF;
-
-    LPTripleProduct<NSTOKES> triple_product(m, (uint)le_phasef.size());
-    sasktran_disco::TripleProductDerivativeHolder<NSTOKES> holder(this->M_NSTR);
-
-    const uint N = this->M_NSTR / 2;
-    for (StreamIndex i = 0; i < N; ++i) {
-        const auto& lp_out = M_LP_MU[m][i];
-        for (StreamIndex j = 0; j <= i; ++j) {
-            const uint linear_index_0 = sum_matrix.linear_index(i, j);
-            const uint linear_index_1 = sum_matrix.linear_index(i, j + N);
-
-            const auto& lp_in = M_LP_MU[m][j];
-            triple_product.calculate(le_phasef, lp_out, lp_in);
-
-            triple_product.negations_derivative_emplace(0, holder);
-            assign(linear_index_0, holder, sum_matrix);
-
-            triple_product.negations_derivative_emplace(1, holder);
-            assign(linear_index_1, holder, sum_matrix);
-        }
-    }
-}
-
 template <>
 void sasktran_disco::LegendreSumMatrix<1>::calculateAEOrder(
     AEOrder m, LegendreSumMatrixStorage<1>& sum_matrix) {

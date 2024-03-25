@@ -39,9 +39,6 @@ namespace sasktran_disco {
 #pragma endregion
 
 #pragma region "Type aliases"
-    // A Legendre polynomial
-    typedef double LPoly;
-
     // Alias for 1 dimensional std::vector
     template <class StoredType> using VectorDim1 = std::vector<StoredType>;
 
@@ -64,12 +61,24 @@ namespace sasktran_disco {
 #pragma endregion
 
 #pragma region "Linearization"
-    // Derivative of the layer quantities with respect to a parameter
-    // These form the input parameters to the model to calculate the derivatives
-    // for The core LIDORT algorithm needs to know the changes in SSA, Optical
-    // Depth, and Legendre Coeff.
+    /**
+     * Derivative of the layer quantities with respect to a parameter.  These
+     * form the input parameters to the model to calculate the derivative.  The
+     * core LIDORT algorithm needs to know the changes in SSA, Optical Depth,
+     * and Legendre Coefficients.
+     *
+     * @tparam NSTOKES
+     * @tparam CNSTR
+     */
     template <int NSTOKES, int CNSTR> class LayerInputDerivative {
       public:
+        /**
+         * @brief Construct a new Layer Input Derivative object. Need to know
+         * the layer and the number of streams
+         *
+         * @param nstr
+         * @param p
+         */
         LayerInputDerivative(uint nstr, LayerIndex p) {
             d_legendre_coeff.resize(nstr);
             layer_index = p;
@@ -77,43 +86,92 @@ namespace sasktran_disco {
             setZero();
         }
 
-        std::vector<LegendreCoefficient<NSTOKES>> d_legendre_coeff;
-        double d_optical_depth;
-        double d_SSA;
-        double d_albedo;
+        std::vector<LegendreCoefficient<NSTOKES>>
+            d_legendre_coeff; /** Derivatives of the legendre coefficients with
+                                 respect to the parameter */
+        double d_optical_depth; /** Derivative of optical depth with respect to
+                                   the parameter */
+        double d_SSA;    /** Derivative of single scatter albedo with respect to
+                            the parameter */
+        double d_albedo; /** Derivative of the surface albedo with respect to
+                            the parameter */
 
-        LayerIndex layer_index;
-        // Mapping between engine weighting functions and internal weighting
-        // functions
-        std::vector<std::pair<uint, double>> group_and_triangle_fraction;
-        // Engine weighting function parameters
-        std::vector<std::tuple<double, double, double>> alt_and_widths;
-        std::vector<double> extinctions;
+        LayerIndex layer_index; /** Layer index that is varying */
+        std::vector<std::pair<uint, double>>
+            group_and_triangle_fraction; /** Mapping between engine weightig
+                                            functions and internal weighting
+                                            functions */
+        std::vector<double>
+            extinctions; /** Multipliers for each group and triangle fraction */
 
       private:
+        /**
+         * @brief Sets all values to 0
+         *
+         */
         void setZero();
     };
 
+    /**
+     * @brief Class which stores all of the user input derivatives
+     *
+     * @tparam NSTOKES
+     * @tparam CNSTR
+     */
     template <int NSTOKES, int CNSTR> class InputDerivatives {
       public:
+        /**
+         * @brief Construct a new Input Derivatives object
+         *
+         */
         InputDerivatives() { m_geometry_configured = false; };
 
+        /**
+         * @brief The full storage container of all derivatives
+         *
+         * @return const VectorDim1<LayerInputDerivative<NSTOKES>>&
+         */
         const VectorDim1<LayerInputDerivative<NSTOKES>>&
         layerDerivatives() const {
             return m_layerderivs;
         }
+
+        /**
+         * @brief The full storage container of all derivatives
+         *
+         * @return VectorDim1<LayerInputDerivative<NSTOKES>>&
+         */
         VectorDim1<LayerInputDerivative<NSTOKES>>& layerDerivatives() {
             return m_layerderivs;
         }
 
+        /**
+         * @brief Get the Layer Derivative for an index
+         *
+         * @param i
+         * @return const LayerInputDerivative<NSTOKES>&
+         */
         const LayerInputDerivative<NSTOKES>& operator[](int i) const {
             return m_layerderivs[i];
         }
 
+        /**
+         * @brief Adds a derivative to the container
+         *
+         * @param deriv
+         */
         void addDerivative(LayerInputDerivative<NSTOKES>&& deriv) {
             m_layerderivs.emplace_back(deriv);
         }
 
+        /**
+         * @brief Adds an empty derivative to the container and returns back a
+         * reference to it
+         *
+         * @param nstr
+         * @param p
+         * @return LayerInputDerivative<NSTOKES>&
+         */
         inline LayerInputDerivative<NSTOKES>& addDerivative(uint nstr,
                                                             LayerIndex p) {
             m_layerderivs.emplace_back(nstr, p);
@@ -121,8 +179,19 @@ namespace sasktran_disco {
             return m_layerderivs.back();
         }
 
+        /**
+         * @brief Total number of derivatives in the container
+         *
+         * @return size_t
+         */
         inline size_t numDerivative() const { return m_layerderivs.size(); }
 
+        /**
+         * @brief Total number of derivatives for a given layer
+         *
+         * @param p
+         * @return size_t
+         */
         inline size_t numDerivativeLayer(LayerIndex p) const {
             if (m_layerderivs.size() == 0) {
                 // We are not calculating derivatives at all
@@ -131,6 +200,12 @@ namespace sasktran_disco {
             return m_numderivlayer[p];
         }
 
+        /**
+         * @brief The index that the layer derivatives for index p start at
+         *
+         * @param p
+         * @return size_t
+         */
         inline size_t layerStartIndex(LayerIndex p) const {
             if (m_layerderivs.size() == 0) {
                 // Not calculating derivatives
@@ -139,6 +214,11 @@ namespace sasktran_disco {
             return m_layerstartindex[p];
         }
 
+        /**
+         * @brief Sorts all the derivatives so they are ordered by layer
+         *
+         * @param nlyr
+         */
         void sort(uint nlyr) {
             std::sort(std::begin(m_layerderivs), std::end(m_layerderivs),
                       [](const LayerInputDerivative<NSTOKES>& a,
@@ -159,13 +239,37 @@ namespace sasktran_disco {
             }
         }
 
+        /**
+         *
+         * @return true If the geometry is configured
+         * @return false If the geometry has not been configured
+         */
         bool is_geometry_configured() const { return m_geometry_configured; }
+
+        /**
+         * @brief Sets the geometry as configured
+         *
+         */
         void set_geometry_configured() { m_geometry_configured = true; }
 
+        /**
+         * @brief Reverse linearization trace for a given los index
+         *
+         * @param i
+         * @return ReverseLinearizationTrace<NSTOKES>&
+         */
         ReverseLinearizationTrace<NSTOKES>& reverse_trace(size_t i) {
             return m_reverse_linearization_traces[i];
         }
 
+        /**
+         * @brief Sets the number of lines of sight to initialize the reverse
+         * traces
+         *
+         * @param numlos
+         * @param nstr
+         * @param nlyr
+         */
         void set_num_los(size_t numlos, uint nstr, uint nlyr) {
             m_reverse_linearization_traces.resize(numlos);
 
@@ -174,6 +278,10 @@ namespace sasktran_disco {
             }
         }
 
+        /**
+         * @brief Sets all of the reverse linearization traces to be 0
+         *
+         */
         void set_zero_traces() {
             for (auto& trace : m_reverse_linearization_traces) {
                 trace.set_zero();
@@ -181,18 +289,28 @@ namespace sasktran_disco {
         }
 
       private:
-        VectorDim1<LayerInputDerivative<NSTOKES>> m_layerderivs;
-        std::vector<size_t> m_layerstartindex;
-        std::vector<size_t> m_numderivlayer;
+        VectorDim1<LayerInputDerivative<NSTOKES>>
+            m_layerderivs; /** Storage of the derivatives */
+        std::vector<size_t>
+            m_layerstartindex; /** Start indexes for each layer */
+        std::vector<size_t>
+            m_numderivlayer; /** Number of derivatives in each layer */
 
         std::vector<ReverseLinearizationTrace<NSTOKES>>
-            m_reverse_linearization_traces;
+            m_reverse_linearization_traces; /** Revers linearization traces */
 
-        bool m_geometry_configured;
+        bool m_geometry_configured; /** True if the geometry has been configured
+                                     */
     };
 
-    // A dual is a combination of a value, and the derivatives of value with
-    // respect to ALL quantities
+    /**
+     * @brief Class to store forward derivatives in the DO model
+     *
+     * A dual is a combination of a value, and the derivatives of value with
+     * respect to ALL quantities
+     *
+     * @tparam T
+     */
     template <typename T> struct Dual {
         T value;
         Eigen::VectorX<T> deriv;
@@ -209,157 +327,13 @@ namespace sasktran_disco {
         }
     };
 
-    // Maps a dual defined with respect to layer quantities to the dual defined
-    // with respect to weighting function ( engine input) quantities
-    template <int NSTOKES, typename T>
-    inline Dual<T> convert_dual_to_wf(const Dual<T>& dual,
-                                      const InputDerivatives<NSTOKES>& in_deriv,
-                                      size_t numwf) {
-
-        Dual<T> result(numwf);
-
-        for (uint l = 0; l < in_deriv.numDerivative(); ++l) {
-            const auto& qty = in_deriv.layerDerivatives()[l];
-            for (uint k = 0; k < qty.group_and_triangle_fraction.size(); ++k) {
-                result.deriv[qty.group_and_triangle_fraction[k].first] +=
-                    dual.deriv[l] * qty.group_and_triangle_fraction[k].second;
-            }
-        }
-
-        result.value = dual.value;
-        return result;
-    }
-
-    // Operators involving Duals, note that these are usually slow because they
-    // involve reallocs so they are used only sparingly
-    template <typename T>
-    inline Dual<T> operator+(const Dual<T>& lhs, const Dual<T>& rhs) {
-        Dual<T> result;
-
-        result.deriv.resize(lhs.deriv.size());
-
-        result.value = lhs.value + rhs.value;
-        for (uint i = 0; i < result.deriv.size(); ++i) {
-            result.deriv[i] = lhs.deriv[i] + rhs.deriv[i];
-        }
-
-        return result;
-    }
-
-    template <typename T>
-    inline Dual<T> operator*(const Dual<T>& lhs, const Dual<T>& rhs) {
-        Dual<T> result;
-
-        result.deriv.resize(lhs.deriv.size());
-
-        result.value = lhs.value * rhs.value;
-        for (uint i = 0; i < result.deriv.size(); ++i) {
-            result.deriv[i] =
-                lhs.deriv[i] * rhs.value + lhs.value * rhs.deriv[i];
-        }
-
-        return result;
-    }
-
-    template <typename T>
-    inline Dual<T> operator/(const Dual<T>& lhs, const Dual<T>& rhs) {
-        Dual<T> result;
-
-        result.deriv.resize(lhs.deriv.size());
-
-        result.value = lhs.value / rhs.value;
-        for (uint i = 0; i < result.deriv.size(); ++i) {
-            result.deriv[i] =
-                lhs.deriv[i] / rhs.value -
-                rhs.deriv[i] * lhs.value / (rhs.value * rhs.value);
-        }
-
-        return result;
-    }
-
-    template <typename T> inline Dual<T> operator*(T lhs, const Dual<T>& rhs) {
-        Dual<T> result;
-
-        result.deriv.resize(rhs.deriv.size());
-
-        result.value = lhs * rhs.value;
-        for (uint i = 0; i < result.deriv.size(); ++i) {
-            result.deriv[i] = lhs * rhs.deriv[i];
-        }
-
-        return result;
-    }
-
-    template <typename T> inline Dual<T> operator*(const Dual<T>& lhs, T rhs) {
-        return rhs * lhs;
-    }
-
-    template <typename T> inline Dual<T> operator/(const Dual<T>& lhs, T rhs) {
-        return (1 / rhs) * lhs;
-    }
-
-    template <typename T>
-    inline Dual<T> operator+(const Dual<T>& lhs, double rhs) {
-        Dual<T> result;
-
-        result.deriv.resize(lhs.deriv.size());
-
-        result.value = lhs.value + rhs;
-        for (uint i = 0; i < result.deriv.size(); ++i) {
-            result.deriv[i] = lhs.deriv[i];
-        }
-
-        return result;
-    }
-
-    template <typename T>
-    inline Dual<T> operator+(double lhs, const Dual<T>& rhs) {
-        return rhs + lhs;
-    }
-
-    template <typename T> inline Dual<T> operator+=(Dual<T>& lhs, double rhs) {
-        lhs.value += rhs;
-
-        return lhs;
-    }
-
-    template <typename T> inline Dual<T> operator*=(Dual<T>& lhs, double rhs) {
-        lhs.value *= rhs;
-        for (uint i = 0; i < lhs.deriv.size(); ++i) {
-            lhs.deriv[i] *= rhs;
-        }
-
-        return lhs;
-    }
-
-    template <typename T>
-    inline Dual<T> operator+=(Dual<T>& lhs, const Dual<T>& rhs) {
-        lhs.value += rhs.value;
-        for (uint i = 0; i < lhs.deriv.size(); ++i) {
-            lhs.deriv[i] += rhs.deriv[i];
-        }
-
-        return lhs;
-    }
-
-    template <typename T>
-    inline Dual<T> operator-(const Dual<T>& lhs, const Dual<T>& rhs) {
-        return lhs + (-1.0) * rhs;
-    }
-
-    template <typename T>
-    inline Dual<T> operator-(const Dual<T>& lhs, double rhs) {
-        return lhs + (-1.0) * rhs;
-    }
-
-    template <typename T>
-    inline Dual<T> operator-(double lhs, const Dual<T>& rhs) {
-        return lhs + (-1.0) * rhs;
-    }
-
-    // A layer dual is a Dual where the derivative is 0 except for inside a
-    // single layer.  We define a separate class to represent this since
-    // operations involving LayerDuals are significantly faster
+    /**
+     * A layer dual is a Dual where the derivative is 0 except for inside a
+     * single layer.  We define a separate class to represent this since
+     * operations involving LayerDuals are significantly faster
+     *
+     * @tparam T
+     */
     template <typename T> struct LayerDual {
         T value;
         uint layer_start;
@@ -388,245 +362,6 @@ namespace sasktran_disco {
         }
     };
 
-    // Operators involving Duals and LayerDuals, once again these are slow and
-    // are only used sparingly
-    template <typename T>
-    inline Dual<T> operator*(const Dual<T>& lhs, const LayerDual<T>& rhs) {
-        Dual<T> result;
-
-        result.deriv.resize(lhs.deriv.size());
-
-        result.value = lhs.value * rhs.value;
-        if (lhs.deriv.size() > 0) {
-            result.deriv = rhs.value * lhs.deriv;
-        }
-        // Add in layer derivs
-        if (rhs.deriv.size() > 0) {
-            result.deriv(Eigen::seq(rhs.layer_start,
-                                    rhs.layer_start + rhs.deriv.size() - 1)) +=
-                lhs.value * rhs.deriv;
-        }
-
-        return result;
-    }
-
-    template <typename T>
-    inline Dual<T> operator*(const LayerDual<T>& lhs, const Dual<T>& rhs) {
-        return rhs * lhs;
-    }
-
-    template <typename T>
-    inline LayerDual<T> operator*(const LayerDual<T>& lhs,
-                                  const LayerDual<T>& rhs) {
-        LayerDual<T> result(lhs.deriv.size(), lhs.layer_index, lhs.layer_start);
-
-        result.value = lhs.value * rhs.value;
-        if (result.deriv.size() > 0) {
-            result.deriv.noalias() =
-                lhs.value * rhs.deriv + lhs.deriv * rhs.value;
-        }
-
-        return result;
-    }
-
-    template <typename T>
-    inline LayerDual<T> operator+(const LayerDual<T>& lhs,
-                                  const LayerDual<T>& rhs) {
-        LayerDual<T> result(lhs.deriv.size(), lhs.layer_index, lhs.layer_start);
-
-        result.value = lhs.value + rhs.value;
-        if (result.deriv.size() > 0) {
-            result.deriv.noalias() = lhs.deriv + rhs.deriv;
-        }
-
-        return result;
-    }
-
-    template <typename T>
-    inline Dual<T> operator+(const Dual<T>& lhs, const LayerDual<T>& rhs) {
-        Dual<T> result;
-
-        result.deriv.resize(lhs.deriv.size());
-
-        result.value = lhs.value + rhs.value;
-
-        if (result.deriv.size() > 0) {
-            result.deriv = lhs.deriv;
-        }
-        if (rhs.deriv.size() > 0) {
-            result.deriv(Eigen::seq(rhs.layer_start,
-                                    rhs.layer_start + rhs.deriv.size() - 1)) +=
-                rhs.deriv;
-        }
-
-        return result;
-    }
-
-    template <typename T>
-    inline Dual<T> operator+(const LayerDual<T>& lhs, const Dual<T>& rhs) {
-        return rhs + lhs;
-    }
-
-    template <typename T>
-    inline LayerDual<T> operator*(double lhs, const LayerDual<T>& rhs) {
-        LayerDual<T> result(rhs.deriv.size(), rhs.layer_index, rhs.layer_start);
-
-        result.value = lhs * rhs.value;
-        if (result.deriv.size() > 0) {
-            result.deriv.noalias() = lhs * rhs.deriv;
-        }
-
-        return result;
-    }
-
-    template <typename T>
-    inline LayerDual<T> operator+(double lhs, const LayerDual<T>& rhs) {
-        LayerDual<T> result(rhs.deriv.size(), rhs.layer_index, rhs.layer_start);
-
-        result.value = lhs + rhs.value;
-        if (result.deriv.size() > 0) {
-            result.deriv.noalias() = rhs.deriv;
-        }
-
-        return result;
-    }
-
-    template <typename T>
-    inline LayerDual<T> operator*=(LayerDual<T>& lhs, double rhs) {
-        lhs.value *= rhs;
-        if (lhs.deriv.size() > 0) {
-            lhs.deriv *= rhs;
-        }
-
-        return lhs;
-    }
-
-    template <typename T>
-    inline LayerDual<T> operator+=(LayerDual<T>& lhs, const LayerDual<T>& rhs) {
-        lhs.value += rhs.value;
-        if (lhs.deriv.size() > 0) {
-            lhs.deriv += rhs.deriv;
-        }
-
-        return lhs;
-    }
-
-    template <typename T>
-    inline LayerDual<T> operator-(const LayerDual<T>& lhs,
-                                  const LayerDual<T>& rhs) {
-        return lhs + (-1.0) * rhs;
-    }
-
-    template <typename T>
-    inline LayerDual<T> operator+(const LayerDual<T>& lhs, double rhs) {
-        LayerDual<T> result(lhs.deriv.size(), lhs.layer_index, lhs.layer_start);
-
-        result.value = lhs.value + rhs;
-        result.deriv.noalias() = lhs.deriv;
-
-        return result;
-    }
-
-    template <typename T>
-    inline LayerDual<T> operator-(const LayerDual<T>& lhs, double rhs) {
-        return lhs + -1.0 * rhs;
-    }
-
-    template <typename T>
-    inline LayerDual<T> operator-(double lhs, const LayerDual<T>& rhs) {
-        return lhs + -1.0 * rhs;
-    }
-
-    template <typename T>
-    inline LayerDual<T> operator/(const LayerDual<T>& lhs, double rhs) {
-        return (1 / rhs) * lhs;
-    }
-
-    template <typename T>
-    inline LayerDual<T> operator/(const LayerDual<T>& lhs,
-                                  const LayerDual<T>& rhs) {
-        LayerDual<T> result(lhs.deriv.size(), lhs.layer_index, rhs.layer_start);
-
-        result.value = lhs.value / rhs.value;
-        if (result.deriv.size() > 0) {
-            result.deriv.noalias() =
-                lhs.deriv / rhs.value -
-                rhs.deriv * (lhs.value / (rhs.value * rhs.value));
-        }
-
-        return result;
-    }
-
-    template <typename T>
-    inline Dual<T> operator*=(Dual<T>& lhs, const LayerDual<T>& rhs) {
-        if (lhs.deriv.size() > 0) {
-            lhs.deriv *= rhs.value;
-        }
-
-        if (rhs.deriv.size() > 0) {
-            lhs.deriv(Eigen::seq(rhs.layer_start,
-                                 rhs.layer_start + rhs.deriv.size() - 1)) +=
-                lhs.value * rhs.deriv;
-        }
-        lhs.value *= rhs.value;
-
-        return lhs;
-    }
-
-    template <typename T>
-    inline VectorLayerDual<T> operator*(const VectorLayerDual<T>& lhs,
-                                        const LayerDual<T>& rhs) {
-        VectorLayerDual<T> result(lhs);
-
-        result.value = lhs.value * rhs.value;
-
-        if (result.deriv.size() > 0) {
-            result.deriv = rhs.value * lhs.deriv;
-        }
-
-        for (uint i = 0; i < result.deriv.rows(); ++i) {
-            for (uint j = 0; j < result.deriv.cols(); ++j) {
-                result.deriv(i, j) += lhs.value(j) * rhs.deriv(i);
-            }
-        }
-
-        return result;
-    }
-
-    namespace dual {
-        // Functions operating on duals
-        template <typename T>
-        inline sasktran_disco::Dual<T> exp(sasktran_disco::Dual<T> x) {
-            sasktran_disco::Dual<T> result;
-
-            result.deriv.resize(x.deriv.size());
-
-            result.value = std::exp(x.value);
-            for (uint i = 0; i < x.deriv.size(); ++i) {
-                result.deriv[i] = std::exp(x.value) * x.deriv[i];
-            }
-
-            return result;
-        }
-    } // namespace dual
-
-    namespace layerdual {
-        // Functions operating on layerduals
-        template <typename T>
-        inline sasktran_disco::LayerDual<T>
-        exp(sasktran_disco::LayerDual<T> x) {
-            sasktran_disco::LayerDual<T> result(x.deriv.size(), x.layer_index,
-                                                x.layer_start);
-
-            result.value = std::exp(x.value);
-            if (result.deriv.size() > 0) {
-                result.deriv = std::exp(x.value) * x.deriv;
-            }
-
-            return result;
-        }
-    } // namespace layerdual
-
 #pragma endregion
 
 #pragma region "Math helpers"
@@ -636,8 +371,13 @@ namespace sasktran_disco {
 
     static const double PI = M_PI;
 
-    // Used to efficiently calculate the triple product of vectors of
-    // legendre polynomials.
+    /**
+     * @brief Efficiently calculates the triple product of vectors of Legendre
+     * polynomials
+     *
+     * @tparam NSTOKES
+     * @tparam CNSTR
+     */
     template <int NSTOKES, int CNSTR = -1> class LPTripleProduct {
       public:
         // Calculates an auxilary result for the given Legendre polynomial
@@ -688,28 +428,6 @@ namespace sasktran_disco {
                 holder_1_negation,
             double ssa);
 
-        // Calculate the result of the triple product given the number of
-        // negations.
-        inline Eigen::Matrix<double, NSTOKES, NSTOKES> negations(uint num) {
-            if (num % 2 == 0) {
-                return Eigen::Matrix<double, NSTOKES, NSTOKES>(
-                    m_aux.first.value);
-            } else {
-                return Eigen::Matrix<double, NSTOKES, NSTOKES>(
-                    m_aux.second.value);
-            }
-        }
-
-        inline sasktran_disco::TripleProductDerivativeHolder<NSTOKES>
-        negations_derivative(uint num) {
-            sasktran_disco::TripleProductDerivativeHolder<NSTOKES> result(
-                m_nstr);
-
-            negations_derivative_emplace(num, result);
-
-            return result;
-        }
-
         void negations_derivative_emplace(
             uint num,
             sasktran_disco::TripleProductDerivativeHolder<NSTOKES>& holder);
@@ -730,39 +448,24 @@ namespace sasktran_disco {
 #pragma endregion
 
 #pragma region "Useful DO classes"
-    // Storage object for simplified line of sight. Efficiencies can be made in
-    // the discrete ordinates algorithm if lines of sight are sorted by cosine
-    // of zenith angles.
+    /**
+     * @brief Storage for DO postprocessing lines of sight
+     *
+     */
     struct LineOfSight {
         double coszenith;
         double azimuth;
         double cos_scattering_angle;
-        std::vector<double>* wf;
-        double* radiance;
         uint unsorted_index;
         double observeraltitude;
-
-        // Sorts a vector of lines of sight while maintaining the proper
-        // radiance and weight function return orders.
-        inline static void sort(VectorDim1<LineOfSight>& los,
-                                VectorDim1<double>& radiance,
-                                VectorDim2<double>* wf, int NSTOKES) {
-            for (uint ridx = 0; ridx < los.size(); ++ridx) {
-                los[ridx].radiance = &radiance[ridx * NSTOKES];
-                los[ridx].wf = (wf != nullptr) ? &((*wf)[ridx]) : nullptr;
-                los[ridx].unsorted_index = ridx;
-            }
-            std::sort(los.begin(), los.end(),
-                      [](const LineOfSight& lhs, const LineOfSight& rhs) {
-                          return lhs.coszenith > rhs.coszenith;
-                      });
-        }
     };
 
-    // Contains the homogeneous and particular solutions for a single layer and
-    // azimuth order. Note that both the homogeneous and particular solutions
-    // are decomposed in sum/difference operators to reduce the order of the
-    // problem from NSTR to NSTR/2
+    /**
+     * @brief The RTE solution for a given layer and azimuth order
+     *
+     * @tparam NSTOKES
+     * @tparam CNSTR
+     */
     template <int NSTOKES, int CNSTR = -1> class RTEGeneralSolution {
 
         // If NSTOKES == 1 all of the eigenvalues are real, but for NSTOKES > 1
@@ -799,7 +502,17 @@ namespace sasktran_disco {
             VectorDual<double, CNSTR / 2 * NSTOKES>>::type;
 
       public:
-        RTEGeneralSolution() : M_NSTR(0) { m_use_green_function = false; }
+        RTEGeneralSolution() : M_NSTR(0) {}
+
+        /**
+         * @brief Resizes the solution storage
+         *
+         * @param nstr
+         * @param nderivlayer
+         * @param l
+         * @param layer_start
+         * @param nderivtotal
+         */
         void resize(size_t nstr, size_t nderivlayer, LayerIndex l,
                     uint layer_start, uint nderivtotal) {
             const_cast<uint&>(M_NSTR) = (uint)nstr;
@@ -809,8 +522,6 @@ namespace sasktran_disco {
                                 nderivlayer, l, layer_start);
             m_homog_minus.resize((nstr / 2) * (nstr / 2) * NSTOKES * NSTOKES,
                                  nderivlayer, l, layer_start);
-            m_particular_plus.resize(nstr / 2 * NSTOKES, nderivtotal);
-            m_particular_minus.resize(nstr / 2 * NSTOKES, nderivtotal);
 
             m_green_A_minus.resize(nstr / 2 * NSTOKES, nderivlayer, l,
                                    layer_start);
@@ -822,12 +533,15 @@ namespace sasktran_disco {
             m_Gminus_top.resize(nstr / 2 * NSTOKES, nderivtotal);
             m_Gminus_bottom.resize(nstr / 2 * NSTOKES, nderivtotal);
         }
+
         inline HomogType eigval(SolutionIndex a) const {
             return m_eigval.value(a);
         }
+
         inline HomogType homog_plus(StreamIndex j, SolutionIndex a) const {
             return m_homog_plus.value(j + (M_NSTR * NSTOKES / 2) * a);
         }
+
         inline HomogType homog_minus(StreamIndex j, SolutionIndex a) const {
             return m_homog_minus.value(j + (M_NSTR * NSTOKES / 2) * a);
         }
@@ -840,13 +554,6 @@ namespace sasktran_disco {
         inline HomogType d_homog_plus(StreamIndex j, SolutionIndex a,
                                       uint deriv) const {
             return m_homog_plus.deriv(deriv, j + (M_NSTR * NSTOKES / 2) * a);
-        }
-
-        inline double particular_plus(StreamIndex j) const {
-            return m_particular_plus.value(j);
-        }
-        inline double particular_minus(StreamIndex j) const {
-            return m_particular_minus.value(j);
         }
 
         inline HomogVector& eigval() { return m_eigval.value; }
@@ -867,13 +574,6 @@ namespace sasktran_disco {
             return m_homog_plus;
         }
 
-        inline HomogType* homog_plus(SolutionIndex a) {
-            return m_homog_plus.value.data() + (M_NSTR * NSTOKES / 2) * a;
-        }
-        inline const HomogType* homog_plus(SolutionIndex a) const {
-            return m_homog_plus.value.data() + (M_NSTR * NSTOKES / 2) * a;
-        }
-
         inline HomogMatrix& homog_minus() { return m_homog_minus.value; }
         inline const HomogMatrix& homog_minus() const {
             return m_homog_minus.value;
@@ -884,37 +584,6 @@ namespace sasktran_disco {
         }
         inline const HomogVectorLayerDual& dual_homog_minus() const {
             return m_homog_minus;
-        }
-
-        inline HomogType* homog_minus(SolutionIndex a) {
-            return m_homog_minus.value.data() + (M_NSTR * NSTOKES / 2) * a;
-        }
-        inline const HomogType* homog_minus(SolutionIndex a) const {
-            return m_homog_minus.value.data() + (M_NSTR * NSTOKES / 2) * a;
-        }
-
-        inline Vector& particular_plus() { return m_particular_plus.value; }
-        inline const Vector& particular_plus() const {
-            return m_particular_plus.value;
-        }
-
-        inline VectorDualType& dual_particular_plus() {
-            return m_particular_plus;
-        }
-        inline const VectorDualType& dual_particular_plus() const {
-            return m_particular_plus;
-        }
-
-        inline Vector& particular_minus() { return m_particular_minus.value; }
-        inline const Vector& particular_minus() const {
-            return m_particular_minus.value;
-        }
-
-        inline VectorDualType& dual_particular_minus() {
-            return m_particular_minus;
-        }
-        inline const VectorDualType& dual_particular_minus() const {
-            return m_particular_minus;
         }
 
         inline VectorLayerDualType& dual_green_A_minus() {
@@ -959,10 +628,6 @@ namespace sasktran_disco {
 
         inline const uint nstr() const { return M_NSTR; }
 
-        void set_use_green_function(bool use) { m_use_green_function = use; }
-
-        bool use_green_function() const { return m_use_green_function; }
-
       private:
         const uint M_NSTR;
 
@@ -970,8 +635,6 @@ namespace sasktran_disco {
 
         HomogVectorLayerDual m_homog_plus;  // W+, See eq (17)
         HomogVectorLayerDual m_homog_minus; // W-, See eq (17)
-        VectorDualType m_particular_plus;   // Z+, See eq (23)
-        VectorDualType m_particular_minus;  // Z-, See eq (23)
 
         VectorLayerDualType m_green_A_plus;
         VectorLayerDualType m_green_A_minus;
@@ -980,12 +643,15 @@ namespace sasktran_disco {
         VectorDualType m_Gplus_bottom;
         VectorDualType m_Gminus_top;
         VectorDualType m_Gminus_bottom;
-
-        bool m_use_green_function;
     };
 
-    // Stores some cached quantities that are needed between different steps
-    // of the RTE solution
+    /**
+     * Stores some cached quantities that are needed between different steps of
+     * the RTE solution
+     *
+     * @tparam NSTOKES
+     * @tparam CNSTR
+     */
     template <int NSTOKES, int CNSTR = -1> class RTESolutionCache {
         using Matrix =
             typename std::conditional<CNSTR == -1, Eigen::MatrixXd,
@@ -1026,16 +692,32 @@ namespace sasktran_disco {
         Matrix m_eigmtx;
     };
 
-    // Stores the homogeneous coefficients L, M for a single layer solution
+    /**
+     * Stores the homogeneous coefficients, L, M, for a single solution
+     *
+     */
     struct RTEBoundarySolution {
         VectorDual<double> L_coeffs;
         VectorDual<double> M_coeffs;
     };
 
+    /**
+     * @brief The full solution for a single layer
+     *
+     * @tparam NSTOKES
+     * @tparam CNSTR
+     */
     template <int NSTOKES, int CNSTR = -1> struct LayerSolution {
         using HomogType = typename std::conditional<NSTOKES != 5, double,
                                                     std::complex<double>>::type;
 
+        /**
+         * @brief Sets up the solution memory
+         *
+         * @param nstr
+         * @param l
+         * @param input_deriv
+         */
         void configure(size_t nstr, LayerIndex l,
                        const InputDerivatives<NSTOKES>& input_deriv) {
             // Core solution contains no cross derivatives
@@ -1056,6 +738,14 @@ namespace sasktran_disco {
             configureDerivatives(nstr, layer_index, input_deriv);
         }
 
+        /**
+         * @brief Sets up any memory needed for derivative propagation of the
+         * cache
+         *
+         * @param nstr
+         * @param layer_index
+         * @param input_deriv
+         */
         void
         configureDerivatives(size_t nstr, LayerIndex layer_index,
                              const InputDerivatives<NSTOKES>& input_deriv) {
@@ -1072,58 +762,6 @@ namespace sasktran_disco {
             }
         }
 
-        // TODO: Remove all of these accessor functions below, they shouldn't
-        // really be used anymore
-        Dual<double>
-        dual_particular_plus(const InputDerivatives<NSTOKES>& in_deriv,
-                             StreamIndex j) const {
-            Dual<double> result(in_deriv.numDerivative());
-
-            result.value = value.particular_plus(j);
-            result.deriv = value.dual_particular_plus().deriv(Eigen::all, j);
-
-            return result;
-        }
-
-        Dual<double>
-        dual_particular_minus(const InputDerivatives<NSTOKES>& in_deriv,
-                              StreamIndex j) const {
-            Dual<double> result(in_deriv.numDerivative());
-
-            result.value = value.particular_minus(j);
-            result.deriv = value.dual_particular_minus().deriv(Eigen::all, j);
-
-            return result;
-        }
-
-        LayerDual<HomogType>
-        dual_homog_minus(const InputDerivatives<NSTOKES>& in_deriv,
-                         StreamIndex j, SolutionIndex a) const {
-            LayerDual<HomogType> result(
-                in_deriv.numDerivativeLayer(layer_index), layer_index,
-                (uint)in_deriv.layerStartIndex(layer_index));
-
-            result.value = value.homog_minus(j, a);
-            result.deriv = value.dual_homog_minus().deriv(
-                Eigen::all, j + (value.nstr() / 2) * a);
-
-            return result;
-        }
-
-        LayerDual<HomogType>
-        dual_homog_plus(const InputDerivatives<NSTOKES>& in_deriv,
-                        StreamIndex j, SolutionIndex a) const {
-            LayerDual<HomogType> result(
-                in_deriv.numDerivativeLayer(layer_index), layer_index,
-                (uint)in_deriv.layerStartIndex(layer_index));
-
-            result.value = value.homog_plus(j, a);
-            result.deriv = value.dual_homog_plus().deriv(
-                Eigen::all, j + (value.nstr() / 2) * a);
-
-            return result;
-        }
-
         LayerIndex layer_index;
         RTEGeneralSolution<NSTOKES, CNSTR> value;
         RTESolutionCache<NSTOKES, CNSTR> cache;
@@ -1132,99 +770,6 @@ namespace sasktran_disco {
     };
 
 #pragma endregion
-
-    struct LOSDiagnostics {
-        /// Zenith angle of the line of sight at the reference point [radians].
-        double local_look_zentih;
-        /// Solar zenith angle at the reference point [radians].
-        double local_solar_zenith;
-        /// Relative difference in azimuth between the line of sight and the sun
-        /// [radians].
-        double local_relative_azimuth;
-    };
-    struct DiscreteAtmosphereDiagnostics {
-        /// Optical depths of discrete-atmosphere layers. TOA ~ index=0.
-        /// layer_optical_depths[layer]
-        std::vector<double> layer_optical_depths;
-        /// Single-scatter-albedo of discrete-atmosphere layers. TOA ~ index=0.
-        /// layer_ssa[layer]
-        std::vector<double> layer_ssa;
-        /// Phase function expansion terms for discrete-atmosphere layers. TOA ~
-        /// index=0. layer_phasef_expansion[layer][m]
-        std::vector<std::vector<std::vector<double>>> layer_phasef_expansion;
-
-        std::vector<double> layer_boundary_altitudes;
-    };
-    struct SingleRTSDiagnostic {
-        SingleRTSDiagnostic(uint nstr, uint nlyr) {
-            intensity_components.resize(nstr, 0.0);
-            reflection_components.resize(nstr, 0.0);
-            layer_participating_source_term.resize(
-                nlyr, std::vector<double>(nstr, 0.0));
-        }
-        /// Computed intensity (at TOA in LOS)
-        double intensity; //
-        /// Components of the azimuth expansion (at TOS in LOS) I =
-        /// cos(m*az_diff) * I_components. intensity_components[m =
-        /// azimuthexpansion index]
-        std::vector<double> intensity_components;
-        /// Components of the ground-reflected azimuth expansion (at ground in
-        /// LOS). reflection_components[m = azimuthexpansion index]
-        std::vector<double> reflection_components; //
-        /// Participating source term for discrete-atmosphere layers. This is
-        /// the source-term integrated through the given layer.
-        /// layer_participating_source_term[layer][m]
-        std::vector<std::vector<double>> layer_participating_source_term; //
-        /// Exit/observer optical depth
-        double observer_od;
-    };
-
-    struct RTSDiagnostics {
-        void initialize(uint p_nstr, uint p_nlyr, uint p_nlos, uint nptrbs) {
-            nlos = p_nlos;
-            nstr = p_nstr;
-            nlyr = p_nlyr;
-
-            los_diagnostic.resize(nlos, SingleRTSDiagnostic(nstr, nlyr));
-            atmo_diagnostics.layer_optical_depths.resize(nlyr);
-            atmo_diagnostics.layer_ssa.resize(nlyr);
-            atmo_diagnostics.layer_phasef_expansion.resize(
-                nlyr, std::vector<std::vector<double>>(
-                          nstr, std::vector<double>(nstr)));
-            atmo_diagnostics.layer_boundary_altitudes.resize(nlyr + 1);
-
-            ptrb_altitudes.reserve(nptrbs * nlyr);
-            ptrb_heights.reserve(nptrbs * nlyr);
-            ptrb_eps.reserve(nptrbs * nlyr);
-            ptrb_ssa_qty.reserve(nptrbs * nlyr);
-            ptrb_optd_qty.reserve(nptrbs * nlyr);
-            ptrb_group.reserve(nptrbs * nlyr);
-        }
-
-        void push_back_ptrb() {
-            ptrb_altitudes.push_back(std::nan("1"));
-            ptrb_heights.push_back(std::nan("1"));
-            ptrb_eps.push_back(std::nan("1"));
-            ptrb_ssa_qty.push_back(std::nan("1"));
-            ptrb_optd_qty.push_back(std::nan("1"));
-            ptrb_group.push_back(std::nan("1"));
-        }
-        uint nlos;
-        uint nstr;
-        uint nlyr;
-
-        /// Diagnostics for the discretized atmosphere
-        DiscreteAtmosphereDiagnostics atmo_diagnostics;
-        /// Diagnostic for lines of sight. Index is line of sight index.
-        std::vector<SingleRTSDiagnostic> los_diagnostic;
-
-        std::vector<double> ptrb_altitudes;
-        std::vector<double> ptrb_heights;
-        std::vector<double> ptrb_eps;
-        std::vector<double> ptrb_ssa_qty;
-        std::vector<double> ptrb_optd_qty;
-        std::vector<double> ptrb_group;
-    };
 
     struct LegendreSumMatrixCommon {
         uint linear_index(StreamIndex m, StreamIndex j) const {
@@ -1294,13 +839,6 @@ namespace sasktran_disco {
             if (triple_product == nullptr) {
                 triple_product = new LPTripleProduct<NSTOKES>(nstr);
             }
-        }
-
-        TripleProductDerivativeHolder<NSTOKES> dual(StreamIndex m,
-                                                    StreamIndex j) const {
-            const uint index = linear_index(m, j);
-
-            return storage[index];
         }
 
         void inplace_dual(StreamIndex m, StreamIndex j,
