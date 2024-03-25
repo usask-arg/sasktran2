@@ -136,6 +136,12 @@ namespace sasktran2 {
                     geometrytype geotype = geometrytype::spherical);
 
         /**
+         * @brief Validates that the coordinate settings are consistent
+         *
+         */
+        void validate() const;
+
+        /**
          * @return The geometry type (plane parallel, spherical, ellipsoidal)
          * for the coordinate system
          */
@@ -303,12 +309,16 @@ namespace sasktran2 {
 
         Geometry1D(Coordinates&& coordinates, grids::AltitudeGrid&& alt_grid)
             : Geometry(std::forward<Coordinates&&>(coordinates)),
-              m_alt_grid(alt_grid) {}
+              m_alt_grid(alt_grid) {
+            validate();
+        }
 
         const grids::AltitudeGrid& altitude_grid() const { return m_alt_grid; }
 
         int num_atmosphere_dimensions() const { return 1; }
         int size() const { return (int)m_alt_grid.grid().size(); }
+
+        void validate() const;
 
         virtual void assign_interpolation_weights(
             const Location& loc,

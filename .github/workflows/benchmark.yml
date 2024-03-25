@@ -60,6 +60,7 @@ jobs:
           path: ${{ env.ASV_DIR }}/benchmarks.log
 
   save-pr-number:
+    if: ${{ contains( github.event.pull_request.labels.*.name, 'run-benchmark') && github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
     # The comment-on-pr workflow needs the issue number of the PR to be able to
     # comment so we output that to a file and pass it over as an artifact.
 
