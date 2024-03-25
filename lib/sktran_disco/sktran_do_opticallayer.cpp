@@ -162,12 +162,6 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::configurePseudoSpherical(
 }
 
 template <int NSTOKES, int CNSTR>
-void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::takeDerivative(
-    bool take_deriv) {
-    m_compute_deriv = take_deriv;
-}
-
-template <int NSTOKES, int CNSTR>
 void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::vectordual_scatPhaseF(
     AEOrder m,
     const std::vector<sasktran_disco::LegendrePhaseContainer<NSTOKES>>& lp_out,

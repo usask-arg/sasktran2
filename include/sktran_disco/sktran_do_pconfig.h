@@ -20,10 +20,6 @@ namespace sasktran_disco {
         ~PersistentConfiguration() {}
 
       public:
-        void configureLowLevel(
-            SKTRAN_DO_UserSpec& userspecmemory,
-            const sasktran_disco_lowlevel::Config& config,
-            const sasktran_disco_lowlevel::ViewingGeometry& geometry);
         void configure(
             SKTRAN_DO_UserSpec& userspecmemory, const sasktran2::Config& config,
             double cos_sza, int nlyr,

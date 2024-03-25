@@ -97,9 +97,6 @@
 
 // SASKTRAN dependencies
 
-// SASKTRAN-DO C API
-#include "sktran_disco/sktran_do_lowlevelinterface.h"
-
 // SASKTRAN-DO internal dependencies
 #include "sktran_disco/sktran_do_linearization_types.h"
 #include "sktran_disco/sktran_do_polarization_types.h"

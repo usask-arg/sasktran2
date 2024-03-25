@@ -4,6 +4,7 @@
 
 #ifdef SKTRAN_CATCH2_VERSION3
 
+/*
 TEST_CASE("2StreamBenchmark", "[sktran_do][lowlevel][benchmark]") {
     // TODO: 2 stream single layer sometimes fails with derivatives and no full
     // compile? Check this
@@ -112,5 +113,5 @@ TEST_CASE("8 Stream Benchmark", "[sktran_do][lowlevel][benchmark]") {
             &atmosphere, &config, &weightingfunctions, &geometry, &output);
     };
 }
-
+*/
 #endif

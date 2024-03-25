@@ -24,30 +24,6 @@ namespace sasktran_disco {
                               public AzimuthDependencyCascade {
       public:
         /**
-         * @brief Construct a new Optical Layer Array object from the lowlevel
-         * API. Right now this is only used for testing and will likely be
-         * deprecated in the future.
-         *
-         * @param config
-         * @param wavelidx
-         * @param los
-         * @param brdf
-         * @param atmosphere
-         * @param weightingfunctions
-         * @param geometry_layers
-         * @param thread_data
-         */
-        OpticalLayerArray(
-            const PersistentConfiguration<NSTOKES, CNSTR>& config, int wavelidx,
-            const std::vector<LineOfSight>& los,
-            std::unique_ptr<BRDF_Base> brdf,
-            const sasktran_disco_lowlevel::Atmosphere& atmosphere,
-            const sasktran_disco_lowlevel::WeightingFunctions*
-                weightingfunctions,
-            const GeometryLayerArray<NSTOKES, CNSTR>& geometry_layers,
-            const ThreadData<NSTOKES, CNSTR>& thread_data);
-
-        /**
          * @brief Construct a new Optical Layer Array object using only geometry
          * information. If this constructor is used set_optical must be called
          * before any calculations are performed.
@@ -62,21 +38,6 @@ namespace sasktran_disco {
             const std::vector<LineOfSight>& los,
             const GeometryLayerArray<NSTOKES, CNSTR>& geometry_layers,
             const ThreadData<NSTOKES, CNSTR>& thread_data);
-
-        /**
-         * @brief Set the optical parameters when using the low-level interface.
-         * This is only used for testing and will likely be deprecated in the
-         * future.
-         *
-         * @param wavelidx
-         * @param brdf
-         * @param atmosphere
-         * @param weightingfunctions
-         */
-        void set_optical(int wavelidx, std::unique_ptr<BRDF_Base> brdf,
-                         const sasktran_disco_lowlevel::Atmosphere& atmosphere,
-                         const sasktran_disco_lowlevel::WeightingFunctions*
-                             weightingfunctions);
 
         /**
          * @brief Construct a new Optical Layer Array object using the sasktran2

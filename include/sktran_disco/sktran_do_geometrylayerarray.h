@@ -41,10 +41,6 @@ namespace sasktran_disco {
       public:
         GeometryLayerArray(
             const PersistentConfiguration<NSTOKES, CNSTR>& config,
-            const sasktran_disco_lowlevel::Atmosphere& atmosphere);
-
-        GeometryLayerArray(
-            const PersistentConfiguration<NSTOKES, CNSTR>& config,
             const sasktran2::Geometry1D& geometry);
 
         const Eigen::MatrixXd& chapman_factors() const {

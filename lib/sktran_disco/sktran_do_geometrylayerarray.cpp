@@ -5,33 +5,6 @@
 template <int NSTOKES, int CNSTR>
 sasktran_disco::GeometryLayerArray<NSTOKES, CNSTR>::GeometryLayerArray(
     const PersistentConfiguration<NSTOKES, CNSTR>& config,
-    const sasktran_disco_lowlevel::Atmosphere& atmosphere)
-    : m_config(config), GeometryLayerArrayROP<NSTOKES>(config) {
-    // Initialize the chapman factor storage
-    m_chapman_factors.resize(this->M_NLYR, this->M_NLYR);
-    m_chapman_factors.setZero();
-
-    // Calculate the ceiling heights and floor heights of each layer
-    m_ceiling_h.resize(this->M_NLYR);
-    m_floor_h.resize(this->M_NLYR);
-
-    for (int p = 0; p < (int)this->M_NLYR; p++) {
-        m_ceiling_h(p) = atmosphere.layerboundaryaltitude[p];
-
-        if (p == this->M_NLYR - 1) {
-            m_floor_h(p) = 0.0;
-        } else {
-            m_floor_h(p) = atmosphere.layerboundaryaltitude[p + 1];
-        }
-    }
-
-    // Now we have the layer locations, we can calculate the chapman factors
-    calculate_chapman_factors(atmosphere.earthradius);
-}
-
-template <int NSTOKES, int CNSTR>
-sasktran_disco::GeometryLayerArray<NSTOKES, CNSTR>::GeometryLayerArray(
-    const PersistentConfiguration<NSTOKES, CNSTR>& config,
     const sasktran2::Geometry1D& geometry)
     : m_config(config), GeometryLayerArrayROP<NSTOKES>(config) {
     // Initialize the chapman factor storage
