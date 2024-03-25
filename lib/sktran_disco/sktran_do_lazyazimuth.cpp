@@ -1,11 +1,12 @@
 #include "sktran_disco/sktran_do.h"
 #include "sktran_disco/sktran_do_lazyazimuth.h"
+#include <sasktran2/math/wigner.h>
 
 template <>
 void sasktran_disco::LegendrePolynomials<1>::calculateAEOrder(
     AEOrder m,
     std::vector<sasktran_disco::LegendrePhaseContainer<1>>& lepolys) {
-    auto calculator = sasktran_disco::WignerDCalculator(m, 0);
+    auto calculator = sasktran2::math::WignerDCalculator(m, 0);
 
     double theta = acos(m_value);
 
@@ -22,9 +23,9 @@ void sasktran_disco::LegendrePolynomials<NSTOKES, CNSTR>::calculateAEOrder(
     AEOrder m,
     std::vector<sasktran_disco::LegendrePhaseContainer<NSTOKES>>& lepolys) {
     // TODO: breaks for NSTOKES=2?
-    auto calculatorP = sasktran_disco::WignerDCalculator(m, 0);
-    auto calculatorneg = sasktran_disco::WignerDCalculator(m, -2);
-    auto calculatorpos = sasktran_disco::WignerDCalculator(m, 2);
+    auto calculatorP = sasktran2::math::WignerDCalculator(m, 0);
+    auto calculatorneg = sasktran2::math::WignerDCalculator(m, -2);
+    auto calculatorpos = sasktran2::math::WignerDCalculator(m, 2);
 
     double theta = acos(m_value);
 

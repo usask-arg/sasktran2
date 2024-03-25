@@ -1,6 +1,7 @@
 #include "sktran_disco/sktran_do.h"
 #include "sktran_disco/sktran_do_specs.h"
 #include "sktran_disco/sktran_do_quadrature.h"
+#include <sasktran2/math/wigner.h>
 
 sasktran_disco::SKTRAN_DO_UserSpec::SKTRAN_DO_UserSpec() {
     configureDefaultDetails();
@@ -147,9 +148,9 @@ void sasktran_disco::SKTRAN_DO_UserSpec::cacheLPOfStreamAngles() {
             VectorDim1<sasktran_disco::LegendrePhaseContainer<1>>(m_nstr)));
 
     for (AEOrder m = 0; m < m_nstr; ++m) {
-        auto calculatorP = sasktran_disco::WignerDCalculator(m, 0);
-        auto calculatorneg = sasktran_disco::WignerDCalculator(m, -2);
-        auto calculatorpos = sasktran_disco::WignerDCalculator(m, 2);
+        auto calculatorP = sasktran2::math::WignerDCalculator(m, 0);
+        auto calculatorneg = sasktran2::math::WignerDCalculator(m, -2);
+        auto calculatorpos = sasktran2::math::WignerDCalculator(m, 2);
 
         for (LPOrder l = 0; l < m_nstr; ++l) {
             for (StreamIndex i = 0; i < m_nstr; ++i) {
