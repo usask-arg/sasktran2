@@ -62,25 +62,21 @@ template <int NSTOKES, int CNSTR>
 void sasktran_disco::GeometryLayerArray<
     NSTOKES, CNSTR>::calculate_chapman_factors(double earth_rad) {
     m_chapman_factors.setZero();
-    if (m_config.use_pseudo_spherical()) {
-        // Calculate the chapman factors for the layer
-        double sinthetasq = 1 - this->M_CSZ * this->M_CSZ;
+    // Calculate the chapman factors for the layer
+    double sinthetasq = 1 - this->M_CSZ * this->M_CSZ;
 
-        for (sasktran_disco::LayerIndex p = 0; p < this->M_NLYR; ++p) {
-            double rp = earth_rad + m_floor_h(p);
+    for (sasktran_disco::LayerIndex p = 0; p < this->M_NLYR; ++p) {
+        double rp = earth_rad + m_floor_h(p);
 
-            for (sasktran_disco::LayerIndex q = 0; q <= p; ++q) {
-                double rfloor = earth_rad + m_floor_h(q);
-                double rceil = earth_rad + m_ceiling_h(q);
+        for (sasktran_disco::LayerIndex q = 0; q <= p; ++q) {
+            double rfloor = earth_rad + m_floor_h(q);
+            double rceil = earth_rad + m_ceiling_h(q);
 
-                m_chapman_factors(p, q) =
-                    (sqrt(rceil * rceil - rp * rp * sinthetasq) -
-                     sqrt(rfloor * rfloor - rp * rp * sinthetasq)) /
-                    (rceil - rfloor);
-            }
+            m_chapman_factors(p, q) =
+                (sqrt(rceil * rceil - rp * rp * sinthetasq) -
+                 sqrt(rfloor * rfloor - rp * rp * sinthetasq)) /
+                (rceil - rfloor);
         }
-    } else {
-        m_chapman_factors.setConstant(1 / this->M_CSZ);
     }
 }
 

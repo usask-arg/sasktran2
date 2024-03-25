@@ -7,9 +7,7 @@ void sasktran_disco::PersistentConfiguration<NSTOKES, CNSTR>::configure(
     SKTRAN_DO_UserSpec& userspecmemory, const sasktran2::Config& config,
     double cos_sza, int nlyr,
     const std::vector<sasktran2::raytracing::TracedRay>& traced_rays) {
-    m_opticalpropertiesmutex = &m_no_mutex_given_mutex;
 
-    int nlos = (int)traced_rays.size();
     int nstr = config.num_do_streams();
 
     m_userspec = &userspecmemory;
@@ -17,16 +15,6 @@ void sasktran_disco::PersistentConfiguration<NSTOKES, CNSTR>::configure(
     const_cast<double&>(this->M_CSZ) = cos_sza;
     const_cast<double&>(this->M_SAZ) = 0;
     const_cast<double&>(this->M_SOLAR_DIRECT_INTENSITY) = 1.0;
-
-    m_unsorted_los.clear();
-    m_unsorted_los.reserve(nlos);
-    for (int i = 0; i < nlos; ++i) {
-        m_unsorted_los.push_back(LineOfSight());
-        m_unsorted_los.back().coszenith =
-            traced_rays[i].observer_and_look.cos_viewing();
-        ;
-        m_unsorted_los.back().azimuth = 0; // Never used?
-    }
 
     const_cast<uint&>(this->M_NSTR) = config.num_do_streams();
     const_cast<uint&>(this->M_NLYR) = nlyr;
@@ -37,12 +25,6 @@ void sasktran_disco::PersistentConfiguration<NSTOKES, CNSTR>::configure(
     this->M_WT = m_userspec->getStreamWeights();
     configureLP(m_userspec);
 
-    // TODO: Do we have to do anything here for weighting functions?
-    // m_perturb_quantities = m_userspec->perturbations();
-    const_cast<bool&>(this->M_USE_PSEUDO_SPHERICAL) =
-        true; // TODO: Get from config?
-
-    const_cast<bool&>(this->M_USE_LOS_SPHERICAL) = false;
     const_cast<bool&>(this->M_SS_ONLY) = false;
     const_cast<bool&>(this->M_BACKPROP_BVP) = config.do_backprop();
     const_cast<size_t&>(this->M_NUM_SZA) = 1;
@@ -70,19 +52,9 @@ void sasktran_disco::PersistentConfiguration<
     this->M_MU = m_userspec->getStreamAbscissae();
     this->M_WT = m_userspec->getStreamWeights();
     configureLP(userspec);
-    m_perturb_quantities = m_userspec->perturbations();
-    const_cast<bool&>(this->M_USE_PSEUDO_SPHERICAL) =
-        m_userspec->getUsePseudoSpherical();
-    const_cast<SKTRAN_DO_UserSpec::LayerConstructionMethod&>(
-        this->M_LAYER_CONSTRUCTION) = m_userspec->getLayerConstructionMethod();
-
-    const_cast<bool&>(this->M_USE_LOS_SPHERICAL) =
-        m_userspec->getUseLOSSpherical();
     const_cast<bool&>(this->M_SS_ONLY) = m_userspec->getSSOnly();
     const_cast<size_t&>(this->M_NUM_SZA) = m_userspec->getNumSZA();
     const_cast<double&>(this->M_SZA_REL_SEP) = m_userspec->getSZARelSep();
-    const_cast<bool&>(this->M_USE_GREENS_FUNCTION) =
-        m_userspec->getUseGreensFunction();
 
     if (m_userspec->getForcedNumberAzimuthTerms() > this->M_NSTR) {
         throw InvalidConfiguration(

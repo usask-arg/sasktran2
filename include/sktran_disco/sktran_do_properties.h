@@ -26,10 +26,6 @@ namespace sasktran_disco {
         BasicProperties(const BasicProperties* other)
             : M_NSTR(other->M_NSTR), M_NLYR(other->M_NLYR), M_MU(other->M_MU),
               M_WT(other->M_WT), M_LP_MU(other->M_LP_MU),
-              M_LAYER_CONSTRUCTION(other->M_LAYER_CONSTRUCTION),
-              M_USE_PSEUDO_SPHERICAL(other->M_USE_PSEUDO_SPHERICAL),
-              M_USE_LOS_SPHERICAL(other->M_USE_LOS_SPHERICAL),
-              M_USE_GREENS_FUNCTION(other->M_USE_GREENS_FUNCTION),
               M_BACKPROP_BVP(other->M_BACKPROP_BVP),
               M_NUM_SZA(other->M_NUM_SZA), M_SS_ONLY(other->M_SS_ONLY),
               M_SZA_REL_SEP(other->M_SZA_REL_SEP) {
@@ -39,11 +35,7 @@ namespace sasktran_disco {
       protected:
         BasicProperties()
             : M_NSTR(0), M_NLYR(0), M_MU(nullptr), M_WT(nullptr),
-              M_LP_MU(nullptr),
-              M_LAYER_CONSTRUCTION(SKTRAN_DO_UserSpec::LayerConstructionMethod::
-                                       uniform_pressure),
-              M_USE_PSEUDO_SPHERICAL(true), M_USE_LOS_SPHERICAL(false),
-              M_BACKPROP_BVP(false), M_USE_GREENS_FUNCTION(false), M_NUM_SZA(2),
+              M_LP_MU(nullptr), M_BACKPROP_BVP(false), M_NUM_SZA(2),
               M_SS_ONLY(false), M_SZA_REL_SEP(0.05) {
             // empty
         }
@@ -52,19 +44,6 @@ namespace sasktran_disco {
 
         // Number of atmospheric layers
         const uint M_NLYR;
-
-        // Default way to place the layers
-        const SKTRAN_DO_UserSpec::LayerConstructionMethod M_LAYER_CONSTRUCTION;
-
-        // Whether to use the pseudo-spherical approximation
-        const bool M_USE_PSEUDO_SPHERICAL;
-
-        // Whether or not to include line of sight sphericity corrections
-        const bool M_USE_LOS_SPHERICAL;
-
-        // Whether or not to use the greens function method for the particular
-        // solution
-        const bool M_USE_GREENS_FUNCTION;
 
         // Whether to use back proprgation to calculate the BVP derivatives
         const bool M_BACKPROP_BVP;
