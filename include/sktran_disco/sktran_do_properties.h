@@ -95,7 +95,7 @@ namespace sasktran_disco {
         const double M_SAZ; /** Solar azimuth angle in radians*/
         // Legendre polynomials evaluated at M_CSZ. Accessed by [m][l] where
         // m is the AEOrder and l is the polynomial order.
-        LegendrePolynomials<NSTOKES>* M_LP_CSZ;
+        VectorDim2<LegendrePhaseContainer<NSTOKES>>* M_LP_CSZ;
     };
 
     /**

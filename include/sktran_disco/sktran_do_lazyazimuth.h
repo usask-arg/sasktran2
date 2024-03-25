@@ -144,27 +144,6 @@ namespace sasktran_disco {
 
 #pragma region "Lazy-Azimuth Cache Objects"
 
-    // Caches a Legendre polynomial evaluated at a given value for the required
-    // components of the azimuth expansion.
-    template <int NSTOKES, int CNSTR = -1>
-    class LegendrePolynomials
-        : public AzimuthDependentCache<
-              std::vector<LegendrePhaseContainer<NSTOKES>>> {
-      public:
-        LegendrePolynomials(uint NSTR, double value)
-            : AzimuthDependentCache<
-                  std::vector<LegendrePhaseContainer<NSTOKES>>>(NSTR) {
-            m_value = value;
-        }
-        virtual void
-        calculateAEOrder(AEOrder m,
-                         std::vector<LegendrePhaseContainer<NSTOKES>>& lepolys)
-            override final;
-
-      private:
-        double m_value;
-    };
-
     // Caches multiScatST calculations for sasktran_disco::OpticalLayer.
     // This object build the NSTRxNSTR multiScatST matrix. For the naive
     // calculation, this calculation is O(NSTR^3). This object improves

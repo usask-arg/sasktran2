@@ -3,45 +3,6 @@
 #include <sasktran2/math/wigner.h>
 
 template <>
-void sasktran_disco::LegendrePolynomials<1>::calculateAEOrder(
-    AEOrder m,
-    std::vector<sasktran_disco::LegendrePhaseContainer<1>>& lepolys) {
-    auto calculator = sasktran2::math::WignerDCalculator(m, 0);
-
-    double theta = acos(m_value);
-
-    // Evaluate the associated Legendre polynomial ( order m, degree
-    // l=[0:M_NSTR) ) at m_value.
-    lepolys.resize(this->M_NSTR);
-    for (LPOrder l = 0; l < this->M_NSTR; ++l) {
-        lepolys[l].value = calculator.d(theta, l);
-    }
-}
-
-template <int NSTOKES, int CNSTR>
-void sasktran_disco::LegendrePolynomials<NSTOKES, CNSTR>::calculateAEOrder(
-    AEOrder m,
-    std::vector<sasktran_disco::LegendrePhaseContainer<NSTOKES>>& lepolys) {
-    // TODO: breaks for NSTOKES=2?
-    auto calculatorP = sasktran2::math::WignerDCalculator(m, 0);
-    auto calculatorneg = sasktran2::math::WignerDCalculator(m, -2);
-    auto calculatorpos = sasktran2::math::WignerDCalculator(m, 2);
-
-    double theta = acos(m_value);
-
-    // Evaluate the associated Legendre polynomial ( order m, degree
-    // l=[0:M_NSTR) ) at m_value.
-    lepolys.resize(this->M_NSTR);
-    for (LPOrder l = 0; l < this->M_NSTR; ++l) {
-        lepolys[l].P() = calculatorP.d(theta, l);
-        lepolys[l].R() =
-            -0.5 * (calculatorpos.d(theta, l) + calculatorneg.d(theta, l));
-        lepolys[l].T() =
-            -0.5 * (calculatorpos.d(theta, l) - calculatorneg.d(theta, l));
-    }
-}
-
-template <>
 void sasktran_disco::LegendreSumMatrix<1>::calculateAEOrder(
     AEOrder m, LegendreSumMatrixStorage<1>& sum_matrix) {
     // Compute scattering matrix from streams to streams.
@@ -158,9 +119,6 @@ void sasktran_disco::AlbedoExpansion::calculateAEOrder(
     // Configure the BRDF object for the current order of the azimuth expansion.
     albedo.configure(m, M_LOS, M_MU, M_CSZ, m_brdf.get(), m_nterms);
 }
-
-template class sasktran_disco::LegendrePolynomials<1>;
-template class sasktran_disco::LegendrePolynomials<3>;
 
 template class sasktran_disco::LegendreSumMatrix<1>;
 template class sasktran_disco::LegendreSumMatrix<3>;

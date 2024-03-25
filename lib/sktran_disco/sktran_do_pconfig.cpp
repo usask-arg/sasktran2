@@ -1,6 +1,8 @@
 #include "sktran_disco/sktran_do.h"
 #include "sktran_disco/sktran_do_pconfig.h"
+#include "sktran_disco/sktran_do_polarization_types.h"
 #include "sktran_disco/sktran_do_specs.h"
+#include "sktran_disco/sktran_do_types.h"
 
 template <int NSTOKES, int CNSTR>
 void sasktran_disco::PersistentConfiguration<NSTOKES, CNSTR>::configure(
@@ -28,16 +30,17 @@ void sasktran_disco::PersistentConfiguration<NSTOKES, CNSTR>::configure(
     const_cast<bool&>(this->M_SS_ONLY) = false;
     const_cast<bool&>(this->M_BACKPROP_BVP) = config.do_backprop();
 
-    m_lp_csz_storage.resize(1);
-    m_lp_csz_storage[0] = std::unique_ptr<LegendrePolynomials<NSTOKES>>(
-        new LegendrePolynomials<NSTOKES>(this->M_NSTR, this->M_CSZ));
-    this->M_LP_CSZ = m_lp_csz_storage[0].get();
+    m_lp_csz_storage.resize(
+        this->M_NSTR,
+        VectorDim1<LegendrePhaseContainer<NSTOKES>>(this->M_NSTR));
+
+    this->M_LP_CSZ = &m_lp_csz_storage;
     m_pool.init(this->M_NLYR, this->M_NSTR);
     m_poolindex = 0;
 
-    for (auto& lp_csz : m_lp_csz_storage) {
-        for (int m = 0; m < (int)this->M_NSTR; ++m) {
-            lp_csz->configureAEOrder(m);
+    for (int m = 0; m < (int)this->M_NSTR; ++m) {
+        for (int l = 0; l < (int)this->M_NSTR; ++l) {
+            m_lp_csz_storage[m][l].fill(m, l, this->M_CSZ);
         }
     }
 }

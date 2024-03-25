@@ -132,8 +132,7 @@ namespace sasktran_disco {
          * @brief Legendre polynomials for the cosine of the solar zenith angle
          *
          */
-        std::vector<std::unique_ptr<LegendrePolynomials<NSTOKES>>>
-            m_lp_csz_storage;
+        VectorDim2<LegendrePhaseContainer<NSTOKES>> m_lp_csz_storage;
     };
 
 } // namespace sasktran_disco

@@ -12,7 +12,6 @@ sasktran_disco::RTESolver<NSTOKES, CNSTR>::RTESolver(
     : RTESProperties<NSTOKES>(config), m_layers(layers),
       m_cache(config.pool().thread_data().rte_cache()) {
     // Configure azimuth expansion
-    registerAzimuthDependency(*this->M_LP_CSZ);
     registerAzimuthDependency(layers);
     // Initialize tracker for which orders have been solved
     m_is_solved.resize(this->M_NSTR, false);
