@@ -19,8 +19,7 @@ namespace sasktran_disco {
     template <int NSTOKES, int CNSTR = -1>
     class PersistentConfiguration : public BasicProperties<NSTOKES>,
                                     public SolarProperties<NSTOKES>,
-                                    public UserSpecProperties,
-                                    public TestProperties {
+                                    public UserSpecProperties {
       public:
         /**
          * @brief Construct a new Persistent Configuration object

@@ -10,7 +10,7 @@ namespace sasktran_disco {
     template <int NSTOKES, int CNSTR = -1>
     using OpticalLayerArrayROP =
         ReadOnlyProperties<BasicProperties<NSTOKES>, SolarProperties<NSTOKES>,
-                           UserSpecProperties, TestProperties>;
+                           UserSpecProperties>;
 
     /**
      * @brief A vector of OpticalLayer objects which represent the layers of the

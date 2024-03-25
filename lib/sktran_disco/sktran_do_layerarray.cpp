@@ -254,10 +254,7 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
       m_chapman_factors(geometry_layers.chapman_factors()),
       m_optical_interpolator(geometry_layers.interpolating_matrix()),
       m_input_derivatives(config.pool().thread_data().input_derivatives()),
-      m_albedo(los, *this->M_MU, this->M_CSZ, std::move(brdf),
-               config.userSpec()
-                   ? config.userSpec()->getNumBRDFQuadratureTerms()
-                   : 64) {
+      m_albedo(los, *this->M_MU, this->M_CSZ, std::move(brdf), 64) {
     m_wavel_index = wavelidx;
     // Allocations
     m_layers.reserve(this->M_NLYR);

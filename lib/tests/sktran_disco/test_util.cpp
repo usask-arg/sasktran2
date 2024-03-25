@@ -39,11 +39,6 @@ namespace sasktran_disco::testing {
         config.set_single_scatter_source(
             sasktran2::Config::SingleScatterSource::discrete_ordinates);
 
-        if (test_spec) {
-            config.set_num_do_forced_azimuth(
-                test_spec->getForcedNumberAzimuthTerms());
-        }
-
         Eigen::VectorXd grid_values(nlyr + 1);
         for (int i = 0; i < nlyr + 1; ++i) {
             grid_values(i) = i;

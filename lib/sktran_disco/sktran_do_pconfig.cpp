@@ -27,7 +27,6 @@ void sasktran_disco::PersistentConfiguration<NSTOKES, CNSTR>::configure(
 
     const_cast<bool&>(this->M_SS_ONLY) = false;
     const_cast<bool&>(this->M_BACKPROP_BVP) = config.do_backprop();
-    const_cast<size_t&>(this->M_NUM_SZA) = 1;
 
     m_lp_csz_storage.resize(1);
     m_lp_csz_storage[0] = std::unique_ptr<LegendrePolynomials<NSTOKES>>(
@@ -53,14 +52,6 @@ void sasktran_disco::PersistentConfiguration<
     this->M_WT = m_userspec->getStreamWeights();
     configureLP(userspec);
     const_cast<bool&>(this->M_SS_ONLY) = m_userspec->getSSOnly();
-    const_cast<size_t&>(this->M_NUM_SZA) = m_userspec->getNumSZA();
-    const_cast<double&>(this->M_SZA_REL_SEP) = m_userspec->getSZARelSep();
-
-    if (m_userspec->getForcedNumberAzimuthTerms() > this->M_NSTR) {
-        throw InvalidConfiguration(
-            "Forced number of azimuth terms must be less than or equal to the "
-            "number of streams!");
-    }
 }
 
 template <int NSTOKES, int CNSTR>

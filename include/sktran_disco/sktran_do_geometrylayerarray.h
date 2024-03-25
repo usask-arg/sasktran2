@@ -6,7 +6,7 @@ namespace sasktran_disco {
     template <int NSTOKES, int CNSTR = -1>
     using GeometryLayerArrayROP =
         ReadOnlyProperties<BasicProperties<NSTOKES>, SolarProperties<NSTOKES>,
-                           UserSpecProperties, TestProperties>;
+                           UserSpecProperties>;
 
     /** Class which calculates and stores the wavelength independent aspects of
      *   constructing the OpticalLayerArray
