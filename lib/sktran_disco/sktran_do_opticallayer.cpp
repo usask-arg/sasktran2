@@ -13,7 +13,7 @@ sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::OpticalLayer(
       m_solutions(thread_data.rte_solution(index)),
       m_legendre_sum(config.nstr(), 1, *this->M_LP_MU,
                      thread_data.legendre_sum_storage(index)),
-      m_compute_deriv(false), m_input_derivs(input_derivs),
+      m_input_derivs(input_derivs),
       m_layercache(thread_data.layer_cache(index)),
       m_postprocessing_cache(thread_data.postprocessing_cache(index)),
       m_triple_product_holder_0(m_layercache.triple_product_holder),
@@ -78,7 +78,7 @@ sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::OpticalLayer(
       m_legendre_sum(config.nstr(), M_SSA, *this->M_LP_MU, *m_lephasef,
                      config.pool().thread_data().legendre_sum_storage(index)),
       m_solutions(config.pool().thread_data().rte_solution(index)),
-      m_compute_deriv(false), m_input_derivs(input_derivatives),
+      m_input_derivs(input_derivatives),
       m_layercache(config.pool().thread_data().layer_cache(index)),
       m_postprocessing_cache(
           config.pool().thread_data().postprocessing_cache(index)),
