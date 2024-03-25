@@ -37,6 +37,12 @@ void init_config(py::module_& m) {
         .value("Source", sasktran2::Config::ThreadingModel::source)
         .export_values();
 
+    py::enum_<sasktran2::Config::InputValidationMode>(m, "InputValidationMode")
+        .value("Strict", sasktran2::Config::InputValidationMode::strict)
+        .value("Standard", sasktran2::Config::InputValidationMode::standard)
+        .value("Disabled", sasktran2::Config::InputValidationMode::disabled)
+        .export_values();
+
     py::class_<sasktran2::Config>(m, "Config")
         .def(py::init<>(),
              R"(
@@ -63,6 +69,23 @@ void init_config(py::module_& m) {
                     Calculation is multi-threaded individually by each source function for each wavelength.
                     This method is recommended when memory is a concern, or when the number of wavelengths
                     is small.
+            )")
+        .def_property("input_validation_mode",
+                      &sasktran2::Config::input_validation_mode,
+                      &sasktran2::Config::set_input_validation_mode,
+                      R"(
+                Sets the input validation mode to use in the calculation.
+
+                `sasktran2.InputValidationMode.Strict` (Default)
+                    All input validation checks are performed. This is the recommended mode for most users.
+
+                `sasktran2.InputValidationMode.Standard`
+                    Only the most important input validation checks are performed. This mode is recommended
+                    for advanced users who are confident in the input data.
+
+                `sasktran2.InputValidationMode.Disabled`
+                    No input validation checks are performed. This mode is recommended for advanced users who
+                    are confident in the input data and want to maximize performance.
             )")
         .def_property("num_stokes", &sasktran2::Config::num_stokes,
                       &sasktran2::Config::set_num_stokes,
