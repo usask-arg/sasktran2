@@ -1,6 +1,7 @@
 #include "sasktran2/output.h"
 #include <sasktran2/geometry.h>
 #include <sasktran2/math/trig.h>
+#include <sasktran2/validation/validation.h>
 
 namespace sasktran2 {
     Coordinates::Coordinates(double cos_sza, double saa, double earth_radius,
@@ -31,6 +32,7 @@ namespace sasktran2 {
         }
 
         m_force_sun_z = force_sun_z;
+        validate();
     }
 
     Coordinates::Coordinates(Eigen::Vector3d ref_point_unit,
@@ -40,7 +42,30 @@ namespace sasktran2 {
         : m_z_unit(ref_point_unit), m_x_unit(ref_plane_unit),
           m_y_unit(ref_point_unit.cross(ref_plane_unit).normalized()),
           m_sun_unit(sun_unit), m_geotype(geotype),
-          m_earth_radius(earth_radius) {}
+          m_earth_radius(earth_radius) {
+        validate();
+    }
+
+    void Coordinates::validate() const {
+        if (m_earth_radius < 0) {
+            spdlog::critical("Invalid earth radius: {}", m_earth_radius);
+            sasktran2::validation::throw_configuration_error();
+        }
+
+        if (m_geotype == geometrytype::planeparallel) {
+            // Have to make sure that the SZA is not greater than 90, or that
+            // cos_sza is positive
+            double cos_sza = m_sun_unit.dot(m_z_unit);
+
+            if (cos_sza < 0) {
+                spdlog::critical(
+                    "Invalid solar zenith angle for planeparallel geometry, "
+                    "cos_sza: {}, and it should be greater than 0",
+                    cos_sza);
+                sasktran2::validation::throw_configuration_error();
+            }
+        }
+    }
 
     Eigen::Vector3d Coordinates::unit_vector_from_angles(double theta,
                                                          double phi) const {
