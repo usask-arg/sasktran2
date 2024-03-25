@@ -191,27 +191,6 @@ namespace sasktran_disco {
         bool m_geometry_configured;
     };
 
-    // Derivative of a quantity with respect to the layer parameters
-    template <int NSTOKES, int CNSTR = -1> class LayerFundamentalDerivative {
-      public:
-        LayerFundamentalDerivative(uint nstr);
-        LayerFundamentalDerivative() {
-            value = 0.0;
-            d_by_opticalDepth = 0.0;
-            d_by_SSA = 0.0;
-        };
-
-        void resize(uint nstr) { d_by_legendre_coeff.resize(nstr); }
-
-        void reduce(const LayerInputDerivative<NSTOKES>& layer_deriv,
-                    double& output) const;
-
-        LegendreCoefficientContainer<NSTOKES> d_by_legendre_coeff;
-        double d_by_opticalDepth;
-        double d_by_SSA;
-        double value;
-    };
-
     // A dual is a combination of a value, and the derivatives of value with
     // respect to ALL quantities
     template <typename T> struct Dual {

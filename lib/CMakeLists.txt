@@ -45,7 +45,6 @@ add_library(
   sktran_disco/sktran_do_geometrylayerarray.cpp
   sktran_disco/sktran_do_layerarray.cpp
   sktran_disco/sktran_do_lazyazimuth.cpp
-  sktran_disco/sktran_do_linearization_types.cpp
   sktran_disco/sktran_do_opticallayer.cpp
   sktran_disco/sktran_do_pconfig.cpp
   sktran_disco/sktran_do_pentadiagonal.cpp

@@ -17,8 +17,6 @@ namespace sasktran_disco {
     template <int NSTOKES, int CNSTR = -1>
     class OpticalLayer : public OpticalLayerROP<NSTOKES>,
                          public AzimuthDependencyCascade {
-        using ScalarDerivativeResult =
-            sasktran_disco::LayerFundamentalDerivative<NSTOKES>;
         using HomogType = typename std::conditional<NSTOKES != 5, double,
                                                     std::complex<double>>::type;
 
