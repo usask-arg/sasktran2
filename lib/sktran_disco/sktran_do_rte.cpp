@@ -1,8 +1,10 @@
 #include "sktran_disco/sktran_do.h"
 #include "sktran_disco/sktran_do_linearization_types.h"
+#include "sktran_disco/sktran_do_opticallayer.h"
 #include "sktran_disco/sktran_do_rte.h"
 #include "sktran_disco/sktran_do_types.h"
 #include <sasktran2/math/real_eigensolver.h>
+#include "sktran_disco/sktran_do_lpproduct.h"
 #include <thread>
 
 template <int NSTOKES, int CNSTR>
@@ -152,6 +154,33 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solve(AEOrder m) {
     m_is_solved[m] = true;
 
     postProcessAEOrder(m);
+}
+
+template <int NSTOKES, int CNSTR>
+void sasktran_disco::RTESolver<NSTOKES, CNSTR>::assignHomogenousSplusMinus2(
+    AEOrder m, OpticalLayer<NSTOKES, CNSTR>& layer) {
+    const uint N = this->M_NSTR / 2;
+
+    Eigen::MatrixXd& S_plus = layer.solution(m).cache.s_plus();
+    Eigen::MatrixXd& S_minus = layer.solution(m).cache.s_minus();
+
+    const std::vector<LegendreCoefficient<NSTOKES>>& leg_coeff =
+        layer.legendre_coeff();
+
+    for (uint i = 0; i < N; ++i) {
+        const std::vector<LegendrePhaseContainer<NSTOKES>>& lp_out =
+            (*this->M_LP_MU)[m][i];
+        for (uint j = 0; j < N; ++j) {
+            const std::vector<LegendrePhaseContainer<NSTOKES>>& lp_in =
+                (*this->M_LP_MU)[m][j];
+
+            lp_triple_product<NSTOKES, CNSTR>(
+                S_plus.block<NSTOKES, NSTOKES>(i * NSTOKES, j * NSTOKES),
+                S_minus.block<NSTOKES, NSTOKES>(i * NSTOKES, j * NSTOKES),
+                leg_coeff, lp_out, lp_in, m, layer.dual_ssa(), (*this->M_WT)[j],
+                (*this->M_MU)[i], i == j);
+        }
+    }
 }
 
 template <int NSTOKES, int CNSTR>
@@ -460,7 +489,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveHomogeneous(
     Matrix& S_plus = solution.cache.s_plus();
     Matrix& S_minus = solution.cache.s_minus();
 
-    assignHomogenousSplusMinus(m, layer);
+    assignHomogenousSplusMinus2(m, layer);
 
     // Eigenvalue problem (16)
     Matrix& eigmtx = solution.cache.eigmtx();
