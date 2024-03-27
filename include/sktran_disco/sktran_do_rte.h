@@ -73,9 +73,6 @@ namespace sasktran_disco {
         void assignHomogenousSplusMinus(AEOrder m,
                                         OpticalLayer<NSTOKES, CNSTR>& layer);
 
-        void assignHomogenousSplusMinus2(AEOrder m,
-                                         OpticalLayer<NSTOKES, CNSTR>& layer);
-
         void assignParticularQ(AEOrder m,
                                const OpticalLayer<NSTOKES, CNSTR>& layer,
                                VectorLayerDual<double>& Qplus,

@@ -11,8 +11,6 @@ sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::OpticalLayer(
     : OpticalLayerROP<NSTOKES>(config), M_ALT_CEILING(altitude_ceiling),
       M_ALT_FLOOR(altitude_floor), M_INDEX(index),
       m_solutions(thread_data.rte_solution(index)),
-      m_legendre_sum(config.nstr(), 1, *this->M_LP_MU,
-                     thread_data.legendre_sum_storage(index)),
       m_input_derivs(input_derivs),
       m_layercache(thread_data.layer_cache(index)),
       m_postprocessing_cache(thread_data.postprocessing_cache(index)),
@@ -24,9 +22,6 @@ sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::OpticalLayer(
       m_average_secant(m_layercache.average_secant),
       m_dual_bt_ceiling(m_layercache.dual_bt_ceiling),
       m_dual_bt_floor(m_layercache.dual_bt_floor) {
-    // Configure azimuthal expansion
-    registerAzimuthDependency(m_legendre_sum);
-
     m_lephasef = std::make_unique<std::vector<LegendreCoefficient<NSTOKES>>>(
         config.nstr());
 }
@@ -53,10 +48,7 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::set_optical(
     double ssa_dither = this->m_userspec->getSSAEqual1Dither();
     if (1 - M_SSA < ssa_dither) {
         const_cast<double&>(M_SSA) = 1 - ssa_dither;
-        m_legendre_sum.adjustSSA(M_SSA);
     }
-
-    m_legendre_sum.set_optical(m_lephasef.get(), M_SSA);
 }
 
 template <int NSTOKES, int CNSTR>
@@ -75,8 +67,6 @@ sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::OpticalLayer(
       M_OPTICAL_THICKNESS(optical_depth_floor - optical_depth_ceiling),
       M_ALT_CEILING(altitude_ceiling), M_ALT_FLOOR(altitude_floor),
       m_lephasef(std::move(phasef_expansion)), M_INDEX(index),
-      m_legendre_sum(config.nstr(), M_SSA, *this->M_LP_MU, *m_lephasef,
-                     config.pool().thread_data().legendre_sum_storage(index)),
       m_solutions(config.pool().thread_data().rte_solution(index)),
       m_input_derivs(input_derivatives),
       m_layercache(config.pool().thread_data().layer_cache(index)),
@@ -95,10 +85,7 @@ sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::OpticalLayer(
     double ssa_dither = this->m_userspec->getSSAEqual1Dither();
     if (1 - M_SSA < ssa_dither) {
         const_cast<double&>(M_SSA) = 1 - ssa_dither;
-        m_legendre_sum.adjustSSA(M_SSA);
     }
-    // Configure azimuthal expansion
-    registerAzimuthDependency(m_legendre_sum);
 }
 
 template <int NSTOKES, int CNSTR>
@@ -690,9 +677,6 @@ void sasktran_disco::OpticalLayer<1, 2>::integrate_source(
 
     dual_lpsum_minus.deriv(Eigen::all, 0) *= (*this->M_WT)[0];
     dual_lpsum_plus.deriv(Eigen::all, 0) *= (*this->M_WT)[0];
-
-    const auto& dual_particular_plus = solution.value.dual_particular_plus();
-    const auto& dual_particular_minus = solution.value.dual_particular_minus();
 
     const auto& dual_Aplus = solution.value.dual_green_A_plus();
     const auto& dual_Aminus = solution.value.dual_green_A_minus();

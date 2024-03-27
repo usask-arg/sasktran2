@@ -219,8 +219,6 @@ namespace sasktran_disco {
       private:
         mutable VectorDim2<LayerSolution<NSTOKES, CNSTR>>
             m_rte_solution; /** RTE Solutions*/
-        mutable VectorDim2<LegendreSumMatrixStorage<NSTOKES>>
-            m_legendre_sum_storage; /** Legendre sum matrices*/
         mutable VectorDim1<PostProcessingCache<NSTOKES>>
             m_postprocessing_cache; /** Post processing caches*/
         mutable VectorDim1<LayerCache<NSTOKES>>
@@ -241,11 +239,6 @@ namespace sasktran_disco {
             for (auto& soln : m_rte_solution) {
                 soln.resize(NSTR);
             }
-            m_legendre_sum_storage.resize(NLYR);
-            for (auto& leg : m_legendre_sum_storage) {
-                leg.resize(1);
-            }
-
             m_postprocessing_cache.resize(NLYR);
             m_layer_cache.resize(NLYR, NSTR);
 
@@ -261,17 +254,6 @@ namespace sasktran_disco {
         std::vector<LayerSolution<NSTOKES, CNSTR>>&
         rte_solution(uint layerindex) const {
             return m_rte_solution[layerindex];
-        }
-
-        /**
-         * @brief Get the legendre sum matrix storage for a given layer
-         *
-         * @param layerindex
-         * @return std::vector<LegendreSumMatrixStorage<NSTOKES>>&
-         */
-        std::vector<LegendreSumMatrixStorage<NSTOKES>>&
-        legendre_sum_storage(uint layerindex) const {
-            return m_legendre_sum_storage[layerindex];
         }
 
         /**

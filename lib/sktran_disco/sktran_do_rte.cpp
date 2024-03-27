@@ -157,15 +157,18 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solve(AEOrder m) {
 }
 
 template <int NSTOKES, int CNSTR>
-void sasktran_disco::RTESolver<NSTOKES, CNSTR>::assignHomogenousSplusMinus2(
+void sasktran_disco::RTESolver<NSTOKES, CNSTR>::assignHomogenousSplusMinus(
     AEOrder m, OpticalLayer<NSTOKES, CNSTR>& layer) {
     const uint N = this->M_NSTR / 2;
 
-    Eigen::MatrixXd& S_plus = layer.solution(m).cache.s_plus();
-    Eigen::MatrixXd& S_minus = layer.solution(m).cache.s_minus();
+    auto& S_plus = layer.solution(m).cache.s_plus();
+    auto& S_minus = layer.solution(m).cache.s_minus();
 
     const std::vector<LegendreCoefficient<NSTOKES>>& leg_coeff =
         layer.legendre_coeff();
+
+    DerivBlockIter<NSTOKES, CNSTR> deriv_iter(
+        layer.solution(m).d_cache, m_layers.inputDerivatives(), layer.index());
 
     for (uint i = 0; i < N; ++i) {
         const std::vector<LegendrePhaseContainer<NSTOKES>>& lp_out =
@@ -174,121 +177,15 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::assignHomogenousSplusMinus2(
             const std::vector<LegendrePhaseContainer<NSTOKES>>& lp_in =
                 (*this->M_LP_MU)[m][j];
 
+            deriv_iter.set_block(i, j);
+
             lp_triple_product<NSTOKES, CNSTR>(
-                S_plus.block<NSTOKES, NSTOKES>(i * NSTOKES, j * NSTOKES),
-                S_minus.block<NSTOKES, NSTOKES>(i * NSTOKES, j * NSTOKES),
+                S_plus.template block<NSTOKES, NSTOKES>(i * NSTOKES,
+                                                        j * NSTOKES),
+                S_minus.template block<NSTOKES, NSTOKES>(i * NSTOKES,
+                                                         j * NSTOKES),
                 leg_coeff, lp_out, lp_in, m, layer.dual_ssa(), (*this->M_WT)[j],
-                (*this->M_MU)[i], i == j);
-        }
-    }
-}
-
-template <int NSTOKES, int CNSTR>
-void sasktran_disco::RTESolver<NSTOKES, CNSTR>::assignHomogenousSplusMinus(
-    AEOrder m, OpticalLayer<NSTOKES, CNSTR>& layer) {
-    // Constructs the Splus and Sminus matrices in the homogeneous solution
-
-    const uint N = this->M_NSTR / 2;
-    uint numDeriv =
-        (uint)m_layers.inputDerivatives().numDerivativeLayer(layer.index());
-    const auto& derivIter =
-        m_layers.inputDerivatives().layerDerivatives().begin() +
-        m_layers.inputDerivatives().layerStartIndex(layer.index());
-
-    double zeta, eta, d_zeta, d_eta;
-
-    typename std::conditional<NSTOKES == 1, double,
-                              Eigen::Matrix<double, NSTOKES, NSTOKES>>::type
-        d_l_upwelling,
-        d_l_downwelling;
-
-    sasktran_disco::TripleProductDerivativeHolder<NSTOKES>& l_upwelling =
-        m_cache.h_l_upwelling;
-    sasktran_disco::TripleProductDerivativeHolder<NSTOKES>& l_downwelling =
-        m_cache.h_l_downwelling;
-
-    // i,j are indexes in the block matrix that is composed of 4x4 stokes blocks
-    for (uint i = 0; i < N; ++i) {
-        for (uint j = 0; j < N; ++j) {
-            // Cache upwelling and downwelling legendre sums
-            layer.inplace_scatPhaseFAndDerivative(m, i, j, l_upwelling);
-            layer.inplace_scatPhaseFAndDerivative(m, i, j + N, l_downwelling);
-
-            // TODO: We can probably refactor this to emplace the values
-            // directly in S_plus/S_minus and derivative the values directly in
-            // as well
-            for (uint s1 = 0; s1 < NSTOKES; ++s1) {
-                for (uint s2 = 0; s2 < NSTOKES; ++s2) {
-                    // Calculate indicies in the full matrix
-                    uint ii, jj;
-                    if (j > i) {
-                        // Have to transpose the matrix
-                        ii = NSTOKES * i + s2;
-                        jj = NSTOKES * j + s1;
-                    } else {
-                        ii = NSTOKES * i + s1;
-                        jj = NSTOKES * j + s2;
-                    }
-
-                    if constexpr (NSTOKES == 1) {
-                        zeta = ((*this->M_WT)[j] * l_upwelling.value -
-                                kronDelta(ii, jj)) /
-                               (*this->M_MU)[i];
-                        eta = (*this->M_WT)[j] * l_downwelling.value /
-                              (*this->M_MU)[i];
-                    } else {
-                        zeta = ((*this->M_WT)[j] * l_upwelling.value(s1, s2) -
-                                kronDelta(ii, jj)) /
-                               (*this->M_MU)[i];
-                        eta = (*this->M_WT)[j] * l_downwelling.value(s1, s2) /
-                              (*this->M_MU)[i];
-                    }
-
-                    layer.solution(m).cache.s_plus()(ii, jj) =
-                        -1.0 * (zeta + eta);
-                    layer.solution(m).cache.s_minus()(ii, jj) =
-                        -1.0 * (zeta - eta);
-                }
-            }
-
-            // Because the derivative propagation is so simple we just do it
-            // manually here
-            for (uint k = 0; k < numDeriv; ++k) {
-                l_upwelling.reduce(*(derivIter + k), d_l_upwelling);
-                l_downwelling.reduce(*(derivIter + k), d_l_downwelling);
-
-                for (uint s1 = 0; s1 < NSTOKES; ++s1) {
-                    for (uint s2 = 0; s2 < NSTOKES; ++s2) {
-                        int ii, jj;
-                        if (j > i) {
-                            // Have to transpose the matrix
-                            ii = NSTOKES * i + s2;
-                            jj = NSTOKES * j + s1;
-                        } else {
-                            ii = NSTOKES * i + s1;
-                            jj = NSTOKES * j + s2;
-                        }
-
-                        if constexpr (NSTOKES == 1) {
-                            d_zeta = ((*this->M_WT)[j] * d_l_upwelling) /
-                                     (*this->M_MU)[i];
-                            d_eta = ((*this->M_WT)[j] * d_l_downwelling) /
-                                    (*this->M_MU)[i];
-                        } else {
-                            d_zeta =
-                                ((*this->M_WT)[j] * d_l_upwelling(s1, s2)) /
-                                (*this->M_MU)[i];
-                            d_eta = (*this->M_WT)[j] * d_l_downwelling(s1, s2) /
-                                    (*this->M_MU)[i];
-                        }
-
-                        layer.solution(m).d_cache[k].s_plus()(ii, jj) =
-                            -1.0 * (d_zeta + d_eta);
-                        layer.solution(m).d_cache[k].s_minus()(ii, jj) =
-                            -1.0 * (d_zeta - d_eta);
-                    }
-                }
-            }
+                (*this->M_MU)[i], deriv_iter, i == j);
         }
     }
 }
@@ -489,7 +386,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveHomogeneous(
     Matrix& S_plus = solution.cache.s_plus();
     Matrix& S_minus = solution.cache.s_minus();
 
-    assignHomogenousSplusMinus2(m, layer);
+    assignHomogenousSplusMinus(m, layer);
 
     // Eigenvalue problem (16)
     Matrix& eigmtx = solution.cache.eigmtx();
@@ -662,8 +559,6 @@ void sasktran_disco::RTESolver<1, 2>::solveParticularGreen(
     // Setup up calculation enviroment
     LayerIndex p = layer.index();
     auto& solution = layer.solution(m);
-
-    solution.value.set_use_green_function(true);
 
     uint numLayerDeriv =
         (uint)m_layers.inputDerivatives().numDerivativeLayer(layer.index());

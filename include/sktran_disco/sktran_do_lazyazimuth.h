@@ -143,62 +143,6 @@ namespace sasktran_disco {
 #pragma endregion
 
 #pragma region "Lazy-Azimuth Cache Objects"
-
-    // Caches multiScatST calculations for sasktran_disco::OpticalLayer.
-    // This object build the NSTRxNSTR multiScatST matrix. For the naive
-    // calculation, this calculation is O(NSTR^3). This object improves
-    // performance by ~8x by exploiting the symmetry in the matrix and
-    // in the triple product of the Legendre polynomials.
-    template <int NSTOKES, int CNSTR = -1>
-    class LegendreSumMatrix
-        : public AzimuthDependentCache<LegendreSumMatrixStorage<NSTOKES>> {
-      public:
-        LegendreSumMatrix(
-            uint NSTR, double ssa,
-            const VectorDim3<LegendrePhaseContainer<NSTOKES>>& lp_mu,
-            const std::vector<LegendreCoefficient<NSTOKES>>& lpe_phasef,
-            std::vector<LegendreSumMatrixStorage<NSTOKES>>& storage)
-            : AzimuthDependentCache<LegendreSumMatrixStorage<NSTOKES>>(NSTR,
-                                                                       storage),
-              M_LP_MU(lp_mu), M_LPE_PHASEF(&lpe_phasef), M_SSA(ssa) {
-            // empty
-        }
-
-        LegendreSumMatrix(
-            uint NSTR, double ssa,
-            const VectorDim3<LegendrePhaseContainer<NSTOKES>>& lp_mu,
-            std::vector<LegendreSumMatrixStorage<NSTOKES>>& storage)
-            : AzimuthDependentCache<LegendreSumMatrixStorage<NSTOKES>>(NSTR,
-                                                                       storage),
-              M_LP_MU(lp_mu), M_SSA(ssa) {
-            // empty
-        }
-
-        // Override which allows for SSA to be adjusted after ctor (used to
-        // handle SSA dither)
-        void adjustSSA(double ssa) { const_cast<double&>(M_SSA) = ssa; }
-
-        void
-        set_optical(const std::vector<LegendreCoefficient<NSTOKES>>* lpe_phasef,
-                    double ssa) {
-            const_cast<double&>(M_SSA) = ssa;
-            M_LPE_PHASEF = lpe_phasef;
-            this->reset();
-        }
-
-        virtual void calculateAEOrder(
-            AEOrder m,
-            LegendreSumMatrixStorage<NSTOKES>& sum_matrix) override final;
-
-      private:
-        const VectorDim3<LegendrePhaseContainer<NSTOKES>>& M_LP_MU;
-        const std::vector<LegendreCoefficient<NSTOKES>>* M_LPE_PHASEF;
-        const double M_SSA;
-        void assign(int linear_index,
-                    const TripleProductDerivativeHolder<NSTOKES>& vals,
-                    LegendreSumMatrixStorage<NSTOKES>& sum_matrix);
-    };
-
     class AlbedoExpansion : public AzimuthDependentCache<Albedo> {
       public:
         AlbedoExpansion(const std::vector<LineOfSight>& los,

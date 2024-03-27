@@ -112,21 +112,6 @@ namespace sasktran_disco {
             VectorLayerDual<double>& result_negative_stream) const;
 
         /**
-         * Returns the value of the scattering phase function from one stream to
-         * another. This is used in constructing the homogeneous solution matrix
-         *
-         * @param m
-         * @param outgoing
-         * @param origin
-         * @param dual
-         */
-        inline void inplace_scatPhaseFAndDerivative(
-            AEOrder m, StreamIndex outgoing, StreamIndex origin,
-            TripleProductDerivativeHolder<NSTOKES>& dual) const {
-            m_legendre_sum[m].inplace_dual(outgoing, origin, dual);
-        }
-
-        /**
          * Calculates the single scatter source term.  This is used in
          * evaluating the single scatter source during post processing, and
          * assigning the RHS for the greens function solution.
@@ -553,7 +538,6 @@ namespace sasktran_disco {
             VectorDim1<sasktran_disco::LegendreCoefficient<NSTOKES>>>
             m_lephasef;           /** Legendre phase expansion */
         const LayerIndex M_INDEX; /** Layer index */
-        LegendreSumMatrix<NSTOKES> m_legendre_sum; /** Sum matrix */
 
         LayerCache<NSTOKES>& m_layercache; /** Layer cache */
 
