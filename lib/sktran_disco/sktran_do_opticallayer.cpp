@@ -514,6 +514,7 @@ void sasktran_disco::OpticalLayer<1, 2>::integrate_source(
     auto& Q = cache.Q;
 
     if (include_ss) {
+        Q.deriv.setZero();
         single_scat_st<1, 2, true>(
             *m_lephasef, lp_mu, (*this->M_LP_CSZ)[m], m, p, m_dual_ssa,
             this->M_SOLAR_DIRECT_INTENSITY, m_input_derivs, &Q.value,
