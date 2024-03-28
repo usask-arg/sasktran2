@@ -23,9 +23,6 @@ namespace sasktran_disco {
         Radiance<NSTOKES> V, Q,
             J; /** To store the individual radiance sources */
 
-        sasktran_disco::InhomogeneousSourceHolder<NSTOKES> Qtemp,
-            temp; /** For single scatter source */
-
         std::vector<LayerDual<double>> hp, hm; /** Homogenous multipliers */
 
         std::vector<Dual<double>> Dm, Dp,
@@ -56,10 +53,6 @@ namespace sasktran_disco {
             V.resize(numtotalderiv, false);
             Q.resize(numtotalderiv, false);
             J.resize(numtotalderiv, false);
-
-            // Source holders
-            Qtemp.resize(NSTR);
-            temp.resize(NSTR);
 
             hp.resize(NSTR / 2 * NSTOKES);
             hm.resize(NSTR / 2 * NSTOKES);
@@ -96,15 +89,7 @@ namespace sasktran_disco {
         Dual<double>
             dual_bt_ceiling; /** Transmission at the ceiling of the layer */
 
-        TripleProductDerivativeHolder<NSTOKES>
-            triple_product_holder; /** Temporaries */
-        TripleProductDerivativeHolder<NSTOKES>
-            triple_product_holder_2;             /** Temporaries*/
-        LPTripleProduct<NSTOKES> triple_product; /** Temporaries */
-
-        LayerCache(uint NSTR)
-            : triple_product(NSTR), triple_product_holder(NSTR),
-              triple_product_holder_2(NSTR) {}
+        LayerCache(uint NSTR) {}
     };
 
     /**
@@ -166,9 +151,6 @@ namespace sasktran_disco {
 
         sasktran_disco::TripleProductDerivativeHolder<NSTOKES> h_l_upwelling;
         sasktran_disco::TripleProductDerivativeHolder<NSTOKES> h_l_downwelling;
-
-        sasktran_disco::InhomogeneousSourceHolder<NSTOKES> p_d_temp;
-        sasktran_disco::InhomogeneousSourceHolder<NSTOKES> p_d_temp2;
 
         // BVP things
         VectorDim1<BVPMatrixDenseBlock<NSTOKES>> d_mat;

@@ -1,5 +1,6 @@
 #pragma once
 #include "sktran_disco/sktran_do.h"
+#include "sktran_disco/sktran_do_polarization_types.h"
 #include "sktran_do_specs.h"
 #include <sasktran2/config.h>
 #include <sasktran2/raytracing.h>
@@ -119,6 +120,11 @@ namespace sasktran_disco {
          */
         inline const VectorDim1<double>* quadrature_cos_angle() const {
             return this->M_MU;
+        }
+
+        inline const VectorDim3<LegendrePhaseContainer<NSTOKES>>*
+        legendre_streams() const {
+            return this->M_LP_MU;
         }
 
       protected: // Private configuration functions

@@ -94,41 +94,6 @@ namespace sasktran_disco {
                                       const Dual<double>& od_bottom);
 
         /**
-         * Returns the value of the scattering phase function into a direction
-         * specified by lp_out.  This is used in post processing to scatter into
-         * the line of sight direction
-         *
-         * @param m
-         * @param lp_out
-         * @param in_deriv
-         * @param result_positive_stream
-         * @param result_negative_stream
-         */
-        void vectordual_scatPhaseF(
-            AEOrder m,
-            const std::vector<LegendrePhaseContainer<NSTOKES>>& lp_out,
-            const InputDerivatives<NSTOKES>& in_deriv,
-            VectorLayerDual<double>& result_positive_stream,
-            VectorLayerDual<double>& result_negative_stream) const;
-
-        /**
-         * Calculates the single scatter source term.  This is used in
-         * evaluating the single scatter source during post processing, and
-         * assigning the RHS for the greens function solution.
-         *
-         * @param m
-         * @param outgoing_coszenith
-         * @param result
-         * @param result_negative_coszenith
-         */
-        void singleScatST(AEOrder m,
-                          const VectorDim1<LegendrePhaseContainer<NSTOKES>>&
-                              outgoing_coszenith,
-                          InhomogeneousSourceHolder<NSTOKES>& result,
-                          InhomogeneousSourceHolder<NSTOKES>&
-                              result_negative_coszenith) const;
-
-        /**
          * @brief The single scatter albedo for the layer
          *
          * @return double
@@ -555,13 +520,6 @@ namespace sasktran_disco {
                                           the layer */
         Dual<double>& m_dual_bt_ceiling; /** Dual of transmission at the top of
                                             the layer */
-
-        TripleProductDerivativeHolder<NSTOKES>&
-            m_triple_product_holder_0; /** Internal memory reference */
-        TripleProductDerivativeHolder<NSTOKES>&
-            m_triple_product_holder_1; /** Internal memory reference */
-        LPTripleProduct<NSTOKES>&
-            m_triple_product; /** Interal memory reference */
     };
 
 } // namespace sasktran_disco

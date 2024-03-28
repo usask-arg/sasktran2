@@ -1,5 +1,6 @@
 #include "sasktran2/do_source.h"
 #include "sasktran2/geometry.h"
+#include "sktran_disco/sktran_do_lpproduct.h"
 
 namespace sasktran2 {
     template <int NSTOKES, int CNSTR>
@@ -758,34 +759,15 @@ namespace sasktran2 {
                 sasktran_disco::VectorLayerDual<double>& dual_lpsum_minus =
                     cache.dual_lpsum_minus;
 
-                layer->vectordual_scatPhaseF(m, storage.phase_container,
-                                             optical_layer.inputDerivatives(),
-                                             dual_lpsum_minus, dual_lpsum_plus);
-
-                // dual_lpsum_plus and minus are now linearly storage of N *
-                // NSTOKES * NSTOKES, have to multiply the blocks by the weights
-                for (int i = 0; i < this->m_config.num_do_streams() / 2; ++i) {
-                    for (int j = 0; j < NSTOKES * NSTOKES; ++j) {
-                        int linearindex = i * NSTOKES * NSTOKES + j;
-                        dual_lpsum_minus.value(linearindex) *=
-                            thread_storage.sza_calculators[0]
-                                .persistent_config->quadrature_weights()
-                                ->at(i);
-                        dual_lpsum_plus.value(linearindex) *=
-                            thread_storage.sza_calculators[0]
-                                .persistent_config->quadrature_weights()
-                                ->at(i);
-
-                        dual_lpsum_minus.deriv(Eigen::all, linearindex) *=
-                            thread_storage.sza_calculators[0]
-                                .persistent_config->quadrature_weights()
-                                ->at(i);
-                        dual_lpsum_plus.deriv(Eigen::all, linearindex) *=
-                            thread_storage.sza_calculators[0]
-                                .persistent_config->quadrature_weights()
-                                ->at(i);
-                    }
-                }
+                sasktran_disco::scat_phase_f<NSTOKES, CNSTR>(
+                    layer->legendre_coeff(), storage.phase_container,
+                    (*thread_storage.sza_calculators[0]
+                          .persistent_config->legendre_streams())[m],
+                    m, p, layer->dual_ssa(),
+                    *thread_storage.sza_calculators[0]
+                         .persistent_config->quadrature_weights(),
+                    optical_layer.inputDerivatives(), dual_lpsum_minus,
+                    dual_lpsum_plus);
 
                 ConstMatrixView lpsum_plus_matrix(
                     dual_lpsum_plus.value.data(), NSTOKES,

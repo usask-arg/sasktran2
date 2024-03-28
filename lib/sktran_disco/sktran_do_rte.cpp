@@ -66,9 +66,6 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::configureCache() {
     m_cache.homog_work.resize(N * NSTOKES * 4);
 #endif
 
-    m_cache.p_d_temp.resize(this->M_NSTR);
-    m_cache.p_d_temp2.resize(this->M_NSTR);
-
     uint numDeriv = (uint)m_layers.inputDerivatives().numDerivative();
 
     m_cache.p_Cplus.resize(numDeriv, false);
@@ -505,50 +502,21 @@ template <int NSTOKES, int CNSTR>
 void sasktran_disco::RTESolver<NSTOKES, CNSTR>::assignParticularQ(
     AEOrder m, const OpticalLayer<NSTOKES, CNSTR>& layer,
     VectorLayerDual<double>& Qplus, VectorLayerDual<double>& Qminus) {
-    InhomogeneousSourceHolder<NSTOKES>& d_temp = m_cache.p_d_temp;
-    InhomogeneousSourceHolder<NSTOKES>& d_temp2 = m_cache.p_d_temp2;
-
-    typename std::conditional<NSTOKES == 1, double,
-                              Eigen::Vector<double, NSTOKES>>::type dholder1,
-        dholder2;
-
-    const auto& derivIter =
-        m_layers.inputDerivatives().layerDerivatives().begin() +
-        m_layers.inputDerivatives().layerStartIndex(layer.index());
-    uint numLayerDeriv =
-        (uint)m_layers.inputDerivatives().numDerivativeLayer(layer.index());
 
     for (uint i = 0; i < this->M_NSTR / 2; ++i) {
-        layer.singleScatST(m, (*this->M_LP_MU)[m][i], d_temp, d_temp2);
+        single_scat_st<NSTOKES, CNSTR, true>(
+            layer.legendre_coeff(), (*this->M_LP_MU)[m][i],
+            (*this->M_LP_CSZ)[m], m, layer.index(), layer.dual_ssa(),
+            this->M_SOLAR_DIRECT_INTENSITY * (*this->M_WT)[i],
+            m_layers.inputDerivatives(), &Qminus.value(NSTOKES * i),
+            &Qminus.deriv(0, NSTOKES * i), Qminus.deriv.rows());
 
-        for (int s = 0; s < NSTOKES; ++s) {
-            int ii = i * NSTOKES + s;
-
-            if constexpr (NSTOKES == 1) {
-                Qplus.value(ii) = d_temp2.value * (*this->M_WT)[i];
-                Qminus.value(ii) = d_temp.value * (*this->M_WT)[i];
-            } else {
-                Qplus.value(ii) = d_temp2.value[s] * (*this->M_WT)[i];
-                Qminus.value(ii) = d_temp.value[s] * (*this->M_WT)[i];
-            }
-        }
-
-        for (uint k = 0; k < numLayerDeriv; ++k) {
-            d_temp2.reduce(*(derivIter + k), dholder2);
-            d_temp.reduce(*(derivIter + k), dholder1);
-
-            for (int s = 0; s < NSTOKES; ++s) {
-                int ii = i * NSTOKES + s;
-
-                if constexpr (NSTOKES == 1) {
-                    Qplus.deriv(k, ii) = dholder2 * (*this->M_WT)[i];
-                    Qminus.deriv(k, ii) = dholder1 * (*this->M_WT)[i];
-                } else {
-                    Qplus.deriv(k, ii) = dholder2[s] * (*this->M_WT)[i];
-                    Qminus.deriv(k, ii) = dholder1[s] * (*this->M_WT)[i];
-                }
-            }
-        }
+        single_scat_st<NSTOKES, CNSTR, false>(
+            layer.legendre_coeff(), (*this->M_LP_MU)[m][i],
+            (*this->M_LP_CSZ)[m], m, layer.index(), layer.dual_ssa(),
+            this->M_SOLAR_DIRECT_INTENSITY * (*this->M_WT)[i],
+            m_layers.inputDerivatives(), &Qplus.value(NSTOKES * i),
+            &Qplus.deriv(0, NSTOKES * i), Qplus.deriv.rows());
     }
 }
 

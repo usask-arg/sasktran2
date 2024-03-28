@@ -1,6 +1,7 @@
 #include "sktran_disco/sktran_do.h"
 #include "sktran_disco/sktran_do_linearization_types.h"
 #include "sktran_disco/sktran_do_opticallayer.h"
+#include "sktran_disco/sktran_do_lpproduct.h"
 
 template <int NSTOKES, int CNSTR>
 sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::OpticalLayer(
@@ -14,9 +15,6 @@ sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::OpticalLayer(
       m_input_derivs(input_derivs),
       m_layercache(thread_data.layer_cache(index)),
       m_postprocessing_cache(thread_data.postprocessing_cache(index)),
-      m_triple_product_holder_0(m_layercache.triple_product_holder),
-      m_triple_product_holder_1(m_layercache.triple_product_holder_2),
-      m_triple_product(m_layercache.triple_product),
       m_dual_thickness(m_layercache.dual_thickness),
       m_dual_ssa(m_layercache.dual_ssa),
       m_average_secant(m_layercache.average_secant),
@@ -72,9 +70,6 @@ sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::OpticalLayer(
       m_layercache(config.pool().thread_data().layer_cache(index)),
       m_postprocessing_cache(
           config.pool().thread_data().postprocessing_cache(index)),
-      m_triple_product_holder_0(m_layercache.triple_product_holder),
-      m_triple_product_holder_1(m_layercache.triple_product_holder_2),
-      m_triple_product(m_layercache.triple_product),
       m_dual_thickness(m_layercache.dual_thickness),
       m_dual_ssa(m_layercache.dual_ssa),
       m_average_secant(m_layercache.average_secant),
@@ -149,144 +144,6 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::configurePseudoSpherical(
 }
 
 template <int NSTOKES, int CNSTR>
-void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::vectordual_scatPhaseF(
-    AEOrder m,
-    const std::vector<sasktran_disco::LegendrePhaseContainer<NSTOKES>>& lp_out,
-    const InputDerivatives<NSTOKES>& in_deriv,
-    VectorLayerDual<double>& result_positive_stream,
-    VectorLayerDual<double>& result_negative_stream) const {
-    uint derivStart = (uint)in_deriv.layerStartIndex(M_INDEX);
-    uint numDeriv = (uint)in_deriv.numDerivativeLayer(M_INDEX);
-
-    // NSTOKES * NSTOKES matrix for each N
-    // result_positive_stream.resize(this->M_NSTR / 2 * NSTOKES * NSTOKES,
-    // numDeriv, M_INDEX, derivStart);
-    // result_negative_stream.resize(this->M_NSTR / 2 * NSTOKES * NSTOKES,
-    // numDeriv, M_INDEX, derivStart);
-
-    typename std::conditional<NSTOKES == 1, double,
-                              Eigen::Matrix<double, NSTOKES, NSTOKES>>::type
-        derivtemp;
-
-    for (StreamIndex j = 0; j < this->M_NSTR / 2; ++j) {
-        m_triple_product.calculate_and_emplace(
-            m, *m_lephasef, lp_out, (*this->M_LP_MU)[m][j],
-            m_triple_product_holder_0, m_triple_product_holder_1, M_SSA);
-
-        if constexpr (NSTOKES == 1) {
-            result_positive_stream.value(j) = m_triple_product_holder_0.value;
-        } else {
-            for (int s1 = 0; s1 < NSTOKES; ++s1) {
-                for (int s2 = 0; s2 < NSTOKES; ++s2) {
-                    int linearindex = j * NSTOKES * NSTOKES + s1 + NSTOKES * s2;
-                    result_positive_stream.value(linearindex) =
-                        m_triple_product_holder_0.value(s1, s2);
-                }
-            }
-        }
-
-        for (uint i = 0; i < numDeriv; ++i) {
-            m_triple_product_holder_0.reduce(in_deriv[i + derivStart],
-                                             derivtemp);
-
-            if constexpr (NSTOKES == 1) {
-                result_positive_stream.deriv(i, j) = derivtemp;
-            } else {
-                for (int s1 = 0; s1 < NSTOKES; ++s1) {
-                    for (int s2 = 0; s2 < NSTOKES; ++s2) {
-                        int linearindex =
-                            j * NSTOKES * NSTOKES + s1 + NSTOKES * s2;
-                        result_positive_stream.deriv(i, linearindex) =
-                            derivtemp(s1, s2);
-                    }
-                }
-            }
-        }
-
-        if constexpr (NSTOKES == 1) {
-            result_negative_stream.value(j) = m_triple_product_holder_1.value;
-
-        } else {
-            for (int s1 = 0; s1 < NSTOKES; ++s1) {
-                for (int s2 = 0; s2 < NSTOKES; ++s2) {
-                    int linearindex = j * NSTOKES * NSTOKES + s1 + NSTOKES * s2;
-                    result_negative_stream.value(linearindex) =
-                        m_triple_product_holder_1.value(s1, s2);
-                }
-            }
-        }
-        for (uint i = 0; i < numDeriv; ++i) {
-            m_triple_product_holder_1.reduce(in_deriv[i + derivStart],
-                                             derivtemp);
-
-            if constexpr (NSTOKES == 1) {
-                result_negative_stream.deriv(i, j) = derivtemp;
-
-            } else {
-                for (int s1 = 0; s1 < NSTOKES; ++s1) {
-                    for (int s2 = 0; s2 < NSTOKES; ++s2) {
-                        int linearindex =
-                            j * NSTOKES * NSTOKES + s1 + NSTOKES * s2;
-                        result_negative_stream.deriv(i, linearindex) =
-                            derivtemp(s1, s2);
-                    }
-                }
-            }
-        }
-    }
-}
-
-template <int NSTOKES, int CNSTR>
-void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::singleScatST(
-    AEOrder m,
-    const sasktran_disco::VectorDim1<LegendrePhaseContainer<NSTOKES>>& lp_out,
-    sasktran_disco::InhomogeneousSourceHolder<NSTOKES>& result,
-    sasktran_disco::InhomogeneousSourceHolder<NSTOKES>&
-        result_negative_coszenith) const {
-    double factor = (1.0 / (2 * PI)) * this->M_SOLAR_DIRECT_INTENSITY * M_SSA *
-                    (2 - kronDelta(m, 0));
-
-    m_triple_product.calculate_and_emplace(
-        m, *m_lephasef, lp_out, (*this->M_LP_CSZ)[m], m_triple_product_holder_0,
-        m_triple_product_holder_1, factor);
-    m_triple_product_holder_0.ssa = M_SSA;
-    m_triple_product_holder_1.ssa = M_SSA;
-
-    if constexpr (NSTOKES == 1) {
-        result.value = m_triple_product_holder_1.value;
-        result.d_by_legendre_coeff =
-            m_triple_product_holder_1.d_by_legendre_coeff;
-
-        result_negative_coszenith.value = m_triple_product_holder_0.value;
-        result_negative_coszenith.d_by_legendre_coeff =
-            m_triple_product_holder_0.d_by_legendre_coeff;
-
-        // And the derivative with respect to SSA is equal to the value divided
-        // by SSA
-        result.d_by_ssa = result.value / M_SSA;
-        result_negative_coszenith.d_by_ssa =
-            result_negative_coszenith.value / M_SSA;
-    } else {
-        result.value = m_triple_product_holder_1.value(Eigen::all, 0);
-        result.d_by_a1 = m_triple_product_holder_1.a1deriv;
-        result.d_by_b1_first = m_triple_product_holder_1.b1deriv(Eigen::all, 2);
-        result.d_by_b1_second =
-            m_triple_product_holder_1.b1deriv(Eigen::all, 3);
-        result.d_by_ssa = result.value / M_SSA;
-
-        result_negative_coszenith.value =
-            m_triple_product_holder_0.value(Eigen::all, 0);
-        result_negative_coszenith.d_by_a1 = m_triple_product_holder_0.a1deriv;
-        result_negative_coszenith.d_by_b1_first =
-            m_triple_product_holder_0.b1deriv(Eigen::all, 2);
-        result_negative_coszenith.d_by_b1_second =
-            m_triple_product_holder_0.b1deriv(Eigen::all, 3);
-        result_negative_coszenith.d_by_ssa =
-            result_negative_coszenith.value / M_SSA;
-    }
-}
-
-template <int NSTOKES, int CNSTR>
 void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::integrate_source(
     AEOrder m, double mu, double obsod,
     const std::vector<LegendrePhaseContainer<NSTOKES>>& lp_mu,
@@ -310,9 +167,7 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::integrate_source(
     }
 
     double x = upper_bound - exit_optical_depth;
-    const auto& transmission =
-        x == 0 ? ceiling_beam_transmittanc()
-               : dual_beamTransmittance(Location::INSIDE, m_input_derivs, x);
+    const auto& transmission = ceiling_beam_transmittanc();
 
     const auto& average_secant = dual_average_secant();
     const LayerDual<double>& dual_thickness = this->dual_thickness();
@@ -323,23 +178,11 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::integrate_source(
     VectorLayerDual<double>& dual_lpsum_minus =
         m_postprocessing_cache.dual_lpsum_minus;
 
-    vectordual_scatPhaseF(m, lp_mu, m_input_derivs, dual_lpsum_minus,
-                          dual_lpsum_plus);
+    scat_phase_f<NSTOKES, CNSTR>(*m_lephasef, lp_mu, (*this->M_LP_MU)[m], m, p,
+                                 m_dual_ssa, (*this->M_WT), m_input_derivs,
+                                 dual_lpsum_minus, dual_lpsum_plus);
 
     const auto& solution = m_solutions[m];
-
-    // dual_lpsum_plus and minus are now linearly storage of N * NSTOKES *
-    // NSTOKES, have to multiply the blocks by the weights
-    for (int i = 0; i < (int)this->M_NSTR / 2; ++i) {
-        for (int j = 0; j < NSTOKES * NSTOKES; ++j) {
-            int linearindex = i * NSTOKES * NSTOKES + j;
-            dual_lpsum_minus.value(linearindex) *= (*this->M_WT)[i];
-            dual_lpsum_plus.value(linearindex) *= (*this->M_WT)[i];
-
-            dual_lpsum_minus.deriv(Eigen::all, linearindex) *= (*this->M_WT)[i];
-            dual_lpsum_plus.deriv(Eigen::all, linearindex) *= (*this->M_WT)[i];
-        }
-    }
 
     const auto& dual_Aplus = solution.value.dual_green_A_plus();
     const auto& dual_Aminus = solution.value.dual_green_A_minus();
@@ -348,29 +191,19 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::integrate_source(
     auto& V = m_postprocessing_cache.V;
 
     // Eq (43)
-    auto& Qtemp = m_postprocessing_cache.Qtemp;
-    auto& temp = m_postprocessing_cache.temp;
     auto& Q = m_postprocessing_cache.Q;
 
     if (include_ss) {
-        singleScatST(m, lp_mu, Qtemp, temp);
-
-        Q.value = Qtemp.value;
-        Q.deriv.setZero();
-
-        typedef typename std::conditional<NSTOKES == 1, double,
-                                          Eigen::Vector<double, NSTOKES>>::type
-            DerivType;
-
-        DerivType derivtemp;
-        for (uint k = 0; k < numderiv; ++k) {
-            Qtemp.reduce(m_input_derivs.layerDerivatives()[layerStart + k],
-                         derivtemp);
-            if constexpr (NSTOKES == 1) {
-                Q.deriv(k + layerStart) = derivtemp;
-            } else {
-                Q.deriv(k + layerStart, Eigen::all) = derivtemp;
-            }
+        if constexpr (NSTOKES == 1) {
+            single_scat_st<NSTOKES, CNSTR, true>(
+                *m_lephasef, lp_mu, (*this->M_LP_CSZ)[m], m, p, m_dual_ssa,
+                this->M_SOLAR_DIRECT_INTENSITY, m_input_derivs, &Q.value,
+                &Q.deriv(layerStart, 0), Q.deriv.rows());
+        } else {
+            single_scat_st<NSTOKES, CNSTR, true>(
+                *m_lephasef, lp_mu, (*this->M_LP_CSZ)[m], m, p, m_dual_ssa,
+                this->M_SOLAR_DIRECT_INTENSITY, m_input_derivs, &Q.value(0),
+                &Q.deriv(layerStart, 0), Q.deriv.rows());
         }
     } else {
         if (manual_ss_source == nullptr) {
@@ -657,9 +490,7 @@ void sasktran_disco::OpticalLayer<1, 2>::integrate_source(
     }
 
     double x = upper_bound - exit_optical_depth;
-    const auto& transmission =
-        x == 0 ? ceiling_beam_transmittanc()
-               : dual_beamTransmittance(Location::INSIDE, m_input_derivs, x);
+    const auto& transmission = ceiling_beam_transmittanc();
 
     const auto& average_secant = dual_average_secant();
     const LayerDual<double>& dual_thickness = this->dual_thickness();
@@ -668,15 +499,9 @@ void sasktran_disco::OpticalLayer<1, 2>::integrate_source(
     VectorLayerDual<double>& dual_lpsum_plus = cache.dual_lpsum_plus;
     VectorLayerDual<double>& dual_lpsum_minus = cache.dual_lpsum_minus;
 
-    vectordual_scatPhaseF(m, lp_mu, m_input_derivs, dual_lpsum_minus,
-                          dual_lpsum_plus);
-
-    // Multiply by the quadrature weight
-    dual_lpsum_minus.value(0) *= (*this->M_WT)[0];
-    dual_lpsum_plus.value(0) *= (*this->M_WT)[0];
-
-    dual_lpsum_minus.deriv(Eigen::all, 0) *= (*this->M_WT)[0];
-    dual_lpsum_plus.deriv(Eigen::all, 0) *= (*this->M_WT)[0];
+    scat_phase_f<1, 2>(*m_lephasef, lp_mu, (*this->M_LP_MU)[m], m, p,
+                       m_dual_ssa, (*this->M_WT), m_input_derivs,
+                       dual_lpsum_minus, dual_lpsum_plus);
 
     const auto& dual_Aplus = solution.value.dual_green_A_plus();
     const auto& dual_Aminus = solution.value.dual_green_A_minus();
@@ -685,22 +510,13 @@ void sasktran_disco::OpticalLayer<1, 2>::integrate_source(
     auto& V = cache.V;
 
     // Eq (43)
-    auto& Qtemp = cache.Qtemp;
-    auto& temp = cache.temp;
     auto& Q = cache.Q;
 
     if (include_ss) {
-        singleScatST(m, lp_mu, Qtemp, temp);
-
-        Q.value = Qtemp.value;
-        Q.deriv.setZero();
-
-        double derivtemp;
-        for (uint k = 0; k < numderiv; ++k) {
-            Qtemp.reduce(m_input_derivs.layerDerivatives()[layerStart + k],
-                         derivtemp);
-            Q.deriv(k + layerStart) = derivtemp;
-        }
+        single_scat_st<1, 2, true>(
+            *m_lephasef, lp_mu, (*this->M_LP_CSZ)[m], m, p, m_dual_ssa,
+            this->M_SOLAR_DIRECT_INTENSITY, m_input_derivs, &Q.value,
+            &Q.deriv(layerStart, 0), Q.deriv.rows());
     } else {
         if (manual_ss_source == nullptr) {
             Q.setzero();

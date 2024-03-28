@@ -1,8 +1,89 @@
 #pragma once
 #include "sktran_disco/sktran_do.h"
+#include "sktran_disco/sktran_do_polarization_types.h"
 #include "sktran_disco/sktran_do_types.h"
 
 namespace sasktran_disco {
+    /**
+     * Calculates the triple product of two Legendre polynomials and a Legendre
+     * coefficient
+     *
+     * @tparam NSTOKES
+     * @tparam CNSTR
+     * @tparam negation
+     * @tparam T
+     * @param coeff
+     * @param lp1
+     * @param lp2
+     * @param l
+     * @param m
+     * @param const_result
+     */
+    template <int NSTOKES, int CNSTR, bool negation, typename T>
+    inline void lp_triple_product(const LegendreCoefficient<NSTOKES>& coeff,
+                                  const LegendrePhaseContainer<NSTOKES>& lp1,
+                                  const LegendrePhaseContainer<NSTOKES>& lp2,
+                                  int l, int m, const T& const_result) {
+        auto& result = const_cast<T&>(const_result);
+
+        if constexpr (NSTOKES == 1) {
+            int negation_factor_upper = 1;
+            if constexpr (negation) {
+                if ((l - m) % 2 != 0 && negation) {
+                    negation_factor_upper *= -1;
+                }
+            }
+
+            result(0, 0) +=
+                lp1.P() * lp2.P() * coeff.a1 * negation_factor_upper;
+        }
+        if constexpr (NSTOKES == 3) {
+            int negation_factor_upper = 1;
+            int negation_factor_lower = 1;
+
+            if constexpr (negation) {
+                negation_factor_lower = -1;
+                if ((l - m) % 2 != 0) {
+                    negation_factor_upper *= -1;
+                    negation_factor_lower *= -1;
+                }
+            }
+
+            // Calculated product by hand
+            result(0, 0) +=
+                lp1.P() * lp2.P() * coeff.a1 * negation_factor_upper;
+            result(0, 1) +=
+                -1.0 * lp1.P() * lp2.R() * coeff.b1 * negation_factor_upper;
+            result(0, 2) +=
+                1.0 * lp1.P() * lp2.T() * coeff.b1 * negation_factor_upper;
+            // 0, 3 is always 0
+
+            result(1, 0) +=
+                -1.0 * lp1.R() * lp2.P() * coeff.b1 * negation_factor_upper;
+            result(1, 1) +=
+                lp1.R() * lp2.R() * coeff.a2 * negation_factor_upper +
+                lp1.T() * lp2.T() * coeff.a3 * negation_factor_lower;
+            result(1, 2) +=
+                -lp1.R() * lp2.T() * coeff.a2 * negation_factor_upper -
+                lp1.T() * lp2.R() * coeff.a3 * negation_factor_lower;
+
+            result(2, 0) +=
+                lp1.T() * lp2.P() * coeff.b1 * negation_factor_upper;
+            result(2, 1) +=
+                -lp1.T() * lp2.R() * coeff.a2 * negation_factor_upper -
+                lp1.R() * lp2.T() * coeff.a3 * negation_factor_lower;
+            result(2, 2) +=
+                lp1.T() * lp2.T() * coeff.a2 * negation_factor_upper +
+                lp1.R() * lp2.R() * coeff.a3 * negation_factor_lower;
+        }
+    }
+
+    /**
+     * @brief Handles derivatives of Splus/Sminus for the Legendre solution
+     *
+     * @tparam NSTOKES
+     * @tparam CNSTR
+     */
     template <int NSTOKES, int CNSTR> class DerivBlockIter {
         using Matrix =
             typename std::conditional<CNSTR == -1, Eigen::MatrixXd,
@@ -63,6 +144,24 @@ namespace sasktran_disco {
         }
     };
 
+    /**
+     * @brief Calculates a block of the Splus/Sminus matrices in the homogeneous
+     * solution and their derivatives
+     *
+     * @tparam NSTOKES
+     * @tparam CNSTR
+     * @param const_Splus
+     * @param const_Sminus
+     * @param coeffs
+     * @param lp1s
+     * @param lp2s
+     * @param m
+     * @param ssa
+     * @param weight
+     * @param mu
+     * @param deriv_blocks
+     * @param on_diagonal
+     */
     template <int NSTOKES, int CNSTR>
     inline void lp_triple_product(
         const Eigen::Block<
@@ -99,80 +198,10 @@ namespace sasktran_disco {
         eta.setZero();
 
         for (int l = m; l < coeffs.size(); ++l) {
-            if constexpr (NSTOKES == 1) {
-                // Start by setting Splus to zeta, and using temporary for eta
-                const auto& coeff = coeffs[l];
-                const auto& lp1 = lp1s[l];
-                const auto& lp2 = lp2s[l];
-
-                // Calculated product by hand
-                Splus(0, 0) += lp1.P() * lp2.P() * coeff.a1;
-
-                int negation_factor_upper = 1;
-                if ((l - m) % 2 != 0) {
-                    negation_factor_upper *= -1;
-                }
-                // Calculated product by hand
-                eta(0, 0) +=
-                    lp1.P() * lp2.P() * coeff.a1 * negation_factor_upper;
-            }
-            if constexpr (NSTOKES == 3) {
-                // Start by setting Splus to zeta, and using temporary for eta
-                const auto& coeff = coeffs[l];
-                const auto& lp1 = lp1s[l];
-                const auto& lp2 = lp2s[l];
-
-                // Calculated product by hand
-                Splus(0, 0) += lp1.P() * lp2.P() * coeff.a1;
-                Splus(0, 1) += -1.0 * lp1.P() * lp2.R() * coeff.b1;
-                Splus(0, 2) += 1.0 * lp1.P() * lp2.T() * coeff.b1;
-                // 0, 3 is always 0
-
-                Splus(1, 0) += -1.0 * lp1.R() * lp2.P() * coeff.b1;
-                Splus(1, 1) +=
-                    lp1.R() * lp2.R() * coeff.a2 + lp1.T() * lp2.T() * coeff.a3;
-                Splus(1, 2) += -lp1.R() * lp2.T() * coeff.a2 -
-                               lp1.T() * lp2.R() * coeff.a3;
-
-                Splus(2, 0) += lp1.T() * lp2.P() * coeff.b1;
-                Splus(2, 1) += -lp1.T() * lp2.R() * coeff.a2 -
-                               lp1.R() * lp2.T() * coeff.a3;
-                Splus(2, 2) +=
-                    lp1.T() * lp2.T() * coeff.a2 + lp1.R() * lp2.R() * coeff.a3;
-
-                int negation_factor_upper = 1;
-                int negation_factor_lower = -1;
-                if ((l - m) % 2 != 0) {
-                    negation_factor_upper *= -1;
-                    negation_factor_lower *= -1;
-                }
-                // Calculated product by hand
-                eta(0, 0) +=
-                    lp1.P() * lp2.P() * coeff.a1 * negation_factor_upper;
-                eta(0, 1) +=
-                    -1.0 * lp1.P() * lp2.R() * coeff.b1 * negation_factor_upper;
-                eta(0, 2) +=
-                    1.0 * lp1.P() * lp2.T() * coeff.b1 * negation_factor_upper;
-                // 0, 3 is always 0
-
-                eta(1, 0) +=
-                    -1.0 * lp1.R() * lp2.P() * coeff.b1 * negation_factor_upper;
-                eta(1, 1) +=
-                    lp1.R() * lp2.R() * coeff.a2 * negation_factor_upper +
-                    lp1.T() * lp2.T() * coeff.a3 * negation_factor_lower;
-                eta(1, 2) +=
-                    -lp1.R() * lp2.T() * coeff.a2 * negation_factor_upper -
-                    lp1.T() * lp2.R() * coeff.a3 * negation_factor_lower;
-
-                eta(2, 0) +=
-                    lp1.T() * lp2.P() * coeff.b1 * negation_factor_upper;
-                eta(2, 1) +=
-                    -lp1.T() * lp2.R() * coeff.a2 * negation_factor_upper -
-                    lp1.R() * lp2.T() * coeff.a3 * negation_factor_lower;
-                eta(2, 2) +=
-                    lp1.T() * lp2.T() * coeff.a2 * negation_factor_upper +
-                    lp1.R() * lp2.R() * coeff.a3 * negation_factor_lower;
-            }
+            lp_triple_product<NSTOKES, CNSTR, false>(coeffs[l], lp1s[l],
+                                                     lp2s[l], l, m, Splus);
+            lp_triple_product<NSTOKES, CNSTR, true>(coeffs[l], lp1s[l], lp2s[l],
+                                                    l, m, eta);
         }
         // Include quadrature factors since we need these for the derivatives
         Splus.array() *= -0.5 * weight / mu;
@@ -195,68 +224,11 @@ namespace sasktran_disco {
                 const auto& coeff = deriv.d_legendre_coeff[l];
                 const auto& lp1 = lp1s[l];
                 const auto& lp2 = lp2s[l];
-                if constexpr (NSTOKES == 1) {
-                    d_Splus(0, 0) += lp1.P() * lp2.P() * coeff.a1;
 
-                    int negation_factor_upper = 1;
-                    if ((l - m) % 2 != 0) {
-                        negation_factor_upper *= -1;
-                    }
-                    d_eta(0, 0) +=
-                        lp1.P() * lp2.P() * coeff.a1 * negation_factor_upper;
-                }
-                if constexpr (NSTOKES == 3) {
-                    // Calculated product by hand
-                    d_Splus(0, 0) += lp1.P() * lp2.P() * coeff.a1;
-                    d_Splus(0, 1) += -1.0 * lp1.P() * lp2.R() * coeff.b1;
-                    d_Splus(0, 2) += 1.0 * lp1.P() * lp2.T() * coeff.b1;
-                    // 0, 3 is always 0
-
-                    d_Splus(1, 0) += -1.0 * lp1.R() * lp2.P() * coeff.b1;
-                    d_Splus(1, 1) += lp1.R() * lp2.R() * coeff.a2 +
-                                     lp1.T() * lp2.T() * coeff.a3;
-                    d_Splus(1, 2) += -lp1.R() * lp2.T() * coeff.a2 -
-                                     lp1.T() * lp2.R() * coeff.a3;
-
-                    d_Splus(2, 0) += lp1.T() * lp2.P() * coeff.b1;
-                    d_Splus(2, 1) += -lp1.T() * lp2.R() * coeff.a2 -
-                                     lp1.R() * lp2.T() * coeff.a3;
-                    d_Splus(2, 2) += lp1.T() * lp2.T() * coeff.a2 +
-                                     lp1.R() * lp2.R() * coeff.a3;
-
-                    int negation_factor_upper = 1;
-                    int negation_factor_lower = -1;
-                    if ((l - m) % 2 != 0) {
-                        negation_factor_upper *= -1;
-                        negation_factor_lower *= -1;
-                    }
-                    // Calculated product by hand
-                    d_eta(0, 0) +=
-                        lp1.P() * lp2.P() * coeff.a1 * negation_factor_upper;
-                    d_eta(0, 1) += -1.0 * lp1.P() * lp2.R() * coeff.b1 *
-                                   negation_factor_upper;
-                    d_eta(0, 2) += 1.0 * lp1.P() * lp2.T() * coeff.b1 *
-                                   negation_factor_upper;
-                    // 0, 3 is always 0
-
-                    d_eta(1, 0) += -1.0 * lp1.R() * lp2.P() * coeff.b1 *
-                                   negation_factor_upper;
-                    d_eta(1, 1) +=
-                        lp1.R() * lp2.R() * coeff.a2 * negation_factor_upper +
-                        lp1.T() * lp2.T() * coeff.a3 * negation_factor_lower;
-                    d_eta(1, 2) +=
-                        -lp1.R() * lp2.T() * coeff.a2 * negation_factor_upper -
-                        lp1.T() * lp2.R() * coeff.a3 * negation_factor_lower;
-
-                    d_eta(2, 0) +=
-                        lp1.T() * lp2.P() * coeff.b1 * negation_factor_upper;
-                    d_eta(2, 1) +=
-                        -lp1.T() * lp2.R() * coeff.a2 * negation_factor_upper -
-                        lp1.R() * lp2.T() * coeff.a3 * negation_factor_lower;
-                    d_eta(2, 2) +=
-                        lp1.T() * lp2.T() * coeff.a2 * negation_factor_upper +
-                        lp1.R() * lp2.R() * coeff.a3 * negation_factor_lower;
-                }
+                lp_triple_product<NSTOKES, CNSTR, false>(coeff, lp1, lp2, l, m,
+                                                         d_Splus);
+                lp_triple_product<NSTOKES, CNSTR, true>(coeff, lp1, lp2, l, m,
+                                                        d_eta);
             }
             // Start by including the quadrature factors
             d_Splus.array() *= -0.5 * ssa.value * weight / mu;
@@ -288,6 +260,125 @@ namespace sasktran_disco {
         // and +/- eta
         Splus.array() += eta.array();
         Sminus.array() -= eta.array();
+    }
+
+    template <int NSTOKES, int CNSTR>
+    inline void scat_phase_f(
+        const std::vector<LegendreCoefficient<NSTOKES>>& coeffs,
+        const std::vector<LegendrePhaseContainer<NSTOKES>>& lp_mu,
+        const sasktran_disco::VectorDim2<LegendrePhaseContainer<NSTOKES>>& lp,
+        int m, LayerIndex p, const LayerDual<double>& ssa,
+        const std::vector<double>& weights,
+        const InputDerivatives<NSTOKES>& input_derivs,
+        VectorLayerDual<double>& dual_lpsum_plus,
+        VectorLayerDual<double>& dual_lpsum_minus) {
+        dual_lpsum_plus.value.setZero();
+        dual_lpsum_minus.value.setZero();
+
+        for (StreamIndex j = 0; j < coeffs.size() / 2; ++j) {
+            Eigen::Map<Eigen::Matrix<double, NSTOKES, NSTOKES>> plus_matrix(
+                dual_lpsum_plus.value.data() + j * NSTOKES * NSTOKES);
+            Eigen::Map<Eigen::Matrix<double, NSTOKES, NSTOKES>> minus_matrix(
+                dual_lpsum_minus.value.data() + j * NSTOKES * NSTOKES);
+
+            for (int l = m; l < coeffs.size(); ++l) {
+                lp_triple_product<NSTOKES, CNSTR, false>(
+                    coeffs[l], lp_mu[l], lp[j][l], l, m, plus_matrix);
+                lp_triple_product<NSTOKES, CNSTR, true>(
+                    coeffs[l], lp_mu[l], lp[j][l], l, m, minus_matrix);
+            }
+
+            for (int k = 0; k < input_derivs.numDerivativeLayer(p); ++k) {
+                const LayerInputDerivative<NSTOKES>& deriv =
+                    input_derivs
+                        .layerDerivatives()[input_derivs.layerStartIndex(p) +
+                                            k];
+
+                Eigen::Map<Eigen::Matrix<double, NSTOKES, NSTOKES>, 0,
+                           Eigen::InnerStride<>>
+                    d_plus_matrix(
+                        &dual_lpsum_plus.deriv(k, j * NSTOKES * NSTOKES),
+                        NSTOKES, NSTOKES,
+                        Eigen::InnerStride<>(
+                            input_derivs.numDerivativeLayer(p)));
+                Eigen::Map<Eigen::Matrix<double, NSTOKES, NSTOKES>, 0,
+                           Eigen::InnerStride<>>
+                    d_minus_matrix(
+                        &dual_lpsum_minus.deriv(k, j * NSTOKES * NSTOKES),
+                        NSTOKES, NSTOKES,
+                        Eigen::InnerStride<>(
+                            input_derivs.numDerivativeLayer(p)));
+
+                d_plus_matrix.setZero();
+                d_minus_matrix.setZero();
+
+                for (int l = m; l < coeffs.size(); ++l) {
+                    lp_triple_product<NSTOKES, CNSTR, false>(
+                        deriv.d_legendre_coeff[l], lp_mu[l], lp[j][l], l, m,
+                        d_plus_matrix);
+                    lp_triple_product<NSTOKES, CNSTR, true>(
+                        deriv.d_legendre_coeff[l], lp_mu[l], lp[j][l], l, m,
+                        d_minus_matrix);
+                }
+
+                d_plus_matrix.array() *= 0.5 * ssa.value * weights[j];
+                d_minus_matrix.array() *= 0.5 * ssa.value * weights[j];
+
+                d_plus_matrix.array() +=
+                    plus_matrix.array() * deriv.d_SSA * 0.5 * weights[j];
+                d_minus_matrix.array() +=
+                    minus_matrix.array() * deriv.d_SSA * 0.5 * weights[j];
+            }
+
+            plus_matrix.array() *= 0.5 * ssa.value * weights[j];
+            minus_matrix.array() *= 0.5 * ssa.value * weights[j];
+        }
+    }
+
+    template <int NSTOKES, int CNSTR, bool negation>
+    inline void
+    single_scat_st(const std::vector<LegendreCoefficient<NSTOKES>>& coeffs,
+                   const std::vector<LegendrePhaseContainer<NSTOKES>>& lp_mu,
+                   const std::vector<LegendrePhaseContainer<NSTOKES>>& lp_csz,
+                   int m, LayerIndex p, const LayerDual<double>& ssa,
+                   double direct_intesity,
+                   const InputDerivatives<NSTOKES>& input_derivs, double* value,
+                   double* d_value, int nderiv) {
+        Eigen::Matrix<double, NSTOKES, NSTOKES> result, d_result;
+        result.setZero();
+
+        double factor =
+            (2 - kronDelta(m, 0)) * (1.0 / (4.0 * EIGEN_PI)) * direct_intesity;
+        for (int l = m; l < coeffs.size(); ++l) {
+            lp_triple_product<NSTOKES, CNSTR, negation>(
+                coeffs[l], lp_mu[l], lp_csz[l], l, m, result);
+        }
+        result *= factor;
+
+        for (int k = 0; k < input_derivs.numDerivativeLayer(p); ++k) {
+            const LayerInputDerivative<NSTOKES>& deriv =
+                input_derivs
+                    .layerDerivatives()[input_derivs.layerStartIndex(p) + k];
+
+            d_result.setZero();
+            for (int l = m; l < coeffs.size(); ++l) {
+                lp_triple_product<NSTOKES, CNSTR, negation>(
+                    deriv.d_legendre_coeff[l], lp_mu[l], lp_csz[l], l, m,
+                    d_result);
+            }
+            d_result *= factor;
+
+            d_result.array() += result.array() * deriv.d_SSA;
+
+            Eigen::Map<Eigen::Matrix<double, NSTOKES, 1>, 0,
+                       Eigen::InnerStride<>>
+                map_d_value(d_value + k, NSTOKES, 1,
+                            Eigen::InnerStride<>(nderiv));
+            map_d_value.array() = d_result(Eigen::all, 0).array();
+        }
+
+        Eigen::Map<Eigen::Matrix<double, NSTOKES, 1>> map_value(value);
+        map_value.array() = result(Eigen::all, 0).array() * ssa.value;
     }
 
 } // namespace sasktran_disco
