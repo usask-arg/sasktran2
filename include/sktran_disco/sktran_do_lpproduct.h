@@ -366,7 +366,7 @@ namespace sasktran_disco {
                     deriv.d_legendre_coeff[l], lp_mu[l], lp_csz[l], l, m,
                     d_result);
             }
-            d_result *= factor;
+            d_result *= factor * ssa.value;
 
             d_result.array() += result.array() * deriv.d_SSA;
 

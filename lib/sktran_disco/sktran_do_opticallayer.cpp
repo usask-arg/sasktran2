@@ -194,6 +194,7 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::integrate_source(
     auto& Q = m_postprocessing_cache.Q;
 
     if (include_ss) {
+        Q.deriv.setZero();
         if constexpr (NSTOKES == 1) {
             single_scat_st<NSTOKES, CNSTR, true>(
                 *m_lephasef, lp_mu, (*this->M_LP_CSZ)[m], m, p, m_dual_ssa,
