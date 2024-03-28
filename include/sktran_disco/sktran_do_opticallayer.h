@@ -85,15 +85,6 @@ namespace sasktran_disco {
         void configureDerivative();
 
         /**
-         * @brief Initializes the layer transmissions
-         *
-         * @param od_top
-         * @param od_bottom
-         */
-        void configurePseudoSpherical(const Dual<double>& od_top,
-                                      const Dual<double>& od_bottom);
-
-        /**
          * @brief The single scatter albedo for the layer
          *
          * @return double
@@ -153,16 +144,11 @@ namespace sasktran_disco {
         inline double beamTransmittance(Location loc, double x = -1) const {
             switch (loc) {
             case Location::FLOOR:
-                return m_dual_bt_floor.value;
+                return floor_beam_transmittance().value;
                 break;
             case Location::CEILING:
-                return m_dual_bt_ceiling.value;
+                return ceiling_beam_transmittanc().value;
                 break;
-            case Location::INSIDE:
-                if (x < 0)
-                    abort();
-                return m_dual_bt_ceiling.value *
-                       std::exp(-x * m_average_secant.value);
             default:
                 abort();
             }
@@ -186,40 +172,10 @@ namespace sasktran_disco {
 
             switch (loc) {
             case Location::FLOOR:
-                return m_dual_bt_floor.deriv(derivindex);
+                return floor_beam_transmittance().deriv(derivindex);
                 break;
             case Location::CEILING:
-                return m_dual_bt_ceiling.deriv(derivindex);
-                break;
-            case Location::INSIDE:
-                if (x < 0)
-                    abort();
-                if (d_idx < cur_layer) {
-                    // transmittance is bt_ceiling * exp(-x * secant)
-                    // dx = 0.0
-                    double dx = 0.0;
-                    return std::exp(-x * m_average_secant.value) *
-                           (m_dual_bt_ceiling.deriv(derivindex) -
-                            m_average_secant.value * m_dual_bt_ceiling.value *
-                                dx -
-                            x * m_average_secant.deriv(derivindex) *
-                                m_dual_bt_ceiling.value);
-                } else if (d_idx == cur_layer) {
-                    // transmittance is = bt_ceiling * exp(-x * secant)
-                    // dx = layer_fraction * deriv.d_optical_depth
-
-                    double layerfraction = x / (M_OPTICAL_THICKNESS);
-                    double dx = layerfraction * deriv.d_optical_depth;
-
-                    return std::exp(-x * m_average_secant.value) *
-                           (m_dual_bt_ceiling.deriv(derivindex) -
-                            m_average_secant.value * m_dual_bt_ceiling.value *
-                                dx -
-                            x * m_average_secant.deriv(derivindex) *
-                                m_dual_bt_ceiling.value);
-                } else {
-                    return 0.0;
-                }
+                return ceiling_beam_transmittanc().deriv(derivindex);
                 break;
             default:
                 abort();
@@ -392,7 +348,7 @@ namespace sasktran_disco {
          * @return const Dual<double>&
          */
         inline const Dual<double>& ceiling_beam_transmittanc() const {
-            return m_dual_bt_ceiling;
+            return *m_bt_ceiling;
         }
 
         /**
@@ -401,7 +357,7 @@ namespace sasktran_disco {
          * @return Dual<double>&
          */
         inline Dual<double>& ceiling_beam_transmittance() const {
-            return m_dual_bt_ceiling;
+            return *m_bt_ceiling;
         }
 
         /**
@@ -410,7 +366,13 @@ namespace sasktran_disco {
          * @return Dual<double>&
          */
         inline Dual<double>& floor_beam_transmittance() const {
-            return m_dual_bt_floor;
+            return *m_bt_floor;
+        }
+
+        inline void set_transmittances(Dual<double>& bt_ceiling,
+                                       Dual<double>& bt_floor) {
+            m_bt_ceiling = &bt_ceiling;
+            m_bt_floor = &bt_floor;
         }
 
         /**
@@ -516,10 +478,11 @@ namespace sasktran_disco {
         LayerDual<double>& m_dual_thickness; /** Dual of the optical thickness*/
         LayerDual<double>& m_dual_ssa;  /** Dual of the single scatter albedo */
         Dual<double>& m_average_secant; /** Dual of the average secant */
-        Dual<double>& m_dual_bt_floor; /** Dual of transmission at the bottom of
-                                          the layer */
-        Dual<double>& m_dual_bt_ceiling; /** Dual of transmission at the top of
-                                            the layer */
+
+        Dual<double>* m_bt_ceiling; /** Dual of transmission at the top of
+                                             the layer */
+        Dual<double>* m_bt_floor;   /** Dual of transmission at the bottom of
+                                             the layer */
     };
 
 } // namespace sasktran_disco

@@ -1,5 +1,6 @@
 #include "sktran_disco/sktran_do.h"
 #include "sktran_disco/sktran_do_layerarray.h"
+#include "sktran_disco/sktran_do_types.h"
 
 template <int NSTOKES, int CNSTR>
 void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::
@@ -254,6 +255,7 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
       m_chapman_factors(geometry_layers.chapman_factors()),
       m_optical_interpolator(geometry_layers.interpolating_matrix()),
       m_input_derivatives(config.pool().thread_data().input_derivatives()),
+      m_transmission(config.pool().thread_data().transmission()),
       m_albedo(los, *this->M_MU, this->M_CSZ, std::move(brdf), 64) {
     m_wavel_index = wavelidx;
     // Allocations
@@ -453,6 +455,10 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
 
             m_input_derivatives.set_geometry_configured();
             m_input_derivatives.sort(this->M_NLYR);
+
+            for (Dual<double>& trans : m_transmission) {
+                trans.deriv.resize(m_input_derivatives.numDerivative());
+            }
         }
 
         // Go through the derivatives and reassign a few things
@@ -630,103 +636,65 @@ void sasktran_disco::OpticalLayerArray<NSTOKES,
 
     bool compute_deriv = m_input_derivatives.numDerivative() > 0;
 
-    // Sometimes we can get OD's so large that exp(-od) = 0, in which case we
-    // can't do log(exp(-od)) to recover od so we have to store OD temporarily
-    double od_temp;
-    Eigen::VectorXd d_temp;
+    // Start at TOA and work down
+    // Start by storing OD
+    m_transmission[0].value = 0;
+    m_transmission[0].deriv.setZero();
 
-    if (compute_deriv) {
-        for (auto& layer : m_layers) {
-            layer->ceiling_beam_transmittance().resize(
-                m_input_derivatives.numDerivative(), false);
-            layer->floor_beam_transmittance().resize(
-                m_input_derivatives.numDerivative(), true);
+    int index = 1;
+    for (auto& layer : m_layers) {
+        m_transmission[index].value = 0.0;
+        m_transmission[index].deriv.setZero();
 
-            layer->floor_beam_transmittance().value = 0;
+        for (LayerIndex p = 0; p <= layer->index(); ++p) {
+            const auto& dual_thickness = m_layers[p]->dual_thickness();
 
-            if (layer->index() == 0) {
-                layer->ceiling_beam_transmittance().value = 1;
-                od_temp = 0;
-                layer->ceiling_beam_transmittance().deriv.setZero();
+            m_transmission[index].value +=
+                m_chapman_factors(layer->index(), p) * dual_thickness.value;
 
-                d_temp = layer->ceiling_beam_transmittance().deriv;
-            } else {
-                layer->ceiling_beam_transmittance().value =
-                    m_layers[layer->index() - 1]
-                        ->floor_beam_transmittance()
-                        .value;
-                layer->ceiling_beam_transmittance().deriv =
-                    m_layers[layer->index() - 1]
-                        ->floor_beam_transmittance()
-                        .deriv;
-            }
-            for (LayerIndex p = 0; p <= layer->index(); ++p) {
-                const auto& dual_thickness = m_layers[p]->dual_thickness();
-                layer->floor_beam_transmittance().value +=
-                    m_chapman_factors(layer->index(), p) * dual_thickness.value;
-
+            if (compute_deriv) {
                 const auto seq =
                     Eigen::seq(dual_thickness.layer_start,
                                dual_thickness.layer_start +
                                    dual_thickness.deriv.size() - 1);
-                layer->floor_beam_transmittance().deriv(seq) +=
+                m_transmission[index].deriv(seq) +=
                     m_chapman_factors(layer->index(), p) * dual_thickness.deriv;
             }
+        }
+        layer->dual_average_secant().value =
+            (m_transmission[index].value - m_transmission[index - 1].value) /
+            layer->dual_thickness().value;
 
-            layer->dual_average_secant().value =
-                (layer->floor_beam_transmittance().value - od_temp) /
-                layer->dual_thickness().value;
-
+        if (compute_deriv) {
             layer->dual_average_secant().deriv =
-                (layer->floor_beam_transmittance().deriv + d_temp) /
+                (m_transmission[index].deriv -
+                 m_transmission[index - 1].deriv) /
                 layer->dual_thickness().value;
+
             const auto seq =
                 Eigen::seq(layer->dual_thickness().layer_start,
                            layer->dual_thickness().layer_start +
                                layer->dual_thickness().deriv.size() - 1);
-
-            if (layer->dual_thickness().deriv.size() > 0) {
-                layer->dual_average_secant().deriv(seq) -=
-                    layer->dual_thickness().deriv /
-                    layer->dual_thickness().value *
-                    layer->dual_average_secant().value;
-            }
-
-            od_temp = layer->floor_beam_transmittance().value;
-            layer->floor_beam_transmittance().value =
-                std::exp(-layer->floor_beam_transmittance().value);
-
-            d_temp = -1 * layer->floor_beam_transmittance().deriv;
-            layer->floor_beam_transmittance().deriv =
-                layer->floor_beam_transmittance().value * -1 *
-                layer->floor_beam_transmittance().deriv;
+            layer->dual_average_secant().deriv(seq) -=
+                layer->dual_thickness().deriv / layer->dual_thickness().value *
+                layer->dual_average_secant().value;
         }
-    } else {
-        for (auto& layer : m_layers) {
-            layer->floor_beam_transmittance().value = 0;
+        ++index;
+    }
 
-            if (layer->index() == 0) {
-                layer->ceiling_beam_transmittance().value = 1;
-                od_temp = 0;
-            } else {
-                layer->ceiling_beam_transmittance().value =
-                    m_layers[layer->index() - 1]
-                        ->floor_beam_transmittance()
-                        .value;
-            }
-            for (LayerIndex p = 0; p <= layer->index(); ++p) {
-                const auto& dual_thickness = m_layers[p]->dual_thickness();
-                layer->floor_beam_transmittance().value +=
-                    m_chapman_factors(layer->index(), p) * dual_thickness.value;
-            }
-            layer->dual_average_secant().value =
-                (layer->floor_beam_transmittance().value - od_temp) /
-                layer->dual_thickness().value;
-
-            od_temp = layer->floor_beam_transmittance().value;
-            layer->floor_beam_transmittance().value =
-                std::exp(-layer->floor_beam_transmittance().value);
+    // Now convert OD to transmission
+    m_transmission[0].value = 1;
+    index = 1;
+    for (auto& layer : m_layers) {
+        m_transmission[index].value = std::exp(-m_transmission[index].value);
+        if (compute_deriv) {
+            m_transmission[index].deriv =
+                -m_transmission[index].deriv * m_transmission[index].value;
         }
+
+        layer->set_transmittances(m_transmission[index - 1],
+                                  m_transmission[index]);
+        ++index;
     }
 }
 

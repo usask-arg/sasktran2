@@ -353,6 +353,9 @@ namespace sasktran_disco {
             m_optical_interpolator; /** Interpolation matrix from the atmosphere
                                        levels to the layers */
 
+        std::vector<Dual<double>>& m_transmission; /** Transmission factors for
+                                                     the layers */
+
         const PersistentConfiguration<NSTOKES, CNSTR>&
             m_config; /** Internal config object */
 

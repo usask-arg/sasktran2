@@ -85,9 +85,6 @@ namespace sasktran_disco {
         LayerDual<double> dual_thickness; /** The thickness of the layer */
         LayerDual<double> dual_ssa;       /** Single scatter albedo */
         Dual<double> average_secant;      /** Average secant */
-        Dual<double> dual_bt_floor; /** Transmission at the floor of the layer*/
-        Dual<double>
-            dual_bt_ceiling; /** Transmission at the ceiling of the layer */
 
         LayerCache(uint NSTR) {}
     };
@@ -207,6 +204,8 @@ namespace sasktran_disco {
             m_layer_cache; /** Layer caches*/
         mutable InputDerivatives<NSTOKES>
             m_input_derivatives; /** Input derivatives*/
+        mutable std::vector<Dual<double>> m_transmission;   /** Transmission
+                                                                    cache*/
         mutable RTEMemoryCache<NSTOKES, CNSTR> m_rte_cache; /** RTE Cache*/
 
       public:
@@ -223,6 +222,7 @@ namespace sasktran_disco {
             }
             m_postprocessing_cache.resize(NLYR);
             m_layer_cache.resize(NLYR, NSTR);
+            m_transmission.resize(NLYR + 1);
 
             m_rte_cache.has_been_configured_by_rte_solver = false;
         }
@@ -266,6 +266,15 @@ namespace sasktran_disco {
          */
         InputDerivatives<NSTOKES>& input_derivatives() const {
             return m_input_derivatives;
+        }
+
+        /**
+         * @brief Layer transmissions
+         *
+         * @return std::vector<Dual<double>>&
+         */
+        std::vector<Dual<double>>& transmission() const {
+            return m_transmission;
         }
 
         /**

@@ -17,9 +17,7 @@ sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::OpticalLayer(
       m_postprocessing_cache(thread_data.postprocessing_cache(index)),
       m_dual_thickness(m_layercache.dual_thickness),
       m_dual_ssa(m_layercache.dual_ssa),
-      m_average_secant(m_layercache.average_secant),
-      m_dual_bt_ceiling(m_layercache.dual_bt_ceiling),
-      m_dual_bt_floor(m_layercache.dual_bt_floor) {
+      m_average_secant(m_layercache.average_secant) {
     m_lephasef = std::make_unique<std::vector<LegendreCoefficient<NSTOKES>>>(
         config.nstr());
 }
@@ -72,9 +70,7 @@ sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::OpticalLayer(
           config.pool().thread_data().postprocessing_cache(index)),
       m_dual_thickness(m_layercache.dual_thickness),
       m_dual_ssa(m_layercache.dual_ssa),
-      m_average_secant(m_layercache.average_secant),
-      m_dual_bt_ceiling(m_layercache.dual_bt_ceiling),
-      m_dual_bt_floor(m_layercache.dual_bt_floor) {
+      m_average_secant(m_layercache.average_secant) {
     // Check that SSA is not approximately zero. If so then emit warning once
     // and then dither SSA.
     double ssa_dither = this->m_userspec->getSSAEqual1Dither();
@@ -110,37 +106,6 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::configureDerivative() {
     uint layerStart = (uint)m_input_derivs.layerStartIndex(p);
     m_postprocessing_cache.resize(this->M_NSTR, p, numderiv, layerStart,
                                   numtotalderiv);
-}
-
-template <int NSTOKES, int CNSTR>
-void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::configurePseudoSpherical(
-    const Dual<double>& od_top, const Dual<double>& od_bottom) {
-    m_dual_bt_ceiling.resize(od_top.deriv.size(), false);
-    m_dual_bt_floor.resize(od_bottom.deriv.size(), false);
-    m_average_secant.resize(od_top.deriv.size(), false);
-
-    m_dual_bt_ceiling.value = std::exp(-1 * od_top.value);
-    m_dual_bt_ceiling.deriv = m_dual_bt_ceiling.value * -1 * od_top.deriv;
-
-    m_dual_bt_floor.value = std::exp(-1 * od_bottom.value);
-    m_dual_bt_floor.deriv = m_dual_bt_floor.value * -1 * od_bottom.deriv;
-
-    m_average_secant.value =
-        (od_bottom.value - od_top.value) / m_dual_thickness.value;
-    m_average_secant.deriv =
-        (od_bottom.deriv - od_top.deriv) / m_dual_thickness.value;
-
-    const auto seq = Eigen::seq(m_dual_thickness.layer_start,
-                                m_dual_thickness.layer_start +
-                                    m_dual_thickness.deriv.size() - 1);
-
-    if (m_dual_thickness.deriv.size() > 0) {
-        m_average_secant.deriv(seq) +=
-            m_dual_thickness.deriv * od_top.value /
-                (m_dual_thickness.value * m_dual_thickness.value) -
-            m_dual_thickness.deriv * od_bottom.value /
-                (m_dual_thickness.value * m_dual_thickness.value);
-    }
 }
 
 template <int NSTOKES, int CNSTR>
