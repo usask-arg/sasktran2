@@ -45,9 +45,6 @@ add_library(
   sktran_disco/sktran_do_geometrylayerarray.cpp
   sktran_disco/sktran_do_layerarray.cpp
   sktran_disco/sktran_do_lazyazimuth.cpp
-  sktran_disco/sktran_do_linearization_types.cpp
-  sktran_disco/sktran_do_lowlevelinterface.cpp
-  sktran_disco/sktran_do_misc.cpp
   sktran_disco/sktran_do_opticallayer.cpp
   sktran_disco/sktran_do_pconfig.cpp
   sktran_disco/sktran_do_pentadiagonal.cpp
@@ -63,8 +60,7 @@ add_library(
   sktran_disco/source_term/do_source_diffuse_storage.cpp
   sktran_disco/source_term/do_source.cpp
   sktran_disco/source_term/do_source_interpolated_pp.cpp
-  sktran_disco/source_term/do_source_planeparallel.cpp
-  sktran_disco/sktran_do_dll_expose.cpp)
+  sktran_disco/source_term/do_source_planeparallel.cpp)
 
 option(BUILD_DOXYGEN "Build Doxygen Docs" ON)
 # Doxygen document build

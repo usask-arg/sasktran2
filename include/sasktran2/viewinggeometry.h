@@ -13,6 +13,7 @@ namespace sasktran2::viewinggeometry {
     struct ViewingRay {
         sasktran2::Location observer; /**< Observer location */
         Eigen::Vector3d look_away;    /**< Look vector away from the observer */
+        double relative_azimuth; /**< Relative azimuth angle in [radians] */
 
         /**
          *

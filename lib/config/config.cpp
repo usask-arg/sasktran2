@@ -74,7 +74,9 @@ namespace sasktran2 {
         }
 
         if (m_nsinglescatter_moments < m_ndostreams &&
-            m_multiple_scatter_source != MultipleScatterSource::none) {
+            m_multiple_scatter_source != MultipleScatterSource::none &&
+            (m_single_scatter_source !=
+             SingleScatterSource::discrete_ordinates)) {
             spdlog::critical("Invalid number of single scatter moments: {}, "
                              "must be at least the number of streams, {}",
                              m_nsinglescatter_moments, m_ndostreams);

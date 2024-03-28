@@ -1,4 +1,5 @@
 #include "sasktran2/do_source.h"
+#include <sasktran2/math/wigner.h>
 
 namespace sasktran2 {
     template <int NSTOKES, int CNSTR>
@@ -26,8 +27,8 @@ namespace sasktran2 {
             }
 
             if constexpr (NSTOKES > 1) {
-                auto calculatorneg = sasktran_disco::WignerDCalculator(m, -2);
-                auto calculatorpos = sasktran_disco::WignerDCalculator(m, 2);
+                auto calculatorneg = sasktran2::math::WignerDCalculator(m, -2);
+                auto calculatorpos = sasktran2::math::WignerDCalculator(m, 2);
                 for (int l = 0; l < nstr; ++l) {
                     int idx = linear_index(m, l);
 

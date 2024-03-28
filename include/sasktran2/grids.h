@@ -10,15 +10,18 @@ namespace sasktran2 {
 namespace sasktran2::grids {
 
     /** Interpolation mode between layer boundaries.  Note that currently
-     * 'constant' is not fully implemented.
+     * 'shell' is not fully implemented.
      *
      * 'linear' performs linear interpolation between layer boundaries
      *
-     * 'constant' assumes the the layer consists of optical properties equal to
+     * 'shell' assumes the the layer consists of optical properties equal to
      * 0.5*lower + 0.5*upper
      *
+     * 'lower' assumes the the layer consists of optical properties equal to
+     *  the lower boundary
+     *
      */
-    enum interpolation { shell, linear };
+    enum interpolation { shell, linear, lower };
 
     /** Keeps track of the spacing between grid points within a grid.
      *

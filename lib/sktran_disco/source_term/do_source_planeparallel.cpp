@@ -215,8 +215,6 @@ namespace sasktran2 {
         m_do_los.resize(los_rays.size());
         m_lp_coszen.resize(los_rays.size());
 
-        double temp;
-
         for (int i = 0; i < m_do_los.size(); ++i) {
             auto& do_los = m_do_los[i];
             const auto& ray = los_rays[i];
@@ -229,10 +227,7 @@ namespace sasktran2 {
                     "is supported in plane parallel mode");
             }
 
-            sasktran2::raytracing::calculate_csz_saz(
-                m_geometry.coordinates().sun_unit(),
-                ray.observer_and_look.observer, ray.observer_and_look.look_away,
-                temp, do_los.azimuth, sasktran2::geometrytype::planeparallel);
+            do_los.azimuth = -ray.observer_and_look.relative_azimuth;
 
             do_los.cos_scattering_angle =
                 m_geometry.coordinates().sun_unit().dot(

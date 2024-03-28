@@ -103,7 +103,7 @@ TEST_CASE("Simple test cast", "[sktran_do_legacy][scalar]") {
     std::vector<double> abs_diff, radiance;
     SKTRAN_DO_TestSpec<1, -1>* spec = nullptr;
 
-    sasktran_disco::testing::run_lowlevel_from_old_testspec(
+    sasktran_disco::testing::run_sasktran2_from_old_testspec(
         testcase, spec, radiance, abs_diff, nullptr);
 
     for (double diff : abs_diff) {
@@ -149,7 +149,7 @@ TEST_CASE("SSA = 1", "[sktran_do_legacy][scalar]") {
     std::vector<double> abs_diff, radiance;
     SKTRAN_DO_TestSpec<1, -1>* spec = nullptr;
 
-    sasktran_disco::testing::run_lowlevel_from_old_testspec(
+    sasktran_disco::testing::run_sasktran2_from_old_testspec(
         testcase, spec, radiance, abs_diff, nullptr);
 
     // ** NOTE **
@@ -204,7 +204,7 @@ TEST_CASE("SSA = 0", "[sktran_do_legacy][scalar]") {
     std::vector<double> abs_diff, radiance;
     SKTRAN_DO_TestSpec<1, -1>* spec = nullptr;
 
-    sasktran_disco::testing::run_lowlevel_from_old_testspec(
+    sasktran_disco::testing::run_sasktran2_from_old_testspec(
         testcase, spec, radiance, abs_diff, nullptr);
     for (double diff : abs_diff) {
         REQUIRE(diff < SKDO_FPC_EPS);
@@ -248,7 +248,7 @@ TEST_CASE("SSA = 0.3", "[sktran_do_legacy][scalar]") {
     std::vector<double> abs_diff, radiance;
     SKTRAN_DO_TestSpec<1, -1>* spec = nullptr;
 
-    sasktran_disco::testing::run_lowlevel_from_old_testspec(
+    sasktran_disco::testing::run_sasktran2_from_old_testspec(
         testcase, spec, radiance, abs_diff, nullptr);
     for (double diff : abs_diff) {
         REQUIRE(diff < SKDO_FPC_EPS);
@@ -292,7 +292,7 @@ TEST_CASE("Optically thick atmosphere", "[sktran_do_legacy][scalar]") {
     std::vector<double> abs_diff, radiance;
     SKTRAN_DO_TestSpec<1, -1>* spec = nullptr;
 
-    sasktran_disco::testing::run_lowlevel_from_old_testspec(
+    sasktran_disco::testing::run_sasktran2_from_old_testspec(
         testcase, spec, radiance, abs_diff, nullptr);
     for (double diff : abs_diff) {
         REQUIRE(diff < SKDO_FPC_EPS);
@@ -339,7 +339,7 @@ TEST_CASE("Optically thin atmosphere", "[sktran_do_legacy][scalar]") {
     std::vector<double> abs_diff, radiance;
     SKTRAN_DO_TestSpec<1, -1>* spec = nullptr;
 
-    sasktran_disco::testing::run_lowlevel_from_old_testspec(
+    sasktran_disco::testing::run_sasktran2_from_old_testspec(
         testcase, spec, radiance, abs_diff, nullptr);
     for (double diff : abs_diff) {
         REQUIRE(diff < SKDO_FPC_EPS);
@@ -370,7 +370,7 @@ TEST_CASE("Surface albedo = 1", "[sktran_do_legacy][scalar]") {
     std::vector<double> abs_diff, radiance;
     SKTRAN_DO_TestSpec<1, -1>* spec = nullptr;
 
-    sasktran_disco::testing::run_lowlevel_from_old_testspec(
+    sasktran_disco::testing::run_sasktran2_from_old_testspec(
         testcase, spec, radiance, abs_diff, nullptr);
     for (double diff : abs_diff) {
         REQUIRE(diff < SKDO_FPC_EPS);
@@ -401,7 +401,7 @@ TEST_CASE("Surface albedo = 0", "[sktran_do_legacy][scalar]") {
     std::vector<double> abs_diff, radiance;
     SKTRAN_DO_TestSpec<1, -1>* spec = nullptr;
 
-    sasktran_disco::testing::run_lowlevel_from_old_testspec(
+    sasktran_disco::testing::run_sasktran2_from_old_testspec(
         testcase, spec, radiance, abs_diff, nullptr);
     for (double diff : abs_diff) {
         REQUIRE(diff < SKDO_FPC_EPS);
@@ -432,7 +432,7 @@ TEST_CASE("Surface albedo = 0.3", "[sktran_do_legacy][scalar]") {
     std::vector<double> abs_diff, radiance;
     SKTRAN_DO_TestSpec<1, -1>* spec = nullptr;
 
-    sasktran_disco::testing::run_lowlevel_from_old_testspec(
+    sasktran_disco::testing::run_sasktran2_from_old_testspec(
         testcase, spec, radiance, abs_diff, nullptr);
     for (double diff : abs_diff) {
         REQUIRE(diff < SKDO_FPC_EPS);
@@ -466,7 +466,7 @@ TEST_CASE("Sun directly overhead", "[sktran_do_legacy][scalar]") {
     std::vector<double> abs_diff, radiance;
     SKTRAN_DO_TestSpec<1, -1>* spec = nullptr;
 
-    sasktran_disco::testing::run_lowlevel_from_old_testspec(
+    sasktran_disco::testing::run_sasktran2_from_old_testspec(
         testcase, spec, radiance, abs_diff, nullptr);
     for (double diff : abs_diff) {
         REQUIRE(diff < SKDO_FPC_EPS);
@@ -499,7 +499,7 @@ TEST_CASE("Solar zenith = 65[deg]", "[sktran_do_legacy][scalar]") {
     std::vector<double> abs_diff, radiance;
     SKTRAN_DO_TestSpec<1, -1>* spec = nullptr;
 
-    sasktran_disco::testing::run_lowlevel_from_old_testspec(
+    sasktran_disco::testing::run_sasktran2_from_old_testspec(
         testcase, spec, radiance, abs_diff, nullptr);
     for (double diff : abs_diff) {
         REQUIRE(diff < SKDO_FPC_EPS);
@@ -533,7 +533,7 @@ TEST_CASE("Single layer atmosphere", "[sktran_do_legacy][scalar]") {
     std::vector<double> abs_diff, radiance;
     SKTRAN_DO_TestSpec<1, -1>* spec = nullptr;
 
-    sasktran_disco::testing::run_lowlevel_from_old_testspec(
+    sasktran_disco::testing::run_sasktran2_from_old_testspec(
         testcase, spec, radiance, abs_diff, nullptr);
     for (double diff : abs_diff) {
         REQUIRE(diff < SKDO_FPC_EPS);
@@ -567,7 +567,7 @@ TEST_CASE("Single layer atmosphere Zero Albedo", "[sktran_do_legacy][scalar]") {
     std::vector<double> abs_diff, radiance;
     SKTRAN_DO_TestSpec<1, -1>* spec = nullptr;
 
-    sasktran_disco::testing::run_lowlevel_from_old_testspec(
+    sasktran_disco::testing::run_sasktran2_from_old_testspec(
         testcase, spec, radiance, abs_diff, nullptr);
     for (double diff : abs_diff) {
         REQUIRE(diff < SKDO_FPC_EPS);
@@ -601,7 +601,7 @@ TEST_CASE("Two layer atmosphere", "[sktran_do_legacy][scalar]") {
     std::vector<double> abs_diff, radiance;
     SKTRAN_DO_TestSpec<1, -1>* spec = nullptr;
 
-    sasktran_disco::testing::run_lowlevel_from_old_testspec(
+    sasktran_disco::testing::run_sasktran2_from_old_testspec(
         testcase, spec, radiance, abs_diff, nullptr);
     for (double diff : abs_diff) {
         REQUIRE(diff < SKDO_FPC_EPS);
@@ -635,7 +635,7 @@ TEST_CASE("Intensity singularity", "[sktran_do_legacy][scalar]") {
     std::vector<double> abs_diff, radiance;
     SKTRAN_DO_TestSpec<1, -1>* spec = nullptr;
 
-    sasktran_disco::testing::run_lowlevel_from_old_testspec(
+    sasktran_disco::testing::run_sasktran2_from_old_testspec(
         testcase, spec, radiance, abs_diff, nullptr);
     for (double diff : abs_diff) {
         REQUIRE(diff < SKDO_FPC_EPS);
@@ -683,7 +683,7 @@ TEST_CASE("HG asymmetry factor = 0", "[sktran_do_legacy][scalar]") {
     std::vector<double> abs_diff, radiance;
     SKTRAN_DO_TestSpec<1, -1>* spec = nullptr;
 
-    sasktran_disco::testing::run_lowlevel_from_old_testspec(
+    sasktran_disco::testing::run_sasktran2_from_old_testspec(
         testcase, spec, radiance, abs_diff, nullptr);
     for (double diff : abs_diff) {
         REQUIRE(diff < SKDO_FPC_EPS);
@@ -731,7 +731,7 @@ TEST_CASE("HG asymmetry factor = 0.9", "[sktran_do_legacy][scalar]") {
     std::vector<double> abs_diff, radiance;
     SKTRAN_DO_TestSpec<1, -1>* spec = nullptr;
 
-    sasktran_disco::testing::run_lowlevel_from_old_testspec(
+    sasktran_disco::testing::run_sasktran2_from_old_testspec(
         testcase, spec, radiance, abs_diff, nullptr);
     for (double diff : abs_diff) {
         REQUIRE(diff < SKDO_FPC_EPS);
@@ -762,7 +762,7 @@ TEST_CASE("8 stream", "[sktran_do_legacy][scalar]") {
     std::vector<double> abs_diff, radiance;
     SKTRAN_DO_TestSpec<1, -1>* spec = nullptr;
 
-    sasktran_disco::testing::run_lowlevel_from_old_testspec(
+    sasktran_disco::testing::run_sasktran2_from_old_testspec(
         testcase, spec, radiance, abs_diff, nullptr);
     for (double diff : abs_diff) {
         REQUIRE(diff < SKDO_FPC_EPS);
@@ -793,7 +793,7 @@ TEST_CASE("32 stream", "[sktran_do][scalar]") {
     std::vector<double> abs_diff, radiance;
     SKTRAN_DO_TestSpec<1, -1>* spec = nullptr;
 
-    sasktran_disco::testing::run_lowlevel_from_old_testspec(
+    sasktran_disco::testing::run_sasktran2_from_old_testspec(
         testcase, spec, radiance, abs_diff, nullptr);
     for (double diff : abs_diff) {
         REQUIRE(diff < SKDO_FPC_EPS);
@@ -834,7 +834,7 @@ TEST_CASE("BRDF surface", "[sktran_do_legacy][scalar]") {
 
     // BRDF NOT CURRENTLY IMPLEMTENTED
     /*
-    sasktran_disco::testing::run_lowlevel_from_old_testspec(testcase, spec,
+    sasktran_disco::testing::run_sasktran2_from_old_testspec(testcase, spec,
     radiance, abs_diff, nullptr); for (double diff : abs_diff) { REQUIRE(diff <
     SKDO_FPC_EPS);
     }
@@ -865,13 +865,13 @@ TEST_CASE("Scalar Boundary Conditions", "[sktran_do_legacy][vector]") {
                          correct_radiances);
     SKTRAN_DO_TestSpec<1, -1>* spec = nullptr;
 
-    sasktran_disco::testing::run_lowlevel_from_old_testspec(
+    sasktran_disco::testing::run_sasktran2_from_old_testspec(
         testcase, spec, correct_radiances, abs_diff, nullptr);
 
     // Run the three layer atmo
     TestCase<1> testcase3(16, default_sun, three_layer_atmo, 0.8, default_los,
                           correct_radiances);
-    sasktran_disco::testing::run_lowlevel_from_old_testspec(
+    sasktran_disco::testing::run_sasktran2_from_old_testspec(
         testcase3, spec, radiances, abs_diff, nullptr);
 
     for (double diff : abs_diff) {

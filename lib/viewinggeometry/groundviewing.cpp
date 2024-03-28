@@ -52,6 +52,8 @@ namespace sasktran2::viewinggeometry {
         result.observer.position =
             ground_vector - result.look_away * distance_from_ground;
 
+        result.relative_azimuth = m_relative_azimuth_angle;
+
         return result;
     }
 
