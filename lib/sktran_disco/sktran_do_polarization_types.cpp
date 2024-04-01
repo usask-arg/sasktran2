@@ -79,10 +79,6 @@ void sasktran_disco::TripleProductDerivativeHolder<4>::reduce(
     }
 }
 
-template class sasktran_disco::TripleProductDerivativeHolder<1>;
-template class sasktran_disco::TripleProductDerivativeHolder<3>;
-template class sasktran_disco::TripleProductDerivativeHolder<4>;
-
 void sasktran_disco::InhomogeneousSourceHolder<1>::reduce(
     const LayerInputDerivative<1>& layer_deriv, double& deriv) const {
     // TripleProduct derivative with respect to thickness is always 0
@@ -96,8 +92,8 @@ void sasktran_disco::InhomogeneousSourceHolder<1>::reduce(
     }
 }
 
-template <int NSTOKES, int CNSTR>
-void sasktran_disco::InhomogeneousSourceHolder<NSTOKES, CNSTR>::reduce(
+template <int NSTOKES>
+void sasktran_disco::InhomogeneousSourceHolder<NSTOKES>::reduce(
     const LayerInputDerivative<NSTOKES>& layer_deriv,
     Eigen::Vector<double, NSTOKES>& deriv) const {
     deriv = d_by_ssa * layer_deriv.d_SSA;
@@ -109,9 +105,7 @@ void sasktran_disco::InhomogeneousSourceHolder<NSTOKES, CNSTR>::reduce(
     }
 }
 
-template class sasktran_disco::InhomogeneousSourceHolder<1>;
 template class sasktran_disco::InhomogeneousSourceHolder<3>;
-template class sasktran_disco::InhomogeneousSourceHolder<4>;
 
 void sasktran_disco::Radiance<1>::apply_transmission_factor(
     const Dual<double>& transmission) {
@@ -119,8 +113,8 @@ void sasktran_disco::Radiance<1>::apply_transmission_factor(
     value = value * transmission.value;
 }
 
-template <int NSTOKES, int CNSTR>
-void sasktran_disco::Radiance<NSTOKES, CNSTR>::apply_transmission_factor(
+template <int NSTOKES>
+void sasktran_disco::Radiance<NSTOKES>::apply_transmission_factor(
     const Dual<double>& transmission) {
     deriv *= transmission.value;
 
@@ -138,9 +132,8 @@ bool sasktran_disco::Radiance<1>::converged(double I, double epsilon) {
     return abs(this->I() / I) < epsilon;
 }
 
-template <int NSTOKES, int CNSTR>
-bool sasktran_disco::Radiance<NSTOKES, CNSTR>::converged(double I,
-                                                         double epsilon) {
+template <int NSTOKES>
+bool sasktran_disco::Radiance<NSTOKES>::converged(double I, double epsilon) {
     bool converged = true;
 
     for (uint i = 0; i < NSTOKES; ++i) {
@@ -187,6 +180,5 @@ void sasktran_disco::Radiance<4>::apply_azimuth_expansion(double angle, int m) {
     deriv(Eigen::all, 3) *= sin_daz;
 }
 
-template struct sasktran_disco::Radiance<1>;
 template struct sasktran_disco::Radiance<3>;
 template struct sasktran_disco::Radiance<4>;

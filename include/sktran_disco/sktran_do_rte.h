@@ -250,28 +250,19 @@ namespace sasktran_disco {
             int s1 = j % NSTOKES;
 
             const Eigen::VectorXd& part_soln_minus =
-                m_use_greens_function
-                    ? layer.solution(m).value.dual_Gminus_bottom().value
-                    : layer.solution(m).value.particular_minus();
+                layer.solution(m).value.dual_Gminus_bottom().value;
             double psi = part_soln_minus(j);
 
             if ((!m_layers.albedo(m).isLambertian() || m == 0) && s1 == 0) {
                 auto& rho =
                     m_layers.albedo(m).streamBDRFromStreams(j / NSTOKES);
                 const Eigen::VectorXd& part_soln_plus =
-                    m_use_greens_function
-                        ? layer.solution(m).value.dual_Gplus_bottom().value
-                        : layer.solution(m).value.particular_plus();
+                    layer.solution(m).value.dual_Gplus_bottom().value;
                 for (StreamIndex i = 0; i < this->M_NSTR / 2; ++i) {
                     psi -= (1 + kronDelta(m, 0)) * rho[i + this->M_NSTR / 2] *
                            (*this->M_WT)[i] * (*this->M_MU)[i] *
                            part_soln_plus(i * NSTOKES);
                 }
-            }
-            if (!m_use_greens_function) {
-                psi *= layer.beamTransmittance(
-                    Location::FLOOR); // factorization is possible because we
-                                      // aren't including thermal
             }
             return psi;
         }
@@ -284,73 +275,26 @@ namespace sasktran_disco {
             int s1 = j % NSTOKES;
 
             bool lambertian = m_layers.albedo(m).isLambertian();
-            if (!m_use_greens_function) {
-                // Start by calculating
-                double psi = layer.solution(m).value.particular_minus(j);
-                if ((!lambertian || m == 0) && s1 == 0) {
-                    auto& rho =
-                        m_layers.albedo(m).streamBDRFromStreams(j / NSTOKES);
-                    for (StreamIndex i = 0; i < this->M_NSTR / 2; ++i) {
-                        psi -= (1 + kronDelta(m, 0)) *
-                               rho[i + this->M_NSTR / 2] * (*this->M_WT)[i] *
-                               (*this->M_MU)[i] *
-                               layer.solution(m).value.particular_plus(i *
-                                                                       NSTOKES);
-                    }
+            // We don't have to calculate psi/d_psi separately since the
+            // greens solution already includes the optical depth dependence
+            double d_psi = layer.solution(m).value.dual_Gminus_bottom().deriv(
+                derivindex, j);
+            if ((!lambertian || m == 0) && s1 == 0) {
+                auto& rho =
+                    m_layers.albedo(m).streamBDRFromStreams(j / NSTOKES);
+                for (StreamIndex i = 0; i < this->M_NSTR / 2; ++i) {
+                    d_psi -= (1 + kronDelta(m, 0)) * rho[i + this->M_NSTR / 2] *
+                             (*this->M_WT)[i] * (*this->M_MU)[i] *
+                             layer.solution(m).value.dual_Gplus_bottom().deriv(
+                                 derivindex, i * NSTOKES);
+                    d_psi -= (1 + kronDelta(m, 0)) * deriv.d_albedo *
+                             kronDelta(m, 0) * (*this->M_WT)[i] *
+                             (*this->M_MU)[i] *
+                             layer.solution(m).value.dual_Gplus_bottom().value(
+                                 i * NSTOKES);
                 }
-                // We have derivatives with respect to the particular solution
-                // and the beam transmittance First we need to calculate d_psi
-                double d_psi =
-                    layer.solution(m).value.dual_particular_minus().deriv(
-                        derivindex, j);
-                if (!lambertian || m == 0) {
-                    auto& rho =
-                        m_layers.albedo(m).streamBDRFromStreams(j / NSTOKES);
-                    for (StreamIndex i = 0; i < this->M_NSTR / 2; ++i) {
-                        d_psi -= (1 + kronDelta(m, 0)) *
-                                 rho[i + this->M_NSTR / 2] * (*this->M_WT)[i] *
-                                 (*this->M_MU)[i] *
-                                 layer.solution(m)
-                                     .value.dual_particular_plus()
-                                     .deriv(derivindex, i * NSTOKES);
-                        d_psi -= (1 + kronDelta(m, 0)) * deriv.d_albedo *
-                                 kronDelta(m, 0) * (*this->M_WT)[i] *
-                                 (*this->M_MU)[i] *
-                                 layer.solution(m).value.particular_plus(
-                                     i * NSTOKES);
-                    }
-                }
-
-                // Result is now psi * beam_transmittance so do derivative
-                // propagation
-                return psi * layer.d_beamTransmittance(Location::FLOOR, deriv,
-                                                       derivindex) +
-                       d_psi * layer.beamTransmittance(Location::FLOOR);
-            } else {
-                // We don't have to calculate psi/d_psi separately since the
-                // greens solution already includes the optical depth dependence
-                double d_psi =
-                    layer.solution(m).value.dual_Gminus_bottom().deriv(
-                        derivindex, j);
-                if ((!lambertian || m == 0) && s1 == 0) {
-                    auto& rho =
-                        m_layers.albedo(m).streamBDRFromStreams(j / NSTOKES);
-                    for (StreamIndex i = 0; i < this->M_NSTR / 2; ++i) {
-                        d_psi -=
-                            (1 + kronDelta(m, 0)) * rho[i + this->M_NSTR / 2] *
-                            (*this->M_WT)[i] * (*this->M_MU)[i] *
-                            layer.solution(m).value.dual_Gplus_bottom().deriv(
-                                derivindex, i * NSTOKES);
-                        d_psi -=
-                            (1 + kronDelta(m, 0)) * deriv.d_albedo *
-                            kronDelta(m, 0) * (*this->M_WT)[i] *
-                            (*this->M_MU)[i] *
-                            layer.solution(m).value.dual_Gplus_bottom().value(
-                                i * NSTOKES);
-                    }
-                }
-                return d_psi;
             }
+            return d_psi;
         }
 
       private:
@@ -359,8 +303,6 @@ namespace sasktran_disco {
         // Flags indicating whether or not the order of the azimuth expansion
         // has been solved.
         std::vector<bool> m_is_solved;
-
-        bool m_use_greens_function;
 
         // Cached memory so we don't have to realloc for every layer/azimuth
         // direction

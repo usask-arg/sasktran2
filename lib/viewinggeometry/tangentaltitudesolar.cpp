@@ -58,6 +58,8 @@ namespace sasktran2::viewinggeometry {
 
         ray.observer.position = tangent_point - s * ray.look_away;
 
+        ray.relative_azimuth = m_relative_azimuth_angle;
+
 #ifdef SASKTRAN_DEBUG_ASSERTS
         if (!tangent_point.allFinite()) {
             spdlog::error("Error calculating tangent point from cos_sza: {} "

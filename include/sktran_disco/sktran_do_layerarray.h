@@ -10,34 +10,48 @@ namespace sasktran_disco {
     template <int NSTOKES, int CNSTR = -1>
     using OpticalLayerArrayROP =
         ReadOnlyProperties<BasicProperties<NSTOKES>, SolarProperties<NSTOKES>,
-                           UserSpecProperties, TestProperties>;
+                           UserSpecProperties>;
 
-    // A vector of OpticalLayers. Provides additional helpful functions.
+    /**
+     * @brief A vector of OpticalLayer objects which represent the layers of the
+     * atmosphere.
+     *
+     * @tparam NSTOKES
+     * @tparam CNSTR
+     */
     template <int NSTOKES, int CNSTR = -1>
     class OpticalLayerArray : public OpticalLayerArrayROP<NSTOKES>,
                               public AzimuthDependencyCascade {
       public:
-        OpticalLayerArray(
-            const PersistentConfiguration<NSTOKES, CNSTR>& config, int wavelidx,
-            const std::vector<LineOfSight>& los,
-            std::unique_ptr<BRDF_Base> brdf,
-            const sasktran_disco_lowlevel::Atmosphere& atmosphere,
-            const sasktran_disco_lowlevel::WeightingFunctions*
-                weightingfunctions,
-            const GeometryLayerArray<NSTOKES, CNSTR>& geometry_layers,
-            const ThreadData<NSTOKES, CNSTR>& thread_data);
-
+        /**
+         * @brief Construct a new Optical Layer Array object using only geometry
+         * information. If this constructor is used set_optical must be called
+         * before any calculations are performed.
+         *
+         * @param config
+         * @param los
+         * @param geometry_layers
+         * @param thread_data
+         */
         OpticalLayerArray(
             const PersistentConfiguration<NSTOKES, CNSTR>& config,
             const std::vector<LineOfSight>& los,
             const GeometryLayerArray<NSTOKES, CNSTR>& geometry_layers,
             const ThreadData<NSTOKES, CNSTR>& thread_data);
 
-        void set_optical(int wavelidx, std::unique_ptr<BRDF_Base> brdf,
-                         const sasktran_disco_lowlevel::Atmosphere& atmosphere,
-                         const sasktran_disco_lowlevel::WeightingFunctions*
-                             weightingfunctions);
-
+        /**
+         * @brief Construct a new Optical Layer Array object using the sasktran2
+         * interface This is the primary way of constructing the
+         * OpticalLayerArray.
+         *
+         * @param config
+         * @param wavelidx
+         * @param los
+         * @param brdf
+         * @param geometry_layers
+         * @param atmosphere
+         * @param sk_config
+         */
         OpticalLayerArray(
             const PersistentConfiguration<NSTOKES, CNSTR>& config, int wavelidx,
             const std::vector<LineOfSight>& los,
@@ -46,69 +60,139 @@ namespace sasktran_disco {
             const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
             const sasktran2::Config& sk_config);
 
-        // Configures a the array for a test. This just skips pulling physical
-        // atmospheric properties.
-        void configureTest(
-            const PersistentConfiguration<NSTOKES, CNSTR>& config,
-            const std::vector<testing::TestLayer<NSTOKES>>& testlayers);
-
-        // Computes the reflected intensity for the given order of the azimuth
-        // expansion.
-        //
-        // Performs Spurr2001 (C.6) and (C.21) and stores the results in
-        // m_reflected
+        /**
+         * @brief Internal method which is called to compute the reflected
+         * intensities for the line of sight rays.
+         *
+         * @param m
+         * @param los
+         */
         void
         computeReflectedIntensities(AEOrder m,
                                     const sasktran_disco::LineOfSight& los);
 
-        // Returns the mutable layer at index lidx.
+        /**
+         * @brief Layer at lidx
+         *
+         * @param lidx
+         * @return OpticalLayer<NSTOKES, CNSTR>&
+         */
         inline OpticalLayer<NSTOKES, CNSTR>& operator[](uint lidx) {
             return *m_layers[lidx];
         }
-        // Returns the non-mutable layer at index lidx.
+
+        /**
+         * @brief Layer at lidx
+         *
+         * @param lidx
+         * @return const OpticalLayer<NSTOKES, CNSTR>&
+         */
         inline const OpticalLayer<NSTOKES, CNSTR>& operator[](uint lidx) const {
             return *m_layers[lidx];
         }
-        // Returns a mutable reference to the bottom layer
+
+        /**
+         * @brief Bottom layer of the atmosphere
+         *
+         * @return OpticalLayer<NSTOKES, CNSTR>&
+         */
         inline OpticalLayer<NSTOKES, CNSTR>& bottom() {
             return *m_layers.back();
         }
-        // Returns a non-mutable reference to the bottom layer
+
+        /**
+         * @brief Bottom layer of the atmosphere
+         *
+         * @return const OpticalLayer<NSTOKES, CNSTR>&
+         */
         inline const OpticalLayer<NSTOKES, CNSTR>& bottom() const {
             return *m_layers.back();
         }
-        // Returns the mutable layer at index lidx.
+
+        /**
+         * @brief Layer at lidx
+         *
+         * @param lidx
+         * @return OpticalLayer<NSTOKES, CNSTR>&
+         */
         inline OpticalLayer<NSTOKES, CNSTR>& layer(uint lidx) {
             return *m_layers[lidx];
         }
-        // Returns the non-mutable layer at index lidx.
+
+        /**
+         * @brief Layer at lidx
+         *
+         * @param lidx
+         * @return const OpticalLayer<NSTOKES, CNSTR>&
+         */
         inline const OpticalLayer<NSTOKES, CNSTR>& layer(uint lidx) const {
             return *m_layers[lidx];
         }
-        // Returns a mutable reference to the top layer
+
+        /**
+         * @brief Layer at the top of the atmosphere
+         *
+         * @return OpticalLayer<NSTOKES, CNSTR>&
+         */
         inline OpticalLayer<NSTOKES, CNSTR>& top() { return *m_layers[0]; }
-        // Returns a non-mutable reference to the bottom layer
+
+        /**
+         * @brief Layer at the top of the atmosphere
+         *
+         * @return const OpticalLayer<NSTOKES, CNSTR>&
+         */
         inline const OpticalLayer<NSTOKES, CNSTR>& top() const {
             return *m_layers[0];
         }
 
+        /**
+         * @brief The solar irradiance at the top of the atmosphere
+         *
+         * @return double
+         */
         inline double directIntensityTOA() const { return m_direct_toa; }
 
+        /**
+         * @brief Access to the internal albedo surface object
+         *
+         * @param m
+         * @return const Albedo&
+         */
         inline const Albedo& albedo(AEOrder m) const { return m_albedo[m]; }
 
-        // Returns the number of layers.
+        /**
+         * @brief The number of layers in the atmosphere
+         *
+         * @return uint
+         */
         inline uint numLayers() const { return this->M_NLYR; }
 
+        /**
+         * @brief The user input derivatives
+         *
+         * @return const InputDerivatives<NSTOKES>&
+         */
         inline const InputDerivatives<NSTOKES>& inputDerivatives() const {
             return m_input_derivatives;
         }
 
+        /**
+         * @brief The user input derivatives
+         *
+         * @return InputDerivatives<NSTOKES>&
+         */
         inline InputDerivatives<NSTOKES>& inputDerivatives() {
             return m_input_derivatives;
         }
 
-        // Returns the total reflected intensity in the direction of the
-        // corresponding los.
+        /**
+         * @brief The total reflected intensity for a given line of sight
+         *     and azimuth order
+         *
+         * @param m
+         * @param los
+         * @return const Radiance<NSTOKES>&
+         */
         inline const Radiance<NSTOKES>&
         reflectedIntensity(AEOrder m, const LineOfSight& los) {
             if (!m_reflection_computed[m][los.unsorted_index]) {
@@ -117,8 +201,14 @@ namespace sasktran_disco {
             return m_ground_reflection[m][los.unsorted_index];
         }
 
-        // Returns an iterator which will iterator in the specified direction
-        // to the given terminal optical depth.
+        /**
+         * @brief Returns an iterator which will iterate in the specified
+         * direction to the given terminal optical depth.
+         *
+         * @tparam dir
+         * @param terminal
+         * @return OpticalLayerArrayIterator<dir, NSTOKES, CNSTR>
+         */
         template <Propagating dir>
         inline OpticalLayerArrayIterator<dir, NSTOKES, CNSTR>
         iteratorTo(double terminal) {
@@ -126,8 +216,13 @@ namespace sasktran_disco {
                                                                   terminal);
         }
 
-        // Returns an iterator which will iterate across all layers in the
-        // specified direction.
+        /**
+         * @brief Returns an iterator which will go through all layers in the
+         * specified direction
+         *
+         * @tparam dir
+         * @return OpticalLayerArrayIterator<dir, NSTOKES, CNSTR>
+         */
         template <Propagating dir>
         inline OpticalLayerArrayIterator<dir, NSTOKES, CNSTR> iteratorAcross() {
             if (dir == Propagating::UP) {
@@ -137,6 +232,13 @@ namespace sasktran_disco {
             }
         }
 
+        /**
+         * @brief Returns the first layer which has a total optical depth
+         * greater than the given value
+         *
+         * @param optical_depth
+         * @return OpticalLayer<NSTOKES, CNSTR>*
+         */
         inline OpticalLayer<NSTOKES, CNSTR>* layerAt(double optical_depth) {
             for (LayerIndex p = 0; p < this->M_NLYR; ++p) {
                 if (layer(p).opticalDepth(Location::FLOOR) >= optical_depth)
@@ -145,6 +247,28 @@ namespace sasktran_disco {
             return nullptr;
         }
 
+        /**
+         * @brief Returns the first layer which has a total optical depth
+         * greater than the given value
+         *
+         * @param optical_depth
+         * @return const OpticalLayer<NSTOKES, CNSTR>*
+         */
+        inline const OpticalLayer<NSTOKES, CNSTR>*
+        layerAt(double optical_depth) const {
+            for (LayerIndex p = 0; p < this->M_NLYR; ++p) {
+                if (layer(p).opticalDepth(Location::FLOOR) >= optical_depth)
+                    return &layer(p);
+            }
+            return nullptr;
+        }
+
+        /**
+         * @brief Returns the layer which contains the altitude given
+         *
+         * @param altitude
+         * @return const OpticalLayer<NSTOKES, CNSTR>*
+         */
         inline const OpticalLayer<NSTOKES, CNSTR>*
         layerAtAltitude(double altitude) const {
             // Binary search since this can be slow and called many times
@@ -176,58 +300,12 @@ namespace sasktran_disco {
             return &layer(retindex);
         }
 
-        // TODO: This is just temporary
-        void copyLegendre(
-            VectorDim1<sasktran_disco::LegendreCoefficient<NSTOKES>>& container,
-            const Eigen::Matrix<double, Eigen::Dynamic, 6>& legendre);
-
-        double triangleFragmentArea(double h_lower, double h_upper,
-                                    double h_center, double w_above,
-                                    double w_below) {
-            // area above center
-            double left = (h_center + w_above) - h_upper;
-            left = (std::min)(left, w_above);
-            left = (std::max)(left, 0.0);
-
-            double right = (h_center + w_above) - h_lower;
-            right = (std::min)(right, w_above);
-            right = (std::max)(right, 0.0);
-
-            double top_area;
-            if (w_above > 0) {
-                top_area = 0.5 * 1.0 / w_above * (right * right - left * left);
-            } else {
-                top_area = 0;
-            }
-
-            // aread below center
-            left = h_upper - (h_center - w_below);
-            left = (std::min)(left, w_below);
-            left = (std::max)(left, 0.0);
-
-            right = h_lower - (h_center - w_below);
-            right = (std::min)(right, w_below);
-            right = (std::max)(right, 0.0);
-
-            double bot_area;
-            if (w_below > 0) {
-                bot_area = 0.5 * 1 / w_below * (left * left - right * right);
-            } else {
-                bot_area = 0.0;
-            }
-
-            return top_area + bot_area;
-        }
-
-        inline const OpticalLayer<NSTOKES, CNSTR>*
-        layerAt(double optical_depth) const {
-            for (LayerIndex p = 0; p < this->M_NLYR; ++p) {
-                if (layer(p).opticalDepth(Location::FLOOR) >= optical_depth)
-                    return &layer(p);
-            }
-            return nullptr;
-        }
-
+        /**
+         * @brief Calculates the optical depth at the given altitude
+         *
+         * @param altitude
+         * @return double
+         */
         inline double opticalDepthAt(double altitude) const {
             const auto& layer = layerAtAltitude(altitude);
 
@@ -243,46 +321,49 @@ namespace sasktran_disco {
             }
         }
 
-        inline double altitudeAt(double optical_depth) const {
-            // TODO: Calculate directly from the layer quantities
-            return 0.0;
-        }
-
       protected:
+        /**
+         * @brief Calculates the transmission factors for the layers
+         *
+         */
         void configureTransmission();
-        void assignLegendreDerivative(
-            std::vector<LegendreCoefficient<NSTOKES>>& d_legendre,
-            const Eigen::Matrix<double, Eigen::Dynamic, 6>& species_legendre,
-            const std::vector<LegendreCoefficient<NSTOKES>>& layer_legendre,
-            double species_ssa, double layer_ssa, double thickness) const;
-        void assignLegendreDerivativeTest(
-            std::vector<LegendreCoefficient<NSTOKES>>& d_legendre,
-            const std::vector<double>& legendre) const;
 
       protected:
-        // Members
-        VectorDim1<std::unique_ptr<OpticalLayer<NSTOKES, CNSTR>>> m_layers;
-        double m_direct_toa;
-        size_t m_num_los;
+        VectorDim1<std::unique_ptr<OpticalLayer<NSTOKES, CNSTR>>>
+            m_layers;        /** Layers */
+        double m_direct_toa; /** Direct solar TOA irradiance */
+        size_t m_num_los;    /** Number of lines of sight */
 
-        InputDerivatives<NSTOKES>& m_input_derivatives;
-        size_t m_wavel_index;
+        InputDerivatives<NSTOKES>&
+            m_input_derivatives; /** User input derivatives */
+        size_t m_wavel_index; /** Index to the loaded wavelength when using the
+                                 sasktran2 interface */
 
-        VectorDim2<Radiance<NSTOKES>> m_ground_reflection;
-        VectorDim2<bool> m_reflection_computed;
+        VectorDim2<Radiance<NSTOKES>>
+            m_ground_reflection; /** Vector of ground reflection objects
+                                    [azi][los]*/
+        VectorDim2<bool>
+            m_reflection_computed; /** True if the ground reflection has been
+                                      computed [azi][los]*/
 
-        const Eigen::VectorXd* m_cell_depths;
+        const Eigen::MatrixXd&
+            m_chapman_factors; /** Chapman factors for the layers*/
 
-        // Pseudo-spherical beam transmittances
-        const Eigen::MatrixXd& m_chapman_factors;
+        const Eigen::MatrixXd&
+            m_optical_interpolator; /** Interpolation matrix from the atmosphere
+                                       levels to the layers */
 
-        const PersistentConfiguration<NSTOKES, CNSTR>& m_config;
+        std::vector<Dual<double>>& m_transmission; /** Transmission factors for
+                                                     the layers */
 
-        AlbedoExpansion m_albedo;
+        const PersistentConfiguration<NSTOKES, CNSTR>&
+            m_config; /** Internal config object */
 
-        bool m_include_direct_bounce;
+        AlbedoExpansion m_albedo; /** Internal surface expansion */
 
-        double m_surfaceemission;
+        bool m_include_direct_bounce; /** True if when computing the reflected
+                                         intensities the direct solar bounce
+                                         should be included */
     };
 
     // STL random access iterator with additional layer of functionality for
@@ -506,63 +587,7 @@ namespace sasktran_disco {
         constexpr inline bool isDownwelling() const {
             return dir == Propagating::DOWN;
         }
-        // Returns the attenuation factor for this layer at the given coszentih
-        inline void attenuationFactor(double coszenith, double losod,
-                                      double losaltitude,
-                                      Dual<double>& factors) const {
-            // TODO: Layer dual?
-            size_t layerStart =
-                m_layers->inputDerivatives().layerStartIndex(layer().index());
-            size_t numDeriv = m_layers->inputDerivatives().numDerivativeLayer(
-                layer().index());
 
-            double exitod = std::max(exitOpticalDepth(), losod);
-
-            factors.value =
-                exp(-std::abs((entryOpticalDepth() - exitod) / coszenith));
-
-            // We do not have cross derivatives
-            // But we store as a full dual for some reason so we have to zero
-            // everything
-            factors.deriv.setZero();
-            for (uint i = 0; i < numDeriv; ++i) {
-                const auto& deriv = m_layers->inputDerivatives()
-                                        .layerDerivatives()[i + layerStart];
-
-                for (uint j = 0; j < deriv.group_and_triangle_fraction.size();
-                     ++j) {
-                    double pertfactor =
-                        deriv.group_and_triangle_fraction[j].second *
-                        deriv.extinctions[j];
-                    if (exitod != exitOpticalDepth()) {
-                        double altitude_floor =
-                            m_layers->altitudeAt(entryOpticalDepth());
-
-                        double lower_triangle = m_layers->triangleFragmentArea(
-                            altitude_floor, losaltitude,
-                            std::get<0>(deriv.alt_and_widths[j]),
-                            std::get<1>(deriv.alt_and_widths[j]),
-                            std::get<2>(deriv.alt_and_widths[j]));
-                        // Account for rounding errors
-                        if (losaltitude <= altitude_floor) {
-                            lower_triangle = 0.0;
-                        }
-                        // Can rarely happen for odd cases, but means that the
-                        // area was 0
-                        if (lower_triangle != lower_triangle) {
-                            lower_triangle = 0.0;
-                        }
-                        // Account for extinction in cm2
-                        pertfactor =
-                            lower_triangle * deriv.extinctions[j] * 100;
-                    }
-                    double added_od = pertfactor * deriv.d_optical_depth;
-
-                    factors.deriv[deriv.group_and_triangle_fraction[j].first] =
-                        -1.0 * factors.value * added_od / coszenith;
-                }
-            }
-        }
         // Returns mutable pointer to the layer
         inline OpticalLayer<NSTOKES, CNSTR>* ptr() { return &layer(); }
 

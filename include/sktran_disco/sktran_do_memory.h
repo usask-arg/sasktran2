@@ -6,20 +6,30 @@
 #endif
 
 namespace sasktran_disco {
-    // Temporaries needed during PostProcessing, create one for each layer even
-    // though some of it could be shared between layers in theory
+    /**
+     * @brief temporary storage needed for layer postprocessing
+     *
+     * Contains all of the memory needed for the postprocessing of the radiative
+     * transfer solution through the layers.
+     *
+     * @tparam NSTOKES
+     * @tparam CNSTR
+     */
     template <int NSTOKES, int CNSTR = -1> struct PostProcessingCache {
-        VectorLayerDual<double> dual_lpsum_plus, dual_lpsum_minus;
-        VectorLayerDual<double> Y_plus, Y_minus;
-        Radiance<NSTOKES> V, Q, J;
+        VectorLayerDual<double> dual_lpsum_plus,
+            dual_lpsum_minus; /** Duals of the legendre sums */
+        VectorLayerDual<double> Y_plus,
+            Y_minus; /** Duals of the homogeneous interpolated solutions */
+        Radiance<NSTOKES> V, Q,
+            J; /** To store the individual radiance sources */
 
-        sasktran_disco::InhomogeneousSourceHolder<NSTOKES> Qtemp, temp;
+        std::vector<LayerDual<double>> hp, hm; /** Homogenous multipliers */
 
-        std::vector<LayerDual<double>> hp, hm;
+        std::vector<Dual<double>> Dm, Dp,
+            Eform; /** Greens function multipliers*/
 
-        std::vector<Dual<double>> Dm, Dp, Eform;
-
-        LayerIndex cached_layer;
+        LayerIndex
+            cached_layer; /** Index of the layer this cache corresponds to */
 
         PostProcessingCache() { cached_layer = -1; }
 
@@ -44,10 +54,6 @@ namespace sasktran_disco {
             Q.resize(numtotalderiv, false);
             J.resize(numtotalderiv, false);
 
-            // Source holders
-            Qtemp.resize(NSTR);
-            temp.resize(NSTR);
-
             hp.resize(NSTR / 2 * NSTOKES);
             hm.resize(NSTR / 2 * NSTOKES);
             Dm.resize(NSTR / 2 * NSTOKES);
@@ -69,24 +75,26 @@ namespace sasktran_disco {
         }
     };
 
-    // Temporaries that are used inside every OpticalLayer
+    /**
+     * @brief Temporaries that are used inside every OpticalLayer
+     *
+     * @tparam NSTOKES
+     * @tparam CNSTR
+     */
     template <int NSTOKES, int CNSTR = -1> struct LayerCache {
-        LayerDual<double> dual_thickness;
-        LayerDual<double> dual_ssa;
-        Dual<double> average_secant;
-        Dual<double> dual_bt_floor;
-        Dual<double> dual_bt_ceiling;
+        LayerDual<double> dual_thickness; /** The thickness of the layer */
+        LayerDual<double> dual_ssa;       /** Single scatter albedo */
+        Dual<double> average_secant;      /** Average secant */
 
-        TripleProductDerivativeHolder<NSTOKES> triple_product_holder;
-        TripleProductDerivativeHolder<NSTOKES> triple_product_holder_2;
-        LPTripleProduct<NSTOKES> triple_product;
-
-        LayerCache(uint NSTR)
-            : triple_product(NSTR), triple_product_holder(NSTR),
-              triple_product_holder_2(NSTR) {}
+        LayerCache(uint NSTR) {}
     };
 
-    // Temporaries needed for the RTE solution
+    /**
+     * @brief Memory for the RTE solution
+     *
+     * @tparam NSTOKES
+     * @tparam CNSTR
+     */
     template <int NSTOKES, int CNSTR> struct RTEMemoryCache {
         using HomogType = typename std::conditional<NSTOKES != 5, double,
                                                     std::complex<double>>::type;
@@ -120,13 +128,6 @@ namespace sasktran_disco {
             CNSTR != -1, Eigen::Matrix<double, CNSTR / 2 * NSTOKES + 1, -1>,
             Eigen::MatrixXd>::type;
 
-        // These four aren't used anymore since we should just kill the
-        // non-greens function solution
-        Eigen::MatrixXd particular_rhs;
-        Matrix particular_A;
-        Matrix particular_b;
-        std::vector<Matrix> particular_d_A;
-
         Matrix h_eigmtx_destroy;
         Matrix h_MX_plus;
         Matrix h_MX_minus;
@@ -147,9 +148,6 @@ namespace sasktran_disco {
 
         sasktran_disco::TripleProductDerivativeHolder<NSTOKES> h_l_upwelling;
         sasktran_disco::TripleProductDerivativeHolder<NSTOKES> h_l_downwelling;
-
-        sasktran_disco::InhomogeneousSourceHolder<NSTOKES> p_d_temp;
-        sasktran_disco::InhomogeneousSourceHolder<NSTOKES> p_d_temp2;
 
         // BVP things
         VectorDim1<BVPMatrixDenseBlock<NSTOKES>> d_mat;
@@ -190,67 +188,115 @@ namespace sasktran_disco {
         bool has_been_configured_by_rte_solver;
     };
 
-    // Data that each thread will need, reused across wavelengths.
+    /**
+     * @brief Data that each thread will need, reused across wavelengths.
+     *
+     * @tparam NSTOKES
+     * @tparam CNSTR
+     */
     template <int NSTOKES, int CNSTR = -1> class ThreadData {
       private:
-        mutable VectorDim2<LayerSolution<NSTOKES, CNSTR>> m_rte_solution;
-        mutable VectorDim2<LegendreSumMatrixStorage<NSTOKES>>
-            m_legendre_sum_storage;
-        mutable VectorDim1<PostProcessingCache<NSTOKES>> m_postprocessing_cache;
-        mutable VectorDim1<LayerCache<NSTOKES>> m_layer_cache;
-        mutable InputDerivatives<NSTOKES> m_input_derivatives;
-        mutable RTEMemoryCache<NSTOKES, CNSTR> m_rte_cache;
+        mutable VectorDim2<LayerSolution<NSTOKES, CNSTR>>
+            m_rte_solution; /** RTE Solutions*/
+        mutable VectorDim1<PostProcessingCache<NSTOKES>>
+            m_postprocessing_cache; /** Post processing caches*/
+        mutable VectorDim1<LayerCache<NSTOKES>>
+            m_layer_cache; /** Layer caches*/
+        mutable InputDerivatives<NSTOKES>
+            m_input_derivatives; /** Input derivatives*/
+        mutable std::vector<Dual<double>> m_transmission;   /** Transmission
+                                                                    cache*/
+        mutable RTEMemoryCache<NSTOKES, CNSTR> m_rte_cache; /** RTE Cache*/
 
       public:
+        /**
+         * @brief Construct a new Thread Data object
+         *
+         * @param NLYR
+         * @param NSTR
+         */
         ThreadData(uint NLYR, uint NSTR) {
             m_rte_solution.resize(NLYR);
             for (auto& soln : m_rte_solution) {
                 soln.resize(NSTR);
             }
-            m_legendre_sum_storage.resize(NLYR);
-            for (auto& leg : m_legendre_sum_storage) {
-                leg.resize(1);
-            }
-
             m_postprocessing_cache.resize(NLYR);
             m_layer_cache.resize(NLYR, NSTR);
+            m_transmission.resize(NLYR + 1);
 
             m_rte_cache.has_been_configured_by_rte_solver = false;
         }
 
+        /**
+         * @brief Get the RTE solution for a given layer
+         *
+         * @param layerindex
+         * @return std::vector<LayerSolution<NSTOKES, CNSTR>>&
+         */
         std::vector<LayerSolution<NSTOKES, CNSTR>>&
         rte_solution(uint layerindex) const {
             return m_rte_solution[layerindex];
         }
 
-        std::vector<LegendreSumMatrixStorage<NSTOKES>>&
-        legendre_sum_storage(uint layerindex) const {
-            return m_legendre_sum_storage[layerindex];
-        }
-
+        /**
+         * @brief Get the post processing cache for a given layer
+         *
+         * @param layerindex
+         * @return PostProcessingCache<NSTOKES>&
+         */
         PostProcessingCache<NSTOKES>&
         postprocessing_cache(uint layerindex) const {
             return m_postprocessing_cache[layerindex];
         }
 
+        /**
+         * @brief Get the layer cache
+         *
+         * @param layerindex
+         * @return LayerCache<NSTOKES>&
+         */
         LayerCache<NSTOKES>& layer_cache(uint layerindex) const {
             return m_layer_cache[layerindex];
         }
 
+        /**
+         * @brief Get the input derivatives
+         *
+         * @return InputDerivatives<NSTOKES>&
+         */
         InputDerivatives<NSTOKES>& input_derivatives() const {
             return m_input_derivatives;
         }
 
+        /**
+         * @brief Layer transmissions
+         *
+         * @return std::vector<Dual<double>>&
+         */
+        std::vector<Dual<double>>& transmission() const {
+            return m_transmission;
+        }
+
+        /**
+         * @brief Get the RTE cache
+         *
+         * @return RTEMemoryCache<NSTOKES, CNSTR>&
+         */
         RTEMemoryCache<NSTOKES, CNSTR>& rte_cache() const {
             return m_rte_cache;
         }
     };
 
-    // Pool of memory for a single Engine instance.  One ThreadData object is
-    // instantiated for each thread that is then intended to be reused across
-    // wavelengths.  Currently the engine does not know exactly how many threads
-    // will be used at the time of calling init, and so we instantiate the
-    // maximum number of available threads, but this should be fixed
+    /**
+     * Pool of memory for a single Engine instance.  One ThreadData object is
+     * instantiated for each thread that is then intended to be reused across
+     * wavelengths.  Currently the engine does not know exactly how many threads
+     * will be used at the time of calling init, and so we instantiate the
+     * maximum number of available threads, but this should be fixed
+     *
+     * @tparam NSTOKES
+     * @tparam CNSTR
+     */
     template <int NSTOKES, int CNSTR = -1> class MemoryPool {
       private:
         // Use a map because we emplace a new object and we don't want reallocs

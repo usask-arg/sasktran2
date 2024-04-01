@@ -106,6 +106,11 @@ namespace sasktran2::grids {
 
                     return;
                 }
+
+                if (m_interp_method == interpolation::lower) {
+                    weight[0] = 1.0;
+                    num_contributing = 1;
+                }
             }
         }
     }
@@ -174,6 +179,9 @@ namespace sasktran2::grids {
             weight[0] = 0.5;
             weight[1] = 0.5;
             num_contributing = 2;
+        } else if (m_interp_method == interpolation::lower) {
+            weight[0] = 1.0;
+            num_contributing = 1;
         } else {
             // Perform linear interpolation
 
