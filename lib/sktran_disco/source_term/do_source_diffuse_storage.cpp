@@ -67,6 +67,7 @@ namespace sasktran2 {
         const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmo) {
         // TODO: This seems like the wrong place to do this, but I'm not sure
         // where else it should go
+        m_atmosphere = &atmo;
 
         int numderiv = atmo.num_deriv();
 
@@ -559,7 +560,6 @@ namespace sasktran2 {
         }
 
         // Always use 0 angle index to store the lambertian scattering result
-        // TODO: Derivative propagation
         int source_index = ground_storage_index(0, szaidx, m);
         auto& storage = m_storage[thread_idx];
 

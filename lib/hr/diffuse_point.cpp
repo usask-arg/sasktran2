@@ -271,14 +271,24 @@ namespace sasktran2::hr {
 
         // Right now just scalar BRDF, TODO: for polarized
         for (int i = 0; i < phase_matrix.cols(); i += NSTOKES) {
-            double mu_in = loc.cos_zenith_angle(
-                m_incoming_sphere->get_quad_position(i / NSTOKES));
+            Eigen::Vector3d incoming =
+                m_incoming_sphere->get_quad_position(i / NSTOKES);
+
+            double mu_in = loc.cos_zenith_angle(incoming);
 
             for (int j = 0; j < phase_matrix.rows(); j += NSTOKES) {
-                double mu_out = loc.cos_zenith_angle(
-                    m_outgoing_sphere->get_quad_position(j / NSTOKES));
+                Eigen::Vector3d outgoing =
+                    m_outgoing_sphere->get_quad_position(j / NSTOKES);
 
-                double phi_diff = 0.0;
+                double mu_out = loc.cos_zenith_angle(outgoing);
+
+                Eigen::Vector3d horiz_in =
+                    (incoming - mu_in * loc.position.normalized()).normalized();
+                Eigen::Vector3d horiz_out =
+                    (outgoing - mu_out * loc.position.normalized())
+                        .normalized();
+
+                double phi_diff = EIGEN_PI - acos(horiz_in.dot(horiz_out));
 
                 Eigen::Matrix<double, NSTOKES, NSTOKES> brdf =
                     surface.brdf(wavelidx, mu_in, mu_out, phi_diff);

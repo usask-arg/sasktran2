@@ -22,8 +22,6 @@ from ._core import (  # noqa: I001
     StokesBasis,
     SurfaceStokes_1,
     SurfaceStokes_3,
-    LambertianStokes_1,
-    LambertianStokes_3,
     TangentAltitudeSolar,
     ThreadingModel,
     ViewingGeometry,

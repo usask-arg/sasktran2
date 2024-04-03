@@ -232,11 +232,12 @@ namespace sasktran2::solartransmission {
 
             // Cosine of direction to LOS at the surface
             double mu_out =
-                m_los_rays->at(losidx).layers[0].exit.cos_zenith_angle(
-                    m_los_rays->at(losidx).layers[0].average_look_away);
+                -1.0 * m_los_rays->at(losidx).layers[0].exit.cos_zenith_angle(
+                           m_los_rays->at(losidx).layers[0].average_look_away);
 
             // We already have the azimuthal difference
-            double phi_diff = m_los_rays->at(losidx).layers[0].saz_exit;
+            double phi_diff =
+                EIGEN_PI - m_los_rays->at(losidx).layers[0].saz_exit;
 
             Eigen::Matrix<double, NSTOKES, NSTOKES> brdf =
                 m_atmosphere->surface().brdf(wavelidx, mu_in, mu_out, phi_diff);

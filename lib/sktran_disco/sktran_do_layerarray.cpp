@@ -35,9 +35,7 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::
     direct_contrib.setzero();
     direct_contrib.setzero();
 
-    Eigen::Map<const Eigen::VectorXd, 1, Eigen::InnerStride<>> rho(
-        m_surface.storage().brdf.los_stream.data(), this->M_NSTR / 2, 1,
-        Eigen::InnerStride<>(m_num_los));
+    const auto& rho = m_surface.storage().brdf.los_stream;
 
     // Construct the Dual quantity for the layer transmittance
     Dual<double> beam_transmittance =
@@ -55,7 +53,7 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::
             dual_rho.value = 0.0;
             dual_rho.deriv.setZero();
         } else {
-            dual_rho.value = rho(i / NSTOKES);
+            dual_rho.value = rho(los.unsorted_index, i / NSTOKES);
 
             for (uint j = 0; j < input_deriv.numDerivativeLayer(layer.index());
                  ++j) {
@@ -266,6 +264,10 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
     // Allocations
     m_layers.reserve(this->M_NLYR);
     m_surface.storage().resize(this->M_NSTR, m_num_los, 1);
+    m_surface.storage().csz = this->M_CSZ;
+    m_surface.storage().mu = this->M_MU;
+
+    m_surface.storage().los = &los;
 
     // Accumulation quantities for the layers
     double ceiling_depth = 0;
