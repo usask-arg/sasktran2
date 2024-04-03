@@ -273,7 +273,7 @@ namespace sasktran2::atmosphere {
             for (int i = 0; i < m_brdf_object->num_deriv(); ++i) {
                 m_d_brdf_args[i].resize(m_brdf_object->num_args(), num_wavel);
 
-                m_d_brdf_args[i].setZero();
+                m_d_brdf_args[i].setConstant(1.0);
             }
             m_brdf_args.setZero();
         }

@@ -1,11 +1,15 @@
+from typing import TYPE_CHECKING
+
 import numpy as np
+
+if TYPE_CHECKING:
+    from sasktran2.mie.refractive import RefractiveIndex
 
 from sasktran2 import Atmosphere
 from sasktran2.atmosphere import (
     NativeGridDerivative,
     SurfaceDerivativeMapping,
 )
-from sasktran2.mie.refractive import Ice, RefractiveIndex
 
 from ..base import Constituent
 from . import (
@@ -20,7 +24,7 @@ class SnowKokhanovsky(Constituent, WavelengthInterpolatorMixin):
         self,
         L: np.array,
         M: np.array,
-        refractive_index_fn: RefractiveIndex = None,
+        refractive_index_fn: "RefractiveIndex" = None,
         wavelengths_nm: np.array = None,
         out_of_bounds_mode="zero",
     ) -> None:
@@ -46,6 +50,8 @@ class SnowKokhanovsky(Constituent, WavelengthInterpolatorMixin):
         self._M = np.atleast_1d(M)
 
         if refractive_index_fn is None:
+            from sasktran2.mie.refractive import Ice
+
             self._refractive_index_fn = Ice()
         else:
             self._refractive_index_fn = refractive_index_fn
@@ -81,7 +87,7 @@ class SnowKokhanovsky(Constituent, WavelengthInterpolatorMixin):
         L_interp = interp_matrix @ self._L
 
         atmo.surface.brdf_args[0, :] = (chi + M_interp) * L_interp / atmo.wavelengths_nm
-        atmo.surface.d_brdf_args[0][0, :] = 1
+        # atmo.surface.d_brdf_args[0][0, :] = 1
 
     def register_derivative(self, atmo: Atmosphere, name: str):
         # Start by constructing the interpolation matrix
