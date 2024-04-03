@@ -288,6 +288,7 @@ if(BUILD_PYTHON)
     src/geometry.cpp
     src/geodetic.cpp
     src/grids.cpp
+    src/surface.cpp
     src/atmosphere.cpp
     src/viewing_geometry.cpp
     src/engine.cpp

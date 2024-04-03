@@ -28,10 +28,7 @@ TEST_CASE("Single Scatter, Rayleigh only SASKTRAN-HR Compare",
     int nwavel = 1;
     sasktran2::atmosphere::AtmosphereGridStorageFull<1> storage(nwavel,
                                                                 geo.size(), 16);
-    sasktran2::atmosphere::Surface surface;
-
-    surface.albedo().resize(nwavel);
-    surface.albedo().setZero();
+    sasktran2::atmosphere::Surface<1> surface(nwavel);
 
     sasktran2::atmosphere::Atmosphere<1> atmo(std::move(storage),
                                               std::move(surface), true);
@@ -112,10 +109,7 @@ TEST_CASE("MS TEST", "[sasktran2][engine]") {
     int nwavel = 1;
     sasktran2::atmosphere::AtmosphereGridStorageFull<1> storage(nwavel,
                                                                 geo.size(), 16);
-    sasktran2::atmosphere::Surface surface;
-
-    surface.albedo().resize(nwavel);
-    surface.albedo().setZero();
+    sasktran2::atmosphere::Surface<1> surface(nwavel);
 
     sasktran2::atmosphere::Atmosphere<1> atmo(std::move(storage),
                                               std::move(surface), true);
@@ -202,10 +196,7 @@ TEST_CASE("Basic Calculation", "[sasktran2][engine]") {
     int nwavel = 2;
     sasktran2::atmosphere::AtmosphereGridStorageFull<1> storage(nwavel,
                                                                 geo.size(), 16);
-    sasktran2::atmosphere::Surface surface;
-
-    surface.albedo().resize(nwavel);
-    surface.albedo().setZero();
+    sasktran2::atmosphere::Surface<1> surface(nwavel);
 
     sasktran2::atmosphere::Atmosphere<1> atmo(std::move(storage),
                                               std::move(surface), true);
@@ -426,10 +417,7 @@ TEST_CASE("Plane Parallel Ray Tracing Integration Test",
     int nwavel = 1;
     sasktran2::atmosphere::AtmosphereGridStorageFull<1> storage(nwavel,
                                                                 geo.size(), 16);
-    sasktran2::atmosphere::Surface surface;
-
-    surface.albedo().resize(nwavel);
-    surface.albedo().setZero();
+    sasktran2::atmosphere::Surface<1> surface(nwavel);
 
     sasktran2::atmosphere::Atmosphere<1> atmo(std::move(storage),
                                               std::move(surface), true);

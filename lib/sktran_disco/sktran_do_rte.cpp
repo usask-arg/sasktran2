@@ -13,8 +13,6 @@ sasktran_disco::RTESolver<NSTOKES, CNSTR>::RTESolver(
     OpticalLayerArray<NSTOKES, CNSTR>& layers)
     : RTESProperties<NSTOKES>(config), m_layers(layers),
       m_cache(config.pool().thread_data().rte_cache()) {
-    // Configure azimuth expansion
-    registerAzimuthDependency(layers);
     // Initialize tracker for which orders have been solved
     m_is_solved.resize(this->M_NSTR, false);
 
@@ -125,7 +123,6 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solve(AEOrder m) {
         return;
 
     // Otherwise do the calculation
-    configureAEOrder(m);
     if (this->M_BACKPROP_BVP) {
         m_cache.m_Cplus_to_b.setZero();
         m_cache.m_Cminus_to_b.setZero();
@@ -138,6 +135,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solve(AEOrder m) {
 
         m_layers.inputDerivatives().set_zero_traces();
     }
+    m_layers.surface().calculate(m);
     for (int p = 0; p < static_cast<int>(this->M_NLYR); ++p) {
         auto& layer = m_layers[p];
         layer.solution(m).configure(this->M_NSTR, p,
@@ -149,8 +147,6 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solve(AEOrder m) {
     // Calculate coefficients that satisfy boundary conditions
     solveBVP(m);
     m_is_solved[m] = true;
-
-    postProcessAEOrder(m);
 }
 
 template <int NSTOKES, int CNSTR>

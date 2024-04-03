@@ -412,7 +412,8 @@ namespace sasktran2 {
 
         // TODO: This is wrong but for lambertian albedo it doesn't matter
         // We should really be using some other function
-        auto& rho = optical_layer.albedo(m).streamBDRFromStreams(0);
+        double albedo =
+            optical_layer.surface().storage().brdf.stream_stream(0, 0);
 
         // Construct the Dual quantity for the layer transmittance
         sasktran_disco::Dual<double> beam_transmittance =
@@ -434,7 +435,7 @@ namespace sasktran2 {
                 dual_rho.value = 0.0;
                 dual_rho.deriv.setZero();
             } else {
-                dual_rho.value = rho[i / NSTOKES + N];
+                dual_rho.value = albedo;
 
                 for (sasktran_disco::uint j = 0;
                      j < input_deriv.numDerivativeLayer(layer.index()); ++j) {

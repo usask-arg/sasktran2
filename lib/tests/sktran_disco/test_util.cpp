@@ -1,4 +1,5 @@
 #include "sasktran2/atmosphere/atmosphere.h"
+#include "sasktran2/atmosphere/surface.h"
 #include "sasktran2/config.h"
 #include "sasktran2/geometry.h"
 #include "sasktran2/grids.h"
@@ -59,10 +60,9 @@ namespace sasktran_disco::testing {
         int nwavel = 1;
         sasktran2::atmosphere::AtmosphereGridStorageFull<NSTOKES> storage(
             nwavel, grid_values.size(), test_case.nstr);
-        sasktran2::atmosphere::Surface surface;
+        sasktran2::atmosphere::Surface<NSTOKES> surface(nwavel);
 
-        surface.albedo().resize(nwavel);
-        surface.albedo().setConstant(test_case.lambertian);
+        surface.brdf_args().setConstant(test_case.lambertian);
 
         auto geometry = sasktran2::Geometry1D(
             test_case.solar.csz, 0, 6372000, std::move(grid_values),

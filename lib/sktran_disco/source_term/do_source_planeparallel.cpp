@@ -21,14 +21,9 @@ namespace sasktran2 {
             sasktran2::Config::SingleScatterSource::discrete_ordinates;
 
         auto& solver = m_thread_storage[threadidx].sza_calculators[0];
-        std::unique_ptr<sasktran_disco::BRDF_Base> brdf;
-
-        // TODO: Make non-lambertian BRDF
-        brdf = std::make_unique<sasktran_disco::TestBRDF>(
-            m_atmosphere->surface().albedo()(wavelidx));
 
         sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR> optical_layer(
-            *solver.persistent_config, wavelidx, m_do_los, std::move(brdf),
+            *solver.persistent_config, wavelidx, m_do_los,
             *solver.geometry_layers, *m_atmosphere, *m_config);
 
         sasktran_disco::RTESolver<NSTOKES, CNSTR> rte(*solver.persistent_config,

@@ -1,6 +1,6 @@
 import numpy as np
 
-from sasktran2 import Atmosphere
+from sasktran2 import Atmosphere, LambertianStokes_1, LambertianStokes_3
 from sasktran2.atmosphere import (
     NativeGridDerivative,
     SurfaceDerivativeMapping,
@@ -68,13 +68,13 @@ class LambertianSurface(Constituent):
     def _interpolating_matrix(self, atmo: Atmosphere):
         if self._interp_var == "constant":
             # Don't have to interpolate, just assign the constant value
-            return np.ones_like(atmo.surface.albedo).reshape(-1, 1)
+            return np.ones(atmo.num_wavel).reshape(-1, 1)
         if self._interp_var == "native":
             # Also can just assign the user value, but first make sure that it is the correct length
-            if len(self._albedo) != len(atmo.surface.albedo):
+            if len(self._albedo) != atmo.num_wavel:
                 msg = "The number of albedo values must match the number of wavelengths in the atmosphere"
                 raise ValueError(msg)
-            return np.eye(len(self._albedo))
+            return np.eye(atmo.num_wavel)
         # Now we have to interpolate
         grid_x = getattr(atmo, self._interp_var)
 
@@ -84,9 +84,14 @@ class LambertianSurface(Constituent):
         return linear_interpolating_matrix(self._x, grid_x, self._out_of_bounds_mode)
 
     def add_to_atmosphere(self, atmo: Atmosphere):
+        atmo.surface.brdf = (
+            LambertianStokes_1() if atmo.nstokes == 1 else LambertianStokes_3()
+        )
+
         interp_matrix = self._interpolating_matrix(atmo)
 
-        atmo.surface.albedo[:] = interp_matrix @ self._albedo
+        atmo.surface.brdf_args[0, :] = interp_matrix @ self._albedo
+        atmo.surface.d_brdf_args[0][0, :] = 1
 
     def register_derivative(self, atmo: Atmosphere, name: str):
         # Start by constructing the interpolation matrix
@@ -95,7 +100,7 @@ class LambertianSurface(Constituent):
         derivs = {}
 
         derivs["albedo"] = SurfaceDerivativeMapping(
-            NativeGridDerivative(d_albedo=np.ones_like(atmo.surface.albedo)),
+            NativeGridDerivative(d_albedo=np.ones(atmo.num_wavel)),
             interpolating_matrix=interp_matrix,
             interp_dim="wavelength",
             result_dim=f"{name}_wavelength",

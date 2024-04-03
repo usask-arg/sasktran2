@@ -82,10 +82,7 @@ TEST_CASE("8StreamBenchmark", "[sktran_do][lowlevel][benchmark]") {
     // Construct the Atmosphere
     sasktran2::atmosphere::AtmosphereGridStorageFull<1> storage(nwavel,
                                                                 geo.size(), 16);
-    sasktran2::atmosphere::Surface surface;
-
-    surface.albedo().resize(nwavel);
-    surface.albedo().setZero();
+    sasktran2::atmosphere::Surface<1> surface(nwavel);
 
     sasktran2::atmosphere::Atmosphere<1> atmo(std::move(storage),
                                               std::move(surface), true);

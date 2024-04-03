@@ -15,8 +15,7 @@ namespace sasktran_disco {
      *   @tparam CNSTR Number of constraints
      */
     template <int NSTOKES, int CNSTR = -1>
-    class GeometryLayerArray : public GeometryLayerArrayROP<NSTOKES>,
-                               public AzimuthDependencyCascade {
+    class GeometryLayerArray : public GeometryLayerArrayROP<NSTOKES> {
       protected:
         const PersistentConfiguration<NSTOKES, CNSTR>&
             m_config;                      /** config object */

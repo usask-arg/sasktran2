@@ -13,7 +13,7 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::
     auto& trace = m_input_derivatives.reverse_trace(los.unsorted_index);
 
     m_reflection_computed[m][los.unsorted_index] = true;
-    if (m_albedo[m].isLambertian() && m > 0) {
+    if (m >= m_surface.sk2_surface().max_azimuthal_order()) {
         return;
     }
     const uint N = this->M_NSTR / 2;
@@ -35,7 +35,9 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::
     direct_contrib.setzero();
     direct_contrib.setzero();
 
-    auto& rho = m_albedo[m].losBDRFromStreams(los.unsorted_index);
+    Eigen::Map<const Eigen::VectorXd, 1, Eigen::InnerStride<>> rho(
+        m_surface.storage().brdf.los_stream.data(), this->M_NSTR / 2, 1,
+        Eigen::InnerStride<>(m_num_los));
 
     // Construct the Dual quantity for the layer transmittance
     Dual<double> beam_transmittance =
@@ -53,7 +55,7 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::
             dual_rho.value = 0.0;
             dual_rho.deriv.setZero();
         } else {
-            dual_rho.value = rho[i / NSTOKES + this->M_NSTR / 2];
+            dual_rho.value = rho(i / NSTOKES);
 
             for (uint j = 0; j < input_deriv.numDerivativeLayer(layer.index());
                  ++j) {
@@ -186,7 +188,9 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::
     LayerDual<double> dual_albedo_sun(
         (uint)input_deriv.numDerivativeLayer(layer.index()), layer.index(),
         (uint)input_deriv.layerStartIndex(layer.index()));
-    dual_albedo_sun.value = m_albedo[m].losBDRFromSun(los.unsorted_index);
+
+    dual_albedo_sun.value =
+        m_surface.storage().brdf.los_solar(los.unsorted_index, 0);
     for (uint j = 0; j < input_deriv.numDerivativeLayer(layer.index()); ++j) {
         dual_albedo_sun.deriv(j) =
             input_deriv
@@ -242,7 +246,7 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::
 template <int NSTOKES, int CNSTR>
 sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
     const PersistentConfiguration<NSTOKES, CNSTR>& config, int wavelidx,
-    const std::vector<LineOfSight>& los, std::unique_ptr<BRDF_Base> brdf,
+    const std::vector<LineOfSight>& los,
     const GeometryLayerArray<NSTOKES, CNSTR>& geometry_layers,
     const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
     const sasktran2::Config& sk_config)
@@ -256,10 +260,12 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
       m_optical_interpolator(geometry_layers.interpolating_matrix()),
       m_input_derivatives(config.pool().thread_data().input_derivatives()),
       m_transmission(config.pool().thread_data().transmission()),
-      m_albedo(los, *this->M_MU, this->M_CSZ, std::move(brdf), 64) {
+      m_surface(config.pool().thread_data().surface_storage(),
+                atmosphere.surface(), wavelidx) {
     m_wavel_index = wavelidx;
     // Allocations
     m_layers.reserve(this->M_NLYR);
+    m_surface.storage().resize(this->M_NSTR, m_num_los, 1);
 
     // Accumulation quantities for the layers
     double ceiling_depth = 0;
@@ -611,12 +617,6 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
     }
 
     configureTransmission();
-
-    // Configure azimuthal dependencies
-    for (auto& layer : m_layers) {
-        registerAzimuthDependency(*layer);
-    }
-    registerAzimuthDependency(m_albedo);
 
     // resize ground reflection vector
     m_ground_reflection.resize(

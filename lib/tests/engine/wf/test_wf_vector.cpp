@@ -25,10 +25,7 @@ TEST_CASE("Verify k WF Vector", "[sasktran2][engine][wf]") {
     int nwavel = 1;
     sasktran2::atmosphere::AtmosphereGridStorageFull<3> storage(nwavel,
                                                                 geo.size(), 16);
-    sasktran2::atmosphere::Surface surface;
-
-    surface.albedo().resize(nwavel);
-    surface.albedo().setZero();
+    sasktran2::atmosphere::Surface<3> surface(nwavel);
 
     sasktran2::atmosphere::Atmosphere<3> atmo(std::move(storage),
                                               std::move(surface), true);
@@ -150,10 +147,7 @@ TEST_CASE("Verify ssa WF Vector", "[sasktran2][engine][wf]") {
     int nwavel = 1;
     sasktran2::atmosphere::AtmosphereGridStorageFull<3> storage(nwavel,
                                                                 geo.size(), 16);
-    sasktran2::atmosphere::Surface surface;
-
-    surface.albedo().resize(nwavel);
-    surface.albedo().setZero();
+    sasktran2::atmosphere::Surface<3> surface(nwavel);
 
     sasktran2::atmosphere::Atmosphere<3> atmo(std::move(storage),
                                               std::move(surface), true);
@@ -276,10 +270,7 @@ TEST_CASE("Verify leg_coeff WF Vector", "[sasktran2][engine][wf]") {
     int nwavel = 1;
     sasktran2::atmosphere::AtmosphereGridStorageFull<3> storage(nwavel,
                                                                 geo.size(), 16);
-    sasktran2::atmosphere::Surface surface;
-
-    surface.albedo().resize(nwavel);
-    surface.albedo().setZero();
+    sasktran2::atmosphere::Surface<3> surface(nwavel);
 
     sasktran2::atmosphere::Atmosphere<3> atmo(std::move(storage),
                                               std::move(surface), true);
@@ -408,10 +399,7 @@ TEST_CASE("Verify k WF Vector plane-parallel", "[sasktran2][engine][wf]") {
     int nwavel = 1;
     sasktran2::atmosphere::AtmosphereGridStorageFull<3> storage(nwavel,
                                                                 geo.size(), 16);
-    sasktran2::atmosphere::Surface surface;
-
-    surface.albedo().resize(nwavel);
-    surface.albedo().setZero();
+    sasktran2::atmosphere::Surface<3> surface(nwavel);
 
     sasktran2::atmosphere::Atmosphere<3> atmo(std::move(storage),
                                               std::move(surface), true);

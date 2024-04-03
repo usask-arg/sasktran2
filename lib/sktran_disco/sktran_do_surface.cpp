@@ -1,6 +1,7 @@
 #include "sktran_disco/sktran_do.h"
 #include "sktran_disco/sktran_do_surface.h"
 
+/*
 void sasktran_disco::Albedo::configure(AEOrder m,
                                        const std::vector<LineOfSight>& los,
                                        const std::vector<double>& streams,
@@ -86,3 +87,4 @@ double sasktran_disco::Albedo::computeBDR(AEOrder m, double outgoing,
     }
     return 0.5 * (2.0 - kronDelta(m, 0)) * integral;
 }
+*/
