@@ -22,8 +22,8 @@ from . import (
 class SnowKokhanovsky(Constituent, WavelengthInterpolatorMixin):
     def __init__(
         self,
-        L: np.array,
-        M: np.array,
+        L: np.array = 3600000,
+        M: np.array = 5.5e-8,
         refractive_index_fn: "RefractiveIndex" = None,
         wavelengths_nm: np.array = None,
         out_of_bounds_mode="zero",
@@ -31,8 +31,12 @@ class SnowKokhanovsky(Constituent, WavelengthInterpolatorMixin):
         """
         Parameters
         ----------
+        L : np.array, optional
+            Kokhanovsky L parameter, by default 3600000
+        M : np.array, optional
+            Kokhanovsky M parameter, by default 5.5e-8
         wavelengths_nm : np.array, optional
-            Wavelengths in [nm] that the albedo is specified at, by default None
+            Wavelengths in [nm] that the parameters L, M is specified at, by default None indicating that L and M are scalar
         out_of_bounds_mode : str, optional
             One of ["extend" or "zero"], "extend" will extend the last/first value if we are
             interpolating outside the grid. "zero" will set the albedo to 0 outside of the

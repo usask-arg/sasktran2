@@ -349,24 +349,49 @@ namespace sasktran2 {
                     }
                 }
             } else {
-                // Ground point, just have to interpolate in SZA and only use
-                // m=0
-                // TODO: CHange when move away from non-lambertian
+                // Ground point, just have to interpolate in SZA and angle
+
+                double mu = location.dot(-direction);
+
+                m_cos_angle_grid->calculate_interpolation_weights(
+                    mu, angle_index, angle_weight, num_angle_contrib);
+
+                // If we have a cos_angle < 0 move the weight into the next one
+                if (m_cos_angle_grid->grid()(angle_index[0]) < 0) {
+                    angle_index[0] = angle_index[1];
+                }
+
                 for (int szaidx = 0; szaidx < num_sza_contrib; ++szaidx) {
-                    double weight = sza_weight[szaidx];
-                    int index = ground_storage_index(0, sza_index[szaidx], 0);
+                    for (int angleidx = 0; angleidx < num_angle_contrib;
+                         ++angleidx) {
+                        double weight =
+                            sza_weight[szaidx] * angle_weight[angleidx];
 
-                    m_need_to_calculate_map[index] = true;
+                        for (int m = 0; m < m_num_azi; ++m) {
+                            int index = ground_storage_index(
+                                angle_index[angleidx], sza_index[szaidx], m);
 
-                    if constexpr (NSTOKES == 1) {
-                        tripletList.emplace_back(T(i, index, weight));
-                    } else if constexpr (NSTOKES == 3) {
-                        tripletList.emplace_back(
-                            T(i * NSTOKES, index * NSTOKES, weight));
-                        tripletList.emplace_back(
-                            T(i * NSTOKES + 1, index * NSTOKES + 1, weight));
-                        tripletList.emplace_back(
-                            T(i * NSTOKES + 2, index * NSTOKES + 2, weight));
+                            m_need_to_calculate_map[index] = true;
+
+                            double azi_factor = cos(m * (EIGEN_PI - saa));
+
+                            if constexpr (NSTOKES == 1) {
+                                tripletList.emplace_back(
+                                    T(i, index, weight * azi_factor));
+                            } else if constexpr (NSTOKES == 3) {
+                                double sin_azi_factor =
+                                    sin(m * (EIGEN_PI - saa));
+                                tripletList.emplace_back(
+                                    T(i * NSTOKES, index * NSTOKES,
+                                      weight * azi_factor));
+                                tripletList.emplace_back(
+                                    T(i * NSTOKES + 1, index * NSTOKES + 1,
+                                      weight * azi_factor));
+                                tripletList.emplace_back(
+                                    T(i * NSTOKES + 2, index * NSTOKES + 2,
+                                      weight * sin_azi_factor));
+                            }
+                        }
                     }
                 }
             }
@@ -622,9 +647,6 @@ namespace sasktran2 {
                 storage.source_terms_linear.value(source_index) =
                     diffuse_contrib.value;
             }
-
-            std::cout << "Diffuse contrib: " << diffuse_contrib.value
-                      << std::endl;
 
             // And we also have to translate the temporary layer DO
             // derivatives to atmosphere derivatives

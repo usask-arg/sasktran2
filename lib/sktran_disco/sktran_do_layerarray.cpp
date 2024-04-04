@@ -257,8 +257,6 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::
         m_ground_reflection[m][los.unsorted_index].deriv =
             diffuse_contrib.deriv;
     }
-
-    std::cout << "Diffuse contrib: " << diffuse_contrib.value << std::endl;
 }
 
 template <int NSTOKES, int CNSTR>
