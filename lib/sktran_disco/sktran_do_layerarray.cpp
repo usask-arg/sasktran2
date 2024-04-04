@@ -57,12 +57,21 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::
 
             for (uint j = 0; j < input_deriv.numDerivativeLayer(layer.index());
                  ++j) {
+                const auto& d_rho =
+                    m_surface.storage()
+                        .d_brdf[input_deriv
+                                    .layerDerivatives()[input_deriv
+                                                            .layerStartIndex(
+                                                                layer.index()) +
+                                                        j]
+                                    .surface_deriv_index]
+                        .los_stream;
                 dual_rho.deriv(j) =
                     input_deriv
                         .layerDerivatives()
                             [input_deriv.layerStartIndex(layer.index()) + j]
                         .d_albedo *
-                    kronDelta(m, 0);
+                    d_rho(los.unsorted_index, i / NSTOKES);
             }
         }
 
@@ -189,13 +198,22 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::
 
     dual_albedo_sun.value =
         m_surface.storage().brdf.los_solar(los.unsorted_index, 0);
+
     for (uint j = 0; j < input_deriv.numDerivativeLayer(layer.index()); ++j) {
+        double d_sun =
+            m_surface.storage()
+                .d_brdf[input_deriv
+                            .layerDerivatives()
+                                [input_deriv.layerStartIndex(layer.index()) + j]
+                            .surface_deriv_index]
+                .los_solar(los.unsorted_index, 0);
+
         dual_albedo_sun.deriv(j) =
             input_deriv
                 .layerDerivatives()[input_deriv.layerStartIndex(layer.index()) +
                                     j]
                 .d_albedo *
-            kronDelta(m, 0);
+            d_sun;
     }
 
     if (m_include_direct_bounce) {
@@ -453,13 +471,16 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
                 }
             }
             // Add one final derivative for the surface
-            LayerInputDerivative<NSTOKES>& deriv_albedo =
-                m_input_derivatives.addDerivative(this->M_NSTR,
-                                                  this->M_NLYR - 1);
-            deriv_albedo.d_albedo = 1;
-            deriv_albedo.group_and_triangle_fraction.emplace_back(
-                atmosphere.surface_deriv_start_index(), 1);
-            deriv_albedo.extinctions.emplace_back(1);
+            for (int k = 0; k < m_surface.sk2_surface().num_deriv(); ++k) {
+                LayerInputDerivative<NSTOKES>& deriv_albedo =
+                    m_input_derivatives.addDerivative(this->M_NSTR,
+                                                      this->M_NLYR - 1);
+                deriv_albedo.d_albedo = 1;
+                deriv_albedo.surface_deriv_index = k;
+                deriv_albedo.group_and_triangle_fraction.emplace_back(
+                    atmosphere.surface_deriv_start_index() + k, 1);
+                deriv_albedo.extinctions.emplace_back(1);
+            }
 
             m_input_derivatives.set_geometry_configured();
             m_input_derivatives.sort(this->M_NLYR);

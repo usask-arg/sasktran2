@@ -87,6 +87,49 @@ namespace sasktran_disco {
             }
             return result * 0.5 * EIGEN_PI * (2.0 - kronDelta(m, 0));
         }
+
+        double d_compute_expansion(
+            AEOrder m,
+            const sasktran2::atmosphere::Surface<NSTOKES>& sk2_surface,
+            int wavel_idx, double mu_out, double mu_in, int deriv_index) const {
+            if (sk2_surface.max_azimuthal_order() == 1) {
+                // Special case
+                return sk2_surface.d_brdf(wavel_idx, mu_in, mu_out, 0,
+                                          deriv_index)(0, 0) *
+                       EIGEN_PI;
+            }
+            if (m >= sk2_surface.max_azimuthal_order()) {
+                return 0;
+            }
+            // else
+            double result = 0;
+
+            for (int i = 0; i < m_quadrature_phi.size() / 2; i++) {
+                double a1 = 0.5 * m_quadrature_phi(i) + 0.5;
+                double a2 = -0.5 * m_quadrature_phi(i) + 0.5;
+                double a3 = 0.5 * m_quadrature_phi(i) - 0.5;
+                double a4 = -0.5 * m_quadrature_phi(i) - 0.5;
+                double w = 0.5 * m_quadrature_weight(i);
+
+                result += w *
+                          sk2_surface.d_brdf(wavel_idx, mu_in, mu_out,
+                                             EIGEN_PI * a1, deriv_index)(0, 0) *
+                          cos(m * EIGEN_PI * a1);
+                result += w *
+                          sk2_surface.d_brdf(wavel_idx, mu_in, mu_out,
+                                             EIGEN_PI * a2, deriv_index)(0, 0) *
+                          cos(m * EIGEN_PI * a2);
+                result += w *
+                          sk2_surface.d_brdf(wavel_idx, mu_in, mu_out,
+                                             EIGEN_PI * a3, deriv_index)(0, 0) *
+                          cos(m * EIGEN_PI * a3);
+                result += w *
+                          sk2_surface.d_brdf(wavel_idx, mu_in, mu_out,
+                                             EIGEN_PI * a4, deriv_index)(0, 0) *
+                          cos(m * EIGEN_PI * a4);
+            }
+            return result * 0.5 * EIGEN_PI * (2.0 - kronDelta(m, 0));
+        }
     };
 
     template <int NSTOKES, int CNSTR = -1> class Surface {
@@ -108,6 +151,7 @@ namespace sasktran_disco {
         }
 
         void calculate(AEOrder m) {
+            int numderiv = m_storage.d_brdf.size();
             // For each stream
             for (int i = 0; i < m_storage.mu->size() / 2; i++) {
                 // LOS stream
@@ -117,6 +161,15 @@ namespace sasktran_disco {
                         m_storage.compute_expansion(
                             m, m_sk2_surface, m_wavel_idx,
                             (*m_storage.los)[j].coszenith, (*m_storage.mu)[i]);
+
+                    for (int k = 0; k < numderiv; ++k) {
+                        m_storage.d_brdf[k].los_stream(
+                            (*m_storage.los)[j].unsorted_index, i) =
+                            m_storage.d_compute_expansion(
+                                m, m_sk2_surface, m_wavel_idx,
+                                (*m_storage.los)[j].coszenith,
+                                (*m_storage.mu)[i], k);
+                    }
                 }
 
                 // Stream Stream
@@ -125,12 +178,26 @@ namespace sasktran_disco {
                         m_storage.compute_expansion(
                             m, m_sk2_surface, m_wavel_idx, (*m_storage.mu)[j],
                             (*m_storage.mu)[i]);
+
+                    for (int k = 0; k < numderiv; ++k) {
+                        m_storage.d_brdf[k].stream_stream(j, i) =
+                            m_storage.d_compute_expansion(
+                                m, m_sk2_surface, m_wavel_idx,
+                                (*m_storage.mu)[j], (*m_storage.mu)[i], k);
+                    }
                 }
 
                 // Stream solar
                 m_storage.brdf.stream_solar(i) = m_storage.compute_expansion(
                     m, m_sk2_surface, m_wavel_idx, (*m_storage.mu)[i],
                     m_storage.csz);
+
+                for (int k = 0; k < numderiv; ++k) {
+                    m_storage.d_brdf[k].stream_solar(i) =
+                        m_storage.d_compute_expansion(
+                            m, m_sk2_surface, m_wavel_idx, (*m_storage.mu)[i],
+                            m_storage.csz, k);
+                }
             }
 
             // Los solar
@@ -139,6 +206,14 @@ namespace sasktran_disco {
                     m_storage.compute_expansion(m, m_sk2_surface, m_wavel_idx,
                                                 (*m_storage.los)[i].coszenith,
                                                 m_storage.csz);
+
+                for (int k = 0; k < numderiv; ++k) {
+                    m_storage.d_brdf[k].los_solar(
+                        (*m_storage.los)[i].unsorted_index) =
+                        m_storage.d_compute_expansion(
+                            m, m_sk2_surface, m_wavel_idx,
+                            (*m_storage.los)[i].coszenith, m_storage.csz, k);
+                }
             }
         }
         const SurfaceStorage<NSTOKES, CNSTR>& storage() const {

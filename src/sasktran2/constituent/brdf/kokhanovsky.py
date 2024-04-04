@@ -64,6 +64,14 @@ class SnowKokhanovsky(Constituent, WavelengthInterpolatorMixin):
     def L(self, L: np.array):
         self._L = np.atleast_1d(L)
 
+    @property
+    def M(self) -> np.array:
+        return self._M
+
+    @M.setter
+    def M(self, M: np.array):
+        self._M = np.atleast_1d(M)
+
     def add_to_atmosphere(self, atmo: Atmosphere):
         if atmo.wavelengths_nm is None:
             msg = (
@@ -87,7 +95,7 @@ class SnowKokhanovsky(Constituent, WavelengthInterpolatorMixin):
         L_interp = interp_matrix @ self._L
 
         atmo.surface.brdf_args[0, :] = (chi + M_interp) * L_interp / atmo.wavelengths_nm
-        # atmo.surface.d_brdf_args[0][0, :] = 1
+        atmo.surface.d_brdf_args[0][0, :] = 1
 
     def register_derivative(self, atmo: Atmosphere, name: str):
         # Start by constructing the interpolation matrix
@@ -95,8 +103,23 @@ class SnowKokhanovsky(Constituent, WavelengthInterpolatorMixin):
 
         derivs = {}
 
-        derivs["albedo"] = SurfaceDerivativeMapping(
-            NativeGridDerivative(d_albedo=np.ones(atmo.num_wavel)),
+        chi = -self._refractive_index_fn.refractive_index(atmo.wavelengths_nm).imag
+
+        # L Deriv factors are (chi + M_interp) / wavelength_nm
+        L_factor = (chi + (interp_matrix @ self._M)) / atmo.wavelengths_nm
+
+        derivs["L"] = SurfaceDerivativeMapping(
+            NativeGridDerivative(d_albedo=L_factor),
+            interpolating_matrix=interp_matrix,
+            interp_dim="wavelength",
+            result_dim=f"{name}_wavelength",
+        )
+
+        # M Deriv factors are L / wavelength_nm
+        M_factor = (interp_matrix @ self._L) / atmo.wavelengths_nm
+
+        derivs["M"] = SurfaceDerivativeMapping(
+            NativeGridDerivative(d_albedo=M_factor),
             interpolating_matrix=interp_matrix,
             interp_dim="wavelength",
             result_dim=f"{name}_wavelength",

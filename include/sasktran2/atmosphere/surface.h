@@ -170,6 +170,7 @@ namespace sasktran2::atmosphere {
                 double r0;
 
                 alpha = sqrt(4 * EIGEN_PI * args(0));
+
                 r0 = R0(mus, muv, theta);
                 res(0, 0) =
                     r0 * (exp(-alpha * K0(mus) * K0(muv) / r0)) / EIGEN_PI;
@@ -177,7 +178,39 @@ namespace sasktran2::atmosphere {
                 return res;
             }
 
-            int num_deriv() const override { return 0; }
+            Eigen::Matrix<double, NSTOKES, NSTOKES>
+            d_brdf(int deriv_index, double mu_in, double mu_out,
+                   double phi_diff, Eigen::Ref<const Eigen::VectorXd> args,
+                   Eigen::Ref<const Eigen::VectorXd> d_args) const override {
+                Eigen::Matrix<double, NSTOKES, NSTOKES> res;
+                res.setZero();
+
+                // Input arguments
+                // args(0) = (chi + M) / wavelennm * L
+
+                double mus = mu_in;
+                double muv = mu_out;
+                double ss = sqrt(1 - mus * mus);
+                double sv = sqrt(1 - muv * muv);
+                double cost = std::max(
+                    -1.0, std::min(1.0, -mus * muv + ss * sv * cos(phi_diff)));
+                double theta = acos(cost) * 180.0 / EIGEN_PI;
+                double alpha;
+                double r0;
+
+                alpha = sqrt(4 * EIGEN_PI * args(0));
+
+                // d_alpha = 0.5 / alpha * d_args(0) * 4 * EIGEN_PI;
+
+                r0 = R0(mus, muv, theta);
+                double factor = -K0(mus) * K0(muv) / r0;
+                res(0, 0) = r0 * (exp(alpha * factor)) *
+                            (2 / alpha * d_args(0) * factor);
+
+                return res;
+            }
+
+            int num_deriv() const override { return 1; }
 
             int num_args() const override { return 1; }
         };
