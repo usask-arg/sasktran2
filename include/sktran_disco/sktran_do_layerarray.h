@@ -303,6 +303,14 @@ namespace sasktran_disco {
             }
         }
 
+        /**
+         * @brief Returns the wavelength index that the layer array is loaded
+         * with
+         *
+         * @return int
+         */
+        int wavelength_index() const { return m_wavel_index; }
+
       protected:
         /**
          * @brief Calculates the transmission factors for the layers

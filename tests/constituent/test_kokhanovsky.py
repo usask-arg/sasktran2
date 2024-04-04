@@ -66,6 +66,30 @@ def _test_scenarios():
         }
     )
 
+    # DO spherical
+    config = sk.Config()
+    config.multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
+    config.num_streams = 4
+    config.delta_m_scaling = False
+
+    geometry = sk.Geometry1D(
+        0.6,
+        0,
+        6327000,
+        altitude_grid,
+        sk.InterpolationMethod.LinearInterpolation,
+        sk.GeometryType.Spherical,
+    )
+
+    scen.append(
+        {
+            "config": config,
+            "geometry": geometry,
+            "viewing_geo": viewing_geo,
+            "atmosphere": atmosphere,
+        }
+    )
+
     return scen
 
 
