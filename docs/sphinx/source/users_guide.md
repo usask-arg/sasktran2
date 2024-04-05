@@ -12,6 +12,9 @@
 [Polarized Calculations](users_guide/polarization.md)
 : Enabling calculation of the full Stokes Vector
 
+[Setting the Surface BRDF](users_guide/brdf.md)
+: How to use the built in surface reflectance models
+
 [Including Mie Scatterers](users_guide/mie.md)
 : Adding Mie scattering particles to your atmospheric state
 
@@ -33,6 +36,7 @@ required_components
 weighting_functions
 users_guide/mie.md
 users_guide/polarization.md
+users_guide/brdf.md
 users_guide/performance.md
 users_guide/phase.md
 users_guide/geodetic.md
