@@ -11,6 +11,8 @@ namespace sasktran2::math {
         m_reverse_contributing_map.resize(m_full_sphere->num_points());
         m_is_full_sphere_looking_up.resize(m_full_sphere->num_points());
 
+        m_quadrature_normalization = 0.0;
+
         // We need to find the points that are looking up
         for (int i = 0; i < m_full_sphere->num_points(); ++i) {
             quad = m_full_sphere->get_quad_position(i);
@@ -21,6 +23,9 @@ namespace sasktran2::math {
 
                 m_reverse_contributing_map[i] = m_contributing_map.size();
                 m_contributing_map.push_back(i);
+
+                m_quadrature_normalization +=
+                    m_full_sphere->quadrature_weight(i);
             } else {
                 m_is_full_sphere_looking_up[i] = false;
                 m_reverse_contributing_map[i] =
@@ -38,9 +43,8 @@ namespace sasktran2::math {
     }
 
     double UnitSphereGround::quadrature_weight(int i) const {
-        // TODO: Should we renormalize the quadrature weights to guarantee they
-        // integrate to the half sphere?
-        return m_full_sphere->quadrature_weight(m_contributing_map[i]);
+        return m_full_sphere->quadrature_weight(m_contributing_map[i]) /
+               m_quadrature_normalization * 0.5;
     }
 
     void UnitSphereGround::interpolate(
@@ -76,6 +80,8 @@ namespace sasktran2::math {
             }
         } else {
             // TODO: Why does this happen?
+            spdlog::warn("Ground Interpolation failed for direction: {}",
+                         direction.transpose());
         }
     }
 

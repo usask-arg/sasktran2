@@ -85,6 +85,11 @@ namespace sasktran2::atmosphere {
             }
         };
 
+        template <int NSTOKES> struct WeightedBRDF : public BRDF<NSTOKES> {
+          private:
+          public:
+        };
+
         /**
          * A lambertian BRDF function, the brdf is a constant value of albedo /
          * pi

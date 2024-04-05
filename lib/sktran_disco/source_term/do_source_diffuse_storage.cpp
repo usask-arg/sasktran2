@@ -232,7 +232,13 @@ namespace sasktran2 {
         m_sza_grid.calculate_interpolation_weights(csz, sza_index, sza_weight,
                                                    num_sza_contrib);
 
-        double mu = location.dot(-direction);
+        double mu;
+        if (m_geometry.coordinates().geometry_type() ==
+            sasktran2::geometrytype::spherical) {
+            mu = location.normalized().dot(-direction);
+        } else {
+            mu = -direction.z();
+        }
 
         m_cos_angle_grid->calculate_interpolation_weights(
             mu, angle_index, angle_weight, num_angle_contrib);
@@ -351,7 +357,13 @@ namespace sasktran2 {
             } else {
                 // Ground point, just have to interpolate in SZA and angle
 
-                double mu = location.dot(-direction);
+                double mu;
+                if (m_geometry.coordinates().geometry_type() ==
+                    sasktran2::geometrytype::spherical) {
+                    mu = location.normalized().dot(-direction);
+                } else {
+                    mu = -direction.z();
+                }
 
                 m_cos_angle_grid->calculate_interpolation_weights(
                     mu, angle_index, angle_weight, num_angle_contrib);
@@ -477,7 +489,7 @@ namespace sasktran2 {
                 double albedo =
                     optical_layer.surface().storage().compute_expansion(
                         m, optical_layer.surface().sk2_surface(),
-                        optical_layer.wavelength_index(), mu_out, mu_in);
+                        optical_layer.wavelength_index(), mu_in, mu_out);
 
                 sasktran_disco::LayerDual<double> dual_rho(
                     (sasktran_disco::uint)input_deriv.numDerivativeLayer(

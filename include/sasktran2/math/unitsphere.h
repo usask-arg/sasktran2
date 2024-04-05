@@ -31,6 +31,8 @@ namespace sasktran2::math {
         std::unique_ptr<const UnitSphere> m_full_sphere;
         const Eigen::Vector3d m_location;
 
+        double m_quadrature_normalization;
+
         std::vector<int> m_contributing_map;
         std::vector<int> m_reverse_contributing_map;
         std::vector<bool> m_is_full_sphere_looking_up;
