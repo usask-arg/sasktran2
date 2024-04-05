@@ -304,8 +304,6 @@ class Atmosphere:
             self._atmosphere.storage.leg_coeff, self._nstokes
         )
 
-        self.surface.albedo = np.zeros(nwavel)
-
         self._storage_needs_reset = False
 
         self._pressure_pa = None
@@ -319,6 +317,18 @@ class Atmosphere:
         self._unscaled_ssa = None
         self._unscaled_extinction = None
         self._applied_delta_m_order = None
+        self._nwavel = nwavel
+
+    @property
+    def num_wavel(self) -> int:
+        """
+        The number of wavelengths the atmosphere is specified at
+
+        Returns
+        -------
+        int
+        """
+        return self._nwavel
 
     @property
     def model_geometry(self) -> sk.Geometry1D:
@@ -385,7 +395,7 @@ class Atmosphere:
         return self._atmosphere.storage
 
     @property
-    def surface(self) -> sk.Surface:
+    def surface(self) -> sk.SurfaceStokes_1 | sk.SurfaceStokes_3:
         """
         The surface object
 
@@ -563,7 +573,7 @@ class Atmosphere:
 
                 self._derivs["raw"]["albedo"] = DerivativeMapping(
                     NativeGridDerivative(
-                        d_albedo=np.ones_like(self.surface.albedo),
+                        d_albedo=np.ones(self.num_wavel),
                     ),
                     summable=True,
                 )

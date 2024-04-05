@@ -15,8 +15,7 @@ namespace sasktran_disco {
         ReadOnlyProperties<BasicProperties<NSTOKES>, SolarProperties<NSTOKES>,
                            UserSpecProperties>;
     template <int NSTOKES, int CNSTR = -1>
-    class OpticalLayer : public OpticalLayerROP<NSTOKES>,
-                         public AzimuthDependencyCascade {
+    class OpticalLayer : public OpticalLayerROP<NSTOKES> {
         using HomogType = typename std::conditional<NSTOKES != 5, double,
                                                     std::complex<double>>::type;
 

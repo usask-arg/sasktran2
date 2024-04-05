@@ -82,6 +82,7 @@ namespace sasktran_disco {
         LayerInputDerivative(uint nstr, LayerIndex p) {
             d_legendre_coeff.resize(nstr);
             layer_index = p;
+            surface_deriv_index = 0;
 
             setZero();
         }
@@ -95,6 +96,7 @@ namespace sasktran_disco {
                             the parameter */
         double d_albedo; /** Derivative of the surface albedo with respect to
                             the parameter */
+        int surface_deriv_index;
 
         LayerIndex layer_index; /** Layer index that is varying */
         std::vector<std::pair<uint, double>>

@@ -139,6 +139,7 @@ namespace sasktran2 {
 
         const sasktran2::Geometry1D& m_geometry;
         const Config& m_config;
+        const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere;
 
         int m_num_azi;
         int m_ground_start;

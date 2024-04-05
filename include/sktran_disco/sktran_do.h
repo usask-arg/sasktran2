@@ -107,7 +107,6 @@
 #include "sktran_disco/sktran_do_specs.h"
 #include "sktran_disco/sktran_do_surface.h"
 #include "sktran_disco/sktran_do_testing.h"
-#include "sktran_disco/sktran_do_lazyazimuth.h"
 #include "sktran_disco/sktran_do_properties.h"
 #include "sktran_disco/sktran_do_pconfig.h"
 #include "sktran_disco/sktran_do_opticallayer.h"

@@ -78,7 +78,8 @@ def test_lambertian_surface_interp_wavelength():
         _ = engine.calculate_radiance(scen["atmosphere"])
 
         np.testing.assert_allclose(
-            scen["atmosphere"].surface.albedo, [0.11875, 0.13125, 0.14375, 0.3]
+            scen["atmosphere"].surface.albedo.flatten(),
+            [0.11875, 0.13125, 0.14375, 0.3],
         )
 
 
@@ -98,7 +99,7 @@ def test_lambertian_surface_interp_wavenumber():
         _ = engine.calculate_radiance(scen["atmosphere"])
 
         np.testing.assert_allclose(
-            scen["atmosphere"].surface.albedo, [0, 0, 0.28571429, 0.16666667]
+            scen["atmosphere"].surface.albedo.flatten(), [0, 0, 0.28571429, 0.16666667]
         )
 
 
@@ -118,7 +119,7 @@ def test_lambertian_surface_native():
         _ = engine.calculate_radiance(scen["atmosphere"])
 
         np.testing.assert_allclose(
-            scen["atmosphere"].surface.albedo, [0.1, 0.8, 0.9, 0.3]
+            scen["atmosphere"].surface.albedo.flatten(), [0.1, 0.8, 0.9, 0.3]
         )
 
 

@@ -39,7 +39,7 @@ namespace sasktran2::hr {
             double* phase_storage_location) const;
 
         void calculate_ground_scattering_matrix(
-            const sasktran2::atmosphere::Surface& surface,
+            const sasktran2::atmosphere::Surface<NSTOKES>& surface,
             const std::vector<std::pair<int, double>>& index_weights,
             const sasktran2::Location& loc, int wavelidx,
             double* phase_storage_location) const;

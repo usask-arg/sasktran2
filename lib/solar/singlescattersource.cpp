@@ -222,24 +222,33 @@ namespace sasktran2::solartransmission {
         int wavelidx, int losidx, int wavel_threadidx, int threadidx,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
-        // TODO: BRDF
-
         if (m_los_rays->at(losidx).ground_is_hit) {
-            double albedo = m_atmosphere->surface().albedo()[wavelidx];
+            // Single scatter ground source is solar_trans * cos(th) * brdf
 
-            // Single scatter ground source is solar_trans * cos(th) * albedo /
-            // pi
+            // Cosine of direction to the sun at the surface
+            double mu_in =
+                m_los_rays->at(losidx).layers[0].exit.cos_zenith_angle(
+                    m_geometry.coordinates().sun_unit());
+
+            // Cosine of direction to LOS at the surface
+            double mu_out =
+                -1.0 * m_los_rays->at(losidx).layers[0].exit.cos_zenith_angle(
+                           m_los_rays->at(losidx).layers[0].average_look_away);
+
+            // We already have the azimuthal difference
+            double phi_diff = m_los_rays->at(losidx).layers[0].saz_exit;
+
+            Eigen::Matrix<double, NSTOKES, NSTOKES> brdf =
+                m_atmosphere->surface().brdf(wavelidx, mu_in, mu_out, phi_diff);
+
             int exit_index = m_index_map[losidx][0];
 
             double solar_trans = m_solar_trans[wavel_threadidx](exit_index);
 
-            double cos_theta =
-                m_los_rays->at(losidx).layers[0].exit.cos_zenith_angle(
-                    m_geometry.coordinates().sun_unit());
+            Eigen::Vector<double, NSTOKES> source_value =
+                solar_trans * brdf(Eigen::all, 0) * mu_in;
 
-            double source_value = solar_trans * albedo * cos_theta / EIGEN_PI;
-
-            source.value(0) += source_value;
+            source.value.array() += source_value.array();
             if (source.deriv.size() > 0) {
                 // Add on the solar transmission derivative factors
                 if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
@@ -252,15 +261,23 @@ namespace sasktran2::solartransmission {
                                                  Eigen::RowMajor>::InnerIterator
                                  it(m_geometry_sparse, exit_index);
                              it; ++it) {
-                            source.deriv(0, it.index()) -=
+                            source.deriv(Eigen::all, it.index()) -=
                                 it.value() * source_value;
                         }
                     }
                 }
 
-                // And then the albedo derivative factors
-                source.deriv(0, m_atmosphere->surface_deriv_start_index()) +=
-                    solar_trans * cos_theta / EIGEN_PI;
+                for (int k = 0; k < m_atmosphere->surface().num_deriv(); ++k) {
+                    // And then the surface derivative factors
+                    Eigen::Matrix<double, NSTOKES, NSTOKES> brdf_deriv =
+                        m_atmosphere->surface().d_brdf(wavelidx, mu_in, mu_out,
+                                                       phi_diff, k);
+
+                    source.deriv(Eigen::all,
+                                 m_atmosphere->surface_deriv_start_index() +
+                                     k) +=
+                        solar_trans * mu_in * brdf_deriv(Eigen::all, 0);
+                }
             }
         }
     }

@@ -162,13 +162,6 @@ namespace sasktran_disco {
             std::function<double(double, double, double)> brdf;
             bool is_lambertian;
 
-            std::unique_ptr<TestBRDF> getBRDF() const {
-                if (is_lambertian)
-                    return std::unique_ptr<TestBRDF>(new TestBRDF(lambertian));
-                else
-                    return std::unique_ptr<TestBRDF>(new TestBRDF(brdf));
-            }
-
             std::vector<TestLayer<NSTOKES>> layers;
             std::vector<TestLOS> linesofsight;
             const std::vector<double>* correct_radiances;

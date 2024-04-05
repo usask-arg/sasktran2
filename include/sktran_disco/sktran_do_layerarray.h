@@ -1,5 +1,6 @@
 #pragma once
 #include "sktran_disco/sktran_do.h"
+#include "sktran_disco/sktran_do_surface.h"
 #include "sktran_disco/sktran_do_types.h"
 #include <sasktran2/atmosphere/atmosphere.h>
 
@@ -20,25 +21,8 @@ namespace sasktran_disco {
      * @tparam CNSTR
      */
     template <int NSTOKES, int CNSTR = -1>
-    class OpticalLayerArray : public OpticalLayerArrayROP<NSTOKES>,
-                              public AzimuthDependencyCascade {
+    class OpticalLayerArray : public OpticalLayerArrayROP<NSTOKES> {
       public:
-        /**
-         * @brief Construct a new Optical Layer Array object using only geometry
-         * information. If this constructor is used set_optical must be called
-         * before any calculations are performed.
-         *
-         * @param config
-         * @param los
-         * @param geometry_layers
-         * @param thread_data
-         */
-        OpticalLayerArray(
-            const PersistentConfiguration<NSTOKES, CNSTR>& config,
-            const std::vector<LineOfSight>& los,
-            const GeometryLayerArray<NSTOKES, CNSTR>& geometry_layers,
-            const ThreadData<NSTOKES, CNSTR>& thread_data);
-
         /**
          * @brief Construct a new Optical Layer Array object using the sasktran2
          * interface This is the primary way of constructing the
@@ -55,7 +39,6 @@ namespace sasktran_disco {
         OpticalLayerArray(
             const PersistentConfiguration<NSTOKES, CNSTR>& config, int wavelidx,
             const std::vector<LineOfSight>& los,
-            std::unique_ptr<BRDF_Base> brdf,
             const GeometryLayerArray<NSTOKES, CNSTR>& geometry_layers,
             const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
             const sasktran2::Config& sk_config);
@@ -153,14 +136,6 @@ namespace sasktran_disco {
         inline double directIntensityTOA() const { return m_direct_toa; }
 
         /**
-         * @brief Access to the internal albedo surface object
-         *
-         * @param m
-         * @return const Albedo&
-         */
-        inline const Albedo& albedo(AEOrder m) const { return m_albedo[m]; }
-
-        /**
          * @brief The number of layers in the atmosphere
          *
          * @return uint
@@ -184,6 +159,13 @@ namespace sasktran_disco {
         inline InputDerivatives<NSTOKES>& inputDerivatives() {
             return m_input_derivatives;
         }
+
+        /**
+         * @brief The surface
+         *
+         * @return Surface<NSTOKES, CNSTR>&
+         */
+        inline Surface<NSTOKES, CNSTR>& surface() { return m_surface; }
 
         /**
          * @brief The total reflected intensity for a given line of sight
@@ -321,6 +303,14 @@ namespace sasktran_disco {
             }
         }
 
+        /**
+         * @brief Returns the wavelength index that the layer array is loaded
+         * with
+         *
+         * @return int
+         */
+        int wavelength_index() const { return m_wavel_index; }
+
       protected:
         /**
          * @brief Calculates the transmission factors for the layers
@@ -359,7 +349,7 @@ namespace sasktran_disco {
         const PersistentConfiguration<NSTOKES, CNSTR>&
             m_config; /** Internal config object */
 
-        AlbedoExpansion m_albedo; /** Internal surface expansion */
+        Surface<NSTOKES, CNSTR> m_surface;
 
         bool m_include_direct_bounce; /** True if when computing the reflected
                                          intensities the direct solar bounce

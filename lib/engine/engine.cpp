@@ -242,7 +242,7 @@ void Sasktran2<NSTOKES>::validate_input_atmosphere(
         atmosphere.storage().ssa, "Atmosphere single scatter albedo", 1.0);
 
     // Check that the atmosphere geometry matches the global geometry
-    if (atmosphere.num_wavel() != atmosphere.surface().albedo().size()) {
+    if (atmosphere.num_wavel() != atmosphere.surface().brdf_args().cols()) {
         spdlog::error("Atmosphere albedo does not have the correct dimensions");
     }
 }

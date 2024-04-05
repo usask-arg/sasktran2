@@ -1,5 +1,6 @@
 #pragma once
 #include "sktran_disco/sktran_do.h"
+#include "sktran_disco/sktran_do_surface.h"
 
 #ifdef SKTRAN_OPENMP_SUPPORT
 #include "omp.h"
@@ -208,6 +209,10 @@ namespace sasktran_disco {
                                                                     cache*/
         mutable RTEMemoryCache<NSTOKES, CNSTR> m_rte_cache; /** RTE Cache*/
 
+        mutable SurfaceStorage<NSTOKES, CNSTR>
+            m_surface_storage; /** Storage for the expansion coefficients of the
+                                  surface BRDF */
+
       public:
         /**
          * @brief Construct a new Thread Data object
@@ -284,6 +289,15 @@ namespace sasktran_disco {
          */
         RTEMemoryCache<NSTOKES, CNSTR>& rte_cache() const {
             return m_rte_cache;
+        }
+
+        /**
+         * @brief Get the storage for the surface expansion coefficients
+         *
+         * @return SurfaceStorage<NSTOKES, CNSTR>&
+         */
+        SurfaceStorage<NSTOKES, CNSTR>& surface_storage() const {
+            return m_surface_storage;
         }
     };
 
