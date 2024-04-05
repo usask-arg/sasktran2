@@ -80,8 +80,7 @@ namespace sasktran2::math {
             }
         } else {
             // TODO: Why does this happen?
-            spdlog::warn("Ground Interpolation failed for direction: {}",
-                         direction.transpose());
+            spdlog::warn("Ground Interpolation failed");
         }
     }
 
