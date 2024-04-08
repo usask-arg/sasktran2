@@ -18,6 +18,7 @@ add_executable(
   sktran_disco/tests_lowlevel.cpp
   sktran_disco/legacy/test_scalar.cpp
   sktran_disco/legacy/test_vector.cpp
+  twostream/test_twostream.cpp
   sktran_disco/benchmark/bench_lowlevel.cpp
   engine/benchmark/bench_singlescatter.cpp
   engine/benchmark/bench_do_wf.cpp

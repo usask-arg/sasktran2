@@ -20,6 +20,7 @@
 #include <sasktran2/source_algorithms.h>
 #include <sasktran2/source_integrator.h>
 #include <sasktran2/do_source.h>
+#include <sktran_disco/twostream/source.h>
 #include <sasktran2/hr/hr.h>
 #include <sasktran2/mie/mie.h>
 #include <sasktran2/mie/linearized_mie.h>

@@ -51,7 +51,9 @@ sasktran_disco::GeometryLayerArray<NSTOKES, CNSTR>::GeometryLayerArray(
 
     if (geometry.coordinates().geometry_type() ==
         sasktran2::geometrytype::planeparallel) {
-        m_chapman_factors.setConstant(1 / this->M_CSZ);
+        m_chapman_factors.triangularView<Eigen::Lower>().setConstant(
+            1 / this->M_CSZ);
+        m_chapman_factors.diagonal().setConstant(1 / this->M_CSZ);
     } else {
         // Now we have the layer locations, we can calculate the chapman factors
         calculate_chapman_factors(geometry.coordinates().earth_radius());

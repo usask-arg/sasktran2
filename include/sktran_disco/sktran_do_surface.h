@@ -6,7 +6,7 @@
 
 namespace sasktran_disco {
     template <int NSTOKES, int CNSTR = -1> struct SurfaceStorage {
-        static constexpr int CSIZE = CNSTR == -1 ? Eigen::Dynamic : CNSTR;
+        static constexpr int CSIZE = CNSTR == -1 ? Eigen::Dynamic : CNSTR / 2;
 
         struct SurfaceExpansion {
             Eigen::Matrix<double, -1, CSIZE> los_stream;
