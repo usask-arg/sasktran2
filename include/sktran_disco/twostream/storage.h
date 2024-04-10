@@ -4,6 +4,37 @@
 #include <sasktran2/internal_common.h>
 
 namespace sasktran2::twostream {
+
+    /**
+     *  Storage for a quantity in the twostream model that has layer derivatives
+     * with respect to (optionally) the single scatter albedo, optical depth,
+     * and first legendre coefficient
+     *
+     */
+    template <bool ssa_deriv, bool od_deriv, bool b1_deriv> struct LayerVector {
+        Eigen::VectorXd value;
+        Eigen::VectorXd d_ssa;
+        Eigen::VectorXd d_od;
+        Eigen::VectorXd d_b1;
+
+        void resize(int n) {
+            value.resize(n);
+
+            if constexpr (ssa_deriv) {
+                d_ssa.resize(n);
+                d_ssa.setZero();
+            }
+            if constexpr (od_deriv) {
+                d_od.resize(n);
+                d_od.setZero();
+            }
+            if constexpr (b1_deriv) {
+                d_b1.resize(n);
+                d_b1.setZero();
+            }
+        }
+    };
+
     /**
      *  Stores all of the input parameters necessary for the two stream model,
      * as well as some derived cached values
@@ -113,32 +144,16 @@ namespace sasktran2::twostream {
      *
      */
     struct HomogSolution {
-        Eigen::VectorXd k;       /** Eigen value, [lyr] */
-        Eigen::VectorXd X_plus;  /** Position eigen vector [lyr] */
-        Eigen::VectorXd X_minus; /** Negative eigen vector [wlyr] */
+        LayerVector<true, false, true> k; /** Eigen value, [lyr] */
+        LayerVector<true, false, true>
+            X_plus; /** Position eigen vector [lyr] */
+        LayerVector<true, false, true>
+            X_minus; /** Negative eigen vector [wlyr] */
 
         // Temporaries
-        Eigen::VectorXd d;     /** Temporary [lyr] */
-        Eigen::VectorXd s;     /** Temporary [lyr] */
-        Eigen::VectorXd omega; /** exp(-k*od) [lyr]*/
-
-        // Gradients
-        Eigen::RowVectorXd
-            d_d_by_ssa; /** Gradient of d with respect to ssa [lyr] */
-        Eigen::RowVectorXd
-            d_s_by_ssa; /** Gradient of s with respect to ssa [lyr] */
-
-        Eigen::RowVectorXd
-            d_k_by_ssa; /** Gradient of k with respect to ssa [lyr] */
-        Eigen::RowVectorXd
-            d_X_plus_by_ssa; /** Gradient of X_plus with respect to ssa [lyr] */
-        Eigen::RowVectorXd d_X_minus_by_ssa; /** Gradient of X_minus with
-                                                respect to ssa [lyr] */
-
-        Eigen::RowVectorXd
-            d_omega_by_ssa; /** Gradient of omega with respect to ssa [lyr] */
-        Eigen::RowVectorXd
-            d_omega_by_od; /** Gradient of omega with respect to od [lyr] */
+        LayerVector<true, false, true> d;    /** Temporary [lyr] */
+        LayerVector<true, false, true> s;    /** Temporary [lyr] */
+        LayerVector<true, true, true> omega; /** exp(-k*od) [lyr]*/
 
         /**
          *  Initializes the storage for a given number of layers
@@ -154,16 +169,6 @@ namespace sasktran2::twostream {
             s.resize(nlyr);
 
             omega.resize(nlyr);
-
-            d_d_by_ssa.resize(nlyr);
-            d_s_by_ssa.resize(nlyr);
-            d_k_by_ssa.resize(nlyr);
-
-            d_X_minus_by_ssa.resize(nlyr);
-            d_X_plus_by_ssa.resize(nlyr);
-
-            d_omega_by_od.resize(nlyr);
-            d_omega_by_ssa.resize(nlyr);
         }
     };
 
@@ -172,46 +177,22 @@ namespace sasktran2::twostream {
      *
      */
     struct ParticularSolution {
-        Eigen::VectorXd G_plus_top;     /** G+ at top of the [lyr] */
-        Eigen::VectorXd G_plus_bottom;  /** G+ at bottom of the [lyr]*/
-        Eigen::VectorXd G_minus_top;    /** G- at the top of the [lyr] */
-        Eigen::VectorXd G_minus_bottom; /** G- at the bottom of the [lyr] */
-        Eigen::VectorXd A_plus;         /** A+ in the layer [lyr] */
-        Eigen::VectorXd A_minus;        /** A- in the [lyr] */
+        LayerVector<true, false, true> G_plus_top; /** G+ at top of the [lyr] */
+        LayerVector<true, false, true>
+            G_plus_bottom; /** G+ at bottom of the [lyr]*/
+        LayerVector<true, false, true>
+            G_minus_top; /** G- at the top of the [lyr] */
+        LayerVector<true, false, true>
+            G_minus_bottom; /** G- at the bottom of the [lyr] */
+        LayerVector<true, false, true> A_plus;  /** A+ in the layer [lyr] */
+        LayerVector<true, false, true> A_minus; /** A- in the [lyr] */
 
         // Temporaries
-        Eigen::VectorXd Q_plus;  /** Q+ in the [lyr] */
-        Eigen::VectorXd Q_minus; /** Q- in the [lyr] */
-        Eigen::VectorXd norm;    /** Normalization factor [lyr] */
-        Eigen::VectorXd C_plus;  /** C+ [lyr]*/
-        Eigen::VectorXd C_minus; /** C- [lyr]*/
-
-        // Gradients
-        Eigen::RowVectorXd
-            d_Q_plus_by_ssa; /** Gradient of Q+ with respect to ssa [lyr] */
-        Eigen::RowVectorXd
-            d_Q_minus_by_ssa; /** Gradient of Q- with respect to ssa [lyr] */
-        Eigen::RowVectorXd
-            d_norm_by_ssa; /** Gradient of norm with respect to ssa [lyr] */
-        Eigen::RowVectorXd
-            d_A_plus_by_ssa; /** Gradient of A+ with respect to ssa [lyr] */
-        Eigen::RowVectorXd
-            d_A_minus_by_ssa; /** Gradient of A- with respect to ssa [lyr] */
-        Eigen::RowVectorXd
-            d_C_plus_by_ssa; /** Gradient of C+ with respect to ssa [lyr] */
-        Eigen::RowVectorXd
-            d_C_minus_by_ssa; /** Gradient of C- with respect to ssa [lyr] */
-
-        Eigen::RowVectorXd d_G_plus_top_by_ssa; /** Gradient of G+ at top with
-                                                   respect to ssa [lyr] */
-        Eigen::RowVectorXd
-            d_G_plus_bottom_by_ssa; /** Gradient of G+ at bottom with respect to
-                                       ssa [lyr] */
-        Eigen::RowVectorXd d_G_minus_top_by_ssa; /** Gradient of G- at top with
-                                                    respect to ssa [lyr] */
-        Eigen::RowVectorXd
-            d_G_minus_bottom_by_ssa; /** Gradient of G- at bottom with respect
-                                        to ssa [lyr] */
+        LayerVector<true, false, true> Q_plus;  /** Q+ in the [lyr] */
+        LayerVector<true, false, true> Q_minus; /** Q- in the [lyr] */
+        LayerVector<true, false, true> norm;   /** Normalization factor [lyr] */
+        LayerVector<true, false, true> C_plus; /** C+ [lyr]*/
+        LayerVector<true, false, true> C_minus; /** C- [lyr]*/
 
         /**
          *  Initializes the storage for a given number of layers
@@ -231,19 +212,6 @@ namespace sasktran2::twostream {
             norm.resize(nlyr);
             C_plus.resize(nlyr);
             C_minus.resize(nlyr);
-
-            d_Q_minus_by_ssa.resize(nlyr);
-            d_Q_plus_by_ssa.resize(nlyr);
-            d_norm_by_ssa.resize(nlyr);
-            d_A_plus_by_ssa.resize(nlyr);
-            d_A_minus_by_ssa.resize(nlyr);
-            d_C_minus_by_ssa.resize(nlyr);
-            d_C_plus_by_ssa.resize(nlyr);
-
-            d_G_plus_bottom_by_ssa.resize(nlyr);
-            d_G_plus_top_by_ssa.resize(nlyr);
-            d_G_minus_bottom_by_ssa.resize(nlyr);
-            d_G_minus_top_by_ssa.resize(nlyr);
         }
     };
 
@@ -286,12 +254,6 @@ namespace sasktran2::twostream {
             d.resize(nlyr * 2);
             b.resize(nlyr * 2);
             a.resize(nlyr * 2);
-
-            e.setZero();
-            c.setZero();
-            d.setZero();
-            b.setZero();
-            a.setZero();
 
             gamma.resize(nlyr * 2);
             mu.resize(nlyr * 2);
@@ -373,40 +335,31 @@ namespace sasktran2::twostream {
      *
      */
     struct Sources {
-        Eigen::VectorXd source; /** Integrated sources in each [lyr] */
+        LayerVector<true, true, true>
+            source; /** Integrated sources in each [lyr] */
 
-        Eigen::VectorXd beamtrans; /** LOS transmission factors exp(-od /
-                                      viewing_zenith) for each [layer] */
+        LayerVector<false, false, false>
+            beamtrans; /** LOS transmission factors exp(-od /
+         viewing_zenith) for each [layer] */
 
         Eigen::VectorXd final_weight_factors; /** Final weight factors for each
                                                 [layer] */
 
-        std::array<Eigen::VectorXd, 2> lpsum_plus,
+        std::array<LayerVector<true, false, true>, 2> lpsum_plus,
             lpsum_minus; /** LP triple products for upwelling and downwelling
                             [lyr] */
-        std::array<Eigen::VectorXd, 2> Y_plus,
+        std::array<LayerVector<true, false, true>, 2> Y_plus,
             Y_minus; /** "Interpolated" homogenous solutions in each [lyr] */
 
-        std::array<Eigen::VectorXd, 2> H_plus,
+        std::array<LayerVector<true, true, true>, 2> H_plus,
             H_minus; /** Homogenous solution multipliers [lyr] */
-        std::array<Eigen::VectorXd, 2> D_plus,
+        std::array<LayerVector<true, true, true>, 2> D_plus,
             D_minus; /** Particular solution multipliers [lyr] */
 
-        std::array<Eigen::VectorXd, 2> V; /** Particular source [lyr] */
+        std::array<LayerVector<true, true, true>, 2>
+            V; /** Particular source [lyr] */
 
-        Eigen::VectorXd E_minus; /** Solar multiplier [lyr] */
-
-        // Gradients
-        Eigen::RowVectorXd d_source_by_ssa;
-        std::array<Eigen::RowVectorXd, 2> d_lpsum_plus_by_ssa;
-        std::array<Eigen::RowVectorXd, 2> d_lpsum_minus_by_ssa;
-        std::array<Eigen::RowVectorXd, 2> d_Y_plus_by_ssa;
-        std::array<Eigen::RowVectorXd, 2> d_Y_minus_by_ssa;
-        std::array<Eigen::RowVectorXd, 2> d_H_plus_by_ssa;
-        std::array<Eigen::RowVectorXd, 2> d_H_minus_by_ssa;
-        std::array<Eigen::RowVectorXd, 2> d_D_plus_by_ssa;
-        std::array<Eigen::RowVectorXd, 2> d_D_minus_by_ssa;
-        std::array<Eigen::RowVectorXd, 2> d_V_by_ssa;
+        LayerVector<false, true, false> E_minus; /** Solar multiplier [lyr] */
 
         // Backprop factors
         std::array<Eigen::RowVectorXd, 2> d_bvp_coeff;
@@ -453,35 +406,6 @@ namespace sasktran2::twostream {
 
             for (auto& d : d_bvp_coeff) {
                 d.resize(nlyr * 2);
-            }
-
-            d_source_by_ssa.resize(nlyr);
-            for (auto& d : d_lpsum_plus_by_ssa) {
-                d.resize(nlyr);
-            }
-            for (auto& d : d_lpsum_minus_by_ssa) {
-                d.resize(nlyr);
-            }
-            for (auto& d : d_Y_plus_by_ssa) {
-                d.resize(nlyr);
-            }
-            for (auto& d : d_Y_minus_by_ssa) {
-                d.resize(nlyr);
-            }
-            for (auto& d : d_H_plus_by_ssa) {
-                d.resize(nlyr);
-            }
-            for (auto& d : d_H_minus_by_ssa) {
-                d.resize(nlyr);
-            }
-            for (auto& d : d_D_plus_by_ssa) {
-                d.resize(nlyr);
-            }
-            for (auto& d : d_D_minus_by_ssa) {
-                d.resize(nlyr);
-            }
-            for (auto& d : d_V_by_ssa) {
-                d.resize(nlyr);
             }
         }
     };

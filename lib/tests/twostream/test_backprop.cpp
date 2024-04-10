@@ -213,33 +213,35 @@ TEST_CASE("Backprop_Homog", "[twostream][backprop]") {
 
         atmo->storage().ssa(i) -= eps;
 
-        numerical_grad(i) = (weights[0].dot(soln_p.homog[0].k) -
-                             weights[0].dot(soln.homog[0].k)) /
+        numerical_grad(i) = (weights[0].dot(soln_p.homog[0].k.value) -
+                             weights[0].dot(soln.homog[0].k.value)) /
                             eps;
-        numerical_grad(i) += (weights[1].dot(soln_p.homog[1].k) -
-                              weights[1].dot(soln.homog[1].k)) /
+        numerical_grad(i) += (weights[1].dot(soln_p.homog[1].k.value) -
+                              weights[1].dot(soln.homog[1].k.value)) /
                              eps;
 
-        numerical_grad(i) += (weights_Xp[0].dot(soln_p.homog[0].X_plus) -
-                              weights_Xp[0].dot(soln.homog[0].X_plus)) /
+        numerical_grad(i) += (weights_Xp[0].dot(soln_p.homog[0].X_plus.value) -
+                              weights_Xp[0].dot(soln.homog[0].X_plus.value)) /
                              eps;
-        numerical_grad(i) += (weights_Xp[1].dot(soln_p.homog[1].X_plus) -
-                              weights_Xp[1].dot(soln.homog[1].X_plus)) /
-                             eps;
-
-        numerical_grad(i) += (weights_Xm[0].dot(soln_p.homog[0].X_minus) -
-                              weights_Xm[0].dot(soln.homog[0].X_minus)) /
-                             eps;
-        numerical_grad(i) += (weights_Xm[1].dot(soln_p.homog[1].X_minus) -
-                              weights_Xm[1].dot(soln.homog[1].X_minus)) /
+        numerical_grad(i) += (weights_Xp[1].dot(soln_p.homog[1].X_plus.value) -
+                              weights_Xp[1].dot(soln.homog[1].X_plus.value)) /
                              eps;
 
-        numerical_grad(i) += (weights_omega[0].dot(soln_p.homog[0].omega) -
-                              weights_omega[0].dot(soln.homog[0].omega)) /
+        numerical_grad(i) += (weights_Xm[0].dot(soln_p.homog[0].X_minus.value) -
+                              weights_Xm[0].dot(soln.homog[0].X_minus.value)) /
                              eps;
-        numerical_grad(i) += (weights_omega[1].dot(soln_p.homog[1].omega) -
-                              weights_omega[1].dot(soln.homog[1].omega)) /
+        numerical_grad(i) += (weights_Xm[1].dot(soln_p.homog[1].X_minus.value) -
+                              weights_Xm[1].dot(soln.homog[1].X_minus.value)) /
                              eps;
+
+        numerical_grad(i) +=
+            (weights_omega[0].dot(soln_p.homog[0].omega.value) -
+             weights_omega[0].dot(soln.homog[0].omega.value)) /
+            eps;
+        numerical_grad(i) +=
+            (weights_omega[1].dot(soln_p.homog[1].omega.value) -
+             weights_omega[1].dot(soln.homog[1].omega.value)) /
+            eps;
     }
 
     sasktran2::twostream::backprop::homog_k(input, soln.homog, weights,
@@ -322,40 +324,44 @@ TEST_CASE("Backprop_Particular", "[twostream][backprop]") {
         atmo->storage().ssa(i) -= eps;
 
         numerical_grad(i) =
-            (weights_Gplus_top[0].dot(soln_p.particular[0].G_plus_top) -
-             weights_Gplus_top[0].dot(soln.particular[0].G_plus_top)) /
+            (weights_Gplus_top[0].dot(soln_p.particular[0].G_plus_top.value) -
+             weights_Gplus_top[0].dot(soln.particular[0].G_plus_top.value)) /
             (eps);
         numerical_grad(i) +=
-            (weights_Gplus_top[1].dot(soln_p.particular[1].G_plus_top) -
-             weights_Gplus_top[1].dot(soln.particular[1].G_plus_top)) /
+            (weights_Gplus_top[1].dot(soln_p.particular[1].G_plus_top.value) -
+             weights_Gplus_top[1].dot(soln.particular[1].G_plus_top.value)) /
             (eps);
 
-        numerical_grad(i) +=
-            (weights_Gplus_bottom[0].dot(soln_p.particular[0].G_plus_bottom) -
-             weights_Gplus_bottom[0].dot(soln.particular[0].G_plus_bottom)) /
-            eps;
-        numerical_grad(i) +=
-            (weights_Gplus_bottom[1].dot(soln_p.particular[1].G_plus_bottom) -
-             weights_Gplus_bottom[1].dot(soln.particular[1].G_plus_bottom)) /
-            eps;
+        numerical_grad(i) += (weights_Gplus_bottom[0].dot(
+                                  soln_p.particular[0].G_plus_bottom.value) -
+                              weights_Gplus_bottom[0].dot(
+                                  soln.particular[0].G_plus_bottom.value)) /
+                             eps;
+        numerical_grad(i) += (weights_Gplus_bottom[1].dot(
+                                  soln_p.particular[1].G_plus_bottom.value) -
+                              weights_Gplus_bottom[1].dot(
+                                  soln.particular[1].G_plus_bottom.value)) /
+                             eps;
 
         numerical_grad(i) +=
-            (weights_Gminus_top[0].dot(soln_p.particular[0].G_minus_top) -
-             weights_Gminus_top[0].dot(soln.particular[0].G_minus_top)) /
+            (weights_Gminus_top[0].dot(soln_p.particular[0].G_minus_top.value) -
+             weights_Gminus_top[0].dot(soln.particular[0].G_minus_top.value)) /
             eps;
         numerical_grad(i) +=
-            (weights_Gminus_top[1].dot(soln_p.particular[1].G_minus_top) -
-             weights_Gminus_top[1].dot(soln.particular[1].G_minus_top)) /
+            (weights_Gminus_top[1].dot(soln_p.particular[1].G_minus_top.value) -
+             weights_Gminus_top[1].dot(soln.particular[1].G_minus_top.value)) /
             eps;
 
-        numerical_grad(i) +=
-            (weights_Gminus_bottom[0].dot(soln_p.particular[0].G_minus_bottom) -
-             weights_Gminus_bottom[0].dot(soln.particular[0].G_minus_bottom)) /
-            eps;
-        numerical_grad(i) +=
-            (weights_Gminus_bottom[1].dot(soln_p.particular[1].G_minus_bottom) -
-             weights_Gminus_bottom[1].dot(soln.particular[1].G_minus_bottom)) /
-            eps;
+        numerical_grad(i) += (weights_Gminus_bottom[0].dot(
+                                  soln_p.particular[0].G_minus_bottom.value) -
+                              weights_Gminus_bottom[0].dot(
+                                  soln.particular[0].G_minus_bottom.value)) /
+                             eps;
+        numerical_grad(i) += (weights_Gminus_bottom[1].dot(
+                                  soln_p.particular[1].G_minus_bottom.value) -
+                              weights_Gminus_bottom[1].dot(
+                                  soln.particular[1].G_minus_bottom.value)) /
+                             eps;
     }
 
     sasktran2::twostream::backprop::particular_G_plus_top(
@@ -512,8 +518,9 @@ TEST_CASE("Backprop_Full_SSA", "[twostream][backprop]") {
 
         atmo->storage().ssa(i) -= eps;
 
-        numerical_grad(i) =
-            (weights.dot(sources_p.source) - weights.dot(sources.source)) / eps;
+        numerical_grad(i) = (weights.dot(sources_p.source.value) -
+                             weights.dot(sources.source.value)) /
+                            eps;
     }
 
     sasktran2::twostream::backprop::full(input, soln, sources, weights,

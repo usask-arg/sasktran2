@@ -139,26 +139,27 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
         sources.final_weight_factors.setConstant(1.0);
         for (int i = 0; i < input.nlyr - 1; ++i) {
             sources.final_weight_factors(Eigen::seq(i + 1, Eigen::last)) *=
-                sources.beamtrans(i);
+                sources.beamtrans.value(i);
         }
 
         sasktran2::twostream::post_process(input, viewing_zenith, azimuth,
                                            solution, sources);
 
         double integrated_source =
-            (solution.particular[0].G_plus_bottom(Eigen::last) +
-             solution.bvp_coeffs[0].z(Eigen::last - 1, 0) *
-                 solution.homog[0].X_plus(Eigen::last) *
-                 solution.homog[0].omega(Eigen::last) +
-             solution.bvp_coeffs[0].z(Eigen::last, 0) *
-                 solution.homog[0].X_minus(Eigen::last)) *
+            (solution.particular[0].G_plus_bottom.value(Eigen::last) +
+             solution.bvp_coeffs[0].rhs(Eigen::last - 1, 0) *
+                 solution.homog[0].X_plus.value(Eigen::last) *
+                 solution.homog[0].omega.value(Eigen::last) +
+             solution.bvp_coeffs[0].rhs(Eigen::last, 0) *
+                 solution.homog[0].X_minus.value(Eigen::last)) *
             2 * input.mu * input.albedo *
             sources.final_weight_factors(Eigen::last) *
-            sources.beamtrans(Eigen::last);
+            sources.beamtrans.value(Eigen::last);
 
         // TODO: Add albedo related backprop terms
 
-        integrated_source += sources.source.dot(sources.final_weight_factors);
+        integrated_source +=
+            sources.source.value.dot(sources.final_weight_factors);
 
         source.value(0) += integrated_source;
     };
