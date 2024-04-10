@@ -29,7 +29,8 @@ namespace sasktran2::twostream {
         double mu;     /** Quadrature angle */
         double albedo; /** Surface albedo */
 
-        int nlyr; /** Number of layers */
+        int nlyr;     /** Number of layers */
+        int wavelidx; /** Wavelength index */
 
         /** Initializes the storage for a given number of layers*/
         void init(int nlyr) {
@@ -52,6 +53,8 @@ namespace sasktran2::twostream {
          * @param wavelidx
          */
         void calculate(int wavelidx) {
+            this->wavelidx = wavelidx;
+
             // Start by interpolating extinction to the layers
             od.array() =
                 (geometry_layers->interpolating_matrix() *
@@ -70,13 +73,17 @@ namespace sasktran2::twostream {
             Eigen::Map<const Eigen::VectorXd, 0, Eigen::InnerStride<>> grid_b1(
                 &atmosphere->storage().leg_coeff(1, 0, wavelidx), nlyr,
                 Eigen::InnerStride<>(stride));
+
+            /*
             b1 = (geometry_layers->interpolating_matrix() *
                   (atmosphere->storage().ssa.col(wavelidx).cwiseProduct(
                        atmosphere->storage().total_extinction.col(wavelidx)))
                       .cwiseProduct(grid_b1));
+            */
 
             // Then we can divide by the total scattering extinction to get b1
             b1.array() /= ssa.array();
+            b1.setConstant(0.1);
 
             // Then ssa will be the scattering extinction divided by the total
             // extinction
@@ -85,8 +92,6 @@ namespace sasktran2::twostream {
             // And we multiply by the thickness to get the optical depth
             od.array() *= (geometry_layers->layer_ceiling().array() -
                            geometry_layers->layer_floor().array());
-
-            b1.setZero();
 
             transmission(0) = 0;
             transmission(Eigen::seq(1, nlyr)) =
@@ -117,6 +122,24 @@ namespace sasktran2::twostream {
         Eigen::VectorXd s;     /** Temporary [lyr] */
         Eigen::VectorXd omega; /** exp(-k*od) [lyr]*/
 
+        // Gradients
+        Eigen::RowVectorXd
+            d_d_by_ssa; /** Gradient of d with respect to ssa [lyr] */
+        Eigen::RowVectorXd
+            d_s_by_ssa; /** Gradient of s with respect to ssa [lyr] */
+
+        Eigen::RowVectorXd
+            d_k_by_ssa; /** Gradient of k with respect to ssa [lyr] */
+        Eigen::RowVectorXd
+            d_X_plus_by_ssa; /** Gradient of X_plus with respect to ssa [lyr] */
+        Eigen::RowVectorXd d_X_minus_by_ssa; /** Gradient of X_minus with
+                                                respect to ssa [lyr] */
+
+        Eigen::RowVectorXd
+            d_omega_by_ssa; /** Gradient of omega with respect to ssa [lyr] */
+        Eigen::RowVectorXd
+            d_omega_by_od; /** Gradient of omega with respect to od [lyr] */
+
         /**
          *  Initializes the storage for a given number of layers
          *
@@ -131,6 +154,16 @@ namespace sasktran2::twostream {
             s.resize(nlyr);
 
             omega.resize(nlyr);
+
+            d_d_by_ssa.resize(nlyr);
+            d_s_by_ssa.resize(nlyr);
+            d_k_by_ssa.resize(nlyr);
+
+            d_X_minus_by_ssa.resize(nlyr);
+            d_X_plus_by_ssa.resize(nlyr);
+
+            d_omega_by_od.resize(nlyr);
+            d_omega_by_ssa.resize(nlyr);
         }
     };
 
@@ -153,6 +186,33 @@ namespace sasktran2::twostream {
         Eigen::VectorXd C_plus;  /** C+ [lyr]*/
         Eigen::VectorXd C_minus; /** C- [lyr]*/
 
+        // Gradients
+        Eigen::RowVectorXd
+            d_Q_plus_by_ssa; /** Gradient of Q+ with respect to ssa [lyr] */
+        Eigen::RowVectorXd
+            d_Q_minus_by_ssa; /** Gradient of Q- with respect to ssa [lyr] */
+        Eigen::RowVectorXd
+            d_norm_by_ssa; /** Gradient of norm with respect to ssa [lyr] */
+        Eigen::RowVectorXd
+            d_A_plus_by_ssa; /** Gradient of A+ with respect to ssa [lyr] */
+        Eigen::RowVectorXd
+            d_A_minus_by_ssa; /** Gradient of A- with respect to ssa [lyr] */
+        Eigen::RowVectorXd
+            d_C_plus_by_ssa; /** Gradient of C+ with respect to ssa [lyr] */
+        Eigen::RowVectorXd
+            d_C_minus_by_ssa; /** Gradient of C- with respect to ssa [lyr] */
+
+        Eigen::RowVectorXd d_G_plus_top_by_ssa; /** Gradient of G+ at top with
+                                                   respect to ssa [lyr] */
+        Eigen::RowVectorXd
+            d_G_plus_bottom_by_ssa; /** Gradient of G+ at bottom with respect to
+                                       ssa [lyr] */
+        Eigen::RowVectorXd d_G_minus_top_by_ssa; /** Gradient of G- at top with
+                                                    respect to ssa [lyr] */
+        Eigen::RowVectorXd
+            d_G_minus_bottom_by_ssa; /** Gradient of G- at bottom with respect
+                                        to ssa [lyr] */
+
         /**
          *  Initializes the storage for a given number of layers
          *
@@ -171,6 +231,19 @@ namespace sasktran2::twostream {
             norm.resize(nlyr);
             C_plus.resize(nlyr);
             C_minus.resize(nlyr);
+
+            d_Q_minus_by_ssa.resize(nlyr);
+            d_Q_plus_by_ssa.resize(nlyr);
+            d_norm_by_ssa.resize(nlyr);
+            d_A_plus_by_ssa.resize(nlyr);
+            d_A_minus_by_ssa.resize(nlyr);
+            d_C_minus_by_ssa.resize(nlyr);
+            d_C_plus_by_ssa.resize(nlyr);
+
+            d_G_plus_bottom_by_ssa.resize(nlyr);
+            d_G_plus_top_by_ssa.resize(nlyr);
+            d_G_minus_bottom_by_ssa.resize(nlyr);
+            d_G_minus_top_by_ssa.resize(nlyr);
         }
     };
 
@@ -187,6 +260,22 @@ namespace sasktran2::twostream {
 
         Eigen::MatrixXd z; /** Temporary storage for the pentadiagonal solver */
         Eigen::MatrixXd rhs; /** RHS of the pentadiagonal system */
+
+        // Gradient mappings from the RHS to the BVP coefficients
+        Eigen::RowVectorXd d_G_plus_top;
+        Eigen::RowVectorXd d_G_plus_bottom;
+        Eigen::RowVectorXd d_G_minus_top;
+        Eigen::RowVectorXd d_G_minus_bottom;
+
+        // Gradient mappings from the adjoint solution to the diagonals
+        Eigen::RowVectorXd d_e, d_c, d_d, d_b, d_a;
+
+        // Gradient mappings of the diagonals with respect to ssa
+        Eigen::MatrixXd d_e_by_ssa, d_c_by_ssa, d_d_by_ssa, d_b_by_ssa,
+            d_a_by_ssa;
+
+        // Temporary storage
+        Eigen::RowVectorXd d_temp;
 
         void init(int nlyr) {
             z.resize(nlyr * 2, 1);
@@ -208,6 +297,43 @@ namespace sasktran2::twostream {
             mu.resize(nlyr * 2);
             alpha.resize(nlyr * 2);
             beta.resize(nlyr * 2);
+
+            d_G_plus_top.resize(nlyr);
+            d_G_plus_bottom.resize(nlyr);
+            d_G_minus_top.resize(nlyr);
+            d_G_minus_bottom.resize(nlyr);
+
+            d_G_minus_top.setZero();
+            d_G_minus_bottom.setZero();
+            d_G_plus_top.setZero();
+            d_G_plus_bottom.setZero();
+
+            d_e.resize(nlyr * 2);
+            d_c.resize(nlyr * 2);
+            d_d.resize(nlyr * 2);
+            d_b.resize(nlyr * 2);
+            d_a.resize(nlyr * 2);
+
+            d_e.setZero();
+            d_c.setZero();
+            d_d.setZero();
+            d_b.setZero();
+            d_a.setZero();
+
+            d_temp.resize(nlyr);
+            d_temp.setZero();
+
+            d_e_by_ssa.resize(nlyr * 2, nlyr);
+            d_c_by_ssa.resize(nlyr * 2, nlyr);
+            d_d_by_ssa.resize(nlyr * 2, nlyr);
+            d_b_by_ssa.resize(nlyr * 2, nlyr);
+            d_a_by_ssa.resize(nlyr * 2, nlyr);
+
+            d_e_by_ssa.setZero();
+            d_c_by_ssa.setZero();
+            d_d_by_ssa.setZero();
+            d_b_by_ssa.setZero();
+            d_a_by_ssa.setZero();
         }
     };
 
@@ -252,6 +378,9 @@ namespace sasktran2::twostream {
         Eigen::VectorXd beamtrans; /** LOS transmission factors exp(-od /
                                       viewing_zenith) for each [layer] */
 
+        Eigen::VectorXd final_weight_factors; /** Final weight factors for each
+                                                [layer] */
+
         std::array<Eigen::VectorXd, 2> lpsum_plus,
             lpsum_minus; /** LP triple products for upwelling and downwelling
                             [lyr] */
@@ -267,6 +396,21 @@ namespace sasktran2::twostream {
 
         Eigen::VectorXd E_minus; /** Solar multiplier [lyr] */
 
+        // Gradients
+        Eigen::RowVectorXd d_source_by_ssa;
+        std::array<Eigen::RowVectorXd, 2> d_lpsum_plus_by_ssa;
+        std::array<Eigen::RowVectorXd, 2> d_lpsum_minus_by_ssa;
+        std::array<Eigen::RowVectorXd, 2> d_Y_plus_by_ssa;
+        std::array<Eigen::RowVectorXd, 2> d_Y_minus_by_ssa;
+        std::array<Eigen::RowVectorXd, 2> d_H_plus_by_ssa;
+        std::array<Eigen::RowVectorXd, 2> d_H_minus_by_ssa;
+        std::array<Eigen::RowVectorXd, 2> d_D_plus_by_ssa;
+        std::array<Eigen::RowVectorXd, 2> d_D_minus_by_ssa;
+        std::array<Eigen::RowVectorXd, 2> d_V_by_ssa;
+
+        // Backprop factors
+        std::array<Eigen::RowVectorXd, 2> d_bvp_coeff;
+
         /**
          * Initializes the storage for a given number of layers
          *
@@ -275,6 +419,7 @@ namespace sasktran2::twostream {
         void init(int nlyr) {
             source.resize(nlyr);
             beamtrans.resize(nlyr);
+            final_weight_factors.resize(nlyr);
 
             for (auto& l : lpsum_plus) {
                 l.resize(nlyr);
@@ -305,6 +450,39 @@ namespace sasktran2::twostream {
             }
 
             E_minus.resize(nlyr);
+
+            for (auto& d : d_bvp_coeff) {
+                d.resize(nlyr * 2);
+            }
+
+            d_source_by_ssa.resize(nlyr);
+            for (auto& d : d_lpsum_plus_by_ssa) {
+                d.resize(nlyr);
+            }
+            for (auto& d : d_lpsum_minus_by_ssa) {
+                d.resize(nlyr);
+            }
+            for (auto& d : d_Y_plus_by_ssa) {
+                d.resize(nlyr);
+            }
+            for (auto& d : d_Y_minus_by_ssa) {
+                d.resize(nlyr);
+            }
+            for (auto& d : d_H_plus_by_ssa) {
+                d.resize(nlyr);
+            }
+            for (auto& d : d_H_minus_by_ssa) {
+                d.resize(nlyr);
+            }
+            for (auto& d : d_D_plus_by_ssa) {
+                d.resize(nlyr);
+            }
+            for (auto& d : d_D_minus_by_ssa) {
+                d.resize(nlyr);
+            }
+            for (auto& d : d_V_by_ssa) {
+                d.resize(nlyr);
+            }
         }
     };
 } // namespace sasktran2::twostream

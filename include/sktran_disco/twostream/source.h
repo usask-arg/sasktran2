@@ -136,6 +136,12 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
 
         double azimuth = -ray.observer_and_look.relative_azimuth;
 
+        sources.final_weight_factors.setConstant(1.0);
+        for (int i = 0; i < input.nlyr - 1; ++i) {
+            sources.final_weight_factors(Eigen::seq(i + 1, Eigen::last)) *=
+                sources.beamtrans(i);
+        }
+
         sasktran2::twostream::post_process(input, viewing_zenith, azimuth,
                                            solution, sources);
 
@@ -146,12 +152,13 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
                  solution.homog[0].omega(Eigen::last) +
              solution.bvp_coeffs[0].z(Eigen::last, 0) *
                  solution.homog[0].X_minus(Eigen::last)) *
-            2 * input.mu * input.albedo;
+            2 * input.mu * input.albedo *
+            sources.final_weight_factors(Eigen::last) *
+            sources.beamtrans(Eigen::last);
 
-        for (int i = input.nlyr - 1; i >= 0; --i) {
-            integrated_source *= sources.beamtrans(i);
-            integrated_source += sources.source(i);
-        }
+        // TODO: Add albedo related backprop terms
+
+        integrated_source += sources.source.dot(sources.final_weight_factors);
 
         source.value(0) += integrated_source;
     };
