@@ -468,6 +468,10 @@ TEST_CASE("Backprop_Full_SSA", "[twostream][backprop]") {
     Eigen::RowVectorXd grad(atmo->num_deriv());
     grad.setZero();
 
+    std::array<Eigen::MatrixXd, 2> bvp_storage;
+    bvp_storage[0].resize(2 * (natmo - 1), 1);
+    bvp_storage[1].resize(2 * (natmo - 1), 1);
+
     sasktran2::twostream::backprop::GradientMap grad_map(*atmo, grad.data());
 
     // Let our output quantity be random weights * homog.k and Xplus/Xminus
@@ -524,7 +528,7 @@ TEST_CASE("Backprop_Full_SSA", "[twostream][backprop]") {
     }
 
     sasktran2::twostream::backprop::full(input, soln, sources, weights,
-                                         grad_map);
+                                         bvp_storage, grad_map);
 
     for (int i = 0; i < natmo; i++) {
         REQUIRE(abs(grad_map.d_ssa(i) - numerical_grad(i)) < 1e-6);

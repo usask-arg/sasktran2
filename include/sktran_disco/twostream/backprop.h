@@ -32,7 +32,8 @@ namespace sasktran2::twostream::backprop {
      * @param d_od
      * @param grad
      */
-    inline void od(const Input& input, const Eigen::RowVectorXd& d_od,
+    template <typename Derived>
+    inline void od(const Input& input, const Eigen::MatrixBase<Derived>& d_od,
                    GradientMap& grad) {
         // Map back the derivative of OD to the derivative of extinction
         // OD = (interpolating_matrix) * (extinction) * (layer_delta_height)
@@ -53,7 +54,8 @@ namespace sasktran2::twostream::backprop {
      * @param d_ssa
      * @param grad
      */
-    inline void ssa(const Input& input, const Eigen::RowVectorXd& d_ssa,
+    template <typename Derived>
+    inline void ssa(const Input& input, const Eigen::MatrixBase<Derived>& d_ssa,
                     GradientMap& grad) {
         // The equation for layer SSA is, let M = (interpolating matrix)  and .
         // be elementwise multiplication, and k, w be the sasktran2 atmosphere
@@ -90,12 +92,14 @@ namespace sasktran2::twostream::backprop {
 
         for (int i = 0; i < 2; ++i) {
             // Now do X_plus and X_minus
-            d_X_plus[i].array() *= solution[i].X_plus.d_ssa.transpose().array();
-            d_X_minus[i].array() *=
-                solution[i].X_minus.d_ssa.transpose().array();
 
-            ssa(input, d_X_plus[i], grad);
-            ssa(input, d_X_minus[i], grad);
+            ssa(input,
+                d_X_plus[i].cwiseProduct(solution[i].X_plus.d_ssa.transpose()),
+                grad);
+            ssa(input,
+                d_X_minus[i].cwiseProduct(
+                    solution[i].X_minus.d_ssa.transpose()),
+                grad);
         }
     }
     inline void homog_k(const Input& input,
@@ -107,10 +111,9 @@ namespace sasktran2::twostream::backprop {
         // The gradient wrt to d is 0.5 / k * s
 
         for (int i = 0; i < 2; ++i) {
-            d_k[i].array() *= solution[i].k.d_ssa.transpose().array();
-
             // This is now grad wrt to ssa
-            ssa(input, d_k[i], grad);
+            ssa(input, d_k[i].cwiseProduct(solution[i].k.d_ssa.transpose()),
+                grad);
         }
     }
     inline void homog_omega(const Input& input,
@@ -118,10 +121,10 @@ namespace sasktran2::twostream::backprop {
                             std::array<Eigen::RowVectorXd, 2>& d_omega,
                             GradientMap& grad) {
         for (int i = 0; i < 2; ++i) {
-            d_omega[i].array() *= solution[i].omega.d_ssa.transpose().array();
-
             // This is now grad wrt to ssa
-            ssa(input, d_omega[i], grad);
+            ssa(input,
+                d_omega[i].cwiseProduct(solution[i].omega.d_ssa.transpose()),
+                grad);
         }
     }
 
@@ -129,10 +132,10 @@ namespace sasktran2::twostream::backprop {
         const Input& input, const std::array<ParticularSolution, 2>& solution,
         std::array<Eigen::RowVectorXd, 2>& d_Q_plus, GradientMap& grad) {
         for (int i = 0; i < 2; ++i) {
-            d_Q_plus[i].array() *= solution[i].Q_plus.d_ssa.transpose().array();
-
             // This is now grad wrt to ssa
-            ssa(input, d_Q_plus[i], grad);
+            ssa(input,
+                d_Q_plus[i].cwiseProduct(solution[i].Q_plus.d_ssa.transpose()),
+                grad);
         }
     }
 
@@ -140,11 +143,11 @@ namespace sasktran2::twostream::backprop {
         const Input& input, const std::array<ParticularSolution, 2>& solution,
         std::array<Eigen::RowVectorXd, 2>& d_Q_minus, GradientMap& grad) {
         for (int i = 0; i < 2; ++i) {
-            d_Q_minus[i].array() *=
-                solution[i].Q_minus.d_ssa.transpose().array();
-
             // This is now grad wrt to ssa
-            ssa(input, d_Q_minus[i], grad);
+            ssa(input,
+                d_Q_minus[i].cwiseProduct(
+                    solution[i].Q_minus.d_ssa.transpose()),
+                grad);
         }
     }
 
@@ -152,10 +155,10 @@ namespace sasktran2::twostream::backprop {
         const Input& input, const std::array<ParticularSolution, 2>& solution,
         std::array<Eigen::RowVectorXd, 2>& d_norm, GradientMap& grad) {
         for (int i = 0; i < 2; ++i) {
-            d_norm[i].array() *= solution[i].norm.d_ssa.transpose().array();
-
             // This is now grad wrt to ssa
-            ssa(input, d_norm[i], grad);
+            ssa(input,
+                d_norm[i].cwiseProduct(solution[i].norm.d_ssa.transpose()),
+                grad);
         }
     }
 
@@ -163,10 +166,10 @@ namespace sasktran2::twostream::backprop {
         const Input& input, const std::array<ParticularSolution, 2>& solution,
         std::array<Eigen::RowVectorXd, 2>& d_Aplus, GradientMap& grad) {
         for (int i = 0; i < 2; ++i) {
-            d_Aplus[i].array() *= solution[i].A_plus.d_ssa.transpose().array();
-
             // This is now grad wrt to ssa
-            ssa(input, d_Aplus[i], grad);
+            ssa(input,
+                d_Aplus[i].cwiseProduct(solution[i].A_plus.d_ssa.transpose()),
+                grad);
         }
     }
 
@@ -174,11 +177,10 @@ namespace sasktran2::twostream::backprop {
         const Input& input, const std::array<ParticularSolution, 2>& solution,
         std::array<Eigen::RowVectorXd, 2>& d_Aminus, GradientMap& grad) {
         for (int i = 0; i < 2; ++i) {
-            d_Aminus[i].array() *=
-                solution[i].A_minus.d_ssa.transpose().array();
-
             // This is now grad wrt to ssa
-            ssa(input, d_Aminus[i], grad);
+            ssa(input,
+                d_Aminus[i].cwiseProduct(solution[i].A_minus.d_ssa.transpose()),
+                grad);
         }
     }
 
@@ -186,11 +188,11 @@ namespace sasktran2::twostream::backprop {
         const Input& input, const std::array<ParticularSolution, 2>& solution,
         std::array<Eigen::RowVectorXd, 2>& d_G_plus_top, GradientMap& grad) {
         for (int i = 0; i < 2; ++i) {
-            d_G_plus_top[i].array() *=
-                solution[i].G_plus_top.d_ssa.transpose().array();
-
             // This is now grad wrt to ssa
-            ssa(input, d_G_plus_top[i], grad);
+            ssa(input,
+                d_G_plus_top[i].cwiseProduct(
+                    solution[i].G_plus_top.d_ssa.transpose()),
+                grad);
         }
     }
 
@@ -198,11 +200,11 @@ namespace sasktran2::twostream::backprop {
         const Input& input, const std::array<ParticularSolution, 2>& solution,
         std::array<Eigen::RowVectorXd, 2>& d_G_plus_bottom, GradientMap& grad) {
         for (int i = 0; i < 2; ++i) {
-            d_G_plus_bottom[i].array() *=
-                solution[i].G_plus_bottom.d_ssa.transpose().array();
-
             // This is now grad wrt to ssa
-            ssa(input, d_G_plus_bottom[i], grad);
+            ssa(input,
+                d_G_plus_bottom[i].cwiseProduct(
+                    solution[i].G_plus_bottom.d_ssa.transpose()),
+                grad);
         }
     }
 
@@ -210,11 +212,11 @@ namespace sasktran2::twostream::backprop {
         const Input& input, const std::array<ParticularSolution, 2>& solution,
         std::array<Eigen::RowVectorXd, 2>& d_G_minus_top, GradientMap& grad) {
         for (int i = 0; i < 2; ++i) {
-            d_G_minus_top[i].array() *=
-                solution[i].G_minus_top.d_ssa.transpose().array();
-
             // This is now grad wrt to ssa
-            ssa(input, d_G_minus_top[i], grad);
+            ssa(input,
+                d_G_minus_top[i].cwiseProduct(
+                    solution[i].G_minus_top.d_ssa.transpose()),
+                grad);
         }
     }
 
@@ -223,11 +225,11 @@ namespace sasktran2::twostream::backprop {
         std::array<Eigen::RowVectorXd, 2>& d_G_minus_bottom,
         GradientMap& grad) {
         for (int i = 0; i < 2; ++i) {
-            d_G_minus_bottom[i].array() *=
-                solution[i].G_minus_bottom.d_ssa.transpose().array();
-
             // This is now grad wrt to ssa
-            ssa(input, d_G_minus_bottom[i], grad);
+            ssa(input,
+                d_G_minus_bottom[i].cwiseProduct(
+                    solution[i].G_minus_bottom.d_ssa.transpose()),
+                grad);
         }
     }
 
@@ -350,15 +352,11 @@ namespace sasktran2::twostream::backprop {
     inline void full(const Input& input, Solution& solution,
                      const Sources& sources,
                      const Eigen::RowVectorXd& source_weights,
+                     std::array<Eigen::MatrixXd, 2>& d_coeffs,
                      GradientMap& grad) {
-        Eigen::RowVectorXd temp =
-            sources.source.d_ssa.transpose().cwiseProduct(source_weights);
-
-        ssa(input, temp, grad);
-
-        std::array<Eigen::MatrixXd, 2> d_coeffs;
-        d_coeffs[0].resize(input.nlyr * 2, 1);
-        d_coeffs[1].resize(input.nlyr * 2, 1);
+        ssa(input,
+            sources.source.d_ssa.transpose().cwiseProduct(source_weights),
+            grad);
 
         d_coeffs[0].col(0) = sources.d_bvp_coeff[0];
         d_coeffs[1].col(0) = sources.d_bvp_coeff[1];
@@ -378,14 +376,5 @@ namespace sasktran2::twostream::backprop {
 
         bvp(input, solution.bvp_coeffs, solution.homog, solution.particular,
             d_coeffs, grad_vec);
-    }
-
-    inline void vfull(const Input& input, Solution& solution,
-                      const std::vector<Sources>& sources,
-                      const Eigen::MatrixXd& source_weights,
-                      std::vector<GradientMap>& grad) {
-
-        for (int j = 0; j < grad.size(); ++j) {
-        }
     }
 } // namespace sasktran2::twostream::backprop

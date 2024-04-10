@@ -7,6 +7,7 @@
 #include "sktran_disco/sktran_do_geometrylayerarray.h"
 #include "sktran_disco/sktran_do_pconfig.h"
 #include "sktran_disco/sktran_do_specs.h"
+#include "sktran_disco/twostream/backprop.h"
 #include "storage.h"
 #include "solutions.h"
 #include <memory>
@@ -14,9 +15,10 @@
 template <int NSTOKES>
 class TwoStreamSource : public SourceTermInterface<NSTOKES> {
   private:
-    std::vector<sasktran2::twostream::Solution> m_solutions;
+    mutable std::vector<sasktran2::twostream::Solution> m_solutions;
     std::vector<sasktran2::twostream::Input> m_inputs;
     mutable std::vector<sasktran2::twostream::Sources> m_sources;
+    mutable std::vector<std::array<Eigen::MatrixXd, 2>> m_bvp_backprop_storage;
 
     const sasktran2::Geometry1D& m_geometry;
     const sasktran2::Config* m_config;
@@ -37,6 +39,7 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
         m_solutions.resize(config.num_threads());
         m_inputs.resize(config.num_threads());
         m_sources.resize(config.num_threads());
+        m_bvp_backprop_storage.resize(config.num_threads());
 
         m_config = &config;
     };
@@ -68,6 +71,11 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
 
         for (auto& source : m_sources) {
             source.init(m_geometry.size() - 1);
+        }
+
+        for (auto& backprop : m_bvp_backprop_storage) {
+            backprop[0].resize(2 * (m_geometry.size() - 1), 1);
+            backprop[1].resize(2 * (m_geometry.size() - 1), 1);
         }
     };
 
@@ -123,7 +131,7 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
         const override {
         auto& sources = m_sources[threadidx];
         const auto& ray = (*m_los_rays)[losidx];
-        const auto& solution = m_solutions[threadidx];
+        auto& solution = m_solutions[threadidx];
         const auto& input = m_inputs[threadidx];
 
         double viewing_zenith = -ray.observer_and_look.look_away.z();
@@ -162,5 +170,13 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
             sources.source.value.dot(sources.final_weight_factors);
 
         source.value(0) += integrated_source;
+
+        if (input.atmosphere->num_deriv() > 0) {
+            sasktran2::twostream::backprop::GradientMap grad(*input.atmosphere,
+                                                             &source.deriv(0));
+            sasktran2::twostream::backprop::full(
+                input, solution, sources, sources.final_weight_factors,
+                m_bvp_backprop_storage[threadidx], grad);
+        }
     };
 };
