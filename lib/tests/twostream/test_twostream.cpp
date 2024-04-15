@@ -30,7 +30,7 @@ TEST_CASE("twostreamBenchmark", "[sktran_do][lowlevel][benchmark]") {
     sasktran2::atmosphere::Surface<1> surface(nwavel);
 
     sasktran2::atmosphere::Atmosphere<1> atmo(std::move(storage),
-                                              std::move(surface), false);
+                                              std::move(surface), true);
 
     atmo.storage().total_extinction.setConstant(0.01);
 

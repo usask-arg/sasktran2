@@ -67,14 +67,49 @@ namespace sasktran2::twostream::backprop {
 
         // K_w = M with each row weighted by k/OD
         grad.d_ssa +=
-            ((d_ssa.cwiseQuotient(input.od.transpose())) *
-             input.geometry_layers->interpolating_matrix())
-                .cwiseProduct(input.atmosphere->storage()
-                                  .total_extinction.col(input.wavelidx)
-                                  .transpose());
+            ((d_ssa.cwiseQuotient(
+                  (input.od
+                       .cwiseQuotient((input.geometry_layers->layer_ceiling() -
+                                       input.geometry_layers->layer_floor()))
+                       .transpose())) *
+              input.geometry_layers->interpolating_matrix())
+                 .cwiseProduct(input.atmosphere->storage()
+                                   .total_extinction.col(input.wavelidx)
+                                   .transpose()));
 
         // TODO: Add the jacobian with respect to k
     }
+
+    template <typename Derived>
+    inline void transmission(const Input& input,
+                             const Eigen::MatrixBase<Derived>& d_transmission,
+                             GradientMap& grad) {
+        // Transmission is calculated through
+        /*
+            transmission(0) = 0;
+            transmission(Eigen::seq(1, nlyr)) =
+                -1 * (geometry_layers->chapman_factors() * od);
+
+            transmission.array() = transmission.array().exp();
+        */
+
+        // d_transmission_i / by d_od = -chapman_factors(i, :) * transmission
+
+        // First transmission is always 1
+
+        for (int i = 1; i < d_transmission.size(); ++i) {
+            od(input,
+               d_transmission(i) *
+                   input.geometry_layers->chapman_factors().row(i - 1) *
+                   (-input.transmission(i)),
+               grad);
+        }
+    }
+
+    template <typename Derived>
+    inline void secant(const Input& input,
+                       const Eigen::MatrixBase<Derived>& d_secant,
+                       GradientMap& grad) {}
 
     inline void homog_X(const Input& input,
                         const std::array<HomogSolution, 2>& solution,
@@ -188,11 +223,21 @@ namespace sasktran2::twostream::backprop {
         const Input& input, const std::array<ParticularSolution, 2>& solution,
         std::array<Eigen::RowVectorXd, 2>& d_G_plus_top, GradientMap& grad) {
         for (int i = 0; i < 2; ++i) {
-            // This is now grad wrt to ssa
             ssa(input,
                 d_G_plus_top[i].cwiseProduct(
                     solution[i].G_plus_top.d_ssa.transpose()),
                 grad);
+            od(input,
+               d_G_plus_top[i].cwiseProduct(
+                   solution[i].G_plus_top.d_od.transpose()),
+               grad);
+            transmission(input,
+                         d_G_plus_top[i].cwiseProduct(
+                             solution[i]
+                                 .G_plus_top
+                                 .d_transmission(Eigen::seq(0, Eigen::last - 1))
+                                 .transpose()),
+                         grad);
         }
     }
 
@@ -200,11 +245,21 @@ namespace sasktran2::twostream::backprop {
         const Input& input, const std::array<ParticularSolution, 2>& solution,
         std::array<Eigen::RowVectorXd, 2>& d_G_plus_bottom, GradientMap& grad) {
         for (int i = 0; i < 2; ++i) {
-            // This is now grad wrt to ssa
             ssa(input,
                 d_G_plus_bottom[i].cwiseProduct(
                     solution[i].G_plus_bottom.d_ssa.transpose()),
                 grad);
+            od(input,
+               d_G_plus_bottom[i].cwiseProduct(
+                   solution[i].G_plus_bottom.d_od.transpose()),
+               grad);
+            transmission(input,
+                         d_G_plus_bottom[i].cwiseProduct(
+                             solution[i]
+                                 .G_plus_bottom
+                                 .d_transmission(Eigen::seq(0, Eigen::last - 1))
+                                 .transpose()),
+                         grad);
         }
     }
 
@@ -212,11 +267,21 @@ namespace sasktran2::twostream::backprop {
         const Input& input, const std::array<ParticularSolution, 2>& solution,
         std::array<Eigen::RowVectorXd, 2>& d_G_minus_top, GradientMap& grad) {
         for (int i = 0; i < 2; ++i) {
-            // This is now grad wrt to ssa
             ssa(input,
                 d_G_minus_top[i].cwiseProduct(
                     solution[i].G_minus_top.d_ssa.transpose()),
                 grad);
+            od(input,
+               d_G_minus_top[i].cwiseProduct(
+                   solution[i].G_minus_top.d_od.transpose()),
+               grad);
+            transmission(input,
+                         d_G_minus_top[i].cwiseProduct(
+                             solution[i]
+                                 .G_minus_top
+                                 .d_transmission(Eigen::seq(0, Eigen::last - 1))
+                                 .transpose()),
+                         grad);
         }
     }
 
@@ -230,6 +295,17 @@ namespace sasktran2::twostream::backprop {
                 d_G_minus_bottom[i].cwiseProduct(
                     solution[i].G_minus_bottom.d_ssa.transpose()),
                 grad);
+            od(input,
+               d_G_minus_bottom[i].cwiseProduct(
+                   solution[i].G_minus_bottom.d_od.transpose()),
+               grad);
+            transmission(input,
+                         d_G_minus_bottom[i].cwiseProduct(
+                             solution[i]
+                                 .G_minus_bottom
+                                 .d_transmission(Eigen::seq(0, Eigen::last - 1))
+                                 .transpose()),
+                         grad);
         }
     }
 
@@ -279,21 +355,93 @@ namespace sasktran2::twostream::backprop {
                 bvp_coeffs[i].d_G_minus_bottom(input.nlyr - 1) =
                     -d_coeffs[i](Eigen::last, j);
 
-                bvp_coeffs[i].d_G_plus_top.array() *=
-                    solution[i].G_plus_top.d_ssa.transpose().array();
-                ssa(input, bvp_coeffs[i].d_G_plus_top, grad[j]);
+                // Backprop the SSA factors
+                ssa(input,
+                    bvp_coeffs[i].d_G_plus_top.cwiseProduct(
+                        solution[i].G_plus_top.d_ssa.transpose()),
+                    grad[j]);
+                ssa(input,
+                    bvp_coeffs[i].d_G_plus_bottom.cwiseProduct(
+                        solution[i].G_plus_bottom.d_ssa.transpose()),
+                    grad[j]);
+                ssa(input,
+                    bvp_coeffs[i].d_G_minus_top.cwiseProduct(
+                        solution[i].G_minus_top.d_ssa.transpose()),
+                    grad[j]);
+                ssa(input,
+                    bvp_coeffs[i].d_G_minus_bottom.cwiseProduct(
+                        solution[i].G_minus_bottom.d_ssa.transpose()),
+                    grad[j]);
 
-                bvp_coeffs[i].d_G_plus_bottom.array() *=
-                    solution[i].G_plus_bottom.d_ssa.transpose().array();
-                ssa(input, bvp_coeffs[i].d_G_plus_bottom, grad[j]);
+                // And the OD factors
+                od(input,
+                   bvp_coeffs[i].d_G_plus_top.cwiseProduct(
+                       solution[i].G_plus_top.d_od.transpose()),
+                   grad[j]);
+                od(input,
+                   bvp_coeffs[i].d_G_plus_bottom.cwiseProduct(
+                       solution[i].G_plus_bottom.d_od.transpose()),
+                   grad[j]);
+                od(input,
+                   bvp_coeffs[i].d_G_minus_top.cwiseProduct(
+                       solution[i].G_minus_top.d_od.transpose()),
+                   grad[j]);
+                od(input,
+                   bvp_coeffs[i].d_G_minus_bottom.cwiseProduct(
+                       solution[i].G_minus_bottom.d_od.transpose()),
+                   grad[j]);
 
-                bvp_coeffs[i].d_G_minus_top.array() *=
-                    solution[i].G_minus_top.d_ssa.transpose().array();
-                ssa(input, bvp_coeffs[i].d_G_minus_top, grad[j]);
+                // And the transmission factors
+                transmission(
+                    input,
+                    bvp_coeffs[i].d_G_plus_top.cwiseProduct(
+                        solution[i]
+                            .G_plus_top
+                            .d_transmission(Eigen::seq(0, Eigen::last - 1))
+                            .transpose()),
+                    grad[j]);
+                transmission(
+                    input,
+                    bvp_coeffs[i].d_G_plus_bottom.cwiseProduct(
+                        solution[i]
+                            .G_plus_bottom
+                            .d_transmission(Eigen::seq(0, Eigen::last - 1))
+                            .transpose()),
+                    grad[j]);
+                transmission(
+                    input,
+                    bvp_coeffs[i].d_G_minus_top.cwiseProduct(
+                        solution[i]
+                            .G_minus_top
+                            .d_transmission(Eigen::seq(0, Eigen::last - 1))
+                            .transpose()),
+                    grad[j]);
+                transmission(
+                    input,
+                    bvp_coeffs[i].d_G_minus_bottom.cwiseProduct(
+                        solution[i]
+                            .G_minus_bottom
+                            .d_transmission(Eigen::seq(0, Eigen::last - 1))
+                            .transpose()),
+                    grad[j]);
 
-                bvp_coeffs[i].d_G_minus_bottom.array() *=
-                    solution[i].G_minus_bottom.d_ssa.transpose().array();
-                ssa(input, bvp_coeffs[i].d_G_minus_bottom, grad[j]);
+                // And finally the secant factors
+                secant(input,
+                       bvp_coeffs[i].d_G_plus_top.cwiseProduct(
+                           solution[i].G_plus_top.d_secant.transpose()),
+                       grad[j]);
+                secant(input,
+                       bvp_coeffs[i].d_G_plus_bottom.cwiseProduct(
+                           solution[i].G_plus_bottom.d_secant.transpose()),
+                       grad[j]);
+                secant(input,
+                       bvp_coeffs[i].d_G_minus_top.cwiseProduct(
+                           solution[i].G_minus_top.d_secant.transpose()),
+                       grad[j]);
+                secant(input,
+                       bvp_coeffs[i].d_G_minus_bottom.cwiseProduct(
+                           solution[i].G_minus_bottom.d_secant.transpose()),
+                       grad[j]);
 
                 // Now for the hard part, the pentadiagonal system (e, c, d, a,
                 // b) The derivative term is -(dA)z, where A is our
@@ -345,6 +493,53 @@ namespace sasktran2::twostream::backprop {
                     bvp_coeffs[i].d_e_by_ssa(Eigen::seq(2, Eigen::last),
                                              Eigen::all);
                 ssa(input, bvp_coeffs[i].d_temp, grad[j]);
+
+                // Now the OD terms
+                bvp_coeffs[i].d_temp = (-bvp_coeffs[i].rhs.cwiseProduct(
+                                            d_coeffs[i](Eigen::all, j)))
+                                           .transpose() *
+                                       bvp_coeffs[i].d_d_by_od;
+                od(input, bvp_coeffs[i].d_temp, grad[j]);
+
+                bvp_coeffs[i].d_temp =
+                    (-bvp_coeffs[i]
+                          .rhs(Eigen::seq(1, Eigen::last), 0)
+                          .cwiseProduct(
+                              d_coeffs[i](Eigen::seq(0, Eigen::last - 1), j)))
+                        .transpose() *
+                    bvp_coeffs[i].d_a_by_od(Eigen::seq(0, Eigen::last - 1),
+                                            Eigen::all);
+                od(input, bvp_coeffs[i].d_temp, grad[j]);
+
+                bvp_coeffs[i].d_temp =
+                    (-bvp_coeffs[i]
+                          .rhs(Eigen::seq(2, Eigen::last), 0)
+                          .cwiseProduct(
+                              d_coeffs[i](Eigen::seq(0, Eigen::last - 2), j)))
+                        .transpose() *
+                    bvp_coeffs[i].d_b_by_od(Eigen::seq(0, Eigen::last - 2),
+                                            Eigen::all);
+                od(input, bvp_coeffs[i].d_temp, grad[j]);
+
+                bvp_coeffs[i].d_temp =
+                    (-bvp_coeffs[i]
+                          .rhs(Eigen::seq(0, Eigen::last - 1), 0)
+                          .cwiseProduct(
+                              d_coeffs[i](Eigen::seq(1, Eigen::last), j)))
+                        .transpose() *
+                    bvp_coeffs[i].d_c_by_od(Eigen::seq(1, Eigen::last),
+                                            Eigen::all);
+                od(input, bvp_coeffs[i].d_temp, grad[j]);
+
+                bvp_coeffs[i].d_temp =
+                    (-bvp_coeffs[i]
+                          .rhs(Eigen::seq(0, Eigen::last - 2), 0)
+                          .cwiseProduct(
+                              d_coeffs[i](Eigen::seq(2, Eigen::last), j)))
+                        .transpose() *
+                    bvp_coeffs[i].d_e_by_od(Eigen::seq(2, Eigen::last),
+                                            Eigen::all);
+                od(input, bvp_coeffs[i].d_temp, grad[j]);
             }
         }
     }
@@ -354,10 +549,23 @@ namespace sasktran2::twostream::backprop {
                      const Eigen::RowVectorXd& source_weights,
                      std::array<Eigen::MatrixXd, 2>& d_coeffs,
                      GradientMap& grad) {
+        // Direct source terms
         ssa(input,
             sources.source.d_ssa.transpose().cwiseProduct(source_weights),
             grad);
+        od(input, sources.source.d_od.transpose().cwiseProduct(source_weights),
+           grad);
+        secant(input,
+               sources.source.d_secant.transpose().cwiseProduct(source_weights),
+               grad);
+        transmission(
+            input,
+            sources.source.d_transmission(Eigen::seq(0, Eigen::last - 1))
+                .transpose()
+                .cwiseProduct(source_weights),
+            grad);
 
+        // BVP adjoint solution
         d_coeffs[0].col(0) = sources.d_bvp_coeff[0];
         d_coeffs[1].col(0) = sources.d_bvp_coeff[1];
 

@@ -29,6 +29,8 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
 
     const std::vector<sasktran2::raytracing::TracedRay>* m_los_rays;
 
+    std::vector<Eigen::MatrixXd> m_los_attenuation_factors;
+
   public:
     TwoStreamSource(const sasktran2::Geometry1D& geometry)
         : m_geometry(geometry) {
@@ -76,6 +78,22 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
         for (auto& backprop : m_bvp_backprop_storage) {
             backprop[0].resize(2 * (m_geometry.size() - 1), 1);
             backprop[1].resize(2 * (m_geometry.size() - 1), 1);
+        }
+        m_los_attenuation_factors.resize(m_los_rays->size());
+
+        for (int i = 0; i < (*m_los_rays).size(); ++i) {
+            const auto& ray = (*m_los_rays)[i];
+            Eigen::MatrixXd& atten_matrix = m_los_attenuation_factors[i];
+            double viewing_secant = 1 / (-ray.observer_and_look.look_away.z());
+
+            atten_matrix.resize(m_geometry.size() - 1, m_geometry.size() - 1);
+            atten_matrix.setZero();
+
+            // layer 0 = TOA, has no attenuation
+            for (int j = 1; j < m_geometry.size() - 1; ++j) {
+                atten_matrix(j, Eigen::seq(0, j - 1))
+                    .setConstant(viewing_secant);
+            }
         }
     };
 
@@ -144,11 +162,8 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
 
         double azimuth = -ray.observer_and_look.relative_azimuth;
 
-        sources.final_weight_factors.setConstant(1.0);
-        for (int i = 0; i < input.nlyr - 1; ++i) {
-            sources.final_weight_factors(Eigen::seq(i + 1, Eigen::last)) *=
-                sources.beamtrans.value(i);
-        }
+        sources.final_weight_factors.array() =
+            (-m_los_attenuation_factors[losidx] * input.od).array().exp();
 
         sasktran2::twostream::post_process(input, viewing_zenith, azimuth,
                                            solution, sources);
@@ -177,6 +192,20 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
             sasktran2::twostream::backprop::full(
                 input, solution, sources, sources.final_weight_factors,
                 m_bvp_backprop_storage[threadidx], grad);
+
+            // Backprop the attenuation factors
+            for (int i = 0; i < input.nlyr; ++i) {
+                // sasktran2::twostream::backprop::od(input,
+                // (-sources.final_weight_factors(i) *
+                // sources.source.value).transpose().cwiseProduct(m_los_attenuation_factors[losidx].row(i)),
+                // grad);
+                sasktran2::twostream::backprop::od(
+                    input,
+                    (-sources.final_weight_factors(i) *
+                     sources.source.value(i) *
+                     m_los_attenuation_factors[losidx].row(i)),
+                    grad);
+            }
         }
     };
 };

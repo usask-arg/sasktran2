@@ -11,11 +11,15 @@ namespace sasktran2::twostream {
      * and first legendre coefficient
      *
      */
-    template <bool ssa_deriv, bool od_deriv, bool b1_deriv> struct LayerVector {
+    template <bool ssa_deriv, bool od_deriv, bool b1_deriv,
+              bool trans_deriv = false, bool secant_deriv = false>
+    struct LayerVector {
         Eigen::VectorXd value;
         Eigen::VectorXd d_ssa;
         Eigen::VectorXd d_od;
         Eigen::VectorXd d_b1;
+        Eigen::VectorXd d_transmission;
+        Eigen::VectorXd d_secant;
 
         void resize(int n) {
             value.resize(n);
@@ -31,6 +35,16 @@ namespace sasktran2::twostream {
             if constexpr (b1_deriv) {
                 d_b1.resize(n);
                 d_b1.setZero();
+            }
+
+            if constexpr (trans_deriv) {
+                d_transmission.resize(n + 1);
+                d_transmission.setZero();
+            }
+
+            if constexpr (secant_deriv) {
+                d_secant.resize(n);
+                d_secant.setZero();
             }
         }
     };
@@ -114,7 +128,7 @@ namespace sasktran2::twostream {
 
             // Then we can divide by the total scattering extinction to get b1
             b1.array() /= ssa.array();
-            b1.setConstant(0.1);
+            b1.setConstant(0.0);
 
             // Then ssa will be the scattering extinction divided by the total
             // extinction
@@ -177,12 +191,13 @@ namespace sasktran2::twostream {
      *
      */
     struct ParticularSolution {
-        LayerVector<true, false, true> G_plus_top; /** G+ at top of the [lyr] */
-        LayerVector<true, false, true>
+        LayerVector<true, true, true, true, true>
+            G_plus_top; /** G+ at top of the [lyr] */
+        LayerVector<true, true, true, true, true>
             G_plus_bottom; /** G+ at bottom of the [lyr]*/
-        LayerVector<true, false, true>
+        LayerVector<true, true, true, true, true>
             G_minus_top; /** G- at the top of the [lyr] */
-        LayerVector<true, false, true>
+        LayerVector<true, true, true, true, true>
             G_minus_bottom; /** G- at the bottom of the [lyr] */
         LayerVector<true, false, true> A_plus;  /** A+ in the layer [lyr] */
         LayerVector<true, false, true> A_minus; /** A- in the [lyr] */
@@ -190,9 +205,9 @@ namespace sasktran2::twostream {
         // Temporaries
         LayerVector<true, false, true> Q_plus;  /** Q+ in the [lyr] */
         LayerVector<true, false, true> Q_minus; /** Q- in the [lyr] */
-        LayerVector<true, false, true> norm;   /** Normalization factor [lyr] */
-        LayerVector<true, false, true> C_plus; /** C+ [lyr]*/
-        LayerVector<true, false, true> C_minus; /** C- [lyr]*/
+        LayerVector<true, false, true> norm; /** Normalization factor [lyr] */
+        LayerVector<true, true, true, true, true> C_plus;  /** C+ [lyr]*/
+        LayerVector<true, true, true, true, true> C_minus; /** C- [lyr]*/
 
         /**
          *  Initializes the storage for a given number of layers
@@ -229,7 +244,7 @@ namespace sasktran2::twostream {
         Eigen::MatrixXd z; /** Temporary storage for the pentadiagonal solver */
         Eigen::MatrixXd rhs; /** RHS of the pentadiagonal system */
 
-        // Gradient mappings from the RHS to the BVP coefficients
+        // Gradient mappings from the RHS to the G terms
         Eigen::RowVectorXd d_G_plus_top;
         Eigen::RowVectorXd d_G_plus_bottom;
         Eigen::RowVectorXd d_G_minus_top;
@@ -241,6 +256,9 @@ namespace sasktran2::twostream {
         // Gradient mappings of the diagonals with respect to ssa
         Eigen::MatrixXd d_e_by_ssa, d_c_by_ssa, d_d_by_ssa, d_b_by_ssa,
             d_a_by_ssa;
+
+        // Gradient mappings of the diagonals with respect to od
+        Eigen::MatrixXd d_e_by_od, d_c_by_od, d_d_by_od, d_b_by_od, d_a_by_od;
 
         // Temporary storage
         Eigen::RowVectorXd d_temp;
@@ -296,6 +314,18 @@ namespace sasktran2::twostream {
             d_d_by_ssa.setZero();
             d_b_by_ssa.setZero();
             d_a_by_ssa.setZero();
+
+            d_e_by_od.resize(nlyr * 2, nlyr);
+            d_c_by_od.resize(nlyr * 2, nlyr);
+            d_d_by_od.resize(nlyr * 2, nlyr);
+            d_b_by_od.resize(nlyr * 2, nlyr);
+            d_a_by_od.resize(nlyr * 2, nlyr);
+
+            d_e_by_od.setZero();
+            d_c_by_od.setZero();
+            d_d_by_od.setZero();
+            d_b_by_od.setZero();
+            d_a_by_od.setZero();
         }
     };
 
@@ -335,10 +365,10 @@ namespace sasktran2::twostream {
      *
      */
     struct Sources {
-        LayerVector<true, true, true>
+        LayerVector<true, true, true, true, true>
             source; /** Integrated sources in each [lyr] */
 
-        LayerVector<false, false, false>
+        LayerVector<false, true, false>
             beamtrans; /** LOS transmission factors exp(-od /
          viewing_zenith) for each [layer] */
 
@@ -353,13 +383,14 @@ namespace sasktran2::twostream {
 
         std::array<LayerVector<true, true, true>, 2> H_plus,
             H_minus; /** Homogenous solution multipliers [lyr] */
-        std::array<LayerVector<true, true, true>, 2> D_plus,
+        std::array<LayerVector<true, true, true, true, true>, 2> D_plus,
             D_minus; /** Particular solution multipliers [lyr] */
 
-        std::array<LayerVector<true, true, true>, 2>
+        std::array<LayerVector<true, true, true, true, true>, 2>
             V; /** Particular source [lyr] */
 
-        LayerVector<false, true, false> E_minus; /** Solar multiplier [lyr] */
+        LayerVector<false, true, false, false, true>
+            E_minus; /** Solar multiplier [lyr] */
 
         // Backprop factors
         std::array<Eigen::RowVectorXd, 2> d_bvp_coeff;
