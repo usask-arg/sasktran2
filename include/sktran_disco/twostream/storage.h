@@ -261,7 +261,10 @@ namespace sasktran2::twostream {
         Eigen::MatrixXd d_e_by_od, d_c_by_od, d_d_by_od, d_b_by_od, d_a_by_od;
 
         // Temporary storage
-        Eigen::RowVectorXd d_temp;
+        Eigen::RowVectorXd d_temp_ssa;
+        Eigen::RowVectorXd d_temp_od;
+        Eigen::RowVectorXd d_temp_transmission;
+        Eigen::RowVectorXd d_temp_secant;
 
         void init(int nlyr) {
             z.resize(nlyr * 2, 1);
@@ -300,8 +303,14 @@ namespace sasktran2::twostream {
             d_b.setZero();
             d_a.setZero();
 
-            d_temp.resize(nlyr);
-            d_temp.setZero();
+            d_temp_ssa.resize(nlyr);
+            d_temp_ssa.setZero();
+            d_temp_od.resize(nlyr);
+            d_temp_od.setZero();
+            d_temp_transmission.resize(nlyr);
+            d_temp_transmission.setZero();
+            d_temp_secant.resize(nlyr);
+            d_temp_secant.setZero();
 
             d_e_by_ssa.resize(nlyr * 2, nlyr);
             d_c_by_ssa.resize(nlyr * 2, nlyr);

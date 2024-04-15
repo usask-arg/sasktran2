@@ -27,6 +27,9 @@ namespace sasktran_disco {
         Eigen::VectorXd m_floor_h;   /** Floor heights of the layers */
         Eigen::VectorXd m_ceiling_h; /** Ceiling eights of the layers */
 
+        bool m_no_interp; /** flag to indicate if interpolation from the
+                             atmosphere grid is needed or not */
+
         GeometryLayerArray(
             const PersistentConfiguration<NSTOKES, CNSTR>& config)
             : GeometryLayerArrayROP<NSTOKES>(config), m_config(config){};
@@ -48,6 +51,8 @@ namespace sasktran_disco {
         const Eigen::MatrixXd& interpolating_matrix() const {
             return m_optical_interpolator;
         }
+
+        bool no_interp() const { return m_no_interp; }
 
         const Eigen::VectorXd& layer_floor() const { return m_floor_h; }
         const Eigen::VectorXd& layer_ceiling() const { return m_ceiling_h; }

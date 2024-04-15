@@ -10,7 +10,7 @@ TEST_CASE("twostreamBenchmark", "[sktran_do][lowlevel][benchmark]") {
                                   sasktran2::geometrytype::planeparallel);
 
     int nlyr = 20;
-    int nwavel = 20000;
+    int nwavel = 220000;
     int nstr = 2;
 
     Eigen::VectorXd grid_values(nlyr + 1);
@@ -20,7 +20,7 @@ TEST_CASE("twostreamBenchmark", "[sktran_do][lowlevel][benchmark]") {
     sasktran2::grids::AltitudeGrid grid = sasktran2::grids::AltitudeGrid(
         std::move(grid_values), sasktran2::grids::gridspacing::constant,
         sasktran2::grids::outofbounds::extend,
-        sasktran2::grids::interpolation::linear);
+        sasktran2::grids::interpolation::lower);
 
     sasktran2::Geometry1D geo(std::move(coords), std::move(grid));
 
