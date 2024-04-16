@@ -142,6 +142,16 @@ namespace sasktran2::twostream {
                                             input.b1.array() *
                                             (1 - input.mu * input.mu);
 
+        // Gradients of d/s by b1
+        solution.homog[0].d.d_b1.array() = input.mu * input.ssa.array();
+        // solution.homog[1].d.d_b1.array().setZero(); // Should always be 0
+
+        // solution.homog[0].s.d_b1.array().setZero(); // Should already get set
+        // to 0 by default
+        solution.homog[1].s.d_b1.array() = 1.0 / (2.0 * input.mu) *
+                                           input.ssa.array() *
+                                           (1 - input.mu * input.mu);
+
         for (auto& homog : solution.homog) {
             // Eigenvalue and gradient
             homog.k.value.array() =
@@ -150,6 +160,10 @@ namespace sasktran2::twostream {
                 (0.5 / homog.k.value.array()) *
                 (homog.s.value.array() * homog.d.d_ssa.array() +
                  homog.d.value.array() * homog.s.d_ssa.array());
+            homog.k.d_b1.array() =
+                (0.5 / homog.k.value.array()) *
+                (homog.s.value.array() * homog.d.d_b1.array() +
+                 homog.d.value.array() * homog.s.d_b1.array());
 
             // Eigenvectors, and gradients
             homog.X_plus.value.array() =
@@ -164,12 +178,23 @@ namespace sasktran2::twostream {
                 (0.5 / homog.k.value.array() * homog.s.d_ssa.array()) -
                 0.5 / homog.d.value.array() * homog.k.d_ssa.array();
 
+            homog.X_plus.d_b1.array() =
+                (-0.5 / homog.k.value.array() * homog.s.d_b1.array()) +
+                0.5 / homog.d.value.array() * homog.k.d_b1.array();
+            homog.X_minus.d_b1.array() =
+                (0.5 / homog.k.value.array() * homog.s.d_b1.array()) -
+                0.5 / homog.d.value.array() * homog.k.d_b1.array();
+
             // Convenience quantity for later
             homog.omega.value.array() =
                 (-homog.k.value.array() * input.od.array()).exp();
             homog.omega.d_ssa.array() = -homog.omega.value.array() *
                                         input.od.array() *
                                         homog.k.d_ssa.array();
+
+            homog.omega.d_b1.array() = -homog.omega.value.array() *
+                                       input.od.array() * homog.k.d_b1.array();
+
             homog.omega.d_od.array() =
                 -homog.omega.value.array() * homog.k.value.array();
         }
@@ -204,6 +229,17 @@ namespace sasktran2::twostream {
         solution.particular[1].Q_minus.d_ssa.array() =
             solution.particular[1].Q_plus.d_ssa.array();
 
+        solution.particular[0].Q_plus.d_b1.array() =
+            1.0 / (4.0 * EIGEN_PI) * input.ssa.array() * input.csz * input.mu;
+        solution.particular[0].Q_minus.d_b1.array() =
+            -1.0 / (4.0 * EIGEN_PI) * input.ssa.array() * input.csz * input.mu;
+
+        solution.particular[1].Q_plus.d_b1.array() =
+            1.0 / (4.0 * EIGEN_PI) * input.ssa.array() *
+            sqrt(1 - input.mu * input.mu) * sqrt(1 - input.csz * input.csz);
+        solution.particular[1].Q_minus.d_b1.array() =
+            solution.particular[1].Q_plus.d_b1.array();
+
         for (int i = 0; i < 2; ++i) {
             auto& homog = solution.homog[i];
             auto& particular = solution.particular[i];
@@ -217,6 +253,11 @@ namespace sasktran2::twostream {
                 2 * input.mu *
                 (homog.X_plus.value.array() * homog.X_plus.d_ssa.array() -
                  homog.X_minus.value.array() * homog.X_minus.d_ssa.array());
+
+            particular.norm.d_b1.array() =
+                2 * input.mu *
+                (homog.X_plus.value.array() * homog.X_plus.d_b1.array() -
+                 homog.X_minus.value.array() * homog.X_minus.d_b1.array());
 
             // A_plus and A_minus and their gradients by ssa
             particular.A_plus.value.array() =
@@ -250,6 +291,24 @@ namespace sasktran2::twostream {
                      particular.A_minus.value.array()) /
                 particular.norm.value.array();
 
+            particular.A_plus.d_b1.array() =
+                (particular.Q_plus.d_b1.array() * homog.X_plus.value.array() +
+                 particular.Q_minus.d_b1.array() * homog.X_minus.value.array() +
+                 particular.Q_plus.value.array() * homog.X_plus.d_b1.array() +
+                 particular.Q_minus.value.array() * homog.X_minus.d_b1.array() -
+                 particular.norm.d_b1.array() *
+                     particular.A_plus.value.array()) /
+                particular.norm.value.array();
+
+            particular.A_minus.d_b1.array() =
+                (particular.Q_minus.d_b1.array() * homog.X_plus.value.array() +
+                 particular.Q_plus.d_b1.array() * homog.X_minus.value.array() +
+                 particular.Q_minus.value.array() * homog.X_plus.d_b1.array() +
+                 particular.Q_plus.value.array() * homog.X_minus.d_b1.array() -
+                 particular.norm.d_b1.array() *
+                     particular.A_minus.value.array()) /
+                particular.norm.value.array();
+
             // Solution multipliers and their derivatives
             particular.C_plus.value.array() =
                 input.transmission(Eigen::seq(0, Eigen::last - 1)).array() *
@@ -272,6 +331,20 @@ namespace sasktran2::twostream {
                     (-homog.omega.d_ssa.array() * input.expsec.array()) /
                     (input.average_secant.array() + homog.k.value.array()) -
                 homog.k.d_ssa.array() * particular.C_minus.value.array() /
+                    (input.average_secant.array() + homog.k.value.array());
+
+            particular.C_plus.d_b1.array() =
+                input.transmission(Eigen::seq(0, Eigen::last - 1)).array() *
+                    (homog.omega.d_b1.array()) /
+                    (input.average_secant.array() - homog.k.value.array()) +
+                homog.k.d_b1.array() * particular.C_plus.value.array() /
+                    (input.average_secant.array() - homog.k.value.array());
+
+            particular.C_minus.d_b1.array() =
+                input.transmission(Eigen::seq(0, Eigen::last - 1)).array() *
+                    (-homog.omega.d_b1.array() * input.expsec.array()) /
+                    (input.average_secant.array() + homog.k.value.array()) -
+                homog.k.d_b1.array() * particular.C_minus.value.array() /
                     (input.average_secant.array() + homog.k.value.array());
 
             // OD Derivatives through omega and expsec.  expsec.d_od = -secant *
@@ -371,6 +444,51 @@ namespace sasktran2::twostream {
                      particular.C_plus.value.array() *
                      homog.X_minus.d_ssa.array());
 
+            // b1 derivatives
+            particular.G_plus_top.d_b1.array() =
+                (particular.A_minus.d_b1.array() *
+                     particular.C_minus.value.array() *
+                     homog.X_minus.value.array() +
+                 particular.A_minus.value.array() *
+                     particular.C_minus.d_b1.array() *
+                     homog.X_minus.value.array() +
+                 particular.A_minus.value.array() *
+                     particular.C_minus.value.array() *
+                     homog.X_minus.d_b1.array());
+
+            particular.G_plus_bottom.d_b1.array() =
+                (particular.A_plus.d_b1.array() *
+                     particular.C_plus.value.array() *
+                     homog.X_plus.value.array() +
+                 particular.A_plus.value.array() *
+                     particular.C_plus.d_b1.array() *
+                     homog.X_plus.value.array() +
+                 particular.A_plus.value.array() *
+                     particular.C_plus.value.array() *
+                     homog.X_plus.d_b1.array());
+
+            particular.G_minus_top.d_b1.array() =
+                (particular.A_minus.d_b1.array() *
+                     particular.C_minus.value.array() *
+                     homog.X_plus.value.array() +
+                 particular.A_minus.value.array() *
+                     particular.C_minus.d_b1.array() *
+                     homog.X_plus.value.array() +
+                 particular.A_minus.value.array() *
+                     particular.C_minus.value.array() *
+                     homog.X_plus.d_b1.array());
+
+            particular.G_minus_bottom.d_b1.array() =
+                (particular.A_plus.d_b1.array() *
+                     particular.C_plus.value.array() *
+                     homog.X_minus.value.array() +
+                 particular.A_plus.value.array() *
+                     particular.C_plus.d_b1.array() *
+                     homog.X_minus.value.array() +
+                 particular.A_plus.value.array() *
+                     particular.C_plus.value.array() *
+                     homog.X_minus.d_b1.array());
+
             // G's only take od, transmission, and secant derivatives from C's
             particular.G_plus_top.d_od.array() =
                 particular.A_minus.value.array() *
@@ -468,7 +586,7 @@ namespace sasktran2::twostream {
                     input.transmission(Eigen::last) -
                 (particular.G_minus_bottom.value(Eigen::last) -
                  2 * input.mu * input.albedo *
-                     particular.G_minus_bottom.value(Eigen::last));
+                     particular.G_plus_bottom.value(Eigen::last));
 
             // Now the LHS and gradients
             bvp.d(0) = homog.X_plus.value(0);
@@ -478,6 +596,11 @@ namespace sasktran2::twostream {
             bvp.d_a_by_ssa(0, 0) =
                 homog.X_minus.d_ssa(0) * homog.omega.value(0) +
                 homog.X_minus.value(0) * homog.omega.d_ssa(0);
+
+            bvp.d_d_by_b1(0, 0) = homog.X_plus.d_b1(0);
+            bvp.d_a_by_b1(0, 0) = homog.X_minus.d_b1(0) * homog.omega.value(0) +
+                                  homog.X_minus.value(0) * homog.omega.d_b1(0);
+            ;
 
             bvp.d_a_by_od(0, 0) = homog.X_minus.value(0) * homog.omega.d_od(0);
 
@@ -514,6 +637,24 @@ namespace sasktran2::twostream {
                     -homog.X_minus.d_ssa(j + 1) * homog.omega.value(j + 1) -
                     homog.X_minus.value(j + 1) * homog.omega.d_ssa(j + 1);
 
+                bvp.d_c_by_b1(j2 + 1, j) =
+                    homog.X_minus.d_b1(j) * homog.omega.value(j) +
+                    homog.X_minus.value(j) * homog.omega.d_b1(j);
+                bvp.d_d_by_b1(j2 + 1, j) = homog.X_plus.d_b1(j);
+                bvp.d_a_by_b1(j2 + 1, j + 1) = -homog.X_minus.d_b1(j + 1);
+                bvp.d_b_by_b1(j2 + 1, j + 1) =
+                    -homog.X_plus.d_b1(j + 1) * homog.omega.value(j + 1) -
+                    homog.X_plus.value(j + 1) * homog.omega.d_b1(j + 1);
+
+                bvp.d_e_by_b1(j2 + 2, j) =
+                    homog.X_plus.d_b1(j) * homog.omega.value(j) +
+                    homog.X_plus.value(j) * homog.omega.d_b1(j);
+                bvp.d_c_by_b1(j2 + 2, j) = homog.X_minus.d_b1(j);
+                bvp.d_d_by_b1(j2 + 2, j + 1) = -homog.X_plus.d_b1(j + 1);
+                bvp.d_a_by_b1(j2 + 2, j + 1) =
+                    -homog.X_minus.d_b1(j + 1) * homog.omega.value(j + 1) -
+                    homog.X_minus.value(j + 1) * homog.omega.d_b1(j + 1);
+
                 bvp.d_c_by_od(j2 + 1, j) =
                     homog.X_minus.value(j) * homog.omega.d_od(j);
                 bvp.d_b_by_od(j2 + 1, j + 1) =
@@ -546,6 +687,19 @@ namespace sasktran2::twostream {
                  2 * input.mu * input.albedo *
                      homog.X_plus.value(Eigen::last)) *
                     homog.omega.d_ssa(Eigen::last);
+
+            bvp.d_d_by_b1(2 * input.nlyr - 1, input.nlyr - 1) =
+                homog.X_plus.d_b1(Eigen::last) -
+                2 * input.mu * input.albedo * homog.X_minus.d_b1(Eigen::last);
+
+            bvp.d_c_by_b1(2 * input.nlyr - 1, input.nlyr - 1) =
+                (homog.X_minus.d_b1(Eigen::last) -
+                 2 * input.mu * input.albedo * homog.X_plus.d_b1(Eigen::last)) *
+                    homog.omega.value(Eigen::last) +
+                (homog.X_minus.value(Eigen::last) -
+                 2 * input.mu * input.albedo *
+                     homog.X_plus.value(Eigen::last)) *
+                    homog.omega.d_b1(Eigen::last);
 
             bvp.d_c_by_od(2 * input.nlyr - 1, input.nlyr - 1) =
                 (homog.X_minus.value(Eigen::last) -
@@ -616,6 +770,22 @@ namespace sasktran2::twostream {
             sqrt((1 - viewing_zenith * viewing_zenith) *
                  (1 - input.mu * input.mu));
 
+        sources.lpsum_plus[0].d_b1.array() =
+            -0.5 * input.ssa.array() * viewing_zenith * input.mu;
+
+        sources.lpsum_minus[0].d_b1.array() =
+            0.5 * input.ssa.array() * viewing_zenith * input.mu;
+
+        sources.lpsum_plus[1].d_b1.array() =
+            0.25 * input.ssa.array() *
+            sqrt((1 - viewing_zenith * viewing_zenith) *
+                 (1 - input.mu * input.mu));
+
+        sources.lpsum_minus[1].d_b1.array() =
+            0.25 * input.ssa.array() *
+            sqrt((1 - viewing_zenith * viewing_zenith) *
+                 (1 - input.mu * input.mu));
+
         sources.beamtrans.value.array() =
             (-input.od.array() / viewing_zenith).exp();
 
@@ -641,6 +811,7 @@ namespace sasktran2::twostream {
         sources.source.value.array().setZero();
         sources.source.d_ssa.array().setZero();
         sources.source.d_od.array().setZero();
+        sources.source.d_b1.array().setZero();
         sources.source.d_transmission.array().setZero();
         sources.source.d_secant.array().setZero();
         for (int i = 0; i < 2; ++i) {
@@ -680,6 +851,27 @@ namespace sasktran2::twostream {
                 sources.lpsum_minus[i].value.array() *
                     homog.X_plus.d_ssa.array();
 
+            // by b1
+            sources.Y_plus[i].d_b1.array() =
+                sources.lpsum_plus[i].d_b1.array() *
+                    homog.X_plus.value.array() +
+                sources.lpsum_minus[i].d_b1.array() *
+                    homog.X_minus.value.array() +
+                sources.lpsum_plus[i].value.array() *
+                    homog.X_plus.d_b1.array() +
+                sources.lpsum_minus[i].value.array() *
+                    homog.X_minus.d_b1.array();
+
+            sources.Y_minus[i].d_b1.array() =
+                sources.lpsum_plus[i].d_b1.array() *
+                    homog.X_minus.value.array() +
+                sources.lpsum_minus[i].d_b1.array() *
+                    homog.X_plus.value.array() +
+                sources.lpsum_plus[i].value.array() *
+                    homog.X_minus.d_b1.array() +
+                sources.lpsum_minus[i].value.array() *
+                    homog.X_plus.d_b1.array();
+
             // Homogeneous multipliers
             sources.H_minus[i].value.array() =
                 (homog.omega.value.array() - sources.beamtrans.value.array()) /
@@ -701,6 +893,21 @@ namespace sasktran2::twostream {
                 -homog.omega.d_ssa.array() * sources.beamtrans.value.array() /
                     (1 + homog.k.value.array() * viewing_zenith) -
                 homog.k.d_ssa.array() * viewing_zenith *
+                    sources.H_plus[i].value.array() /
+                    (1 + homog.k.value.array() * viewing_zenith);
+
+            // Also by b1
+            sources.H_minus[i].d_b1.array() =
+                homog.omega.d_b1.array() /
+                    (1 - homog.k.value.array() * viewing_zenith) +
+                homog.k.d_b1.array() * viewing_zenith *
+                    sources.H_minus[i].value.array() /
+                    (1 - homog.k.value.array() * viewing_zenith);
+
+            sources.H_plus[i].d_b1.array() =
+                -homog.omega.d_b1.array() * sources.beamtrans.value.array() /
+                    (1 + homog.k.value.array() * viewing_zenith) -
+                homog.k.d_b1.array() * viewing_zenith *
                     sources.H_plus[i].value.array() /
                     (1 + homog.k.value.array() * viewing_zenith);
 
@@ -738,6 +945,19 @@ namespace sasktran2::twostream {
                 (input.transmission(Eigen::seq(0, Eigen::last - 1)).array() *
                      sources.H_plus[i].d_ssa.array() +
                  homog.k.d_ssa.array() * sources.D_minus[i].value.array()) /
+                (input.average_secant.array() - homog.k.value.array());
+
+            // and b1
+            sources.D_plus[i].d_b1.array() =
+                (input.transmission(Eigen::seq(0, Eigen::last - 1)).array() *
+                     (-sources.H_minus[i].d_b1.array() * input.expsec.array()) -
+                 homog.k.d_b1.array() * sources.D_plus[i].value.array()) /
+                (input.average_secant.array() + homog.k.value.array());
+
+            sources.D_minus[i].d_b1.array() =
+                (input.transmission(Eigen::seq(0, Eigen::last - 1)).array() *
+                     sources.H_plus[i].d_b1.array() +
+                 homog.k.d_b1.array() * sources.D_minus[i].value.array()) /
                 (input.average_secant.array() - homog.k.value.array());
 
             // D's also have od derivatives through E_minus, expsec, and H
@@ -805,6 +1025,20 @@ namespace sasktran2::twostream {
                  part.A_minus.value.array() * sources.Y_minus[i].value.array() *
                      sources.D_plus[i].d_ssa.array());
 
+            sources.V[i].d_b1.array() =
+                (part.A_plus.d_b1.array() * sources.Y_plus[i].value.array() *
+                     sources.D_minus[i].value.array() +
+                 part.A_plus.value.array() * sources.Y_plus[i].d_b1.array() *
+                     sources.D_minus[i].value.array() +
+                 part.A_plus.value.array() * sources.Y_plus[i].value.array() *
+                     sources.D_minus[i].d_b1.array()) +
+                (part.A_minus.d_b1.array() * sources.Y_minus[i].value.array() *
+                     sources.D_plus[i].value.array() +
+                 part.A_minus.value.array() * sources.Y_minus[i].d_b1.array() *
+                     sources.D_plus[i].value.array() +
+                 part.A_minus.value.array() * sources.Y_minus[i].value.array() *
+                     sources.D_plus[i].d_b1.array());
+
             // D Has extra derivatives wrt to od, transmission, and secant
             sources.V[i].d_od.array() =
                 (part.A_plus.value.array() * sources.Y_plus[i].value.array() *
@@ -848,6 +1082,15 @@ namespace sasktran2::twostream {
                                sources.Y_plus[i].value.array() *
                                    sources.H_plus[i].d_ssa.array()));
 
+            sources.source.d_b1.array() +=
+                azi_factor * (solution.bvp_coeffs[i]
+                                  .rhs(Eigen::seq(0, Eigen::last, 2), 0)
+                                  .array() *
+                              (sources.Y_plus[i].d_b1.array() *
+                                   sources.H_plus[i].value.array() +
+                               sources.Y_plus[i].value.array() *
+                                   sources.H_plus[i].d_b1.array()));
+
             // H_plus has extra derivatives wrt to od
             sources.source.d_od.array() +=
                 azi_factor * (solution.bvp_coeffs[i]
@@ -873,6 +1116,15 @@ namespace sasktran2::twostream {
                                sources.Y_minus[i].value.array() *
                                    sources.H_minus[i].d_ssa.array()));
 
+            sources.source.d_b1.array() +=
+                azi_factor * (solution.bvp_coeffs[i]
+                                  .rhs(Eigen::seq(1, Eigen::last, 2), 0)
+                                  .array() *
+                              (sources.Y_minus[i].d_b1.array() *
+                                   sources.H_minus[i].value.array() +
+                               sources.Y_minus[i].value.array() *
+                                   sources.H_minus[i].d_b1.array()));
+
             // Extra derivatives wrt to od
             sources.source.d_od.array() +=
                 azi_factor * (solution.bvp_coeffs[i]
@@ -895,6 +1147,8 @@ namespace sasktran2::twostream {
                 azi_factor * (sources.V[i].value.array());
             sources.source.d_ssa.array() +=
                 azi_factor * (sources.V[i].d_ssa.array());
+            sources.source.d_b1.array() +=
+                azi_factor * (sources.V[i].d_b1.array());
             sources.source.d_od.array() +=
                 azi_factor * (sources.V[i].d_od.array());
             sources.source.d_transmission.array() +=

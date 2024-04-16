@@ -116,19 +116,16 @@ namespace sasktran2::twostream {
             int stride = atmosphere->storage().leg_coeff.dimension(0);
 
             Eigen::Map<const Eigen::VectorXd, 0, Eigen::InnerStride<>> grid_b1(
-                &atmosphere->storage().leg_coeff(1, 0, wavelidx), nlyr,
+                &atmosphere->storage().leg_coeff(1, 0, wavelidx), nlyr + 1,
                 Eigen::InnerStride<>(stride));
 
-            /*
             b1 = (geometry_layers->interpolating_matrix() *
                   (atmosphere->storage().ssa.col(wavelidx).cwiseProduct(
                        atmosphere->storage().total_extinction.col(wavelidx)))
                       .cwiseProduct(grid_b1));
-            */
 
             // Then we can divide by the total scattering extinction to get b1
             b1.array() /= ssa.array();
-            b1.setConstant(0.0);
 
             // Then ssa will be the scattering extinction divided by the total
             // extinction
@@ -150,6 +147,9 @@ namespace sasktran2::twostream {
             transmission.array() = transmission.array().exp();
 
             expsec = (-1.0 * average_secant.array() * od.array()).exp();
+
+            albedo =
+                atmosphere->surface().brdf(wavelidx, 0, 0, 0)(0, 0) * EIGEN_PI;
         }
     };
 
@@ -257,6 +257,9 @@ namespace sasktran2::twostream {
         Eigen::MatrixXd d_e_by_ssa, d_c_by_ssa, d_d_by_ssa, d_b_by_ssa,
             d_a_by_ssa;
 
+        // Gradient mappings of the diagonals with respect to b1
+        Eigen::MatrixXd d_e_by_b1, d_c_by_b1, d_d_by_b1, d_b_by_b1, d_a_by_b1;
+
         // Gradient mappings of the diagonals with respect to od
         Eigen::MatrixXd d_e_by_od, d_c_by_od, d_d_by_od, d_b_by_od, d_a_by_od;
 
@@ -307,7 +310,7 @@ namespace sasktran2::twostream {
             d_temp_ssa.setZero();
             d_temp_od.resize(nlyr);
             d_temp_od.setZero();
-            d_temp_transmission.resize(nlyr);
+            d_temp_transmission.resize(nlyr + 1);
             d_temp_transmission.setZero();
             d_temp_secant.resize(nlyr);
             d_temp_secant.setZero();
@@ -323,6 +326,18 @@ namespace sasktran2::twostream {
             d_d_by_ssa.setZero();
             d_b_by_ssa.setZero();
             d_a_by_ssa.setZero();
+
+            d_e_by_b1.resize(nlyr * 2, nlyr);
+            d_c_by_b1.resize(nlyr * 2, nlyr);
+            d_d_by_b1.resize(nlyr * 2, nlyr);
+            d_b_by_b1.resize(nlyr * 2, nlyr);
+            d_a_by_b1.resize(nlyr * 2, nlyr);
+
+            d_e_by_b1.setZero();
+            d_c_by_b1.setZero();
+            d_d_by_b1.setZero();
+            d_b_by_b1.setZero();
+            d_a_by_b1.setZero();
 
             d_e_by_od.resize(nlyr * 2, nlyr);
             d_c_by_od.resize(nlyr * 2, nlyr);
