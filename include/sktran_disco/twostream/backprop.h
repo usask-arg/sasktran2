@@ -12,17 +12,105 @@ namespace sasktran2::twostream::backprop {
         Eigen::Map<Eigen::RowVectorXd> d_extinction;
         Eigen::Map<Eigen::RowVectorXd> d_ssa;
         Eigen::Map<Eigen::RowVectorXd> d_b1;
-        // Eigen::Map<Eigen::RowVectorXd> d_albedo;
+        double& d_albedo;
 
         GradientMap(const sasktran2::atmosphere::Atmosphere<1>& atmo,
                     double* deriv_start)
             : d_extinction(deriv_start, 1,
-                           atmo.storage().total_extinction.rows()),
+                           atmo.storage().total_extinction.rows() - 1),
               d_ssa(deriv_start + atmo.storage().total_extinction.rows(), 1,
-                    atmo.storage().total_extinction.rows()),
+                    atmo.storage().total_extinction.rows() - 1),
               d_b1(deriv_start + 2 * atmo.storage().total_extinction.rows(), 1,
-                   atmo.storage().total_extinction.rows()) {}
+                   atmo.storage().total_extinction.rows() - 1),
+              d_albedo(
+                  deriv_start[atmo.storage().total_extinction.rows() - 1]) {}
     };
+
+    inline void map_to_atmosphere(
+        const Input& input, const GradientMap& internal_grad,
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& source) {
+        int n = input.nlyr + 1;
+        const auto& M = input.geometry_layers->interpolating_matrix();
+
+        // Go through each atmosphere grid element
+        for (int i = 0; i < n; ++i) {
+            for (int j = 0; j < n - 1; ++j) {
+                double a = M(j, i);
+
+                if (a == 0) {
+                    continue;
+                }
+
+                // Have a weight contribution
+
+                // For extinction we just have to multiply by the weight and the
+                // layer thickness
+                source.deriv(i) += a * internal_grad.d_extinction(j) *
+                                   (input.geometry_layers->layer_ceiling()(j) -
+                                    input.geometry_layers->layer_floor()(j));
+
+                // For SSA,
+                source.deriv(i + n) +=
+                    a * internal_grad.d_ssa(j) *
+                    input.atmosphere->storage().total_extinction(
+                        i, input.wavelidx) /
+                    (input.od(j) / (input.geometry_layers->layer_ceiling()(j) -
+                                    input.geometry_layers->layer_floor()(j)));
+
+                source.deriv(i) +=
+                    a * internal_grad.d_ssa(j) *
+                    (input.atmosphere->storage().ssa(i, input.wavelidx) -
+                     input.ssa(j)) /
+                    (input.od(j) / (input.geometry_layers->layer_ceiling()(j) -
+                                    input.geometry_layers->layer_floor()(j)));
+
+                // for b1, find the contribution to atmo b1
+                double denom = (input.ssa(j) * input.od(j) /
+                                (input.geometry_layers->layer_ceiling()(j) -
+                                 input.geometry_layers->layer_floor()(j)));
+                double b1_deriv =
+                    a * internal_grad.d_b1(j) *
+                    (input.atmosphere->storage().ssa(i, input.wavelidx) *
+                     input.atmosphere->storage().total_extinction(
+                         i, input.wavelidx)) /
+                    denom;
+
+                // to extinction
+                source.deriv(i) +=
+                    a * internal_grad.d_b1(j) *
+                    input.atmosphere->storage().ssa(i, input.wavelidx) *
+                    (input.atmosphere->storage().leg_coeff(1, i,
+                                                           input.wavelidx) -
+                     input.b1(j)) /
+                    denom;
+
+                // to ssa
+                source.deriv(i) += a * internal_grad.d_b1(j) *
+                                   input.atmosphere->storage().total_extinction(
+                                       i, input.wavelidx) *
+                                   (input.atmosphere->storage().leg_coeff(
+                                        1, i, input.wavelidx) -
+                                    input.b1(j)) /
+                                   denom;
+
+                // To scattering derivatives
+                for (int k = 0;
+                     k < input.atmosphere->num_scattering_deriv_groups(); ++k) {
+                    source.deriv(input.atmosphere->scat_deriv_start_index() +
+                                 k * n + i) +=
+                        input.atmosphere->storage().d_leg_coeff(
+                            1, i, input.wavelidx, k) *
+                        b1_deriv;
+                }
+            }
+        }
+
+        // Albedo derivatives
+        for (int i = 0; i < input.atmosphere->surface().num_deriv(); ++i) {
+            source.deriv(input.atmosphere->surface_deriv_start_index() + i) +=
+                internal_grad.d_albedo;
+        }
+    }
 
     /**
      * Takes a gradient vector with respect to the input optical depth and maps
@@ -35,24 +123,8 @@ namespace sasktran2::twostream::backprop {
     template <typename Derived>
     inline void od(const Input& input, const Eigen::MatrixBase<Derived>& d_od,
                    GradientMap& grad) {
-        // Map back the derivative of OD to the derivative of extinction
-        // OD = (interpolating_matrix) * (extinction) * (layer_delta_height)
-        // jacobian = (interpolating_matrix) * (layer_delta_height)
 
-        if (input.geometry_layers->no_interp()) {
-            grad.d_extinction(Eigen::seq(0, input.nlyr - 1)).array() +=
-                d_od.cwiseProduct((input.geometry_layers->layer_ceiling() -
-                                   input.geometry_layers->layer_floor())
-                                      .transpose())(
-                        Eigen::seq(Eigen::last, 0, -1))
-                    .array();
-        } else {
-            grad.d_extinction +=
-                (d_od.cwiseProduct((input.geometry_layers->layer_ceiling() -
-                                    input.geometry_layers->layer_floor())
-                                       .transpose()) *
-                 input.geometry_layers->interpolating_matrix());
-        }
+        grad.d_extinction += d_od;
     }
 
     /**
@@ -66,34 +138,7 @@ namespace sasktran2::twostream::backprop {
     template <typename Derived>
     inline void ssa(const Input& input, const Eigen::MatrixBase<Derived>& d_ssa,
                     GradientMap& grad) {
-        // The equation for layer SSA is, let M = (interpolating matrix)  and .
-        // be elementwise multiplication, and k, w be the sasktran2 atmosphere
-        // quantities
-
-        // SSA = M * (k . w) / (M * k) = f(w, k)
-
-        // The jacobian with respect to w is
-
-        // K_w = M with each row weighted by k/OD
-
-        if (input.geometry_layers->no_interp()) {
-            grad.d_ssa(Eigen::seq(0, input.nlyr - 1)).array() +=
-                d_ssa.array()(Eigen::seq(Eigen::last, 0, -1));
-        } else {
-            grad.d_ssa +=
-                ((d_ssa.cwiseQuotient(
-                      (input.od
-                           .cwiseQuotient(
-                               (input.geometry_layers->layer_ceiling() -
-                                input.geometry_layers->layer_floor()))
-                           .transpose())) *
-                  input.geometry_layers->interpolating_matrix())
-                     .cwiseProduct(input.atmosphere->storage()
-                                       .total_extinction.col(input.wavelidx)
-                                       .transpose()));
-        }
-
-        // TODO: Add the jacobian with respect to k
+        grad.d_ssa += d_ssa;
     }
 
     /**
@@ -107,8 +152,8 @@ namespace sasktran2::twostream::backprop {
     template <typename Derived>
     inline void b1(const Input& input, const Eigen::MatrixBase<Derived>& d_b1,
                    GradientMap& grad) {
-        grad.d_b1(Eigen::seq(0, input.nlyr - 1)).array() +=
-            d_b1.array()(Eigen::seq(Eigen::last, 0, -1));
+
+        grad.d_b1 += d_b1;
     }
 
     template <typename Derived>
@@ -506,6 +551,13 @@ namespace sasktran2::twostream::backprop {
                            solution[i].G_minus_bottom.d_secant.transpose()),
                        grad[j]);
 
+                // Directly assign the albedo derivative
+                grad[j].d_albedo +=
+                    d_coeffs[i](2 * input.nlyr - 1, 0) *
+                    (input.csz / EIGEN_PI * input.transmission(Eigen::last) +
+                     2 * input.mu *
+                         solution[i].G_plus_bottom.value(Eigen::last));
+
                 // Now for the hard part, the pentadiagonal system (e, c, d, a,
                 // b) The derivative term is -(dA)z, where A is our
                 // pentadiagonal matrix and z is our BVP solution The
@@ -713,6 +765,22 @@ namespace sasktran2::twostream::backprop {
                     bvp_coeffs[i].d_c_by_b1(2 * input.nlyr - 1, input.nlyr - 1);
 
                 b1(input, bvp_coeffs[i].d_temp_ssa, grad[j]);
+
+                // BVP matrix albedo derivatives
+                // c and d have albedo derivatives
+
+                // for c
+                double d_albedo = -2 * input.mu *
+                                  homog[i].X_plus.value(Eigen::last) *
+                                  homog[i].omega.value(Eigen::last);
+                grad[j].d_albedo +=
+                    -bvp_coeffs[i].rhs(2 * input.nlyr - 1 - 1, 0) *
+                    d_coeffs[i](2 * input.nlyr - 1, j) * d_albedo;
+                // for d
+                d_albedo = -2 * input.mu * homog[i].X_minus.value(Eigen::last);
+                grad[j].d_albedo += -bvp_coeffs[i].rhs(2 * input.nlyr - 1, 0) *
+                                    d_coeffs[i](2 * input.nlyr - 1, j) *
+                                    d_albedo;
             }
         }
         transmission(input, bvp_coeffs[0].d_temp_transmission, grad[0]);
@@ -751,7 +819,7 @@ namespace sasktran2::twostream::backprop {
 
         // Direct ground multiple scatter contributions
 
-        grad.d_ssa(0) +=
+        grad.d_ssa(input.nlyr - 1) +=
             (solution.particular[0].G_plus_bottom.d_ssa(input.nlyr - 1) +
              solution.bvp_coeffs[0].rhs(Eigen::last - 1, 0) *
                  (solution.homog[0].X_plus.d_ssa(Eigen::last) *
@@ -762,7 +830,7 @@ namespace sasktran2::twostream::backprop {
                  (solution.homog[0].X_minus.d_ssa(Eigen::last))) *
             ground_weight;
 
-        grad.d_b1(0) +=
+        grad.d_b1(input.nlyr - 1) +=
             (solution.particular[0].G_plus_bottom.d_b1(input.nlyr - 1) +
              solution.bvp_coeffs[0].rhs(Eigen::last - 1, 0) *
                  (solution.homog[0].X_plus.d_b1(Eigen::last) *
@@ -773,14 +841,12 @@ namespace sasktran2::twostream::backprop {
                  (solution.homog[0].X_minus.d_b1(Eigen::last))) *
             ground_weight;
 
-        grad.d_extinction(0) +=
+        grad.d_extinction(input.nlyr - 1) +=
             (solution.particular[0].G_plus_bottom.d_od(input.nlyr - 1) +
              solution.bvp_coeffs[0].rhs(Eigen::last - 1, 0) *
                  solution.homog[0].X_plus.value(Eigen::last) *
                  solution.homog[0].omega.d_od(Eigen::last)) *
-            ground_weight *
-            (input.geometry_layers->layer_ceiling()(Eigen::last) -
-             input.geometry_layers->layer_floor()(Eigen::last));
+            ground_weight;
 
         // BVP adjoint solution
         d_coeffs[0].col(0) = sources.d_bvp_coeff[0];

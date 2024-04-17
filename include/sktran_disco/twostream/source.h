@@ -202,6 +202,18 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
 
             sasktran2::twostream::backprop::GradientMap grad(
                 *input.atmosphere, internal_gradient.data());
+
+            // assign d_albedo
+            grad.d_albedo =
+                (solution.particular[0].G_plus_bottom.value(Eigen::last) +
+                 solution.bvp_coeffs[0].rhs(Eigen::last - 1, 0) *
+                     solution.homog[0].X_plus.value(Eigen::last) *
+                     solution.homog[0].omega.value(Eigen::last) +
+                 solution.bvp_coeffs[0].rhs(Eigen::last, 0) *
+                     solution.homog[0].X_minus.value(Eigen::last)) *
+                2 * input.mu * sources.final_weight_factors(Eigen::last) *
+                sources.beamtrans.value(Eigen::last);
+
             sasktran2::twostream::backprop::full(
                 input, solution, sources, sources.final_weight_factors,
                 m_bvp_backprop_storage[threadidx], grad, ground_weight);
@@ -228,9 +240,8 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
                 grad);
 
             // Map the derivatives to the atmosphere
-            int n = input.nlyr + 1;
-            source.deriv(Eigen::seq(0, n - 1)) += grad.d_extinction;
-            source.deriv(Eigen::seq(n, 2 * n - 1)) += grad.d_ssa;
+            sasktran2::twostream::backprop::map_to_atmosphere(input, grad,
+                                                              source);
         }
     };
 };

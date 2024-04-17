@@ -60,6 +60,33 @@ def _ground_scenarios() -> list:
         }
     )
 
+    # Two stream Source
+    config = sk.Config()
+    config.single_scatter_source = sk.SingleScatterSource.NoSource
+    config.multiple_scatter_source = sk.MultipleScatterSource.TwoStream
+
+    config.num_streams = 2
+
+    geometry = sk.Geometry1D(
+        0.6,
+        0,
+        6372000,
+        altitude_grid,
+        sk.InterpolationMethod.LinearInterpolation,
+        sk.GeometryType.PlaneParallel,
+    )
+
+    scens.append(
+        {
+            "config": config,
+            "geometry": geometry,
+            "viewing_geo": viewing_geo,
+            "atmosphere": sk.test_util.scenarios.default_pure_scattering_atmosphere(
+                config, geometry, 0.8, albedo=0.5
+            ),
+        }
+    )
+
     return scens
 
 
