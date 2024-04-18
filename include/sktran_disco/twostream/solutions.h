@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <sasktran2/internal_common.h>
+#include "sktran_disco/sktran_do_types.h"
 #include "storage.h"
 
 namespace sasktran2::twostream {
@@ -376,12 +377,14 @@ namespace sasktran2::twostream {
             // Secant derivatives are a little more complicated
             // expsec.d_sec = -od * expsec
             particular.C_plus.d_secant.array() =
-                (input.od.array() * input.expsec.array() -
+                (input.transmission(Eigen::seq(0, Eigen::last - 1)).array() *
+                     input.od.array() * input.expsec.array() -
                  particular.C_plus.value.array()) /
                 (input.average_secant.array() - homog.k.value.array());
 
             particular.C_minus.d_secant.array() =
-                (input.od.array() * input.expsec.array() *
+                (input.transmission(Eigen::seq(0, Eigen::last - 1)).array() *
+                     input.od.array() * input.expsec.array() *
                      homog.omega.value.array() -
                  particular.C_minus.value.array()) /
                 (input.average_secant.array() + homog.k.value.array());
@@ -582,10 +585,10 @@ namespace sasktran2::twostream {
                 particular.G_plus_bottom.value(Eigen::seq(0, Eigen::last - 1));
 
             bvp.rhs(2 * input.nlyr - 1, 0) =
-                input.csz * input.albedo / EIGEN_PI *
-                    input.transmission(Eigen::last) -
+                sasktran_disco::kronDelta(i, 0) * input.csz * input.albedo /
+                    EIGEN_PI * input.transmission(Eigen::last) -
                 (particular.G_minus_bottom.value(Eigen::last) -
-                 2 * input.mu * input.albedo *
+                 2 * sasktran_disco::kronDelta(i, 0) * input.mu * input.albedo *
                      particular.G_plus_bottom.value(Eigen::last));
 
             // Now the LHS and gradients
@@ -666,44 +669,49 @@ namespace sasktran2::twostream {
                     -homog.X_minus.value(j + 1) * homog.omega.d_od(j + 1);
             }
 
-            bvp.c(2 * input.nlyr - 1) = (homog.X_minus.value(Eigen::last) -
-                                         2 * input.mu * input.albedo *
-                                             homog.X_plus.value(Eigen::last)) *
-                                        homog.omega.value(Eigen::last);
-            bvp.d(2 * input.nlyr - 1) = (homog.X_plus.value(Eigen::last) -
-                                         2 * input.mu * input.albedo *
-                                             homog.X_minus.value(Eigen::last));
+            bvp.c(2 * input.nlyr - 1) =
+                (homog.X_minus.value(Eigen::last) -
+                 2 * input.mu * input.albedo * sasktran_disco::kronDelta(i, 0) *
+                     homog.X_plus.value(Eigen::last)) *
+                homog.omega.value(Eigen::last);
+            bvp.d(2 * input.nlyr - 1) =
+                (homog.X_plus.value(Eigen::last) -
+                 2 * input.mu * input.albedo * sasktran_disco::kronDelta(i, 0) *
+                     homog.X_minus.value(Eigen::last));
 
             bvp.d_d_by_ssa(2 * input.nlyr - 1, input.nlyr - 1) =
                 homog.X_plus.d_ssa(Eigen::last) -
-                2 * input.mu * input.albedo * homog.X_minus.d_ssa(Eigen::last);
+                2 * input.mu * input.albedo * sasktran_disco::kronDelta(i, 0) *
+                    homog.X_minus.d_ssa(Eigen::last);
 
             bvp.d_c_by_ssa(2 * input.nlyr - 1, input.nlyr - 1) =
                 (homog.X_minus.d_ssa(Eigen::last) -
-                 2 * input.mu * input.albedo *
+                 2 * input.mu * input.albedo * sasktran_disco::kronDelta(i, 0) *
                      homog.X_plus.d_ssa(Eigen::last)) *
                     homog.omega.value(Eigen::last) +
                 (homog.X_minus.value(Eigen::last) -
-                 2 * input.mu * input.albedo *
+                 2 * input.mu * input.albedo * sasktran_disco::kronDelta(i, 0) *
                      homog.X_plus.value(Eigen::last)) *
                     homog.omega.d_ssa(Eigen::last);
 
             bvp.d_d_by_b1(2 * input.nlyr - 1, input.nlyr - 1) =
                 homog.X_plus.d_b1(Eigen::last) -
-                2 * input.mu * input.albedo * homog.X_minus.d_b1(Eigen::last);
+                2 * input.mu * input.albedo * sasktran_disco::kronDelta(i, 0) *
+                    homog.X_minus.d_b1(Eigen::last);
 
             bvp.d_c_by_b1(2 * input.nlyr - 1, input.nlyr - 1) =
                 (homog.X_minus.d_b1(Eigen::last) -
-                 2 * input.mu * input.albedo * homog.X_plus.d_b1(Eigen::last)) *
+                 2 * input.mu * input.albedo * sasktran_disco::kronDelta(i, 0) *
+                     homog.X_plus.d_b1(Eigen::last)) *
                     homog.omega.value(Eigen::last) +
                 (homog.X_minus.value(Eigen::last) -
-                 2 * input.mu * input.albedo *
+                 2 * input.mu * input.albedo * sasktran_disco::kronDelta(i, 0) *
                      homog.X_plus.value(Eigen::last)) *
                     homog.omega.d_b1(Eigen::last);
 
             bvp.d_c_by_od(2 * input.nlyr - 1, input.nlyr - 1) =
                 (homog.X_minus.value(Eigen::last) -
-                 2 * input.mu * input.albedo *
+                 2 * input.mu * input.albedo * sasktran_disco::kronDelta(i, 0) *
                      homog.X_plus.value(Eigen::last)) *
                 homog.omega.d_od(Eigen::last);
 
@@ -992,8 +1000,7 @@ namespace sasktran2::twostream {
                 (input.transmission(Eigen::seq(0, Eigen::last - 1)).array() *
                      (sources.E_minus.d_secant.array() +
                       input.od.array() * input.expsec.array() *
-                          sources.H_minus[i].value.array() -
-                      input.expsec.array() * sources.H_minus[i].value.array()) -
+                          sources.H_minus[i].value.array()) -
                  sources.D_plus[i].value.array()) /
                 (input.average_secant.array() + homog.k.value.array());
 

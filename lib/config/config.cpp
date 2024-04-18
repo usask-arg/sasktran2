@@ -91,6 +91,16 @@ namespace sasktran2 {
 
             sasktran2::validation::throw_configuration_error();
         }
+
+        // Special twostream options
+        if (m_multiple_scatter_source == MultipleScatterSource::twostream) {
+            if (m_ndostreams != 2) {
+                spdlog::critical("Invalid number of streams: {}, must be 2 for "
+                                 "twostream multiple scatter source",
+                                 m_ndostreams);
+                sasktran2::validation::throw_configuration_error();
+            }
+        }
     }
 
 } // namespace sasktran2

@@ -64,9 +64,9 @@ TEST_CASE("8StreamBenchmark", "[sktran_do][lowlevel][benchmark]") {
     sasktran2::Coordinates coords(0.6, 0, 6371000,
                                   sasktran2::geometrytype::planeparallel);
 
-    int nlyr = 50;
+    int nlyr = 20;
     int nwavel = 40;
-    int nstr = 8;
+    int nstr = 2;
 
     Eigen::VectorXd grid_values(nlyr + 1);
     for (int i = 0; i < nlyr + 1; ++i) {
@@ -83,13 +83,14 @@ TEST_CASE("8StreamBenchmark", "[sktran_do][lowlevel][benchmark]") {
     sasktran2::atmosphere::AtmosphereGridStorageFull<1> storage(nwavel,
                                                                 geo.size(), 16);
     sasktran2::atmosphere::Surface<1> surface(nwavel);
+    surface.brdf_args().setConstant(0.5);
 
     sasktran2::atmosphere::Atmosphere<1> atmo(std::move(storage),
                                               std::move(surface), true);
 
     atmo.storage().total_extinction.setConstant(0.01);
 
-    atmo.storage().ssa.setConstant(1.0);
+    atmo.storage().ssa.setConstant(0.8);
 
     atmo.storage().leg_coeff.chip(0, 0).setConstant(1);
     atmo.storage().leg_coeff.chip(2, 0).setConstant(0.5);

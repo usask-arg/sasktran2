@@ -91,13 +91,7 @@ namespace sasktran2::twostream {
             mu = 0.5;
         }
 
-        /**
-         * Sets the input parameters based on the wavelength index from the
-         * sasktran2 atmosphere object
-         *
-         * @param wavelidx
-         */
-        void calculate(int wavelidx) {
+        void calculate_base(int wavelidx) {
             this->wavelidx = wavelidx;
 
             // Start by interpolating extinction to the layers
@@ -135,6 +129,11 @@ namespace sasktran2::twostream {
             od.array() *= (geometry_layers->layer_ceiling().array() -
                            geometry_layers->layer_floor().array());
 
+            albedo =
+                atmosphere->surface().brdf(wavelidx, 0, 0, 0)(0, 0) * EIGEN_PI;
+        }
+
+        void calculate_derived(int wavelidx) {
             transmission(0) = 0;
             transmission(Eigen::seq(1, nlyr)) =
                 -1 * (geometry_layers->chapman_factors() * od);
@@ -147,9 +146,17 @@ namespace sasktran2::twostream {
             transmission.array() = transmission.array().exp();
 
             expsec = (-1.0 * average_secant.array() * od.array()).exp();
+        }
 
-            albedo =
-                atmosphere->surface().brdf(wavelidx, 0, 0, 0)(0, 0) * EIGEN_PI;
+        /**
+         * Sets the input parameters based on the wavelength index from the
+         * sasktran2 atmosphere object
+         *
+         * @param wavelidx
+         */
+        void calculate(int wavelidx) {
+            calculate_base(wavelidx);
+            calculate_derived(wavelidx);
         }
     };
 

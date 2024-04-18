@@ -6,11 +6,12 @@
 
 void construct_atmo_geometry(
     std::unique_ptr<sasktran2::atmosphere::Atmosphere<1>>& atmo,
-    std::unique_ptr<sasktran_disco::GeometryLayerArray<1>>& layer_geo) {
+    std::unique_ptr<sasktran_disco::GeometryLayerArray<1>>& layer_geo,
+    double csz = 0.6) {
     omp_set_num_threads(1);
     // Construct the geometry
-    sasktran2::Coordinates coords(0.6, 0, 6371000,
-                                  sasktran2::geometrytype::planeparallel);
+    sasktran2::Coordinates coords(csz, 0, 6371000,
+                                  sasktran2::geometrytype::pseudospherical);
 
     int nlyr = 20;
     int nwavel = 1;
@@ -38,6 +39,9 @@ void construct_atmo_geometry(
         std::move(storage), std::move(surface), true);
 
     atmo->storage().total_extinction.setConstant(0.01);
+    atmo->storage()
+        .total_extinction(Eigen::seq(10, 13), Eigen::all)
+        .setConstant(0.02);
 
     atmo->storage().ssa.setConstant(0.8);
 
@@ -81,17 +85,14 @@ TEST_CASE("Backprop_OpticalDepth", "[twostream][backprop]") {
     Eigen::VectorXd numerical_grad(natmo);
 
     double eps = 1e-6;
-    for (int i = 0; i < natmo; i++) {
+    for (int i = 0; i < natmo - 1; i++) {
         sasktran2::twostream::Input input_p;
         input_p.atmosphere = atmo.get();
         input_p.geometry_layers = layer_geo.get();
         input_p.init(natmo - 1);
 
-        atmo->storage().total_extinction(i) += eps;
-
         input_p.calculate(0);
-
-        atmo->storage().total_extinction(i) -= eps;
+        input_p.od(i) += eps;
 
         numerical_grad(i) =
             (weights.dot(input_p.od) - weights.dot(input.od)) / eps;
@@ -99,7 +100,7 @@ TEST_CASE("Backprop_OpticalDepth", "[twostream][backprop]") {
 
     sasktran2::twostream::backprop::od(input, weights, grad_map);
 
-    for (int i = 0; i < natmo; i++) {
+    for (int i = 0; i < natmo - 1; i++) {
         REQUIRE(abs(grad_map.d_extinction(i) - numerical_grad(i)) < 1e-6);
     }
 }
@@ -131,17 +132,14 @@ TEST_CASE("Backprop_SSA", "[twostream][backprop]") {
     Eigen::VectorXd numerical_grad(natmo);
 
     double eps = 1e-6;
-    for (int i = 0; i < natmo; i++) {
+    for (int i = 0; i < natmo - 1; i++) {
         sasktran2::twostream::Input input_p;
         input_p.atmosphere = atmo.get();
         input_p.geometry_layers = layer_geo.get();
         input_p.init(natmo - 1);
 
-        atmo->storage().ssa(i) += eps;
-
         input_p.calculate(0);
-
-        atmo->storage().ssa(i) -= eps;
+        input_p.ssa(i) += eps;
 
         numerical_grad(i) =
             (weights.dot(input_p.ssa) - weights.dot(input.ssa)) / eps;
@@ -149,7 +147,7 @@ TEST_CASE("Backprop_SSA", "[twostream][backprop]") {
 
     sasktran2::twostream::backprop::ssa(input, weights, grad_map);
 
-    for (int i = 0; i < natmo; i++) {
+    for (int i = 0; i < natmo - 1; i++) {
         REQUIRE(abs(grad_map.d_ssa(i) - numerical_grad(i)) < 1e-6);
     }
 }
@@ -199,7 +197,7 @@ TEST_CASE("Backprop_Homog", "[twostream][backprop]") {
     Eigen::VectorXd numerical_grad(natmo);
 
     double eps = 1e-6;
-    for (int i = 0; i < natmo; i++) {
+    for (int i = 0; i < natmo - 1; i++) {
         sasktran2::twostream::Input input_p;
         input_p.atmosphere = atmo.get();
         input_p.geometry_layers = layer_geo.get();
@@ -208,12 +206,9 @@ TEST_CASE("Backprop_Homog", "[twostream][backprop]") {
         sasktran2::twostream::Solution soln_p;
         soln_p.init(natmo - 1);
 
-        atmo->storage().ssa(i) += eps;
-
         input_p.calculate(0);
+        input_p.ssa(i) += eps;
         sasktran2::twostream::solve_layers(input_p, soln_p);
-
-        atmo->storage().ssa(i) -= eps;
 
         numerical_grad(i) = (weights[0].dot(soln_p.homog[0].k.value) -
                              weights[0].dot(soln.homog[0].k.value)) /
@@ -253,7 +248,7 @@ TEST_CASE("Backprop_Homog", "[twostream][backprop]") {
     sasktran2::twostream::backprop::homog_omega(input, soln.homog,
                                                 weights_omega, grad_map);
 
-    for (int i = 0; i < natmo; i++) {
+    for (int i = 0; i < natmo - 1; i++) {
         REQUIRE(abs(grad_map.d_ssa(i) - numerical_grad(i)) < 1e-4);
     }
 }
@@ -306,7 +301,7 @@ TEST_CASE("Backprop_Particular", "[twostream][backprop]") {
     Eigen::VectorXd numerical_grad(natmo);
 
     double eps = 1e-6;
-    for (int i = 0; i < natmo; i++) {
+    for (int i = 0; i < natmo - 1; i++) {
         sasktran2::twostream::Input input_p;
         input_p.atmosphere = atmo.get();
         input_p.geometry_layers = layer_geo.get();
@@ -315,13 +310,10 @@ TEST_CASE("Backprop_Particular", "[twostream][backprop]") {
         sasktran2::twostream::Solution soln_p;
         soln_p.init(natmo - 1);
 
-        atmo->storage().ssa(i) += eps;
-
         input_p.calculate(0);
+        input_p.ssa(i) += eps;
         input_p.csz = 0.6;
         sasktran2::twostream::solve_layers(input_p, soln_p);
-
-        atmo->storage().ssa(i) -= eps;
 
         numerical_grad(i) =
             (weights_Gplus_top[0].dot(soln_p.particular[0].G_plus_top.value) -
@@ -373,7 +365,7 @@ TEST_CASE("Backprop_Particular", "[twostream][backprop]") {
     sasktran2::twostream::backprop::particular_G_minus_bottom(
         input, soln.particular, weights_Gminus_bottom, grad_map);
 
-    for (int i = 0; i < natmo; i++) {
+    for (int i = 0; i < natmo - 1; i++) {
         REQUIRE(abs(grad_map.d_ssa(i) - numerical_grad(i)) < 1e-4);
     }
 }
@@ -416,7 +408,7 @@ TEST_CASE("Backprop_BVP", "[twostream][backprop]") {
     Eigen::VectorXd numerical_grad(natmo);
 
     double eps = 1e-6;
-    for (int i = 0; i < natmo; i++) {
+    for (int i = 0; i < natmo - 1; i++) {
         sasktran2::twostream::Input input_p;
         input_p.atmosphere = atmo.get();
         input_p.geometry_layers = layer_geo.get();
@@ -425,14 +417,11 @@ TEST_CASE("Backprop_BVP", "[twostream][backprop]") {
         sasktran2::twostream::Solution soln_p;
         soln_p.init(natmo - 1);
 
-        atmo->storage().ssa(i) += eps;
-
         input_p.calculate(0);
+        input_p.ssa(i) += eps;
         input_p.csz = 0.6;
         sasktran2::twostream::solve_layers(input_p, soln_p);
         sasktran2::twostream::solve_bvp(input_p, soln_p);
-
-        atmo->storage().ssa(i) -= eps;
 
         numerical_grad(i) =
             (weights[0].col(0).dot(soln_p.bvp_coeffs[0].rhs.col(0)) -
@@ -447,7 +436,7 @@ TEST_CASE("Backprop_BVP", "[twostream][backprop]") {
     sasktran2::twostream::backprop::bvp(input, soln.bvp_coeffs, soln.homog,
                                         soln.particular, weights, grad_map);
 
-    for (int i = 0; i < natmo; i++) {
+    for (int i = 0; i < natmo - 1; i++) {
         REQUIRE(abs(grad_map[0].d_ssa(i) - numerical_grad(i)) < 1e-4);
     }
 }
@@ -463,7 +452,7 @@ TEST_CASE("Backprop_Full_SSA", "[twostream][backprop]") {
 
     int natmo = atmo->storage().total_extinction.rows();
 
-    Eigen::RowVectorXd grad(atmo->num_deriv());
+    Eigen::RowVectorXd grad(3 * natmo);
     grad.setZero();
 
     std::array<Eigen::MatrixXd, 2> bvp_storage;
@@ -496,7 +485,7 @@ TEST_CASE("Backprop_Full_SSA", "[twostream][backprop]") {
     Eigen::VectorXd numerical_grad(natmo);
 
     double eps = 1e-6;
-    for (int i = 0; i < natmo; i++) {
+    for (int i = 0; i < natmo - 1; i++) {
         sasktran2::twostream::Input input_p;
         input_p.atmosphere = atmo.get();
         input_p.geometry_layers = layer_geo.get();
@@ -507,16 +496,13 @@ TEST_CASE("Backprop_Full_SSA", "[twostream][backprop]") {
         sasktran2::twostream::Solution soln_p;
         soln_p.init(natmo - 1);
 
-        atmo->storage().ssa(i) += eps;
-
         input_p.calculate(0);
+        input_p.ssa(i) += eps;
         input_p.csz = 0.6;
         sasktran2::twostream::solve_layers(input_p, soln_p);
         sasktran2::twostream::solve_bvp(input_p, soln_p);
         sasktran2::twostream::post_process(input_p, viewing_zenith, azimuth,
                                            soln_p, sources_p);
-
-        atmo->storage().ssa(i) -= eps;
 
         numerical_grad(i) = (weights.dot(sources_p.source.value) -
                              weights.dot(sources.source.value)) /
@@ -526,7 +512,7 @@ TEST_CASE("Backprop_Full_SSA", "[twostream][backprop]") {
     sasktran2::twostream::backprop::full(input, soln, sources, weights,
                                          bvp_storage, grad_map);
 
-    for (int i = 0; i < natmo; i++) {
+    for (int i = 0; i < natmo - 1; i++) {
         REQUIRE(abs(grad_map.d_ssa(i) - numerical_grad(i)) < 1e-6);
     }
 }
@@ -558,17 +544,15 @@ TEST_CASE("Backprop_Transmission", "[twostream][backprop]") {
     Eigen::VectorXd numerical_grad(natmo);
 
     double eps = 1e-8;
-    for (int i = 0; i < natmo; i++) {
+    for (int i = 0; i < natmo - 1; i++) {
         sasktran2::twostream::Input input_p;
         input_p.atmosphere = atmo.get();
         input_p.geometry_layers = layer_geo.get();
         input_p.init(natmo - 1);
 
-        atmo->storage().total_extinction(i) += eps;
-
-        input_p.calculate(0);
-
-        atmo->storage().total_extinction(i) -= eps;
+        input_p.calculate_base(0);
+        input_p.od(i) += eps;
+        input_p.calculate_derived(0);
 
         numerical_grad(i) = (weights.dot(input_p.transmission) -
                              weights.dot(input.transmission)) /
@@ -577,16 +561,16 @@ TEST_CASE("Backprop_Transmission", "[twostream][backprop]") {
 
     sasktran2::twostream::backprop::transmission(input, weights, grad_map);
 
-    for (int i = 0; i < natmo; i++) {
+    for (int i = 0; i < natmo - 1; i++) {
         REQUIRE(abs(grad_map.d_extinction(i) - numerical_grad(i)) < 1e-6);
     }
 }
 
-TEST_CASE("Backprop_Particular_ext", "[twostream][backprop]") {
+TEST_CASE("Backprop_Secant", "[twostream][backprop]") {
     std::unique_ptr<sasktran2::atmosphere::Atmosphere<1>> atmo;
     std::unique_ptr<sasktran_disco::GeometryLayerArray<1>> layer_geo;
 
-    construct_atmo_geometry(atmo, layer_geo);
+    construct_atmo_geometry(atmo, layer_geo, 0.01);
 
     int natmo = atmo->storage().total_extinction.rows();
 
@@ -595,12 +579,59 @@ TEST_CASE("Backprop_Particular_ext", "[twostream][backprop]") {
 
     sasktran2::twostream::backprop::GradientMap grad_map(*atmo, grad.data());
 
+    // Let our output quantity be random weights * od
+    Eigen::RowVectorXd weights = Eigen::RowVectorXd::Random(natmo - 1);
+
+    sasktran2::twostream::Input input;
+    input.atmosphere = atmo.get();
+    input.geometry_layers = layer_geo.get();
+
+    input.init(natmo - 1);
+
+    input.calculate(0);
+
+    Eigen::VectorXd numerical_grad(natmo);
+
+    double eps = 1e-6;
+    for (int i = 0; i < natmo - 1; i++) {
+        sasktran2::twostream::Input input_p;
+        input_p.atmosphere = atmo.get();
+        input_p.geometry_layers = layer_geo.get();
+        input_p.init(natmo - 1);
+
+        input_p.calculate_base(0);
+        input_p.od(i) += eps;
+        input_p.calculate_derived(0);
+
+        numerical_grad(i) = (weights.dot(input_p.average_secant) -
+                             weights.dot(input.average_secant)) /
+                            eps;
+    }
+
+    sasktran2::twostream::backprop::secant(input, weights, grad_map);
+
+    for (int i = 0; i < natmo - 1; i++) {
+        REQUIRE(abs(grad_map.d_extinction(i) - numerical_grad(i)) < 1e-6);
+    }
+}
+
+TEST_CASE("Backprop_Particular_ext", "[twostream][backprop]") {
+    std::unique_ptr<sasktran2::atmosphere::Atmosphere<1>> atmo;
+    std::unique_ptr<sasktran_disco::GeometryLayerArray<1>> layer_geo;
+
+    construct_atmo_geometry(atmo, layer_geo, 0.01);
+
+    int natmo = atmo->storage().total_extinction.rows();
+
+    Eigen::RowVectorXd grad(3 * natmo);
+    grad.setZero();
+
+    sasktran2::twostream::backprop::GradientMap grad_map(*atmo, grad.data());
+
     // Let our output quantity be random weights * homog.k and Xplus/Xminus
     std::array<Eigen::RowVectorXd, 2> weights_Gplus_top;
-    weights_Gplus_top[0] = Eigen::RowVectorXd::Random(natmo - 1) +
-                           Eigen::RowVectorXd::Ones(natmo - 1);
-    weights_Gplus_top[1] = Eigen::RowVectorXd::Random(natmo - 1) +
-                           Eigen::RowVectorXd::Ones(natmo - 1);
+    weights_Gplus_top[0] = Eigen::RowVectorXd::Ones(natmo - 1);
+    weights_Gplus_top[1] = Eigen::RowVectorXd::Ones(natmo - 1);
 
     std::array<Eigen::RowVectorXd, 2> weights_Gplus_bottom;
     weights_Gplus_bottom[0] = Eigen::RowVectorXd::Random(natmo - 1);
@@ -617,7 +648,7 @@ TEST_CASE("Backprop_Particular_ext", "[twostream][backprop]") {
     sasktran2::twostream::Input input;
     input.atmosphere = atmo.get();
     input.geometry_layers = layer_geo.get();
-    input.csz = 0.6;
+    input.csz = 0.01;
 
     input.init(natmo - 1);
 
@@ -629,8 +660,8 @@ TEST_CASE("Backprop_Particular_ext", "[twostream][backprop]") {
 
     Eigen::VectorXd numerical_grad(natmo);
 
-    double eps = 1e-6;
-    for (int i = 0; i < natmo; i++) {
+    double eps = 1e-7;
+    for (int i = 0; i < natmo - 1; i++) {
         sasktran2::twostream::Input input_p;
         input_p.atmosphere = atmo.get();
         input_p.geometry_layers = layer_geo.get();
@@ -639,23 +670,22 @@ TEST_CASE("Backprop_Particular_ext", "[twostream][backprop]") {
         sasktran2::twostream::Solution soln_p;
         soln_p.init(natmo - 1);
 
-        atmo->storage().total_extinction(i) += eps;
+        input_p.calculate_base(0);
+        input_p.od(i) += eps;
+        input_p.calculate_derived(0);
+        input_p.csz = 0.01;
 
-        input_p.calculate(0);
-        input_p.csz = 0.6;
         sasktran2::twostream::solve_layers(input_p, soln_p);
-
-        atmo->storage().total_extinction(i) -= eps;
 
         numerical_grad(i) =
             (weights_Gplus_top[0].dot(soln_p.particular[0].G_plus_top.value) -
              weights_Gplus_top[0].dot(soln.particular[0].G_plus_top.value)) /
             (eps);
+
         numerical_grad(i) +=
             (weights_Gplus_top[1].dot(soln_p.particular[1].G_plus_top.value) -
              weights_Gplus_top[1].dot(soln.particular[1].G_plus_top.value)) /
             (eps);
-
         numerical_grad(i) += (weights_Gplus_bottom[0].dot(
                                   soln_p.particular[0].G_plus_bottom.value) -
                               weights_Gplus_bottom[0].dot(
@@ -696,9 +726,8 @@ TEST_CASE("Backprop_Particular_ext", "[twostream][backprop]") {
         input, soln.particular, weights_Gminus_top, grad_map);
     sasktran2::twostream::backprop::particular_G_minus_bottom(
         input, soln.particular, weights_Gminus_bottom, grad_map);
-
-    for (int i = 0; i < natmo; i++) {
-        REQUIRE(abs(grad_map.d_extinction(i) - numerical_grad(i)) < 1e-4);
+    for (int i = 0; i < natmo - 1; i++) {
+        REQUIRE(abs(grad_map.d_extinction(i) - numerical_grad(i)) < 1e-6);
     }
 }
 
@@ -740,7 +769,7 @@ TEST_CASE("Backprop_BVP_ext", "[twostream][backprop]") {
     Eigen::VectorXd numerical_grad(natmo);
 
     double eps = 1e-6;
-    for (int i = 0; i < natmo; i++) {
+    for (int i = 0; i < natmo - 1; i++) {
         sasktran2::twostream::Input input_p;
         input_p.atmosphere = atmo.get();
         input_p.geometry_layers = layer_geo.get();
@@ -749,14 +778,12 @@ TEST_CASE("Backprop_BVP_ext", "[twostream][backprop]") {
         sasktran2::twostream::Solution soln_p;
         soln_p.init(natmo - 1);
 
-        atmo->storage().total_extinction(i) += eps;
-
-        input_p.calculate(0);
+        input_p.calculate_base(0);
+        input_p.od(i) += eps;
+        input_p.calculate_derived(0);
         input_p.csz = 0.6;
         sasktran2::twostream::solve_layers(input_p, soln_p);
         sasktran2::twostream::solve_bvp(input_p, soln_p);
-
-        atmo->storage().total_extinction(i) -= eps;
 
         numerical_grad(i) =
             (weights[0].col(0).dot(soln_p.bvp_coeffs[0].rhs.col(0)) -
@@ -771,7 +798,7 @@ TEST_CASE("Backprop_BVP_ext", "[twostream][backprop]") {
     sasktran2::twostream::backprop::bvp(input, soln.bvp_coeffs, soln.homog,
                                         soln.particular, weights, grad_map);
 
-    for (int i = 0; i < natmo; i++) {
+    for (int i = 0; i < natmo - 1; i++) {
         REQUIRE(abs(grad_map[0].d_extinction(i) - numerical_grad(i)) < 1e-4);
     }
 }
@@ -783,11 +810,11 @@ TEST_CASE("Backprop_Full_ext", "[twostream][backprop]") {
     double viewing_zenith = 0.6;
     double azimuth = 0.0;
 
-    construct_atmo_geometry(atmo, layer_geo);
+    construct_atmo_geometry(atmo, layer_geo, 0.01);
 
     int natmo = atmo->storage().total_extinction.rows();
 
-    Eigen::RowVectorXd grad(atmo->num_deriv());
+    Eigen::RowVectorXd grad(3 * natmo);
     grad.setZero();
 
     std::array<Eigen::MatrixXd, 2> bvp_storage;
@@ -803,7 +830,7 @@ TEST_CASE("Backprop_Full_ext", "[twostream][backprop]") {
     sasktran2::twostream::Input input;
     input.atmosphere = atmo.get();
     input.geometry_layers = layer_geo.get();
-    input.csz = 0.6;
+    input.csz = 0.01;
 
     input.init(natmo - 1);
 
@@ -820,7 +847,7 @@ TEST_CASE("Backprop_Full_ext", "[twostream][backprop]") {
     Eigen::VectorXd numerical_grad(natmo);
 
     double eps = 1e-6;
-    for (int i = 0; i < natmo; i++) {
+    for (int i = 0; i < natmo - 1; i++) {
         sasktran2::twostream::Input input_p;
         input_p.atmosphere = atmo.get();
         input_p.geometry_layers = layer_geo.get();
@@ -831,16 +858,15 @@ TEST_CASE("Backprop_Full_ext", "[twostream][backprop]") {
         sasktran2::twostream::Solution soln_p;
         soln_p.init(natmo - 1);
 
-        atmo->storage().total_extinction(i) += eps;
+        input_p.calculate_base(0);
+        input_p.od(i) += eps;
+        input_p.calculate_derived(0);
+        input_p.csz = 0.01;
 
-        input_p.calculate(0);
-        input_p.csz = 0.6;
         sasktran2::twostream::solve_layers(input_p, soln_p);
         sasktran2::twostream::solve_bvp(input_p, soln_p);
         sasktran2::twostream::post_process(input_p, viewing_zenith, azimuth,
                                            soln_p, sources_p);
-
-        atmo->storage().total_extinction(i) -= eps;
 
         numerical_grad(i) = (weights.dot(sources_p.source.value) -
                              weights.dot(sources.source.value)) /
@@ -850,7 +876,7 @@ TEST_CASE("Backprop_Full_ext", "[twostream][backprop]") {
     sasktran2::twostream::backprop::full(input, soln, sources, weights,
                                          bvp_storage, grad_map);
 
-    for (int i = 0; i < natmo; i++) {
+    for (int i = 0; i < natmo - 1; i++) {
         REQUIRE(abs(grad_map.d_extinction(i) - numerical_grad(i)) < 1e-6);
     }
 }
@@ -899,7 +925,7 @@ TEST_CASE("Backprop_Full_b1", "[twostream][backprop]") {
     Eigen::VectorXd numerical_grad(natmo);
 
     double eps = 1e-6;
-    for (int i = 0; i < natmo; i++) {
+    for (int i = 0; i < natmo - 1; i++) {
         sasktran2::twostream::Input input_p;
         input_p.atmosphere = atmo.get();
         input_p.geometry_layers = layer_geo.get();
@@ -910,16 +936,13 @@ TEST_CASE("Backprop_Full_b1", "[twostream][backprop]") {
         sasktran2::twostream::Solution soln_p;
         soln_p.init(natmo - 1);
 
-        atmo->storage().leg_coeff(1, i, 0) += eps;
-
         input_p.calculate(0);
+        input_p.b1(i) += eps;
         input_p.csz = 0.6;
         sasktran2::twostream::solve_layers(input_p, soln_p);
         sasktran2::twostream::solve_bvp(input_p, soln_p);
         sasktran2::twostream::post_process(input_p, viewing_zenith, azimuth,
                                            soln_p, sources_p);
-
-        atmo->storage().leg_coeff(1, i, 0) -= eps;
 
         numerical_grad(i) = (weights.dot(sources_p.source.value) -
                              weights.dot(sources.source.value)) /
@@ -929,7 +952,7 @@ TEST_CASE("Backprop_Full_b1", "[twostream][backprop]") {
     sasktran2::twostream::backprop::full(input, soln, sources, weights,
                                          bvp_storage, grad_map);
 
-    for (int i = 0; i < natmo; i++) {
+    for (int i = 0; i < natmo - 1; i++) {
         REQUIRE(abs(grad_map.d_b1(i) - numerical_grad(i)) < 1e-6);
     }
 }
@@ -982,7 +1005,7 @@ TEST_CASE("Backprop_Particular_b1", "[twostream][backprop]") {
     Eigen::VectorXd numerical_grad(natmo);
 
     double eps = 1e-6;
-    for (int i = 0; i < natmo; i++) {
+    for (int i = 0; i < natmo - 1; i++) {
         sasktran2::twostream::Input input_p;
         input_p.atmosphere = atmo.get();
         input_p.geometry_layers = layer_geo.get();
@@ -991,13 +1014,10 @@ TEST_CASE("Backprop_Particular_b1", "[twostream][backprop]") {
         sasktran2::twostream::Solution soln_p;
         soln_p.init(natmo - 1);
 
-        atmo->storage().leg_coeff(1, i, 0) += eps;
-
         input_p.calculate(0);
+        input_p.b1(i) += eps;
         input_p.csz = 0.6;
         sasktran2::twostream::solve_layers(input_p, soln_p);
-
-        atmo->storage().leg_coeff(1, i, 0) -= eps;
 
         numerical_grad(i) =
             (weights_Gplus_top[0].dot(soln_p.particular[0].G_plus_top.value) -
@@ -1049,7 +1069,7 @@ TEST_CASE("Backprop_Particular_b1", "[twostream][backprop]") {
     sasktran2::twostream::backprop::particular_G_minus_bottom(
         input, soln.particular, weights_Gminus_bottom, grad_map);
 
-    for (int i = 0; i < natmo; i++) {
+    for (int i = 0; i < natmo - 1; i++) {
         REQUIRE(abs(grad_map.d_b1(i) - numerical_grad(i)) < 1e-4);
     }
 }
@@ -1092,7 +1112,7 @@ TEST_CASE("Backprop_BVP_b1", "[twostream][backprop]") {
     Eigen::VectorXd numerical_grad(natmo);
 
     double eps = 1e-6;
-    for (int i = 0; i < natmo; i++) {
+    for (int i = 0; i < natmo - 1; i++) {
         sasktran2::twostream::Input input_p;
         input_p.atmosphere = atmo.get();
         input_p.geometry_layers = layer_geo.get();
@@ -1101,14 +1121,11 @@ TEST_CASE("Backprop_BVP_b1", "[twostream][backprop]") {
         sasktran2::twostream::Solution soln_p;
         soln_p.init(natmo - 1);
 
-        atmo->storage().leg_coeff(1, i, 0) += eps;
-
         input_p.calculate(0);
+        input_p.b1(i) += eps;
         input_p.csz = 0.6;
         sasktran2::twostream::solve_layers(input_p, soln_p);
         sasktran2::twostream::solve_bvp(input_p, soln_p);
-
-        atmo->storage().leg_coeff(1, i, 0) -= eps;
 
         numerical_grad(i) =
             (weights[0].col(0).dot(soln_p.bvp_coeffs[0].rhs.col(0)) -
@@ -1123,88 +1140,8 @@ TEST_CASE("Backprop_BVP_b1", "[twostream][backprop]") {
     sasktran2::twostream::backprop::bvp(input, soln.bvp_coeffs, soln.homog,
                                         soln.particular, weights, grad_map);
 
-    for (int i = 0; i < natmo; i++) {
+    for (int i = 0; i < natmo - 1; i++) {
         REQUIRE(abs(grad_map[0].d_b1(i) - numerical_grad(i)) < 1e-4);
-    }
-}
-
-TEST_CASE("Backprop_b1_debug", "[twostream][backprop]") {
-    std::unique_ptr<sasktran2::atmosphere::Atmosphere<1>> atmo;
-    std::unique_ptr<sasktran_disco::GeometryLayerArray<1>> layer_geo;
-
-    double viewing_zenith = 0.6;
-    double azimuth = 0.0;
-
-    construct_atmo_geometry(atmo, layer_geo);
-
-    int natmo = atmo->storage().total_extinction.rows();
-
-    Eigen::RowVectorXd grad(natmo * 3);
-    grad.setZero();
-
-    std::array<Eigen::MatrixXd, 2> bvp_storage;
-    bvp_storage[0].resize(2 * (natmo - 1), 1);
-    bvp_storage[1].resize(2 * (natmo - 1), 1);
-
-    sasktran2::twostream::backprop::GradientMap grad_map(*atmo, grad.data());
-
-    // Let our output quantity be random weights * homog.k and Xplus/Xminus
-    Eigen::RowVectorXd weights;
-    weights = Eigen::RowVectorXd::Random((natmo - 1));
-
-    sasktran2::twostream::Input input;
-    input.atmosphere = atmo.get();
-    input.geometry_layers = layer_geo.get();
-    input.csz = 0.6;
-
-    input.init(natmo - 1);
-
-    input.calculate(0);
-
-    sasktran2::twostream::Solution soln;
-    sasktran2::twostream::Sources sources;
-    soln.init(natmo - 1);
-    sources.init(natmo - 1);
-    sasktran2::twostream::solve(input, soln);
-    sasktran2::twostream::post_process(input, viewing_zenith, azimuth, soln,
-                                       sources);
-
-    Eigen::VectorXd numerical_grad(natmo);
-
-    double eps = 1e-6;
-    for (int i = 0; i < natmo; i++) {
-        sasktran2::twostream::Input input_p;
-        input_p.atmosphere = atmo.get();
-        input_p.geometry_layers = layer_geo.get();
-        input_p.init(natmo - 1);
-        sasktran2::twostream::Sources sources_p;
-        sources_p.init(natmo - 1);
-
-        sasktran2::twostream::Solution soln_p;
-        soln_p.init(natmo - 1);
-
-        atmo->storage().leg_coeff(1, i, 0) += eps;
-
-        input_p.calculate(0);
-        input_p.csz = 0.6;
-        sasktran2::twostream::solve_layers(input_p, soln_p);
-        sasktran2::twostream::solve_bvp(input_p, soln_p);
-        sasktran2::twostream::post_process(input_p, viewing_zenith, azimuth,
-                                           soln_p, sources_p);
-
-        atmo->storage().leg_coeff(1, i, 0) -= eps;
-
-        numerical_grad(i) = (weights.dot(sources_p.H_plus[0].value) -
-                             weights.dot(sources.H_plus[0].value)) /
-                            eps;
-    }
-
-    sasktran2::twostream::backprop::b1(
-        input, sources.H_plus[0].d_b1.transpose().cwiseProduct(weights),
-        grad_map);
-
-    for (int i = 0; i < natmo; i++) {
-        REQUIRE(abs(grad_map.d_b1(i) - numerical_grad(i)) < 1e-6);
     }
 }
 

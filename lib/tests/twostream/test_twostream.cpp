@@ -28,6 +28,7 @@ TEST_CASE("twostreamBenchmark", "[sktran_do][lowlevel][benchmark]") {
     sasktran2::atmosphere::AtmosphereGridStorageFull<1> storage(nwavel,
                                                                 geo.size(), 16);
     sasktran2::atmosphere::Surface<1> surface(nwavel);
+    surface.brdf_args().setConstant(0.5);
 
     sasktran2::atmosphere::Atmosphere<1> atmo(std::move(storage),
                                               std::move(surface), true);
