@@ -21,6 +21,7 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
         wavelengths_nm: np.array,
         db_root: Path | None = None,
         backend: str = "sasktran_legacy",
+        max_legendre_moments: int = 64,
         **kwargs,
     ) -> None:
         """
@@ -53,7 +54,13 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
 
         hasher = hashlib.sha1()
         encoded = json.dumps(
-            {**kwargs, "wavelengths": wavelengths_nm}, sort_keys=True, cls=NumpyEncoder
+            {
+                **kwargs,
+                "wavelengths": wavelengths_nm,
+                "max_legendre_moments": max_legendre_moments,
+            },
+            sort_keys=True,
+            cls=NumpyEncoder,
         ).encode()
         hasher.update(encoded)
         identifier = hasher.hexdigest()
@@ -73,6 +80,7 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
         self._refractive_index = refractive_index
         self._wavelengths_nm = wavelengths_nm
         self._backend = backend
+        self._max_legendre_moments = max_legendre_moments
 
         for arg in kwargs:
             if arg not in self._psize_args:
@@ -103,7 +111,7 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
             raise ImportError(msg) from err
 
         def _create_table(distribution, refractive_index_fn, wavelengths):
-            mie = MieWiscombe()
+            mie = MieWiscombe(max_legendre_moment=self._max_legendre_moments)
 
             vals = integrated_mie(
                 mie,
