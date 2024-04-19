@@ -286,6 +286,12 @@ namespace sasktran2::twostream {
             b.resize(nlyr * 2);
             a.resize(nlyr * 2);
 
+            e.setZero();
+            c.setZero();
+            d.setZero();
+            b.setZero();
+            a.setZero();
+
             gamma.resize(nlyr * 2);
             mu.resize(nlyr * 2);
             alpha.resize(nlyr * 2);
