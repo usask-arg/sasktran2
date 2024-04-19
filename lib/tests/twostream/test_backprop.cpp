@@ -66,7 +66,7 @@ TEST_CASE("Backprop_OpticalDepth", "[twostream][backprop]") {
 
     int natmo = atmo->storage().total_extinction.rows();
 
-    Eigen::RowVectorXd grad(atmo->num_deriv());
+    Eigen::RowVectorXd grad(3 * natmo);
     grad.setZero();
 
     sasktran2::twostream::backprop::GradientMap grad_map(*atmo, grad.data());
@@ -113,7 +113,7 @@ TEST_CASE("Backprop_SSA", "[twostream][backprop]") {
 
     int natmo = atmo->storage().total_extinction.rows();
 
-    Eigen::RowVectorXd grad(atmo->num_deriv());
+    Eigen::RowVectorXd grad(3 * natmo);
     grad.setZero();
 
     sasktran2::twostream::backprop::GradientMap grad_map(*atmo, grad.data());
@@ -160,7 +160,7 @@ TEST_CASE("Backprop_Homog", "[twostream][backprop]") {
 
     int natmo = atmo->storage().total_extinction.rows();
 
-    Eigen::RowVectorXd grad(atmo->num_deriv());
+    Eigen::RowVectorXd grad(3 * natmo);
     grad.setZero();
 
     sasktran2::twostream::backprop::GradientMap grad_map(*atmo, grad.data());
@@ -261,7 +261,7 @@ TEST_CASE("Backprop_Particular", "[twostream][backprop]") {
 
     int natmo = atmo->storage().total_extinction.rows();
 
-    Eigen::RowVectorXd grad(atmo->num_deriv());
+    Eigen::RowVectorXd grad(3 * natmo);
     grad.setZero();
 
     sasktran2::twostream::backprop::GradientMap grad_map(*atmo, grad.data());
@@ -525,7 +525,7 @@ TEST_CASE("Backprop_Transmission", "[twostream][backprop]") {
 
     int natmo = atmo->storage().total_extinction.rows();
 
-    Eigen::RowVectorXd grad(atmo->num_deriv());
+    Eigen::RowVectorXd grad(3 * natmo);
     grad.setZero();
 
     sasktran2::twostream::backprop::GradientMap grad_map(*atmo, grad.data());
@@ -574,7 +574,7 @@ TEST_CASE("Backprop_Secant", "[twostream][backprop]") {
 
     int natmo = atmo->storage().total_extinction.rows();
 
-    Eigen::RowVectorXd grad(atmo->num_deriv());
+    Eigen::RowVectorXd grad(3 * natmo);
     grad.setZero();
 
     sasktran2::twostream::backprop::GradientMap grad_map(*atmo, grad.data());
