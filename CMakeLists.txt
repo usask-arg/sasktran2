@@ -239,6 +239,8 @@ endif()
 
 if(WIN32)
   target_compile_options(sasktran2BuildProperties INTERFACE /bigobj)
+  target_compile_options(sasktran2BuildProperties
+                         INTERFACE /d2ReducedOptimizeHugeFunctions)
 endif()
 
 # -------- END LAPACK FINDING -------
