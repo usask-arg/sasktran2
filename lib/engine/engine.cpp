@@ -151,6 +151,17 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
                 *m_raytracer, *m_geometry));
         m_los_source_terms.push_back(
             m_source_terms[m_source_terms.size() - 1].get());
+    } else if (m_config.multiple_scatter_source() ==
+               sasktran2::Config::MultipleScatterSource::twostream) {
+        if constexpr (NSTOKES == 1) {
+            m_source_terms.emplace_back(
+                std::make_unique<TwoStreamSource<NSTOKES>>(*m_geometry));
+            m_los_source_terms.push_back(
+                m_source_terms[m_source_terms.size() - 1].get());
+        } else {
+            spdlog::error(
+                "TwoStreamSource is only implemented for NSTOKES = 1");
+        }
     }
 
     for (auto& source : m_source_terms) {

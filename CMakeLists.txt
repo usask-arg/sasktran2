@@ -239,6 +239,8 @@ endif()
 
 if(WIN32)
   target_compile_options(sasktran2BuildProperties INTERFACE /bigobj)
+  target_compile_definitions(sasktran2BuildProperties
+                             INTERFACE EIGEN_STRONG_INLINE=inline)
 endif()
 
 # -------- END LAPACK FINDING -------

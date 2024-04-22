@@ -44,7 +44,12 @@ namespace sasktran2 {
          *  'none' Removes the multiple scatter source from the calculation.
          *
          */
-        enum class MultipleScatterSource { discrete_ordinates, hr, none };
+        enum class MultipleScatterSource {
+            discrete_ordinates,
+            hr,
+            twostream,
+            none
+        };
 
         /** Enum that determines the accuracy of the weighting function solution
          * within the model.  The exact effect of each level is determined

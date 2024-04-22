@@ -8,6 +8,7 @@ void init_grids(py::module_& m) {
     py::enum_<sasktran2::grids::interpolation>(m, "InterpolationMethod")
         .value("ShellInterpolation", sasktran2::grids::interpolation::shell)
         .value("LinearInterpolation", sasktran2::grids::interpolation::linear)
+        .value("LowerInterpolation", sasktran2::grids::interpolation::lower)
         .export_values();
 
     py::enum_<sasktran2::grids::gridspacing>(m, "GridSpacing")

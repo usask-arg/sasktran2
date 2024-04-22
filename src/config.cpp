@@ -9,6 +9,7 @@ void init_config(py::module_& m) {
                                                         "MultipleScatterSource")
         .value("DiscreteOrdinates",
                sasktran2::Config::MultipleScatterSource::discrete_ordinates)
+        .value("TwoStream", sasktran2::Config::MultipleScatterSource::twostream)
         .value("SuccessiveOrders", sasktran2::Config::MultipleScatterSource::hr)
         .value("NoSource", sasktran2::Config::MultipleScatterSource::none)
         .export_values();
