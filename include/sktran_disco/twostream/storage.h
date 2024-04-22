@@ -23,6 +23,7 @@ namespace sasktran2::twostream {
 
         void resize(int n) {
             value.resize(n);
+            value.setZero();
 
             if constexpr (ssa_deriv) {
                 d_ssa.resize(n);
@@ -280,6 +281,9 @@ namespace sasktran2::twostream {
             z.resize(nlyr * 2, 1);
             rhs.resize(nlyr * 2, 1);
 
+            z.setZero();
+            rhs.setZero();
+
             e.resize(nlyr * 2);
             c.resize(nlyr * 2);
             d.resize(nlyr * 2);
@@ -296,6 +300,11 @@ namespace sasktran2::twostream {
             mu.resize(nlyr * 2);
             alpha.resize(nlyr * 2);
             beta.resize(nlyr * 2);
+
+            gamma.setZero();
+            mu.setZero();
+            alpha.setZero();
+            beta.setZero();
 
             d_G_plus_top.resize(nlyr);
             d_G_plus_bottom.resize(nlyr);
@@ -474,6 +483,7 @@ namespace sasktran2::twostream {
 
             for (auto& d : d_bvp_coeff) {
                 d.resize(nlyr * 2);
+                d.setZero();
             }
         }
     };

@@ -32,10 +32,6 @@ int sasktran_disco::la::dgbsv_pentadiagonal(
 
     Eigen::Map<Eigen::MatrixXd> y(B, N, NRHS);
 
-    if (transpose) {
-        y.setConstant(1.0);
-    }
-
     mu(0) = d(0);
     alpha(0) = a(0) / mu(0);
 
