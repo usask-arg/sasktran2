@@ -5,7 +5,6 @@ from sasktran2.atmosphere import (
     InterpolatedDerivativeMapping,
     NativeGridDerivative,
 )
-from sasktran2.optical import pressure_temperature_to_numberdensity
 from sasktran2.optical.rayleigh import rayleigh_cross_section_bates
 from sasktran2.polarization import LegendreStorageView
 
@@ -91,9 +90,7 @@ class Rayleigh(Constituent):
             raise ValueError(msg)
 
         # Get the number density from the atmosphere object at the grid points
-        num_dens = pressure_temperature_to_numberdensity(
-            atmo.pressure_pa, atmo.temperature_k
-        )
+        num_dens = atmo.state_equation.air_numberdensity["N"]
 
         scattering_xs, king_factor = self._rayleigh_cross_fn(
             atmo.wavelengths_nm / 1000, **self._fn_kwargs
@@ -138,9 +135,8 @@ class Rayleigh(Constituent):
             raise ValueError(msg)
 
     def register_derivative(self, atmo: sk.Atmosphere, name: str):  # noqa: ARG002
-        N, dN_dP, dN_dT = pressure_temperature_to_numberdensity(
-            atmo.pressure_pa, atmo.temperature_k, include_derivatives=True
-        )
+        num_dens = atmo.state_equation.air_numberdensity
+        N = num_dens["N"]
 
         derivs = {}
 
@@ -154,10 +150,10 @@ class Rayleigh(Constituent):
         d_vals = []
         if atmo.calculate_pressure_derivative:
             deriv_names.append("pressure_pa")
-            d_vals.append(dN_dP)
+            d_vals.append(num_dens["dN_dP"])
         if atmo.calculate_temperature_derivative:
             deriv_names.append("temperature_k")
-            d_vals.append(dN_dT)
+            d_vals.append(num_dens["dN_dT"])
 
         for deriv_name, vert_factor in zip(deriv_names, d_vals, strict=True):
             derivs[deriv_name] = InterpolatedDerivativeMapping(

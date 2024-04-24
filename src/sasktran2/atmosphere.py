@@ -12,6 +12,7 @@ from sasktran2.units import (
     wavenumber_cminv_to_wavlength_nm,
     wavlength_nm_to_wavenumber_cminv,
 )
+from sasktran2.util.state import EquationOfState
 
 
 @dataclass
@@ -234,6 +235,7 @@ class Atmosphere:
         calculate_derivatives: bool = True,
         pressure_derivative: bool = True,
         temperature_derivative: bool = True,
+        specific_humidity_derivative: bool = True,
         legendre_derivative: bool = True,
     ):
         """
@@ -290,6 +292,7 @@ class Atmosphere:
         self._pressure_derivative = pressure_derivative
         self._temperature_derivative = temperature_derivative
         self._legendre_derivative = legendre_derivative
+        self._specific_humidity_derivative = specific_humidity_derivative
 
         if self._nstokes == 1:
             self._atmosphere = sk.AtmosphereStokes_1(
@@ -306,8 +309,7 @@ class Atmosphere:
 
         self._storage_needs_reset = False
 
-        self._pressure_pa = None
-        self._temperature_k = None
+        self._equation_of_state = EquationOfState()
 
         self._model_geometry = model_geometry
         self._config = config
@@ -382,6 +384,17 @@ class Atmosphere:
         return self._pressure_derivative
 
     @property
+    def calculate_specific_humidity_derivative(self) -> bool:
+        """
+        True if we are calculating the derivative with respect to specific humidity
+
+        Returns
+        -------
+        bool
+        """
+        return self._specific_humidity_derivative
+
+    @property
     def storage(
         self,
     ) -> sk.AtmosphereStorageStokes_1 | sk.AtmosphereStorageStokes_3:
@@ -414,11 +427,11 @@ class Atmosphere:
         -------
         np.array
         """
-        return self._temperature_k
+        return self._equation_of_state.temperature_k
 
     @temperature_k.setter
     def temperature_k(self, temp: np.array):
-        self._temperature_k = temp
+        self._equation_of_state.temperature_k = temp
 
     @property
     def pressure_pa(self) -> np.array:
@@ -429,11 +442,37 @@ class Atmosphere:
         -------
         np.array
         """
-        return self._pressure_pa
+        return self._equation_of_state.pressure_pa
+
+    @property
+    def specific_humidity(self) -> np.array:
+        """
+        Specific humidity on the same grid as :py:attr:`~model_geometry`
+
+        Returns
+        -------
+        np.array
+        """
+        return self._equation_of_state.specific_humidity
+
+    @property
+    def state_equation(self) -> EquationOfState:
+        """
+        The equation of state object which contains the temperature, pressure, and specific humidity
+
+        Returns
+        -------
+        EquationOfState
+        """
+        return self._equation_of_state
+
+    @specific_humidity.setter
+    def specific_humidity(self, sh: np.array):
+        self._equation_of_state.specific_humidity = sh
 
     @pressure_pa.setter
     def pressure_pa(self, pres: np.array):
-        self._pressure_pa = pres
+        self._equation_of_state.pressure_pa = pres
 
     @property
     def wavelengths_nm(self) -> np.ndarray | None:
