@@ -127,7 +127,7 @@ def test_specific_humidity_wf():
 
         radiance = sk.test_util.wf.numeric_wf(
             atmosphere.specific_humidity,
-            0.01,
+            0.1,
             engine,
             atmosphere,
             "wf_specific_humidity",
