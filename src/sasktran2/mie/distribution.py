@@ -1,0 +1,215 @@
+import numpy as np
+import scipy.integrate as integrate
+import xarray as xr
+from scipy.stats import rv_continuous
+
+from sasktran2 import mie
+from sasktran2.legendre import compute_greek_coefficients
+from sasktran2.mie import MieOutput
+
+
+def _post_process(total: dict, wavelengths):
+    """
+    Internal method to post-process the Mie solution.  This involves transforming the quantities that we integrate over
+    to the relevant bulk properties and applying the necessary normalizations.
+        Parameters
+    ----------
+    total : dict
+        Dictionary containing calculated and integrated mie parameters
+    wavelengths : np.array
+        Wavelengths of interest
+
+    """
+    k = 2 * np.pi / wavelengths
+    c = 4 * np.pi / (2 * k**2 * total["xs_scattering"])
+
+    total["p11"] *= c
+    total["p12"] *= c
+    total["p33"] *= c
+    total["p34"] *= c
+
+    return
+
+
+def _integrable_parameters(output: MieOutput, pdf, x):
+    """
+    Helper function to set up the parameters to be integrated
+
+    Parameters
+    ----------
+    output : MieOutput
+        MieOutput structure containing angles, siza parameters, refractive index, and calculated mie parameters
+    pdf : np.array
+        Probability distribution evaluated for radii x
+    x : np.array
+        Radii of the distribution
+    Returns
+    -------
+    Dict
+        Dictionary containing the keys 'p11', 'p12', 'p33', 'p34', 'Cext', 'Csca', and 'Cabs'
+    """
+
+    out = {}
+    s1 = output.values.S1
+    s2 = output.values.S2
+
+    # Phase function elements
+    # Note that P22 = P11 and P44 = p33 so we have 6 independent elements
+    out["p11"] = np.abs(s1) ** 2 + np.abs(s2) ** 2
+    out["p12"] = np.abs(s1) ** 2 - np.abs(s2) ** 2
+    out["p33"] = np.real(s1 * np.conj(s2) + s2 * np.conj(s1))
+    out["p34"] = np.real(-1j * (s1 * np.conj(s2) - s2 * np.conj(s1)))
+
+    # Cross sections in units of input radius**2
+    out["Cext"] = output.values.Qext * np.pi * np.square(x)
+    out["Csca"] = output.values.Qsca * np.pi * np.square(x)
+    out["Cabs"] = (output.values.Qext - output.values.Qsca) * np.pi * np.square(x)
+
+    for key in ["Cext", "Csca", "Cabs"]:
+        out[key] *= pdf
+
+    for key in ["p11", "p12", "p33", "p34"]:
+        out[key] *= np.transpose([pdf])
+
+    return out
+
+
+def integrate_mie(
+    my_mie: mie,
+    prob_dist: rv_continuous,
+    refrac_index_fn,
+    wavelengths,
+    num_angles=1801,
+    num_quad=1024,
+    maxintquantile=0.99999,
+    compute_coeffs=False,
+    num_coeffs=1,
+):
+    """
+    Integrates the Mie parameters over an arbitrary particle size distribution, returning cross sections and phase matrices
+      at a set of wavelengths.
+
+    Note that the units of the input parameters are left arbitrary, but they must be consistent between each other,
+    i.e., if wavelengths is specified in nm it is expected that the particle size distribution will be as a function
+    of nm.
+
+    Parameters
+    ----------
+    mie : sk.Mie
+        Internal Mie algorithms to use
+    prob_dist : rv_continuous
+        Instance of a probability distribution to integrate over.  Distribution must be specified in the same units
+        as wavelengths
+    refrac_index_fn : fn
+        Function taking in one argument (wavelength) and returning a complex number for refractive index at that
+        wavelength.  Function argument should be in the same units as wavelengths.
+    wavelengths : np.array
+        Wavelengths to calculate for.  Units should be consistent with prob_dist
+    num_angles: int, Optional
+        Number of angles at which to evaluate p11, p12, p33, p34
+    num_quad : int, Optional
+        Number of quadrature points to use when integrating over particle size.  Default is 1024
+    maxintquantile : float
+        Used to determine the maximum radius to use in integration.  A value of 0.99 means that at least 99% of the
+        probability distribution area multipied by radius**2 will be included within the integration bounds.  Default
+        0.99999
+    compute_coeffs : bool
+        Option to also compute and return the greek coefficients. Default False.
+    num_coeffes : int
+        Optional parameter, maximum number of coefficients to return in the expansion. Default 1.
+    Returns
+    -------
+    xr.Dataset
+        Dataset containing the keys 'p11', 'p12', 'p33', 'p34', 'xs_total', 'xs_absorption', and 'xs_scattering'
+        All scattering cross sections will be in units of wavelength**2. If compute_coeffs is True, will also
+        contain keys 'lm_a1', 'lm_a2', 'lm_a3', 'lm_a4', 'lm_b1', and 'lm_b2'.
+    """
+
+    angles = np.linspace(0, 180, num_angles)
+
+    # TODO FROM HERE
+    norm = integrate.quad(
+        lambda x: prob_dist.pdf(x) * x**2, 0, 1e25, points=(prob_dist.mean())
+    )[0]
+
+    def pdf(x):
+        return prob_dist.pdf(x) * x**2 / norm
+
+    # We have to determine the maximum R to integrate to, this is apparently very challenging, what we do is
+    # calculate the CDF of repeatadly large values until it is greater than our threshold
+    max_r = prob_dist.mean()
+    while (
+        integrate.quad(pdf, 0, max_r * 2, points=(prob_dist.mean()))[0]
+        - integrate.quad(pdf, 0, max_r, points=(prob_dist.mean()))[0]
+    ) > (1 - maxintquantile):
+        max_r *= 2
+
+    from scipy.special import roots_legendre
+
+    x, w = roots_legendre(num_quad)
+    x = 0.5 * (x + 1) * max_r
+    w *= max_r / 2
+    # TODO TO HERE, need to fix
+
+    all_output = xr.Dataset(
+        {
+            "p11": (["wavelength", "angle"], np.zeros((len(wavelengths), len(angles)))),
+            "p12": (["wavelength", "angle"], np.zeros((len(wavelengths), len(angles)))),
+            "p33": (["wavelength", "angle"], np.zeros((len(wavelengths), len(angles)))),
+            "p34": (["wavelength", "angle"], np.zeros((len(wavelengths), len(angles)))),
+            "xs_total": (["wavelength"], np.zeros(len(wavelengths))),
+            "xs_scattering": (["wavelength"], np.zeros(len(wavelengths))),
+            "xs_absorption": (["wavelength"], np.zeros(len(wavelengths))),
+        },
+        coords={"wavelength": wavelengths, "angle": angles},
+    )
+
+    for idx, wavelength in enumerate(wavelengths):
+        n = np.cdouble(refrac_index_fn(wavelength))
+
+        size_param = 2 * np.pi * x / wavelength
+        output = my_mie.calculate(size_param, n, np.cos(angles * np.pi / 180), False)
+        params = _integrable_parameters(output, prob_dist.pdf(x), x)
+
+        # performing the integral
+        all_output["p11"].values[idx, :] = np.sum(
+            params["p11"] * np.transpose([w]), axis=0
+        )
+        all_output["p12"].values[idx, :] = np.sum(
+            params["p12"] * np.transpose([w]), axis=0
+        )
+        all_output["p33"].values[idx, :] = np.sum(
+            params["p33"] * np.transpose([w]), axis=0
+        )
+        all_output["p34"].values[idx, :] = np.sum(
+            params["p34"] * np.transpose([w]), axis=0
+        )
+        all_output["xs_total"].values[idx] = np.sum(params["Cext"] * w)
+        all_output["xs_scattering"].values[idx] = np.sum(params["Csca"] * w)
+        all_output["xs_absorption"].values[idx] = np.sum(params["Cabs"] * w)
+    _post_process(all_output, wavelengths)
+    if compute_coeffs:
+        # Note that P22 = P11 and P44 = p33
+        lm_a1, lm_a2, lm_a3, lm_a4, lm_b1, lm_b2 = compute_greek_coefficients(
+            p11=all_output["p11"].data,
+            p12=all_output["p12"].data,
+            p22=all_output["p11"].data,
+            p33=all_output["p33"].data,
+            p34=all_output["p34"].data,
+            p44=all_output["p33"].data,
+            angle_grid=angles,
+            num_coeff=num_coeffs,
+        )
+        coeffs_output = xr.Dataset(
+            {
+                "lm_a1": (["wavelength", "num_terms"], lm_a1),
+                "lm_a2": (["wavelength", "num_terms"], lm_a2),
+                "lm_a3": (["wavelength", "num_terms"], lm_a3),
+                "lm_a4": (["wavelength", "num_terms"], lm_a4),
+                "lm_b1": (["wavelength", "num_terms"], lm_b1),
+                "lm_b2": (["wavelength", "num_terms"], lm_b2),
+            },
+            coords={"wavelength": wavelengths, "num_terms": np.arange(num_coeffs)},
+        )
+        all_output = all_output.merge(coeffs_output)
+    return all_output

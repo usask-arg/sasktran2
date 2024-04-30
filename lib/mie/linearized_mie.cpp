@@ -247,9 +247,9 @@ namespace sasktran2::mie {
             a_hat2.rowwise().replicate(cos_angles.size());
         Eigen::MatrixXcd b_hat1_matrix =
             b_hat1.rowwise().replicate(cos_angles.size());
-        Eigen::MatrixXd mu_matrix =
+        Eigen::MatrixXd mu_matrix_temp =
             cos_angles.rowwise().replicate(size_param.size());
-        mu_matrix.array() = mu_matrix.transpose();
+        Eigen::MatrixXd mu_matrix = mu_matrix_temp.transpose();
 
         S1 = 3.0 / 2.0 * pow(size_param_matrix.array(), 3) *
              (a_hat1_matrix.array() +

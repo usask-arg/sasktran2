@@ -69,6 +69,15 @@ TEST_CASE("LinMie An Bn test", "[sasktran2][mie]") {
 TEST_CASE("LinMie multiple size_params", "[sasktran2][mie]") {
     auto mie = sasktran2::mie::LinearizedMie();
 
+    auto size_param_og = Eigen::VectorXd::LinSpaced(2, 0.0004317428463995357,
+                                                    0.0022637105717340984);
+    auto refractive_index_og = std::complex<double>(1, -0.1);
+    Eigen::VectorXd angles_og = Eigen::VectorXd::LinSpaced(15, 0, 180.0);
+    Eigen::VectorXd cos_angles_og = cos(angles_og.array() * EIGEN_PI / 180.0);
+
+    auto result_og =
+        mie.calculate(size_param_og, refractive_index_og, cos_angles_og, true);
+
     auto size_param = Eigen::VectorXd::LinSpaced(2, 0.101, 0.2);
     auto refractive_index = std::complex<double>(0.75, 0.0);
     Eigen::VectorXd angles = Eigen::VectorXd::LinSpaced(7, 0, 180.0);
