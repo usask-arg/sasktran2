@@ -94,6 +94,9 @@ template <int NSTOKES> class Sasktran2 : public Sasktran2Interface {
                   viewing_rays)
         : m_config(config), m_viewing_geometry(viewing_rays),
           m_geometry(geometry) {
+        // Validate config
+        m_config.validate_config();
+
         // First create the ray tracer
         construct_raytracer();
 

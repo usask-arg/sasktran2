@@ -256,32 +256,45 @@ namespace sasktran2::hr {
     template <int NSTOKES>
     void
     IncomingOutgoingSpherePair<NSTOKES>::calculate_ground_scattering_matrix(
-        const sasktran2::atmosphere::Surface& surface,
+        const sasktran2::atmosphere::Surface<NSTOKES>& surface,
         const std::vector<std::pair<int, double>>& index_weights,
         const sasktran2::Location& loc, int wavelidx,
         double* phase_storage_location) const {
         Eigen::Map<Eigen::MatrixXd> phase_matrix(
             phase_storage_location, m_legendre_scat_mats[0][0].rows(),
             m_legendre_scat_mats[0][0].cols());
-
-        // TODO: update for BRDF
-
-        double albedo = surface.albedo()[wavelidx];
-
-        // scattering matrix elements are albedo/pi * cos(theta),
+        // scattering matrix elements are brdf * mu_in,
         // but quadrature is sut up for 4pi normalization so we multiply this by
         // 4pi
 
         phase_matrix.setZero();
 
-        // right now just lambertian, so only scalar
+        // Right now just scalar BRDF, TODO: for polarized
         for (int i = 0; i < phase_matrix.cols(); i += NSTOKES) {
-            double cos_theta = loc.cos_zenith_angle(
-                m_incoming_sphere->get_quad_position(i / NSTOKES));
+            Eigen::Vector3d incoming =
+                m_incoming_sphere->get_quad_position(i / NSTOKES);
+
+            double mu_in = loc.cos_zenith_angle(incoming);
 
             for (int j = 0; j < phase_matrix.rows(); j += NSTOKES) {
+                Eigen::Vector3d outgoing =
+                    m_outgoing_sphere->get_quad_position(j / NSTOKES);
+
+                double mu_out = loc.cos_zenith_angle(outgoing);
+
+                Eigen::Vector3d horiz_in =
+                    (incoming - mu_in * loc.position.normalized()).normalized();
+                Eigen::Vector3d horiz_out =
+                    (outgoing - mu_out * loc.position.normalized())
+                        .normalized();
+
+                double phi_diff = EIGEN_PI - acos(horiz_in.dot(horiz_out));
+
+                Eigen::Matrix<double, NSTOKES, NSTOKES> brdf =
+                    surface.brdf(wavelidx, mu_in, mu_out, phi_diff);
+
                 phase_matrix(j, i) =
-                    4 * albedo * cos_theta *
+                    4 * EIGEN_PI * brdf(0, 0) * mu_in *
                     m_incoming_sphere->quadrature_weight(i / NSTOKES);
             }
         }

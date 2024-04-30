@@ -4,43 +4,21 @@
 namespace sasktran_disco {
     // Linear algebra namespace.
     namespace la {
-        // Used to index a submatrix of some larger matrix. Essentially just
-        // calls  mat(i + tl_i, j + tl_j) on any index operation (i, j).
-        template <class MatrixClass> class MatrixBlock {
-          public:
-            MatrixBlock(MatrixClass& mat, uint tl_i, uint tl_j, uint rows,
-                        uint cols)
-                : M_I0(tl_i), M_J0(tl_j), M_ROWS(rows), M_COLS(cols),
-                  M_IS_MATRIX(true), m_mat(mat) {
-                // empty
-            }
-            MatrixBlock(MatrixClass& mat, uint tl_i, uint rows, uint cols)
-                : M_I0(tl_i), M_ROWS(rows), M_COLS(cols), M_IS_MATRIX(false),
-                  m_mat(mat) {
-                // empty
-            }
-            inline double& operator()(StreamIndex i, SolutionIndex j) {
-                return m_mat(M_I0 + i, M_J0 + j);
-            }
-            inline double operator()(StreamIndex i, SolutionIndex j) const {
-                return m_mat(M_I0 + i, M_J0 + j);
-            }
-            inline double& operator[](StreamIndex i) { return m_mat[M_I0 + i]; }
-            inline double operator[](StreamIndex i) const {
-                return m_mat[M_I0 + i];
-            }
-
-          private:
-            const bool M_IS_MATRIX;
-            const uint M_I0, M_J0, M_ROWS, M_COLS;
-            MatrixClass& m_mat;
-        };
-
-        // Used for storing the boundary-value-problem (BVP) matrix. This
-        // matrix is block-tridiagonal and stored according to the LAPACK
-        // band storage scheme.
+        /**
+         * @brief Class used to store the boundary value problem matrix that is
+         * band diagonal
+         *
+         * @tparam NSTOKES
+         * @tparam CNSTR
+         */
         template <int NSTOKES, int CNSTR = -1> class BVPMatrix {
-          public: // Constructors and destructor
+          public:
+            /**
+             * @brief Construct a new BVPMatrix object
+             *
+             * @param NSTR Number of streams
+             * @param NLYR Number of layers
+             */
             BVPMatrix(uint NSTR, uint NLYR)
                 : M_NCD(3 * NSTR * NSTOKES / 2 - 1),
                   M_NCOLS(NSTR * NSTOKES * NLYR),
@@ -60,40 +38,30 @@ namespace sasktran_disco {
             inline double operator()(uint i, uint j) const {
                 return m_data[2 * M_NCD + i + j * M_NRM1];
             }
+
+            /**
+             * @brief Set boundary matrix to zero
+             *
+             */
             inline void setZero() const {
                 std::fill_n(m_data.get(), M_NCOLS * M_NROWS, 0.0);
             }
 
-            inline void multiplyVector(const Eigen::VectorXd& rhs,
-                                       Eigen::VectorXd& result) {
-                // TODO: Fix this
-                assert(result.size() == rhs.size());
-                assert(result.size() == (M_NSTR * M_NLYR));
-
-                result.setZero();
-
-                // We go through every non-zero element of the data array
-                for (int i = 2 * M_NCD; i < int(M_NROWS * M_NCOLS); ++i) {
-                    if (m_data[i] == 0) {
-                        continue;
-                    }
-                    // Internal array is a matrix (M_NROWS, M_NCOLS) convert to
-                    // this format
-                    int internal_row = i % M_NROWS;
-                    int internal_col = i / M_NROWS;
-
-                    // Each column in the internal array is a column of the band
-                    // matrix
-                    int external_row = internal_row + internal_col - 2 * M_NCD;
-                    int external_col = internal_col;
-
-                    result[external_row] += rhs[external_col] * m_data[i];
-                }
-            }
-
-            // Used to wrap a block within a BVPMatrix
+            /**
+             * @brief Class which represents a block in the boundary value
+             * matrix
+             *
+             */
             class Block {
-              public: // Constructor
+              public:
+                /**
+                 * @brief Construct a new Block object
+                 *
+                 * @param mat
+                 * @param b
+                 * @param nstr
+                 * @param nlyr
+                 */
                 Block(BVPMatrix& mat, BoundaryIndex b, uint nstr, uint nlyr)
                     : m_mat(mat) {
                     m_row_offset = (b == 0) ? 0
@@ -105,7 +73,7 @@ namespace sasktran_disco {
                                        : (b - 1) * nstr * NSTOKES;
                 }
 
-              public: // Interface
+              public:
                 inline double& operator()(StreamIndex i, SolutionIndex j) {
                     return m_mat(m_row_offset + i, m_col_offset + j);
                 }
@@ -113,67 +81,113 @@ namespace sasktran_disco {
                     return m_mat(m_row_offset + i, m_col_offset + j);
                 }
 
-              private: // Members
+              private:
                 uint m_row_offset;
                 uint m_col_offset;
                 BVPMatrix& m_mat;
             };
 
-            // Returns a block to the matrix with a top-left element (i0, j0).
-            inline MatrixBlock<BVPMatrix> block(uint i0, uint j0, uint rows,
-                                                uint cols) {
-                return MatrixBlock<BVPMatrix>(*this, i0, j0, rows, cols);
-            }
-
-            // Get the block corresponding to the given boundary index.
+            /**
+             * @brief Get the Block object for a given boundary index
+             *
+             * @param b
+             * @return Block
+             */
             inline Block getBlock(BoundaryIndex b) {
                 return Block(*this, b, M_NSTR, M_NLYR);
             }
 
-            // Returns mutable pointer to underlying data.
+            /**
+             * @brief Pointer to the underlying data
+             *
+             * @return double*
+             */
             inline double* data() { return m_data.get(); }
 
-            // Returns the number of elements in data
+            /**
+             * @brief Number of elements in data
+             *
+             * @return size_t
+             */
             inline size_t size() { return M_NSTR * NSTOKES * M_NLYR; }
 
-            // Returns the number of elements above/below the diagonal.
+            /**
+             * @brief Number of elements above/below the diagonal
+             *
+             * @return lapack_int
+             */
             inline lapack_int NCD() const { return M_NCD; }
-            // Returns the number of columns (band storage).
+
+            /**
+             * @brief Number of columns (band storage)
+             *
+             * @return lapack_int
+             */
             inline lapack_int N() const { return M_NCOLS; }
-            // Returns the leading dimension of this matrix (band storage).
-            // Here it is equivalent to the number of rows (**in band
-            // storage**).
+
+            /**
+             * @brief Leading dimension of the matrix (band storage)
+             *
+             * @return lapack_int
+             */
             inline lapack_int LD() const { return M_NROWS; }
 
           private: // Members
             // Number of elements above/below the diagonal
-            const uint M_NCD;
+            const uint M_NCD; /** Number of elements above/below the diagonal */
 
-            // The number of rows minus 1. Equivalent to M_NROWS-1
-            const uint M_NRM1;
+            const uint M_NRM1; /** Number of rows minus 1 */
 
-            // Number of rows in band-stored scheme
-            const uint M_NROWS;
+            const uint M_NROWS; /** Number of rows in band-storage scheme*/
 
-            // Number of columns in the original matrix (also in band-stored
-            // scheme)
-            const uint M_NCOLS;
+            const uint M_NCOLS; /** Number of columns in the original matrix
+                                   (also in band-storage scheme)*/
 
             const uint M_NSTR;
             const uint M_NLYR;
             std::unique_ptr<double[]> m_data;
         };
 
+        /**
+         * Equivalent to the LAPACK routine dgbsv, but with the additional
+         * constraint that the matrix is pentadiagonal this is used for the
+         * special 2-stream case
+         *
+         * @param N
+         * @param NRHS
+         * @param AB
+         * @param B
+         * @param LDB
+         * @param alpha
+         * @param beta
+         * @param z
+         * @param gamma
+         * @param mu
+         * @param transpose
+         * @return int
+         */
         int dgbsv_pentadiagonal(int N, int NRHS, double* AB, double* B, int LDB,
-                                Eigen::VectorXd alpha, Eigen::VectorXd beta,
-                                Eigen::MatrixXd z, Eigen::VectorXd gamma,
-                                Eigen::VectorXd mu);
+                                Eigen::VectorXd& alpha, Eigen::VectorXd& beta,
+                                Eigen::MatrixXd& z, Eigen::VectorXd& gamma,
+                                Eigen::VectorXd& mu, bool transpose);
 
     } // namespace la
 
-    // Need dense blocks of the BVP matrix for the derivative calculations
+    /**
+     * @brief Dense blocks of the BVP matrix used to propagate derivatives
+     *
+     * @tparam NSTOKES
+     * @tparam CNSTR
+     */
     template <int NSTOKES, int CNSTR = -1> class BVPMatrixDenseBlock {
       public:
+        /**
+         * @brief Construct a new BVPMatrixDenseBlock object
+         *
+         * @param b
+         * @param nstr
+         * @param nlyr
+         */
         BVPMatrixDenseBlock(BoundaryIndex b, uint nstr, uint nlyr) {
             m_b = b;
             if (b + 1 == nlyr) {
@@ -197,33 +211,39 @@ namespace sasktran_disco {
                                ? (nlyr * nstr * NSTOKES) - nstr * NSTOKES
                                : (b - 1) * nstr * NSTOKES;
         }
+
+        /**
+         * @brief Upper storage
+         *
+         * @return Eigen::MatrixXd&
+         */
         Eigen::MatrixXd& upper() { return m_upper_data; }
 
+        /**
+         * @brief Layer storage
+         *
+         * @return Eigen::MatrixXd&
+         */
         Eigen::MatrixXd& layer() { return m_data; }
 
+        /**
+         * @brief Set the block to zero
+         *
+         */
         inline void setZero() {
             m_data.setZero();
             m_upper_data.setZero();
         }
 
-        inline void multiplyVector(const Eigen::VectorXd& rhs,
-                                   Eigen::VectorXd& result) {
-            result.setZero();
-            for (uint i = 0; i < m_data.rows(); ++i) {
-                for (uint j = 0; j < m_data.cols(); ++j) {
-                    result[i + m_row_offset] +=
-                        rhs[j + m_col_offset] * m_data(i, j);
-                }
-            }
-
-            for (uint i = 0; i < m_upper_data.rows(); ++i) {
-                for (uint j = 0; j < m_upper_data.cols(); ++j) {
-                    result[i + m_upper_row_offset] +=
-                        rhs[j + m_upper_col_offset] * m_upper_data(i, j);
-                }
-            }
-        }
-
+        /**
+         * @brief Assigns the right hand side of the boundary value problem
+         *
+         * Basically takes d_b and subtracts off this block * b
+         *
+         * @param colindex
+         * @param d_b
+         * @param b
+         */
         inline void assign_rhs_d_bvp(int colindex, Eigen::MatrixXd& d_b,
                                      const Eigen::VectorXd& b) {
 

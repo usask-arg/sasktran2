@@ -1,5 +1,6 @@
 #include <pybind11/pybind11.h>
 #include <unsupported/Eigen/CXX11/Tensor>
+#include <pybind11/functional.h>
 #include <pybind11/eigen.h>
 #include <pybind11/eigen/tensor.h>
 #include <pybind11/stl.h>
@@ -27,7 +28,7 @@ void declareAtmosphere(py::module_& m, const std::string& suffix) {
                    storage) { return atmo.storage() = storage; })
         .def_property(
             "surface",
-            [](Atmosphere& atmo) -> sasktran2::atmosphere::Surface& {
+            [](Atmosphere& atmo) -> sasktran2::atmosphere::Surface<NSTOKES>& {
                 return atmo.surface();
             },
             nullptr);
@@ -90,6 +91,38 @@ void declareAtmosphereStorage(py::module_& m, const std::string& suffix) {
             });
 }
 
+template <int NSTOKES>
+void declareSurface(py::module_& m, const std::string& suffix) {
+    using Surface = sasktran2::atmosphere::Surface<NSTOKES>;
+
+    py::class_<Surface>(m, ("Surface" + suffix).c_str())
+        .def_property(
+            "max_azimuthal_order",
+            [](Surface& surface) -> int {
+                return surface.max_azimuthal_order();
+            },
+            nullptr)
+        .def_property("brdf", &Surface::brdf_object, &Surface::set_brdf_object)
+        .def_property(
+            "brdf_args",
+            [](Surface& surface) -> Eigen::MatrixXd& {
+                return surface.brdf_args();
+            },
+            nullptr)
+        .def_property(
+            "d_brdf_args",
+            [](Surface& surface) -> std::vector<Eigen::MatrixXd>& {
+                return surface.d_brdf_args();
+            },
+            nullptr)
+        .def_property(
+            "albedo",
+            [](Surface& surface) -> Eigen::MatrixXd& {
+                return surface.brdf_args();
+            },
+            nullptr);
+}
+
 void init_atmosphere(py::module_& m) {
     declareAtmosphere<1>(m, "Stokes_1");
     declareAtmosphere<3>(m, "Stokes_3");
@@ -97,13 +130,6 @@ void init_atmosphere(py::module_& m) {
     declareAtmosphereStorage<1>(m, "Stokes_1");
     declareAtmosphereStorage<3>(m, "Stokes_3");
 
-    py::class_<sasktran2::atmosphere::Surface>(m, "Surface")
-        .def(py::init<>())
-        .def_property(
-            "albedo",
-            [](sasktran2::atmosphere::Surface& surface) -> Eigen::VectorXd& {
-                return surface.albedo();
-            },
-            [](sasktran2::atmosphere::Surface& surface,
-               const Eigen::VectorXd& albedo) { surface.albedo() = albedo; });
+    declareSurface<1>(m, "Stokes_1");
+    declareSurface<3>(m, "Stokes_3");
 }

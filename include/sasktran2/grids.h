@@ -10,15 +10,18 @@ namespace sasktran2 {
 namespace sasktran2::grids {
 
     /** Interpolation mode between layer boundaries.  Note that currently
-     * 'constant' is not fully implemented.
+     * 'shell' is not fully implemented.
      *
      * 'linear' performs linear interpolation between layer boundaries
      *
-     * 'constant' assumes the the layer consists of optical properties equal to
+     * 'shell' assumes the the layer consists of optical properties equal to
      * 0.5*lower + 0.5*upper
      *
+     * 'lower' assumes the the layer consists of optical properties equal to
+     *  the lower boundary
+     *
      */
-    enum interpolation { shell, linear };
+    enum interpolation { shell, linear, lower };
 
     /** Keeps track of the spacing between grid points within a grid.
      *
@@ -114,6 +117,14 @@ namespace sasktran2::grids {
          * @return  The internal grid
          */
         const Eigen::VectorXd& grid() const { return m_grid_values; }
+
+        /**
+         *
+         * @return const interpolation
+         */
+        const interpolation interpolation_method() const {
+            return m_interp_method;
+        }
     };
 
     /** An AltitudeGrid is essentially the same as a Grid except we give it a

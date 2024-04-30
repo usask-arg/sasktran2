@@ -1,4 +1,5 @@
 #include <sasktran2.h>
+#include "sasktran2/geometry.h"
 #include "sasktran2/viewinggeometry.h"
 
 namespace sasktran2::viewinggeometry {
@@ -16,17 +17,20 @@ namespace sasktran2::viewinggeometry {
         ViewingRay result;
 
         // Coordinate of ground point that has the correct angles
-        Eigen::Vector3d ground_vector = geometry.solar_coordinate_vector(
-            m_cos_sza, m_relative_azimuth_angle, 0.0);
+        Eigen::Vector3d ground_vector =
+            geometry.solar_coordinate_vector(m_cos_sza, 0.0, 0.0);
 
-        result.look_away = -1.0 * geometry.look_vector_from_azimuth(
-                                      ground_vector, m_relative_azimuth_angle,
-                                      m_cos_viewing_zenith);
+        result.look_away =
+            -1.0 * geometry.look_vector_from_azimuth(
+                       ground_vector, -(EIGEN_PI - m_relative_azimuth_angle),
+                       m_cos_viewing_zenith);
 
         double distance_from_ground = 0.0;
 
         if (geometry.geometry_type() ==
-            sasktran2::geometrytype::planeparallel) {
+                sasktran2::geometrytype::planeparallel ||
+            geometry.geometry_type() ==
+                sasktran2::geometrytype::pseudospherical) {
             // Distance from ground is a simple scaling of the observer altitude
             distance_from_ground = m_observer_altitude / m_cos_viewing_zenith;
 
@@ -47,6 +51,8 @@ namespace sasktran2::viewinggeometry {
 
         result.observer.position =
             ground_vector - result.look_away * distance_from_ground;
+
+        result.relative_azimuth = m_relative_azimuth_angle;
 
         return result;
     }

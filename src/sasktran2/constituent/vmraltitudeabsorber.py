@@ -5,7 +5,6 @@ from sasktran2.atmosphere import (
     InterpolatedDerivativeMapping,
     NativeGridDerivative,
 )
-from sasktran2.optical import pressure_temperature_to_numberdensity
 from sasktran2.optical.base import OpticalProperty
 from sasktran2.util.interpolation import linear_interpolating_matrix
 
@@ -62,9 +61,7 @@ class VMRAltitudeAbsorber(Constituent):
             msg = "Both pressure_pa and temperature_k have to be specified in the atmosphere to use VMRAltitudeAbsorber"
             raise ValueError(msg)
 
-        number_density = pressure_temperature_to_numberdensity(
-            atmo.pressure_pa, atmo.temperature_k
-        )
+        number_density = atmo.state_equation.dry_air_numberdensity["N"]
 
         interp_matrix = linear_interpolating_matrix(
             self._altitudes_m,
@@ -80,9 +77,10 @@ class VMRAltitudeAbsorber(Constituent):
         )
 
     def register_derivative(self, atmo: Atmosphere, name: str):
-        number_density, dN_dP, dN_dT = pressure_temperature_to_numberdensity(
-            atmo.pressure_pa, atmo.temperature_k, include_derivatives=True
-        )
+        dry_air_number_density = atmo.state_equation.dry_air_numberdensity
+
+        number_density = dry_air_number_density["N"]
+
         interp_matrix = linear_interpolating_matrix(
             self._altitudes_m,
             atmo.model_geometry.altitudes(),
@@ -107,14 +105,20 @@ class VMRAltitudeAbsorber(Constituent):
         interp_vmr = interp_matrix @ self._vmr
 
         deriv_names = []
+        d_vals = []
         if atmo.calculate_pressure_derivative:
             deriv_names.append("pressure_pa")
+            d_vals.append(dry_air_number_density["dN_dP"])
         if atmo.calculate_temperature_derivative:
             deriv_names.append("temperature_k")
+            d_vals.append(dry_air_number_density["dN_dT"])
+        if atmo.calculate_specific_humidity_derivative:
+            deriv_names.append("specific_humidity")
+            d_vals.append(dry_air_number_density["dN_dsh"])
 
         # Contributions from the change in number density due to a constant
         # VMR and changing pressure/temperature
-        for deriv_name, vert_factor in zip(deriv_names, [dN_dP, dN_dT]):
+        for deriv_name, vert_factor in zip(deriv_names, d_vals, strict=False):
             derivs[deriv_name] = InterpolatedDerivativeMapping(
                 NativeGridDerivative(
                     d_extinction=self._optical_quants.extinction,

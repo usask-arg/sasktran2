@@ -1,5 +1,5 @@
 # SASKTRAN
-[![Anaconda-Server Badge](https://anaconda.org/usask-arg/sasktran2/badges/version.svg)](https://anaconda.org/usask-arg/sasktran2)
+[![Anaconda-Server Badge](https://anaconda.org/conda-forge/sasktran2/badges/version.svg)](https://anaconda.org/conda-forge/sasktran2)
 [![Available on pypi](https://img.shields.io/pypi/v/sasktran2.svg)](https://pypi.python.org/pypi/sasktran2/)
 [![Documentation Status](https://readthedocs.org/projects/sasktran2/badge/?version=latest)](https://sasktran2.readthedocs.io/en/latest/?badge=latest)
 [![pre-commit.ci status](https://results.pre-commit.ci/badge/github/usask-arg/sasktran2/main.svg)](https://results.pre-commit.ci/latest/github/usask-arg/sasktran2/main)
@@ -15,9 +15,9 @@ improvements, full linearizations of atmospheric input properties, and an improv
 The preferred method to install SASKTRAN2 is through the pre-compiled Conda package
 
 ```
-conda install -c usask-arg -c conda-forge sasktran2
+conda install -c conda-forge sasktran2
 ```
-these packages are made available for Python versions 3.8, 3.9, 3.10, 3.11, 3.12 on Windows/Linux/Mac platforms.
+these packages are made available for Python versions 3.10, 3.11, 3.12 on Windows/Linux/Mac platforms.
 For Mac, both x86_64 and Arm packages are available.
 
 Wheels are also built for the same platforms and can be installed through,
@@ -54,7 +54,7 @@ pip install .
 Documentation can be found at https://sasktran2.readthedocs.io/
 
 ## License
-SASKTRAN2 is made available under the MIT license subject to the Commons Clause condition (see license.md). Effectively this is a MIT license restricted for academic and educational use, for commercial use please contact the package authors. Commerical level support may also be available for specific applications.
+SASKTRAN2 is made available under the MIT license.
 
 ## Acknowledgement
 We request that users of the model contact the authors before publishing results using SASKTRAN, and that the following publications are acknowledged:

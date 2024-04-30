@@ -2,6 +2,7 @@ import numpy as np
 
 import sasktran2 as sk
 from sasktran2.constants import K_BOLTZMANN
+from sasktran2.database.web import StandardDatabase
 
 from . import database
 
@@ -72,7 +73,7 @@ class O3DBM(database.OpticalDatabaseGenericAbsorber):
         OSError
             If the file could not be found
         """
-        dbm_file = sk.appconfig.database_root().joinpath("cross_sections/o3/dbm.nc")
+        dbm_file = StandardDatabase().path("cross_sections/o3/dbm.nc")
 
         if dbm_file.exists():
             super().__init__(dbm_file)
@@ -95,7 +96,7 @@ class NO2Vandaele(database.OpticalDatabaseGenericAbsorber):
         OSError
             If the Vandaele file cannot be found
         """
-        v_file = sk.appconfig.database_root().joinpath("cross_sections/no2/vandaele.nc")
+        v_file = StandardDatabase().path("cross_sections/no2/vandaele.nc")
 
         if v_file.exists():
             super().__init__(v_file)
@@ -135,9 +136,7 @@ class HITRANUV(database.OpticalDatabaseGenericAbsorber):
         OSError
             If the databases are not installed
         """
-        data_file = sk.appconfig.database_root().joinpath(
-            f"cross_sections/{name}/hitran{version}.nc"
-        )
+        data_file = StandardDatabase().path(f"cross_sections/{name}/hitran{version}.nc")
 
         if data_file.exists():
             super().__init__(data_file)
@@ -179,6 +178,34 @@ class HITRANTabulated(database.OpticalDatabaseGenericAbsorber):
             super().__init__(data_file)
         else:
             msg = f"Could not find HITRAN database for {name} at {data_file}"
+            raise OSError(msg)
+
+
+class HITRANCollision(database.OpticalDatabaseGenericAbsorber):
+    def __init__(self, name: str) -> None:
+        """
+        Loads collision induced absorption (CIA) cross sections compiled from data found at https://hitran.org/cia/.
+
+        This requires the extended databases to be downloaded, e.g. by running sk.appconfig.download_extended_databases()
+
+        Currently supported species are:
+
+            | O2O2
+
+        Parameters
+        ----------
+        name : str
+            Species name
+        """
+
+        data_file = StandardDatabase().path(
+            f"cross_sections/{name.lower()}/hitran_cia.nc"
+        )
+
+        if data_file.exists():
+            super().__init__(data_file)
+        else:
+            msg = f"Could not find HITRAN CIA database for {name} at {data_file}"
             raise OSError(msg)
 
 

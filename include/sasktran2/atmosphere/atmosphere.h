@@ -4,29 +4,9 @@
 #include <sasktran2/config.h>
 #include <sasktran2/atmosphere/grid_storage.h>
 #include <sasktran2/atmosphere/constituent.h>
+#include <sasktran2/atmosphere/surface.h>
 
 namespace sasktran2::atmosphere {
-    /** Class to represent the surface within the atmosphere.  Right now we just
-     * have a lambertian surface, plan to upgrade this later
-     *
-     */
-    class Surface {
-      private:
-        Eigen::VectorXd m_albedo;
-
-      public:
-        Surface() {}
-
-        Eigen::VectorXd& albedo() { return m_albedo; };
-        const Eigen::VectorXd& albedo() const { return m_albedo; }
-
-        void set_albedo(const Eigen::VectorXd& albedo) {
-            this->albedo() = albedo;
-        }
-
-        int num_deriv() const { return 1; }
-    };
-
     /** Essentially void base class for the Atmosphere to remove the NSTOKES
      * parameter for SWIG.
      *
@@ -48,7 +28,7 @@ namespace sasktran2::atmosphere {
       private:
         AtmosphereGridStorageFull<NSTOKES>
             m_storage;                /** The internal storage object */
-        Surface m_surface;            /** The surface */
+        Surface<NSTOKES> m_surface;   /** The surface */
         bool m_calculate_derivatives; /** True if we are going to be calculating
                                          derivatives */
       public:
@@ -59,7 +39,8 @@ namespace sasktran2::atmosphere {
          * @param calculate_derivatives
          */
         Atmosphere(AtmosphereGridStorageFull<NSTOKES>&& storage,
-                   Surface&& surface, bool calculate_derivatives = false);
+                   Surface<NSTOKES>&& surface,
+                   bool calculate_derivatives = false);
 
         /** Constructs the atmosphere storage from constituents
          *
@@ -71,7 +52,8 @@ namespace sasktran2::atmosphere {
          * @param calculate_derivatives
          */
         Atmosphere(const std::vector<Constituent>& constituents,
-                   Surface&& surface, const Eigen::VectorXd& wavelengths,
+                   Surface<NSTOKES>&& surface,
+                   const Eigen::VectorXd& wavelengths,
                    const sasktran2::Geometry1D& geometry,
                    const sasktran2::Config& config,
                    bool calculate_derivatives = false);
@@ -106,8 +88,8 @@ namespace sasktran2::atmosphere {
         AtmosphereGridStorageFull<NSTOKES>& storage() { return m_storage; }
         int num_wavel() const { return (int)m_storage.total_extinction.cols(); }
 
-        Surface& surface() { return m_surface; }
-        const Surface& surface() const { return m_surface; }
+        Surface<NSTOKES>& surface() { return m_surface; }
+        const Surface<NSTOKES>& surface() const { return m_surface; }
 
         // TODO: refactor the below functions into a derivative handler class of
         // some kind

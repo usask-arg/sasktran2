@@ -16,6 +16,7 @@ build:
   binary_relocation: true
   script_env:
     - CMAKE_BUILD_PARALLEL_LEVEL={{ cpu_count }}
+    - DO_STREAM_TEMPLATES=ON # [not win]
   number: {{ describe_number }}
   string: py_{{ py_version }}_{{ describe_hash }}_{{ describe_number }}
   script:
@@ -65,7 +66,6 @@ test:
   source_files:
     - tests
   commands:
-    - python -c "import sasktran2 as sk; sk.appconfig.download_standard_databases()"
     - python -m pytest
 
 about:

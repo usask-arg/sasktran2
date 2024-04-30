@@ -5,12 +5,12 @@ from sasktran2.atmosphere import (
     NativeGridDerivative,
     SurfaceDerivativeMapping,
 )
-from sasktran2.util.interpolation import linear_interpolating_matrix
 
-from .base import Constituent
+from ..base import Constituent
+from . import LambertianStokes_1, LambertianStokes_3, WavelengthInterpolatorMixin
 
 
-class LambertianSurface(Constituent):
+class LambertianSurface(Constituent, WavelengthInterpolatorMixin):
     def __init__(
         self,
         albedo: np.array,
@@ -40,22 +40,15 @@ class LambertianSurface(Constituent):
             interpolating outside the grid. "zero" will set the albedo to 0 outside of the
             grid boundaries, by default "zero"
         """
-        super().__init__()
-
-        self._out_of_bounds_mode = out_of_bounds_mode
+        Constituent.__init__(self)
+        WavelengthInterpolatorMixin.__init__(
+            self,
+            wavelengths_nm=wavelengths_nm,
+            wavenumbers_cminv=wavenumbers_cminv,
+            out_of_bounds_mode=out_of_bounds_mode,
+            param_length=len(np.atleast_1d(albedo)),
+        )
         self._albedo = np.atleast_1d(albedo)
-
-        if wavelengths_nm is not None:
-            self._x = np.atleast_1d(wavelengths_nm)
-            self._interp_var = "wavelengths_nm"
-        elif wavenumbers_cminv is not None:
-            self._x = np.atleast_1d(wavenumbers_cminv)
-            self._interp_var = "wavenumbers_cminv"
-        else:
-            if len(self._albedo) == 1:
-                self._interp_var = "constant"
-            else:
-                self._interp_var = "native"
 
     @property
     def albedo(self) -> np.array:
@@ -65,28 +58,15 @@ class LambertianSurface(Constituent):
     def albedo(self, albedo: np.array):
         self._albedo = np.atleast_1d(albedo)
 
-    def _interpolating_matrix(self, atmo: Atmosphere):
-        if self._interp_var == "constant":
-            # Don't have to interpolate, just assign the constant value
-            return np.ones_like(atmo.surface.albedo).reshape(-1, 1)
-        if self._interp_var == "native":
-            # Also can just assign the user value, but first make sure that it is the correct length
-            if len(self._albedo) != len(atmo.surface.albedo):
-                msg = "The number of albedo values must match the number of wavelengths in the atmosphere"
-                raise ValueError(msg)
-            return np.eye(len(self._albedo))
-        # Now we have to interpolate
-        grid_x = getattr(atmo, self._interp_var)
-
-        if grid_x is None:
-            msg = f"The atmosphere does not have {self._interp_var} defined, cannot interpolate the user albedo"
-            raise ValueError(msg)
-        return linear_interpolating_matrix(self._x, grid_x, self._out_of_bounds_mode)
-
     def add_to_atmosphere(self, atmo: Atmosphere):
+        atmo.surface.brdf = (
+            LambertianStokes_1() if atmo.nstokes == 1 else LambertianStokes_3()
+        )
+
         interp_matrix = self._interpolating_matrix(atmo)
 
-        atmo.surface.albedo[:] = interp_matrix @ self._albedo
+        atmo.surface.brdf_args[0, :] = interp_matrix @ self._albedo
+        atmo.surface.d_brdf_args[0][0, :] = 1
 
     def register_derivative(self, atmo: Atmosphere, name: str):
         # Start by constructing the interpolation matrix
@@ -95,7 +75,7 @@ class LambertianSurface(Constituent):
         derivs = {}
 
         derivs["albedo"] = SurfaceDerivativeMapping(
-            NativeGridDerivative(d_albedo=np.ones_like(atmo.surface.albedo)),
+            NativeGridDerivative(d_albedo=np.ones(atmo.num_wavel)),
             interpolating_matrix=interp_matrix,
             interp_dim="wavelength",
             result_dim=f"{name}_wavelength",

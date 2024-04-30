@@ -1,6 +1,7 @@
 #include "sasktran2/output.h"
 #include <sasktran2/geometry.h>
 #include <sasktran2/math/trig.h>
+#include <sasktran2/validation/validation.h>
 
 namespace sasktran2 {
     Coordinates::Coordinates(double cos_sza, double saa, double earth_radius,
@@ -31,6 +32,7 @@ namespace sasktran2 {
         }
 
         m_force_sun_z = force_sun_z;
+        validate();
     }
 
     Coordinates::Coordinates(Eigen::Vector3d ref_point_unit,
@@ -40,7 +42,30 @@ namespace sasktran2 {
         : m_z_unit(ref_point_unit), m_x_unit(ref_plane_unit),
           m_y_unit(ref_point_unit.cross(ref_plane_unit).normalized()),
           m_sun_unit(sun_unit), m_geotype(geotype),
-          m_earth_radius(earth_radius) {}
+          m_earth_radius(earth_radius) {
+        validate();
+    }
+
+    void Coordinates::validate() const {
+        if (m_earth_radius < 0) {
+            spdlog::critical("Invalid earth radius: {}", m_earth_radius);
+            sasktran2::validation::throw_configuration_error();
+        }
+
+        if (m_geotype == geometrytype::planeparallel) {
+            // Have to make sure that the SZA is not greater than 90, or that
+            // cos_sza is positive
+            double cos_sza = m_sun_unit.dot(m_z_unit);
+
+            if (cos_sza < 0) {
+                spdlog::critical(
+                    "Invalid solar zenith angle for planeparallel geometry, "
+                    "cos_sza: {}, and it should be greater than 0",
+                    cos_sza);
+                sasktran2::validation::throw_configuration_error();
+            }
+        }
+    }
 
     Eigen::Vector3d Coordinates::unit_vector_from_angles(double theta,
                                                          double phi) const {
@@ -97,6 +122,11 @@ namespace sasktran2 {
     Eigen::Vector3d
     Coordinates::solar_coordinate_vector(double cos_sza, double saa,
                                          double altitude) const {
+        if (m_geotype == sasktran2::geometrytype::planeparallel ||
+            m_geotype == sasktran2::geometrytype::pseudospherical) {
+            return m_z_unit * (altitude + m_earth_radius);
+        }
+
         // First find the plane to rotate the sun vector around
 
         Eigen::Vector3d normal = m_sun_unit.cross(m_z_unit);
@@ -136,9 +166,15 @@ namespace sasktran2 {
         const Eigen::Vector3d& location, double saa, double cos_viewing) const {
         // Calculate the normalized sun vector at the location
 
+        Eigen::Vector3d local_up;
+        if (m_geotype == sasktran2::geometrytype::spherical) {
+            local_up = location.normalized();
+        } else {
+            local_up = m_z_unit;
+        }
+
         Eigen::Vector3d sun_horiz =
-            m_sun_unit -
-            location.normalized() * (location.normalized().dot(m_sun_unit));
+            m_sun_unit - local_up * (local_up.dot(m_sun_unit));
 
         if (sun_horiz.norm() == 0) {
             // sun azimuth is ambiguous, and so we define? the x vector as
@@ -149,14 +185,14 @@ namespace sasktran2 {
         sun_horiz = sun_horiz.normalized();
 
         // Rotate the horizontal sun vector around SAA
-        Eigen::AngleAxis<double> azimuth_transform(saa, location.normalized());
+        Eigen::AngleAxis<double> azimuth_transform(-saa, local_up);
 
         Eigen::Vector3d horiz_look = azimuth_transform.matrix() * sun_horiz;
 
         double viewing_angle = sasktran2::math::PiOver2 - acos(-cos_viewing);
 
-        Eigen::AngleAxis<double> vertical_transform(
-            viewing_angle, location.normalized().cross(horiz_look));
+        Eigen::AngleAxis<double> vertical_transform(viewing_angle,
+                                                    local_up.cross(horiz_look));
 
         return vertical_transform.matrix() * horiz_look;
     }

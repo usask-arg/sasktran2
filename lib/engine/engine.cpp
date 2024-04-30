@@ -1,13 +1,30 @@
+#include "sasktran2/do_source.h"
+#include "sasktran2/geometry.h"
+#include "sasktran2/raytracing.h"
+#include "sasktran2/source_interface.h"
+#include <memory>
 #include <sasktran2.h>
+#include <sasktran2/validation/validation.h>
 #ifdef SKTRAN_OPENMP_SUPPORT
 #include <omp.h>
 #endif
 
 template <int NSTOKES> void Sasktran2<NSTOKES>::construct_raytracer() {
-    // TODO: Use config to determine what type of raytracer we are going to use
-    m_raytracer =
-        std::make_unique<sasktran2::raytracing::SphericalShellRayTracer>(
-            *m_geometry);
+    if (m_geometry->coordinates().geometry_type() ==
+        sasktran2::geometrytype::spherical) {
+        m_raytracer =
+            std::make_unique<sasktran2::raytracing::SphericalShellRayTracer>(
+                *m_geometry);
+    } else if (m_geometry->coordinates().geometry_type() ==
+                   sasktran2::geometrytype::planeparallel ||
+               m_geometry->coordinates().geometry_type() ==
+                   sasktran2::geometrytype::pseudospherical) {
+        m_raytracer =
+            std::make_unique<sasktran2::raytracing::PlaneParallelRayTracer>(
+                *m_geometry);
+    } else {
+        spdlog::error("Requested geometry type is not yet supported.");
+    }
 }
 
 template <int NSTOKES> void Sasktran2<NSTOKES>::construct_integrator() {
@@ -55,35 +72,73 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
 #ifdef SASKTRAN_DISCO_FULL_COMPILE
         if constexpr (NSTOKES == 1) {
             if (m_config.num_do_streams() == 2) {
-                m_source_terms.emplace_back(
-                    std::make_unique<
-                        sasktran2::DOSourceInterpolatedPostProcessing<NSTOKES,
-                                                                      2>>(
-                        *m_geometry, *m_raytracer));
+                if (m_geometry->coordinates().geometry_type() ==
+                    sasktran2::geometrytype::spherical) {
+                    m_source_terms.emplace_back(
+                        std::make_unique<
+                            sasktran2::DOSourceInterpolatedPostProcessing<
+                                NSTOKES, 2>>(*m_geometry, *m_raytracer));
+                } else {
+                    m_source_terms.emplace_back(
+                        std::make_unique<
+                            sasktran2::DOSourcePlaneParallelPostProcessing<
+                                NSTOKES, 2>>(*m_geometry));
+                }
             } else if (m_config.num_do_streams() == 4) {
-                m_source_terms.emplace_back(
-                    std::make_unique<
-                        sasktran2::DOSourceInterpolatedPostProcessing<NSTOKES,
-                                                                      4>>(
-                        *m_geometry, *m_raytracer));
+                if (m_geometry->coordinates().geometry_type() ==
+                    sasktran2::geometrytype::spherical) {
+                    m_source_terms.emplace_back(
+                        std::make_unique<
+                            sasktran2::DOSourceInterpolatedPostProcessing<
+                                NSTOKES, 4>>(*m_geometry, *m_raytracer));
+                } else {
+                    m_source_terms.emplace_back(
+                        std::make_unique<
+                            sasktran2::DOSourcePlaneParallelPostProcessing<
+                                NSTOKES, 4>>(*m_geometry));
+                }
             } else {
+                if (m_geometry->coordinates().geometry_type() ==
+                    sasktran2::geometrytype::spherical) {
+                    m_source_terms.emplace_back(
+                        std::make_unique<
+                            sasktran2::DOSourceInterpolatedPostProcessing<
+                                NSTOKES, -1>>(*m_geometry, *m_raytracer));
+                } else {
+                    m_source_terms.emplace_back(
+                        std::make_unique<
+                            sasktran2::DOSourcePlaneParallelPostProcessing<
+                                NSTOKES, -1>>(*m_geometry));
+                }
+            }
+        } else {
+            if (m_geometry->coordinates().geometry_type() ==
+                sasktran2::geometrytype::spherical) {
                 m_source_terms.emplace_back(
                     std::make_unique<
                         sasktran2::DOSourceInterpolatedPostProcessing<NSTOKES,
                                                                       -1>>(
                         *m_geometry, *m_raytracer));
+            } else {
+                m_source_terms.emplace_back(
+                    std::make_unique<
+                        sasktran2::DOSourcePlaneParallelPostProcessing<NSTOKES,
+                                                                       -1>>(
+                        *m_geometry));
             }
-        } else {
+        }
+#else
+        if (m_geometry->coordinates().geometry_type() ==
+            sasktran2::geometrytype::spherical) {
             m_source_terms.emplace_back(
                 std::make_unique<
                     sasktran2::DOSourceInterpolatedPostProcessing<NSTOKES, -1>>(
                     *m_geometry, *m_raytracer));
+        } else {
+            m_source_terms.emplace_back(
+                std::make_unique<sasktran2::DOSourcePlaneParallelPostProcessing<
+                    NSTOKES, -1>>(*m_geometry));
         }
-#else
-        m_source_terms.emplace_back(
-            std::make_unique<
-                sasktran2::DOSourceInterpolatedPostProcessing<NSTOKES, -1>>(
-                *m_geometry, *m_raytracer));
 
 #endif
 
@@ -96,6 +151,17 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
                 *m_raytracer, *m_geometry));
         m_los_source_terms.push_back(
             m_source_terms[m_source_terms.size() - 1].get());
+    } else if (m_config.multiple_scatter_source() ==
+               sasktran2::Config::MultipleScatterSource::twostream) {
+        if constexpr (NSTOKES == 1) {
+            m_source_terms.emplace_back(
+                std::make_unique<TwoStreamSource<NSTOKES>>(*m_geometry));
+            m_los_source_terms.push_back(
+                m_source_terms[m_source_terms.size() - 1].get());
+        } else {
+            spdlog::error(
+                "TwoStreamSource is only implemented for NSTOKES = 1");
+        }
     }
 
     for (auto& source : m_source_terms) {
@@ -142,9 +208,52 @@ void Sasktran2<NSTOKES>::validate_input_atmosphere(
     // NSTOKES requested
 
     // Check that the atmosphere parameters have the correct dimensions
+    if (atmosphere.storage().total_extinction.rows() != m_geometry->size()) {
+        spdlog::error(
+            "Atmosphere total extinction does not have the correct dimensions");
+        throw std::runtime_error(
+            "Invalid input. Check log for more information");
+    }
+
+    if (atmosphere.storage().ssa.rows() != m_geometry->size()) {
+        spdlog::error("Atmosphere single scatter albedo does not have the "
+                      "correct dimensions");
+        throw std::runtime_error(
+            "Invalid input. Check log for more information");
+    }
+
+    if (atmosphere.storage().total_extinction.cols() !=
+        atmosphere.num_wavel()) {
+        spdlog::error(
+            "Atmosphere total extinction does not have the correct dimensions");
+        throw std::runtime_error(
+            "Invalid input. Check log for more information");
+    }
+
+    if (atmosphere.storage().ssa.cols() != atmosphere.num_wavel()) {
+        spdlog::error("Atmosphere single scatter albedo does not have the "
+                      "correct dimensions");
+        throw std::runtime_error(
+            "Invalid input. Check log for more information");
+    }
+
+    // Verify that all extinction values are finite and greater than 0
+    sasktran2::validation::verify_finite(atmosphere.storage().total_extinction,
+                                         "Atmosphere total extinction");
+    sasktran2::validation::verify_greater_than(
+        atmosphere.storage().total_extinction, "Atmosphere total extinction",
+        0.0);
+
+    // Verify that the SSA values are finite and betwen 0 and 1
+    sasktran2::validation::verify_finite(atmosphere.storage().ssa,
+                                         "Atmosphere single scatter albedo");
+    sasktran2::validation::verify_greater_than(
+        atmosphere.storage().ssa, "Atmosphere single scatter albedo", 0.0);
+    sasktran2::validation::verify_less_than(
+        atmosphere.storage().ssa, "Atmosphere single scatter albedo", 1.0);
 
     // Check that the atmosphere geometry matches the global geometry
-    if (atmosphere.num_wavel() != atmosphere.surface().albedo().size()) {
+    if (atmosphere.num_wavel() != atmosphere.surface().brdf_args().cols()) {
         spdlog::error("Atmosphere albedo does not have the correct dimensions");
     }
 }
@@ -209,6 +318,13 @@ void Sasktran2<NSTOKES>::calculate_radiance(
             m_source_integrator->integrate(radiance[ray_threadidx],
                                            m_los_source_terms, w, i, thread_idx,
                                            ray_threadidx);
+
+            // Add on any start of ray sources
+            for (const SourceTermInterface<NSTOKES>* source :
+                 m_los_source_terms) {
+                source->start_of_ray_source(w, i, thread_idx, ray_threadidx,
+                                            radiance[ray_threadidx]);
+            }
 
             // And assign it to the output
             output.assign(radiance[ray_threadidx], i, w);

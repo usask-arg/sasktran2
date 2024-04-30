@@ -17,10 +17,20 @@ namespace sasktran2 {
          * 'solartable' Creates a solar transmission table at a set of grid
          * points.  NOT YET IMPLEMENTED.
          *
+         * 'discrete_ordinates' Lets the discrete ordinates solution include the
+         * single scatter term.  Only has an effect in Plane Parallel or
+         * PseudoSpherical geometry where the multiple scatter source is also
+         * discrete_ordinates
+         *
          * 'none' Removes the single scatter source from the integration.
          *
          */
-        enum class SingleScatterSource { exact, solartable, none };
+        enum class SingleScatterSource {
+            exact,
+            solartable,
+            discrete_ordinates,
+            none
+        };
 
         /** Enum determining the type of multiple scatter source to be included
          * within the model.
@@ -34,7 +44,12 @@ namespace sasktran2 {
          *  'none' Removes the multiple scatter source from the calculation.
          *
          */
-        enum class MultipleScatterSource { discrete_ordinates, hr, none };
+        enum class MultipleScatterSource {
+            discrete_ordinates,
+            hr,
+            twostream,
+            none
+        };
 
         /** Enum that determines the accuracy of the weighting function solution
          * within the model.  The exact effect of each level is determined
@@ -92,6 +107,17 @@ namespace sasktran2 {
          *
          */
         enum class ThreadingModel { wavelength, source };
+
+        /** Enum determining the level of input validation to perform
+         *
+         *     'strict' Performs all input validation checks
+         *
+         *     'standard' Performs a reduced set of input validation checks
+         *
+         *     'disabled' Disables all input validation checks
+         *
+         */
+        enum class InputValidationMode { strict, standard, disabled };
 
         Config();
 
@@ -194,6 +220,24 @@ namespace sasktran2 {
         }
 
         /**
+         * @brief The level of input validation to perform
+         *
+         * @return InputValidationMode
+         */
+        InputValidationMode input_validation_mode() const {
+            return m_input_validation_mode;
+        }
+
+        /**
+         * @brief Set the level of input validation to perform
+         *
+         * @param mode
+         */
+        void set_input_validation_mode(InputValidationMode mode) {
+            m_input_validation_mode = mode;
+        }
+
+        /**
          *
          * @return The number of DO streams (full space) to use in the
          * calculation
@@ -254,6 +298,33 @@ namespace sasktran2 {
          * @param nsza
          */
         void set_num_do_sza(int nsza) { m_ndosza = nsza; }
+
+        /**
+         * @brief
+         *
+         * @return int
+         */
+        int num_do_forced_azimuth() const { return m_do_forced_azimuth; }
+
+        /**
+         * @brief Set the number of forzed azimuth terms in the DO solution
+         *
+         * @param n
+         */
+        void set_num_do_forced_azimuth(int n) { m_do_forced_azimuth = n; }
+
+        /**
+         * @brief Perform backpropogation for relevant terms in the DO solution,
+         * only valid for plane parallel/pesudo spherical geometry
+         */
+        bool do_backprop() const { return m_do_backprop; }
+
+        /**
+         * @brief Set
+         *
+         * @param backprop
+         */
+        void set_do_backprop(bool backprop) { m_do_backprop = backprop; }
 
         /**
          *
@@ -408,6 +479,12 @@ namespace sasktran2 {
             m_hr_num_incoming_points = points;
         }
 
+        /**
+         * @brief Validates that the config is valid
+         *
+         */
+        void validate_config() const;
+
       private:
         // TODO: Refactor these into individual source configs?
 
@@ -416,6 +493,10 @@ namespace sasktran2 {
         int m_ndostreams;
         int m_ndosza;
         int m_ndosphericaliterations;
+
+        int m_do_forced_azimuth;
+
+        bool m_do_backprop;
 
         int m_nsinglescatter_moments;
 
@@ -434,6 +515,8 @@ namespace sasktran2 {
         OccultationSource m_occultation_source;
 
         WeightingFunctionPrecision m_wf_precision;
+
+        InputValidationMode m_input_validation_mode;
 
         StokesBasis m_stokes_basis;
 

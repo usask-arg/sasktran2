@@ -18,6 +18,8 @@ namespace sasktran2::atmosphere {
       public:
         Eigen::MatrixXd ssa;              // location, wavel
         Eigen::MatrixXd total_extinction; // location, wavel
+
+        // Scattering parameters
         Eigen::Matrix<sasktran2::types::leg_coeff, -1, -1>
             f; // location, wavel, (Delta scaling factor)
 

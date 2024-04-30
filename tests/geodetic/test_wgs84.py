@@ -30,7 +30,7 @@ def test_geodetic_from_lat_lon_alt():
     lons = [0, 180, 330]
     alts = [0, 10000, 80000]
 
-    for lat, lon, alt in zip(lats, lons, alts):
+    for lat, lon, alt in zip(lats, lons, alts, strict=True):
         geo.from_lat_lon_alt(latitude=lat, longitude=lon, altitude=alt)
 
         np.testing.assert_almost_equal(geo.latitude, lat)

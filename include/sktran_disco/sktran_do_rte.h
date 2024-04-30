@@ -1,5 +1,6 @@
 #pragma once
 #include "sktran_disco/sktran_do.h"
+#include "sktran_disco/sktran_do_linearization_types.h"
 
 namespace sasktran_disco {
 
@@ -12,8 +13,7 @@ namespace sasktran_disco {
         ReadOnlyProperties<BasicProperties<NSTOKES>, SolarProperties<NSTOKES>,
                            UserSpecProperties>;
     template <int NSTOKES, int CNSTR = -1>
-    class RTESolver : public RTESProperties<NSTOKES>,
-                      private AzimuthDependencyCascade {
+    class RTESolver : public RTESProperties<NSTOKES> {
         using HomogType = typename std::conditional<NSTOKES != 5, double,
                                                     std::complex<double>>::type;
 
@@ -56,6 +56,9 @@ namespace sasktran_disco {
         // Solves order m of the azimuth expansion. After this call, solutions
         // stored in layers are valid for azimuth expansion order m.
         void solve(AEOrder m);
+
+        void backprop(AEOrder m, ReverseLinearizationTrace<NSTOKES>& trace,
+                      sasktran_disco::Radiance<NSTOKES>& component);
 
         // Frees all pooled memory.
         ~RTESolver() {}
@@ -100,14 +103,11 @@ namespace sasktran_disco {
 
         // Boundary conditions for the RHS of the boundary value problem
         void bvpCouplingCondition_BC1(AEOrder m, BoundaryIndex p, uint& loc,
-                                      Eigen::VectorXd& b,
-                                      Eigen::MatrixXd& d_b) const;
+                                      Eigen::VectorXd& b, Eigen::MatrixXd& d_b);
         void bvpCouplingCondition_BC2(AEOrder m, BoundaryIndex p, uint& loc,
-                                      Eigen::VectorXd& b,
-                                      Eigen::MatrixXd& d_b) const;
+                                      Eigen::VectorXd& b, Eigen::MatrixXd& d_b);
         void bvpCouplingCondition_BC3(AEOrder m, BoundaryIndex p, uint& loc,
-                                      Eigen::VectorXd& b,
-                                      Eigen::MatrixXd& d_b) const;
+                                      Eigen::VectorXd& b, Eigen::MatrixXd& d_b);
 
         inline HomogType v_plus(AEOrder m,
                                 const OpticalLayer<NSTOKES, CNSTR>& layer,
@@ -116,11 +116,12 @@ namespace sasktran_disco {
             int s1 = j % NSTOKES;
 
             HomogType sum = layer.solution(m).value.homog_plus(j, a);
-            if ((m_layers.albedo(m).isLambertian() && m > 0) || s1 != 0)
+            if ((m >= m_layers.surface().sk2_surface().max_azimuthal_order()) ||
+                s1 != 0)
                 return sum; // rho will be zero
-            auto& rho = m_layers.albedo(m).streamBDRFromStreams(j / NSTOKES);
+            auto& rho = m_layers.surface().storage().brdf.stream_stream;
             for (StreamIndex i = 0; i < this->M_NSTR / 2; ++i) {
-                sum -= (1 + kronDelta(m, 0)) * rho[i + this->M_NSTR / 2] *
+                sum -= (1 + kronDelta(m, 0)) * rho(j / NSTOKES, i) *
                        (*this->M_WT)[i] * (*this->M_MU)[i] *
                        layer.solution(m).value.homog_minus(i * NSTOKES, a);
             }
@@ -134,11 +135,12 @@ namespace sasktran_disco {
             int s1 = j % NSTOKES;
 
             HomogType sum = layer.solution(m).value.homog_minus(j, a);
-            if ((m_layers.albedo(m).isLambertian() && m > 0) || s1 != 0)
+            if ((m >= m_layers.surface().sk2_surface().max_azimuthal_order()) ||
+                s1 != 0)
                 return sum; // rho will be zero
-            auto& rho = m_layers.albedo(m).streamBDRFromStreams(j / NSTOKES);
+            const auto& rho = m_layers.surface().storage().brdf.stream_stream;
             for (StreamIndex i = 0; i < this->M_NSTR / 2; ++i) {
-                sum -= (1 + kronDelta(m, 0)) * rho[i + this->M_NSTR / 2] *
+                sum -= (1 + kronDelta(m, 0)) * rho(j / NSTOKES, i) *
                        (*this->M_WT)[i] * (*this->M_MU)[i] *
                        layer.solution(m).value.homog_plus(i * NSTOKES, a);
             }
@@ -152,23 +154,28 @@ namespace sasktran_disco {
             // TODO: Polarized surface
             int s1 = j % NSTOKES;
 
-            bool lambertian = m_layers.albedo(m).isLambertian();
             HomogType d_sum = layer.solution(m).value.dual_homog_plus().deriv(
                 derivindex,
                 j + (layer.solution(m).value.nstr() * NSTOKES / 2) * a);
-            if (lambertian && m > 0 || s1 != 0)
+            if (m >= m_layers.surface().sk2_surface().max_azimuthal_order() ||
+                s1 != 0)
                 return d_sum; // rho will be zero
-            auto& rho = m_layers.albedo(m).streamBDRFromStreams(j / NSTOKES);
+            const auto& rho = m_layers.surface().storage().brdf.stream_stream;
+            const auto& d_rho = m_layers.surface()
+                                    .storage()
+                                    .d_brdf[deriv.surface_deriv_index]
+                                    .stream_stream;
             for (StreamIndex i = 0; i < this->M_NSTR / 2; ++i) {
                 HomogType d_minus =
                     layer.solution(m).value.dual_homog_minus().deriv(
                         derivindex,
                         i * NSTOKES +
                             (layer.solution(m).value.nstr() * NSTOKES / 2) * a);
-                d_sum -= (1 + kronDelta(m, 0)) * rho[i + this->M_NSTR / 2] *
+                d_sum -= (1 + kronDelta(m, 0)) * rho(j / NSTOKES, i) *
                          (*this->M_WT)[i] * (*this->M_MU)[i] * d_minus;
                 d_sum -= (1 + kronDelta(m, 0)) * deriv.d_albedo *
-                         kronDelta(m, 0) * (*this->M_WT)[i] * (*this->M_MU)[i] *
+                         d_rho(j / NSTOKES, i) * (*this->M_WT)[i] *
+                         (*this->M_MU)[i] *
                          layer.solution(m).value.homog_minus(i * NSTOKES, a);
             }
             return d_sum;
@@ -184,19 +191,25 @@ namespace sasktran_disco {
             HomogType d_sum = layer.solution(m).value.dual_homog_minus().deriv(
                 derivindex,
                 j + (layer.solution(m).value.nstr() * NSTOKES / 2) * a);
-            if (m_layers.albedo(m).isLambertian() && m > 0 || s1 != 0)
+            if ((m >= m_layers.surface().sk2_surface().max_azimuthal_order()) ||
+                s1 != 0)
                 return d_sum; // rho will be zero
-            auto& rho = m_layers.albedo(m).streamBDRFromStreams(j / NSTOKES);
+            const auto& rho = m_layers.surface().storage().brdf.stream_stream;
+            const auto& d_rho = m_layers.surface()
+                                    .storage()
+                                    .d_brdf[deriv.surface_deriv_index]
+                                    .stream_stream;
             for (StreamIndex i = 0; i < this->M_NSTR / 2; ++i) {
                 HomogType d_plus =
                     layer.solution(m).value.dual_homog_plus().deriv(
                         derivindex,
                         i * NSTOKES +
                             (layer.solution(m).value.nstr() * NSTOKES / 2) * a);
-                d_sum -= (1 + kronDelta(m, 0)) * rho[i + this->M_NSTR / 2] *
+                d_sum -= (1 + kronDelta(m, 0)) * rho(j / NSTOKES, i) *
                          (*this->M_WT)[i] * (*this->M_MU)[i] * d_plus;
                 d_sum -= (1 + kronDelta(m, 0)) * deriv.d_albedo *
-                         kronDelta(m, 0) * (*this->M_WT)[i] * (*this->M_MU)[i] *
+                         d_rho(j / NSTOKES, i) * (*this->M_WT)[i] *
+                         (*this->M_MU)[i] *
                          layer.solution(m).value.homog_plus(i * NSTOKES, a);
             }
             return d_sum;
@@ -208,12 +221,14 @@ namespace sasktran_disco {
             // TODO: Polarized surface
             int s1 = out % NSTOKES;
 
-            if (m_layers.albedo(m).isLambertian() && m > 0 || s1 != 0) {
+            if (m_layers.surface().sk2_surface().max_azimuthal_order() <= m ||
+                s1 != 0) {
                 return 0;
             } else {
                 return this->M_CSZ * m_layers.directIntensityTOA() *
-                       m_layers.albedo(m).streamBDRFromSun(out / NSTOKES) / PI *
-                       layer.beamTransmittance(Location::FLOOR);
+                       m_layers.surface().storage().brdf.stream_solar(out /
+                                                                      NSTOKES) /
+                       PI * layer.beamTransmittance(Location::FLOOR);
             }
         }
 
@@ -224,16 +239,22 @@ namespace sasktran_disco {
             // TODO: Polarized surface
             int s1 = out % NSTOKES;
 
-            if (m_layers.albedo(m).isLambertian() && m > 0 || s1 != 0) {
+            if (m_layers.surface().sk2_surface().max_azimuthal_order() <= m ||
+                s1 != 0) {
                 return 0;
             } else {
-                double result =
-                    this->M_CSZ * m_layers.directIntensityTOA() *
-                    m_layers.albedo(m).streamBDRFromSun(out / NSTOKES) / PI *
-                    layer.d_beamTransmittance(Location::FLOOR, deriv,
-                                              derivindex);
+                double result = this->M_CSZ * m_layers.directIntensityTOA() *
+                                m_layers.surface().storage().brdf.stream_solar(
+                                    out / NSTOKES) /
+                                PI *
+                                layer.d_beamTransmittance(Location::FLOOR,
+                                                          deriv, derivindex);
 
-                double d_albedo = deriv.d_albedo * kronDelta(m, 0);
+                double d_albedo =
+                    deriv.d_albedo * m_layers.surface()
+                                         .storage()
+                                         .d_brdf[deriv.surface_deriv_index]
+                                         .stream_solar(out / NSTOKES);
 
                 result += this->M_CSZ * m_layers.directIntensityTOA() *
                           d_albedo / PI *
@@ -249,27 +270,20 @@ namespace sasktran_disco {
             int s1 = j % NSTOKES;
 
             const Eigen::VectorXd& part_soln_minus =
-                m_use_greens_function
-                    ? layer.solution(m).value.dual_Gminus_bottom().value
-                    : layer.solution(m).value.particular_minus();
+                layer.solution(m).value.dual_Gminus_bottom().value;
             double psi = part_soln_minus(j);
-            if ((!m_layers.albedo(m).isLambertian() || m == 0) && s1 == 0) {
-                auto& rho =
-                    m_layers.albedo(m).streamBDRFromStreams(j / NSTOKES);
+
+            if ((m < m_layers.surface().sk2_surface().max_azimuthal_order()) &&
+                s1 == 0) {
+                const auto& rho =
+                    m_layers.surface().storage().brdf.stream_stream;
                 const Eigen::VectorXd& part_soln_plus =
-                    m_use_greens_function
-                        ? layer.solution(m).value.dual_Gplus_bottom().value
-                        : layer.solution(m).value.particular_plus();
+                    layer.solution(m).value.dual_Gplus_bottom().value;
                 for (StreamIndex i = 0; i < this->M_NSTR / 2; ++i) {
-                    psi -= (1 + kronDelta(m, 0)) * rho[i + this->M_NSTR / 2] *
+                    psi -= (1 + kronDelta(m, 0)) * rho(j / NSTOKES, i) *
                            (*this->M_WT)[i] * (*this->M_MU)[i] *
                            part_soln_plus(i * NSTOKES);
                 }
-            }
-            if (!m_use_greens_function) {
-                psi *= layer.beamTransmittance(
-                    Location::FLOOR); // factorization is possible because we
-                                      // aren't including thermal
             }
             return psi;
         }
@@ -281,74 +295,31 @@ namespace sasktran_disco {
             // TODO: Polarized surface
             int s1 = j % NSTOKES;
 
-            bool lambertian = m_layers.albedo(m).isLambertian();
-            if (!m_use_greens_function) {
-                // Start by calculating
-                double psi = layer.solution(m).value.particular_minus(j);
-                if ((!lambertian || m == 0) && s1 == 0) {
-                    auto& rho =
-                        m_layers.albedo(m).streamBDRFromStreams(j / NSTOKES);
-                    for (StreamIndex i = 0; i < this->M_NSTR / 2; ++i) {
-                        psi -= (1 + kronDelta(m, 0)) *
-                               rho[i + this->M_NSTR / 2] * (*this->M_WT)[i] *
-                               (*this->M_MU)[i] *
-                               layer.solution(m).value.particular_plus(i *
-                                                                       NSTOKES);
-                    }
+            // We don't have to calculate psi/d_psi separately since the
+            // greens solution already includes the optical depth dependence
+            double d_psi = layer.solution(m).value.dual_Gminus_bottom().deriv(
+                derivindex, j);
+            if ((m < m_layers.surface().sk2_surface().max_azimuthal_order()) &&
+                s1 == 0) {
+                const auto& rho =
+                    m_layers.surface().storage().brdf.stream_stream;
+                const auto& d_rho = m_layers.surface()
+                                        .storage()
+                                        .d_brdf[deriv.surface_deriv_index]
+                                        .stream_stream;
+                for (StreamIndex i = 0; i < this->M_NSTR / 2; ++i) {
+                    d_psi -= (1 + kronDelta(m, 0)) * rho(j / NSTOKES, i) *
+                             (*this->M_WT)[i] * (*this->M_MU)[i] *
+                             layer.solution(m).value.dual_Gplus_bottom().deriv(
+                                 derivindex, i * NSTOKES);
+                    d_psi -= (1 + kronDelta(m, 0)) * deriv.d_albedo *
+                             d_rho(j / NSTOKES, i) * (*this->M_WT)[i] *
+                             (*this->M_MU)[i] *
+                             layer.solution(m).value.dual_Gplus_bottom().value(
+                                 i * NSTOKES);
                 }
-                // We have derivatives with respect to the particular solution
-                // and the beam transmittance First we need to calculate d_psi
-                double d_psi =
-                    layer.solution(m).value.dual_particular_minus().deriv(
-                        derivindex, j);
-                if (!lambertian || m == 0) {
-                    auto& rho =
-                        m_layers.albedo(m).streamBDRFromStreams(j / NSTOKES);
-                    for (StreamIndex i = 0; i < this->M_NSTR / 2; ++i) {
-                        d_psi -= (1 + kronDelta(m, 0)) *
-                                 rho[i + this->M_NSTR / 2] * (*this->M_WT)[i] *
-                                 (*this->M_MU)[i] *
-                                 layer.solution(m)
-                                     .value.dual_particular_plus()
-                                     .deriv(derivindex, i * NSTOKES);
-                        d_psi -= (1 + kronDelta(m, 0)) * deriv.d_albedo *
-                                 kronDelta(m, 0) * (*this->M_WT)[i] *
-                                 (*this->M_MU)[i] *
-                                 layer.solution(m).value.particular_plus(
-                                     i * NSTOKES);
-                    }
-                }
-
-                // Result is now psi * beam_transmittance so do derivative
-                // propagation
-                return psi * layer.d_beamTransmittance(Location::FLOOR, deriv,
-                                                       derivindex) +
-                       d_psi * layer.beamTransmittance(Location::FLOOR);
-            } else {
-                // We don't have to calculate psi/d_psi separately since the
-                // greens solution already includes the optical depth dependence
-                double d_psi =
-                    layer.solution(m).value.dual_Gminus_bottom().deriv(
-                        derivindex, j);
-                if ((!lambertian || m == 0) && s1 == 0) {
-                    auto& rho =
-                        m_layers.albedo(m).streamBDRFromStreams(j / NSTOKES);
-                    for (StreamIndex i = 0; i < this->M_NSTR / 2; ++i) {
-                        d_psi -=
-                            (1 + kronDelta(m, 0)) * rho[i + this->M_NSTR / 2] *
-                            (*this->M_WT)[i] * (*this->M_MU)[i] *
-                            layer.solution(m).value.dual_Gplus_bottom().deriv(
-                                derivindex, i * NSTOKES);
-                        d_psi -=
-                            (1 + kronDelta(m, 0)) * deriv.d_albedo *
-                            kronDelta(m, 0) * (*this->M_WT)[i] *
-                            (*this->M_MU)[i] *
-                            layer.solution(m).value.dual_Gplus_bottom().value(
-                                i * NSTOKES);
-                    }
-                }
-                return d_psi;
             }
+            return d_psi;
         }
 
       private:
@@ -357,8 +328,6 @@ namespace sasktran_disco {
         // Flags indicating whether or not the order of the azimuth expansion
         // has been solved.
         std::vector<bool> m_is_solved;
-
-        bool m_use_greens_function;
 
         // Cached memory so we don't have to realloc for every layer/azimuth
         // direction

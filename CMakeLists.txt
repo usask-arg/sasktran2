@@ -127,6 +127,15 @@ if(USE_OMP)
   endif()
 endif()
 
+option(DO_STREAM_TEMPLATES
+       "Enables Compilation of templated number of streams in DO" OFF)
+
+if(DO_STREAM_TEMPLATES)
+  target_compile_definitions(sasktran2BuildProperties
+                             INTERFACE SASKTRAN_DISCO_FULL_COMPILE)
+  message(STATUS "Enabling Full DO Stream Template Compilation")
+endif()
+
 # -------- LAPACK FINDING -----------
 # We support multiple blas vendors, but these can require some funny options
 set(SKTRAN_BLAS_VENDOR
@@ -230,6 +239,8 @@ endif()
 
 if(WIN32)
   target_compile_options(sasktran2BuildProperties INTERFACE /bigobj)
+  target_compile_definitions(sasktran2BuildProperties
+                             INTERFACE EIGEN_STRONG_INLINE=inline)
 endif()
 
 # -------- END LAPACK FINDING -------
@@ -279,11 +290,13 @@ if(BUILD_PYTHON)
     src/geometry.cpp
     src/geodetic.cpp
     src/grids.cpp
+    src/surface.cpp
     src/atmosphere.cpp
     src/viewing_geometry.cpp
     src/engine.cpp
     src/mie.cpp
     src/output.cpp
+    src/math.cpp
     WITH_SOABI)
 
   target_link_libraries(_core PRIVATE pybind11::headers)

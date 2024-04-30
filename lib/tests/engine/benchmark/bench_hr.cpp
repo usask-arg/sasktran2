@@ -26,10 +26,7 @@ TEST_CASE("HR_bench Vector", "[sasktran2][engine]") {
     int nwavel = 50;
     sasktran2::atmosphere::AtmosphereGridStorageFull<3> storage(nwavel,
                                                                 geo.size(), 16);
-    sasktran2::atmosphere::Surface surface;
-
-    surface.albedo().resize(nwavel);
-    surface.albedo().setConstant(0.3);
+    sasktran2::atmosphere::Surface<3> surface(nwavel);
 
     sasktran2::atmosphere::Atmosphere<3> atmo(std::move(storage),
                                               std::move(surface), false);
@@ -121,10 +118,7 @@ TEST_CASE("HR_bench", "[sasktran2][engine]") {
     int nwavel = 55;
     sasktran2::atmosphere::AtmosphereGridStorageFull<3> storage(nwavel,
                                                                 geo.size(), 16);
-    sasktran2::atmosphere::Surface surface;
-
-    surface.albedo().resize(nwavel);
-    surface.albedo().setConstant(0.3);
+    sasktran2::atmosphere::Surface<3> surface(nwavel);
 
     sasktran2::atmosphere::Atmosphere<3> atmo(std::move(storage),
                                               std::move(surface), false);

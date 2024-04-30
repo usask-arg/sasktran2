@@ -1,12 +1,19 @@
 #pragma once
 #include "sktran_disco/sktran_do.h"
+#include <sasktran2/math/wigner.h>
 
 namespace sasktran_disco {
-    // Many vector equations use a matrix D = diag(1, 1, -1, -1) that accounts
-    // for the symmetry of the Legendre functions.  This implements the diagonal
-    // elements of this matrix, templated to not slow down the scalar code
-    template <int NSTOKES, int CNSTR = -1>
-    double stokes_negation_factor(int linear_index) {
+
+    /**
+     * Many vector equations use a matrix D = diag(1, 1, -1, -1) that accounts
+     * for the symmetry of the Legendre functions.  This implements the diagonal
+     * elements of this matrix, templated to not slow down the scalar code
+     *
+     * @tparam NSTOKES
+     * @param linear_index
+     * @return double
+     */
+    template <int NSTOKES> double stokes_negation_factor(int linear_index) {
         int stokes_index = linear_index % NSTOKES;
 
         if (stokes_index >= 2) {
@@ -16,242 +23,25 @@ namespace sasktran_disco {
         }
     }
 
-    // Class to calculate the Wigner D functions
-    // Likely will have to move this into SasktranCore, or copy it, so that we
-    // can use it for the optical properties Uses Recurrence relations in
-    // Mishchenko (2006) to calculate the functions, all equations refer to this
-    // book We use the different notation d^l_mn instead of d^s_mn to match the
-    // associate legendre polynomial notations
-    class WignerDCalculator {
-      private:
-        int m_m;
-        int m_n;
-        int m_lmin;
-
-        double m_recurrence_start_factor;
-
-        int m_zeta;
-
-        double recurrence_start_factor() {
-            // Start of the recurrence, i.e. d^lmin_mn(theta)
-            // Eq. F.4.3, the factor that does not depend on x
-
-            // Start by calculating the factorial chain
-            int num = 2 * m_lmin;
-            int den1 = std::abs(int(m_m) - int(m_n));
-            int den2 = std::abs(int(m_m) + int(m_n));
-
-            // We need to calculate num! / (den1! * den2!)
-            double factorial = 1;
-            // The numerator will always be >= the denominator so we start there
-            for (int i = num; i > 1; --i) {
-                factorial *= double(i);
-                if (i <= den1) {
-                    factorial /= double(i);
-                }
-                if (i <= den2) {
-                    factorial /= double(i);
-                }
-            }
-            double otherfactor = std::pow(2.0, -double(m_lmin));
-
-            return m_zeta * otherfactor * sqrt(factorial);
-        }
-
-        double recurrence_start(double theta) {
-            double x = cos(theta);
-            double xfactor =
-                std::pow(1 - x, double(std::abs(int(m_m) - int(m_n))) / 2.0) *
-                std::pow(1 + x, double(std::abs(int(m_m) + int(m_n))) / 2.0);
-
-            return m_recurrence_start_factor * xfactor;
-        }
-
-      public:
-        WignerDCalculator(int m, int n) : m_m(m), m_n(n) {
-            // Calculate zeta from F.2.4
-            if (m_n >= m_m) {
-                m_zeta = 1;
-            } else {
-                if ((m_m - m_n) % 2 == 0) {
-                    m_zeta = 1;
-                } else {
-                    m_zeta = -1;
-                }
-            }
-            m_lmin = std::max(std::abs(int(m_m)), std::abs(int(m_n)));
-            m_recurrence_start_factor = recurrence_start_factor();
-        };
-
-        double d(double theta, int l) {
-            if (l < m_lmin) {
-                return 0.0;
-            } else {
-                double x = cos(theta);
-                double val_l = recurrence_start(theta); // Value at current l
-                double val_lm1 = 0.0; // Value at current l minus 1
-
-                // We use F.4.1 if n != 0, but if n == 0 the recurrence has a
-                // 0/0 singularity that we must remove and the recurrence
-                // reduces to the standard associated legendre function
-                // recurrence relation
-
-                if (m_n == 0) {
-                    for (int lidx = m_lmin + 1; lidx <= l; ++lidx) {
-                        double multiplier =
-                            1.0 / (sqrt(lidx * lidx - m_m * m_m) * lidx);
-                        double curfactor = (2 * lidx - 1) * (lidx * x);
-                        double priorfactor =
-                            lidx * sqrt((lidx - 1) * (lidx - 1) - m_m * m_m);
-
-                        double temp = val_l;
-                        val_l = multiplier *
-                                (curfactor * val_l - priorfactor * val_lm1);
-                        val_lm1 = temp;
-                    }
-                } else {
-                    for (int lidx = m_lmin + 1; lidx <= l; ++lidx) {
-                        double multiplier =
-                            1.0 / ((lidx - 1) *
-                                   sqrt(double(lidx * lidx - m_m * m_m)) *
-                                   sqrt(double(lidx * lidx - m_n * m_n)));
-                        double curfactor = (2 * lidx - 1) *
-                                           (lidx * (lidx - 1) * x - m_n * m_m);
-                        double priorfactor =
-                            lidx *
-                            sqrt(double((lidx - 1) * (lidx - 1) - m_m * m_m)) *
-                            sqrt(double((lidx - 1) * (lidx - 1) - m_n * m_n));
-
-                        double temp = val_l;
-                        val_l = multiplier *
-                                (curfactor * val_l - priorfactor * val_lm1);
-                        val_lm1 = temp;
-                    }
-                }
-
-                return val_l;
-            }
-        }
-    };
-
-    template <class T> class LegendreCoefficientInterface {};
-
-    template <int NSTOKES, int CNSTR = -1> class LegendreCoefficientContainer {
-
-        LegendreCoefficientContainer() {
-            // Error?
-        }
-    };
-
-    // Container when operating in Scalar mode, there is only a Legendre
-    // expansion of the scalar P11 phase function element and so this container
-    // is basically a wrapper around a 1D array
-    template <>
-    class LegendreCoefficientContainer<1>
-        : LegendreCoefficientInterface<LegendreCoefficientContainer<1>> {
-      private:
-        Eigen::VectorXd m_storage;
-
-      public:
-        LegendreCoefficientContainer(size_t size) { resize(size); }
-
-        LegendreCoefficientContainer(){};
-
-        void resize(size_t size) { m_storage.resize(size); }
-
-        LegendreCoefficientContainer<1> operator*(const double& lhs) {
-            LegendreCoefficientContainer<1> container(m_storage.size());
-
-            container.data() = lhs * this->data();
-
-            return container;
-        }
-
-        Eigen::VectorXd& data() { return m_storage; }
-        const Eigen::VectorXd& data() const { return m_storage; }
-    };
-
-    // Container when operating in fully vector mode.  The legendre expansion
-    // matrix is a 4x4 matrix of coefficients, but only 6 elements are unique,
-    // the matrix looks like [ a1 -b1  0   0 ]
-    // [-b1  a2  0   0 ]
-    // [  0   0 a3 -b2 ]
-    // [  0   0 b2  a4 ]
-    // where we use the internal storage indexing
-    // 0 - a1
-    // 1 - a2
-    // 2 - a3
-    // 3 - a4
-    // 4 - b1
-    // 5 - b2
-
-    template <>
-    class LegendreCoefficientContainer<4>
-        : LegendreCoefficientInterface<LegendreCoefficientContainer<4>> {
-      private:
-        Eigen::MatrixXd m_storage;
-
-      public:
-        LegendreCoefficientContainer(size_t size) { resize(size); }
-
-        LegendreCoefficientContainer(){};
-
-        void resize(size_t size) { m_storage.resize(size, 6); }
-
-        Eigen::Ref<Eigen::MatrixXd> a1() { return m_storage(Eigen::all, 0); }
-
-        Eigen::Ref<Eigen::MatrixXd> a2() { return m_storage(Eigen::all, 1); }
-
-        Eigen::Ref<Eigen::MatrixXd> a3() { return m_storage(Eigen::all, 2); }
-
-        Eigen::Ref<Eigen::MatrixXd> a4() { return m_storage(Eigen::all, 3); }
-
-        Eigen::Ref<Eigen::MatrixXd> b1() { return m_storage(Eigen::all, 4); }
-
-        Eigen::Ref<Eigen::MatrixXd> b2() { return m_storage(Eigen::all, 5); }
-
-        Eigen::MatrixXd& data() { return m_storage; }
-        const Eigen::MatrixXd& data() const { return m_storage; }
-    };
-
-    // For the special case of NSTOKES=3, we have a4=b2=0, and so we only have 4
-    // greek coefficients
-    template <>
-    class LegendreCoefficientContainer<3>
-        : LegendreCoefficientInterface<LegendreCoefficientContainer<3>> {
-      private:
-        Eigen::MatrixXd m_storage;
-
-      public:
-        LegendreCoefficientContainer(size_t size) { resize(size); }
-
-        LegendreCoefficientContainer(){};
-
-        void resize(size_t size) { m_storage.resize(size, 4); }
-
-        Eigen::Ref<Eigen::MatrixXd> a1() { return m_storage(Eigen::all, 0); }
-
-        Eigen::Ref<Eigen::MatrixXd> a2() { return m_storage(Eigen::all, 1); }
-
-        Eigen::Ref<Eigen::MatrixXd> a3() { return m_storage(Eigen::all, 2); }
-
-        Eigen::Ref<Eigen::MatrixXd> b1() { return m_storage(Eigen::all, 4); }
-
-        Eigen::MatrixXd& data() { return m_storage; }
-        const Eigen::MatrixXd& data() const { return m_storage; }
-    };
-
     // Type to store a single Legendre coefficient value
-    template <int NSTOKES, int CNSTR = -1> struct LegendreCoefficient {};
+    template <int NSTOKES> struct LegendreCoefficient {};
 
-    // NSTOKES = 1 we only have 1 Legendre coefficient
+    /**
+     * @brief NSTOKES = 1 just has one Legendre coefficient
+     *
+     * @tparam
+     */
     template <> struct LegendreCoefficient<1> {
         double a1;
 
         LegendreCoefficient() { a1 = 0.0; }
     };
 
-    // NSTOKES = 4 we have 6 Legendre coefficients
+    /**
+     * @brief NSTOKES = 4 has 6 Legendre coefficients
+     *
+     * @tparam
+     */
     template <> struct LegendreCoefficient<4> {
         double a1;
         double a2;
@@ -270,7 +60,11 @@ namespace sasktran_disco {
         }
     };
 
-    // NSTOKES = 3 we have 4 legendre coefficients
+    /**
+     * @brief NSTOKES=3 we just have 3 Legendre Coefficients
+     *
+     * @tparam
+     */
     template <> struct LegendreCoefficient<3> {
         double a1;
         double a2;
@@ -285,16 +79,20 @@ namespace sasktran_disco {
         }
     };
 
-    // Class to store the Legendre functions evaluated at stream angles, see eq
-    // A.6 in Rozanov et. al 2013 Storage is 3 elements, [P R T] in the general
-    // case, we need these three elements for NSTOKES=3 as well so we leave this
-    // as the full general case
+    /**
+     * Class to store the Legendre functions evaluated at stream angles, see eq
+     * A.6 in Rozanov et. al 2013 Storage is 3 elements, [P R T] in the general
+     * case, we need these three elements for NSTOKES=3 as well so we leave this
+     * as the full general case
+     *
+     * @tparam NSTOKES
+     */
     template <int NSTOKES> struct LegendrePhaseContainer {
         Eigen::Vector3d values;
 
         void fill(int m, int l, double coszen) {
-            auto calculatorneg = sasktran_disco::WignerDCalculator(m, -2);
-            auto calculatorpos = sasktran_disco::WignerDCalculator(m, 2);
+            auto calculatorneg = sasktran2::math::WignerDCalculator(m, -2);
+            auto calculatorpos = sasktran2::math::WignerDCalculator(m, 2);
             double theta = acos(coszen);
 
             values(1) =
@@ -302,7 +100,7 @@ namespace sasktran_disco {
             values(2) =
                 -0.5 * (calculatorpos.d(theta, l) - calculatorneg.d(theta, l));
 
-            auto calculator = WignerDCalculator(m, 0);
+            auto calculator = sasktran2::math::WignerDCalculator(m, 0);
 
             values(0) = calculator.d(theta, l);
         }
@@ -320,12 +118,16 @@ namespace sasktran_disco {
         double T() const { return values(2); }
     };
 
-    // Storage is simply a scalar element for the NSTOKES=1 special case
+    /**
+     * @brief Special case for NSTOKES=1
+     *
+     * @tparam
+     */
     template <> struct LegendrePhaseContainer<1> {
         double value;
 
         void fill(int m, int l, double coszen) {
-            auto calculator = WignerDCalculator(m, 0);
+            auto calculator = sasktran2::math::WignerDCalculator(m, 0);
             double theta = acos(coszen);
 
             value = calculator.d(theta, l);
@@ -337,29 +139,63 @@ namespace sasktran_disco {
 
     template <int NSTOKES, int CNSTR = -1> class LayerInputDerivative;
 
-    // Holds the quantities calculated by the LPETripleProduct class and their
-    // derivatives The value is a NSTOKES x NSTOKES matrix, where each value in
-    // theory has derivatives with respect to every greek parameter.  For
-    // NSTOKES=4 this would result in a 4x4 matrix where we need derivatives
-    // with respect to 6 quantities for every l.  In reality the derivatives are
-    // sparse, alpha1 only affects the 1,1 element of the matrix for example.
-    // This class stores the NSTOKESxNOSTKES matrix values efficiently and the
-    // capability to propagate derivatives of the greek parameters efficiently
-    // which requires specialized instantiations for every value of NSTOKES
-    template <int NSTOKES, int CNSTR = -1>
-    class TripleProductDerivativeHolder {};
+    /**
+     * Holds the quantities calculated by the LPETripleProduct class and their
+     * derivatives The value is a NSTOKES x NSTOKES matrix, where each value in
+     * theory has derivatives with respect to every greek parameter.  For
+     * NSTOKES=4 this would result in a 4x4 matrix where we need derivatives
+     * with respect to 6 quantities for every l.  In reality the derivatives are
+     * sparse, alpha1 only affects the 1,1 element of the matrix for example.
+     * This class stores the NSTOKESxNOSTKES matrix values efficiently and the
+     * capability to propagate derivatives of the greek parameters efficiently
+     * which requires specialized instantiations for every value of NSTOKES
+     *
+     * @tparam NSTOKES
+     * @tparam CNSTR
+     */
+    template <int NSTOKES> class TripleProductDerivativeHolder {};
 
+    /**
+     * @brief Special case for NSTOKES=1
+     *
+     * @tparam
+     */
     template <> class TripleProductDerivativeHolder<1> {
       public:
+        /**
+         * @brief Construct a new Triple Product Derivative Holder object
+         * without allocating
+         *
+         */
         TripleProductDerivativeHolder() {}
 
+        /**
+         * @brief Construct a new Triple Product Derivative Holder object and
+         * allocate storage
+         *
+         * @param nstr
+         */
         TripleProductDerivativeHolder(int nstr) : nstr(nstr) { resize(nstr); }
 
+        /**
+         * @brief Allocates storage for a given nstr
+         *
+         * @param nstr
+         */
         void resize(int nstr) {
             this->nstr = nstr;
             d_by_legendre_coeff.resize(nstr);
         }
 
+        /**
+         * @brief Calculates the triple product
+         *
+         * @param coeffs
+         * @param lp1s
+         * @param lp2s
+         * @param negation
+         * @param m
+         */
         void calculate(const std::vector<LegendreCoefficient<1>>& coeffs,
                        const std::vector<LegendrePhaseContainer<1>>& lp1s,
                        const std::vector<LegendrePhaseContainer<1>>& lp2s,
@@ -382,18 +218,33 @@ namespace sasktran_disco {
             }
         }
 
-        double value;
-        double ssa;
-        int nstr;
-        Eigen::VectorXd d_by_legendre_coeff;
+        double value; /** Value of the triple product */
+        double ssa;   /** Single scatter albedo */
+        int nstr;     /** Number of streams */
+        Eigen::VectorXd
+            d_by_legendre_coeff; /** Derivative of value with respect to each
+                                    Legendre coefficient */
+
+        /**
+         * @brief Reduce a user input derivative to derivative of the triple
+         * product
+         *
+         * @param layer_deriv
+         * @param deriv
+         */
         void reduce(const LayerInputDerivative<1>& layer_deriv,
                     double& deriv) const;
     };
 
-    // The values are a 4x4 matrix, the derivative factors for the 6 greek
-    // constants are a1 - 11 a2 - 22, 23, 32, 33 a3 - 22, 23, 32, 33 a4 - 44 b1
-    // - 12, 13, 21, 31 b2 - 24, 34, 42, 43
-    //
+    /**
+     * The values are a 4x4 matrix, the derivative factors for the 6 greek
+     * constants are a1 - 11 a2 - 22, 23, 32, 33 a3 - 22, 23, 32, 33 a4 - 44 b1
+     * - 12, 13, 21, 31 b2 - 24, 34, 42, 43
+     *
+     * This class has not been extensively validated
+     *
+     * @tparam
+     */
     template <> class TripleProductDerivativeHolder<4> {
       public:
         Eigen::Matrix<double, 4, 4> value;
@@ -522,9 +373,13 @@ namespace sasktran_disco {
                     Eigen::Matrix<double, 4, 4>& deriv) const;
     };
 
-    // The values are a 3x3 matrix, the derivative factors for the 4 greek
-    // constants are a1 - 11 a2 - 22, 23, 32, 33 a3 - 22, 23, 32, 33 b1 - 12,
-    // 13, 21, 31
+    /**
+     * The values are a 3x3 matrix, the derivative factors for the 4 greek
+     * constants are a1 - 11 a2 - 22, 23, 32, 33 a3 - 22, 23, 32, 33 b1 - 12,
+     * 13, 21, 31
+     *
+     * @tparam
+     */
     template <> class TripleProductDerivativeHolder<3> {
       public:
         Eigen::Matrix<double, 3, 3> value;
@@ -629,21 +484,44 @@ namespace sasktran_disco {
                     Eigen::Matrix<double, 3, 3>& deriv) const;
     };
 
-    // This class holds the value and derivative for the solar source which is
-    // of size NSTOKES
-    template <int NSTOKES, int CNSTR = -1> class InhomogeneousSourceHolder {
+    /**
+     * @brief Holds the value and derivative of the solar source which is size
+     * NSTOKES
+     *
+     * @tparam NSTOKES
+     */
+    template <int NSTOKES> class InhomogeneousSourceHolder {
       public:
-        Eigen::Vector<double, NSTOKES> value;
-        Eigen::VectorXd d_by_a1;
-        Eigen::VectorXd d_by_b1_first;
-        Eigen::VectorXd d_by_b1_second;
-        Eigen::Vector<double, NSTOKES> d_by_ssa;
+        Eigen::Vector<double, NSTOKES> value; /** Value */
+        Eigen::VectorXd d_by_a1; /** Derivative with respect to a1 */
+        Eigen::VectorXd
+            d_by_b1_first; /** First term of derivative with respect to b1 */
+        Eigen::VectorXd
+            d_by_b1_second; /** Second term of deriative with respect to b1 */
+        Eigen::Vector<double, NSTOKES>
+            d_by_ssa; /** Derivative with respect to ssa */
         int nstr;
 
+        /**
+         * @brief Construct a new Inhomogeneous Source Holder object without
+         * allocating
+         *
+         */
         InhomogeneousSourceHolder() {}
 
+        /**
+         * @brief Construct a new Inhomogeneous Source Holder object with
+         * allocating
+         *
+         * @param nstr
+         */
         InhomogeneousSourceHolder(int nstr) : nstr(nstr) { resize(nstr); }
 
+        /**
+         * @brief Allocate memory
+         *
+         * @param nstr
+         */
         void resize(int nstr) {
             this->nstr = nstr;
             d_by_a1.resize(nstr);
@@ -651,10 +529,22 @@ namespace sasktran_disco {
             d_by_b1_second.resize(nstr);
         }
 
+        /**
+         * @brief Takes a user input derivative and reduces it to the derivative
+         * of the source
+         *
+         * @param layer_deriv
+         * @param deriv
+         */
         void reduce(const LayerInputDerivative<NSTOKES>& layer_deriv,
                     Eigen::Vector<double, NSTOKES>& deriv) const;
     };
 
+    /**
+     * @brief For NSTOKES=1 we only have one value
+     *
+     * @tparam
+     */
     template <> class InhomogeneousSourceHolder<1> {
       public:
         double value;
@@ -678,10 +568,14 @@ namespace sasktran_disco {
     // Forward declaration
     template <typename T> struct Dual;
 
-    // Class to store a stokes vector (or scalar radiance) and it's derivative
-    // We specialize the scalar case to use a double instead of an eigen object
-    // (or scalars)
-    template <int NSTOKES, int CNSTR = -1> struct Radiance {
+    /**
+     * Class to store a stokes vector (or scalar radiance) and it's derivative
+     * We specialize the scalar case to use a double instead of an eigen object
+     * (or scalars)
+     *
+     * @tparam NSTOKES
+     */
+    template <int NSTOKES> struct Radiance {
         Eigen::Vector<double, NSTOKES> value;
         Eigen::Matrix<double, -1, NSTOKES> deriv;
 
@@ -740,51 +634,5 @@ namespace sasktran_disco {
     };
 
     template <int NSTOKES, int CNSTR = -1> class InputDerivatives;
-
-    // Maps a dual defined with respect to layer quantities to the dual defined
-    // with respect to weighting function ( engine input) quantities
-    template <int NSTOKES, int CNSTR = -1>
-    inline Radiance<NSTOKES>
-    convert_dual_to_wf(const Radiance<NSTOKES>& dual,
-                       const InputDerivatives<NSTOKES>& in_deriv,
-                       size_t numwf) {
-
-        Radiance<NSTOKES> result(numwf);
-
-        for (unsigned int l = 0; l < in_deriv.numDerivative(); ++l) {
-            const auto& qty = in_deriv.layerDerivatives()[l];
-            for (unsigned int k = 0; k < qty.group_and_triangle_fraction.size();
-                 ++k) {
-                result
-                    .deriv(qty.group_and_triangle_fraction[k].first, Eigen::all)
-                    .noalias() += dual.deriv(l, Eigen::all) *
-                                  qty.group_and_triangle_fraction[k].second *
-                                  qty.extinctions[k];
-            }
-        }
-
-        result.value = dual.value;
-        return result;
-    }
-
-    template <int NSTOKES, int CNSTR = -1>
-    inline void convert_dual_to_wf(const Radiance<NSTOKES>& dual,
-                                   const InputDerivatives<NSTOKES>& in_deriv,
-                                   Radiance<NSTOKES>& result) {
-        result.deriv.setZero();
-        for (unsigned int l = 0; l < in_deriv.numDerivative(); ++l) {
-            const auto& qty = in_deriv.layerDerivatives()[l];
-            for (unsigned int k = 0; k < qty.group_and_triangle_fraction.size();
-                 ++k) {
-                result
-                    .deriv(qty.group_and_triangle_fraction[k].first, Eigen::all)
-                    .noalias() += dual.deriv(l, Eigen::all) *
-                                  qty.group_and_triangle_fraction[k].second *
-                                  qty.extinctions[k];
-            }
-        }
-
-        result.value = dual.value;
-    }
 
 } // namespace sasktran_disco

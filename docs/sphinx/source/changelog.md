@@ -2,12 +2,29 @@
 (_changelog)=
 # Changelog
 
-## Unreleased
+# Unreleased
+- Add `config.do_backprop` option for discrete ordinates source
+
+# 2024.03.0
+- Fix binary wheel uploads on PyPI
+
+# 2024.02.1
+- Fix the license classifier on PyPI
+
+## 2024.02.0
+- Templated number of streams has been enabled in DO, resulting in large speedups for 2-stream calculations
+- Added support for Mie calculations (Using SASKTRAN Legacy)
+- Added support for HITRAN cross sections (Using SASKTRAN Legacy)
+
+## 2024.01.1
+- Model has been relicensed under the MIT licenses
+
+## 2024.01.0
 - Add support for Python 3.12 wheels
 - Remove support for Python versions below 3.10
+- SASKTRAN2 is now available in conda-forge
+- Added the {py:class}`sasktran2.LinearizedMie` object to perform Mie calculations
+- Added support for `sk.GeometryType.PlaneParallel` and `sk.GeometryType.PseudoSpherical`
 
 ## 2023.12.0
 - First official release
-
-# 2023.12.20
-- Change mie calculate to have parameter 'calculate_derivative' be optional and default to false

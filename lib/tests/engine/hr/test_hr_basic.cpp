@@ -24,10 +24,9 @@ TEST_CASE("Basic Calculation HR", "[sasktran2][engine][hr]") {
     int nwavel = 100;
     sasktran2::atmosphere::AtmosphereGridStorageFull<1> storage(nwavel,
                                                                 geo.size(), 16);
-    sasktran2::atmosphere::Surface surface;
+    sasktran2::atmosphere::Surface<1> surface(nwavel);
 
-    surface.albedo().resize(nwavel);
-    surface.albedo().setZero();
+    surface.brdf_args().setZero();
 
     sasktran2::atmosphere::Atmosphere<1> atmo(std::move(storage),
                                               std::move(surface), true);
