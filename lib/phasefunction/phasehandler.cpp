@@ -91,10 +91,10 @@ namespace sasktran2::solartransmission {
         int numderiv = m_atmosphere->num_scattering_deriv_groups();
 
         if constexpr (NSTOKES == 1) {
-            m_d_phase.resize(1, m_internal_to_geometry.size(), numderiv,
+            m_d_phase.resize(1, (int)m_internal_to_geometry.size(), numderiv,
                              m_config->num_wavelength_threads());
         } else {
-            m_d_phase.resize(2, m_internal_to_geometry.size(), numderiv,
+            m_d_phase.resize(2, (int)m_internal_to_geometry.size(), numderiv,
                              m_config->num_wavelength_threads());
         }
     }
