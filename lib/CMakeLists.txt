@@ -20,6 +20,7 @@ add_library(
   atmosphere/constituent.cpp
   atmosphere/userdefined1d_constituent.cpp
   phasefunction/interpolator.cpp
+  phasefunction/phasehandler.cpp
   sourceintegrator/sourceintegrator.cpp
   sourceintegrator/source_algorithms.cpp
   geometry/geometry.cpp

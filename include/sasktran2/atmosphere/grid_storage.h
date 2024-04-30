@@ -34,6 +34,9 @@ namespace sasktran2::atmosphere {
             d_leg_coeff; // (legendre order, location, wavel, deriv)
         Eigen::Tensor<double, 3> d_f; // (location, wavel, deriv)
 
+        Eigen::MatrixXi
+            max_order; // Maximum order of the phase function for each location
+
         int numscatderiv;
 
       public:
@@ -41,6 +44,7 @@ namespace sasktran2::atmosphere {
             ssa.resize(nlocation, nwavel);
             total_extinction.resize(nlocation, nwavel);
             f.resize(nlocation, nwavel);
+            max_order.resize(nlocation, nwavel);
 
             if constexpr (NSTOKES == 1) {
                 leg_coeff.resize(numlegendre, nlocation, nwavel);
@@ -82,6 +86,31 @@ namespace sasktran2::atmosphere {
                 return (int)d[0];
             } else if constexpr (NSTOKES == 3) {
                 return (int)(d[0] / 4);
+            }
+        }
+
+        void determine_maximum_order() {
+            max_order.setConstant(max_stored_legendre());
+
+            return;
+
+            for (int i = 0; i < max_order.rows(); ++i) {
+                for (int j = 0; j < max_order.cols(); ++j) {
+
+                    if constexpr (NSTOKES == 1) {
+                        for (int k = 0; k < max_stored_legendre(); ++k) {
+                            if (leg_coeff(k, i, j) != 0) {
+                                max_order(i, j) = k;
+                            }
+                        }
+                    } else {
+                        for (int k = 0; k < max_stored_legendre(); k += 4) {
+                            if (leg_coeff(4 * k, i, j) != 0) {
+                                max_order(i, j) = k / 4;
+                            }
+                        }
+                    }
+                }
             }
         }
     };

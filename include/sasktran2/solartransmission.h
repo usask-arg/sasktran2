@@ -1,5 +1,6 @@
 #pragma once
 
+#include "sasktran2/geometry.h"
 #include <sasktran2/source_interface.h>
 #include <sasktran2/raytracing.h>
 #include <sasktran2/atmosphere/atmosphere.h>
@@ -107,6 +108,66 @@ namespace sasktran2::solartransmission {
         }
     };
 
+    /**
+     * The PhaseHandler is responsible for constructing the phase function for
+     * the single scatter source term. The single scatter source term is needed
+     * on a set of (wavelength, cos_angle, geometry) points.
+     *
+     * Construction can be done in one of two ways, depending on the
+     * configuration and user input. The default is to construct the phase
+     * function through the user input Legendre coefficients.
+     *
+     * The other option is for the user to directly input the phase function.
+     * This is useful for cases where the phase function requires many terms in
+     * the Legendre series.
+     *
+     * @tparam NSTOKES
+     */
+    template <int NSTOKES> class PhaseHandler {
+      private:
+        const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere;
+        const sasktran2::Config* m_config;
+        const sasktran2::Geometry1D& m_geometry;
+
+        std::vector<std::array<double, NSTOKES>>
+            m_scatter_angles; /** Full list of  scattering angles that we need.
+                                 for NSTOKES =3 this is (cos_scatter, C1, C2) */
+
+        // Internal phase functions and derivatives on the actual grid
+        Eigen::Tensor<double, 3>
+            m_phase; /** (stokes eq, internal_index, thread) **/
+        Eigen::Tensor<double, 4>
+            m_d_phase; /** (stokes eq, internal_index, deriv, thread) **/
+
+        std::map<int, int> m_geometry_to_internal; /** Maps the geometry index
+                                                      to the internal index */
+        std::map<int, int> m_internal_to_geometry; /** Maps the internal index
+                                                      to the geometry index */
+        std::map<int, int>
+            m_internal_to_cos_scatter; /** Determines what scattering angle to
+                                          use for each internal index */
+
+      public:
+        PhaseHandler(const Geometry1D& geometry) : m_geometry(geometry) {}
+
+        void initialize_config(const sasktran2::Config& config) {
+            m_config = &config;
+        }
+
+        void initialize_atmosphere(
+            const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere);
+
+        void initialize_geometry(
+            const std::vector<sasktran2::raytracing::TracedRay>& los_rays);
+
+        void calculate(int wavelidx, int threadidx);
+
+        void scatter(int wavelidx,
+                     const std::vector<std::pair<int, double>>& index_weights,
+                     sasktran2::Dual<double, sasktran2::dualstorage::dense,
+                                     NSTOKES>& source) const;
+    };
+
     template <typename S, int NSTOKES>
     class SingleScatterSource : public SourceTermInterface<NSTOKES> {
       private:
@@ -119,9 +180,8 @@ namespace sasktran2::solartransmission {
 
         std::vector<Eigen::VectorXd> m_solar_trans;
         std::vector<std::vector<int>> m_index_map;
-        std::vector<std::vector<int>> m_phase_index_map;
-        std::vector<sasktran2::atmosphere::PhaseInterpolator<NSTOKES, true>>
-            m_phase_interp;
+
+        PhaseHandler<NSTOKES> m_phase_handler;
 
         sasktran2::Dual<double> m_precomputed_sources;
 
@@ -169,7 +229,8 @@ namespace sasktran2::solartransmission {
         SingleScatterSource(
             const Geometry1D& geometry,
             const sasktran2::raytracing::RayTracerBase& raytracer)
-            : m_solar_transmission(geometry, raytracer), m_geometry(geometry){};
+            : m_solar_transmission(geometry, raytracer), m_geometry(geometry),
+              m_phase_handler(geometry){};
 
         void initialize_config(const sasktran2::Config& config) override;
 
