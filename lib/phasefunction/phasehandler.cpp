@@ -4,64 +4,25 @@
 namespace sasktran2::solartransmission {
     template <int NSTOKES>
     void PhaseHandler<NSTOKES>::initialize_geometry(
-        const std::vector<sasktran2::raytracing::TracedRay>& los_rays) {
+        const std::vector<sasktran2::raytracing::TracedRay>& los_rays,
+        const std::vector<std::vector<int>>& index_map) {
 
-        // Go through each ray and construct the mappings between internal and
-        // atmosphere indicies
-        int internal_index = 0;
-        int cos_scatter_index = 0;
+        int num_internal = 0;
+        int num_scatter = 0;
         double theta, C1, C2, S1, S2;
         int negation;
-        for (const sasktran2::raytracing::TracedRay& ray : los_rays) {
+        // First we need to iterate through and figure out how many internal
+        // indices we will end up with and how many scatter angles we will need
+        m_geometry_entrance_to_internal.resize(los_rays.size());
+        m_geometry_exit_to_internal.resize(los_rays.size());
+        for (int i = 0; i < los_rays.size(); ++i) {
+            const sasktran2::raytracing::TracedRay& ray = los_rays[i];
+
             if (ray.layers.size() == 0) {
                 continue;
             }
-            // For each layer in the ray
-            for (const sasktran2::raytracing::SphericalLayer& layer :
-                 ray.layers) {
-                const auto& entrance_weights =
-                    layer.entrance.interpolation_weights;
 
-                for (const auto& weight : entrance_weights) {
-                    if (m_internal_to_geometry.count(internal_index) == 0) {
-                        m_internal_to_geometry[internal_index] = weight.first;
-                        m_geometry_to_internal[weight.first] = internal_index;
-                        m_internal_to_cos_scatter[internal_index] =
-                            cos_scatter_index;
-
-                        ++internal_index;
-                    }
-                }
-
-                const auto& exit_weights = layer.exit.interpolation_weights;
-                for (const auto& weight : layer.exit.interpolation_weights) {
-                    if (m_internal_to_geometry.count(internal_index) == 0) {
-                        m_internal_to_geometry[internal_index] = weight.first;
-                        m_geometry_to_internal[weight.first] = internal_index;
-                        m_internal_to_cos_scatter[internal_index] =
-                            cos_scatter_index;
-
-                        ++internal_index;
-                    }
-                }
-
-                if (!ray.is_straight) {
-                    ++cos_scatter_index;
-
-                    math::stokes_scattering_factors(
-                        -1 * m_geometry.coordinates().sun_unit(),
-                        -1 * layer.average_look_away, theta, C1, C2, S1, S2,
-                        negation);
-                    if constexpr (NSTOKES == 3) {
-                        m_scatter_angles.push_back({theta, C1, C2});
-                    } else {
-                        m_scatter_angles.push_back({theta});
-                    }
-                }
-            }
             if (ray.is_straight) {
-                ++cos_scatter_index;
-
                 math::stokes_scattering_factors(
                     -1 * m_geometry.coordinates().sun_unit(),
                     -1 * ray.layers[0].average_look_away, theta, C1, C2, S1, S2,
@@ -71,6 +32,60 @@ namespace sasktran2::solartransmission {
                 } else {
                     m_scatter_angles.push_back({theta});
                 }
+            }
+
+            m_geometry_entrance_to_internal[i].resize(ray.layers.size());
+            m_geometry_exit_to_internal[i].resize(ray.layers.size());
+
+            if (ray.layers.size() == 0) {
+                continue;
+            }
+            for (int j = 0; j < ray.layers.size(); ++j) {
+                if (!ray.is_straight) {
+                    math::stokes_scattering_factors(
+                        -1 * m_geometry.coordinates().sun_unit(),
+                        -1 * ray.layers[0].average_look_away, theta, C1, C2, S1,
+                        S2, negation);
+                    if constexpr (NSTOKES == 3) {
+                        m_scatter_angles.push_back({theta, C2, S2});
+                    } else {
+                        m_scatter_angles.push_back({theta});
+                    }
+                }
+
+                const sasktran2::raytracing::SphericalLayer& layer =
+                    ray.layers[j];
+                m_geometry_entrance_to_internal[i][j].resize(
+                    layer.entrance.interpolation_weights.size());
+                m_geometry_exit_to_internal[i][j].resize(
+                    layer.exit.interpolation_weights.size());
+
+                for (int k = 0; k < layer.entrance.interpolation_weights.size();
+                     ++k) {
+                    m_geometry_entrance_to_internal[i][j][k] = num_internal;
+                    ++num_internal;
+
+                    m_internal_to_geometry.push_back(
+                        layer.entrance.interpolation_weights[k].first);
+                    m_internal_to_cos_scatter.push_back(num_scatter);
+                }
+
+                for (int k = 0; k < layer.exit.interpolation_weights.size();
+                     ++k) {
+                    m_geometry_exit_to_internal[i][j][k] = num_internal;
+                    ++num_internal;
+
+                    m_internal_to_geometry.push_back(
+                        layer.exit.interpolation_weights[k].first);
+                    m_internal_to_cos_scatter.push_back(num_scatter);
+                }
+
+                if (!ray.is_straight) {
+                    ++num_scatter;
+                }
+            }
+            if (ray.is_straight) {
+                ++num_scatter;
             }
         }
 
@@ -163,24 +178,30 @@ namespace sasktran2::solartransmission {
 
     template <int NSTOKES>
     void PhaseHandler<NSTOKES>::scatter(
-        int threadidx, const std::vector<std::pair<int, double>>& index_weights,
+        int threadidx, int losidx, int layeridx,
+        const std::vector<std::pair<int, double>>& index_weights,
+        bool is_entrance,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
+        const auto& internal_indices =
+            is_entrance ? m_geometry_entrance_to_internal[losidx][layeridx]
+                        : m_geometry_exit_to_internal[losidx][layeridx];
+
         if constexpr (NSTOKES == 1) {
             double phase_result = 0.0;
 
-            for (const auto& index_weight : index_weights) {
-                int internal_index =
-                    m_geometry_to_internal.at(index_weight.first);
+            for (int i = 0; i < index_weights.size(); ++i) {
+                const auto& index_weight = index_weights[i];
+                int internal_index = internal_indices[i];
                 phase_result +=
                     m_phase(0, internal_index, threadidx) * index_weight.second;
             }
 
             for (int d = 0; d < m_atmosphere->num_scattering_deriv_groups();
                  ++d) {
-                for (const auto& index_weight : index_weights) {
-                    int internal_index =
-                        m_geometry_to_internal.at(index_weight.first);
+                for (int i = 0; i < index_weights.size(); ++i) {
+                    const auto& index_weight = index_weights[i];
+                    int internal_index = internal_indices[i];
 
                     source.deriv(0, m_atmosphere->scat_deriv_start_index() +
                                         d * m_geometry.size() +
@@ -195,9 +216,9 @@ namespace sasktran2::solartransmission {
         } else if constexpr (NSTOKES == 3) {
             Eigen::Vector3d phase_result = Eigen::Vector3d::Zero();
 
-            for (const auto& index_weight : index_weights) {
-                int internal_index =
-                    m_geometry_to_internal.at(index_weight.first);
+            for (int i = 0; i < index_weights.size(); ++i) {
+                const auto& index_weight = index_weights[i];
+                int internal_index = internal_indices[i];
                 double C2 = m_scatter_angles[m_internal_to_cos_scatter.at(
                     internal_index)][1];
                 double S2 = m_scatter_angles[m_internal_to_cos_scatter.at(
@@ -213,9 +234,10 @@ namespace sasktran2::solartransmission {
             }
             for (int d = 0; d < m_atmosphere->num_scattering_deriv_groups();
                  ++d) {
-                for (const auto& index_weight : index_weights) {
-                    int internal_index =
-                        m_geometry_to_internal.at(index_weight.first);
+                for (int i = 0; i < index_weights.size(); ++i) {
+                    const auto& index_weight = index_weights[i];
+
+                    int internal_index = internal_indices[i];
                     double C2 = m_scatter_angles[m_internal_to_cos_scatter.at(
                         internal_index)][1];
                     double S2 = m_scatter_angles[m_internal_to_cos_scatter.at(

@@ -139,11 +139,17 @@ namespace sasktran2::solartransmission {
         Eigen::Tensor<double, 4>
             m_d_phase; /** (stokes eq, internal_index, deriv, thread) **/
 
-        std::map<int, int> m_geometry_to_internal; /** Maps the geometry index
-                                                      to the internal index */
-        std::map<int, int> m_internal_to_geometry; /** Maps the internal index
+        std::vector<std::vector<std::vector<int>>>
+            m_geometry_entrance_to_internal; /** Mapping from layer entrances to
+                                                internal,
+                                                [los][layer][interp_index] */
+        std::vector<std::vector<std::vector<int>>>
+            m_geometry_exit_to_internal;         /** Mapping from layer exits to
+                                                    internal, [los][layer][interp_index]
+                                                  */
+        std::vector<int> m_internal_to_geometry; /** Maps the internal index
                                                       to the geometry index */
-        std::map<int, int>
+        std::vector<int>
             m_internal_to_cos_scatter; /** Determines what scattering angle to
                                           use for each internal index */
 
@@ -158,12 +164,14 @@ namespace sasktran2::solartransmission {
             const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere);
 
         void initialize_geometry(
-            const std::vector<sasktran2::raytracing::TracedRay>& los_rays);
+            const std::vector<sasktran2::raytracing::TracedRay>& los_rays,
+            const std::vector<std::vector<int>>& index_map);
 
         void calculate(int wavelidx, int threadidx);
 
-        void scatter(int wavelidx,
+        void scatter(int wavelidx, int losidx, int layeridx,
                      const std::vector<std::pair<int, double>>& index_weights,
+                     bool is_entrance,
                      sasktran2::Dual<double, sasktran2::dualstorage::dense,
                                      NSTOKES>& source) const;
     };

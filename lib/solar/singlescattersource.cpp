@@ -152,7 +152,6 @@ namespace sasktran2::solartransmission {
     void SingleScatterSource<S, NSTOKES>::initialize_geometry(
         const std::vector<sasktran2::raytracing::TracedRay>& los_rays) {
         this->m_solar_transmission.initialize_geometry(los_rays);
-        this->m_phase_handler.initialize_geometry(los_rays);
 
         if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
             // Generates the geometry matrix so that matrix * extinction = solar
@@ -186,6 +185,7 @@ namespace sasktran2::solartransmission {
 
             m_num_cells += (int)los_rays[i].layers.size();
         }
+        this->m_phase_handler.initialize_geometry(los_rays, m_index_map);
 
         // Store the rays for later
         m_los_rays = &los_rays;
@@ -252,10 +252,12 @@ namespace sasktran2::solartransmission {
         start_phase.value(0) = ssa_start * entrance_factor;
         end_phase.value(0) = ssa_end * exit_factor;
 
-        m_phase_handler.scatter(
-            wavel_threadidx, layer.entrance.interpolation_weights, start_phase);
-        m_phase_handler.scatter(wavel_threadidx,
-                                layer.exit.interpolation_weights, end_phase);
+        m_phase_handler.scatter(wavel_threadidx, losidx, layeridx,
+                                layer.entrance.interpolation_weights, true,
+                                start_phase);
+        m_phase_handler.scatter(wavel_threadidx, losidx, layeridx,
+                                layer.exit.interpolation_weights, false,
+                                end_phase);
 
         if (calculate_derivative) {
             if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
