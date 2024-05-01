@@ -23,7 +23,7 @@ TEST_CASE("Singlescatterbench", "[sasktran2][engine]") {
     sasktran2::Geometry1D geo(std::move(coords), std::move(grid));
 
     // Construct the Atmosphere
-    int nwavel = 5000;
+    int nwavel = 500;
     sasktran2::atmosphere::AtmosphereGridStorageFull<1> storage(nwavel,
                                                                 geo.size(), 16);
     sasktran2::atmosphere::Surface<1> surface(nwavel);

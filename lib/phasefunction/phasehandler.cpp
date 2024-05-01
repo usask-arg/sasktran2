@@ -96,6 +96,26 @@ namespace sasktran2::solartransmission {
             m_phase.resize(1, m_internal_to_geometry.size(),
                            m_config->num_wavelength_threads());
         }
+
+        m_wigner_d00.resize(m_config->num_singlescatter_moments(),
+                            m_scatter_angles.size());
+        auto d00 = sasktran2::math::WignerDCalculator(0, 0);
+        auto d02 = sasktran2::math::WignerDCalculator(0, 2);
+
+        if constexpr (NSTOKES == 3) {
+            m_wigner_d02.resize(m_config->num_singlescatter_moments(),
+                                m_scatter_angles.size());
+        }
+
+        for (int i = 0; i < m_scatter_angles.size(); ++i) {
+            for (int j = 0; j < m_config->num_singlescatter_moments(); ++j) {
+                m_wigner_d00(j, i) = d00.d(m_scatter_angles[i][0], j);
+
+                if constexpr (NSTOKES == 3) {
+                    m_wigner_d02(j, i) = d02.d(m_scatter_angles[i][0], j);
+                }
+            }
+        }
     }
 
     template <int NSTOKES>
@@ -124,11 +144,8 @@ namespace sasktran2::solartransmission {
             m_phase.chip(threadidx, 2).setZero();
             m_d_phase.chip(threadidx, 3).setZero();
 
-            sasktran2::math::WignerDCalculator d00(0, 0);
-            sasktran2::math::WignerDCalculator d02(0, 2);
             for (int i = 0; i < m_internal_to_geometry.size(); ++i) {
-                double theta =
-                    m_scatter_angles[m_internal_to_cos_scatter[i]][0];
+                int scat_index = m_internal_to_cos_scatter[i];
 
                 int atmo_index = m_internal_to_geometry[i];
 
@@ -139,16 +156,16 @@ namespace sasktran2::solartransmission {
                         m_phase(0, i, threadidx) +=
                             m_atmosphere->storage().leg_coeff(k, atmo_index,
                                                               wavelidx) *
-                            d00.d(theta, k);
+                            m_wigner_d00(k, scat_index);
                     } else {
                         m_phase(0, i, threadidx) +=
                             m_atmosphere->storage().leg_coeff(k * 4, atmo_index,
                                                               wavelidx) *
-                            d00.d(theta, k);
+                            m_wigner_d00(k, scat_index);
                         m_phase(1, i, threadidx) +=
                             m_atmosphere->storage().leg_coeff(
                                 k * 4 + 3, atmo_index, wavelidx) *
-                            d02.d(theta, k);
+                            m_wigner_d00(k, scat_index);
                     }
 
                     for (int d = 0;
@@ -157,16 +174,16 @@ namespace sasktran2::solartransmission {
                             m_d_phase(0, i, d, threadidx) +=
                                 m_atmosphere->storage().d_leg_coeff(
                                     k, atmo_index, wavelidx, d) *
-                                d00.d(theta, k);
+                                m_wigner_d00(k, scat_index);
                         } else {
                             m_d_phase(0, i, d, threadidx) +=
                                 m_atmosphere->storage().d_leg_coeff(
                                     k * 4, atmo_index, wavelidx, d) *
-                                d00.d(theta, k);
+                                m_wigner_d00(k, scat_index);
                             m_d_phase(1, i, d, threadidx) +=
                                 m_atmosphere->storage().d_leg_coeff(
                                     k * 4 + 3, atmo_index, wavelidx, d) *
-                                d02.d(theta, k);
+                                m_wigner_d02(k, scat_index);
                         }
                     }
                 }

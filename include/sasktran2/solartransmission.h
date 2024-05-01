@@ -133,6 +133,11 @@ namespace sasktran2::solartransmission {
             m_scatter_angles; /** Full list of  scattering angles that we need.
                                  for NSTOKES =3 this is (cos_scatter, C1, C2) */
 
+        Eigen::MatrixXd m_wigner_d00; /** Wigner D matrix for the phase function
+                                         (legendre_order, scatter_angle) */
+        Eigen::MatrixXd m_wigner_d02; /** Wigner D matrix for the phase function
+                                         (legendre_order, scatter_angle) */
+
         // Internal phase functions and derivatives on the actual grid
         Eigen::Tensor<double, 3>
             m_phase; /** (stokes eq, internal_index, thread) **/
