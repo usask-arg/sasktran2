@@ -70,14 +70,21 @@ namespace sasktran2::solartransmission {
                     m_internal_to_cos_scatter.push_back(num_scatter);
                 }
 
-                for (int k = 0; k < layer.exit.interpolation_weights.size();
-                     ++k) {
-                    m_geometry_exit_to_internal[i][j][k] = num_internal;
-                    ++num_internal;
+                if (j == 0) {
+                    // End layer at TOA, need to use layer exit
+                    for (int k = 0; k < layer.exit.interpolation_weights.size();
+                         ++k) {
+                        m_geometry_exit_to_internal[i][j][k] = num_internal;
+                        ++num_internal;
 
-                    m_internal_to_geometry.push_back(
-                        layer.exit.interpolation_weights[k].first);
-                    m_internal_to_cos_scatter.push_back(num_scatter);
+                        m_internal_to_geometry.push_back(
+                            layer.exit.interpolation_weights[k].first);
+                        m_internal_to_cos_scatter.push_back(num_scatter);
+                    }
+                } else {
+                    // Assign to previous layers entrance
+                    m_geometry_exit_to_internal[i][j] =
+                        m_geometry_entrance_to_internal[i][j - 1];
                 }
 
                 if (!ray.is_straight) {
