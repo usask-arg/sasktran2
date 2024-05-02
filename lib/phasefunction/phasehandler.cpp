@@ -151,47 +151,72 @@ namespace sasktran2::solartransmission {
             m_phase.chip(threadidx, 2).setZero();
             m_d_phase.chip(threadidx, 3).setZero();
 
+            Eigen::array<Eigen::Index, 3> dims = m_phase.dimensions();
+            Eigen::array<Eigen::Index, 3> offsets = {0, 1, 0};
+            Eigen::array<Eigen::Index, 3> extents = {dims[0], 1, 1};
+
             for (int i = 0; i < m_internal_to_geometry.size(); ++i) {
                 int scat_index = m_internal_to_cos_scatter[i];
 
                 int atmo_index = m_internal_to_geometry[i];
 
-                for (int k = 0; k < m_atmosphere->storage().max_order(
-                                        atmo_index, wavelidx);
-                     ++k) {
-                    if constexpr (NSTOKES == 1) {
-                        m_phase(0, i, threadidx) +=
-                            m_atmosphere->storage().leg_coeff(k, atmo_index,
-                                                              wavelidx) *
-                            m_wigner_d00(k, scat_index);
-                    } else {
-                        m_phase(0, i, threadidx) +=
-                            m_atmosphere->storage().leg_coeff(k * 4, atmo_index,
-                                                              wavelidx) *
-                            m_wigner_d00(k, scat_index);
-                        m_phase(1, i, threadidx) +=
-                            m_atmosphere->storage().leg_coeff(
-                                k * 4 + 3, atmo_index, wavelidx) *
-                            m_wigner_d00(k, scat_index);
-                    }
+                int max_order =
+                    m_atmosphere->storage().max_order(atmo_index, wavelidx);
 
-                    for (int d = 0;
-                         d < m_atmosphere->num_scattering_deriv_groups(); ++d) {
-                        if constexpr (NSTOKES == 1) {
-                            m_d_phase(0, i, d, threadidx) +=
-                                m_atmosphere->storage().d_leg_coeff(
-                                    k, atmo_index, wavelidx, d) *
-                                m_wigner_d00(k, scat_index);
-                        } else {
-                            m_d_phase(0, i, d, threadidx) +=
-                                m_atmosphere->storage().d_leg_coeff(
-                                    k * 4, atmo_index, wavelidx, d) *
-                                m_wigner_d00(k, scat_index);
-                            m_d_phase(1, i, d, threadidx) +=
-                                m_atmosphere->storage().d_leg_coeff(
-                                    k * 4 + 3, atmo_index, wavelidx, d) *
-                                m_wigner_d02(k, scat_index);
-                        }
+                if constexpr (NSTOKES == 1) {
+                    m_phase(0, i, threadidx) =
+                        Eigen::Map<const Eigen::VectorXd>(
+                            &m_atmosphere->storage().leg_coeff(0, atmo_index,
+                                                               wavelidx),
+                            max_order)
+                            .dot(m_wigner_d00(Eigen::seq(0, max_order - 1),
+                                              scat_index));
+                } else {
+                    m_phase(0, i, threadidx) =
+                        Eigen::Map<const Eigen::VectorXd, 0,
+                                   Eigen::InnerStride<4>>(
+                            &m_atmosphere->storage().leg_coeff(0, atmo_index,
+                                                               wavelidx),
+                            max_order)
+                            .dot(m_wigner_d00(Eigen::seq(0, max_order - 1),
+                                              scat_index));
+
+                    m_phase(1, i, threadidx) =
+                        Eigen::Map<const Eigen::VectorXd, 0,
+                                   Eigen::InnerStride<4>>(
+                            &m_atmosphere->storage().leg_coeff(3, atmo_index,
+                                                               wavelidx),
+                            max_order)
+                            .dot(m_wigner_d02(Eigen::seq(0, max_order - 1),
+                                              scat_index));
+                }
+                for (int d = 0; d < m_atmosphere->num_scattering_deriv_groups();
+                     ++d) {
+                    if constexpr (NSTOKES == 1) {
+                        m_d_phase(0, i, d, threadidx) =
+                            Eigen::Map<const Eigen::VectorXd>(
+                                &m_atmosphere->storage().d_leg_coeff(
+                                    0, atmo_index, wavelidx, d),
+                                max_order)
+                                .dot(m_wigner_d00(Eigen::seq(0, max_order - 1),
+                                                  scat_index));
+                    } else {
+                        m_d_phase(0, i, d, threadidx) =
+                            Eigen::Map<const Eigen::VectorXd, 0,
+                                       Eigen::InnerStride<4>>(
+                                &m_atmosphere->storage().d_leg_coeff(
+                                    0, atmo_index, wavelidx, d),
+                                max_order)
+                                .dot(m_wigner_d00(Eigen::seq(0, max_order - 1),
+                                                  scat_index));
+                        m_d_phase(1, i, d, threadidx) =
+                            Eigen::Map<const Eigen::VectorXd, 0,
+                                       Eigen::InnerStride<4>>(
+                                &m_atmosphere->storage().d_leg_coeff(
+                                    3, atmo_index, wavelidx, d),
+                                max_order)
+                                .dot(m_wigner_d02(Eigen::seq(0, max_order - 1),
+                                                  scat_index));
                     }
                 }
             }
