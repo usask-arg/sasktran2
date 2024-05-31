@@ -54,6 +54,7 @@ requirements:
     - pyyaml
     - xarray
     - netcdf4
+    - hdf5==1.14.3
     - scipy
     - liblapacke
     - libblas
