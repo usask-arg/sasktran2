@@ -83,9 +83,9 @@ jobs:
             target_plat: x86_64
           - os: windows-latest
             target_plat: x86_64
-          - os: macos-11
+          - os: macos-12
             target_plat: x86_64
-          - os: macos-11
+          - os: macos-12
             target_plat: arm
 
     steps:
@@ -108,7 +108,7 @@ jobs:
 
       - name: Build Conda package (cross mac arm)
         shell: bash -el {0}
-        if: (matrix.target_plat == 'arm') && (matrix.os == 'macos-11')
+        if: (matrix.target_plat == 'arm') && (matrix.os == 'macos-12')
         run: |
           conda mambabuild conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/ --no-test
 
@@ -123,7 +123,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-latest, macos-11, windows-latest ]
+        os: [ ubuntu-latest, macos-12, windows-latest ]
 
     steps:
       - uses: actions/checkout@v4
