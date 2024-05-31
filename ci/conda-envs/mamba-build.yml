@@ -3,4 +3,4 @@ dependencies:
   - python=3.11
   - boa
   - anaconda-client
-  - conda=24.3.0
+  - conda

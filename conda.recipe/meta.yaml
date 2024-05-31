@@ -48,6 +48,7 @@ requirements:
     - python {{ python }}
     - numpy
     - spdlog
+    - netcdf4
     - fmt
     - appdirs
     - pyyaml
