@@ -53,8 +53,6 @@ requirements:
     - appdirs
     - pyyaml
     - xarray
-    - netcdf4
-    - hdf5
     - scipy
     - liblapacke
     - libblas
