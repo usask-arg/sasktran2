@@ -104,13 +104,13 @@ jobs:
         shell: bash -el {0}
         if: (matrix.target_plat == 'x86_64')
         run: |
-          conda mambabuild conda.recipe --output-folder pkgs/
+          conda build conda.recipe --output-folder pkgs/
 
       - name: Build Conda package (cross mac arm)
         shell: bash -el {0}
         if: (matrix.target_plat == 'arm') && (matrix.os == 'macos-12')
         run: |
-          conda mambabuild conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/ --no-test
+          conda build conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/ --no-test
 
       - name: Save conda package
         uses: actions/upload-artifact@v4
