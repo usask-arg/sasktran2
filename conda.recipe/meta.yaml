@@ -49,7 +49,6 @@ requirements:
     - numpy
     - spdlog
     - fmt
-    - dask
     - appdirs
     - pyyaml
     - xarray
