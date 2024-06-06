@@ -1,9 +1,7 @@
 import xarray as xr
 import numpy as np
 
-# Takes about 42 minutes to run
-# Get singular file from Stokes.tar
-# DN files deleted as sasktran2 only works with Upwelling radiation
+# Takes about 45 minutes to run
 
 # Open Benchmark data file
 # if working in python console, need "SaskTran2 Testing/2009JournalDataReplication/Sasktran2 Addition/Stokes_Benchmark_Data_Set.nc"
