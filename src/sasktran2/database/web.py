@@ -34,6 +34,8 @@ class WebDatabase(CachedDatabase):
         else:
             self._data_directory = self._db_root
 
+        self._data_directory.mkdir(parents=True, exist_ok=True)
+
         # Get the filename from the url
         self._filename = Path(url).name
 
