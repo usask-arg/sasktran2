@@ -184,9 +184,12 @@ namespace sasktran2::atmosphere {
             sasktran2::types::leg_coeff phase_result = 0;
 
             for (const auto& ele : index_weights) {
+                auto non_zero_leg =
+                    Eigen::seq(0, phase_storage.max_order(ele.first, wavelidx));
                 phase_result +=
-                    ele.second * (m_scattering_weights.dot(
-                                     phase_matrix(Eigen::all, ele.first)));
+                    ele.second *
+                    (m_scattering_weights(non_zero_leg)
+                         .dot(phase_matrix(non_zero_leg, ele.first)));
             }
             // Apply the phase function
             source.value(0) *= phase_result;

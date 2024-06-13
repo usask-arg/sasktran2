@@ -1,3 +1,4 @@
+#include "sasktran2/atmosphere/grid_storage.h"
 #include "sasktran2/do_source.h"
 #include "sasktran2/geometry.h"
 #include "sasktran2/raytracing.h"
@@ -268,6 +269,10 @@ void Sasktran2<NSTOKES>::calculate_radiance(
 #endif
 
     validate_input_atmosphere(atmosphere);
+
+    const_cast<sasktran2::atmosphere::AtmosphereGridStorageFull<NSTOKES>&>(
+        atmosphere.storage())
+        .determine_maximum_order();
 
     // Use this method for observer geometries and make a different method for
     // interior fluxes?

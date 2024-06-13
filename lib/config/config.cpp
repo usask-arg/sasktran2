@@ -10,6 +10,7 @@ namespace sasktran2 {
           m_ndosphericaliterations(0), m_hr_nincoming(110), m_hr_noutgoing(110),
           m_hr_nspherical_iterations(50), m_hr_num_incoming_points(-1),
           m_do_forced_azimuth(-1), m_do_backprop(false),
+          m_singlescatter_phasemode(SingleScatterPhaseMode::from_legendre),
           m_threading_model(ThreadingModel::wavelength),
           m_initialize_hr_with_do_solution(false),
           m_input_validation_mode(InputValidationMode::strict) {
