@@ -195,7 +195,7 @@ def test_aerosol_constituent(altitude_grid: np.array, extinction_space=True):
     ext_wavel = 525
 
     mie = sk.optical.database.OpticalDatabaseGenericScatterer(
-        sk.appconfig.database_root().joinpath("cross_sections/mie/sulfate_test.nc")
+        sk.database.StandardDatabase().path("cross_sections/mie/sulfate_test.nc")
     )
     radius = np.ones_like(altitude_grid) * 105
     const = sk.constituent.ExtinctionScatterer(
