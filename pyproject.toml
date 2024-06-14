@@ -61,6 +61,7 @@ before-build = "bash {project}/ci/cibw/cibw_before_build.sh {project}"
 [tool.cibuildwheel.linux]
 archs = "native"
 environment = { CFLAGS="-fno-strict-aliasing -DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", LDFLAGS="-Wl,--strip-debug", CXXFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", RUNNER_OS="Linux", CMAKE_BUILD_PARALLEL_LEVEL="2", DO_STREAM_TEMPLATES="ON"}
+before-test = "pip install hdf5"
 
 [tool.cibuildwheel.macos]
 archs = "x86_64 arm64"
