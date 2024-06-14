@@ -25,13 +25,9 @@ def _atm_file_path(folder_name: str, file_name: str) -> Path:
     Path
         Absolute path to the file.
     """
-
-    base_path = StandardDatabase().path("climatology")
-
-    path_to_file = (
-        folder_name + "/" + file_name
-    )  # relative path to atm file from this python file
-    return (base_path / path_to_file).resolve()  # absolute path to atm file
+    return StandardDatabase().path(
+        (Path("climatology") / folder_name / file_name).as_posix()
+    )
 
 
 def _atm_reader(atm_file: str) -> dict:
