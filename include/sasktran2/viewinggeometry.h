@@ -50,6 +50,14 @@ namespace sasktran2::viewinggeometry {
         virtual ViewingRay
         construct_ray(const sasktran2::Coordinates& geometry) = 0;
 
+        /**
+         *  A string representation of the viewing geometry. Primarily used
+         * through the Python interface
+         *
+         * @return std::string
+         */
+        virtual std::string to_string() const = 0;
+
         virtual ~ViewingGeometryBase(){};
     };
 
@@ -95,6 +103,8 @@ namespace sasktran2::viewinggeometry {
          */
         ViewingRay
         construct_ray(const sasktran2::Coordinates& geometry) override final;
+
+        std::string to_string() const override final;
     };
 
     /** A singular line of sight that is defined from solar parameters at the
@@ -133,6 +143,8 @@ namespace sasktran2::viewinggeometry {
          */
         ViewingRay
         construct_ray(const sasktran2::Coordinates& geometry) override final;
+
+        std::string to_string() const override final;
     };
 
     /** A singular line of sight that is defined based upon the solar angles at
@@ -156,6 +168,8 @@ namespace sasktran2::viewinggeometry {
          */
         ViewingRay
         construct_ray(const sasktran2::Coordinates& geometry) override final;
+
+        std::string to_string() const override final;
     };
 
     /** A container that defines all of the viewing rays
