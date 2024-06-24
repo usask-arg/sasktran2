@@ -7,7 +7,9 @@ using namespace pybind11::literals;
 
 void init_viewing_geometry(py::module_& m) {
     py::class_<sasktran2::viewinggeometry::ViewingGeometryBase>(
-        m, "ViewingGeometryBase");
+        m, "ViewingGeometryBase")
+        .def("__repr__",
+             &sasktran2::viewinggeometry::ViewingGeometryBase::to_string);
 
     py::class_<sasktran2::viewinggeometry::TangentAltitudeSolar,
                sasktran2::viewinggeometry::ViewingGeometryBase>(
