@@ -87,7 +87,7 @@ class FrozenDistribution(ParticleSizeDistribution):
         """
         identifier = f"frozen_{base_distribution.identifier}"
         for key, value in frozen_parameters.items():
-            identifier += f"_{key}: {value}"
+            identifier += f"_{key}_{value}"
 
             if key not in base_distribution.args():
                 msg = f"Frozen key {key} not in base distribution args"
