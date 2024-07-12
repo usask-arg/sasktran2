@@ -1,0 +1,748 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="../" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Setting the Surface BRDF &#8212; sasktran2 2024.7.0 documentation</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="../_static/styles/theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../_static/styles/bootstrap.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+<link href="../_static/styles/pydata-sphinx-theme.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+
+  
+  <link href="../_static/vendor/fontawesome/6.5.2/css/all.min.css?digest=dfe6caa3a7d634c4db9b" rel="stylesheet" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-solid-900.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-brands-400.woff2" />
+<link rel="preload" as="font" type="font/woff2" crossorigin href="../_static/vendor/fontawesome/6.5.2/webfonts/fa-regular-400.woff2" />
+
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=a746c00c" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/sphinx-book-theme.css?v=a3416100" />
+    <link rel="stylesheet" type="text/css" href="../_static/mystnb.4510f1fc1dee50b3e5859aac5469c37c29e427902b24a333a5f9fcb2f0b3ac41.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=87e54e7c" />
+    <link rel="stylesheet" type="text/css" href="../_static/locals.css?v=12481bcd" />
+  
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b" />
+<link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b" />
+  <script src="../_static/vendor/fontawesome/6.5.2/js/all.min.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+    <script src="../_static/documentation_options.js?v=241d5602"></script>
+    <script src="../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/scripts/sphinx-book-theme.js?v=887ef09a"></script>
+    <script src="../_static/design-tabs.js?v=f930bc37"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'users_guide/brdf';</script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Performance Tips" href="performance.html" />
+    <link rel="prev" title="Polarized Calculations" href="polarization.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-primary-sidebar-checkbox"/>
+  <label class="overlay overlay-primary" for="pst-primary-sidebar-checkbox"></label>
+  
+  <input type="checkbox"
+          class="sidebar-toggle"
+          id="pst-secondary-sidebar-checkbox"/>
+  <label class="overlay overlay-secondary" for="pst-secondary-sidebar-checkbox"></label>
+  
+  <div class="search-button__wrapper">
+    <div class="search-button__overlay"></div>
+    <div class="search-button__search-container">
+<form class="bd-search d-flex align-items-center"
+      action="../search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         id="search-input"
+         placeholder="Search..."
+         aria-label="Search..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form></div>
+  </div>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <div class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="../index.html">
+  
+  
+  
+  
+  
+    
+    
+      
+    
+    
+    <img src="../_static/sasktran-dark.png" class="logo__image only-light" alt="sasktran2 2024.7.0 documentation - Home"/>
+    <script>document.write(`<img src="../_static/sasktran-light.png" class="logo__image only-dark" alt="sasktran2 2024.7.0 documentation - Home"/>`);</script>
+  
+  
+</a></div>
+        <div class="sidebar-primary-item"><ul class="navbar-icon-links"
+    aria-label="Icon Links">
+        <li class="nav-item">
+          
+          
+          
+          
+          
+          
+          
+          
+          <a href="https://github.com/usask-arg/sasktran2" title="GitHub" class="nav-link pst-navbar-icon" rel="noopener" target="_blank" data-bs-toggle="tooltip" data-bs-placement="bottom"><i class="fa-brands fa-square-github fa-lg" aria-hidden="true"></i>
+            <span class="sr-only">GitHub</span></a>
+        </li>
+</ul></div>
+        <div class="sidebar-primary-item">
+
+ <script>
+ document.write(`
+   <button class="btn search-button-field search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass"></i>
+    <span class="search-button__default-text">Search</span>
+    <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+   </button>
+ `);
+ </script></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">For Users</span></p>
+<ul class="current nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../installation.html">Installation</a></li>
+
+
+<li class="toctree-l1"><a class="reference internal" href="../quickstart.html">Quick Start</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="../users_guide.html">Users Guide</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2 has-children"><a class="reference internal" href="../required_components.html">Setting up the Calculation</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../components/model_geometry.html">The Model Geometry</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../components/viewing_geometry.html">The Viewing Geometry</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../components/sources.html">Source Terms</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l4"><a class="reference internal" href="../components/source_terms/singlescatter.html">Single Scatter Sources</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../components/source_terms/discrete_ordinates.html">The Discrete Ordinates Source</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../components/source_terms/occultation.html">Occultation Sources</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../components/source_terms/successive_orders.html">The Successive Orders of Scattering Source</a></li>
+</ul>
+</details></li>
+<li class="toctree-l3"><a class="reference internal" href="../components/atmosphere.html">The Atmospheric State</a></li>
+</ul>
+</details></li>
+<li class="toctree-l2"><a class="reference internal" href="../weighting_functions.html">Weighting Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mie.html">Mie Scattering Databases</a></li>
+<li class="toctree-l2"><a class="reference internal" href="polarization.html">Polarized Calculations</a></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">Setting the Surface BRDF</a></li>
+
+
+<li class="toctree-l2"><a class="reference internal" href="performance.html">Performance Tips</a></li>
+<li class="toctree-l2"><a class="reference internal" href="phase.html">Phase Function Specification</a></li>
+<li class="toctree-l2"><a class="reference internal" href="geodetic.html">Geodesy Tools</a></li>
+<li class="toctree-l2"><a class="reference internal" href="input_validation.html">Input validation</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../examples/examples.html">More Examples</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../examples/aerosol/basic.html">Basic Aerosol Inclusion</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../examples/wf/amf.html">Calculating Air Mass Factors</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../examples/validation/coulson.html">Reproducing the Coulson Tables</a></li>
+</ul>
+</details></li>
+</ul>
+</details></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../api_reference.html">API Reference</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../api/config.html">Config</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/engine.html">Engine</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/model_geometry.html">Model Geometry</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/atmosphere.html">Atmosphere</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/constituents.html">Constituents</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/optical.html">Optical Properties</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/output.html">Output</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/viewing_geometry.html">Viewing Geometry</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/climatology.html">Climatologies</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/geodetic.html">Geodetic</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/database.html">Databases</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/util.html">Utility</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../api/mie.html">Mie</a></li>
+</ul>
+</details></li>
+<li class="toctree-l1"><a class="reference internal" href="../changelog.html">Changelog</a></li>
+
+
+
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Extending SASKTRAN2</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="../extending/constituent.html">Adding Constituents</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Developer Documentation</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../developer/compiling.html">Compiling from Source</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../developer/windows.html">Local Windows Development</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../developer/ide/vscode.html">Visual Studio Code Configuration</a></li>
+</ul>
+</details></li>
+
+<li class="toctree-l1"><a class="reference internal" href="../developer/contributing.html">Contributing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../developer/codespaces.html">Using GitHub Codespaces</a></li>
+</ul>
+
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+  </div>
+  
+  <div id="rtd-footer-container"></div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+
+<div class="sbt-scroll-pixel-helper"></div>
+
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+
+
+
+<div class="dropdown dropdown-source-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Source repositories">
+    <i class="fab fa-github"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="https://github.com/usask-arg/sasktran2" target="_blank"
+   class="btn btn-sm btn-source-repository-button dropdown-item"
+   title="Source repository"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+<span class="btn__text-container">Repository</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/usask-arg/sasktran2/edit/main/docs/sphinx/source/users_guide/brdf.md" target="_blank"
+   class="btn btn-sm btn-source-edit-button dropdown-item"
+   title="Suggest edit"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-pencil-alt"></i>
+  </span>
+<span class="btn__text-container">Suggest edit</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li><a href="https://github.com/usask-arg/sasktran2/issues/new?title=Issue%20on%20page%20%2Fusers_guide/brdf.html&body=Your%20issue%20content%20here." target="_blank"
+   class="btn btn-sm btn-source-issues-button dropdown-item"
+   title="Open an issue"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-lightbulb"></i>
+  </span>
+<span class="btn__text-container">Open issue</span>
+</a>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="../_sources/users_guide/brdf.md" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.md</span>
+</a>
+</li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button" title="light/dark" aria-label="light/dark" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="theme-switch fa-solid fa-sun fa-lg" data-mode="light"></i>
+    <i class="theme-switch fa-solid fa-moon fa-lg" data-mode="dark"></i>
+    <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"></i>
+  </button>
+`);
+</script>
+
+
+<script>
+document.write(`
+  <button class="btn btn-sm pst-navbar-icon search-button search-button__button" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+  </button>
+`);
+</script>
+<button class="sidebar-toggle secondary-toggle btn btn-sm" title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="fa-solid fa-list"></span>
+</button>
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>Setting the Surface BRDF</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+            <div>
+                <h2> Contents </h2>
+            </div>
+            <nav aria-label="Page">
+                <ul class="visible nav section-nav flex-column">
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#">Setting the Surface BRDF</a></li>
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#surface-brdf-linearization">Surface BRDF Linearization</a></li>
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#available-brdfs">Available BRDFs</a></li>
+</ul>
+
+            </nav>
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section class="tex2jax_ignore mathjax_ignore" id="setting-the-surface-brdf">
+<span id="users-brdf"></span><h1>Setting the Surface BRDF<a class="headerlink" href="#setting-the-surface-brdf" title="Link to this heading">#</a></h1>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">sasktran2</span> <span class="k">as</span> <span class="nn">sk</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p>SASKTRAN2 has the capability to include surface reflectance in the form of a Bi-directional Reflectance Distribution Function (BRDF).
+The simplest BRDF is a Lambertian surface where the outgoing radiation is the same in all directions.</p>
+<p>Let’s start by setting up a calculation where we view the ground at a variety of different viewing zenith angles.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
+
+<span class="n">config</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">Config</span><span class="p">()</span>
+<span class="c1">#config.multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates</span>
+<span class="n">config</span><span class="o">.</span><span class="n">num_streams</span> <span class="o">=</span> <span class="mi">4</span>
+
+<span class="n">model_geometry</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">Geometry1D</span><span class="p">(</span><span class="n">cos_sza</span><span class="o">=</span><span class="mf">0.6</span><span class="p">,</span>
+                                <span class="n">solar_azimuth</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+                                <span class="n">earth_radius_m</span><span class="o">=</span><span class="mi">6372000</span><span class="p">,</span>
+                                <span class="n">altitude_grid_m</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">65001</span><span class="p">,</span> <span class="mi">1000</span><span class="p">),</span>
+                                <span class="n">interpolation_method</span><span class="o">=</span><span class="n">sk</span><span class="o">.</span><span class="n">InterpolationMethod</span><span class="o">.</span><span class="n">LinearInterpolation</span><span class="p">,</span>
+                                <span class="n">geometry_type</span><span class="o">=</span><span class="n">sk</span><span class="o">.</span><span class="n">GeometryType</span><span class="o">.</span><span class="n">Spherical</span><span class="p">)</span>
+
+<span class="n">viewing_geo</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">ViewingGeometry</span><span class="p">()</span>
+
+<span class="n">cos_viewing_angle</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mf">0.01</span><span class="p">,</span> <span class="mf">0.99</span><span class="p">,</span> <span class="mf">0.05</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">mu</span> <span class="ow">in</span> <span class="n">cos_viewing_angle</span><span class="p">:</span>
+    <span class="n">ray</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">GroundViewingSolar</span><span class="p">(</span><span class="mf">0.6</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">,</span> <span class="n">mu</span><span class="p">,</span> <span class="mi">100000</span><span class="p">)</span>
+    <span class="n">viewing_geo</span><span class="o">.</span><span class="n">add_ray</span><span class="p">(</span><span class="n">ray</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">mu</span> <span class="ow">in</span> <span class="n">cos_viewing_angle</span><span class="p">[::</span><span class="o">-</span><span class="mi">1</span><span class="p">]:</span>
+    <span class="n">ray</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">GroundViewingSolar</span><span class="p">(</span><span class="mf">0.6</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">mu</span><span class="p">,</span> <span class="mi">100000</span><span class="p">)</span>
+    <span class="n">viewing_geo</span><span class="o">.</span><span class="n">add_ray</span><span class="p">(</span><span class="n">ray</span><span class="p">)</span>
+
+<span class="n">wavel</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">600</span><span class="p">])</span>
+
+<span class="n">atmosphere</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">Atmosphere</span><span class="p">(</span><span class="n">model_geometry</span><span class="p">,</span> <span class="n">config</span><span class="p">,</span> <span class="n">wavelengths_nm</span><span class="o">=</span><span class="n">wavel</span><span class="p">)</span>
+
+<span class="n">sk</span><span class="o">.</span><span class="n">climatology</span><span class="o">.</span><span class="n">us76</span><span class="o">.</span><span class="n">add_us76_standard_atmosphere</span><span class="p">(</span><span class="n">atmosphere</span><span class="p">)</span>
+
+<span class="n">atmosphere</span><span class="p">[</span><span class="s1">&#39;rayleigh&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">constituent</span><span class="o">.</span><span class="n">Rayleigh</span><span class="p">()</span>
+<span class="n">atmosphere</span><span class="p">[</span><span class="s1">&#39;ozone&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">climatology</span><span class="o">.</span><span class="n">mipas</span><span class="o">.</span><span class="n">constituent</span><span class="p">(</span><span class="s2">&quot;O3&quot;</span><span class="p">,</span> <span class="n">sk</span><span class="o">.</span><span class="n">optical</span><span class="o">.</span><span class="n">O3DBM</span><span class="p">())</span>
+
+<span class="n">engine</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">Engine</span><span class="p">(</span><span class="n">config</span><span class="p">,</span> <span class="n">model_geometry</span><span class="p">,</span> <span class="n">viewing_geo</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p>BRDFs are added to the atmosphere the same way any constituent is.  Let’s add a Lambertian surface
+with a constant surface albedo of 1.0</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">atmosphere</span><span class="p">[</span><span class="s1">&#39;brdf&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">constituent</span><span class="o">.</span><span class="n">LambertianSurface</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+<p>And calculate the radiance</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">radiance</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">calculate_radiance</span><span class="p">(</span><span class="n">atmosphere</span><span class="p">)</span>
+
+<span class="n">radiance</span><span class="p">[</span><span class="s2">&quot;radiance&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">isel</span><span class="p">(</span><span class="n">stokes</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">sel</span><span class="p">(</span><span class="n">wavelength</span><span class="o">=</span><span class="mi">600</span><span class="p">)</span><span class="o">.</span><span class="n">plot</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_plain highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>[&lt;matplotlib.lines.Line2D at 0x7fcfe0d32c50&gt;]
+</pre></div>
+</div>
+<img alt="../_images/418be3164bcf35c149242fe338f508f4a867998eed502561a41dd31fc49fe5c1.png" src="../_images/418be3164bcf35c149242fe338f508f4a867998eed502561a41dd31fc49fe5c1.png" />
+</div>
+</div>
+<p>We can change the surface to a snow surface and compare the results,</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">atmosphere</span><span class="p">[</span><span class="s1">&#39;brdf&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">sk</span><span class="o">.</span><span class="n">constituent</span><span class="o">.</span><span class="n">SnowKokhanovsky</span><span class="p">()</span>
+
+<span class="n">radiance_snow</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">calculate_radiance</span><span class="p">(</span><span class="n">atmosphere</span><span class="p">)</span>
+
+<span class="n">radiance</span><span class="p">[</span><span class="s2">&quot;radiance&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">isel</span><span class="p">(</span><span class="n">stokes</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">sel</span><span class="p">(</span><span class="n">wavelength</span><span class="o">=</span><span class="mi">600</span><span class="p">)</span><span class="o">.</span><span class="n">plot</span><span class="p">()</span>
+<span class="n">radiance_snow</span><span class="p">[</span><span class="s2">&quot;radiance&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">isel</span><span class="p">(</span><span class="n">stokes</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span><span class="o">.</span><span class="n">sel</span><span class="p">(</span><span class="n">wavelength</span><span class="o">=</span><span class="mi">600</span><span class="p">)</span><span class="o">.</span><span class="n">plot</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_plain highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>[&lt;matplotlib.lines.Line2D at 0x7fcfd8c45dd0&gt;]
+</pre></div>
+</div>
+<img alt="../_images/23cce91068493fd937b310c82fbb5ada124352f05a6df779994a283d90453419.png" src="../_images/23cce91068493fd937b310c82fbb5ada124352f05a6df779994a283d90453419.png" />
+</div>
+</div>
+<p>And we see a shifting of radiance values towards the later lines of sight,
+which have relative azimuth 0 and are in the glint region.</p>
+</section>
+<section class="tex2jax_ignore mathjax_ignore" id="surface-brdf-linearization">
+<h1>Surface BRDF Linearization<a class="headerlink" href="#surface-brdf-linearization" title="Link to this heading">#</a></h1>
+<p>Each BRDF provides linearizations with respect to it’s input parameters.
+If we look at the radiance calculated with the Lambertian surface,</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">radiance</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>&lt;xarray.Dataset&gt; Size: 81kB
+Dimensions:               (wavelength: 1, stokes: 1, altitude: 66, los: 40,
+                           ozone_altitude: 50, brdf_wavelength: 1)
+Coordinates:
+  * wavelength            (wavelength) int64 8B 600
+  * stokes                (stokes) &lt;U1 4B &#39;I&#39;
+  * altitude              (altitude) float64 528B 0.0 1e+03 ... 6.4e+04 6.5e+04
+Dimensions without coordinates: los, ozone_altitude, brdf_wavelength
+Data variables:
+    radiance              (wavelength, los, stokes) float64 320B 0.05522 ... ...
+    wf_pressure_pa        (altitude, wavelength, los, stokes) float64 21kB -1...
+    wf_temperature_k      (altitude, wavelength, los, stokes) float64 21kB 6....
+    wf_ozone_vmr          (ozone_altitude, wavelength, los, stokes) float64 16kB ...
+    wf_specific_humidity  (altitude, wavelength, los, stokes) float64 21kB 0....
+    wf_brdf_albedo        (brdf_wavelength, wavelength, los, stokes) float64 320B ...
+</pre></div>
+</div>
+</div>
+</div>
+<p>We see there is a field <code class="docutils literal notranslate"><span class="pre">wf_brdf_albedo</span></code> that represents the derivative of
+the observations with respect to our input albedo value.</p>
+<p>Looking at the snow calculation,</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">radiance_snow</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>&lt;xarray.Dataset&gt; Size: 81kB
+Dimensions:               (wavelength: 1, stokes: 1, altitude: 66, los: 40,
+                           ozone_altitude: 50, brdf_wavelength: 1)
+Coordinates:
+  * wavelength            (wavelength) int64 8B 600
+  * stokes                (stokes) &lt;U1 4B &#39;I&#39;
+  * altitude              (altitude) float64 528B 0.0 1e+03 ... 6.4e+04 6.5e+04
+Dimensions without coordinates: los, ozone_altitude, brdf_wavelength
+Data variables:
+    radiance              (wavelength, los, stokes) float64 320B 0.0535 ... 0...
+    wf_pressure_pa        (altitude, wavelength, los, stokes) float64 21kB -1...
+    wf_temperature_k      (altitude, wavelength, los, stokes) float64 21kB 4....
+    wf_ozone_vmr          (ozone_altitude, wavelength, los, stokes) float64 16kB ...
+    wf_specific_humidity  (altitude, wavelength, los, stokes) float64 21kB 0....
+    wf_brdf_L             (brdf_wavelength, wavelength, los, stokes) float64 320B ...
+    wf_brdf_M             (brdf_wavelength, wavelength, los, stokes) float64 320B ...
+</pre></div>
+</div>
+</div>
+</div>
+<p>We see two parameters, <code class="docutils literal notranslate"><span class="pre">wf_brdf_L</span></code> and <code class="docutils literal notranslate"><span class="pre">wf_brdf_M</span></code>. These are the derivatives
+with respect to the input parameters <code class="docutils literal notranslate"><span class="pre">L</span></code> and <code class="docutils literal notranslate"><span class="pre">M</span></code> of the Kokhanovsky model.</p>
+</section>
+<section class="tex2jax_ignore mathjax_ignore" id="available-brdfs">
+<h1>Available BRDFs<a class="headerlink" href="#available-brdfs" title="Link to this heading">#</a></h1>
+<p>A full list of available surface parameterizations can be found at <a class="reference internal" href="../api/constituents.html#brdfs"><span class="std std-ref">BRDFs</span></a>.</p>
+</section>
+
+
+                </article>
+              
+
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="polarization.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">Polarized Calculations</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="performance.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Performance Tips</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <div class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+  <div class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> Contents
+  </div>
+  <nav class="bd-toc-nav page-toc">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#">Setting the Surface BRDF</a></li>
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#surface-brdf-linearization">Surface BRDF Linearization</a></li>
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#available-brdfs">Available BRDFs</a></li>
+</ul>
+
+  </nav></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By USask-ARG
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2024, USask-ARG.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script src="../_static/scripts/bootstrap.js?digest=dfe6caa3a7d634c4db9b"></script>
+<script src="../_static/scripts/pydata-sphinx-theme.js?digest=dfe6caa3a7d634c4db9b"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
+</html>
