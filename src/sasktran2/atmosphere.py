@@ -1,7 +1,6 @@
 import logging
 from copy import copy
 from dataclasses import dataclass
-from typing import List, Optional, Union
 
 import numpy as np
 import xarray as xr
@@ -13,6 +12,7 @@ from sasktran2.units import (
     wavenumber_cminv_to_wavlength_nm,
     wavlength_nm_to_wavenumber_cminv,
 )
+from sasktran2.util.state import EquationOfState
 
 
 @dataclass
@@ -100,13 +100,13 @@ class DerivativeMapping:
     def name_prefix(self) -> str:
         return self._name_prefix
 
-    def map_derivative(self, data: np.ndarray, dimensions: List[str]):
+    def map_derivative(self, data: np.ndarray, dimensions: list[str]):
         return xr.DataArray(
             data,
             dims=dimensions,
         )
 
-    def name(self) -> Optional[str]:
+    def name(self) -> str | None:
         return None
 
 
@@ -119,7 +119,7 @@ class InterpolatedDerivativeMapping(DerivativeMapping):
         result_dim="interp_altitude",
         summable: bool = False,
         log_radiance_space: bool = False,
-        name: Optional[str] = None,
+        name: str | None = None,
     ):
         """
         A class which defines a mapping from internal model derivative quantities to user input quantities
@@ -161,7 +161,7 @@ class InterpolatedDerivativeMapping(DerivativeMapping):
 
         self._sparse_mapping = sparse.csc_matrix(self._xr_interpolator.to_numpy())
 
-    def map_derivative(self, data: np.ndarray, dimensions: List[str]):
+    def map_derivative(self, data: np.ndarray, dimensions: list[str]):
         new_dims = copy(dimensions)
         new_dims[-1] = self._xr_interpolator.dims[-1]
 
@@ -172,7 +172,7 @@ class InterpolatedDerivativeMapping(DerivativeMapping):
             dims=new_dims,
         ).transpose(*[new_dims[-1], *new_dims[:-1]])
 
-    def name(self) -> Optional[str]:
+    def name(self) -> str | None:
         return self._name
 
 
@@ -215,7 +215,7 @@ class SurfaceDerivativeMapping(DerivativeMapping):
             interpolating_matrix, dims=["tempDIM", result_dim]
         )
 
-    def map_derivative(self, data: np.ndarray, dimensions: List[str]):
+    def map_derivative(self, data: np.ndarray, dimensions: list[str]):
         return xr.DataArray(
             np.einsum(
                 "ijk, il->lijk", data, self._xr_interpolator.to_numpy(), optimize=True
@@ -231,10 +231,12 @@ class Atmosphere:
         config: sk.Config,
         wavelengths_nm: np.array = None,
         wavenumber_cminv: np.array = None,
-        numwavel: Optional[int] = None,
+        numwavel: int | None = None,
         calculate_derivatives: bool = True,
         pressure_derivative: bool = True,
         temperature_derivative: bool = True,
+        specific_humidity_derivative: bool = True,
+        legendre_derivative: bool = True,
     ):
         """
         The main specification for the atmospheric state.
@@ -262,6 +264,8 @@ class Atmosphere:
             Whether or not the model should calculate derivatives with respect to pressure., by default True
         temperature_derivative: bool, optional
             Whether or not the model should calculate derivatives with respect to temperature., by default True
+        legendre_derivative: bool, optional
+            Whether or not the model should calculate derivatives with respect to the legendre coefficients., by default True
         """
         self._wavelengths_nm = None
         self._wavenumbers_cminv = None
@@ -287,6 +291,8 @@ class Atmosphere:
         self._calculate_derivatives = calculate_derivatives
         self._pressure_derivative = pressure_derivative
         self._temperature_derivative = temperature_derivative
+        self._legendre_derivative = legendre_derivative
+        self._specific_humidity_derivative = specific_humidity_derivative
 
         if self._nstokes == 1:
             self._atmosphere = sk.AtmosphereStokes_1(
@@ -301,12 +307,9 @@ class Atmosphere:
             self._atmosphere.storage.leg_coeff, self._nstokes
         )
 
-        self.surface.albedo = np.zeros(nwavel)
-
         self._storage_needs_reset = False
 
-        self._pressure_pa = None
-        self._temperature_k = None
+        self._equation_of_state = EquationOfState()
 
         self._model_geometry = model_geometry
         self._config = config
@@ -316,6 +319,18 @@ class Atmosphere:
         self._unscaled_ssa = None
         self._unscaled_extinction = None
         self._applied_delta_m_order = None
+        self._nwavel = nwavel
+
+    @property
+    def num_wavel(self) -> int:
+        """
+        The number of wavelengths the atmosphere is specified at
+
+        Returns
+        -------
+        int
+        """
+        return self._nwavel
 
     @property
     def model_geometry(self) -> sk.Geometry1D:
@@ -329,7 +344,7 @@ class Atmosphere:
         return self._model_geometry
 
     @property
-    def applied_delta_m_order(self) -> Optional[int]:
+    def applied_delta_m_order(self) -> int | None:
         """
         The order of the applied delta_m scaling. Can be None if no scaling has been applied
         """
@@ -369,9 +384,20 @@ class Atmosphere:
         return self._pressure_derivative
 
     @property
+    def calculate_specific_humidity_derivative(self) -> bool:
+        """
+        True if we are calculating the derivative with respect to specific humidity
+
+        Returns
+        -------
+        bool
+        """
+        return self._specific_humidity_derivative
+
+    @property
     def storage(
         self,
-    ) -> Union[sk.AtmosphereStorageStokes_1, sk.AtmosphereStorageStokes_3]:
+    ) -> sk.AtmosphereStorageStokes_1 | sk.AtmosphereStorageStokes_3:
         """
         The internal object which contains the atmosphere extinction, single scatter albedo, and legendre coefficients.
 
@@ -382,7 +408,7 @@ class Atmosphere:
         return self._atmosphere.storage
 
     @property
-    def surface(self) -> sk.Surface:
+    def surface(self) -> sk.SurfaceStokes_1 | sk.SurfaceStokes_3:
         """
         The surface object
 
@@ -401,11 +427,11 @@ class Atmosphere:
         -------
         np.array
         """
-        return self._temperature_k
+        return self._equation_of_state.temperature_k
 
     @temperature_k.setter
     def temperature_k(self, temp: np.array):
-        self._temperature_k = temp
+        self._equation_of_state.temperature_k = temp
 
     @property
     def pressure_pa(self) -> np.array:
@@ -416,14 +442,40 @@ class Atmosphere:
         -------
         np.array
         """
-        return self._pressure_pa
+        return self._equation_of_state.pressure_pa
+
+    @property
+    def specific_humidity(self) -> np.array:
+        """
+        Specific humidity on the same grid as :py:attr:`~model_geometry`
+
+        Returns
+        -------
+        np.array
+        """
+        return self._equation_of_state.specific_humidity
+
+    @property
+    def state_equation(self) -> EquationOfState:
+        """
+        The equation of state object which contains the temperature, pressure, and specific humidity
+
+        Returns
+        -------
+        EquationOfState
+        """
+        return self._equation_of_state
+
+    @specific_humidity.setter
+    def specific_humidity(self, sh: np.array):
+        self._equation_of_state.specific_humidity = sh
 
     @pressure_pa.setter
     def pressure_pa(self, pres: np.array):
-        self._pressure_pa = pres
+        self._equation_of_state.pressure_pa = pres
 
     @property
-    def wavelengths_nm(self) -> Optional[np.array]:
+    def wavelengths_nm(self) -> np.ndarray | None:
         """
         The wavelengths in [nm] the atmosphere is specified at.  This is an
         optional property, it may be None.
@@ -440,7 +492,7 @@ class Atmosphere:
         self._wavenumbers_cminv = wavlength_nm_to_wavenumber_cminv(wav)
 
     @property
-    def wavenumbers_cminv(self) -> Optional[np.array]:
+    def wavenumbers_cminv(self) -> np.ndarray | None:
         """
         The wavenumbers in [:math:`\\text{cm}^{-1}`].  This is an optional property, it may be set to None
 
@@ -505,7 +557,7 @@ class Atmosphere:
     def leg_coeff(self) -> LegendreStorageView:
         return self._leg_coeff
 
-    def internal_object(self) -> Union[sk.AtmosphereStokes_1, sk.AtmosphereStokes_3]:
+    def internal_object(self) -> sk.AtmosphereStokes_1 | sk.AtmosphereStokes_3:
         """
         The internal `pybind11` object that can be used to perform the radiative transfer calculation.
         Calling this method will trigger a construction of the atmosphere object if necessary, and then
@@ -558,23 +610,33 @@ class Atmosphere:
                     summable=True,
                 )
 
-                for i in range(self.storage.leg_coeff.shape[0]):
-                    if i == 0:
-                        # No derivative for the first leg_coeff
-                        continue
+                self._derivs["raw"]["albedo"] = DerivativeMapping(
+                    NativeGridDerivative(
+                        d_albedo=np.ones(self.num_wavel),
+                    ),
+                    summable=True,
+                )
 
-                    d_leg_coeff = np.zeros_like(self.storage.leg_coeff)
-                    d_leg_coeff[i, :] = 1
-                    self._derivs["raw"][f"leg_coeff_{i}"] = DerivativeMapping(
-                        NativeGridDerivative(
-                            d_extinction=np.zeros_like(self.storage.total_extinction),
-                            d_ssa=np.zeros_like(self.storage.ssa),
-                            d_leg_coeff=d_leg_coeff,
-                            scat_factor=np.ones_like(self.storage.ssa),
-                        ),
-                        summable=True,
-                    )
-                    num_scat_derivs += 1
+                if self._legendre_derivative:
+                    for i in range(self.storage.leg_coeff.shape[0]):
+                        if i == 0:
+                            # No derivative for the first leg_coeff
+                            continue
+
+                        d_leg_coeff = np.zeros_like(self.storage.leg_coeff)
+                        d_leg_coeff[i, :] = 1
+                        self._derivs["raw"][f"leg_coeff_{i}"] = DerivativeMapping(
+                            NativeGridDerivative(
+                                d_extinction=np.zeros_like(
+                                    self.storage.total_extinction
+                                ),
+                                d_ssa=np.zeros_like(self.storage.ssa),
+                                d_leg_coeff=d_leg_coeff,
+                                scat_factor=np.ones_like(self.storage.ssa),
+                            ),
+                            summable=True,
+                        )
+                        num_scat_derivs += 1
 
         # Now we need to resize the phase derivative storage if necessary, and set the scattering derivatives
         if num_scat_derivs > 0:
@@ -588,9 +650,9 @@ class Atmosphere:
                             mapping is not None
                             and mapping.native_grid_mapping.d_leg_coeff is not None
                         ):
-                            self.storage.d_leg_coeff[
-                                :, :, :, scat_index
-                            ] = mapping.native_grid_mapping.d_leg_coeff
+                            self.storage.d_leg_coeff[:, :, :, scat_index] = (
+                                mapping.native_grid_mapping.d_leg_coeff
+                            )
                             mapping.native_grid_mapping.scat_deriv_index = scat_index
                             scat_index += 1
 

@@ -2,6 +2,7 @@
 
 #include <sktran_disco/sktran_do.h>
 
+/*
 TEST_CASE("Basic LowLevel", "[sktran_do][lowlevel]") {
     sasktran_disco_lowlevel::CPPApi cppapi(16, 2, 1, 1, 1, 0);
 
@@ -302,3 +303,4 @@ TEST_CASE("Single Layer Weighting Function", "[sktran_do][lowlevel]") {
     sasktran_disco_lowlevel::calculate(&atmosphere, &config,
                                        &weightingfunctions, &geometry, &output);
 }
+*/

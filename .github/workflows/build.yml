@@ -39,7 +39,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           submodules: true
@@ -68,7 +68,7 @@ jobs:
           conda mambabuild conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/ --no-test --user usask-arg --token ${{ secrets.TOKEN }}
 
       - name: Save conda package
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: sasktran2-conda-${{ matrix.os }}-${{ matrix.target_plat }}
           path: pkgs
@@ -98,7 +98,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           submodules: true
@@ -127,7 +127,7 @@ jobs:
           conda mambabuild conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/ --no-test --user usask-arg-nightly --token ${{ secrets.TOKEN }}
 
       - name: Save conda package
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: sasktran2-conda-${{ matrix.os }}-${{ matrix.target_plat }}
           path: pkgs
@@ -146,7 +146,7 @@ jobs:
       - name: Check metadata
         run: pipx run twine check dist/*
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           path: dist/*.tar.gz
 
@@ -164,16 +164,17 @@ jobs:
           submodules: true
 
       - name: Build wheels all
-        uses: pypa/cibuildwheel@v2.16.2
+        uses: pypa/cibuildwheel@v2.17.0
         env:
           CIBW_SKIP: "pp* *musllinux* cp37-* cp38-* cp39-*"
           CIBW_BUILD: "cp310-* cp311-* cp312-*"
         with:
           output-dir: wheelhouse
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           path: ./wheelhouse/*.whl
+          name: sasktran2-wheel-${{ matrix.os }}
 
   upload_wheels:
     runs-on: ubuntu-latest
@@ -185,17 +186,32 @@ jobs:
       id-token: write
     if: (github.event_name == 'release')
     steps:
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
 
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
           name: artifact
           path: dist
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: sasktran2-wheel-ubuntu-latest
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: sasktran2-wheel-macos-11
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: sasktran2-wheel-windows-latest
+          path: dist
+
       - name: Publish package to PyPI
-        uses: pypa/gh-action-pypi-publish@v1.8.7
+        uses: pypa/gh-action-pypi-publish@v1.8.14
         with:
           verbose: true
 
@@ -204,13 +220,13 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           submodules: true
 
       - name: Setup Conda build environment
-        uses: conda-incubator/setup-miniconda@v2
+        uses: conda-incubator/setup-miniconda@v3
         with:
           activate-environment: sasktran2-dev-build
           environment-file: conda/dev_env.yml
@@ -222,7 +238,6 @@ jobs:
         shell: bash -el {0}
         run: |
           pip install .
-          python -c "import sasktran2 as sk; sk.appconfig.download_standard_databases()"
 
       - name: Build sphinx
         shell: bash -el {0}
@@ -230,7 +245,7 @@ jobs:
           cd docs/sphinx
           make html
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: sasktran2-py-docs
           path: docs/sphinx/build/html
@@ -246,50 +261,14 @@ jobs:
 
     steps:
       - name: Download doc artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: sasktran2-py-docs
           path: docs
 
       - name: Deploy release docs
-        uses: peaceiris/actions-gh-pages@v3
+        uses: peaceiris/actions-gh-pages@v4
         if: github.event_name == 'release'
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: docs
-
-  upload-nightly-wheels:
-    needs: build_wheels_cibuildwheel
-    runs-on: ubuntu-latest
-
-    if: (github.event_name != 'release')
-
-    environment:
-      name: conda-nightly-wheels
-      url: https://anaconda.org/usask-arg-nightly/sasktran2
-
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-          submodules: true
-
-      - name: Setup Conda build environment
-        uses: mamba-org/setup-micromamba@v1
-        with:
-          environment-file: ci/conda-envs/mamba-build.yml
-
-      - uses: actions/download-artifact@v3
-        with:
-          name: artifact
-          path: dist
-
-      - name: Upload Wheels
-        shell: bash -el {0}
-        run: |
-          anaconda --token ${{ secrets.TOKEN }} upload \
-          --force \
-          --user "usask-arg-nightly" \
-          dist/*.whl

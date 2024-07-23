@@ -13,13 +13,15 @@ from ._core import (  # noqa: I001
     GeometryType,
     GroundViewingSolar,
     InterpolationMethod,
+    InputValidationMode,
     MultipleScatterSource,
     SingleScatterSource,
     OccultationSource,
     OutputIdealStokes_1,
     OutputIdealStokes_3,
     StokesBasis,
-    Surface,
+    SurfaceStokes_1,
+    SurfaceStokes_3,
     TangentAltitudeSolar,
     ThreadingModel,
     ViewingGeometry,
@@ -31,4 +33,13 @@ from .output import Output, OutputIdeal
 from .engine import Engine
 from .geodetic import WGS84, SphericalGeoid
 
-from . import appconfig, climatology, constituent, mie, optical, test_util, util
+from . import (
+    appconfig,
+    climatology,
+    constituent,
+    database,
+    mie,
+    optical,
+    test_util,
+    util,
+)

@@ -1,5 +1,4 @@
 import abc
-from typing import Union
 
 import numpy as np
 import xarray as xr
@@ -57,7 +56,7 @@ class OutputIdeal(Output):
             msg = "nstokes must be 1 or 3"
             raise ValueError(msg)
 
-    def internal_output(self) -> Union[sk.OutputIdealStokes_1, sk.OutputIdealStokes_3]:
+    def internal_output(self) -> sk.OutputIdealStokes_1 | sk.OutputIdealStokes_3:
         """
         The internal output object that can be passed to the internal engine
 

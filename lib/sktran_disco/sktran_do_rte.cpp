@@ -1,5 +1,10 @@
 #include "sktran_disco/sktran_do.h"
+#include "sktran_disco/sktran_do_linearization_types.h"
+#include "sktran_disco/sktran_do_opticallayer.h"
 #include "sktran_disco/sktran_do_rte.h"
+#include "sktran_disco/sktran_do_types.h"
+#include <sasktran2/math/real_eigensolver.h>
+#include "sktran_disco/sktran_do_lpproduct.h"
 #include <thread>
 
 template <int NSTOKES, int CNSTR>
@@ -8,13 +13,8 @@ sasktran_disco::RTESolver<NSTOKES, CNSTR>::RTESolver(
     OpticalLayerArray<NSTOKES, CNSTR>& layers)
     : RTESProperties<NSTOKES>(config), m_layers(layers),
       m_cache(config.pool().thread_data().rte_cache()) {
-    // Configure azimuth expansion
-    registerAzimuthDependency(*this->M_LP_CSZ);
-    registerAzimuthDependency(layers);
     // Initialize tracker for which orders have been solved
     m_is_solved.resize(this->M_NSTR, false);
-
-    m_use_greens_function = true;
 
     configureCache();
 }
@@ -64,9 +64,6 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::configureCache() {
     m_cache.homog_work.resize(N * NSTOKES * 4);
 #endif
 
-    m_cache.p_d_temp.resize(this->M_NSTR);
-    m_cache.p_d_temp2.resize(this->M_NSTR);
-
     uint numDeriv = (uint)m_layers.inputDerivatives().numDerivative();
 
     m_cache.p_Cplus.resize(numDeriv, false);
@@ -98,6 +95,23 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::configureCache() {
     m_cache.bvp_pd_mu.resize(m_cache.bvp_mat->N());
 
     m_cache.has_been_configured_by_rte_solver = true;
+
+    int Nd = m_cache.bvp_b.size();
+
+    m_cache.m_Cplus_to_b.resize(Nd, Nd / 2);
+    m_cache.m_Cminus_to_b.resize(Nd, Nd / 2);
+
+    m_cache.m_trans_to_Cplus.resize(Nd / 2, this->M_NLYR);
+    m_cache.m_trans_to_Cminus.resize(Nd / 2, this->M_NLYR);
+
+    m_cache.m_secant_to_Cplus.resize(Nd / 2, this->M_NLYR);
+    m_cache.m_secant_to_Cminus.resize(Nd / 2, this->M_NLYR);
+
+    m_cache.m_trans_weights.resize(NSTOKES, this->M_NLYR);
+    m_cache.m_secant_weights.resize(NSTOKES, this->M_NLYR);
+
+    // Only for 2str
+    m_cache.m_bvp_backprop_z.resize(m_cache.bvp_mat->N(), 1);
 }
 
 template <int NSTOKES, int CNSTR>
@@ -109,7 +123,19 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solve(AEOrder m) {
         return;
 
     // Otherwise do the calculation
-    configureAEOrder(m);
+    if (this->M_BACKPROP_BVP) {
+        m_cache.m_Cplus_to_b.setZero();
+        m_cache.m_Cminus_to_b.setZero();
+
+        m_cache.m_trans_to_Cplus.setZero();
+        m_cache.m_trans_to_Cminus.setZero();
+
+        m_cache.m_secant_to_Cplus.setZero();
+        m_cache.m_secant_to_Cminus.setZero();
+
+        m_layers.inputDerivatives().set_zero_traces();
+    }
+    m_layers.surface().calculate(m);
     for (int p = 0; p < static_cast<int>(this->M_NLYR); ++p) {
         auto& layer = m_layers[p];
         layer.solution(m).configure(this->M_NSTR, p,
@@ -121,116 +147,38 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solve(AEOrder m) {
     // Calculate coefficients that satisfy boundary conditions
     solveBVP(m);
     m_is_solved[m] = true;
-
-    postProcessAEOrder(m);
 }
 
 template <int NSTOKES, int CNSTR>
 void sasktran_disco::RTESolver<NSTOKES, CNSTR>::assignHomogenousSplusMinus(
     AEOrder m, OpticalLayer<NSTOKES, CNSTR>& layer) {
-    // Constructs the Splus and Sminus matrices in the homogeneous solution
-
     const uint N = this->M_NSTR / 2;
-    uint numDeriv =
-        (uint)m_layers.inputDerivatives().numDerivativeLayer(layer.index());
-    const auto& derivIter =
-        m_layers.inputDerivatives().layerDerivatives().begin() +
-        m_layers.inputDerivatives().layerStartIndex(layer.index());
 
-    double zeta, eta, d_zeta, d_eta;
+    auto& S_plus = layer.solution(m).cache.s_plus();
+    auto& S_minus = layer.solution(m).cache.s_minus();
 
-    typename std::conditional<NSTOKES == 1, double,
-                              Eigen::Matrix<double, NSTOKES, NSTOKES>>::type
-        d_l_upwelling,
-        d_l_downwelling;
+    const std::vector<LegendreCoefficient<NSTOKES>>& leg_coeff =
+        layer.legendre_coeff();
 
-    sasktran_disco::TripleProductDerivativeHolder<NSTOKES>& l_upwelling =
-        m_cache.h_l_upwelling;
-    sasktran_disco::TripleProductDerivativeHolder<NSTOKES>& l_downwelling =
-        m_cache.h_l_downwelling;
+    DerivBlockIter<NSTOKES, CNSTR> deriv_iter(
+        layer.solution(m).d_cache, m_layers.inputDerivatives(), layer.index());
 
-    // i,j are indexes in the block matrix that is composed of 4x4 stokes blocks
     for (uint i = 0; i < N; ++i) {
+        const std::vector<LegendrePhaseContainer<NSTOKES>>& lp_out =
+            (*this->M_LP_MU)[m][i];
         for (uint j = 0; j < N; ++j) {
-            // Cache upwelling and downwelling legendre sums
-            layer.inplace_scatPhaseFAndDerivative(m, i, j, l_upwelling);
-            layer.inplace_scatPhaseFAndDerivative(m, i, j + N, l_downwelling);
+            const std::vector<LegendrePhaseContainer<NSTOKES>>& lp_in =
+                (*this->M_LP_MU)[m][j];
 
-            // TODO: We can probably refactor this to emplace the values
-            // directly in S_plus/S_minus and derivative the values directly in
-            // as well
-            for (uint s1 = 0; s1 < NSTOKES; ++s1) {
-                for (uint s2 = 0; s2 < NSTOKES; ++s2) {
-                    // Calculate indicies in the full matrix
-                    uint ii, jj;
-                    if (j > i) {
-                        // Have to transpose the matrix
-                        ii = NSTOKES * i + s2;
-                        jj = NSTOKES * j + s1;
-                    } else {
-                        ii = NSTOKES * i + s1;
-                        jj = NSTOKES * j + s2;
-                    }
+            deriv_iter.set_block(i, j);
 
-                    if constexpr (NSTOKES == 1) {
-                        zeta = ((*this->M_WT)[j] * l_upwelling.value -
-                                kronDelta(ii, jj)) /
-                               (*this->M_MU)[i];
-                        eta = (*this->M_WT)[j] * l_downwelling.value /
-                              (*this->M_MU)[i];
-                    } else {
-                        zeta = ((*this->M_WT)[j] * l_upwelling.value(s1, s2) -
-                                kronDelta(ii, jj)) /
-                               (*this->M_MU)[i];
-                        eta = (*this->M_WT)[j] * l_downwelling.value(s1, s2) /
-                              (*this->M_MU)[i];
-                    }
-
-                    layer.solution(m).cache.s_plus()(ii, jj) =
-                        -1.0 * (zeta + eta);
-                    layer.solution(m).cache.s_minus()(ii, jj) =
-                        -1.0 * (zeta - eta);
-                }
-            }
-
-            // Because the derivative propagation is so simple we just do it
-            // manually here
-            for (uint k = 0; k < numDeriv; ++k) {
-                l_upwelling.reduce(*(derivIter + k), d_l_upwelling);
-                l_downwelling.reduce(*(derivIter + k), d_l_downwelling);
-
-                for (uint s1 = 0; s1 < NSTOKES; ++s1) {
-                    for (uint s2 = 0; s2 < NSTOKES; ++s2) {
-                        int ii, jj;
-                        if (j > i) {
-                            // Have to transpose the matrix
-                            ii = NSTOKES * i + s2;
-                            jj = NSTOKES * j + s1;
-                        } else {
-                            ii = NSTOKES * i + s1;
-                            jj = NSTOKES * j + s2;
-                        }
-
-                        if constexpr (NSTOKES == 1) {
-                            d_zeta = ((*this->M_WT)[j] * d_l_upwelling) /
-                                     (*this->M_MU)[i];
-                            d_eta = ((*this->M_WT)[j] * d_l_downwelling) /
-                                    (*this->M_MU)[i];
-                        } else {
-                            d_zeta =
-                                ((*this->M_WT)[j] * d_l_upwelling(s1, s2)) /
-                                (*this->M_MU)[i];
-                            d_eta = (*this->M_WT)[j] * d_l_downwelling(s1, s2) /
-                                    (*this->M_MU)[i];
-                        }
-
-                        layer.solution(m).d_cache[k].s_plus()(ii, jj) =
-                            -1.0 * (d_zeta + d_eta);
-                        layer.solution(m).d_cache[k].s_minus()(ii, jj) =
-                            -1.0 * (d_zeta - d_eta);
-                    }
-                }
-            }
+            lp_triple_product<NSTOKES, CNSTR>(
+                S_plus.template block<NSTOKES, NSTOKES>(i * NSTOKES,
+                                                        j * NSTOKES),
+                S_minus.template block<NSTOKES, NSTOKES>(i * NSTOKES,
+                                                         j * NSTOKES),
+                leg_coeff, lp_out, lp_in, m, layer.dual_ssa(), (*this->M_WT)[j],
+                (*this->M_MU)[i], deriv_iter, i == j);
         }
     }
 }
@@ -469,7 +417,8 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveHomogeneous(
                              // case of NSTOKES=1 or pure Rayleigh scattering
 
     if (SASKTRAN_DISCO_USE_EIGEN_EIGENSOLVER || CNSTR != -1) {
-        Eigen::EigenSolver<Matrix> es(eigmtx_destroyable);
+        // Eigen::SelfAdjointEigenSolver<Matrix> es(eigmtx_destroyable);
+        Eigen::RealEigenSolver<Matrix> es(eigmtx_destroyable);
 
         auto eigeninfo = es.info();
         if (eigeninfo != Eigen::Success) {
@@ -549,50 +498,21 @@ template <int NSTOKES, int CNSTR>
 void sasktran_disco::RTESolver<NSTOKES, CNSTR>::assignParticularQ(
     AEOrder m, const OpticalLayer<NSTOKES, CNSTR>& layer,
     VectorLayerDual<double>& Qplus, VectorLayerDual<double>& Qminus) {
-    InhomogeneousSourceHolder<NSTOKES>& d_temp = m_cache.p_d_temp;
-    InhomogeneousSourceHolder<NSTOKES>& d_temp2 = m_cache.p_d_temp2;
-
-    typename std::conditional<NSTOKES == 1, double,
-                              Eigen::Vector<double, NSTOKES>>::type dholder1,
-        dholder2;
-
-    const auto& derivIter =
-        m_layers.inputDerivatives().layerDerivatives().begin() +
-        m_layers.inputDerivatives().layerStartIndex(layer.index());
-    uint numLayerDeriv =
-        (uint)m_layers.inputDerivatives().numDerivativeLayer(layer.index());
 
     for (uint i = 0; i < this->M_NSTR / 2; ++i) {
-        layer.singleScatST(m, (*this->M_LP_MU)[m][i], d_temp, d_temp2);
+        single_scat_st<NSTOKES, CNSTR, true>(
+            layer.legendre_coeff(), (*this->M_LP_MU)[m][i],
+            (*this->M_LP_CSZ)[m], m, layer.index(), layer.dual_ssa(),
+            this->M_SOLAR_DIRECT_INTENSITY * (*this->M_WT)[i],
+            m_layers.inputDerivatives(), &Qminus.value(NSTOKES * i),
+            &Qminus.deriv(0, NSTOKES * i), Qminus.deriv.rows());
 
-        for (int s = 0; s < NSTOKES; ++s) {
-            int ii = i * NSTOKES + s;
-
-            if constexpr (NSTOKES == 1) {
-                Qplus.value(ii) = d_temp2.value * (*this->M_WT)[i];
-                Qminus.value(ii) = d_temp.value * (*this->M_WT)[i];
-            } else {
-                Qplus.value(ii) = d_temp2.value[s] * (*this->M_WT)[i];
-                Qminus.value(ii) = d_temp.value[s] * (*this->M_WT)[i];
-            }
-        }
-
-        for (uint k = 0; k < numLayerDeriv; ++k) {
-            d_temp2.reduce(*(derivIter + k), dholder2);
-            d_temp.reduce(*(derivIter + k), dholder1);
-
-            for (int s = 0; s < NSTOKES; ++s) {
-                int ii = i * NSTOKES + s;
-
-                if constexpr (NSTOKES == 1) {
-                    Qplus.deriv(k, ii) = dholder2 * (*this->M_WT)[i];
-                    Qminus.deriv(k, ii) = dholder1 * (*this->M_WT)[i];
-                } else {
-                    Qplus.deriv(k, ii) = dholder2[s] * (*this->M_WT)[i];
-                    Qminus.deriv(k, ii) = dholder1[s] * (*this->M_WT)[i];
-                }
-            }
-        }
+        single_scat_st<NSTOKES, CNSTR, false>(
+            layer.legendre_coeff(), (*this->M_LP_MU)[m][i],
+            (*this->M_LP_CSZ)[m], m, layer.index(), layer.dual_ssa(),
+            this->M_SOLAR_DIRECT_INTENSITY * (*this->M_WT)[i],
+            m_layers.inputDerivatives(), &Qplus.value(NSTOKES * i),
+            &Qplus.deriv(0, NSTOKES * i), Qplus.deriv.rows());
     }
 }
 
@@ -603,8 +523,6 @@ void sasktran_disco::RTESolver<1, 2>::solveParticularGreen(
     // Setup up calculation enviroment
     LayerIndex p = layer.index();
     auto& solution = layer.solution(m);
-
-    solution.value.set_use_green_function(true);
 
     uint numLayerDeriv =
         (uint)m_layers.inputDerivatives().numDerivativeLayer(layer.index());
@@ -693,15 +611,43 @@ void sasktran_disco::RTESolver<1, 2>::solveParticularGreen(
                       (exp_thickness_eigval - exp_thickness_secant) /
                       (average_secant.value - eigval.value(0));
 
-        Cplus.deriv.noalias() = (exp_thickness_eigval - exp_thickness_secant) /
-                                (average_secant.value - eigval.value(0)) *
-                                transmission.deriv;
-        Cplus.deriv.noalias() +=
-            average_secant.deriv *
-            (transmission.value * thickness.value *
-                 exp(-1.0 * thickness.value * average_secant.value) -
-             Cplus.value) /
-            (average_secant.value - eigval.value(0));
+        if (this->M_BACKPROP_BVP && SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
+            m_cache.m_trans_to_Cplus(p, p) =
+                (exp_thickness_eigval - exp_thickness_secant) /
+                (average_secant.value - eigval.value(0));
+
+            m_cache.m_secant_to_Cplus(p, p) =
+                (transmission.value * thickness.value *
+                     exp(-1.0 * thickness.value * average_secant.value) -
+                 Cplus.value) /
+                (average_secant.value - eigval.value(0));
+
+            if (p != this->M_NLYR - 1) {
+                Cplus.deriv.setZero();
+            } else {
+                Cplus.deriv.noalias() =
+                    (exp_thickness_eigval - exp_thickness_secant) /
+                    (average_secant.value - eigval.value(0)) *
+                    transmission.deriv;
+                Cplus.deriv.noalias() +=
+                    average_secant.deriv *
+                    (transmission.value * thickness.value *
+                         exp(-1.0 * thickness.value * average_secant.value) -
+                     Cplus.value) /
+                    (average_secant.value - eigval.value(0));
+            }
+
+        } else {
+            Cplus.deriv.noalias() =
+                (exp_thickness_eigval - exp_thickness_secant) /
+                (average_secant.value - eigval.value(0)) * transmission.deriv;
+            Cplus.deriv.noalias() +=
+                average_secant.deriv *
+                (transmission.value * thickness.value *
+                     exp(-1.0 * thickness.value * average_secant.value) -
+                 Cplus.value) /
+                (average_secant.value - eigval.value(0));
+        }
 
         for (uint k = 0; k < numLayerDeriv; ++k) {
             Cplus.deriv(k + layerStart) +=
@@ -722,15 +668,49 @@ void sasktran_disco::RTESolver<1, 2>::solveParticularGreen(
                       (1 - thickness.value / 2 *
                                (average_secant.value - eigval.value(0)));
 
-        Cplus.deriv.noalias() =
-            exp(-1.0 * thickness.value * eigval.value(0)) * thickness.value *
-            (1 -
-             thickness.value / 2 * (average_secant.value - eigval.value(0))) *
-            transmission.deriv;
-        ;
-        Cplus.deriv.noalias() += -1.0 * average_secant.deriv * thickness.value /
-                                 2.0 * thickness.value * transmission.value *
-                                 exp(-1.0 * thickness.value * eigval.value(0));
+        if (this->M_BACKPROP_BVP && SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
+            m_cache.m_trans_to_Cplus(p, p) =
+                exp(-1.0 * thickness.value * eigval.value(0)) *
+                thickness.value *
+                (1 - thickness.value / 2 *
+                         (average_secant.value - eigval.value(0)));
+
+            m_cache.m_secant_to_Cplus(p, p) =
+                -1.0 * thickness.value / 2.0 * thickness.value *
+                transmission.value *
+                exp(-1.0 * thickness.value * eigval.value(0));
+
+            if (p != this->M_NLYR - 1) {
+                Cplus.deriv.setZero();
+            } else {
+
+                Cplus.deriv.noalias() =
+                    exp(-1.0 * thickness.value * eigval.value(0)) *
+                    thickness.value *
+                    (1 - thickness.value / 2 *
+                             (average_secant.value - eigval.value(0))) *
+                    transmission.deriv;
+                ;
+                Cplus.deriv.noalias() +=
+                    -1.0 * average_secant.deriv * thickness.value / 2.0 *
+                    thickness.value * transmission.value *
+                    exp(-1.0 * thickness.value * eigval.value(0));
+            }
+
+        } else {
+
+            Cplus.deriv.noalias() =
+                exp(-1.0 * thickness.value * eigval.value(0)) *
+                thickness.value *
+                (1 - thickness.value / 2 *
+                         (average_secant.value - eigval.value(0))) *
+                transmission.deriv;
+            ;
+            Cplus.deriv.noalias() +=
+                -1.0 * average_secant.deriv * thickness.value / 2.0 *
+                thickness.value * transmission.value *
+                exp(-1.0 * thickness.value * eigval.value(0));
+        }
 
         for (uint k = 0; k < numLayerDeriv; ++k) {
             Cplus.deriv(k + layerStart) +=
@@ -756,14 +736,29 @@ void sasktran_disco::RTESolver<1, 2>::solveParticularGreen(
                        (1 - exp_thickness_secant * exp_thickness_eigval) /
                        (average_secant.value + eigval.value(0));
 
-        Cminus.deriv.noalias() =
-            (1 - exp_thickness_secant * exp_thickness_eigval) /
-            (average_secant.value + eigval.value(0)) * transmission.deriv;
-        Cminus.deriv.noalias() +=
-            average_secant.deriv / (average_secant.value + eigval.value(0)) *
-            (transmission.value * thickness.value * exp_thickness_eigval *
-                 exp_thickness_secant -
-             Cminus.value);
+        if (this->M_BACKPROP_BVP && SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
+            m_cache.m_trans_to_Cminus(p, p) =
+                (1 - exp_thickness_secant * exp_thickness_eigval) /
+                (average_secant.value + eigval.value(0));
+
+            m_cache.m_secant_to_Cminus(p, p) =
+                1 / (average_secant.value + eigval.value(0)) *
+                (transmission.value * thickness.value * exp_thickness_eigval *
+                     exp_thickness_secant -
+                 Cminus.value);
+
+            Cminus.deriv.setZero();
+        } else {
+            Cminus.deriv.noalias() =
+                (1 - exp_thickness_secant * exp_thickness_eigval) /
+                (average_secant.value + eigval.value(0)) * transmission.deriv;
+            Cminus.deriv.noalias() +=
+                average_secant.deriv /
+                (average_secant.value + eigval.value(0)) *
+                (transmission.value * thickness.value * exp_thickness_eigval *
+                     exp_thickness_secant -
+                 Cminus.value);
+        }
 
         for (uint k = 0; k < numLayerDeriv; ++k) {
             Cminus.deriv(k + layerStart) +=
@@ -781,11 +776,24 @@ void sasktran_disco::RTESolver<1, 2>::solveParticularGreen(
                        (1 - thickness.value / 2 *
                                 (average_secant.value + eigval.value(0)));
 
-        Cminus.deriv = transmission.deriv * thickness.value *
-                       (1 - thickness.value / 2 *
-                                (average_secant.value + eigval.value(0)));
-        Cminus.deriv += average_secant.deriv * -1.0 * thickness.value / 2 *
-                        thickness.value * transmission.value;
+        if (this->M_BACKPROP_BVP && SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
+            m_cache.m_trans_to_Cminus(p, p) =
+                thickness.value *
+                (1 - thickness.value / 2 *
+                         (average_secant.value + eigval.value(0)));
+
+            m_cache.m_secant_to_Cminus(p, p) = -1.0 * thickness.value / 2 *
+                                               thickness.value *
+                                               transmission.value;
+
+            Cminus.deriv.setZero();
+        } else {
+            Cminus.deriv = transmission.deriv * thickness.value *
+                           (1 - thickness.value / 2 *
+                                    (average_secant.value + eigval.value(0)));
+            Cminus.deriv += average_secant.deriv * -1.0 * thickness.value / 2 *
+                            thickness.value * transmission.value;
+        }
 
         for (uint k = 0; k < numLayerDeriv; ++k) {
             Cminus.deriv(k + layerStart) +=
@@ -805,6 +813,8 @@ void sasktran_disco::RTESolver<1, 2>::solveParticularGreen(
     Gminus_bottom.value(0) =
         Aplus.value(0) * Cplus.value * homog_minus.value(0);
 
+    // Normally in backprop we don't copy all of these derivatives, but we would
+    // have to zero memory anyways so probably no benefit?
     Gplus_top.deriv(Eigen::all, 0).noalias() =
         Aminus.value(0) * homog_minus.value(0) * Cminus.deriv;
     Gminus_top.deriv(Eigen::all, 0).noalias() =
@@ -842,8 +852,6 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
     // Setup up calculation enviroment
     LayerIndex p = layer.index();
     auto& solution = layer.solution(m);
-
-    solution.value.set_use_green_function(true);
 
     const uint N = this->M_NSTR / 2;
 
@@ -901,7 +909,6 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
     // For each homogeneous solution, add it's contribution in
     for (SolutionIndex i = 0; i < N * NSTOKES; ++i) {
         uint h_start = i * N * NSTOKES;
-        const auto& eigval = solution.value.dual_eigval();
 
         // Normalization constant calculation
         norm.value = 0.0;
@@ -962,10 +969,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
 
         Cplus.value = 0.0;
         Cminus.value = 0.0;
-
-        Cplus.deriv.setZero();
-        Cminus.deriv.setZero();
-
+        const auto& eigval = solution.value.dual_eigval();
         // If average secant is close to eigval then we evaluate Cplus or Cminus
         // with a taylor series expansion instead
         if (abs(average_secant.value - eigval.value(i)) >
@@ -975,16 +979,50 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
                            exp(-thickness.value * average_secant.value)) /
                           (average_secant.value - eigval.value(i));
 
-            Cplus.deriv.noalias() +=
-                (exp(-thickness.value * eigval.value(i)) -
-                 exp(-thickness.value * average_secant.value)) /
-                (average_secant.value - eigval.value(i)) * transmission.deriv;
-            Cplus.deriv.noalias() +=
-                average_secant.deriv *
-                (transmission.value * thickness.value *
-                     exp(-1.0 * thickness.value * average_secant.value) -
-                 Cplus.value) /
-                (average_secant.value - eigval.value(i));
+            // If we are doing backprop, then we don't need the derivatives,
+            // unless we are in the last layer Then we still do the full
+            // calculation for the ground source
+            if (this->M_BACKPROP_BVP && SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
+                m_cache.m_trans_to_Cplus(p * N * NSTOKES + i, p) =
+                    (exp(-thickness.value * eigval.value(i)) -
+                     exp(-thickness.value * average_secant.value)) /
+                    (average_secant.value - eigval.value(i));
+
+                m_cache.m_secant_to_Cplus(p * N * NSTOKES + i, p) =
+                    (transmission.value * thickness.value *
+                         exp(-1.0 * thickness.value * average_secant.value) -
+                     Cplus.value) /
+                    (average_secant.value - eigval.value(i));
+
+                if (p != this->M_NLYR - 1) {
+                    Cplus.deriv.setZero();
+                } else {
+                    Cplus.deriv.noalias() =
+                        (exp(-thickness.value * eigval.value(i)) -
+                         exp(-thickness.value * average_secant.value)) /
+                        (average_secant.value - eigval.value(i)) *
+                        transmission.deriv;
+                    Cplus.deriv.noalias() +=
+                        average_secant.deriv *
+                        (transmission.value * thickness.value *
+                             exp(-1.0 * thickness.value *
+                                 average_secant.value) -
+                         Cplus.value) /
+                        (average_secant.value - eigval.value(i));
+                }
+            } else {
+                Cplus.deriv.noalias() =
+                    (exp(-thickness.value * eigval.value(i)) -
+                     exp(-thickness.value * average_secant.value)) /
+                    (average_secant.value - eigval.value(i)) *
+                    transmission.deriv;
+                Cplus.deriv.noalias() +=
+                    average_secant.deriv *
+                    (transmission.value * thickness.value *
+                         exp(-1.0 * thickness.value * average_secant.value) -
+                     Cplus.value) /
+                    (average_secant.value - eigval.value(i));
+            }
 
             for (uint k = 0; k < numLayerDeriv; ++k) {
                 Cplus.deriv(k + layerStart) +=
@@ -1009,17 +1047,46 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
                           (1 - thickness.value / 2 *
                                    (average_secant.value - eigval.value(i)));
 
-            Cplus.deriv.noalias() +=
-                exp(-1.0 * thickness.value * eigval.value(i)) *
-                thickness.value *
-                (1 - thickness.value / 2 *
-                         (average_secant.value - eigval.value(i))) *
-                transmission.deriv;
-            ;
-            Cplus.deriv.noalias() +=
-                -1.0 * average_secant.deriv * thickness.value / 2.0 *
-                thickness.value * transmission.value *
-                exp(-1.0 * thickness.value * eigval.value(i));
+            if (this->M_BACKPROP_BVP && SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
+                m_cache.m_trans_to_Cplus(p * N * NSTOKES + i, p) =
+                    exp(-1.0 * thickness.value * eigval.value(i)) *
+                    thickness.value *
+                    (1 - thickness.value / 2 *
+                             (average_secant.value - eigval.value(i)));
+
+                m_cache.m_secant_to_Cplus(p * N * NSTOKES + i, p) =
+                    -1.0 * thickness.value / 2.0 * thickness.value *
+                    transmission.value *
+                    exp(-1.0 * thickness.value * eigval.value(i));
+
+                if (p != this->M_NLYR - 1) {
+                    Cplus.deriv.setZero();
+                } else {
+                    Cplus.deriv.noalias() =
+                        exp(-1.0 * thickness.value * eigval.value(i)) *
+                        thickness.value *
+                        (1 - thickness.value / 2 *
+                                 (average_secant.value - eigval.value(i))) *
+                        transmission.deriv;
+                    ;
+                    Cplus.deriv.noalias() +=
+                        -1.0 * average_secant.deriv * thickness.value / 2.0 *
+                        thickness.value * transmission.value *
+                        exp(-1.0 * thickness.value * eigval.value(i));
+                }
+            } else {
+                Cplus.deriv.noalias() =
+                    exp(-1.0 * thickness.value * eigval.value(i)) *
+                    thickness.value *
+                    (1 - thickness.value / 2 *
+                             (average_secant.value - eigval.value(i))) *
+                    transmission.deriv;
+                ;
+                Cplus.deriv.noalias() +=
+                    -1.0 * average_secant.deriv * thickness.value / 2.0 *
+                    thickness.value * transmission.value *
+                    exp(-1.0 * thickness.value * eigval.value(i));
+            }
 
             for (uint k = 0; k < numLayerDeriv; ++k) {
                 Cplus.deriv(k + layerStart) +=
@@ -1047,17 +1114,33 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
                                     exp(-thickness.value * eigval.value(i))) /
                            (average_secant.value + eigval.value(i));
 
-            Cminus.deriv.noalias() +=
-                (1 - exp(-thickness.value * average_secant.value) *
-                         exp(-thickness.value * eigval.value(i))) /
-                (average_secant.value + eigval.value(i)) * transmission.deriv;
-            Cminus.deriv.noalias() +=
-                average_secant.deriv /
-                (average_secant.value + eigval.value(i)) *
-                (transmission.value * thickness.value *
-                     exp(-thickness.value *
-                         (average_secant.value + eigval.value(i))) -
-                 Cminus.value);
+            if (this->M_BACKPROP_BVP && SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
+                m_cache.m_trans_to_Cminus(p * N * NSTOKES + i, p) =
+                    (1 - exp(-thickness.value * average_secant.value) *
+                             exp(-thickness.value * eigval.value(i))) /
+                    (average_secant.value + eigval.value(i));
+                m_cache.m_secant_to_Cminus(p * N * NSTOKES + i, p) =
+                    (1 / (average_secant.value + eigval.value(i))) *
+                    (transmission.value * thickness.value *
+                         exp(-thickness.value *
+                             (average_secant.value + eigval.value(i))) -
+                     Cminus.value);
+
+                Cminus.deriv.setZero();
+            } else {
+                Cminus.deriv.noalias() =
+                    (1 - exp(-thickness.value * average_secant.value) *
+                             exp(-thickness.value * eigval.value(i))) /
+                    (average_secant.value + eigval.value(i)) *
+                    transmission.deriv;
+                Cminus.deriv.noalias() +=
+                    average_secant.deriv /
+                    (average_secant.value + eigval.value(i)) *
+                    (transmission.value * thickness.value *
+                         exp(-thickness.value *
+                             (average_secant.value + eigval.value(i))) -
+                     Cminus.value);
+            }
 
             for (uint k = 0; k < numLayerDeriv; ++k) {
                 Cminus.deriv(k + layerStart) +=
@@ -1078,11 +1161,24 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
                            (1 - thickness.value / 2 *
                                     (average_secant.value + eigval.value(i)));
 
-            Cminus.deriv += transmission.deriv * thickness.value *
-                            (1 - thickness.value / 2 *
-                                     (average_secant.value + eigval.value(i)));
-            Cminus.deriv += average_secant.deriv * -1.0 * thickness.value / 2 *
-                            thickness.value * transmission.value;
+            if (this->M_BACKPROP_BVP && SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
+                m_cache.m_trans_to_Cminus(p * N * NSTOKES + i, p) =
+                    thickness.value *
+                    (1 - thickness.value / 2 *
+                             (average_secant.value + eigval.value(i)));
+                m_cache.m_secant_to_Cminus(p * N * NSTOKES + i, p) =
+                    -1.0 * thickness.value / 2 * thickness.value *
+                    transmission.value;
+
+                Cminus.deriv.setZero();
+            } else {
+                Cminus.deriv =
+                    transmission.deriv * thickness.value *
+                    (1 - thickness.value / 2 *
+                             (average_secant.value + eigval.value(i)));
+                Cminus.deriv += average_secant.deriv * -1.0 * thickness.value /
+                                2 * thickness.value * transmission.value;
+            }
 
             for (uint k = 0; k < numLayerDeriv; ++k) {
                 Cminus.deriv(k + layerStart) +=
@@ -1109,16 +1205,54 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
             Gminus_bottom.value(j) += negation * Aplus.value(i) * Cplus.value *
                                       homog_minus.value(h_start + j);
 
-            Gplus_top.deriv(Eigen::all, j).noalias() +=
-                Aminus.value(i) * homog_minus.value(h_start + j) * Cminus.deriv;
-            Gminus_top.deriv(Eigen::all, j).noalias() +=
-                negation * Aminus.value(i) * homog_plus.value(h_start + j) *
-                Cminus.deriv;
-            Gplus_bottom.deriv(Eigen::all, j).noalias() +=
-                Aplus.value(i) * homog_plus.value(h_start + j) * Cplus.deriv;
-            Gminus_bottom.deriv(Eigen::all, j).noalias() +=
-                negation * Aplus.value(i) * homog_minus.value(h_start + j) *
-                Cplus.deriv;
+            if (!(this->M_BACKPROP_BVP &&
+                  SASKTRAN_DISCO_ENABLE_FULL_BACKPROP)) {
+                Gplus_top.deriv(Eigen::all, j).noalias() +=
+                    Aminus.value(i) * homog_minus.value(h_start + j) *
+                    Cminus.deriv;
+                Gminus_top.deriv(Eigen::all, j).noalias() +=
+                    negation * Aminus.value(i) * homog_plus.value(h_start + j) *
+                    Cminus.deriv;
+                Gplus_bottom.deriv(Eigen::all, j).noalias() +=
+                    Aplus.value(i) * homog_plus.value(h_start + j) *
+                    Cplus.deriv;
+                Gminus_bottom.deriv(Eigen::all, j).noalias() +=
+                    negation * Aplus.value(i) * homog_minus.value(h_start + j) *
+                    Cplus.deriv;
+            } else {
+                // Special case for the ground layer, we keep track of
+                // Gplus_bottom derivatives
+                if (p == this->M_NLYR - 1) {
+                    Gplus_bottom.deriv(Eigen::all, j).noalias() +=
+                        Aplus.value(i) * homog_plus.value(h_start + j) *
+                        Cplus.deriv;
+
+                    Gminus_bottom.deriv(Eigen::all, j).noalias() +=
+                        negation * Aplus.value(i) *
+                        homog_minus.value(h_start + j) * Cplus.deriv;
+                }
+
+                for (uint k = 0; k < numLayerDeriv; ++k) {
+                    Gplus_top.deriv(layerStart + k, j) +=
+                        Aminus.value(i) * homog_minus.value(h_start + j) *
+                        Cminus.deriv(layerStart + k);
+                    Gminus_top.deriv(layerStart + k, j) +=
+                        negation * Aminus.value(i) *
+                        homog_plus.value(h_start + j) *
+                        Cminus.deriv(layerStart + k);
+
+                    // Avoid double counting for the bottom G's
+                    if (p != this->M_NLYR - 1) {
+                        Gplus_bottom.deriv(layerStart + k, j) +=
+                            Aplus.value(i) * homog_plus.value(h_start + j) *
+                            Cplus.deriv(layerStart + k);
+                        Gminus_bottom.deriv(layerStart + k, j) +=
+                            negation * Aplus.value(i) *
+                            homog_minus.value(h_start + j) *
+                            Cplus.deriv(layerStart + k);
+                    }
+                }
+            }
 
             for (uint k = 0; k < numLayerDeriv; ++k) {
                 Gplus_top.deriv(layerStart + k, j) +=
@@ -1199,7 +1333,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveBVP(AEOrder m) {
         errorcode = la::dgbsv_pentadiagonal(
             N, 1, mat.data(), b.data(), N, m_cache.bvp_pd_alpha,
             m_cache.bvp_pd_beta, m_cache.bvp_pd_z, m_cache.bvp_pd_gamma,
-            m_cache.bvp_pd_mu);
+            m_cache.bvp_pd_mu, false);
     } else {
 #ifdef SKTRAN_USE_ACCELERATE
         int one = 1;
@@ -1262,12 +1396,17 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveBVP(AEOrder m) {
         d_mat[i].assign_rhs_d_bvp(i, d_b, b);
     }
 
+    if (this->M_BACKPROP_BVP) {
+        // Don't need to calculate derivatives of the coeffs
+        return;
+    }
+
     if constexpr (NSTOKES == 1 && CNSTR == 2 &&
                   SASKTRAN_DISCO_ENABLE_PENTADIAGONAL) {
         errorcode = la::dgbsv_pentadiagonal(
             N, numDeriv, mat.data(), rhs.data(), N, m_cache.bvp_pd_alpha,
             m_cache.bvp_pd_beta, m_cache.bvp_pd_d_z, m_cache.bvp_pd_gamma,
-            m_cache.bvp_pd_mu);
+            m_cache.bvp_pd_mu, false);
     } else {
         // Solve using the same LHS as above
 #ifdef SKTRAN_USE_ACCELERATE
@@ -1304,6 +1443,102 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveBVP(AEOrder m) {
             for (SolutionIndex k = 0; k < this->M_NSTR / 2 * NSTOKES; ++k) {
                 solution.boundary.L_coeffs.deriv(i, k) = rhs(l_offset + k, i);
                 solution.boundary.M_coeffs.deriv(i, k) = rhs(m_offset + k, i);
+            }
+        }
+    }
+}
+
+template <int NSTOKES, int CNSTR>
+void sasktran_disco::RTESolver<NSTOKES, CNSTR>::backprop(
+    AEOrder m, ReverseLinearizationTrace<NSTOKES>& trace,
+    sasktran_disco::Radiance<NSTOKES>& component) {
+    la::BVPMatrix<NSTOKES>& mat = *m_cache.bvp_mat;
+
+    uint numDeriv = (int)m_layers.inputDerivatives().numDerivative();
+
+    lapack_int N = mat.N();
+    lapack_int NCD = mat.NCD();
+    lapack_int LDA = mat.LD();
+    lapack_int errorcode;
+
+    auto& ipiv = m_cache.ipiv;
+
+    int n_rhs = NSTOKES;
+
+    if constexpr (NSTOKES == 1 && CNSTR == 2 &&
+                  SASKTRAN_DISCO_ENABLE_PENTADIAGONAL) {
+        errorcode = la::dgbsv_pentadiagonal(
+            N, n_rhs, mat.data(), trace.bvp_coeff_weights().data(), N,
+            m_cache.bvp_pd_alpha, m_cache.bvp_pd_beta, m_cache.m_bvp_backprop_z,
+            m_cache.bvp_pd_gamma, m_cache.bvp_pd_mu, true);
+    } else {
+        errorcode = LAPACKE_dgbtrs(LAPACK_COL_MAJOR, 'T', N, NCD, NCD, n_rhs,
+                                   mat.data(), LDA, ipiv.data(),
+                                   trace.bvp_coeff_weights().data(), N);
+    }
+
+    const auto& d_b = m_cache.d_b;
+
+    // Component deriv is shape (nderiv)
+    // d_b is shape (N, nderiv)
+    // w is shape (N)
+
+    component.deriv.noalias() += d_b.transpose() * trace.bvp_coeff_weights();
+
+    if (SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
+        // Annoying accumulation of non-zero terms in b
+        int start = 0;
+
+        // First layer gets an extra N/2 contribution from TOA BC
+        int end = this->M_NSTR * NSTOKES / 2;
+        for (int p = 0; p < this->M_NLYR; ++p) {
+            end += this->M_NSTR * NSTOKES;
+
+            if (p == this->M_NLYR - 1) {
+                // Last layer gets extra contributions from ground BC
+                // start -= this->M_NSTR/2;
+                end -= this->M_NSTR * NSTOKES / 2;
+            }
+
+            auto nz = Eigen::seq(p * this->M_NSTR * NSTOKES / 2,
+                                 (p + 1) * this->M_NSTR * NSTOKES / 2 - 1);
+            auto nz_2 = Eigen::seq(start, end - 1);
+            for (int s = 0; s < NSTOKES; ++s) {
+                m_cache.m_trans_weights(s, p) =
+                    trace.bvp_coeff_weights().transpose()(s, nz_2) *
+                    m_cache.m_Cminus_to_b(nz_2, nz) *
+                    m_cache.m_trans_to_Cminus(nz, p);
+                m_cache.m_trans_weights(s, p) +=
+                    trace.bvp_coeff_weights().transpose()(s, nz_2) *
+                    m_cache.m_Cplus_to_b(nz_2, nz) *
+                    m_cache.m_trans_to_Cplus(nz, p);
+
+                m_cache.m_secant_weights(s, p) =
+                    trace.bvp_coeff_weights().transpose()(s, nz_2) *
+                    m_cache.m_Cminus_to_b(nz_2, nz) *
+                    m_cache.m_secant_to_Cminus(nz, p);
+                m_cache.m_secant_weights(s, p) +=
+                    trace.bvp_coeff_weights().transpose()(s, nz_2) *
+                    m_cache.m_Cplus_to_b(nz_2, nz) *
+                    m_cache.m_secant_to_Cplus(nz, p);
+            }
+
+            // Account for overlap in the continuity conditions
+            start = end - this->M_NSTR * NSTOKES;
+        }
+
+        // Now we backprop the derivatives with respect to the transmission
+        // and secant values for each layer
+        for (LayerIndex p = 0; p < this->M_NLYR; ++p) {
+            auto& layer = m_layers[p];
+            const auto& average_secant = layer.dual_average_secant();
+            const auto& transmission = layer.ceiling_beam_transmittanc();
+
+            for (int s = 0; s < NSTOKES; ++s) {
+                component.deriv(Eigen::all, s).noalias() +=
+                    m_cache.m_trans_weights(s, p) * transmission.deriv;
+                component.deriv(Eigen::all, s).noalias() +=
+                    m_cache.m_secant_weights(s, p) * average_secant.deriv;
             }
         }
     }
@@ -1539,7 +1774,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpGroundCondition(
 template <int NSTOKES, int CNSTR>
 void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC1(
     AEOrder m, BoundaryIndex p, uint& loc, Eigen::VectorXd& b,
-    Eigen::MatrixXd& d_b) const {
+    Eigen::MatrixXd& d_b) {
 
     // Setup enviroment
     assert(p == 0);
@@ -1547,14 +1782,33 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC1(
     const uint N = this->M_NSTR / 2;
 
     uint numDeriv = (uint)m_layers.inputDerivatives().numDerivative();
+    uint layerStart = (uint)m_layers.inputDerivatives().layerStartIndex(p);
+    uint numLayerDeriv =
+        (uint)m_layers.inputDerivatives().numDerivativeLayer(p);
 
     // Build TOA condition. See (29)
     for (StreamIndex i = 0; i < N * NSTOKES; ++i) {
+        double negation = sasktran_disco::stokes_negation_factor<NSTOKES>(i);
         b[loc] = -solution.dual_Gplus_top().value(i);
 
-        for (uint k = 0; k < numDeriv; ++k) {
-            d_b(loc, k) = -solution.dual_Gplus_top().deriv(k, i);
+        if (this->M_BACKPROP_BVP && SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
+            for (SolutionIndex j = 0; j < N * NSTOKES; ++j) {
+                uint h_start = j * N * NSTOKES;
+                m_cache.m_Cminus_to_b(loc, j) +=
+                    -(solution.dual_green_A_minus().value(j) *
+                      solution.dual_homog_minus().value(h_start + i));
+            }
+            for (int k = 0; k < numLayerDeriv; ++k) {
+                d_b(loc, layerStart + k) =
+                    -solution.dual_Gplus_top().deriv(layerStart + k, i);
+            }
+        } else {
+            if (numDeriv > 0) {
+                d_b(loc, Eigen::all).noalias() +=
+                    -solution.dual_Gplus_top().deriv(Eigen::all, i);
+            }
         }
+
         loc++;
     }
 }
@@ -1562,7 +1816,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC1(
 template <int NSTOKES, int CNSTR>
 void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC2(
     AEOrder m, BoundaryIndex p, uint& loc, Eigen::VectorXd& b,
-    Eigen::MatrixXd& d_b) const {
+    Eigen::MatrixXd& d_b) {
     // Setup enviroment
     assert(p != 0 && p != this->M_NLYR);
     const uint N = this->M_NSTR / 2;
@@ -1572,33 +1826,76 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC2(
     struct Layer {
         const RTEGeneralSolution<NSTOKES, CNSTR>& solution;
         const OpticalLayer<NSTOKES, CNSTR>& optical;
+        uint numDeriv;
+        uint layerDerivStart;
     };
-    Layer upper = {m_layers[p - 1].solution(m).value, m_layers[p - 1]};
-    Layer lower = {m_layers[p].solution(m).value, m_layers[p]};
+    Layer upper = {m_layers[p - 1].solution(m).value, m_layers[p - 1],
+                   (uint)m_layers.inputDerivatives().numDerivativeLayer(p - 1),
+                   (uint)m_layers.inputDerivatives().layerStartIndex(p - 1)};
+    Layer lower = {m_layers[p].solution(m).value, m_layers[p],
+                   (uint)m_layers.inputDerivatives().numDerivativeLayer(p),
+                   (uint)m_layers.inputDerivatives().layerStartIndex(p)};
 
     // Build coupling condition. See eq 31
     for (StreamIndex i = 0; i < N * NSTOKES; ++i) {
-        double u_p_p = upper.solution.particular_plus(i);
-        double u_p_m = upper.solution.particular_minus(i);
-        double u_bt = upper.optical.beamTransmittance(Location::FLOOR);
-
-        double l_p_p = lower.solution.particular_plus(i);
-        double l_p_m = lower.solution.particular_minus(i);
-        double l_bt = lower.optical.beamTransmittance(Location::CEILING);
-
+        double negation = sasktran_disco::stokes_negation_factor<NSTOKES>(i);
         b[loc] = -upper.solution.dual_Gminus_bottom().value(i) +
                  lower.solution.dual_Gminus_top().value(i);
         b[loc + N * NSTOKES] = -upper.solution.dual_Gplus_bottom().value(i) +
                                lower.solution.dual_Gplus_top().value(i);
 
-        if (numderiv > 0) {
-            d_b(loc + N * NSTOKES, Eigen::all).noalias() =
-                lower.solution.dual_Gplus_top().deriv(Eigen::all, i) -
-                upper.solution.dual_Gplus_bottom().deriv(Eigen::all, i);
+        if (this->M_BACKPROP_BVP && SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
+            for (SolutionIndex j = 0; j < N * NSTOKES; ++j) {
+                uint h_start = j * N * NSTOKES;
+                // for b[loc]
+                m_cache.m_Cminus_to_b(loc, p * N * NSTOKES + j) +=
+                    negation *
+                    (lower.solution.dual_green_A_minus().value(j) *
+                     lower.solution.dual_homog_plus().value(h_start + i));
+                m_cache.m_Cplus_to_b(loc, (p - 1) * N * NSTOKES + j) +=
+                    -negation *
+                    (upper.solution.dual_green_A_plus().value(j) *
+                     upper.solution.dual_homog_minus().value(h_start + i));
 
-            d_b(loc, Eigen::all).noalias() =
-                lower.solution.dual_Gminus_top().deriv(Eigen::all, i) -
-                upper.solution.dual_Gminus_bottom().deriv(Eigen::all, i);
+                // for b[loc + N*NSTOKES]
+
+                m_cache.m_Cplus_to_b(loc + N * NSTOKES,
+                                     (p - 1) * N * NSTOKES + j) +=
+                    -(upper.solution.dual_green_A_plus().value(j) *
+                      upper.solution.dual_homog_plus().value(h_start + i));
+                m_cache.m_Cminus_to_b(loc + N * NSTOKES, p * N * NSTOKES + j) +=
+                    (lower.solution.dual_green_A_minus().value(j) *
+                     lower.solution.dual_homog_minus().value(h_start + i));
+            }
+            // Have to add in layer derivs
+            for (int k = 0; k < upper.numDeriv; ++k) {
+                d_b(loc + N * NSTOKES, upper.layerDerivStart + k) +=
+                    -upper.solution.dual_Gplus_bottom().deriv(
+                        upper.layerDerivStart + k, i);
+                d_b(loc, upper.layerDerivStart + k) +=
+                    -upper.solution.dual_Gminus_bottom().deriv(
+                        upper.layerDerivStart + k, i);
+            }
+
+            // Have to add in layer derivs
+            for (int k = 0; k < lower.numDeriv; ++k) {
+                d_b(loc + N * NSTOKES, lower.layerDerivStart + k) +=
+                    lower.solution.dual_Gplus_top().deriv(
+                        lower.layerDerivStart + k, i);
+                d_b(loc, lower.layerDerivStart + k) +=
+                    lower.solution.dual_Gminus_top().deriv(
+                        lower.layerDerivStart + k, i);
+            }
+        } else {
+            if (numderiv > 0) {
+                d_b(loc + N * NSTOKES, Eigen::all).noalias() =
+                    lower.solution.dual_Gplus_top().deriv(Eigen::all, i) -
+                    upper.solution.dual_Gplus_bottom().deriv(Eigen::all, i);
+
+                d_b(loc, Eigen::all).noalias() =
+                    lower.solution.dual_Gminus_top().deriv(Eigen::all, i) -
+                    upper.solution.dual_Gminus_bottom().deriv(Eigen::all, i);
+            }
         }
 
         loc++;
@@ -1609,16 +1906,17 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC2(
 template <int NSTOKES, int CNSTR>
 void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC3(
     AEOrder m, BoundaryIndex p, uint& loc, Eigen::VectorXd& b,
-    Eigen::MatrixXd& d_b) const {
+    Eigen::MatrixXd& d_b) {
     // Configure
     assert(p == this->M_NLYR);
+    const int N = this->M_NSTR / 2;
     RTEGeneralSolution<NSTOKES, CNSTR>& solution =
         m_layers.bottom().solution(m).value;
     const OpticalLayer<NSTOKES, CNSTR>& layer = m_layers[p - 1];
     const auto& input_deriv = m_layers.inputDerivatives().layerDerivatives();
 
     // Build ground condition. See eq (36)
-    for (StreamIndex i = 0; i < this->M_NSTR / 2 * NSTOKES; ++i) {
+    for (StreamIndex i = 0; i < N * NSTOKES; ++i) {
         b[loc] = ground_direct_sun(m, layer, i) - u_minus(m, layer, i);
 
         // We have cross derivatives

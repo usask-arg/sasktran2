@@ -25,9 +25,29 @@ void init_geometry(py::module_& m) {
                    altitude_grid_m: np.array
                        One dimensional altitude grid
                    interpolation_method: sasktran2.InterpolationMethod
-                       One of sasktran2.InterpolationMethod.LinearInterpolation or sasktran2.InterpolationMethod.ShellInterpolation
+                       The interpolation method to use in-between geometry grid points
+
+                       `sasktran2.InterpolationMethod.LinearInterpolation`
+                           In-between grid points, linear interpolation is assumed.  This means that Atmospheric quantities
+                           such as extinction, single scatter albedo, should be thought of as sampled on the geometry grid points.
+
+                       `sasktran2.InterpolationMethod.ShellInterpolation`
+                           Atmospheric quantities such as extinction, single scatter albedo, are assumed to be constant in-between
+                           geometry grid points.
+
                    geometry_type: sasktran2.GeometryType
-                       One of sasktran2.GeometryType.Spherical or sasktran2.GeometryType.PlaneParallel
+                       The global geometry type used inside the radiative transfer calculation.
+
+                       `sasktran2.GeometryType.Spherical`
+                           All aspects of the calculation are done using spherical geometry.
+
+                       `sasktran2.GeometryType.PlaneParallel`
+                           All aspects of the calculation are done using plane-parallel geometry.
+
+                       `sasktran2.GeometryType.PseudoSpherical`
+                           Line of sight integration and the multiple scatter calculation is done using
+                           plane parallel geometry, however the initial solar source function is calculated
+                           using a spherical geometry.
                  )",
              "cos_sza"_a, "solar_azimuth"_a, "earth_radius_m"_a,
              "altitude_grid_m"_a, "interpolation_method"_a, "geometry_type"_a)

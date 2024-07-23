@@ -24,10 +24,7 @@ TEST_CASE("Verify SSA WF", "[sasktran2][engine][wf]") {
     int nwavel = 1;
     sasktran2::atmosphere::AtmosphereGridStorageFull<1> storage(nwavel,
                                                                 geo.size(), 16);
-    sasktran2::atmosphere::Surface surface;
-
-    surface.albedo().resize(nwavel);
-    surface.albedo().setZero();
+    sasktran2::atmosphere::Surface<1> surface(nwavel);
 
     sasktran2::atmosphere::Atmosphere<1> atmo(std::move(storage),
                                               std::move(surface), true);

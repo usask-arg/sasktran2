@@ -50,7 +50,12 @@ namespace sasktran2::grids {
         std::array<double, 2> alt_weight, sza_weight;
         int num_alt_contrib, num_sza_contrib;
 
-        double altitude = location.radius() - coords.earth_radius();
+        double altitude;
+        if (coords.geometry_type() == sasktran2::geometrytype::spherical) {
+            altitude = location.radius() - coords.earth_radius();
+        } else {
+            altitude = location.position.z() - coords.earth_radius();
+        }
 
         double cos_sza =
             coords.solar_angles_at_location(location.position).first;

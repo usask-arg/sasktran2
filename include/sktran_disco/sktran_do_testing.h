@@ -4,6 +4,8 @@
 
 namespace sasktran_disco {
     namespace testing {
+        // Most of this is old code to interface with the legacy tests
+
         struct TestLayerSpecBase {
             virtual ~TestLayerSpecBase(){};
         };
@@ -160,13 +162,6 @@ namespace sasktran_disco {
             std::function<double(double, double, double)> brdf;
             bool is_lambertian;
 
-            std::unique_ptr<TestBRDF> getBRDF() const {
-                if (is_lambertian)
-                    return std::unique_ptr<TestBRDF>(new TestBRDF(lambertian));
-                else
-                    return std::unique_ptr<TestBRDF>(new TestBRDF(brdf));
-            }
-
             std::vector<TestLayer<NSTOKES>> layers;
             std::vector<TestLOS> linesofsight;
             const std::vector<double>* correct_radiances;
@@ -176,40 +171,11 @@ namespace sasktran_disco {
     template <int NSTOKES, int CNSTR = -1>
     class SKTRAN_DO_TestSpec : public SKTRAN_DO_UserSpec {
       public:
-        struct TestWF : WeightingFunctionSpec {
-            TestWF() = default;
-            TestWF(double a_ssa, double a_optd, double alb, uint layer) {
-                ssa = a_ssa;
-                optd = a_optd;
-                albedo = alb;
-                layer_index = layer;
-            }
-            TestWF(double a_ssa, double a_optd, double alb, uint layer,
-                   const std::vector<double>& legendre) {
-                ssa = a_ssa;
-                optd = a_optd;
-                albedo = alb;
-                layer_index = layer;
-                legendrecoeff = legendre;
-            }
-
-            WeightingFunctionType type() override {
-                return WeightingFunctionSpec::TestWF;
-            }
-
-            double ssa;
-            double optd;
-            double albedo;
-            LayerIndex layer_index;
-            std::vector<double> legendrecoeff;
-        };
-
         void configure(const testing::TestCase<NSTOKES>& testcase) {
             setNumberOfStreams(testcase.nstr);
             cacheLPOfStreamAngles();
             setNumberOfLayers(testcase.nlyr);
             setTOAIntensities(testcase.solar.intensities.direct);
-            setWFReturnForm(WeightingFunctionForm::dI_dLogX);
             m_testcase = &testcase;
         }
         const testing::TestCase<NSTOKES>* getTestCase() const {

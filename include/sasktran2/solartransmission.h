@@ -226,6 +226,20 @@ namespace sasktran2::solartransmission {
             int wavelidx, int losidx, int wavel_threadidx, int threadidx,
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
                 source) const override;
+
+        /**
+         * @brief Not used for the Single Scatter source.
+         *
+         * @param wavelidx
+         * @param losidx
+         * @param wavel_threadidx
+         * @param threadidx
+         * @param source
+         */
+        virtual void start_of_ray_source(
+            int wavelidx, int losidx, int wavel_threadidx, int threadidx,
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+                source) const override{};
     };
 
     template <int NSTOKES>
@@ -287,6 +301,20 @@ namespace sasktran2::solartransmission {
             int wavelidx, int losidx, int wavel_threadidx, int threadidx,
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
                 source) const override;
+
+        /**
+         * @brief Not used for the occultation source.
+         *
+         * @param wavelidx
+         * @param losidx
+         * @param wavel_threadidx
+         * @param threadidx
+         * @param source
+         */
+        virtual void start_of_ray_source(
+            int wavelidx, int losidx, int wavel_threadidx, int threadidx,
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+                source) const override{};
     };
 
 } // namespace sasktran2::solartransmission

@@ -55,7 +55,7 @@ def database_root() -> Path:
     dir = load_user_config().get("database_root", None)
 
     if dir is None:
-        return None
+        return Path(APPDIRS.user_data_dir).joinpath("database")
     return Path(dir)
 
 
@@ -66,39 +66,6 @@ def are_extended_db_downloaded() -> bool:
     if database_root() is None:
         return False
     return database_root().joinpath("cross_sections/h2o/hitran_01nm_res.nc").exists()
-
-
-def download_standard_databases(version: str = "latest"):
-    user_config = load_user_config()
-
-    if "database_root" in user_config:
-        data_directory = Path(user_config["database_root"])
-    else:
-        data_directory = Path(APPDIRS.user_data_dir).joinpath("database")
-
-    if not data_directory.exists():
-        data_directory.mkdir(parents=True)
-
-    output_file_temp = data_directory.joinpath(f"v_{version}.zip")
-
-    if output_file_temp.exists():
-        output_file_temp.unlink()
-
-    try:
-        urllib.request.urlretrieve(
-            f"https://arg.usask.ca/sasktranfiles/sasktran2_db/v_{version}.zip",
-            filename=output_file_temp.as_posix(),
-        )
-        with zipfile.ZipFile(output_file_temp.as_posix(), "r") as zip_ref:
-            zip_ref.extractall(data_directory)
-    except Exception as e:
-        logging.exception(e)
-
-    if output_file_temp.exists():
-        output_file_temp.unlink()
-
-    user_config["database_root"] = data_directory.as_posix()
-    save_user_config(user_config)
 
 
 def download_extended_databases(version: str = "latest"):

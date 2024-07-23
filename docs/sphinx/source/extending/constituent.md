@@ -76,7 +76,7 @@ The extinction derivative is straightforward, since {math}`k_i = \sum_j k_{i, j}
 where {math}`n_i` is our background number density.  The single scattering albedo derivative is a little more involved, but from a simple chain rule
 
 ```{math}
-\frac{partial \omega_i}{\partial x} = \frac{-n_i \omega_i}{k_i}
+\frac{\partial \omega_i}{\partial x} = \frac{-n_i \omega_i}{k_i}
 ```
 where we have used the fact that the single scatter albedo for our absorber is 0.
 

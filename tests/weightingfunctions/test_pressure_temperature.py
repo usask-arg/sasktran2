@@ -109,3 +109,33 @@ def test_temperature_wf():
             wf_dim="altitude",
             decimal=4,
         )
+
+
+def test_specific_humidity_wf():
+    """
+    Checks that the specific_humidity weighting function is working correctly
+    """
+
+    scens = _test_scenarios()
+
+    # Only the second scenario has specific humidity derivatives
+    for scen in scens[1:]:
+        atmosphere = scen["atmosphere"]
+
+        engine = sk.Engine(scen["config"], scen["geometry"], scen["viewing_geo"])
+        atmosphere.specific_humidity = np.zeros_like(atmosphere.temperature_k) + 0.01
+
+        radiance = sk.test_util.wf.numeric_wf(
+            atmosphere.specific_humidity,
+            0.1,
+            engine,
+            atmosphere,
+            "wf_specific_humidity",
+        )
+
+        sk.test_util.wf.validate_wf(
+            radiance["wf_specific_humidity"],
+            radiance["wf_specific_humidity_numeric"],
+            wf_dim="altitude",
+            decimal=4,
+        )

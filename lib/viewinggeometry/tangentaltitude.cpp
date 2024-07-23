@@ -44,6 +44,8 @@ namespace sasktran2::viewinggeometry {
 
         ray.observer.position = tangent_point - s * ray.look_away;
 
+        ray.relative_azimuth = m_relative_azimuth_angle;
+
         return ray;
     }
 } // namespace sasktran2::viewinggeometry

@@ -4,19 +4,20 @@ namespace sasktran2::atmosphere {
 
     template <int NSTOKES>
     Atmosphere<NSTOKES>::Atmosphere(
-        const std::vector<Constituent>& constituents, Surface&& surface,
-        const Eigen::VectorXd& wavelengths,
+        const std::vector<Constituent>& constituents,
+        Surface<NSTOKES>&& surface, const Eigen::VectorXd& wavelengths,
         const sasktran2::Geometry1D& geometry, const sasktran2::Config& config,
         bool calculate_derivatives)
         : m_calculate_derivatives(calculate_derivatives),
+          m_surface(std::move(surface)),
           m_storage(wavelengths.size(), geometry.size(),
                     config.num_singlescatter_moments()) {}
 
     template <int NSTOKES>
     Atmosphere<NSTOKES>::Atmosphere(
-        AtmosphereGridStorageFull<NSTOKES>&& storage, Surface&& surface,
-        bool calculate_derivatives)
-        : m_storage(storage), m_surface(surface),
+        AtmosphereGridStorageFull<NSTOKES>&& storage,
+        Surface<NSTOKES>&& surface, bool calculate_derivatives)
+        : m_storage(storage), m_surface(std::move(surface)),
           m_calculate_derivatives(calculate_derivatives) {}
 
     template <int NSTOKES>
@@ -26,7 +27,7 @@ namespace sasktran2::atmosphere {
                                     bool calculate_derivatives)
         : m_storage(nwavel, geometry.size(),
                     config.num_singlescatter_moments()),
-          m_calculate_derivatives(calculate_derivatives) {}
+          m_calculate_derivatives(calculate_derivatives), m_surface(nwavel) {}
 
     template <int NSTOKES> int Atmosphere<NSTOKES>::num_deriv() const {
         if (m_calculate_derivatives) {

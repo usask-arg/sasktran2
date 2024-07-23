@@ -31,6 +31,9 @@
 [Mie](api/mie.md)
 : Tools to calculate Mie parameters
 
+[Databases](api/database.md)
+: Tools to manage downloading external databases and generating internal databases
+
 [Utility](api/util.rst)
 : Utility functionality in `sasktran2.util.*`
 
@@ -48,6 +51,7 @@ api/output
 api/viewing_geometry
 api/climatology
 api/geodetic
+api/database
 api/util
 api/mie
 ```

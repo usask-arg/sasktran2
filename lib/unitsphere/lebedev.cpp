@@ -74,7 +74,6 @@ namespace sasktran2::math {
                 for (int j = 0; j < num_interp; ++j) {
                     index_weights[j].second = 0;
                 }
-                index_weights[i].first = i;
                 index_weights[i].second = 1;
                 return;
             }

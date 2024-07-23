@@ -1,3 +1,4 @@
+#include "sasktran2/geometry.h"
 #include <algorithm>
 #ifdef SKTRAN_OPENMP_SUPPORT
 #include <omp.h>
@@ -503,7 +504,7 @@ namespace sasktran2::hr {
             saa_initial);
 
         return m_geometry.coordinates().look_vector_from_azimuth(
-            new_position, -saa_initial, temp.cos_zenith_angle(vector));
+            new_position, saa_initial, temp.cos_zenith_angle(vector));
     }
 
     template <int NSTOKES>
@@ -531,7 +532,7 @@ namespace sasktran2::hr {
         sasktran2::Location temp_location;
 
 #pragma omp parallel for num_threads(nthreads) private(                        \
-    num_location, num_direction, rotated_los, temp_location)
+        num_location, num_direction, rotated_los, temp_location)
         for (int rayidx = 0; rayidx < rays.size(); ++rayidx) {
 #ifdef SKTRAN_OPENMP_SUPPORT
             int threadidx = omp_get_thread_num();
@@ -569,10 +570,17 @@ namespace sasktran2::hr {
                     const auto& contributing_point =
                         m_diffuse_points[temp_location_storage[locidx].first];
 
-                    // Multiply by -1 to get the propagation direction
-                    rotated_los = rotate_unit_vector(
-                        -1 * layer.average_look_away, temp_location.position,
-                        contributing_point->location().position);
+                    if (m_geometry.coordinates().geometry_type() ==
+                        sasktran2::geometrytype::spherical) {
+                        // Multiply by -1 to get the propagation direction
+                        rotated_los = rotate_unit_vector(
+                            -1 * layer.average_look_away,
+                            temp_location.position,
+                            contributing_point->location().position);
+                    } else {
+                        // Don't need to rotate in plane parallel geometry
+                        rotated_los = -1 * layer.average_look_away;
+                    }
 
                     contributing_point->sphere_pair()
                         .outgoing_sphere()
@@ -618,10 +626,16 @@ namespace sasktran2::hr {
                     const auto& contributing_point =
                         m_diffuse_points[temp_location_storage[locidx].first];
 
-                    // Multiply by -1 to get the propagation direction
-                    rotated_los = rotate_unit_vector(
-                        -1 * layer.average_look_away, temp_location.position,
-                        contributing_point->location().position);
+                    if (m_geometry.coordinates().geometry_type() ==
+                        sasktran2::geometrytype::spherical) {
+                        // Multiply by -1 to get the propagation direction
+                        rotated_los = rotate_unit_vector(
+                            -1 * layer.average_look_away,
+                            temp_location.position,
+                            contributing_point->location().position);
+                    } else {
+                        rotated_los = -1 * layer.average_look_away;
+                    }
 
                     contributing_point->sphere_pair()
                         .outgoing_sphere()
@@ -994,7 +1008,31 @@ namespace sasktran2::hr {
         int wavelidx, int losidx, int wavel_threadidx, int threadidx,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
-        // TODO: Only necessary for nadir viewing ground?
+        auto& interpolator = m_los_source_weights[losidx].ground_weights;
+        auto& storage = m_thread_storage[wavel_threadidx];
+
+        for (int i = 0; i < interpolator.size(); ++i) {
+            auto& index_weight = interpolator[i];
+
+            for (int s = 0; s < NSTOKES; ++s) {
+                double source_value =
+                    storage.m_outgoing_sources.value(
+                        (std::get<0>(index_weight) * NSTOKES + s)) *
+                    std::get<1>(index_weight);
+
+                source.value(s) += source_value;
+
+                if (this->m_config->wf_precision() ==
+                        sasktran2::Config::WeightingFunctionPrecision::full &&
+                    m_config->initialize_hr_with_do()) {
+                    source.deriv(s, Eigen::all) +=
+                        std::get<1>(index_weight) *
+                        storage.m_outgoing_sources.deriv(
+                            std::get<0>(index_weight) * NSTOKES + s,
+                            Eigen::all);
+                }
+            }
+        }
     }
 
     template class DiffuseTable<1>;

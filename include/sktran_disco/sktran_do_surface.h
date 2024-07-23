@@ -1,133 +1,225 @@
 #pragma once
 #include "sktran_disco/sktran_do.h"
+#include "sktran_disco/sktran_do_quadrature.h"
+#include "sktran_disco/sktran_do_types.h"
+#include <sasktran2/atmosphere/surface.h>
 
 namespace sasktran_disco {
-    // BRDF interface SKDO
-    class BRDF_Base {
-      public:
-        virtual ~BRDF_Base(){};
+    template <int NSTOKES, int CNSTR = -1> struct SurfaceStorage {
+        static constexpr int CSIZE = CNSTR == -1 ? Eigen::Dynamic : CNSTR / 2;
 
-        // BRDF arguments:
-        // coszen_out : cosine of outgoing ray zenith angle
-        // coszen_in : cosine of incoming ray zenith angle
-        // az_diff : difference in azimuth angles [units: radians]
-        // return: BRDF value, no pi normalization, integral over BRDF should ->
-        // 1
-        virtual double brdf(double coszen_out, double coszen_in,
-                            double az_diff) const = 0;
-        virtual bool isLambertian() const = 0;
+        struct SurfaceExpansion {
+            Eigen::Matrix<double, -1, CSIZE> los_stream;
+            Eigen::Matrix<double, CSIZE, CSIZE> stream_stream;
+            Eigen::Matrix<double, -1, 1> los_solar;
+            Eigen::Matrix<double, CSIZE, 1> stream_solar;
+        };
+
+        SurfaceExpansion brdf;
+        std::vector<SurfaceExpansion> d_brdf;
+
+        Eigen::VectorXd m_quadrature_phi;
+        Eigen::VectorXd m_quadrature_weight;
+
+        // Geometry factors
+        double csz;                          /** Cosine solar zenith */
+        const std::vector<double>* mu;       /** Stream angles */
+        const std::vector<LineOfSight>* los; /** Los for the LOS angles*/
+
+        void resize(int nstr, int nlos, int nderiv) {
+            brdf.los_stream.resize(nlos, nstr / 2);
+            brdf.stream_stream.resize(nstr / 2, nstr / 2);
+            brdf.los_solar.resize(nlos, 1);
+            brdf.stream_solar.resize(nstr / 2, 1);
+
+            d_brdf.resize(nderiv);
+            for (auto& d_b : d_brdf) {
+                d_b.los_stream.resize(nlos, nstr / 2);
+                d_b.stream_stream.resize(nstr / 2, nstr / 2);
+                d_b.los_solar.resize(nlos, 1);
+                d_b.stream_solar.resize(nstr / 2, 1);
+            }
+
+            m_quadrature_phi = Eigen::Map<const Eigen::VectorXd>(
+                getQuadratureAbscissae(512), 512);
+            m_quadrature_weight = Eigen::Map<const Eigen::VectorXd>(
+                getQuadratureWeights(512), 512);
+        }
+
+        double compute_expansion(
+            AEOrder m,
+            const sasktran2::atmosphere::Surface<NSTOKES>& sk2_surface,
+            int wavel_idx, double mu_out, double mu_in) const {
+            if (sk2_surface.max_azimuthal_order() == 1) {
+                // Special case
+                return sk2_surface.brdf(wavel_idx, mu_in, mu_out, 0)(0, 0) *
+                       EIGEN_PI;
+            }
+            if (m >= sk2_surface.max_azimuthal_order()) {
+                return 0;
+            }
+            // else
+            double result = 0;
+
+            for (int i = 0; i < m_quadrature_phi.size() / 2; i++) {
+                double a1 = 0.5 * m_quadrature_phi(i) + 0.5;
+                double a2 = -0.5 * m_quadrature_phi(i) + 0.5;
+                double a3 = 0.5 * m_quadrature_phi(i) - 0.5;
+                double a4 = -0.5 * m_quadrature_phi(i) - 0.5;
+                double w = 0.5 * m_quadrature_weight(i);
+
+                result += w *
+                          sk2_surface.brdf(wavel_idx, mu_in, mu_out,
+                                           EIGEN_PI * a1)(0, 0) *
+                          cos(m * EIGEN_PI * a1);
+                result += w *
+                          sk2_surface.brdf(wavel_idx, mu_in, mu_out,
+                                           EIGEN_PI * a2)(0, 0) *
+                          cos(m * EIGEN_PI * a2);
+                result += w *
+                          sk2_surface.brdf(wavel_idx, mu_in, mu_out,
+                                           EIGEN_PI * a3)(0, 0) *
+                          cos(m * EIGEN_PI * a3);
+                result += w *
+                          sk2_surface.brdf(wavel_idx, mu_in, mu_out,
+                                           EIGEN_PI * a4)(0, 0) *
+                          cos(m * EIGEN_PI * a4);
+            }
+            return result * 0.5 * EIGEN_PI * (2.0 - kronDelta(m, 0));
+        }
+
+        double d_compute_expansion(
+            AEOrder m,
+            const sasktran2::atmosphere::Surface<NSTOKES>& sk2_surface,
+            int wavel_idx, double mu_out, double mu_in, int deriv_index) const {
+            if (sk2_surface.max_azimuthal_order() == 1) {
+                // Special case
+                return sk2_surface.d_brdf(wavel_idx, mu_in, mu_out, 0,
+                                          deriv_index)(0, 0) *
+                       EIGEN_PI;
+            }
+            if (m >= sk2_surface.max_azimuthal_order()) {
+                return 0;
+            }
+            // else
+            double result = 0;
+
+            for (int i = 0; i < m_quadrature_phi.size() / 2; i++) {
+                double a1 = 0.5 * m_quadrature_phi(i) + 0.5;
+                double a2 = -0.5 * m_quadrature_phi(i) + 0.5;
+                double a3 = 0.5 * m_quadrature_phi(i) - 0.5;
+                double a4 = -0.5 * m_quadrature_phi(i) - 0.5;
+                double w = 0.5 * m_quadrature_weight(i);
+
+                result += w *
+                          sk2_surface.d_brdf(wavel_idx, mu_in, mu_out,
+                                             EIGEN_PI * a1, deriv_index)(0, 0) *
+                          cos(m * EIGEN_PI * a1);
+                result += w *
+                          sk2_surface.d_brdf(wavel_idx, mu_in, mu_out,
+                                             EIGEN_PI * a2, deriv_index)(0, 0) *
+                          cos(m * EIGEN_PI * a2);
+                result += w *
+                          sk2_surface.d_brdf(wavel_idx, mu_in, mu_out,
+                                             EIGEN_PI * a3, deriv_index)(0, 0) *
+                          cos(m * EIGEN_PI * a3);
+                result += w *
+                          sk2_surface.d_brdf(wavel_idx, mu_in, mu_out,
+                                             EIGEN_PI * a4, deriv_index)(0, 0) *
+                          cos(m * EIGEN_PI * a4);
+            }
+            return result * 0.5 * EIGEN_PI * (2.0 - kronDelta(m, 0));
+        }
     };
 
-    // Allows tests to be setup. Overrides standard configuration so writing
-    // tests is easy.
-    class TestBRDF : public BRDF_Base {
-      public:
-        TestBRDF() {}
-        TestBRDF(std::function<double(double, double, double)> brdf) {
-            setBRDF(brdf, false);
-        }
-        TestBRDF(double lambertian) {
-            setBRDF([=](double, double, double) { return lambertian; }, true);
-        }
-        void setBRDF(std::function<double(double, double, double)> brdf,
-                     bool lambertian) {
-            m_brdf = brdf;
-            m_is_lambertian = lambertian;
-        }
-
-        virtual double brdf(double coszen_out, double coszen_in,
-                            double az_diff) const override {
-            return m_brdf(coszen_out, coszen_in, az_diff);
-        }
-
-        virtual bool isLambertian() const override { return m_is_lambertian; }
-
+    template <int NSTOKES, int CNSTR = -1> class Surface {
       private:
-        std::function<double(double, double, double)> m_brdf;
-        bool m_is_lambertian;
-    };
+        SurfaceStorage<NSTOKES, CNSTR>& m_storage;
 
-    template <class NonLambertianBRDF>
-    class PretendNotLambertian : public NonLambertianBRDF {
+        const sasktran2::atmosphere::Surface<NSTOKES>& m_sk2_surface;
+        int m_wavel_idx;
+
       public:
-        using NonLambertianBRDF::NonLambertianBRDF;
-        virtual bool isLambertian() const override { return false; }
-    };
+        Surface(SurfaceStorage<NSTOKES, CNSTR>& storage,
+                const sasktran2::atmosphere::Surface<NSTOKES>& sk2_surface,
+                int wavel_idx)
+            : m_storage(storage), m_sk2_surface(sk2_surface),
+              m_wavel_idx(wavel_idx) {}
 
-    // Surface object used internally by SASKTRAN-Disco. Handles the expansion
-    // of the BRDF function, and caches all reflection angles which will be
-    // requested internally by SKDO.
-    class Albedo {
-      public:
-        Albedo() {}
-
-        void configure(AEOrder m, const std::vector<LineOfSight>& los,
-                       const std::vector<double>& streams, double csz,
-                       BRDF_Base* brdf, uint nterms);
-
-        bool isLambertian() const { return m_brdf->isLambertian(); }
-
-        inline const std::vector<double>&
-        losBDRFromStreams(uint los_idx) const {
-            return m_brdf_los_stream[los_idx];
+        const sasktran2::atmosphere::Surface<NSTOKES>& sk2_surface() const {
+            return m_sk2_surface;
         }
 
-        inline const std::vector<double>&
-        streamBDRFromStreams(uint out_stream_idx) const {
-            return m_brdf_stream_stream[out_stream_idx];
-        }
+        void calculate(AEOrder m) {
+            int numderiv = m_storage.d_brdf.size();
+            // For each stream
+            for (int i = 0; i < m_storage.mu->size() / 2; i++) {
+                // LOS stream
+                for (int j = 0; j < m_storage.los->size(); j++) {
+                    m_storage.brdf.los_stream(
+                        (*m_storage.los)[j].unsorted_index, i) =
+                        m_storage.compute_expansion(
+                            m, m_sk2_surface, m_wavel_idx,
+                            (*m_storage.los)[j].coszenith, (*m_storage.mu)[i]);
 
-        inline double losBDRFromSun(uint los_idx) const {
-            return m_brdf_los_solar[los_idx];
-        }
-        inline double streamBDRFromSun(StreamIndex str_idx) const {
-            return m_brdf_stream_solar[str_idx];
-        }
+                    for (int k = 0; k < numderiv; ++k) {
+                        m_storage.d_brdf[k].los_stream(
+                            (*m_storage.los)[j].unsorted_index, i) =
+                            m_storage.d_compute_expansion(
+                                m, m_sk2_surface, m_wavel_idx,
+                                (*m_storage.los)[j].coszenith,
+                                (*m_storage.mu)[i], k);
+                    }
+                }
 
-        inline double d_streamBRDFFromSun(AEOrder m,
-                                          StreamIndex str_idx) const {
-            if (isLambertian()) {
-                return kronDelta(m, 0);
-            } else {
-                return m_brdf_stream_solar[str_idx];
+                // Stream Stream
+                for (int j = 0; j < m_storage.mu->size() / 2; j++) {
+                    m_storage.brdf.stream_stream(j, i) =
+                        m_storage.compute_expansion(
+                            m, m_sk2_surface, m_wavel_idx, (*m_storage.mu)[j],
+                            (*m_storage.mu)[i]);
+
+                    for (int k = 0; k < numderiv; ++k) {
+                        m_storage.d_brdf[k].stream_stream(j, i) =
+                            m_storage.d_compute_expansion(
+                                m, m_sk2_surface, m_wavel_idx,
+                                (*m_storage.mu)[j], (*m_storage.mu)[i], k);
+                    }
+                }
+
+                // Stream solar
+                m_storage.brdf.stream_solar(i) = m_storage.compute_expansion(
+                    m, m_sk2_surface, m_wavel_idx, (*m_storage.mu)[i],
+                    m_storage.csz);
+
+                for (int k = 0; k < numderiv; ++k) {
+                    m_storage.d_brdf[k].stream_solar(i) =
+                        m_storage.d_compute_expansion(
+                            m, m_sk2_surface, m_wavel_idx, (*m_storage.mu)[i],
+                            m_storage.csz, k);
+                }
+            }
+
+            // Los solar
+            for (int i = 0; i < m_storage.los->size(); i++) {
+                m_storage.brdf.los_solar((*m_storage.los)[i].unsorted_index) =
+                    m_storage.compute_expansion(m, m_sk2_surface, m_wavel_idx,
+                                                (*m_storage.los)[i].coszenith,
+                                                m_storage.csz);
+
+                for (int k = 0; k < numderiv; ++k) {
+                    m_storage.d_brdf[k].los_solar(
+                        (*m_storage.los)[i].unsorted_index) =
+                        m_storage.d_compute_expansion(
+                            m, m_sk2_surface, m_wavel_idx,
+                            (*m_storage.los)[i].coszenith, m_storage.csz, k);
+                }
             }
         }
-
-      private:
-        double computeBDR(AEOrder m, double outgoing, double incoming) const;
-
-      private: // members
-        VectorDim2<double> m_brdf_los_stream;
-        VectorDim2<double> m_brdf_stream_stream;
-        VectorDim1<double> m_brdf_los_solar;
-        VectorDim1<double> m_brdf_stream_solar;
-
-        bool m_configured;
-        const double* m_gq_angles;
-        const double* m_gq_weights;
-        uint m_nterms;
-
-        BRDF_Base* m_brdf;
-    };
-
-    class SurfaceEmission {
-      public:
-        SurfaceEmission(const std::vector<double>& wavelengths,
-                        const std::vector<double>& emissions)
-            : m_wavelengths(wavelengths), m_emissions(emissions){};
-
-        double emission(double wavelength) const {
-            // Interpolate in wavelength, set to 0 outside
-            // TODO: Fix this
-            return 0.0;
-            // return nxLinearInterpolate::EvaluateYatX(wavelength,
-            // m_wavelengths, m_emissions,
-            // nxLinearInterpolate::EnumOutOfBoundAction::ENUM_MISSINGVALUE,
-            // 0.0);
+        const SurfaceStorage<NSTOKES, CNSTR>& storage() const {
+            return m_storage;
         }
-
-      private:
-        std::vector<double> m_wavelengths;
-        std::vector<double> m_emissions;
+        SurfaceStorage<NSTOKES, CNSTR>& storage() { return m_storage; }
     };
+
 } // namespace sasktran_disco

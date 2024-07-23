@@ -6,7 +6,7 @@ namespace sasktran_disco::testing {
     /** This is an interface function to run the old SASKTRAN DISCO tests that
      * used the sasktran_disco::testing::TestCase class along with the standard
      * DO engine.  Here we transform the TestCase input to input used in the
-     * lowlevel interface instead.
+     * sasktran2 interface instead
      *
      * @tparam NSTOKES
      * @param test_case
@@ -15,7 +15,7 @@ namespace sasktran_disco::testing {
      * @param wf
      */
     template <int NSTOKES>
-    void run_lowlevel_from_old_testspec(
+    void run_sasktran2_from_old_testspec(
         sasktran_disco::testing::TestCase<NSTOKES>& test_case,
         sasktran_disco::SKTRAN_DO_TestSpec<NSTOKES, -1>* test_spec,
         std::vector<double>& radiance, std::vector<double>& abs_diff,
