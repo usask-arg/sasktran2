@@ -48,4 +48,12 @@ namespace sasktran2::viewinggeometry {
 
         return ray;
     }
+
+    std::string TangentAltitude::to_string() const {
+        return fmt::format(
+            "Tangent Viewing Ray: tangentaltitude: {}, relative_azimuth_angle: "
+            "{}, observeraltitude: {}, theta: {}, phi: {}",
+            m_tangentaltitude, m_relative_azimuth_angle, m_observeraltitude,
+            m_theta, m_phi);
+    }
 } // namespace sasktran2::viewinggeometry

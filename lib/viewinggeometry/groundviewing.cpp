@@ -57,4 +57,12 @@ namespace sasktran2::viewinggeometry {
         return result;
     }
 
+    std::string GroundViewingSolar::to_string() const {
+        return fmt::format(
+            "Ground Viewing Ray: cos_sza: {}, relative_azimuth_angle: {}, "
+            "cos_viewing_zenith: {}, observer_altitude: {}",
+            m_cos_sza, m_relative_azimuth_angle, m_cos_viewing_zenith,
+            m_observer_altitude);
+    }
+
 } // namespace sasktran2::viewinggeometry
