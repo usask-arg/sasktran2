@@ -22,7 +22,7 @@ if [[ "$INSTALL_OPENBLAS" = "true" ]] ; then
     # rm -rf $PKG_CONFIG_PATH
     # mkdir -p $PKG_CONFIG_PATH
     python -m pip install scipy-openblas64==0.3.27.44.3
-    python -c "import scipy_openblas64; print(scipy_openblas64.get_pkg_config())" > $PKG_CONFIG_PATH/OpenBLAS.pc
+    python -c "import scipy_openblas64; print(scipy_openblas64.get_pkg_config())" > $PKG_CONFIG_PATH/openblas.pc
     # Copy the shared objects to a path under $PKG_CONFIG_PATH, the build
     # will point $LD_LIBRARY_PATH there and then auditwheel/delocate-wheel will
     # pull these into the wheel. Use python to avoid windows/posix problems
