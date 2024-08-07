@@ -76,7 +76,7 @@ repair-wheel-command = "bash ./ci/cibw/repair_windows.sh {wheel} {dest_dir}"
 
 
 [tool.ruff]
-select = [
+lint.select = [
     "E", "F", "W", # flake8
     "B",           # flake8-bugbear
     "I",           # isort
@@ -101,21 +101,21 @@ select = [
     "NPY",         # NumPy specific rules
     "PD",          # pandas-vet
 ]
-extend-ignore = [
+lint.extend-ignore = [
     "PLR",    # Design related pylint codes
     "E501",   # Line too long
     "I002",   # Future annotations
     "PD011", # wanting to use to_numpy instead of values
 ]
 src = ["python"]
-unfixable = [
+lint.unfixable = [
     "T20",  # Removes print statements
     "F841", # Removes unused variables
     "F401", # Removes unused imports
 ]
-flake8-unused-arguments.ignore-variadic-names = true
-isort.required-imports = ["from __future__ import annotations"]
+lint.flake8-unused-arguments.ignore-variadic-names = true
+lint.isort.required-imports = ["from __future__ import annotations"]
 exclude = ["tools/*", "docs/sphinx/source/conf.py", "src/sasktran2/_core.pyi"]
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "tests/**" = ["T20"]
