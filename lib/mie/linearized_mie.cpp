@@ -319,9 +319,11 @@ namespace sasktran2::mie {
 
         psi_n_1 = psi_n;     // this is n=1
         psi_n = xi_n.real(); // this is n=2
-
+        int nan_idx; // index to keep track of where we are approaching limit
+                     // where we will generate Nans, manually set Ans and Bns to
+                     // zero at this point
+        bool flag = false; // flag to see if we have to modify values
         for (int n = 2; n < N + 1; n++) {
-
             An = ((Dn_matrix.row(n - 1).transpose().array() / refractive_index +
                    n / size_param.array()) *
                       psi_n.array() -
@@ -351,6 +353,37 @@ namespace sasktran2::mie {
 
             psi_n_1 = psi_n;
             psi_n = xi_n.real(); // allowed since xi_n = psi_n + i*X_n
+
+            if (flag) {
+                // need to modify the values
+                // first check if we need to increase the values
+                while (std::abs(psi_n(nan_idx + 1)) > 1.0e275) {
+                    nan_idx += 1;
+                }
+                // now modify
+                An_matrix(n - 1, Eigen::seq(0, nan_idx)) =
+                    Eigen::VectorXcd::Zero(nan_idx + 1);
+                Bn_matrix(n - 1, Eigen::seq(0, nan_idx)) =
+                    Eigen::VectorXcd::Zero(nan_idx + 1);
+
+            } else if (std::abs(psi_n(0)) > 1.0e275) {
+                // need to start modifying values
+                flag = true;
+                nan_idx = 0;
+                // check if any others
+                while (std::abs(psi_n(nan_idx + 1)) > 1.0e275) {
+                    nan_idx += 1;
+                }
+                if (nan_idx == 0) {
+                    An_matrix(n - 1, 0) = 0;
+                    Bn_matrix(n - 1, 0) = 0;
+                } else {
+                    An_matrix(n - 1, Eigen::seq(0, nan_idx)) =
+                        Eigen::VectorXcd::Zero(nan_idx);
+                    Bn_matrix(n - 1, Eigen::seq(0, nan_idx)) =
+                        Eigen::VectorXcd::Zero(nan_idx);
+                }
+            }
         }
     }
 

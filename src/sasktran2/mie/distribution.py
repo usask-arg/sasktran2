@@ -85,7 +85,7 @@ def integrate_mie(
     num_quad=1024,
     maxintquantile=0.99999,
     compute_coeffs=False,
-    num_coeffs=1,
+    num_coeffs=64,
 ):
     """
     Integrates the Mie parameters over an arbitrary particle size distribution, returning cross sections and phase matrices
@@ -118,7 +118,7 @@ def integrate_mie(
     compute_coeffs : bool
         Option to also compute and return the greek coefficients. Default False.
     num_coeffes : int
-        Optional parameter, maximum number of coefficients to return in the expansion. Default 1.
+        Optional parameter, maximum number of coefficients to return in the expansion. Default 64.
     Returns
     -------
     xr.Dataset
@@ -204,14 +204,14 @@ def integrate_mie(
         )
         coeffs_output = xr.Dataset(
             {
-                "lm_a1": (["wavelength", "num_terms"], lm_a1),
-                "lm_a2": (["wavelength", "num_terms"], lm_a2),
-                "lm_a3": (["wavelength", "num_terms"], lm_a3),
-                "lm_a4": (["wavelength", "num_terms"], lm_a4),
-                "lm_b1": (["wavelength", "num_terms"], lm_b1),
-                "lm_b2": (["wavelength", "num_terms"], lm_b2),
+                "lm_a1": (["wavelength", "legendre"], lm_a1),
+                "lm_a2": (["wavelength", "legendre"], lm_a2),
+                "lm_a3": (["wavelength", "legendre"], lm_a3),
+                "lm_a4": (["wavelength", "legendre"], lm_a4),
+                "lm_b1": (["wavelength", "legendre"], lm_b1),
+                "lm_b2": (["wavelength", "legendre"], lm_b2),
             },
-            coords={"wavelength": wavelengths, "num_terms": np.arange(num_coeffs)},
+            coords={"wavelength": wavelengths, "legendre": np.arange(num_coeffs)},
         )
         all_output = all_output.merge(coeffs_output)
     return all_output

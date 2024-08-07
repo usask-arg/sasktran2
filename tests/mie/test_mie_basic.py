@@ -1,12 +1,6 @@
-import matplotlib.pyplot as plt
 import numpy as np
 import sasktran2 as sk
-import scipy.interpolate as interp
-import xarray as xr
-
-# from sasktran.legendre.wigner import WignerD
-from scipy import interpolate
-from scipy.special import roots_legendre
+from sasktran2 import appconfig
 
 
 def test_mie_construction():
@@ -127,14 +121,17 @@ def test_qext_q_Sca_s1_s2():
 
 
 def test_mie_integration():
-    # mie = sk.mie.LinearizedMie()
-    # refractive_index = 1 - 0.1j
-    # size_param = np.array(
-    #   [1]
-    # )  # not checking values for 0.2, just there to show that we can calculate with multiple size param and angles
-    # angles = np.linspace(0, 180, 3)
-    # cos_angles = np.cos(angles * np.pi / 180)
-    # output = mie.calculate(size_param, refractive_index, cos_angles, True)
+    mie = sk.mie.LinearizedMie()
+    refractive_index = 1 - 0.1j
+    size_param = np.array(
+        [1, 2, 3]
+    )  # not checking values for these, just there to show that we can calculate with multiple size param and angles
+    angles = np.linspace(0, 180, 3)
+    cos_angles = np.cos(angles * np.pi / 180)
+    output = mie.calculate(size_param, refractive_index, cos_angles, True)
+    np.testing.assert_allclose(
+        output.values.Qext[0], 0.25925991210268584, atol=1e-06, rtol=0
+    )
     from scipy.stats import rv_continuous
 
     class gaussian_gen(rv_continuous):
@@ -147,8 +144,8 @@ def test_mie_integration():
 
     prob_dist = gaussian_gen(name="gaussian")
 
-    def refrac_index_fn():
-        return 1.0 - 0.1j
+    def refrac_index_fn(w):
+        return 1.0 - 0.1j + 0 * w
 
     wavelengths = np.array([400, 500])
     my_mie = sk.mie.LinearizedMie()
@@ -195,143 +192,350 @@ def test_mie_integration():
     )
 
 
-def test_external_calc():
-    data = xr.open_dataset(
-        "\\\\utls\\SasktranFiles\\BaumIceCrystals\\GeneralHabitMixture_SeverelyRough_AllWavelengths_FullPhaseMatrix.nc"
+def test_mie_database():
+    db_root_legacy = appconfig.database_root().joinpath("legacy")
+    db_root_current = appconfig.database_root().joinpath("current")
+
+    refrac = sk.mie.refractive.H2SO4()
+    distribution = sk.mie.distribution.LogNormalDistribution()
+    mie_db = sk.database.MieDatabase(
+        distribution,
+        refrac,
+        wavelengths_nm=np.arange(270, 1000, 50.0),
+        median_radius=[100, 150, 200],
+        mode_width=[1.5, 1.7],
+        db_root=db_root_legacy,
+        max_legendre_moments=100,
     )
-    from sasktran2.legendre import compute_greek_coefficients
+    mie_db.load_ds()
 
-    num_coeffs = 10000
-    wavelengths = data["wavelengths"].data
+    mie_db_new = sk.database.MieDatabase(
+        distribution,
+        refrac,
+        wavelengths_nm=np.arange(270, 1000, 50.0),
+        median_radius=[100, 150, 200],
+        mode_width=[1.5, 1.7],
+        backend="sasktran_current",
+        db_root=db_root_current,
+        max_legendre_moments=100,
+    )
 
-    lm_a1_master = np.zeros((len(wavelengths), num_coeffs, len(data["nDeff"].data)))
-    lm_a2_master = np.zeros((len(wavelengths), num_coeffs, len(data["nDeff"].data)))
-    lm_a3_master = np.zeros((len(wavelengths), num_coeffs, len(data["nDeff"].data)))
-    lm_a4_master = np.zeros((len(wavelengths), num_coeffs, len(data["nDeff"].data)))
-    lm_b1_master = np.zeros((len(wavelengths), num_coeffs, len(data["nDeff"].data)))
-    lm_b2_master = np.zeros((len(wavelengths), num_coeffs, len(data["nDeff"].data)))
+    # testing select legendre moments for both to make sure we get reasonably close results
+    tolerance = 1e-7
+    np.testing.assert_allclose(
+        mie_db._database["lm_a1"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=0)
+        .data,
+        mie_db_new._database["lm_a1"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=0)
+        .data,
+        atol=tolerance,
+        rtol=0,
+    )
+    np.testing.assert_allclose(
+        mie_db._database["lm_a1"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=20)
+        .data,
+        mie_db_new._database["lm_a1"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=20)
+        .data,
+        atol=tolerance,
+        rtol=0,
+    )
+    np.testing.assert_allclose(
+        mie_db._database["lm_a1"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=40)
+        .data,
+        mie_db_new._database["lm_a1"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=40)
+        .data,
+        atol=tolerance,
+        rtol=0,
+    )
+    np.testing.assert_allclose(
+        mie_db._database["lm_a1"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=60)
+        .data,
+        mie_db_new._database["lm_a1"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=60)
+        .data,
+        atol=tolerance,
+        rtol=0,
+    )
 
-    # put total cross section in units of m ^2
-    xs_total = data["extinction_efficiency"].data * data["total_area"].data / 1e6 / 1e6
-    xs_scat = xs_total * data["single_scattering_albedo"].data
+    np.testing.assert_allclose(
+        mie_db._database["lm_a2"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=0)
+        .data,
+        mie_db_new._database["lm_a2"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=0)
+        .data,
+        atol=tolerance,
+        rtol=0,
+    )
+    np.testing.assert_allclose(
+        mie_db._database["lm_a2"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=20)
+        .data,
+        mie_db_new._database["lm_a2"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=20)
+        .data,
+        atol=tolerance,
+        rtol=0,
+    )
+    np.testing.assert_allclose(
+        mie_db._database["lm_a2"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=40)
+        .data,
+        mie_db_new._database["lm_a2"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=40)
+        .data,
+        atol=tolerance,
+        rtol=0,
+    )
+    np.testing.assert_allclose(
+        mie_db._database["lm_a2"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=60)
+        .data,
+        mie_db_new._database["lm_a2"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=60)
+        .data,
+        atol=tolerance,
+        rtol=0,
+    )
 
-    angles = data["phase_angles"].data
-    # angles_interp = np.linspace(0,180,10000)
-    diff = angles[1:] - angles[:-1]
-    sub_divisions = 16
-    angles_interp = angles
-    for i in range(sub_divisions - 1):
-        angles_interp = np.append(
-            angles_interp, angles[:-1] + (i + 1) * diff / sub_divisions
+    np.testing.assert_allclose(
+        mie_db._database["lm_a3"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=0)
+        .data,
+        mie_db_new._database["lm_a3"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=0)
+        .data,
+        atol=tolerance,
+        rtol=0,
+    )
+    np.testing.assert_allclose(
+        mie_db._database["lm_a3"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=20)
+        .data,
+        mie_db_new._database["lm_a3"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=20)
+        .data,
+        atol=tolerance,
+        rtol=0,
+    )
+    np.testing.assert_allclose(
+        mie_db._database["lm_a3"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=40)
+        .data,
+        mie_db_new._database["lm_a3"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=40)
+        .data,
+        atol=tolerance,
+        rtol=0,
+    )
+    np.testing.assert_allclose(
+        mie_db._database["lm_a3"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=60)
+        .data,
+        mie_db_new._database["lm_a3"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=60)
+        .data,
+        atol=tolerance,
+        rtol=0,
+    )
+
+    np.testing.assert_allclose(
+        mie_db._database["lm_a4"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=0)
+        .data,
+        mie_db_new._database["lm_a4"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=0)
+        .data,
+        atol=tolerance,
+        rtol=0,
+    )
+    np.testing.assert_allclose(
+        mie_db._database["lm_a4"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=20)
+        .data,
+        mie_db_new._database["lm_a4"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=20)
+        .data,
+        atol=tolerance,
+        rtol=0,
+    )
+    np.testing.assert_allclose(
+        mie_db._database["lm_a4"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=40)
+        .data,
+        mie_db_new._database["lm_a4"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=40)
+        .data,
+        atol=tolerance,
+        rtol=0,
+    )
+    np.testing.assert_allclose(
+        mie_db._database["lm_a4"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=60)
+        .data,
+        mie_db_new._database["lm_a4"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=60)
+        .data,
+        atol=tolerance,
+        rtol=0,
+    )
+
+    np.testing.assert_allclose(
+        mie_db._database["lm_b1"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=0)
+        .data,
+        mie_db_new._database["lm_b1"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=0)
+        .data,
+        atol=tolerance,
+        rtol=0,
+    )
+    np.testing.assert_allclose(
+        mie_db._database["lm_b1"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=20)
+        .data,
+        mie_db_new._database["lm_b1"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=20)
+        .data,
+        atol=tolerance,
+        rtol=0,
+    )
+    np.testing.assert_allclose(
+        mie_db._database["lm_b1"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=40)
+        .data,
+        mie_db_new._database["lm_b1"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=40)
+        .data,
+        atol=tolerance,
+        rtol=0,
+    )
+    np.testing.assert_allclose(
+        mie_db._database["lm_b1"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=60)
+        .data,
+        mie_db_new._database["lm_b1"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=60)
+        .data,
+        atol=tolerance,
+        rtol=0,
+    )
+
+    np.testing.assert_allclose(
+        mie_db._database["lm_b2"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=0)
+        .data,
+        mie_db_new._database["lm_b2"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=0)
+        .data,
+        atol=tolerance,
+        rtol=0,
+    )
+    np.testing.assert_allclose(
+        mie_db._database["lm_b2"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=20)
+        .data,
+        mie_db_new._database["lm_b2"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=20)
+        .data,
+        atol=tolerance,
+        rtol=0,
+    )
+    np.testing.assert_allclose(
+        mie_db._database["lm_b2"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=40)
+        .data,
+        mie_db_new._database["lm_b2"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=40)
+        .data,
+        atol=tolerance,
+        rtol=0,
+    )
+    np.testing.assert_allclose(
+        mie_db._database["lm_b2"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=60)
+        .data,
+        mie_db_new._database["lm_b2"]
+        .isel(median_radius=0, mode_width=0, wavelength_nm=0, legendre=60)
+        .data,
+        atol=tolerance,
+        rtol=0,
+    )
+
+    config = sk.Config()
+
+    altitudes_m = np.arange(0, 65001, 1000)
+
+    model_geometry = sk.Geometry1D(
+        cos_sza=0.6,
+        solar_azimuth=0,
+        earth_radius_m=6372000,
+        altitude_grid_m=altitudes_m,
+        interpolation_method=sk.InterpolationMethod.LinearInterpolation,
+        geometry_type=sk.GeometryType.Spherical,
+    )
+
+    viewing_geo = sk.ViewingGeometry()
+
+    for alt in [10000, 20000, 30000, 40000]:
+        ray = sk.TangentAltitudeSolar(
+            tangent_altitude_m=alt,
+            relative_azimuth=45 * np.pi / 180,
+            observer_altitude_m=200000,
+            cos_sza=0.6,
         )
+        viewing_geo.add_ray(ray)
 
-    angles_interp = np.sort(angles_interp)
-    for diameter_idx in data["nDeff"].data:
-        p11 = data["p11_phase_function"].data[:, diameter_idx, :].transpose()
-        p11_s = interp.CubicSpline(angles, p11, axis=1)
-        p11_interp = p11_s(angles_interp)
-        # rest of 'phase functions' are normalized by p11, multiply by p11 to return to full phase function
-        p12 = data["p21_phase_function"].data[:, diameter_idx, :].transpose() * p11
-        p12_s = interp.CubicSpline(angles, p12, axis=1)
-        p12_interp = p12_s(angles_interp)
+    wavel = np.arange(280.0, 800.0, 1)
 
-        p22 = data["p22_phase_function"].data[:, diameter_idx, :].transpose() * p11
-        p22_s = interp.CubicSpline(angles, p22, axis=1)
-        p22_interp = p22_s(angles_interp)
+    atmosphere = sk.Atmosphere(model_geometry, config, wavelengths_nm=wavel)
 
-        p33 = data["p33_phase_function"].data[:, diameter_idx, :].transpose() * p11
-        p33_s = interp.CubicSpline(angles, p33, axis=1)
-        p33_interp = p33_s(angles_interp)
+    sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
 
-        p34 = -1 * data["p43_phase_function"].data[:, diameter_idx, :].transpose() * p11
-        p34_s = interp.CubicSpline(angles, p34, axis=1)
-        p34_interp = p34_s(angles_interp)
+    atmosphere["rayleigh"] = sk.constituent.Rayleigh()
+    atmosphere["ozone"] = sk.climatology.mipas.constituent("O3", sk.optical.O3DBM())
 
-        p44 = data["p44_phase_function"].data[:, diameter_idx, :].transpose() * p11
-        p44_s = interp.CubicSpline(angles, p44, axis=1)
-        p44_interp = p44_s(angles_interp)
+    engine = sk.Engine(config, model_geometry, viewing_geo)
 
-        lm_a1, lm_a2, lm_a3, lm_a4, lm_b1, lm_b2 = compute_greek_coefficients(
-            p11=p11_interp,
-            p12=p12_interp,
-            p22=p22_interp,
-            p33=p33_interp,
-            p34=p34_interp,
-            p44=p44_interp,
-            angle_grid=angles_interp,
-            num_coeff=num_coeffs,
-        )
-        lm_a1_master[:, :, diameter_idx] = lm_a1
-        lm_a2_master[:, :, diameter_idx] = lm_a2
-        lm_a3_master[:, :, diameter_idx] = lm_a3
-        lm_a4_master[:, :, diameter_idx] = lm_a4
-        lm_b1_master[:, :, diameter_idx] = lm_b1
-        lm_b2_master[:, :, diameter_idx] = lm_b2
+    radiance_no_aerosol = engine.calculate_radiance(atmosphere)
+    aero_ext = np.zeros(len(altitudes_m))
+    aero_ext[0:30] = 1e-7
 
-    # wavelengths in nm
-    coeffs_output = xr.Dataset(
-        {
-            "lm_a1": (["wavelength", "num_terms", "nDeff"], lm_a1_master),
-            "lm_a2": (["wavelength", "num_terms", "nDeff"], lm_a2_master),
-            "lm_a3": (["wavelength", "num_terms", "nDeff"], lm_a3_master),
-            "lm_a4": (["wavelength", "num_terms", "nDeff"], lm_a4_master),
-            "lm_b1": (["wavelength", "num_terms", "nDeff"], lm_b1_master),
-            "lm_b2": (["wavelength", "num_terms", "nDeff"], lm_b2_master),
-            "xs_total": (["wavelength", "nDeff"], xs_total),
-            "xs_scat": (["wavelength", "nDeff"], xs_scat),
-        },
-        coords={
-            "wavelength": wavelengths * 1e3,
-            "num_terms": np.arange(num_coeffs),
-            "nDeff": data["nDeff"].data,
-        },
+    atmosphere["aerosol"] = sk.constituent.ExtinctionScatterer(
+        mie_db_new,
+        altitudes_m=altitudes_m,
+        extinction_per_m=aero_ext,
+        extinction_wavelength_nm=745,
+        median_radius=np.ones_like(aero_ext) * 120,
+        mode_width=np.ones_like(aero_ext) * 1.6,
     )
 
-    coeffs_output.to_netcdf(
-        "\\\\utls\\SasktranFiles\\BaumIceCrystals\\GeneralHabitMixture_SeverelyRough_AllWavelengths_FullPhaseMatrix_processed.nc"
+    radiance_with_aerosol = engine.calculate_radiance(atmosphere)
+    import matplotlib.pyplot as plt
+
+    plt.plot(wavel, radiance_no_aerosol["radiance"].isel(los=0, stokes=0))
+    plt.plot(wavel, radiance_with_aerosol["radiance"].isel(los=0, stokes=0))
+
+    # try freezing
+    distribution = sk.mie.distribution.LogNormalDistribution().freeze(
+        median_radius=160, mode_width=1.6
+    )
+    mie_db_f = sk.database.MieDatabase(
+        distribution,
+        refrac,
+        wavelengths_nm=np.arange(270, 1000, 50.0),
     )
 
-
-def test_dan_calc():
-    ds = xr.open_dataset(
-        "\\\\utls\\SasktranFiles\\BaumIceCrystals\\GeneralHabitMixture_SeverelyRough_AllWavelengths_FullPhaseMatrix.nc"
+    mie_db_f.load_ds()
+    atmosphere["aerosol"] = sk.constituent.ExtinctionScatterer(
+        mie_db_f,
+        altitudes_m=altitudes_m,
+        extinction_per_m=aero_ext,
+        extinction_wavelength_nm=745,
     )
-
-    phase = (
-        ds.isel(nDeff=0, nWaveLen=50)["p11_phase_function"]
-        .to_numpy()
-        .astype(np.float64)[::-1]
-    )
-    cos_angles = np.cos(np.deg2rad(ds["phase_angles"].to_numpy().astype(np.float64)))[
-        ::-1
-    ]
-
-    c = 0.995
-    n = 4000
-
-    nodes, weights = roots_legendre(n)
-    # splitting into peak and non-peak
-
-    nodes_left = (c - (-1)) / 2 * nodes + (c + (-1)) / 2
-    weights_left = (c - (-1)) / 2 * weights
-
-    nodes_right = (1 - c) / 2 * nodes + (1 + c) / 2
-    weights_right = (1 - c) / 2 * weights
-
-    all_weights = np.concatenate([weights_left, weights_right])
-    cos_angle_grid = np.concatenate([nodes_left, nodes_right])
-
-    # wig = WignerD(0, 0)
-    wig = sk.util.WignerD(0, 0)
-
-    l_vals = np.zeros((n, 2 * n))
-    for i in range(n):
-        l_vals[i] = wig.d(np.arccos(cos_angle_grid), i)
-        l_vals[i] *= all_weights / (2.0 / (2.0 * i + 1))
-
-    phase_interp = interpolate.PchipInterpolator(cos_angles, phase)(cos_angle_grid)
-
-    a1 = l_vals @ phase_interp
-
-    plt.plot(a1)
-    plt.yscale("log")
