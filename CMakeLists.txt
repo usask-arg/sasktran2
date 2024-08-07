@@ -189,7 +189,8 @@ else()
   if(SKTRAN_BLAS_VENDOR MATCHES "OpenBLAS")
     # Try searching for openblas directly This path should only be taken with
     # the numpy precompiled openblas...
-    find_package(OpenBLAS REQUIRED)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(OpenBLAS REQUIRED openblas)
     if(NOT WIN32)
       target_link_libraries(sasktran2BuildProperties
                             INTERFACE ${OpenBLAS_LIBRARIES})
