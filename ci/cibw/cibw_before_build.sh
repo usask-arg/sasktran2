@@ -46,6 +46,9 @@ fi
 if [[ $RUNNER_OS == "Windows" ]]; then
     # delvewheel is the equivalent of delocate/auditwheel for windows.
     python -m pip install delvewheel wheel
+
+    # Need pkg-config to use scipy openblas
+    choco install pkgconfiglite
 fi
 
 if [[ $RUNNER_OS == "macOS" ]]; then

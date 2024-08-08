@@ -215,6 +215,8 @@ else()
                           INTERFACE ${OpenBLAS_LIBRARIES})
     target_include_directories(sasktran2BuildProperties
                                INTERFACE ${OpenBLAS_INCLUDE_DIRS})
+    target_compile_options(sasktran2BuildProperties
+                           INTERFACE ${OpenBLAS_CFLAGS_OTHER})
   endif()
 endif()
 
