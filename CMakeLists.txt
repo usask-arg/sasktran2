@@ -189,8 +189,7 @@ else()
   if(SKTRAN_BLAS_VENDOR MATCHES "OpenBLAS")
     # Try searching for openblas directly This path should only be taken with
     # the numpy precompiled openblas...
-    find_package(PkgConfig REQUIRED)
-    pkg_check_modules(OpenBLAS REQUIRED openblas)
+    find_package(OpenBLAS REQUIRED)
     if(NOT WIN32)
       target_link_libraries(sasktran2BuildProperties
                             INTERFACE ${OpenBLAS_LIBRARIES})
@@ -203,6 +202,17 @@ else()
 
       target_link_libraries(sasktran2BuildProperties INTERFACE ${OpenBLAS_LIBS})
     endif()
+    target_include_directories(sasktran2BuildProperties
+                               INTERFACE ${OpenBLAS_INCLUDE_DIRS})
+  endif()
+
+  if(SKTRAN_BLAS_VENDOR MATCHES "scipy-openblas")
+    # Scipy bundled openblas
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(OpenBLAS REQUIRED scipy-openblas)
+
+    target_link_libraries(sasktran2BuildProperties
+                          INTERFACE ${OpenBLAS_LIBRARIES})
     target_include_directories(sasktran2BuildProperties
                                INTERFACE ${OpenBLAS_INCLUDE_DIRS})
   endif()
