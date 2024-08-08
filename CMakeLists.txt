@@ -205,6 +205,21 @@ else()
     target_include_directories(sasktran2BuildProperties
                                INTERFACE ${OpenBLAS_INCLUDE_DIRS})
   endif()
+
+  if(SKTRAN_BLAS_VENDOR MATCHES "scipy-openblas")
+    # Scipy bundled openblas
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(OpenBLAS REQUIRED scipy-openblas)
+
+    target_link_libraries(sasktran2BuildProperties
+                          INTERFACE ${OpenBLAS_LIBRARIES})
+    target_include_directories(sasktran2BuildProperties
+                               INTERFACE ${OpenBLAS_INCLUDE_DIRS})
+    target_compile_options(sasktran2BuildProperties
+                           INTERFACE ${OpenBLAS_CFLAGS_OTHER})
+    target_link_directories(sasktran2BuildProperties INTERFACE
+                            ${OpenBLAS_LIBRARY_DIRS})
+  endif()
 endif()
 
 target_compile_definitions(
