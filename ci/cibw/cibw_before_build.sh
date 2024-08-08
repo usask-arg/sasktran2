@@ -26,7 +26,6 @@ if [[ "$INSTALL_OPENBLAS" = "true" ]] ; then
     if [ ! -d "$PKG_CONFIG_PATH" ]; then
     # Create the directory
         mkdir -p "$PKG_CONFIG_PATH"
-    else
     fi
 
     python -m pip install scipy-openblas64==0.3.27.44.3
