@@ -35,6 +35,7 @@ sdist.include = ["src/sasktran2/_version.py"]
 
 [tool.scikit-build.cmake.define]
 DO_STREAM_TEMPLATES = {env="DO_STREAM_TEMPLATES", default="OFF"}
+SKTRAN_BLAS_VENDOR = {env="SKTRAN_BLAS_VENDOR", default="OpenBLAS"}
 
 [tool.setuptools_scm]
 write_to = "src/sasktran2/_version.py"
