@@ -100,6 +100,12 @@ jobs:
         with:
           environment-file: ci/conda-envs/mamba-build.yml
 
+      - name: Set test python envs
+        shell: bash -el {0}
+        run: |
+            cp ci/conda_build_config_test.yaml conda.recipe/conda_build_config.yaml
+            conda config --set anaconda_upload no
+
       - name: Build Conda package
         shell: bash -el {0}
         if: (matrix.target_plat == 'x86_64')
