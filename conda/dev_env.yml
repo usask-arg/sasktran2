@@ -12,7 +12,7 @@ dependencies:
   - libopenblas
   - openblas
   - eigen
-  - build
+  - python-build
   - scikit-build-core
   - catch2
   - pytest
