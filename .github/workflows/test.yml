@@ -132,7 +132,7 @@ jobs:
           submodules: true
 
       - name: Build wheels single version
-        uses: pypa/cibuildwheel@v2.21.0
+        uses: pypa/cibuildwheel@v2.21.1
         env:
           CIBW_SKIP: "pp* *musllinux* cp37-*"
           CIBW_BUILD: "cp312-*"
