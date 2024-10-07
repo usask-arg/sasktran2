@@ -2,6 +2,9 @@
 (_changelog)=
 # Changelog
 
+# 2023.10.0
+- Add python 3.13 conda builds
+
 # 2024.07.0
 - Add `config.do_backprop` option for discrete ordinates source
 - Add `freeze` method to particle size distributions
