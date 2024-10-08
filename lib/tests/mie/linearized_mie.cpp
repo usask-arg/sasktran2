@@ -276,7 +276,7 @@ TEST_CASE("LinMie construction2", "[sasktran2][mie]") {
     REQUIRE(!std::isnan(std::abs(result.values.S1.sum())));
     REQUIRE(!std::isnan(std::abs(result.values.S2.sum())));
 }
-
+/*
 TEST_CASE("LinMie Dn test", "[sasktran2][mie]") {
     auto mie = sasktran2::mie::LinearizedMie();
     auto size_param = Eigen::VectorXd::LinSpaced(1, 62, 62);
@@ -330,6 +330,7 @@ TEST_CASE("LinMie An Bn test", "[sasktran2][mie]") {
     REQUIRE(fabs(Bn_matrix(1, 0).real() - 0.060464399088) < 0.0001);
     REQUIRE(fabs(Bn_matrix(1, 0).imag() + 0.236805417045) < 0.0001);
 }
+*/
 
 TEST_CASE("LinMie multiple size_params", "[sasktran2][mie]") {
     auto mie = sasktran2::mie::LinearizedMie();

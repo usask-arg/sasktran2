@@ -3,9 +3,9 @@
 
 namespace sasktran2::mie {
 
-    LinearizedMie::LinearizedMie() {}
+    LinearizedMie_OLD::LinearizedMie_OLD() {}
 
-    void LinearizedMie::internal_calculate(
+    void LinearizedMie_OLD::internal_calculate(
         const Eigen::VectorXd& size_param,
         const std::complex<double>& refractive_index,
         const Eigen::VectorXd& cos_angles, bool calculate_derivative,
@@ -95,11 +95,11 @@ namespace sasktran2::mie {
     }
 
     void
-    LinearizedMie::Regular_Q_S(const std::complex<double>& refractive_index,
-                               const Eigen::VectorXd& size_param,
-                               const Eigen::VectorXd& cos_angles,
-                               Eigen::VectorXd& Qext, Eigen::VectorXd& Qsca,
-                               Eigen::MatrixXcd& S1, Eigen::MatrixXcd& S2) {
+    LinearizedMie_OLD::Regular_Q_S(const std::complex<double>& refractive_index,
+                                   const Eigen::VectorXd& size_param,
+                                   const Eigen::VectorXd& cos_angles,
+                                   Eigen::VectorXd& Qext, Eigen::VectorXd& Qsca,
+                                   Eigen::MatrixXcd& S1, Eigen::MatrixXcd& S2) {
 
         // An Bn calculation - need for both
         double x = size_param.maxCoeff(); // largest size parameter, use to do
@@ -184,11 +184,12 @@ namespace sasktran2::mie {
                                           cos_angles.size());
     }
 
-    void LinearizedMie::Small_Q_S(const std::complex<double>& refractive_index,
-                                  const Eigen::VectorXd& size_param,
-                                  const Eigen::VectorXd& cos_angles,
-                                  Eigen::VectorXd& Qext, Eigen::VectorXd& Qsca,
-                                  Eigen::MatrixXcd& S1, Eigen::MatrixXcd& S2) {
+    void
+    LinearizedMie_OLD::Small_Q_S(const std::complex<double>& refractive_index,
+                                 const Eigen::VectorXd& size_param,
+                                 const Eigen::VectorXd& cos_angles,
+                                 Eigen::VectorXd& Qext, Eigen::VectorXd& Qsca,
+                                 Eigen::MatrixXcd& S1, Eigen::MatrixXcd& S2) {
         // Mie Scattering Calculations: Advances in Technique and Fast,
         // Vector-Speed Computer Codes, Section 4 for small spheres
 
@@ -262,10 +263,10 @@ namespace sasktran2::mie {
                  (2.0 * pow(mu_matrix.array(), 2) - 1.0));
     }
 
-    void LinearizedMie::An_Bn(const std::complex<double>& refractive_index,
-                              const Eigen::VectorXd& size_param, const int N,
-                              Eigen::MatrixXcd& An_matrix,
-                              Eigen::MatrixXcd& Bn_matrix) {
+    void LinearizedMie_OLD::An_Bn(const std::complex<double>& refractive_index,
+                                  const Eigen::VectorXd& size_param,
+                                  const int N, Eigen::MatrixXcd& An_matrix,
+                                  Eigen::MatrixXcd& Bn_matrix) {
         // here we are calculating An and bn coefficients
         // start by finding Dns.
         An_matrix.resize(N, size_param.size());
@@ -387,10 +388,11 @@ namespace sasktran2::mie {
         }
     }
 
-    void LinearizedMie::Tau_Pi(const Eigen::VectorXd& size_param,
-                               const Eigen::VectorXd& cos_angles, const int N,
-                               Eigen::Tensor<double, 3>& tau_tensor,
-                               Eigen::Tensor<double, 3>& pi_tensor) {
+    void LinearizedMie_OLD::Tau_Pi(const Eigen::VectorXd& size_param,
+                                   const Eigen::VectorXd& cos_angles,
+                                   const int N,
+                                   Eigen::Tensor<double, 3>& tau_tensor,
+                                   Eigen::Tensor<double, 3>& pi_tensor) {
 
         Eigen::MatrixXd Pi_matrix;
         Eigen::MatrixXd Tau_matrix;
@@ -434,9 +436,9 @@ namespace sasktran2::mie {
         }
     }
 
-    void LinearizedMie::Dn(Eigen::MatrixXcd& Dn_matrix,
-                           const std::complex<double>& refractive_index,
-                           const Eigen::VectorXd& size_param, const int N) {
+    void LinearizedMie_OLD::Dn(Eigen::MatrixXcd& Dn_matrix,
+                               const std::complex<double>& refractive_index,
+                               const Eigen::VectorXd& size_param, const int N) {
         // check which way to go - upwards or downwards, then go for it,
         // concatenating arrays at the end if real part of m is less than 1 or
         // bigger than 10, abs of imaginary is bigger than 10, or x*
@@ -485,9 +487,8 @@ namespace sasktran2::mie {
             }
         }
     }
-
-    void LinearizedMie::Dn_upwards(const Eigen::VectorXcd& z, const int N,
-                                   Eigen::MatrixXcd& Dn_matrix) {
+    void LinearizedMie_OLD::Dn_upwards(const Eigen::VectorXcd& z, const int N,
+                                       Eigen::MatrixXcd& Dn_matrix) {
         // here we are using upward recurrence to calculate Dn
 
         // first calculate D1
@@ -510,8 +511,8 @@ namespace sasktran2::mie {
         }
     }
 
-    void LinearizedMie::Dn_downwards(const Eigen::VectorXcd& z, const int N,
-                                     Eigen::MatrixXcd& Dn_matrix) {
+    void LinearizedMie_OLD::Dn_downwards(const Eigen::VectorXcd& z, const int N,
+                                         Eigen::MatrixXcd& Dn_matrix) {
         // here we are using downward recurrence to calculate Dn
 
         // first calculate the last Dn we will need
@@ -527,8 +528,8 @@ namespace sasktran2::mie {
         }
     }
 
-    void LinearizedMie::Dn_Lentz(const Eigen::VectorXcd& z, const int N,
-                                 Eigen::VectorXcd& Dn_array) {
+    void LinearizedMie_OLD::Dn_Lentz(const Eigen::VectorXcd& z, const int N,
+                                     Eigen::VectorXcd& Dn_array) {
         // keeping track
         Eigen::VectorXcd z_inv = 2.0 / z.array();
 
