@@ -26,5 +26,6 @@ The latest nightly version of SASKTRAN2 is made available through::
 | conda-forge Py 3.10  | ✅ | ✅  | ✅  | ✅  |
 | conda-forge Py 3.11  | ✅ | ✅  | ✅  | ✅  |
 | conda-forge Py 3.12  | ✅ | ✅  | ✅  | ✅  |
+| conda-forge Py 3.13  | ✅ | ✅  | ✅  | ✅  |
 
 <sup>¹ Open-MP Support is Disabled</sup><br>

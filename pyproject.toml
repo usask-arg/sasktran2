@@ -6,7 +6,7 @@ build-backend = "scikit_build_core.build"
 [project]
 name = "sasktran2"
 dynamic = ["version"]
-dependencies = ['numpy', 'appdirs', 'pyyaml', 'xarray>=2023.0.0', 'dask', 'scipy', 'netcdf4']
+dependencies = ['numpy', 'appdirs', 'pyyaml', 'xarray>=2023.0.0', 'scipy', 'netcdf4']
 include = ['python/src/sasktran2/*']
 license = {text = "MIT"}
 description= "The SASKTRAN radiative transfer model Version 2"
