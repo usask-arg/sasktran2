@@ -59,7 +59,9 @@ TEST_CASE("2StreamBenchmark", "[sktran_do][lowlevel][benchmark]") {
 }
 */
 TEST_CASE("8StreamBenchmark", "[sktran_do][lowlevel][benchmark]") {
+#ifdef USE_OMP
     omp_set_num_threads(1);
+#endif
     // Construct the geometry
     sasktran2::Coordinates coords(0.6, 0, 6371000,
                                   sasktran2::geometrytype::planeparallel);

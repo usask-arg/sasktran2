@@ -4,7 +4,9 @@
 #ifdef SKTRAN_CATCH2_VERSION3
 
 TEST_CASE("twostreamBenchmark", "[sktran_do][lowlevel][benchmark]") {
+#ifdef USE_OMP
     omp_set_num_threads(1);
+#endif
     // Construct the geometry
     sasktran2::Coordinates coords(0.6, 0, 6371000,
                                   sasktran2::geometrytype::planeparallel);

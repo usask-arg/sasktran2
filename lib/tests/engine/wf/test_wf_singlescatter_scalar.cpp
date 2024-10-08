@@ -1,10 +1,14 @@
 #include <sasktran2/test_helper.h>
 
 #include <sasktran2.h>
+#ifdef USE_OMP
 #include <omp.h>
+#endif
 
 TEST_CASE("Verify SSA WF", "[sasktran2][engine][wf]") {
+#ifdef USE_OMP
     omp_set_num_threads(1);
+#endif
     // Construct the geometry
     sasktran2::Coordinates coords(0, sasktran2::math::PiOver2, 6372000,
                                   sasktran2::geometrytype::spherical);
