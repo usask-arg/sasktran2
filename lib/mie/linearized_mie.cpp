@@ -1,562 +1,317 @@
+#include "sasktran2/math/trig.h"
 #include <sasktran2/mie/mie.h>
 #include <sasktran2/mie/linearized_mie.h>
 
 namespace sasktran2::mie {
 
-    LinearizedMie_OLD::LinearizedMie_OLD() {}
+    LinearizedMie::LinearizedMie(int num_threads)
+        : m_num_threads(num_threads) {}
 
-    void LinearizedMie_OLD::internal_calculate(
+    void LinearizedMie::internal_calculate(
         const Eigen::VectorXd& size_param,
         const std::complex<double>& refractive_index,
         const Eigen::VectorXd& cos_angles, bool calculate_derivative,
         MieOutput& output) {
-        // this is where my code is going to go: first start with calculating
-        // the parameters Q ext, Q sca, S1, S2 size param is x refractive index
-        // is m, complex number Angles needed S1 and S2
+        // max x value
+        double max_x = size_param.maxCoeff();
 
-        // output is a pointer to the structure MieOutput, so we need to fill
-        // those values
-        // TODO: actually type in the equations here
-        MieData data_values;
-        Eigen::VectorXd Qext;
-        Eigen::VectorXd Qsca;
-        Eigen::MatrixXcd S1; // Scattering amplitude1 [nsize, nangles]
-        Eigen::MatrixXcd S2; // Scattering amplitude2 [nsize, nangles]
+        this->allocate(max_x, cos_angles.size());
 
-        auto res = (abs(refractive_index) * size_param.array() < 0.1);
-        // wherever res is true, should use small mie approx, wherever res if
-        // False, should do regular
-        auto iterator = std::find(res.begin(), res.end(), false);
-        int index;
-        if (iterator == res.end() || refractive_index.real() <= 0.0) {
-            Small_Q_S(refractive_index, size_param, cos_angles, Qext, Qsca, S1,
-                      S2);
-            // small mie for all
-        } else if (iterator == res.begin()) {
-            Regular_Q_S(refractive_index, size_param, cos_angles, Qext, Qsca,
-                        S1, S2);
-            // regular method
-        } else {
-            // we need to split it
-            index = iterator - res.begin();
-            Eigen::VectorXd small_array = size_param(Eigen::seq(0, index - 1));
-            Eigen::VectorXd reg_array =
-                size_param(Eigen::seq(index, size_param.size() - 1));
+        tau_pi(cos_angles);
 
-            // regular
-            Eigen::VectorXd Qext_reg;
-            Eigen::VectorXd Qsca_reg;
-            Eigen::MatrixXcd S1_reg;
-            Eigen::MatrixXcd S2_reg;
-            Regular_Q_S(refractive_index, reg_array, cos_angles, Qext_reg,
-                        Qsca_reg, S1_reg, S2_reg);
-            // small
-            Eigen::VectorXd Qext_small;
-            Eigen::VectorXd Qsca_small;
-            Eigen::MatrixXcd S1_small;
-            Eigen::MatrixXcd S2_small;
-            Small_Q_S(refractive_index, small_array, cos_angles, Qext_small,
-                      Qsca_small, S1_small, S2_small);
-            // rejoin down here
-
-            Qext.resize(size_param.size());
-            ;
-            Qext << Qext_small, Qext_reg;
-
-            Qsca.resize(size_param.size());
-            ;
-            Qsca << Qsca_small, Qsca_reg;
-
-            S1.resize(size_param.size(), cos_angles.size());
-            S1 << S1_small, S1_reg;
-            S2.resize(size_param.size(), cos_angles.size());
-            S2 << S2_small, S2_reg;
+#pragma omp parallel for num_threads(m_num_threads)
+        for (int i = 0; i < size_param.size(); ++i) {
+            if (abs(refractive_index) * size_param(i) < 0.1) {
+                small_Q_S(refractive_index, size_param(i), cos_angles, i, 0,
+                          output.values);
+            } else {
+                regular_Q_S(refractive_index, size_param(i), i, 0,
+                            output.values);
+            }
         }
-
-        data_values.Qext = Qext;
-        data_values.Qsca = Qsca;
-        data_values.S1 = S1;
-        data_values.S2 = S2;
-
-        // S1 S2 calculation
-
-        // first need 3D tensor that represents the multiplication
-        // the n terms: (2n+1)/(n(n+1))
-
-        // need to transform an and bn from 2D matrix to 3D tensor - just need
-        // to replicate it however many times there are angles
-
-        // then need the tau and pi functions - these need to be calculated.
-        // These are angle dependent, n dependent, but not x dependent
-
-        // then sum along the N dimension to represent summing over n=1 to N
-
-        output.values = data_values;
     }
 
     void
-    LinearizedMie_OLD::Regular_Q_S(const std::complex<double>& refractive_index,
-                                   const Eigen::VectorXd& size_param,
-                                   const Eigen::VectorXd& cos_angles,
-                                   Eigen::VectorXd& Qext, Eigen::VectorXd& Qsca,
-                                   Eigen::MatrixXcd& S1, Eigen::MatrixXcd& S2) {
+    LinearizedMie::regular_Q_S(const std::complex<double>& refractive_index,
+                               const double& size_param, int size_index,
+                               int thread_idx, MieData& output) {
 
-        // An Bn calculation - need for both
-        double x = size_param.maxCoeff(); // largest size parameter, use to do
-                                          // the calculations for highest N
-        int N = int(x + 4.05 * pow(x, 0.33333) + 2.0) + 2;
-        Eigen::MatrixXcd An_matrix;
-        Eigen::MatrixXcd Bn_matrix;
-        An_Bn(refractive_index, size_param, N, An_matrix, Bn_matrix);
+        An_Bn(refractive_index, size_param, thread_idx);
+        int N = m_thread_storage[thread_idx].local_N;
 
-        Eigen::VectorXd n2_1 =
-            Eigen::VectorXd::LinSpaced(N, 1, N).array() * 2.0 + 1.0;
-        Eigen::MatrixXd n2_1_matrix;
-        n2_1_matrix.resize(N, size_param.size());
+        Eigen::VectorXcd& An = m_thread_storage[thread_idx].An;
+        Eigen::VectorXcd& Bn = m_thread_storage[thread_idx].Bn;
 
-        for (int i = 0; i < size_param.size(); i++) {
-            n2_1_matrix(Eigen::all, i) = n2_1.transpose();
+        double& Qext = output.Qext(size_index);
+        double& Qsca = output.Qsca(size_index);
+
+        Eigen::MatrixXcd& S1 = output.S1;
+        Eigen::MatrixXcd& S2 = output.S2;
+
+        Qext = 0.0;
+        Qsca = 0.0;
+        for (int n = 0; n < N; ++n) {
+            Qext += (2.0 * (n + 1) + 1.0) *
+                    (m_thread_storage[thread_idx].An(n).real() +
+                     m_thread_storage[thread_idx].Bn(n).real());
+            Qsca += (2.0 * (n + 1) + 1.0) *
+                    (math::sqr(abs(m_thread_storage[thread_idx].An(n))) +
+                     math::sqr(abs(m_thread_storage[thread_idx].Bn(n))));
         }
+        Qext *= 2.0 / size_param / size_param;
+        Qsca *= 2.0 / size_param / size_param;
 
-        // Qext Qsca calculation
-        Eigen::MatrixXd qext_temp_matrix =
-            n2_1_matrix.array() *
-            (An_matrix.array().real() + Bn_matrix.array().real());
-        Qext = qext_temp_matrix.colwise().sum();
-        Qext.array() *= 2.0 / size_param.array().square();
+        S1(size_index, Eigen::all).setZero();
+        S2(size_index, Eigen::all).setZero();
+        for (int i = 0; i < N; ++i) {
+            double n_factor = (2.0 * (i + 1.0) + 1.0) / (i + 1.0) / (i + 2.0);
 
-        Eigen::MatrixXd qsca_temp_matrix =
-            n2_1_matrix.array() *
-            (abs(An_matrix.array()).square() + abs(Bn_matrix.array()).square());
-        Qsca = qsca_temp_matrix.colwise().sum();
-        Qsca.array() *= 2.0 / size_param.array().square();
-
-        // S1 S2 calculation
-        Eigen::Tensor<std::complex<double>, 3> S1_temp_tensor;
-        S1_temp_tensor.resize(N, size_param.size(), cos_angles.size());
-        Eigen::Tensor<std::complex<double>, 3> S2_temp_tensor;
-        S2_temp_tensor.resize(N, size_param.size(), cos_angles.size());
-
-        Eigen::Tensor<double, 3> n_tensor;
-        n_tensor.resize(N, size_param.size(), cos_angles.size());
-        Eigen::Tensor<std::complex<double>, 3> an_tensor;
-        an_tensor.resize(N, size_param.size(), cos_angles.size());
-        Eigen::Tensor<std::complex<double>, 3> bn_tensor;
-        bn_tensor.resize(N, size_param.size(), cos_angles.size());
-
-        Eigen::VectorXd n = Eigen::VectorXd::LinSpaced(N, 1, N);
-        n.array() = (2.0 * n.array() + 1.0) / n.array() / (n.array() + 1.0);
-        Eigen::MatrixXd temp = n.rowwise().replicate(size_param.size());
-
-        Eigen::TensorMap<Eigen::Tensor<double, 2>> n_matrix(temp.data(), N,
-                                                            size_param.size());
-        Eigen::TensorMap<Eigen::Tensor<std::complex<double>, 2>> An_matrix_map(
-            An_matrix.data(), N, size_param.size());
-        Eigen::TensorMap<Eigen::Tensor<std::complex<double>, 2>> Bn_matrix_map(
-            Bn_matrix.data(), N, size_param.size());
-        for (int i = 0; i < cos_angles.size(); i++) {
-            n_tensor.chip(i, 2) = n_matrix;
-            an_tensor.chip(i, 2) = An_matrix_map;
-            bn_tensor.chip(i, 2) = Bn_matrix_map;
+            S1(size_index, Eigen::all).array() +=
+                n_factor * (An(i) * m_pi_matrix(i, Eigen::all).array() +
+                            Bn(i) * m_tau_matrix(i, Eigen::all).array());
+            S2(size_index, Eigen::all).array() +=
+                n_factor * (An(i) * m_tau_matrix(i, Eigen::all).array() +
+                            Bn(i) * m_pi_matrix(i, Eigen::all).array());
         }
-
-        Eigen::Tensor<double, 3> tau_tensor;
-        tau_tensor.resize(N, size_param.size(), cos_angles.size());
-        Eigen::Tensor<double, 3> pi_tensor;
-        pi_tensor.resize(N, size_param.size(), cos_angles.size());
-        Tau_Pi(size_param, cos_angles, N, tau_tensor, pi_tensor);
-
-        S1_temp_tensor =
-            (an_tensor * pi_tensor + bn_tensor * tau_tensor); //*n_tensor;
-        S2_temp_tensor =
-            (an_tensor * tau_tensor + bn_tensor * pi_tensor); //*n_tensor;
-        S1_temp_tensor = S1_temp_tensor * n_tensor;
-        S2_temp_tensor = S2_temp_tensor * n_tensor;
-
-        // adding up along the N dimension
-        Eigen::Tensor<std::complex<double>, 2> S1_matrix =
-            S1_temp_tensor.sum(Eigen::array<int, 1>({0}));
-        Eigen::Tensor<std::complex<double>, 2> S2_matrix =
-            S2_temp_tensor.sum(Eigen::array<int, 1>({0}));
-        S1 = Eigen::Map<Eigen::MatrixXcd>(S1_matrix.data(), size_param.size(),
-                                          cos_angles.size());
-        S2 = Eigen::Map<Eigen::MatrixXcd>(S2_matrix.data(), size_param.size(),
-                                          cos_angles.size());
     }
 
-    void
-    LinearizedMie_OLD::Small_Q_S(const std::complex<double>& refractive_index,
-                                 const Eigen::VectorXd& size_param,
-                                 const Eigen::VectorXd& cos_angles,
-                                 Eigen::VectorXd& Qext, Eigen::VectorXd& Qsca,
-                                 Eigen::MatrixXcd& S1, Eigen::MatrixXcd& S2) {
-        // Mie Scattering Calculations: Advances in Technique and Fast,
-        // Vector-Speed Computer Codes, Section 4 for small spheres
+    void LinearizedMie::small_Q_S(const std::complex<double>& refractive_index,
+                                  const double& size_param,
+                                  const Eigen::VectorXd& cos_angles,
+                                  int size_index, int thread_idx,
+                                  MieData& output) {
+        double& Qext = output.Qext(size_index);
+        double& Qsca = output.Qsca(size_index);
 
-        std::complex<double> m_2 = pow(refractive_index, 2);
-        Eigen::VectorXd x_2 = size_param.array().square();
+        Eigen::MatrixXcd& S1 = output.S1;
+        Eigen::MatrixXcd& S2 = output.S2;
+
+        std::complex<double> m_2 = refractive_index * refractive_index;
+        double x_2 = size_param * size_param;
         std::complex<double> j(0.0, 1.0);
 
-        Eigen::VectorXcd N_1 =
-            (1.0 - 0.1 * x_2.array() +
-             (4.0 * m_2 + 5.0) * x_2.array().square() / 1400.0);
+        std::complex<double> N_1 =
+            (1.0 - 0.1 * x_2 + (4.0 * m_2 + 5.0) * x_2 * x_2 / 1400.0);
 
-        Eigen::VectorXcd D_1 =
-            m_2 + 2.0 + (1.0 - 0.7 * m_2) * x_2.array() -
-            (8.0 * pow(refractive_index, 4) - 385.0 * m_2 + 350.0) *
-                x_2.array().square() / 1400.0;
-        D_1 = D_1.array() + 2.0 * j * (m_2 - 1.0) * pow(size_param.array(), 3) *
-                                (1.0 - 0.1 * x_2.array()) / 3.0;
+        std::complex<double> D_1 =
+            m_2 + 2.0 + (1.0 - 0.7 * m_2) * x_2 -
+            (8.0 * m_2 * m_2 - 385.0 * m_2 + 350.0) * x_2 * x_2 / 1400.0;
 
-        Eigen::VectorXcd a_hat1 =
-            2.0 * j * (m_2 - 1.0) / 3.0 * N_1.array() / D_1.array();
+        D_1 = D_1 + 2.0 * j * (m_2 - 1.0) * pow(size_param, 3) *
+                        (1.0 - 0.1 * x_2) / 3.0;
 
-        Eigen::VectorXcd b_hat1 =
-            (j * x_2.array() * (m_2 - 1.0) / 45.0 *
-             (1.0 + (2.0 * m_2 - 5.0) / 70.0 * x_2.array())) /
-            (1.0 - x_2.array() * (2.0 * m_2 - 5.0) / 30.0);
+        std::complex<double> a_hat1 = 2.0 * j * (m_2 - 1.0) / 3.0 * N_1 / D_1;
 
-        Eigen::VectorXcd a_hat2 =
-            (j * x_2.array() * (m_2 - 1.0) / 15.0 *
-             (1.0 - x_2.array() / 14.0)) /
-            (2.0 * m_2 + 3.0 - x_2.array() * (2.0 * m_2 - 7.0) / 14.0);
+        std::complex<double> b_hat1 = (j * x_2 * (m_2 - 1.0) / 45.0 *
+                                       (1.0 + (2.0 * m_2 - 5.0) / 70.0 * x_2)) /
+                                      (1.0 - x_2 * (2.0 * m_2 - 5.0) / 30.0);
 
-        Eigen::VectorXd T = pow(abs(a_hat1.array()), 2) +
-                            pow(abs(b_hat1.array()), 2) +
-                            5.0 / 3.0 * pow(abs(a_hat2.array()), 2);
-        Qsca.resize(size_param.size());
-        Qsca = 6.0 * x_2.array().square() * T.array();
+        std::complex<double> a_hat2 =
+            (j * x_2 * (m_2 - 1.0) / 15.0 * (1.0 - x_2 / 14.0)) /
+            (2.0 * m_2 + 3.0 - x_2 * (2.0 * m_2 - 7.0) / 14.0);
+
+        double T = math::sqr(abs(a_hat1)) + math::sqr(abs(b_hat1)) +
+                   5.0 / 3.0 * math::sqr(abs(a_hat2));
+
+        Qsca = 6.0 * x_2 * x_2 * T;
 
         if (refractive_index.imag() == 0) {
             Qext = Qsca;
         } else {
-            Qext = 6.0 * size_param.array() *
-                   ((a_hat1.array() + b_hat1.array()).real() +
-                    5.0 / 3.0 * a_hat2.array().real());
+            Qext = 6.0 * size_param *
+                   ((a_hat1 + b_hat1).real() + 5.0 / 3.0 * a_hat2.real());
         }
 
-        // need to deal with matrices here
-        // S1 and S2 are of size size_param.size x cos_angles size
-        S1.resize(size_param.size(), cos_angles.size());
-        S2.resize(size_param.size(), cos_angles.size());
+        S1(size_index, Eigen::all).array() =
+            3.0 / 2.0 * pow(size_param, 3.0) *
+            (a_hat1 + cos_angles.array() * (b_hat1 + 5.0 / 3.0 * a_hat2));
 
-        Eigen::MatrixXd size_param_matrix =
-            size_param.rowwise().replicate(cos_angles.size());
-        Eigen::MatrixXcd a_hat1_matrix =
-            a_hat1.rowwise().replicate(cos_angles.size());
-        Eigen::MatrixXcd a_hat2_matrix =
-            a_hat2.rowwise().replicate(cos_angles.size());
-        Eigen::MatrixXcd b_hat1_matrix =
-            b_hat1.rowwise().replicate(cos_angles.size());
-        Eigen::MatrixXd mu_matrix_temp =
-            cos_angles.rowwise().replicate(size_param.size());
-        Eigen::MatrixXd mu_matrix = mu_matrix_temp.transpose();
-
-        S1 = 3.0 / 2.0 * pow(size_param_matrix.array(), 3) *
-             (a_hat1_matrix.array() +
-              mu_matrix.array() *
-                  (b_hat1_matrix.array() + 5.0 / 3.0 * a_hat2_matrix.array()));
-        S2 =
-            3.0 / 2.0 * pow(size_param_matrix.array(), 3) *
-            (b_hat1_matrix.array() + a_hat1_matrix.array() * mu_matrix.array() +
-             5.0 / 3.0 * a_hat2_matrix.array() *
-                 (2.0 * pow(mu_matrix.array(), 2) - 1.0));
+        S2(size_index, Eigen::all).array() =
+            3.0 / 2.0 * pow(size_param, 3.0) *
+            (b_hat1 + a_hat1 * cos_angles.array() +
+             5.0 / 3.0 * a_hat2 * (2.0 * pow(cos_angles.array(), 2) - 1.0));
     }
 
-    void LinearizedMie_OLD::An_Bn(const std::complex<double>& refractive_index,
-                                  const Eigen::VectorXd& size_param,
-                                  const int N, Eigen::MatrixXcd& An_matrix,
-                                  Eigen::MatrixXcd& Bn_matrix) {
-        // here we are calculating An and bn coefficients
-        // start by finding Dns.
-        An_matrix.resize(N, size_param.size());
-        Bn_matrix.resize(N, size_param.size());
+    void LinearizedMie::tau_pi(const Eigen::VectorXd& cos_angles) {
+        Eigen::MatrixXd& tau_matrix = m_tau_matrix;
+        Eigen::MatrixXd& pi_matrix = m_pi_matrix;
+        int N = m_tau_matrix.rows();
 
+        pi_matrix(0, Eigen::all).setConstant(1.0);
+        tau_matrix(0, Eigen::all) = cos_angles.array();
+
+        if (N > 1) {
+            pi_matrix(1, Eigen::all) = 3.0 * cos_angles.array();
+            tau_matrix(1, Eigen::all) = 2.0 * cos_angles.array().transpose() *
+                                            pi_matrix(1, Eigen::all).array() -
+                                        3.0;
+        }
+
+        for (int n = 3; n < N + 1; ++n) {
+            pi_matrix(n - 1, Eigen::all) =
+                ((2.0 * n - 1) * cos_angles.array().transpose() *
+                     pi_matrix(n - 2, Eigen::all).array() -
+                 double(n) * pi_matrix(n - 3, Eigen::all).array()) /
+                (n - 1);
+
+            tau_matrix(n - 1, Eigen::all) =
+                double(n) * cos_angles.array().transpose() *
+                    pi_matrix(n - 1, Eigen::all).array() -
+                (n + 1) * pi_matrix(n - 2, Eigen::all).array();
+        }
+    }
+
+    void LinearizedMie::allocate(double max_x, int num_angle) {
+        int N = int(max_x + 4.05 * pow(max_x, 0.33333) + 2.0) + 2;
+        m_thread_storage.resize(m_num_threads);
+
+        for (int i = 0; i < m_num_threads; ++i) {
+            m_thread_storage[i].An.resize(N);
+            m_thread_storage[i].Bn.resize(N);
+            m_thread_storage[i].Dn.resize(N);
+        }
+        m_tau_matrix.resize(N, num_angle);
+        m_pi_matrix.resize(N, num_angle);
+    }
+
+    void LinearizedMie::An_Bn(const std::complex<double>& refractive_index,
+                              const double& size_param, int thread_idx) {
+        // Max terms for this size parameter
+        m_thread_storage[thread_idx].local_N =
+            int(size_param + 4.05 * pow(size_param, 0.33333) + 2.0) + 2;
+        int N = m_thread_storage[thread_idx].local_N;
+
+        // Convenience accessors
+        Eigen::VectorXcd& An = m_thread_storage[thread_idx].An;
+        Eigen::VectorXcd& Bn = m_thread_storage[thread_idx].Bn;
+        Eigen::VectorXcd& Dn = m_thread_storage[thread_idx].Dn;
         std::complex<double> j(0.0, 1.0);
-        Eigen::VectorXcd
-            temp; // temporary variable, will need when propagating psis and xis
-        Eigen::VectorXcd psi_n_1 = sin(size_param.array()); // this is n=0
-        Eigen::VectorXcd psi_n = sin(size_param.array()) / size_param.array() -
-                                 cos(size_param.array()); // this is n=1
-        Eigen::VectorXcd xi_n_1 = sin(size_param.array()) +
-                                  j * cos(size_param.array()); // this is n=0
-        Eigen::VectorXcd xi_n =
-            sin(size_param.array()) / size_param.array() -
-            cos(size_param.array()) +
-            j * (cos(size_param.array()) / size_param.array() +
-                 sin(size_param.array())); // this is n=1
 
-        Eigen::MatrixXcd Dn_matrix;
-        Dn(Dn_matrix, refractive_index, size_param, N);
+        std::complex<double> psi_n_1 = sin(size_param); // this is n=0
+        std::complex<double> psi_n =
+            sin(size_param) / size_param - cos(size_param); // this is n=1
+        std::complex<double> xi_n_1 =
+            sin(size_param) + j * cos(size_param); // this is n=0
+        std::complex<double> xi_n =
+            sin(size_param) / size_param - cos(size_param) +
+            j * (cos(size_param) / size_param + sin(size_param)); // this is n=1
+        std::complex<double> temp;
 
-        // initial values for psi and xi functions
+        this->Dn(refractive_index, size_param, thread_idx);
 
-        // now calculate An and Bn. need from n =1 to n=N
-        Eigen::VectorXcd An =
-            ((Dn_matrix.row(0).transpose().array() / refractive_index +
-              1.0 / size_param.array()) *
-                 psi_n.array() -
-             psi_n_1.array()) /
-            ((Dn_matrix.row(0).transpose().array() / refractive_index +
-              1.0 / size_param.array()) *
-                 xi_n.array() -
-             xi_n_1.array());
-        An_matrix(0, Eigen::all) = An; // this is for n=1, stored in row 0
-        Eigen::VectorXcd Bn =
-            ((Dn_matrix.row(0).transpose().array() * refractive_index +
-              1.0 / size_param.array()) *
-                 psi_n.array() -
-             psi_n_1.array()) /
-            ((Dn_matrix.row(0).transpose().array() * refractive_index +
-              1.0 / size_param.array()) *
-                 xi_n.array() -
-             xi_n_1.array());
-        Bn_matrix(0, Eigen::all) = Bn; // this is for n=1, stored in row 0
+        // Set the initial elements of An and Bn
+        An(0) =
+            ((Dn(0) / refractive_index + 1.0 / size_param) * psi_n - psi_n_1) /
+            ((Dn(0) / refractive_index + 1.0 / size_param) * xi_n - xi_n_1);
+        Bn(0) =
+            ((Dn(0) * refractive_index + 1.0 / size_param) * psi_n - psi_n_1) /
+            ((Dn(0) * refractive_index + 1.0 / size_param) * xi_n - xi_n_1);
 
-        temp = xi_n_1; // this is n=0
-        xi_n_1 = xi_n; // this is n=1
-        xi_n = (2.0 + 1.0) / size_param.array() * xi_n_1.array() -
-               temp.array(); // this is n=2
+        temp = xi_n_1;
+        xi_n_1 = xi_n;
+        xi_n = (2.0 + 1.0) / size_param * xi_n_1 - temp;
 
-        psi_n_1 = psi_n;     // this is n=1
-        psi_n = xi_n.real(); // this is n=2
-        int nan_idx; // index to keep track of where we are approaching limit
-                     // where we will generate Nans, manually set Ans and Bns to
-                     // zero at this point
-        bool flag = false; // flag to see if we have to modify values
-        for (int n = 2; n < N + 1; n++) {
-            An = ((Dn_matrix.row(n - 1).transpose().array() / refractive_index +
-                   n / size_param.array()) *
-                      psi_n.array() -
-                  psi_n_1.array()) /
-                 ((Dn_matrix.row(n - 1).transpose().array() / refractive_index +
-                   n / size_param.array()) *
-                      xi_n.array() -
-                  xi_n_1.array());
-            An_matrix(n - 1, Eigen::all) =
-                An; // in matrix, the value for n is stored in row n-1
-            Bn = ((Dn_matrix.row(n - 1).transpose().array() * refractive_index +
-                   n / size_param.array()) *
-                      psi_n.array() -
-                  psi_n_1.array()) /
-                 ((Dn_matrix.row(n - 1).transpose().array() * refractive_index +
-                   n / size_param.array()) *
-                      xi_n.array() -
-                  xi_n_1.array());
-            Bn_matrix(n - 1, Eigen::all) =
-                Bn; // in matrix, the value for n is stored in row n-1
+        psi_n_1 = psi_n;
+        psi_n = xi_n.real();
 
-            // update psis and xis
+        for (int n = 2; n < N + 1; ++n) {
+            An(n - 1) =
+                ((Dn(n - 1) / refractive_index + double(n) / size_param) *
+                     psi_n -
+                 psi_n_1) /
+                ((Dn(n - 1) / refractive_index + double(n) / size_param) *
+                     xi_n -
+                 xi_n_1);
+            Bn(n - 1) =
+                ((Dn(n - 1) * refractive_index + double(n) / size_param) *
+                     psi_n -
+                 psi_n_1) /
+                ((Dn(n - 1) * refractive_index + double(n) / size_param) *
+                     xi_n -
+                 xi_n_1);
+
             temp = xi_n_1;
             xi_n_1 = xi_n;
-            xi_n = (2 * n + 1) / size_param.array() * xi_n_1.array() -
-                   temp.array();
+            xi_n = (double(2 * n) + 1.0) / size_param * xi_n_1 - temp;
 
             psi_n_1 = psi_n;
-            psi_n = xi_n.real(); // allowed since xi_n = psi_n + i*X_n
-
-            if (flag) {
-                // need to modify the values
-                // first check if we need to increase the values
-                while (std::abs(psi_n(nan_idx + 1)) > 1.0e275) {
-                    nan_idx += 1;
-                }
-                // now modify
-                An_matrix(n - 1, Eigen::seq(0, nan_idx)) =
-                    Eigen::VectorXcd::Zero(nan_idx + 1);
-                Bn_matrix(n - 1, Eigen::seq(0, nan_idx)) =
-                    Eigen::VectorXcd::Zero(nan_idx + 1);
-
-            } else if (std::abs(psi_n(0)) > 1.0e275) {
-                // need to start modifying values
-                flag = true;
-                nan_idx = 0;
-                // check if any others
-                while (std::abs(psi_n(nan_idx + 1)) > 1.0e275) {
-                    nan_idx += 1;
-                }
-                if (nan_idx == 0) {
-                    An_matrix(n - 1, 0) = 0;
-                    Bn_matrix(n - 1, 0) = 0;
-                } else {
-                    An_matrix(n - 1, Eigen::seq(0, nan_idx)) =
-                        Eigen::VectorXcd::Zero(nan_idx);
-                    Bn_matrix(n - 1, Eigen::seq(0, nan_idx)) =
-                        Eigen::VectorXcd::Zero(nan_idx);
-                }
-            }
+            psi_n = xi_n.real();
         }
     }
 
-    void LinearizedMie_OLD::Tau_Pi(const Eigen::VectorXd& size_param,
-                                   const Eigen::VectorXd& cos_angles,
-                                   const int N,
-                                   Eigen::Tensor<double, 3>& tau_tensor,
-                                   Eigen::Tensor<double, 3>& pi_tensor) {
+    void LinearizedMie::Dn(const std::complex<double>& refractive_index,
+                           const double& size_param, int thread_idx) {
+        std::complex<double> z = size_param * refractive_index;
 
-        Eigen::MatrixXd Pi_matrix;
-        Eigen::MatrixXd Tau_matrix;
-        Pi_matrix.resize(N, cos_angles.size());
-        Tau_matrix.resize(N, cos_angles.size());
-
-        // have to start at 0, and then make our way up all the way to N
-        Eigen::VectorXd temp;
-        Eigen::VectorXd pi_n_1 =
-            Eigen::VectorXd::Constant(cos_angles.size(), 0); // n=0
-        Eigen::VectorXd pi_n =
-            Eigen::VectorXd::Constant(cos_angles.size(), 1); // n=1
-        Eigen::VectorXd tau_n = 1 * cos_angles.array() * pi_n.array() -
-                                (1 + 1) * pi_n_1.array(); // n=1
-
-        Pi_matrix(0, Eigen::all) = pi_n;   // this is for n=1, stored in row 0
-        Tau_matrix(0, Eigen::all) = tau_n; // this is for n=1, stored in row 0
-
-        for (int n = 2; n < N + 1; n++) {
-            temp = pi_n;
-            pi_n = ((2 * n - 1) * cos_angles.array() * pi_n.array() -
-                    n * pi_n_1.array()) /
-                   (n - 1);
-            pi_n_1 = temp;
-            tau_n = n * cos_angles.array() * pi_n.array() -
-                    (n + 1) * pi_n_1.array();
-            Pi_matrix(n - 1, Eigen::all) =
-                pi_n; // this is for n, stored in row n-1
-            Tau_matrix(n - 1, Eigen::all) =
-                tau_n; // this is for n, stored in row n-1
-        }
-
-        Eigen::TensorMap<Eigen::Tensor<double, 2>> tau_map(Tau_matrix.data(), N,
-                                                           cos_angles.size());
-        Eigen::TensorMap<Eigen::Tensor<double, 2>> pi_map(Pi_matrix.data(), N,
-                                                          cos_angles.size());
-
-        for (int i = 0; i < size_param.size(); i++) {
-            tau_tensor.chip(i, 1) = tau_map;
-            pi_tensor.chip(i, 1) = pi_map;
-        }
-    }
-
-    void LinearizedMie_OLD::Dn(Eigen::MatrixXcd& Dn_matrix,
-                               const std::complex<double>& refractive_index,
-                               const Eigen::VectorXd& size_param, const int N) {
-        // check which way to go - upwards or downwards, then go for it,
-        // concatenating arrays at the end if real part of m is less than 1 or
-        // bigger than 10, abs of imaginary is bigger than 10, or x*
-        // m_imag>= 3.9 - 10.8 * mreal + 13.78 * mreal**2
-        double m_real = refractive_index.real();
-        double m_imag = refractive_index.imag();
-
-        Eigen::VectorXcd z_array = size_param.array() * refractive_index;
-
-        if (m_real < 1 || m_real > 10 || abs(m_imag) > 10) {
-            // downwards
-            Dn_downwards(z_array, N, Dn_matrix);
-
+        if (refractive_index.real() < 1 || refractive_index.real() > 10 ||
+            abs(refractive_index.imag()) > 10) {
+            Dn_downwards(refractive_index, z, thread_idx);
         } else {
-            // need to split and figure out what's up and what's down
-            // assuming the size parameters are ordered smallest to largest
-            double temp = 3.9 - 10.8 * m_real + 13.78 * pow(m_real, 2);
-            auto res = size_param.array() * abs(m_imag) >=
-                       3.9 - 10.8 * m_real + 13.78 * pow(m_real, 2);
-            // wherever res is true, should do downwards, wherever res if False,
-            // should do upwards
-            auto iterator = std::find(res.begin(), res.end(), true);
-            int index;
-            if (iterator == res.end()) {
-                Dn_upwards(z_array, N, Dn_matrix);
-            } else if (iterator == res.begin()) {
-                Dn_downwards(z_array, N, Dn_matrix);
+            double temp = 3.9 - 10.8 * refractive_index.real() +
+                          13.78 * pow(refractive_index.real(), 2);
+            if (abs(refractive_index.imag()) * size_param >= temp) {
+                Dn_downwards(refractive_index, z, thread_idx);
             } else {
-                // we need to split it
-                index = iterator - res.begin();
-                Eigen::VectorXcd up_array = z_array(Eigen::seq(0, index - 1));
-                Eigen::VectorXcd down_array =
-                    z_array(Eigen::seq(index, z_array.size() - 1));
-
-                // upwards
-                Eigen::MatrixXcd Dn_matrix_up;
-                Dn_upwards(up_array, N, Dn_matrix_up);
-                // downwards
-                Eigen::MatrixXcd Dn_matrix_down;
-                Dn_downwards(down_array, N, Dn_matrix_down);
-                // TODO rejoin down here
-
-                Dn_matrix.resize(N, z_array.size());
-                ;
-                Dn_matrix << Dn_matrix_up, Dn_matrix_down;
+                Dn_upwards(refractive_index, z, thread_idx);
             }
         }
     }
-    void LinearizedMie_OLD::Dn_upwards(const Eigen::VectorXcd& z, const int N,
-                                       Eigen::MatrixXcd& Dn_matrix) {
-        // here we are using upward recurrence to calculate Dn
 
-        // first calculate D1
+    void LinearizedMie::Dn_upwards(const std::complex<double>& refractive_index,
+                                   const std::complex<double>& z,
+                                   int thread_idx) {
+        Eigen::VectorXcd& Dn = m_thread_storage[thread_idx].Dn;
+        int N = m_thread_storage[thread_idx].local_N;
+
         std::complex<double> j(0.0, 1.0);
-        Eigen::VectorXcd temp = -2.0 * j * z.array();
-        Eigen::VectorXcd exp_2 = temp.array().exp();
-        Eigen::VectorXcd prev_Dn =
-            -1.0 / z.array() +
-            (1.0 - exp_2.array()) /
-                ((1.0 - exp_2.array()) / z.array() - j * (1.0 + exp_2.array()));
+        std::complex<double> temp = -2.0 * j * z;
+        std::complex<double> exp_2 = exp(temp);
 
-        // now calculate each successive term and store it in the Dn array
-        Dn_matrix.resize(N, z.size());
-        Dn_matrix(0, Eigen::all) = prev_Dn;
+        Dn(0) =
+            -1.0 / z + (1.0 - exp_2) / ((1.0 - exp_2) / z - j * (1.0 + exp_2));
 
-        for (int n = 2; n < N + 1; n++) {
-            prev_Dn = -n / z.array() + 1.0 / (n / z.array() - prev_Dn.array());
-            // put Dns in the matrix
-            Dn_matrix(n - 1, Eigen::all) = prev_Dn;
+        for (int n = 2; n < N + 1; ++n) {
+            Dn(n - 1) = -double(n) / z + 1.0 / (double(n) / z - Dn(n - 2));
         }
     }
 
-    void LinearizedMie_OLD::Dn_downwards(const Eigen::VectorXcd& z, const int N,
-                                         Eigen::MatrixXcd& Dn_matrix) {
-        // here we are using downward recurrence to calculate Dn
+    void
+    LinearizedMie::Dn_downwards(const std::complex<double>& refractive_index,
+                                const std::complex<double>& z, int thread_idx) {
+        int N = m_thread_storage[thread_idx].local_N;
+        Eigen::VectorXcd& Dn = m_thread_storage[thread_idx].Dn;
 
-        // first calculate the last Dn we will need
-        Eigen::VectorXcd prev_Dn;
-        Dn_Lentz(z, N, prev_Dn);
-        Dn_matrix.resize(N, z.size());
-        Dn_matrix(N - 1, Eigen::all) = prev_Dn;
-        // now calculate each term before it, and store it in the big Dn thing
-        for (int n = N; n > 1; n--) {
-            prev_Dn = n / z.array() - 1 / (n / z.array() + prev_Dn.array());
-            // TODO put Dns in the matrix
-            Dn_matrix(n - 2, Eigen::all) = prev_Dn;
+        Dn_Lentz(z, thread_idx, Dn(N - 1));
+
+        for (int n = N; n > 1; --n) {
+            Dn[n - 2] = double(n) / z - 1.0 / (double(n) / z + Dn[n - 1]);
         }
     }
 
-    void LinearizedMie_OLD::Dn_Lentz(const Eigen::VectorXcd& z, const int N,
-                                     Eigen::VectorXcd& Dn_array) {
-        // keeping track
-        Eigen::VectorXcd z_inv = 2.0 / z.array();
+    void LinearizedMie::Dn_Lentz(const std::complex<double>& z, int thread_idx,
+                                 std::complex<double>& result) {
+        int N = m_thread_storage[thread_idx].local_N;
 
-        Eigen::VectorXcd alpha_1 = (N + 0.5) * z_inv.array(); // [a1], sam as a1
-        Eigen::VectorXcd a_j =
-            -(N + 1.5) *
-            z_inv
-                .array(); // aj term to be used for alpha j1 and j2 calculations
-        Eigen::VectorXcd alpha_j1 =
-            a_j.array() + 1.0 / alpha_1.array(); // [aj,... a1]
-        Eigen::VectorXcd alpha_j2 = a_j.array(); // [aj,... a2]
+        std::complex<double> z_inv = 2.0 / z;
 
-        Eigen::VectorXcd cur_ratio = alpha_j1.array() / alpha_j2.array();
-        Eigen::VectorXcd overall_ratio = alpha_1.array() * cur_ratio.array();
+        std::complex<double> alpha_1 = (N + 0.5) * z_inv;
+        std::complex<double> a_j = -(N + 1.5) * z_inv;
+        std::complex<double> alpha_j1 = a_j + 1.0 / alpha_1;
+        std::complex<double> alpha_j2 = a_j;
 
-        while ((cur_ratio.array().abs() - 1).abs().maxCoeff() > 1e-12) {
-            // iterating until we are within some number of decimal places
+        std::complex<double> cur_ratio = alpha_j1 / alpha_j2;
+        std::complex<double> overall_ratio = alpha_1 * cur_ratio;
 
+        while (abs(abs(cur_ratio) - 1) > 1e-12) {
             a_j = z_inv - a_j;
-            alpha_j1 = 1.0 / alpha_j1.array() + a_j.array();
-            alpha_j2 = 1.0 / alpha_j2.array() + a_j.array();
+            alpha_j1 = a_j + 1.0 / alpha_j1;
+            alpha_j2 = a_j + 1.0 / alpha_j2;
 
             z_inv *= -1;
-            cur_ratio = alpha_j1.array() / alpha_j2.array();
-            overall_ratio = overall_ratio.array() * cur_ratio.array();
+            cur_ratio = alpha_j1 / alpha_j2;
+            overall_ratio *= cur_ratio;
         }
-        Dn_array = -N / z.array() + overall_ratio.array();
+        result = -double(N) / z + overall_ratio;
     }
 
 } // namespace sasktran2::mie

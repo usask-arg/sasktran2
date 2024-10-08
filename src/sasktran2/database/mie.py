@@ -267,13 +267,29 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
                 entry[key] = val
 
             entries.append(entry)
-        ds = (
-            xr.concat(entries, dim="args")  # noqa: PD010
-            .set_index(args=list(self._kwargs.keys()))
-            .unstack("args")
-            .rename_dims({"wavelength": "wavelength_nm"})
-            .rename_vars({"wavelength": "wavelength_nm"})
-        )
+
+        if len(self._kwargs) > 1:
+            # Have to do a multi-index unstack
+            ds = (
+                xr.concat(entries, dim="args")  # noqa: PD010
+                .set_index(args=list(self._kwargs.keys()))
+                .unstack("args")
+                .rename_dims({"wavelength": "wavelength_nm"})
+                .rename_vars({"wavelength": "wavelength_nm"})
+            )
+        elif len(self._kwargs) == 1:
+            ds = (
+                xr.concat(entries, dim=next(iter(self._kwargs.keys())))
+                .rename_dims({"wavelength": "wavelength_nm"})
+                .rename_vars({"wavelength": "wavelength_nm"})
+            )
+        else:
+            # length is 0
+            ds = (
+                entries[0]
+                .rename_dims({"wavelength": "wavelength_nm"})
+                .rename_vars({"wavelength": "wavelength_nm"})
+            )
 
         ds.to_netcdf(self._data_file)
 

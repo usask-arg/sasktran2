@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import sasktran2 as sk
 from sasktran2 import appconfig
 
@@ -193,6 +194,8 @@ def test_mie_integration():
 
 
 def test_mie_database():
+    _ = pytest.importorskip("sasktran")
+
     db_root_legacy = appconfig.database_root().joinpath("legacy")
     db_root_current = appconfig.database_root().joinpath("current")
 
@@ -215,7 +218,7 @@ def test_mie_database():
         wavelengths_nm=np.arange(270, 1000, 50.0),
         median_radius=[100, 150, 200],
         mode_width=[1.5, 1.7],
-        backend="sasktran_current",
+        backend="sasktran2",
         db_root=db_root_current,
         max_legendre_moments=100,
     )
@@ -468,60 +471,9 @@ def test_mie_database():
         rtol=0,
     )
 
-    config = sk.Config()
 
-    altitudes_m = np.arange(0, 65001, 1000)
-
-    model_geometry = sk.Geometry1D(
-        cos_sza=0.6,
-        solar_azimuth=0,
-        earth_radius_m=6372000,
-        altitude_grid_m=altitudes_m,
-        interpolation_method=sk.InterpolationMethod.LinearInterpolation,
-        geometry_type=sk.GeometryType.Spherical,
-    )
-
-    viewing_geo = sk.ViewingGeometry()
-
-    for alt in [10000, 20000, 30000, 40000]:
-        ray = sk.TangentAltitudeSolar(
-            tangent_altitude_m=alt,
-            relative_azimuth=45 * np.pi / 180,
-            observer_altitude_m=200000,
-            cos_sza=0.6,
-        )
-        viewing_geo.add_ray(ray)
-
-    wavel = np.arange(280.0, 800.0, 1)
-
-    atmosphere = sk.Atmosphere(model_geometry, config, wavelengths_nm=wavel)
-
-    sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
-
-    atmosphere["rayleigh"] = sk.constituent.Rayleigh()
-    atmosphere["ozone"] = sk.climatology.mipas.constituent("O3", sk.optical.O3DBM())
-
-    engine = sk.Engine(config, model_geometry, viewing_geo)
-
-    radiance_no_aerosol = engine.calculate_radiance(atmosphere)
-    aero_ext = np.zeros(len(altitudes_m))
-    aero_ext[0:30] = 1e-7
-
-    atmosphere["aerosol"] = sk.constituent.ExtinctionScatterer(
-        mie_db_new,
-        altitudes_m=altitudes_m,
-        extinction_per_m=aero_ext,
-        extinction_wavelength_nm=745,
-        median_radius=np.ones_like(aero_ext) * 120,
-        mode_width=np.ones_like(aero_ext) * 1.6,
-    )
-
-    radiance_with_aerosol = engine.calculate_radiance(atmosphere)
-    import matplotlib.pyplot as plt
-
-    plt.plot(wavel, radiance_no_aerosol["radiance"].isel(los=0, stokes=0))
-    plt.plot(wavel, radiance_with_aerosol["radiance"].isel(los=0, stokes=0))
-
+def test_mie_db_freezing():
+    refrac = sk.mie.refractive.H2SO4()
     # try freezing
     distribution = sk.mie.distribution.LogNormalDistribution().freeze(
         median_radius=160, mode_width=1.6
@@ -533,9 +485,3 @@ def test_mie_database():
     )
 
     mie_db_f.load_ds()
-    atmosphere["aerosol"] = sk.constituent.ExtinctionScatterer(
-        mie_db_f,
-        altitudes_m=altitudes_m,
-        extinction_per_m=aero_ext,
-        extinction_wavelength_nm=745,
-    )
