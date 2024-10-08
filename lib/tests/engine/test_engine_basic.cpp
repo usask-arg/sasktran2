@@ -5,11 +5,15 @@
 #include <sasktran2/test_helper.h>
 
 #include <sasktran2.h>
+#ifdef USE_OMP
 #include <omp.h>
+#endif
 
 TEST_CASE("Single Scatter, Rayleigh only SASKTRAN-HR Compare",
           "[sasktran2][engine]") {
+#ifdef USE_OMP
     omp_set_num_threads(1);
+#endif
     // Construct the geometry
     sasktran2::Coordinates coords(0.6, 0, 6371000,
                                   sasktran2::geometrytype::spherical);
@@ -90,7 +94,9 @@ TEST_CASE("Single Scatter, Rayleigh only SASKTRAN-HR Compare",
 }
 
 TEST_CASE("MS TEST", "[sasktran2][engine]") {
+#ifdef USE_OMP
     omp_set_num_threads(1);
+#endif
     // Construct the geometry
     sasktran2::Coordinates coords(0.6, 0, 6371000,
                                   sasktran2::geometrytype::spherical);
@@ -177,7 +183,9 @@ TEST_CASE("MS TEST", "[sasktran2][engine]") {
 }
 
 TEST_CASE("Basic Calculation", "[sasktran2][engine]") {
+#ifdef USE_OMP
     omp_set_num_threads(1);
+#endif
     // Construct the geometry
     sasktran2::Coordinates coords(0, sasktran2::math::PiOver2, 6372000,
                                   sasktran2::geometrytype::spherical);
@@ -398,7 +406,9 @@ TEST_CASE("Spherical Correction", "[sasktran2][engine]") {
 
 TEST_CASE("Plane Parallel Ray Tracing Integration Test",
           "[sasktran2][engine]") {
+#ifdef USE_OMP
     omp_set_num_threads(1);
+#endif
     // Construct the geometry
     sasktran2::Coordinates coords(0.6, 0, 6371000,
                                   sasktran2::geometrytype::planeparallel);
@@ -483,7 +493,9 @@ TEST_CASE("Plane Parallel Ray Tracing Integration Test",
 
 TEST_CASE("Plane Parallel Ray Tracing Integration Test with BRDF",
           "[sasktran2][engine]") {
+#ifdef USE_OMP
     omp_set_num_threads(1);
+#endif
     // Construct the geometry
     sasktran2::Coordinates coords(0.6, 0, 6371000,
                                   sasktran2::geometrytype::planeparallel);

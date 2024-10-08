@@ -2,10 +2,14 @@
 #include <sasktran2/test_helper.h>
 
 #include <sasktran2.h>
+#ifdef USE_OMP
 #include <omp.h>
+#endif
 
 TEST_CASE("Verify k WF Vector", "[sasktran2][engine][wf]") {
+#ifdef USE_OMP
     omp_set_num_threads(1);
+#endif
     // Construct the geometry
     sasktran2::Coordinates coords(0, sasktran2::math::PiOver2, 6372000,
                                   sasktran2::geometrytype::spherical);
@@ -127,7 +131,9 @@ TEST_CASE("Verify k WF Vector", "[sasktran2][engine][wf]") {
 }
 
 TEST_CASE("Verify ssa WF Vector", "[sasktran2][engine][wf]") {
+#ifdef USE_OMP
     omp_set_num_threads(1);
+#endif
     // Construct the geometry
     sasktran2::Coordinates coords(0, sasktran2::math::PiOver2, 6372000,
                                   sasktran2::geometrytype::spherical);
@@ -250,7 +256,9 @@ TEST_CASE("Verify ssa WF Vector", "[sasktran2][engine][wf]") {
 }
 
 TEST_CASE("Verify leg_coeff WF Vector", "[sasktran2][engine][wf]") {
+#ifdef USE_OMP
     omp_set_num_threads(1);
+#endif
     // Construct the geometry
     sasktran2::Coordinates coords(0, sasktran2::math::PiOver2, 6372000,
                                   sasktran2::geometrytype::spherical);
@@ -379,7 +387,9 @@ TEST_CASE("Verify leg_coeff WF Vector", "[sasktran2][engine][wf]") {
 }
 
 TEST_CASE("Verify k WF Vector plane-parallel", "[sasktran2][engine][wf]") {
+#ifdef USE_OMP
     omp_set_num_threads(1);
+#endif
     // Construct the geometry
     sasktran2::Coordinates coords(0.6, sasktran2::math::PiOver2, 6372000,
                                   sasktran2::geometrytype::planeparallel);
