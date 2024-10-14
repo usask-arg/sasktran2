@@ -25,7 +25,7 @@ jobs:
           submodules: true
 
       - name: Setup mamba build environment
-        uses: mamba-org/setup-micromamba@v1
+        uses: mamba-org/setup-micromamba@v2
         with:
           environment-file: conda/dev_env.yml
 
@@ -52,7 +52,7 @@ jobs:
           submodules: true
 
       - name: Setup mamba build environment
-        uses: mamba-org/setup-micromamba@v1
+        uses: mamba-org/setup-micromamba@v2
         with:
           environment-file: conda/dev_env_windows.yml
 
@@ -96,7 +96,7 @@ jobs:
           submodules: true
 
       - name: Setup Conda build environment
-        uses: mamba-org/setup-micromamba@v1
+        uses: mamba-org/setup-micromamba@v2
         with:
           environment-file: ci/conda-envs/mamba-build.yml
 
@@ -138,7 +138,7 @@ jobs:
           submodules: true
 
       - name: Build wheels single version
-        uses: pypa/cibuildwheel@v2.21.1
+        uses: pypa/cibuildwheel@v2.21.3
         env:
           CIBW_SKIP: "pp* *musllinux* cp37-*"
           CIBW_BUILD: "cp312-*"
