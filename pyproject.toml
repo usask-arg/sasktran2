@@ -26,7 +26,9 @@ classifiers = [
 
 [project.optional-dependencies]
 test = ["pytest"]
+solar = ["astropy"]
 hapi = ["hitran-api"]
+complete = ["sasktran2[solar,hapi]"]
 
 [tool.scikit-build]
 wheel.expand-macos-universal-tags = true

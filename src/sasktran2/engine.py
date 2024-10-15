@@ -64,6 +64,11 @@ class Engine:
             atmosphere.internal_object(), engine_output.internal_output()
         )
 
-        return engine_output.post_process(
+        result = engine_output.post_process(
             atmosphere, self._model_geometry, self._viewing_geometry
         )
+
+        if isinstance(result, sk.viewinggeo.ViewingGeometryContainer):
+            result = result.add_geometry_to_radiance(engine_output.internal_output())
+
+        return result
