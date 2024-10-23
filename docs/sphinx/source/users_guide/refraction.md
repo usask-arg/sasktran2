@@ -58,6 +58,55 @@ when viewing in the atmospheric limb or at high viewing zenith angles.  It is co
 {py:attr}`sasktran2.Config.los_refraction` option.  It is generally an important effect when viewing in the limb with tangent altitudes
 below approximately 20 km, and causes a bending of the ray downwards towards lower tangent altitudes, usually increasing the observed signal.
 
+```{code}
+import sasktran2 as sk
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+tan_alts = np.arange(1000, 65000, 1000)
+
+
+def run(include_refraction):
+    config = sk.Config()
+    config.los_refraction = include_refraction
+
+    model_geometry = sk.Geometry1D(cos_sza=0.6,
+                                    solar_azimuth=0,
+                                    earth_radius_m=6372000,
+                                    altitude_grid_m=np.arange(0, 100001, 1000),
+                                    interpolation_method=sk.InterpolationMethod.LinearInterpolation,
+                                    geometry_type=sk.GeometryType.Spherical)
+
+    viewing_geo = sk.ViewingGeometry()
+
+
+    for alt in tan_alts:
+        ray = sk.TangentAltitudeSolar(tangent_altitude_m=alt,
+                                        relative_azimuth=0,
+                                        observer_altitude_m=200000,
+                                        cos_sza=0.6)
+        viewing_geo.add_ray(ray)
+
+    wavel = np.array([600])
+    atmosphere = sk.Atmosphere(model_geometry, config, wavelengths_nm=wavel)
+
+    sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
+    model_geometry.refractive_index = sk.optical.refraction.ciddor_index_of_refraction(atmosphere.temperature_k, atmosphere.pressure_pa, 0.0, 200, 600)
+
+    atmosphere['rayleigh'] = sk.constituent.Rayleigh()
+    #atmosphere['ozone'] = sk.climatology.mipas.constituent("O3", sk.optical.O3DBM())
+    #atmosphere['no2'] = sk.climatology.mipas.constituent("NO2", sk.optical.NO2Vandaele())
+
+    engine = sk.Engine(config, model_geometry, viewing_geo)
+    return engine.calculate_radiance(atmosphere)
+
+refracted = run(true)
+unrefracted = run(false)
+
+plt.plot((refracted["radiance"] / unrefracted["radiance]).to_numpy(), tan_alts)
+```
+
 ## Solar Refraction
 Solar refraction refers to refraction of the incoming solar beam, it is most important for twilight conditions where the sun is low in the sky.
 Typically solar refraction is unimportant until the solar zenith angle is above 85 degrees.  The option is controlled by
