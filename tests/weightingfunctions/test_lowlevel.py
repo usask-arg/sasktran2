@@ -359,7 +359,10 @@ def test_wf_ssa():
     D_FRACTION = 1e-5
     test_scens = _raw_scenarios()
 
+    i = 0
     for scen in test_scens:
+        print(i)
+        i += 1
         engine = sk.Engine(scen["config"], scen["geometry"], scen["viewing_geo"])
 
         radiance = engine.calculate_radiance(scen["atmosphere"])
