@@ -58,7 +58,7 @@ when viewing in the atmospheric limb or at high viewing zenith angles.  It is co
 {py:attr}`sasktran2.Config.los_refraction` option.  It is generally an important effect when viewing in the limb with tangent altitudes
 below approximately 20 km, and causes a bending of the ray downwards towards lower tangent altitudes, usually increasing the observed signal.
 
-```{code}
+```{code-cell}
 import sasktran2 as sk
 import numpy as np
 import matplotlib.pyplot as plt
@@ -104,7 +104,7 @@ def run(include_refraction):
 refracted = run(true)
 unrefracted = run(false)
 
-plt.plot((refracted["radiance"] / unrefracted["radiance]).to_numpy(), tan_alts)
+plt.plot((refracted["radiance"] / unrefracted["radiance"]).to_numpy(), tan_alts)
 ```
 
 ## Solar Refraction
