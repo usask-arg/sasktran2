@@ -59,7 +59,7 @@ TEST_CASE(
     double dx = 1000;
     int nx = 66;
     double x0 = 0;
-    double tangent_altitude = GENERATE(5000, 10000.0, 20000.0, 30405.0);
+    double tangent_altitude = GENERATE(5000, 10000.0, 18000, 20000.0, 30405.0);
 
     Eigen::VectorXd grid_values(nx);
     for (int i = 0; i < nx; ++i) {

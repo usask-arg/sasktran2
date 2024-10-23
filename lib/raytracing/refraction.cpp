@@ -78,7 +78,7 @@ namespace sasktran2::raytracing::refraction {
         double sum_d2 = (x_high + x_low) / 2.0;
 
         double sum = 0;
-        for (uint i = 0; i < num_integration_points / 2; ++i) {
+        for (int i = 0; i < num_integration_points / 2; ++i) {
             double a1 = 0.5 * mu[i] + 0.5;
             double a2 = -0.5 * mu[i] + 0.5;
             double a3 = 0.5 * mu[i] - 0.5;
