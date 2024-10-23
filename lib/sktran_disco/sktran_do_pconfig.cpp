@@ -17,6 +17,7 @@ void sasktran_disco::PersistentConfiguration<NSTOKES, CNSTR>::configure(
     const_cast<double&>(this->M_CSZ) = cos_sza;
     const_cast<double&>(this->M_SAZ) = 0;
     const_cast<double&>(this->M_SOLAR_DIRECT_INTENSITY) = 1.0;
+    const_cast<bool&>(this->M_SOLAR_REFRACTION) = config.solar_refraction();
 
     const_cast<uint&>(this->M_NSTR) = config.num_do_streams();
     const_cast<uint&>(this->M_NLYR) = nlyr;
