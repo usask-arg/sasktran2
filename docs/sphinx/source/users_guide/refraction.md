@@ -101,10 +101,10 @@ def run(include_refraction):
     engine = sk.Engine(config, model_geometry, viewing_geo)
     return engine.calculate_radiance(atmosphere)
 
-refracted = run(true)
-unrefracted = run(false)
+refracted = run(True)
+unrefracted = run(True)
 
-plt.plot((refracted["radiance"] / unrefracted["radiance"]).to_numpy(), tan_alts)
+plt.plot((refracted["radiance"] / unrefracted["radiance"]).to_numpy().flatten(), tan_alts)
 ```
 
 ## Solar Refraction
