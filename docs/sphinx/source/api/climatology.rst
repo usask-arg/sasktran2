@@ -8,11 +8,16 @@ Climatoligies are utility functions used to help in creating standard atmosphere
 
 MIPAS Reference Atmospheres
 ---------------------------
+.. autosummary::
+    :toctree: generated/
 
-.. automodule:: sasktran2.climatology.mipas
+    sasktran2.climatology.mipas
 
 
 US76 Standard Atmosphere
 ------------------------
 
-.. automodule:: sasktran2.climatology.us76
+.. autosummary::
+    :toctree: generated/
+
+    sasktran2.climatology.us76

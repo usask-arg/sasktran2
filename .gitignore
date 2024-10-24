@@ -49,3 +49,4 @@ typings
 .cache
 *._cache
 asv_bench/.asv/
+docs/sphinx/source/api/generated

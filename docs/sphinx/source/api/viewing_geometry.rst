@@ -2,12 +2,16 @@
 
 Viewing Geometry
 ================
+.. autosummary::
+    :toctree: generated/
 
-.. autoclass:: sasktran2.ViewingGeometry
+    sasktran2.ViewingGeometry
 
 Viewing Policies
 ----------------
 
-.. autoclass:: sasktran2.TangentAltitudeSolar
+.. autosummary::
+    :toctree: generated/
 
-.. autoclass:: sasktran2.GroundViewingSolar
+    sasktran2.TangentAltitudeSolar
+    sasktran2.GroundViewingSolar
