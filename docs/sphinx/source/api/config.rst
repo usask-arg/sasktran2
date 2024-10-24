@@ -3,4 +3,7 @@
 Config
 ======
 
-.. autoclass:: sasktran2.Config
+.. autosummary::
+    :toctree: generated/
+
+    sasktran2.Config

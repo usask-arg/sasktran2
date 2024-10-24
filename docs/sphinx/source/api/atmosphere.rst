@@ -3,13 +3,19 @@
 Atmosphere
 ==========
 
-.. autoclass:: sasktran2.Atmosphere
+.. autosummary::
+    :toctree: generated/
+
+    sasktran2.Atmosphere
 
 Internal Objects
 ----------------
 
-.. autoclass:: sasktran2.AtmosphereStokes_1
-.. autoclass:: sasktran2.AtmosphereStokes_3
+.. autosummary::
+    :toctree: generated/
 
-.. autoclass:: sasktran2.AtmosphereStorageStokes_1
-.. autoclass:: sasktran2.AtmosphereStorageStokes_3
+    sasktran2.AtmosphereStokes_1
+    sasktran2.AtmosphereStokes_3
+
+    sasktran2.AtmosphereStorageStokes_1
+    sasktran2.AtmosphereStorageStokes_3

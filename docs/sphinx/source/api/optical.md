@@ -5,25 +5,24 @@
 ## Class Objects
 
 ```{eval-rst}
-.. autoclass:: sasktran2.optical.O3DBM
+.. autosummary::
+    :toctree: generated/
 
-.. autoclass:: sasktran2.optical.NO2Vandaele
-
-.. autoclass:: sasktran2.optical.HITRANUV
-
-.. autoclass:: sasktran2.optical.HITRANTabulated
-
-.. autoclass:: sasktran2.optical.HITRANCollision
-
-.. autoclass:: sasktran2.optical.database.OpticalDatabase
-
-.. autoclass:: sasktran2.optical.database.OpticalDatabaseGenericAbsorber
-
-.. autoclass:: sasktran2.optical.database.OpticalDatabaseGenericScatterer
+    sasktran2.optical.O3DBM
+    sasktran2.optical.NO2Vandaele
+    sasktran2.optical.HITRANUV
+    sasktran2.optical.HITRANTabulated
+    sasktran2.optical.HITRANCollision
+    sasktran2.optical.database.OpticalDatabase
+    sasktran2.optical.database.OpticalDatabaseGenericAbsorber
+    sasktran2.optical.database.OpticalDatabaseGenericScatterer
 ```
 
 ## Special Modules
 
 ```{eval-rst}
-.. automodule:: sasktran2.optical.rayleigh
+.. autosummary::
+    :toctree: generated/
+
+    sasktran2.optical.rayleigh
 ```

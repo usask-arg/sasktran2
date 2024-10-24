@@ -4,14 +4,20 @@
 
 ## Specialized Instances
 ```{eval-rst}
-.. autoclass:: sasktran2.WGS84
 
-.. autoclass:: sasktran2.SphericalGeoid
+.. autosummary::
+    :toctree: generated/
+
+    sasktran2.WGS84
+    sasktran2.SphericalGeoid
 
 ```
 
 ## sk.Geodetic
 
 ```{eval-rst}
-.. autoclass:: sasktran2.Geodetic
+.. autosummary::
+    :toctree: generated/
+
+    sasktran2.Geodetic
 ```
