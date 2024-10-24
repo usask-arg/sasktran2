@@ -60,6 +60,7 @@ requirements:
 test:
   requires:
     - pytest
+    - nomkl # [win]
   imports:
     - sasktran2
   source_files:

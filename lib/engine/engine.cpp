@@ -190,7 +190,8 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::calculate_geometry() {
         }
 #endif
 
-        m_raytracer->trace_ray(ray, m_traced_rays[i]);
+        m_raytracer->trace_ray(ray, m_traced_rays[i],
+                               m_config.los_refraction());
     }
 
     // Initialize the integrator

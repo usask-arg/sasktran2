@@ -250,6 +250,17 @@ namespace sasktran2 {
         std::pair<double, double>
         stokes_standard_to_observer(const Eigen::Vector3d& look_vector,
                                     const Eigen::Vector3d& position) const;
+
+        /**
+         * @brief Calculates the vector position above the earth at the
+         * reference point
+         *
+         * @param altitude_above_earth
+         * @return Eigen::Vector3d
+         */
+        Eigen::Vector3d reference_point(double altitude_above_earth) const {
+            return m_z_unit * (m_earth_radius + altitude_above_earth);
+        }
     };
 
     /** Base class that defines the Geometry for the calculation.  The Geometry
@@ -299,6 +310,7 @@ namespace sasktran2 {
     class Geometry1D : public Geometry {
       private:
         const grids::AltitudeGrid m_alt_grid;
+        Eigen::VectorXd m_refractive_index;
 
       public:
         Geometry1D(double cos_sza, double saa, double earth_radius,
@@ -310,6 +322,9 @@ namespace sasktran2 {
         Geometry1D(Coordinates&& coordinates, grids::AltitudeGrid&& alt_grid)
             : Geometry(std::forward<Coordinates&&>(coordinates)),
               m_alt_grid(alt_grid) {
+
+            m_refractive_index.resize(m_alt_grid.grid().size());
+            m_refractive_index.setConstant(1.0);
             validate();
         }
 
@@ -319,6 +334,12 @@ namespace sasktran2 {
         int size() const { return (int)m_alt_grid.grid().size(); }
 
         void validate() const;
+
+        const Eigen::VectorXd& refractive_index() const {
+            return m_refractive_index;
+        }
+
+        Eigen::VectorXd& refractive_index() { return m_refractive_index; }
 
         virtual void assign_interpolation_weights(
             const Location& loc,

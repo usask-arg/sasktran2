@@ -11,6 +11,9 @@ namespace sasktran2 {
           m_alt_grid(std::move(grid_values),
                      sasktran2::grids::gridspacing::automatic,
                      sasktran2::grids::outofbounds::extend, interp_method) {
+
+        m_refractive_index.resize(m_alt_grid.grid().size());
+        m_refractive_index.setConstant(1.0);
         validate();
     }
 

@@ -1,3 +1,4 @@
+#include "sasktran2/geometry.h"
 #include <pybind11/pybind11.h>
 #include <pybind11/eigen.h>
 #include <sasktran2.h>
@@ -51,7 +52,21 @@ void init_geometry(py::module_& m) {
                  )",
              "cos_sza"_a, "solar_azimuth"_a, "earth_radius_m"_a,
              "altitude_grid_m"_a, "interpolation_method"_a, "geometry_type"_a)
-        .def("altitudes", [](const sasktran2::Geometry1D& geo) {
-            return geo.altitude_grid().grid();
-        });
+        .def("altitudes",
+             [](const sasktran2::Geometry1D& geo) {
+                 return geo.altitude_grid().grid();
+             })
+        .def_property(
+            "refractive_index",
+            [](sasktran2::Geometry1D& storage) -> Eigen::VectorXd& {
+                return storage.refractive_index();
+            },
+            [](sasktran2::Geometry1D& storage, const Eigen::VectorXd& ssa) {
+                storage.refractive_index() = ssa;
+            },
+            R"(
+                The refractive index of the atmosphere.  This is used to calculate refraction in the radiative transfer calculation.
+                Defaults to 1.0 which indicates no refractive effects.  Only has an effect if the refraction configuration options are
+                enabled in the `sasktran2.Config` object.
+            )");
 }
