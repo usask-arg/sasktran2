@@ -2,7 +2,7 @@
 (_changelog)=
 # Changelog
 
-# 2023.11.0
+# 2023.10.1
 - Add internal backend for Mie calculations
 - Add capability to include refractive raytracing
 - Add wheel builds for Python 3.13
