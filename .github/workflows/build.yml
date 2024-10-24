@@ -200,7 +200,12 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: sasktran2-wheel-macos-12
+          name: sasktran2-wheel-macos-14
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: sasktran2-wheel-macos-13
           path: dist
 
       - uses: actions/download-artifact@v4
