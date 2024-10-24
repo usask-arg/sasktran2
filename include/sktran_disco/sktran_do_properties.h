@@ -78,6 +78,7 @@ namespace sasktran_disco {
         SolarProperties(const SolarProperties* other)
             : M_CSZ(other->M_CSZ), M_SAZ(other->M_SAZ),
               M_SOLAR_DIRECT_INTENSITY(other->M_SOLAR_DIRECT_INTENSITY),
+              M_SOLAR_REFRACTION(other->M_SOLAR_REFRACTION),
               M_LP_CSZ(other->M_LP_CSZ) {
             // empty
         }
@@ -85,14 +86,17 @@ namespace sasktran_disco {
       protected:
         SolarProperties()
             : M_CSZ(std::nan("1")), M_SAZ(std::nan("1")),
+              M_SOLAR_REFRACTION(false),
               M_SOLAR_DIRECT_INTENSITY(std::nan("1")), M_LP_CSZ(nullptr) {
             // empty
         }
 
         const double M_SOLAR_DIRECT_INTENSITY; /** Direct solar intensity at
                                                   TOA, usually 1*/
-        const double M_CSZ;                    /** Cosine solar zenith angle */
-        const double M_SAZ; /** Solar azimuth angle in radians*/
+        const bool M_SOLAR_REFRACTION; /** Whether to include solar refraction
+                                         in the calculations */
+        const double M_CSZ;            /** Cosine solar zenith angle */
+        const double M_SAZ;            /** Solar azimuth angle in radians*/
         // Legendre polynomials evaluated at M_CSZ. Accessed by [m][l] where
         // m is the AEOrder and l is the polynomial order.
         VectorDim2<LegendrePhaseContainer<NSTOKES>>* M_LP_CSZ;

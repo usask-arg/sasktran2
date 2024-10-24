@@ -38,7 +38,9 @@ namespace sasktran2::solartransmission {
                 if (j == 0) {
                     // End layer at TOA, need to use layer exit
                     ray_to_sun.observer = layer.exit;
-                    m_raytracer.trace_ray(ray_to_sun, traced_ray);
+
+                    // Always don't use refraction for this
+                    m_raytracer.trace_ray(ray_to_sun, traced_ray, false);
 
                     if (!traced_ray.ground_is_hit) {
                         assign_dense_matrix_column(row, traced_ray, m_geometry,
@@ -50,7 +52,7 @@ namespace sasktran2::solartransmission {
                 }
 
                 ray_to_sun.observer = layer.entrance;
-                m_raytracer.trace_ray(ray_to_sun, traced_ray);
+                m_raytracer.trace_ray(ray_to_sun, traced_ray, false);
 
                 if (!traced_ray.ground_is_hit) {
                     assign_dense_matrix_column(row, traced_ray, m_geometry,

@@ -2,8 +2,13 @@
 (_changelog)=
 # Changelog
 
+# 2023.11.0 (unreleased)
+- Add internal backend for Mie calculations
+- Add capability to include refractive raytracing
+
 # 2023.10.0
 - Add python 3.13 conda builds
+- Add linux arm64 builds
 
 # 2024.07.0
 - Add `config.do_backprop` option for discrete ordinates source
