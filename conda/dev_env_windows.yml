@@ -21,5 +21,3 @@ dependencies:
   - pip
   - ipython
   - cmake<3.30
-  - pip:
-    - sphinx_rtd_theme
