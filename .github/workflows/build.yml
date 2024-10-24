@@ -32,9 +32,9 @@ jobs:
             target_plat: x86_64
           - os: windows-2019
             target_plat: x86_64
-          - os: macos-12
+          - os: macos-13
             target_plat: x86_64
-          - os: macos-12
+          - os: macos-14
             target_plat: arm
 
     steps:
@@ -57,7 +57,6 @@ jobs:
 
       - name: Build Conda package
         shell: bash -el {0}
-        if: (matrix.target_plat == 'x86_64')
         run: |
           conda mambabuild conda.recipe --output-folder pkgs/ -c conda-forge/label/python_rc --user usask-arg --token ${{ secrets.TOKEN }}
 
@@ -91,9 +90,9 @@ jobs:
             target_plat: x86_64
           - os: windows-2019
             target_plat: x86_64
-          - os: macos-12
+          - os: macos-13
             target_plat: x86_64
-          - os: macos-12
+          - os: macos-14
             target_plat: arm
 
     steps:
@@ -116,7 +115,6 @@ jobs:
 
       - name: Build Conda package
         shell: bash -el {0}
-        if: (matrix.target_plat == 'x86_64')
         run: |
           conda mambabuild conda.recipe --output-folder pkgs/ -c conda-forge/label/python_rc --user usask-arg-nightly --token ${{ secrets.TOKEN }}
 
@@ -155,7 +153,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-latest, macos-12, windows-2019 ]
+        os: [ ubuntu-latest, macos-13, macos-14, windows-2019 ]
 
     steps:
       - uses: actions/checkout@v4
@@ -167,7 +165,7 @@ jobs:
         uses: pypa/cibuildwheel@v2.21.3
         env:
           CIBW_SKIP: "pp* *musllinux* cp37-* cp38-* cp39-*"
-          CIBW_BUILD: "cp310-* cp311-* cp312-*"
+          CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-*"
         with:
           output-dir: wheelhouse
 
