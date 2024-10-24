@@ -102,7 +102,7 @@ def run(include_refraction):
     return engine.calculate_radiance(atmosphere)
 
 refracted = run(True)
-unrefracted = run(True)
+unrefracted = run(False)
 
 plt.plot((refracted["radiance"] / unrefracted["radiance"]).to_numpy().flatten(), tan_alts)
 ```
