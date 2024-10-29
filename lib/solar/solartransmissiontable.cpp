@@ -61,7 +61,8 @@ namespace sasktran2::solartransmission {
                 m_location_interpolator->grid_location(m_geometry.coordinates(),
                                                        i);
 
-            m_raytracer.trace_ray(ray_to_sun, traced_ray);
+            // This method specifically does not allow for refraction
+            m_raytracer.trace_ray(ray_to_sun, traced_ray, false);
 
             if (!traced_ray.ground_is_hit) {
                 assign_dense_matrix_column(i, traced_ray, m_geometry,

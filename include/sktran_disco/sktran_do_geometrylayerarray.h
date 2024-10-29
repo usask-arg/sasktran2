@@ -38,7 +38,8 @@ namespace sasktran_disco {
          *
          *   @param earth_rad Earth radius
          */
-        void calculate_chapman_factors(double earth_rad);
+        void calculate_chapman_factors(double earth_rad,
+                                       const sasktran2::Geometry1D& geometry);
 
       public:
         GeometryLayerArray(

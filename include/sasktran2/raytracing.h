@@ -40,6 +40,9 @@ namespace sasktran2::raytracing {
         Location exit; /**< The boundary location of the layer farther from the
                           observer */
 
+        double r_entrance; /**< Radius of the entrance point in [m] */
+        double r_exit;     /**< Radius of the exit point in [m] */
+
         Eigen::Vector3d
             average_look_away; /**< Look vector away from the observer */
 
@@ -83,11 +86,20 @@ namespace sasktran2::raytracing {
             layers; /**< Set of traced ray layers, starting from the end of the
                        ray moving towards the observer */
 
+        double tangent_radius; /**< Radius of the tangent point in [m] INCLUDING
+                                  refractive effects. Could be negative if the
+                                  ray hits the ground. */
+
+        std::vector<std::pair<int, double>> interpolation_index_weights; /**<
+            Workspace memory to be used by the raytracer.
+         */
+
         /** Resets the storage for the TracedRay so it can be traced again
          */
         void reset() {
             ground_is_hit = false;
             layers.resize(0);
+            tangent_radius = std::numeric_limits<double>::quiet_NaN();
         }
     };
 
@@ -123,20 +135,6 @@ namespace sasktran2::raytracing {
             (look_away - local_up * (look_away.dot(local_up))).normalized();
         Eigen::Vector3d sun_projceted =
             (sun_unit - local_up * (sun_unit.dot(local_up))).normalized();
-
-        /*
-        double proj = sun_projceted.dot(los_projected);
-
-        if (proj > 1) {
-            proj = 1;
-        }
-        else if (proj < -1) {
-            proj = -1;
-        }
-        // TODO: Check this, is this right?
-
-        saa = -1*acos(proj);
-         */
 
         // Take sun to by the x axis, then the y axis is up cross sun
         Eigen::Vector3d y_axis = local_up.cross(sun_projceted);
@@ -342,10 +340,13 @@ namespace sasktran2::raytracing {
          *
          * @param ray ViewingRay to trace
          * @param tracedray Result
+         * @param include_refraction If true, the ray will be traced with
+         * refractive effects enabled
          */
         virtual void
         trace_ray(const sasktran2::viewinggeometry::ViewingRay& ray,
-                  TracedRay& tracedray) const = 0;
+                  TracedRay& tracedray,
+                  bool include_refraction = false) const = 0;
     };
 
     /** A ray tracer that traces straight (unrefracted) rays in a spherical
@@ -366,7 +367,8 @@ namespace sasktran2::raytracing {
               m_geometry(geometry) {}
 
         void trace_ray(const sasktran2::viewinggeometry::ViewingRay& ray,
-                       TracedRay& tracedray) const;
+                       TracedRay& tracedray,
+                       bool include_refraction = false) const override;
 
       private:
         const sasktran2::grids::AltitudeGrid&
@@ -495,6 +497,15 @@ namespace sasktran2::raytracing {
                               ViewingDirection direction,
                               TangentSide side) const;
 
+        /**
+         * Finalizes the ray geometry by calculating the intersection points for
+         * each layer, the quadrature parameters, and the solar angles
+         *
+         * @param tracedray
+         * @param rt
+         */
+        void finalize_ray_geometry(TracedRay& tracedray) const;
+
         /** Converts altitude to distance along the ray
          *
          * @param ray viewing ray
@@ -565,7 +576,8 @@ namespace sasktran2::raytracing {
               m_geometry(geometry) {}
 
         void trace_ray(const sasktran2::viewinggeometry::ViewingRay& ray,
-                       TracedRay& tracedray) const;
+                       TracedRay& tracedray,
+                       bool include_refraction = false) const;
 
       private:
         const sasktran2::grids::AltitudeGrid&

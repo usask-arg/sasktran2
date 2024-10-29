@@ -11,7 +11,12 @@
 
 #include <sasktran2/types.h>
 
+// Minimimum size shells have to be to have contributions
 #define MINIMUM_SHELL_SIZE_M 0.0001
+
+// If dot(viewing, normal) < NADIR_VIEWING_CUTOFF then the ray is considered to
+// be strictly nadir viewing and the refraction is not applied
+#define NADIR_VIEWING_CUTOFF 0.999999
 
 // Setup dependening on what linear algebra package is being linked
 #ifdef SKTRAN_USE_MKL

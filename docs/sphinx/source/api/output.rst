@@ -2,17 +2,23 @@
 
 Output
 ======
-.. autoclass:: sasktran2.OutputIdeal
+.. autosummary::
+    :toctree: generated/
+
+    sasktran2.OutputIdeal
 
 Base Objects
 ------------
+.. autosummary::
+    :toctree: generated/
 
-.. autoclass:: sasktran2.Output
+    sasktran2.Output
 
 
 Internal Objects
 ----------------
+.. autosummary::
+    :toctree: generated/
 
-.. autoclass:: sasktran2.OutputIdealStokes_1
-
-.. autoclass:: sasktran2.OutputIdealStokes_3
+    sasktran2.OutputIdealStokes_1
+    sasktran2.OutputIdealStokes_3

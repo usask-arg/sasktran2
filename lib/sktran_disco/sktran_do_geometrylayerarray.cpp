@@ -1,4 +1,5 @@
 #include "sasktran2/geometry.h"
+#include "sasktran2/refraction.h"
 #include "sktran_disco/sktran_do.h"
 #include "sktran_disco/sktran_do_geometrylayerarray.h"
 
@@ -59,28 +60,60 @@ sasktran_disco::GeometryLayerArray<NSTOKES, CNSTR>::GeometryLayerArray(
         m_chapman_factors.diagonal().setConstant(1 / this->M_CSZ);
     } else {
         // Now we have the layer locations, we can calculate the chapman factors
-        calculate_chapman_factors(geometry.coordinates().earth_radius());
+        calculate_chapman_factors(geometry.coordinates().earth_radius(),
+                                  geometry);
     }
 }
 
 template <int NSTOKES, int CNSTR>
-void sasktran_disco::GeometryLayerArray<
-    NSTOKES, CNSTR>::calculate_chapman_factors(double earth_rad) {
+void sasktran_disco::GeometryLayerArray<NSTOKES, CNSTR>::
+    calculate_chapman_factors(double earth_rad,
+                              const sasktran2::Geometry1D& geometry) {
     m_chapman_factors.setZero();
     // Calculate the chapman factors for the layer
     double sinthetasq = 1 - this->M_CSZ * this->M_CSZ;
+    std::vector<std::pair<int, double>> index_weights;
 
     for (sasktran_disco::LayerIndex p = 0; p < this->M_NLYR; ++p) {
         double rp = earth_rad + m_floor_h(p);
+
+        // Straight line rt = rp sin(theta)
+        double rt = rp * sqrt(sinthetasq);
+
+        if (this->M_SOLAR_REFRACTION) {
+            rt = sasktran2::raytracing::refraction::tangent_radius(
+                geometry, rt, index_weights);
+        }
+        double nt =
+            sasktran2::raytracing::refraction::refractive_index_at_altitude(
+                geometry, rt - earth_rad, index_weights);
+
+        if (rt > rp) {
+            // Tangent viewing ray
+            spdlog::warn(
+                "Tangent viewing ray at layer {}, results may not be accurate",
+                p);
+            continue;
+        }
 
         for (sasktran_disco::LayerIndex q = 0; q <= p; ++q) {
             double rfloor = earth_rad + m_floor_h(q);
             double rceil = earth_rad + m_ceiling_h(q);
 
-            m_chapman_factors(p, q) =
-                (sqrt(rceil * rceil - rp * rp * sinthetasq) -
-                 sqrt(rfloor * rfloor - rp * rp * sinthetasq)) /
-                (rceil - rfloor);
+            // If we are refracting do the full integral
+            if (this->M_SOLAR_REFRACTION) {
+                std::pair<double, double> refraction_result =
+                    sasktran2::raytracing::refraction::integrate_path(
+                        geometry, rt, nt, rfloor, rceil, index_weights);
+                m_chapman_factors(p, q) =
+                    refraction_result.first / (rceil - rfloor);
+            } else {
+                // Just use the straight line equation
+                m_chapman_factors(p, q) =
+                    (sqrt(rceil * rceil - rp * rp * sinthetasq) -
+                     sqrt(rfloor * rfloor - rp * rp * sinthetasq)) /
+                    (rceil - rfloor);
+            }
         }
     }
 }

@@ -156,6 +156,28 @@ void init_config(py::module_& m) {
                       R"(
                 Controls whether the delta-M scaling is applied to the calculation.  Defaults to False.
             )")
+        .def_property("los_refraction", &sasktran2::Config::los_refraction,
+                      &sasktran2::Config::set_los_refraction,
+                      R"(
+                Controls whether or not refraction is enabled for the observer line of sight rays. Requires
+                the refractive index to be set in the Geometry object for refraction to work.  Defaults to False.
+            )")
+        .def_property("solar_refraction", &sasktran2::Config::solar_refraction,
+                      &sasktran2::Config::set_solar_refraction,
+                      R"(
+                      Controls whether or not refraction is enabled for the solar line of sight rays. Requires
+                        the refractive index to be set in the Geometry object for refraction to work.  Only has an effect
+                        when the single scatter source term is set to Table.  Defaults to False.
+                      )")
+        .def_property("multiple_scatter_refraction",
+                      &sasktran2::Config::multiple_scatter_refraction,
+                      &sasktran2::Config::set_multiple_scatter_refraction,
+                      R"(
+                    Controls whether or not refraction is enabled for the multiple scatter source. Requires
+                    the refractive index to be set in the Geometry object for refraction to work.
+                    Only has an effect when the SuccessiveOrders multiple scatter source term is being used.
+                    Defaults to False.
+                )")
         .def_property("num_sza", &sasktran2::Config::num_do_sza,
                       &sasktran2::Config::set_num_do_sza,
                       R"(
