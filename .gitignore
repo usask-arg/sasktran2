@@ -51,3 +51,4 @@ typings
 asv_bench/.asv/
 docs/sphinx/source/api/generated
 .pixi
+pixi.lock
