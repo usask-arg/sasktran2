@@ -28,7 +28,43 @@ classifiers = [
 test = ["pytest"]
 solar = ["astropy"]
 hapi = ["hitran-api"]
+dev = ["ruff", "sphinx", "sphinx_book_theme", "myst-nb", "sphinx_design"]
 complete = ["sasktran2[solar,hapi]"]
+
+[tool.pixi.project]
+channels = ["conda-forge"]
+platforms = ["linux-64", "linux-aarch64", "linux-ppc64le", "osx-64", "osx-arm64", "win-64"]
+
+[tool.pixi.pypi-dependencies]
+sasktran2 = { path = ".", editable = true }
+
+[tool.pixi.tasks]
+
+[tool.pixi.dependencies]
+numpy = "*"
+appdirs = "*"
+pyyaml = "*"
+xarray = ">=2023.0.0"
+scipy = "*"
+netcdf4 = "*"
+
+[tool.pixi.feature.test.dependencies]
+pytest = ">=8.3.3,<9"
+
+[tool.pixi.feature.solar.dependencies]
+astropy = "*"
+
+[tool.pixi.feature.dev.dependencies]
+ruff = "*"
+sphinx = "*"
+
+[tool.pixi.environments]
+test = ["test"]
+dev = ["test", "solar", "hapi", "dev"]
+
+[tool.pixi.feature.dev.tasks]
+test = { cmd = "pytest tests/", cwd = "." }
+
 
 [tool.scikit-build]
 wheel.expand-macos-universal-tags = true

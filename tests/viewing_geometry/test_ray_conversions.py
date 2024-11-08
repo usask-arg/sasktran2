@@ -18,7 +18,7 @@ def test_limb_viewing_ray_conversion():
     for tan_alt in tan_alts:
         lv = tp_geo.from_tangent_altitude(tan_alt, obs_geo.location, [0, 0, 1])
 
-        ray = sk.viewinggeo.ecef_to_sasktran2_ray(
+        ray = sk.viewinggeo.ecef.ecef_to_sasktran2_ray(
             obs_geo.location, lv, time, sk.WGS84(), solar
         )
 

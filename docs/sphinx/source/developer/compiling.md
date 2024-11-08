@@ -1,15 +1,8 @@
 
 (_dev_compiling)=
 # Compiling from Source
-In order to develop SASKTRAN2 locally you will need
-
-- cmake
-- C++ compiler
-- A BLAS/Lapack Library
-- Optionally Eigen3, spdlog, and Catch2
-
-If you know how to install all of these things on your platform of choice, great, do that and it should work. If you don't know
-where to begin, read on.
+SASKTRAN2 is primarily `c++` code, and thus local development requires the capability to compile the model.  Below are various
+different ways you can install the dependencies to do this, for most users using `pixi` is the easiest option.
 
 ```{toctree}
 :maxdepth: 4
@@ -24,8 +17,23 @@ ide/vscode.md
 The following assumes you have cloned the repository https://github.com/usask-arg/sasktran2 and have a terminal open
 from inside the folder.
 ```
-The easiest way to set up a local development environment for SASKTRAN2 is to use the provided `conda` environment
-files
+
+### Using pixi
+The easiest way to setup a `sasktran2` development environment is through the package manager [pixi](https://pixi.sh/latest/).
+Assuming you have `pixi` installed, you can create a development environment on any platform through
+
+```
+pixi install -e dev
+```
+
+You can then verify your environment is correct by running the provided tests
+
+```
+pixi run test
+```
+
+### Using the conda development environnment
+Alternatively you can create a `conda` environment directly from provided development environment files
 
 On windows,
 ```
