@@ -57,12 +57,15 @@ astropy = "*"
 [tool.pixi.feature.dev.dependencies]
 ruff = "*"
 sphinx = "*"
+myst_nb = "*"
 openblas = "*"
+libopenblas = "*"
 eigen = "*"
 spdlog = "*"
 c-compiler = "*"
 cxx-compiler = "*"
 fortran-compiler = "*"
+cmake = "*"
 
 [tool.pixi.environments]
 test = ["test"]
