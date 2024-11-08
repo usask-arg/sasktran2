@@ -249,28 +249,6 @@ message(STATUS "Lapack Configuration Complete")
 
 add_subdirectory(lib)
 
-install(
-  TARGETS sasktran2BuildProperties
-  EXPORT ${EXPORT_NAME}
-  LIBRARY DESTINATION ${STATIC_LIB_INSTALL_DIR}
-  INCLUDES
-  DESTINATION ${INCLUDE_INSTALL_DIR})
-
-write_basic_package_version_file(
-  "${CMAKE_BINARY_DIR}/sasktran2ConfigVersion.cmake"
-  VERSION ${SASKTRAN2_VERSION}
-  COMPATIBILITY SameMajorVersion)
-
-install(
-  EXPORT ${EXPORT_NAME}
-  FILE sasktran2Targets.cmake
-  NAMESPACE sasktran2::
-  DESTINATION lib/cmake/sasktran2)
-
-install(FILES "cmake/sasktran2Config.cmake"
-              "${CMAKE_BINARY_DIR}/sasktran2ConfigVersion.cmake"
-        DESTINATION lib/cmake/sasktran2)
-
 option(BUILD_PYTHON "True if Building Python Files" ON)
 # We basically just include this for clion help
 if(BUILD_PYTHON)
@@ -303,4 +281,27 @@ if(BUILD_PYTHON)
   target_link_libraries(_core PRIVATE sasktran2)
 
   install(TARGETS _core DESTINATION sasktran2)
+else()
+  install(
+    TARGETS sasktran2BuildProperties
+    EXPORT ${EXPORT_NAME}
+    LIBRARY DESTINATION ${STATIC_LIB_INSTALL_DIR}
+    INCLUDES
+    DESTINATION ${INCLUDE_INSTALL_DIR})
+
+  write_basic_package_version_file(
+    "${CMAKE_BINARY_DIR}/sasktran2ConfigVersion.cmake"
+    VERSION ${SASKTRAN2_VERSION}
+    COMPATIBILITY SameMajorVersion)
+
+  install(
+    EXPORT ${EXPORT_NAME}
+    FILE sasktran2Targets.cmake
+    NAMESPACE sasktran2::
+    DESTINATION lib/cmake/sasktran2)
+
+  install(FILES "cmake/sasktran2Config.cmake"
+                "${CMAKE_BINARY_DIR}/sasktran2ConfigVersion.cmake"
+          DESTINATION lib/cmake/sasktran2)
+
 endif()
