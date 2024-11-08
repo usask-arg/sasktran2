@@ -57,7 +57,7 @@ astropy = "*"
 [tool.pixi.feature.dev.dependencies]
 ruff = "*"
 sphinx = "*"
-myst_nb = "*"
+myst-nb = "*"
 openblas = "*"
 libopenblas = "*"
 eigen = "*"
