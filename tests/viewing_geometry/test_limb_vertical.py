@@ -1,9 +1,11 @@
 import numpy as np
 import pandas as pd
+import pytest
 import sasktran2 as sk
 
 
 def test_limb_from_tangent_parameters():
+    pytest.importorskip("astropy")
     solar = sk.solar.SolarGeometryHandlerAstropy()
 
     geo = sk.viewinggeo.LimbVertical.from_tangent_parameters(
@@ -20,6 +22,7 @@ def test_limb_from_tangent_parameters():
 
 
 def test_chain_with_viewing_container():
+    pytest.importorskip("astropy")
     solar = sk.solar.SolarGeometryHandlerAstropy()
 
     geo = sk.viewinggeo.LimbVertical.from_tangent_parameters(

@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pytest
 import sasktran2 as sk
 
 
@@ -23,6 +24,8 @@ def test_forced_handler():
 
 
 def test_astropy_handler():
+    pytest.importorskip("astropy")
+
     handler = sk.solar.SolarGeometryHandlerAstropy()
 
     latitude = 39.74

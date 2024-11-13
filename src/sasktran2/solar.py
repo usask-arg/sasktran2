@@ -77,7 +77,7 @@ class SolarGeometryHandlerAstropy(SolarGeometryHandlerBase):
             from astropy.time import Time
         except ImportError:
             msg = "Astropy is required to use the astropy solar hanlder"
-            raise ImportError from msg
+            raise ImportError(msg)  # noqa: B904
 
         # Location object
         loc = EarthLocation(lat=latitude, lon=longitude, height=altitude)
