@@ -6,7 +6,7 @@ import sasktran2 as sk
 def test_limb_viewing_ray_conversion():
     time = pd.Timestamp.now()
 
-    solar = sk.solar.SolarHandlerForced(45, 180)
+    solar = sk.solar.SolarGeometryHandlerForced(45, 180)
 
     tan_alts = np.array([10, 20, 30, 40]) * 1000
 

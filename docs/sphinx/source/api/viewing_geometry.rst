@@ -15,3 +15,14 @@ Viewing Policies
 
     sasktran2.TangentAltitudeSolar
     sasktran2.GroundViewingSolar
+
+
+Solar Geometry
+--------------
+.. autosummary::
+    :toctree: generated/
+
+    sasktran2.solar.SolarGeometryHandlerAstropy
+    sasktran2.solar.SolarGeometryHandlerForced
+
+"""

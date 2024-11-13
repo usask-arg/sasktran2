@@ -23,7 +23,13 @@ The easiest way to setup a `sasktran2` development environment is through the pa
 Assuming you have `pixi` installed, you can create a development environment on any platform through
 
 ```
-pixi install -e dev
+pixi install
+```
+
+Then the code can be compiled through
+
+```
+pixi run build
 ```
 
 You can then verify your environment is correct by running the provided tests

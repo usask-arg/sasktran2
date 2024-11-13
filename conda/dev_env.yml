@@ -27,6 +27,7 @@ dependencies:
   - c-compiler
   - cxx-compiler
   - fortran-compiler
+  - astropy
   - pip:
     - sphinx_book_theme
     - myst-nb

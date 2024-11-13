@@ -33,7 +33,7 @@ def ecef_to_sasktran2_ray(
     sk.ViewingGeometryBase
     """
     if solar_handler is None:
-        solar_handler = sk.solar.SolarHandlerForced(0, 0)
+        solar_handler = sk.solar.SolarGeometryHandlerForced(0, 0)
 
     if geoid is None:
         geoid = sk.WGS84()
@@ -53,9 +53,16 @@ def ecef_to_sasktran2_ray(
         solar_zenith, solar_azimuth = solar_handler.target_solar_angles(
             geoid.latitude, geoid.longitude, geoid.altitude, time
         )
+
+        # Get the viewing azimuth angle
+        viewing_azimuth = -np.arctan2(
+            np.dot(look_vector, geoid.local_west),
+            -np.dot(look_vector, geoid.local_south),
+        )
+
         return sk.TangentAltitudeSolar(
             geoid.altitude,
-            np.deg2rad(solar_azimuth),
+            np.deg2rad(solar_azimuth - viewing_azimuth),
             obs_alt,
             np.cos(np.deg2rad(solar_zenith)),
         )
@@ -67,11 +74,21 @@ def ecef_to_sasktran2_ray(
         geoid.latitude, geoid.longitude, geoid.altitude, time
     )
 
-    cos_viewing_zenith = np.dot(look_vector, geoid.local)
+    cos_viewing_zenith = np.dot(look_vector, geoid.local_up)
+
+    if np.abs(cos_viewing_zenith) > (1 - 1e-8):
+        # Basically nadir viewing and so we can't get an observer azimuth
+        viewing_azimuth = 0.0
+    else:
+        # Get the viewing azimuth angle
+        viewing_azimuth = -np.arctan2(
+            np.dot(look_vector, geoid.local_west),
+            -np.dot(look_vector, geoid.local_south),
+        )
 
     return sk.GroundViewingSolar(
         np.cos(np.deg2rad(solar_zenith)),
-        np.deg2rad(solar_azimuth),
+        np.deg2rad(solar_azimuth - viewing_azimuth),
         cos_viewing_zenith,
         obs_alt,
     )

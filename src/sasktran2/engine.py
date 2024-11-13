@@ -68,7 +68,7 @@ class Engine:
             atmosphere, self._model_geometry, self._viewing_geometry
         )
 
-        if isinstance(result, sk.viewinggeo.ViewingGeometryContainer):
-            result = result.add_geometry_to_radiance(engine_output.internal_output())
+        if isinstance(self._viewing_geometry, sk.viewinggeo.ViewingGeometryContainer):
+            result = self._viewing_geometry.add_geometry_to_radiance(result)
 
         return result

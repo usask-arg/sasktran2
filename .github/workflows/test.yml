@@ -92,16 +92,14 @@ jobs:
 
       - name: setup pixi
         uses: prefix-dev/setup-pixi@v0.8.1
-        with:
-          environments: dev
 
       - name: compile sasktran2
         run: |
-          pixi r -e dev install
+          pixi r build
 
       - name: run tests
         run: |
-          pixi r -e dev test
+          pixi r test
 
 
   test-conda-pysasktran2:

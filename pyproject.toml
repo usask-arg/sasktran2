@@ -37,15 +37,19 @@ platforms = ["linux-64", "linux-aarch64", "linux-ppc64le", "osx-64", "osx-arm64"
 
 [tool.pixi.pypi-dependencies]
 
+[tool.pixi.pypi-options]
+
 [tool.pixi.tasks]
-install = { cmd = [
+build = { cmd = [
     "pip",
     "install",
     "--no-build-isolation",
     "-v",
     "-e",
     ".",
-], env = { CXXFLAGS = "$CXXFLAGS -O0" } }
+] }
+test = { cmd = "pytest tests/", cwd = "." }
+pre-commit = { cmd = "pre-commit run -a", cwd = "." }
 
 
 [tool.pixi.dependencies]
@@ -55,14 +59,8 @@ pyyaml = "*"
 xarray = ">=2023.0.0"
 scipy = "*"
 netcdf4 = "*"
-
-[tool.pixi.feature.test.dependencies]
 pytest = ">=8.3.3,<9"
-
-[tool.pixi.feature.solar.dependencies]
 astropy = "*"
-
-[tool.pixi.feature.dev.dependencies]
 ruff = "*"
 sphinx = "*"
 myst-nb = "*"
@@ -78,13 +76,11 @@ cmake = "*"
 pip = "*"
 setuptools_scm = "*"
 pybind11 = "*"
+matplotlib = "*"
+pre-commit = "*"
 
 [tool.pixi.environments]
-test = ["test"]
-dev = ["test", "solar", "hapi", "dev"]
-
-[tool.pixi.feature.dev.tasks]
-test = { cmd = "pytest tests/", cwd = "." }
+default = ["test", "solar", "hapi", "dev"]
 
 
 [tool.scikit-build]
