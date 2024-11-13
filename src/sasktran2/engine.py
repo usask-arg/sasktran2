@@ -1,4 +1,5 @@
 import sasktran2 as sk
+from sasktran2.viewinggeo.base import ViewingGeometryContainer
 
 
 class Engine:
@@ -68,7 +69,7 @@ class Engine:
             atmosphere, self._model_geometry, self._viewing_geometry
         )
 
-        if isinstance(self._viewing_geometry, sk.viewinggeo.ViewingGeometryContainer):
+        if isinstance(self._viewing_geometry, ViewingGeometryContainer):
             result = self._viewing_geometry.add_geometry_to_radiance(result)
 
         return result
