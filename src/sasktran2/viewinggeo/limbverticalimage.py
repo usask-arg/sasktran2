@@ -4,13 +4,13 @@ import xarray as xr
 from scipy import interpolate
 
 from sasktran2 import (
-    WGS84,
     Geometry1D,
     GeometryType,
     InterpolationMethod,
     TangentAltitudeSolar,
     ViewingGeometry,
 )
+from sasktran2.geodetic import WGS84
 from sasktran2.solar import SolarGeometryHandlerBase
 
 from .base import ViewingGeometryContainer
