@@ -88,6 +88,8 @@ Here we have pre-computed the position and look vector of a satellite directly a
 Saskatoon, Canada, and we will specify a local time of noon (18 UTC).
 
 ```{code-cell}
+import numpy as np
+
 observer = np.array([-1158730.59368676, -3875262.18406142,  5170772.5134034 ])
 look_vector = np.array([ 0.17579194,  0.58791911, -0.78958743])
 
