@@ -71,6 +71,36 @@ jobs:
         run: |
           printenv
 
+  test-pixi:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+          - os: windows-2019
+          - os: macos-13
+          - os: macos-14
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: setup pixi
+        uses: prefix-dev/setup-pixi@v0.8.1
+
+      - name: compile sasktran2
+        run: |
+          pixi r build
+
+      - name: run tests
+        run: |
+          pixi r test
+
 
   test-conda-pysasktran2:
     runs-on: ${{ matrix.os }}

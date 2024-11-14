@@ -26,7 +26,63 @@ classifiers = [
 
 [project.optional-dependencies]
 test = ["pytest"]
+solar = ["astropy"]
 hapi = ["hitran-api"]
+dev = ["ruff", "sphinx", "sphinx_book_theme", "myst-nb", "sphinx_design"]
+complete = ["sasktran2[solar,hapi]"]
+
+[tool.pixi.project]
+channels = ["conda-forge"]
+platforms = ["linux-64", "linux-aarch64", "linux-ppc64le", "osx-64", "osx-arm64", "win-64"]
+
+[tool.pixi.pypi-dependencies]
+
+[tool.pixi.pypi-options]
+
+[tool.pixi.tasks]
+build = { cmd = [
+    "pip",
+    "install",
+    "--no-build-isolation",
+    "-v",
+    "-e",
+    ".",
+] }
+test = { cmd = "pytest tests/", cwd = "." }
+pre-commit = { cmd = "pre-commit run -a", cwd = "." }
+docs = { cmd = "sphinx-build -b html docs/sphinx/source docs/sphinx/build", cwd = "." }
+
+
+[tool.pixi.dependencies]
+numpy = "*"
+appdirs = "*"
+pyyaml = "*"
+xarray = ">=2023.0.0"
+scipy = "*"
+netcdf4 = "*"
+pytest = ">=8.3.3,<9"
+astropy = "*"
+ruff = "*"
+sphinx = "*"
+myst-nb = "*"
+openblas = "*"
+libopenblas = "*"
+eigen = "*"
+spdlog = "*"
+c-compiler = "*"
+cxx-compiler = "*"
+fortran-compiler = "*"
+scikit-build-core = "*"
+cmake = "*"
+pip = "*"
+setuptools_scm = "*"
+pybind11 = "*"
+matplotlib = "*"
+pre-commit = "*"
+
+[tool.pixi.environments]
+default = ["test", "solar", "hapi", "dev"]
+
 
 [tool.scikit-build]
 wheel.expand-macos-universal-tags = true

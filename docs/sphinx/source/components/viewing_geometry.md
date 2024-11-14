@@ -51,5 +51,65 @@ viewing_geo.observer_rays
     sasktran2.GroundViewingSolar
 ```
 
+## Working with Real Measurements
+
+### The Solar Geometry Handler
+`sasktran2` contains utilities to compute the solar angles automatically for a given location and time
+using the `astropy` package.  To use this functionality you must have `astropy` installed.
+
+For example, to calculate the (solar zenith angle, solar azimuth angle) at a given location we can do,
+
+```{code-cell}
+import pandas as pd
+
+
+solar = sk.solar.SolarGeometryHandlerAstropy()
+
+print(solar.target_solar_angles(
+    latitude=20,
+    longitude=-100,
+    altitude=0,
+    time=pd.Timestamp("2024-11-12 20:00:00")
+))
+```
+
+Solar azimuth angles are always measured from true north, with 90 degrees pointing in the east direction.
+
+```{eval-rst}
+.. note::
+    The solar handler specifies angles in degrees, whereas most other aspects of SASKTRAN2 use radians.
+```
+
+### Converting from ECEF Coordinates
+In the original `sasktran1` package, all rays were specified as a triplet of
+(observer position, local look vector, time) in Earth Centered Earth Fixed coordinates.
+
+Here we have pre-computed the position and look vector of a satellite directly above
+Saskatoon, Canada, and we will specify a local time of noon (18 UTC).
+
+```{code-cell}
+import numpy as np
+
+observer = np.array([-1158730.59368676, -3875262.18406142,  5170772.5134034 ])
+look_vector = np.array([ 0.17579194,  0.58791911, -0.78958743])
+
+time = pd.Timestamp("2024-11-12 18:00:00")
+```
+
+We can then convert the ray to one `sasktran2` recognizes,
+
+```{code-cell}
+ray = sk.viewinggeo.ecef_to_sasktran2_ray(
+    observer=observer,
+    look_vector=look_vector,
+    time=time,
+    solar_handler=solar
+)
+print(ray)
+```
+
+Note here we re-used our solar handler from the previous section.
+
+
 ## Flux Output
 Flux output is planned for a future version.
