@@ -58,13 +58,13 @@ jobs:
       - name: Build Conda package
         shell: bash -el {0}
         run: |
-          conda mambabuild conda.recipe --output-folder pkgs/ -c conda-forge/label/python_rc --user usask-arg --token ${{ secrets.TOKEN }}
+          conda mambabuild conda.recipe --output-folder pkgs/ -c conda-forge/label/python_rc --user usask-arg --token ${{ secrets.ANACONDA_TOKEN }}
 
       - name: Build Conda package (cross mac arm)
         shell: bash -el {0}
         if: (matrix.target_plat == 'arm') && (matrix.os == 'macos-12')
         run: |
-          conda mambabuild conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/ -c conda-forge/label/python_rc --no-test --user usask-arg --token ${{ secrets.TOKEN }}
+          conda mambabuild conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/ -c conda-forge/label/python_rc --no-test --user usask-arg --token ${{ secrets.ANACONDA_TOKEN }}
 
       - name: Save conda package
         uses: actions/upload-artifact@v4
@@ -116,13 +116,13 @@ jobs:
       - name: Build Conda package
         shell: bash -el {0}
         run: |
-          conda mambabuild conda.recipe --output-folder pkgs/ -c conda-forge/label/python_rc --user usask-arg-nightly --token ${{ secrets.TOKEN }}
+          conda mambabuild conda.recipe --output-folder pkgs/ -c conda-forge/label/python_rc --user usask-arg-nightly --token ${{ secrets.ANACONDA_TOKEN_NIGHTLY }}
 
       - name: Build Conda package (cross mac arm)
         shell: bash -el {0}
         if: (matrix.target_plat == 'arm') && (matrix.os == 'macos-12')
         run: |
-          conda mambabuild conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/ -c conda-forge/label/python_rc --no-test --user usask-arg-nightly --token ${{ secrets.TOKEN }}
+          conda mambabuild conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/ -c conda-forge/label/python_rc --no-test --user usask-arg-nightly --token ${{ secrets.ANACONDA_TOKEN_NIGHTLY }}
 
       - name: Save conda package
         uses: actions/upload-artifact@v4
