@@ -92,6 +92,8 @@ class LimbVertical(ViewingGeometry, ViewingGeometryContainer):
 
         self._cos_sza = np.zeros(n)
         self._earth_radius = np.zeros(n)
+        self._solar_azimuth = np.zeros(n)
+        self._observer_azimuth = np.zeros(n)
 
         for i, (alt, lat, lon, t, obs_alt, obs_lat, obs_lon) in enumerate(
             zip(
@@ -133,6 +135,9 @@ class LimbVertical(ViewingGeometry, ViewingGeometryContainer):
                 )
             )
 
+            self._observer_azimuth[i] = observer_azimuth
+            self._solar_azimuth[i] = solar_azimuth
+
             # Assign the viewing zenith and azimuthal angles
             viewing_zenith[i] = np.rad2deg(np.arccos(np.dot(lv, observer_geo.local_up)))
 
@@ -158,10 +163,13 @@ class LimbVertical(ViewingGeometry, ViewingGeometryContainer):
                     ["los"],
                     np.ones_like(tangent_altitudes) * tangent_latitude,
                 ),
-                "time": (["los"], self._time),
+                "time": (["los"], self._time.astype(np.datetime64)),
                 "observer_altitude": (["los"], self._observer_altitude),
                 "observer_latitude": (["los"], self._observer_latitude),
                 "observer_longitude": (["los"], self._observer_longitude),
+                "tangent_cos_sza": (["los"], self._cos_sza),
+                "tangent_solar_azimuth": (["los"], self._solar_azimuth),
+                "tangent_observer_azimuth": (["los"], self._observer_azimuth),
                 "viewing_zenith": (["los"], viewing_zenith),
                 "viewing_azimuth": (["los"], viewing_azimuth),
             },
