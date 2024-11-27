@@ -8,6 +8,8 @@ from ..._core import (  # noqa: F401
     LambertianStokes_3,
     SnowKokhanovskyStokes_1,
     SnowKokhanovskyStokes_3,
+    MODISStokes_1,
+    MODISStokes_3,
 )
 
 

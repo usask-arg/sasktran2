@@ -130,6 +130,9 @@ namespace sasktran2::atmosphere {
         /**
          * A BRDF reperesenting a snow surface using the Kokhanovsky model.
          *
+         * MODIS BRDF/Albedo Product ATBD
+         * https://modis.gsfc.nasa.gov/data/atbd/atbd_mod09.pdf
+         *
          * args(0) = (chi + M) / wavelennm * L
          *
          * @tparam NSTOKES
@@ -218,6 +221,127 @@ namespace sasktran2::atmosphere {
             int num_deriv() const override { return 1; }
 
             int num_args() const override { return 1; }
+        };
+
+        /**
+         * A BRDF corresponding to the kernel-based model used by MODIS.
+         *
+         * args(0) = isotropic (Lambertian) component
+         * args(1) = volumetric (Ross-thick) component
+         * args(2) = geometric (Li-Sparse-R) component
+         *
+         * @tparam NSTOKES
+         */
+        template <int NSTOKES> struct MODIS : BRDF<NSTOKES> {
+          public:
+            Eigen::Matrix<double, NSTOKES, NSTOKES>
+            brdf(double mu_in, double mu_out, double phi_diff,
+                 Eigen::Ref<const Eigen::VectorXd> args) const override {
+                Eigen::Matrix<double, NSTOKES, NSTOKES> res;
+                res.setZero();
+
+                double csza = mu_in;
+                double cvza = mu_out;
+                double ssza = sqrt(1 - csza * csza);
+                double svza = sqrt(1 - cvza * cvza);
+                double tsza = ssza / ccza;
+                double tvza = svza / cvza;
+                double craa =
+                    -cos(phi_diff); // negate b/c input defines raa = 0 as
+                                    // forward, but the formula below defines
+                                    // raa = 0 as backward
+                double sraa = sin(phi_diff);
+                double csa = std::max(
+                    -1.0, std::min(1.0, csza * cvza + ssza * svza * craa));
+                double sa = acos(csa);
+                double ssa = sin(sa);
+
+                // volumetric kernel (Ross-Thick, Roujean et al. 1992, Eqn 38)
+                double k_vol =
+                    ((0.5 * EIGEN_PI - sa) * csa + ssa) / (csza + cvza) -
+                    0.25 * EIGEN_PI;
+
+                // geometric kernel (Li-Sparse-R, Wanner et al. 1995, Eqns
+                // 39-44)
+                double d2 = tsza * tsza + tvza * tvza - 2 * tsza * tvza * craa;
+                double ct = std::max(
+                    -1.0, std::min(1.0, 2 *
+                                            sqrt(d2 + tsza * tsza * tvza *
+                                                          tvza * sraa * sraa) *
+                                            csza * cvza / (csza + cvza)));
+                double t = acos(ct);
+                double st = sin(t);
+                double o =
+                    (t - st * ct) * (csza + cvza) / (EIGEN_PI * csza * cvza);
+                double k_geo =
+                    o - (csza + cvza + 0.5 * (1 + csaa)) / (csza * cvza);
+
+                res(0, 0) = args(0) + args(1) * k_vol + args(2) * k_geo;
+                return res;
+            }
+
+            Eigen::Matrix<double, NSTOKES, NSTOKES>
+            d_brdf(int deriv_index, double mu_in, double mu_out,
+                   double phi_diff, Eigen::Ref<const Eigen::VectorXd> args,
+                   Eigen::Ref<const Eigen::VectorXd> d_args) const override {
+                Eigen::Matrix<double, NSTOKES, NSTOKES> res;
+                res.setZero();
+
+                if (deriv_index == 0) {
+                    res(0, 0) = 1.0;
+                    return res;
+                }
+
+                double csza = mu_in;
+                double cvza = mu_out;
+                double ssza = sqrt(1 - csza * csza);
+                double svza = sqrt(1 - cvza * cvza);
+                double tsza = ssza / ccza;
+                double tvza = svza / cvza;
+                double craa =
+                    -cos(phi_diff); // negate b/c input defines raa = 0 as
+                                    // forward, but the formula below defines
+                                    // raa = 0 as backward
+                double sraa = sin(phi_diff);
+                double csa = std::max(
+                    -1.0, std::min(1.0, csza * cvza + ssza * svza * craa));
+                double sa = acos(csa);
+                double ssa = sin(sa);
+
+                if (deriv_index == 1) {
+                    // volumetric kernel (Ross-Thick, Roujean et al. 1992, Eqn
+                    // 38)
+                    double k_vol =
+                        ((0.5 * EIGEN_PI - sa) * csa + ssa) / (csza + cvza) -
+                        0.25 * EIGEN_PI;
+                    res(0, 0) = k_vol;
+                    return res;
+                } else {
+                    // geometric kernel (Li-Sparse-R, Wanner et al. 1995, Eqns
+                    // 39-44)
+                    double d2 =
+                        tsza * tsza + tvza * tvza - 2 * tsza * tvza * craa;
+                    double ct = std::max(
+                        -1.0,
+                        std::min(1.0, 2 *
+                                          sqrt(d2 + tsza * tsza * tvza * tvza *
+                                                        sraa * sraa) *
+                                          csza * cvza / (csza + cvza)));
+                    double t = acos(ct);
+                    double st = sin(t);
+                    double o = (t - st * ct) * (csza + cvza) /
+                               (EIGEN_PI * csza * cvza);
+                    double k_geo =
+                        o - (csza + cvza + 0.5 * (1 + csaa)) / (csza * cvza);
+
+                    res(0, 0) = k_geo;
+                    return res;
+                }
+            }
+
+            int num_deriv() const override { return 3; }
+
+            int num_args() const override { return 3; }
         };
 
     } // namespace brdf
