@@ -244,7 +244,7 @@ namespace sasktran2::atmosphere {
                 double cvza = mu_out;
                 double ssza = sqrt(1 - csza * csza);
                 double svza = sqrt(1 - cvza * cvza);
-                double tsza = ssza / ccza;
+                double tsza = ssza / csza;
                 double tvza = svza / cvza;
                 double craa =
                     -cos(phi_diff); // negate b/c input defines raa = 0 as
@@ -274,7 +274,7 @@ namespace sasktran2::atmosphere {
                 double o =
                     (t - st * ct) * (csza + cvza) / (EIGEN_PI * csza * cvza);
                 double k_geo =
-                    o - (csza + cvza + 0.5 * (1 + csaa)) / (csza * cvza);
+                    o - (csza + cvza - 0.5 * (1 + csa)) / (csza * cvza);
 
                 res(0, 0) = args(0) + args(1) * k_vol + args(2) * k_geo;
                 return res;
@@ -296,7 +296,7 @@ namespace sasktran2::atmosphere {
                 double cvza = mu_out;
                 double ssza = sqrt(1 - csza * csza);
                 double svza = sqrt(1 - cvza * cvza);
-                double tsza = ssza / ccza;
+                double tsza = ssza / csza;
                 double tvza = svza / cvza;
                 double craa =
                     -cos(phi_diff); // negate b/c input defines raa = 0 as
@@ -332,7 +332,7 @@ namespace sasktran2::atmosphere {
                     double o = (t - st * ct) * (csza + cvza) /
                                (EIGEN_PI * csza * cvza);
                     double k_geo =
-                        o - (csza + cvza + 0.5 * (1 + csaa)) / (csza * cvza);
+                        o - (csza + cvza - 0.5 * (1 + csa)) / (csza * cvza);
 
                     res(0, 0) = k_geo;
                     return res;
