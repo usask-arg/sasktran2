@@ -107,5 +107,5 @@ def test_modis():
             isotropic=0.2, volumetric=0.05, geometric=0.05
         )
 
-        print('doing radiaitive transfer')
+        print("doing radiaitive transfer")
         _ = engine.calculate_radiance(scen["atmosphere"])
