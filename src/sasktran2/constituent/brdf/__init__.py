@@ -6,10 +6,10 @@ from sasktran2.util.interpolation import linear_interpolating_matrix
 from ..._core import (  # noqa: F401
     LambertianStokes_1,
     LambertianStokes_3,
-    SnowKokhanovskyStokes_1,
-    SnowKokhanovskyStokes_3,
     MODISStokes_1,
     MODISStokes_3,
+    SnowKokhanovskyStokes_1,
+    SnowKokhanovskyStokes_3,
 )
 
 

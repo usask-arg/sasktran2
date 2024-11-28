@@ -102,6 +102,10 @@ def test_modis():
     for scen in scens:
         engine = sk.Engine(scen["config"], scen["geometry"], scen["viewing_geo"])
 
-        scen["atmosphere"]["surface"] = sk.constituent.MODIS(isotropic=0.2, volumetric=0.05, geometric=0.05)
+        # scen["atmosphere"]["surface"] = sk.constituent.MODIS(isotropic=np.array([0.2, 0.3]), volumetric=np.array([0.05, 0.08]), geometric=np.array([0.05, 0.06]), wavelengths_nm=np.array([330., 440.]), out_of_bounds_mode='extend')
+        scen["atmosphere"]["surface"] = sk.constituent.MODIS(
+            isotropic=0.2, volumetric=0.05, geometric=0.05
+        )
 
+        print('doing radiaitive transfer')
         _ = engine.calculate_radiance(scen["atmosphere"])
