@@ -289,7 +289,7 @@ namespace sasktran2::atmosphere {
                 return res;
             }
 
-            int num_deriv() const override { return 3; }
+            int num_deriv() const override { return 1; }
 
             int num_args() const override { return 3; }
         };
