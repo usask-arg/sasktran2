@@ -94,7 +94,7 @@ class MODIS(Constituent, WavelengthInterpolatorMixin):
         interp_matrix = self._interpolating_matrix(atmo)
 
         derivs = {}
-        
+
         derivs["albedo"] = SurfaceDerivativeMapping(
             NativeGridDerivative(d_albedo=np.ones(atmo.num_wavel)),
             interpolating_matrix=interp_matrix,
