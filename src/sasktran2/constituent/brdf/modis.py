@@ -1,5 +1,3 @@
-from typing import TYPE_CHECKING
-
 import numpy as np
 
 from sasktran2 import Atmosphere
@@ -82,40 +80,26 @@ class MODIS(Constituent, WavelengthInterpolatorMixin):
             msg = "Atmosphere must have wavelengths defined before using MODIS"
             raise ValueError(msg)
 
-        print(atmo.surface.brdf_args.shape)
         atmo.surface.brdf = MODISStokes_1() if atmo.nstokes == 1 else MODISStokes_3()
 
         interp_matrix = self._interpolating_matrix(atmo)
-        print(atmo.surface.brdf_args.shape)
-        print(interp_matrix.shape)
-        print(self._iso.shape)
         atmo.surface.brdf_args[0, :] = interp_matrix @ self._iso
         atmo.surface.brdf_args[1, :] = interp_matrix @ self._vol
         atmo.surface.brdf_args[2, :] = interp_matrix @ self._geo
         atmo.surface.d_brdf_args[0][:, :] = 1
 
     def register_derivative(self, atmo: Atmosphere, name: str):
-        return {}
+        # TODO update once C++ derivatives are implemented
+        # Start by constructing the interpolation matrix
+        interp_matrix = self._interpolating_matrix(atmo)
 
+        derivs = {}
+        
+        derivs["albedo"] = SurfaceDerivativeMapping(
+            NativeGridDerivative(d_albedo=np.ones(atmo.num_wavel)),
+            interpolating_matrix=interp_matrix,
+            interp_dim="wavelength",
+            result_dim=f"{name}_wavelength",
+        )
 
-if __name__ == "__main__":
-    from sasktran2 import Config, Geometry1D, GeometryType, InterpolationMethod
-
-    z = np.linspace(0, 65e3, 66)
-    model_geometry = Geometry1D(
-        cos_sza=0.5,
-        solar_azimuth=0.0,
-        earth_radius_m=6e6,
-        altitude_grid_m=z,
-        interpolation_method=InterpolationMethod.LinearInterpolation,
-        geometry_type=GeometryType.Spherical,
-    )
-    config = Config()
-    atmo = Atmosphere(
-        model_geometry=model_geometry,
-        config=config,
-        wavelengths_nm=np.array([340.0, 440.0]),
-    )
-    modis = MODIS(0.2, 0.05, 0.05)
-    modis.add_to_atmosphere(atmo)
-    atmo.surface.brdf()
+        return derivs
