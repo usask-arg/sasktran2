@@ -12,8 +12,10 @@ namespace sasktran2::raytracing {
                              (fabs(ray.cos_viewing()) > NADIR_VIEWING_CUTOFF);
 
         // Calculate the tangent point details in a straight geometry
-        double rt = ray.observer.radius() *
-                    sqrt(1 - ray.cos_viewing() * ray.cos_viewing());
+        // Ensure we don't get negative values from rounding errors
+        double rt =
+            ray.observer.radius() *
+            sqrt(std::max(0.0, 1 - ray.cos_viewing() * ray.cos_viewing()));
 
         if (include_refraction) {
             // If including refraction, adjust the tangent radius

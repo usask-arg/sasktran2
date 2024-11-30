@@ -14,7 +14,7 @@ Next, go to your forked repository.  The URL will look something like https://gi
 Once inside the codespace, go to the terminal at the bottom and run
 
 ```
-conda activate sasktran2-dev-env
+micromamba activate sasktran2-dev-env
 pip install -e .
 ```
 
