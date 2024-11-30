@@ -48,4 +48,9 @@ void init_surface(py::module_& m) {
         m, "SnowKokhanovskyStokes_1");
     declareDerived<sasktran2::atmosphere::brdf::SnowKokhanovsky<3>, 3>(
         m, "SnowKokhanovskyStokes_3");
+
+    declareDerived<sasktran2::atmosphere::brdf::MODIS<1>, 1>(m,
+                                                             "MODISStokes_1");
+    declareDerived<sasktran2::atmosphere::brdf::MODIS<3>, 3>(m,
+                                                             "MODISStokes_3");
 }

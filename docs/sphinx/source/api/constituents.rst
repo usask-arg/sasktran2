@@ -21,6 +21,7 @@ BRDFs
 
     sasktran2.constituent.LambertianSurface
     sasktran2.constituent.SnowKokhanovsky
+    sasktran2.constituent.MODIS
 
 
 Dummy Constituents

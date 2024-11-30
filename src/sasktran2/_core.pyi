@@ -34,6 +34,8 @@ __all__ = [
     "LowerInterpolation",
     "MieData",
     "MieOutput",
+    "MODISStokes_1",
+    "MODISStokes_3",
     "MultipleScatterSource",
     "NoSource",
     "Observer",
@@ -1252,6 +1254,16 @@ class SnowKokhanovskyStokes_1(BRDFStokes_1):
     def __init__(self) -> None: ...
 
 class SnowKokhanovskyStokes_3(BRDFStokes_3):
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
+    def __init__(self) -> None: ...
+
+class MODISStokes_1(BRDFStokes_1):
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
+    def __init__(self) -> None: ...
+
+class MODISStokes_3(BRDFStokes_3):
     @staticmethod
     def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(self) -> None: ...
