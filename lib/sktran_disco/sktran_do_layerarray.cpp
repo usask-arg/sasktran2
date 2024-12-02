@@ -281,7 +281,8 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
     m_wavel_index = wavelidx;
     // Allocations
     m_layers.reserve(this->M_NLYR);
-    m_surface.storage().resize(this->M_NSTR, m_num_los, 1);
+    m_surface.storage().resize(this->M_NSTR, m_num_los,
+                               atmosphere.surface().num_deriv());
     m_surface.storage().csz = this->M_CSZ;
     m_surface.storage().mu = this->M_MU;
 

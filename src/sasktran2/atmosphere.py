@@ -27,7 +27,7 @@ class NativeGridDerivative:
     d_leg_coeff: np.ndarray = None
     scat_factor: np.ndarray = None
     scat_deriv_index: int = None
-    d_albedo: np.ndarray = None
+    d_brdf: np.ndarray = None
 
 
 class DerivativeMapping:
@@ -72,7 +72,7 @@ class DerivativeMapping:
 
     @property
     def is_surface_derivative(self) -> bool:
-        return self._native_grid_mapping.d_albedo is not None
+        return self._native_grid_mapping.d_brdf is not None
 
     @property
     def summable(self) -> bool:
@@ -218,7 +218,10 @@ class SurfaceDerivativeMapping(DerivativeMapping):
     def map_derivative(self, data: np.ndarray, dimensions: list[str]):
         return xr.DataArray(
             np.einsum(
-                "ijk, il->lijk", data, self._xr_interpolator.to_numpy(), optimize=True
+                "ijk, il->lijk",
+                data.sum(axis=-1),
+                self._xr_interpolator.to_numpy(),
+                optimize=True,
             ),
             dims=[self._result_dim, *dimensions],
         )
@@ -612,7 +615,7 @@ class Atmosphere:
 
                 self._derivs["raw"]["albedo"] = DerivativeMapping(
                     NativeGridDerivative(
-                        d_albedo=np.ones(self.num_wavel),
+                        d_brdf=np.ones((self.num_wavel, 1)),
                     ),
                     summable=True,
                 )
