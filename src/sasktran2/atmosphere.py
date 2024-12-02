@@ -101,6 +101,11 @@ class DerivativeMapping:
         return self._name_prefix
 
     def map_derivative(self, data: np.ndarray, dimensions: list[str]):
+        if self.is_surface_derivative:
+            return xr.DataArray(
+                data.sum(axis=-1),
+                dims=dimensions,
+            )
         return xr.DataArray(
             data,
             dims=dimensions,
