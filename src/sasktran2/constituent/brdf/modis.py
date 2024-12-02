@@ -86,7 +86,6 @@ class MODIS(Constituent, WavelengthInterpolatorMixin):
         atmo.surface.brdf_args[0, :] = interp_matrix @ self._iso
         atmo.surface.brdf_args[1, :] = interp_matrix @ self._vol
         atmo.surface.brdf_args[2, :] = interp_matrix @ self._geo
-        atmo.surface.d_brdf_args[0][:, :] = 1
 
     def register_derivative(self, atmo: Atmosphere, name: str):
         # TODO update once C++ derivatives are implemented
@@ -95,8 +94,31 @@ class MODIS(Constituent, WavelengthInterpolatorMixin):
 
         derivs = {}
 
-        derivs["albedo"] = SurfaceDerivativeMapping(
-            NativeGridDerivative(d_albedo=np.ones(atmo.num_wavel)),
+        iso_deriv = np.zeros((atmo.num_wavel, 3))
+        iso_deriv[:, 0] = 1
+
+        derivs["isotropic"] = SurfaceDerivativeMapping(
+            NativeGridDerivative(d_brdf=iso_deriv),
+            interpolating_matrix=interp_matrix,
+            interp_dim="wavelength",
+            result_dim=f"{name}_wavelength",
+        )
+
+        vol_deriv = np.zeros((atmo.num_wavel, 3))
+        vol_deriv[:, 1] = 1
+
+        derivs["volumetric"] = SurfaceDerivativeMapping(
+            NativeGridDerivative(d_brdf=vol_deriv),
+            interpolating_matrix=interp_matrix,
+            interp_dim="wavelength",
+            result_dim=f"{name}_wavelength",
+        )
+
+        geo_deriv = np.zeros((atmo.num_wavel, 3))
+        geo_deriv[:, 2] = 1
+
+        derivs["geometric"] = SurfaceDerivativeMapping(
+            NativeGridDerivative(d_brdf=geo_deriv),
             interpolating_matrix=interp_matrix,
             interp_dim="wavelength",
             result_dim=f"{name}_wavelength",

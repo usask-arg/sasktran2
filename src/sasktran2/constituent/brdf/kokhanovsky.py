@@ -113,7 +113,7 @@ class SnowKokhanovsky(Constituent, WavelengthInterpolatorMixin):
         L_factor = (chi + (interp_matrix @ self._M)) / atmo.wavelengths_nm
 
         derivs["L"] = SurfaceDerivativeMapping(
-            NativeGridDerivative(d_albedo=L_factor),
+            NativeGridDerivative(d_brdf=L_factor.reshape(-1, 1)),
             interpolating_matrix=interp_matrix,
             interp_dim="wavelength",
             result_dim=f"{name}_wavelength",
@@ -123,7 +123,7 @@ class SnowKokhanovsky(Constituent, WavelengthInterpolatorMixin):
         M_factor = (interp_matrix @ self._L) / atmo.wavelengths_nm
 
         derivs["M"] = SurfaceDerivativeMapping(
-            NativeGridDerivative(d_albedo=M_factor),
+            NativeGridDerivative(d_brdf=M_factor.reshape(-1, 1)),
             interpolating_matrix=interp_matrix,
             interp_dim="wavelength",
             result_dim=f"{name}_wavelength",
