@@ -286,10 +286,58 @@ namespace sasktran2::atmosphere {
                    Eigen::Ref<const Eigen::VectorXd> d_args) const override {
                 Eigen::Matrix<double, NSTOKES, NSTOKES> res;
                 res.setZero();
+
+                if (deriv_index == 0) {
+                    res(0, 0) = 1.0;
+                    return res;
+                }
+
+                double csza = mu_in;
+                double cvza = mu_out;
+                double ssza = sqrt(1 - csza * csza);
+                double svza = sqrt(1 - cvza * cvza);
+                double tsza = ssza / csza;
+                double tvza = svza / cvza;
+                double craa =
+                    -cos(phi_diff); // negate b/c input defines raa = 0 as
+                                    // forward, but the formula below defines
+                                    // raa = 0 as backward
+                double sraa = sin(phi_diff);
+                double csa = std::max(
+                    -1.0, std::min(1.0, csza * cvza + ssza * svza * craa));
+                double sa = acos(csa);
+                double ssa = sin(sa);
+
+                // volumetric kernel (Ross-Thick, Roujean et al. 1992, Eqn 38)
+                double k_vol =
+                    ((0.5 * EIGEN_PI - sa) * csa + ssa) / (csza + cvza) -
+                    0.25 * EIGEN_PI;
+
+                // geometric kernel (Li-Sparse-R, Wanner et al. 1995, Eqns
+                // 39-44)
+                double d2 = tsza * tsza + tvza * tvza - 2 * tsza * tvza * craa;
+                double ct = std::max(
+                    -1.0, std::min(1.0, 2 *
+                                            sqrt(d2 + tsza * tsza * tvza *
+                                                          tvza * sraa * sraa) *
+                                            csza * cvza / (csza + cvza)));
+                double t = acos(ct);
+                double st = sin(t);
+                double o =
+                    (t - st * ct) * (csza + cvza) / (EIGEN_PI * csza * cvza);
+                double k_geo =
+                    o - (csza + cvza - 0.5 * (1 + csa)) / (csza * cvza);
+
+                if (deriv_index == 1) {
+                    res(0, 0) = k_vol;
+                } else if (deriv_index == 2) {
+                    res(0, 0) = k_geo;
+                }
+
                 return res;
             }
 
-            int num_deriv() const override { return 1; }
+            int num_deriv() const override { return 3; }
 
             int num_args() const override { return 3; }
         };
@@ -323,7 +371,12 @@ namespace sasktran2::atmosphere {
             for (int i = 0; i < m_brdf_object->num_deriv(); ++i) {
                 m_d_brdf_args[i].resize(m_brdf_object->num_args(), num_wavel);
 
+<<<<<<< HEAD
                 m_d_brdf_args[i].setConstant(1.0);
+=======
+                m_d_brdf_args[i].setConstant(0.0);
+                m_d_brdf_args[i](i, Eigen::all).setConstant(1.0);
+>>>>>>> upstream/main
             }
             m_brdf_args.setZero();
         }
