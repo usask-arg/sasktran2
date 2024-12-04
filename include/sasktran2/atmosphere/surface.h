@@ -276,7 +276,8 @@ namespace sasktran2::atmosphere {
                 double k_geo =
                     o - (csza + cvza - 0.5 * (1 + csa)) / (csza * cvza);
 
-                res(0, 0) = (args(0) + args(1) * k_vol + args(2) * k_geo) / EIGEN_PI;
+                res(0, 0) =
+                    (args(0) + args(1) * k_vol + args(2) * k_geo) / EIGEN_PI;
                 return res;
             }
 
