@@ -276,7 +276,8 @@ namespace sasktran2::atmosphere {
                 double k_geo =
                     o - (csza + cvza - 0.5 * (1 + csa)) / (csza * cvza);
 
-                res(0, 0) = args(0) + args(1) * k_vol + args(2) * k_geo;
+                res(0, 0) =
+                    (args(0) + args(1) * k_vol + args(2) * k_geo) / EIGEN_PI;
                 return res;
             }
 
@@ -288,7 +289,7 @@ namespace sasktran2::atmosphere {
                 res.setZero();
 
                 if (deriv_index == 0) {
-                    res(0, 0) = 1.0;
+                    res(0, 0) = 1.0 / EIGEN_PI;
                     return res;
                 }
 
@@ -329,9 +330,9 @@ namespace sasktran2::atmosphere {
                     o - (csza + cvza - 0.5 * (1 + csa)) / (csza * cvza);
 
                 if (deriv_index == 1) {
-                    res(0, 0) = k_vol;
+                    res(0, 0) = k_vol / EIGEN_PI;
                 } else if (deriv_index == 2) {
-                    res(0, 0) = k_geo;
+                    res(0, 0) = k_geo / EIGEN_PI;
                 }
 
                 return res;
