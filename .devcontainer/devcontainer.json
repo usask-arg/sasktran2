@@ -18,6 +18,7 @@
                 "xaver.clang-format",
                 "ms-python.python",
                 "charliermarsh.ruff",
+                "ms-toolsai.jupyter",
                 "github.vscode-github-actions",
                 "elagil.pre-commit-helper"
             ],
