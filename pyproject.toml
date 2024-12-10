@@ -79,6 +79,7 @@ setuptools_scm = "*"
 pybind11 = "*"
 matplotlib = "*"
 pre-commit = "*"
+seaborn = ">=0.13.2,<0.14"
 
 [tool.pixi.environments]
 default = ["test", "solar", "hapi", "dev"]
@@ -163,7 +164,6 @@ lint.extend-ignore = [
     "I002",   # Future annotations
     "PD011", # wanting to use to_numpy instead of values
 ]
-src = ["python"]
 lint.unfixable = [
     "T20",  # Removes print statements
     "F841", # Removes unused variables
@@ -171,6 +171,7 @@ lint.unfixable = [
 ]
 lint.flake8-unused-arguments.ignore-variadic-names = true
 lint.isort.required-imports = ["from __future__ import annotations"]
+src = ["python"]
 exclude = ["tools/*", "docs/sphinx/source/conf.py", "src/sasktran2/_core.pyi"]
 
 [tool.ruff.lint.per-file-ignores]

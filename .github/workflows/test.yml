@@ -24,6 +24,11 @@ jobs:
           fetch-depth: 0
           submodules: true
 
+      - name: install apt dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y zlib1g-dev
+
       - name: Setup mamba build environment
         uses: mamba-org/setup-micromamba@v2
         with:

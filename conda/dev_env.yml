@@ -28,6 +28,7 @@ dependencies:
   - cxx-compiler
   - fortran-compiler
   - astropy
+  - jupyter
   - pip:
     - sphinx_book_theme
     - myst-nb
