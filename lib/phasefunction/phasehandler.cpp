@@ -97,10 +97,10 @@ namespace sasktran2::solartransmission {
         }
 
         if constexpr (NSTOKES == 3) {
-            m_phase.resize(2, m_internal_to_geometry.size(),
+            m_phase.resize(2, (int)m_internal_to_geometry.size(),
                            m_config->num_wavelength_threads());
         } else {
-            m_phase.resize(1, m_internal_to_geometry.size(),
+            m_phase.resize(1, (int)m_internal_to_geometry.size(),
                            m_config->num_wavelength_threads());
         }
 
