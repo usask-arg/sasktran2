@@ -114,7 +114,8 @@ class OutputIdeal(Output):
         )
         d_radiance_k = d_radiance_raw[:, :, :, :natmo_grid]
         d_radiance_ssa = d_radiance_raw[:, :, :, natmo_grid : 2 * natmo_grid]
-        d_radiance_albedo = d_radiance_raw[:, :, :, -1:]
+
+        d_radiance_albedo = d_radiance_raw[:, :, :, -atmo.surface.brdf.num_deriv :]
 
         dk_scaled_by_dk = 1 - atmo.storage.f * atmo.unscaled_ssa
         dssa_scaled_by_dssa = (
@@ -142,8 +143,8 @@ class OutputIdeal(Output):
                 if mapping.is_surface_derivative:
                     np_deriv = (
                         d_radiance_albedo
-                        * mapping.native_grid_mapping.d_albedo[
-                            :, np.newaxis, np.newaxis, np.newaxis
+                        * mapping.native_grid_mapping.d_brdf[
+                            :, np.newaxis, np.newaxis, :
                         ]
                     )
                 else:
@@ -204,7 +205,7 @@ class OutputIdeal(Output):
 
                 if mapping.is_surface_derivative:
                     mapped_derivative = mapping.map_derivative(
-                        np_deriv[:, :, :, 0], ["wavelength", "los", "stokes"]
+                        np_deriv, ["wavelength", "los", "stokes"]
                     )
                 else:
                     mapped_derivative = mapping.map_derivative(

@@ -1,0 +1,23 @@
+{
+    "cmake.configureArgs": [
+        "-DSKTRAN_BLAS_VENDOR=Generic",
+        "-DBUILD_TESTS=ON",
+        "-DINCLUDE_WISCOMBE_MIE=ON",
+        "-DDO_STREAM_TEMPLATES=OFF",
+        "-DBUILD_PYTHON=OFF",
+        "-DUSE_OMP=OFF"
+    ],
+    "python.testing.pytestArgs": [
+        "tests"
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
+    "files.associations": {
+        "core": "cpp",
+        "specialfunctions": "cpp"
+    },
+    "C_Cpp.intelliSenseEngineFallback": "disabled",
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.typeCheckingMode": "off",
+    "python.defaultInterpreterPath": "/home/vscode/micromamba/envs/sasktran2-dev-env/bin",
+}

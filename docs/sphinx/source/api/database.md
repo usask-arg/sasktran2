@@ -4,12 +4,16 @@
 
 ## Web Databases
 ```{eval-rst}
-.. autoclass:: sasktran2.database.StandardDatabase
+.. autosummary::
+    :toctree: generated/
 
+    sasktran2.database.StandardDatabase
 ```
 
 ## Internal Databases
 ```{eval-rst}
-.. autoclass:: sasktran2.database.MieDatabase
+.. autosummary::
+    :toctree: generated/
 
+    sasktran2.database.MieDatabase
 ```

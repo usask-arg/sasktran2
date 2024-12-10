@@ -241,8 +241,8 @@ namespace sasktran2::hr {
 
                 m_raytracer.trace_ray(
                     viewing_ray,
-                    m_incoming_traced_rays[m_diffuse_incoming_index_map[i] +
-                                           j]);
+                    m_incoming_traced_rays[m_diffuse_incoming_index_map[i] + j],
+                    m_config->multiple_scatter_refraction());
             }
         }
     }

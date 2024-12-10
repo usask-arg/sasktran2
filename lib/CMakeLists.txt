@@ -32,6 +32,7 @@ add_library(
   viewinggeometry/viewinggeometrycontainer.cpp
   raytracing/spherical_shell.cpp
   raytracing/plane_parallel.cpp
+  raytracing/refraction.cpp
   solar/solartransmissionexact.cpp
   solar/solartransmissiontable.cpp
   solar/singlescattersource.cpp

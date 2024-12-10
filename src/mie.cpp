@@ -40,13 +40,19 @@ void init_mie(py::module_& m) {
             )");
 
     py::class_<sasktran2::mie::LinearizedMie>(m, "LinearizedMie")
-        .def(py::init<>(), R"(
+        .def(py::init<int>(), R"(
             A Mie object created with no input parameters.
 
             Standard usage is to create a Mie object, and then calculate mie parameters using
             `calculate` method.
 
-        )")
+            Parameters
+            ----------
+            num_threads : int
+                Number of threads to use for the Mie calculation. Default is 1.
+
+        )",
+             "num_threads"_a = 1)
         .def("calculate", &sasktran2::mie::LinearizedMie::calculate,
              R"(
                 Performs the Mie computation for an array of size parameters, a single refractive index, and an array that is the cosine of the scattering angles.

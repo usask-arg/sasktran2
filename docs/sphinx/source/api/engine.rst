@@ -3,11 +3,15 @@
 Engine
 ======
 
-.. autoclass:: sasktran2.Engine
+.. autosummary::
+    :toctree: generated/
+
+    sasktran2.Engine
 
 Internal Objects
 ----------------
+.. autosummary::
+    :toctree: generated/
 
-.. autoclass:: sasktran2.EngineStokes_1
-
-.. autoclass:: sasktran2.EngineStokes_3
+    sasktran2.EngineStokes_1
+    sasktran2.EngineStokes_3

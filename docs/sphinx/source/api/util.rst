@@ -5,10 +5,14 @@ Utility
 
 Interpolation
 -------------
+.. autosummary::
+    :toctree: generated/
 
-.. automodule:: sasktran2.util.interpolation
+    sasktran2.util.interpolation
 
 Wigner Functions
 ----------------
+.. autosummary::
+    :toctree: generated/
 
-.. autoclass:: sasktran2.util.WignerD
+    sasktran2.util.WignerD

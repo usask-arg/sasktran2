@@ -250,10 +250,16 @@ class OpticalDatabaseGenericScatterer(OpticalDatabase):
             .interp(**interp_handler)
         )
 
-        quants.extinction = (
+        if "z" not in ds_interp.dims:
+            # Our dataset has no z dependence
+            ds_interp = ds_interp.expand_dims(
+                dim={"z": len(atmo.model_geometry.altitudes())}
+            )
+
+        quants.extinction = np.copy(
             ds_interp["xs_total"].transpose("z", "wavelength_nm").to_numpy()
         )
-        quants.ssa = (
+        quants.ssa = np.copy(
             ds_interp["xs_scattering"].transpose("z", "wavelength_nm").to_numpy()
         )
 

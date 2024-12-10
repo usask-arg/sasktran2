@@ -34,6 +34,8 @@ class WebDatabase(CachedDatabase):
         else:
             self._data_directory = self._db_root
 
+        self._data_directory.mkdir(parents=True, exist_ok=True)
+
         # Get the filename from the url
         self._filename = Path(url).name
 
@@ -57,8 +59,6 @@ class WebDatabase(CachedDatabase):
                 self._url,
                 filename=output_file.as_posix(),
             )
-            with zipfile.ZipFile(output_file.as_posix(), "r") as zip_ref:
-                zip_ref.extractall(self._db_root)
         except Exception as e:
             logging.exception(e)
 
@@ -69,6 +69,15 @@ class WebDatabase(CachedDatabase):
 
         if output_file.exists():
             output_file.unlink()
+
+    def output_file(self):
+        return self._data_directory.joinpath(self._filename)
+
+    def path(self, key: str, **kwargs) -> Path | None:
+        return self._data_directory.joinpath(key)
+
+    def load_ds(self, key: str, **kwargs):
+        return xr.open_dataset(self.path(key, **kwargs))
 
 
 class ZipWebDatabase(WebDatabase):
@@ -99,7 +108,7 @@ class ZipWebDatabase(WebDatabase):
             logging.exception(e)
 
 
-class StandardDatabase(ZipWebDatabase):
+class StandardDatabase(CachedDatabase):
     def __init__(self, version: str = "latest") -> None:
         """
         Standard databases that are downloaded from the sasktran website.
@@ -109,13 +118,17 @@ class StandardDatabase(ZipWebDatabase):
         version : str, optional
             Specific version to use, by default "latest"
         """
-        url = f"https://arg.usask.ca/sasktranfiles/sasktran2_db/v_{version}.zip"
-        super().__init__(url)
-
-        self.load()
+        self._url = f"https://arg.usask.ca/sasktranfiles/sasktran2_db/v_{version}/"
 
     def path(self, key: str, **kwargs) -> Path | None:
-        return self._data_directory.joinpath(key)
+        db = WebDatabase(self._url + key, rel_path=Path(key).parent)
+        db.load()
+
+        return db.output_file()
 
     def load_ds(self, key: str, **kwargs):
         return xr.open_dataset(self.path(key, **kwargs))
+
+    def clear(self):
+        msg = "The standard database can only be cleared manually"
+        raise NotImplementedError(msg)

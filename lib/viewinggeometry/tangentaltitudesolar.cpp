@@ -80,4 +80,12 @@ namespace sasktran2::viewinggeometry {
         return ray;
     }
 
+    std::string TangentAltitudeSolar::to_string() const {
+        return fmt::format(
+            "Tangent Viewing Ray: tangentaltitude: {}, "
+            "relative_azimuth_angle: {}, observeraltitude: {}, cos_sza: {}",
+            m_tangentaltitude, m_relative_azimuth_angle, m_observeraltitude,
+            m_cos_sza);
+    }
+
 } // namespace sasktran2::viewinggeometry

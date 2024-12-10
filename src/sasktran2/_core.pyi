@@ -1,8 +1,6 @@
 from __future__ import annotations
-
-import typing
-
 import numpy
+import typing
 
 __all__ = [
     "AltitudeGrid",
@@ -36,6 +34,8 @@ __all__ = [
     "LowerInterpolation",
     "MieData",
     "MieOutput",
+    "MODISStokes_1",
+    "MODISStokes_3",
     "MultipleScatterSource",
     "NoSource",
     "Observer",
@@ -73,6 +73,8 @@ __all__ = [
 ]
 
 class AltitudeGrid:
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(
         self,
         arg0: numpy.ndarray[numpy.float64[m, 1]],
@@ -83,6 +85,8 @@ class AltitudeGrid:
 
 class AtmosphereStokes_1:
     storage: ...
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(
         self, arg0: int, arg1: Geometry1D, arg2: Config, arg3: bool
     ) -> None: ...
@@ -92,6 +96,8 @@ class AtmosphereStokes_1:
 
 class AtmosphereStokes_3:
     storage: ...
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(
         self, arg0: int, arg1: Geometry1D, arg2: Config, arg3: bool
     ) -> None: ...
@@ -104,6 +110,8 @@ class AtmosphereStorageStokes_1:
     leg_coeff: numpy.ndarray[numpy.float64[..., ..., ...]]
     ssa: numpy.ndarray[numpy.float64[m, n]]
     total_extinction: numpy.ndarray[numpy.float64[m, n]]
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(self, arg0: int, arg1: int, arg2: int) -> None: ...
     def resize_derivatives(self, num_deriv: int) -> None: ...
     @property
@@ -116,6 +124,8 @@ class AtmosphereStorageStokes_3:
     leg_coeff: numpy.ndarray[numpy.float64[..., ..., ...]]
     ssa: numpy.ndarray[numpy.float64[m, n]]
     total_extinction: numpy.ndarray[numpy.float64[m, n]]
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(self, arg0: int, arg1: int, arg2: int) -> None: ...
     def resize_derivatives(self, num_deriv: int) -> None: ...
     @property
@@ -124,13 +134,17 @@ class AtmosphereStorageStokes_3:
     def f(self) -> numpy.ndarray[numpy.float64[m, n]]: ...
 
 class BRDFStokes_1:
-    pass
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
 
 class BRDFStokes_3:
-    pass
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
 
 class Config:
     stokes_basis: StokesBasis
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(self) -> None:
         """
         Object which stores all of the configuration settings for the radiative transfer calculation.
@@ -182,6 +196,26 @@ class Config:
 
     @input_validation_mode.setter
     def input_validation_mode(self, arg1: InputValidationMode) -> None: ...
+    @property
+    def los_refraction(self) -> bool:
+        """
+        Controls whether or not refraction is enabled for the observer line of sight rays. Requires
+        the refractive index to be set in the Geometry object for refraction to work.  Defaults to False.
+        """
+
+    @los_refraction.setter
+    def los_refraction(self, arg1: bool) -> None: ...
+    @property
+    def multiple_scatter_refraction(self) -> bool:
+        """
+        Controls whether or not refraction is enabled for the multiple scatter source. Requires
+        the refractive index to be set in the Geometry object for refraction to work.
+        Only has an effect when the SuccessiveOrders multiple scatter source term is being used.
+        Defaults to False.
+        """
+
+    @multiple_scatter_refraction.setter
+    def multiple_scatter_refraction(self, arg1: bool) -> None: ...
     @property
     def multiple_scatter_source(self) -> MultipleScatterSource:
         """
@@ -336,6 +370,16 @@ class Config:
     @single_scatter_source.setter
     def single_scatter_source(self, arg1: SingleScatterSource) -> None: ...
     @property
+    def solar_refraction(self) -> bool:
+        """
+        Controls whether or not refraction is enabled for the solar line of sight rays. Requires
+          the refractive index to be set in the Geometry object for refraction to work.  Only has an effect
+          when the single scatter source term is set to Table.  Defaults to False.
+        """
+
+    @solar_refraction.setter
+    def solar_refraction(self, arg1: bool) -> None: ...
+    @property
     def threading_model(self) -> ThreadingModel:
         """
         Sets the multi-threading mode to use in the calculation.
@@ -355,11 +399,15 @@ class Config:
     def threading_model(self, arg1: ThreadingModel) -> None: ...
 
 class Coordinates:
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(
         self, arg0: float, arg1: float, arg2: float, arg3: GeometryType, arg4: bool
     ) -> None: ...
 
 class EngineStokes_1:
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(
         self,
         config: Config,
@@ -395,6 +443,8 @@ class EngineStokes_1:
         """
 
 class EngineStokes_3:
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(
         self,
         config: Config,
@@ -430,6 +480,8 @@ class EngineStokes_3:
         """
 
 class Geodetic:
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(self, equatorial_radius: float, flattening_factor: float) -> None:
         """
         A geodetic object based on a given equatorial (semi-major) radius and flattening factor.
@@ -642,6 +694,8 @@ class Geodetic:
         """
 
 class Geometry1D:
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(
         self,
         cos_sza: float,
@@ -692,6 +746,16 @@ class Geometry1D:
         """
 
     def altitudes(self) -> numpy.ndarray[numpy.float64[m, 1]]: ...
+    @property
+    def refractive_index(self) -> numpy.ndarray[numpy.float64[m, 1]]:
+        """
+        The refractive index of the atmosphere.  This is used to calculate refraction in the radiative transfer calculation.
+        Defaults to 1.0 which indicates no refractive effects.  Only has an effect if the refraction configuration options are
+        enabled in the `sasktran2.Config` object.
+        """
+
+    @refractive_index.setter
+    def refractive_index(self, arg1: numpy.ndarray[numpy.float64[m, 1]]) -> None: ...
 
 class GeometryType:
     """
@@ -717,6 +781,8 @@ class GeometryType:
     __members__: typing.ClassVar[
         dict[str, GeometryType]
     ]  # value = {'PlaneParallel': <GeometryType.PlaneParallel: 0>, 'Spherical': <GeometryType.Spherical: 2>, 'PseudoSpherical': <GeometryType.PseudoSpherical: 1>, 'Ellipsoidal': <GeometryType.Ellipsoidal: 3>}
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __eq__(self, other: typing.Any) -> bool: ...
     def __getstate__(self) -> int: ...
     def __hash__(self) -> int: ...
@@ -750,6 +816,8 @@ class GridSpacing:
     __members__: typing.ClassVar[
         dict[str, GridSpacing]
     ]  # value = {'ConstantSpacing': <GridSpacing.ConstantSpacing: 0>, 'LinearSpacing': <GridSpacing.LinearSpacing: 1>}
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __eq__(self, other: typing.Any) -> bool: ...
     def __getstate__(self) -> int: ...
     def __hash__(self) -> int: ...
@@ -766,6 +834,8 @@ class GridSpacing:
     def value(self) -> int: ...
 
 class GroundViewingSolar(ViewingGeometryBase):
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(
         self,
         cos_sza: float,
@@ -812,6 +882,8 @@ class InputValidationMode:
     __members__: typing.ClassVar[
         dict[str, InputValidationMode]
     ]  # value = {'Strict': <InputValidationMode.Strict: 0>, 'Standard': <InputValidationMode.Standard: 1>, 'Disabled': <InputValidationMode.Disabled: 2>}
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __eq__(self, other: typing.Any) -> bool: ...
     def __getstate__(self) -> int: ...
     def __hash__(self) -> int: ...
@@ -850,6 +922,8 @@ class InterpolationMethod:
     __members__: typing.ClassVar[
         dict[str, InterpolationMethod]
     ]  # value = {'ShellInterpolation': <InterpolationMethod.ShellInterpolation: 0>, 'LinearInterpolation': <InterpolationMethod.LinearInterpolation: 1>, 'LowerInterpolation': <InterpolationMethod.LowerInterpolation: 2>}
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __eq__(self, other: typing.Any) -> bool: ...
     def __getstate__(self) -> int: ...
     def __hash__(self) -> int: ...
@@ -866,18 +940,29 @@ class InterpolationMethod:
     def value(self) -> int: ...
 
 class LambertianStokes_1(BRDFStokes_1):
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(self) -> None: ...
 
 class LambertianStokes_3(BRDFStokes_3):
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(self) -> None: ...
 
 class LinearizedMie:
-    def __init__(self) -> None:
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
+    def __init__(self, num_threads: int = 1) -> None:
         """
         A Mie object created with no input parameters.
 
         Standard usage is to create a Mie object, and then calculate mie parameters using
         `calculate` method.
+
+        Parameters
+        ----------
+        num_threads : int
+            Number of threads to use for the Mie calculation. Default is 1.
         """
 
     def calculate(
@@ -924,6 +1009,8 @@ class LinearizedMie:
         """
 
 class MieData:
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     @property
     def Qext(self) -> numpy.ndarray[numpy.float64[m, 1]]:
         """
@@ -949,6 +1036,8 @@ class MieData:
         """
 
 class MieOutput:
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     @property
     def cos_angles(self) -> numpy.ndarray[numpy.float64[m, 1]]:
         """
@@ -1001,6 +1090,8 @@ class MultipleScatterSource:
     __members__: typing.ClassVar[
         dict[str, MultipleScatterSource]
     ]  # value = {'DiscreteOrdinates': <MultipleScatterSource.DiscreteOrdinates: 0>, 'TwoStream': <MultipleScatterSource.TwoStream: 2>, 'SuccessiveOrders': <MultipleScatterSource.SuccessiveOrders: 1>, 'NoSource': <MultipleScatterSource.NoSource: 3>}
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __eq__(self, other: typing.Any) -> bool: ...
     def __getstate__(self) -> int: ...
     def __hash__(self) -> int: ...
@@ -1034,6 +1125,8 @@ class OccultationSource:
     __members__: typing.ClassVar[
         dict[str, OccultationSource]
     ]  # value = {'NoSource': <OccultationSource.NoSource: 1>, 'Standard': <OccultationSource.Standard: 0>}
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __eq__(self, other: typing.Any) -> bool: ...
     def __getstate__(self) -> int: ...
     def __hash__(self) -> int: ...
@@ -1067,6 +1160,8 @@ class OutOfBoundsPolicy:
     __members__: typing.ClassVar[
         dict[str, OutOfBoundsPolicy]
     ]  # value = {'OutOfBoundsExtend': <OutOfBoundsPolicy.OutOfBoundsExtend: 0>, 'OutOfBoundsSetZero': <OutOfBoundsPolicy.OutOfBoundsSetZero: 1>}
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __eq__(self, other: typing.Any) -> bool: ...
     def __getstate__(self) -> int: ...
     def __hash__(self) -> int: ...
@@ -1083,6 +1178,8 @@ class OutOfBoundsPolicy:
     def value(self) -> int: ...
 
 class OutputIdealStokes_1(OutputStokes_1):
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(self) -> None: ...
     @property
     def d_radiance(self) -> numpy.ndarray[numpy.float64[m, n]]: ...
@@ -1090,6 +1187,8 @@ class OutputIdealStokes_1(OutputStokes_1):
     def radiance(self) -> numpy.ndarray[numpy.float64[m, 1]]: ...
 
 class OutputIdealStokes_3(OutputStokes_3):
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(self) -> None: ...
     @property
     def d_radiance(self) -> numpy.ndarray[numpy.float64[m, n]]: ...
@@ -1097,10 +1196,12 @@ class OutputIdealStokes_3(OutputStokes_3):
     def radiance(self) -> numpy.ndarray[numpy.float64[m, 1]]: ...
 
 class OutputStokes_1:
-    pass
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
 
 class OutputStokes_3:
-    pass
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
 
 class SingleScatterSource:
     """
@@ -1130,6 +1231,8 @@ class SingleScatterSource:
     __members__: typing.ClassVar[
         dict[str, SingleScatterSource]
     ]  # value = {'NoSource': <SingleScatterSource.NoSource: 3>, 'Exact': <SingleScatterSource.Exact: 0>, 'Table': <SingleScatterSource.Table: 1>, 'DiscreteOrdinates': <SingleScatterSource.DiscreteOrdinates: 2>}
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __eq__(self, other: typing.Any) -> bool: ...
     def __getstate__(self) -> int: ...
     def __hash__(self) -> int: ...
@@ -1146,9 +1249,23 @@ class SingleScatterSource:
     def value(self) -> int: ...
 
 class SnowKokhanovskyStokes_1(BRDFStokes_1):
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(self) -> None: ...
 
 class SnowKokhanovskyStokes_3(BRDFStokes_3):
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
+    def __init__(self) -> None: ...
+
+class MODISStokes_1(BRDFStokes_1):
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
+    def __init__(self) -> None: ...
+
+class MODISStokes_3(BRDFStokes_3):
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(self) -> None: ...
 
 class StokesBasis:
@@ -1168,6 +1285,8 @@ class StokesBasis:
     __members__: typing.ClassVar[
         dict[str, StokesBasis]
     ]  # value = {'Standard': <StokesBasis.Standard: 0>, 'Solar': <StokesBasis.Solar: 1>, 'Observer': <StokesBasis.Observer: 2>}
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __eq__(self, other: typing.Any) -> bool: ...
     def __getstate__(self) -> int: ...
     def __hash__(self) -> int: ...
@@ -1185,6 +1304,8 @@ class StokesBasis:
 
 class SurfaceStokes_1:
     brdf: BRDFStokes_1
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     @property
     def albedo(self) -> numpy.ndarray[numpy.float64[m, n]]: ...
     @property
@@ -1196,6 +1317,8 @@ class SurfaceStokes_1:
 
 class SurfaceStokes_3:
     brdf: BRDFStokes_3
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     @property
     def albedo(self) -> numpy.ndarray[numpy.float64[m, n]]: ...
     @property
@@ -1206,6 +1329,8 @@ class SurfaceStokes_3:
     def max_azimuthal_order(self) -> int: ...
 
 class TangentAltitudeSolar(ViewingGeometryBase):
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(
         self,
         tangent_altitude_m: float,
@@ -1245,6 +1370,8 @@ class ThreadingModel:
     __members__: typing.ClassVar[
         dict[str, ThreadingModel]
     ]  # value = {'Wavelength': <ThreadingModel.Wavelength: 0>, 'Source': <ThreadingModel.Source: 1>}
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __eq__(self, other: typing.Any) -> bool: ...
     def __getstate__(self) -> int: ...
     def __hash__(self) -> int: ...
@@ -1261,15 +1388,21 @@ class ThreadingModel:
     def value(self) -> int: ...
 
 class ViewingGeometry:
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(self) -> None: ...
     def add_ray(self, arg0: ViewingGeometryBase) -> None: ...
     @property
     def observer_rays(self) -> list: ...
 
 class ViewingGeometryBase:
-    pass
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
+    def __repr__(self) -> str: ...
 
 class WignerD:
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(self, m: int, n: int) -> None:
         """
         Performs calculations of the Wigner (small) d function, :math:`d^l_{m, n}(\\theta)`.

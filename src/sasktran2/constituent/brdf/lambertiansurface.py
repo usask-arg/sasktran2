@@ -75,7 +75,7 @@ class LambertianSurface(Constituent, WavelengthInterpolatorMixin):
         derivs = {}
 
         derivs["albedo"] = SurfaceDerivativeMapping(
-            NativeGridDerivative(d_albedo=np.ones(atmo.num_wavel)),
+            NativeGridDerivative(d_brdf=np.ones((atmo.num_wavel, 1))),
             interpolating_matrix=interp_matrix,
             interp_dim="wavelength",
             result_dim=f"{name}_wavelength",

@@ -8,7 +8,9 @@ void construct_atmo_geometry(
     std::unique_ptr<sasktran2::atmosphere::Atmosphere<1>>& atmo,
     std::unique_ptr<sasktran_disco::GeometryLayerArray<1>>& layer_geo,
     double csz = 0.6) {
+#ifdef USE_OMP
     omp_set_num_threads(1);
+#endif
     // Construct the geometry
     sasktran2::Coordinates coords(csz, 0, 6371000,
                                   sasktran2::geometrytype::pseudospherical);

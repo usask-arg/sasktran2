@@ -42,4 +42,6 @@ from . import (
     optical,
     test_util,
     util,
+    solar,
+    viewinggeo,
 )

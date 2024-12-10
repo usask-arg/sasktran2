@@ -18,6 +18,9 @@
 [Including Mie Scatterers](users_guide/mie.md)
 : Adding Mie scattering particles to your atmospheric state
 
+[Ray Tracing and Refraction](users_guide/refraction.md)
+: Including refractive effects in the ray-tracing
+
 [Built in Geodesy Tools](users_guide/geodetic.md)
 : Methods to work with datums such as WGS84
 
@@ -35,6 +38,7 @@
 required_components
 weighting_functions
 users_guide/mie.md
+users_guide/refraction.md
 users_guide/polarization.md
 users_guide/brdf.md
 users_guide/performance.md

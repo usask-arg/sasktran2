@@ -13,8 +13,8 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 OPENBLAS_V = "0.3.23.dev"
-OPENBLAS_LONG = "v0.3.23-293-gc2f4bdbb"
-BASE_LOC = "https://anaconda.org/scientific-python-nightly-wheels/openblas-libs"
+OPENBLAS_LONG = "v0.3.23-246-g3d31191b"
+BASE_LOC = "https://anaconda.org/multibuild-wheels-staging/openblas-libs"
 SUPPORTED_PLATFORMS = [
     "linux-aarch64",
     "linux-x86_64",

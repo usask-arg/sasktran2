@@ -2,7 +2,7 @@ name: sasktran2-dev-env
 channels:
   - conda-forge
 dependencies:
-  - python=3.11
+  - python=3.12
   - numpy
   - pybind11
   - spdlog
@@ -12,7 +12,7 @@ dependencies:
   - libopenblas
   - openblas
   - eigen
-  - build
+  - python-build
   - scikit-build-core
   - catch2
   - pytest
@@ -27,8 +27,8 @@ dependencies:
   - c-compiler
   - cxx-compiler
   - fortran-compiler
+  - astropy
   - pip:
     - sphinx_book_theme
     - myst-nb
-    - sasktran
     - sphinx_design

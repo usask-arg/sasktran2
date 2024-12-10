@@ -429,6 +429,49 @@ namespace sasktran2 {
         }
 
         /**
+         * @return True if the line of sight rays should be refracted.
+         *
+         */
+        bool los_refraction() const { return m_los_refraction; }
+
+        /**
+         * @brief Set to true to enable refraction on the LOS rays
+         *
+         * @param refraction
+         */
+        void set_los_refraction(bool refraction) {
+            m_los_refraction = refraction;
+        }
+
+        /**
+         * @return True if the solar rays should be refracted.
+         */
+        bool solar_refraction() const { return m_solar_refraction; }
+
+        /**
+         * @brief Set to true to enable refraction on the solar rays
+         *
+         * @param refraction
+         */
+        void set_solar_refraction(bool refraction) {
+            m_solar_refraction = refraction;
+        }
+
+        /**
+         * @return True if multiple scatter rays should be refracted
+         */
+        bool multiple_scatter_refraction() const { return m_ms_refraction; }
+
+        /**
+         * @brief Set to true to enable refraction on the multiple scatter rays
+         *
+         * @param refraction
+         */
+        void set_multiple_scatter_refraction(bool refraction) {
+            m_ms_refraction = refraction;
+        }
+
+        /**
          *
          * @return The precision of the Weighting Function calculation
          */
@@ -539,6 +582,10 @@ namespace sasktran2 {
         bool m_apply_delta_scaling;
 
         bool m_enable_wfs;
+
+        bool m_los_refraction;
+        bool m_solar_refraction;
+        bool m_ms_refraction;
 
         SingleScatterSource m_single_scatter_source;
         MultipleScatterSource m_multiple_scatter_source;

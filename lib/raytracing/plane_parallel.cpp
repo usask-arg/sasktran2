@@ -3,8 +3,8 @@
 
 namespace sasktran2::raytracing {
     void PlaneParallelRayTracer::trace_ray(
-        const sasktran2::viewinggeometry::ViewingRay& ray,
-        TracedRay& result) const {
+        const sasktran2::viewinggeometry::ViewingRay& ray, TracedRay& result,
+        bool include_refraction) const {
         // Set the ray to 0
         result.reset();
 

@@ -24,6 +24,7 @@ if [[ $RUNNER_OS == "Linux" || $RUNNER_OS == "macOS" ]] ; then
 elif [[ $RUNNER_OS == "Windows" ]]; then
     # delvewheel is the equivalent of delocate/auditwheel for windows.
     python -m pip install delvewheel
+    python -m pip install wheel
 
     # make the DLL available for tools/wheels/repair_windows.sh. If you change
     # this location you need to alter that script.

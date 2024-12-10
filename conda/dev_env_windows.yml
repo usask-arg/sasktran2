@@ -2,7 +2,7 @@ name: sasktran2-dev-env
 channels:
   - conda-forge
 dependencies:
-  - python=3.11
+  - python=3.12
   - numpy
   - pybind11
   - spdlog
@@ -20,6 +20,4 @@ dependencies:
   - doxygen
   - pip
   - ipython
-  - cmake>=3.28
-  - pip:
-    - sphinx_rtd_theme
+  - cmake<3.30

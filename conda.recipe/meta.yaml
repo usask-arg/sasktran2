@@ -48,12 +48,11 @@ requirements:
     - python {{ python }}
     - numpy
     - spdlog
+    - netcdf4
     - fmt
-    - dask
     - appdirs
     - pyyaml
     - xarray
-    - netcdf4
     - scipy
     - liblapacke
     - libblas
@@ -61,6 +60,7 @@ requirements:
 test:
   requires:
     - pytest
+    - nomkl # [win]
   imports:
     - sasktran2
   source_files:

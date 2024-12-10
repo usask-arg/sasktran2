@@ -49,3 +49,7 @@ typings
 .cache
 *._cache
 asv_bench/.asv/
+docs/sphinx/source/api/generated
+.pixi
+pixi.lock
+docs/sphinx/jupyter_execute

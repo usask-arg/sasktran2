@@ -1,17 +1,29 @@
 #include <sasktran2/raytracing.h>
+#include <sasktran2/refraction.h>
 
 namespace sasktran2::raytracing {
     void SphericalShellRayTracer::trace_ray(
-        const sasktran2::viewinggeometry::ViewingRay& ray,
-        TracedRay& result) const {
+        const sasktran2::viewinggeometry::ViewingRay& ray, TracedRay& result,
+        bool include_refraction) const {
         // Set the ray to 0
         result.reset();
 
-        result.is_straight = true;
+        result.is_straight = !include_refraction ||
+                             (fabs(ray.cos_viewing()) > NADIR_VIEWING_CUTOFF);
 
         // Calculate the tangent point details in a straight geometry
-        double rt = ray.observer.radius() *
-                    sqrt(1 - ray.cos_viewing() * ray.cos_viewing());
+        // Ensure we don't get negative values from rounding errors
+        double rt =
+            ray.observer.radius() *
+            sqrt(std::max(0.0, 1 - ray.cos_viewing() * ray.cos_viewing()));
+
+        if (include_refraction) {
+            // If including refraction, adjust the tangent radius
+            rt = refraction::tangent_radius(m_geometry, rt,
+                                            result.interpolation_index_weights);
+        }
+        result.tangent_radius = rt;
+
         double tangent_altitude = rt - m_earth_radius;
 
         // If the tangent altitude is greater than the TOA altitude then we have
@@ -57,9 +69,125 @@ namespace sasktran2::raytracing {
                 }
             }
         }
+        // Now that we have found all the layers, we go through and add in
+        // all of the necessary geometry information for each layer
+        finalize_ray_geometry(result);
+    }
 
-        // For each layer, we go through and add in the computed solar angles
-        for (auto& layer : result.layers) {
+    /**
+     * Goes through all of the layers, computes path lengths, and finds the
+     * locations of the layers within the atmosphere.  Then we add in the
+     * optical depth quadrature factors and compute solar angles.
+     *
+     * @param result
+     */
+    void
+    SphericalShellRayTracer::finalize_ray_geometry(TracedRay& result) const {
+        // Iterate through all of the rays, starting from the observer
+        double total_deflection = 0.0;
+        std::vector<std::pair<int, double>> index_weights;
+
+        double costh = result.observer_and_look.cos_viewing();
+
+        double rt_refracted = result.tangent_radius;
+
+        double nt = refraction::refractive_index_at_altitude(
+            m_geometry, rt_refracted - m_geometry.coordinates().earth_radius(),
+            index_weights);
+
+        Eigen::Vector3d x_basis, y_basis;
+
+        for (int i = 0; i < result.layers.size(); ++i) {
+            auto& layer = result.layers[result.layers.size() - i - 1];
+
+            if (i == 0) {
+                // First layer, set the position of the entrance layer
+
+                // If the observer is inside the atmosphere
+                if (result.observer_and_look.observer.radius() -
+                        m_earth_radius <
+                    m_alt_grid.grid()(Eigen::last)) {
+                    // The observer is inside the atmosphere
+                    // And so our ray tracing starts with the observer
+                    layer.entrance.position =
+                        result.observer_and_look.observer.position;
+                } else {
+                    // The observer is outside the atmosphere
+                    // and so our raytracing starts at TOA
+                    layer.entrance.position =
+                        result.observer_and_look.observer.position +
+                        result.observer_and_look.look_away *
+                            distance_to_altitude(result.observer_and_look,
+                                                 m_alt_grid.grid()(Eigen::last),
+                                                 ViewingDirection::down,
+                                                 TangentSide::nearside);
+                }
+                // Get the basis vectors
+                x_basis = layer.entrance.position.normalized();
+                y_basis = (x_basis.cross(result.observer_and_look.look_away)
+                               .normalized())
+                              .cross(x_basis)
+                              .normalized();
+            } else {
+                // Have to assign entrance to be the exit of the previous layer
+                layer.entrance = result.layers[result.layers.size() - i].exit;
+            }
+
+            // Now we have to assign the curvature factors and deflection angles
+            if (!result.is_straight) {
+                std::pair<double, double> refraction_result =
+                    refraction::integrate_path(
+                        m_geometry, rt_refracted, nt, layer.r_entrance,
+                        layer.r_exit,
+                        result
+                            .interpolation_index_weights); // (layer distance,
+                                                           // deflection angle)
+
+                // Set the layer deflection angle
+                total_deflection += refraction_result.second;
+                // Can use the deflection to calculate the exit point
+                layer.exit.position =
+                    layer.r_exit * (x_basis * cos(total_deflection) +
+                                    y_basis * sin(total_deflection));
+
+                // And then get the average look vector in the layer
+                layer.average_look_away =
+                    (layer.exit.position - layer.entrance.position)
+                        .normalized();
+
+                // And the straight line layer distance
+                layer.layer_distance =
+                    (layer.exit.position - layer.entrance.position).norm();
+
+                // Which gives us the curvature
+                layer.curvature_factor =
+                    refraction_result.first / layer.layer_distance;
+
+            } else {
+                // Layer is straight
+                layer.curvature_factor = 1;
+
+                // Straight line distance
+                layer.layer_distance =
+                    std::abs(sqrt(fmax(layer.r_entrance * layer.r_entrance -
+                                           rt_refracted * rt_refracted,
+                                       0)) -
+                             sqrt(fmax(layer.r_exit * layer.r_exit -
+                                           rt_refracted * rt_refracted,
+                                       0.0)));
+
+                // Same look vector as observer
+                layer.average_look_away = result.observer_and_look.look_away;
+
+                // Exit can be calculated from the look vector and straight line
+                // distance
+                layer.exit.position =
+                    layer.entrance.position +
+                    layer.average_look_away * layer.layer_distance;
+            }
+
+            add_od_quadrature(layer);
+            add_interpolation_weights(layer, m_geometry);
             add_solar_parameters(m_geometry.coordinates().sun_unit(), layer);
         }
     }
@@ -83,8 +211,8 @@ namespace sasktran2::raytracing {
     void SphericalShellRayTracer::trace_ray_observer_outside_limb_viewing(
         const sasktran2::viewinggeometry::ViewingRay& ray,
         TracedRay& tracedray) const {
-        double rt = ray.observer.radius() *
-                    sqrt(1 - ray.cos_viewing() * ray.cos_viewing());
+        double rt = tracedray.tangent_radius;
+
         double tangent_altitude = rt - m_earth_radius;
 
         // Find the index to the first altitude ABOVE the tangent altitude
@@ -141,29 +269,14 @@ namespace sasktran2::raytracing {
         double entrance_altitude = m_alt_grid.grid()(exit_index + direction);
         double exit_altitude = m_alt_grid.grid()(exit_index);
 
+        layer.r_entrance = entrance_altitude + m_earth_radius;
+        layer.r_exit = exit_altitude + m_earth_radius;
+
         layer.entrance.on_exact_altitude = true;
         layer.entrance.lower_alt_index = int(exit_index + direction);
 
         layer.exit.on_exact_altitude = true;
         layer.exit.lower_alt_index = int(exit_index);
-
-        double s_entrance =
-            distance_to_altitude(ray, entrance_altitude, direction, side);
-        double s_exit =
-            distance_to_altitude(ray, exit_altitude, direction, side);
-
-        layer.layer_distance = abs(s_entrance - s_exit);
-
-        layer.entrance.position =
-            ray.observer.position + ray.look_away * s_entrance;
-        layer.exit.position = ray.observer.position + ray.look_away * s_exit;
-
-        layer.curvature_factor = 1;
-
-        layer.average_look_away = ray.look_away;
-
-        add_od_quadrature(layer);
-        add_interpolation_weights(layer, m_geometry);
     }
 
     void SphericalShellRayTracer::partial_layer(
@@ -175,29 +288,15 @@ namespace sasktran2::raytracing {
         double entrance_altitude = ray.observer.radius() - m_earth_radius;
         double exit_altitude = m_alt_grid.grid()(start_index);
 
+        layer.r_entrance = entrance_altitude + m_earth_radius;
+        layer.r_exit = exit_altitude + m_earth_radius;
+
         layer.exit.on_exact_altitude = true;
         layer.exit.lower_alt_index = int(start_index);
 
         layer.entrance.on_exact_altitude = false;
         layer.entrance.lower_alt_index =
             direction < 0 ? int(start_index + direction) : int(start_index);
-
-        double s_entrance =
-            distance_to_altitude(ray, entrance_altitude, direction, side);
-        double s_exit =
-            distance_to_altitude(ray, exit_altitude, direction, side);
-
-        layer.layer_distance = abs(s_entrance - s_exit);
-
-        layer.entrance.position =
-            ray.observer.position + ray.look_away * s_entrance;
-        layer.exit.position = ray.observer.position + ray.look_away * s_exit;
-
-        layer.curvature_factor = 1;
-        layer.average_look_away = ray.look_away;
-
-        add_od_quadrature(layer);
-        add_interpolation_weights(layer, m_geometry);
     }
 
     void SphericalShellRayTracer::tangent_layer(
@@ -229,22 +328,8 @@ namespace sasktran2::raytracing {
             layer.exit.lower_alt_index = int(upper_index - 1);
         }
 
-        double s_entrance =
-            distance_to_altitude(ray, entrance_altitude, direction, side);
-        double s_exit =
-            distance_to_altitude(ray, exit_altitude, direction, side);
-
-        layer.layer_distance = abs(s_entrance - s_exit);
-
-        layer.entrance.position =
-            ray.observer.position + ray.look_away * s_entrance;
-        layer.exit.position = ray.observer.position + ray.look_away * s_exit;
-
-        layer.curvature_factor = 1;
-        layer.average_look_away = ray.look_away;
-
-        add_od_quadrature(layer);
-        add_interpolation_weights(layer, m_geometry);
+        layer.r_entrance = entrance_altitude + m_earth_radius;
+        layer.r_exit = exit_altitude + m_earth_radius;
     }
 
     void SphericalShellRayTracer::partial_tangent_layer(
@@ -269,24 +354,10 @@ namespace sasktran2::raytracing {
 
             layer.exit.on_exact_altitude = false;
             layer.exit.lower_alt_index = int(start_index - 1);
+
+            layer.r_exit = exit_altitude + m_earth_radius;
+            layer.r_entrance = entrance_altitude + m_earth_radius;
         }
-
-        double s_entrance =
-            distance_to_altitude(ray, entrance_altitude, direction, side);
-        double s_exit =
-            distance_to_altitude(ray, exit_altitude, direction, side);
-
-        layer.layer_distance = abs(s_entrance - s_exit);
-
-        layer.entrance.position =
-            ray.observer.position + ray.look_away * s_entrance;
-        layer.exit.position = ray.observer.position + ray.look_away * s_exit;
-
-        layer.curvature_factor = 1;
-        layer.average_look_away = ray.look_away;
-
-        add_od_quadrature(layer);
-        add_interpolation_weights(layer, m_geometry);
     }
 
     void SphericalShellRayTracer::trace_ray_observer_inside_looking_up(

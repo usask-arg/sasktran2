@@ -1,12 +1,16 @@
 #include <sasktran2/test_helper.h>
 
 #include <sasktran2.h>
+#ifdef USE_OMP
 #include <omp.h>
+#endif
 
 #ifdef SKTRAN_CATCH2_VERSION3
 
 TEST_CASE("occultation_bench", "[sasktran2][engine]") {
+#ifdef USE_OMP
     omp_set_num_threads(8);
+#endif
     // Construct the geometry
     sasktran2::Coordinates coords(0.6, 0, 6371000,
                                   sasktran2::geometrytype::spherical);

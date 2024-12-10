@@ -92,6 +92,7 @@ namespace sasktran2::solartransmission {
             // Single scatter ground source is solar_trans * cos(th) * brdf
 
             // Cosine of direction to the sun at the surface
+            // TODO: This does not account for refraction?
             double mu_in =
                 m_los_rays->at(losidx).layers[0].exit.cos_zenith_angle(
                     m_geometry.coordinates().sun_unit());

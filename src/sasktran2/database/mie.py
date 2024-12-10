@@ -6,7 +6,8 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
-from sasktran2.mie.distribution import ParticleSizeDistribution
+from sasktran2.mie import LinearizedMie
+from sasktran2.mie.distribution import ParticleSizeDistribution, integrate_mie
 from sasktran2.mie.refractive import RefractiveIndex
 from sasktran2.optical.database import OpticalDatabaseGenericScatterer
 
@@ -20,7 +21,7 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
         refractive_index: RefractiveIndex,
         wavelengths_nm: np.array,
         db_root: Path | None = None,
-        backend: str = "sasktran_legacy",
+        backend: str = "sasktran2",
         max_legendre_moments: int = 64,
         **kwargs,
     ) -> None:
@@ -40,8 +41,9 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
         db_root : Path, optional
             The root directory to store the database, by default None
         backend : str, optional
-            The backend to use, by default "sasktran_legacy" which requires the module `sasktran` to be installed. Currently supported
-            options are ["sasktran_legacy"]. Default is "sasktran_legacy"
+            The backend to use, by default "sasktran2". Currently supported
+            options are ["sasktran_legacy", "sasktran2]. "sasktran_legacy"
+            requires the module `sasktran` to be installed.
         kwargs
             Additional arguments to pass to the particle size distribution, these should match the psize_distribution.args() method
         """
@@ -94,13 +96,15 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
     def generate(self):
         if self._backend == "sasktran_legacy":
             self._generate_sasktran_legacy()
+        elif self._backend == "sasktran2":
+            self._generate_sasktran2()
         else:
             msg = f"Invalid backend {self._backend}"
             raise ValueError(msg)
 
     def _generate_sasktran_legacy(self):
         """
-        Generates the data file
+        Generates the data file from legacy sasktran
         """
         try:
             from sasktran import MieWiscombe
@@ -187,13 +191,105 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
                 entry[key] = val
 
             entries.append(entry)
-        ds = (
-            xr.concat(entries, dim="args")  # noqa: PD010
-            .set_index(args=list(self._kwargs.keys()))
-            .unstack("args")
-            .rename_dims({"wavelength": "wavelength_nm"})
-            .rename_vars({"wavelength": "wavelength_nm"})
-        )
+
+        if len(self._kwargs) > 1:
+            # Have to do a multi-index unstack
+            ds = (
+                xr.concat(entries, dim="args")  # noqa: PD010
+                .set_index(args=list(self._kwargs.keys()))
+                .unstack("args")
+                .rename_dims({"wavelength": "wavelength_nm"})
+                .rename_vars({"wavelength": "wavelength_nm"})
+            )
+        elif len(self._kwargs) == 1:
+            ds = (
+                xr.concat(entries, dim=next(iter(self._kwargs.keys())))
+                .rename_dims({"wavelength": "wavelength_nm"})
+                .rename_vars({"wavelength": "wavelength_nm"})
+            )
+        else:
+            # length is 0
+            ds = (
+                entries[0]
+                .rename_dims({"wavelength": "wavelength_nm"})
+                .rename_vars({"wavelength": "wavelength_nm"})
+            )
+
+        ds.to_netcdf(self._data_file)
+
+    def _generate_sasktran2(self):
+        """
+        Generates the data file from sasktran2
+        """
+
+        def _create_table(distribution, refractive_index_fn, wavelengths):
+
+            mie = LinearizedMie()
+            vals = integrate_mie(
+                mie,
+                distribution,
+                refractive_index_fn,
+                wavelengths,
+                num_quad=1000,
+                maxintquantile=0.99999,
+                compute_coeffs=True,
+                num_coeffs=self._max_legendre_moments,
+            )
+            # vals xs is in units of nm^2, convert to cm^2 then to m^2
+            vals["xs_total"] *= 1e-14 * 1e-4
+            vals["xs_scattering"] *= 1e-14 * 1e-4
+            vals["xs_absorption"] *= 1e-14 * 1e-4
+
+            ret_ds = xr.Dataset()
+
+            ret_ds["xs_scattering"] = vals["xs_scattering"]
+            ret_ds["xs_total"] = vals["xs_total"]
+            ret_ds["lm_a1"] = vals["lm_a1"]
+            ret_ds["lm_a2"] = vals["lm_a2"]
+            ret_ds["lm_a3"] = vals["lm_a3"]
+            ret_ds["lm_a4"] = vals["lm_a4"]
+            ret_ds["lm_b1"] = vals["lm_b1"]
+            ret_ds["lm_b2"] = vals["lm_b2"]
+
+            return ret_ds
+
+        refractive = self._refractive_index.refractive_index_fn
+
+        entries = []
+        for vals in product(*self._kwargs.values()):
+            psize_args = dict(zip(self._kwargs.keys(), vals, strict=True))
+
+            dist = self._psize_dist.distribution(**psize_args)
+
+            entry = _create_table(dist, refractive, self._wavelengths_nm)
+
+            for key, val in psize_args.items():
+                entry[key] = val
+
+            entries.append(entry)
+
+        if len(self._kwargs) > 1:
+            # Have to do a multi-index unstack
+            ds = (
+                xr.concat(entries, dim="args")  # noqa: PD010
+                .set_index(args=list(self._kwargs.keys()))
+                .unstack("args")
+                .rename_dims({"wavelength": "wavelength_nm"})
+                .rename_vars({"wavelength": "wavelength_nm"})
+            )
+        elif len(self._kwargs) == 1:
+            ds = (
+                xr.concat(entries, dim=next(iter(self._kwargs.keys())))
+                .rename_dims({"wavelength": "wavelength_nm"})
+                .rename_vars({"wavelength": "wavelength_nm"})
+            )
+        else:
+            # length is 0
+            ds = (
+                entries[0]
+                .rename_dims({"wavelength": "wavelength_nm"})
+                .rename_vars({"wavelength": "wavelength_nm"})
+            )
 
         ds.to_netcdf(self._data_file)
 

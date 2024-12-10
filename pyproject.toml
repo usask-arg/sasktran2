@@ -1,12 +1,12 @@
 [build-system]
-requires = ["scikit-build-core>=0.3.3", "pybind11", "setuptools-scm>=8.0"]
+requires = ["scikit-build-core>=0.3.3", "pybind11", "setuptools-scm>=8.0", "cmake<3.30 ; platform_system=='Darwin'"]
 build-backend = "scikit_build_core.build"
 
 
 [project]
 name = "sasktran2"
 dynamic = ["version"]
-dependencies = ['numpy', 'appdirs', 'pyyaml', 'xarray>=2023.0.0', 'dask', 'scipy', 'netcdf4']
+dependencies = ['numpy', 'appdirs', 'pyyaml', 'xarray>=2023.0.0', 'scipy', 'netcdf4']
 include = ['python/src/sasktran2/*']
 license = {text = "MIT"}
 description= "The SASKTRAN radiative transfer model Version 2"
@@ -26,7 +26,63 @@ classifiers = [
 
 [project.optional-dependencies]
 test = ["pytest"]
+solar = ["astropy"]
 hapi = ["hitran-api"]
+dev = ["ruff", "sphinx", "sphinx_book_theme", "myst-nb", "sphinx_design"]
+complete = ["sasktran2[solar,hapi]"]
+
+[tool.pixi.project]
+channels = ["conda-forge"]
+platforms = ["linux-64", "linux-aarch64", "linux-ppc64le", "osx-64", "osx-arm64", "win-64"]
+
+[tool.pixi.pypi-dependencies]
+
+[tool.pixi.pypi-options]
+
+[tool.pixi.tasks]
+build = { cmd = [
+    "pip",
+    "install",
+    "--no-build-isolation",
+    "-v",
+    "-e",
+    ".",
+] }
+test = { cmd = "pytest tests/", cwd = "." }
+pre-commit = { cmd = "pre-commit run -a", cwd = "." }
+docs = { cmd = "sphinx-build -b html docs/sphinx/source docs/sphinx/build", cwd = "." }
+
+
+[tool.pixi.dependencies]
+numpy = "*"
+appdirs = "*"
+pyyaml = "*"
+xarray = ">=2023.0.0"
+scipy = "*"
+netcdf4 = "*"
+pytest = ">=8.3.3,<9"
+astropy = "*"
+ruff = "*"
+sphinx = "*"
+myst-nb = "*"
+openblas = "*"
+libopenblas = "*"
+eigen = "*"
+spdlog = "*"
+c-compiler = "*"
+cxx-compiler = "*"
+fortran-compiler = "*"
+scikit-build-core = "*"
+cmake = "*"
+pip = "*"
+setuptools_scm = "*"
+pybind11 = "*"
+matplotlib = "*"
+pre-commit = "*"
+
+[tool.pixi.environments]
+default = ["test", "solar", "hapi", "dev"]
+
 
 [tool.scikit-build]
 wheel.expand-macos-universal-tags = true
@@ -63,7 +119,7 @@ archs = "native"
 environment = { CFLAGS="-fno-strict-aliasing -DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", LDFLAGS="-Wl,--strip-debug", CXXFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", RUNNER_OS="Linux", CMAKE_BUILD_PARALLEL_LEVEL="2", DO_STREAM_TEMPLATES="ON"}
 
 [tool.cibuildwheel.macos]
-archs = "x86_64 arm64"
+archs = "native"
 test-skip = "*_universal2:arm64"
 # MACOS linker doesn't support stripping symbols
 environment = {CFLAGS="-fno-strict-aliasing -DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", CXXFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64",  CC="clang", CXX = "clang++", RUNNER_OS="macOS", CMAKE_ARGS="-DUSE_OPENMP=OFF", CMAKE_BUILD_PARALLEL_LEVEL="3", DO_STREAM_TEMPLATES="ON"}
@@ -76,7 +132,7 @@ repair-wheel-command = "bash ./ci/cibw/repair_windows.sh {wheel} {dest_dir}"
 
 
 [tool.ruff]
-select = [
+lint.select = [
     "E", "F", "W", # flake8
     "B",           # flake8-bugbear
     "I",           # isort
@@ -101,21 +157,21 @@ select = [
     "NPY",         # NumPy specific rules
     "PD",          # pandas-vet
 ]
-extend-ignore = [
+lint.extend-ignore = [
     "PLR",    # Design related pylint codes
     "E501",   # Line too long
     "I002",   # Future annotations
     "PD011", # wanting to use to_numpy instead of values
 ]
 src = ["python"]
-unfixable = [
+lint.unfixable = [
     "T20",  # Removes print statements
     "F841", # Removes unused variables
     "F401", # Removes unused imports
 ]
-flake8-unused-arguments.ignore-variadic-names = true
-isort.required-imports = ["from __future__ import annotations"]
+lint.flake8-unused-arguments.ignore-variadic-names = true
+lint.isort.required-imports = ["from __future__ import annotations"]
 exclude = ["tools/*", "docs/sphinx/source/conf.py", "src/sasktran2/_core.pyi"]
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "tests/**" = ["T20"]

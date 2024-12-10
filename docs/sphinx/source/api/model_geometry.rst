@@ -3,5 +3,7 @@
 Model Geometry
 ==============
 
+.. autosummary::
+    :toctree: generated/
 
-.. autoclass:: sasktran2.Geometry1D
+    sasktran2.Geometry1D
