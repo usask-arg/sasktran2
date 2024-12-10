@@ -92,21 +92,19 @@ namespace sasktran2::atmosphere {
         void determine_maximum_order() {
             max_order.setConstant(max_stored_legendre());
 
-            return;
-
             for (int i = 0; i < max_order.rows(); ++i) {
                 for (int j = 0; j < max_order.cols(); ++j) {
 
                     if constexpr (NSTOKES == 1) {
                         for (int k = 0; k < max_stored_legendre(); ++k) {
                             if (leg_coeff(k, i, j) != 0) {
-                                max_order(i, j) = k;
+                                max_order(i, j) = k + 1;
                             }
                         }
                     } else {
-                        for (int k = 0; k < max_stored_legendre(); k += 4) {
+                        for (int k = 0; k < max_stored_legendre() * 4; k += 4) {
                             if (leg_coeff(4 * k, i, j) != 0) {
-                                max_order(i, j) = k / 4;
+                                max_order(i, j) = k / 4 + 1;
                             }
                         }
                     }
