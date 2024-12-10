@@ -18,6 +18,7 @@
                 "xaver.clang-format",
                 "ms-python.python",
                 "charliermarsh.ruff",
+                "github.vscode-github-actions",
                 "elagil.pre-commit-helper"
             ],
             "settings": {}
