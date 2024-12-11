@@ -5,6 +5,7 @@ from .brdf.kokhanovsky import SnowKokhanovsky
 from .brdf.lambertiansurface import LambertianSurface
 from .brdf.modis import MODIS
 from .collisioninducedabsorber import CollisionInducedAbsorber
+from .emission import ThermalEmission
 from .numdenscatterer import ExtinctionScatterer, NumberDensityScatterer
 from .rayleigh import Rayleigh
 from .vmraltitudeabsorber import VMRAltitudeAbsorber

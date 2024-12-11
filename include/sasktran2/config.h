@@ -80,6 +80,16 @@ namespace sasktran2 {
          */
         enum class OccultationSource { standard, none };
 
+        /** Enum determining the type of emission source to include within the
+         * model.
+         *
+         *  'standard' Uses the emission source defined in the atmosphere
+         * grid storage class.
+         *
+         *  'none' Removes the emission source.
+         */
+        enum class EmissionSource { standard, none };
+
         /** Enum determining what basis to return back the Stokes vectors
          * components in
          *
@@ -217,6 +227,20 @@ namespace sasktran2 {
          */
         void set_occultation_source(OccultationSource source) {
             m_occultation_source = source;
+        }
+
+        /**
+         *
+         * @return The type of emission source to include
+         */
+        EmissionSource emission_source() const { return m_emission_source; }
+
+        /** Sets the type of emission source to include
+         *
+         * @param source
+         */
+        void set_emission_source(EmissionSource source) {
+            m_emission_source = source;
         }
 
         /**
@@ -560,6 +584,7 @@ namespace sasktran2 {
         SingleScatterSource m_single_scatter_source;
         MultipleScatterSource m_multiple_scatter_source;
         OccultationSource m_occultation_source;
+        EmissionSource m_emission_source;
 
         WeightingFunctionPrecision m_wf_precision;
 

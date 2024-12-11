@@ -61,6 +61,15 @@ void declareAtmosphereStorage(py::module_& m, const std::string& suffix) {
                 storage.total_extinction = total_extinction;
             })
         .def_property(
+            "emission_source",
+            [](AtmosphereGridStorage& storage) -> Eigen::MatrixXd& {
+                return storage.emission_source;
+            },
+            [](AtmosphereGridStorage& storage,
+               const Eigen::MatrixXd& emission_source) {
+                storage.emission_source = emission_source;
+            })
+        .def_property(
             "f",
             [](AtmosphereGridStorage& storage) -> const Eigen::MatrixXd& {
                 return storage.f;

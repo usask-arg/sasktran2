@@ -66,6 +66,15 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
             m_source_terms[m_source_terms.size() - 1].get());
     }
 
+    if (m_config.emission_source() ==
+        sasktran2::Config::EmissionSource::standard) {
+        m_source_terms.emplace_back(
+            std::make_unique<sasktran2::emission::EmissionSource<NSTOKES>>());
+
+        m_los_source_terms.push_back(
+            m_source_terms[m_source_terms.size() - 1].get());
+    }
+
     if (m_config.multiple_scatter_source() ==
         sasktran2::Config::MultipleScatterSource::discrete_ordinates) {
 

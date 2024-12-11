@@ -128,6 +128,17 @@ void init_config(py::module_& m) {
                 `sasktran2.OccultationSource.Standard`
                     A constant source of 1 is placed at the end of every individual line of sight.
             )")
+        .def_property("emission_source", &sasktran2::Config::emission_source,
+                      &sasktran2::Config::set_emission_source,
+                      R"(
+                Sets which (if any) emission source is to be used inside the calculation.
+
+                `sasktran2.EmissionSource.NoSource` (Default)
+                    No emission source included
+
+                `sasktran2.EmissionSource.Standard`
+                    An emission source defined on the atmosphere grid is enabled.
+            )")
         .def_property("multiple_scatter_source",
                       &sasktran2::Config::multiple_scatter_source,
                       &sasktran2::Config::set_multiple_scatter_source,
