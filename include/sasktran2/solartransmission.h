@@ -121,6 +121,18 @@ namespace sasktran2::solartransmission {
      * This is useful for cases where the phase function requires many terms in
      * the Legendre series.
      *
+     * Storage for the phase function is handled in a semi-complicated hard to
+     * understand manner. For each thread, we store the phase function (stokes,
+     * internal_index) where internal_index represents a single scattering angle
+     * at a single geomtry level in the atmosphere.
+     *
+     * The internal_index is mapped back to the geometry index through the
+     * m_internal_to_geometry, and the scattering angle is determined by the
+     * m_internal_to_cos_scatter.  This combination lets us calculate the phase
+     * function.  But to actually use it, we need to map the entrance and exit
+     * points of the ray to the internal indices.  This is done through the
+     * m_geometry_entrance_to_internal and m_geometry_exit_to_internal
+     *
      * @tparam NSTOKES
      */
     template <int NSTOKES> class PhaseHandler {
@@ -161,19 +173,52 @@ namespace sasktran2::solartransmission {
       public:
         PhaseHandler(const Geometry1D& geometry) : m_geometry(geometry) {}
 
+        /**
+         * Initializes the phase handler with the configuration object
+         */
         void initialize_config(const sasktran2::Config& config) {
             m_config = &config;
         }
 
+        /**
+         *  Initializes the phase handler with the atmosphere object
+         *
+         *  @param atmosphere The atmosphere object
+         */
         void initialize_atmosphere(
             const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere);
 
+        /**
+         * Initializes the phase handler with the geometry object
+         *
+         * @param los_rays The traced line of sight rays
+         * @param index_map The index map
+         */
         void initialize_geometry(
             const std::vector<sasktran2::raytracing::TracedRay>& los_rays,
             const std::vector<std::vector<int>>& index_map);
 
+        /**
+         *   Calculates the phase function from the legendre coefficients at the
+         * necessary scatter angles
+         *
+         *   @param threadidx The thread index
+         *   @param wavelidx The wavelength index
+         */
         void calculate(int wavelidx, int threadidx);
 
+        /**
+         * Calculates the phase function at a given point and puts it into
+         * source
+         *
+         * @param wavelidx The wavelength index
+         * @param losidx The line of sight index
+         * @param layeridx The layer index
+         * @param index_weights The interpolation weights
+         * @param is_entrance  True if we are at the entrance to a layer, false
+         * if we are at the exit to a layer
+         * @param source The source term
+         */
         void scatter(int wavelidx, int losidx, int layeridx,
                      const std::vector<std::pair<int, double>>& index_weights,
                      bool is_entrance,

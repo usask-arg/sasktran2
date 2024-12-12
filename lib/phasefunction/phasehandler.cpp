@@ -1,5 +1,6 @@
 #include "sasktran2/raytracing.h"
 #include <sasktran2/solartransmission.h>
+#include <spdlog/spdlog.h>
 
 namespace sasktran2::solartransmission {
     template <int NSTOKES>
@@ -13,15 +14,20 @@ namespace sasktran2::solartransmission {
         int negation;
         // First we need to iterate through and figure out how many internal
         // indices we will end up with and how many scatter angles we will need
+
+        // Keep track of the entrance and exits separately
         m_geometry_entrance_to_internal.resize(los_rays.size());
         m_geometry_exit_to_internal.resize(los_rays.size());
         for (int i = 0; i < los_rays.size(); ++i) {
             const sasktran2::raytracing::TracedRay& ray = los_rays[i];
 
+            // Empty rays don't need to be considered
             if (ray.layers.size() == 0) {
                 continue;
             }
 
+            // Straight rays we can just use the first layer to get the
+            // scattering angle, scattering angle does not change along the ray
             if (ray.is_straight) {
                 math::stokes_scattering_factors(
                     -1 * m_geometry.coordinates().sun_unit(),
@@ -34,13 +40,14 @@ namespace sasktran2::solartransmission {
                 }
             }
 
+            // We have to map every exit/internal layer point to an internal
+            // scattering angle
             m_geometry_entrance_to_internal[i].resize(ray.layers.size());
             m_geometry_exit_to_internal[i].resize(ray.layers.size());
 
-            if (ray.layers.size() == 0) {
-                continue;
-            }
             for (int j = 0; j < ray.layers.size(); ++j) {
+
+                // If the ray isn't straight every layer has a scattering angle
                 if (!ray.is_straight) {
                     math::stokes_scattering_factors(
                         -1 * m_geometry.coordinates().sun_unit(),
@@ -192,36 +199,43 @@ namespace sasktran2::solartransmission {
                 }
                 for (int d = 0; d < m_atmosphere->num_scattering_deriv_groups();
                      ++d) {
+
+                    int d_max_order = m_atmosphere->storage().d_max_order[d](
+                        atmo_index, wavelidx);
                     if constexpr (NSTOKES == 1) {
                         m_d_phase(0, i, d, threadidx) =
                             Eigen::Map<const Eigen::VectorXd>(
                                 &m_atmosphere->storage().d_leg_coeff(
                                     0, atmo_index, wavelidx, d),
-                                max_order)
-                                .dot(m_wigner_d00(Eigen::seq(0, max_order - 1),
-                                                  scat_index));
+                                d_max_order)
+                                .dot(
+                                    m_wigner_d00(Eigen::seq(0, d_max_order - 1),
+                                                 scat_index));
                     } else {
                         m_d_phase(0, i, d, threadidx) =
                             Eigen::Map<const Eigen::VectorXd, 0,
                                        Eigen::InnerStride<4>>(
                                 &m_atmosphere->storage().d_leg_coeff(
                                     0, atmo_index, wavelidx, d),
-                                max_order)
-                                .dot(m_wigner_d00(Eigen::seq(0, max_order - 1),
-                                                  scat_index));
+                                d_max_order)
+                                .dot(
+                                    m_wigner_d00(Eigen::seq(0, d_max_order - 1),
+                                                 scat_index));
                         m_d_phase(1, i, d, threadidx) =
                             Eigen::Map<const Eigen::VectorXd, 0,
                                        Eigen::InnerStride<4>>(
                                 &m_atmosphere->storage().d_leg_coeff(
                                     3, atmo_index, wavelidx, d),
-                                max_order)
-                                .dot(m_wigner_d02(Eigen::seq(0, max_order - 1),
-                                                  scat_index));
+                                d_max_order)
+                                .dot(
+                                    m_wigner_d02(Eigen::seq(0, d_max_order - 1),
+                                                 scat_index));
                     }
                 }
             }
         } else {
-            // How to do this?
+            spdlog::error("Phase mode not implemented");
+            throw std::runtime_error("Phase mode not implemented");
         }
     }
 
