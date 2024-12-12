@@ -119,6 +119,18 @@ namespace sasktran2 {
          */
         enum class InputValidationMode { strict, standard, disabled };
 
+        /** Enum determining how to calculate the single scatter phase function
+         *
+         *      'from_legendre' Calculates the single scatter phase function
+         * from the legendre coefficients and the
+         * config.num_singlescatter_moments option
+         *
+         *      'user' Allows the user to provide a custom phase function inside
+         * the Atmosphere class
+         *
+         */
+        enum class SingleScatterPhaseMode { from_legendre, user };
+
         Config();
 
         /**
@@ -489,6 +501,24 @@ namespace sasktran2 {
         void set_stokes_basis(StokesBasis basis) { m_stokes_basis = basis; }
 
         /**
+         * @brief The single scatter phase mode
+         *
+         * @return SingleScatterPhaseMode
+         */
+        SingleScatterPhaseMode singlescatter_phasemode() const {
+            return m_singlescatter_phasemode;
+        }
+
+        /**
+         * @brief Set the single scatter phase mode
+         *
+         * @param mode
+         */
+        void set_singlescatter_phasemode(SingleScatterPhaseMode mode) {
+            m_singlescatter_phasemode = mode;
+        }
+
+        /**
          * @brief The threading model to use
          *
          * @return ThreadingModel
@@ -568,6 +598,8 @@ namespace sasktran2 {
         StokesBasis m_stokes_basis;
 
         ThreadingModel m_threading_model;
+
+        SingleScatterPhaseMode m_singlescatter_phasemode;
 
         bool m_initialize_hr_with_do_solution;
     };
