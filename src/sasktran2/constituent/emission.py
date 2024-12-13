@@ -7,7 +7,7 @@ from .base import Constituent
 
 
 class ThermalEmission(Constituent):
-    def __init__():
+    def __init__(self):
         """
         An implementation of thermal emissions calculated from the Planck function. The emission is
         calculated with units of [photons / (cm^2 nm sr)].
@@ -35,18 +35,25 @@ class ThermalEmission(Constituent):
             raise ValueError(msg)
 
         wavelen_m = atmo.wavelengths_nm / 1e9
-        blackbodyradiance = (
-            (2 * SPEED_OF_LIGHT / wavelen_m**4)
-            / (
-                np.exp(
-                    PLANCK
-                    * SPEED_OF_LIGHT
-                    / wavelen_m
-                    / K_BOLTZMANN
-                    / atmo.temperature_k
+        blackbodyradiance = np.zeros([len(atmo.temperature_k), len(atmo.wavelengths_nm)])
+
+        for i in range(len(atmo.temperature_k)):
+            for j in range(len(atmo.wavelengths_nm)):
+                blackbodyradiance[i, j] = (
+                    (2 * SPEED_OF_LIGHT / wavelen_m[j]**4)
+                    / (
+                        np.exp(
+                            PLANCK
+                            * SPEED_OF_LIGHT
+                            / wavelen_m[j]
+                            / K_BOLTZMANN
+                            / atmo.temperature_k[i]
+                        )
+                        - 1
+                    )
+                    / 1e13
                 )
-                - 1
-            )
-            / 1e13
-        )
         atmo.storage.emission_source += blackbodyradiance
+
+    def register_derivative(self, atmo: sk.Atmosphere, name: str):
+        return super().register_derivative(atmo=atmo, name=name)
