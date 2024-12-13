@@ -218,26 +218,25 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::
 
     if (m_include_direct_bounce) {
         if constexpr (NSTOKES == 1) {
-            direct_contrib.value = directIntensityTOA() * this->M_CSZ / PI *
-                                   beam_transmittance.value *
+            direct_contrib.value = this->M_CSZ / PI * beam_transmittance.value *
                                    dual_albedo_sun.value;
         } else {
-            direct_contrib.value(0) = directIntensityTOA() * this->M_CSZ / PI *
+            direct_contrib.value(0) = this->M_CSZ / PI *
                                       beam_transmittance.value *
                                       dual_albedo_sun.value;
         }
 
         // beam has full deriv
         for (uint k = 0; k < input_deriv.numDerivative(); ++k) {
-            direct_contrib.deriv(k, 0) += directIntensityTOA() * this->M_CSZ /
-                                          PI * beam_transmittance.deriv(k) *
+            direct_contrib.deriv(k, 0) += this->M_CSZ / PI *
+                                          beam_transmittance.deriv(k) *
                                           dual_albedo_sun.value;
         }
         // albedo has layer deriv
         for (int k = 0; k < numLayerDeriv; ++k) {
             direct_contrib.deriv(k + layerStart, 0) +=
-                directIntensityTOA() * this->M_CSZ / PI *
-                beam_transmittance.value * dual_albedo_sun.deriv(k);
+                this->M_CSZ / PI * beam_transmittance.value *
+                dual_albedo_sun.deriv(k);
         }
 
         if (m_config.ss_only()) {
@@ -266,8 +265,7 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
     const GeometryLayerArray<NSTOKES, CNSTR>& geometry_layers,
     const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
     const sasktran2::Config& sk_config)
-    : OpticalLayerArrayROP<NSTOKES>(config),
-      m_direct_toa(this->M_SOLAR_DIRECT_INTENSITY), m_config(config),
+    : OpticalLayerArrayROP<NSTOKES>(config), m_config(config),
       m_include_direct_bounce(
           sk_config.single_scatter_source() ==
           sasktran2::Config::SingleScatterSource::discrete_ordinates),
@@ -279,6 +277,7 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
       m_surface(config.pool().thread_data().surface_storage(),
                 atmosphere.surface(), wavelidx) {
     m_wavel_index = wavelidx;
+    m_direct_toa = atmosphere.storage().solar_irradiance(wavelidx);
     // Allocations
     m_layers.reserve(this->M_NLYR);
     m_surface.storage().resize(this->M_NSTR, m_num_los,
@@ -707,10 +706,11 @@ void sasktran_disco::OpticalLayerArray<NSTOKES,
     }
 
     // Now convert OD to transmission
-    m_transmission[0].value = 1;
+    m_transmission[0].value = directIntensityTOA();
     index = 1;
     for (auto& layer : m_layers) {
-        m_transmission[index].value = std::exp(-m_transmission[index].value);
+        m_transmission[index].value =
+            std::exp(-m_transmission[index].value) * directIntensityTOA();
         if (compute_deriv) {
             m_transmission[index].deriv =
                 -m_transmission[index].deriv * m_transmission[index].value;

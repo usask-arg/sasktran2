@@ -503,16 +503,16 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::assignParticularQ(
         single_scat_st<NSTOKES, CNSTR, true>(
             layer.legendre_coeff(), (*this->M_LP_MU)[m][i],
             (*this->M_LP_CSZ)[m], m, layer.index(), layer.dual_ssa(),
-            this->M_SOLAR_DIRECT_INTENSITY * (*this->M_WT)[i],
-            m_layers.inputDerivatives(), &Qminus.value(NSTOKES * i),
-            &Qminus.deriv(0, NSTOKES * i), Qminus.deriv.rows());
+            (*this->M_WT)[i], m_layers.inputDerivatives(),
+            &Qminus.value(NSTOKES * i), &Qminus.deriv(0, NSTOKES * i),
+            Qminus.deriv.rows());
 
         single_scat_st<NSTOKES, CNSTR, false>(
             layer.legendre_coeff(), (*this->M_LP_MU)[m][i],
             (*this->M_LP_CSZ)[m], m, layer.index(), layer.dual_ssa(),
-            this->M_SOLAR_DIRECT_INTENSITY * (*this->M_WT)[i],
-            m_layers.inputDerivatives(), &Qplus.value(NSTOKES * i),
-            &Qplus.deriv(0, NSTOKES * i), Qplus.deriv.rows());
+            (*this->M_WT)[i], m_layers.inputDerivatives(),
+            &Qplus.value(NSTOKES * i), &Qplus.deriv(0, NSTOKES * i),
+            Qplus.deriv.rows());
     }
 }
 
