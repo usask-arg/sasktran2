@@ -10,8 +10,7 @@ class ThermalEmission(Constituent):
     def __init__(self):
         """
         An implementation of thermal emissions calculated from the Planck function. The emission is
-        calculated with units of [photons / (cm^2 nm sr)].
-        TODO: Add options for different units or normalization by solar spectrum.
+        calculated with units of [W / (m^2 nm sr)].
 
         This Constituent requires that the atmosphere object have `temperature_k` and
         `wavelength_nm` defined inside the :py:class:`sasktran2.Atmosphere` object.
@@ -34,25 +33,11 @@ class ThermalEmission(Constituent):
             msg = "It is required to set the temperature_k property in the Atmosphere object to use the ThermalEmission Constituent"
             raise ValueError(msg)
 
-        wavelen_m = atmo.wavelengths_nm / 1e9
-        blackbodyradiance = np.zeros([len(atmo.temperature_k), len(atmo.wavelengths_nm)])
+        # calculate radiance in W / (m^2 nm sr)
+        wavelengths_m = atmo.wavelengths_nm * 1e-9
+        exponent = PLANCK * SPEED_OF_LIGHT / (wavelengths_m * K_BOLTZMANN * atmo.temperature_k[:, np.newaxis])
+        blackbodyradiance = (2 * PLANCK * SPEED_OF_LIGHT ** 2 / wavelengths_m ** 5) / (np.exp(exponent) - 1) * 1e-9
 
-        for i in range(len(atmo.temperature_k)):
-            for j in range(len(atmo.wavelengths_nm)):
-                blackbodyradiance[i, j] = (
-                    (2 * SPEED_OF_LIGHT / wavelen_m[j]**4)
-                    / (
-                        np.exp(
-                            PLANCK
-                            * SPEED_OF_LIGHT
-                            / wavelen_m[j]
-                            / K_BOLTZMANN
-                            / atmo.temperature_k[i]
-                        )
-                        - 1
-                    )
-                    / 1e13
-                )
         atmo.storage.emission_source += blackbodyradiance
 
     def register_derivative(self, atmo: sk.Atmosphere, name: str):
