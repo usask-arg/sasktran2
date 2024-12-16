@@ -42,12 +42,15 @@ namespace sasktran2::atmosphere {
 
         int numscatderiv;
 
+        Eigen::VectorXd solar_irradiance; // wavel
+
       public:
         AtmosphereGridStorageFull(int nwavel, int nlocation, int numlegendre) {
             ssa.resize(nlocation, nwavel);
             total_extinction.resize(nlocation, nwavel);
             f.resize(nlocation, nwavel);
             max_order.resize(nlocation, nwavel);
+            solar_irradiance.resize(nwavel);
 
             if constexpr (NSTOKES == 1) {
                 leg_coeff.resize(numlegendre, nlocation, nwavel);
@@ -59,6 +62,7 @@ namespace sasktran2::atmosphere {
             total_extinction.setZero();
             leg_coeff.setZero();
             f.setZero();
+            solar_irradiance.setConstant(1.0);
 
             applied_f_location = -1;
             applied_f_order = -1;

@@ -2,6 +2,10 @@ import abc
 
 import pandas as pd
 
+from .model import SolarModel
+
+__all__ = ["SolarModel"]
+
 
 class SolarGeometryHandlerBase:
     def __init__(self):

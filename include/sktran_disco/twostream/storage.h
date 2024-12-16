@@ -126,6 +126,9 @@ namespace sasktran2::twostream {
             // extinction
             ssa.array() /= od.array();
 
+            // Dither the ssa if it's exactly 1
+            ssa = ssa.cwiseMin(1 - 1e-9);
+
             // And we multiply by the thickness to get the optical depth
             od.array() *= (geometry_layers->layer_ceiling().array() -
                            geometry_layers->layer_floor().array());
@@ -144,7 +147,9 @@ namespace sasktran2::twostream {
                  transmission(Eigen::seq(1, nlyr)).array()) /
                 od.array();
 
-            transmission.array() = transmission.array().exp();
+            transmission.array() =
+                transmission.array().exp() *
+                atmosphere->storage().solar_irradiance(wavelidx);
 
             expsec = (-1.0 * average_secant.array() * od.array()).exp();
         }

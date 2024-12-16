@@ -77,7 +77,6 @@ namespace sasktran_disco {
       public:
         SolarProperties(const SolarProperties* other)
             : M_CSZ(other->M_CSZ), M_SAZ(other->M_SAZ),
-              M_SOLAR_DIRECT_INTENSITY(other->M_SOLAR_DIRECT_INTENSITY),
               M_SOLAR_REFRACTION(other->M_SOLAR_REFRACTION),
               M_LP_CSZ(other->M_LP_CSZ) {
             // empty
@@ -86,13 +85,10 @@ namespace sasktran_disco {
       protected:
         SolarProperties()
             : M_CSZ(std::nan("1")), M_SAZ(std::nan("1")),
-              M_SOLAR_REFRACTION(false),
-              M_SOLAR_DIRECT_INTENSITY(std::nan("1")), M_LP_CSZ(nullptr) {
+              M_SOLAR_REFRACTION(false), M_LP_CSZ(nullptr) {
             // empty
         }
 
-        const double M_SOLAR_DIRECT_INTENSITY; /** Direct solar intensity at
-                                                  TOA, usually 1*/
         const bool M_SOLAR_REFRACTION; /** Whether to include solar refraction
                                          in the calculations */
         const double M_CSZ;            /** Cosine solar zenith angle */

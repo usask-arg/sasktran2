@@ -75,7 +75,9 @@ namespace sasktran2::solartransmission {
                                          Eigen::all, wavelidx));
         }
 
-        m_solar_trans[threadidx] = exp(-m_solar_trans[threadidx].array());
+        m_solar_trans[threadidx] =
+            exp(-m_solar_trans[threadidx].array()) *
+            m_atmosphere->storage().solar_irradiance(wavelidx);
         for (int i = 0; i < m_ground_hit_flag.size(); ++i) {
             if (m_ground_hit_flag[i]) {
                 m_solar_trans[threadidx][i] = 0;
