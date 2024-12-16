@@ -9,8 +9,8 @@ namespace sasktran2::emission {
     template <int NSTOKES>
     void EmissionSource<NSTOKES>::initialize_atmosphere(
         const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere) {
-            // Store the atmosphere for later
-            m_atmosphere = &atmosphere;
+        // Store the atmosphere for later
+        m_atmosphere = &atmosphere;
     }
 
     template <int NSTOKES>
@@ -33,13 +33,15 @@ namespace sasktran2::emission {
             ssa_start +=
                 m_atmosphere->storage().ssa(ele.first, wavelidx) * ele.second;
             emission_start +=
-                m_atmosphere->storage().emission_source(ele.first, wavelidx) * ele.second;
+                m_atmosphere->storage().emission_source(ele.first, wavelidx) *
+                ele.second;
         }
         for (auto& ele : layer.exit.interpolation_weights) {
             ssa_end +=
                 m_atmosphere->storage().ssa(ele.first, wavelidx) * ele.second;
             emission_end +=
-                m_atmosphere->storage().emission_source(ele.first, wavelidx) * ele.second;
+                m_atmosphere->storage().emission_source(ele.first, wavelidx) *
+                ele.second;
         }
 
         // Average value of layer boundaries
@@ -48,7 +50,7 @@ namespace sasktran2::emission {
             source_factor1 *
             ((1 - ssa_start) * emission_start * layer.od_quad_start_fraction +
              (1 - ssa_end) * emission_end * layer.od_quad_end_fraction);
-        
+
         if constexpr (NSTOKES == 1) {
             source.value.array() += emission_cell;
         } else {
