@@ -26,7 +26,7 @@ void init_config(py::module_& m) {
         .value("NoSource", sasktran2::Config::OccultationSource::none)
         .value("Standard", sasktran2::Config::OccultationSource::standard)
         .export_values();
-    
+
     py::enum_<sasktran2::Config::EmissionSource>(m, "EmissionSource")
         .value("NoSource", sasktran2::Config::EmissionSource::none)
         .value("Standard", sasktran2::Config::EmissionSource::standard)

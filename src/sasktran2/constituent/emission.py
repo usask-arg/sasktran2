@@ -35,12 +35,14 @@ class ThermalEmission(Constituent):
             raise ValueError(msg)
 
         wavelen_m = atmo.wavelengths_nm / 1e9
-        blackbodyradiance = np.zeros([len(atmo.temperature_k), len(atmo.wavelengths_nm)])
+        blackbodyradiance = np.zeros(
+            [len(atmo.temperature_k), len(atmo.wavelengths_nm)]
+        )
 
         for i in range(len(atmo.temperature_k)):
             for j in range(len(atmo.wavelengths_nm)):
                 blackbodyradiance[i, j] = (
-                    (2 * SPEED_OF_LIGHT / wavelen_m[j]**4)
+                    (2 * SPEED_OF_LIGHT / wavelen_m[j] ** 4)
                     / (
                         np.exp(
                             PLANCK
