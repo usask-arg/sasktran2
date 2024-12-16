@@ -35,8 +35,16 @@ class ThermalEmission(Constituent):
 
         # calculate radiance in W / (m^2 nm sr)
         wavelengths_m = atmo.wavelengths_nm * 1e-9
-        exponent = PLANCK * SPEED_OF_LIGHT / (wavelengths_m * K_BOLTZMANN * atmo.temperature_k[:, np.newaxis])
-        blackbodyradiance = (2 * PLANCK * SPEED_OF_LIGHT ** 2 / wavelengths_m ** 5) / (np.exp(exponent) - 1) * 1e-9
+        exponent = (
+            PLANCK
+            * SPEED_OF_LIGHT
+            / (wavelengths_m * K_BOLTZMANN * atmo.temperature_k[:, np.newaxis])
+        )
+        blackbodyradiance = (
+            (2 * PLANCK * SPEED_OF_LIGHT**2 / wavelengths_m**5)
+            / (np.exp(exponent) - 1)
+            * 1e-9
+        )
 
         atmo.storage.emission_source += blackbodyradiance
 
