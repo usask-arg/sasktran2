@@ -23,6 +23,13 @@ BRDFs
     sasktran2.constituent.SnowKokhanovsky
     sasktran2.constituent.MODIS
 
+Solar Irradiance Models
+-----------------------
+.. autosummary::
+    :toctree: generated/
+
+    sasktran2.constituent.SolarIrradiance
+
 
 Dummy Constituents
 ------------------
