@@ -131,12 +131,16 @@ class HITRANLineDatabase(CachedDatabase):
             self._download_line_db(key)
 
     def load_ds(self, key: str, **kwargs) -> xr.Dataset:
+        nc_file = self._db_root.joinpath(f"{key}.nc")
+        if nc_file.exists():
+            return xr.open_dataset(nc_file)
         try:
             import hapi
         except ImportError as err:
             msg = "HITRAN API is required to use HAPI, try pip install hitran-api"
             raise ImportError(msg) from err
 
+        self.path(key)
         self.initialize_hapi(key)
 
         data_vars = {}
@@ -146,7 +150,10 @@ class HITRANLineDatabase(CachedDatabase):
                 data_vars[param] = ("line", param_column)
             except KeyError:  # param does not exist for this molecule
                 continue
-        return xr.Dataset(data_vars=data_vars)
+
+        ds = xr.Dataset(data_vars=data_vars)
+        ds.to_netcdf(nc_file)
+        return ds
 
     def clear(self):
         # deletes all .data and .header files in database folder

@@ -585,9 +585,10 @@ class Atmosphere:
             for _, constituent in self._constituents.items():
                 constituent.add_to_atmosphere(self)
 
-            self.storage.leg_coeff /= self.storage.ssa[np.newaxis, :, :]
+            nz = self.storage.ssa > 0
 
-            self.storage.ssa /= self.storage.total_extinction
+            self.storage.leg_coeff[:, nz] /= self.storage.ssa[np.newaxis, nz]
+            self.storage.ssa[nz] /= self.storage.total_extinction[nz]
 
             self._derivs = {}
             if self._calculate_derivatives:

@@ -7,6 +7,7 @@
 #include <sasktran2/math/wigner.h>
 #include <sasktran2/math/unitsphere.h>
 #include <sasktran2/math/geodetic.h>
+#include <sasktran2/math/spectroscopy.h>
 
 #include <sasktran2/core.h>
 #include <sasktran2/config.h>
