@@ -7,7 +7,9 @@ from sasktran2.constants import K_BOLTZMANN, PLANCK, SPEED_OF_LIGHT
 from .base import Constituent
 
 
-def planck_blackbody_radiance(temperature_k: np.ndarray, wavelengths_nm: np.ndarray) -> np.ndarray:
+def planck_blackbody_radiance(
+    temperature_k: np.ndarray, wavelengths_nm: np.ndarray
+) -> np.ndarray:
     """
     Calculates the Planck function for a given set of temperatures and wavelengths.
 
@@ -24,8 +26,16 @@ def planck_blackbody_radiance(temperature_k: np.ndarray, wavelengths_nm: np.ndar
         array is shape(len(temperature_k), len(wavelengths_nm)).
     """
     wavelengths_m = wavelengths_nm * 1e-9
-    exponent = PLANCK * SPEED_OF_LIGHT / (wavelengths_m * K_BOLTZMANN * temperature_k[:, np.newaxis])
-    return (2 * PLANCK * SPEED_OF_LIGHT ** 2 / wavelengths_m ** 5) / (np.exp(exponent) - 1) * 1e-9
+    exponent = (
+        PLANCK
+        * SPEED_OF_LIGHT
+        / (wavelengths_m * K_BOLTZMANN * temperature_k[:, np.newaxis])
+    )
+    return (
+        (2 * PLANCK * SPEED_OF_LIGHT**2 / wavelengths_m**5)
+        / (np.exp(exponent) - 1)
+        * 1e-9
+    )
 
 
 class ThermalEmission(Constituent):
@@ -56,7 +66,9 @@ class ThermalEmission(Constituent):
             raise ValueError(msg)
 
         # calculate radiance in W / (m^2 nm sr)
-        atmo.storage.emission_source += planck_blackbody_radiance(atmo.temperature_k, atmo.wavelengths_nm)
+        atmo.storage.emission_source += planck_blackbody_radiance(
+            atmo.temperature_k, atmo.wavelengths_nm
+        )
 
     def register_derivative(self, atmo: sk.Atmosphere, name: str):
         return super().register_derivative(atmo=atmo, name=name)
@@ -103,7 +115,12 @@ class SurfaceThermalEmission(Constituent):
         self._emissivity = np.atleast_1d(emissivity)
 
     def add_to_atmosphere(self, atmo: Atmosphere):
-        atmo.surface.emission += self.emissivity * planck_blackbody_radiance(np.atleast_1d(self.temperature_k), atmo.wavelengths_nm).flatten()
+        atmo.surface.emission += (
+            self.emissivity
+            * planck_blackbody_radiance(
+                np.atleast_1d(self.temperature_k), atmo.wavelengths_nm
+            ).flatten()
+        )
 
     def register_derivative(self, atmo: sk.Atmosphere, name: str):
         return super().register_derivative(atmo=atmo, name=name)
