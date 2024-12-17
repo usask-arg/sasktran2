@@ -225,7 +225,7 @@ namespace sasktran_disco {
                 s1 != 0) {
                 return 0;
             } else {
-                return this->M_CSZ * m_layers.directIntensityTOA() *
+                return this->M_CSZ *
                        m_layers.surface().storage().brdf.stream_solar(out /
                                                                       NSTOKES) /
                        PI * layer.beamTransmittance(Location::FLOOR);
@@ -243,7 +243,7 @@ namespace sasktran_disco {
                 s1 != 0) {
                 return 0;
             } else {
-                double result = this->M_CSZ * m_layers.directIntensityTOA() *
+                double result = this->M_CSZ *
                                 m_layers.surface().storage().brdf.stream_solar(
                                     out / NSTOKES) /
                                 PI *
@@ -256,8 +256,7 @@ namespace sasktran_disco {
                                          .d_brdf[deriv.surface_deriv_index]
                                          .stream_solar(out / NSTOKES);
 
-                result += this->M_CSZ * m_layers.directIntensityTOA() *
-                          d_albedo / PI *
+                result += this->M_CSZ * d_albedo / PI *
                           layer.beamTransmittance(Location::FLOOR);
                 return result;
             }

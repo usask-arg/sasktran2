@@ -22,10 +22,8 @@ jobs:
       - name: Set up conda environment
         uses: mamba-org/setup-micromamba@v2
         with:
+          conda-version: "24.1.2"
           environment-file: ${{env.CONDA_ENV_FILE}}
-          create-args: >-
-            asv
-
 
       - name: Run benchmarks
         shell: bash -l {0}
@@ -37,6 +35,7 @@ jobs:
           ASV_FACTOR: 1.05
           ASV_SKIP_SLOW: 1
         run: |
+          conda install asv
           set -x
           # ID this runner
           asv machine --yes

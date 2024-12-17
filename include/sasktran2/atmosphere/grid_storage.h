@@ -2,7 +2,6 @@
 
 #include <sasktran2/internal_common.h>
 #include <sasktran2/dual.h>
-#include "../geometry.h"
 
 namespace sasktran2::atmosphere {
     /** Base abstract storage container for specifying the atmospheric
@@ -35,7 +34,16 @@ namespace sasktran2::atmosphere {
             d_leg_coeff; // (legendre order, location, wavel, deriv)
         Eigen::Tensor<double, 3> d_f; // (location, wavel, deriv)
 
+        Eigen::MatrixXi
+            max_order; // Maximum order of the phase function for each location
+
+        std::vector<Eigen::MatrixXi>
+            d_max_order; // Maximum order of the derivative of the phase
+                         // function for each location
+
         int numscatderiv;
+
+        Eigen::VectorXd solar_irradiance; // wavel
 
       public:
         AtmosphereGridStorageFull(int nwavel, int nlocation, int numlegendre) {
@@ -43,6 +51,8 @@ namespace sasktran2::atmosphere {
             total_extinction.resize(nlocation, nwavel);
             emission_source.resize(nlocation, nwavel);
             f.resize(nlocation, nwavel);
+            max_order.resize(nlocation, nwavel);
+            solar_irradiance.resize(nwavel);
 
             if constexpr (NSTOKES == 1) {
                 leg_coeff.resize(numlegendre, nlocation, nwavel);
@@ -55,6 +65,7 @@ namespace sasktran2::atmosphere {
             emission_source.setZero();
             leg_coeff.setZero();
             f.setZero();
+            solar_irradiance.setConstant(1.0);
 
             applied_f_location = -1;
             applied_f_order = -1;
@@ -63,6 +74,12 @@ namespace sasktran2::atmosphere {
             scatderivstart = 0;
         }
 
+        /**
+         *  Allocates the necessary storage for the given number of scattering
+         * derivatives
+         *
+         * @param numderiv the number of scattering derivatives to allocate
+         */
         void resize_derivatives(int numderiv) {
             int legendre = leg_coeff.dimension(0);
             int numgeo = leg_coeff.dimension(1);
@@ -76,8 +93,17 @@ namespace sasktran2::atmosphere {
             d_f.setZero();
 
             numscatderiv = numderiv;
+
+            d_max_order.resize(numderiv);
+            for (int i = 0; i < numderiv; ++i) {
+                d_max_order[i].resize(numgeo, nwavel);
+                d_max_order[i].setZero();
+            }
         }
 
+        /*
+         *  Determines the maximum stored legendre coefficient index.
+         */
         int max_stored_legendre() const {
             const auto& d = leg_coeff.dimensions();
 
@@ -87,11 +113,65 @@ namespace sasktran2::atmosphere {
                 return (int)(d[0] / 4);
             }
         }
+
+        /**
+         *  Determines the maximum order of the phase function for each
+         * location.  This is done by finding the highest stored legendre
+         * coefficient index that is non-zero.
+         */
+        void determine_maximum_order() {
+            max_order.setConstant(1);
+
+            for (int i = 0; i < max_order.rows(); ++i) {
+                for (int j = 0; j < max_order.cols(); ++j) {
+
+                    if constexpr (NSTOKES == 1) {
+                        for (int k = 0; k < max_stored_legendre(); ++k) {
+                            if (leg_coeff(k, i, j) != 0) {
+                                max_order(i, j) = k + 1;
+                            }
+                        }
+                    } else {
+                        for (int k = 0; k < max_stored_legendre(); ++k) {
+                            if (leg_coeff(4 * k, i, j) != 0) {
+                                max_order(i, j) = k + 1;
+                            }
+                        }
+                    }
+                }
+            }
+
+            for (int d = 0; d < d_max_order.size(); ++d) {
+                auto& max_order_deriv = d_max_order[d];
+
+                for (int i = 0; i < max_order_deriv.rows(); ++i) {
+                    for (int j = 0; j < max_order_deriv.cols(); ++j) {
+
+                        if constexpr (NSTOKES == 1) {
+                            for (int k = 0; k < max_stored_legendre(); ++k) {
+                                if (d_leg_coeff(k, i, j, d) != 0) {
+                                    max_order_deriv(i, j) = k + 1;
+                                }
+                            }
+                        } else {
+                            for (int k = 0; k < max_stored_legendre(); ++k) {
+                                if (d_leg_coeff(4 * k, i, j, d) != 0) {
+                                    max_order_deriv(i, j) = k + 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     };
 
     /** Class which performs interpolation over the phase matrix.
      *  This can either mean direct interpolation of phase matrix values, or
      * calculation of the phase matrix from the Legendre/greek coefficients
+     *
+     * Note: This class isn't used anymore, we keep it around because it may be
+     * used in future source functions that allocate less memory?
      *
      * @tparam NSTOKES
      */

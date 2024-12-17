@@ -162,14 +162,14 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::integrate_source(
         Q.deriv.setZero();
         if constexpr (NSTOKES == 1) {
             single_scat_st<NSTOKES, CNSTR, true>(
-                *m_lephasef, lp_mu, (*this->M_LP_CSZ)[m], m, p, m_dual_ssa,
-                this->M_SOLAR_DIRECT_INTENSITY, m_input_derivs, &Q.value,
-                &Q.deriv(layerStart, 0), Q.deriv.rows());
+                *m_lephasef, lp_mu, (*this->M_LP_CSZ)[m], m, p, m_dual_ssa, 1.0,
+                m_input_derivs, &Q.value, &Q.deriv(layerStart, 0),
+                Q.deriv.rows());
         } else {
             single_scat_st<NSTOKES, CNSTR, true>(
-                *m_lephasef, lp_mu, (*this->M_LP_CSZ)[m], m, p, m_dual_ssa,
-                this->M_SOLAR_DIRECT_INTENSITY, m_input_derivs, &Q.value(0),
-                &Q.deriv(layerStart, 0), Q.deriv.rows());
+                *m_lephasef, lp_mu, (*this->M_LP_CSZ)[m], m, p, m_dual_ssa, 1.0,
+                m_input_derivs, &Q.value(0), &Q.deriv(layerStart, 0),
+                Q.deriv.rows());
         }
     } else {
         if (manual_ss_source == nullptr) {
@@ -480,10 +480,9 @@ void sasktran_disco::OpticalLayer<1, 2>::integrate_source(
 
     if (include_ss) {
         Q.deriv.setZero();
-        single_scat_st<1, 2, true>(
-            *m_lephasef, lp_mu, (*this->M_LP_CSZ)[m], m, p, m_dual_ssa,
-            this->M_SOLAR_DIRECT_INTENSITY, m_input_derivs, &Q.value,
-            &Q.deriv(layerStart, 0), Q.deriv.rows());
+        single_scat_st<1, 2, true>(*m_lephasef, lp_mu, (*this->M_LP_CSZ)[m], m,
+                                   p, m_dual_ssa, 1.0, m_input_derivs, &Q.value,
+                                   &Q.deriv(layerStart, 0), Q.deriv.rows());
     } else {
         if (manual_ss_source == nullptr) {
             Q.setzero();

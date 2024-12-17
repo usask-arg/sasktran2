@@ -18,7 +18,10 @@
                 "xaver.clang-format",
                 "ms-python.python",
                 "charliermarsh.ruff",
-                "elagil.pre-commit-helper"
+                "ms-toolsai.jupyter",
+                "github.vscode-github-actions",
+                "elagil.pre-commit-helper",
+                "njpwerner.autodocstring"
             ],
             "settings": {}
         }
