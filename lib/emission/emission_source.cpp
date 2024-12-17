@@ -7,6 +7,13 @@
 
 namespace sasktran2::emission {
     template <int NSTOKES>
+    void EmissionSource<NSTOKES>::initialize_geometry(
+        const std::vector<sasktran2::raytracing::TracedRay>& los_rays) {
+        // Store the rays for later
+        m_los_rays = &los_rays;
+    }
+
+    template <int NSTOKES>
     void EmissionSource<NSTOKES>::initialize_atmosphere(
         const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere) {
         // Store the atmosphere for later
@@ -73,6 +80,21 @@ namespace sasktran2::emission {
 
         integrated_source_constant(wavelidx, losidx, layeridx, wavel_threadidx,
                                    threadidx, layer, shell_od, source);
+    }
+
+    template <int NSTOKES>    
+    void EmissionSource<NSTOKES>::end_of_ray_source(
+        int wavelidx, int losidx, int wavel_threadidx, int threadidx,
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&source)
+        const {
+        if (m_los_rays->at(losidx).ground_is_hit) {
+            double emission_surface = m_atmosphere->surface().emission()[wavelidx];
+            if constexpr (NSTOKES == 1) {
+                source.value.array() += emission_surface;
+            } else {
+                source.value(0) += emission_surface;
+            }
+        }
     }
 
     template class EmissionSource<1>;

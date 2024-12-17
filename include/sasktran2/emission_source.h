@@ -12,6 +12,7 @@ namespace sasktran2::emission {
     class EmissionSource : public SourceTermInterface<NSTOKES> {
       private:
         const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere;
+        const std::vector<sasktran2::raytracing::TracedRay>* m_los_rays;
 
         void integrated_source_constant(
             int wavelidx, int losidx, int layeridx, int wavel_threadidx,
@@ -21,6 +22,16 @@ namespace sasktran2::emission {
                 source) const;
 
       public:
+        /** Here the emission source term saves the los_rays, which are
+         * needed to detect ground hits and whether to include
+         * surface emissions at the end of the ray.
+         *
+         *  @param los_rays The traced line of sight rays
+         */
+        void initialize_geometry(
+            const std::vector<sasktran2::raytracing::TracedRay>& los_rays)
+            override;
+
         /**
          *
          */
@@ -58,7 +69,7 @@ namespace sasktran2::emission {
         void end_of_ray_source(
             int wavelidx, int losidx, int wavel_threadidx, int threadidx,
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                source) const override{};
+                source) const override;
 
         /** Calculates the radiance at the start of the ray, i.e., the source
          * term has done the equivalent of the integration along the ray.  This

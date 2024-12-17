@@ -129,6 +129,12 @@ void declareSurface(py::module_& m, const std::string& suffix) {
             [](Surface& surface) -> Eigen::MatrixXd& {
                 return surface.brdf_args();
             },
+            nullptr)
+        .def_property(
+            "emission",
+            [](Surface& surface) -> Eigen::VectorXd& {
+                return surface.emission();
+            },
             nullptr);
 }
 
