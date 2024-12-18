@@ -6,6 +6,7 @@ from ._core import (  # noqa: I001
     AtmosphereStorageStokes_1,
     AtmosphereStorageStokes_3,
     Config,
+    EmissionSource,
     EngineStokes_1,
     EngineStokes_3,
     Geodetic,
