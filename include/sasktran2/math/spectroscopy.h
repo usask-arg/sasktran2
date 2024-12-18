@@ -7,6 +7,36 @@
 #endif
 
 namespace sasktran2::math::spectroscopy {
+    /**
+     * Broadens the input line data using the Voigt profile. All values are
+     * assumed to be in cgs units unless otherwise specified. The result matrix
+     * is filled with the broadened line data.
+     *
+     * @param line_center Central vacuum wavenumber of the line [line]
+     * @param line_intensity Line intensity [line]
+     * @param lower_energy Lower enregy level of the line [line]
+     * @param gamma_air Lorentz broadening due to air [line]
+     * @param gamma_self Lorentz broadening due to self [line]
+     * @param delta_air Pressure shift due to air [line]
+     * @param n_air [line]
+     * @param iso_id Identifier for the isotopalog [line]
+     * @param partitions Partition function ratios at the specified temperatures
+     * for each isotopalog [ngeo, num_isotop]
+     * @param molecular_mass Molecular mass of each isotopalog [num_isotop]
+     * @param pressure Partial pressure at each geometry (Pressure in Pa /
+     * 101325) [geometry]
+     * @param pself Self partial pressure at each geometry [geometry]
+     * @param temperature Temperature in K at each geometry [geometry]
+     * @param wavenumber_grid Wavenumber grid to produce the result on
+     * [wavenumber]
+     * @param result Resulting cross sections [geometry, wavenumber]
+     * @param line_contribution_width +/- from the line center to consider.
+     * Defaults to 25 [cm^-1]
+     * @param cull_factor Lines with total estimated vertical column relative
+     * optical depth less than this value are culled. Defaults to 0.0
+     * @param num_threads Number of threads to use if OMP is enabled. Defaults
+     * to 1.
+     */
     inline void voigt_broaden(
         Eigen::Ref<const Eigen::VectorXd> line_center,     // [line]
         Eigen::Ref<const Eigen::VectorXd> line_intensity,  // [line]
@@ -23,7 +53,7 @@ namespace sasktran2::math::spectroscopy {
         Eigen::Ref<const Eigen::VectorXd> temperature,     // [geometry]
         Eigen::Ref<const Eigen::VectorXd> wavenumber_grid, // [wavenumber]
         Eigen::Ref<Eigen::MatrixXd> result, // [geometry, wavenumber]
-        double line_contribution_width = 10.0, double cull_factor = 0.0,
+        double line_contribution_width = 25.0, double cull_factor = 0.0,
         const int num_threads = 1) {
         // Constants (cgs)
         const double c2 = 1.4387769;
