@@ -39,7 +39,7 @@ namespace sasktran2::math::spectroscopy {
         result.setZero();
 
         const double inv_sqrt2 = 1.0 / std::sqrt(2.0);
-        const double sqrt_2pi = std::sqrt(2.0 * M_PI);
+        const double sqrt_2pi = std::sqrt(2.0 * EIGEN_PI);
 
         double max_p_self = pself.maxCoeff();
         if (max_p_self == 0) {
