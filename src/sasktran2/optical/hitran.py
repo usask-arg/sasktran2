@@ -63,7 +63,7 @@ class HITRANAbsorber(OpticalProperty):
             atmo.model_geometry.altitudes(),
             temperature_k=atmo.temperature_k,
             pressure_pa=atmo.pressure_pa,
-            num_threads=atmo.config.num_threads,
+            num_threads=atmo._config.num_threads,
         ).T
         return result
 
