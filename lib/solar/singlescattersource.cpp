@@ -234,6 +234,9 @@ namespace sasktran2::solartransmission {
         double ssa_start = 0;
         double ssa_end = 0;
 
+        double k_start = 0;
+        double k_end = 0;
+
         double entrance_factor =
             solar_trans_entrance / (sasktran2::math::Pi * 4);
         double exit_factor = solar_trans_exit / (sasktran2::math::Pi * 4);
@@ -245,15 +248,22 @@ namespace sasktran2::solartransmission {
         for (auto& ele : layer.entrance.interpolation_weights) {
             ssa_start +=
                 m_atmosphere->storage().ssa(ele.first, wavelidx) * ele.second;
+
+            k_start +=
+                m_atmosphere->storage().total_extinction(ele.first, wavelidx) *
+                ele.second;
         }
         for (auto& ele : layer.exit.interpolation_weights) {
             ssa_end +=
                 m_atmosphere->storage().ssa(ele.first, wavelidx) * ele.second;
+            k_end +=
+                m_atmosphere->storage().total_extinction(ele.first, wavelidx) *
+                ele.second;
         }
 
         // Incident solar beam is unpolarized
-        start_phase.value(0) = ssa_start * entrance_factor;
-        end_phase.value(0) = ssa_end * exit_factor;
+        start_phase.value(0) = ssa_start * k_start * entrance_factor;
+        end_phase.value(0) = ssa_end * k_end * exit_factor;
 
         m_phase_handler.scatter(wavel_threadidx, losidx, layeridx,
                                 layer.entrance.interpolation_weights, true,
@@ -285,18 +295,23 @@ namespace sasktran2::solartransmission {
                 }
             }
 
-            // And SSA derivative factors
+            // And SSA/k derivative factors
             for (auto& ele : layer.entrance.interpolation_weights) {
                 start_phase.deriv(Eigen::all,
                                   m_atmosphere->ssa_deriv_start_index() +
                                       ele.first) +=
                     ele.second * start_phase.value / ssa_start;
+
+                start_phase.deriv(Eigen::all, ele.first) +=
+                    ele.second * start_phase.value / k_start;
             }
             for (auto& ele : layer.exit.interpolation_weights) {
                 end_phase.deriv(Eigen::all,
                                 m_atmosphere->ssa_deriv_start_index() +
                                     ele.first) +=
                     ele.second * end_phase.value / ssa_end;
+                end_phase.deriv(Eigen::all, ele.first) +=
+                    ele.second * end_phase.value / k_end;
             }
         }
 
@@ -310,8 +325,8 @@ namespace sasktran2::solartransmission {
         // }
         // return;
 
-        double source_factor1 = (1 - shell_od.exp_minus_od);
-        // Note dsource_factor = d_od * (1 - source_factor)
+        double source_factor1 = (1 - shell_od.exp_minus_od) / shell_od.od;
+        // Note dsource_factor = d_od * (1/od - source_factor * (1 + 1/od))
 
         // Get the phase matrix and add on the sources
         // The source factor term will only have extinction derivatives, the
@@ -319,24 +334,24 @@ namespace sasktran2::solartransmission {
         // in a 1D atmosphere
 
         source.value.array() +=
-            source_factor1 *
-            (start_phase.value.array() * layer.od_quad_start_fraction +
-             end_phase.value.array() * layer.od_quad_end_fraction);
+            source_factor1 * (start_phase.value.array() * layer.od_quad_start +
+                              end_phase.value.array() * layer.od_quad_end);
 
         if (calculate_derivative) {
             // Now for the derivatives, start with dsource_factor which is
             // sparse
             for (auto it = shell_od.deriv_iter; it; ++it) {
                 source.deriv(Eigen::all, it.index()).array() +=
-                    it.value() * (1 - source_factor1) *
-                    (start_phase.value.array() * layer.od_quad_start_fraction +
-                     end_phase.value.array() * layer.od_quad_end_fraction);
+                    it.value() *
+                    (1 / shell_od.od - source_factor1 * (1 + 1 / shell_od.od)) *
+                    (start_phase.value.array() * layer.od_quad_start +
+                     end_phase.value.array() * layer.od_quad_end);
             }
             // And add on d_phase
-            source.deriv.array() += source_factor1 * start_phase.deriv.array() *
-                                        layer.od_quad_start_fraction +
-                                    source_factor1 * end_phase.deriv.array() *
-                                        layer.od_quad_end_fraction;
+            source.deriv.array() +=
+                source_factor1 * start_phase.deriv.array() *
+                    layer.od_quad_start +
+                source_factor1 * end_phase.deriv.array() * layer.od_quad_end;
         }
 
 #ifdef SASKTRAN_DEBUG_ASSERTS

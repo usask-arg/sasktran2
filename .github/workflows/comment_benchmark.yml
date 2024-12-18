@@ -46,6 +46,7 @@ jobs:
         with:
           workflow: benchmark.yml
           workflow_conclusion: success
+          run_id: ${{ github.event.workflow_run.id }}
           name: asv-benchmark-results-Linux
 
       - name: Read benchmark output 1
