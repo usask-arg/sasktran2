@@ -5,6 +5,7 @@ from sasktran2.constants import K_BOLTZMANN
 from sasktran2.database.web import StandardDatabase
 
 from . import database, refraction  # noqa: F401
+from .hitran import HITRANAbsorber  # noqa: F401
 
 
 class O3DBM(database.OpticalDatabaseGenericAbsorber):
