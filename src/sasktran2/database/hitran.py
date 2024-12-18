@@ -7,9 +7,12 @@ import numpy as np
 import xarray as xr
 
 from sasktran2.optical.database import OpticalDatabaseGenericAbsorber
+from sasktran2.optical.hitran import HITRANAbsorber
 from sasktran2.units import wavenumber_cminv_to_wavlength_nm
+from sasktran2.util import get_hapi
 
 from .base import CachedDatabase
+from .hitran_line import HITRANLineDatabase
 
 PRESSURE_GRID = (
     np.array(
@@ -117,93 +120,6 @@ PRESSURE_GRID = (
 TEMP_GRID = np.arange(190, 311, 10)
 
 
-class HITRANLineDatabase(CachedDatabase):
-    def __init__(
-        self, db_root: Path | None = None, rel_path: Path | None = "hitran_lines"
-    ):
-        CachedDatabase.__init__(self, db_root, rel_path=rel_path)
-
-    def path(self, key: str, **kwargs) -> Path:
-        data_file = self._db_root.joinpath(f"{key}.data")
-        header_file = self._db_root.joinpath(f"{key}.header")
-        if not (data_file.exists() and header_file.exists()):
-            # download lines for this molecule
-            self._download_line_db(key)
-
-    def load_ds(self, key: str, **kwargs) -> xr.Dataset:
-        nc_file = self._db_root.joinpath(f"{key}.nc")
-        if nc_file.exists():
-            return xr.open_dataset(nc_file)
-        try:
-            import hapi
-        except ImportError as err:
-            msg = "HITRAN API is required to use HAPI, try pip install hitran-api"
-            raise ImportError(msg) from err
-
-        self.path(key)
-        self.initialize_hapi(key)
-
-        data_vars = {}
-        for param in hapi.PARLIST_ALL:
-            try:
-                param_column = hapi.getColumn(key, param)
-                data_vars[param] = ("line", param_column)
-            except KeyError:  # param does not exist for this molecule
-                continue
-
-        ds = xr.Dataset(data_vars=data_vars)
-        ds.to_netcdf(nc_file)
-        return ds
-
-    def clear(self):
-        # deletes all .data and .header files in database folder
-        for header_file in self._db_root.glob("*.header"):
-            header_file.unlink()
-        for data_file in self._db_root.glob("*.data"):
-            data_file.unlink()
-
-    def _download_line_db(self, molecule):
-        try:
-            import hapi
-        except ImportError as err:
-            msg = "HITRAN API is required to use HAPI, try pip install hitran-api"
-            raise ImportError(msg) from err
-
-        self.initialize_hapi()
-
-        # Get global isotopologue ids for this molecule
-        mol_index = hapi.ISO_ID_INDEX["mol_name"]
-        iso_ids = []
-        for id in hapi.ISO_ID:
-            if hapi.ISO_ID[id][mol_index] == molecule:
-                iso_ids.append(id)
-
-        # Download files
-        hapi.fetch_by_ids(
-            molecule, iso_ids, 0.0, 1.0e6, ParameterGroups=["par_line", "sdvoigt", "ht"]
-        )
-
-        return
-
-    def initialize_hapi(self, table_name: str | None = None):
-        """
-        Initialize the HAPI database with one or no tables. This is to reduce the time and memory that hapi.db_begin
-        uses when it is given a folder with many data files.
-        """
-        try:
-            import hapi
-        except ImportError as err:
-            msg = "HITRAN API is required to use HAPI, try pip install hitran-api"
-            raise ImportError(msg) from err
-
-        hapi.VARIABLES["BACKEND_DATABASE_NAME"] = str(self._db_root)
-        hapi.LOCAL_TABLE_CACHE = {}
-        if table_name is not None:
-            hapi.storage2cache(table_name)
-
-        return
-
-
 class HITRANDatabase(CachedDatabase, OpticalDatabaseGenericAbsorber):
     def __init__(
         self,
@@ -212,8 +128,9 @@ class HITRANDatabase(CachedDatabase, OpticalDatabaseGenericAbsorber):
         end_wavenumber: float,
         wavenumber_resolution: float,
         reduction_factor: int,
+        num_threads: int = 1,
         db_root: Path | None = None,
-        backend: str = "sasktran_legacy",
+        backend: str = "sasktran2",
         profile: str = "voigt",
     ) -> None:
         """
@@ -221,17 +138,27 @@ class HITRANDatabase(CachedDatabase, OpticalDatabaseGenericAbsorber):
 
         Parameters
         ----------
+        molecule : str
+            The HITRAN molecule identifier, e.g. "CO2", "H2O", "O3", "CH4"
+        start_wavenumber : float
+            The start wavenumber of the database in cm^-1
+        end_wavenumber : float
+            The end wavenumber of the database in cm^-1
+        wavenumber_resolution : float
+            The wavenumber resolution of the database in cm^-1
+        num_threads: int, optional
+            The number of threads to use in the cross section calculation. Default is 1.
         db_root : Path, optional
             The root directory to store the database, by default None
         backend : str, optional
-            The backend to use, by default "sasktran_legacy" which requires the module `sasktran` to be installed. Currently supported
-            options are ["sasktran_legacy", "hapi"]. Default is "sasktran_legacy"
+            The backend to use, by default "sasktran2" which uses the internal broadening algorithms.
+            options are ["sasktran2", "sasktran_legacy", "hapi"]. Default is "sasktran2".
+            Note: "sasktran_legacy" requires the sasktran package to be installed.
+            Both the "sasktran2" and "hapi" backends use the hapi package to access the HITRAN database.
         profile : str, optional
             The line shape profile to use in the cross section calculation. Currently, only the "hapi" backend supports options other
             than the default "voigt". Supported options are ["voigt", "sdvoigt", "ht", "priority", "lorentz", "doppler"].
             Default is "voigt".
-        kwargs
-            Additional arguments to pass to the particle size distribution, these should match the psize_distribution.args() method
         """
 
         class NumpyEncoder(json.JSONEncoder):
@@ -271,6 +198,7 @@ class HITRANDatabase(CachedDatabase, OpticalDatabaseGenericAbsorber):
         self._ltol = 1e-9
         self._wavenumber_wing = 50
         self._wavenumber_margin = 10
+        self._num_threads = num_threads
 
         CachedDatabase.__init__(
             self,
@@ -283,7 +211,9 @@ class HITRANDatabase(CachedDatabase, OpticalDatabaseGenericAbsorber):
         OpticalDatabaseGenericAbsorber.__init__(self, self.path())
 
     def generate(self):
-        if self._backend == "sasktran_legacy":
+        if self._backend == "sasktran2":
+            self._generate_sasktran2()
+        elif self._backend == "sasktran_legacy":
             self._generate_sasktran_legacy()
         elif self._backend == "hapi":
             self._generate_hapi()
@@ -353,11 +283,7 @@ class HITRANDatabase(CachedDatabase, OpticalDatabaseGenericAbsorber):
         line_db = HITRANLineDatabase()
         line_db.path(self._molecule)
 
-        try:
-            import hapi
-        except ImportError as err:
-            msg = "HITRAN API is required to use HAPI, try pip install hitran-api"
-            raise ImportError(msg) from err
+        hapi = get_hapi()
 
         abs_cal_fn = {
             "voigt": hapi.absorptionCoefficient_Voigt,
@@ -400,6 +326,35 @@ class HITRANDatabase(CachedDatabase, OpticalDatabaseGenericAbsorber):
                 )
                 xs[idx, idy] = xs_hapi / 1e4
 
+        ds = xr.Dataset(
+            {"xs": (["pressure", "temperature", "wavenumber_cminv"], xs)},
+            coords={
+                "pressure": PRESSURE_GRID,
+                "temperature": TEMP_GRID,
+                "wavenumber_cminv": hires_wavenumber_grid,
+            },
+        )
+
+        ds.to_netcdf(self._data_file)
+
+    def _generate_sasktran2(self):
+        hires_wavenumber_grid = np.arange(
+            self._start_wavenumber, self._end_wavenumber, self._wavenumber_resolution
+        )
+
+        calculator = HITRANAbsorber(
+            self._molecule, line_contribution_width=self._wavenumber_wing / 2
+        )
+        xs = np.zeros((len(PRESSURE_GRID), len(TEMP_GRID), len(hires_wavenumber_grid)))
+
+        for i, temperature in enumerate(TEMP_GRID):
+            xs[:, i, :] = calculator.cross_sections(
+                temperature_k=np.ones(len(PRESSURE_GRID)) * temperature,
+                pressure_pa=PRESSURE_GRID,
+                wavelengths_nm=wavenumber_cminv_to_wavlength_nm(hires_wavenumber_grid),
+                num_threads=self._num_threads,
+                altitudes_m=np.ones(len(PRESSURE_GRID)) * 0,
+            ).T
         ds = xr.Dataset(
             {"xs": (["pressure", "temperature", "wavenumber_cminv"], xs)},
             coords={
