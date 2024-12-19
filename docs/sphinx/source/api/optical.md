@@ -17,6 +17,7 @@
     sasktran2.optical.database.OpticalDatabase
     sasktran2.optical.database.OpticalDatabaseGenericAbsorber
     sasktran2.optical.database.OpticalDatabaseGenericScatterer
+    sasktran2.optical.Mie
 ```
 
 ## Special Modules

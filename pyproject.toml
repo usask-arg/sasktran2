@@ -163,6 +163,7 @@ lint.extend-ignore = [
     "E501",   # Line too long
     "I002",   # Future annotations
     "PD011", # wanting to use to_numpy instead of values
+    "G004",   # Logging format
 ]
 lint.unfixable = [
     "T20",  # Removes print statements
