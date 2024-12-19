@@ -111,7 +111,7 @@ class HITRANAbsorber(OpticalProperty):
             order="f",
         )
 
-        logging.debug(f"Starting Broadening for {self._molecule}")  # noqa: G004
+        logging.debug(f"Starting Broadening for {self._molecule}")
         voigt_broaden(
             self._line_db.nu.to_numpy(),
             self._line_db.sw.to_numpy(),
