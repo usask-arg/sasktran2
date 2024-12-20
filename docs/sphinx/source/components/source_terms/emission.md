@@ -18,7 +18,7 @@ config.emission_source = sk.EmissionSource.Standard
 
 Currently, emissions can not be included in the multiple scattering source.
 They are only considered along the line of sight and from the surface when
-the line of sight intersects the ground. 
+the line of sight intersects the ground.
 
 ## Relevant Configuration Options
 
