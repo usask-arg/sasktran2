@@ -18,6 +18,7 @@ def planck_blackbody_radiance(
     temperature_k : np.ndarray
         Temperatures in [K]
     wavelengths_nm : np.ndarray
+        Wavelengths in [nm] to calculate the radiance at
 
     Returns
     -------
@@ -81,7 +82,8 @@ class SurfaceThermalEmission(Constituent):
         emissivity: np.ndarray,
     ) -> None:
         """
-        A thermally emissive surface that is defined by a temperature and emissivity.
+        A thermally emissive surface that is defined by a temperature and emissivity. The
+        emission is calculated as the product of emissivity and the Planck function.
 
         This can either operate in a "scalar" mode where the emissivity is constant in wavelength,
         or a "native" mode where the emissivity is defined on the same grid as the atmosphere.
@@ -115,7 +117,7 @@ class SurfaceThermalEmission(Constituent):
         self._emissivity = np.atleast_1d(emissivity)
 
     def add_to_atmosphere(self, atmo: Atmosphere):
-        atmo.surface.emission += (
+        atmo.surface.emission[:] += (
             self.emissivity
             * planck_blackbody_radiance(
                 np.atleast_1d(self.temperature_k), atmo.wavelengths_nm

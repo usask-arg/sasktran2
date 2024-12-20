@@ -346,8 +346,7 @@ namespace sasktran2::atmosphere {
     } // namespace brdf
     /**
      * The full surface representation inside the SASKTRAN2 model.  Currently
-     * this is just the BRDF object, but will be expanded in the future to
-     * include other surface properties such as surface emissions.
+     * this includes the BRDF object and surface emissions.
      *
      * The BRDF is handled by the user setting a BRDF object, which defaults to
      * Lambertian, and then setting the brdf_args and d_brdf_args parameters.

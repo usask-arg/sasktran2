@@ -59,8 +59,6 @@ namespace sasktran2::emission {
          * of this are ground scattering, ground emission, or the solar radiance
          * if looking directly at the sun.
          *
-         * @todo Implement ground emission.
-         *
          * @param wavelidx Raw index for the wavelength we are calculating
          * @param losidx Raw index pointing to the ray that was previously
          * passed in initialize_geometry
