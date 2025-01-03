@@ -1,10 +1,6 @@
 import numpy as np
 
 import sasktran2 as sk
-from sasktran2.atmosphere import (
-    InterpolatedDerivativeMapping,
-    NativeGridDerivative,
-)
 from sasktran2.optical import pressure_temperature_to_numberdensity
 
 from ..optical.base import OpticalProperty
@@ -69,7 +65,7 @@ class CollisionInducedAbsorber(Constituent):
             * (self._fraction_product * num_dens**2)[:, np.newaxis]
         )
 
-    def register_derivative(self, atmo: sk.Atmosphere, name: str):  # noqa: ARG002
+    def register_derivative(self, atmo: sk.Atmosphere, name: str):
         number_density, dN_dP, dN_dT = pressure_temperature_to_numberdensity(
             atmo.pressure_pa, atmo.temperature_k, include_derivatives=True
         )
@@ -92,40 +88,37 @@ class CollisionInducedAbsorber(Constituent):
                 * (number_density * dN_dX)[:, np.newaxis]
                 * self._optical_quants.extinction
             )
-            derivs[deriv_name] = InterpolatedDerivativeMapping(
-                NativeGridDerivative(
-                    d_extinction=dk_dX,
-                    d_ssa=dk_dX
-                    * (self._optical_quants.ssa - atmo.storage.ssa)
-                    / atmo.storage.total_extinction,
-                ),
-                interpolating_matrix=np.eye(len(number_density)),
-                interp_dim="altitude",
-                result_dim="altitude",
-                summable=True,
+            deriv_mapping = atmo.storage.get_derivative_mapping(
+                f"wf_{name}_{deriv_name}"
             )
+            deriv_mapping.d_extinction[:] += dk_dX
+            deriv_mapping.d_ssa[:] += (
+                dk_dX
+                * (self._optical_quants.ssa - atmo.storage.ssa)
+                / atmo.storage.total_extinction
+            )
+            deriv_mapping.interpolator = np.eye(len(number_density))
+            deriv_mapping.interp_dim = "altitude"
+            deriv_mapping.assign_name = f"wf_{deriv_name}"
 
         if len(deriv_names) > 0:
             optical_derivs = self._optical_property.optical_derivatives(atmo=atmo)
 
             for key, val in optical_derivs.items():
-                # We only get d_extinction from the optical property, have to set d_ssa accordingly
-                val.d_ssa = (
+                deriv_mapping = atmo.storage.get_derivative_mapping(
+                    f"wf_{name}_{deriv_name}_{key}_xs"
+                )
+                deriv_mapping.d_extinction[:] += val.d_extinction
+                deriv_mapping.d_ssa[:] += (
                     val.d_extinction
                     * (self._optical_quants.ssa - atmo.storage.ssa)
                     / atmo.storage.total_extinction
                 )
-
-                # Assume that all optical derivs are summable, I can't think of any that aren't right now.
-                # Give it a unique key to help with the summing
-                derivs[f"{key}_xs"] = InterpolatedDerivativeMapping(
-                    val,
-                    interpolating_matrix=np.eye(len(number_density))
-                    * (self._fraction_product * number_density**2)[np.newaxis, :],
-                    interp_dim="altitude",
-                    result_dim="altitude",
-                    summable=True,
-                    name=key,
+                deriv_mapping.interpolator = (
+                    np.eye(len(number_density))
+                    * (self._fraction_product * number_density**2)[np.newaxis, :]
                 )
+                deriv_mapping.interp_dim = "altitude"
+                deriv_mapping.assign_name = f"wf_{deriv_name}"
 
         return derivs

@@ -1,7 +1,6 @@
 import numpy as np
 
 from sasktran2 import Atmosphere
-from sasktran2.atmosphere import DerivativeMapping, NativeGridDerivative
 
 from .base import Constituent
 
@@ -30,16 +29,13 @@ class AirMassFactor(Constituent):
 
         derivs = {}
 
-        derivs["air_mass_factor"] = DerivativeMapping(
-            NativeGridDerivative(
-                d_extinction=alt_factors[:, np.newaxis],
-                d_ssa=alt_factors[:, np.newaxis]
-                * (0 - atmo.storage.ssa)
-                / atmo.storage.total_extinction,
-            ),
-            summable=True,
-            log_radiance_space=True,
-            name_prefix="",
+        deriv_mapping = atmo.storage.get_derivative_mapping("air_mass_factor")
+        deriv_mapping.d_extinction[:] += alt_factors[:, np.newaxis]
+        deriv_mapping.d_ssa[:] += (
+            alt_factors[:, np.newaxis]
+            * (0 - atmo.storage.ssa)
+            / atmo.storage.total_extinction
         )
+        deriv_mapping.log_radiance_space = True
 
         return derivs

@@ -14,10 +14,12 @@ void init_output(py::module_&);
 void init_engine(py::module_&);
 void init_mie(py::module_&);
 void init_math(py::module_&);
+void init_derivative_mappings(py::module_&);
 
 PYBIND11_MODULE(_core, m) {
     init_config(m);
     init_grids(m);
+    init_derivative_mappings(m);
     init_coordinates(m);
     init_geometry(m);
     init_geodetic(m);

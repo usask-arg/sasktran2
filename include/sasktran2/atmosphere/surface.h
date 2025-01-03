@@ -1,5 +1,6 @@
 #pragma once
 
+#include "sasktran2/derivative_mapping.h"
 #include "sasktran2/grids.h"
 #include <limits>
 #include <sasktran2/internal_common.h>
@@ -366,6 +367,11 @@ namespace sasktran2::atmosphere {
         Eigen::MatrixXd m_brdf_args;
         std::vector<Eigen::MatrixXd> m_d_brdf_args;
 
+        std::map<std::string, SurfaceDerivativeMapping>
+            m_derivative_mappings; /** Derivatives
+                                for the
+                                atmosphere */
+
         void allocate(int num_wavel) {
             m_brdf_args.resize(m_brdf_object->num_args(), num_wavel);
             m_d_brdf_args.resize(m_brdf_object->num_deriv());
@@ -485,6 +491,28 @@ namespace sasktran2::atmosphere {
          * num_wavel)
          */
         std::vector<Eigen::MatrixXd>& d_brdf_args() { return m_d_brdf_args; }
+
+        SurfaceDerivativeMapping&
+        get_derivative_mapping(const std::string& name) {
+            if (auto it = m_derivative_mappings.find(name);
+                it != m_derivative_mappings.end()) {
+                // Key exists; just return reference
+                return it->second;
+            } else {
+                // Key does not exist; create it in-place without default
+                // constructor
+                auto [new_it, inserted] = m_derivative_mappings.emplace(
+                    std::piecewise_construct, std::forward_as_tuple(name),
+                    std::forward_as_tuple(m_num_wavel,
+                                          m_brdf_object->num_args()));
+                return new_it->second;
+            }
+        }
+
+        const std::map<std::string, SurfaceDerivativeMapping>&
+        derivative_mappings() const {
+            return m_derivative_mappings;
+        }
     };
 
 } // namespace sasktran2::atmosphere

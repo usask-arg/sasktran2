@@ -1,10 +1,6 @@
 import numpy as np
 
 from sasktran2 import Atmosphere
-from sasktran2.atmosphere import (
-    NativeGridDerivative,
-    SurfaceDerivativeMapping,
-)
 
 from ..base import Constituent
 from . import LambertianStokes_1, LambertianStokes_3, WavelengthInterpolatorMixin
@@ -74,11 +70,9 @@ class LambertianSurface(Constituent, WavelengthInterpolatorMixin):
 
         derivs = {}
 
-        derivs["albedo"] = SurfaceDerivativeMapping(
-            NativeGridDerivative(d_brdf=np.ones((atmo.num_wavel, 1))),
-            interpolating_matrix=interp_matrix,
-            interp_dim="wavelength",
-            result_dim=f"{name}_wavelength",
-        )
+        deriv_mapping = atmo.surface.get_derivative_mapping(f"wf_{name}_albedo")
+        deriv_mapping.d_brdf[:] = np.ones((atmo.num_wavel, 1))
+        deriv_mapping.interpolator = interp_matrix
+        deriv_mapping.interp_dim = f"{name}_wavelength"
 
         return derivs

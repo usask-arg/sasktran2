@@ -16,9 +16,11 @@
 #include <sasktran2/viewinggeometry.h>
 #include <sasktran2/refraction.h>
 #include <sasktran2/raytracing.h>
+#include <sasktran2/derivative_mapping.h>
+#include <sasktran2/sensor.h>
 #include <sasktran2/dual.h>
 #include <sasktran2/atmosphere/surface.h>
-#include "sasktran2/atmosphere/atmosphere.h"
+#include <sasktran2/atmosphere/atmosphere.h>
 #include <sasktran2/source_algorithms.h>
 #include <sasktran2/source_integrator.h>
 #include <sasktran2/do_source.h>

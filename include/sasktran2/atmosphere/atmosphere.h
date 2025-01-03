@@ -31,6 +31,7 @@ namespace sasktran2::atmosphere {
         Surface<NSTOKES> m_surface;   /** The surface */
         bool m_calculate_derivatives; /** True if we are going to be calculating
                                          derivatives */
+
       public:
         /** Directly constructs the atmosphere from it's base objects
          *
