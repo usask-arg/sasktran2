@@ -170,8 +170,8 @@ class NumberDensityScatterer(Constituent):
             deriv_mapping.d_leg_coeff[:] += (
                 self._optical_quants.leg_coeff - atmo.storage.leg_coeff
             ) * (
-                1 / self._optical_quants.ssa * val.d_ssa
-                + 1 / self._optical_quants.extinction * val.d_extinction
+                1 / self._optical_quants.ssa * deriv_mapping.d_ssa
+                + 1 / self._optical_quants.extinction * deriv_mapping.d_extinction
             )[
                 np.newaxis, :, :
             ]
@@ -184,7 +184,7 @@ class NumberDensityScatterer(Constituent):
             deriv_mapping.d_ssa[:] /= atmo.storage.total_extinction
 
             # TODO: The model should probably handle this
-            norm_factor = val.d_leg_coeff.max(axis=0)
+            norm_factor = deriv_mapping.d_leg_coeff.max(axis=0)
             norm_factor[norm_factor == 0] = 1
 
             deriv_mapping.scat_factor[:] = (
