@@ -39,7 +39,7 @@ Now, set up a line of sight that ends at the ground.
 model_geometry = sk.Geometry1D(cos_sza=0.6,
                                 solar_azimuth=0,
                                 earth_radius_m=6372000,
-                                altitude_grid_m=alt_grid,
+                                altitude_grid_m=np.arange(0, 100001, 1000),
                                 interpolation_method=sk.InterpolationMethod.LinearInterpolation,
                                 geometry_type=sk.GeometryType.Spherical)
 

@@ -14,6 +14,10 @@ config = sk.Config()
 config.emission_source = sk.EmissionSource.Standard
 ```
 
+Note that for this option to have any effect, emissions must be included in the model atmosphere, for example,
+by using the {py:class}`sasktran2.constituent.ThermalEmission` and
+{py:class}`sasktran2.constituent.SurfaceThermalEmission` constituents.
+
 ## Notes
 
 Currently, emissions can not be included in the multiple scattering source.
