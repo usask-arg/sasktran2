@@ -55,6 +55,12 @@ calculation will take several minutes the first time it runs but the result is s
 database cache in order to speed up future calculations.
 
 ```{code-cell}
+:tags: ["remove-cell"]
+wavelengths = np.arange(7370, 7380, 0.01)
+hitran_db = sk.optical.database.OpticalDatabaseGenericAbsorber(sk.database.StandardDatabase().path("hitran/CH4/hapi/d6cfbb82aa26584bb76a618ed11cf9bcc011376b.nc"))
+```
+
+```{code}
 wavelengths = np.arange(7370, 7380, 0.01)
 
 hitran_db = sk.database.HITRANDatabase(
