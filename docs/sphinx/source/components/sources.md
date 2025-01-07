@@ -61,6 +61,23 @@ occultation sources, which can be explicity set through
 config.occultation_source = sk.OccultationSource.NoSource
 ```
 
+## Emission Source Terms
+SASKTRAN2 can include emission sources along the sight and from the surface for lines of sight that intersect
+the ground, by setting
+
+```{code-cell}
+config.emission_source = sk.EmissionSource.Standard
+```
+
+The default is to include no emission sources, which can be explicitly set through
+
+```{code-cell}
+config.emission_source = sk.EmissionSource.NoSource
+```
+
+Note that for this option to have any effect, emissions must be included in the model atmosphere, for example,
+by using the {py:class}`sasktran2.constituent.ThermalEmission` and
+{py:class}`sasktran2.constituent.SurfaceThermalEmission` constituents.
 
 ## Detailed Descriptions
 
@@ -72,4 +89,5 @@ config.occultation_source = sk.OccultationSource.NoSource
    source_terms/discrete_ordinates
    source_terms/occultation
    source_terms/successive_orders
+   source_terms/emission
 ```
