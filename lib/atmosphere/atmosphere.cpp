@@ -39,6 +39,18 @@ namespace sasktran2::atmosphere {
         }
     }
 
+    template <int NSTOKES> int Atmosphere<NSTOKES>::num_output_deriv() const {
+        int n = 0;
+
+        if (m_calculate_derivatives) {
+            for (auto& [name, mapping] : m_storage.derivative_mappings()) {
+                n += mapping.num_output();
+            }
+        }
+
+        return n;
+    }
+
     template <int NSTOKES>
     void Atmosphere<NSTOKES>::apply_delta_m_scaling(int order) {
         if (order >= m_storage.max_stored_legendre()) {

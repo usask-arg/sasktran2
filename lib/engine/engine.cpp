@@ -290,9 +290,7 @@ void Sasktran2<NSTOKES>::calculate_radiance(
         radiance(m_config.num_threads(),
                  {NSTOKES, atmosphere.num_deriv(), true});
 
-    output.resize((int)m_traced_rays.size(), atmosphere.num_wavel(),
-                  atmosphere.num_deriv());
-    output.initialize(m_config, *m_geometry, m_traced_rays);
+    output.initialize(m_config, *m_geometry, m_traced_rays, atmosphere);
 
 #pragma omp parallel for num_threads(m_config.num_wavelength_threads())
     for (int w = 0; w < atmosphere.num_wavel(); ++w) {

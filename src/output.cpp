@@ -1,5 +1,6 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/eigen.h>
+#include <pybind11/stl.h>
 #include <sasktran2.h>
 
 namespace py = pybind11;
@@ -28,6 +29,13 @@ void declareOutputIdeal(py::module_& m, const std::string& suffix) {
             "d_radiance",
             [](Output& output) -> Eigen::MatrixXd& {
                 return output.radiance().deriv;
+            },
+            nullptr)
+        .def_property(
+            "deriv_map",
+            [](Output& output)
+                -> const std::map<std::string, Eigen::MatrixXd>& {
+                return output.derivatives();
             },
             nullptr);
 }

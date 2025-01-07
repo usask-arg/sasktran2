@@ -114,6 +114,14 @@ namespace sasktran2 {
         void set_log_radiance_space(bool log) { m_log_radiance_space = log; }
 
         void set_zero();
+
+        int num_output() const {
+            if (m_interpolator.has_value()) {
+                return m_interpolator.value().cols();
+            } else {
+                return m_ninternallocation;
+            }
+        }
     };
 
     class SurfaceDerivativeMapping {

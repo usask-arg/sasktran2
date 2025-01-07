@@ -1,10 +1,16 @@
 #include <sasktran2/output.h>
 
 namespace sasktran2 {
-    template <int NSTOKES>
-    void OutputIdealDense<NSTOKES>::resize(int nlos, int nwavel, int nderiv) {
-        Output<NSTOKES>::resize(nlos, nwavel, nderiv);
-        m_radiance.resize(NSTOKES * nwavel * nlos, nderiv, false);
+    template <int NSTOKES> void OutputIdealDense<NSTOKES>::resize() {
+        m_radiance.resize(NSTOKES * this->m_nwavel * this->m_nlos,
+                          this->m_nderiv, false);
+
+        int i = 0;
+        for (auto& [name, deriv] :
+             this->m_atmosphere->storage().derivative_mappings()) {
+            m_derivatives[name].resize(NSTOKES * this->m_nwavel * this->m_nlos,
+                                       deriv.num_output());
+        }
     }
 
     template <int NSTOKES>
@@ -14,10 +20,16 @@ namespace sasktran2 {
         int losidx, int wavelidx) {
 
         int linear_index = NSTOKES * this->m_nlos * wavelidx + NSTOKES * losidx;
+
+        // Quantities necessary for derivative propagation
+
         if constexpr (NSTOKES >= 1) {
             m_radiance.value(linear_index) = radiance.value(0);
             m_radiance.deriv(linear_index, Eigen::all) =
                 radiance.deriv(0, Eigen::all);
+
+            for (auto& [name, deriv] : m_derivatives) {
+            }
         }
 
         if constexpr (NSTOKES >= 3) {

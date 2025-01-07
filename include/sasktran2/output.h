@@ -1,9 +1,11 @@
 #pragma once
 
+#include "sasktran2/atmosphere/atmosphere.h"
 #include "sasktran2/config.h"
 #include "sasktran2/sensor.h"
 #include "sasktran2/geometry.h"
 #include "sasktran2/raytracing.h"
+#include <Eigen/src/Core/Matrix.h>
 #include <sasktran2/internal_common.h>
 #include <sasktran2/dual.h>
 
@@ -30,6 +32,9 @@ namespace sasktran2 {
      * @tparam NSTOKES
      */
     template <int NSTOKES> class Output : public OutputInterface {
+      private:
+        virtual void resize() = 0;
+
       protected:
         int m_nlos;
         int m_nwavel;
@@ -38,28 +43,21 @@ namespace sasktran2 {
         Eigen::VectorXd m_stokes_C;
         Eigen::VectorXd m_stokes_S;
 
+        const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere;
+
       public:
         Output(){};
         virtual ~Output() {}
 
-        virtual void
-        initialize(const sasktran2::Config& config,
-                   const sasktran2::Geometry1D& geometry,
-                   const std::vector<sasktran2::raytracing::TracedRay>& rays);
-
-        /** Method called by the Sasktran2 engine which specifies the native
-         * number of lines of sight, wavelength batches, and derivatives.  These
-         * are then internally stored for derived classes to access.
-         *
-         * @param nlos
-         * @param nwavel
-         * @param nderiv
+        /**
+         *  Initializes the output container with the necessary information.
+         * This is called by the engine during calculate_radiance
          */
-        virtual void resize(int nlos, int nwavel, int nderiv) {
-            m_nlos = nlos;
-            m_nwavel = nwavel;
-            m_nderiv = nderiv;
-        }
+        virtual void initialize(
+            const sasktran2::Config& config,
+            const sasktran2::Geometry1D& geometry,
+            const std::vector<sasktran2::raytracing::TracedRay>& rays,
+            const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere);
 
         /** Method the Sasktran2 engine calls for each integrated line of
          * sight/wavelength
@@ -102,10 +100,13 @@ namespace sasktran2 {
       private:
         sasktran2::Dual<double, sasktran2::dualstorage::dense>
             m_radiance; /**< Internal storage */
+
+        std::map<std::string, Eigen::MatrixXd> m_derivatives;
+
+        void resize();
+
       public:
         OutputIdealDense(){};
-
-        void resize(int nlos, int nwavel, int nderiv);
 
         void assign(const sasktran2::Dual<double, sasktran2::dualstorage::dense,
                                           NSTOKES>& radiance,
@@ -118,6 +119,10 @@ namespace sasktran2 {
         sasktran2::Dual<double, sasktran2::dualstorage::dense>& radiance() {
             return m_radiance;
         }
+
+        const std::map<std::string, Eigen::MatrixXd>& derivatives() const {
+            return m_derivatives;
+        }
     };
 
     /**
@@ -128,11 +133,12 @@ namespace sasktran2 {
 
         sasktran2::Dual<double, sasktran2::dualstorage::dense>
             m_radiance; /**< Internal storage */
+
+        void resize();
+
       public:
         OutputSpectralSensor(const sasktran2::sensor::Sensor& sensor)
             : m_sensor(sensor){};
-
-        void resize(int nlos, int nwavel, int nderiv);
 
         void assign(const sasktran2::Dual<double, sasktran2::dualstorage::dense,
                                           NSTOKES>& radiance,
