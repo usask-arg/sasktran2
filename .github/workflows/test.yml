@@ -97,14 +97,18 @@ jobs:
 
       - name: setup pixi
         uses: prefix-dev/setup-pixi@v0.8.1
+        with:
+          cache: false
 
       - name: compile sasktran2
         run: |
           pixi r build
+        shell: pixi run bash -e {0}
 
       - name: run tests
         run: |
           pixi r test
+        shell: pixi run bash -e {0}
 
 
   test-conda-pysasktran2:
