@@ -5,7 +5,7 @@ file_format: mystnb
 (_users_emissions)=
 # Emissions
 
-To include any type of emissions as part of the radiation force, they must first be enabled in the configuration.
+To include any type of emissions as part of the radiation source, they must first be enabled in the configuration.
 
 ```{code-cell}
 import sasktran2 as sk
@@ -14,7 +14,7 @@ config = sk.Config()
 config.emission_source = sk.EmissionSource.Standard
 ```
 
-By default, `config.emission_source` is set to `sk.EmissionSource.NoSource`, where emissions are not added to
+By default, {py:attr}`sasktran2.Config.emission_source` is set to `sk.EmissionSource.NoSource`, where emissions are not added to
 the source and any emissions present in the model atmosphere will be ignored.
 
 ## Thermal Emissions
@@ -50,14 +50,15 @@ viewing_geo.add_ray(ray)
 ```
 
 Next, we will add an absorbing/emitting species to the atmosphere. For this example we will use
-methane, with the cross sections calculated using the HITRAN API. Note that the cross section
+methane, with the cross sections calculated using the HITRAN database. Note that the cross section
 calculation will take several minutes the first time it runs but the result is saved in a
-database cache in order to speed up future calculations.
+database cache in order to speed up future calculations. The `hitran-api` python package must
+be installed to download the database files.
 
 ```{code-cell}
 :tags: ["remove-cell"]
 wavelengths = np.arange(7370, 7380, 0.01)
-hitran_db = sk.optical.database.OpticalDatabaseGenericAbsorber(sk.database.StandardDatabase().path("hitran/CH4/hapi/d6cfbb82aa26584bb76a618ed11cf9bcc011376b.nc"))
+hitran_db = sk.optical.database.OpticalDatabaseGenericAbsorber(sk.database.StandardDatabase().path("hitran/CH4/sasktran2/6f006bcb051f81fc57d1bd09315589bfe77b4348.nc"))
 ```
 
 ```{code}
@@ -65,11 +66,11 @@ wavelengths = np.arange(7370, 7380, 0.01)
 
 hitran_db = sk.database.HITRANDatabase(
     molecule="CH4",
-    start_wavenumber=1e7/wavelengths[-1],
-    end_wavenumber=1e7/wavelengths[0],
+    start_wavenumber=1355,
+    end_wavenumber=1357,
     wavenumber_resolution=0.01,
     reduction_factor=1,
-    backend="hapi",
+    backend="sasktran2",
     profile="voigt"
 )
 ```
@@ -77,8 +78,8 @@ hitran_db = sk.database.HITRANDatabase(
 Now we will create the atmopshere object and enable both line of sight and surface emissions.
 For the ground emission, we need to specify the surface temperature and emissivity.
 Wavelength-dependent emissivities can be specified by passing an array of values to the
-`SurfaceThermalEmission` constructor. The array must be the same length as the
-wavelength array given to the `Atmosphere` object.
+{py:class}`sasktran2.constituent.SurfaceThermalEmission` constructor. The array must be the same length as the
+wavelength array given to the {py:class}`sasktran2.Atmosphere` object.
 
 ```{code-cell}
 atmosphere = sk.Atmosphere(model_geometry, config, wavelengths_nm=wavelengths, calculate_derivatives=False)
@@ -103,7 +104,7 @@ plt.ylabel('Radiance [W/m^2/nm/ster]')
 
 ## Combining Thermal Emissions and Solar Irradiance
 
-If we wish to perform calculations that include both thermal emissions and scattered, we must take care
+If we wish to perform calculations that include both thermal emissions and scattered sunlight, we must take care
 to ensure that the units of the thermal and solar sources are in agreement. By default, the solar
 source terms are normalized by the irradiance at the top of the atmosphere, but thermal emissions
 are input to sasktran with absolute radiance units (W/m^2/nm/ster). To combine these sources we must
