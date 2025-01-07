@@ -45,4 +45,5 @@ from . import (
     util,
     solar,
     viewinggeo,
+    spectroscopy,
 )

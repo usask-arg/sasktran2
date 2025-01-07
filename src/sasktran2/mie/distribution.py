@@ -1,4 +1,6 @@
 import abc
+import logging
+import time
 
 import numpy as np
 import scipy.integrate as integrate
@@ -126,6 +128,7 @@ def integrate_mie(
         All scattering cross sections will be in units of wavelength**2. If compute_coeffs is True, will also
         contain keys 'lm_a1', 'lm_a2', 'lm_a3', 'lm_a4', 'lm_b1', and 'lm_b2'.
     """
+    t_full = time.time()
 
     angles = np.linspace(0, 180, num_angles)
 
@@ -170,7 +173,9 @@ def integrate_mie(
         n = np.cdouble(refrac_index_fn(wavelength))
 
         size_param = 2 * np.pi * x / wavelength
+        t = time.time()
         output = my_mie.calculate(size_param, n, np.cos(angles * np.pi / 180), False)
+        logging.debug(f"Internal Mie Calculation {time.time() - t}")
         params = _integrable_parameters(output, prob_dist.pdf(x), x)
 
         # performing the integral
@@ -190,6 +195,7 @@ def integrate_mie(
         all_output["xs_scattering"].values[idx] = np.sum(params["Csca"] * w)
         all_output["xs_absorption"].values[idx] = np.sum(params["Cabs"] * w)
     _post_process(all_output, wavelengths)
+
     if compute_coeffs:
         # Note that P22 = P11 and P44 = p33
         lm_a1, lm_a2, lm_a3, lm_a4, lm_b1, lm_b2 = compute_greek_coefficients(
@@ -214,6 +220,8 @@ def integrate_mie(
             coords={"wavelength": wavelengths, "legendre": np.arange(num_coeffs)},
         )
         all_output = all_output.merge(coeffs_output)
+
+    logging.debug(f"Total Mie Calculation {time.time() - t_full}")
     return all_output
 
 
