@@ -347,8 +347,7 @@ namespace sasktran2::atmosphere {
     } // namespace brdf
     /**
      * The full surface representation inside the SASKTRAN2 model.  Currently
-     * this is just the BRDF object, but will be expanded in the future to
-     * include other surface properties such as surface emissions.
+     * this includes the BRDF object and surface emissions.
      *
      * The BRDF is handled by the user setting a BRDF object, which defaults to
      * Lambertian, and then setting the brdf_args and d_brdf_args parameters.
@@ -366,6 +365,7 @@ namespace sasktran2::atmosphere {
         std::shared_ptr<brdf::BRDF<NSTOKES>> m_brdf_object;
         Eigen::MatrixXd m_brdf_args;
         std::vector<Eigen::MatrixXd> m_d_brdf_args;
+        Eigen::VectorXd m_emission;
 
         std::map<std::string, SurfaceDerivativeMapping>
             m_derivative_mappings; /** Derivatives
@@ -382,6 +382,8 @@ namespace sasktran2::atmosphere {
                 m_d_brdf_args[i](i, Eigen::all).setConstant(1.0);
             }
             m_brdf_args.setZero();
+            m_emission.resize(num_wavel);
+            m_emission.setZero();
         }
 
       public:
@@ -513,6 +515,20 @@ namespace sasktran2::atmosphere {
         derivative_mappings() const {
             return m_derivative_mappings;
         }
+      
+        /**
+         * @brief The surface emission.
+         *
+         * @return Eigen::VectorXd& shape (num_wavel)
+         */
+        Eigen::VectorXd& emission() { return m_emission; }
+
+        /**
+         * @brief The surface emission.
+         *
+         * @return const Eigen::VectorXd& shape (num_wavel)
+         */
+        const Eigen::VectorXd& emission() const { return m_emission; }
     };
 
 } // namespace sasktran2::atmosphere

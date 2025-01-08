@@ -37,6 +37,7 @@ add_library(
   solar/solartransmissiontable.cpp
   solar/singlescattersource.cpp
   solar/occultation.cpp
+  emission/emission_source.cpp
   output/output.cpp
   output/outputidealdense.cpp
   output/outputsensor.cpp

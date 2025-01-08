@@ -9,6 +9,9 @@
 [Solar Irradiance](users_guide/solar_irradiance.md)
 : Absolute vs relative radiances, and how to include the solar irradiance
 
+[Atmospheric and Surface Emissions](users_guide/emissions.md)
+: Enabling emission source and how to include thermal emissions
+
 [Calculating Weighting Functions](weighting_functions.md)
 : How to calculate derivatives (weighting functions) of output quantities with respect to input quantities
 
@@ -41,6 +44,7 @@
 required_components
 weighting_functions
 users_guide/solar_irradiance.md
+users_guide/emissions.md
 users_guide/mie.md
 users_guide/refraction.md
 users_guide/polarization.md
