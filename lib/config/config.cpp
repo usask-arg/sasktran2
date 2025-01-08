@@ -18,6 +18,7 @@ namespace sasktran2 {
         set_multiple_scatter_source(MultipleScatterSource::none);
         set_single_scatter_source(SingleScatterSource::exact);
         set_occultation_source(OccultationSource::none);
+        set_emission_source(EmissionSource::none);
         set_stokes_basis(StokesBasis::standard);
     }
 

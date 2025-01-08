@@ -66,6 +66,15 @@ void declareAtmosphereStorage(py::module_& m, const std::string& suffix) {
                 storage.total_extinction = total_extinction;
             })
         .def_property(
+            "emission_source",
+            [](AtmosphereGridStorage& storage) -> Eigen::MatrixXd& {
+                return storage.emission_source;
+            },
+            [](AtmosphereGridStorage& storage,
+               const Eigen::MatrixXd& emission_source) {
+                storage.emission_source = emission_source;
+            })
+        .def_property(
             "f",
             [](AtmosphereGridStorage& storage) -> const Eigen::MatrixXd& {
                 return storage.f;
@@ -137,6 +146,12 @@ void declareSurface(py::module_& m, const std::string& suffix) {
             "albedo",
             [](Surface& surface) -> Eigen::MatrixXd& {
                 return surface.brdf_args();
+            },
+            nullptr)
+        .def_property(
+            "emission",
+            [](Surface& surface) -> Eigen::VectorXd& {
+                return surface.emission();
             },
             nullptr);
 }

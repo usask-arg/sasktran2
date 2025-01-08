@@ -26,6 +26,7 @@ namespace sasktran2::atmosphere {
       public:
         Eigen::MatrixXd ssa;              // location, wavel
         Eigen::MatrixXd total_extinction; // location, wavel
+        Eigen::MatrixXd emission_source;  // location, wavel
 
         // Scattering parameters
         Eigen::Matrix<sasktran2::types::leg_coeff, -1, -1>
@@ -56,6 +57,7 @@ namespace sasktran2::atmosphere {
         AtmosphereGridStorageFull(int nwavel, int nlocation, int numlegendre) {
             ssa.resize(nlocation, nwavel);
             total_extinction.resize(nlocation, nwavel);
+            emission_source.resize(nlocation, nwavel);
             f.resize(nlocation, nwavel);
             max_order.resize(nlocation, nwavel);
             solar_irradiance.resize(nwavel);
@@ -68,6 +70,7 @@ namespace sasktran2::atmosphere {
 
             ssa.setZero();
             total_extinction.setZero();
+            emission_source.setZero();
             leg_coeff.setZero();
             f.setZero();
             solar_irradiance.setConstant(1.0);

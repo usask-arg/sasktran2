@@ -5,6 +5,7 @@
 #include <sasktran2/viewinggeometry.h>
 #include <sasktran2/raytracing.h>
 #include <sasktran2/solartransmission.h>
+#include <sasktran2/emission_source.h>
 #include <sasktran2/source_integrator.h>
 #include <sasktran2/output.h>
 
