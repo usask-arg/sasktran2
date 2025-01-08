@@ -515,7 +515,7 @@ namespace sasktran2::atmosphere {
         derivative_mappings() const {
             return m_derivative_mappings;
         }
-      
+
         /**
          * @brief The surface emission.
          *
