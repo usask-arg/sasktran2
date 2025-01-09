@@ -338,13 +338,13 @@ def test_wf_extinction():
 
             scen["atmosphere"].storage.total_extinction[i] += dk
 
-            numeric_wf[:, :, :, i] = (
+            numeric_wf[i, :, :, :] = (
                 radiance_above["radiance"].to_numpy()
                 - radiance_below["radiance"].to_numpy()
             ) / (2 * dk)
 
         radiance["wf_extinction_numeric"] = (
-            ["wavelength", "los", "stokes", "altitude"],
+            ["altitude", "wavelength", "los", "stokes"],
             numeric_wf,
         )
         validate_wf(
@@ -377,13 +377,13 @@ def test_wf_ssa():
 
             scen["atmosphere"].storage.ssa[i] += d_ssa
 
-            numeric_wf[:, :, :, i] = (
+            numeric_wf[i, :, :, :] = (
                 radiance_above["radiance"].to_numpy()
                 - radiance_below["radiance"].to_numpy()
             ) / (2 * d_ssa)
 
         radiance["wf_ssa_numeric"] = (
-            ["wavelength", "los", "stokes", "altitude"],
+            ["altitude", "wavelength", "los", "stokes"],
             numeric_wf,
         )
         validate_wf(radiance["wf_ssa"], radiance["wf_ssa_numeric"], decimal=6)
@@ -416,13 +416,13 @@ def test_wf_legendre():
 
                 scen["atmosphere"].storage.leg_coeff[i, j] += D_L
 
-                numeric_wf[:, :, :, j] = (
+                numeric_wf[j, :, :, :] = (
                     radiance_above["radiance"].to_numpy()
                     - radiance_below["radiance"].to_numpy()
                 ) / (2 * D_L)
 
             radiance[f"wf_leg_coeff_{i}_numeric"] = (
-                ["wavelength", "los", "stokes", "altitude"],
+                ["altitude", "wavelength", "los", "stokes"],
                 numeric_wf,
             )
             validate_wf(

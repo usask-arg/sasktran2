@@ -83,23 +83,33 @@ namespace sasktran2 {
         DerivativeMapping(int nwavel, int ninternallocation, int nlegendre);
 
         NativeDerivativeMapping& native_mapping() { return m_native_mapping; }
+        const NativeDerivativeMapping& native_mapping() const {
+            return m_native_mapping;
+        }
 
         void allocate_extinction_derivatives();
         void allocate_ssa_derivatives();
         void allocate_legendre_derivatives();
 
-        int get_scattering_index() { return m_native_mapping.scat_deriv_index; }
+        int get_scattering_index() const {
+            return m_native_mapping.scat_deriv_index;
+        }
         void set_scattering_index(int index) {
             m_native_mapping.scat_deriv_index = index;
         }
 
-        bool is_scattering_derivative() {
+        bool is_scattering_derivative() const {
             return m_native_mapping.d_legendre.has_value();
         }
 
         std::optional<Eigen::MatrixXd>& get_interpolator() {
             return m_interpolator;
         }
+
+        const std::optional<Eigen::MatrixXd>& get_interpolator_const() const {
+            return m_interpolator;
+        }
+
         void set_interpolator(const Eigen::MatrixXd& interpolator) {
             m_interpolator = interpolator;
         }
@@ -140,6 +150,10 @@ namespace sasktran2 {
         SurfaceDerivativeMapping(int nwavel, int nbrdf_args);
 
         NativeSurfaceDerivativeMapping& native_surface_mapping() {
+            return m_native_surface_mapping;
+        }
+
+        const NativeSurfaceDerivativeMapping& native_surface_mapping() const {
             return m_native_surface_mapping;
         }
 

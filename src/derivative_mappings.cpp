@@ -53,6 +53,8 @@ void init_derivative_mappings(py::module_& m) {
         .def_property_readonly(
             "is_scattering_derivative",
             &sasktran2::DerivativeMapping::is_scattering_derivative)
+        .def_property_readonly("num_output",
+                               &sasktran2::DerivativeMapping::num_output)
         .def_property(
             "d_leg_coeff",
             [](sasktran2::DerivativeMapping& mapping)

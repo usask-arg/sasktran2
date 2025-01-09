@@ -27,11 +27,11 @@ def map_surface_derivative(
     mapping, np_deriv: np.ndarray, dims: list[str]
 ) -> xr.DataArray:
     if mapping.interpolator is None:
-        return xr.DataArray(np_deriv.sum(axis=-1), dims=dims)
+        return xr.DataArray(np_deriv, dims=dims)
     return xr.DataArray(
         np.einsum(
             "ijk, il->lijk",
-            np_deriv.sum(axis=-1),
+            np_deriv,
             mapping.interpolator,
             optimize=True,
         ),
@@ -218,6 +218,138 @@ class OutputIdeal(Output):
             name_to_place_result = deriv_name
 
             np_deriv = d_radiance_albedo * mapping.d_brdf[:, np.newaxis, np.newaxis, :]
+
+            mapped_derivative = map_surface_derivative(
+                mapping, np_deriv.sum(axis=-1), ["wavelength", "los", "stokes"]
+            )
+            result[name_to_place_result] = mapped_derivative
+
+        return result
+
+
+class OutputDerivMapped(Output):
+    def __init__(self, nstokes: int):
+        """
+        The default output container used by SASKTRAN2.  Here radiances  are returned
+        back densely for every input line of sight without modification, and derivatives are mapped
+        based on the atmospheric derivative mappings.
+
+        Parameters
+        ----------
+        nstokes : int
+            Number of stokes parameters to store for the output quantities
+
+        Raises
+        ------
+        ValueError
+            If nstokes is not 1 or 3
+        """
+        self._nstokes = nstokes
+
+        if nstokes == 1:
+            self._output = sk.OutputDerivMappedStokes_1()
+        elif nstokes == 3:
+            self._output = sk.OutputDerivMappedStokes_3()
+        else:
+            msg = "nstokes must be 1 or 3"
+            raise ValueError(msg)
+
+    def internal_output(
+        self,
+    ) -> sk.OutputDerivMappedStokes_1 | sk.OutputDerivMappedStokes_3:
+        """
+        The internal output object that can be passed to the internal engine
+
+        Returns
+        -------
+        Union[sk.OutputDerivMappedStokes_1, sk.OutputDerivMappedStokes_3]
+        """
+        return self._output
+
+    def post_process(
+        self,
+        atmo: sk.Atmosphere,
+        geometry: sk.Geometry1D,
+        viewing_geo: sk.ViewingGeometry,
+    ):
+        """
+        Converts the raw output values to a more usable format.  Also performs the mapping of raw model
+        derivatives to derivatives of the constituent input quantities.
+
+        Parameters
+        ----------
+        atmo : sk.Atmosphere
+            Atmosphere object after calculation has been performed
+        geometry : sk.Geometry1D
+            Geometry object
+        viewing_geo : sk.ViewingGeometry
+            Viewing geometry
+
+        Returns
+        -------
+        xr.Dataset
+        """
+        # Reshape and organize output
+        result = xr.Dataset()
+        if atmo.wavelengths_nm is not None:
+            result.coords["wavelength"] = atmo.wavelengths_nm
+
+        result.coords["stokes"] = ["I", "Q", "U", "V"][: atmo.nstokes]
+        result.coords["altitude"] = geometry.altitudes()
+
+        radiance = self._output.radiance.reshape(
+            -1, len(viewing_geo.observer_rays), atmo.nstokes
+        )
+        result["radiance"] = (["wavelength", "los", "stokes"], radiance)
+
+        for deriv_name, mapping in atmo.storage.derivative_mappings.items():
+            if mapping.assign_name != "":
+                name_to_place_result = mapping.assign_name
+            else:
+                name_to_place_result = deriv_name
+
+            # Make sure to copy before reshaping because the internal array is
+            # Fortran ordered
+            np_deriv = (
+                self._output.deriv_map[deriv_name]
+                .copy()
+                .reshape(
+                    -1, len(viewing_geo.observer_rays), atmo.nstokes, mapping.num_output
+                )
+                .transpose([3, 0, 1, 2])
+            )
+
+            if name_to_place_result in result:
+                result[name_to_place_result] += xr.DataArray(
+                    np_deriv.copy(),
+                    dims=[
+                        mapping.interp_dim if mapping.interp_dim != "" else "altitude",
+                        "wavelength",
+                        "los",
+                        "stokes",
+                    ],
+                )
+            else:
+                result[name_to_place_result] = xr.DataArray(
+                    np_deriv.copy(),
+                    dims=[
+                        mapping.interp_dim if mapping.interp_dim != "" else "altitude",
+                        "wavelength",
+                        "los",
+                        "stokes",
+                    ],
+                )
+        # And the surface derivatives
+        for deriv_name, mapping in atmo.surface.derivative_mappings.items():
+            name_to_place_result = deriv_name
+
+            # Make sure to copy before reshaping because the internal array is
+            # Fortran ordered
+            np_deriv = (
+                self._output.surface_deriv_map[deriv_name]
+                .copy()
+                .reshape(-1, len(viewing_geo.observer_rays), atmo.nstokes)
+            )
 
             mapped_derivative = map_surface_derivative(
                 mapping, np_deriv, ["wavelength", "los", "stokes"]

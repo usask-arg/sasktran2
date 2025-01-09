@@ -20,6 +20,8 @@ from ._core import (  # noqa: I001
     OccultationSource,
     OutputIdealStokes_1,
     OutputIdealStokes_3,
+    OutputDerivMappedStokes_1,
+    OutputDerivMappedStokes_3,
     StokesBasis,
     SurfaceStokes_1,
     SurfaceStokes_3,
@@ -30,7 +32,7 @@ from ._core import (  # noqa: I001
 )
 from ._version import __version__
 from .atmosphere import Atmosphere
-from .output import Output, OutputIdeal
+from .output import Output, OutputIdeal, OutputDerivMapped
 from .engine import Engine
 from .geodetic import WGS84, SphericalGeoid
 

@@ -340,7 +340,7 @@ void Sasktran2<NSTOKES>::calculate_radiance(
             }
 
             // And assign it to the output
-            output.assign(radiance[ray_threadidx], i, w);
+            output.assign(radiance[ray_threadidx], i, w, ray_threadidx);
         }
 
         // TODO: Is this where we should generate fluxes or other quantities

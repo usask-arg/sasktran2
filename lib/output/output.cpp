@@ -14,8 +14,10 @@ namespace sasktran2 {
         m_nlos = rays.size();
         m_nwavel = atmosphere.num_wavel();
         m_nderiv = atmosphere.num_deriv();
+        m_ngeometry = atmosphere.storage().total_extinction.rows();
 
         m_atmosphere = &atmosphere;
+        m_config = &config;
 
         this->resize();
 
