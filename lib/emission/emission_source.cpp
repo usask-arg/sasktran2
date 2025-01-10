@@ -30,6 +30,8 @@ namespace sasktran2::emission {
         // Integrates assuming the source is constant in the layer and
         // determined by the average of the layer boundaries
 
+        bool calculate_derivative = source.derivative_size() > 0;
+
         double ssa_start = 0;
         double ssa_end = 0;
         double emission_start = 0;
@@ -62,6 +64,32 @@ namespace sasktran2::emission {
             source.value.array() += emission_cell;
         } else {
             source.value(0) += emission_cell;
+        }
+
+        if (calculate_derivative) {
+            // Now for the derivatives, start with dsource_factor which is
+            // sparse
+            Eigen::Ref<Eigen::Matrix<double, NSTOKES, -1>> d_ssa =
+                source.d_ssa(m_atmosphere->storage().ssa.rows());
+            for (auto it = shell_od.deriv_iter; it; ++it) {
+                source.deriv(0, it.index()) +=
+                    it.value() * (1 - source_factor1) *
+                    ((1 - ssa_start) * emission_start *
+                         layer.od_quad_start_fraction +
+                     (1 - ssa_end) * emission_end * layer.od_quad_end_fraction);
+            }
+
+            // And the SSA/emission derivatives
+            for (auto& ele : layer.entrance.interpolation_weights) {
+                d_ssa(0, ele.first) -= ele.second * emission_start *
+                                       source_factor1 *
+                                       layer.od_quad_start_fraction;
+            }
+            for (auto& ele : layer.exit.interpolation_weights) {
+                d_ssa(0, ele.first) -= ele.second * emission_end *
+                                       source_factor1 *
+                                       layer.od_quad_end_fraction;
+            }
         }
     }
 
