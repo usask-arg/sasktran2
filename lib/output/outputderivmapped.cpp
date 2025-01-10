@@ -124,6 +124,15 @@ namespace sasktran2 {
                             deriv_storage(2, Eigen::all).array();
                 }
             }
+            if (mapping.log_radiance_space()) {
+                deriv(linear_index, Eigen::all).array() /= radiance.value(0);
+                if constexpr (NSTOKES >= 3) {
+                    deriv(linear_index + 1, Eigen::all).array() /=
+                        radiance.value(0);
+                    deriv(linear_index + 2, Eigen::all).array() /=
+                        radiance.value(0);
+                }
+            }
         }
 
         Eigen::Ref<const Eigen::Matrix<double, NSTOKES, -1>>
