@@ -4,7 +4,7 @@ namespace sasktran2 {
     DerivativeMapping::DerivativeMapping(int nwavel, int ninternallocation,
                                          int nlegendre)
         : m_nwavel(nwavel), m_ninternallocation(ninternallocation),
-          m_nlegendre(nlegendre) : m_log_radiance_space(false) {}
+          m_nlegendre(nlegendre), m_log_radiance_space(false) {}
 
     void DerivativeMapping::allocate_legendre_derivatives() {
         // If the legendre derivatives are already allocated, we don't need to
