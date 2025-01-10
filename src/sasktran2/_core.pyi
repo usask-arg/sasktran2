@@ -13,9 +13,11 @@ __all__ = [
     "Config",
     "ConstantSpacing",
     "Coordinates",
+    "DerivativeMapping",
     "Disabled",
     "DiscreteOrdinates",
     "Ellipsoidal",
+    "EmissionSource",
     "EngineStokes_1",
     "EngineStokes_3",
     "Exact",
@@ -32,10 +34,10 @@ __all__ = [
     "LinearSpacing",
     "LinearizedMie",
     "LowerInterpolation",
-    "MieData",
-    "MieOutput",
     "MODISStokes_1",
     "MODISStokes_3",
+    "MieData",
+    "MieOutput",
     "MultipleScatterSource",
     "NoSource",
     "Observer",
@@ -43,6 +45,8 @@ __all__ = [
     "OutOfBoundsExtend",
     "OutOfBoundsPolicy",
     "OutOfBoundsSetZero",
+    "OutputDerivMappedStokes_1",
+    "OutputDerivMappedStokes_3",
     "OutputIdealStokes_1",
     "OutputIdealStokes_3",
     "OutputStokes_1",
@@ -60,6 +64,7 @@ __all__ = [
     "StokesBasis",
     "Strict",
     "SuccessiveOrders",
+    "SurfaceDerivativeMapping",
     "SurfaceStokes_1",
     "SurfaceStokes_3",
     "Table",
@@ -70,6 +75,7 @@ __all__ = [
     "ViewingGeometryBase",
     "Wavelength",
     "WignerD",
+    "voigt_broaden",
 ]
 
 class AltitudeGrid:
@@ -107,29 +113,39 @@ class AtmosphereStokes_3:
 
 class AtmosphereStorageStokes_1:
     d_leg_coeff: numpy.ndarray[numpy.float64[..., ..., ..., ...]]
+    emission_source: numpy.ndarray[numpy.float64[m, n]]
     leg_coeff: numpy.ndarray[numpy.float64[..., ..., ...]]
+    solar_irradiance: numpy.ndarray[numpy.float64[m, 1]]
     ssa: numpy.ndarray[numpy.float64[m, n]]
     total_extinction: numpy.ndarray[numpy.float64[m, n]]
     @staticmethod
     def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(self, arg0: int, arg1: int, arg2: int) -> None: ...
+    def get_derivative_mapping(self, name: str) -> DerivativeMapping: ...
     def resize_derivatives(self, num_deriv: int) -> None: ...
     @property
     def d_f(self) -> numpy.ndarray[numpy.float64[..., ..., ...]]: ...
+    @property
+    def derivative_mappings(self) -> dict[str, DerivativeMapping]: ...
     @property
     def f(self) -> numpy.ndarray[numpy.float64[m, n]]: ...
 
 class AtmosphereStorageStokes_3:
     d_leg_coeff: numpy.ndarray[numpy.float64[..., ..., ..., ...]]
+    emission_source: numpy.ndarray[numpy.float64[m, n]]
     leg_coeff: numpy.ndarray[numpy.float64[..., ..., ...]]
+    solar_irradiance: numpy.ndarray[numpy.float64[m, 1]]
     ssa: numpy.ndarray[numpy.float64[m, n]]
     total_extinction: numpy.ndarray[numpy.float64[m, n]]
     @staticmethod
     def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(self, arg0: int, arg1: int, arg2: int) -> None: ...
+    def get_derivative_mapping(self, name: str) -> DerivativeMapping: ...
     def resize_derivatives(self, num_deriv: int) -> None: ...
     @property
     def d_f(self) -> numpy.ndarray[numpy.float64[..., ..., ...]]: ...
+    @property
+    def derivative_mappings(self) -> dict[str, DerivativeMapping]: ...
     @property
     def f(self) -> numpy.ndarray[numpy.float64[m, n]]: ...
 
@@ -167,6 +183,20 @@ class Config:
 
     @do_backprop.setter
     def do_backprop(self, arg1: bool) -> None: ...
+    @property
+    def emission_source(self) -> EmissionSource:
+        """
+        Sets which (if any) emission source is to be used inside the calculation.
+
+        `sasktran2.EmissionSource.NoSource` (Default)
+            No emission source included
+
+        `sasktran2.EmissionSource.Standard`
+            An emission source defined on the atmosphere grid is enabled.
+        """
+
+    @emission_source.setter
+    def emission_source(self, arg1: EmissionSource) -> None: ...
     @property
     def init_successive_orders_with_discrete_ordinates(self) -> bool:
         """
@@ -405,6 +435,63 @@ class Coordinates:
         self, arg0: float, arg1: float, arg2: float, arg3: GeometryType, arg4: bool
     ) -> None: ...
 
+class DerivativeMapping:
+    assign_name: str
+    interp_dim: str
+    log_radiance_space: bool
+    scat_deriv_index: int
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
+    def __init__(self, arg0: int, arg1: int, arg2: int) -> None: ...
+    def set_zero(self) -> None: ...
+    @property
+    def d_extinction(self) -> numpy.ndarray[numpy.float64[m, n]]: ...
+    @property
+    def d_leg_coeff(self) -> numpy.ndarray[numpy.float64[..., ..., ...]]: ...
+    @property
+    def d_ssa(self) -> numpy.ndarray[numpy.float64[m, n]]: ...
+    @property
+    def interpolator(self) -> numpy.ndarray[numpy.float64[m, n]] | None: ...
+    @interpolator.setter
+    def interpolator(self, arg1: numpy.ndarray[numpy.float64[m, n]]) -> None: ...
+    @property
+    def is_scattering_derivative(self) -> bool: ...
+    @property
+    def num_output(self) -> int: ...
+    @property
+    def scat_factor(self) -> numpy.ndarray[numpy.float64[m, n]]: ...
+
+class EmissionSource:
+    """
+    Members:
+
+      NoSource
+
+      Standard
+    """
+
+    NoSource: typing.ClassVar[EmissionSource]  # value = <EmissionSource.NoSource: 1>
+    Standard: typing.ClassVar[EmissionSource]  # value = <EmissionSource.Standard: 0>
+    __members__: typing.ClassVar[
+        dict[str, EmissionSource]
+    ]  # value = {'NoSource': <EmissionSource.NoSource: 1>, 'Standard': <EmissionSource.Standard: 0>}
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
+    def __eq__(self, other: typing.Any) -> bool: ...
+    def __getstate__(self) -> int: ...
+    def __hash__(self) -> int: ...
+    def __index__(self) -> int: ...
+    def __init__(self, value: int) -> None: ...
+    def __int__(self) -> int: ...
+    def __ne__(self, other: typing.Any) -> bool: ...
+    def __repr__(self) -> str: ...
+    def __setstate__(self, state: int) -> None: ...
+    def __str__(self) -> str: ...
+    @property
+    def name(self) -> str: ...
+    @property
+    def value(self) -> int: ...
+
 class EngineStokes_1:
     @staticmethod
     def _pybind11_conduit_v1_(*args, **kwargs): ...
@@ -528,7 +615,7 @@ class Geodetic:
                         >>> import sasktran2 as sk
                         >>> import numpy as np
                         >>> geodetic = sk.WGS84()
-                        >>> look = geodetic.from_tangent_altitude(15322, [3.676013154788849600e+005, 1.009976313640051500e+006, \\
+                        >>> look = geodetic.from_tangent_altitude(15322, [3.676013154788849600e+005, 1.009976313640051500e+006, \
                                                                     -6.871601202127538600e+006], [0, 0, 1])
                         >>> obs = geodetic.location
                         >>> intercept1, intercept2 = geodetic.altitude_intercepts(16000, obs, look)
@@ -590,7 +677,7 @@ class Geodetic:
                         --------
                         >>> import sasktran2 as sk
                         >>> geodetic = sk.WGS84()
-                        >>> look = geodetic.from_tangent_altitude(15322, [ 3.676013154788849600e+005, 1.009976313640051500e+006,\\
+                        >>> look = geodetic.from_tangent_altitude(15322, [ 3.676013154788849600e+005, 1.009976313640051500e+006,\
                                                                           -6.871601202127538600e+006], [0, 0, 1])
                         >>> print(look)
                         [0.28880556 0.79348676 0.53569591]
@@ -618,8 +705,8 @@ class Geodetic:
                         --------
                         >>> import sasktran2 as sk
                         >>> geodetic = sk.WGS84()
-                        >>> geodetic.from_tangent_point([ 3.676013154788849600e+005, 1.009976313640051500e+006,\\
-                                                         -6.871601202127538600e+006], [ 2.884568631765662100e-001,\\
+                        >>> geodetic.from_tangent_point([ 3.676013154788849600e+005, 1.009976313640051500e+006,\
+                                                         -6.871601202127538600e+006], [ 2.884568631765662100e-001,\
                                                           7.925287180643269000e-001,  5.372996083468238900e-001])
                         >>> print(geodetic)
                         WGS84 Location:
@@ -943,11 +1030,21 @@ class LambertianStokes_1(BRDFStokes_1):
     @staticmethod
     def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(self) -> None: ...
+    @property
+    def num_deriv(self) -> int:
+        """
+        Number of derivatives this BRDF will calculate.
+        """
 
 class LambertianStokes_3(BRDFStokes_3):
     @staticmethod
     def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(self) -> None: ...
+    @property
+    def num_deriv(self) -> int:
+        """
+        Number of derivatives this BRDF will calculate.
+        """
 
 class LinearizedMie:
     @staticmethod
@@ -1006,6 +1103,26 @@ class LinearizedMie:
         [3.41805617 4.05245221 3.92782673]
         >>> print(output.values.Qsca)
         [3.41805617 4.05245221 3.92782673]
+        """
+
+class MODISStokes_1(BRDFStokes_1):
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
+    def __init__(self) -> None: ...
+    @property
+    def num_deriv(self) -> int:
+        """
+        Number of derivatives this BRDF will calculate.
+        """
+
+class MODISStokes_3(BRDFStokes_3):
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
+    def __init__(self) -> None: ...
+    @property
+    def num_deriv(self) -> int:
+        """
+        Number of derivatives this BRDF will calculate.
         """
 
 class MieData:
@@ -1177,6 +1294,28 @@ class OutOfBoundsPolicy:
     @property
     def value(self) -> int: ...
 
+class OutputDerivMappedStokes_1(OutputStokes_1):
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
+    def __init__(self) -> None: ...
+    @property
+    def deriv_map(self) -> dict[str, numpy.ndarray[numpy.float64[m, n]]]: ...
+    @property
+    def radiance(self) -> numpy.ndarray[numpy.float64[m, 1]]: ...
+    @property
+    def surface_deriv_map(self) -> dict[str, numpy.ndarray[numpy.float64[m, n]]]: ...
+
+class OutputDerivMappedStokes_3(OutputStokes_3):
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
+    def __init__(self) -> None: ...
+    @property
+    def deriv_map(self) -> dict[str, numpy.ndarray[numpy.float64[m, n]]]: ...
+    @property
+    def radiance(self) -> numpy.ndarray[numpy.float64[m, 1]]: ...
+    @property
+    def surface_deriv_map(self) -> dict[str, numpy.ndarray[numpy.float64[m, n]]]: ...
+
 class OutputIdealStokes_1(OutputStokes_1):
     @staticmethod
     def _pybind11_conduit_v1_(*args, **kwargs): ...
@@ -1252,21 +1391,21 @@ class SnowKokhanovskyStokes_1(BRDFStokes_1):
     @staticmethod
     def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(self) -> None: ...
+    @property
+    def num_deriv(self) -> int:
+        """
+        Number of derivatives this BRDF will calculate.
+        """
 
 class SnowKokhanovskyStokes_3(BRDFStokes_3):
     @staticmethod
     def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(self) -> None: ...
-
-class MODISStokes_1(BRDFStokes_1):
-    @staticmethod
-    def _pybind11_conduit_v1_(*args, **kwargs): ...
-    def __init__(self) -> None: ...
-
-class MODISStokes_3(BRDFStokes_3):
-    @staticmethod
-    def _pybind11_conduit_v1_(*args, **kwargs): ...
-    def __init__(self) -> None: ...
+    @property
+    def num_deriv(self) -> int:
+        """
+        Number of derivatives this BRDF will calculate.
+        """
 
 class StokesBasis:
     """
@@ -1302,16 +1441,34 @@ class StokesBasis:
     @property
     def value(self) -> int: ...
 
+class SurfaceDerivativeMapping:
+    interp_dim: str
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
+    def __init__(self, arg0: int, arg1: int) -> None: ...
+    def set_zero(self) -> None: ...
+    @property
+    def d_brdf(self) -> numpy.ndarray[numpy.float64[m, n]]: ...
+    @property
+    def interpolator(self) -> numpy.ndarray[numpy.float64[m, n]] | None: ...
+    @interpolator.setter
+    def interpolator(self, arg1: numpy.ndarray[numpy.float64[m, n]]) -> None: ...
+
 class SurfaceStokes_1:
     brdf: BRDFStokes_1
     @staticmethod
     def _pybind11_conduit_v1_(*args, **kwargs): ...
+    def get_derivative_mapping(self, name: str) -> SurfaceDerivativeMapping: ...
     @property
     def albedo(self) -> numpy.ndarray[numpy.float64[m, n]]: ...
     @property
     def brdf_args(self) -> numpy.ndarray[numpy.float64[m, n]]: ...
     @property
     def d_brdf_args(self) -> list[numpy.ndarray[numpy.float64[m, n]]]: ...
+    @property
+    def derivative_mappings(self) -> dict[str, SurfaceDerivativeMapping]: ...
+    @property
+    def emission(self) -> numpy.ndarray[numpy.float64[m, 1]]: ...
     @property
     def max_azimuthal_order(self) -> int: ...
 
@@ -1319,12 +1476,17 @@ class SurfaceStokes_3:
     brdf: BRDFStokes_3
     @staticmethod
     def _pybind11_conduit_v1_(*args, **kwargs): ...
+    def get_derivative_mapping(self, name: str) -> SurfaceDerivativeMapping: ...
     @property
     def albedo(self) -> numpy.ndarray[numpy.float64[m, n]]: ...
     @property
     def brdf_args(self) -> numpy.ndarray[numpy.float64[m, n]]: ...
     @property
     def d_brdf_args(self) -> list[numpy.ndarray[numpy.float64[m, n]]]: ...
+    @property
+    def derivative_mappings(self) -> dict[str, SurfaceDerivativeMapping]: ...
+    @property
+    def emission(self) -> numpy.ndarray[numpy.float64[m, 1]]: ...
     @property
     def max_azimuthal_order(self) -> int: ...
 
@@ -1405,7 +1567,7 @@ class WignerD:
     def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(self, m: int, n: int) -> None:
         """
-        Performs calculations of the Wigner (small) d function, :math:`d^l_{m, n}(\\theta)`.
+        Performs calculations of the Wigner (small) d function, :math:`d^l_{m, n}(\theta)`.
 
         First, this class is constructed for a given `m` and `n`, and then :py:meth:`d` is called
         for a given `l`.
@@ -1413,12 +1575,12 @@ class WignerD:
         The Wigner functions are closely related to the associated Legendre polynomials,
         .. math::
 
-            d^l_{m, 0}(\\theta) = \\sqrt{\\frac{(l-m)!}{(l+m)!}} P^m_l(\\cos \\theta)
+            d^l_{m, 0}(\theta) = \sqrt{\frac{(l-m)!}{(l+m)!}} P^m_l(\cos \theta)
 
         and the regular Legendre polynomials,
         .. math::
 
-            d^l_{0, 0}(\\theta) = P_l(\\cos \\theta)
+            d^l_{0, 0}(\theta) = P_l(\cos \theta)
 
         Parameters
         ----------
@@ -1433,7 +1595,7 @@ class WignerD:
         self, theta: numpy.ndarray[numpy.float64], l: numpy.ndarray[numpy.int32]
     ) -> typing.Any:
         """
-        Calculates :math:`d^l_{m, n}(\\theta)` for a given `l`, and `m`, `n` provided in the constructor.
+        Calculates :math:`d^l_{m, n}(\theta)` for a given `l`, and `m`, `n` provided in the constructor.
         Note that only one of `theta`, `l` can be array-like, one must be scalar.
 
         Parameters
@@ -1450,6 +1612,31 @@ class WignerD:
             The calculated Wigner function, either scalar or the same size as `theta` or `l`, whichever is array-like.
         """
 
+def voigt_broaden(
+    line_center: numpy.ndarray[numpy.float64[m, 1]],
+    line_intensity: numpy.ndarray[numpy.float64[m, 1]],
+    lower_energy: numpy.ndarray[numpy.float64[m, 1]],
+    gamma_air: numpy.ndarray[numpy.float64[m, 1]],
+    gamma_self: numpy.ndarray[numpy.float64[m, 1]],
+    delta_air: numpy.ndarray[numpy.float64[m, 1]],
+    n_air: numpy.ndarray[numpy.float64[m, 1]],
+    iso_id: numpy.ndarray[numpy.int32[m, 1]],
+    partitions: numpy.ndarray[numpy.float64[m, n], numpy.ndarray.flags.f_contiguous],
+    molecular_mass: numpy.ndarray[numpy.float64[m, 1]],
+    pressure: numpy.ndarray[numpy.float64[m, 1]],
+    pself: numpy.ndarray[numpy.float64[m, 1]],
+    temperature: numpy.ndarray[numpy.float64[m, 1]],
+    wavenumber_grid: numpy.ndarray[numpy.float64[m, 1]],
+    result: numpy.ndarray[
+        numpy.float64[m, n],
+        numpy.ndarray.flags.writeable,
+        numpy.ndarray.flags.f_contiguous,
+    ],
+    line_contribution_width: float = 10.0,
+    cull_factor: float = 0.0,
+    num_threads: int = 1,
+) -> None: ...
+
 ConstantSpacing: GridSpacing  # value = <GridSpacing.ConstantSpacing: 0>
 Disabled: InputValidationMode  # value = <InputValidationMode.Disabled: 2>
 DiscreteOrdinates: (
@@ -1464,7 +1651,7 @@ LinearSpacing: GridSpacing  # value = <GridSpacing.LinearSpacing: 1>
 LowerInterpolation: (
     InterpolationMethod  # value = <InterpolationMethod.LowerInterpolation: 2>
 )
-NoSource: OccultationSource  # value = <OccultationSource.NoSource: 1>
+NoSource: EmissionSource  # value = <EmissionSource.NoSource: 1>
 Observer: StokesBasis  # value = <StokesBasis.Observer: 2>
 OutOfBoundsExtend: OutOfBoundsPolicy  # value = <OutOfBoundsPolicy.OutOfBoundsExtend: 0>
 OutOfBoundsSetZero: (
