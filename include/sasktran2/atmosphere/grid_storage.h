@@ -28,6 +28,11 @@ namespace sasktran2::atmosphere {
         Eigen::MatrixXd total_extinction; // location, wavel
         Eigen::MatrixXd emission_source;  // location, wavel
 
+        // Unscaled quantities, necessary for temporary storage during
+        // derivative propagations
+        Eigen::MatrixXd unscaled_ssa;              // location, wavel
+        Eigen::MatrixXd unscaled_total_extinction; // location, wavel
+
         // Scattering parameters
         Eigen::Matrix<sasktran2::types::leg_coeff, -1, -1>
             f; // location, wavel, (Delta scaling factor)
@@ -57,6 +62,8 @@ namespace sasktran2::atmosphere {
         AtmosphereGridStorageFull(int nwavel, int nlocation, int numlegendre) {
             ssa.resize(nlocation, nwavel);
             total_extinction.resize(nlocation, nwavel);
+            unscaled_total_extinction.resize(nlocation, nwavel);
+            unscaled_ssa.resize(nlocation, nwavel);
             emission_source.resize(nlocation, nwavel);
             f.resize(nlocation, nwavel);
             max_order.resize(nlocation, nwavel);
@@ -173,8 +180,12 @@ namespace sasktran2::atmosphere {
             }
         }
 
+        std::map<std::string, DerivativeMapping>& derivative_mappings() {
+            return m_derivative_mappings;
+        }
+
         const std::map<std::string, DerivativeMapping>&
-        derivative_mappings() const {
+        derivative_mappings_const() const {
             return m_derivative_mappings;
         }
 

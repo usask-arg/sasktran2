@@ -6,7 +6,7 @@ namespace sasktran2 {
 
         int i = 0;
         for (auto& [name, deriv] :
-             this->m_atmosphere->storage().derivative_mappings()) {
+             this->m_atmosphere->storage().derivative_mappings_const()) {
             m_derivatives[name].resize(NSTOKES * this->m_nwavel * this->m_nlos,
                                        deriv.num_output());
         }
@@ -47,7 +47,8 @@ namespace sasktran2 {
         // Do the atmosphere mappings
         for (auto& [name, deriv] : m_derivatives) {
             const auto& mapping =
-                this->m_atmosphere->storage().derivative_mappings().at(name);
+                this->m_atmosphere->storage().derivative_mappings_const().at(
+                    name);
 
             const auto& d_ssa =
                 mapping.native_mapping().d_ssa.value(); // [N x wavelength]

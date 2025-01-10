@@ -43,7 +43,8 @@ namespace sasktran2::atmosphere {
         int n = 0;
 
         if (m_calculate_derivatives) {
-            for (auto& [name, mapping] : m_storage.derivative_mappings()) {
+            for (auto& [name, mapping] :
+                 m_storage.derivative_mappings_const()) {
                 n += mapping.num_output();
             }
         }
@@ -58,6 +59,10 @@ namespace sasktran2::atmosphere {
                          "legendre orders");
             return;
         }
+
+        // Copy the unscaled extinction/ssa
+        m_storage.unscaled_total_extinction = m_storage.total_extinction;
+        m_storage.unscaled_ssa = m_storage.ssa;
 
         int stokes_stack;
         if (NSTOKES == 1) {
@@ -123,6 +128,61 @@ namespace sasktran2::atmosphere {
                             m_storage.d_f(i, w, d);
                         m_storage.d_leg_coeff(j, i, w, d) /=
                             1 - m_storage.f(i, w);
+                    }
+                }
+            }
+        }
+        // Now we can scale the derivative mappings based on our new values
+
+        for (auto& [name, mapping] : m_storage.derivative_mappings()) {
+            // Start with d_k
+            if (mapping.native_mapping().d_extinction.has_value()) {
+                // Step 1, scale the extinction
+                mapping.native_mapping().d_extinction.value().array() *=
+                    (1 - m_storage.unscaled_ssa.array() *
+                             m_storage.f.template cast<double>().array());
+
+                // Step 2, subtract how the term due to d_ssa
+                mapping.native_mapping().d_extinction.value().array() -=
+                    m_storage.unscaled_total_extinction.array() *
+                    m_storage.f.template cast<double>().array() *
+                    mapping.native_mapping().d_ssa.value().array();
+
+                // and d_ssa
+                // Only have to scale d_ssa
+                mapping.native_mapping().d_ssa.value().array() *=
+                    (1 - m_storage.f.template cast<double>().array() *
+                             (1 - m_storage.ssa.array())) /
+                    (1 - m_storage.unscaled_ssa.array() *
+                             m_storage.f.template cast<double>().array());
+            }
+
+            // If we are a scattering derivative, we also have to calculate the
+            // changes in d_k and d_ssa due to d_f
+            if (mapping.is_scattering_derivative()) {
+                // Now we have to scale the d_k and d_ssa
+                if (mapping.native_mapping().d_extinction.has_value()) {
+                    // TODO: Rewrite this with Eigen ops
+                    for (int w = 0; w < m_storage.f.cols(); ++w) { // wavel loop
+                        for (int i = 0; i < m_storage.f.rows();
+                             ++i) { // location loop
+                            double d_f =
+                                m_storage.d_f(i, w,
+                                              mapping.get_scattering_index()) *
+                                mapping.native_mapping().scat_factor.value()(i,
+                                                                             w);
+
+                            mapping.native_mapping().d_extinction.value()(i,
+                                                                          w) -=
+                                m_storage.unscaled_ssa(i, w) *
+                                m_storage.unscaled_total_extinction(i, w) * d_f;
+
+                            mapping.native_mapping().d_ssa.value()(i, w) +=
+                                d_f * m_storage.unscaled_ssa(i, w) /
+                                (1 - m_storage.unscaled_ssa(i, w) *
+                                         m_storage.f(i, w)) *
+                                (m_storage.ssa(i, w) - 1);
+                        }
                     }
                 }
             }
