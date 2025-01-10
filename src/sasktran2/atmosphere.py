@@ -523,6 +523,7 @@ class Atmosphere:
         self.storage.ssa[:] = 0
         self.storage.total_extinction[:] = 0
         self.storage.leg_coeff[:] = 0
+        self.storage.emission_source[:] = 0
 
         for _, ele in self.storage.derivative_mappings.items():
             ele.set_zero()

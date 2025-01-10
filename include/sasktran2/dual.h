@@ -151,6 +151,10 @@ namespace sasktran2 {
             return deriv(Eigen::all, Eigen::seq(0, n - 1));
         }
 
+        Eigen::Ref<Eigen::Matrix<T, CSIZE, -1>> d_ssa(int n) {
+            return deriv(Eigen::all, Eigen::seq(n, 2 * n - 1));
+        }
+
         Eigen::Ref<const Eigen::Matrix<T, CSIZE, -1>> d_ssa(int n) const {
             return deriv(Eigen::all, Eigen::seq(n, 2 * n - 1));
         }
