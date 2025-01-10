@@ -6,10 +6,6 @@ if TYPE_CHECKING:
     from sasktran2.mie.refractive import RefractiveIndex
 
 from sasktran2 import Atmosphere
-from sasktran2.atmosphere import (
-    NativeGridDerivative,
-    SurfaceDerivativeMapping,
-)
 
 from ..base import Constituent
 from . import (
@@ -112,21 +108,18 @@ class SnowKokhanovsky(Constituent, WavelengthInterpolatorMixin):
         # L Deriv factors are (chi + M_interp) / wavelength_nm
         L_factor = (chi + (interp_matrix @ self._M)) / atmo.wavelengths_nm
 
-        derivs["L"] = SurfaceDerivativeMapping(
-            NativeGridDerivative(d_brdf=L_factor.reshape(-1, 1)),
-            interpolating_matrix=interp_matrix,
-            interp_dim="wavelength",
-            result_dim=f"{name}_wavelength",
-        )
+        deriv_mapping = atmo.surface.get_derivative_mapping(f"wf_{name}_L")
+        deriv_mapping.d_brdf[:] += L_factor.reshape(-1, 1)
+        deriv_mapping.interpolator = interp_matrix
+        deriv_mapping.interp_dim = f"{name}_wavelength"
+
+        deriv_mapping = atmo.surface.get_derivative_mapping(f"wf_{name}_M")
 
         # M Deriv factors are L / wavelength_nm
         M_factor = (interp_matrix @ self._L) / atmo.wavelengths_nm
 
-        derivs["M"] = SurfaceDerivativeMapping(
-            NativeGridDerivative(d_brdf=M_factor.reshape(-1, 1)),
-            interpolating_matrix=interp_matrix,
-            interp_dim="wavelength",
-            result_dim=f"{name}_wavelength",
-        )
+        deriv_mapping.d_brdf[:] += M_factor.reshape(-1, 1)
+        deriv_mapping.interpolator = interp_matrix
+        deriv_mapping.interp_dim = f"{name}_wavelength"
 
         return derivs

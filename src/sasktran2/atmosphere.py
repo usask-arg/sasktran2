@@ -524,6 +524,11 @@ class Atmosphere:
         self.storage.total_extinction[:] = 0
         self.storage.leg_coeff[:] = 0
 
+        for _, ele in self.storage.derivative_mappings.items():
+            ele.set_zero()
+        for _, ele in self.surface.derivative_mappings.items():
+            ele.set_zero()
+
     @property
     def deriv_mappings(self) -> dict:
         """
@@ -593,38 +598,25 @@ class Atmosphere:
             self._derivs = {}
             if self._calculate_derivatives:
                 for name, constituent in self._constituents.items():
-                    self._derivs[name] = constituent.register_derivative(self, name)
+                    constituent.register_derivative(self, name)
 
-                    if self._derivs[name] is not None:
-                        for _, deriv in self._derivs[name].items():
-                            if deriv.native_grid_mapping.d_leg_coeff is not None:
-                                num_scat_derivs += 1
+                for _, deriv in self.storage.derivative_mappings.items():
+                    if deriv.is_scattering_derivative:
+                        num_scat_derivs += 1
             logging.debug("Finished setting atmosphere from constituents")
         else:
             # using the raw interface
             if self._calculate_derivatives and len(self._derivs) == 0:
-                self._derivs["raw"] = {}
-                self._derivs["raw"]["extinction"] = DerivativeMapping(
-                    NativeGridDerivative(
-                        d_extinction=np.ones_like(self.storage.total_extinction),
-                        d_ssa=np.zeros_like(self.storage.ssa),
-                    ),
-                    summable=True,
-                )
-                self._derivs["raw"]["ssa"] = DerivativeMapping(
-                    NativeGridDerivative(
-                        d_extinction=np.zeros_like(self.storage.total_extinction),
-                        d_ssa=np.ones_like(self.storage.ssa),
-                    ),
-                    summable=True,
-                )
+                deriv_mapping = self.storage.get_derivative_mapping("wf_extinction")
+                deriv_mapping.d_extinction[:] = 1
+                deriv_mapping.d_ssa[:] = 0.0
 
-                self._derivs["raw"]["albedo"] = DerivativeMapping(
-                    NativeGridDerivative(
-                        d_brdf=np.ones((self.num_wavel, 1)),
-                    ),
-                    summable=True,
-                )
+                deriv_mapping = self.storage.get_derivative_mapping("wf_ssa")
+                deriv_mapping.d_extinction[:] = 0.0
+                deriv_mapping.d_ssa[:] = 1.0
+
+                deriv_mapping = self.surface.get_derivative_mapping("wf_albedo")
+                deriv_mapping.d_brdf[:] = 1.0
 
                 if self._legendre_derivative:
                     for i in range(self.storage.leg_coeff.shape[0]):
@@ -632,19 +624,13 @@ class Atmosphere:
                             # No derivative for the first leg_coeff
                             continue
 
-                        d_leg_coeff = np.zeros_like(self.storage.leg_coeff)
-                        d_leg_coeff[i, :] = 1
-                        self._derivs["raw"][f"leg_coeff_{i}"] = DerivativeMapping(
-                            NativeGridDerivative(
-                                d_extinction=np.zeros_like(
-                                    self.storage.total_extinction
-                                ),
-                                d_ssa=np.zeros_like(self.storage.ssa),
-                                d_leg_coeff=d_leg_coeff,
-                                scat_factor=np.ones_like(self.storage.ssa),
-                            ),
-                            summable=True,
+                        deriv_mapping = self.storage.get_derivative_mapping(
+                            f"wf_leg_coeff_{i}"
                         )
+                        deriv_mapping.d_leg_coeff[i, :] = 1
+                        deriv_mapping.d_extinction[:] = 0
+                        deriv_mapping.d_ssa[:] = 0
+                        deriv_mapping.scat_factor[:] = 1
                         num_scat_derivs += 1
 
         # Now we need to resize the phase derivative storage if necessary, and set the scattering derivatives
@@ -652,18 +638,11 @@ class Atmosphere:
             self.storage.resize_derivatives(num_scat_derivs)
 
             scat_index = 0
-            for _, mappings in self._derivs.items():
-                if mappings is not None:
-                    for _, mapping in mappings.items():
-                        if (
-                            mapping is not None
-                            and mapping.native_grid_mapping.d_leg_coeff is not None
-                        ):
-                            self.storage.d_leg_coeff[:, :, :, scat_index] = (
-                                mapping.native_grid_mapping.d_leg_coeff
-                            )
-                            mapping.native_grid_mapping.scat_deriv_index = scat_index
-                            scat_index += 1
+            for _, mapping in self.storage.derivative_mappings.items():
+                if mapping.is_scattering_derivative:
+                    self.storage.d_leg_coeff[:, :, :, scat_index] = mapping.d_leg_coeff
+                    mapping.scat_deriv_index = scat_index
+                    scat_index += 1
 
         # Store the unscaled optical properties for use in the derivative mappings
         self._unscaled_ssa = copy(self.storage.ssa)

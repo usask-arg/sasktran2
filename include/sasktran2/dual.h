@@ -145,6 +145,28 @@ namespace sasktran2 {
          * @return The number of derivatives stored
          */
         int derivative_size() const { return (int)deriv.cols(); };
+
+        Eigen::Ref<const Eigen::Matrix<T, CSIZE, -1>>
+        d_extinction(int n) const {
+            return deriv(Eigen::all, Eigen::seq(0, n - 1));
+        }
+
+        Eigen::Ref<const Eigen::Matrix<T, CSIZE, -1>> d_ssa(int n) const {
+            return deriv(Eigen::all, Eigen::seq(n, 2 * n - 1));
+        }
+
+        Eigen::Ref<const Eigen::Matrix<T, CSIZE, -1>>
+        d_scatterer(int n, int scat_index) const {
+            return deriv(Eigen::all, Eigen::seq((2 + scat_index) * n,
+                                                (3 + scat_index) * n - 1));
+        }
+
+        Eigen::Ref<const Eigen::Matrix<T, CSIZE, -1>>
+        d_brdf(int n, int num_scatterers, int num_brdf_args) const {
+            return deriv(Eigen::all, Eigen::seq((2 + num_scatterers) * n,
+                                                (2 + num_scatterers) * n +
+                                                    num_brdf_args - 1));
+        }
     };
 
     /** A special convenience struct to work with the derivatives of layer

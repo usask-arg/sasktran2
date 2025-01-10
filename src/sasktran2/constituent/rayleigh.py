@@ -1,10 +1,6 @@
 import numpy as np
 
 import sasktran2 as sk
-from sasktran2.atmosphere import (
-    InterpolatedDerivativeMapping,
-    NativeGridDerivative,
-)
 from sasktran2.optical.rayleigh import rayleigh_cross_section_bates
 from sasktran2.polarization import LegendreStorageView
 
@@ -134,7 +130,7 @@ class Rayleigh(Constituent):
             )
             raise ValueError(msg)
 
-    def register_derivative(self, atmo: sk.Atmosphere, name: str):  # noqa: ARG002
+    def register_derivative(self, atmo: sk.Atmosphere, name: str):
         num_dens = atmo.state_equation.air_numberdensity
         N = num_dens["N"]
 
@@ -156,34 +152,33 @@ class Rayleigh(Constituent):
             d_vals.append(num_dens["dN_dT"])
 
         for deriv_name, vert_factor in zip(deriv_names, d_vals, strict=True):
-            derivs[deriv_name] = InterpolatedDerivativeMapping(
-                NativeGridDerivative(
-                    d_extinction=xs,
-                    d_ssa=xs * (1 - atmo.storage.ssa) / atmo.storage.total_extinction,
-                    d_leg_coeff=-atmo.storage.leg_coeff,
-                    scat_factor=(
-                        xs / (atmo.storage.ssa * atmo.storage.total_extinction)
-                    ),
-                ),
-                summable=True,
-                interp_dim="altitude",
-                result_dim="altitude",
-                interpolating_matrix=np.eye(len(N)) * vert_factor[np.newaxis, :],
+            mapping = atmo.storage.get_derivative_mapping(f"wf_{name}_{deriv_name}")
+            mapping.d_extinction[:] += xs
+            mapping.d_ssa[:] += (
+                xs * (1 - atmo.storage.ssa) / atmo.storage.total_extinction
+            )
+            mapping.d_leg_coeff[:] -= atmo.storage.leg_coeff
+            mapping.scat_factor[:] += xs / (
+                atmo.storage.ssa * atmo.storage.total_extinction
             )
 
-            d_leg_coeff = LegendreStorageView(
-                derivs[deriv_name].native_grid_mapping.d_leg_coeff, atmo.nstokes
-            )
+            mapping.interpolator = np.eye(len(N)) * vert_factor[np.newaxis, :]
+            mapping.interp_dim = "altitude"
+            mapping.assign_name = f"wf_{deriv_name}"
 
-            d_leg_coeff.a1[0] += 1
-            d_leg_coeff.a1[2] += ((1 - self._delta) / (2 + self._delta))[np.newaxis, :]
+            d_leg_coeff = LegendreStorageView(mapping.d_leg_coeff, atmo.nstokes)
+
+            d_leg_coeff.a1[0][:] += 1
+            d_leg_coeff.a1[2][:] += ((1 - self._delta) / (2 + self._delta))[
+                np.newaxis, :
+            ]
 
             if atmo.nstokes >= 3:
-                d_leg_coeff.a2[2] += (
+                d_leg_coeff.a2[2][:] += (
                     6 * ((1 - self._delta) / (2 + self._delta))[np.newaxis, :]
                 )
 
-                d_leg_coeff.b1[2] += (
+                d_leg_coeff.b1[2][:] += (
                     np.sqrt(6.0)
                     * ((1 - self._delta) / (2 + self._delta))[np.newaxis, :]
                 )

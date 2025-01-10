@@ -40,10 +40,13 @@ add_library(
   emission/emission_source.cpp
   output/output.cpp
   output/outputidealdense.cpp
+  output/outputsensor.cpp
+  output/outputderivmapped.cpp
   engine/engine.cpp
   hr/diffuse_point.cpp
   hr/diffuse_table.cpp
   mie/linearized_mie.cpp
+  derivative_mapping/derivative_mapping.cpp
   sktran_disco/sktran_do.cpp
   sktran_disco/sktran_do_geometrylayerarray.cpp
   sktran_disco/sktran_do_layerarray.cpp

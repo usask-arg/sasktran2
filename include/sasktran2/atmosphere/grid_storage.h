@@ -1,7 +1,10 @@
 #pragma once
 
+#include <map>
 #include <sasktran2/internal_common.h>
 #include <sasktran2/dual.h>
+#include <sasktran2/derivative_mapping.h>
+#include <string>
 
 namespace sasktran2::atmosphere {
     /** Base abstract storage container for specifying the atmospheric
@@ -14,10 +17,21 @@ namespace sasktran2::atmosphere {
 
     template <int NSTOKES>
     class AtmosphereGridStorageFull : public AtmosphereGridStorage {
+      private:
+        std::map<std::string, DerivativeMapping>
+            m_derivative_mappings; /** Derivatives
+                                       for the
+                                       atmosphere */
+
       public:
         Eigen::MatrixXd ssa;              // location, wavel
         Eigen::MatrixXd total_extinction; // location, wavel
         Eigen::MatrixXd emission_source;  // location, wavel
+
+        // Unscaled quantities, necessary for temporary storage during
+        // derivative propagations
+        Eigen::MatrixXd unscaled_ssa;              // location, wavel
+        Eigen::MatrixXd unscaled_total_extinction; // location, wavel
 
         // Scattering parameters
         Eigen::Matrix<sasktran2::types::leg_coeff, -1, -1>
@@ -44,11 +58,12 @@ namespace sasktran2::atmosphere {
         int numscatderiv;
 
         Eigen::VectorXd solar_irradiance; // wavel
-
       public:
         AtmosphereGridStorageFull(int nwavel, int nlocation, int numlegendre) {
             ssa.resize(nlocation, nwavel);
             total_extinction.resize(nlocation, nwavel);
+            unscaled_total_extinction.resize(nlocation, nwavel);
+            unscaled_ssa.resize(nlocation, nwavel);
             emission_source.resize(nlocation, nwavel);
             f.resize(nlocation, nwavel);
             max_order.resize(nlocation, nwavel);
@@ -162,6 +177,31 @@ namespace sasktran2::atmosphere {
                         }
                     }
                 }
+            }
+        }
+
+        std::map<std::string, DerivativeMapping>& derivative_mappings() {
+            return m_derivative_mappings;
+        }
+
+        const std::map<std::string, DerivativeMapping>&
+        derivative_mappings_const() const {
+            return m_derivative_mappings;
+        }
+
+        DerivativeMapping& get_derivative_mapping(const std::string& name) {
+            if (auto it = m_derivative_mappings.find(name);
+                it != m_derivative_mappings.end()) {
+                // Key exists; just return reference
+                return it->second;
+            } else {
+                // Key does not exist; create it in-place without default
+                // constructor
+                auto [new_it, inserted] = m_derivative_mappings.emplace(
+                    std::piecewise_construct, std::forward_as_tuple(name),
+                    std::forward_as_tuple(ssa.cols(), ssa.rows(),
+                                          leg_coeff.dimension(0)));
+                return new_it->second;
             }
         }
     };

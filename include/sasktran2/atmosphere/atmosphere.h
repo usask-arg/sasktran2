@@ -31,6 +31,7 @@ namespace sasktran2::atmosphere {
         Surface<NSTOKES> m_surface;   /** The surface */
         bool m_calculate_derivatives; /** True if we are going to be calculating
                                          derivatives */
+
       public:
         /** Directly constructs the atmosphere from it's base objects
          *
@@ -104,9 +105,20 @@ namespace sasktran2::atmosphere {
                    m_storage.numscatderiv * m_storage.total_extinction.rows();
         }
 
+        /**
+         *  Number of internal derivative values (extinction, ssa, phase,
+         * albedo, etc)
+         */
         int num_deriv() const;
+
         int num_scattering_deriv_groups() const {
             return m_storage.numscatderiv;
         }
+
+        /**
+         *  Number of output derivative values, computed from the
+         * DerivativeMappings
+         */
+        int num_output_deriv() const;
     };
 } // namespace sasktran2::atmosphere

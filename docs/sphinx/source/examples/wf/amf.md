@@ -36,7 +36,7 @@ viewing_geo.add_ray(
     sk.GroundViewingSolar(
         cos_sza=0.6,
         relative_azimuth=0,
-        cos_viewing_zenith=-0.8,
+        cos_viewing_zenith=0.8,
         observer_altitude_m=200000,
     )
 )

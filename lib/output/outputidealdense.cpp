@@ -1,19 +1,21 @@
 #include <sasktran2/output.h>
 
 namespace sasktran2 {
-    template <int NSTOKES>
-    void OutputIdealDense<NSTOKES>::resize(int nlos, int nwavel, int nderiv) {
-        Output<NSTOKES>::resize(nlos, nwavel, nderiv);
-        m_radiance.resize(NSTOKES * nwavel * nlos, nderiv, false);
+    template <int NSTOKES> void OutputIdealDense<NSTOKES>::resize() {
+        m_radiance.resize(NSTOKES * this->m_nwavel * this->m_nlos,
+                          this->m_nderiv, false);
     }
 
     template <int NSTOKES>
     void OutputIdealDense<NSTOKES>::assign(
         const sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
             radiance,
-        int losidx, int wavelidx) {
+        int losidx, int wavelidx, int threadidx) {
 
         int linear_index = NSTOKES * this->m_nlos * wavelidx + NSTOKES * losidx;
+
+        // Quantities necessary for derivative propagation
+
         if constexpr (NSTOKES >= 1) {
             m_radiance.value(linear_index) = radiance.value(0);
             m_radiance.deriv(linear_index, Eigen::all) =

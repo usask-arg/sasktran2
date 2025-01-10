@@ -59,7 +59,9 @@ class Engine:
             :py:class:`sasktran2.OutputIdeal`, the output format is an `xarray` Dataset.
             See for example, :py:meth:`sasktran2.OutputIdeal.post_process`
         """
-        engine_output = sk.OutputIdeal(self._nstokes) if output is None else output
+        engine_output = (
+            sk.OutputDerivMapped(self._nstokes) if output is None else output
+        )
 
         self._engine.calculate_radiance(
             atmosphere.internal_object(), engine_output.internal_output()

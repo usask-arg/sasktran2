@@ -269,6 +269,7 @@ if(BUILD_PYTHON)
     src/main.cpp
     src/config.cpp
     src/coordinates.cpp
+    src/derivative_mappings.cpp
     src/geometry.cpp
     src/geodetic.cpp
     src/grids.cpp

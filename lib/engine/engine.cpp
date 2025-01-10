@@ -299,9 +299,7 @@ void Sasktran2<NSTOKES>::calculate_radiance(
         radiance(m_config.num_threads(),
                  {NSTOKES, atmosphere.num_deriv(), true});
 
-    output.resize((int)m_traced_rays.size(), atmosphere.num_wavel(),
-                  atmosphere.num_deriv());
-    output.initialize(m_config, *m_geometry, m_traced_rays);
+    output.initialize(m_config, *m_geometry, m_traced_rays, atmosphere);
 
 #pragma omp parallel for num_threads(m_config.num_wavelength_threads())
     for (int w = 0; w < atmosphere.num_wavel(); ++w) {
@@ -342,7 +340,7 @@ void Sasktran2<NSTOKES>::calculate_radiance(
             }
 
             // And assign it to the output
-            output.assign(radiance[ray_threadidx], i, w);
+            output.assign(radiance[ray_threadidx], i, w, ray_threadidx);
         }
 
         // TODO: Is this where we should generate fluxes or other quantities

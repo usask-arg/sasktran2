@@ -1,3 +1,4 @@
+#include "sasktran2/atmosphere/atmosphere.h"
 #include "sasktran2/config.h"
 #include "sasktran2/geometry.h"
 #include <sasktran2/output.h>
@@ -8,7 +9,18 @@ namespace sasktran2 {
     template <int NSTOKES>
     void Output<NSTOKES>::initialize(
         const sasktran2::Config& config, const sasktran2::Geometry1D& geometry,
-        const std::vector<sasktran2::raytracing::TracedRay>& rays) {
+        const std::vector<sasktran2::raytracing::TracedRay>& rays,
+        const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere) {
+        m_nlos = rays.size();
+        m_nwavel = atmosphere.num_wavel();
+        m_nderiv = atmosphere.num_deriv();
+        m_ngeometry = atmosphere.storage().total_extinction.rows();
+
+        m_atmosphere = &atmosphere;
+        m_config = &config;
+
+        this->resize();
+
         if constexpr (NSTOKES > 1) {
             m_stokes_C.resize(rays.size());
             m_stokes_S.resize(rays.size());

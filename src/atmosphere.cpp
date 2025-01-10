@@ -43,6 +43,11 @@ void declareAtmosphereStorage(py::module_& m, const std::string& suffix) {
         .def(py::init<int, int, int>())
         .def("resize_derivatives", &AtmosphereGridStorage::resize_derivatives,
              "num_deriv"_a)
+        .def("get_derivative_mapping",
+             &AtmosphereGridStorage::get_derivative_mapping, "name"_a,
+             py::return_value_policy::reference)
+        .def_property_readonly("derivative_mappings",
+                               &AtmosphereGridStorage::derivative_mappings)
         .def_property(
             "ssa",
             [](AtmosphereGridStorage& storage) -> Eigen::MatrixXd& {
@@ -120,6 +125,10 @@ void declareSurface(py::module_& m, const std::string& suffix) {
                 return surface.max_azimuthal_order();
             },
             nullptr)
+        .def("get_derivative_mapping", &Surface::get_derivative_mapping,
+             "name"_a, py::return_value_policy::reference)
+        .def_property_readonly("derivative_mappings",
+                               &Surface::derivative_mappings)
         .def_property("brdf", &Surface::brdf_object, &Surface::set_brdf_object)
         .def_property(
             "brdf_args",

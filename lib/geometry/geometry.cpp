@@ -1,4 +1,3 @@
-#include "sasktran2/output.h"
 #include <sasktran2/geometry.h>
 #include <sasktran2/math/trig.h>
 #include <sasktran2/validation/validation.h>

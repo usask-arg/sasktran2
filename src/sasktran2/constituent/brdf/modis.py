@@ -1,10 +1,6 @@
 import numpy as np
 
 from sasktran2 import Atmosphere
-from sasktran2.atmosphere import (
-    NativeGridDerivative,
-    SurfaceDerivativeMapping,
-)
 
 from ..base import Constituent
 from . import (
@@ -97,31 +93,25 @@ class MODIS(Constituent, WavelengthInterpolatorMixin):
         iso_deriv = np.zeros((atmo.num_wavel, 3))
         iso_deriv[:, 0] = 1
 
-        derivs["isotropic"] = SurfaceDerivativeMapping(
-            NativeGridDerivative(d_brdf=iso_deriv),
-            interpolating_matrix=interp_matrix,
-            interp_dim="wavelength",
-            result_dim=f"{name}_wavelength",
-        )
+        deriv_mapping = atmo.surface.get_derivative_mapping(f"wf_{name}_isotropic")
+        deriv_mapping.d_brdf[:] = iso_deriv
+        deriv_mapping.interpolator = interp_matrix
+        deriv_mapping.interp_dim = f"{name}_wavelength"
 
         vol_deriv = np.zeros((atmo.num_wavel, 3))
         vol_deriv[:, 1] = 1
 
-        derivs["volumetric"] = SurfaceDerivativeMapping(
-            NativeGridDerivative(d_brdf=vol_deriv),
-            interpolating_matrix=interp_matrix,
-            interp_dim="wavelength",
-            result_dim=f"{name}_wavelength",
-        )
+        deriv_mapping = atmo.surface.get_derivative_mapping(f"wf_{name}_volumetric")
+        deriv_mapping.d_brdf[:] = vol_deriv
+        deriv_mapping.interpolator = interp_matrix
+        deriv_mapping.interp_dim = f"{name}_wavelength"
 
         geo_deriv = np.zeros((atmo.num_wavel, 3))
         geo_deriv[:, 2] = 1
 
-        derivs["geometric"] = SurfaceDerivativeMapping(
-            NativeGridDerivative(d_brdf=geo_deriv),
-            interpolating_matrix=interp_matrix,
-            interp_dim="wavelength",
-            result_dim=f"{name}_wavelength",
-        )
+        deriv_mapping = atmo.surface.get_derivative_mapping(f"wf_{name}_geometric")
+        deriv_mapping.d_brdf[:] = geo_deriv
+        deriv_mapping.interpolator = interp_matrix
+        deriv_mapping.interp_dim = f"{name}_wavelength"
 
         return derivs
