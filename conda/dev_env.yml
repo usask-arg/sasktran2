@@ -29,6 +29,7 @@ dependencies:
   - fortran-compiler
   - astropy
   - jupyter
+  - pybind11-stubgen
   - pip:
     - sphinx_book_theme
     - myst-nb
