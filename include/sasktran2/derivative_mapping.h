@@ -65,6 +65,13 @@ namespace sasktran2 {
          *   Dimension: [wavel, brdf_coeff]
          */
         std::optional<Eigen::MatrixXd> d_brdf;
+
+        /**
+         * d_emission / dx
+         * Dimension: [wavel, 1]
+         *
+         */
+        std::optional<Eigen::MatrixXd> d_emission;
     };
 
     /**
@@ -319,6 +326,12 @@ namespace sasktran2 {
          *
          */
         void allocate_brdf_derivatives();
+
+        /**
+         * @brief Allocates derivatives with respect to surface emission
+         *
+         */
+        void allocate_emission_derivatives();
 
         /**
          * @brief Get the interpolator object

@@ -530,6 +530,8 @@ class Atmosphere:
         for _, ele in self.surface.derivative_mappings.items():
             ele.set_zero()
 
+        self.surface.emission[:] = 0
+
     @property
     def deriv_mappings(self) -> dict:
         """

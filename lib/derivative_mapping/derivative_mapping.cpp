@@ -92,9 +92,23 @@ namespace sasktran2 {
         m_native_surface_mapping.d_brdf.value().setZero();
     }
 
+    void SurfaceDerivativeMapping::allocate_emission_derivatives() {
+        // If the emission derivatives are already allocated, we don't need to
+        // do anything
+        if (m_native_surface_mapping.d_emission.has_value()) {
+            return;
+        }
+        // Else create the value
+        m_native_surface_mapping.d_emission = Eigen::MatrixXd(m_nwavel, 1);
+        m_native_surface_mapping.d_emission.value().setZero();
+    }
+
     void SurfaceDerivativeMapping::set_zero() {
         if (m_native_surface_mapping.d_brdf.has_value()) {
             m_native_surface_mapping.d_brdf.value().setZero();
+        }
+        if (m_native_surface_mapping.d_emission.has_value()) {
+            m_native_surface_mapping.d_emission.value().setZero();
         }
     }
 }; // namespace sasktran2

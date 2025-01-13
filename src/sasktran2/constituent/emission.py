@@ -32,9 +32,50 @@ def planck_blackbody_radiance(
         * SPEED_OF_LIGHT
         / (wavelengths_m * K_BOLTZMANN * temperature_k[:, np.newaxis])
     )
+
     return (
         (2 * PLANCK * SPEED_OF_LIGHT**2 / wavelengths_m**5)
         / (np.exp(exponent) - 1)
+        * 1e-9
+    )
+
+
+def d_planck_blackbody_radiance_d_temperature(
+    temperature_k: np.ndarray, wavelengths_nm: np.ndarray
+) -> np.ndarray:
+    """
+    Calculates the derivative of the Planck function for a given set of temperatures and wavelengths
+    with respect to the temperature parameter
+
+    Parameters
+    ----------
+    temperature_k : np.ndarray
+        Temperatures in [K]
+    wavelengths_nm : np.ndarray
+        Wavelengths in [nm] to calculate the radiance at
+
+    Returns
+    -------
+    np.ndarray
+        The derivative of the blackbody radiance with respect to temperature with units of W / (m^2 nm sr K). The shape of the returned
+        array is shape(len(temperature_k), len(wavelengths_nm)).
+    """
+    wavelengths_m = wavelengths_nm * 1e-9
+    exponent = (
+        PLANCK
+        * SPEED_OF_LIGHT
+        / (wavelengths_m * K_BOLTZMANN * temperature_k[:, np.newaxis])
+    )
+
+    return (
+        (2 * PLANCK * SPEED_OF_LIGHT**2 / wavelengths_m**5)
+        / (np.exp(exponent) - 1) ** 2
+        * (
+            PLANCK
+            * SPEED_OF_LIGHT
+            / (wavelengths_m * K_BOLTZMANN * temperature_k[:, np.newaxis] ** 2)
+        )
+        * np.exp(exponent)
         * 1e-9
     )
 
@@ -72,7 +113,18 @@ class ThermalEmission(Constituent):
         )
 
     def register_derivative(self, atmo: sk.Atmosphere, name: str):
-        return super().register_derivative(atmo=atmo, name=name)
+        derivs = {}
+
+        deriv_mapping = atmo.storage.get_derivative_mapping(f"{name}_temperature_k")
+        deriv_mapping.d_ssa[:] = 0
+        deriv_mapping.d_extinction[:] = 0
+        deriv_mapping.d_emission[:] += d_planck_blackbody_radiance_d_temperature(
+            atmo.temperature_k, atmo.wavelengths_nm
+        )
+        deriv_mapping.interp_dim = "altitude"
+        deriv_mapping.assign_name = "wf_temperature_k"
+
+        return derivs
 
 
 class SurfaceThermalEmission(Constituent):
@@ -125,4 +177,28 @@ class SurfaceThermalEmission(Constituent):
         )
 
     def register_derivative(self, atmo: sk.Atmosphere, name: str):
-        return super().register_derivative(atmo=atmo, name=name)
+        planck = planck_blackbody_radiance(
+            np.atleast_1d(self.temperature_k), atmo.wavelengths_nm
+        )
+
+        # Surface temperature derivative
+        deriv_mapping = atmo.surface.get_derivative_mapping(f"wf_{name}_temperature_k")
+        deriv_mapping.d_emission[:] = (
+            self.emissivity
+            * d_planck_blackbody_radiance_d_temperature(
+                np.atleast_1d(self.temperature_k), atmo.wavelengths_nm
+            ).T
+        )
+        deriv_mapping.interp_dim = "dummy"
+        deriv_mapping.interpolator = np.ones((len(atmo.wavelengths_nm), 1))
+
+        # Surface emissivity derivative
+        deriv_mapping = atmo.surface.get_derivative_mapping(f"wf_{name}_emissivity")
+        deriv_mapping.d_emission[:] = planck.flatten().reshape(-1, 1)
+        deriv_mapping.interp_dim = "dummy"
+
+        # If emissivity is scalear, we interpolate
+        if len(self.emissivity) == 1:
+            deriv_mapping.interpolator = np.ones((len(atmo.wavelengths_nm), 1))
+
+        # Else don't need an interpolator

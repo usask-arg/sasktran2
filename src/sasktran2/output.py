@@ -354,6 +354,8 @@ class OutputDerivMapped(Output):
             mapped_derivative = map_surface_derivative(
                 mapping, np_deriv, ["wavelength", "los", "stokes"]
             )
+            if mapping.interp_dim == "dummy":
+                mapped_derivative = mapped_derivative.isel(**{mapping.interp_dim: 0})
             result[name_to_place_result] = mapped_derivative
 
         return result

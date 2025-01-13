@@ -50,6 +50,15 @@ void init_derivative_mappings(py::module_& m) {
                 return mapping.native_mapping().d_ssa.value();
             },
             nullptr)
+        .def_property(
+            "d_emission",
+            [](sasktran2::DerivativeMapping& mapping) -> Eigen::MatrixXd& {
+                if (!mapping.native_mapping().d_emission.has_value()) {
+                    mapping.allocate_emission_derivatives();
+                }
+                return mapping.native_mapping().d_emission.value();
+            },
+            nullptr)
         .def_property_readonly(
             "is_scattering_derivative",
             &sasktran2::DerivativeMapping::is_scattering_derivative)
@@ -81,6 +90,16 @@ void init_derivative_mappings(py::module_& m) {
                     mapping.allocate_brdf_derivatives();
                 }
                 return mapping.native_surface_mapping().d_brdf.value();
+            },
+            nullptr)
+        .def_property(
+            "d_emission",
+            [](sasktran2::SurfaceDerivativeMapping& mapping)
+                -> Eigen::MatrixXd& {
+                if (!mapping.native_surface_mapping().d_emission.has_value()) {
+                    mapping.allocate_emission_derivatives();
+                }
+                return mapping.native_surface_mapping().d_emission.value();
             },
             nullptr)
         .def_property("interpolator",
