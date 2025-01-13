@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import numpy as np
 
-from sasktran2 import Atmosphere
+from sasktran2.atmosphere import Atmosphere
 
 from .base import Constituent
 

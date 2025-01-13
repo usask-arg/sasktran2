@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 from sasktran2.optical.refraction import ciddor_index_of_refraction
 
