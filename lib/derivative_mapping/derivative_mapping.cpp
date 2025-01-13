@@ -46,6 +46,18 @@ namespace sasktran2 {
         m_native_mapping.d_ssa.value().setZero();
     }
 
+    void DerivativeMapping::allocate_emission_derivatives() {
+        // If the emission derivatives are already allocated, we don't need to
+        // do anything
+        if (m_native_mapping.d_emission.has_value()) {
+            return;
+        }
+        // Else create the value
+        m_native_mapping.d_emission =
+            Eigen::MatrixXd(m_ninternallocation, m_nwavel);
+        m_native_mapping.d_emission.value().setZero();
+    }
+
     void DerivativeMapping::set_zero() {
         if (m_native_mapping.d_extinction.has_value()) {
             m_native_mapping.d_extinction.value().setZero();
@@ -58,6 +70,9 @@ namespace sasktran2 {
         }
         if (m_native_mapping.scat_factor.has_value()) {
             m_native_mapping.scat_factor.value().setZero();
+        }
+        if (m_native_mapping.d_emission.has_value()) {
+            m_native_mapping.d_emission.value().setZero();
         }
     }
 

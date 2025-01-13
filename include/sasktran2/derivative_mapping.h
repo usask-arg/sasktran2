@@ -45,6 +45,15 @@ namespace sasktran2 {
          *  Dimension: [geometry, wavel]
          */
         std::optional<Eigen::MatrixXd> scat_factor;
+
+        /**
+         *  The emission derivative
+         *  Dimension: [geometry, wavel]
+         *
+         *   Note, this quantity is only used when the Emission source term is
+         * included in the engine
+         */
+        std::optional<Eigen::MatrixXd> d_emission;
     };
 
     /**
@@ -126,6 +135,12 @@ namespace sasktran2 {
          *
          */
         void allocate_legendre_derivatives();
+
+        /**
+         * @brief Allocates the emission derivative object
+         *
+         */
+        void allocate_emission_derivatives();
 
         /**
          * @brief Get the scattering index
