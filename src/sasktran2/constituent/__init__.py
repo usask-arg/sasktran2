@@ -1,4 +1,5 @@
 # ruff: noqa: F401
+from __future__ import annotations
 
 from .amf import AirMassFactor
 from .brdf.kokhanovsky import SnowKokhanovsky

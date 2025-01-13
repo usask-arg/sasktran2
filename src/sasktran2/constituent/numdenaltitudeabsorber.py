@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from sasktran2 import Atmosphere
 from sasktran2.optical.base import OpticalProperty
 
