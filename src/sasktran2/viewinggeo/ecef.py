@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
 
-from sasktran2 import (
+from sasktran2._core import (
     Geodetic,
     GroundViewingSolar,
     TangentAltitudeSolar,

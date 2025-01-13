@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -5,7 +7,7 @@ import numpy as np
 if TYPE_CHECKING:
     from sasktran2.mie.refractive import RefractiveIndex
 
-from sasktran2 import Atmosphere
+from sasktran2.atmosphere import Atmosphere
 
 from ..base import Constituent
 from . import (
@@ -20,7 +22,7 @@ class SnowKokhanovsky(Constituent, WavelengthInterpolatorMixin):
         self,
         L: np.array = 3600000,
         M: np.array = 5.5e-8,
-        refractive_index_fn: "RefractiveIndex" = None,
+        refractive_index_fn: RefractiveIndex = None,
         wavelengths_nm: np.array = None,
         out_of_bounds_mode="zero",
     ) -> None:

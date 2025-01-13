@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 
 from sasktran2.units import kelvin_to_celsius

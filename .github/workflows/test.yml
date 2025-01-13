@@ -171,6 +171,10 @@ jobs:
           fetch-depth: 0
           submodules: true
 
+      - name: Set MACOSX_DEPLOYMENT_TARGET for macos-13
+        if: matrix.os == 'macos-13'
+        run: echo "MACOSX_DEPLOYMENT_TARGET=10.14" >> $GITHUB_ENV
+
       - name: Build wheels single version
         uses: pypa/cibuildwheel@v2.22.0
         env:
