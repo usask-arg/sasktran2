@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 import sasktran2 as sk
-from sasktran2 import Config, Geometry1D
+from sasktran2._core import Config, Geometry1D
 from sasktran2.atmosphere import Atmosphere
 from sasktran2.climatology.us76 import add_us76_standard_atmosphere
 

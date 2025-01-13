@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import abc
 
-from sasktran2 import Atmosphere
+from sasktran2.atmosphere import Atmosphere
 
 
 class Constituent(abc.ABC):

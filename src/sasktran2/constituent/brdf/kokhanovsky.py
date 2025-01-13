@@ -7,7 +7,7 @@ import numpy as np
 if TYPE_CHECKING:
     from sasktran2.mie.refractive import RefractiveIndex
 
-from sasktran2 import Atmosphere
+from sasktran2.atmosphere import Atmosphere
 
 from ..base import Constituent
 from . import (
