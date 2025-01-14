@@ -171,6 +171,12 @@ jobs:
           fetch-depth: 0
           submodules: true
 
+      - name: Set up QEMU
+        if: runner.os == 'Linux'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: all
+
       - name: Set MACOSX_DEPLOYMENT_TARGET for macos-13
         if: matrix.os == 'macos-13'
         run: echo "MACOSX_DEPLOYMENT_TARGET=10.14" >> $GITHUB_ENV
@@ -180,10 +186,11 @@ jobs:
         env:
           CIBW_SKIP: "pp* *musllinux* cp37-*"
           CIBW_BUILD: "cp313-*"
+          CIBW_ARCHS_LINUX: auto aarch64
         with:
           output-dir: wheelhouse
 
       - uses: actions/upload-artifact@v4
         with:
           path: ./wheelhouse/*.whl
-          name: sasktran2-wheel-${{ matrix.os }}
+          name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
