@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 import sasktran2 as sk
 from sasktran2.test_util.wf import validate_wf

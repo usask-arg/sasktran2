@@ -161,11 +161,15 @@ jobs:
           fetch-depth: 0
           submodules: true
 
+      - name: Set MACOSX_DEPLOYMENT_TARGET for macos-13
+        if: matrix.os == 'macos-13'
+        run: echo "MACOSX_DEPLOYMENT_TARGET=10.14" >> $GITHUB_ENV
+
       - name: Build wheels all
         uses: pypa/cibuildwheel@v2.22.0
         env:
-          CIBW_SKIP: "pp* *musllinux* cp37-* cp38-* cp39-*"
-          CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-*"
+          CIBW_SKIP: "pp* *musllinux* cp37-* cp38-* cp39-* cp310-*"
+          CIBW_BUILD: "cp311-* cp312-* cp313-*"
         with:
           output-dir: wheelhouse
 

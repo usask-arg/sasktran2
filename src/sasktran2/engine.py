@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import sasktran2 as sk
 from sasktran2.viewinggeo.base import ViewingGeometryContainer
 

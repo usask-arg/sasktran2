@@ -1,6 +1,20 @@
 # ruff: noqa: F401
+from __future__ import annotations
 
-from ._core import (  # noqa: I001
+from . import (
+    appconfig,
+    climatology,
+    constituent,
+    database,
+    mie,
+    optical,
+    solar,
+    spectroscopy,
+    test_util,
+    util,
+    viewinggeo,
+)
+from ._core import (
     AtmosphereStokes_1,
     AtmosphereStokes_3,
     AtmosphereStorageStokes_1,
@@ -13,15 +27,15 @@ from ._core import (  # noqa: I001
     Geometry1D,
     GeometryType,
     GroundViewingSolar,
-    InterpolationMethod,
     InputValidationMode,
+    InterpolationMethod,
     MultipleScatterSource,
-    SingleScatterSource,
     OccultationSource,
-    OutputIdealStokes_1,
-    OutputIdealStokes_3,
     OutputDerivMappedStokes_1,
     OutputDerivMappedStokes_3,
+    OutputIdealStokes_1,
+    OutputIdealStokes_3,
+    SingleScatterSource,
     StokesBasis,
     SurfaceStokes_1,
     SurfaceStokes_3,
@@ -32,20 +46,6 @@ from ._core import (  # noqa: I001
 )
 from ._version import __version__
 from .atmosphere import Atmosphere
-from .output import Output, OutputIdeal, OutputDerivMapped
 from .engine import Engine
 from .geodetic import WGS84, SphericalGeoid
-
-from . import (
-    appconfig,
-    climatology,
-    constituent,
-    database,
-    mie,
-    optical,
-    test_util,
-    util,
-    solar,
-    viewinggeo,
-    spectroscopy,
-)
+from .output import Output, OutputDerivMapped, OutputIdeal

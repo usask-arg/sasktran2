@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 
 from sasktran2.optical import pressure_temperature_to_numberdensity

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from .ecef import ecef_to_sasktran2_ray
 from .limbverticalimage import LimbVertical
 

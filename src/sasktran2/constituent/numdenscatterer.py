@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 from typing import Any
 
 import numpy as np
 
-from sasktran2 import Atmosphere
+from sasktran2.atmosphere import Atmosphere
 from sasktran2.optical.base import OpticalProperty
 from sasktran2.util.interpolation import linear_interpolating_matrix
 

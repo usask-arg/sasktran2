@@ -1,7 +1,9 @@
-import sasktran2 as sk
+from __future__ import annotations
+
+from sasktran2._core import Geodetic
 
 
-class WGS84(sk.Geodetic):
+class WGS84(Geodetic):
     def __init__(self):
         """
         A geodetic object based upon the standard WGS84 ellipsoid. See
@@ -16,7 +18,7 @@ class WGS84(sk.Geodetic):
             return "WGS84 Unitialized"
 
 
-class SphericalGeoid(sk.Geodetic):
+class SphericalGeoid(Geodetic):
     def __init__(self, radius: float):
         """
         A geoid that is represented as a perfect sphere. See

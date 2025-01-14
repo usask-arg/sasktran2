@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import numpy as np
 import xarray as xr
 
-from sasktran2 import Geometry1D
+from sasktran2._core import Geometry1D
 
 
 class ViewingGeometryContainer:
