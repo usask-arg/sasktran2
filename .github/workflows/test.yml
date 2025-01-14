@@ -178,12 +178,14 @@ jobs:
       - name: Build wheels single version
         uses: pypa/cibuildwheel@v2.22.0
         env:
+          DO_STREAM_TEMPLATES: "ON"
           CIBW_SKIP: "pp* *musllinux* cp37-*"
           CIBW_BUILD: "cp313-*"
+          CIBW_ENVIRONMENT_PASS_LINUX: DO_STREAM_TEMPLATES
         with:
           output-dir: wheelhouse
 
       - uses: actions/upload-artifact@v4
         with:
           path: ./wheelhouse/*.whl
-          name: sasktran2-wheel-${{ matrix.os }}
+          name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}

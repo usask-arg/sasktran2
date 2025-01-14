@@ -118,17 +118,17 @@ before-build = "bash {project}/ci/cibw/cibw_before_build.sh {project}"
 
 [tool.cibuildwheel.linux]
 archs = "native"
-environment = { CFLAGS="-fno-strict-aliasing -DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", LDFLAGS="-Wl,--strip-debug", CXXFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", RUNNER_OS="Linux", CMAKE_BUILD_PARALLEL_LEVEL="2", DO_STREAM_TEMPLATES="ON"}
+environment = { CFLAGS="-fno-strict-aliasing -DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", LDFLAGS="-Wl,--strip-debug", CXXFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", RUNNER_OS="Linux", CMAKE_BUILD_PARALLEL_LEVEL="4"}
 
 [tool.cibuildwheel.macos]
 archs = "native"
 test-skip = "*_universal2:arm64"
 # MACOS linker doesn't support stripping symbols
-environment = {CFLAGS="-fno-strict-aliasing -DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", CXXFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64",  CC="clang", CXX = "clang++", RUNNER_OS="macOS", CMAKE_ARGS="-DUSE_OPENMP=OFF", CMAKE_BUILD_PARALLEL_LEVEL="3", DO_STREAM_TEMPLATES="ON"}
+environment = {CFLAGS="-fno-strict-aliasing -DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", CXXFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64",  CC="clang", CXX = "clang++", RUNNER_OS="macOS", CMAKE_ARGS="-DUSE_OPENMP=OFF", CMAKE_BUILD_PARALLEL_LEVEL="3"}
 
 [tool.cibuildwheel.windows]
 archs = "native"
-environment = {CFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", CXXFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", LDFLAGS="", PKG_CONFIG_PATH="C:/opt/64/lib/pkgconfig", CMAKE_PREFIX_PATH="C:/opt/64/", CMAKE_BUILD_PARALLEL_LEVEL="2", DO_STREAM_TEMPLATES="ON"}
+environment = {CFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", CXXFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64", LDFLAGS="", PKG_CONFIG_PATH="C:/opt/64/lib/pkgconfig", CMAKE_PREFIX_PATH="C:/opt/64/", CMAKE_BUILD_PARALLEL_LEVEL="4"}
 #config-settings = "setup-args=--vsenv"
 repair-wheel-command = "bash ./ci/cibw/repair_windows.sh {wheel} {dest_dir}"
 
