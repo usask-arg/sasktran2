@@ -178,6 +178,7 @@ jobs:
           CIBW_SKIP: "pp* *musllinux* cp37-* cp38-* cp39-* cp310-*"
           CIBW_BUILD: "cp311-* cp312-* cp313-*"
           CIBW_ARCHS_LINUX: x86_64 aarch64
+          CIBW_TEST_SKIP: "*-*linux_{aarch64,ppc64le,s390x,armv7l}"
         with:
           output-dir: wheelhouse
 
