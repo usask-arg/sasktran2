@@ -31,6 +31,8 @@ namespace sasktran2::atmosphere {
         Surface<NSTOKES> m_surface;   /** The surface */
         bool m_calculate_derivatives; /** True if we are going to be calculating
                                          derivatives */
+        bool m_include_emission_derivatives; /** True if we are going to include
+                                                emission derivatives */
 
       public:
         /** Directly constructs the atmosphere from it's base objects
@@ -102,7 +104,11 @@ namespace sasktran2::atmosphere {
         }
         int surface_deriv_start_index() const {
             return scat_deriv_start_index() +
-                   m_storage.numscatderiv * m_storage.total_extinction.rows();
+                   num_source_deriv_groups() *
+                       m_storage.total_extinction.rows();
+        }
+        int surface_emission_deriv_start_index() const {
+            return surface_deriv_start_index() + m_surface.num_deriv();
         }
 
         /**
@@ -113,6 +119,11 @@ namespace sasktran2::atmosphere {
 
         int num_scattering_deriv_groups() const {
             return m_storage.numscatderiv;
+        }
+
+        int num_source_deriv_groups() const {
+            return num_scattering_deriv_groups() +
+                   int(m_include_emission_derivatives);
         }
 
         /**

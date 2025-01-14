@@ -80,6 +80,22 @@ namespace sasktran2 {
                 }
             }
 
+            if (mapping.native_mapping().d_emission.has_value()) {
+                // Include the emission terms
+                Eigen::Ref<const Eigen::Matrix<double, NSTOKES, -1>>
+                    d_rad_by_d_emission = radiance.d_emission(
+                        this->m_ngeometry,
+                        this->m_atmosphere->num_scattering_deriv_groups());
+
+                const auto& d_emission =
+                    mapping.native_mapping().d_emission.value();
+
+                // Emission terms only ever affect the stokes = 0 component
+                deriv_storage(0, Eigen::all).array() +=
+                    d_emission.col(wavelidx).transpose().array() *
+                    d_rad_by_d_emission(0, Eigen::all).array();
+            }
+
             // If we are interpolating in geometry, then apply the interpolator
             // before assigning
             if (mapping.get_interpolator_const().has_value()) {
@@ -147,11 +163,28 @@ namespace sasktran2 {
             const auto& mapping =
                 this->m_atmosphere->surface().derivative_mappings().at(name);
 
-            // Just assign the stokes = 0 component
-            deriv(linear_index, 0) =
-                d_rad_by_d_surface(0, Eigen::all)
-                    .dot(mapping.native_surface_mapping().d_brdf.value().row(
-                        wavelidx));
+            // Do the BRDF derivatives
+            if (mapping.native_surface_mapping().d_brdf.has_value()) {
+                // Just assign the stokes = 0 component
+                // TODO: Revisit when we have polarized brdfs?
+                deriv(linear_index, 0) =
+                    d_rad_by_d_surface(0, Eigen::all)
+                        .dot(
+                            mapping.native_surface_mapping().d_brdf.value().row(
+                                wavelidx));
+            }
+
+            // Then do the emission derivatives
+            if (mapping.native_surface_mapping().d_emission.has_value()) {
+                double d_rad_by_d_emission = radiance.deriv(
+                    0,
+                    this->m_atmosphere->surface_emission_deriv_start_index());
+                // Just assign the stokes = 0 component
+                deriv(linear_index, 0) =
+                    d_rad_by_d_emission *
+                    mapping.native_surface_mapping().d_emission.value()(
+                        wavelidx, 0);
+            }
 
             if constexpr (NSTOKES >= 3) {
                 // Temporaries for dQ, dU

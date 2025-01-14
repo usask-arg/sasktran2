@@ -1,3 +1,4 @@
+#include "sasktran2/config.h"
 #include <sasktran2/atmosphere/atmosphere.h>
 
 namespace sasktran2::atmosphere {
@@ -18,7 +19,8 @@ namespace sasktran2::atmosphere {
         AtmosphereGridStorageFull<NSTOKES>&& storage,
         Surface<NSTOKES>&& surface, bool calculate_derivatives)
         : m_storage(storage), m_surface(std::move(surface)),
-          m_calculate_derivatives(calculate_derivatives) {}
+          m_calculate_derivatives(calculate_derivatives),
+          m_include_emission_derivatives(false) {}
 
     template <int NSTOKES>
     Atmosphere<NSTOKES>::Atmosphere(int nwavel,
@@ -27,13 +29,18 @@ namespace sasktran2::atmosphere {
                                     bool calculate_derivatives)
         : m_storage(nwavel, geometry.size(),
                     config.num_singlescatter_moments()),
-          m_calculate_derivatives(calculate_derivatives), m_surface(nwavel) {}
+          m_calculate_derivatives(calculate_derivatives), m_surface(nwavel),
+          m_include_emission_derivatives(
+              (config.emission_source() !=
+               sasktran2::Config::EmissionSource::none) &&
+              calculate_derivatives) {}
 
     template <int NSTOKES> int Atmosphere<NSTOKES>::num_deriv() const {
         if (m_calculate_derivatives) {
             return (int)(m_storage.total_extinction.rows() *
-                             (2 + m_storage.numscatderiv) +
-                         m_surface.num_deriv());
+                             (2 + num_source_deriv_groups()) +
+                         m_surface.num_deriv() +
+                         int(m_include_emission_derivatives));
         } else {
             return 0;
         }

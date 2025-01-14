@@ -71,6 +71,10 @@ namespace sasktran2::emission {
             // sparse
             Eigen::Ref<Eigen::Matrix<double, NSTOKES, -1>> d_ssa =
                 source.d_ssa(m_atmosphere->storage().ssa.rows());
+            Eigen::Ref<Eigen::Matrix<double, NSTOKES, -1>> d_emission =
+                source.d_emission(m_atmosphere->storage().ssa.rows(),
+                                  m_atmosphere->num_scattering_deriv_groups());
+
             for (auto it = shell_od.deriv_iter; it; ++it) {
                 source.deriv(0, it.index()) +=
                     it.value() * (1 - source_factor1) *
@@ -84,11 +88,17 @@ namespace sasktran2::emission {
                 d_ssa(0, ele.first) -= ele.second * emission_start *
                                        source_factor1 *
                                        layer.od_quad_start_fraction;
+                d_emission(0, ele.first) += ele.second * (1 - ssa_start) *
+                                            source_factor1 *
+                                            layer.od_quad_start_fraction;
             }
             for (auto& ele : layer.exit.interpolation_weights) {
                 d_ssa(0, ele.first) -= ele.second * emission_end *
                                        source_factor1 *
                                        layer.od_quad_end_fraction;
+                d_emission(0, ele.first) += ele.second * (1 - ssa_end) *
+                                            source_factor1 *
+                                            layer.od_quad_end_fraction;
             }
         }
     }
@@ -122,6 +132,11 @@ namespace sasktran2::emission {
                 source.value.array() += emission_surface;
             } else {
                 source.value(0) += emission_surface;
+            }
+
+            if (source.derivative_size() > 0) {
+                source.deriv(
+                    0, m_atmosphere->surface_emission_deriv_start_index()) += 1;
             }
         }
     }
