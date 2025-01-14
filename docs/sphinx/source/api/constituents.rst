@@ -32,7 +32,7 @@ Solar Irradiance Models
 
 Emissions
 ---------
-.. autosummyary::
+.. autosummary::
     :toctree: generated/
 
     sasktran2.constituent.ThermalEmission
