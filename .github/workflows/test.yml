@@ -171,12 +171,6 @@ jobs:
           fetch-depth: 0
           submodules: true
 
-      - name: Set up QEMU
-        if: runner.os == 'Linux'
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: all
-
       - name: Set MACOSX_DEPLOYMENT_TARGET for macos-13
         if: matrix.os == 'macos-13'
         run: echo "MACOSX_DEPLOYMENT_TARGET=10.14" >> $GITHUB_ENV
@@ -214,7 +208,7 @@ jobs:
         if: runner.os == 'Linux'
         uses: docker/setup-qemu-action@v3
         with:
-          platforms: all
+          platforms: arm64
 
       - name: Build wheels single version
         uses: pypa/cibuildwheel@v2.22.0
