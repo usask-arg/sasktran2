@@ -7,7 +7,7 @@
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = 'sasktran2'
-copyright = '2024, USask-ARG'
+copyright = '2025, USask-ARG'
 author = 'USask-ARG'
 
 from importlib.metadata import version as get_version

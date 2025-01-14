@@ -2,23 +2,37 @@
 (_changelog)=
 # Changelog
 
-# 2023.10.1
+## Unreleased
+
+## 2025.01.0
+- Added capability for thermal emissions, see [Atmospheric and Surface Emissions](users_guide/emissions.md)
+- Several accuracy and speed improvements
+- Dropped support for Python 3.10
+
+## 2024.11.0
+- Added {py:class}`sasktran2.viewinggeo.LimbVertical`
+- Added {py:class}`sasktran2.solar.SolarGeometryHandlerAstropy`
+
+## 2024.10.2
+- Internal re-release with wheel upload fixed
+
+## 2024.10.1
 - Add internal backend for Mie calculations
 - Add capability to include refractive raytracing
 - Add wheel builds for Python 3.13
 
-# 2023.10.0
+## 2024.10.0
 - Add python 3.13 conda builds
 - Add linux arm64 builds
 
-# 2024.07.0
+## 2024.07.0
 - Add `config.do_backprop` option for discrete ordinates source
 - Add `freeze` method to particle size distributions
 
-# 2024.03.0
+## 2024.03.0
 - Fix binary wheel uploads on PyPI
 
-# 2024.02.1
+## 2024.02.1
 - Fix the license classifier on PyPI
 
 ## 2024.02.0
