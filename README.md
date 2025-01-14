@@ -17,8 +17,9 @@ The preferred method to install SASKTRAN2 is through the pre-compiled Conda pack
 ```
 conda install -c conda-forge sasktran2
 ```
-these packages are made available for Python versions 3.10, 3.11, 3.12, 3.13 on Windows/Linux/Mac platforms.
+these packages are made available for Python versions 3.11, 3.12, 3.13 on Windows/Linux/Mac platforms.
 For Mac, both x86_64 and Arm packages are available.
+For Linux, arm/ppc are also supported.
 
 Wheels are also built for the same platforms and can be installed through,
 ```

@@ -30,6 +30,13 @@ Solar Irradiance Models
 
     sasktran2.constituent.SolarIrradiance
 
+Emissions
+---------
+.. autosummyary::
+    :toctree: generated/
+
+    sasktran2.constituent.ThermalEmission
+    sasktran2.constituent.SurfaceThermalEmission
 
 Dummy Constituents
 ------------------
