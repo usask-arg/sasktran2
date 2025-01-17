@@ -5,6 +5,9 @@
 ## Unreleased
 - Adds manylinux aarch64 wheel builds
 
+## 2025.01.1
+- Fixes a bug in ecef_to_sasktran2_ray
+
 ## 2025.01.0
 - Added capability for thermal emissions, see [Atmospheric and Surface Emissions](users_guide/emissions.md)
 - Several accuracy and speed improvements
