@@ -64,9 +64,11 @@ def ecef_to_sasktran2_ray(
         )
 
         # Get the viewing azimuth angle
-        viewing_azimuth = -np.arctan2(
-            np.dot(look_vector, geoid.local_west),
-            -np.dot(look_vector, geoid.local_south),
+        viewing_azimuth = -np.rad2deg(
+            np.arctan2(
+                np.dot(look_vector, geoid.local_west),
+                -np.dot(look_vector, geoid.local_south),
+            )
         )
 
         return TangentAltitudeSolar(
