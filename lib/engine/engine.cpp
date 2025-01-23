@@ -215,6 +215,11 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::calculate_geometry() {
 template <int NSTOKES>
 void Sasktran2<NSTOKES>::validate_input_atmosphere(
     const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere) const {
+    if (m_config.input_validation_mode() ==
+        sasktran2::Config::InputValidationMode::disabled) {
+        return;
+    }
+
     // Check that we have the required legendre information for the number of
     // NSTOKES requested
 

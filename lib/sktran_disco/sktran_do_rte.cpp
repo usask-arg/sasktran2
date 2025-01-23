@@ -422,6 +422,27 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveHomogeneous(
 
         auto eigeninfo = es.info();
         if (eigeninfo != Eigen::Success) {
+            // Failed to compute the eigenvalues, throw an error and output all
+            // of the layer information
+            spdlog::error("Failed to compute the eigensolution for layer {}, "
+                          "order {}, ssa {}",
+                          layer.index(), m, layer.dual_ssa().value);
+
+            spdlog::error("Layer Legendre Coefficients: ");
+
+            for (int i = 0; i < layer.legendre_coeff().size(); ++i) {
+                if constexpr (NSTOKES == 3) {
+                    spdlog::error("{}: a1: {}, a2: {}, a3: {}, b1: {}", i,
+                                  layer.legendre_coeff()[i].a1,
+                                  layer.legendre_coeff()[i].a2,
+                                  layer.legendre_coeff()[i].a3,
+                                  layer.legendre_coeff()[i].b1);
+                } else {
+                    spdlog::error("{}: a1: {}", i,
+                                  layer.legendre_coeff()[i].a1);
+                }
+            }
+
             throw InternalRuntimeError(
                 "Error computing the homogeneous solution");
         }
