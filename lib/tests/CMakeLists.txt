@@ -18,6 +18,7 @@ add_executable(
   sktran_disco/tests_lowlevel.cpp
   sktran_disco/legacy/test_scalar.cpp
   sktran_disco/legacy/test_vector.cpp
+  sktran_disco/test_crash.cpp
   twostream/test_twostream.cpp
   twostream/test_backprop.cpp
   sktran_disco/benchmark/bench_lowlevel.cpp
