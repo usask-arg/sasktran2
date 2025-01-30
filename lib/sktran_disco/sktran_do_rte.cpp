@@ -457,9 +457,10 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveHomogeneous(
                 }
                 spdlog::error("Eigenmatrix: ");
                 std::cout << eigmtx;
-
-                throw InternalRuntimeError(
-                    "Error computing the homogeneous solution");
+                // Still use diagonal terms instead of throwing an error
+                eigvalsq = eigmtx.diagonal();
+                MX_plus.setIdentity();
+                reigval_imag.setZero();
             }
         } else {
             eigvalsq = es.eigenvalues().real();
