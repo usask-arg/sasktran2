@@ -61,5 +61,9 @@ if [[ $RUNNER_OS == "macOS" ]]; then
 
     # Also install libomp
     brew install libomp
-    sudo cp -r /usr/local/opt/libomp/* /usr/local/
+    if [[ $PLATFORM == "macosx-arm64" ]]; then
+        sudo cp -r /opt/homebrew/opt/libomp/* /opt/homebrew/
+    else
+        sudo cp -r /usr/local/opt/libomp/* /usr/local/
+    fi
 fi
