@@ -58,4 +58,7 @@ if [[ $RUNNER_OS == "macOS" ]]; then
     source $PROJECT_DIR/ci/cibw/gfortran_utils.sh
     install_gfortran
     pip install "delocate==0.10.4"
+
+    # Also install libomp
+    brew install libomp
 fi
