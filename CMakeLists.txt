@@ -163,8 +163,8 @@ elseif(SKTRAN_BLAS_VENDOR MATCHES "Apple")
     INTERFACE
       /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers
   )
-  target_compile_definitions(sasktran2BuildProperties
-                             INTERFACE SKTRAN_USE_ACCELERATE)
+  # target_compile_definitions(sasktran2BuildProperties INTERFACE
+  # SKTRAN_USE_ACCELERATE)
   target_compile_definitions(sasktran2BuildProperties
                              INTERFACE ACCELERATE_NEW_LAPACK=1)
   target_compile_definitions(sasktran2BuildProperties INTERFACE EIGEN_USE_BLAS)

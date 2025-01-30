@@ -163,7 +163,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-22.04, macos-13, macos-14, windows-2019 ]
+        os: [ ubuntu-24.04, macos-13, macos-14, windows-2019, ubuntu-24.04-arm ]
 
     steps:
       - uses: actions/checkout@v4
