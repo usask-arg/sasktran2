@@ -3,7 +3,10 @@
 # Changelog
 
 ## Unreleased
+
+## 2025.01.2
 - Adds manylinux aarch64 wheel builds
+- More graceful error handling when homogenous solution fails
 
 ## 2025.01.1
 - Fixes a bug in ecef_to_sasktran2_ray

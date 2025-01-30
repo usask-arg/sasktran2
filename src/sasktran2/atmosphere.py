@@ -600,6 +600,9 @@ class Atmosphere:
             self.storage.leg_coeff[:, nz] /= self.storage.ssa[np.newaxis, nz]
             self.storage.ssa[nz] /= self.storage.total_extinction[nz]
 
+            # Numerical precision errors on ssa
+            self.storage.ssa[self.storage.ssa > 1] = 1
+
             self._derivs = {}
             if self._calculate_derivatives:
                 for name, constituent in self._constituents.items():
