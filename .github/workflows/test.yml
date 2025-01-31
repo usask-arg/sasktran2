@@ -175,6 +175,34 @@ jobs:
         if: matrix.os == 'macos-13'
         run: echo "MACOSX_DEPLOYMENT_TARGET=10.14" >> $GITHUB_ENV
 
+      - name: Build wheels single version
+        uses: pypa/cibuildwheel@v2.22.0
+        env:
+          DO_STREAM_TEMPLATES: "ON"
+          CIBW_SKIP: "pp* *musllinux* cp37-*"
+          CIBW_BUILD: "cp313-*"
+          CIBW_ENVIRONMENT_PASS_LINUX: DO_STREAM_TEMPLATES
+        with:
+          output-dir: wheelhouse
+
+      - uses: actions/upload-artifact@v4
+        with:
+          path: ./wheelhouse/*.whl
+          name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
+
+  test_wheels_cibuildwheel-accelerate:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ macos-14 ]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: true
+
       - name: Set MACOSX_DEPLOYMENT_TARGET for macos-14
         if: matrix.os == 'macos-14'
         run: |
@@ -194,4 +222,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           path: ./wheelhouse/*.whl
-          name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
+          name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}-accelerate
