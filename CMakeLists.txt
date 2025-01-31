@@ -161,12 +161,14 @@ elseif(SKTRAN_BLAS_VENDOR MATCHES "Apple")
   target_include_directories(
     sasktran2BuildProperties
     INTERFACE
-      /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers
+      /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers
   )
-  # target_compile_definitions(sasktran2BuildProperties INTERFACE
-  # SKTRAN_USE_ACCELERATE)
+  target_compile_definitions(sasktran2BuildProperties
+                             INTERFACE SKTRAN_USE_ACCELERATE)
   target_compile_definitions(sasktran2BuildProperties
                              INTERFACE ACCELERATE_NEW_LAPACK=1)
+  target_compile_definitions(sasktran2BuildProperties
+                             INTERFACE ACCELERATE_LAPACK_ILP64=1)
   target_compile_definitions(sasktran2BuildProperties INTERFACE EIGEN_USE_BLAS)
 else()
   # have to set this on unix even when using static openblas because of a cmake
