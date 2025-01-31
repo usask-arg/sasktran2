@@ -154,7 +154,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-22.04, macos-13, macos-14, windows-2019 ]
+        os: [ ubuntu-24.04, macos-13, macos-14, windows-2019, ubuntu-24.04-arm ]
 
     steps:
       - uses: actions/checkout@v4
@@ -179,12 +179,13 @@ jobs:
           path: ./wheelhouse/*.whl
           name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
 
-  build_wheels_cibuildwheel_emulated:
+
+  build_wheels_cibuildwheel-accelerate:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-22.04 ]
+        os: [macos-14]
 
     steps:
       - uses: actions/checkout@v4
@@ -192,33 +193,28 @@ jobs:
           fetch-depth: 0
           submodules: true
 
-      - name: Set up QEMU
-        if: runner.os == 'Linux'
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
+      - name: Set MACOSX_DEPLOYMENT_TARGET for macos-14
+        if: matrix.os == 'macos-14'
+        run: |
+          echo "MACOSX_DEPLOYMENT_TARGET=14.0" >> $GITHUB_ENV
+          echo "SKTRAN_BLAS_VENDOR=Apple" >> $GITHUB_ENV
 
-      - name: Build wheels single version
+      - name: Build wheels all
         uses: pypa/cibuildwheel@v2.22.0
         env:
-          DO_STREAM_TEMPLATES: "OFF"
           CIBW_SKIP: "pp* *musllinux* cp37-* cp38-* cp39-* cp310-*"
           CIBW_BUILD: "cp311-* cp312-* cp313-*"
-          CIBW_ARCHS_LINUX: aarch64
-          CIBW_ENVIRONMENT_PASS_LINUX: DO_STREAM_TEMPLATES
-          CIBW_TEST_SKIP: "*-*linux_{aarch64,ppc64le,s390x,armv7l}"
         with:
           output-dir: wheelhouse
 
       - uses: actions/upload-artifact@v4
         with:
           path: ./wheelhouse/*.whl
-          name: cibw-wheels-${{ matrix.os }}-aarch64
-
+          name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}-accelerate
 
   upload_wheels:
     runs-on: ubuntu-latest
-    needs: [build_wheels_cibuildwheel, build_wheels_cibuildwheel_emulated, build_sdist]
+    needs: [build_wheels_cibuildwheel, build_wheels_cibuildwheel-accelerate, build_sdist]
     environment:
       name: pypi
       url: https://pypi.org/p/sasktran2

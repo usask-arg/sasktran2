@@ -1510,9 +1510,17 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::backprop(
             m_cache.bvp_pd_alpha, m_cache.bvp_pd_beta, m_cache.m_bvp_backprop_z,
             m_cache.bvp_pd_gamma, m_cache.bvp_pd_mu, true);
     } else {
+
+#ifdef SKTRAN_USE_ACCELERATE
+        char trans = 'T';
+        int intnderiv = n_rhs;
+        dgbtrs_(&trans, &N, &NCD, &NCD, &intnderiv, mat.data(), &LDA,
+                ipiv.data(), trace.bvp_coeff_weights().data(), &N, &errorcode);
+#else
         errorcode = LAPACKE_dgbtrs(LAPACK_COL_MAJOR, 'T', N, NCD, NCD, n_rhs,
                                    mat.data(), LDA, ipiv.data(),
                                    trace.bvp_coeff_weights().data(), N);
+#endif
     }
 
     const auto& d_b = m_cache.d_b;
