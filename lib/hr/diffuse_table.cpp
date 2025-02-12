@@ -787,6 +787,7 @@ namespace sasktran2::hr {
 
                 {
                     ZoneScopedN("Apply Scattering Matrix");
+
                     storage.m_outgoing_sources.value(outgoing_seq).noalias() =
                         storage.point_scattering_matrices[i] *
                         storage.m_incoming_radiances.value(incoming_seq);

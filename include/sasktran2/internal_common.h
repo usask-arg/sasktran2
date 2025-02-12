@@ -41,9 +41,9 @@
 #else
 #define lapack_int int
 #endif
-#include <vecLib.h>
-// #include <clapack.h>
-// #include <cblas.h>
+// #include <vecLib.h>
+#include <clapack.h>
+#include <cblas.h>
 #else
 #define LAPACK_DISABLE_NAN_CHECK
 // Using a standard LAPACKE compatible package

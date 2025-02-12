@@ -247,33 +247,41 @@ namespace sasktran2::solartransmission {
         start_phase.value.setZero();
         end_phase.value.setZero();
 
-        // Calculate SSA, don't do derivatives until later
-        for (auto& ele : layer.entrance.interpolation_weights) {
-            ssa_start +=
-                m_atmosphere->storage().ssa(ele.first, wavelidx) * ele.second;
+        {
+            ZoneScopedN(
+                "Single Scatter Source Constant Calculation - Interpolating");
+            // Calculate SSA, don't do derivatives until later
+            for (auto& ele : layer.entrance.interpolation_weights) {
+                ssa_start += m_atmosphere->storage().ssa(ele.first, wavelidx) *
+                             ele.second;
 
-            k_start +=
-                m_atmosphere->storage().total_extinction(ele.first, wavelidx) *
-                ele.second;
+                k_start += m_atmosphere->storage().total_extinction(ele.first,
+                                                                    wavelidx) *
+                           ele.second;
+            }
+            for (auto& ele : layer.exit.interpolation_weights) {
+                ssa_end += m_atmosphere->storage().ssa(ele.first, wavelidx) *
+                           ele.second;
+                k_end += m_atmosphere->storage().total_extinction(ele.first,
+                                                                  wavelidx) *
+                         ele.second;
+            }
         }
-        for (auto& ele : layer.exit.interpolation_weights) {
-            ssa_end +=
-                m_atmosphere->storage().ssa(ele.first, wavelidx) * ele.second;
-            k_end +=
-                m_atmosphere->storage().total_extinction(ele.first, wavelidx) *
-                ele.second;
+
+        {
+            ZoneScopedN(
+                "Single Scatter Source Constant Calculation - Scattering");
+            // Incident solar beam is unpolarized
+            start_phase.value(0) = ssa_start * k_start * entrance_factor;
+            end_phase.value(0) = ssa_end * k_end * exit_factor;
+
+            m_phase_handler.scatter(wavel_threadidx, losidx, layeridx,
+                                    layer.entrance.interpolation_weights, true,
+                                    start_phase);
+            m_phase_handler.scatter(wavel_threadidx, losidx, layeridx,
+                                    layer.exit.interpolation_weights, false,
+                                    end_phase);
         }
-
-        // Incident solar beam is unpolarized
-        start_phase.value(0) = ssa_start * k_start * entrance_factor;
-        end_phase.value(0) = ssa_end * k_end * exit_factor;
-
-        m_phase_handler.scatter(wavel_threadidx, losidx, layeridx,
-                                layer.entrance.interpolation_weights, true,
-                                start_phase);
-        m_phase_handler.scatter(wavel_threadidx, losidx, layeridx,
-                                layer.exit.interpolation_weights, false,
-                                end_phase);
 
         if (calculate_derivative) {
             if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
