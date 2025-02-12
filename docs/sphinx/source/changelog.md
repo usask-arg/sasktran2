@@ -2,7 +2,7 @@
 (_changelog)=
 # Changelog
 
-## 2025.02.1
+## 2025.02.0
 - Fix a bug when loading climatologies with lowercase letters
 
 ## 2025.01.2
