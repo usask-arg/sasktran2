@@ -1,6 +1,7 @@
 #include "sasktran2/do_source.h"
 #include "sasktran2/geometry.h"
 #include "sktran_disco/sktran_do_lpproduct.h"
+#include <stdexcept>
 
 namespace sasktran2 {
     template <int NSTOKES, int CNSTR>
@@ -697,6 +698,8 @@ namespace sasktran2 {
         sasktran_disco::AEOrder m,
         sasktran2::DOSourceThreadStorage<NSTOKES, CNSTR>& thread_storage,
         int szaidx, int thread_idx) {
+        ZoneScopedN("Accumulate DO sources");
+
         auto& storage = m_storage[thread_idx];
 
         if (m == 0 && szaidx == 0) {
@@ -704,6 +707,10 @@ namespace sasktran2 {
             storage.source_terms_linear.value.setZero();
             storage.source_terms_linear.deriv.setZero();
             m_converged_map.setConstant(false);
+        }
+        if (m >= 2) {
+            thread_storage.converged =
+                true; // Reset this later if no convergence is detected
         }
 
         accumulate_ground_sources(optical_layer, m, thread_storage, szaidx,
@@ -814,6 +821,7 @@ namespace sasktran2 {
             // Precalculate the layer multipliers since they are the same for
             // every angle
             for (int i = 0; i < m_config.num_do_streams() / 2 * NSTOKES; ++i) {
+                ZoneScopedN("Precalculate layer multipliers");
                 const auto& eigval = solution.value.dual_eigval();
 
                 sasktran_disco::postprocessing::h_plus_sampled(
@@ -832,6 +840,7 @@ namespace sasktran2 {
             }
 
             for (int aidx = 0; aidx < m_cos_angle_grid->grid().size(); ++aidx) {
+                ZoneScopedN("Accumulate DO sources for angle");
                 int sourceidx = linear_storage_index(aidx, lidx, szaidx, m);
 
                 if (!m_need_to_calculate_map[sourceidx] ||
@@ -867,15 +876,19 @@ namespace sasktran2 {
                     dual_lpsum_minus.value.data(), NSTOKES,
                     m_config.num_do_streams() / 2 * NSTOKES);
 
-                Y_plus_matrix.noalias() =
-                    lpsum_plus_matrix * homog_plus_matrix +
-                    lpsum_minus_matrix * homog_minus_matrix;
-                Y_minus_matrix.noalias() =
-                    lpsum_plus_matrix * homog_minus_matrix +
-                    lpsum_minus_matrix * homog_plus_matrix;
+                {
+                    ZoneScopedN("Y Calculation");
+                    Y_plus_matrix.noalias() =
+                        lpsum_plus_matrix * homog_plus_matrix +
+                        lpsum_minus_matrix * homog_minus_matrix;
+                    Y_minus_matrix.noalias() =
+                        lpsum_plus_matrix * homog_minus_matrix +
+                        lpsum_minus_matrix * homog_plus_matrix;
+                }
 
                 // Calculate derivatives of Y_plus/Y_minus
                 for (sasktran_disco::uint k = 0; k < numderiv; ++k) {
+                    ZoneScopedN("Y_Deriv Calculation");
                     Eigen::Map<const Eigen::MatrixXd, 0,
                                Eigen::InnerStride<Eigen::Dynamic>>
                         lpsum_plus_deriv(&dual_lpsum_plus.deriv(k, 0), NSTOKES,
@@ -927,6 +940,7 @@ namespace sasktran2 {
                     const auto& Dpi = Dp[i];
 
                     for (int s = 0; s < NSTOKES; ++s) {
+                        ZoneScopedN("Homogeneous Source Accumulation");
                         storage.source_terms_linear.value(sourceidx * NSTOKES +
                                                           s) +=
                             Y_plus_matrix(s, i) * hpi.value * dual_L.value(i);
@@ -966,6 +980,7 @@ namespace sasktran2 {
                     }
 
                     for (int s = 0; s < NSTOKES; ++s) {
+                        ZoneScopedN("Particular Source Accumulation");
                         storage.source_terms_linear.value(sourceidx * NSTOKES +
                                                           s) +=
                             (dual_Aplus.value(i) * Y_plus_matrix(s, i) *
@@ -1007,6 +1022,7 @@ namespace sasktran2 {
                 // Now we have to divide out SSA from the source since we opt to
                 // multiply by actual SSA later on
                 for (int s = 0; s < NSTOKES; ++s) {
+                    ZoneScopedN("Finalization");
                     int index = sourceidx * NSTOKES + s;
 
                     storage.source_terms_linear.value(index) /= ssa.value;
@@ -1018,19 +1034,26 @@ namespace sasktran2 {
                         int l2_index =
                             linear_storage_index(aidx, lidx, szaidx, m - 2);
 
-                        if (abs(storage.source_terms_linear.value(index) /
-                                storage.source_terms_linear.value(
-                                    l1_index * NSTOKES)) < 1e-4) {
-                            if (abs(storage.source_terms_linear.value(index) /
-                                    storage.source_terms_linear.value(
-                                        l2_index * NSTOKES)) < 1e-4) {
-                                for (int azi = m + 1;
-                                     azi < m_config.num_do_streams(); ++azi) {
-                                    int converged_index = linear_storage_index(
-                                        aidx, lidx, szaidx, azi);
-                                    m_converged_map[converged_index] = true;
-                                }
+                        double current_value =
+                            storage.source_terms_linear.value(index);
+                        double prev_value = storage.source_terms_linear.value(
+                            l1_index * NSTOKES);
+                        double prev_prev_value =
+                            storage.source_terms_linear.value(l2_index *
+                                                              NSTOKES);
+
+                        if ((abs(current_value / prev_value) < 1e-4 ||
+                             prev_value < 1e-10) &&
+                            (abs(current_value / prev_prev_value) < 1e-4 ||
+                             prev_prev_value < 1e-10)) {
+                            for (int azi = m + 1;
+                                 azi < m_config.num_do_streams(); ++azi) {
+                                int converged_index = linear_storage_index(
+                                    aidx, lidx, szaidx, azi);
+                                m_converged_map[converged_index] = true;
                             }
+                        } else {
+                            thread_storage.converged = false;
                         }
                     }
 

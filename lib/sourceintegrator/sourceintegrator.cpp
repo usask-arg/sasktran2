@@ -128,6 +128,7 @@ namespace sasktran2 {
         int rayidx, int wavel_threadidx, int threadidx,
         const SInterpolator& source_interpolator,
         Eigen::VectorXd& accumulation_values) {
+        ZoneScopedN("Integrate and Emplace Accumulation Triplets");
         const auto& ray = (*m_traced_rays)[rayidx];
         const auto& interpolator = source_interpolator[rayidx];
 

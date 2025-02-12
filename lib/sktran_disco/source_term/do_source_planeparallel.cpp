@@ -52,6 +52,7 @@ namespace sasktran2 {
         for (int m = 0; m < num_azi; ++m) {
             rte.solve(m);
 
+            ZoneScopedN("DO PostProcessing");
             for (int j = 0; j < m_do_los.size(); ++j) {
                 double observeraltitude = m_do_los[j].observeraltitude;
                 double observer_opticaldepth = 0.0;

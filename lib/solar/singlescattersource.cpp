@@ -45,6 +45,7 @@ namespace sasktran2::solartransmission {
     template <typename S, int NSTOKES>
     void SingleScatterSource<S, NSTOKES>::calculate(int wavelidx,
                                                     int threadidx) {
+        ZoneScopedN("Single Scatter Source Calculation");
         // Don't have to do anything here
         m_phase_handler.calculate(wavelidx, threadidx);
 
@@ -154,6 +155,7 @@ namespace sasktran2::solartransmission {
     template <typename S, int NSTOKES>
     void SingleScatterSource<S, NSTOKES>::initialize_geometry(
         const std::vector<sasktran2::raytracing::TracedRay>& los_rays) {
+        ZoneScopedN("Initialize Single Scatter Source Geometry");
         this->m_solar_transmission.initialize_geometry(los_rays);
 
         if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
@@ -212,6 +214,7 @@ namespace sasktran2::solartransmission {
         const sasktran2::SparseODDualView& shell_od,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
+        ZoneScopedN("Single Scatter Source Constant Calculation");
         bool calculate_derivative = source.derivative_size() > 0;
 
         // Integrates assuming the source is constant in the layer and

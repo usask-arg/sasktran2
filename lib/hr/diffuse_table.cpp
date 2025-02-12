@@ -219,6 +219,7 @@ namespace sasktran2::hr {
     }
 
     template <int NSTOKES> void DiffuseTable<NSTOKES>::trace_incoming_rays() {
+        ZoneScopedN("Trace Incoming Rays");
         int nthreads = m_config->num_threads();
 
         std::vector<sasktran2::viewinggeometry::ViewingRay> thread_viewing_ray;
@@ -250,6 +251,7 @@ namespace sasktran2::hr {
     template <int NSTOKES>
     void DiffuseTable<NSTOKES>::initialize_geometry(
         const std::vector<sasktran2::raytracing::TracedRay>& los_rays) {
+        ZoneScopedN("Initialize HR Geometry");
         // TODO: This is the 1D case, need to add separate logic for 2d/3d
 
         // find the min/max SZA from the LOS rays and generate the cos_sza_grid
@@ -336,6 +338,7 @@ namespace sasktran2::hr {
 
     template <int NSTOKES>
     void DiffuseTable<NSTOKES>::construct_accumulation_sparsity() {
+        ZoneScopedN("Construct Accumulation Sparsity");
         // These are the length of the rows
         m_outer_starts.resize(NSTOKES * m_diffuse_source_weights.size() + 1);
         m_inner_nnz.resize(NSTOKES * m_diffuse_source_weights.size());
@@ -511,6 +514,7 @@ namespace sasktran2::hr {
     void DiffuseTable<NSTOKES>::generate_source_interpolation_weights(
         const std::vector<sasktran2::raytracing::TracedRay>& rays,
         SInterpolator& interpolator, int& total_num_weights) const {
+        ZoneScopedN("Generate Source Interpolation Weights");
         total_num_weights = 0;
 
         interpolator.resize(rays.size());
@@ -661,6 +665,7 @@ namespace sasktran2::hr {
     template <int NSTOKES>
     void DiffuseTable<NSTOKES>::generate_scattering_matrices(int wavelidx,
                                                              int threadidx) {
+        ZoneScopedN("Generate Scattering Matrices");
         auto& storage = m_thread_storage[threadidx];
 
 #pragma omp parallel for num_threads(m_config->num_source_threads())           \
@@ -710,6 +715,7 @@ namespace sasktran2::hr {
     template <int NSTOKES>
     void DiffuseTable<NSTOKES>::iterate_to_solution(int wavelidx,
                                                     int threadidx) {
+        ZoneScopedN("Iterate to Solution");
         auto& storage = m_thread_storage[threadidx];
 
         Eigen::Map<Eigen::SparseMatrix<double, Eigen::RowMajor>>
@@ -750,6 +756,7 @@ namespace sasktran2::hr {
                         storage.m_firstorder_radiances.value;
                 }
             } else {
+                ZoneScopedN("Apply Accumulation Matrix");
                 storage.m_incoming_radiances.value.noalias() =
                     accumulation_matrix * storage.m_outgoing_sources.value +
                     storage.m_firstorder_radiances.value;
@@ -778,9 +785,12 @@ namespace sasktran2::hr {
                                           point->num_outgoing()) -
                                    1);
 
-                storage.m_outgoing_sources.value(outgoing_seq).noalias() =
-                    storage.point_scattering_matrices[i] *
-                    storage.m_incoming_radiances.value(incoming_seq);
+                {
+                    ZoneScopedN("Apply Scattering Matrix");
+                    storage.m_outgoing_sources.value(outgoing_seq).noalias() =
+                        storage.point_scattering_matrices[i] *
+                        storage.m_incoming_radiances.value(incoming_seq);
+                }
 
 #ifdef SASKTRAN_DEBUG_ASSERTS
                 if (storage.m_outgoing_sources.value(outgoing_seq).hasNaN()) {

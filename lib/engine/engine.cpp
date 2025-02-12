@@ -9,6 +9,9 @@
 #ifdef SKTRAN_OPENMP_SUPPORT
 #include <omp.h>
 #endif
+#ifdef SKTRAN_USE_ACCELERATE
+#include <vecLib/thread_api.h>
+#endif
 
 template <int NSTOKES> void Sasktran2<NSTOKES>::construct_raytracer() {
     if (m_geometry->coordinates().geometry_type() ==
@@ -278,9 +281,13 @@ template <int NSTOKES>
 void Sasktran2<NSTOKES>::calculate_radiance(
     const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
     sasktran2::Output<NSTOKES>& output) const {
+
 #ifdef SKTRAN_OPENMP_SUPPORT
     omp_set_num_threads(m_config.num_threads());
     Eigen::setNbThreads(m_config.num_source_threads());
+#ifdef SKTRAN_USE_ACCELERATE
+    BLASSetThreading(BLAS_THREADING_SINGLE_THREADED);
+#endif
 #endif
 
     validate_input_atmosphere(atmosphere);
@@ -313,9 +320,11 @@ void Sasktran2<NSTOKES>::calculate_radiance(
 #else
         int thread_idx = 0;
 #endif
+        FrameMarkStart("Frame");
 
         // Trigger source term generation for this wavelength
         for (auto& source : m_source_terms) {
+            ZoneScopedN("Source Calculation");
             source->calculate(w, thread_idx);
         }
 
@@ -332,10 +341,13 @@ void Sasktran2<NSTOKES>::calculate_radiance(
             radiance[ray_threadidx].value.setZero();
             radiance[ray_threadidx].deriv.setZero();
 
-            // Integrate all of the sources for the ray
-            m_source_integrator->integrate(radiance[ray_threadidx],
-                                           m_los_source_terms, w, i, thread_idx,
-                                           ray_threadidx);
+            {
+                ZoneScopedN("Source Integration");
+                // Integrate all of the sources for the ray
+                m_source_integrator->integrate(radiance[ray_threadidx],
+                                               m_los_source_terms, w, i,
+                                               thread_idx, ray_threadidx);
+            }
 
             // Add on any start of ray sources
             for (const SourceTermInterface<NSTOKES>* source :
@@ -350,6 +362,7 @@ void Sasktran2<NSTOKES>::calculate_radiance(
 
         // TODO: Is this where we should generate fluxes or other quantities
         // that aren't through the integrator?
+        FrameMarkEnd("Frame");
     }
 }
 
