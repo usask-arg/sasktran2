@@ -9,9 +9,6 @@
 #ifdef SKTRAN_OPENMP_SUPPORT
 #include <omp.h>
 #endif
-#ifdef SKTRAN_USE_ACCELERATE
-#include <vecLib/thread_api.h>
-#endif
 
 template <int NSTOKES> void Sasktran2<NSTOKES>::construct_raytracer() {
     if (m_geometry->coordinates().geometry_type() ==
@@ -285,9 +282,6 @@ void Sasktran2<NSTOKES>::calculate_radiance(
 #ifdef SKTRAN_OPENMP_SUPPORT
     omp_set_num_threads(m_config.num_threads());
     Eigen::setNbThreads(m_config.num_source_threads());
-#ifdef SKTRAN_USE_ACCELERATE
-    BLASSetThreading(BLAS_THREADING_SINGLE_THREADED);
-#endif
 #endif
 
     validate_input_atmosphere(atmosphere);
