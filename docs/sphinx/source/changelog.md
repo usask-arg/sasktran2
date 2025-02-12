@@ -2,7 +2,8 @@
 (_changelog)=
 # Changelog
 
-## Unreleased
+## 2025.02.0
+- Fix a bug when loading climatologies with lowercase letters
 
 ## 2025.01.2
 - Adds manylinux aarch64 wheel builds
