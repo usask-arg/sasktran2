@@ -77,7 +77,7 @@ def _atm_reader(atm_file: str) -> dict:
                 for item in no_space_or_comma:
                     with contextlib.suppress(ValueError):
                         if item != "\n":
-                            profiles[cur_profile] = np.append(
+                            profiles[cur_profile.upper()] = np.append(
                                 profiles[cur_profile.upper()], float(item)
                             )
     return profiles

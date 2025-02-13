@@ -56,9 +56,10 @@ def test_fascode():
 
     for fascode in fascode_valid:
         for fascode_state in fascode_states:
-            sk.climatology.mipas.constituent(
+            vmr = sk.climatology.mipas.constituent(
                 fascode, None, dataset="fascode", climatology=fascode_state
             )
+            assert len(vmr._vmr) > 0
 
 
 def test_mipas1998():
