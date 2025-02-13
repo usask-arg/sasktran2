@@ -42,11 +42,15 @@ namespace sasktran2 {
                 *solver.persistent_config, optical_layer);
 
             int num_azi = m_config->num_do_streams();
+            m_thread_storage[threadidx].converged = false;
             for (int m = 0; m < num_azi; ++m) {
                 rte.solve(m);
                 accumulate_solved_azimuth(optical_layer,
                                           m_thread_storage[threadidx], szaidx,
                                           m, threadidx);
+                if (m_thread_storage[threadidx].converged) {
+                    break;
+                }
             }
         }
     }

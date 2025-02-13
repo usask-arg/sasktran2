@@ -9,6 +9,12 @@
 #include <iostream>
 #include <optional>
 
+#ifdef SKTRAN_TRACY
+#include <tracy/Tracy.hpp>
+#else
+#include <sasktran2/tracy_dummy.h>
+#endif
+
 #include <sasktran2/types.h>
 
 // Minimimum size shells have to be to have contributions
@@ -30,7 +36,12 @@
 #ifdef SKTRAN_USE_ACCELERATE
 // Using apple Accelerate for linear algebra, which doesn't have a LAPACKE
 // interface
+#ifdef ACCELERATE_LAPACK_ILP64
+#define lapack_int long
+#else
 #define lapack_int int
+#endif
+// #include <vecLib.h>
 #include <clapack.h>
 #include <cblas.h>
 #else

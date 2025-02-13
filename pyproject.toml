@@ -60,7 +60,7 @@ pyyaml = "*"
 xarray = ">=2023.0.0"
 scipy = "*"
 netcdf4 = "*"
-pytest = ">=8.3.3,<9"
+pytest = ">=8.3.4,<9"
 astropy = "*"
 ruff = "*"
 sphinx = "*"
@@ -94,6 +94,7 @@ sdist.include = ["src/sasktran2/_version.py"]
 [tool.scikit-build.cmake.define]
 DO_STREAM_TEMPLATES = {env="DO_STREAM_TEMPLATES", default="OFF"}
 SKTRAN_BLAS_VENDOR = {env="SKTRAN_BLAS_VENDOR", default="OpenBLAS"}
+INCLUDE_TRACY = {env="INCLUDE_TRACY", default="OFF"}
 
 [tool.setuptools_scm]
 write_to = "src/sasktran2/_version.py"

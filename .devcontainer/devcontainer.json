@@ -2,6 +2,8 @@
     // More info about Features: https://containers.dev/features
     "image": "mcr.microsoft.com/devcontainers/cpp:ubuntu-24.04",
     "features": {},
+    "forwardPorts": [8086],
+    "runArgs": ["--network=host"],
 
     "onCreateCommand": ".devcontainer/setup.sh",
     "postCreateCommand": "",

@@ -5,6 +5,7 @@ import numpy as np
 from sasktran2.atmosphere import Atmosphere
 from sasktran2.optical.base import OpticalProperty
 from sasktran2.util.interpolation import linear_interpolating_matrix
+from sasktran2.util.speed_helpers import assign_absorber_derivatives
 
 from .base import Constituent
 
@@ -87,16 +88,16 @@ class VMRAltitudeAbsorber(Constituent):
         derivs = {}
 
         deriv_mapping = atmo.storage.get_derivative_mapping(f"wf_{name}_vmr")
-        deriv_mapping.d_extinction[:] += (
-            self._optical_quants.extinction * number_density[:, np.newaxis]
+
+        assign_absorber_derivatives(
+            deriv_mapping,
+            self._optical_quants.extinction,
+            self._optical_quants.ssa,
+            atmo.storage.ssa,
+            atmo.storage.total_extinction,
         )
-        deriv_mapping.d_ssa[:] += (
-            self._optical_quants.extinction
-            * (self._optical_quants.ssa - atmo.storage.ssa)
-            / atmo.storage.total_extinction
-            * number_density[:, np.newaxis]
-        )
-        deriv_mapping.interpolator = interp_matrix
+
+        deriv_mapping.interpolator = interp_matrix * number_density[:, np.newaxis]
         deriv_mapping.interp_dim = f"{name}_altitude"
 
         interp_vmr = interp_matrix @ self._vmr
@@ -119,12 +120,21 @@ class VMRAltitudeAbsorber(Constituent):
             deriv_mapping = atmo.storage.get_derivative_mapping(
                 f"wf_{name}_{deriv_name}"
             )
-            deriv_mapping.d_extinction[:] += self._optical_quants.extinction
-            deriv_mapping.d_ssa[:] += (
-                self._optical_quants.extinction
-                * (self._optical_quants.ssa - atmo.storage.ssa)
-                / atmo.storage.total_extinction
+
+            assign_absorber_derivatives(
+                deriv_mapping,
+                self._optical_quants.extinction,
+                self._optical_quants.ssa,
+                atmo.storage.ssa,
+                atmo.storage.total_extinction,
             )
+
+            # deriv_mapping.d_extinction[:] += self._optical_quants.extinction
+            # deriv_mapping.d_ssa[:] += (
+            #    self._optical_quants.extinction
+            #    * (self._optical_quants.ssa - atmo.storage.ssa)
+            #    / atmo.storage.total_extinction
+            # )
             deriv_mapping.interpolator = (
                 np.eye(len(number_density)) * (vert_factor * interp_vmr)[np.newaxis, :]
             )
@@ -138,12 +148,19 @@ class VMRAltitudeAbsorber(Constituent):
                 deriv_mapping = atmo.storage.get_derivative_mapping(
                     f"wf_{name}_{key}_xs"
                 )
-                deriv_mapping.d_extinction[:] += val.d_extinction
-                deriv_mapping.d_ssa[:] += (
-                    val.d_extinction
-                    * (self._optical_quants.ssa - atmo.storage.ssa)
-                    / atmo.storage.total_extinction
+                assign_absorber_derivatives(
+                    deriv_mapping,
+                    val.d_extinction,
+                    self._optical_quants.ssa,
+                    atmo.storage.ssa,
+                    atmo.storage.total_extinction,
                 )
+                # deriv_mapping.d_extinction[:] += val.d_extinction
+                # deriv_mapping.d_ssa[:] += (
+                #    val.d_extinction
+                #    * (self._optical_quants.ssa - atmo.storage.ssa)
+                #    / atmo.storage.total_extinction
+                # )
 
                 deriv_mapping.interpolator = (
                     np.eye(len(number_density))

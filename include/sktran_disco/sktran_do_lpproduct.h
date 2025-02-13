@@ -272,6 +272,7 @@ namespace sasktran_disco {
         const InputDerivatives<NSTOKES>& input_derivs,
         VectorLayerDual<double>& dual_lpsum_plus,
         VectorLayerDual<double>& dual_lpsum_minus) {
+        ZoneScopedN("Scattering Phase Calculation");
         dual_lpsum_plus.value.setZero();
         dual_lpsum_minus.value.setZero();
 

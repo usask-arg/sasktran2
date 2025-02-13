@@ -48,6 +48,10 @@ else()
   target_compile_definitions(sasktran2_tests PUBLIC SKTRAN_CATCH2_VERSION3)
 endif()
 
+if(INCLUDE_TRACY)
+  target_link_libraries(sasktran2_tests INTERFACE TracyClient)
+endif()
+
 add_test(NAME TestSASKTRAN2 COMMAND sasktran2_tests)
 
 # This is just a hack to copy dependent DLLs on windows when building inside a

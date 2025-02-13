@@ -88,6 +88,7 @@ namespace sasktran2 {
         const sasktran2::SparseODDualView& shell_od,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
+        ZoneScopedN("DO Integrated Source");
         if (layer.layer_distance < MINIMUM_SHELL_SIZE_M) {
             // Essentially an empty shell from rounding, don't have to do
             // anything

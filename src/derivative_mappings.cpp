@@ -109,4 +109,8 @@ void init_derivative_mappings(py::module_& m) {
                       &sasktran2::SurfaceDerivativeMapping::get_interp_dim,
                       &sasktran2::SurfaceDerivativeMapping::set_interp_dim)
         .def("set_zero", &sasktran2::SurfaceDerivativeMapping::set_zero);
+
+    m.def("assign_absorber_derivatives",
+          &sasktran2::assign_absorber_derivatives, "mapping"_a,
+          "d_extinction"_a, "d_ssa"_a, "atmo_ssa"_a, "atmo_extinction"_a);
 }

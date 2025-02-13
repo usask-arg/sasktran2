@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 
 import numpy as np
@@ -57,6 +58,9 @@ class OpticalDatabaseGenericAbsorber(OpticalDatabase):
         super().__init__(db_filepath)
 
         self._validate_db()
+
+        self._quants = None
+        self._cached_interp_handler = None
 
     def _validate_db(self):
         # Old file format used "temperature" and "pressure" instead of the standard keys
@@ -148,16 +152,24 @@ class OpticalDatabaseGenericAbsorber(OpticalDatabase):
         return interp_handler
 
     def atmosphere_quantities(self, atmo: sk.Atmosphere, **kwargs) -> OpticalQuantities:
-        quants = OpticalQuantities(ssa=np.zeros_like(atmo.storage.ssa))
-
         interp_handler = self._construct_interp_handler(atmo, **kwargs)
 
-        quants.extinction = self._database["xs"].interp(**interp_handler).to_numpy()
+        try:
+            np.testing.assert_equal(self._cached_interp_handler, interp_handler)
+            return self._quants
+        except (ValueError, AssertionError):
+            self._quants = OpticalQuantities(ssa=np.zeros_like(atmo.storage.ssa))
 
-        # Out of bounds, set to 0
-        quants.extinction[np.isnan(quants.extinction)] = 0
+            self._quants.extinction = (
+                self._database["xs"].interp(**interp_handler).to_numpy()
+            )
 
-        return quants
+            # Out of bounds, set to 0
+            self._quants.extinction[np.isnan(self._quants.extinction)] = 0
+
+            self._cached_interp_handler = deepcopy(interp_handler)
+
+            return deepcopy(self._quants)
 
 
 class OpticalDatabaseGenericScatterer(OpticalDatabase):

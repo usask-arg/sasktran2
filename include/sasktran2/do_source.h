@@ -104,6 +104,8 @@ namespace sasktran2 {
 
         std::vector<sasktran_disco::PostProcessingCache<NSTOKES, CNSTR>>
             postprocessing_cache; // [layer]
+
+        bool converged;
     };
 
     template <int NSTOKES, int CNSTR = -1> class DOSourceDiffuseStorage {
