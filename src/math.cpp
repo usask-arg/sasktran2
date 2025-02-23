@@ -62,5 +62,6 @@ void init_math(py::module_& m) {
           "gamma_self"_a, "delta_air"_a, "n_air"_a, "iso_id"_a, "partitions"_a,
           "molecular_mass"_a, "pressure"_a, "pself"_a, "temperature"_a,
           "wavenumber_grid"_a, "result"_a, "line_contribution_width"_a = 10.0,
-          "cull_factor"_a = 0.0, "num_threads"_a = 1);
+          "cull_factor"_a = 0.0, "num_threads"_a = 1,
+          "interpolation_delta"_a = 0.0);
 }
