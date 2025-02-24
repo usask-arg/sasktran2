@@ -45,6 +45,7 @@ namespace sasktran2::solartransmission {
     template <typename S, int NSTOKES>
     void SingleScatterSource<S, NSTOKES>::calculate(int wavelidx,
                                                     int threadidx) {
+        ZoneScopedN("Single Scatter Source Calculation");
         // Don't have to do anything here
         m_phase_handler.calculate(wavelidx, threadidx);
 
@@ -154,6 +155,7 @@ namespace sasktran2::solartransmission {
     template <typename S, int NSTOKES>
     void SingleScatterSource<S, NSTOKES>::initialize_geometry(
         const std::vector<sasktran2::raytracing::TracedRay>& los_rays) {
+        ZoneScopedN("Initialize Single Scatter Source Geometry");
         this->m_solar_transmission.initialize_geometry(los_rays);
 
         if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
@@ -212,6 +214,7 @@ namespace sasktran2::solartransmission {
         const sasktran2::SparseODDualView& shell_od,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
+        ZoneScopedN("Single Scatter Source Constant Calculation");
         bool calculate_derivative = source.derivative_size() > 0;
 
         // Integrates assuming the source is constant in the layer and
@@ -244,33 +247,41 @@ namespace sasktran2::solartransmission {
         start_phase.value.setZero();
         end_phase.value.setZero();
 
-        // Calculate SSA, don't do derivatives until later
-        for (auto& ele : layer.entrance.interpolation_weights) {
-            ssa_start +=
-                m_atmosphere->storage().ssa(ele.first, wavelidx) * ele.second;
+        {
+            ZoneScopedN(
+                "Single Scatter Source Constant Calculation - Interpolating");
+            // Calculate SSA, don't do derivatives until later
+            for (auto& ele : layer.entrance.interpolation_weights) {
+                ssa_start += m_atmosphere->storage().ssa(ele.first, wavelidx) *
+                             ele.second;
 
-            k_start +=
-                m_atmosphere->storage().total_extinction(ele.first, wavelidx) *
-                ele.second;
+                k_start += m_atmosphere->storage().total_extinction(ele.first,
+                                                                    wavelidx) *
+                           ele.second;
+            }
+            for (auto& ele : layer.exit.interpolation_weights) {
+                ssa_end += m_atmosphere->storage().ssa(ele.first, wavelidx) *
+                           ele.second;
+                k_end += m_atmosphere->storage().total_extinction(ele.first,
+                                                                  wavelidx) *
+                         ele.second;
+            }
         }
-        for (auto& ele : layer.exit.interpolation_weights) {
-            ssa_end +=
-                m_atmosphere->storage().ssa(ele.first, wavelidx) * ele.second;
-            k_end +=
-                m_atmosphere->storage().total_extinction(ele.first, wavelidx) *
-                ele.second;
+
+        {
+            ZoneScopedN(
+                "Single Scatter Source Constant Calculation - Scattering");
+            // Incident solar beam is unpolarized
+            start_phase.value(0) = ssa_start * k_start * entrance_factor;
+            end_phase.value(0) = ssa_end * k_end * exit_factor;
+
+            m_phase_handler.scatter(wavel_threadidx, losidx, layeridx,
+                                    layer.entrance.interpolation_weights, true,
+                                    start_phase);
+            m_phase_handler.scatter(wavel_threadidx, losidx, layeridx,
+                                    layer.exit.interpolation_weights, false,
+                                    end_phase);
         }
-
-        // Incident solar beam is unpolarized
-        start_phase.value(0) = ssa_start * k_start * entrance_factor;
-        end_phase.value(0) = ssa_end * k_end * exit_factor;
-
-        m_phase_handler.scatter(wavel_threadidx, losidx, layeridx,
-                                layer.entrance.interpolation_weights, true,
-                                start_phase);
-        m_phase_handler.scatter(wavel_threadidx, losidx, layeridx,
-                                layer.exit.interpolation_weights, false,
-                                end_phase);
 
         if (calculate_derivative) {
             if constexpr (std::is_same_v<S, SolarTransmissionExact>) {

@@ -7,6 +7,271 @@
 #endif
 
 namespace sasktran2::math::spectroscopy {
+    const double inv_sqrt2 = 1.0 / std::sqrt(2.0);
+    const double sqrt_2pi = std::sqrt(2.0 * EIGEN_PI);
+    const double sqrt_pi = std::sqrt(EIGEN_PI);
+
+    // Quadratic interpolation helper
+
+    /**
+     * Interpolates to w, given f(a), f(b), f(c) using quadratic interpolation
+     *
+     * @param w value to interpolate two
+     * @param a
+     * @param b
+     * @param c
+     * @param fa
+     * @param fb
+     * @param fc
+     * @return double
+     */
+    inline double quadratic_interpolate(double w, double a, double b, double c,
+                                        double fa, double fb, double fc) {
+        double denom_ab = (a - b);
+        double denom_ac = (a - c);
+        double denom_bc = (b - c);
+
+        double term_a = fa * (w - b) * (w - c) / ((a - b) * (a - c));
+        double term_b = fb * (w - a) * (w - c) / ((b - a) * (b - c));
+        double term_c = fc * (w - a) * (w - b) / ((c - a) * (c - b));
+        return term_a + term_b + term_c;
+    }
+
+    /**
+     * @brief Humlicek region 1 approximation
+     *
+     * Valid when |x| + y > 15
+     *
+     * @param x
+     * @param y
+     * @return double
+     */
+    inline double humlicek_region1(double x, double y) {
+        double a1 = 0.2820948 * y + 0.5641896 * y * y * y;
+        double b1 = 0.5641896 * y;
+        double a2 = 0.25 + y * y + y * y * y * y;
+        double b2 = -1.0 + 2 * y * y;
+
+        return (a1 + b1 * x * x) / (a2 + b2 * x * x + x * x * x * x);
+    }
+
+    /**
+     * @brief Humlicek region 2 approximation
+     *
+     * Valid when 5.5 < |x| + y < 15
+     *
+     * @param x
+     * @param y
+     * @return double
+     */
+    inline double humlicek_region2(double x, double y) {
+        double y2 = y * y;
+        double y3 = y2 * y;
+        double y4 = y3 * y;
+        double y5 = y4 * y;
+        double y6 = y5 * y;
+        double y7 = y6 * y;
+        double y8 = y7 * y;
+
+        double a3 = 1.05786 * y + 4.65456 * y3 + 3.10304 * y5 + 0.56419 * y7;
+        double b3 = 2.962 * y + 0.56419 * y3 + 1.69257 * y5;
+        double c3 = 1.69257 * y - 2.53885 * y3;
+        double d3 = 0.56419 * y;
+
+        double a4 = 0.5625 + 4.5 * y2 + 10.5 * y4 + 6 * y6 + y8;
+        double b4 = -4.5 + 9.0 * y2 + 6.0 * y4 + 4.0 * y6;
+        double c4 = 10.5 - 6.0 * y2 + 6.0 * y4;
+        double d4 = -6.0 + 4.0 * y2;
+
+        double x2 = x * x;
+        double x4 = x2 * x2;
+        double x6 = x4 * x2;
+        double x8 = x6 * x2;
+
+        return (a3 + b3 * x2 + c3 * x4 + d3 * x6) /
+               (a4 + b4 * x2 + c4 * x4 + d4 * x6 + x8);
+    }
+
+    /**
+     * @brief Analytic approximation to the Voigt profile using the
+     * Tepper-Garcia function
+     *
+     * Reference: https://arxiv.org/pdf/astro-ph/0602124
+     *
+     * Valid for gamma / doppler_width < 1e-4, has a special case at x=0
+     *
+     * @param x
+     * @param gamma
+     * @param doppler_width
+     * @return double
+     */
+    inline double tepper_garcia(double x, double gamma, double doppler_width) {
+        if (x == 0) {
+            std::complex<double> z(0, gamma * inv_sqrt2 / doppler_width);
+
+            std::complex<double> val = Faddeeva::w(z);
+            return val.real();
+        }
+
+        double u = x * inv_sqrt2 / (doppler_width);
+        double a = gamma * inv_sqrt2 / (doppler_width);
+
+        double P = u * u;
+        double Q = 1.5 / P;
+        double R = std::exp(-P);
+
+        double T = R - (a / (sqrt_pi * P)) *
+                           (R * R * (4.0 * P * P + 7 * P + 4 + Q) - Q - 1);
+
+        return T;
+    }
+
+    /**
+     * @brief Lorentzian line shape
+     *
+     * @param x
+     * @param gamma
+     * @return double
+     */
+    inline double lorentzian(double x, double y) {
+        return y / (sqrt_pi * (x * x + y * y));
+    }
+
+    /**
+     * @brief Gaussian line shape
+     *
+     * @param x
+     * @param sigma
+     * @return double
+     */
+    inline double gaussian(double x, double y) { return std::exp(-x * x); }
+
+    /**
+     * @brief Voigt line shape
+     *
+     * Uses the Faddeeva function to calculate the voigt function.  Using other
+     * approximations have been tried, but the branching made them slower than
+     * just using the Faddeeva function.
+     *
+     * @param x
+     * @param y
+     * @return double
+     */
+    inline double voigt(double x, double y) {
+        return Faddeeva::w(std::complex<double>(x, y)).real();
+
+        // All of this branching just ended up being slower
+        const double epsilon = 1e-4;
+        if (x * x > 1.52 / epsilon - 2.84 * y * y) {
+            return lorentzian(x, y);
+        }
+
+        if (abs(x) < 2.15 - 2.53 * y / epsilon) {
+            return gaussian(x, y);
+        }
+
+        if (std::abs(x) + y > 15) {
+            return humlicek_region1(x, y);
+        } else if (std::abs(x) + y > 5.5 && false) {
+            return humlicek_region2(x, y);
+        } else {
+            std::complex<double> val = Faddeeva::w(std::complex<double>(x, y));
+            return val.real();
+        }
+    }
+
+    /**
+     * @brief Broadens a line using the Voigt function, and adds the result to
+     * the result matrix
+     *
+     * @param result
+     * @param wavenumbers
+     * @param geo_index
+     * @param startidx
+     * @param endidx
+     * @param doppler_width
+     * @param gamma
+     * @param line_center
+     * @param line_intensity
+     */
+    inline void sum_line(Eigen::Ref<Eigen::MatrixXd>& result,
+                         const Eigen::VectorXd& wavenumbers, int geo_index,
+                         size_t startidx, size_t endidx, double doppler_width,
+                         double gamma, double line_center,
+                         double line_intensity) {
+        double y = gamma * inv_sqrt2 / doppler_width;
+        // Compute line shape
+        double norm_factor = 1.0 / (sqrt_2pi * doppler_width);
+
+        double normalized_intensity = line_intensity * norm_factor;
+
+        for (size_t w = startidx; w < endidx; ++w) {
+            double x =
+                (wavenumbers[w] - line_center) * inv_sqrt2 / doppler_width;
+
+            result(w, geo_index) += voigt(x, y) * normalized_intensity;
+        }
+    }
+
+    /**
+     * @brief Broadens a line using the Voigt function, and adds the result to
+     * the result matrix by interpolating between points
+     *
+     * This function is mostly just experimental, it turned out to be slower
+     * than just using the voigt function
+     *
+     * @param result
+     * @param wavenumbers
+     * @param geo_index
+     * @param startidx
+     * @param endidx
+     * @param doppler_width
+     * @param gamma
+     * @param line_center
+     * @param line_intensity
+     * @param dx
+     */
+    inline void sum_line_interpolated(Eigen::Ref<Eigen::MatrixXd>& result,
+                                      const Eigen::VectorXd& wavenumbers,
+                                      int geo_index, size_t startidx,
+                                      size_t endidx, double doppler_width,
+                                      double gamma, double line_center,
+                                      double line_intensity, double dx) {
+        double y = gamma * inv_sqrt2 / doppler_width;
+        // Compute line shape
+        double norm_factor = 1.0 / (sqrt_2pi * doppler_width);
+
+        double normalized_intensity = line_intensity * norm_factor;
+
+        double a =
+            (wavenumbers[startidx] - line_center) * inv_sqrt2 / doppler_width;
+        ;
+        double b = a + dx;
+        double c = b + dx;
+
+        double fa = voigt(a, y);
+        double fb = voigt(b, y);
+        double fc = voigt(c, y);
+
+        for (size_t w = startidx; w < endidx; ++w) {
+            double x =
+                (wavenumbers[w] - line_center) * inv_sqrt2 / doppler_width;
+
+            if (x > c) {
+                a = b;
+                b = c;
+                c = b + dx;
+
+                fa = fb;
+                fb = fc;
+                fc = voigt(c, y);
+            }
+            result(w, geo_index) +=
+                quadratic_interpolate(x, a, b, c, fa, fb, fc) *
+                normalized_intensity;
+        }
+    }
+
     /**
      * Broadens the input line data using the Voigt profile. All values are
      * assumed to be in cgs units unless otherwise specified. The result matrix
@@ -52,9 +317,9 @@ namespace sasktran2::math::spectroscopy {
         Eigen::Ref<const Eigen::VectorXd> pself,           // [geometry]
         Eigen::Ref<const Eigen::VectorXd> temperature,     // [geometry]
         Eigen::Ref<const Eigen::VectorXd> wavenumber_grid, // [wavenumber]
-        Eigen::Ref<Eigen::MatrixXd> result, // [geometry, wavenumber]
+        Eigen::Ref<Eigen::MatrixXd> result, // [wavenumber, geometry]
         double line_contribution_width = 25.0, double cull_factor = 0.0,
-        const int num_threads = 1) {
+        const int num_threads = 1, const double interpolation_delta = 0.0) {
         // Constants (cgs)
         const double c2 = 1.4387769;
         const double SPEED_OF_LIGHT = 2.99792458e10;
@@ -67,9 +332,6 @@ namespace sasktran2::math::spectroscopy {
 
         // Initialize result to zero
         result.setZero();
-
-        const double inv_sqrt2 = 1.0 / std::sqrt(2.0);
-        const double sqrt_2pi = std::sqrt(2.0 * EIGEN_PI);
 
         double max_p_self = pself.maxCoeff();
         if (max_p_self == 0) {
@@ -143,21 +405,15 @@ namespace sasktran2::math::spectroscopy {
 
                 double shifted_center = lc + da * P;
 
-                // Compute line shape
-                double norm_factor = 1.0 / (sqrt_2pi * doppler_width);
-
-                for (int w = start_idx; w < end_idx; ++w) {
-                    double x = wavenumber_grid[w];
-                    // z = (x - center)/(sqrt(2)*dw) +
-                    // i*(gamma_val/(sqrt(2)*dw))
-                    std::complex<double> z(
-                        (x - shifted_center) * inv_sqrt2 / doppler_width,
-                        gamma_val * inv_sqrt2 / doppler_width);
-
-                    std::complex<double> val = Faddeeva::w(z);
-                    double line_fn = norm_factor * val.real();
-
-                    result(w, g) += line_fn * adjusted_line_intensity;
+                if (interpolation_delta == 0.0) {
+                    sum_line(result, wavenumber_grid, g, start_idx, end_idx,
+                             doppler_width, gamma_val, shifted_center,
+                             adjusted_line_intensity);
+                } else {
+                    sum_line_interpolated(
+                        result, wavenumber_grid, g, start_idx, end_idx,
+                        doppler_width, gamma_val, shifted_center,
+                        adjusted_line_intensity, interpolation_delta);
                 }
             }
         }

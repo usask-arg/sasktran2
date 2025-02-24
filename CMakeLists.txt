@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.20.0)
 include(CMakePackageConfigHelpers) # Provides function/macro
                                    # write_basic_package_version_file
 include(ExternalProject)
+include(FetchContent)
 
 # Convenience
 if(UNIX AND NOT APPLE)
@@ -161,15 +162,17 @@ elseif(SKTRAN_BLAS_VENDOR MATCHES "Apple")
   target_include_directories(
     sasktran2BuildProperties
     INTERFACE
-      /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers
+      /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers
+      /Library/Developer/CommandLineTools/SDKs/MacOSX15.2.sdk/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers
   )
   target_compile_definitions(sasktran2BuildProperties
                              INTERFACE SKTRAN_USE_ACCELERATE)
   target_compile_definitions(sasktran2BuildProperties
                              INTERFACE ACCELERATE_NEW_LAPACK=1)
-  target_compile_definitions(sasktran2BuildProperties
-                             INTERFACE ACCELERATE_LAPACK_ILP64=1)
-  target_compile_definitions(sasktran2BuildProperties INTERFACE EIGEN_USE_BLAS)
+  # target_compile_definitions(sasktran2BuildProperties INTERFACE
+  # ACCELERATE_LAPACK_ILP64=1)
+  # target_compile_definitions(sasktran2BuildProperties INTERFACE
+  # EIGEN_USE_BLAS)
 else()
   # have to set this on unix even when using static openblas because of a cmake
   # fortran bug
@@ -254,6 +257,26 @@ endif()
 message(STATUS "Lapack Configuration Complete")
 
 add_subdirectory(lib)
+
+option(INCLUDE_TRACY "Include Tracy Profiling" OFF)
+
+if(INCLUDE_TRACY)
+  target_compile_definitions(sasktran2BuildProperties INTERFACE SKTRAN_TRACY)
+  option(TRACY_ENABLE "Enable Tracy Profiling" ON)
+  option(TRACY_ON_DEMAND "Enable Tracy On Demand" OFF)
+
+  FetchContent_Declare(
+    tracy
+    GIT_REPOSITORY https://github.com/wolfpld/tracy.git
+    GIT_TAG v0.11.1
+    GIT_SHALLOW TRUE
+    GIT_PROGRESS TRUE)
+
+  FetchContent_MakeAvailable(tracy)
+
+  target_link_libraries(sasktran2BuildProperties INTERFACE TracyClient)
+
+endif()
 
 option(BUILD_PYTHON "True if Building Python Files" ON)
 # We basically just include this for clion help

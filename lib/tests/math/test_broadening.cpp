@@ -31,5 +31,5 @@ TEST_CASE("Run Line Broadening", "[sasktran2][spectroscopy]") {
     sasktran2::math::spectroscopy::voigt_broaden(
         line_center, line_intensity, lower_energy, gamma_air, gamma_self,
         delta_air, n_air, iso_id, partitions, molecular_mass, pressure, pself,
-        temperature, wavenumber_grid, result);
+        temperature, wavenumber_grid, result, 25.0, 0.0, 1, 0.0);
 }

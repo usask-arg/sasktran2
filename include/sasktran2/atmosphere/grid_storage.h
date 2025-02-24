@@ -180,6 +180,40 @@ namespace sasktran2::atmosphere {
             }
         }
 
+        /**
+         *  Divides the Legendre coefficients by the scattering extinction
+         * (stored in ssa)
+         *
+         *  Then divides the ssa (currently storing scattering extinction) by
+         * the total extinction
+         *
+         */
+        void normalize_by_extinctions() {
+            Eigen::TensorMap<Eigen::Tensor<double, 3>> ssa_map(
+                ssa.data(), 1, ssa.rows(), ssa.cols());
+
+            // Broadcast ssa over the leg_coeff dimension and divide
+            Eigen::array<int, 3> bcast = {(int)leg_coeff.dimension(0), 1, 1};
+
+            leg_coeff /= ssa_map.broadcast(bcast);
+
+            // Any non-finite values in leg_coeff are a result of
+            // scattering_extinction = 0, since these numbers wont be used
+            // anyways, we can just set them to 1
+            leg_coeff = leg_coeff.unaryExpr(
+                [](double x) { return std::isfinite(x) ? x : 1.0; });
+
+            ssa.array() /= total_extinction.array();
+
+            // Similarly for SSA, any non-finite values are when the total
+            // extinction is 0, so we can just set this to 0
+            ssa = ssa.unaryExpr(
+                [](double x) { return std::isfinite(x) ? x : 0.0; });
+
+            // Clamp the SSA values to 1
+            ssa = ssa.cwiseMin(1.0);
+        }
+
         std::map<std::string, DerivativeMapping>& derivative_mappings() {
             return m_derivative_mappings;
         }

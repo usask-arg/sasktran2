@@ -1,17 +1,8 @@
 #pragma once
 
 // STL dependencies
-#include <algorithm>
-#include <memory>
-#include <numeric>
-#include <mutex>
-#include <queue>
-#include <math.h>
-#include <iostream>
-#include <list>
-#include <map>
-#include <limits>
-#include <complex>
+
+#include <sasktran2/internal_common.h>
 
 // Eigen settings
 
@@ -67,33 +58,6 @@
     template struct classname<1>;                                              \
     template struct classname<3>;
 #endif
-
-// Setup dependening on what linear algebra package is being linked
-#ifdef SKTRAN_USE_MKL
-// Using MKL for linear algebdra
-#define EIGEN_USE_MKL_ALL 1
-
-#include <mkl_lapacke.h>
-#else
-// Unsure if this is faster or not
-// #define EIGEN_USE_BLAS 1
-#ifdef SKTRAN_USE_ACCELERATE
-// Using apple Accelerate for linear algebra, which doesn't have a LAPACKE
-// interface
-
-#define lapack_int int
-#include <clapack.h>
-#include <cblas.h>
-#else
-// Using a standard LAPACKE compatible package
-#define LAPACK_DISABLE_NAN_CHECK
-#define lapack_complex_float std::complex<float>
-#define lapack_complex_double std::complex<double>
-#include <Eigen/src/misc/lapacke.h>
-#endif
-#endif
-
-#include <Eigen/Dense>
 
 // SASKTRAN dependencies
 

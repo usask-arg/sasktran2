@@ -103,6 +103,8 @@ void declareAtmosphereStorage(py::module_& m, const std::string& suffix) {
                const Eigen::Tensor<double, 4>& d_leg_coeff) {
                 storage.d_leg_coeff = d_leg_coeff;
             })
+        .def("normalize_by_extinctions",
+             &AtmosphereGridStorage::normalize_by_extinctions)
         .def_property(
             "solar_irradiance",
             [](AtmosphereGridStorage& storage) -> Eigen::VectorXd& {

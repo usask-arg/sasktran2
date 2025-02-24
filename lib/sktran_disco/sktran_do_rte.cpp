@@ -187,6 +187,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::assignHomogenousSplusMinus(
 template <int NSTOKES, int CNSTR>
 void sasktran_disco::RTESolver<NSTOKES, CNSTR>::linearizeHomogeneous(
     AEOrder m, OpticalLayer<NSTOKES, CNSTR>& layer) {
+    ZoneScopedN("Linearize Homogeneous");
     // Linearizes the homogeneous solution
 
     auto& solution = layer.solution(m);
@@ -366,6 +367,7 @@ void sasktran_disco::RTESolver<1, 2>::linearizeHomogeneous(
 template <int NSTOKES, int CNSTR>
 void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveHomogeneous(
     AEOrder m, OpticalLayer<NSTOKES, CNSTR>& layer) {
+    ZoneScopedN("Homogeneous Solution");
     // Setup up calculation environment
     const uint N = this->M_NSTR / 2;
     auto& solution = layer.solution(m);
@@ -419,6 +421,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveHomogeneous(
 
     if (SASKTRAN_DISCO_USE_EIGEN_EIGENSOLVER || CNSTR != -1) {
         // Eigen::SelfAdjointEigenSolver<Matrix> es(eigmtx_destroyable);
+        ZoneScopedN("EigenSolver");
         Eigen::RealEigenSolver<Matrix> es(eigmtx_destroyable);
 
         auto eigeninfo = es.info();
@@ -474,11 +477,11 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveHomogeneous(
 
 #ifdef SKTRAN_USE_ACCELERATE
         Eigen::VectorXd& work = m_cache.homog_work;
-        int worksize = N * NSTOKES * 4;
+        lapack_int worksize = N * NSTOKES * 4;
         char jobvl = 'N';
         char jobvr = 'V';
-        int n = N * NSTOKES;
-        int one = 1;
+        lapack_int n = N * NSTOKES;
+        lapack_int one = 1;
 
         dgeev_(&jobvl, &jobvr, &n, eigmtx_destroyable.data(), &n,
                eigvalsq.data(), reigval_imag.data(), nullptr, &one,
@@ -887,6 +890,7 @@ void sasktran_disco::RTESolver<1, 2>::solveParticularGreen(
 template <int NSTOKES, int CNSTR>
 void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
     AEOrder m, OpticalLayer<NSTOKES, CNSTR>& layer) {
+    ZoneScopedN("Particular Green Solution");
     // Setup up calculation enviroment
     LayerIndex p = layer.index();
     auto& solution = layer.solution(m);
@@ -1325,6 +1329,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
 
 template <int NSTOKES, int CNSTR>
 void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveBVP(AEOrder m) {
+    ZoneScopedN("BVP Solution");
     // Setup calculation environment
     // TODO: These should be moved to the cache
     la::BVPMatrix<NSTOKES>& mat =
@@ -1348,16 +1353,19 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveBVP(AEOrder m) {
     }
     d_b.setZero();
 
-    // Build the S.O.E for unperturbed system
-    bvpTOACondition(m, 0, mat, d_mat); // TOA Coefficients
-    for (BoundaryIndex p = 1; p < this->M_NLYR; ++p)
-        bvpContinuityCondition(m, p, mat, d_mat);    // Continuity coefficients
-    bvpGroundCondition(m, this->M_NLYR, mat, d_mat); // Ground Coefficients
-    uint loc = 0;
-    bvpCouplingCondition_BC1(m, 0, loc, b, d_b); // TOA RHS
-    for (BoundaryIndex p = 1; p < this->M_NLYR; ++p)
-        bvpCouplingCondition_BC2(m, p, loc, b, d_b);        // Continuity RHS
-    bvpCouplingCondition_BC3(m, this->M_NLYR, loc, b, d_b); // Ground RHS
+    {
+        ZoneScopedN("BVP Matrix Build");
+        // Build the S.O.E for unperturbed system
+        bvpTOACondition(m, 0, mat, d_mat); // TOA Coefficients
+        for (BoundaryIndex p = 1; p < this->M_NLYR; ++p)
+            bvpContinuityCondition(m, p, mat, d_mat); // Continuity coefficients
+        bvpGroundCondition(m, this->M_NLYR, mat, d_mat); // Ground Coefficients
+        uint loc = 0;
+        bvpCouplingCondition_BC1(m, 0, loc, b, d_b); // TOA RHS
+        for (BoundaryIndex p = 1; p < this->M_NLYR; ++p)
+            bvpCouplingCondition_BC2(m, p, loc, b, d_b); // Continuity RHS
+        bvpCouplingCondition_BC3(m, this->M_NLYR, loc, b, d_b); // Ground RHS
+    }
 
     lapack_int N = mat.N();
     lapack_int NCD = mat.NCD();
@@ -1374,9 +1382,12 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveBVP(AEOrder m) {
             m_cache.bvp_pd_mu, false);
     } else {
 #ifdef SKTRAN_USE_ACCELERATE
-        int one = 1;
-        dgbsv_(&N, &NCD, &NCD, &one, mat.data(), &LDA, ipiv.data(), b.data(),
-               &N, &errorcode);
+        lapack_int one = 1;
+        {
+            ZoneScopedN("BVP Solve dgbsv_");
+            dgbsv_(&N, &NCD, &NCD, &one, mat.data(), &LDA, ipiv.data(),
+                   b.data(), &N, &errorcode);
+        }
 #else
         errorcode = LAPACKE_dgbsv(LAPACK_COL_MAJOR, N, NCD, NCD, 1, mat.data(),
                                   LDA, ipiv.data(), b.data(), N);
@@ -1449,9 +1460,12 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveBVP(AEOrder m) {
         // Solve using the same LHS as above
 #ifdef SKTRAN_USE_ACCELERATE
         char trans = 'N';
-        int intnderiv = numDeriv;
-        dgbtrs_(&trans, &N, &NCD, &NCD, &intnderiv, mat.data(), &LDA,
-                ipiv.data(), rhs.data(), &N, &errorcode);
+        lapack_int intnderiv = numDeriv;
+        {
+            ZoneScopedN("Deriv dgbtrs_");
+            dgbtrs_(&trans, &N, &NCD, &NCD, &intnderiv, mat.data(), &LDA,
+                    ipiv.data(), rhs.data(), &N, &errorcode);
+        }
 #else
         errorcode = LAPACKE_dgbtrs(LAPACK_COL_MAJOR, 'N', N, NCD, NCD, numDeriv,
                                    mat.data(), LDA, ipiv.data(), rhs.data(), N);
@@ -1490,6 +1504,7 @@ template <int NSTOKES, int CNSTR>
 void sasktran_disco::RTESolver<NSTOKES, CNSTR>::backprop(
     AEOrder m, ReverseLinearizationTrace<NSTOKES>& trace,
     sasktran_disco::Radiance<NSTOKES>& component) {
+    ZoneScopedN("Backprop BVP");
     la::BVPMatrix<NSTOKES>& mat = *m_cache.bvp_mat;
 
     uint numDeriv = (int)m_layers.inputDerivatives().numDerivative();
@@ -1513,7 +1528,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::backprop(
 
 #ifdef SKTRAN_USE_ACCELERATE
         char trans = 'T';
-        int intnderiv = n_rhs;
+        lapack_int intnderiv = n_rhs;
         dgbtrs_(&trans, &N, &NCD, &NCD, &intnderiv, mat.data(), &LDA,
                 ipiv.data(), trace.bvp_coeff_weights().data(), &N, &errorcode);
 #else
@@ -1594,6 +1609,7 @@ template <int NSTOKES, int CNSTR>
 void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpTOACondition(
     AEOrder m, BoundaryIndex p, BVPMatrix& A,
     VectorDim1<BVPMatrixDenseBlock<NSTOKES>>& d_A) const {
+    ZoneScopedN("BVP TOA Condition");
     // Eq (29)
 
     // Setup enviroment
@@ -1639,6 +1655,7 @@ template <int NSTOKES, int CNSTR>
 void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpContinuityCondition(
     AEOrder m, BoundaryIndex p, BVPMatrix& A,
     VectorDim1<BVPMatrixDenseBlock<NSTOKES>>& d_A) const {
+    ZoneScopedN("BVP Continuity Condition");
     // Eq (31)
     // Setup enviroment
     assert(p != 0 && p != this->M_NLYR);
@@ -1768,6 +1785,7 @@ template <int NSTOKES, int CNSTR>
 void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpGroundCondition(
     AEOrder m, BoundaryIndex p, BVPMatrix& A,
     VectorDim1<BVPMatrixDenseBlock<NSTOKES>>& d_A) const {
+    ZoneScopedN("BVP Ground Condition");
 
     // Setup enviroment
     assert(p == this->M_NLYR);
@@ -1821,6 +1839,7 @@ template <int NSTOKES, int CNSTR>
 void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC1(
     AEOrder m, BoundaryIndex p, uint& loc, Eigen::VectorXd& b,
     Eigen::MatrixXd& d_b) {
+    ZoneScopedN("BVP Coupling Condition BC1");
 
     // Setup enviroment
     assert(p == 0);
@@ -1863,6 +1882,7 @@ template <int NSTOKES, int CNSTR>
 void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC2(
     AEOrder m, BoundaryIndex p, uint& loc, Eigen::VectorXd& b,
     Eigen::MatrixXd& d_b) {
+    ZoneScopedN("BVP Coupling Condition BC2");
     // Setup enviroment
     assert(p != 0 && p != this->M_NLYR);
     const uint N = this->M_NSTR / 2;
@@ -1953,6 +1973,7 @@ template <int NSTOKES, int CNSTR>
 void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC3(
     AEOrder m, BoundaryIndex p, uint& loc, Eigen::VectorXd& b,
     Eigen::MatrixXd& d_b) {
+    ZoneScopedN("BVP Coupling Condition BC3");
     // Configure
     assert(p == this->M_NLYR);
     const int N = this->M_NSTR / 2;

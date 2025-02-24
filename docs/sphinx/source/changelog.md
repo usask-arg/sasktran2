@@ -2,6 +2,9 @@
 (_changelog)=
 # Changelog
 
+## 2025.02.1
+- Miscallaneous speed improvements
+
 ## 2025.02.0
 - Fix a bug when loading climatologies with lowercase letters
 
