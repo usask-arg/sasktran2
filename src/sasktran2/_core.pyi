@@ -75,6 +75,7 @@ __all__ = [
     "ViewingGeometryBase",
     "Wavelength",
     "WignerD",
+    "assign_absorber_derivatives",
     "voigt_broaden",
 ]
 
@@ -122,6 +123,7 @@ class AtmosphereStorageStokes_1:
     def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(self, arg0: int, arg1: int, arg2: int) -> None: ...
     def get_derivative_mapping(self, name: str) -> DerivativeMapping: ...
+    def normalize_by_extinctions(self) -> None: ...
     def resize_derivatives(self, num_deriv: int) -> None: ...
     @property
     def d_f(self) -> numpy.ndarray[numpy.float64[..., ..., ...]]: ...
@@ -141,6 +143,7 @@ class AtmosphereStorageStokes_3:
     def _pybind11_conduit_v1_(*args, **kwargs): ...
     def __init__(self, arg0: int, arg1: int, arg2: int) -> None: ...
     def get_derivative_mapping(self, name: str) -> DerivativeMapping: ...
+    def normalize_by_extinctions(self) -> None: ...
     def resize_derivatives(self, num_deriv: int) -> None: ...
     @property
     def d_f(self) -> numpy.ndarray[numpy.float64[..., ..., ...]]: ...
@@ -1616,6 +1619,13 @@ class WignerD:
             The calculated Wigner function, either scalar or the same size as `theta` or `l`, whichever is array-like.
         """
 
+def assign_absorber_derivatives(
+    mapping: DerivativeMapping,
+    d_extinction: numpy.ndarray[numpy.float64[m, n]],
+    d_ssa: numpy.ndarray[numpy.float64[m, n]],
+    atmo_ssa: numpy.ndarray[numpy.float64[m, n]],
+    atmo_extinction: numpy.ndarray[numpy.float64[m, n]],
+) -> None: ...
 def voigt_broaden(
     line_center: numpy.ndarray[numpy.float64[m, 1]],
     line_intensity: numpy.ndarray[numpy.float64[m, 1]],
@@ -1636,10 +1646,72 @@ def voigt_broaden(
         numpy.ndarray.flags.writeable,
         numpy.ndarray.flags.f_contiguous,
     ],
-    line_contribution_width: float = 10.0,
+    line_contribution_width: float = 25.0,
     cull_factor: float = 0.0,
     num_threads: int = 1,
-) -> None: ...
+    interpolation_delta: float = 0.0,
+) -> None:
+    """
+    Calculates the absorption coefficient spectrum for a given set of lines using the Voigt
+    line shape.   Most of these parameters are taken directly from the HITRAN database.
+
+    Parameters
+    ----------
+    line_center: numpy.ndarray[numpy.float64]
+        The center of the lines in wavenumbers (cm^-1)
+
+    line_intensity: numpy.ndarray[numpy.float64]
+        The intensity of the lines
+
+    lower_energy: numpy.ndarray[numpy.float64]
+        The lower energy level of the lines
+
+    gamma_air: numpy.ndarray[numpy.float64]
+        The Lorentz broadening due to air
+
+    gamma_self: numpy.ndarray[numpy.float64]
+        The Lorentz broadening due to self
+
+    delta_air: numpy.ndarray[numpy.float64]
+        The pressure shift due to air
+
+    n_air: numpy.ndarray[numpy.float64]
+
+    iso_id: numpy.ndarray[numpy.int32]
+        The identifier for the isotopalog
+
+    partitions: numpy.ndarray[numpy.float64]
+        The partition function ratios at the specified temperatures, dimension [ngeo, num_isotop]
+
+    molecular_mass: numpy.ndarray[numpy.float64]
+        The molecular mass of each isotopalog, [num_isotop]
+
+    pressure: numpy.ndarray[numpy.float64]
+        Partial pressure (1 at 101.325 kPa) at each geometry [ngeo]
+
+    pself: numpy.ndarray[numpy.float64]
+        Self partial pressure at each geometry [ngeo], only required for self broadening, but can inform
+        the determination of which lines have relevant contributions
+
+    temperature: numpy.ndarray[numpy.float64]
+        Temperature in K at each geometry [ngeo]
+
+    wavenumber_grid: numpy.ndarray[numpy.float64]
+        The wavenumber grid to produce the result on [wavenumber]
+
+    result: numpy.ndarray[numpy.float64]
+        The result matrix, [wavenumber, geometry]
+
+    line_contribution_width: float
+        The width of the line of each line to consider, default 25.0
+
+    cull_factor: float
+        Lines with less than this total optical depth are culled, default 0.0 indicating no culling
+        Should be experimented with to see what is appropriate for the application
+
+    num_threads: int
+        The number of threads to use if OMP is enabled, default 1
+    """
 
 ConstantSpacing: GridSpacing  # value = <GridSpacing.ConstantSpacing: 0>
 Disabled: InputValidationMode  # value = <InputValidationMode.Disabled: 2>
