@@ -32,6 +32,7 @@ class Engine:
             Viewing geometry
         """
         self._nstokes = config.num_stokes
+        self._config = config
 
         if self._nstokes == 1:
             self._engine = sk.EngineStokes_1(config, model_geometry, viewing_geo)
@@ -75,5 +76,11 @@ class Engine:
 
         if isinstance(self._viewing_geometry, ViewingGeometryContainer):
             result = self._viewing_geometry.add_geometry_to_radiance(result)
+
+        if self._config.output_los_optical_depth:
+            result["optical_depth"] = (
+                ["wavelength", "los"],
+                engine_output.internal_output().los_optical_depth,
+            )
 
         return result

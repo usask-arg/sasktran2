@@ -44,6 +44,9 @@ namespace sasktran2 {
         Eigen::VectorXd m_stokes_C;
         Eigen::VectorXd m_stokes_S;
 
+        // Diagnostic qunatities
+        Eigen::MatrixXd m_los_optical_depth;
+
         const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere;
         const sasktran2::Config* m_config;
 
@@ -91,6 +94,12 @@ namespace sasktran2 {
          * @return The engine number of derivatives
          */
         int num_deriv() const { return m_nderiv; }
+
+        const Eigen::MatrixXd& los_optical_depth() const {
+            return m_los_optical_depth;
+        }
+
+        Eigen::MatrixXd& los_optical_depth() { return m_los_optical_depth; }
     };
 
     /** An idealized output container where only the line of sight radiances are

@@ -577,6 +577,25 @@ namespace sasktran2 {
         }
 
         /**
+         * @brief
+         *
+         * @return true
+         * @return false
+         */
+        bool output_los_optical_depth() const {
+            return m_output_los_optical_depth;
+        }
+
+        /**
+         * @brief Sets diagnostic los_optical_depth output to be on or off
+         *
+         * @param output
+         */
+        void set_output_los_optical_depth(bool output) {
+            m_output_los_optical_depth = output;
+        }
+
+        /**
          * @brief Validates that the config is valid
          *
          */
@@ -627,5 +646,8 @@ namespace sasktran2 {
         SingleScatterPhaseMode m_singlescatter_phasemode;
 
         bool m_initialize_hr_with_do_solution;
+
+        // Diagnostic output control
+        bool m_output_los_optical_depth;
     };
 } // namespace sasktran2

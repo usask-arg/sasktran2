@@ -178,6 +178,13 @@ void init_config(py::module_& m) {
                 Controls whether or not refraction is enabled for the observer line of sight rays. Requires
                 the refractive index to be set in the Geometry object for refraction to work.  Defaults to False.
             )")
+        .def_property("output_los_optical_depth",
+                      &sasktran2::Config::output_los_optical_depth,
+                      &sasktran2::Config::set_output_los_optical_depth,
+                      R"(
+                If True, then the output from a calculate_radiance call will also contain an "optical_depth" variable
+                with dimensions ["los", "wavelength"] that is the optical depth for each line of sight.
+      )")
         .def_property("solar_refraction", &sasktran2::Config::solar_refraction,
                       &sasktran2::Config::set_solar_refraction,
                       R"(

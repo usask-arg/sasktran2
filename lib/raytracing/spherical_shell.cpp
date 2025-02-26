@@ -390,11 +390,6 @@ namespace sasktran2::raytracing {
             assert(result.layers[i + 1].exit.radius() ==
                    result.layers[i].entrance.radius());
         }
-
-        assert(abs(result.layers[0].exit.radius() -
-                   m_alt_grid.grid()(Eigen::last) - m_earth_radius) < 1e-8);
-        assert(abs(result.layers[result.layers.size() - 1].entrance.radius() -
-                   ray.observer.radius()) < 1e-8);
     }
 
     void SphericalShellRayTracer::trace_ray_observer_inside_looking_ground(

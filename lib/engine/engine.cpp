@@ -358,6 +358,11 @@ void Sasktran2<NSTOKES>::calculate_radiance(
         // that aren't through the integrator?
         FrameMarkEnd("Frame");
     }
+
+    if (m_config.output_los_optical_depth()) {
+        m_source_integrator->integrate_optical_depth(
+            output.los_optical_depth());
+    }
 }
 
 template class Sasktran2<1>;

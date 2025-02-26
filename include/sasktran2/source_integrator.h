@@ -112,9 +112,6 @@ namespace sasktran2 {
             Eigen::VectorXd& accumulation_values);
 
         /** Calculates the Optical Depth for each ray */
-        void integrate_optical_depth(
-            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                radiance,
-            int wavelidx, int rayidx, int wavel_threadidx, int threadidx);
+        void integrate_optical_depth(Eigen::MatrixXd& optical_depth);
     };
 } // namespace sasktran2

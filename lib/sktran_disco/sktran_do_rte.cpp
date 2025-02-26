@@ -61,7 +61,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::configureCache() {
     m_cache.h_l_downwelling.resize(this->M_NSTR);
     m_cache.h_l_upwelling.resize(this->M_NSTR);
 
-#ifdef SKTRAN_USE_ACCELERATE
+#if defined(SKTRAN_USE_ACCELERATE) || defined(SKTRAN_NO_LAPACKE)
     m_cache.homog_work.resize(N * NSTOKES * 4);
 #endif
 
@@ -475,7 +475,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveHomogeneous(
         // Compute eigensolution
         lapack_int errorcode;
 
-#ifdef SKTRAN_USE_ACCELERATE
+#if defined(SKTRAN_USE_ACCELERATE) || defined(SKTRAN_NO_LAPACKE)
         Eigen::VectorXd& work = m_cache.homog_work;
         lapack_int worksize = N * NSTOKES * 4;
         char jobvl = 'N';
@@ -1381,7 +1381,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveBVP(AEOrder m) {
             m_cache.bvp_pd_beta, m_cache.bvp_pd_z, m_cache.bvp_pd_gamma,
             m_cache.bvp_pd_mu, false);
     } else {
-#ifdef SKTRAN_USE_ACCELERATE
+#if defined(SKTRAN_USE_ACCELERATE) || defined(SKTRAN_NO_LAPACKE)
         lapack_int one = 1;
         {
             ZoneScopedN("BVP Solve dgbsv_");
@@ -1458,7 +1458,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveBVP(AEOrder m) {
             m_cache.bvp_pd_mu, false);
     } else {
         // Solve using the same LHS as above
-#ifdef SKTRAN_USE_ACCELERATE
+#if defined(SKTRAN_USE_ACCELERATE) || defined(SKTRAN_NO_LAPACKE)
         char trans = 'N';
         lapack_int intnderiv = numDeriv;
         {
@@ -1526,7 +1526,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::backprop(
             m_cache.bvp_pd_gamma, m_cache.bvp_pd_mu, true);
     } else {
 
-#ifdef SKTRAN_USE_ACCELERATE
+#if defined(SKTRAN_USE_ACCELERATE) || defined(SKTRAN_NO_LAPACKE)
         char trans = 'T';
         lapack_int intnderiv = n_rhs;
         dgbtrs_(&trans, &N, &NCD, &NCD, &intnderiv, mat.data(), &LDA,
