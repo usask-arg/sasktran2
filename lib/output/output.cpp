@@ -49,6 +49,11 @@ namespace sasktran2 {
                 }
             }
         }
+
+        if (m_config->output_los_optical_depth()) {
+            m_los_optical_depth.resize(m_nwavel, m_nlos);
+            m_los_optical_depth.setZero();
+        }
     }
 
     template class Output<1>;

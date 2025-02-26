@@ -86,6 +86,8 @@ TEST_CASE("Single Scatter, Rayleigh only SASKTRAN-HR Compare",
     // Construct the config
     sasktran2::Config config;
 
+    config.set_output_los_optical_depth(true);
+
     // Make the engine
     Sasktran2<1> engine(config, &geo, viewing_geometry);
 

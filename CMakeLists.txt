@@ -190,6 +190,8 @@ if(BLAS_FOUND)
   find_package(LAPACK REQUIRED)
   target_link_libraries(sasktran2BuildProperties INTERFACE BLAS::BLAS
                                                            LAPACK::LAPACK)
+  target_compile_definitions(sasktran2BuildProperties
+                             INTERFACE SKTRAN_NO_LAPACKE)
 else()
   if(SKTRAN_BLAS_VENDOR MATCHES "OpenBLAS")
     # Try searching for openblas directly This path should only be taken with
@@ -209,6 +211,9 @@ else()
     endif()
     target_include_directories(sasktran2BuildProperties
                                INTERFACE ${OpenBLAS_INCLUDE_DIRS})
+
+    target_compile_definitions(sasktran2BuildProperties
+                               INTERFACE SKTRAN_NO_LAPACKE)
   endif()
 endif()
 

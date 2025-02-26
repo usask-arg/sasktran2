@@ -31,6 +31,12 @@ void declareOutputIdeal(py::module_& m, const std::string& suffix) {
             [](Output& output) -> Eigen::MatrixXd& {
                 return output.radiance().deriv;
             },
+            nullptr)
+        .def_property(
+            "los_optical_depth",
+            [](Output& output) -> Eigen::MatrixXd& {
+                return output.los_optical_depth();
+            },
             nullptr);
 }
 
@@ -59,6 +65,12 @@ void declareOutputDerivMapped(py::module_& m, const std::string& suffix) {
             [](Output& output)
                 -> const std::map<std::string, Eigen::MatrixXd>& {
                 return output.surface_derivatives();
+            },
+            nullptr)
+        .def_property(
+            "los_optical_depth",
+            [](Output& output) -> Eigen::MatrixXd& {
+                return output.los_optical_depth();
             },
             nullptr);
 }

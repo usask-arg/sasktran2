@@ -2,6 +2,9 @@
 (_changelog)=
 # Changelog
 
+## 2025.02.2
+- Add config.output_los_optical_depth to enable diagnostic optical depth calculations for the LOS
+
 ## 2025.02.1
 - Miscallaneous speed improvements
 

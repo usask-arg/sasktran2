@@ -113,11 +113,10 @@ namespace sasktran2 {
 
     template <int NSTOKES>
     void SourceIntegrator<NSTOKES>::integrate_optical_depth(
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-            radiance,
-        int wavelidx, int rayidx, int wavel_threadidx, int threadidx) {
-        radiance.value(0) =
-            m_shell_od[rayidx](Eigen::all, wavelidx).array().sum();
+        Eigen::MatrixXd& optical_depth) {
+        for (int i = 0; i < m_traced_rays->size(); ++i) {
+            optical_depth.col(i) = m_shell_od[i].colwise().sum();
+        }
     }
 
     template <int NSTOKES>

@@ -14,6 +14,7 @@ namespace sasktran2 {
           m_singlescatter_phasemode(SingleScatterPhaseMode::from_legendre),
           m_threading_model(ThreadingModel::wavelength),
           m_initialize_hr_with_do_solution(false),
+          m_output_los_optical_depth(false),
           m_input_validation_mode(InputValidationMode::strict) {
         set_multiple_scatter_source(MultipleScatterSource::none);
         set_single_scatter_source(SingleScatterSource::exact);
