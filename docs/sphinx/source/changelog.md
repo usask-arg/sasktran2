@@ -4,6 +4,7 @@
 
 ## 2025.02.2
 - Add config.output_los_optical_depth to enable diagnostic optical depth calculations for the LOS
+- Add the option to combine two optical properties together using the + method, currently only works for absorbing species
 
 ## 2025.02.1
 - Miscallaneous speed improvements

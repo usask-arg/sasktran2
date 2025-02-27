@@ -117,11 +117,15 @@ void init_math(py::module_& m) {
 
             num_threads: int
                 The number of threads to use if OMP is enabled, default 1
+
+            subtract_pedastal: bool
+                If true, subtract the pedastal from the result, default False.  This should be set to true if you are using
+                a continuum model in addition to the line model
         )",
           "line_center"_a, "line_intensity"_a, "lower_energy"_a, "gamma_air"_a,
           "gamma_self"_a, "delta_air"_a, "n_air"_a, "iso_id"_a, "partitions"_a,
           "molecular_mass"_a, "pressure"_a, "pself"_a, "temperature"_a,
           "wavenumber_grid"_a, "result"_a, "line_contribution_width"_a = 25.0,
           "cull_factor"_a = 0.0, "num_threads"_a = 1,
-          "interpolation_delta"_a = 0.0);
+          "interpolation_delta"_a = 0.0, "subtract_pedastal"_a = false);
 }
