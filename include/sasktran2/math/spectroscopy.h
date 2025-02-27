@@ -198,7 +198,7 @@ namespace sasktran2::math::spectroscopy {
                          const Eigen::VectorXd& wavenumbers, int geo_index,
                          size_t startidx, size_t endidx, double doppler_width,
                          double gamma, double line_center,
-                         double line_intensity) {
+                         double line_intensity, bool subtract_pedastal) {
         double y = gamma * inv_sqrt2 / doppler_width;
         // Compute line shape
         double norm_factor = 1.0 / (sqrt_2pi * doppler_width);
@@ -210,6 +210,12 @@ namespace sasktran2::math::spectroscopy {
                 (wavenumbers[w] - line_center) * inv_sqrt2 / doppler_width;
 
             result(w, geo_index) += voigt(x, y) * normalized_intensity;
+        }
+
+        if (subtract_pedastal) {
+            double x = 25 * inv_sqrt2 / doppler_width;
+            result(Eigen::seq(startidx, endidx - 1), geo_index).array() -=
+                voigt(x, y) * normalized_intensity;
         }
     }
 
@@ -319,7 +325,8 @@ namespace sasktran2::math::spectroscopy {
         Eigen::Ref<const Eigen::VectorXd> wavenumber_grid, // [wavenumber]
         Eigen::Ref<Eigen::MatrixXd> result, // [wavenumber, geometry]
         double line_contribution_width = 25.0, double cull_factor = 0.0,
-        const int num_threads = 1, const double interpolation_delta = 0.0) {
+        const int num_threads = 1, const double interpolation_delta = 0.0,
+        bool subtract_pedastal = false) {
         // Constants (cgs)
         const double c2 = 1.4387769;
         const double SPEED_OF_LIGHT = 2.99792458e10;
@@ -408,7 +415,7 @@ namespace sasktran2::math::spectroscopy {
                 if (interpolation_delta == 0.0) {
                     sum_line(result, wavenumber_grid, g, start_idx, end_idx,
                              doppler_width, gamma_val, shifted_center,
-                             adjusted_line_intensity);
+                             adjusted_line_intensity, subtract_pedastal);
                 } else {
                     sum_line_interpolated(
                         result, wavenumber_grid, g, start_idx, end_idx,
