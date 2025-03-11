@@ -1667,6 +1667,7 @@ def voigt_broaden(
     cull_factor: float = 0.0,
     num_threads: int = 1,
     interpolation_delta: float = 0.0,
+    subtract_pedastal: bool = False,
 ) -> None:
     """
     Calculates the absorption coefficient spectrum for a given set of lines using the Voigt
@@ -1728,6 +1729,10 @@ def voigt_broaden(
 
     num_threads: int
         The number of threads to use if OMP is enabled, default 1
+
+    subtract_pedastal: bool
+        If true, subtract the pedastal from the result, default False.  This should be set to true if you are using
+        a continuum model in addition to the line model
     """
 
 ConstantSpacing: GridSpacing  # value = <GridSpacing.ConstantSpacing: 0>
