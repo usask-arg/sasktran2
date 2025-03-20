@@ -108,7 +108,8 @@ namespace sasktran2::emission {
         int wavelidx, int losidx, int layeridx, int wavel_threadidx,
         int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
         const sasktran2::SparseODDualView& shell_od,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
+        typename SourceTermInterface<NSTOKES>::IntegrationDirection direction)
         const {
         if (layer.layer_distance < MINIMUM_SHELL_SIZE_M) {
             // Essentially an empty shell from rounding, don't have to do

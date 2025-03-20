@@ -86,7 +86,8 @@ namespace sasktran2 {
         int wavelidx, int losidx, int layeridx, int wavel_threadidx,
         int ray_threadidx, const sasktran2::raytracing::SphericalLayer& layer,
         const sasktran2::SparseODDualView& shell_od,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
+        typename SourceTermInterface<NSTOKES>::IntegrationDirection direction)
         const {
         ZoneScopedN("DO Integrated Source");
         if (layer.layer_distance < MINIMUM_SHELL_SIZE_M) {

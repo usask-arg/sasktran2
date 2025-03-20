@@ -120,11 +120,12 @@ namespace sasktran2 {
                     altitude =
                         (layer.entrance.radius() + layer.exit.radius()) / 2.0 -
                         earth_radius;
-                    cos_angle =
-                        (layer.entrance.cos_zenith_angle(
-                             layer.average_look_away) +
-                         layer.exit.cos_zenith_angle(layer.average_look_away)) /
-                        2.0;
+                    cos_angle = -(layer.entrance.cos_zenith_angle(
+                                      layer.average_look_away) +
+                                  layer.exit.cos_zenith_angle(
+                                      layer.average_look_away)) /
+                                2.0;
+
                     azi = (layer.saz_entrance + layer.saz_exit) / 2.0;
                     cos_sza =
                         (layer.cos_sza_entrance + layer.cos_sza_exit) / 2.0;
@@ -133,7 +134,7 @@ namespace sasktran2 {
                                 layer.exit.position.z()) /
                                    2.0 -
                                earth_radius;
-                    cos_angle = layer.average_look_away.z();
+                    cos_angle = -layer.average_look_away.z();
 
                     azi = (layer.saz_entrance + layer.saz_exit) / 2.0;
                     cos_sza =
@@ -146,6 +147,10 @@ namespace sasktran2 {
                     cos_angle, angle_index, angle_weight, num_angle_contrib);
                 m_sza_grid.calculate_interpolation_weights(
                     cos_sza, sza_index, sza_weight, num_sza_contrib);
+
+                std::cout << "Angle WEights" << cos_angle << " --- "
+                          << angle_weight[0] << " --- " << angle_weight[1]
+                          << std::endl;
 
                 for (int szaidx = 0; szaidx < num_sza_contrib; ++szaidx) {
                     for (int altidx = 0; altidx < num_alt_contrib; ++altidx) {
@@ -318,6 +323,7 @@ namespace sasktran2 {
                     altitude, alt_index, alt_weight, num_alt_contrib);
                 m_cos_angle_grid->calculate_interpolation_weights(
                     cos_angle, angle_index, angle_weight, num_angle_contrib);
+
                 for (int szaidx = 0; szaidx < num_sza_contrib; ++szaidx) {
                     for (int altidx = 0; altidx < num_alt_contrib; ++altidx) {
                         for (int angleidx = 0; angleidx < num_angle_contrib;

@@ -203,7 +203,10 @@ namespace sasktran2::hr {
             int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
             const sasktran2::SparseODDualView& shell_od,
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                source) const;
+                source,
+            typename SourceTermInterface<
+                NSTOKES>::IntegrationDirection direction =
+                SourceTermInterface<NSTOKES>::IntegrationDirection::none) const;
 
         /** Calculates the source term at the end of the ray.  Common examples
          * of this are ground scattering, ground emission, or the solar radiance
