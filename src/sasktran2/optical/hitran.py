@@ -5,14 +5,15 @@ import logging
 import numpy as np
 
 from sasktran2.atmosphere import Atmosphere
+from sasktran2.database.aer_line import AERLineDatabase
 from sasktran2.database.hitran_line import HITRANLineDatabase
 from sasktran2.optical.base import OpticalProperty, OpticalQuantities
-from sasktran2.spectroscopy import voigt_broaden
+from sasktran2.spectroscopy import voigt_broaden, voigt_broaden_uniform
 from sasktran2.util import get_hapi
 
 
-class HITRANAbsorber(OpticalProperty):
-    def __init__(self, molecule: str, line_fn="voigt", **kwargs):
+class LineAbsorber(OpticalProperty):
+    def __init__(self, molecule: str, line_db, line_fn="voigt", **kwargs):
         """
         Absorption cross sections calculated using discrete absorption lines from the HITRAN database
         and broadened using the internal SASKTRAN2 Voigt line shape function.
@@ -36,7 +37,7 @@ class HITRANAbsorber(OpticalProperty):
         kwargs : dict
             Additional keyword arguments to pass to the line broadening function
         """
-        self._line_db = HITRANLineDatabase().load_ds(molecule)
+        self._line_db = line_db.load_ds(molecule)
         self._molecule = molecule
         self._kwargs = kwargs
 
@@ -114,6 +115,33 @@ class HITRANAbsorber(OpticalProperty):
         )
 
         logging.debug(f"Starting Broadening for {self._molecule}")
+        if True:
+            voigt_broaden_uniform(
+                self._line_db.nu.to_numpy(),
+                self._line_db.sw.to_numpy(),
+                self._line_db.elower.to_numpy(),
+                self._line_db.gamma_air.to_numpy(),
+                self._line_db.gamma_self.to_numpy(),
+                self._line_db.delta_air.to_numpy(),
+                self._line_db.n_air.to_numpy(),
+                self._line_db.local_iso_id.to_numpy(),
+                partition_ratio,
+                molecular_mass,
+                pressure_pa / 101325.0,
+                np.ones(len(pressure_pa)) * 0,
+                temperature_k,
+                wavenumbers_cminv[0],
+                wavenumbers_cminv[1] - wavenumbers_cminv[0],
+                result,
+                num_threads=num_threads,
+                **self._kwargs,
+            )
+
+            result[sidx, :] = result
+
+            return result / 1e4
+
+        logging.debug(f"Starting Broadening for {self._molecule}")
         voigt_broaden(
             self._line_db.nu.to_numpy(),
             self._line_db.sw.to_numpy(),
@@ -141,3 +169,13 @@ class HITRANAbsorber(OpticalProperty):
         self, wavelengths_nm: np.array, altitudes_m: np.array, **kwargs  # noqa: ARG002
     ) -> dict:
         return {}
+
+
+class HITRANAbsorber(LineAbsorber):
+    def __init__(self, molecule: str, **kwargs):
+        super().__init__(molecule, HITRANLineDatabase(), **kwargs)
+
+
+class AERLineAbsorber(LineAbsorber):
+    def __init__(self, molecule: str, **kwargs):
+        super().__init__(molecule, AERLineDatabase(), **kwargs)

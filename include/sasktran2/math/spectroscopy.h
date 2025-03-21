@@ -1,6 +1,7 @@
 #include <sasktran2/internal_common.h>
 
 #include <sasktran2/external/faddeeva.h>
+#include <sasktran2/math/custom_faddeeva.h>
 
 #ifdef SKTRAN_OMP_SUPPORT
 #include <omp.h>
@@ -158,7 +159,7 @@ namespace sasktran2::math::spectroscopy {
      * @return double
      */
     inline double voigt(double x, double y) {
-        return Faddeeva::w(std::complex<double>(x, y)).real();
+        //return Faddeeva::w(std::complex<double>(x, y)).real();
 
         // All of this branching just ended up being slower
         const double epsilon = 1e-4;
@@ -170,14 +171,7 @@ namespace sasktran2::math::spectroscopy {
             return gaussian(x, y);
         }
 
-        if (std::abs(x) + y > 15) {
-            return humlicek_region1(x, y);
-        } else if (std::abs(x) + y > 5.5 && false) {
-            return humlicek_region2(x, y);
-        } else {
-            std::complex<double> val = Faddeeva::w(std::complex<double>(x, y));
-            return val.real();
-        }
+        return CustomFaddeeva::faddeeva_w(x, y).real();
     }
 
     /**
@@ -278,6 +272,250 @@ namespace sasktran2::math::spectroscopy {
         }
     }
 
+
+
+    /**
+     * Broadens the input line data using the Voigt profile. All values are
+     * assumed to be in cgs units unless otherwise specified. The result matrix
+     * is filled with the broadened line data.
+     *
+     * @param line_center Central vacuum wavenumber of the line [line]
+     * @param line_intensity Line intensity [line]
+     * @param lower_energy Lower enregy level of the line [line]
+     * @param gamma_air Lorentz broadening due to air [line]
+     * @param gamma_self Lorentz broadening due to self [line]
+     * @param delta_air Pressure shift due to air [line]
+     * @param n_air [line]
+     * @param iso_id Identifier for the isotopalog [line]
+     * @param partitions Partition function ratios at the specified temperatures
+     * for each isotopalog [ngeo, num_isotop]
+     * @param molecular_mass Molecular mass of each isotopalog [num_isotop]
+     * @param pressure Partial pressure at each geometry (Pressure in Pa /
+     * 101325) [geometry]
+     * @param pself Self partial pressure at each geometry [geometry]
+     * @param temperature Temperature in K at each geometry [geometry]
+     * @param wavenumber_grid Wavenumber grid to produce the result on
+     * [wavenumber]
+     * @param result Resulting cross sections [geometry, wavenumber]
+     * @param line_contribution_width +/- from the line center to consider.
+     * Defaults to 25 [cm^-1]
+     * @param cull_factor Lines with total estimated vertical column relative
+     * optical depth less than this value are culled. Defaults to 0.0
+     * @param num_threads Number of threads to use if OMP is enabled. Defaults
+     * to 1.
+     */
+     inline void voigt_broaden_uniform(
+        Eigen::Ref<const Eigen::VectorXd> line_center,     // [line]
+        Eigen::Ref<const Eigen::VectorXd> line_intensity,  // [line]
+        Eigen::Ref<const Eigen::VectorXd> lower_energy,    // [line]
+        Eigen::Ref<const Eigen::VectorXd> gamma_air,       // [line]
+        Eigen::Ref<const Eigen::VectorXd> gamma_self,      // [line]
+        Eigen::Ref<const Eigen::VectorXd> delta_air,       // [line]
+        Eigen::Ref<const Eigen::VectorXd> n_air,           // [line]
+        Eigen::Ref<const Eigen::VectorXi> iso_id,          // [line]
+        Eigen::Ref<const Eigen::MatrixXd> partitions,      // [ngeo, num_isotop]
+        Eigen::Ref<const Eigen::VectorXd> molecular_mass,  // [num_isotop]
+        Eigen::Ref<const Eigen::VectorXd> pressure,        // [geometry]
+        Eigen::Ref<const Eigen::VectorXd> pself,           // [geometry]
+        Eigen::Ref<const Eigen::VectorXd> temperature,     // [geometry]
+        double first_wavenumber,
+        double wavenumber_spacing,
+        Eigen::Ref<Eigen::MatrixXd> result, // [wavenumber, geometry]
+        double line_contribution_width = 25.0, double cull_factor = 0.0,
+        const int num_threads = 1, const double interpolation_delta = 0.0,
+        bool subtract_pedastal = false) {
+        // Constants (cgs)
+        const double c2 = 1.4387769;
+        const double SPEED_OF_LIGHT = 2.99792458e10;
+        const double NA = 6.02214179e23;
+        const double K_B = 1.38064852e-16;
+
+        const int n_line = static_cast<int>(line_center.size());
+        const int n_geo = static_cast<int>(pressure.size());
+        const int n_wavenumber = static_cast<int>(result.rows());
+
+        double last_wavenumber = first_wavenumber + wavenumber_spacing * (n_wavenumber - 1);
+
+        const double epsilon = 1e-4;
+
+        // Initialize result to zero
+        result.setZero();
+
+        double max_p_self = pself.maxCoeff();
+        if (max_p_self == 0) {
+            max_p_self = 1.0;
+        }
+
+        // Find the first line is that is > 25 cm^-1 from the first wavenumber
+        const double* line_begin = line_center.data();
+        const double* line_end = line_center.data() + n_line;
+        const double* first_line_it = std::lower_bound(
+            line_begin, line_end, first_wavenumber - line_contribution_width);
+
+        const double* last_line_it = std::lower_bound(
+            line_begin, line_end, last_wavenumber + line_contribution_width);
+
+        int start_line_idx =
+            static_cast<int>(std::distance(line_begin, first_line_it));
+        int end_line_idx =
+            static_cast<int>(std::distance(line_begin, last_line_it));
+
+        int zero_pivot = 0;
+
+        for (int i = start_line_idx; i < end_line_idx; ++i) {
+            const double lc = line_center[i];
+
+            if (line_intensity[i] * 101325 * max_p_self / (K_B * 1e-7 * 296) <
+                cull_factor) {
+                continue;
+            }
+
+
+
+            int start_wavenumber_idx = floor((lc - line_contribution_width - first_wavenumber) / wavenumber_spacing);
+            int end_wavenumber_idx = ceil((lc + line_contribution_width - first_wavenumber) / wavenumber_spacing);
+
+            if (start_wavenumber_idx < 0) {
+                start_wavenumber_idx = 0;
+            }
+            if (end_wavenumber_idx > n_wavenumber) {
+                end_wavenumber_idx = n_wavenumber;
+            }
+
+            while(zero_pivot < end_wavenumber_idx && zero_pivot*wavenumber_spacing + first_wavenumber < lc) {
+                zero_pivot++;
+            }
+
+            if (start_wavenumber_idx == end_wavenumber_idx) {
+                continue;
+            }
+
+            const double le = lower_energy[i];
+
+            // Common reference temperature normalization
+            double denominator =
+                (1.0 - std::exp(-c2 * lc / 296.0)) * std::exp(-c2 * le / 296.0);
+
+#pragma omp parallel for num_threads(num_threads) schedule(dynamic)
+            for (int g = 0; g < n_geo; ++g) {
+                const double T = temperature[g];
+                const double P = pressure[g];
+                const double Pself = pself[g];
+
+                double numerator =
+                    std::exp(-c2 * le / T) * (1.0 - std::exp(-c2 * lc / T));
+
+                double common_factor = numerator / denominator;
+                int iso_index = iso_id[i] - 1;
+                double partition_factor = 1.0 / partitions(g, iso_index);
+                double adjusted_line_intensity =
+                    line_intensity[i] * common_factor * partition_factor;
+
+                double mol_mass = molecular_mass[iso_index];
+                double doppler_width = lc / SPEED_OF_LIGHT *
+                                       std::sqrt(NA * K_B * T / mol_mass) /
+                                       inv_sqrt2;
+
+                // Compute gamma (Lorentz broadening)
+                double g_air = gamma_air[i];
+                double g_self = gamma_self[i];
+                double da = delta_air[i];
+                double na = n_air[i];
+
+                double gamma_val = std::pow(296.0 / T, na) *
+                                   (g_air * (P - Pself) + g_self * Pself);
+
+                double shifted_center = lc + da * P;
+
+                double y = gamma_val / doppler_width;
+                // Compute line shape
+                double norm_factor =
+                    1.0 / (sqrt_2pi * doppler_width * inv_sqrt2);
+
+                double normalized_intensity =
+                    adjusted_line_intensity * norm_factor;
+
+                // condition for lorentzian x * x > 1.52 / epsilon - 2.84 * y * y => x = sqrt(1.52 / epsilon - 2.84 * y * y)
+                int lorentzian_low = 0;
+                int lorentzian_high = 0;
+                // condition for gaussian is abs(x) < 2.15 - 2.53 * y / epsilon
+                
+                if(2.84 * y * y > 1.52 / epsilon) {
+                    // Entirely lorentzian, skip the split
+                    for (size_t w = start_wavenumber_idx; w < end_wavenumber_idx;
+                         ++w) {
+                        double x =
+                            (w * wavenumber_spacing + first_wavenumber - shifted_center) / doppler_width;
+
+                        result(w, g) +=
+                            lorentzian(x, y) * normalized_intensity;
+                    }
+                } else {
+                    double max_x = end_wavenumber_idx * wavenumber_spacing + first_wavenumber / doppler_width;
+                    double min_x = start_wavenumber_idx * wavenumber_spacing + first_wavenumber / doppler_width;
+
+                    double max_abs_x = std::max(std::abs(max_x), std::abs(min_x));
+
+                    if(max_abs_x < 2.15 - 2.53 * y / epsilon) {
+                        // Entirely gaussian, skip the split
+                        for (size_t w = start_wavenumber_idx; w < end_wavenumber_idx;
+                             ++w) {
+                            double x =
+                                (w * wavenumber_spacing + first_wavenumber - shifted_center) / doppler_width;
+
+                            result(w, g) +=
+                                gaussian(x, y) * normalized_intensity;
+                        }
+                    } else {
+                        // Find the lorentzian split point
+                        double split_x = std::sqrt(1.52 / epsilon - 2.84 * y * y);
+                        
+                        // Distance from the line center to the split point in index units
+                        int lorentzian_split = floor((split_x * doppler_width) / wavenumber_spacing);
+
+                        if(zero_pivot + lorentzian_split > end_wavenumber_idx) {
+                            lorentzian_split = end_wavenumber_idx - zero_pivot;
+                        }
+                        if(zero_pivot - lorentzian_split < start_wavenumber_idx) {
+                            lorentzian_split = zero_pivot - start_wavenumber_idx;
+                        }
+
+
+                        for(size_t w = start_wavenumber_idx; w < zero_pivot - lorentzian_split; ++w) {
+                            double x =
+                                (w * wavenumber_spacing + first_wavenumber - shifted_center) / doppler_width;
+
+                            result(w, g) +=
+                                lorentzian(x, y) * normalized_intensity;
+                        }
+
+                        for(size_t w = zero_pivot - lorentzian_split; w < zero_pivot + lorentzian_split; ++w) {
+                            double x =
+                                (w * wavenumber_spacing + first_wavenumber - shifted_center) / doppler_width;
+
+                            result(w, g) +=
+                                CustomFaddeeva::faddeeva_w(x, y).real() *
+                                normalized_intensity;
+                        }
+
+                        for(size_t w = zero_pivot + lorentzian_split; w < end_wavenumber_idx; ++w) {
+                            double x =
+                                (w * wavenumber_spacing + first_wavenumber - shifted_center) / doppler_width;
+
+                            result(w, g) +=
+                                lorentzian(x, y) * normalized_intensity;
+                        }
+                    }
+                    if (subtract_pedastal) {
+                        double x = line_contribution_width / doppler_width;
+                        result(Eigen::seq(start_wavenumber_idx, end_wavenumber_idx - 1), g).array() -=
+                            voigt(x, y) * normalized_intensity;
+                    }
+                }
+            }
+        }
+    }
+
     /**
      * Broadens the input line data using the Voigt profile. All values are
      * assumed to be in cgs units unless otherwise specified. The result matrix
@@ -309,6 +547,198 @@ namespace sasktran2::math::spectroscopy {
      * to 1.
      */
     inline void voigt_broaden(
+        Eigen::Ref<const Eigen::VectorXd> line_center,     // [line]
+        Eigen::Ref<const Eigen::VectorXd> line_intensity,  // [line]
+        Eigen::Ref<const Eigen::VectorXd> lower_energy,    // [line]
+        Eigen::Ref<const Eigen::VectorXd> gamma_air,       // [line]
+        Eigen::Ref<const Eigen::VectorXd> gamma_self,      // [line]
+        Eigen::Ref<const Eigen::VectorXd> delta_air,       // [line]
+        Eigen::Ref<const Eigen::VectorXd> n_air,           // [line]
+        Eigen::Ref<const Eigen::VectorXi> iso_id,          // [line]
+        Eigen::Ref<const Eigen::MatrixXd> partitions,      // [ngeo, num_isotop]
+        Eigen::Ref<const Eigen::VectorXd> molecular_mass,  // [num_isotop]
+        Eigen::Ref<const Eigen::VectorXd> pressure,        // [geometry]
+        Eigen::Ref<const Eigen::VectorXd> pself,           // [geometry]
+        Eigen::Ref<const Eigen::VectorXd> temperature,     // [geometry]
+        Eigen::Ref<const Eigen::VectorXd> wavenumber_grid, // [wavenumber]
+        Eigen::Ref<Eigen::MatrixXd> result, // [wavenumber, geometry]
+        double line_contribution_width = 25.0, double cull_factor = 0.0,
+        const int num_threads = 1, const double interpolation_delta = 0.0,
+        bool subtract_pedastal = false) {
+        // Constants (cgs)
+        const double c2 = 1.4387769;
+        const double SPEED_OF_LIGHT = 2.99792458e10;
+        const double NA = 6.02214179e23;
+        const double K_B = 1.38064852e-16;
+
+        const int n_line = static_cast<int>(line_center.size());
+        const int n_geo = static_cast<int>(pressure.size());
+        const int n_wavenumber = static_cast<int>(wavenumber_grid.size());
+
+        const double epsilon = 1e-4;
+
+        // Initialize result to zero
+        result.setZero();
+
+        double max_p_self = pself.maxCoeff();
+        if (max_p_self == 0) {
+            max_p_self = 1.0;
+        }
+
+        double first_wavenumber = wavenumber_grid[0];
+        double last_wavenumber = wavenumber_grid[n_wavenumber - 1];
+        // Find the first line is that is > 25 cm^-1 from the first wavenumber
+        const double* line_begin = line_center.data();
+        const double* line_end = line_center.data() + n_line;
+        const double* first_line_it = std::lower_bound(
+            line_begin, line_end, first_wavenumber - line_contribution_width);
+
+        const double* last_line_it = std::lower_bound(
+            line_begin, line_end, last_wavenumber + line_contribution_width);
+
+        int start_line_idx =
+            static_cast<int>(std::distance(line_begin, first_line_it));
+        int end_line_idx =
+            static_cast<int>(std::distance(line_begin, last_line_it));
+
+        // Now we have our lines that can potentially contribute, we want to
+        // keep track of the lower and upper indicies on the wavenumber grid
+        // that the line can contribute to
+        int start_wavenumber_idx = 0;
+        int end_wavenumber_idx = 0;
+        int zero_pivot = 0;
+
+        // For certian y values we can switch to lorentzian profiles, 
+        // if 2.84 * y *y > 1.52 / epsilon we can use lorentzian for all x
+
+        // condition for lorentzian x * x > 1.52 / epsilon - 2.84 * y * y
+        int lorentzian_low = 0;
+        int lorentzian_high = 0;
+        // condition for gaussian is abs(x) < 2.15 - 2.53 * y / epsilon
+
+
+        for (int i = start_line_idx; i < end_line_idx; ++i) {
+            const double lc = line_center[i];
+
+            if (line_intensity[i] * 101325 * max_p_self / (K_B * 1e-7 * 296) <
+                cull_factor) {
+                continue;
+            }
+
+            while (wavenumber_grid[start_wavenumber_idx] <
+                       lc - line_contribution_width &&
+                   start_wavenumber_idx < n_wavenumber) {
+                start_wavenumber_idx++;
+            }
+            while (wavenumber_grid[end_wavenumber_idx] <
+                       lc + line_contribution_width &&
+                   end_wavenumber_idx < n_wavenumber) {
+                end_wavenumber_idx++;
+            }
+
+            while(wavenumber_grid[zero_pivot] < 0 && zero_pivot < end_wavenumber_idx) {
+                zero_pivot++;
+            }
+
+            if (start_wavenumber_idx == end_wavenumber_idx) {
+                continue;
+            }
+
+            const double le = lower_energy[i];
+
+            // Common reference temperature normalization
+            double denominator =
+                (1.0 - std::exp(-c2 * lc / 296.0)) * std::exp(-c2 * le / 296.0);
+
+#pragma omp parallel for num_threads(num_threads) schedule(dynamic)
+            for (int g = 0; g < n_geo; ++g) {
+                const double T = temperature[g];
+                const double P = pressure[g];
+                const double Pself = pself[g];
+
+                double numerator =
+                    std::exp(-c2 * le / T) * (1.0 - std::exp(-c2 * lc / T));
+
+                double common_factor = numerator / denominator;
+                int iso_index = iso_id[i] - 1;
+                double partition_factor = 1.0 / partitions(g, iso_index);
+                double adjusted_line_intensity =
+                    line_intensity[i] * common_factor * partition_factor;
+
+                double mol_mass = molecular_mass[iso_index];
+                double doppler_width = lc / SPEED_OF_LIGHT *
+                                       std::sqrt(NA * K_B * T / mol_mass) /
+                                       inv_sqrt2;
+
+                // Compute gamma (Lorentz broadening)
+                double g_air = gamma_air[i];
+                double g_self = gamma_self[i];
+                double da = delta_air[i];
+                double na = n_air[i];
+
+                double gamma_val = std::pow(296.0 / T, na) *
+                                   (g_air * (P - Pself) + g_self * Pself);
+
+                double shifted_center = lc + da * P;
+
+                double y = gamma_val / doppler_width;
+                // Compute line shape
+                double norm_factor =
+                    1.0 / (sqrt_2pi * doppler_width * inv_sqrt2);
+
+                double normalized_intensity =
+                    adjusted_line_intensity * norm_factor;
+
+
+                for (size_t w = start_wavenumber_idx; w < end_wavenumber_idx;
+                        ++w) {
+                    double x =
+                        (wavenumber_grid[w] - shifted_center) / doppler_width;
+
+                    result(w, g) +=
+                        voigt(x, y) * normalized_intensity;
+                }
+                if (subtract_pedastal) {
+                    double x = line_contribution_width / doppler_width;
+                    result(Eigen::seq(start_wavenumber_idx, end_wavenumber_idx - 1), g).array() -=
+                        voigt(x, y) * normalized_intensity;
+                }
+
+            }
+        }
+    }
+
+    /**
+     * Broadens the input line data using the Voigt profile. All values are
+     * assumed to be in cgs units unless otherwise specified. The result matrix
+     * is filled with the broadened line data.
+     *
+     * @param line_center Central vacuum wavenumber of the line [line]
+     * @param line_intensity Line intensity [line]
+     * @param lower_energy Lower enregy level of the line [line]
+     * @param gamma_air Lorentz broadening due to air [line]
+     * @param gamma_self Lorentz broadening due to self [line]
+     * @param delta_air Pressure shift due to air [line]
+     * @param n_air [line]
+     * @param iso_id Identifier for the isotopalog [line]
+     * @param partitions Partition function ratios at the specified temperatures
+     * for each isotopalog [ngeo, num_isotop]
+     * @param molecular_mass Molecular mass of each isotopalog [num_isotop]
+     * @param pressure Partial pressure at each geometry (Pressure in Pa /
+     * 101325) [geometry]
+     * @param pself Self partial pressure at each geometry [geometry]
+     * @param temperature Temperature in K at each geometry [geometry]
+     * @param wavenumber_grid Wavenumber grid to produce the result on
+     * [wavenumber]
+     * @param result Resulting cross sections [geometry, wavenumber]
+     * @param line_contribution_width +/- from the line center to consider.
+     * Defaults to 25 [cm^-1]
+     * @param cull_factor Lines with total estimated vertical column relative
+     * optical depth less than this value are culled. Defaults to 0.0
+     * @param num_threads Number of threads to use if OMP is enabled. Defaults
+     * to 1.
+     */
+    inline void voigt_broaden_old(
         Eigen::Ref<const Eigen::VectorXd> line_center,     // [line]
         Eigen::Ref<const Eigen::VectorXd> line_intensity,  // [line]
         Eigen::Ref<const Eigen::VectorXd> lower_energy,    // [line]
