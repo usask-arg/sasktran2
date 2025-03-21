@@ -148,10 +148,6 @@ namespace sasktran2 {
                 m_sza_grid.calculate_interpolation_weights(
                     cos_sza, sza_index, sza_weight, num_sza_contrib);
 
-                std::cout << "Angle WEights" << cos_angle << " --- "
-                          << angle_weight[0] << " --- " << angle_weight[1]
-                          << std::endl;
-
                 for (int szaidx = 0; szaidx < num_sza_contrib; ++szaidx) {
                     for (int altidx = 0; altidx < num_alt_contrib; ++altidx) {
                         for (int angleidx = 0; angleidx < num_angle_contrib;
