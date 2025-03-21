@@ -12,6 +12,16 @@
 template <int NSTOKES> class SourceTermInterface {
   protected:
   public:
+    // Enum determinig the direction the source integration happens
+    // Knowing the direction of integration when calculating the source can
+    // enable some optimization. This is essentially a contract from the user to
+    // the source term indicating the order that integrated_source will be
+    // called in backward indicates we are starting at the end of the LOS, and
+    // moving towards the observer forward indicates we are starting at the
+    // observer and moving towards the end of the LOS none indicates that the
+    // source should not assume any direction of integration
+    enum class IntegrationDirection { forward, backward, none };
+
     virtual ~SourceTermInterface(){};
 
     virtual void initialize_config(const sasktran2::Config& config){};
@@ -55,8 +65,8 @@ template <int NSTOKES> class SourceTermInterface {
         int wavelidx, int losidx, int layeridx, int wavel_threadidx,
         int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
         const sasktran2::SparseODDualView& shell_od,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
-        const = 0;
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
+        IntegrationDirection direction = IntegrationDirection::none) const = 0;
 
     /** Calculates the source term at the end of the ray.  Common examples of
      * this are ground scattering, ground emission, or the solar radiance if

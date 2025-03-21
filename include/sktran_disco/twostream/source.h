@@ -123,8 +123,9 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
         int wavelidx, int losidx, int layeridx, int wavel_threadidx,
         int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
         const sasktran2::SparseODDualView& shell_od,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
-        const {};
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
+        typename SourceTermInterface<NSTOKES>::IntegrationDirection direction =
+            SourceTermInterface<NSTOKES>::IntegrationDirection::none) const {};
 
     virtual void end_of_ray_source(
         int wavelidx, int losidx, int wavel_threadidx, int threadidx,

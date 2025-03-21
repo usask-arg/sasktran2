@@ -2,6 +2,10 @@
 (_changelog)=
 # Changelog
 
+## 2025.03.0
+- Fixed a bug with the successive orders source when viewing the ground in extreme scattering angles
+- Various speed improvements
+
 ## 2025.02.2
 - Add config.output_los_optical_depth to enable diagnostic optical depth calculations for the LOS
 - Add the option to combine two optical properties together using the + method, currently only works for absorbing species
