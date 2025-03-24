@@ -54,8 +54,6 @@ class VMRAltitudeAbsorber(Constituent):
         self._vmr = vmr
 
     def add_to_atmosphere(self, atmo: Atmosphere):
-        self._optical_quants = self._optical_property.atmosphere_quantities(atmo)
-
         if atmo.pressure_pa is None or atmo.temperature_k is None:
             msg = "Both pressure_pa and temperature_k have to be specified in the atmosphere to use VMRAltitudeAbsorber"
             raise ValueError(msg)
@@ -69,6 +67,10 @@ class VMRAltitudeAbsorber(Constituent):
         )
 
         interp_vmr = interp_matrix @ self._vmr
+
+        self._optical_quants = self._optical_property.atmosphere_quantities(
+            atmo, vmr=interp_vmr
+        )
 
         atmo.storage.total_extinction += (
             self._optical_quants.extinction
