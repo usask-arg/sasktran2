@@ -371,7 +371,10 @@ namespace sasktran2 {
             int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
             const sasktran2::SparseODDualView& shell_od,
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                source) const;
+                source,
+            typename SourceTermInterface<
+                NSTOKES>::IntegrationDirection direction =
+                SourceTermInterface<NSTOKES>::IntegrationDirection::none) const;
 
         /**
          * @brief Not used for the DO Interpolated Post Processing source.
@@ -448,7 +451,11 @@ namespace sasktran2 {
             int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
             const sasktran2::SparseODDualView& shell_od,
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                source) const {};
+                source,
+            typename SourceTermInterface<NSTOKES>::IntegrationDirection
+                direction =
+                    SourceTermInterface<NSTOKES>::IntegrationDirection::none)
+            const {};
 
         void end_of_ray_source(
             int wavelidx, int losidx, int wavel_threadidx, int threadidx,

@@ -507,7 +507,8 @@ namespace sasktran2::hr {
             saa_initial);
 
         return m_geometry.coordinates().look_vector_from_azimuth(
-            new_position, saa_initial, temp.cos_zenith_angle(vector));
+            new_position, EIGEN_PI - saa_initial,
+            temp.cos_zenith_angle(vector));
     }
 
     template <int NSTOKES>
@@ -576,14 +577,14 @@ namespace sasktran2::hr {
 
                     if (m_geometry.coordinates().geometry_type() ==
                         sasktran2::geometrytype::spherical) {
-                        // Multiply by -1 to get the propagation direction
+                        // Multiply by -1 to get the propagation direction? Or
+                        // not, I think the -1 is done in the interpolator
                         rotated_los = rotate_unit_vector(
-                            -1 * layer.average_look_away,
-                            temp_location.position,
+                            layer.average_look_away, temp_location.position,
                             contributing_point->location().position);
                     } else {
                         // Don't need to rotate in plane parallel geometry
-                        rotated_los = -1 * layer.average_look_away;
+                        rotated_los = layer.average_look_away;
                     }
 
                     contributing_point->sphere_pair()
@@ -956,7 +957,8 @@ namespace sasktran2::hr {
         int wavelidx, int losidx, int layeridx, int wavel_threadidx,
         int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
         const sasktran2::SparseODDualView& shell_od,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
+        typename SourceTermInterface<NSTOKES>::IntegrationDirection direction)
         const {
         auto& storage = m_thread_storage[wavel_threadidx];
 

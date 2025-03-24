@@ -1,4 +1,5 @@
 
+#include "sasktran2/source_interface.h"
 #include <sasktran2/source_integrator.h>
 
 namespace sasktran2 {
@@ -91,9 +92,11 @@ namespace sasktran2 {
 
             // Calculate all of the layer sources
             for (const auto& source : source_terms) {
-                source->integrated_source(wavelidx, rayidx, j, wavel_threadidx,
-                                          threadidx, layer, local_shell_od,
-                                          radiance);
+                source->integrated_source(
+                    wavelidx, rayidx, j, wavel_threadidx, threadidx, layer,
+                    local_shell_od, radiance,
+                    SourceTermInterface<
+                        NSTOKES>::IntegrationDirection::backward);
             }
 
 #ifdef SASKTRAN_DEBUG_ASSERTS
@@ -152,9 +155,11 @@ namespace sasktran2 {
             // Calculate all of the layer sources
             layer_source.value.setZero();
             for (const auto& source : source_terms) {
-                source->integrated_source(wavelidx, rayidx, j, wavel_threadidx,
-                                          threadidx, layer, local_shell_od,
-                                          layer_source);
+                source->integrated_source(
+                    wavelidx, rayidx, j, wavel_threadidx, threadidx, layer,
+                    local_shell_od, layer_source,
+                    SourceTermInterface<
+                        NSTOKES>::IntegrationDirection::forward);
             }
 
             radiance.value += layer_source.value * atten_factor;

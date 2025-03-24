@@ -1,5 +1,6 @@
 #pragma once
 
+#include "sasktran2/atmosphere/grid_storage.h"
 #include "sasktran2/geometry.h"
 #include <sasktran2/source_interface.h>
 #include <sasktran2/raytracing.h>
@@ -226,6 +227,57 @@ namespace sasktran2::solartransmission {
                                      NSTOKES>& source) const;
     };
 
+    template <int NSTOKES>
+    inline void scattering_source(
+        const PhaseHandler<NSTOKES>& phase_handler, int threadidx, int losidx,
+        int layeridx, int wavelidx,
+        const std::vector<std::pair<int, double>>& index_weights,
+        bool is_entrance, double solar_trans,
+        const atmosphere::Atmosphere<NSTOKES>& atmosphere,
+        Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
+            solar_trans_iter,
+        bool calculate_derivatives,
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
+        double& ssa, double& k) {
+        const auto& storage = atmosphere.storage();
+        source.value.setZero();
+
+        if (calculate_derivatives) {
+            source.deriv.setZero();
+        }
+
+        ssa = 0;
+        k = 0;
+        for (auto& ele : index_weights) {
+            ssa += storage.ssa(ele.first, wavelidx) * ele.second;
+
+            k += storage.total_extinction(ele.first, wavelidx) * ele.second;
+        }
+
+        source.value(0) = k * ssa * solar_trans / (EIGEN_PI * 4);
+
+        phase_handler.scatter(threadidx, losidx, layeridx, index_weights,
+                              is_entrance, source);
+
+        if (!calculate_derivatives) {
+            return;
+        }
+        // Solar transmission derivative factors
+        for (auto it = solar_trans_iter; it; ++it) {
+            source.deriv(Eigen::all, it.index()) -= it.value() * source.value;
+        }
+
+        // And SSA/k derivative factors
+        for (auto& ele : index_weights) {
+            source.deriv(Eigen::all,
+                         atmosphere.ssa_deriv_start_index() + ele.first) +=
+                ele.second * source.value / ssa;
+
+            source.deriv(Eigen::all, ele.first) +=
+                ele.second * source.value / k;
+        }
+    }
+
     template <typename S, int NSTOKES>
     class SingleScatterSource : public SourceTermInterface<NSTOKES> {
       private:
@@ -274,7 +326,9 @@ namespace sasktran2::solartransmission {
             int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
             const sasktran2::SparseODDualView& shell_od,
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                source) const;
+                source,
+            typename SourceTermInterface<NSTOKES>::IntegrationDirection
+                direction) const;
 
         void integrated_source_linear(
             int wavelidx, int losidx, int layeridx, int wavel_threadidx,
@@ -330,7 +384,11 @@ namespace sasktran2::solartransmission {
             int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
             const sasktran2::SparseODDualView& shell_od,
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                source) const override;
+                source,
+            typename SourceTermInterface<NSTOKES>::IntegrationDirection
+                direction =
+                    SourceTermInterface<NSTOKES>::IntegrationDirection::none)
+            const override;
 
         /** Calculates the source term at the end of the ray.  Common examples
          * of this are ground scattering, ground emission, or the solar radiance
@@ -405,7 +463,11 @@ namespace sasktran2::solartransmission {
             int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
             const sasktran2::SparseODDualView& shell_od,
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                source) const override;
+                source,
+            typename SourceTermInterface<NSTOKES>::IntegrationDirection
+                direction =
+                    SourceTermInterface<NSTOKES>::IntegrationDirection::none)
+            const override;
 
         /** Calculates the source term at the end of the ray.  Common examples
          * of this are ground scattering, ground emission, or the solar radiance
