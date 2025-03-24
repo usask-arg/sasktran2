@@ -1666,8 +1666,8 @@ namespace CustomFaddeeva {
              */
             const double ispi = 0.56418958354775628694807945156; // 1 / sqrt(pi)
             double xs = y < 0 ? -x : x; // compute for -z if y < 0
-            if (x + ya > 4000) {                      // nu <= 2
-                if (x + ya > 1e7) { // nu == 1, w(z) = i/sqrt(pi) / z
+            if (x + ya > 4000) {        // nu <= 2
+                if (x + ya > 1e7) {     // nu == 1, w(z) = i/sqrt(pi) / z
                     // scale to avoid overflow
                     if (x > ya) {
                         double yax = ya / xs;
@@ -1854,11 +1854,11 @@ namespace CustomFaddeeva {
         double sum1 = 0, sum2 = 0, sum3 = 0, sum4 = 0, sum5 = 0;
 
         if (y > 7 || (x > 6 // continued fraction is faster
-                       /* As pointed out by M. Zaghloul, the continued
-                          fraction seems to give a large relative error in
-                          Re w(z) for |x| ~ 6 and small |y|, so use
-                          algorithm 816 in this region: */
-                       && (y > 0.1 || (x > 8 && y > 1e-10) || x > 28))) {
+                      /* As pointed out by M. Zaghloul, the continued
+                         fraction seems to give a large relative error in
+                         Re w(z) for |x| ~ 6 and small |y|, so use
+                         algorithm 816 in this region: */
+                      && (y > 0.1 || (x > 8 && y > 1e-10) || x > 28))) {
 
             /* Poppe & Wijers suggest using a number of terms
                    nu = 3 + 1442 / (26*rho + 77)
@@ -1872,7 +1872,7 @@ namespace CustomFaddeeva {
                precision. I also separate the regions where nu == 2 and nu == 1.
              */
             const double ispi = 0.56418958354775628694807945156; // 1 / sqrt(pi)
-            if (x + y > 4000) {                      // nu <= 2
+            if (x + y > 4000) {                                  // nu <= 2
                 if (x + y > 1e7) { // nu == 1, w(z) = i/sqrt(pi) / z
                     // scale to avoid overflow
                     if (x > y) {
@@ -1939,7 +1939,7 @@ namespace CustomFaddeeva {
                 if ((coef * prod2ax) * (a * n) < DBL_EPSILON * sum5)
                     break;
             }
-            
+
             const double
                 expx2erfcxy = // avoid spurious overflow for large negative y
                 y > -6 // for y < -6, erfcx(y) = 2*exp(y*y) to double precision

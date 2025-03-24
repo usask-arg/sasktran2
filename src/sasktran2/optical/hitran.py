@@ -8,20 +8,26 @@ from sasktran2.atmosphere import Atmosphere
 from sasktran2.database.aer_line import AERLineDatabase
 from sasktran2.database.hitran_line import HITRANLineDatabase
 from sasktran2.optical.base import OpticalProperty, OpticalQuantities
-from sasktran2.spectroscopy import voigt_broaden, voigt_broaden_uniform
+from sasktran2.spectroscopy import (
+    voigt_broaden,
+    voigt_broaden_uniform,
+    voigt_broaden_with_line_coupling,
+)
 from sasktran2.util import get_hapi
 
 
 class LineAbsorber(OpticalProperty):
-    def __init__(self, molecule: str, line_db, line_fn="voigt", **kwargs):
+    def __init__(
+        self, molecule: str, line_db, line_fn="voigt", line_coupling=False, **kwargs
+    ):
         """
-        Absorption cross sections calculated using discrete absorption lines from the HITRAN database
+        Absorption cross sections calculated using discrete absorption lines from a HITRAN-like database
         and broadened using the internal SASKTRAN2 Voigt line shape function.
 
         Notes:
 
-        The HITRAN database is not included with SASKTRAN2 and must be downloaded separately. The hitran-api package
-        is required.
+        A line database is not included with SASKTRAN2 and must be downloaded separately. The hitran-api package
+        is required to use HITRAN lines, and the zenodo_get package is required to download the AER line database.
 
         Broadening is calculated "online" rather than using pre-computed tables. This is slower but allows for
         more flexibility in the calculation.
@@ -32,6 +38,8 @@ class LineAbsorber(OpticalProperty):
         ----------
         molecule : str
             HITRAN Molecule identifier, e.g. "CO2", "H2O", "O3", "CH4"
+        line_db : LineDatabase
+            Line database to use, one of HITRANLineDatabase or AERLineDatabase
         line_fn : str
             Line shape function to use, currently only "voigt" is supported
         kwargs : dict
@@ -40,6 +48,7 @@ class LineAbsorber(OpticalProperty):
         self._line_db = line_db.load_ds(molecule)
         self._molecule = molecule
         self._kwargs = kwargs
+        self._line_coupling = line_coupling
 
         if line_fn != "voigt":
             msg = "Only Voigt line shape is supported"
@@ -67,6 +76,7 @@ class LineAbsorber(OpticalProperty):
             temperature_k=atmo.temperature_k,
             pressure_pa=atmo.pressure_pa,
             num_threads=atmo._config.num_threads,
+            **kwargs,
         ).T
         return result
 
@@ -114,8 +124,62 @@ class LineAbsorber(OpticalProperty):
             order="f",
         )
 
+        partial_pressures = kwargs.get("vmr", np.zeros(len(pressure_pa))) * pressure_pa
         logging.debug(f"Starting Broadening for {self._molecule}")
-        if True:
+
+        if self._line_coupling:
+            Y_arr = np.zeros((len(temperature_k), len(self._line_db.nu)), order="f")
+            G_arr = np.zeros((len(temperature_k), len(self._line_db.nu)), order="f")
+
+            Y = (
+                self._line_db["Y"]
+                .fillna(0.0)
+                .interp(temperature=temperature_k, kwargs={"fill_value": 0.0})
+            )
+            G = (
+                self._line_db["G"]
+                .fillna(0.0)
+                .interp(temperature=temperature_k, kwargs={"fill_value": 0.0})
+            )
+
+            Y_arr[:, :] = Y.to_numpy()
+            G_arr[:, :] = G.to_numpy()
+
+            voigt_broaden_with_line_coupling(
+                self._line_db.nu.to_numpy(),
+                self._line_db.sw.to_numpy(),
+                self._line_db.elower.to_numpy(),
+                self._line_db.gamma_air.to_numpy(),
+                self._line_db.gamma_self.to_numpy(),
+                self._line_db.delta_air.to_numpy(),
+                self._line_db.n_air.to_numpy(),
+                self._line_db.local_iso_id.to_numpy(),
+                partition_ratio,
+                Y_arr,
+                G_arr,
+                molecular_mass,
+                pressure_pa / 101325.0,
+                np.ones(len(pressure_pa)) * 0,
+                temperature_k,
+                wavenumbers_cminv[sidx],
+                result,
+                num_threads=num_threads,
+                **self._kwargs,
+            )
+            result[sidx, :] = result
+
+            # Line coupling numerics can give very small negative values
+            result[result < 0] = 0.0
+
+            return result / 1e4
+
+        # else
+        # Check if the input is uniform wavenumber grid
+        uniform_grid = np.allclose(
+            np.diff(wavenumbers_cminv), np.diff(wavenumbers_cminv)[0], atol=1e-6
+        )
+
+        if uniform_grid:
             voigt_broaden_uniform(
                 self._line_db.nu.to_numpy(),
                 self._line_db.sw.to_numpy(),
@@ -128,7 +192,7 @@ class LineAbsorber(OpticalProperty):
                 partition_ratio,
                 molecular_mass,
                 pressure_pa / 101325.0,
-                np.ones(len(pressure_pa)) * 0,
+                partial_pressures / 101325.0,
                 temperature_k,
                 wavenumbers_cminv[0],
                 wavenumbers_cminv[1] - wavenumbers_cminv[0],
@@ -141,7 +205,6 @@ class LineAbsorber(OpticalProperty):
 
             return result / 1e4
 
-        logging.debug(f"Starting Broadening for {self._molecule}")
         voigt_broaden(
             self._line_db.nu.to_numpy(),
             self._line_db.sw.to_numpy(),

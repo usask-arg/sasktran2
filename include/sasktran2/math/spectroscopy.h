@@ -159,7 +159,7 @@ namespace sasktran2::math::spectroscopy {
      * @return double
      */
     inline double voigt(double x, double y) {
-        //return Faddeeva::w(std::complex<double>(x, y)).real();
+        // return Faddeeva::w(std::complex<double>(x, y)).real();
 
         // All of this branching just ended up being slower
         const double epsilon = 1e-4;
@@ -272,8 +272,6 @@ namespace sasktran2::math::spectroscopy {
         }
     }
 
-
-
     /**
      * Broadens the input line data using the Voigt profile. All values are
      * assumed to be in cgs units unless otherwise specified. The result matrix
@@ -304,22 +302,21 @@ namespace sasktran2::math::spectroscopy {
      * @param num_threads Number of threads to use if OMP is enabled. Defaults
      * to 1.
      */
-     inline void voigt_broaden_uniform(
-        Eigen::Ref<const Eigen::VectorXd> line_center,     // [line]
-        Eigen::Ref<const Eigen::VectorXd> line_intensity,  // [line]
-        Eigen::Ref<const Eigen::VectorXd> lower_energy,    // [line]
-        Eigen::Ref<const Eigen::VectorXd> gamma_air,       // [line]
-        Eigen::Ref<const Eigen::VectorXd> gamma_self,      // [line]
-        Eigen::Ref<const Eigen::VectorXd> delta_air,       // [line]
-        Eigen::Ref<const Eigen::VectorXd> n_air,           // [line]
-        Eigen::Ref<const Eigen::VectorXi> iso_id,          // [line]
-        Eigen::Ref<const Eigen::MatrixXd> partitions,      // [ngeo, num_isotop]
-        Eigen::Ref<const Eigen::VectorXd> molecular_mass,  // [num_isotop]
-        Eigen::Ref<const Eigen::VectorXd> pressure,        // [geometry]
-        Eigen::Ref<const Eigen::VectorXd> pself,           // [geometry]
-        Eigen::Ref<const Eigen::VectorXd> temperature,     // [geometry]
-        double first_wavenumber,
-        double wavenumber_spacing,
+    inline void voigt_broaden_uniform(
+        Eigen::Ref<const Eigen::VectorXd> line_center,    // [line]
+        Eigen::Ref<const Eigen::VectorXd> line_intensity, // [line]
+        Eigen::Ref<const Eigen::VectorXd> lower_energy,   // [line]
+        Eigen::Ref<const Eigen::VectorXd> gamma_air,      // [line]
+        Eigen::Ref<const Eigen::VectorXd> gamma_self,     // [line]
+        Eigen::Ref<const Eigen::VectorXd> delta_air,      // [line]
+        Eigen::Ref<const Eigen::VectorXd> n_air,          // [line]
+        Eigen::Ref<const Eigen::VectorXi> iso_id,         // [line]
+        Eigen::Ref<const Eigen::MatrixXd> partitions,     // [ngeo, num_isotop]
+        Eigen::Ref<const Eigen::VectorXd> molecular_mass, // [num_isotop]
+        Eigen::Ref<const Eigen::VectorXd> pressure,       // [geometry]
+        Eigen::Ref<const Eigen::VectorXd> pself,          // [geometry]
+        Eigen::Ref<const Eigen::VectorXd> temperature,    // [geometry]
+        double first_wavenumber, double wavenumber_spacing,
         Eigen::Ref<Eigen::MatrixXd> result, // [wavenumber, geometry]
         double line_contribution_width = 25.0, double cull_factor = 0.0,
         const int num_threads = 1, const double interpolation_delta = 0.0,
@@ -334,7 +331,8 @@ namespace sasktran2::math::spectroscopy {
         const int n_geo = static_cast<int>(pressure.size());
         const int n_wavenumber = static_cast<int>(result.rows());
 
-        double last_wavenumber = first_wavenumber + wavenumber_spacing * (n_wavenumber - 1);
+        double last_wavenumber =
+            first_wavenumber + wavenumber_spacing * (n_wavenumber - 1);
 
         const double epsilon = 1e-4;
 
@@ -370,10 +368,12 @@ namespace sasktran2::math::spectroscopy {
                 continue;
             }
 
-
-
-            int start_wavenumber_idx = floor((lc - line_contribution_width - first_wavenumber) / wavenumber_spacing);
-            int end_wavenumber_idx = ceil((lc + line_contribution_width - first_wavenumber) / wavenumber_spacing);
+            int start_wavenumber_idx =
+                floor((lc - line_contribution_width - first_wavenumber) /
+                      wavenumber_spacing);
+            int end_wavenumber_idx =
+                ceil((lc + line_contribution_width - first_wavenumber) /
+                     wavenumber_spacing);
 
             if (start_wavenumber_idx < 0) {
                 start_wavenumber_idx = 0;
@@ -382,7 +382,8 @@ namespace sasktran2::math::spectroscopy {
                 end_wavenumber_idx = n_wavenumber;
             }
 
-            while(zero_pivot < end_wavenumber_idx && zero_pivot*wavenumber_spacing + first_wavenumber < lc) {
+            while (zero_pivot < end_wavenumber_idx &&
+                   zero_pivot * wavenumber_spacing + first_wavenumber < lc) {
                 zero_pivot++;
             }
 
@@ -435,72 +436,88 @@ namespace sasktran2::math::spectroscopy {
                 double normalized_intensity =
                     adjusted_line_intensity * norm_factor;
 
-                // condition for lorentzian x * x > 1.52 / epsilon - 2.84 * y * y => x = sqrt(1.52 / epsilon - 2.84 * y * y)
+                // condition for lorentzian x * x > 1.52 / epsilon - 2.84 * y *
+                // y => x = sqrt(1.52 / epsilon - 2.84 * y * y)
                 int lorentzian_low = 0;
                 int lorentzian_high = 0;
                 // condition for gaussian is abs(x) < 2.15 - 2.53 * y / epsilon
-                
-                if(2.84 * y * y > 1.52 / epsilon) {
-                    // Entirely lorentzian, skip the split
-                    for (size_t w = start_wavenumber_idx; w < end_wavenumber_idx;
-                         ++w) {
-                        double x =
-                            (w * wavenumber_spacing + first_wavenumber - shifted_center) / doppler_width;
 
-                        result(w, g) +=
-                            lorentzian(x, y) * normalized_intensity;
+                if (2.84 * y * y > 1.52 / epsilon) {
+                    // Entirely lorentzian, skip the split
+                    for (size_t w = start_wavenumber_idx;
+                         w < end_wavenumber_idx; ++w) {
+                        double x = (w * wavenumber_spacing + first_wavenumber -
+                                    shifted_center) /
+                                   doppler_width;
+
+                        result(w, g) += lorentzian(x, y) * normalized_intensity;
                     }
                 } else {
-                    double max_x = end_wavenumber_idx * wavenumber_spacing + first_wavenumber / doppler_width;
-                    double min_x = start_wavenumber_idx * wavenumber_spacing + first_wavenumber / doppler_width;
+                    double max_x = end_wavenumber_idx * wavenumber_spacing +
+                                   first_wavenumber / doppler_width;
+                    double min_x = start_wavenumber_idx * wavenumber_spacing +
+                                   first_wavenumber / doppler_width;
 
-                    double max_abs_x = std::max(std::abs(max_x), std::abs(min_x));
+                    double max_abs_x =
+                        std::max(std::abs(max_x), std::abs(min_x));
 
-                    if(max_abs_x < 2.15 - 2.53 * y / epsilon) {
+                    if (max_abs_x < 2.15 - 2.53 * y / epsilon) {
                         // Entirely gaussian, skip the split
-                        for (size_t w = start_wavenumber_idx; w < end_wavenumber_idx;
-                             ++w) {
-                            double x =
-                                (w * wavenumber_spacing + first_wavenumber - shifted_center) / doppler_width;
+                        for (size_t w = start_wavenumber_idx;
+                             w < end_wavenumber_idx; ++w) {
+                            double x = (w * wavenumber_spacing +
+                                        first_wavenumber - shifted_center) /
+                                       doppler_width;
 
                             result(w, g) +=
                                 gaussian(x, y) * normalized_intensity;
                         }
                     } else {
                         // Find the lorentzian split point
-                        double split_x = std::sqrt(1.52 / epsilon - 2.84 * y * y);
-                        
-                        // Distance from the line center to the split point in index units
-                        int lorentzian_split = floor((split_x * doppler_width) / wavenumber_spacing);
+                        double split_x =
+                            std::sqrt(1.52 / epsilon - 2.84 * y * y);
 
-                        if(zero_pivot + lorentzian_split > end_wavenumber_idx) {
+                        // Distance from the line center to the split point in
+                        // index units
+                        int lorentzian_split = floor((split_x * doppler_width) /
+                                                     wavenumber_spacing);
+
+                        if (zero_pivot + lorentzian_split >
+                            end_wavenumber_idx) {
                             lorentzian_split = end_wavenumber_idx - zero_pivot;
                         }
-                        if(zero_pivot - lorentzian_split < start_wavenumber_idx) {
-                            lorentzian_split = zero_pivot - start_wavenumber_idx;
+                        if (zero_pivot - lorentzian_split <
+                            start_wavenumber_idx) {
+                            lorentzian_split =
+                                zero_pivot - start_wavenumber_idx;
                         }
 
-
-                        for(size_t w = start_wavenumber_idx; w < zero_pivot - lorentzian_split; ++w) {
-                            double x =
-                                (w * wavenumber_spacing + first_wavenumber - shifted_center) / doppler_width;
+                        for (size_t w = start_wavenumber_idx;
+                             w < zero_pivot - lorentzian_split; ++w) {
+                            double x = (w * wavenumber_spacing +
+                                        first_wavenumber - shifted_center) /
+                                       doppler_width;
 
                             result(w, g) +=
                                 lorentzian(x, y) * normalized_intensity;
                         }
 
-                        for(size_t w = zero_pivot - lorentzian_split; w < zero_pivot + lorentzian_split; ++w) {
-                            double x =
-                                (w * wavenumber_spacing + first_wavenumber - shifted_center) / doppler_width;
+                        for (size_t w = zero_pivot - lorentzian_split;
+                             w < zero_pivot + lorentzian_split; ++w) {
+                            double x = (w * wavenumber_spacing +
+                                        first_wavenumber - shifted_center) /
+                                       doppler_width;
 
                             result(w, g) +=
                                 CustomFaddeeva::faddeeva_w(x, y).real() *
                                 normalized_intensity;
                         }
 
-                        for(size_t w = zero_pivot + lorentzian_split; w < end_wavenumber_idx; ++w) {
-                            double x =
-                                (w * wavenumber_spacing + first_wavenumber - shifted_center) / doppler_width;
+                        for (size_t w = zero_pivot + lorentzian_split;
+                             w < end_wavenumber_idx; ++w) {
+                            double x = (w * wavenumber_spacing +
+                                        first_wavenumber - shifted_center) /
+                                       doppler_width;
 
                             result(w, g) +=
                                 lorentzian(x, y) * normalized_intensity;
@@ -508,8 +525,10 @@ namespace sasktran2::math::spectroscopy {
                     }
                     if (subtract_pedastal) {
                         double x = line_contribution_width / doppler_width;
-                        result(Eigen::seq(start_wavenumber_idx, end_wavenumber_idx - 1), g).array() -=
-                            voigt(x, y) * normalized_intensity;
+                        result(Eigen::seq(start_wavenumber_idx,
+                                          end_wavenumber_idx - 1),
+                               g)
+                            .array() -= voigt(x, y) * normalized_intensity;
                     }
                 }
             }
@@ -608,14 +627,13 @@ namespace sasktran2::math::spectroscopy {
         int end_wavenumber_idx = 0;
         int zero_pivot = 0;
 
-        // For certian y values we can switch to lorentzian profiles, 
+        // For certian y values we can switch to lorentzian profiles,
         // if 2.84 * y *y > 1.52 / epsilon we can use lorentzian for all x
 
         // condition for lorentzian x * x > 1.52 / epsilon - 2.84 * y * y
         int lorentzian_low = 0;
         int lorentzian_high = 0;
         // condition for gaussian is abs(x) < 2.15 - 2.53 * y / epsilon
-
 
         for (int i = start_line_idx; i < end_line_idx; ++i) {
             const double lc = line_center[i];
@@ -636,7 +654,8 @@ namespace sasktran2::math::spectroscopy {
                 end_wavenumber_idx++;
             }
 
-            while(wavenumber_grid[zero_pivot] < 0 && zero_pivot < end_wavenumber_idx) {
+            while (wavenumber_grid[zero_pivot] < 0 &&
+                   zero_pivot < end_wavenumber_idx) {
                 zero_pivot++;
             }
 
@@ -689,21 +708,20 @@ namespace sasktran2::math::spectroscopy {
                 double normalized_intensity =
                     adjusted_line_intensity * norm_factor;
 
-
                 for (size_t w = start_wavenumber_idx; w < end_wavenumber_idx;
-                        ++w) {
+                     ++w) {
                     double x =
                         (wavenumber_grid[w] - shifted_center) / doppler_width;
 
-                    result(w, g) +=
-                        voigt(x, y) * normalized_intensity;
+                    result(w, g) += voigt(x, y) * normalized_intensity;
                 }
                 if (subtract_pedastal) {
                     double x = line_contribution_width / doppler_width;
-                    result(Eigen::seq(start_wavenumber_idx, end_wavenumber_idx - 1), g).array() -=
-                        voigt(x, y) * normalized_intensity;
+                    result(Eigen::seq(start_wavenumber_idx,
+                                      end_wavenumber_idx - 1),
+                           g)
+                        .array() -= voigt(x, y) * normalized_intensity;
                 }
-
             }
         }
     }
@@ -738,7 +756,7 @@ namespace sasktran2::math::spectroscopy {
      * @param num_threads Number of threads to use if OMP is enabled. Defaults
      * to 1.
      */
-    inline void voigt_broaden_old(
+    inline void voigt_broaden_with_line_coupling(
         Eigen::Ref<const Eigen::VectorXd> line_center,     // [line]
         Eigen::Ref<const Eigen::VectorXd> line_intensity,  // [line]
         Eigen::Ref<const Eigen::VectorXd> lower_energy,    // [line]
@@ -748,6 +766,8 @@ namespace sasktran2::math::spectroscopy {
         Eigen::Ref<const Eigen::VectorXd> n_air,           // [line]
         Eigen::Ref<const Eigen::VectorXi> iso_id,          // [line]
         Eigen::Ref<const Eigen::MatrixXd> partitions,      // [ngeo, num_isotop]
+        Eigen::Ref<const Eigen::MatrixXd> Y_coupling,      // [ngeo, line]
+        Eigen::Ref<const Eigen::MatrixXd> G_coupling,      // [ngeo, line]
         Eigen::Ref<const Eigen::VectorXd> molecular_mass,  // [num_isotop]
         Eigen::Ref<const Eigen::VectorXd> pressure,        // [geometry]
         Eigen::Ref<const Eigen::VectorXd> pself,           // [geometry]
@@ -767,6 +787,8 @@ namespace sasktran2::math::spectroscopy {
         const int n_geo = static_cast<int>(pressure.size());
         const int n_wavenumber = static_cast<int>(wavenumber_grid.size());
 
+        const double epsilon = 1e-4;
+
         // Initialize result to zero
         result.setZero();
 
@@ -775,38 +797,66 @@ namespace sasktran2::math::spectroscopy {
             max_p_self = 1.0;
         }
 
-        for (int i = 0; i < n_line; ++i) {
-            const double lc = line_center[i];
+        double first_wavenumber = wavenumber_grid[0];
+        double last_wavenumber = wavenumber_grid[n_wavenumber - 1];
+        // Find the first line is that is > 25 cm^-1 from the first wavenumber
+        const double* line_begin = line_center.data();
+        const double* line_end = line_center.data() + n_line;
+        const double* first_line_it = std::lower_bound(
+            line_begin, line_end, first_wavenumber - line_contribution_width);
 
-            if (lc > wavenumber_grid[n_wavenumber - 1] +
-                         line_contribution_width ||
-                lc < (wavenumber_grid[0] - line_contribution_width)) {
-                continue;
-            }
+        const double* last_line_it = std::lower_bound(
+            line_begin, line_end, last_wavenumber + line_contribution_width);
+
+        int start_line_idx =
+            static_cast<int>(std::distance(line_begin, first_line_it));
+        int end_line_idx =
+            static_cast<int>(std::distance(line_begin, last_line_it));
+
+        // Now we have our lines that can potentially contribute, we want to
+        // keep track of the lower and upper indicies on the wavenumber grid
+        // that the line can contribute to
+        int start_wavenumber_idx = 0;
+        int end_wavenumber_idx = 0;
+        int zero_pivot = 0;
+
+        // For certian y values we can switch to lorentzian profiles,
+        // if 2.84 * y *y > 1.52 / epsilon we can use lorentzian for all x
+
+        // condition for lorentzian x * x > 1.52 / epsilon - 2.84 * y * y
+        int lorentzian_low = 0;
+        int lorentzian_high = 0;
+        // condition for gaussian is abs(x) < 2.15 - 2.53 * y / epsilon
+
+        for (int i = start_line_idx; i < end_line_idx; ++i) {
+            const double lc = line_center[i];
 
             if (line_intensity[i] * 101325 * max_p_self / (K_B * 1e-7 * 296) <
                 cull_factor) {
                 continue;
             }
 
-            const double le = lower_energy[i];
+            while (wavenumber_grid[start_wavenumber_idx] <
+                       lc - line_contribution_width &&
+                   start_wavenumber_idx < n_wavenumber) {
+                start_wavenumber_idx++;
+            }
+            while (wavenumber_grid[end_wavenumber_idx] <
+                       lc + line_contribution_width &&
+                   end_wavenumber_idx < n_wavenumber) {
+                end_wavenumber_idx++;
+            }
 
-            // Determine wavenumber bounds
-            double start_val = lc - line_contribution_width;
-            double end_val = lc + line_contribution_width;
+            while (wavenumber_grid[zero_pivot] < 0 &&
+                   zero_pivot < end_wavenumber_idx) {
+                zero_pivot++;
+            }
 
-            // Search for start and end indices
-            const double* wbegin = wavenumber_grid.data();
-            const double* wend = wavenumber_grid.data() + n_wavenumber;
-            const double* start_it = std::lower_bound(wbegin, wend, start_val);
-            const double* end_it = std::lower_bound(wbegin, wend, end_val);
-
-            int start_idx = static_cast<int>(std::distance(wbegin, start_it));
-            int end_idx = static_cast<int>(std::distance(wbegin, end_it));
-
-            if (start_idx == end_idx) {
+            if (start_wavenumber_idx == end_wavenumber_idx) {
                 continue;
             }
+
+            const double le = lower_energy[i];
 
             // Common reference temperature normalization
             double denominator =
@@ -828,8 +878,9 @@ namespace sasktran2::math::spectroscopy {
                     line_intensity[i] * common_factor * partition_factor;
 
                 double mol_mass = molecular_mass[iso_index];
-                double doppler_width =
-                    lc / SPEED_OF_LIGHT * std::sqrt(NA * K_B * T / mol_mass);
+                double doppler_width = lc / SPEED_OF_LIGHT *
+                                       std::sqrt(NA * K_B * T / mol_mass) /
+                                       inv_sqrt2;
 
                 // Compute gamma (Lorentz broadening)
                 double g_air = gamma_air[i];
@@ -842,15 +893,44 @@ namespace sasktran2::math::spectroscopy {
 
                 double shifted_center = lc + da * P;
 
-                if (interpolation_delta == 0.0) {
-                    sum_line(result, wavenumber_grid, g, start_idx, end_idx,
-                             doppler_width, gamma_val, shifted_center,
-                             adjusted_line_intensity, subtract_pedastal);
+                double y = gamma_val / doppler_width;
+                // Compute line shape
+                double norm_factor =
+                    1.0 / (sqrt_2pi * doppler_width * inv_sqrt2);
+
+                double normalized_intensity =
+                    adjusted_line_intensity * norm_factor;
+
+                if (Y_coupling(g, i) != 0.0 || G_coupling(g, i) != 0.0) {
+                    for (size_t w = start_wavenumber_idx;
+                         w < end_wavenumber_idx; ++w) {
+                        double x = (wavenumber_grid[w] - shifted_center) /
+                                   doppler_width;
+
+                        result(w, g) += (CustomFaddeeva::faddeeva_w(x, y) *
+                                         std::complex<double>(
+                                             1 + pressure(g) * pressure(g) *
+                                                     G_coupling(g, i),
+                                             -pressure(g) * Y_coupling(g, i)))
+                                            .real() *
+                                        normalized_intensity;
+                    }
                 } else {
-                    sum_line_interpolated(
-                        result, wavenumber_grid, g, start_idx, end_idx,
-                        doppler_width, gamma_val, shifted_center,
-                        adjusted_line_intensity, interpolation_delta);
+                    for (size_t w = start_wavenumber_idx;
+                         w < end_wavenumber_idx; ++w) {
+                        double x = (wavenumber_grid[w] - shifted_center) /
+                                   doppler_width;
+
+                        result(w, g) += voigt(x, y) * normalized_intensity;
+                    }
+                }
+
+                if (subtract_pedastal) {
+                    double x = line_contribution_width / doppler_width;
+                    result(Eigen::seq(start_wavenumber_idx,
+                                      end_wavenumber_idx - 1),
+                           g)
+                        .array() -= voigt(x, y) * normalized_intensity;
                 }
             }
         }

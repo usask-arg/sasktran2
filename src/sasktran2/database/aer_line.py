@@ -1,23 +1,20 @@
 from __future__ import annotations
 
-from os import stat
+import shlex
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
 import xarray as xr
 
+from sasktran2.database.base import CachedDatabase
 from sasktran2.util import get_hapi
 
-from .base import CachedDatabase
 
-import pandas as pd
-from pathlib import Path
-import xarray as xr
-import numpy as np
-import shlex
-
-def _read_line_file(file_path: Path) -> xr.Dataset:
+def _read_line_file_pd(file_path: Path) -> xr.Dataset:
     """
-    Reads an AER linefile and puts it in the same format as the HITRAN optical reader
+    Reads an AER linefile and puts it in the same format as the HITRAN optical reader.
+    This function uses the pandas backend, it is faster but does not support all features
 
     Parameters
     ----------
@@ -46,18 +43,19 @@ def _read_line_file(file_path: Path) -> xr.Dataset:
         "upper_local_q",
         "lower_local_q",
         "error_codes",
-        "reference"
-        ]
+        "reference",
+    ]
 
-    data = pd.read_fwf(file_path,
-                       widths=widths,
-                       names=names,
-                       #converters=converters,
-                       comment=">",
-                       on_bad_lines="skip",
-                       error_bad_lines=False
-                       )
-    # Drop rows where mol_id is %% 
+    data = pd.read_fwf(
+        file_path,
+        widths=widths,
+        names=names,
+        # converters=converters,
+        comment=">",
+        on_bad_lines="skip",
+        error_bad_lines=False,
+    )
+    # Drop rows where mol_id is %%
     data = data[data["molec_id"] != "%%"]
 
     # Rows where iso_id is NaN are extra information
@@ -81,7 +79,20 @@ def _read_line_file(file_path: Path) -> xr.Dataset:
     data["delta_air"] = data["delta_air"].astype(float)
 
     # Drop all other columns
-    data = data[["molec_id", "local_iso_id", "nu", "sw", "rsq", "gamma_air", "gamma_self", "elower", "n_air", "delta_air"]]
+    data = data[
+        [
+            "molec_id",
+            "local_iso_id",
+            "nu",
+            "sw",
+            "rsq",
+            "gamma_air",
+            "gamma_self",
+            "elower",
+            "n_air",
+            "delta_air",
+        ]
+    ]
 
     # Reset the index column
     data = data.reset_index(drop=True)
@@ -90,13 +101,127 @@ def _read_line_file(file_path: Path) -> xr.Dataset:
     return xr.Dataset.from_dataframe(data)
 
 
+def _read_line_file_py(file_path: Path) -> xr.Dataset:
+    """
+    Reads an AER linefile and puts it in the same format as the HITRAN optical reader.
+    This function uses the python backend, it is slower but supports all features such as
+    line coupling
+
+    Parameters
+    ----------
+    file_path : Path
+        Path to the individual molecule datafile
+
+    Returns
+    -------
+    xr.Dataset
+    """
+    # HITRAN F100 format is
+    widths = np.array([2, 1, 12, 10, 10, 5, 5, 10, 4, 8, 3, 3, 9, 9, 3, 6])
+    cols = np.concatenate(([0], np.cumsum(widths)))  # e.g. [ 0,  2,  3, 15, 25, ...]
+
+    names = {
+        "molec_id": int,
+        "local_iso_id": int,
+        "nu": float,
+        "sw": float,
+        "rsq": float,
+        "gamma_air": float,
+        "gamma_self": float,
+        "elower": float,
+        "n_air": float,
+        "delta_air": float,
+        "upper_quanta": str,
+        "lower_quanta": str,
+        "upper_local_q": str,
+        "lower_local_q": str,
+        "error_codes": str,
+        "reference": str,
+    }
+    name_items = list(names.items())  # for indexing
+
+    all_data = []
+
+    with file_path.open() as f:
+        for line in f:
+            # Skip blank lines or comment lines
+            if (not line.strip()) or line[0] in (">", "%"):
+                continue
+
+            # Slice out all fields at once
+            fields = [
+                line[cols[i] : cols[i + 1]].replace("D", "E")
+                for i in range(len(widths))
+            ]
+
+            # Parse them according to the dictionary
+            record = {}
+            for (k, cast), raw in zip(name_items, fields, strict=True):
+                record[k] = cast(raw)
+
+            # Check if we need to read the line-coupling parameters
+            if record["reference"][-2:] == "-1":
+                lc = next(f)  # read the next line
+                record["Y_200"] = float(lc[3:15])
+                record["G_200"] = float(lc[15:26])
+                record["Y_250"] = float(lc[26:39])
+                record["G_250"] = float(lc[39:50])
+                record["Y_296"] = float(lc[50:63])
+                record["G_296"] = float(lc[63:74])
+                record["Y_340"] = float(lc[74:87])
+                record["G_340"] = float(lc[87:98])
+            else:
+                record["Y_200"] = np.nan
+                record["G_200"] = np.nan
+                record["Y_250"] = np.nan
+                record["G_250"] = np.nan
+                record["Y_296"] = np.nan
+                record["G_296"] = np.nan
+                record["Y_340"] = np.nan
+                record["G_340"] = np.nan
+
+            all_data.append(record)
+
+    # Convert to dataframe
+    data = pd.DataFrame(all_data)
+
+    # Reset the index column
+    data = data.reset_index(drop=True)
+
+    ds = xr.Dataset.from_dataframe(data)
+
+    ds["Y"] = ds[["Y_200", "Y_250", "Y_296", "Y_340"]].to_array(dim="temperature")
+    ds["G"] = ds[["G_200", "G_250", "G_296", "G_340"]].to_array(dim="temperature")
+
+    ds = ds.drop_vars(
+        ["Y_200", "G_200", "Y_250", "G_250", "Y_296", "G_296", "Y_340", "G_340"]
+    )
+
+    ds = ds.assign_coords(temperature=[200.0, 250.0, 296.0, 340.0])
+
+    return ds.drop(
+        [
+            "error_codes",
+            "reference",
+            "upper_quanta",
+            "lower_quanta",
+            "upper_local_q",
+            "lower_local_q",
+        ]
+    )
+
+
 class AERLineDatabase(CachedDatabase):
+    """
+    Database for AER line files.  Currently only supports the 3.8.1 version of the AER line database
+    """
+
     def __init__(
-        self, db_root: Path | None = None, rel_path: Path | None = "aer_lines", version: str = "3.8.1"
+        self,
+        db_root: Path | None = None,
+        rel_path: Path | None = "aer_lines",
+        version: str = "3.8.1",
     ):
-        """
-        Loads in the AER line database from the AER line files.
-        """
         CachedDatabase.__init__(self, db_root, rel_path=rel_path)
 
         self._hapi = get_hapi()
@@ -117,7 +242,9 @@ class AERLineDatabase(CachedDatabase):
         dir = self._db_root
         version_dir = dir.joinpath(f"aer_v_{self._version}")
         mol_id = self._get_molecule_id(key)
-        mol_dir = version_dir.joinpath(f"line_files_By_Molecule/{mol_id:02d}_{key.upper()}")
+        mol_dir = version_dir.joinpath(
+            f"line_files_By_Molecule/{mol_id:02d}_{key.upper()}"
+        )
 
         nc_file = mol_dir.joinpath(f"{mol_id:02d}_{key.upper()}.nc")
 
@@ -128,8 +255,13 @@ class AERLineDatabase(CachedDatabase):
 
         if not version_dir.exists():
             from zenodo_get import zenodo_get
+
             try:
-                zenodo_get(shlex.split(f'--record {self._version_map[self._version]} -o "{dir.as_posix()}"'))
+                zenodo_get(
+                    shlex.split(
+                        f'--record {self._version_map[self._version]} -o "{dir.as_posix()}"'
+                    )
+                )
             except ImportError as e:
                 msg = "zenodo_get is required to download the AER line database"
                 raise ImportError(msg) from e
@@ -137,6 +269,7 @@ class AERLineDatabase(CachedDatabase):
             file = dir.joinpath(f"aer_v_{self._version}.tar.gz")
             # Extract the tar file
             import tarfile
+
             with tarfile.open(file, "r:gz") as tar:
                 tar.extractall(dir)
             # Delete the tar file
@@ -149,14 +282,13 @@ class AERLineDatabase(CachedDatabase):
             raise FileNotFoundError(msg)
 
         # And convert to netcdf
-        ds = _read_line_file(mol_data_file)
+        ds = _read_line_file_py(mol_data_file)
         ds.to_netcdf(nc_file)
 
         return nc_file
 
     def load_ds(self, key: str, **kwargs) -> xr.Dataset:
         return xr.open_dataset(self.path(key, **kwargs))
-
 
     def clear(self):
         # Delete the entire database folder
@@ -168,8 +300,3 @@ class AERLineDatabase(CachedDatabase):
                     file.rmdir()
                 else:
                     file.unlink()
-
-if __name__ == "__main__":
-    line_file = Path("~/Documents/data/aer_v_3.8.1/line_files_By_Molecule/02_CO2/02_CO2/").expanduser()
-
-    _read_line_file(line_file)
