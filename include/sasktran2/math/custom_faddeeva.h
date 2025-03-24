@@ -27,9 +27,6 @@ namespace CustomFaddeeva {
 
 #define C(a, b) cmplx(a, b)
 
-#define isnan std::isnan
-#define isinf std::isinf
-
     // return sinc(x) = sin(x)/x, given both x and sin(x)
     // [since we only use this in cases where sin(x) has already been computed]
     static inline double sinc(double x, double sinx) {
