@@ -3,13 +3,14 @@ from __future__ import annotations
 import hashlib
 import json
 from itertools import product
+from os import rename
 from pathlib import Path
 
 import numpy as np
 import xarray as xr
 
 from sasktran2.mie import LinearizedMie
-from sasktran2.mie.distribution import ParticleSizeDistribution, integrate_mie
+from sasktran2.mie.distribution import ParticleSizeDistribution, integrate_mie, integrate_mie2
 from sasktran2.mie.refractive import RefractiveIndex
 from sasktran2.optical.database import OpticalDatabaseGenericScatterer
 
@@ -23,8 +24,9 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
         refractive_index: RefractiveIndex,
         wavelengths_nm: np.array,
         db_root: Path | None = None,
-        backend: str = "sasktran2",
+        backend: str = "sasktran2_cpp",
         max_legendre_moments: int = 64,
+        num_threads=1,
         **kwargs,
     ) -> None:
         """
@@ -43,9 +45,11 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
         db_root : Path, optional
             The root directory to store the database, by default None
         backend : str, optional
-            The backend to use, by default "sasktran2". Currently supported
-            options are ["sasktran_legacy", "sasktran2]. "sasktran_legacy"
+            The backend to use, by default "sasktran2_cpp". Currently supported
+            options are ["sasktran_legacy", "sasktran2", "sasktran2_cpp"]. "sasktran_legacy"
             requires the module `sasktran` to be installed.
+        num_threads: int, optional
+            The number of threads to use for the calculation, by default 1. Only current works in the sasktran2_cpp backend
         kwargs
             Additional arguments to pass to the particle size distribution, these should match the psize_distribution.args() method
         """
@@ -62,6 +66,8 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
                 **kwargs,
                 "wavelengths": wavelengths_nm,
                 "max_legendre_moments": max_legendre_moments,
+                "backend": backend,
+                "TESTPAR": "50"
             },
             sort_keys=True,
             cls=NumpyEncoder,
@@ -85,6 +91,7 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
         self._wavelengths_nm = wavelengths_nm
         self._backend = backend
         self._max_legendre_moments = max_legendre_moments
+        self._num_threads = num_threads
 
         for arg in kwargs:
             if arg not in self._psize_args:
@@ -100,6 +107,8 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
             self._generate_sasktran_legacy()
         elif self._backend == "sasktran2":
             self._generate_sasktran2()
+        elif self._backend == "sasktran2_cpp":
+            self._generate_sasktran2_cpp()
         else:
             msg = f"Invalid backend {self._backend}"
             raise ValueError(msg)
@@ -294,6 +303,49 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
             )
 
         ds.to_netcdf(self._data_file)
+
+
+    def _generate_sasktran2_cpp(self):
+        """
+        Generates the data file from sasktran2 using the cpp integration option rather than python
+        """
+        refractive = self._refractive_index.refractive_index_fn
+
+        prob_dists = []
+        for vals in product(*self._kwargs.values()):
+            psize_args = dict(zip(self._kwargs.keys(), vals, strict=True))
+
+            prob_dists.append(self._psize_dist.distribution(**psize_args))
+
+        ds = integrate_mie2(
+            prob_dists,
+            refractive,
+            self._wavelengths_nm,
+            num_quad=1000,
+            maxintquantile=0.99999,
+            num_coeffs=self._max_legendre_moments,
+            num_threads=self._num_threads,
+        )
+
+        if len(self._kwargs) > 1:
+            # Have to do a multi-index unstack
+            ds = (
+                ds
+                .set_index(distribution=list(self._kwargs.keys()))
+                .unstack("distribution")
+            )
+        elif len(self._kwargs) == 1:
+            ds = (
+                ds.rename_dims({"distribution": next(iter(self._kwargs.keys()))})
+            )
+        else:
+            # length is 0
+            ds = (
+                ds.isel(distribution=0)
+            )
+
+        ds.to_netcdf(self._data_file)
+
 
     def clear(self):
         if self._data_file.exists():

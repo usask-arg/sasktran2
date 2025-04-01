@@ -92,4 +92,41 @@ void init_mie(py::module_& m) {
              )",
              "size_param"_a, "refractive_index"_a, "cos_angles"_a,
              "calculate_derivative"_a);
+
+    py::class_<sasktran2::mie::MieIntegrator>(m, "MieIntegrator")
+        .def(py::init<Eigen::Ref<const Eigen::VectorXd>, int, int>())
+        .def("integrate", &sasktran2::mie::MieIntegrator::integrate,
+             R"(
+                Integrates the Mie parameters over the scattering angles using the quadrature weights.
+
+                Parameters
+                ----------
+                mie_output : MieOutput
+                    MieOutput that contains the original size parameters, cosine of angles, and refractive index, as well as the calculated mie parameters.
+                radii : np.ndarray
+                    Array of radii of the spheres. Shape (size).
+                quadrature_weights : np.ndarray
+                    Array of quadrature weights. Shape (angle).
+                p11 : np.ndarray
+                    Array to store the integrated p11 values. Shape (angle).
+                p12 : np.ndarray
+                    Array to store the integrated p12 values. Shape (angle).
+                p33 : np.ndarray
+                    Array to store the integrated p33 values. Shape (angle).
+                p34 : np.ndarray
+                    Array to store the integrated p34 values. Shape (angle).
+                wavelength : float
+                    Wavelength of light in meters.
+
+             )",
+             "mie_output"_a, "radii"_a, "quadrature_weights"_a, "p11"_a, "p12"_a,
+             "p33"_a, "p34"_a, "wavelength"_a)
+        .def("integrate_all", &sasktran2::mie::MieIntegrator::integrate_all,
+                "wavelength"_a, "refractive_index"_a, "size_param"_a,
+                "pdf"_a, "size_weights"_a, "angle_weights"_a,
+                "xs_total"_a, "xs_scattering"_a, "p11"_a, "p12"_a,
+                "p33"_a, "p34"_a, "lm_a1"_a, "lm_a2"_a, "lm_a3"_a,
+                "lm_a4"_a, "lm_b1"_a, "lm_b2"_a
+        )
+             ;
 }

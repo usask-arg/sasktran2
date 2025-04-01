@@ -2,16 +2,21 @@ from __future__ import annotations
 
 import abc
 import logging
+import re
 import time
 
 import numpy as np
 import scipy.integrate as integrate
 import xarray as xr
-from scipy.stats import lognorm, rv_continuous
+from scipy.stats import lognorm, rv_continuous, uniform, gamma, triang
+import scipy.special as special
+from scipy.optimize import root_scalar
 
 from sasktran2 import mie
 from sasktran2.legendre import compute_greek_coefficients
-from sasktran2.mie import MieOutput
+from sasktran2.mie import MieOutput, MieIntegrator
+
+from typing import List
 
 
 def _post_process(total: dict, wavelengths):
@@ -292,8 +297,76 @@ class LogNormalDistribution(ParticleSizeDistribution):
     def distribution(self, **kwargs):
         return lognorm(np.log(kwargs["mode_width"]), scale=kwargs["median_radius"])
 
+    def left_bound(tolerance=1e-6, **kwargs):
+        return 0.0
+
     def args(self):
         return ["median_radius", "mode_width"]
+
+
+class UniformDistribution(ParticleSizeDistribution):
+    def __init__(self) -> None:
+        """
+        A uniform particle size distribution, defined by two parameters, the minimum and maximum radius
+        """
+        super().__init__("uniform")
+
+    def distribution(self, **kwargs):
+        left = kwargs["min_radius"]
+        right = kwargs["max_radius"]
+
+        if left >= right:
+            msg = f"Left bound {left} must be less than right bound {right}"
+            raise ValueError(msg)
+
+        return uniform(left, right - left)
+
+    def args(self):
+        return ["min_radius", "max_radius"]
+
+class GammaDistribution(ParticleSizeDistribution):
+    def __init__(self) -> None:
+        """
+        A gamma particle size distribution, defined by two parameters, alpha and beta
+        """
+        super().__init__("gamma")
+
+    def distribution(self, **kwargs):
+        alpha = kwargs["alpha"]
+        beta = kwargs["beta"]
+
+        scale = 1 / beta
+
+        return gamma(a=alpha, scale=scale)
+
+    def args(self):
+        return ["alpha", "beta"]
+
+
+class TriangularDistribution(ParticleSizeDistribution):
+    def __init__(self) -> None:
+        """
+        A triangular particle size distribution, defined by three parameters, the "min_radius", "max_radius", and "center_radius".
+        Essentially a triangular shape that is 0 until minimum, then increases to 1 at central radius, then decreases back 
+        to 0 at maximum.
+
+        Parameters 
+        """
+        super().__init__("triangular")
+
+    def distribution(self, **kwargs):
+        left = kwargs["min_radius"]
+        right = kwargs["max_radius"]
+        mode = kwargs["center_radius"]
+
+        if left >= right:
+            msg = f"Left bound {left} must be less than right bound {right}"
+            raise ValueError(msg)
+
+        return triang(loc=left, scale=right - left, c=(mode - left) / (right - left))
+
+    def args(self):
+        return ["min_radius", "max_radius", "center_radius"]
 
 
 class FrozenDistribution(ParticleSizeDistribution):
@@ -329,3 +402,150 @@ class FrozenDistribution(ParticleSizeDistribution):
 
     def args(self):
         return self._args
+
+
+def integrate_mie2(
+    prob_dists: List[rv_continuous],
+    refrac_index_fn,
+    wavelengths,
+    num_quad=1024,
+    maxintquantile=0.99999,
+    num_coeffs=64,
+    num_threads=1,
+) -> xr.Dataset:
+    from scipy.special import roots_legendre
+
+    c = 0.995
+    nodes, weights = roots_legendre(num_coeffs)
+
+    max_r = 0.0
+    for prob_dist in prob_dists:
+        max_r = max(max_r, prob_dist.ppf(maxintquantile))
+
+    nodes_left = (c - (-1)) / 2 * nodes + (c + (-1)) / 2
+    weights_left = (c - (-1)) / 2 * weights
+
+    nodes_right = (1 - c) / 2 * nodes + (1 + c) / 2
+    weights_right = (1 - c) / 2 * weights
+    a_weights = np.concatenate([weights_left, weights_right])
+    cos_angles = np.concatenate([nodes_left, nodes_right])
+
+    a_weights = np.array(a_weights, order="F")
+    cos_angles = np.array(cos_angles, order="C")
+
+    x, w = roots_legendre(num_quad)
+    x = 0.5 * (x + 1) * max_r
+    w *= max_r / 2
+
+    x = np.array(x, order="F")
+    w = np.array(w, order="F")
+
+    integrator = MieIntegrator(cos_angles, num_coeffs, num_threads)
+
+    pdf_matrix = np.zeros((len(x), len(prob_dists)), order="F")
+    for i, prob_dist in enumerate(prob_dists):
+        pdf_matrix[:, i] = prob_dist.pdf(x)
+
+    all_result = []
+    for i, wavel in enumerate(wavelengths):
+        refrac_index = np.cdouble(refrac_index_fn(wavel))
+
+        result = xr.Dataset(
+            {
+                "xs_scattering": (
+                    ["distribution"], 
+                    np.zeros((len(prob_dists),), order="F")
+                ),
+                "xs_total": (
+                    ["distribution"], 
+                    np.zeros((len(prob_dists),), order="F")
+                ),
+                "xs_absorption": (
+                    ["distribution"], 
+                    np.zeros((len(prob_dists),), order="F")
+                ),
+                "p11": (
+                    ["cos_angle", "distribution"], 
+                    np.zeros((len(cos_angles), len(prob_dists)), order="F")
+                ),
+                "p12": (
+                    ["cos_angle", "distribution"], 
+                    np.zeros((len(cos_angles), len(prob_dists)), order="F")
+                ),
+                "p33": (
+                    ["cos_angle", "distribution"], 
+                    np.zeros((len(cos_angles), len(prob_dists)), order="F")
+                ),
+                "p34": (
+                    ["cos_angle", "distribution"], 
+                    np.zeros((len(cos_angles), len(prob_dists)), order="F")
+                ),
+                "lm_a1": (
+                    ["legendre", "distribution"], 
+                    np.zeros((num_coeffs, len(prob_dists)), order="F")
+                ),
+                "lm_a2": (
+                    ["legendre", "distribution"], 
+                    np.zeros((num_coeffs, len(prob_dists)), order="F")
+                ),
+                "lm_a3": (
+                    ["legendre", "distribution"], 
+                    np.zeros((num_coeffs, len(prob_dists)), order="F")
+                ),
+                "lm_a4": (
+                    ["legendre", "distribution"], 
+                    np.zeros((num_coeffs, len(prob_dists)), order="F")
+                ),
+                "lm_b1": (
+                    ["legendre", "distribution"], 
+                    np.zeros((num_coeffs, len(prob_dists)), order="F")
+                ),
+                "lm_b2": (
+                    ["legendre", "distribution"], 
+                    np.zeros((num_coeffs, len(prob_dists)), order="F")
+                ),
+            },
+            coords={
+                "distribution": np.arange(len(prob_dists)), 
+                "cos_angle": cos_angles
+            },
+        )
+
+        size_param = 2 * np.pi * x / wavel
+
+        integrator.integrate_all(
+            float(wavel),
+            refrac_index,
+            size_param.reshape(-1, 1),
+            pdf_matrix,
+            w.reshape(-1, 1),
+            a_weights.reshape(-1, 1),
+            result["xs_total"].to_numpy(),
+            result["xs_scattering"].to_numpy(),
+            result["p11"].to_numpy(),
+            result["p12"].to_numpy(),
+            result["p33"].to_numpy(),
+            result["p34"].to_numpy(),
+            result["lm_a1"].to_numpy(),
+            result["lm_a2"].to_numpy(),
+            result["lm_a3"].to_numpy(),
+            result["lm_a4"].to_numpy(),
+            result["lm_b1"].to_numpy(),
+            result["lm_b2"].to_numpy(),
+        )
+
+        all_result.append(result)
+
+    result = xr.concat(all_result, dim="wavelength_nm")
+    result["wavelength_nm"] = wavelengths
+
+    result["xs_absorption"].values = (
+        result["xs_total"].values - result["xs_scattering"].values
+    )
+
+    # Convert to m^2
+    result["xs_total"].values *= 1e-4 * 1e-14
+    result["xs_scattering"].values *= 1e-4 * 1e-14
+    result["xs_absorption"].values *= 1e-4 * 1e-14
+
+    return result

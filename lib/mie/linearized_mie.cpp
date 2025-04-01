@@ -1,6 +1,9 @@
 #include "sasktran2/math/trig.h"
 #include <sasktran2/mie/mie.h>
 #include <sasktran2/mie/linearized_mie.h>
+#ifdef SKTRAN_OPENMP_SUPPORT
+#include <omp.h>
+#endif
 
 namespace sasktran2::mie {
 
@@ -21,26 +24,32 @@ namespace sasktran2::mie {
 
 #pragma omp parallel for num_threads(m_num_threads)
         for (int i = 0; i < size_param.size(); ++i) {
+            #ifdef SKTRAN_OPENMP_SUPPORT
+                auto& worker = m_thread_storage[omp_get_thread_num()];
+            #else
+                auto& worker = m_thread_storage[0];
+            #endif
+            worker.set_local_N(size_param(i));
             if (abs(refractive_index) * size_param(i) < 0.1) {
-                small_Q_S(refractive_index, size_param(i), cos_angles, i, 0,
+                worker.small_Q_S(refractive_index, size_param(i), cos_angles, i,
                           output.values);
             } else {
-                regular_Q_S(refractive_index, size_param(i), i, 0,
+                worker.regular_Q_S(refractive_index, size_param(i), i,
                             output.values);
             }
         }
     }
 
     void
-    LinearizedMie::regular_Q_S(const std::complex<double>& refractive_index,
+    LinearizedMieWorker::regular_Q_S(const std::complex<double>& refractive_index,
                                const double& size_param, int size_index,
-                               int thread_idx, MieData& output) {
+                               MieData& output) {
 
-        An_Bn(refractive_index, size_param, thread_idx);
-        int N = m_thread_storage[thread_idx].local_N;
+        An_Bn(refractive_index, size_param);
+        int N = m_local_N;
 
-        Eigen::VectorXcd& An = m_thread_storage[thread_idx].An;
-        Eigen::VectorXcd& Bn = m_thread_storage[thread_idx].Bn;
+        Eigen::VectorXcd& An = m_An;
+        Eigen::VectorXcd& Bn = m_Bn;
 
         double& Qext = output.Qext(size_index);
         double& Qsca = output.Qsca(size_index);
@@ -52,11 +61,11 @@ namespace sasktran2::mie {
         Qsca = 0.0;
         for (int n = 0; n < N; ++n) {
             Qext += (2.0 * (n + 1) + 1.0) *
-                    (m_thread_storage[thread_idx].An(n).real() +
-                     m_thread_storage[thread_idx].Bn(n).real());
+                    (An(n).real() +
+                     Bn(n).real());
             Qsca += (2.0 * (n + 1) + 1.0) *
-                    (math::sqr(abs(m_thread_storage[thread_idx].An(n))) +
-                     math::sqr(abs(m_thread_storage[thread_idx].Bn(n))));
+                    (math::sqr(abs(An(n))) +
+                     math::sqr(abs(Bn(n))));
         }
         Qext *= 2.0 / size_param / size_param;
         Qsca *= 2.0 / size_param / size_param;
@@ -75,10 +84,10 @@ namespace sasktran2::mie {
         }
     }
 
-    void LinearizedMie::small_Q_S(const std::complex<double>& refractive_index,
+    void LinearizedMieWorker::small_Q_S(const std::complex<double>& refractive_index,
                                   const double& size_param,
                                   const Eigen::VectorXd& cos_angles,
-                                  int size_index, int thread_idx,
+                                  int size_index,
                                   MieData& output) {
         double& Qext = output.Qext(size_index);
         double& Qsca = output.Qsca(size_index);
@@ -163,28 +172,20 @@ namespace sasktran2::mie {
 
     void LinearizedMie::allocate(double max_x, int num_angle) {
         int N = int(max_x + 4.05 * pow(max_x, 0.33333) + 2.0) + 2;
-        m_thread_storage.resize(m_num_threads);
+        m_thread_storage.resize(m_num_threads,
+                                LinearizedMieWorker(N, m_tau_matrix, m_pi_matrix));
 
-        for (int i = 0; i < m_num_threads; ++i) {
-            m_thread_storage[i].An.resize(N);
-            m_thread_storage[i].Bn.resize(N);
-            m_thread_storage[i].Dn.resize(N);
-        }
         m_tau_matrix.resize(N, num_angle);
         m_pi_matrix.resize(N, num_angle);
     }
 
-    void LinearizedMie::An_Bn(const std::complex<double>& refractive_index,
-                              const double& size_param, int thread_idx) {
-        // Max terms for this size parameter
-        m_thread_storage[thread_idx].local_N =
-            int(size_param + 4.05 * pow(size_param, 0.33333) + 2.0) + 2;
-        int N = m_thread_storage[thread_idx].local_N;
+    void LinearizedMieWorker::An_Bn(const std::complex<double>& refractive_index,
+                              const double& size_param) {
+        int N = m_local_N;
 
         // Convenience accessors
-        Eigen::VectorXcd& An = m_thread_storage[thread_idx].An;
-        Eigen::VectorXcd& Bn = m_thread_storage[thread_idx].Bn;
-        Eigen::VectorXcd& Dn = m_thread_storage[thread_idx].Dn;
+        Eigen::VectorXcd& An = m_An;
+        Eigen::VectorXcd& Bn = m_Bn;
         std::complex<double> j(0.0, 1.0);
 
         std::complex<double> psi_n_1 = sin(size_param); // this is n=0
@@ -197,15 +198,15 @@ namespace sasktran2::mie {
             j * (cos(size_param) / size_param + sin(size_param)); // this is n=1
         std::complex<double> temp;
 
-        this->Dn(refractive_index, size_param, thread_idx);
+        this->Dn(refractive_index, size_param);
 
         // Set the initial elements of An and Bn
         An(0) =
-            ((Dn(0) / refractive_index + 1.0 / size_param) * psi_n - psi_n_1) /
-            ((Dn(0) / refractive_index + 1.0 / size_param) * xi_n - xi_n_1);
+            ((m_Dn(0) / refractive_index + 1.0 / size_param) * psi_n - psi_n_1) /
+            ((m_Dn(0) / refractive_index + 1.0 / size_param) * xi_n - xi_n_1);
         Bn(0) =
-            ((Dn(0) * refractive_index + 1.0 / size_param) * psi_n - psi_n_1) /
-            ((Dn(0) * refractive_index + 1.0 / size_param) * xi_n - xi_n_1);
+            ((m_Dn(0) * refractive_index + 1.0 / size_param) * psi_n - psi_n_1) /
+            ((m_Dn(0) * refractive_index + 1.0 / size_param) * xi_n - xi_n_1);
 
         temp = xi_n_1;
         xi_n_1 = xi_n;
@@ -216,17 +217,17 @@ namespace sasktran2::mie {
 
         for (int n = 2; n < N + 1; ++n) {
             An(n - 1) =
-                ((Dn(n - 1) / refractive_index + double(n) / size_param) *
+                ((m_Dn(n - 1) / refractive_index + double(n) / size_param) *
                      psi_n -
                  psi_n_1) /
-                ((Dn(n - 1) / refractive_index + double(n) / size_param) *
+                ((m_Dn(n - 1) / refractive_index + double(n) / size_param) *
                      xi_n -
                  xi_n_1);
             Bn(n - 1) =
-                ((Dn(n - 1) * refractive_index + double(n) / size_param) *
+                ((m_Dn(n - 1) * refractive_index + double(n) / size_param) *
                      psi_n -
                  psi_n_1) /
-                ((Dn(n - 1) * refractive_index + double(n) / size_param) *
+                ((m_Dn(n - 1) * refractive_index + double(n) / size_param) *
                      xi_n -
                  xi_n_1);
 
@@ -239,29 +240,28 @@ namespace sasktran2::mie {
         }
     }
 
-    void LinearizedMie::Dn(const std::complex<double>& refractive_index,
-                           const double& size_param, int thread_idx) {
+    void LinearizedMieWorker::Dn(const std::complex<double>& refractive_index,
+                           const double& size_param) {
         std::complex<double> z = size_param * refractive_index;
 
         if (refractive_index.real() < 1 || refractive_index.real() > 10 ||
             abs(refractive_index.imag()) > 10) {
-            Dn_downwards(refractive_index, z, thread_idx);
+            Dn_downwards(refractive_index, z);
         } else {
             double temp = 3.9 - 10.8 * refractive_index.real() +
                           13.78 * pow(refractive_index.real(), 2);
             if (abs(refractive_index.imag()) * size_param >= temp) {
-                Dn_downwards(refractive_index, z, thread_idx);
+                Dn_downwards(refractive_index, z);
             } else {
-                Dn_upwards(refractive_index, z, thread_idx);
+                Dn_upwards(refractive_index, z);
             }
         }
     }
 
-    void LinearizedMie::Dn_upwards(const std::complex<double>& refractive_index,
-                                   const std::complex<double>& z,
-                                   int thread_idx) {
-        Eigen::VectorXcd& Dn = m_thread_storage[thread_idx].Dn;
-        int N = m_thread_storage[thread_idx].local_N;
+    void LinearizedMieWorker::Dn_upwards(const std::complex<double>& refractive_index,
+                                   const std::complex<double>& z) {
+        Eigen::VectorXcd& Dn = m_Dn;
+        int N = m_local_N;
 
         std::complex<double> j(0.0, 1.0);
         std::complex<double> temp = -2.0 * j * z;
@@ -276,21 +276,20 @@ namespace sasktran2::mie {
     }
 
     void
-    LinearizedMie::Dn_downwards(const std::complex<double>& refractive_index,
-                                const std::complex<double>& z, int thread_idx) {
-        int N = m_thread_storage[thread_idx].local_N;
-        Eigen::VectorXcd& Dn = m_thread_storage[thread_idx].Dn;
+    LinearizedMieWorker::Dn_downwards(const std::complex<double>& refractive_index,
+                                const std::complex<double>& z) {
+        int N = m_local_N;
 
-        Dn_Lentz(z, thread_idx, Dn(N - 1));
+        Dn_Lentz(z, m_Dn(N - 1));
 
         for (int n = N; n > 1; --n) {
-            Dn[n - 2] = double(n) / z - 1.0 / (double(n) / z + Dn[n - 1]);
+            m_Dn[n - 2] = double(n) / z - 1.0 / (double(n) / z + m_Dn[n - 1]);
         }
     }
 
-    void LinearizedMie::Dn_Lentz(const std::complex<double>& z, int thread_idx,
+    void LinearizedMieWorker::Dn_Lentz(const std::complex<double>& z,
                                  std::complex<double>& result) {
-        int N = m_thread_storage[thread_idx].local_N;
+        int N = m_local_N;
 
         std::complex<double> z_inv = 2.0 / z;
 
