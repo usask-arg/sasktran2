@@ -358,8 +358,10 @@ if(BUILD_PYTHON)
 
   add_custom_command(
     OUTPUT ${PY_MODULE_OUTPUT}
-    COMMAND PYO3_PYTHON=${Python_EXECUTABLE} cargo build --manifest-path
-            ${CMAKE_CURRENT_SOURCE_DIR}/rust/pybindings/Cargo.toml --release
+    COMMAND
+      PYO3_PYTHON=${Python_EXECUTABLE} ${Rust_CARGO_CACHED} build
+      --manifest-path ${CMAKE_CURRENT_SOURCE_DIR}/rust/pybindings/Cargo.toml
+      --release
     COMMAND ${CMAKE_COMMAND} -E copy ${RUST_BUILD_PATH} ${PY_MODULE_OUTPUT}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/rust/pybindings
     COMMENT "Building and copying Rust PyO3 module to Python package"
