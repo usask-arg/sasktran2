@@ -89,7 +89,7 @@ namespace sasktran2::math {
         };
 
         void vector_d(double theta, Eigen::Ref<Eigen::VectorXd> dvec) {
-            for(int l = 0; l < dvec.size(); ++l) {
+            for (int l = 0; l < dvec.size(); ++l) {
                 dvec(l) = d(theta, l);
             }
         }

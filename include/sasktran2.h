@@ -28,6 +28,7 @@
 #include <sasktran2/hr/hr.h>
 #include <sasktran2/mie/mie.h>
 #include <sasktran2/mie/linearized_mie.h>
+#include <sasktran2/mie/rust_mie.h>
 #include <sasktran2/mie/integration.h>
 #include <sasktran2/engine.h>
 

@@ -1,3 +1,4 @@
+#include "sasktran2/mie/rust_mie.h"
 #include <sasktran2/test_helper.h>
 
 #include <sasktran2.h>
@@ -361,7 +362,7 @@ TEST_CASE("LinMie multiple size_params", "[sasktran2][mie]") {
 
 TEST_CASE("LinMie Qext Qsca test non absorbing (miepython)",
           "[sasktran2][mie]") {
-    auto mie = sasktran2::mie::LinearizedMie();
+    auto mie = sasktran2::mie::RustMie();
     double lambda0 = 0.6328;
     double radius = 0.525;
 

@@ -94,39 +94,24 @@ void init_mie(py::module_& m) {
              "calculate_derivative"_a);
 
     py::class_<sasktran2::mie::MieIntegrator>(m, "MieIntegrator")
-        .def(py::init<Eigen::Ref<const Eigen::VectorXd>, int, int>())
-        .def("integrate", &sasktran2::mie::MieIntegrator::integrate,
+        .def(py::init<Eigen::Ref<const Eigen::VectorXd>, int, int>(),
              R"(
-                Integrates the Mie parameters over the scattering angles using the quadrature weights.
+                A MieIntegrator object created with the given cosine angles, number of legendre moments, and number of threads.
 
                 Parameters
                 ----------
-                mie_output : MieOutput
-                    MieOutput that contains the original size parameters, cosine of angles, and refractive index, as well as the calculated mie parameters.
-                radii : np.ndarray
-                    Array of radii of the spheres. Shape (size).
-                quadrature_weights : np.ndarray
-                    Array of quadrature weights. Shape (angle).
-                p11 : np.ndarray
-                    Array to store the integrated p11 values. Shape (angle).
-                p12 : np.ndarray
-                    Array to store the integrated p12 values. Shape (angle).
-                p33 : np.ndarray
-                    Array to store the integrated p33 values. Shape (angle).
-                p34 : np.ndarray
-                    Array to store the integrated p34 values. Shape (angle).
-                wavelength : float
-                    Wavelength of light in meters.
+                cos_angles : np.ndarray
+                    Array of cosine of angles to calculate the scattering amplitude at. Shape (angle).
+                num_legendre : int
+                    Number of legendre moments to calculate.
+                num_threads : int
+                    Number of threads to use for the Mie calculation. Default is 1.
 
-             )",
-             "mie_output"_a, "radii"_a, "quadrature_weights"_a, "p11"_a, "p12"_a,
-             "p33"_a, "p34"_a, "wavelength"_a)
-        .def("integrate_all", &sasktran2::mie::MieIntegrator::integrate_all,
-                "wavelength"_a, "refractive_index"_a, "size_param"_a,
-                "pdf"_a, "size_weights"_a, "angle_weights"_a,
-                "xs_total"_a, "xs_scattering"_a, "p11"_a, "p12"_a,
-                "p33"_a, "p34"_a, "lm_a1"_a, "lm_a2"_a, "lm_a3"_a,
-                "lm_a4"_a, "lm_b1"_a, "lm_b2"_a
-        )
-             ;
+            )",
+             "cos_angles"_a, "num_legendre"_a = 16, "num_threads"_a = 1)
+        .def("integrate_all", &sasktran2::mie::MieIntegrator::integrate,
+             "wavelength"_a, "refractive_index"_a, "size_param"_a, "pdf"_a,
+             "size_weights"_a, "angle_weights"_a, "xs_total"_a,
+             "xs_scattering"_a, "p11"_a, "p12"_a, "p33"_a, "p34"_a, "lm_a1"_a,
+             "lm_a2"_a, "lm_a3"_a, "lm_a4"_a, "lm_b1"_a, "lm_b2"_a);
 }

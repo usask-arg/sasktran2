@@ -3,14 +3,17 @@ from __future__ import annotations
 import hashlib
 import json
 from itertools import product
-from os import rename
 from pathlib import Path
 
 import numpy as np
 import xarray as xr
 
 from sasktran2.mie import LinearizedMie
-from sasktran2.mie.distribution import ParticleSizeDistribution, integrate_mie, integrate_mie2
+from sasktran2.mie.distribution import (
+    ParticleSizeDistribution,
+    integrate_mie,
+    integrate_mie_cpp,
+)
 from sasktran2.mie.refractive import RefractiveIndex
 from sasktran2.optical.database import OpticalDatabaseGenericScatterer
 
@@ -67,7 +70,7 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
                 "wavelengths": wavelengths_nm,
                 "max_legendre_moments": max_legendre_moments,
                 "backend": backend,
-                "TESTPAR": "50"
+                "TESTPAR": "50",
             },
             sort_keys=True,
             cls=NumpyEncoder,
@@ -206,7 +209,7 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
         if len(self._kwargs) > 1:
             # Have to do a multi-index unstack
             ds = (
-                xr.concat(entries, dim="args")  # noqa: PD010
+                xr.concat(entries, dim="args")
                 .set_index(args=list(self._kwargs.keys()))
                 .unstack("args")
                 .rename_dims({"wavelength": "wavelength_nm"})
@@ -282,7 +285,7 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
         if len(self._kwargs) > 1:
             # Have to do a multi-index unstack
             ds = (
-                xr.concat(entries, dim="args")  # noqa: PD010
+                xr.concat(entries, dim="args")
                 .set_index(args=list(self._kwargs.keys()))
                 .unstack("args")
                 .rename_dims({"wavelength": "wavelength_nm"})
@@ -304,7 +307,6 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
 
         ds.to_netcdf(self._data_file)
 
-
     def _generate_sasktran2_cpp(self):
         """
         Generates the data file from sasktran2 using the cpp integration option rather than python
@@ -317,7 +319,7 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
 
             prob_dists.append(self._psize_dist.distribution(**psize_args))
 
-        ds = integrate_mie2(
+        ds = integrate_mie_cpp(
             prob_dists,
             refractive,
             self._wavelengths_nm,
@@ -329,23 +331,16 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
 
         if len(self._kwargs) > 1:
             # Have to do a multi-index unstack
-            ds = (
-                ds
-                .set_index(distribution=list(self._kwargs.keys()))
-                .unstack("distribution")
+            ds = ds.set_index(distribution=list(self._kwargs.keys())).unstack(
+                "distribution"
             )
         elif len(self._kwargs) == 1:
-            ds = (
-                ds.rename_dims({"distribution": next(iter(self._kwargs.keys()))})
-            )
+            ds = ds.rename_dims({"distribution": next(iter(self._kwargs.keys()))})
         else:
             # length is 0
-            ds = (
-                ds.isel(distribution=0)
-            )
+            ds = ds.isel(distribution=0)
 
         ds.to_netcdf(self._data_file)
-
 
     def clear(self):
         if self._data_file.exists():

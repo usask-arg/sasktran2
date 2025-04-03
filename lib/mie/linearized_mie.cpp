@@ -24,26 +24,50 @@ namespace sasktran2::mie {
 
 #pragma omp parallel for num_threads(m_num_threads)
         for (int i = 0; i < size_param.size(); ++i) {
-            #ifdef SKTRAN_OPENMP_SUPPORT
-                auto& worker = m_thread_storage[omp_get_thread_num()];
-            #else
-                auto& worker = m_thread_storage[0];
-            #endif
+#ifdef SKTRAN_OPENMP_SUPPORT
+            auto& worker = m_thread_storage[omp_get_thread_num()];
+#else
+            auto& worker = m_thread_storage[0];
+#endif
             worker.set_local_N(size_param(i));
             if (abs(refractive_index) * size_param(i) < 0.1) {
                 worker.small_Q_S(refractive_index, size_param(i), cos_angles, i,
-                          output.values);
+                                 output.values);
             } else {
                 worker.regular_Q_S(refractive_index, size_param(i), i,
-                            output.values);
+                                   output.values);
             }
         }
     }
 
-    void
-    LinearizedMieWorker::regular_Q_S(const std::complex<double>& refractive_index,
-                               const double& size_param, int size_index,
-                               MieData& output) {
+    void LinearizedMie::recalculate_scattering(
+        Eigen::Ref<const Eigen::VectorXd> cos_angles, MieOutput& output) {
+        double max_x = output.size_param.maxCoeff();
+        this->allocate(max_x, cos_angles.size());
+
+        tau_pi(cos_angles);
+
+#pragma omp parallel for num_threads(m_num_threads)
+        for (int i = 0; i < output.size_param.size(); ++i) {
+#ifdef SKTRAN_OPENMP_SUPPORT
+            auto& worker = m_thread_storage[omp_get_thread_num()];
+#else
+            auto& worker = m_thread_storage[0];
+#endif
+            worker.set_local_N(output.size_param(i));
+            if (abs(output.refractive_index) * output.size_param(i) < 0.1) {
+                worker.small_Q_S(output.refractive_index, output.size_param(i),
+                                 cos_angles, i, output.values);
+            } else {
+                worker.regular_Q_S_scat(output.refractive_index,
+                                        output.size_param(i), i, output.values);
+            }
+        }
+    }
+
+    void LinearizedMieWorker::regular_Q_S(
+        const std::complex<double>& refractive_index, const double& size_param,
+        int size_index, MieData& output) {
 
         An_Bn(refractive_index, size_param);
         int N = m_local_N;
@@ -54,25 +78,30 @@ namespace sasktran2::mie {
         double& Qext = output.Qext(size_index);
         double& Qsca = output.Qsca(size_index);
 
-        Eigen::MatrixXcd& S1 = output.S1;
-        Eigen::MatrixXcd& S2 = output.S2;
-
         Qext = 0.0;
         Qsca = 0.0;
         for (int n = 0; n < N; ++n) {
-            Qext += (2.0 * (n + 1) + 1.0) *
-                    (An(n).real() +
-                     Bn(n).real());
+            Qext += (2.0 * (n + 1) + 1.0) * (An(n).real() + Bn(n).real());
             Qsca += (2.0 * (n + 1) + 1.0) *
-                    (math::sqr(abs(An(n))) +
-                     math::sqr(abs(Bn(n))));
+                    (math::sqr(abs(An(n))) + math::sqr(abs(Bn(n))));
         }
         Qext *= 2.0 / size_param / size_param;
         Qsca *= 2.0 / size_param / size_param;
 
+        regular_Q_S_scat(refractive_index, size_param, size_index, output);
+    }
+
+    void LinearizedMieWorker::regular_Q_S_scat(
+        const std::complex<double>& refractive_index, const double& size_param,
+        int size_index, MieData& output) {
+        Eigen::MatrixXcd& S1 = output.S1;
+        Eigen::MatrixXcd& S2 = output.S2;
+        const Eigen::VectorXcd& An = m_An;
+        const Eigen::VectorXcd& Bn = m_Bn;
+
         S1(size_index, Eigen::all).setZero();
         S2(size_index, Eigen::all).setZero();
-        for (int i = 0; i < N; ++i) {
+        for (int i = 0; i < m_local_N; ++i) {
             double n_factor = (2.0 * (i + 1.0) + 1.0) / (i + 1.0) / (i + 2.0);
 
             S1(size_index, Eigen::all).array() +=
@@ -84,11 +113,9 @@ namespace sasktran2::mie {
         }
     }
 
-    void LinearizedMieWorker::small_Q_S(const std::complex<double>& refractive_index,
-                                  const double& size_param,
-                                  const Eigen::VectorXd& cos_angles,
-                                  int size_index,
-                                  MieData& output) {
+    void LinearizedMieWorker::small_Q_S(
+        const std::complex<double>& refractive_index, const double& size_param,
+        const Eigen::VectorXd& cos_angles, int size_index, MieData& output) {
         double& Qext = output.Qext(size_index);
         double& Qsca = output.Qsca(size_index);
 
@@ -172,15 +199,16 @@ namespace sasktran2::mie {
 
     void LinearizedMie::allocate(double max_x, int num_angle) {
         int N = int(max_x + 4.05 * pow(max_x, 0.33333) + 2.0) + 2;
-        m_thread_storage.resize(m_num_threads,
-                                LinearizedMieWorker(N, m_tau_matrix, m_pi_matrix));
+        m_thread_storage.resize(
+            m_num_threads, LinearizedMieWorker(N, m_tau_matrix, m_pi_matrix));
 
         m_tau_matrix.resize(N, num_angle);
         m_pi_matrix.resize(N, num_angle);
     }
 
-    void LinearizedMieWorker::An_Bn(const std::complex<double>& refractive_index,
-                              const double& size_param) {
+    void
+    LinearizedMieWorker::An_Bn(const std::complex<double>& refractive_index,
+                               const double& size_param) {
         int N = m_local_N;
 
         // Convenience accessors
@@ -202,10 +230,12 @@ namespace sasktran2::mie {
 
         // Set the initial elements of An and Bn
         An(0) =
-            ((m_Dn(0) / refractive_index + 1.0 / size_param) * psi_n - psi_n_1) /
+            ((m_Dn(0) / refractive_index + 1.0 / size_param) * psi_n -
+             psi_n_1) /
             ((m_Dn(0) / refractive_index + 1.0 / size_param) * xi_n - xi_n_1);
         Bn(0) =
-            ((m_Dn(0) * refractive_index + 1.0 / size_param) * psi_n - psi_n_1) /
+            ((m_Dn(0) * refractive_index + 1.0 / size_param) * psi_n -
+             psi_n_1) /
             ((m_Dn(0) * refractive_index + 1.0 / size_param) * xi_n - xi_n_1);
 
         temp = xi_n_1;
@@ -241,7 +271,7 @@ namespace sasktran2::mie {
     }
 
     void LinearizedMieWorker::Dn(const std::complex<double>& refractive_index,
-                           const double& size_param) {
+                                 const double& size_param) {
         std::complex<double> z = size_param * refractive_index;
 
         if (refractive_index.real() < 1 || refractive_index.real() > 10 ||
@@ -258,8 +288,9 @@ namespace sasktran2::mie {
         }
     }
 
-    void LinearizedMieWorker::Dn_upwards(const std::complex<double>& refractive_index,
-                                   const std::complex<double>& z) {
+    void LinearizedMieWorker::Dn_upwards(
+        const std::complex<double>& refractive_index,
+        const std::complex<double>& z) {
         Eigen::VectorXcd& Dn = m_Dn;
         int N = m_local_N;
 
@@ -275,9 +306,9 @@ namespace sasktran2::mie {
         }
     }
 
-    void
-    LinearizedMieWorker::Dn_downwards(const std::complex<double>& refractive_index,
-                                const std::complex<double>& z) {
+    void LinearizedMieWorker::Dn_downwards(
+        const std::complex<double>& refractive_index,
+        const std::complex<double>& z) {
         int N = m_local_N;
 
         Dn_Lentz(z, m_Dn(N - 1));
@@ -288,7 +319,7 @@ namespace sasktran2::mie {
     }
 
     void LinearizedMieWorker::Dn_Lentz(const std::complex<double>& z,
-                                 std::complex<double>& result) {
+                                       std::complex<double>& result) {
         int N = m_local_N;
 
         std::complex<double> z_inv = 2.0 / z;

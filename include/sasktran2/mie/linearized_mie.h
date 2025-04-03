@@ -17,17 +17,19 @@ namespace sasktran2::mie {
         int m_local_N;
 
       public:
-        LinearizedMieWorker(int max_N, const Eigen::MatrixXd& tau, const Eigen::MatrixXd& pi) : m_local_N(max_N),
-            m_tau_matrix(tau), m_pi_matrix(pi) {
+        LinearizedMieWorker(int max_N, const Eigen::MatrixXd& tau,
+                            const Eigen::MatrixXd& pi)
+            : m_local_N(max_N), m_tau_matrix(tau), m_pi_matrix(pi) {
             m_An.resize(max_N);
             m_Bn.resize(max_N);
             m_Dn.resize(max_N);
         }
 
         void set_local_N(double size_param) {
-            m_local_N = int(size_param + 4.05 * pow(size_param, 0.33333) + 2.0) + 2;
+            m_local_N =
+                int(size_param + 4.05 * pow(size_param, 0.33333) + 2.0) + 2;
 
-            if(m_local_N > m_An.size()) {
+            if (m_local_N > m_An.size()) {
                 m_An.resize(m_local_N);
                 m_Bn.resize(m_local_N);
                 m_Dn.resize(m_local_N);
@@ -36,12 +38,16 @@ namespace sasktran2::mie {
 
         void regular_Q_S(const std::complex<double>& refractive_index,
                          const double& size_param, int size_index,
-                        MieData& output);
+                         MieData& output);
 
         void small_Q_S(const std::complex<double>& refractive_index,
                        const double& size_param,
                        const Eigen::VectorXd& cos_angles, int size_index,
                        MieData& output);
+
+        void regular_Q_S_scat(const std::complex<double>& refractive_index,
+                              const double& size_param, int size_index,
+                              MieData& output);
 
         void An_Bn(const std::complex<double>& refractive_index,
                    const double& size_param);
@@ -80,6 +86,10 @@ namespace sasktran2::mie {
       public:
         LinearizedMie(int num_threads = 1);
         ~LinearizedMie(){};
+
+        void
+        recalculate_scattering(Eigen::Ref<const Eigen::VectorXd> cos_angles,
+                               MieOutput& output);
     };
 
 } // namespace sasktran2::mie

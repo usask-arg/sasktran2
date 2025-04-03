@@ -104,6 +104,20 @@ else()
   target_link_libraries(sasktran2BuildProperties INTERFACE spdloglib)
 endif()
 
+FetchContent_Declare(
+  Corrosion
+  GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
+  GIT_TAG v0.5 # Optionally specify a commit hash, version tag or branch here
+)
+# Set any global configuration variables such as `Rust_TOOLCHAIN` before this
+# line!
+FetchContent_MakeAvailable(Corrosion)
+
+# Import targets defined in a package or workspace manifest `Cargo.toml` file
+corrosion_import_crate(MANIFEST_PATH rust/core/Cargo.toml)
+
+target_link_libraries(sasktran2BuildProperties INTERFACE sk_core)
+
 # add the additional compiler flags
 set(CMAKE_CXX_FLAGS " ${CompilerFlags} ${OpenMP_CXX_FLAGS} ${CMAKE_CXX_FLAGS}")
 
@@ -316,9 +330,48 @@ if(BUILD_PYTHON)
   target_link_libraries(_core PRIVATE sasktran2)
 
   install(TARGETS _core DESTINATION sasktran2)
+
+  if(WIN32)
+    set(SHARED_LIB_EXT ".dll")
+  elseif(APPLE)
+    set(SHARED_LIB_EXT ".dylib")
+  else()
+    set(SHARED_LIB_EXT ".so")
+  endif()
+
+  # Path to final output inside target/
+  set(RUST_BUILD_NAME "lib_core_rust${SHARED_LIB_EXT}")
+  set(RUST_BUILD_PATH
+      "${CMAKE_CURRENT_SOURCE_DIR}/rust/pybindings/target/release/${RUST_BUILD_NAME}"
+  )
+
+  execute_process(
+    COMMAND ${Python_EXECUTABLE} -c
+            "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))"
+    OUTPUT_VARIABLE PYTHON_EXT_SUFFIX
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+  # Final path
+  set(PY_MODULE_OUTPUT
+      "${CMAKE_CURRENT_SOURCE_DIR}/src/python/sasktran2/_core_rust${PYTHON_EXT_SUFFIX}"
+  )
+
+  add_custom_command(
+    OUTPUT ${PY_MODULE_OUTPUT}
+    COMMAND PYO3_PYTHON=${Python_EXECUTABLE} cargo build --manifest-path
+            ${CMAKE_CURRENT_SOURCE_DIR}/rust/pybindings/Cargo.toml --release
+    COMMAND ${CMAKE_COMMAND} -E copy ${RUST_BUILD_PATH} ${PY_MODULE_OUTPUT}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/rust/pybindings
+    DEPENDS ${RUST_BUILD_PATH}
+    COMMENT "Building and copying Rust PyO3 module to Python package"
+    VERBATIM)
+
+  add_custom_target(copy_core_rust ALL DEPENDS ${PY_MODULE_OUTPUT})
+  install(FILES ${PY_MODULE_OUTPUT} DESTINATION sasktran2)
+
 else()
   install(
-    TARGETS sasktran2BuildProperties
+    TARGETS sasktran2BuildProperties sk_core
     EXPORT ${EXPORT_NAME}
     LIBRARY DESTINATION ${STATIC_LIB_INSTALL_DIR}
     INCLUDES

@@ -4,9 +4,11 @@ import logging
 
 import numpy as np
 
-from sasktran2._core import LinearizedMie
 from sasktran2.atmosphere import Atmosphere
-from sasktran2.mie.distribution import ParticleSizeDistribution, integrate_mie
+from sasktran2.mie.distribution import (
+    ParticleSizeDistribution,
+    integrate_mie_cpp,
+)
 from sasktran2.mie.refractive import RefractiveIndex
 from sasktran2.optical.base import OpticalProperty, OpticalQuantities
 from sasktran2.polarization import LegendreStorageView
@@ -48,8 +50,6 @@ class Mie(OpticalProperty):
 
         dist_args = self._psize_distribution.args()
 
-        compute_coeff = "num_legendre" in kwargs
-
         for arg in dist_args:
             if arg not in kwargs:
                 msg = f"Missing argument {arg} for particle size distribution"
@@ -65,31 +65,33 @@ class Mie(OpticalProperty):
                     "Calculating Mie scattering parameters for a large number of particle size distribution arguments. You may want to use the MieDatabase class instead."
                 )
 
-            for args in unique_args:
-                # Generate the Mie scattering cross sections for each unique set of distribution arguments
-                ds = integrate_mie(
-                    LinearizedMie(kwargs.get("num_threads", 1)),
-                    self._psize_distribution.distribution(
-                        **dict(zip(dist_args, args, strict=True))
-                    ),
-                    self._refrac_index.refractive_index_fn,
-                    wavelengths_nm,
-                    compute_coeffs=compute_coeff,
-                    num_coeffs=kwargs.get("num_legendre", 10),
+            dists = [
+                self._psize_distribution.distribution(
+                    **dict(zip(dist_args, args, strict=True))
                 )
+                for args in unique_args
+            ]
 
-                result_ds[tuple(args)] = ds
-        else:
-            ds = integrate_mie(
-                LinearizedMie(kwargs.get("num_threads", 1)),
-                self._psize_distribution.distribution(),
+            ds = integrate_mie_cpp(
+                dists,
                 self._refrac_index.refractive_index_fn,
                 wavelengths_nm,
-                compute_coeffs=compute_coeff,
                 num_coeffs=kwargs.get("num_legendre", 10),
+                num_threads=kwargs.get("num_threads", 1),
             )
 
-            result_ds[()] = ds
+            for i, args in enumerate(unique_args):
+                result_ds[tuple(args)] = ds.isel(distribution=i)
+        else:
+            ds = integrate_mie_cpp(
+                [self._psize_distribution.distribution()],
+                self._refrac_index.refractive_index_fn,
+                wavelengths_nm,
+                num_coeffs=kwargs.get("num_legendre", 10),
+                num_threads=kwargs.get("num_threads", 1),
+            )
+
+            result_ds[()] = ds.isel(distribution=0)
 
     def atmosphere_quantities(self, atmo: Atmosphere, **kwargs) -> OpticalQuantities:
         self._internal_generate(
@@ -122,30 +124,29 @@ class Mie(OpticalProperty):
             ).T
             for i, arg in enumerate(arg_tuples):
                 ds = self._calculation_ds[tuple(arg)].sel(
-                    wavelength=atmo.wavelengths_nm
+                    wavelength_nm=atmo.wavelengths_nm
                 )
 
-                # Convert nm^2 to m^2
-                quants.extinction[i, :] = ds["xs_total"].to_numpy() / 1e18
-                quants.ssa[i, :] = ds["xs_scattering"].to_numpy() / 1e18
+                quants.extinction[i, :] = ds["xs_total"].to_numpy()
+                quants.ssa[i, :] = ds["xs_scattering"].to_numpy()
 
-                leg_coeff.a1[:, i, :] = ds["lm_a1"].to_numpy().T
+                leg_coeff.a1[:, i, :] = ds["lm_a1"].to_numpy()
                 if atmo.nstokes == 3:
-                    leg_coeff.a2[:, i, :] = ds["lm_a2"].to_numpy().T
-                    leg_coeff.b1[:, i, :] = ds["lm_b1"].to_numpy().T
-                    leg_coeff.a3[:, i, :] = ds["lm_a3"].to_numpy().T
+                    leg_coeff.a2[:, i, :] = ds["lm_a2"].to_numpy()
+                    leg_coeff.b1[:, i, :] = ds["lm_b1"].to_numpy()
+                    leg_coeff.a3[:, i, :] = ds["lm_a3"].to_numpy()
         else:
-            ds = self._calculation_ds[()].sel(wavelength=atmo.wavelengths_nm)
+            ds = self._calculation_ds[()].sel(wavelength_nm=atmo.wavelengths_nm)
 
             # Convert nm^2 to m^2
-            quants.extinction[:] = ds["xs_total"].to_numpy()[np.newaxis, :] / 1e18
-            quants.ssa[:] = ds["xs_scattering"].to_numpy()[np.newaxis, :] / 1e18
+            quants.extinction[:] = ds["xs_total"].to_numpy()[np.newaxis, :]
+            quants.ssa[:] = ds["xs_scattering"].to_numpy()[np.newaxis, :]
 
-            leg_coeff.a1[:] = ds["lm_a1"].to_numpy().T[:, np.newaxis, :]
+            leg_coeff.a1[:] = ds["lm_a1"].to_numpy()[:, np.newaxis, :]
             if atmo.nstokes == 3:
-                leg_coeff.a2[:] = ds["lm_a2"].to_numpy().T[:, np.newaxis, :]
-                leg_coeff.b1[:] = ds["lm_b1"].to_numpy().T[:, np.newaxis, :]
-                leg_coeff.a3[:] = ds["lm_a3"].to_numpy().T[:, np.newaxis, :]
+                leg_coeff.a2[:] = ds["lm_a2"].to_numpy()[:, np.newaxis, :]
+                leg_coeff.b1[:] = ds["lm_b1"].to_numpy()[:, np.newaxis, :]
+                leg_coeff.a3[:] = ds["lm_a3"].to_numpy()[:, np.newaxis, :]
 
         quants.extinction[np.isnan(quants.extinction)] = 0
         quants.ssa[np.isnan(quants.ssa)] = 0
@@ -166,22 +167,22 @@ class Mie(OpticalProperty):
                 [kwargs[arg] for arg in self._psize_distribution.args()]
             ).T
             for i, arg in enumerate(arg_tuples):
-                ds = self._xs_ds[tuple(arg)].sel(wavelength=wavelengths_nm)
+                ds = self._xs_ds[tuple(arg)].sel(wavelength_nm=wavelengths_nm)
 
                 # Convert nm^2 to m^2
-                quants.extinction[i, :] = ds["xs_total"].to_numpy() / 1e18
-                quants.ssa[i, :] = (
-                    ds["xs_scattering"].to_numpy() / 1e18
-                ) / quants.extinction[i, :]
+                quants.extinction[i, :] = ds["xs_total"].to_numpy()
+                quants.ssa[i, :] = (ds["xs_scattering"].to_numpy()) / quants.extinction[
+                    i, :
+                ]
 
             quants.extinction[np.isnan(quants.extinction)] = 0
             quants.ssa[np.isnan(quants.ssa)] = 0
         else:
-            ds = self._xs_ds[()].sel(wavelength=wavelengths_nm)
+            ds = self._xs_ds[()].sel(wavelength_nm=wavelengths_nm)
 
             # Convert nm^2 to m^2
-            quants.extinction[:] = ds["xs_total"].to_numpy() / 1e18
-            quants.ssa[:] = (ds["xs_scattering"].to_numpy() / 1e18) / quants.extinction
+            quants.extinction[:] = ds["xs_total"].to_numpy()
+            quants.ssa[:] = (ds["xs_scattering"].to_numpy()) / quants.extinction
 
             quants.extinction[np.isnan(quants.extinction)] = 0
             quants.ssa[np.isnan(quants.ssa)] = 0

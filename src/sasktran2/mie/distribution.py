@@ -2,21 +2,16 @@ from __future__ import annotations
 
 import abc
 import logging
-import re
 import time
 
 import numpy as np
 import scipy.integrate as integrate
 import xarray as xr
-from scipy.stats import lognorm, rv_continuous, uniform, gamma, triang
-import scipy.special as special
-from scipy.optimize import root_scalar
+from scipy.stats import gamma, lognorm, rv_continuous, triang, uniform
 
 from sasktran2 import mie
 from sasktran2.legendre import compute_greek_coefficients
-from sasktran2.mie import MieOutput, MieIntegrator
-
-from typing import List
+from sasktran2.mie import MieIntegrator, MieOutput
 
 
 def _post_process(total: dict, wavelengths):
@@ -90,7 +85,7 @@ def integrate_mie(
     prob_dist: rv_continuous,
     refrac_index_fn,
     wavelengths,
-    num_angles=1801,
+    num_angles=180001,
     num_quad=1024,
     maxintquantile=0.99999,
     compute_coeffs=False,
@@ -137,7 +132,7 @@ def integrate_mie(
     """
     t_full = time.time()
 
-    angles = np.linspace(0, 180, num_angles)
+    angles = np.linspace(0, 180, num_angles, endpoint=True)
 
     # TODO FROM HERE
     norm = integrate.quad(
@@ -324,6 +319,7 @@ class UniformDistribution(ParticleSizeDistribution):
     def args(self):
         return ["min_radius", "max_radius"]
 
+
 class GammaDistribution(ParticleSizeDistribution):
     def __init__(self) -> None:
         """
@@ -347,10 +343,10 @@ class TriangularDistribution(ParticleSizeDistribution):
     def __init__(self) -> None:
         """
         A triangular particle size distribution, defined by three parameters, the "min_radius", "max_radius", and "center_radius".
-        Essentially a triangular shape that is 0 until minimum, then increases to 1 at central radius, then decreases back 
+        Essentially a triangular shape that is 0 until minimum, then increases to 1 at central radius, then decreases back
         to 0 at maximum.
 
-        Parameters 
+        Parameters
         """
         super().__init__("triangular")
 
@@ -404,8 +400,8 @@ class FrozenDistribution(ParticleSizeDistribution):
         return self._args
 
 
-def integrate_mie2(
-    prob_dists: List[rv_continuous],
+def integrate_mie_cpp(
+    prob_dists: list[rv_continuous],
     refrac_index_fn,
     wavelengths,
     num_quad=1024,
@@ -415,12 +411,27 @@ def integrate_mie2(
 ) -> xr.Dataset:
     from scipy.special import roots_legendre
 
-    c = 0.995
     nodes, weights = roots_legendre(num_coeffs)
 
     max_r = 0.0
+    mean_r = 0.0
     for prob_dist in prob_dists:
         max_r = max(max_r, prob_dist.ppf(maxintquantile))
+        mean_r = max(mean_r, prob_dist.mean())
+
+    # Determine a reasonable split point based on the input wavelengths and distributions
+    mean_size_param = 2 * np.pi * mean_r / np.nanmean(wavelengths)
+    if mean_size_param > 200:
+        # Very sharply peaked,
+        c = 0.995  # Works well enough
+    else:
+        if mean_size_param < 1:
+            # Really no peak, just do double quadrature
+            c = 0
+        else:
+            # A simple threshold is a linear function going from (1, 0.95) to (200, 0.995)
+            slope = (0.995 - 0.95) / (200 - 1)
+            c = slope * (mean_size_param - 1) + 0.95
 
     nodes_left = (c - (-1)) / 2 * nodes + (c + (-1)) / 2
     weights_left = (c - (-1)) / 2 * weights
@@ -446,70 +457,77 @@ def integrate_mie2(
     for i, prob_dist in enumerate(prob_dists):
         pdf_matrix[:, i] = prob_dist.pdf(x)
 
-    all_result = []
+    result = xr.Dataset(
+        {
+            "xs_scattering": (
+                ["distribution", "wavelength_nm"],
+                np.zeros((len(prob_dists), len(wavelengths)), order="F"),
+            ),
+            "xs_total": (
+                ["distribution", "wavelength_nm"],
+                np.zeros((len(prob_dists), len(wavelengths)), order="F"),
+            ),
+            "xs_absorption": (
+                ["distribution", "wavelength_nm"],
+                np.zeros((len(prob_dists), len(wavelengths)), order="F"),
+            ),
+            "p11": (
+                ["cos_angle", "distribution", "wavelength_nm"],
+                np.zeros(
+                    (len(cos_angles), len(prob_dists), len(wavelengths)), order="F"
+                ),
+            ),
+            "p12": (
+                ["cos_angle", "distribution", "wavelength_nm"],
+                np.zeros(
+                    (len(cos_angles), len(prob_dists), len(wavelengths)), order="F"
+                ),
+            ),
+            "p33": (
+                ["cos_angle", "distribution", "wavelength_nm"],
+                np.zeros(
+                    (len(cos_angles), len(prob_dists), len(wavelengths)), order="F"
+                ),
+            ),
+            "p34": (
+                ["cos_angle", "distribution", "wavelength_nm"],
+                np.zeros(
+                    (len(cos_angles), len(prob_dists), len(wavelengths)), order="F"
+                ),
+            ),
+            "lm_a1": (
+                ["legendre", "distribution", "wavelength_nm"],
+                np.zeros((num_coeffs, len(prob_dists), len(wavelengths)), order="F"),
+            ),
+            "lm_a2": (
+                ["legendre", "distribution", "wavelength_nm"],
+                np.zeros((num_coeffs, len(prob_dists), len(wavelengths)), order="F"),
+            ),
+            "lm_a3": (
+                ["legendre", "distribution", "wavelength_nm"],
+                np.zeros((num_coeffs, len(prob_dists), len(wavelengths)), order="F"),
+            ),
+            "lm_a4": (
+                ["legendre", "distribution", "wavelength_nm"],
+                np.zeros((num_coeffs, len(prob_dists), len(wavelengths)), order="F"),
+            ),
+            "lm_b1": (
+                ["legendre", "distribution", "wavelength_nm"],
+                np.zeros((num_coeffs, len(prob_dists), len(wavelengths)), order="F"),
+            ),
+            "lm_b2": (
+                ["legendre", "distribution", "wavelength_nm"],
+                np.zeros((num_coeffs, len(prob_dists), len(wavelengths)), order="F"),
+            ),
+        },
+        coords={
+            "distribution": np.arange(len(prob_dists)),
+            "cos_angle": cos_angles,
+            "wavelength_nm": wavelengths,
+        },
+    )
     for i, wavel in enumerate(wavelengths):
         refrac_index = np.cdouble(refrac_index_fn(wavel))
-
-        result = xr.Dataset(
-            {
-                "xs_scattering": (
-                    ["distribution"], 
-                    np.zeros((len(prob_dists),), order="F")
-                ),
-                "xs_total": (
-                    ["distribution"], 
-                    np.zeros((len(prob_dists),), order="F")
-                ),
-                "xs_absorption": (
-                    ["distribution"], 
-                    np.zeros((len(prob_dists),), order="F")
-                ),
-                "p11": (
-                    ["cos_angle", "distribution"], 
-                    np.zeros((len(cos_angles), len(prob_dists)), order="F")
-                ),
-                "p12": (
-                    ["cos_angle", "distribution"], 
-                    np.zeros((len(cos_angles), len(prob_dists)), order="F")
-                ),
-                "p33": (
-                    ["cos_angle", "distribution"], 
-                    np.zeros((len(cos_angles), len(prob_dists)), order="F")
-                ),
-                "p34": (
-                    ["cos_angle", "distribution"], 
-                    np.zeros((len(cos_angles), len(prob_dists)), order="F")
-                ),
-                "lm_a1": (
-                    ["legendre", "distribution"], 
-                    np.zeros((num_coeffs, len(prob_dists)), order="F")
-                ),
-                "lm_a2": (
-                    ["legendre", "distribution"], 
-                    np.zeros((num_coeffs, len(prob_dists)), order="F")
-                ),
-                "lm_a3": (
-                    ["legendre", "distribution"], 
-                    np.zeros((num_coeffs, len(prob_dists)), order="F")
-                ),
-                "lm_a4": (
-                    ["legendre", "distribution"], 
-                    np.zeros((num_coeffs, len(prob_dists)), order="F")
-                ),
-                "lm_b1": (
-                    ["legendre", "distribution"], 
-                    np.zeros((num_coeffs, len(prob_dists)), order="F")
-                ),
-                "lm_b2": (
-                    ["legendre", "distribution"], 
-                    np.zeros((num_coeffs, len(prob_dists)), order="F")
-                ),
-            },
-            coords={
-                "distribution": np.arange(len(prob_dists)), 
-                "cos_angle": cos_angles
-            },
-        )
 
         size_param = 2 * np.pi * x / wavel
 
@@ -520,24 +538,19 @@ def integrate_mie2(
             pdf_matrix,
             w.reshape(-1, 1),
             a_weights.reshape(-1, 1),
-            result["xs_total"].to_numpy(),
-            result["xs_scattering"].to_numpy(),
-            result["p11"].to_numpy(),
-            result["p12"].to_numpy(),
-            result["p33"].to_numpy(),
-            result["p34"].to_numpy(),
-            result["lm_a1"].to_numpy(),
-            result["lm_a2"].to_numpy(),
-            result["lm_a3"].to_numpy(),
-            result["lm_a4"].to_numpy(),
-            result["lm_b1"].to_numpy(),
-            result["lm_b2"].to_numpy(),
+            result["xs_total"].to_numpy()[:, i],
+            result["xs_scattering"].to_numpy()[:, i],
+            result["p11"].to_numpy()[:, :, i],
+            result["p12"].to_numpy()[:, :, i],
+            result["p33"].to_numpy()[:, :, i],
+            result["p34"].to_numpy()[:, :, i],
+            result["lm_a1"].to_numpy()[:, :, i],
+            result["lm_a2"].to_numpy()[:, :, i],
+            result["lm_a3"].to_numpy()[:, :, i],
+            result["lm_a4"].to_numpy()[:, :, i],
+            result["lm_b1"].to_numpy()[:, :, i],
+            result["lm_b2"].to_numpy()[:, :, i],
         )
-
-        all_result.append(result)
-
-    result = xr.concat(all_result, dim="wavelength_nm")
-    result["wavelength_nm"] = wavelengths
 
     result["xs_absorption"].values = (
         result["xs_total"].values - result["xs_scattering"].values

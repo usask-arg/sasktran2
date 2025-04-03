@@ -111,7 +111,7 @@ def test_mie_database_against_online():
         ),
         sk.mie.refractive.H2SO4(),
         wavelengths_nm=np.array([700, 750, 800]),
-        backend="sasktran2"
+        backend="sasktran2",
     )
 
     aero_ext = np.zeros(len(model_geometry.altitudes()))
