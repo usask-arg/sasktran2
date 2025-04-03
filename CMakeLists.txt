@@ -362,7 +362,6 @@ if(BUILD_PYTHON)
             ${CMAKE_CURRENT_SOURCE_DIR}/rust/pybindings/Cargo.toml --release
     COMMAND ${CMAKE_COMMAND} -E copy ${RUST_BUILD_PATH} ${PY_MODULE_OUTPUT}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/rust/pybindings
-    DEPENDS ${RUST_BUILD_PATH}
     COMMENT "Building and copying Rust PyO3 module to Python package"
     VERBATIM)
 
