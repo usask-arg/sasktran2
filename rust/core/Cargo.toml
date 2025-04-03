@@ -8,4 +8,5 @@ ndarray = "*"
 num = "*"
 
 [lib]
-crate-type=["staticlib"]
+name = "sk_core"
+crate-type = ["rlib", "staticlib"]
