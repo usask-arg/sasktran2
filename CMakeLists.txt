@@ -356,10 +356,14 @@ if(BUILD_PYTHON)
       "${CMAKE_CURRENT_SOURCE_DIR}/src/python/sasktran2/_core_rust${PYTHON_EXT_SUFFIX}"
   )
 
+  get_target_property(RUST_CARGO_EXECUTABLE Rust::Cargo IMPORTED_LOCATION)
+  get_target_property(RUSTC_EXECUTABLE Rust::Rustc IMPORTED_LOCATION)
+
   add_custom_command(
     OUTPUT ${PY_MODULE_OUTPUT}
     COMMAND
-      PYO3_PYTHON=${Python_EXECUTABLE} ${Rust_CARGO_CACHED} build
+      ${CMAKE_COMMAND} -E env CARGO_BUILD_RUSTC=${RUSTC_EXECUTABLE}
+      PYO3_PYTHON=${Python_EXECUTABLE} ${RUST_CARGO_EXECUTABLE} build
       --manifest-path ${CMAKE_CURRENT_SOURCE_DIR}/rust/pybindings/Cargo.toml
       --release
     COMMAND ${CMAKE_COMMAND} -E copy ${RUST_BUILD_PATH} ${PY_MODULE_OUTPUT}
