@@ -199,8 +199,12 @@ namespace sasktran2::mie {
 
     void LinearizedMie::allocate(double max_x, int num_angle) {
         int N = int(max_x + 4.05 * pow(max_x, 0.33333) + 2.0) + 2;
-        m_thread_storage.resize(
-            m_num_threads, LinearizedMieWorker(N, m_tau_matrix, m_pi_matrix));
+
+        m_thread_storage.clear();
+        m_thread_storage.reserve(m_num_threads);
+        for (int i = 0; i < m_num_threads; ++i) {
+            m_thread_storage.emplace_back(N, m_tau_matrix, m_pi_matrix);
+        }
 
         m_tau_matrix.resize(N, num_angle);
         m_pi_matrix.resize(N, num_angle);
