@@ -13,7 +13,10 @@ if ! command -v rustc >/dev/null 2>&1; then
     curl https://sh.rustup.rs -sSf | sh -s -- -y
 
     # Source cargo environment for current session
-    source "$HOME/.cargo/env"
+    echo "source $HOME/.cargo/env" >> ~/.bashrc && \
+    source $HOME/.cargo/env && \
+    rustc --version && cargo --version
+
 else
     echo "Rust is already installed: $(rustc --version)"
 fi
