@@ -85,7 +85,7 @@ def integrate_mie(
     prob_dist: rv_continuous,
     refrac_index_fn,
     wavelengths,
-    num_angles=180001,
+    num_angles=1801,
     num_quad=1024,
     maxintquantile=0.99999,
     compute_coeffs=False,
@@ -132,7 +132,7 @@ def integrate_mie(
     """
     t_full = time.time()
 
-    angles = np.linspace(0, 180, num_angles, endpoint=True)
+    angles = np.linspace(0, 180, num_angles)
 
     # TODO FROM HERE
     norm = integrate.quad(

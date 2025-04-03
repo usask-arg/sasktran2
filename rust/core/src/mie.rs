@@ -106,6 +106,7 @@ pub struct Mie {
     pi: Array2<f64>,
     S1: Array1<Complex64>,
     S2: Array1<Complex64>,
+    recalculate_tau: bool,
 }
 
 impl Mie {
@@ -119,6 +120,7 @@ impl Mie {
             pi: Array2::zeros((0, 0)),
             S1: Array1::from_vec(vec![]),
             S2: Array1::from_vec(vec![]),
+            recalculate_tau: false,
         }
     }
 
@@ -126,6 +128,7 @@ impl Mie {
         self.cos_angles = Array1::from_vec(cos_angles);
         self.S1 = Array1::from_vec(vec![Complex64::new(0.0, 0.0); self.cos_angles.len()]);
         self.S2 = Array1::from_vec(vec![Complex64::new(0.0, 0.0); self.cos_angles.len()]);
+        self.recalculate_tau = true;
         self
     }
 
@@ -140,7 +143,12 @@ impl Mie {
 
         if N > self.current_N() {
             self.allocate(N);
+            self.recalculate_tau = true;
+        }
+
+        if self.recalculate_tau {
             (self.tau, self.pi) = tau_pi_matrices(&self.cos_angles, N);
+            self.recalculate_tau = false;
         }
 
         if refractive_index.norm() * size_param < 0.1 {
@@ -394,9 +402,7 @@ mod tests {
         let refractive_index = Complex64::new(0.75, 0.0);
 
         let mut mie = Mie::new().with_cos_angles(default_cos_angles());
-        let (Qext, Qsca) = mie.calculate(size_param, refractive_index);
-
-        println!("{}", mie.S1());
+        let (_Qext, Qsca) = mie.calculate(size_param, refractive_index);
 
         assert!((Qsca - 0.000007).abs() < 1e-5);
 
@@ -453,7 +459,7 @@ mod tests {
         let refractive_index = Complex64::new(0.75, 0.0);
 
         let mut mie = Mie::new();
-        let (Qext, Qsca) = mie.calculate(size_param, refractive_index);
+        let (_Qext, Qsca) = mie.calculate(size_param, refractive_index);
 
         assert!((Qsca - 2.232265).abs() < 1e-6);
     }
@@ -464,7 +470,7 @@ mod tests {
         let refractive_index = Complex64::new(0.75, 0.0);
 
         let mut mie = Mie::new();
-        let (Qext, Qsca) = mie.calculate(size_param, refractive_index);
+        let (_Qext, Qsca) = mie.calculate(size_param, refractive_index);
 
         assert!((Qsca - 1.997908).abs() < 1e-6);
     }
@@ -475,7 +481,7 @@ mod tests {
         let refractive_index = Complex64::new(1.5, 0.0);
 
         let mut mie = Mie::new();
-        let (Qext, Qsca) = mie.calculate(size_param, refractive_index);
+        let (_Qext, Qsca) = mie.calculate(size_param, refractive_index);
         assert!((Qsca - 2.8820).abs() < 1e-4);
     }
 
@@ -485,7 +491,7 @@ mod tests {
         let refractive_index = Complex64::new(1.5, 0.0);
 
         let mut mie = Mie::new();
-        let (Qext, Qsca) = mie.calculate(size_param, refractive_index);
+        let (_Qext, Qsca) = mie.calculate(size_param, refractive_index);
         assert!((Qsca - 2.0944).abs() < 1e-4);
     }
 
@@ -495,7 +501,7 @@ mod tests {
         let refractive_index = Complex64::new(1.5, 0.0);
 
         let mut mie = Mie::new();
-        let (Qext, Qsca) = mie.calculate(size_param, refractive_index);
+        let (_Qext, Qsca) = mie.calculate(size_param, refractive_index);
         assert!((Qsca - 2.0139).abs() < 1e-4);
     }
 
@@ -505,7 +511,7 @@ mod tests {
         let refractive_index = Complex64::new(1.5, 0.0);
 
         let mut mie = Mie::new();
-        let (Qext, Qsca) = mie.calculate(size_param, refractive_index);
+        let (_Qext, Qsca) = mie.calculate(size_param, refractive_index);
         assert!((Qsca - 2.0086).abs() < 1e-4);
     }
 
