@@ -16,6 +16,7 @@ if ! command -v rustc >/dev/null 2>&1; then
     echo "source $HOME/.cargo/env" >> ~/.bashrc && \
     source $HOME/.cargo/env && \
     rustc --version && cargo --version
+    export PATH="$HOME/.cargo/bin:$PATH"
 
 else
     echo "Rust is already installed: $(rustc --version)"
