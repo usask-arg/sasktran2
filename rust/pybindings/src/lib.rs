@@ -4,6 +4,6 @@ use pyo3::prelude::*;
 
 #[pymodule]
 fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<mie::MieIntegrator>()?;
+    m.add_class::<mie::Mie>()?;
     Ok(())
 }

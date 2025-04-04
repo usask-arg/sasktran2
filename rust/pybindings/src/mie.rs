@@ -1,8 +1,7 @@
-use sk_core::wigner::WignerDCalculator;
 use sk_core::mie as sk_mie;
 
+use numpy::{PyArray1, PyReadonlyArray1};
 use pyo3::prelude::*;
-
 
 #[pyclass]
 pub struct Mie {
@@ -12,10 +11,9 @@ pub struct Mie {
 #[pymethods]
 impl Mie {
     #[new]
-    pub fn new() -> Self {
+    pub fn new<'py>(cos_angles: PyReadonlyArray1<'py, f64>) -> Self {
         Mie {
-            mie: sk_mie::Mie::new()
+            mie: sk_mie::Mie::new().with_cos_angles(cos_angles.as_array().to_vec()),
         }
     }
-
 }
