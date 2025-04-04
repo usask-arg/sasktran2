@@ -94,6 +94,68 @@ impl WignerDCalculator {
         }
     }
 
+
+    /// Computes d^l_{m,n}(theta).
+    pub fn vector_d(&self, theta: f64, output: &mut [f64]) {
+        for (l, elem ) in output.iter_mut().enumerate() {
+            if (l as i32) < self.m_lmin {
+                *elem = 0.0;
+            } else {
+                let x = theta.cos();
+                // Value at current l
+                let mut val_l = self.recurrence_start(theta);
+                // Value at current (l - 1)
+                let mut val_lm1 = 0.0;
+
+                // If n == 0, use the associated Legendre function recurrence.
+                if self.m_n == 0 {
+                    for lidx in (self.m_lmin + 1)..=(l as i32) {
+                        let lidx_f = lidx as f64;
+                        let mm = (lidx * lidx - self.m_m * self.m_m) as f64;
+                        // multiplier = 1 / (sqrt(lidx*lidx - m_m*m_m) * lidx)
+                        let multiplier = 1.0 / (mm.sqrt() * lidx_f);
+
+                        // (2*lidx - 1)*(lidx * x)
+                        let curfactor = (2 * lidx - 1) as f64 * (lidx_f * x);
+
+                        // lidx * sqrt((lidx - 1)^2 - m_m^2)
+                        let priorfactor =
+                            lidx_f * (((lidx - 1) * (lidx - 1) - self.m_m * self.m_m) as f64).sqrt();
+
+                        let temp = val_l;
+                        val_l = multiplier * (curfactor * val_l - priorfactor * val_lm1);
+                        val_lm1 = temp;
+                    }
+                } else {
+                    // Use F.4.1 from Mischenko
+                    for lidx in (self.m_lmin + 1)..=(l as i32) {
+                        let lidx_f = lidx as f64;
+                        let mm = (lidx * lidx - self.m_m * self.m_m) as f64;
+                        let nn = (lidx * lidx - self.m_n * self.m_n) as f64;
+
+                        // multiplier = 1 / ((lidx - 1) * sqrt(lidx^2 - m_m^2) * sqrt(lidx^2 - m_n^2))
+                        let multiplier = 1.0 / (((lidx - 1) as f64) * mm.sqrt() * nn.sqrt());
+
+                        // (2*lidx - 1)* (lidx * (lidx-1) * x - m_n*m_m)
+                        let curfactor = (2 * lidx - 1) as f64
+                            * (lidx_f * (lidx_f - 1.0) * x - (self.m_n * self.m_m) as f64);
+
+                        // lidx * sqrt((lidx-1)^2 - m_m^2) * sqrt((lidx-1)^2 - m_n^2)
+                        let priorfactor = lidx_f
+                            * (((lidx - 1) * (lidx - 1) - self.m_m * self.m_m) as f64).sqrt()
+                            * (((lidx - 1) * (lidx - 1) - self.m_n * self.m_n) as f64).sqrt();
+
+                        let temp = val_l;
+                        val_l = multiplier * (curfactor * val_l - priorfactor * val_lm1);
+                        val_lm1 = temp;
+                    }
+                }
+
+                *elem = val_l;
+            }
+        }
+    }
+
     /// Internal method to compute the start scaling factor of the recurrence.
     fn recurrence_start_factor(&self) -> f64 {
         // Start of the recurrence, i.e. d^lmin_{m,n}(theta)

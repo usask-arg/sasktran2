@@ -353,8 +353,7 @@ if(BUILD_PYTHON)
 
   # Final path
   set(PY_MODULE_OUTPUT
-      "${CMAKE_CURRENT_SOURCE_DIR}/src/sasktran2/_core_rust${PYTHON_EXT_SUFFIX}"
-  )
+      "${CMAKE_CURRENT_BINARY_DIR}/_core_rust${PYTHON_EXT_SUFFIX}")
 
   get_target_property(RUST_CARGO_EXECUTABLE Rust::Cargo IMPORTED_LOCATION)
   get_target_property(RUSTC_EXECUTABLE Rust::Rustc IMPORTED_LOCATION)

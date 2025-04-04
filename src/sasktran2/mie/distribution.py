@@ -10,6 +10,7 @@ import xarray as xr
 from scipy.stats import gamma, lognorm, rv_continuous, triang, uniform
 
 from sasktran2 import mie
+from sasktran2._core import LinearizedMie
 from sasktran2.legendre import compute_greek_coefficients
 from sasktran2.mie import MieIntegrator, MieOutput
 
@@ -404,7 +405,7 @@ def integrate_mie_cpp(
     prob_dists: list[rv_continuous],
     refrac_index_fn,
     wavelengths,
-    num_quad=1024,
+    num_quad=31,
     maxintquantile=0.99999,
     num_coeffs=64,
     num_threads=1,
@@ -414,10 +415,16 @@ def integrate_mie_cpp(
     nodes, weights = roots_legendre(num_coeffs)
 
     max_r = 0.0
+    min_r = 1e25
     mean_r = 0.0
+    repr_dist = None
     for prob_dist in prob_dists:
+        min_r = min(min_r, prob_dist.ppf(1 - maxintquantile))
         max_r = max(max_r, prob_dist.ppf(maxintquantile))
-        mean_r = max(mean_r, prob_dist.mean())
+
+        if prob_dist.mean() > mean_r:
+            mean_r = prob_dist.mean()
+            repr_dist = prob_dist
 
     # Determine a reasonable split point based on the input wavelengths and distributions
     mean_size_param = 2 * np.pi * mean_r / np.nanmean(wavelengths)
@@ -444,9 +451,34 @@ def integrate_mie_cpp(
     a_weights = np.array(a_weights, order="F")
     cos_angles = np.array(cos_angles, order="C")
 
-    x, w = roots_legendre(num_quad)
-    x = 0.5 * (x + 1) * max_r
-    w *= max_r / 2
+    # Calculate the size distribution quadrature points, this is a bit tricky
+    mie = LinearizedMie(1)
+
+    def integrand(r):
+        x = 2 * np.pi * r / np.min(wavelengths)
+        v = mie.calculate(
+            [x], refrac_index_fn(np.min(wavelengths)), np.array([]), False
+        )
+        return v.values.Qext * repr_dist.pdf(r) * r**2 * np.pi
+
+    result = integrate.quad(integrand, 0, 2 * max_r, full_output=True, limit=200)
+
+    result = result[2]
+
+    # Now use the subintervals and a quadrature order to to the integration
+    g_x, g_w = roots_legendre(num_quad)
+
+    left = np.sort(result["alist"][: result["last"]])
+    right = np.sort(result["blist"][: result["last"]])
+    all_x = []
+    all_w = []
+    for a, b in zip(left, right, strict=False):
+        x = 0.5 * (g_x + 1) * (b - a) + a
+        w = g_w * (b - a) / 2
+        all_x.append(x)
+        all_w.append(w)
+    x = np.concatenate(all_x)
+    w = np.concatenate(all_w)
 
     x = np.array(x, order="F")
     w = np.array(w, order="F")
@@ -456,6 +488,8 @@ def integrate_mie_cpp(
     pdf_matrix = np.zeros((len(x), len(prob_dists)), order="F")
     for i, prob_dist in enumerate(prob_dists):
         pdf_matrix[:, i] = prob_dist.pdf(x)
+
+        pdf_matrix[:, i] /= np.dot(pdf_matrix[:, i], w)
 
     result = xr.Dataset(
         {

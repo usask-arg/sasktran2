@@ -29,6 +29,7 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
         db_root: Path | None = None,
         backend: str = "sasktran2",
         max_legendre_moments: int = 64,
+        num_size_quadrature: int = 1000,
         num_threads=1,
         **kwargs,
     ) -> None:
@@ -94,6 +95,7 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
         self._backend = backend
         self._max_legendre_moments = max_legendre_moments
         self._num_threads = num_threads
+        self._num_size_quadrature = num_size_quadrature
 
         for arg in kwargs:
             if arg not in self._psize_args:
@@ -135,8 +137,8 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
                 distribution,
                 refractive_index_fn,
                 wavelengths,
-                num_quad=1000,
-                maxintquantile=0.99999,
+                num_quad=self._num_size_quadrature,
+                maxintquantile=0.9999,
             )
 
             # vals xs is in units of nm^2, convert to cm^2 then to m^2
@@ -243,8 +245,8 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
                 distribution,
                 refractive_index_fn,
                 wavelengths,
-                num_quad=1000,
-                maxintquantile=0.99999,
+                num_quad=self._num_size_quadrature,
+                maxintquantile=0.999999,
                 compute_coeffs=True,
                 num_coeffs=self._max_legendre_moments,
             )
@@ -253,18 +255,7 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
             vals["xs_scattering"] *= 1e-14 * 1e-4
             vals["xs_absorption"] *= 1e-14 * 1e-4
 
-            ret_ds = xr.Dataset()
-
-            ret_ds["xs_scattering"] = vals["xs_scattering"]
-            ret_ds["xs_total"] = vals["xs_total"]
-            ret_ds["lm_a1"] = vals["lm_a1"]
-            ret_ds["lm_a2"] = vals["lm_a2"]
-            ret_ds["lm_a3"] = vals["lm_a3"]
-            ret_ds["lm_a4"] = vals["lm_a4"]
-            ret_ds["lm_b1"] = vals["lm_b1"]
-            ret_ds["lm_b2"] = vals["lm_b2"]
-
-            return ret_ds
+            return vals
 
         refractive = self._refractive_index.refractive_index_fn
 
@@ -322,7 +313,7 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
             prob_dists,
             refractive,
             self._wavelengths_nm,
-            num_quad=1000,
+            num_quad=31,
             maxintquantile=0.99999,
             num_coeffs=self._max_legendre_moments,
             num_threads=self._num_threads,

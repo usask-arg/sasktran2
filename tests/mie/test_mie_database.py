@@ -113,6 +113,7 @@ def test_mie_database_against_online():
         wavelengths_nm=np.array([700, 750, 800]),
         backend="sasktran2",
     )
+    mie_db.clear()
 
     aero_ext = np.zeros(len(model_geometry.altitudes()))
     aero_ext[0:30] = 1e-7

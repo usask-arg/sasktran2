@@ -362,7 +362,7 @@ TEST_CASE("LinMie multiple size_params", "[sasktran2][mie]") {
 
 TEST_CASE("LinMie Qext Qsca test non absorbing (miepython)",
           "[sasktran2][mie]") {
-    auto mie = sasktran2::mie::RustMie();
+    auto mie = sasktran2::mie::LinearizedMie();
     double lambda0 = 0.6328;
     double radius = 0.525;
 
