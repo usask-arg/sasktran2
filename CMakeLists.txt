@@ -333,13 +333,13 @@ if(BUILD_PYTHON)
 
   if(WIN32)
     set(SHARED_LIB_EXT ".dll")
-    set(RUST_LIB_PREFIX "") # no 'lib' prefix on Windows
+    set(RUST_LIB_PREFIX "_") # no 'lib' prefix on Windows
   elseif(APPLE)
     set(SHARED_LIB_EXT ".dylib")
-    set(RUST_LIB_PREFIX "lib")
+    set(RUST_LIB_PREFIX "lib_")
   else()
     set(SHARED_LIB_EXT ".so")
-    set(RUST_LIB_PREFIX "lib")
+    set(RUST_LIB_PREFIX "lib_")
   endif()
 
   set(RUST_BUILD_NAME "${RUST_LIB_PREFIX}core_rust${SHARED_LIB_EXT}")
