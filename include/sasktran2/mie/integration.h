@@ -1,5 +1,6 @@
+#pragma once
+
 #include "sasktran2/math/wigner.h"
-#include "sasktran2/mie/mie.h"
 #include "sasktran2/mie/linearized_mie.h"
 #include <sasktran2/internal_common.h>
 
