@@ -172,6 +172,28 @@ namespace sasktran2::viewinggeometry {
         std::string to_string() const override final;
     };
 
+    class ViewingUpSolar : public ViewingGeometryBase {
+      private:
+        double m_cos_sza;
+        double m_relative_azimuth_angle;
+        double m_observer_altitude;
+        double m_cos_viewing_zenith;
+
+      public:
+        ViewingUpSolar(double cos_sza, double relative_azimuth_angle,
+                       double cos_viewing_zenith, double observer_altitude);
+
+        /** Constructs the ray from the user provided angles and altitudes
+         *
+         * @param geometry Internal sasktran Coordinates
+         * @return ViewingRay
+         */
+        ViewingRay
+        construct_ray(const sasktran2::Coordinates& geometry) override final;
+
+        std::string to_string() const override final;
+    };
+
     /** A container that defines all of the viewing rays
      *
      */

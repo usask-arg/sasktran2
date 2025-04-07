@@ -22,6 +22,14 @@ namespace sasktran2::viewinggeometry {
                     *dynamic_cast<
                         const sasktran2::viewinggeometry::GroundViewingSolar*>(
                         &ray)));
+        } else if (dynamic_cast<
+                       const sasktran2::viewinggeometry::ViewingUpSolar*>(
+                       &ray)) {
+            m_observer_rays.push_back(
+                std::make_unique<sasktran2::viewinggeometry::ViewingUpSolar>(
+                    *dynamic_cast<
+                        const sasktran2::viewinggeometry::ViewingUpSolar*>(
+                        &ray)));
         } else {
             spdlog::error("Unsupported viewing ray type");
         }

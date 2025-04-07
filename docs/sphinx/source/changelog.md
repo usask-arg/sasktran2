@@ -2,6 +2,9 @@
 (_changelog)=
 # Changelog
 
+## 2025.04.0
+- Added sk.SolarAnglesObserverLocation to define a viewing ray from a position and local viewing angles
+
 ## 2025.03.0
 - Fixed a bug with the successive orders source when viewing the ground in extreme scattering angles
 - Various speed improvements

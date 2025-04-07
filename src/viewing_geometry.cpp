@@ -1,3 +1,4 @@
+#include "sasktran2/viewinggeometry.h"
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <sasktran2.h>
@@ -53,6 +54,30 @@ void init_viewing_geometry(py::module_& m) {
                 cos_viewing_zenith: float
                     Cosine of the viewing zenith angle at the ground point [unitless]
             )",
+             "cos_sza"_a, "relative_azimuth"_a, "cos_viewing_zenith"_a,
+             "observer_altitude_m"_a);
+
+    py::class_<sasktran2::viewinggeometry::ViewingUpSolar,
+               sasktran2::viewinggeometry::ViewingGeometryBase>(
+        m, "SolarAnglesObserverLocation")
+        .def(py::init<double, double, double, double>(),
+             R"(
+              Defines a viewing ray that is defined at a location defined from the solar angles. Note that
+              all of these parameters assumes straight line paths (i.e. no atmospheric refraction).
+              This differs from sk.GroundViewingSolar in that the angles are defined at the observer location, not the ground location.
+
+              Parameters
+              ----------
+              cos_sza: float
+                  Cosine of solar zenith angle at the observer point [unitless]
+              relative_azimuth: float
+                  Relative azimuth angle to the sun [rad] at the observer point. An angle of 0 degrees corresponds to the forward scattering plane.
+              observer_altitude_m: float
+                  Observer altitude relative to the earth [m]
+              cos_viewing_zenith: float
+                  Cosine of the viewing zenith angle at the observer point.  Positive angles are viewing up,
+                  negative angles are viewing down. [unitless]
+          )",
              "cos_sza"_a, "relative_azimuth"_a, "cos_viewing_zenith"_a,
              "observer_altitude_m"_a);
 

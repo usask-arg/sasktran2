@@ -15,6 +15,7 @@ Viewing Policies
 
     sasktran2.TangentAltitudeSolar
     sasktran2.GroundViewingSolar
+    sasktran2.SolarAnglesObserverLocation
 
 
 Solar Geometry
