@@ -1,12 +1,13 @@
-use core::num;
-use std::slice;
+#![allow(non_snake_case)]
+#![allow(unused_variables)]
+#![allow(dead_code)]
 
 use sk_core::mie as sk_mie;
 use sk_core::wigner::WignerDCalculator;
 
-use numpy::{Complex64, PyArrayMethods};
-use numpy::ndarray::{Array1, Array2, Axis, Zip};
-use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1, PyReadwriteArray2};
+use numpy::Complex64;
+use numpy::ndarray::{Array1, Array2, Zip};
+use numpy::{PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray1, PyReadwriteArray2};
 use pyo3::prelude::*;
 
 #[pyclass]
@@ -45,13 +46,15 @@ impl Mie {
             .and(lpoly_22.rows_mut())
             .and(lpoly_2m2.rows_mut())
             .and(cos_angles.as_array())
-            .for_each(|mut lpoly00_row, mut lpoly02_row, mut lpoly22_row, mut lpoly2m2_row, cos_angle| {
-                let theta = cos_angle.acos();
-                wigner00.vector_d(theta, lpoly00_row.as_slice_mut().unwrap());
-                wigner22.vector_d(theta, lpoly22_row.as_slice_mut().unwrap());
-                wigner2m2.vector_d(theta, lpoly2m2_row.as_slice_mut().unwrap());
-                wigner02.vector_d(theta, lpoly02_row.as_slice_mut().unwrap());
-            });
+            .for_each(
+                |mut lpoly00_row, mut lpoly02_row, mut lpoly22_row, mut lpoly2m2_row, cos_angle| {
+                    let theta = cos_angle.acos();
+                    wigner00.vector_d(theta, lpoly00_row.as_slice_mut().unwrap());
+                    wigner22.vector_d(theta, lpoly22_row.as_slice_mut().unwrap());
+                    wigner2m2.vector_d(theta, lpoly2m2_row.as_slice_mut().unwrap());
+                    wigner02.vector_d(theta, lpoly02_row.as_slice_mut().unwrap());
+                },
+            );
 
         Mie {
             mie: sk_mie::Mie::new().with_cos_angles(cos_angles.as_array().to_vec()),
@@ -71,7 +74,7 @@ impl Mie {
         pdf: PyReadonlyArray2<'py, f64>,        // [distribution, size_Param]
         size_weights: PyReadonlyArray1<'py, f64>, // [size_param]
         angle_weights: PyReadonlyArray1<'py, f64>, // [angle]
-        mut xs_total: PyReadwriteArray1<'py, f64>,  // [distribution]
+        mut xs_total: PyReadwriteArray1<'py, f64>, // [distribution]
         mut xs_scattering: PyReadwriteArray1<'py, f64>, // [distribution]
         p11: PyReadwriteArray2<'py, f64>,       // [distribution, angle]
         p12: PyReadwriteArray2<'py, f64>,       // [distribution, angle]
@@ -103,18 +106,14 @@ impl Mie {
             let pdf_row = pdf_row.as_slice().unwrap();
 
             Zip::from(Qext.view())
-            .and(Qsca.view())
-            .and(size_weights.as_array())
-            .and(pdf_row)
-            .for_each(|Qe, Qs, size_weight, pdf_val| {
-                xs_total[i] += (Qe * size_weight * pdf_val);
-                xs_scattering[i] += (Qs * size_weight * pdf_val);
-            });
-
+                .and(Qsca.view())
+                .and(size_weights.as_array())
+                .and(pdf_row)
+                .for_each(|Qe, Qs, size_weight, pdf_val| {
+                    xs_total[i] += Qe * size_weight * pdf_val;
+                    xs_scattering[i] += Qs * size_weight * pdf_val;
+                });
         }
-
-
-
 
         Ok(())
     }

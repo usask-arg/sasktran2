@@ -333,14 +333,16 @@ if(BUILD_PYTHON)
 
   if(WIN32)
     set(SHARED_LIB_EXT ".dll")
+    set(RUST_LIB_PREFIX "") # no 'lib' prefix on Windows
   elseif(APPLE)
     set(SHARED_LIB_EXT ".dylib")
+    set(RUST_LIB_PREFIX "lib")
   else()
     set(SHARED_LIB_EXT ".so")
+    set(RUST_LIB_PREFIX "lib")
   endif()
 
-  # Path to final output inside target/
-  set(RUST_BUILD_NAME "lib_core_rust${SHARED_LIB_EXT}")
+  set(RUST_BUILD_NAME "${RUST_LIB_PREFIX}core_rust${SHARED_LIB_EXT}")
   set(RUST_BUILD_PATH
       "${CMAKE_CURRENT_SOURCE_DIR}/rust/pybindings/target/release/${RUST_BUILD_NAME}"
   )
