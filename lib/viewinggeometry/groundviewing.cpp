@@ -89,10 +89,6 @@ namespace sasktran2::viewinggeometry {
 
         result.relative_azimuth = m_relative_azimuth_angle;
 
-        std::cout << "Observer position: " << result.observer.position
-                  << std::endl;
-        std::cout << "Look away: " << result.look_away << std::endl;
-
         return result;
     }
 
