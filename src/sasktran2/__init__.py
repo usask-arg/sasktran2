@@ -36,6 +36,7 @@ from ._core import (
     OutputIdealStokes_1,
     OutputIdealStokes_3,
     SingleScatterSource,
+    SolarAnglesObserverLocation,
     StokesBasis,
     SurfaceStokes_1,
     SurfaceStokes_3,
@@ -43,7 +44,6 @@ from ._core import (
     ThreadingModel,
     ViewingGeometry,
     ViewingGeometryBase,
-    ViewingUpSolar,
 )
 from ._version import __version__
 from .atmosphere import Atmosphere
