@@ -43,6 +43,7 @@ from ._core import (
     ThreadingModel,
     ViewingGeometry,
     ViewingGeometryBase,
+    ViewingUpSolar,
 )
 from ._version import __version__
 from .atmosphere import Atmosphere

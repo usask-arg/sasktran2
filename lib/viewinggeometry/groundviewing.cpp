@@ -65,4 +65,43 @@ namespace sasktran2::viewinggeometry {
             m_observer_altitude);
     }
 
+    ViewingUpSolar::ViewingUpSolar(double cos_sza,
+                                   double relative_azimuth_angle,
+                                   double cos_viewing_zenith,
+                                   double observer_altitude)
+        : m_cos_sza(cos_sza), m_relative_azimuth_angle(relative_azimuth_angle),
+          m_observer_altitude(observer_altitude),
+          m_cos_viewing_zenith(cos_viewing_zenith) {}
+
+    ViewingRay
+    ViewingUpSolar::construct_ray(const sasktran2::Coordinates& geometry) {
+        ViewingRay result;
+
+        // Coordinate of ground point that has the correct angles
+        Eigen::Vector3d ground_vector = geometry.solar_coordinate_vector(
+            m_cos_sza, 0.0, m_observer_altitude);
+
+        result.look_away = geometry.look_vector_from_azimuth(
+            ground_vector, -(EIGEN_PI - m_relative_azimuth_angle),
+            m_cos_viewing_zenith);
+
+        result.observer.position = ground_vector;
+
+        result.relative_azimuth = m_relative_azimuth_angle;
+
+        std::cout << "Observer position: " << result.observer.position
+                  << std::endl;
+        std::cout << "Look away: " << result.look_away << std::endl;
+
+        return result;
+    }
+
+    std::string ViewingUpSolar::to_string() const {
+        return fmt::format(
+            "Up Viewing Ray: cos_sza: {}, relative_azimuth_angle: {}, "
+            "cos_viewing_zenith: {}, observer_altitude: {}",
+            m_cos_sza, m_relative_azimuth_angle, m_cos_viewing_zenith,
+            m_observer_altitude);
+    }
+
 } // namespace sasktran2::viewinggeometry
