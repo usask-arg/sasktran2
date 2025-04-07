@@ -113,5 +113,6 @@ void init_mie(py::module_& m) {
              "wavelength"_a, "refractive_index"_a, "size_param"_a, "pdf"_a,
              "size_weights"_a, "angle_weights"_a, "xs_total"_a,
              "xs_scattering"_a, "p11"_a, "p12"_a, "p33"_a, "p34"_a, "lm_a1"_a,
-             "lm_a2"_a, "lm_a3"_a, "lm_a4"_a, "lm_b1"_a, "lm_b2"_a);
+             "lm_a2"_a, "lm_a3"_a, "lm_a4"_a, "lm_b1"_a, "lm_b2"_a,
+             py::doc(""));
 }
