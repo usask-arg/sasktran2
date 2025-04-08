@@ -58,6 +58,7 @@ __all__ = [
     "SnowKokhanovskyStokes_1",
     "SnowKokhanovskyStokes_3",
     "Solar",
+    "SolarAnglesObserverLocation",
     "Source",
     "Spherical",
     "Standard",
@@ -77,6 +78,8 @@ __all__ = [
     "WignerD",
     "assign_absorber_derivatives",
     "voigt_broaden",
+    "voigt_broaden_uniform",
+    "voigt_broaden_with_line_coupling",
 ]
 
 class AltitudeGrid:
@@ -1429,6 +1432,34 @@ class SnowKokhanovskyStokes_3(BRDFStokes_3):
         Number of derivatives this BRDF will calculate.
         """
 
+class SolarAnglesObserverLocation(ViewingGeometryBase):
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
+    def __init__(
+        self,
+        cos_sza: float,
+        relative_azimuth: float,
+        cos_viewing_zenith: float,
+        observer_altitude_m: float,
+    ) -> None:
+        """
+        Defines a viewing ray that is defined at a location defined from the solar angles. Note that
+        all of these parameters assumes straight line paths (i.e. no atmospheric refraction).
+        This differs from sk.GroundViewingSolar in that the angles are defined at the observer location, not the ground location.
+
+        Parameters
+        ----------
+        cos_sza: float
+            Cosine of solar zenith angle at the observer point [unitless]
+        relative_azimuth: float
+            Relative azimuth angle to the sun [rad] at the observer point. An angle of 0 degrees corresponds to the forward scattering plane.
+        observer_altitude_m: float
+            Observer altitude relative to the earth [m]
+        cos_viewing_zenith: float
+            Cosine of the viewing zenith angle at the observer point.  Positive angles are viewing up,
+            negative angles are viewing down. [unitless]
+        """
+
 class StokesBasis:
     """
     Members:
@@ -1734,6 +1765,62 @@ def voigt_broaden(
         If true, subtract the pedastal from the result, default False.  This should be set to true if you are using
         a continuum model in addition to the line model
     """
+
+def voigt_broaden_uniform(
+    line_center: numpy.ndarray[numpy.float64[m, 1]],
+    line_intensity: numpy.ndarray[numpy.float64[m, 1]],
+    lower_energy: numpy.ndarray[numpy.float64[m, 1]],
+    gamma_air: numpy.ndarray[numpy.float64[m, 1]],
+    gamma_self: numpy.ndarray[numpy.float64[m, 1]],
+    delta_air: numpy.ndarray[numpy.float64[m, 1]],
+    n_air: numpy.ndarray[numpy.float64[m, 1]],
+    iso_id: numpy.ndarray[numpy.int32[m, 1]],
+    partitions: numpy.ndarray[numpy.float64[m, n], numpy.ndarray.flags.f_contiguous],
+    molecular_mass: numpy.ndarray[numpy.float64[m, 1]],
+    pressure: numpy.ndarray[numpy.float64[m, 1]],
+    pself: numpy.ndarray[numpy.float64[m, 1]],
+    temperature: numpy.ndarray[numpy.float64[m, 1]],
+    first_wavenumber: float,
+    wavenumber_spacing: float,
+    result: numpy.ndarray[
+        numpy.float64[m, n],
+        numpy.ndarray.flags.writeable,
+        numpy.ndarray.flags.f_contiguous,
+    ],
+    line_contribution_width: float = 25.0,
+    cull_factor: float = 0.0,
+    num_threads: int = 1,
+    interpolation_delta: float = 0.0,
+    subtract_pedastal: bool = False,
+) -> None: ...
+def voigt_broaden_with_line_coupling(
+    line_center: numpy.ndarray[numpy.float64[m, 1]],
+    line_intensity: numpy.ndarray[numpy.float64[m, 1]],
+    lower_energy: numpy.ndarray[numpy.float64[m, 1]],
+    gamma_air: numpy.ndarray[numpy.float64[m, 1]],
+    gamma_self: numpy.ndarray[numpy.float64[m, 1]],
+    delta_air: numpy.ndarray[numpy.float64[m, 1]],
+    n_air: numpy.ndarray[numpy.float64[m, 1]],
+    iso_id: numpy.ndarray[numpy.int32[m, 1]],
+    partitions: numpy.ndarray[numpy.float64[m, n], numpy.ndarray.flags.f_contiguous],
+    Y_coupling: numpy.ndarray[numpy.float64[m, n], numpy.ndarray.flags.f_contiguous],
+    G_coupling: numpy.ndarray[numpy.float64[m, n], numpy.ndarray.flags.f_contiguous],
+    molecular_mass: numpy.ndarray[numpy.float64[m, 1]],
+    pressure: numpy.ndarray[numpy.float64[m, 1]],
+    pself: numpy.ndarray[numpy.float64[m, 1]],
+    temperature: numpy.ndarray[numpy.float64[m, 1]],
+    wavenumber_grid: numpy.ndarray[numpy.float64[m, 1]],
+    result: numpy.ndarray[
+        numpy.float64[m, n],
+        numpy.ndarray.flags.writeable,
+        numpy.ndarray.flags.f_contiguous,
+    ],
+    line_contribution_width: float = 25.0,
+    cull_factor: float = 0.0,
+    num_threads: int = 1,
+    interpolation_delta: float = 0.0,
+    subtract_pedastal: bool = False,
+) -> None: ...
 
 ConstantSpacing: GridSpacing  # value = <GridSpacing.ConstantSpacing: 0>
 Disabled: InputValidationMode  # value = <InputValidationMode.Disabled: 2>

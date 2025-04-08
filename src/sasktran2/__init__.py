@@ -36,6 +36,7 @@ from ._core import (
     OutputIdealStokes_1,
     OutputIdealStokes_3,
     SingleScatterSource,
+    SolarAnglesObserverLocation,
     StokesBasis,
     SurfaceStokes_1,
     SurfaceStokes_3,

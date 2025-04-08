@@ -49,6 +49,7 @@ viewing_geo.observer_rays
 
     sasktran2.TangentAltitudeSolar
     sasktran2.GroundViewingSolar
+    sasktran2.SolarAnglesObserverLocation
 ```
 
 ## Working with Real Measurements
