@@ -58,6 +58,7 @@ __all__ = [
     "SnowKokhanovskyStokes_1",
     "SnowKokhanovskyStokes_3",
     "Solar",
+    "SolarAnglesObserverLocation",
     "Source",
     "Spherical",
     "Standard",
@@ -1429,6 +1430,34 @@ class SnowKokhanovskyStokes_3(BRDFStokes_3):
     def num_deriv(self) -> int:
         """
         Number of derivatives this BRDF will calculate.
+        """
+
+class SolarAnglesObserverLocation(ViewingGeometryBase):
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
+    def __init__(
+        self,
+        cos_sza: float,
+        relative_azimuth: float,
+        cos_viewing_zenith: float,
+        observer_altitude_m: float,
+    ) -> None:
+        """
+        Defines a viewing ray that is defined at a location defined from the solar angles. Note that
+        all of these parameters assumes straight line paths (i.e. no atmospheric refraction).
+        This differs from sk.GroundViewingSolar in that the angles are defined at the observer location, not the ground location.
+
+        Parameters
+        ----------
+        cos_sza: float
+            Cosine of solar zenith angle at the observer point [unitless]
+        relative_azimuth: float
+            Relative azimuth angle to the sun [rad] at the observer point. An angle of 0 degrees corresponds to the forward scattering plane.
+        observer_altitude_m: float
+            Observer altitude relative to the earth [m]
+        cos_viewing_zenith: float
+            Cosine of the viewing zenith angle at the observer point.  Positive angles are viewing up,
+            negative angles are viewing down. [unitless]
         """
 
 class StokesBasis:
