@@ -1,8 +1,9 @@
-import sasktran2 as sk
-import numpy as np
+from __future__ import annotations
 
-from sasktran2.constituent.rayleigh import Rayleigh as PyRayleigh
+import numpy as np
+import sasktran2 as sk
 from sasktran2._core_rust import Rayleigh as RustRayleigh
+from sasktran2.constituent.rayleigh import Rayleigh as PyRayleigh
 
 
 def test_bates_identical():
@@ -42,7 +43,6 @@ def test_bates_identical():
 
         sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
 
-
         atmosphere["ozone"] = sk.constituent.VMRAltitudeAbsorber(
             sk.optical.O3DBM(),
             model_geometry.altitudes(),
@@ -56,7 +56,6 @@ def test_bates_identical():
 
         atmosphere["rayleigh"] = RustRayleigh()
         rad_rust = engine.calculate_radiance(atmosphere)
-
 
         # Verify the radiances and weighting functions are identical
         for var in rad_py:
