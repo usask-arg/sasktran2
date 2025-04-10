@@ -144,7 +144,7 @@ jobs:
       - name: Build Conda package
         shell: bash -el {0}
         run: |
-          rattler-build build --recipe conda.recipe/meta.yaml --output-folder pkgs/ -c conda-forge/label/python_rc
+          rattler-build build --recipe conda.recipe/meta.yaml --output-dir pkgs/
 
       - name: Save conda package
         uses: actions/upload-artifact@v4
