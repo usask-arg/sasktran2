@@ -6,6 +6,7 @@ from itertools import product
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import xarray as xr
 
 from sasktran2.mie import LinearizedMie
@@ -27,7 +28,7 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
         refractive_index: RefractiveIndex,
         wavelengths_nm: np.array,
         db_root: Path | None = None,
-        backend: str = "sasktran2",
+        backend: str = "sasktran2_cpp",
         max_legendre_moments: int = 64,
         num_size_quadrature: int = 1000,
         num_threads=1,
@@ -320,10 +321,17 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
         )
 
         if len(self._kwargs) > 1:
-            # Have to do a multi-index unstack
-            ds = ds.set_index(distribution=list(self._kwargs.keys())).unstack(
-                "distribution"
+            multi = pd.MultiIndex.from_product(
+                [self._kwargs[k] for k in self._kwargs],
+                names=list(self._kwargs.keys()),
             )
+
+            ds = ds.assign_coords(
+                xr.Coordinates.from_pandas_multiindex(multi, "distribution")
+            )
+
+            # Have to do a multi-index unstack
+            ds = ds.unstack("distribution")
         elif len(self._kwargs) == 1:
             ds = ds.rename_dims({"distribution": next(iter(self._kwargs.keys()))})
         else:
