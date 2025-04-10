@@ -331,7 +331,7 @@ if(BUILD_PYTHON)
 
   install(TARGETS _core DESTINATION sasktran2)
   corrosion_import_crate(MANIFEST_PATH rust/pybindings/Cargo.toml)
-  corrosion_set_env_vars(_rust_core PYO3_PYTHON=${Python_EXECUTABLE})
+  corrosion_set_env_vars(_core_rust PYO3_PYTHON=${Python_EXECUTABLE})
 
   if(WIN32)
     set(SHARED_LIB_EXT ".dll")
