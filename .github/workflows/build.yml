@@ -72,64 +72,6 @@ jobs:
           name: sasktran2-conda-${{ matrix.os }}-${{ matrix.target_plat }}
           path: pkgs
 
-  build-conda-pysasktran2:
-    runs-on: ${{ matrix.os }}
-    if: (github.event_name != 'release')
-
-    environment:
-      name: conda-nightly
-      url: https://anaconda.org/usask-arg-nightly/sasktran2
-    permissions:
-      id-token: write
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target_plat: x86_64
-          - os: windows-2019
-            target_plat: x86_64
-          - os: macos-13
-            target_plat: x86_64
-          - os: macos-14
-            target_plat: arm
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          submodules: true
-
-      - name: Setup Conda build environment
-        uses: mamba-org/setup-micromamba@v2
-        with:
-          environment-file: ci/conda-envs/mamba-build.yml
-
-      - name: Set release python envs
-        shell: bash -el {0}
-        run: |
-          cp ci/conda_build_config_release.yaml conda.recipe/conda_build_config.yaml
-          conda config --set anaconda_upload yes
-
-      - name: Build Conda package
-        shell: bash -el {0}
-        run: |
-          conda mambabuild conda.recipe --output-folder pkgs/ -c conda-forge/label/python_rc --user usask-arg-nightly --token ${{ secrets.ANACONDA_TOKEN_NIGHTLY }}
-
-      - name: Build Conda package (cross mac arm)
-        shell: bash -el {0}
-        if: (matrix.target_plat == 'arm') && (matrix.os == 'macos-12')
-        run: |
-          conda mambabuild conda.recipe -m conda.recipe/osx_arm64_.yaml --output-folder pkgs/ -c conda-forge/label/python_rc --no-test --user usask-arg-nightly --token ${{ secrets.ANACONDA_TOKEN_NIGHTLY }}
-
-      - name: Save conda package
-        uses: actions/upload-artifact@v4
-        with:
-          name: sasktran2-conda-${{ matrix.os }}-${{ matrix.target_plat }}
-          path: pkgs
-
   build_sdist:
     name: Build SDist
     runs-on: ubuntu-latest
