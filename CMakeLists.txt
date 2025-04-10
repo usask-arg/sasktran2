@@ -330,6 +330,7 @@ if(BUILD_PYTHON)
   target_link_libraries(_core PRIVATE sasktran2)
 
   install(TARGETS _core DESTINATION sasktran2)
+  corrosion_import_crate(MANIFEST_PATH rust/pybindings/Cargo.toml)
 
   if(WIN32)
     set(SHARED_LIB_EXT ".dll")
@@ -343,9 +344,7 @@ if(BUILD_PYTHON)
   endif()
 
   set(RUST_BUILD_NAME "${RUST_LIB_PREFIX}core_rust${SHARED_LIB_EXT}")
-  set(RUST_BUILD_PATH
-      "${CMAKE_CURRENT_SOURCE_DIR}/rust/pybindings/target/release/${RUST_BUILD_NAME}"
-  )
+  set(RUST_BUILD_PATH "${CMAKE_CURRENT_BINARY_DIR}/${RUST_BUILD_NAME}")
 
   execute_process(
     COMMAND ${Python_EXECUTABLE} -c
@@ -362,17 +361,13 @@ if(BUILD_PYTHON)
 
   add_custom_command(
     OUTPUT ${PY_MODULE_OUTPUT}
-    COMMAND
-      ${CMAKE_COMMAND} -E env CARGO_BUILD_RUSTC=${RUSTC_EXECUTABLE}
-      PYO3_PYTHON=${Python_EXECUTABLE} ${RUST_CARGO_EXECUTABLE} build
-      --manifest-path ${CMAKE_CURRENT_SOURCE_DIR}/rust/pybindings/Cargo.toml
-      --release --verbose
     COMMAND ${CMAKE_COMMAND} -E copy ${RUST_BUILD_PATH} ${PY_MODULE_OUTPUT}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/rust/pybindings
     COMMENT "Building and copying Rust PyO3 module to Python package"
     VERBATIM)
 
-  add_custom_target(copy_core_rust ALL DEPENDS ${PY_MODULE_OUTPUT})
+  add_custom_target(copy_core_rust ALL DEPENDS ${PY_MODULE_OUTPUT}
+                                               _cargo-build__core_rust)
   install(FILES ${PY_MODULE_OUTPUT} DESTINATION sasktran2)
 
 else()
