@@ -170,6 +170,7 @@ extend-ignore = [
     "E501",   # Line too long
     "PD011", # wanting to use to_numpy instead of values
     "G004",   # Logging format
+    "PD010", # Pandas unstack
 ]
 unfixable = [
     "T20",  # Removes print statements

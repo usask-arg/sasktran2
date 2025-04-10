@@ -88,6 +88,12 @@ namespace sasktran2::math {
             m_recurrence_start_factor = recurrence_start_factor();
         };
 
+        void vector_d(double theta, Eigen::Ref<Eigen::VectorXd> dvec) {
+            for (int l = 0; l < dvec.size(); ++l) {
+                dvec(l) = d(theta, l);
+            }
+        }
+
         /** Calculates \f$d^l_{mn}(\theta)\f$
          *
          * @param theta Angle in radians

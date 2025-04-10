@@ -290,10 +290,10 @@ class Atmosphere:
             raise ValueError(msg)
 
         if wavelengths_nm is not None:
-            self.wavelengths_nm = wavelengths_nm
+            self.wavelengths_nm = wavelengths_nm.astype(np.float64)
 
         if wavenumber_cminv is not None:
-            self.wavenumbers_cminv = wavenumber_cminv
+            self.wavenumbers_cminv = wavenumber_cminv.astype(np.float64)
 
         nwavel = len(self.wavelengths_nm) if numwavel is None else numwavel
 

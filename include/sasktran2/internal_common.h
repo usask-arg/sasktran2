@@ -64,3 +64,4 @@
 #include <unsupported/Eigen/CXX11/Tensor>
 #include <spdlog/spdlog.h>
 #include <spdlog/fmt/ostr.h>
+#include <sasktran2/rext.h>

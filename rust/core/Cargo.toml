@@ -1,0 +1,12 @@
+[package]
+name = "sk_core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ndarray = {version = "*", features = ["rayon"] }
+num = "*"
+
+[lib]
+name = "sk_core"
+crate-type = ["rlib", "staticlib"]

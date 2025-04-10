@@ -1,3 +1,4 @@
+#include "sasktran2/mie/rust_mie.h"
 #include <sasktran2/test_helper.h>
 
 #include <sasktran2.h>
@@ -382,6 +383,8 @@ TEST_CASE("LinMie Qext Qsca test non absorbing (miepython)",
     auto size_param_2 = Eigen::VectorXd::LinSpaced(1, 0.099, 0.099);
     result = mie.calculate(size_param_2, refractive_index, cos_angles, true);
     REQUIRE(fabs(result.values.Qsca(0) - 0.000007) < 1e-6);
+
+    auto TEMP = result.values.S1(1);
 
     REQUIRE(fabs(result.values.S1(0).real() - 1.817558E-08) < 1e-6);
     REQUIRE(fabs(result.values.S1(0).imag() + 1.654225E-04) < 1e-6);
