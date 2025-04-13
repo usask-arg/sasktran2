@@ -8,7 +8,10 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
-from sasktran2.optical.database import OpticalDatabaseGenericAbsorber
+from sasktran2.optical.database import (
+    OpticalDatabaseGenericAbsorber,
+    OpticalDatabaseRust,
+)
 from sasktran2.optical.hitran import HITRANAbsorber
 from sasktran2.units import wavenumber_cminv_to_wavlength_nm
 from sasktran2.util import get_hapi
@@ -122,7 +125,7 @@ PRESSURE_GRID = (
 TEMP_GRID = np.arange(190, 311, 10)
 
 
-class HITRANDatabase(CachedDatabase, OpticalDatabaseGenericAbsorber):
+class HITRANDatabase(CachedDatabase, OpticalDatabaseRust):
     def __init__(
         self,
         molecule: str,

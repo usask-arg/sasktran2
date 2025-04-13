@@ -2,8 +2,8 @@
 
 use crate::mie::Mie;
 
-use std::os::raw::c_double;
 use num::complex::Complex64;
+use std::os::raw::c_double;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn mie_new() -> *mut Mie {

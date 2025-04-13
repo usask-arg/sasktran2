@@ -3,5 +3,5 @@ pub mod wigner;
 
 pub mod cffi;
 pub mod constituent;
-pub mod optical;
 pub mod interpolation;
+pub mod optical;

@@ -1,8 +1,8 @@
 #![allow(non_snake_case)]
 
 use ndarray::{Array1, Array2, Zip};
-use num::complex::Complex64;
 use num::abs;
+use num::complex::Complex64;
 
 fn max_order(size_param: f64) -> usize {
     (size_param + 4.05 * size_param.powf(0.3333) + 2.0).round() as usize

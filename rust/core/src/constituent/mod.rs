@@ -50,11 +50,7 @@ pub trait DerivMappingGenerator<'a> {
 }
 
 pub trait Constituent {
-    fn add_to_atmosphere(
-        &self,
-        inputs: &impl StorageInputs,
-        outputs: &mut impl StorageOutputs,
-    );
+    fn add_to_atmosphere(&self, inputs: &impl StorageInputs, outputs: &mut impl StorageOutputs);
 
     fn register_derivatives<'a>(
         &self,

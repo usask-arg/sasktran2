@@ -2,14 +2,14 @@
 
 use std::collections::HashMap;
 
-use numpy::Element;
 use numpy::ndarray::{Array1, ArrayView1, ArrayView2, ArrayView3, ArrayViewMut2, ArrayViewMut3};
+use numpy::{Element, PyUntypedArrayMethods};
 use numpy::{PyReadonlyArray1, PyReadwriteArray2, PyReadwriteArray3};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use sk_core::constituent::{AtmosphereStorageOutputImmutView, AtmosphereStorageOutputView};
 
-use sk_core::constituent::{StorageInputs, StorageOutputs, DerivMappingGenerator, DerivMapping};
+use sk_core::constituent::{DerivMapping, DerivMappingGenerator, StorageInputs, StorageOutputs};
 
 use super::deriv_mapping::PyDerivMapping;
 
@@ -141,7 +141,7 @@ impl<'py> AtmosphereStorage<'py> {
         let pressure_pa_array = get_optional_array1::<f64>(atmo, "pressure_pa").unwrap();
         let temperature_k_array = get_optional_array1::<f64>(atmo, "temperature_k").unwrap();
         let wavelengths_nm_array = get_optional_array1::<f64>(atmo, "wavelengths_nm").unwrap();
-        let wavenumber_cminv_array = get_optional_array1::<f64>(atmo, "wavenumber_cminv").unwrap();
+        let wavenumber_cminv_array = get_optional_array1::<f64>(atmo, "wavenumbers_cminv").unwrap();
 
         let storage = atmo.getattr("storage").unwrap();
         let total_extinction_obj = storage.getattr("total_extinction").unwrap();
@@ -160,7 +160,7 @@ impl<'py> AtmosphereStorage<'py> {
 
         AtmosphereStorage {
             num_stokes,
-            deriv_generator: PyDerivativeGenerator{ storage },
+            deriv_generator: PyDerivativeGenerator { storage },
             inputs: AtmosphereStorageInputs {
                 num_stokes,
                 py_pressure_pa: pressure_pa_array,
@@ -177,18 +177,24 @@ impl<'py> AtmosphereStorage<'py> {
             },
         }
     }
+
+    pub fn num_geometry(&self) -> usize {
+        self.outputs.py_total_extinction.shape()[0]
+    }
+    pub fn num_wavelengths(&self) -> usize {
+        self.outputs.py_total_extinction.shape()[1]
+    }
 }
 
 impl<'py> DerivMappingGenerator<'py> for PyDerivativeGenerator<'py> {
     fn get_derivative_mapping(&self, name: &str) -> impl DerivMapping<'py> {
         let args = (name,);
 
-        let deriv= self
+        let deriv = self
             .storage
             .call_method1("get_derivative_mapping", args)
             .unwrap();
 
         PyDerivMapping::new(deriv)
     }
-
 }

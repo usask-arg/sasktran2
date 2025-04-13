@@ -1,5 +1,5 @@
-use ndarray::*;
 use super::OutOfBoundsMode;
+use ndarray::*;
 
 pub fn linear_interpolating_matrix<S>(
     from_grid: &ArrayBase<S, Ix1>,
@@ -16,12 +16,12 @@ where
         .for_each(|mut row, to_val| {
             if to_val < from_grid.first().unwrap() {
                 match out_of_bounds_mode {
-                    OutOfBoundsMode::Zero =>  {}, // Do nothing
+                    OutOfBoundsMode::Zero => {} // Do nothing
                     OutOfBoundsMode::Extend => row.first_mut().unwrap().assign_elem(1.0),
                 }
             } else if to_val > from_grid.last().unwrap() {
                 match out_of_bounds_mode {
-                    OutOfBoundsMode::Zero => {}, // Do nothing
+                    OutOfBoundsMode::Zero => {} // Do nothing
                     OutOfBoundsMode::Extend => row.last_mut().unwrap().assign_elem(1.0),
                 }
             } else {
@@ -35,6 +35,33 @@ where
     result
 }
 
+pub struct Grid {
+    pub x: Array1<f64>,
+    is_uniform: bool,
+    start: Option<f64>,
+    dx: Option<f64>,
+}
+
+impl Grid {
+    pub fn new(x: Array1<f64>) -> Self {
+        // Check if the distance between successive elements is uniform
+        let first_diff = x[1] - x[0];
+        let is_uniform = x
+            .windows(2)
+            .into_iter()
+            .all(|w| (w[1] - w[0] - first_diff).abs() < 1e-10);
+
+        let start = x.first().copied();
+        let dx = if is_uniform { Some(x[1] - x[0]) } else { None };
+        Self {
+            x,
+            is_uniform,
+            start,
+            dx,
+        }
+    }
+}
+
 pub trait Interp1<S: Data<Elem = f64>> {
     fn interp1(
         &self,
@@ -42,6 +69,13 @@ pub trait Interp1<S: Data<Elem = f64>> {
         to_x: f64,
         out_of_bounds_mode: OutOfBoundsMode,
     ) -> f64;
+}
+pub trait Interp1Weights {
+    fn interp1_weights(
+        &self,
+        to_x: f64,
+        out_of_bounds_mode: OutOfBoundsMode,
+    ) -> [(usize, f64, f64); 2];
 }
 
 impl<S> Interp1<S> for ArrayBase<S, Ix1>
@@ -65,11 +99,94 @@ where
                 OutOfBoundsMode::Extend => return *self.last().unwrap(),
             }
         }
-        let idx = x_grid.iter().position(|&x| x >= to_x).unwrap();
+        // Binary search for the first element >= to_x
+        let idx = match x_grid
+            .as_slice()
+            .unwrap()
+            .binary_search_by(|x| x.partial_cmp(&to_x).unwrap())
+        {
+            Ok(i) => i,  // Exact match found
+            Err(i) => i, // Not found, i is the index where `to_x` would be inserted
+        };
+
+        if idx == 0 {
+            return *self.first().unwrap();
+        } else if idx == x_grid.len() {
+            return *self.last().unwrap();
+        }
+
         let w = (to_x - x_grid[idx - 1]) / (x_grid[idx] - x_grid[idx - 1]);
         let y1 = *self.get(idx - 1).unwrap();
         let y2 = *self.get(idx).unwrap();
         y1 + (y2 - y1) * w
+    }
+}
+impl Interp1Weights for Array1<f64> {
+    fn interp1_weights(
+        &self,
+        to_x: f64,
+        out_of_bounds_mode: OutOfBoundsMode,
+    ) -> [(usize, f64, f64); 2] {
+        if to_x < *self.first().unwrap() {
+            match out_of_bounds_mode {
+                OutOfBoundsMode::Zero => return [(0, 0.0, 0.0), (0, 0.0, 0.0)],
+                OutOfBoundsMode::Extend => return [(0, 1.0, 0.0), (0, 0.0, 0.0)],
+            }
+        } else if to_x > *self.last().unwrap() {
+            match out_of_bounds_mode {
+                OutOfBoundsMode::Zero => return [(0, 0.0, 0.0), (0, 0.0, 0.0)],
+                OutOfBoundsMode::Extend => {
+                    return [(self.len() - 1, 1.0, 0.0), (self.len() - 1, 0.0, 0.0)];
+                }
+            }
+        }
+        // Binary search for the first element >= to_x
+        let idx = match self
+            .as_slice()
+            .unwrap()
+            .binary_search_by(|x| x.partial_cmp(&to_x).unwrap())
+        {
+            Ok(i) => i,  // Exact match found
+            Err(i) => i, // Not found, i is the index where `to_x` would be inserted
+        };
+
+        let w = (to_x - self[idx - 1]) / (self[idx] - self[idx - 1]);
+
+        // Also consider dw/dx = 1/(x[idx] - x[idx-1])
+        let d_w = 1.0 / (self[idx] - self[idx - 1]);
+
+        [(idx - 1, 1.0 - w, -d_w), (idx, w, d_w)]
+    }
+}
+
+impl Interp1Weights for Grid {
+    fn interp1_weights(
+        &self,
+        to_x: f64,
+        out_of_bounds_mode: OutOfBoundsMode,
+    ) -> [(usize, f64, f64); 2] {
+        if self.is_uniform {
+            if to_x < *self.x.first().unwrap() {
+                match out_of_bounds_mode {
+                    OutOfBoundsMode::Zero => return [(0, 0.0, 0.0), (0, 0.0, 0.0)],
+                    OutOfBoundsMode::Extend => return [(0, 1.0, 0.0), (0, 0.0, 0.0)],
+                }
+            } else if to_x > *self.x.last().unwrap() {
+                match out_of_bounds_mode {
+                    OutOfBoundsMode::Zero => return [(0, 0.0, 0.0), (0, 0.0, 0.0)],
+                    OutOfBoundsMode::Extend => {
+                        return [(self.x.len() - 1, 1.0, 0.0), (self.x.len() - 1, 0.0, 0.0)];
+                    }
+                }
+            }
+            let idx = ((to_x - self.start.unwrap()) / self.dx.unwrap()).floor() as usize;
+            let w =
+                (to_x - self.start.unwrap() - (idx as f64) * self.dx.unwrap()) / self.dx.unwrap();
+            let d_w = 1.0 / self.dx.unwrap();
+            [(idx, 1.0 - w, -d_w), (idx + 1, w, d_w)]
+        } else {
+            self.x.interp1_weights(to_x, out_of_bounds_mode)
+        }
     }
 }
 

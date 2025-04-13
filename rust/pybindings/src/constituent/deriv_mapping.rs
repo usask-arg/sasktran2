@@ -1,8 +1,7 @@
 use ndarray::Array2;
 use numpy::*;
 use pyo3::prelude::*;
-use sk_core::constituent::{DerivMappingView, DerivMapping};
-
+use sk_core::constituent::{DerivMapping, DerivMappingView};
 
 pub struct PyDerivMapping<'py> {
     py_mapping: Bound<'py, PyAny>,
@@ -20,7 +19,8 @@ impl<'py> PyDerivMapping<'py> {
             .extract()
             .unwrap();
 
-        let d_ssa: PyReadwriteArray2<'py, f64> = py_mapping.getattr("d_ssa").unwrap().extract().unwrap();
+        let d_ssa: PyReadwriteArray2<'py, f64> =
+            py_mapping.getattr("d_ssa").unwrap().extract().unwrap();
 
         PyDerivMapping {
             py_mapping: py_mapping,

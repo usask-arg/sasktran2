@@ -94,10 +94,9 @@ impl WignerDCalculator {
         }
     }
 
-
     /// Computes d^l_{m,n}(theta).
     pub fn vector_d(&self, theta: f64, output: &mut [f64]) {
-        for (l, elem ) in output.iter_mut().enumerate() {
+        for (l, elem) in output.iter_mut().enumerate() {
             if (l as i32) < self.m_lmin {
                 *elem = 0.0;
             } else {
@@ -119,8 +118,8 @@ impl WignerDCalculator {
                         let curfactor = (2 * lidx - 1) as f64 * (lidx_f * x);
 
                         // lidx * sqrt((lidx - 1)^2 - m_m^2)
-                        let priorfactor =
-                            lidx_f * (((lidx - 1) * (lidx - 1) - self.m_m * self.m_m) as f64).sqrt();
+                        let priorfactor = lidx_f
+                            * (((lidx - 1) * (lidx - 1) - self.m_m * self.m_m) as f64).sqrt();
 
                         let temp = val_l;
                         val_l = multiplier * (curfactor * val_l - priorfactor * val_lm1);

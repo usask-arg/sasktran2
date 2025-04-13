@@ -2,17 +2,15 @@
 //! to SASKTRAN2.  This is primarly the Bates parameterization for the
 //! cross section and King factor, and then a Constituent interface to SASKTRAN2
 
-use pyo3::prelude::*;
-use pyo3::exceptions::PyValueError;
-use pyo3::types::PyAny;
 use numpy::PyReadonlyArray1;
+use pyo3::exceptions::PyValueError;
+use pyo3::prelude::*;
+use pyo3::types::PyAny;
 
 use sk_core::constituent::rayleigh::Rayleigh as RustRayleighCore;
 use sk_core::constituent::{Constituent, StorageInputs};
 
 use crate::constituent::atmo_storage::AtmosphereStorage;
-
-
 
 #[pyclass]
 /// An implementation of Rayleigh scattering.  Cross sections (and depolarization factors) can be
@@ -49,7 +47,6 @@ pub struct Rayleigh {
 
 #[pymethods]
 impl Rayleigh {
-
     #[new]
     #[pyo3(
         signature = (method="bates", n2_percentage=None, o2_percentage=None, ar_percentage=None, co2_percentage=None, wavelengths_nm=None, xs=None, king=None),
@@ -69,19 +66,34 @@ impl Rayleigh {
 
         if method.to_lowercase() == "manual" {
             let xs = xs
-                .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    "xs must be specified when using the manual method",
-                )).unwrap().as_array().to_owned();
+                .ok_or_else(|| {
+                    PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                        "xs must be specified when using the manual method",
+                    )
+                })
+                .unwrap()
+                .as_array()
+                .to_owned();
 
             let king = king
-                .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    "king must be specified when using the manual method",
-                )).unwrap().as_array().to_owned();
+                .ok_or_else(|| {
+                    PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                        "king must be specified when using the manual method",
+                    )
+                })
+                .unwrap()
+                .as_array()
+                .to_owned();
 
             let wavelengths_nm = wavelengths_nm
-                .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    "wavelengths_nm must be specified when using the manual method",
-                )).unwrap().as_array().to_owned();
+                .ok_or_else(|| {
+                    PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                        "wavelengths_nm must be specified when using the manual method",
+                    )
+                })
+                .unwrap()
+                .as_array()
+                .to_owned();
 
             inner = inner.with_manual_xs(xs, king, wavelengths_nm);
         }
@@ -102,10 +114,7 @@ impl Rayleigh {
             inner = inner.with_co2_percentage(co2_percentage.unwrap());
         }
 
-
-        Rayleigh {
-            inner: inner
-        }
+        Rayleigh { inner: inner }
     }
 
     ///
@@ -116,11 +125,11 @@ impl Rayleigh {
         let inputs = rust_atmo.inputs;
         let mut outputs = rust_atmo.outputs;
 
-        inputs.wavelengths_nm().ok_or_else(
-            || PyErr::new::<pyo3::exceptions::PyValueError, _>(
+        inputs.wavelengths_nm().ok_or_else(|| {
+            PyErr::new::<pyo3::exceptions::PyValueError, _>(
                 "wavelengths_nm must be specified in the atmosphere to use this function",
-            ),
-        )?;
+            )
+        })?;
 
         if rust_atmo.num_stokes != 1 && rust_atmo.num_stokes != 3 {
             return Err(PyValueError::new_err(format!(
@@ -138,9 +147,10 @@ impl Rayleigh {
 
         let inputs = rust_atmo.inputs;
         let outputs = rust_atmo.outputs;
-        let deriv_generator= rust_atmo.deriv_generator;
+        let deriv_generator = rust_atmo.deriv_generator;
 
-        self.inner.register_derivatives(&inputs, &outputs, name, &deriv_generator);
+        self.inner
+            .register_derivatives(&inputs, &outputs, name, &deriv_generator);
 
         Ok(())
     }
