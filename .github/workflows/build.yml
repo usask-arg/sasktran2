@@ -167,7 +167,7 @@ jobs:
         run: echo "MACOSX_DEPLOYMENT_TARGET=10.14" >> $GITHUB_ENV
 
       - name: Build wheels all
-        uses: pypa/cibuildwheel@v2.23.1
+        uses: pypa/cibuildwheel@v2.23.2
         env:
           CIBW_SKIP: "pp* *musllinux* cp37-* cp38-* cp39-* cp310-*"
           CIBW_BUILD: "cp311-* cp312-* cp313-*"
@@ -200,7 +200,7 @@ jobs:
           echo "SKTRAN_BLAS_VENDOR=Apple" >> $GITHUB_ENV
 
       - name: Build wheels all
-        uses: pypa/cibuildwheel@v2.23.1
+        uses: pypa/cibuildwheel@v2.23.2
         env:
           CIBW_SKIP: "pp* *musllinux* cp37-* cp38-* cp39-* cp310-*"
           CIBW_BUILD: "cp311-* cp312-* cp313-*"
