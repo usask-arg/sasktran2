@@ -1,12 +1,8 @@
-use std::{path::PathBuf, str::FromStr};
-
 use numpy::ndarray::*;
 use numpy::*;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::PyType;
 use sk_core::interpolation::linear::Grid;
-use sk_core::optical::read_fwf_xs::read_fwf_folder;
 use sk_core::optical::xsec_dbase::SKXsecDatabase;
 use sk_core::optical::xsec_dbase::XsecDatabaseInterp;
 
@@ -31,7 +27,13 @@ pub struct AbsorberDatabaseDim2 {
 /// Parameters
 /// ----------
 /// wavenumber_cminv : ndarray
-///  Wavenumber in cm^-1
+///   Wavenumber in cm^-1, shape [W]
+/// param_0: ndarray
+///   First parameter that the cross section depends on, e.g. Pressure, must be sorted in ascending order, shape [N]
+/// param_1: ndarray
+///   Second parameter that the cross section depends on, e.g. Temperature, must be sorted in ascending order, shape [M]
+/// xsec_m2 : ndarray
+///   Cross section in m^2/molecule [N, M, W]
 pub struct AbsorberDatabaseDim3 {
     db: SKXsecDatabase<Ix3>,
 }
@@ -52,14 +54,6 @@ impl AbsorberDatabaseDim2 {
         let db = SKXsecDatabase::<Ix2>::new(arr_xsec, Grid::new(arr_wvnum), vec![arr_params])
             .ok_or_else(|| PyValueError::new_err("Failed to create SKXsecDatabase"))?;
 
-        Ok(Self { db })
-    }
-
-    #[classmethod]
-    fn from_fwf_folder(_: &Bound<'_, PyType>, path: String) -> PyResult<Self> {
-        let path = PathBuf::from_str(&path)?;
-
-        let db: SKXsecDatabase<Ix2> = read_fwf_folder(path).unwrap().into();
         Ok(Self { db })
     }
 
