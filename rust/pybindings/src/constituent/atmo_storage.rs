@@ -165,7 +165,7 @@ impl<'py> AtmosphereStorage<'py> {
         let num_stokes: usize = num_stokes_obj.extract().unwrap();
 
         let geometry_obj = atmo.getattr("model_geometry").unwrap();
-        let altitudes_m = geometry_obj.call_method0("altitudes_m").unwrap();
+        let altitudes_m = geometry_obj.call_method0("altitudes").unwrap();
         let altitudes_m: PyReadonlyArray1<f64> = altitudes_m.extract().unwrap();
 
         AtmosphereStorage {
