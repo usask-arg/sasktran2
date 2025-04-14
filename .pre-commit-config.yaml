@@ -69,3 +69,19 @@ repos:
   hooks:
   - id: clang-format
     types_or: [c++, c]
+
+- repo: local
+  hooks:
+    - id: cargo-fmt-core
+      name: cargo fmt core
+      entry: cargo fmt --manifest-path rust/core/Cargo.toml --all -- --check
+      language: system
+      types: [rust]
+      pass_filenames: false
+
+    - id: cargo-fmt-pybindings
+      name: cargo fmt pybindings
+      entry: cargo fmt --manifest-path rust/pybindings/Cargo.toml --all -- --check
+      language: system
+      types: [rust]
+      pass_filenames: false

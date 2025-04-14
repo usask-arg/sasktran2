@@ -1,8 +1,12 @@
 pub mod rayleigh;
+pub mod vmr_alt_absorber;
 
+use anyhow::Result;
 use std::collections::HashMap;
 
 use ndarray::*;
+
+use crate::atmosphere::AtmosphereStorageAccess;
 
 pub struct AtmosphereStorageOutputView<'a> {
     pub total_extinction: ArrayViewMut2<'a, f64>,
@@ -25,6 +29,7 @@ pub struct DerivMappingView<'py> {
 
 pub trait StorageInputs {
     fn num_stokes(&self) -> usize;
+    fn altitude_m(&self) -> ArrayView1<f64>;
     fn pressure_pa(&self) -> Option<ArrayView1<f64>>;
     fn temperature_k(&self) -> Option<ArrayView1<f64>>;
     fn wavelengths_nm(&self) -> Option<ArrayView1<f64>>;
@@ -50,13 +55,11 @@ pub trait DerivMappingGenerator<'a> {
 }
 
 pub trait Constituent {
-    fn add_to_atmosphere(&self, inputs: &impl StorageInputs, outputs: &mut impl StorageOutputs);
+    fn add_to_atmosphere(&self, storage: &mut impl AtmosphereStorageAccess) -> Result<()>;
 
     fn register_derivatives<'a>(
         &self,
-        inputs: &impl StorageInputs,
-        outputs: &impl StorageOutputs,
+        storage: &mut impl AtmosphereStorageAccess,
         constituent_name: &str,
-        derivative_generator: &impl DerivMappingGenerator<'a>,
-    );
+    ) -> Result<()>;
 }

@@ -6,8 +6,9 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyType;
 use sk_core::interpolation::linear::Grid;
+use sk_core::optical::read_fwf_xs::read_fwf_folder;
+use sk_core::optical::xsec_dbase::SKXsecDatabase;
 use sk_core::optical::xsec_dbase::XsecDatabaseInterp;
-use sk_core::optical::xsec_dbase::{SKXsecDatabase, read_fwf_folder};
 
 #[pyclass]
 /// An absorber database that depends on wavenumber and 1 parameter (e.g. temperature)

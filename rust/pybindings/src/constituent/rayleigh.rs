@@ -3,12 +3,11 @@
 //! cross section and King factor, and then a Constituent interface to SASKTRAN2
 
 use numpy::PyReadonlyArray1;
-use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
 
+use sk_core::constituent::Constituent;
 use sk_core::constituent::rayleigh::Rayleigh as RustRayleighCore;
-use sk_core::constituent::{Constituent, StorageInputs};
 
 use crate::constituent::atmo_storage::AtmosphereStorage;
 
@@ -120,37 +119,17 @@ impl Rayleigh {
     ///
     /// Test docstring add to atmosphere
     pub fn add_to_atmosphere<'py>(&self, atmo: &Bound<'py, PyAny>) -> PyResult<()> {
-        let rust_atmo = AtmosphereStorage::new(atmo);
+        let mut rust_atmo = AtmosphereStorage::new(atmo);
 
-        let inputs = rust_atmo.inputs;
-        let mut outputs = rust_atmo.outputs;
-
-        inputs.wavelengths_nm().ok_or_else(|| {
-            PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                "wavelengths_nm must be specified in the atmosphere to use this function",
-            )
-        })?;
-
-        if rust_atmo.num_stokes != 1 && rust_atmo.num_stokes != 3 {
-            return Err(PyValueError::new_err(format!(
-                "Invalid number of Stokes parameters: {} (expected 1 or 3)",
-                rust_atmo.num_stokes
-            )));
-        }
-        self.inner.add_to_atmosphere(&inputs, &mut outputs);
+        let _ = self.inner.add_to_atmosphere(&mut rust_atmo);
 
         Ok(())
     }
 
     pub fn register_derivative(&self, atmo: &'_ Bound<'_, PyAny>, name: &str) -> PyResult<()> {
-        let rust_atmo = AtmosphereStorage::new(atmo);
+        let mut rust_atmo = AtmosphereStorage::new(atmo);
 
-        let inputs = rust_atmo.inputs;
-        let outputs = rust_atmo.outputs;
-        let deriv_generator = rust_atmo.deriv_generator;
-
-        self.inner
-            .register_derivatives(&inputs, &outputs, name, &deriv_generator);
+        let _ = self.inner.register_derivatives(&mut rust_atmo, name);
 
         Ok(())
     }

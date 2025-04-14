@@ -124,3 +124,64 @@ pub fn rayleigh_cross_section_bates(
         eff_king,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_o2_refrac_bates() {
+        let result = o2_refrac_bates(0.3);
+        assert!(result > 0.0, "Expected a positive refractive index for O2");
+    }
+
+    #[test]
+    fn test_n2_refrac_bates() {
+        let result = n2_refrac_bates(0.4);
+        assert!(result > 0.0, "Expected a positive refractive index for N2");
+    }
+
+    #[test]
+    fn test_ar_refrac_bates() {
+        let result = ar_refrac_bates(0.5);
+        assert!(result > 0.0, "Expected a positive refractive index for Ar");
+    }
+
+    #[test]
+    fn test_co2_refrac_bates() {
+        let result = co2_refrac_bates(0.6);
+        assert!(result > 0.0, "Expected a positive refractive index for CO2");
+    }
+
+    #[test]
+    fn test_o2_king_bates() {
+        let result = o2_king_bates(0.3);
+        assert!(result > 1.0, "Expected a King factor greater than 1 for O2");
+    }
+
+    #[test]
+    fn test_n2_king_bates() {
+        let result = n2_king_bates(0.4);
+        assert!(result > 1.0, "Expected a King factor greater than 1 for N2");
+    }
+
+    #[test]
+    fn test_ar_king_bates() {
+        let result = ar_king_bates(0.5);
+        assert_eq!(result, 1.0, "Expected a King factor of 1 for Ar");
+    }
+
+    #[test]
+    fn test_co2_king_bates() {
+        let result = co2_king_bates(0.6);
+        assert_eq!(result, 1.15, "Expected a King factor of 1.15 for CO2");
+    }
+
+    #[test]
+    fn test_rayleigh_cross_section_bates() {
+        let (cross_section, king_factor) =
+            rayleigh_cross_section_bates(0.5, 78.08, 20.95, 0.93, 0.04);
+        assert!(cross_section > 0.0, "Expected a positive cross section");
+        assert!(king_factor > 1.0, "Expected a King factor greater than 1");
+    }
+}

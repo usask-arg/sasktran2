@@ -1,10 +1,13 @@
 use ndarray::{Array1, Array2, Axis, Zip};
 
+use crate::atmosphere::AtmosphereStorageAccess;
 use crate::constituent::{Constituent, StorageInputs};
 use crate::optical::rayleigh::rayleigh_cross_section_bates;
 
-use super::{DerivMapping, StorageOutputs};
+use super::{DerivMapping, DerivMappingGenerator, StorageOutputs};
 use crate::interpolation::linear::Interp1;
+
+use anyhow::Result;
 
 pub enum RayleighMethod {
     Bates,
@@ -100,7 +103,9 @@ impl Rayleigh {
 }
 
 impl Constituent for Rayleigh {
-    fn add_to_atmosphere(&self, inputs: &impl StorageInputs, outputs: &mut impl StorageOutputs) {
+    fn add_to_atmosphere(&self, storage: &mut impl AtmosphereStorageAccess) -> Result<()> {
+        let (inputs, outputs) = storage.split_inputs_outputs();
+
         let wavelengths_nm = inputs.wavelengths_nm().unwrap();
         let mut outputs = outputs.mut_view();
 
@@ -146,15 +151,16 @@ impl Constituent for Rayleigh {
                         }
                     });
             });
+        Ok(())
     }
 
     fn register_derivatives<'a>(
         &self,
-        inputs: &impl StorageInputs,
-        outputs: &impl StorageOutputs,
+        storage: &mut impl AtmosphereStorageAccess,
         constituent_name: &str,
-        derivative_generator: &impl super::DerivMappingGenerator<'a>,
-    ) {
+    ) -> Result<()> {
+        let (inputs, outputs, derivative_generator) = storage.split_inputs_outputs_deriv();
+
         let outputs = outputs.view();
 
         let air_dens = inputs.air_numberdensity_dict();
@@ -226,5 +232,6 @@ impl Constituent for Rayleigh {
             let assign_name = "wf_".to_owned() + deriv_name;
             deriv.set_assign_name(&assign_name);
         }
+        Ok(())
     }
 }

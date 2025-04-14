@@ -1,13 +1,14 @@
 use super::OutOfBoundsMode;
 use ndarray::*;
 
-pub fn linear_interpolating_matrix<S>(
-    from_grid: &ArrayBase<S, Ix1>,
-    to_grid: &ArrayBase<S, Ix1>,
+pub fn linear_interpolating_matrix<S1, S2>(
+    from_grid: &ArrayBase<S1, Ix1>,
+    to_grid: &ArrayBase<S2, Ix1>,
     out_of_bounds_mode: OutOfBoundsMode,
 ) -> Array2<f64>
 where
-    S: Data<Elem = f64>,
+    S1: Data<Elem = f64>,
+    S2: Data<Elem = f64>,
 {
     let mut result: Array2<f64> = Array2::zeros((to_grid.len(), from_grid.len()));
 
@@ -202,5 +203,82 @@ mod tests {
         let result = linear_interpolating_matrix(&from_grid, &to_grid, OutOfBoundsMode::Zero);
 
         println!("{:?}", result);
+    }
+
+    #[test]
+    fn test_linear_interpolating_matrix_with_extend() {
+        let from_grid = array![0.0, 1.0, 2.0];
+        let to_grid = array![-0.5, 0.5, 1.5, 2.5];
+
+        let result = linear_interpolating_matrix(&from_grid, &to_grid, OutOfBoundsMode::Extend);
+
+        assert_eq!(
+            result,
+            array![
+                [1.0, 0.0, 0.0],
+                [0.5, 0.5, 0.0],
+                [0.0, 0.5, 0.5],
+                [0.0, 0.0, 1.0]
+            ]
+        );
+    }
+
+    #[test]
+    fn test_interp1_with_zero_out_of_bounds() {
+        let x_grid = array![0.0, 1.0, 2.0];
+        let y_values = array![10.0, 20.0, 30.0];
+
+        let result = y_values.interp1(&x_grid, -1.0, OutOfBoundsMode::Zero);
+        assert_eq!(result, 0.0);
+
+        let result = y_values.interp1(&x_grid, 3.0, OutOfBoundsMode::Zero);
+        assert_eq!(result, 0.0);
+    }
+
+    #[test]
+    fn test_interp1_with_extend_out_of_bounds() {
+        let x_grid = array![0.0, 1.0, 2.0];
+        let y_values = array![10.0, 20.0, 30.0];
+
+        let result = y_values.interp1(&x_grid, -1.0, OutOfBoundsMode::Extend);
+        assert_eq!(result, 10.0);
+
+        let result = y_values.interp1(&x_grid, 3.0, OutOfBoundsMode::Extend);
+        assert_eq!(result, 30.0);
+    }
+
+    #[test]
+    fn test_interp1_weights_uniform_grid() {
+        let grid = Grid::new(array![0.0, 1.0, 2.0, 3.0]);
+
+        let weights = grid.interp1_weights(1.5, OutOfBoundsMode::Zero);
+        assert_eq!(weights, [(1, 0.5, -1.0), (2, 0.5, 1.0)]);
+    }
+
+    #[test]
+    fn test_interp1_weights_non_uniform_grid() {
+        let grid = Grid::new(array![0.0, 1.0, 2.5, 4.0]);
+
+        let weights = grid.interp1_weights(2.0, OutOfBoundsMode::Zero);
+        let expected_weights = [
+            (1, 0.3333333333333333, -0.6666666666666666),
+            (2, 0.6666666666666666, 0.6666666666666666),
+        ];
+        for (actual, expected) in weights.iter().zip(expected_weights.iter()) {
+            assert_eq!(actual.0, expected.0);
+            assert!((actual.1 - expected.1).abs() < 1e-10);
+            assert!((actual.2 - expected.2).abs() < 1e-10);
+        }
+    }
+
+    #[test]
+    fn test_interp1_weights_out_of_bounds() {
+        let grid = Grid::new(array![0.0, 1.0, 2.0]);
+
+        let weights = grid.interp1_weights(-1.0, OutOfBoundsMode::Extend);
+        assert_eq!(weights, [(0, 1.0, 0.0), (0, 0.0, 0.0)]);
+
+        let weights = grid.interp1_weights(3.0, OutOfBoundsMode::Extend);
+        assert_eq!(weights, [(2, 1.0, 0.0), (2, 0.0, 0.0)]);
     }
 }

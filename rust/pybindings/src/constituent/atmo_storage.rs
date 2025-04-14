@@ -7,6 +7,7 @@ use numpy::{Element, PyUntypedArrayMethods};
 use numpy::{PyReadonlyArray1, PyReadwriteArray2, PyReadwriteArray3};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
+use sk_core::atmosphere::AtmosphereStorageAccess;
 use sk_core::constituent::{AtmosphereStorageOutputImmutView, AtmosphereStorageOutputView};
 
 use sk_core::constituent::{DerivMapping, DerivMappingGenerator, StorageInputs, StorageOutputs};
@@ -63,6 +64,7 @@ impl StorageOutputs for AtmosphereStorageOutputs<'_> {
 
 pub struct AtmosphereStorageInputs<'py> {
     pub num_stokes: usize,
+    pub py_altitude_m: PyReadonlyArray1<'py, f64>,
     pub py_pressure_pa: Option<PyReadonlyArray1<'py, f64>>,
     pub py_temperature_k: Option<PyReadonlyArray1<'py, f64>>,
     pub py_wavelength_nm: Option<PyReadonlyArray1<'py, f64>>,
@@ -123,6 +125,10 @@ impl<'py> StorageInputs for AtmosphereStorageInputs<'py> {
         }
         dict
     }
+
+    fn altitude_m(&self) -> ArrayView1<f64> {
+        self.py_altitude_m.as_array()
+    }
 }
 
 pub struct PyDerivativeGenerator<'py> {
@@ -158,11 +164,16 @@ impl<'py> AtmosphereStorage<'py> {
         let num_stokes_obj = atmo.getattr("nstokes").unwrap();
         let num_stokes: usize = num_stokes_obj.extract().unwrap();
 
+        let geometry_obj = atmo.getattr("model_geometry").unwrap();
+        let altitudes_m = geometry_obj.call_method0("altitudes_m").unwrap();
+        let altitudes_m: PyReadonlyArray1<f64> = altitudes_m.extract().unwrap();
+
         AtmosphereStorage {
             num_stokes,
             deriv_generator: PyDerivativeGenerator { storage },
             inputs: AtmosphereStorageInputs {
                 num_stokes,
+                py_altitude_m: altitudes_m,
                 py_pressure_pa: pressure_pa_array,
                 py_temperature_k: temperature_k_array,
                 py_wavelength_nm: wavelengths_nm_array,
@@ -183,6 +194,25 @@ impl<'py> AtmosphereStorage<'py> {
     }
     pub fn num_wavelengths(&self) -> usize {
         self.outputs.py_total_extinction.shape()[1]
+    }
+}
+
+impl AtmosphereStorageAccess for AtmosphereStorage<'_> {
+    fn split_inputs_outputs(&mut self) -> (&impl StorageInputs, &mut impl StorageOutputs) {
+        let inputs = &self.inputs;
+        let outputs = &mut self.outputs;
+
+        (inputs, outputs)
+    }
+
+    fn split_inputs_outputs_deriv<'a>(
+        &'a self,
+    ) -> (
+        &'a impl StorageInputs,
+        &'a impl StorageOutputs,
+        &'a impl DerivMappingGenerator<'a>,
+    ) {
+        (&self.inputs, &self.outputs, &self.deriv_generator)
     }
 }
 
