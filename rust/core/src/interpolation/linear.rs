@@ -15,23 +15,9 @@ where
     Zip::from(result.rows_mut())
         .and(to_grid)
         .for_each(|mut row, to_val| {
-            if to_val < from_grid.first().unwrap() {
-                match out_of_bounds_mode {
-                    OutOfBoundsMode::Zero => {} // Do nothing
-                    OutOfBoundsMode::Extend => row.first_mut().unwrap().assign_elem(1.0),
-                }
-            } else if to_val > from_grid.last().unwrap() {
-                match out_of_bounds_mode {
-                    OutOfBoundsMode::Zero => {} // Do nothing
-                    OutOfBoundsMode::Extend => row.last_mut().unwrap().assign_elem(1.0),
-                }
-            } else {
-                let idx = from_grid.iter().position(|&x| x >= *to_val).unwrap();
-
-                let w = (*to_val - from_grid[idx - 1]) / (from_grid[idx] - from_grid[idx - 1]);
-                row[idx - 1] = 1.0 - w;
-                row[idx] = w;
-            }
+            let weights = from_grid.interp1_weights(*to_val, out_of_bounds_mode);
+            row[weights[0].0] += weights[0].1;
+            row[weights[1].0] += weights[1].1;
         });
     result
 }
@@ -122,7 +108,10 @@ where
         y1 + (y2 - y1) * w
     }
 }
-impl Interp1Weights for Array1<f64> {
+impl<S> Interp1Weights for ArrayBase<S, Ix1>
+where
+    S: Data<Elem = f64>,
+{
     fn interp1_weights(
         &self,
         to_x: f64,
@@ -150,6 +139,12 @@ impl Interp1Weights for Array1<f64> {
             Ok(i) => i,  // Exact match found
             Err(i) => i, // Not found, i is the index where `to_x` would be inserted
         };
+
+        if idx == 0 {
+            return [(0, 1.0, 0.0), (0, 0.0, 0.0)];
+        } else if idx == self.len() {
+            return [(self.len() - 1, 1.0, 0.0), (self.len() - 1, 0.0, 0.0)];
+        }
 
         let w = (to_x - self[idx - 1]) / (self[idx] - self[idx - 1]);
 
@@ -221,6 +216,14 @@ mod tests {
                 [0.0, 0.0, 1.0]
             ]
         );
+    }
+
+    #[test]
+    fn test_linear_interpolating_matrix_oob() {
+        let from_grid = array![0.0, 0.000004];
+        let to_grid = array![-0.5, 0.0, 1.5, 2.5];
+
+        let _result = linear_interpolating_matrix(&from_grid, &to_grid, OutOfBoundsMode::Extend);
     }
 
     #[test]

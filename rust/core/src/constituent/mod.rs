@@ -28,13 +28,22 @@ pub struct DerivMappingView<'py> {
 }
 
 pub trait StorageInputs {
+    // Configuration options
     fn num_stokes(&self) -> usize;
+    fn calculate_pressure_derivative(&self) -> bool;
+    fn calculate_temperature_derivative(&self) -> bool;
+    fn calculate_specific_humidity_derivative(&self) -> bool;
+
+    // Geometry properties
     fn altitude_m(&self) -> ArrayView1<f64>;
+
+    // Atmospheric properties
     fn pressure_pa(&self) -> Option<ArrayView1<f64>>;
     fn temperature_k(&self) -> Option<ArrayView1<f64>>;
     fn wavelengths_nm(&self) -> Option<ArrayView1<f64>>;
     fn wavenumbers_cminv(&self) -> Option<ArrayView1<f64>>;
     fn air_numberdensity_dict(&self) -> HashMap<String, Array1<f64>>;
+    fn dry_air_numberdensity_dict(&self) -> HashMap<String, Array1<f64>>;
 }
 
 pub trait StorageOutputs {

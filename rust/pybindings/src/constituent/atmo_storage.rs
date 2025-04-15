@@ -64,6 +64,9 @@ impl StorageOutputs for AtmosphereStorageOutputs<'_> {
 
 pub struct AtmosphereStorageInputs<'py> {
     pub num_stokes: usize,
+    pub calculate_pressure_derivative: bool,
+    pub calculate_temperature_derivative: bool,
+    pub calculate_specific_humidity_derivative: bool,
     pub py_altitude_m: PyReadonlyArray1<'py, f64>,
     pub py_pressure_pa: Option<PyReadonlyArray1<'py, f64>>,
     pub py_temperature_k: Option<PyReadonlyArray1<'py, f64>>,
@@ -126,8 +129,37 @@ impl<'py> StorageInputs for AtmosphereStorageInputs<'py> {
         dict
     }
 
+    fn dry_air_numberdensity_dict(&self) -> HashMap<String, Array1<f64>> {
+        let state_eqn = &self.py_equation_of_state;
+
+        let air_numden: Bound<'py, PyDict> = state_eqn
+            .getattr("dry_air_numberdensity")
+            .unwrap()
+            .downcast_into()
+            .unwrap();
+
+        let mut dict = HashMap::new();
+        for (key, value) in air_numden.iter() {
+            let array: PyReadonlyArray1<f64> = value.extract().unwrap();
+            dict.insert(key.to_string(), array.as_array().to_owned());
+        }
+        dict
+    }
+
     fn altitude_m(&self) -> ArrayView1<f64> {
         self.py_altitude_m.as_array()
+    }
+
+    fn calculate_pressure_derivative(&self) -> bool {
+        self.calculate_pressure_derivative
+    }
+
+    fn calculate_temperature_derivative(&self) -> bool {
+        self.calculate_temperature_derivative
+    }
+
+    fn calculate_specific_humidity_derivative(&self) -> bool {
+        self.calculate_specific_humidity_derivative
     }
 }
 
@@ -168,11 +200,32 @@ impl<'py> AtmosphereStorage<'py> {
         let altitudes_m = geometry_obj.call_method0("altitudes").unwrap();
         let altitudes_m: PyReadonlyArray1<f64> = altitudes_m.extract().unwrap();
 
+        let calculate_pressure_derivative = atmo
+            .getattr("calculate_pressure_derivative")
+            .unwrap()
+            .extract()
+            .unwrap_or(false);
+
+        let calculate_temperature_derivative = atmo
+            .getattr("calculate_temperature_derivative")
+            .unwrap()
+            .extract()
+            .unwrap_or(false);
+
+        let calculate_specific_humidity_derivative = atmo
+            .getattr("calculate_specific_humidity_derivative")
+            .unwrap()
+            .extract()
+            .unwrap_or(false);
+
         AtmosphereStorage {
             num_stokes,
             deriv_generator: PyDerivativeGenerator { storage },
             inputs: AtmosphereStorageInputs {
                 num_stokes,
+                calculate_pressure_derivative,
+                calculate_temperature_derivative,
+                calculate_specific_humidity_derivative,
                 py_altitude_m: altitudes_m,
                 py_pressure_pa: pressure_pa_array,
                 py_temperature_k: temperature_k_array,

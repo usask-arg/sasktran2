@@ -1,3 +1,5 @@
+pub mod optical_property;
+
 use numpy::ndarray::*;
 use numpy::*;
 use pyo3::exceptions::PyValueError;

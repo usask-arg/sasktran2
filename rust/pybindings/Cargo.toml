@@ -13,3 +13,4 @@ ndarray = { version = "0.16.1", features = ["rayon"]}
 numpy = { version = "0.24" }
 sk_core = { path = "../core" }  # your existing core Rust lib
 rayon = "*"
+anyhow = "*"
