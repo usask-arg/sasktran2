@@ -1,4 +1,3 @@
-use ndarray::*;
 use numpy::*;
 use pyo3::prelude::*;
 use sk_core::optical::OpticalQuantities;

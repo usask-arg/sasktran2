@@ -56,11 +56,6 @@ class OpticalDatabaseGenericAbsorber(OpticalDatabase):
         """
         super().__init__(db_filepath)
 
-        self._validate_db()
-
-        self._quants = None
-        self._cached_interp_handler = None
-
     def _validate_db(self):
         if type(self._database) is not xr.Dataset:
             return
@@ -117,76 +112,13 @@ class OpticalDatabaseGenericAbsorber(OpticalDatabase):
             )
             self._coords = coords
 
-    def _construct_interp_handler(self, atmo: Atmosphere, **kwargs) -> dict:
-        coords = kwargs["coords"] if "coords" in kwargs else self._database["xs"].coords
-
-        interp_handler = {}
-
-        # TODO: this could probably be refactored to iterate over atmosphere properties?
-        if "temperature_k" in coords:
-            if atmo.temperature_k is None:
-                msg = "temperature_k must be specified in Atmosphere to use OpticalDatabaseGenericAbsorber"
-                raise ValueError(msg)
-
-            interp_handler["temperature_k"] = ("z", atmo.temperature_k)
-
-        if "pressure_pa" in coords:
-            if atmo.pressure_pa is None:
-                msg = "pressure_pa must be specified in Atmosphere to use OpticalDatabaseGenericAbsorber"
-                raise ValueError(msg)
-
-            interp_handler["pressure_pa"] = ("z", atmo.pressure_pa)
-
-        if "wavelength_nm" in coords:
-            if atmo.wavelengths_nm is None:
-                msg = "wavelengths_nm must be specified in Atmosphere to use OpticalDatabaseGenericAbsorber"
-            interp_handler["wavenumber_cminv"] = 1e7 / atmo.wavelengths_nm
-
-        if "wavenumber_cminv" in coords:
-            if atmo.wavenumbers_cminv is None:
-                msg = "wavenumber_cminv must be specified in Atmosphere to use OpticalDatabaseGenericAbsorber"
-            interp_handler["wavenumber_cminv"] = atmo.wavenumbers_cminv
-
-        return interp_handler
-
     def atmosphere_quantities(self, atmo, **kwargs):
-        interp_handler = self._construct_interp_handler(
-            atmo, coords=self._coords, **kwargs
-        )
-
-        wvnum = interp_handler["wavenumber_cminv"]
-
-        params = []
-        for coord in self._coords[:-1]:
-            params.append(interp_handler[coord][1])
-
-        quants = OpticalQuantities(ssa=np.zeros_like(atmo.storage.ssa))
-
-        call_params = params[0] if len(params) == 1 else np.vstack(params)
-
-        quants.extinction = self._database.cross_section(wvnum, call_params)[0]
-
-        return quants
+        # When called by the constituent this should be elided
+        return self._database.atmosphere_quantities(atmo)
 
     def optical_derivatives(self, atmo, **kwargs):
-        interp_handler = self._construct_interp_handler(
-            atmo, coords=self._coords, **kwargs
-        )
-
-        wvnum = interp_handler["wavenumber_cminv"]
-
-        params = []
-        for coord in self._coords[:-1]:
-            params.append(interp_handler[coord][1])
-
-        call_params = params[0] if len(params) == 1 else np.vstack(params)
-        d_xs = self._database.cross_section(wvnum, call_params)[1]
-
-        derivs = {}
-        for i, coord in enumerate(self._coords[:-1]):
-            derivs[coord] = NativeGridDerivative(d_extinction=d_xs[i])
-
-        return derivs
+        # When called by the constituent this should be elided
+        return self._database.optical_derivatives(atmo)
 
     def _into_rust_object(self):
         return self._database

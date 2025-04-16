@@ -9,10 +9,8 @@ use pyo3::types::PyAny;
 
 use sk_core::constituent::Constituent;
 use sk_core::constituent::vmr_alt_absorber::VMRAltitudeAbsorber as VMRAltitudeAbsorberCore;
-use sk_core::optical;
 
 use crate::constituent::atmo_storage::AtmosphereStorage;
-use crate::optical::AbsorberDatabaseDim2;
 use crate::optical::optical_property::PyOpticalProperty;
 
 #[pyclass]

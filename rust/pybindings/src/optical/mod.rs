@@ -7,6 +7,7 @@ use optical_quantities::PyOpticalQuantities;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use sk_core::interpolation::linear::Grid;
 use sk_core::optical::OpticalPropertyExt;
 use sk_core::optical::xsec_dbase::SKXsecDatabase;
@@ -81,6 +82,27 @@ impl AbsorberDatabaseDim2 {
         Ok(PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())?)
     }
 
+    fn optical_derivatives<'py>(&self, atmo: Bound<'py, PyAny>) -> PyResult<Bound<'py, PyDict>> {
+        let rust_atmo = AtmosphereStorage::new(&atmo);
+
+        let oq = self
+            .db
+            .optical_derivatives(&rust_atmo.inputs)
+            .map_err(|e| {
+                PyValueError::new_err(format!("Failed to get optical quantities: {}", e))
+            })?;
+
+        let py = atmo.py();
+        let py_dict = PyDict::new(py);
+
+        for (key, oq) in oq {
+            let py_oq = PyOpticalQuantities::new(oq).into_bound_py_any(py)?;
+            py_dict.set_item(key.as_str(), py_oq)?;
+        }
+
+        Ok(py_dict)
+    }
+
     fn cross_section<'py>(
         &self,
         wavenumber_cminv: PyReadonlyArray1<'py, f64>,
@@ -145,6 +167,37 @@ impl AbsorberDatabaseDim3 {
         .ok_or_else(|| PyValueError::new_err("Failed to create SKXsecDatabase"))?;
 
         Ok(Self { db })
+    }
+
+    fn atmosphere_quantities<'py>(&self, atmo: Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        let rust_atmo = AtmosphereStorage::new(&atmo);
+
+        let oq = self.db.optical_quantities(&rust_atmo.inputs).map_err(|e| {
+            PyValueError::new_err(format!("Failed to get optical quantities: {}", e))
+        })?;
+
+        Ok(PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())?)
+    }
+
+    fn optical_derivatives<'py>(&self, atmo: Bound<'py, PyAny>) -> PyResult<Bound<'py, PyDict>> {
+        let rust_atmo = AtmosphereStorage::new(&atmo);
+
+        let oq = self
+            .db
+            .optical_derivatives(&rust_atmo.inputs)
+            .map_err(|e| {
+                PyValueError::new_err(format!("Failed to get optical quantities: {}", e))
+            })?;
+
+        let py = atmo.py();
+        let py_dict = PyDict::new(py);
+
+        for (key, oq) in oq {
+            let py_oq = PyOpticalQuantities::new(oq).into_bound_py_any(py)?;
+            py_dict.set_item(key.as_str(), py_oq)?;
+        }
+
+        Ok(py_dict)
     }
 
     fn cross_section<'py>(

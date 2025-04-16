@@ -48,6 +48,8 @@ class VMRAltitudeAbsorber(Constituent):
             out_of_bounds_mode,
         )
 
+        self._temp = optical_property
+
     @property
     def vmr(self):
         return self._constituent.vmr

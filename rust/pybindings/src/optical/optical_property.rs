@@ -7,7 +7,7 @@ use pyo3::types::PyDictMethods;
 use pyo3::{prelude::*, types::PyDict};
 use sk_core::{constituent::StorageInputs, optical::*};
 
-use super::AbsorberDatabaseDim2;
+use super::{AbsorberDatabaseDim2, AbsorberDatabaseDim3};
 
 pub struct PyOpticalProperty {
     py_optical_property: Py<PyAny>,
@@ -43,6 +43,14 @@ impl OpticalProperty for PyOpticalProperty {
                         .optical_quantities_emplace(inputs, optical_quantities)?;
                     return Ok(());
                 }
+
+                if let Ok(absorber) = rust_optical.downcast::<AbsorberDatabaseDim3>() {
+                    absorber
+                        .borrow()
+                        .db
+                        .optical_quantities_emplace(inputs, optical_quantities)?;
+                    return Ok(());
+                }
             }
 
             let bound_atmosphere = self.py_atmosphere.bind(py);
@@ -63,11 +71,34 @@ impl OpticalProperty for PyOpticalProperty {
 
     fn optical_derivatives_emplace(
         &self,
-        _inputs: &dyn StorageInputs,
+        inputs: &dyn StorageInputs,
         d_optical_quantities: &mut HashMap<String, OpticalQuantities>,
     ) -> Result<()> {
         Python::with_gil(|py| {
             let bound_optical_property = self.py_optical_property.bind(py);
+
+            let rust_optical = bound_optical_property
+                .call_method0("_into_rust_object")
+                .ok();
+
+            if let Some(rust_optical) = rust_optical {
+                if let Ok(absorber) = rust_optical.downcast::<AbsorberDatabaseDim2>() {
+                    absorber
+                        .borrow()
+                        .db
+                        .optical_derivatives_emplace(inputs, d_optical_quantities)?;
+                    return Ok(());
+                }
+
+                if let Ok(absorber) = rust_optical.downcast::<AbsorberDatabaseDim3>() {
+                    absorber
+                        .borrow()
+                        .db
+                        .optical_derivatives_emplace(inputs, d_optical_quantities)?;
+                    return Ok(());
+                }
+            }
+
             let bound_atmosphere = self.py_atmosphere.bind(py);
 
             let d_aq: Bound<'_, PyDict> = bound_optical_property
