@@ -10,7 +10,6 @@ import xarray as xr
 
 from sasktran2.optical.database import (
     OpticalDatabaseGenericAbsorber,
-    OpticalDatabaseRust,
 )
 from sasktran2.optical.hitran import HITRANAbsorber
 from sasktran2.units import wavenumber_cminv_to_wavlength_nm
@@ -125,7 +124,7 @@ PRESSURE_GRID = (
 TEMP_GRID = np.arange(190, 311, 10)
 
 
-class HITRANDatabase(CachedDatabase, OpticalDatabaseRust):
+class HITRANDatabase(CachedDatabase, OpticalDatabaseGenericAbsorber):
     def __init__(
         self,
         molecule: str,

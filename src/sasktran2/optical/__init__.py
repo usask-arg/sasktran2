@@ -14,7 +14,7 @@ from .hitran import (
 from .mie import Mie  # noqa: F401
 
 
-class O3DBM(database.OpticalDatabaseRust):
+class O3DBM(database.OpticalDatabaseGenericAbsorber):
     def __init__(self) -> None:
         """
         Tabulated high resolution cross-sections of O3 measured by Daumont, Brion and Malicet in the early 1990's [1].
@@ -89,7 +89,7 @@ class O3DBM(database.OpticalDatabaseRust):
             raise OSError(msg)
 
 
-class NO2Vandaele(database.OpticalDatabaseRust):
+class NO2Vandaele(database.OpticalDatabaseGenericAbsorber):
     def __init__(self) -> None:
         """
         Calculates the absorption cross section of NO2 molecules from 230 nm to 1000 nm at 220 K to 294 K following [1]
@@ -112,7 +112,7 @@ class NO2Vandaele(database.OpticalDatabaseRust):
             raise OSError(msg)
 
 
-class HITRANUV(database.OpticalDatabaseRust):
+class HITRANUV(database.OpticalDatabaseGenericAbsorber):
     def __init__(self, name: str, version: str = "2022") -> None:
         """
         HITRAN UV cross-sections for a given constituent.  The constituent must be one of the following:
@@ -152,7 +152,7 @@ class HITRANUV(database.OpticalDatabaseRust):
             raise OSError(msg)
 
 
-class HITRANTabulated(database.OpticalDatabaseRust):
+class HITRANTabulated(database.OpticalDatabaseGenericAbsorber):
     def __init__(self, name: str, res="01nm") -> None:
         """
         Loads in a database tabulated from HITRAN line entries as a function of pressure/temperature that have been
@@ -188,7 +188,7 @@ class HITRANTabulated(database.OpticalDatabaseRust):
             raise OSError(msg)
 
 
-class HITRANCollision(database.OpticalDatabaseRust):
+class HITRANCollision(database.OpticalDatabaseGenericAbsorber):
     def __init__(self, name: str) -> None:
         """
         Loads collision induced absorption (CIA) cross sections compiled from data found at https://hitran.org/cia/.
