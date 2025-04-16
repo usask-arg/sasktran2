@@ -363,38 +363,3 @@ pub fn read_fwf_folder(folder: PathBuf) -> Option<XsecDatabase> {
 
     Some(combined_ds)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::Path;
-
-    #[test]
-    #[test]
-    fn test_read_fwf() {
-        let file = Path::new(
-            "/Users/djz828/OneDrive - University of Saskatchewan/sasktran_databases/input/hitran_uv/o3/O3_293.0K-0.0Torr_28901.0-40999.0_118.xsc",
-        );
-        let _df = read_fwf_xsec(file.to_path_buf());
-    }
-
-    #[test]
-    fn test_read_fwf_folder() {
-        let folder = Path::new(
-            "/Users/djz828/OneDrive - University of Saskatchewan/sasktran_databases/input/hitran_uv/o3/",
-        );
-        let db = read_fwf_folder(folder.to_path_buf()).unwrap();
-
-        let db: SKXsecDatabase<Ix2> = db.into();
-
-        let wvnum = Array1::from(vec![28901.3, 28902.4, 28903.7, 28904.0, 28905.0]);
-
-        let params = Array1::from(vec![293.0]);
-
-        let mut xs = Array1::zeros(wvnum.len());
-
-        db.xs_emplace(&wvnum, &params, &mut xs, None).unwrap();
-
-        println!("xs: {:?}", xs);
-    }
-}

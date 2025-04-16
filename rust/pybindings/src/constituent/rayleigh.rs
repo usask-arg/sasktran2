@@ -40,12 +40,12 @@ use crate::constituent::atmo_storage::AtmosphereStorage;
 /// king : numpy.ndarray, optional
 ///    King factor to use for the cross section, by default None, only used when method is "manual"
 
-pub struct Rayleigh {
+pub struct PyRayleigh {
     inner: RustRayleighCore,
 }
 
 #[pymethods]
-impl Rayleigh {
+impl PyRayleigh {
     #[new]
     #[pyo3(
         signature = (method="bates", n2_percentage=None, o2_percentage=None, ar_percentage=None, co2_percentage=None, wavelengths_nm=None, xs=None, king=None),
@@ -113,7 +113,7 @@ impl Rayleigh {
             inner = inner.with_co2_percentage(co2_percentage.unwrap());
         }
 
-        Rayleigh { inner: inner }
+        PyRayleigh { inner: inner }
     }
 
     ///

@@ -14,13 +14,13 @@ use crate::constituent::atmo_storage::AtmosphereStorage;
 use crate::optical::optical_property::PyOpticalProperty;
 
 #[pyclass]
-pub struct VMRAltitudeAbsorber {
+pub struct PyVMRAltitudeAbsorber {
     pub inner: VMRAltitudeAbsorberCore<PyOpticalProperty>,
     optical_property: Py<PyAny>,
 }
 
 #[pymethods]
-impl VMRAltitudeAbsorber {
+impl PyVMRAltitudeAbsorber {
     #[new]
     #[pyo3(
         signature = (optical_property, altitudes_m, vmr, out_of_bounds_mode = "zero"),
