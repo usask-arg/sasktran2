@@ -3,14 +3,25 @@ from __future__ import annotations
 import numpy as np
 
 import sasktran2 as sk
-from sasktran2.optical.rayleigh import rayleigh_cross_section_bates
-from sasktran2.polarization import LegendreStorageView
+from sasktran2._core_rust import PyRayleigh
 
 from .base import Constituent
 
 
 class Rayleigh(Constituent):
-    def __init__(self, method: str = "bates", method_kwargs: dict | None = None):
+    _rayleigh: PyRayleigh
+
+    def __init__(
+        self,
+        method: str = "bates",
+        n2_percentage: float = 78.084,
+        o2_percentage: float = 20.946,
+        ar_percentage: float = 0.934,
+        co2_percentage: float = 0.036,
+        wavelength_nm: np.ndarray = None,
+        xs: np.ndarray = None,
+        king_factor: np.ndarray = None,
+    ) -> None:
         """
         An implementation of Rayleigh scattering.  Cross sections (and depolarization factors) can be
         calculated multiple ways, with the default method being that of 'bates'.
@@ -22,49 +33,43 @@ class Rayleigh(Constituent):
 
         Parameters
         ----------
-        method : str, optional
+        method : str, default='bates'
             Method to use to calculate the cross section.  Supported methods are
-            ['bates'], by default 'bates'
-
-        method_kwargs: dict, optional
-            kwargs that can be passed to the method
+            ['bates', 'manual'], by default 'bates'
+        n2_percentage : float, optional
+            Percentage of N2 in the atmosphere, by default 78.084
+        o2_percentage : float, optional
+            Percentage of O2 in the atmosphere, by default 20.946
+        ar_percentage : float, optional
+            Percentage of Ar in the atmosphere, by default 0.934
+        co2_percentage : float, optional
+            Percentage of CO2 in the atmosphere, by default 0.036
+        wavelength_nm : numpy.ndarray
+            Wavelengths in nm to use for the cross section
+        xs : numpy.ndarray
+            Cross section in m2/molecule to use for the cross section
+        king_factor : numpy.ndarray
+            King factor to use for the cross section
 
         Raises
         ------
         ValueError
             If input method is not supported
         """
-        self._method_kwargs = method_kwargs
-        if method.lower() == "bates":
-            self._rayleigh_cross_fn = rayleigh_cross_section_bates
-            if self._method_kwargs is not None:
-                self._fn_kwargs = self._method_kwargs
-            else:
-                self._fn_kwargs = {}
-        elif method.lower() == "manual":
-
-            def temp_fn(wv_micron: np.array):
-                xs = np.interp(
-                    wv_micron * 1000,
-                    self._method_kwargs["wavelength_nm"],
-                    self._method_kwargs["xs"],
-                )
-                king = np.interp(
-                    wv_micron * 1000,
-                    self._method_kwargs["wavelength_nm"],
-                    self._method_kwargs["king_factor"],
-                )
-
-                return xs, king
-
-            self._rayleigh_cross_fn = temp_fn
-            self._fn_kwargs = {}
-        else:
-            msg = "Method must be bates or manual"
-            raise ValueError(msg)
-
-        self._ray_ext = None
-        self._delta = None
+        self._rayleigh = PyRayleigh(
+            method=method.lower(),
+            n2_percentage=n2_percentage,
+            o2_percentage=o2_percentage,
+            ar_percentage=ar_percentage,
+            co2_percentage=co2_percentage,
+            wavelength_nm=(
+                wavelength_nm.astype(np.float64) if wavelength_nm is not None else None
+            ),
+            xs=xs.astype(np.float64) if xs is not None else None,
+            king_factor=(
+                king_factor.astype(np.float64) if king_factor is not None else None
+            ),
+        )
 
     def add_to_atmosphere(self, atmo: sk.Atmosphere):
         """
@@ -75,114 +80,7 @@ class Rayleigh(Constituent):
 
         :meta private:
         """
-        if atmo.wavelengths_nm is None:
-            msg = "It is required to give the Atmosphere object wavelengths to use the Rayleigh constituent"
-            raise ValueError(msg)
-
-        if atmo.pressure_pa is None:
-            msg = "It is required to set the pressure_pa property in the Atmosphere object to use the Rayleigh Constituent"
-            raise ValueError(msg)
-
-        if atmo.temperature_k is None:
-            msg = "It is required to set the temperature_k property in the Atmosphere object to use the Rayleigh Constituent"
-            raise ValueError(msg)
-
-        # Get the number density from the atmosphere object at the grid points
-        num_dens = atmo.state_equation.air_numberdensity["N"]
-
-        scattering_xs, king_factor = self._rayleigh_cross_fn(
-            atmo.wavelengths_nm / 1000, **self._fn_kwargs
-        )
-
-        # King factor F = (6 + 3 d) / (6 - 7 d)
-        # So then (6 - 7 d) * F = 6 + 3 d
-        # d (3 + 7 F) = 6(F - 1)
-        # d = 6 (F - 1) / (3 + 7 F)
-        self._delta = 6 * (king_factor - 1) / (3 + 7 * king_factor)
-
-        self._ray_ext = np.outer(num_dens, scattering_xs)
-        # Start by adding in the extinction
-        atmo.storage.total_extinction += self._ray_ext
-
-        # SSA temporarily stores the scattering extinction
-        atmo.storage.ssa += self._ray_ext
-
-        atmo.leg_coeff.a1[0] += self._ray_ext
-        atmo.leg_coeff.a1[2] += (
-            self._ray_ext * ((1 - self._delta) / (2 + self._delta))[np.newaxis, :]
-        )
-
-        if atmo.nstokes == 3:
-            atmo.leg_coeff.a2[2] += (
-                self._ray_ext
-                * 6
-                * ((1 - self._delta) / (2 + self._delta))[np.newaxis, :]
-            )
-
-            atmo.leg_coeff.b1[2] += (
-                self._ray_ext
-                * np.sqrt(6.0)
-                * ((1 - self._delta) / (2 + self._delta))[np.newaxis, :]
-            )
-        elif atmo.nstokes == 4:
-            msg = (
-                "NSTOKES={} not currently implemented for Rayleigh constituent".format(
-                    atmo.nstokes
-                )
-            )
-            raise ValueError(msg)
+        self._rayleigh.add_to_atmosphere(atmo)
 
     def register_derivative(self, atmo: sk.Atmosphere, name: str):
-        num_dens = atmo.state_equation.air_numberdensity
-        N = num_dens["N"]
-
-        derivs = {}
-
-        # dI/dP = dI/dN * dN/dP, and dI/dN is the extinction
-        # It's easier to just treat this as a number density derivative using the Interpolated Derivative Mapping
-        # and an Identity matrix as the mapping matrix
-
-        xs = self._ray_ext / N[:, np.newaxis]
-
-        deriv_names = []
-        d_vals = []
-        if atmo.calculate_pressure_derivative:
-            deriv_names.append("pressure_pa")
-            d_vals.append(num_dens["dN_dP"])
-        if atmo.calculate_temperature_derivative:
-            deriv_names.append("temperature_k")
-            d_vals.append(num_dens["dN_dT"])
-
-        for deriv_name, vert_factor in zip(deriv_names, d_vals, strict=True):
-            mapping = atmo.storage.get_derivative_mapping(f"wf_{name}_{deriv_name}")
-            mapping.d_extinction[:] += xs
-            mapping.d_ssa[:] += (
-                xs * (1 - atmo.storage.ssa) / atmo.storage.total_extinction
-            )
-            mapping.d_leg_coeff[:] -= atmo.storage.leg_coeff
-            mapping.scat_factor[:] += xs / (
-                atmo.storage.ssa * atmo.storage.total_extinction
-            )
-
-            mapping.interpolator = np.eye(len(N)) * vert_factor[np.newaxis, :]
-            mapping.interp_dim = "altitude"
-            mapping.assign_name = f"wf_{deriv_name}"
-
-            d_leg_coeff = LegendreStorageView(mapping.d_leg_coeff, atmo.nstokes)
-
-            d_leg_coeff.a1[0][:] += 1
-            d_leg_coeff.a1[2][:] += ((1 - self._delta) / (2 + self._delta))[
-                np.newaxis, :
-            ]
-
-            if atmo.nstokes >= 3:
-                d_leg_coeff.a2[2][:] += (
-                    6 * ((1 - self._delta) / (2 + self._delta))[np.newaxis, :]
-                )
-
-                d_leg_coeff.b1[2][:] += (
-                    np.sqrt(6.0)
-                    * ((1 - self._delta) / (2 + self._delta))[np.newaxis, :]
-                )
-
-        return derivs
+        self._rayleigh.register_derivative(atmo, name)
