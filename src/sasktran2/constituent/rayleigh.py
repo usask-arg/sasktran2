@@ -18,7 +18,7 @@ class Rayleigh(Constituent):
         o2_percentage: float = 20.946,
         ar_percentage: float = 0.934,
         co2_percentage: float = 0.036,
-        wavelength_nm: np.ndarray = None,
+        wavelengths_nm: np.ndarray = None,
         xs: np.ndarray = None,
         king_factor: np.ndarray = None,
     ) -> None:
@@ -44,7 +44,7 @@ class Rayleigh(Constituent):
             Percentage of Ar in the atmosphere, by default 0.934
         co2_percentage : float, optional
             Percentage of CO2 in the atmosphere, by default 0.036
-        wavelength_nm : numpy.ndarray
+        wavelengths_nm : numpy.ndarray
             Wavelengths in nm to use for the cross section
         xs : numpy.ndarray
             Cross section in m2/molecule to use for the cross section
@@ -62,8 +62,10 @@ class Rayleigh(Constituent):
             o2_percentage=o2_percentage,
             ar_percentage=ar_percentage,
             co2_percentage=co2_percentage,
-            wavelength_nm=(
-                wavelength_nm.astype(np.float64) if wavelength_nm is not None else None
+            wavelengths_nm=(
+                wavelengths_nm.astype(np.float64)
+                if wavelengths_nm is not None
+                else None
             ),
             xs=xs.astype(np.float64) if xs is not None else None,
             king_factor=(
