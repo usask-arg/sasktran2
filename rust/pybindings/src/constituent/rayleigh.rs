@@ -48,7 +48,7 @@ pub struct PyRayleigh {
 impl PyRayleigh {
     #[new]
     #[pyo3(
-        signature = (method="bates", n2_percentage=None, o2_percentage=None, ar_percentage=None, co2_percentage=None, wavelengths_nm=None, xs=None, king=None),
+        signature = (method="bates", n2_percentage=None, o2_percentage=None, ar_percentage=None, co2_percentage=None, wavelengths_nm=None, xs=None, king_factor=None),
     )]
     /// Test dosstring new
     fn new<'py>(
@@ -59,7 +59,7 @@ impl PyRayleigh {
         co2_percentage: Option<f64>,
         wavelengths_nm: Option<PyReadonlyArray1<'py, f64>>,
         xs: Option<PyReadonlyArray1<'py, f64>>,
-        king: Option<PyReadonlyArray1<'py, f64>>,
+        king_factor: Option<PyReadonlyArray1<'py, f64>>,
     ) -> Self {
         let mut inner = RustRayleighCore::new();
 
@@ -74,7 +74,7 @@ impl PyRayleigh {
                 .as_array()
                 .to_owned();
 
-            let king = king
+            let king = king_factor
                 .ok_or_else(|| {
                     PyErr::new::<pyo3::exceptions::PyValueError, _>(
                         "king must be specified when using the manual method",

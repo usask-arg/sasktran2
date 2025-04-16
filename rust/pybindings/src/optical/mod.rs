@@ -3,11 +3,16 @@ pub mod optical_quantities;
 
 use numpy::ndarray::*;
 use numpy::*;
+use optical_quantities::PyOpticalQuantities;
+use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use sk_core::interpolation::linear::Grid;
+use sk_core::optical::OpticalPropertyExt;
 use sk_core::optical::xsec_dbase::SKXsecDatabase;
 use sk_core::optical::xsec_dbase::XsecDatabaseInterp;
+
+use crate::constituent::atmo_storage::AtmosphereStorage;
 
 #[pyclass]
 /// An absorber database that depends on wavenumber and 1 parameter (e.g. temperature)
@@ -21,7 +26,7 @@ use sk_core::optical::xsec_dbase::XsecDatabaseInterp;
 /// xsec_m2 : ndarray
 ///   Cross section in m^2/molecule [num_param, num_wavenumber]
 pub struct AbsorberDatabaseDim2 {
-    db: SKXsecDatabase<Ix2>,
+    pub db: SKXsecDatabase<Ix2>,
 }
 
 #[pyclass]
@@ -48,16 +53,32 @@ impl AbsorberDatabaseDim2 {
         wavenumber_cminv: PyReadonlyArray1<f64>,
         params: PyReadonlyArray1<f64>,
         xsec_m2: PyReadonlyArray2<f64>,
+        param_names: Vec<String>,
     ) -> PyResult<Self> {
         let arr_wvnum = wavenumber_cminv.as_array().to_owned();
         let arr_params = params.as_array().to_owned();
 
         let arr_xsec = xsec_m2.as_array().to_owned();
 
-        let db = SKXsecDatabase::<Ix2>::new(arr_xsec, Grid::new(arr_wvnum), vec![arr_params])
-            .ok_or_else(|| PyValueError::new_err("Failed to create SKXsecDatabase"))?;
+        let db = SKXsecDatabase::<Ix2>::new(
+            arr_xsec,
+            Grid::new(arr_wvnum),
+            vec![arr_params],
+            param_names,
+        )
+        .ok_or_else(|| PyValueError::new_err("Failed to create SKXsecDatabase"))?;
 
         Ok(Self { db })
+    }
+
+    fn atmosphere_quantities<'py>(&self, atmo: Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        let rust_atmo = AtmosphereStorage::new(&atmo);
+
+        let oq = self.db.optical_quantities(&rust_atmo.inputs).map_err(|e| {
+            PyValueError::new_err(format!("Failed to get optical quantities: {}", e))
+        })?;
+
+        Ok(PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())?)
     }
 
     fn cross_section<'py>(
@@ -106,6 +127,7 @@ impl AbsorberDatabaseDim3 {
         param_0: PyReadonlyArray1<f64>,
         param_1: PyReadonlyArray1<f64>,
         xsec_m2: PyReadonlyArray3<f64>,
+        param_names: Vec<String>,
     ) -> PyResult<Self> {
         let arr_wvnum = wavenumber_cminv.as_array().to_owned();
 
@@ -118,6 +140,7 @@ impl AbsorberDatabaseDim3 {
             arr_xsec,
             Grid::new(arr_wvnum),
             vec![arr_param_0, arr_param_1],
+            param_names,
         )
         .ok_or_else(|| PyValueError::new_err("Failed to create SKXsecDatabase"))?;
 

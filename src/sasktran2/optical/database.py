@@ -62,6 +62,8 @@ class OpticalDatabaseGenericAbsorber(OpticalDatabase):
         self._cached_interp_handler = None
 
     def _validate_db(self):
+        if type(self._database) is not xr.Dataset:
+            return
         # Old file format used "temperature" and "pressure" instead of the standard keys
         # "temperature_k" and "pressure_pa", if so we rename them
 
@@ -96,6 +98,7 @@ class OpticalDatabaseGenericAbsorber(OpticalDatabase):
                 param0[sidx0].astype(np.float64),
                 param1[sidx1].astype(np.float64),
                 xs,
+                coords[:-1],
             )
             self._coords = coords
         elif len(coords) == 2:
@@ -110,6 +113,7 @@ class OpticalDatabaseGenericAbsorber(OpticalDatabase):
                 wavenumber_cminv[sidx1].astype(np.float64),
                 param0[sidx0].astype(np.float64),
                 xs,
+                coords[:-1],
             )
             self._coords = coords
 
@@ -183,6 +187,9 @@ class OpticalDatabaseGenericAbsorber(OpticalDatabase):
             derivs[coord] = NativeGridDerivative(d_extinction=d_xs[i])
 
         return derivs
+
+    def _into_rust_object(self):
+        return self._database
 
 
 class OpticalDatabaseGenericScatterer(OpticalDatabase):

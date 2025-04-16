@@ -44,6 +44,16 @@ pub trait StorageInputs {
     fn wavenumbers_cminv(&self) -> Option<ArrayView1<f64>>;
     fn air_numberdensity_dict(&self) -> HashMap<String, Array1<f64>>;
     fn dry_air_numberdensity_dict(&self) -> HashMap<String, Array1<f64>>;
+
+    fn get_parameter(&self, name: &str) -> Option<ArrayView1<f64>> {
+        match name {
+            "pressure_pa" => self.pressure_pa(),
+            "temperature_k" => self.temperature_k(),
+            "wavelengths_nm" => self.wavelengths_nm(),
+            "wavenumbers_cminv" => self.wavenumbers_cminv(),
+            _ => None,
+        }
+    }
 }
 
 pub trait StorageOutputs {

@@ -7,6 +7,8 @@ use pyo3::types::PyDictMethods;
 use pyo3::{prelude::*, types::PyDict};
 use sk_core::{constituent::StorageInputs, optical::*};
 
+use super::AbsorberDatabaseDim2;
+
 pub struct PyOpticalProperty {
     py_optical_property: Py<PyAny>,
     py_atmosphere: Py<PyAny>,
@@ -22,12 +24,27 @@ impl PyOpticalProperty {
 }
 
 impl OpticalProperty for PyOpticalProperty {
-    fn optical_quantities<'a>(
-        &'a self,
-        _inputs: &dyn StorageInputs,
-    ) -> Result<OpticalQuantities<'a>> {
+    fn optical_quantities_emplace(
+        &self,
+        inputs: &dyn StorageInputs,
+        optical_quantities: &mut OpticalQuantities,
+    ) -> Result<()> {
         Python::with_gil(|py| {
             let bound_optical_property = self.py_optical_property.bind(py);
+            let rust_optical = bound_optical_property
+                .call_method0("_into_rust_object")
+                .ok();
+
+            if let Some(rust_optical) = rust_optical {
+                if let Ok(absorber) = rust_optical.downcast::<AbsorberDatabaseDim2>() {
+                    absorber
+                        .borrow()
+                        .db
+                        .optical_quantities_emplace(inputs, optical_quantities)?;
+                    return Ok(());
+                }
+            }
+
             let bound_atmosphere = self.py_atmosphere.bind(py);
 
             let aq = bound_optical_property
@@ -38,23 +55,17 @@ impl OpticalProperty for PyOpticalProperty {
 
             let ssa = Array2::zeros(cross_section.dim());
 
-            Ok(OpticalQuantities {
-                cross_section: cross_section.into(),
-                ssa: ssa.into(),
-                a1: None,
-                a2: None,
-                a3: None,
-                a4: None,
-                b1: None,
-                b2: None,
-            })
+            optical_quantities.cross_section = cross_section.into();
+            optical_quantities.ssa = ssa.into();
+            Ok(())
         })
     }
 
-    fn optical_derivatives<'a>(
-        &'a self,
+    fn optical_derivatives_emplace(
+        &self,
         _inputs: &dyn StorageInputs,
-    ) -> Result<std::collections::HashMap<String, OpticalQuantities<'a>>> {
+        d_optical_quantities: &mut HashMap<String, OpticalQuantities>,
+    ) -> Result<()> {
         Python::with_gil(|py| {
             let bound_optical_property = self.py_optical_property.bind(py);
             let bound_atmosphere = self.py_atmosphere.bind(py);
@@ -64,7 +75,6 @@ impl OpticalProperty for PyOpticalProperty {
                 .downcast_into()
                 .unwrap();
 
-            let mut hash: HashMap<String, OpticalQuantities<'a>> = std::collections::HashMap::new();
             // Convert to PyDict
             d_aq.iter().for_each(|(key, value)| {
                 let cross_section: PyReadonlyArray2<f64> =
@@ -75,7 +85,7 @@ impl OpticalProperty for PyOpticalProperty {
 
                 let k = key.extract::<String>().unwrap();
 
-                hash.insert(
+                d_optical_quantities.insert(
                     k,
                     OpticalQuantities {
                         cross_section: cross_section.into(),
@@ -90,7 +100,7 @@ impl OpticalProperty for PyOpticalProperty {
                 );
             });
 
-            Ok(hash)
+            Ok(())
         })
     }
 }

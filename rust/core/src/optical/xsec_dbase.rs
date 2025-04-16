@@ -9,6 +9,8 @@ use std::io::{BufRead, BufReader};
 use std::ops::AddAssign;
 use std::path::PathBuf;
 
+use super::OpticalProperty;
+
 /// Returns back the indices required to sort a vector of f64 values.
 pub fn argsort_f64(data: &[f64]) -> Vec<usize> {
     let mut indices = (0..data.len()).collect::<Vec<_>>();
@@ -91,16 +93,23 @@ pub struct SKXsecDatabase<D: Dimension> {
     xsec: Array<f64, D>,
     wvnum: Grid,
     params: Vec<Array1<f64>>,
+    param_names: Vec<String>,
 }
 
 impl<D: Dimension> SKXsecDatabase<D> {
-    pub fn new(xsec: Array<f64, D>, wvnum: Grid, params: Vec<Array1<f64>>) -> Option<Self> {
+    pub fn new(
+        xsec: Array<f64, D>,
+        wvnum: Grid,
+        params: Vec<Array1<f64>>,
+        param_names: Vec<String>,
+    ) -> Option<Self> {
         assert_eq!(params.len(), D::NDIM? - 1);
 
         Some(SKXsecDatabase {
             xsec,
             wvnum,
             params,
+            param_names,
         })
     }
 }
@@ -133,7 +142,13 @@ impl From<XsecDatabase> for SKXsecDatabase<Ix2> {
             xsec.slice_mut(s![i, ..]).assign(&db.xsec[sidx[0][i]]);
         }
 
-        SKXsecDatabase::<Ix2>::new(xsec, Grid::new(unique_wvnum), params).unwrap()
+        SKXsecDatabase::<Ix2>::new(
+            xsec,
+            Grid::new(unique_wvnum),
+            params,
+            vec!["temperature_k".to_string()],
+        )
+        .unwrap()
     }
 }
 
@@ -231,6 +246,44 @@ impl XsecDatabaseInterp for SKXsecDatabase<Ix3> {
 
         // Have to iterate through all of the
         Ok(())
+    }
+}
+
+impl OpticalProperty for SKXsecDatabase<Ix2> {
+    fn optical_quantities_emplace(
+        &self,
+        inputs: &dyn crate::constituent::StorageInputs,
+        optical_quantities: &mut super::OpticalQuantities,
+    ) -> anyhow::Result<()> {
+        let wavenumber_cminv = inputs
+            .get_parameter("wavenumbers_cminv")
+            .ok_or_else(|| anyhow::anyhow!("Wavenumber not found in inputs"))?;
+
+        let param = inputs
+            .get_parameter(&self.param_names[0])
+            .ok_or_else(|| anyhow::anyhow!("Parameter not found in inputs"))?;
+
+        let _ = optical_quantities.resize(param.len(), wavenumber_cminv.len());
+
+        let xs = &mut optical_quantities.cross_section;
+
+        Zip::from(xs.rows_mut())
+            .and(param)
+            .par_for_each(|mut row, param| {
+                let params = Array1::from(vec![*param]);
+
+                let _ = self.xs_emplace(&wavenumber_cminv, &params, &mut row, None);
+            });
+
+        Ok(())
+    }
+
+    fn optical_derivatives_emplace(
+        &self,
+        inputs: &dyn crate::constituent::StorageInputs,
+        d_optical_quantities: &mut HashMap<String, super::OpticalQuantities>,
+    ) -> anyhow::Result<()> {
+        todo!()
     }
 }
 

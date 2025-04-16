@@ -2,7 +2,7 @@ use ndarray::{Array1, Array2, ArrayBase, Axis, Data, Ix2, Zip};
 
 use crate::atmosphere::AtmosphereStorageAccess;
 use crate::constituent::{Constituent, StorageInputs};
-use crate::optical::OpticalProperty;
+use crate::optical::{OpticalProperty, OpticalPropertyExt};
 
 use super::{DerivMapping, DerivMappingGenerator, DerivMappingView, StorageOutputs};
 use crate::interpolation::linear::linear_interpolating_matrix;

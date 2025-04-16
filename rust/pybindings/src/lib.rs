@@ -14,6 +14,8 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<optical::AbsorberDatabaseDim2>()?;
     m.add_class::<optical::AbsorberDatabaseDim3>()?;
 
+    m.add_class::<optical::optical_quantities::PyOpticalQuantities>()?;
+
     m.add_function(wrap_pyfunction!(accel::assign_absorber_derivatives, m)?)?;
 
     Ok(())
