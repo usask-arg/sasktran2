@@ -114,7 +114,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(Corrosion)
 
 # Import targets defined in a package or workspace manifest `Cargo.toml` file
-corrosion_import_crate(MANIFEST_PATH rust/core/Cargo.toml)
+corrosion_import_crate(MANIFEST_PATH Cargo.toml)
 
 target_link_libraries(sasktran2BuildProperties INTERFACE sk_core)
 
@@ -330,7 +330,7 @@ if(BUILD_PYTHON)
   target_link_libraries(_core PRIVATE sasktran2)
 
   install(TARGETS _core DESTINATION sasktran2)
-  corrosion_import_crate(MANIFEST_PATH rust/pybindings/Cargo.toml)
+  # corrosion_import_crate(MANIFEST_PATH rust/pybindings/Cargo.toml)
   corrosion_set_env_vars(_core_rust PYO3_PYTHON=${Python_EXECUTABLE})
 
   if(WIN32)
