@@ -46,7 +46,7 @@ jobs:
           cd build/lib
           ctest --verbose
 
-  test-rust-core-ubuntu:
+  test-rust-ubuntu:
     runs-on: ubuntu-latest
 
     steps:
@@ -59,22 +59,7 @@ jobs:
       - name: test
         shell: bash -el {0}
         run: |
-          cd rust/core && cargo test
-
-  test-rust-bindings-ubuntu:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          submodules: true
-
-      - name: test
-        shell: bash -el {0}
-        run: |
-          cd rust/pybindings && cargo test
+          cargo test
 
   test-dev-env-windows:
     runs-on: windows-2019

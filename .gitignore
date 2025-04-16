@@ -55,3 +55,4 @@ pixi.lock
 docs/sphinx/jupyter_execute
 rust/core/target/
 rust/pybindings/target/
+target
