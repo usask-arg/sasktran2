@@ -51,7 +51,7 @@ def test_vmr_altitude_construction():
     """
     Test that the VMRAltitude class can be constructed
     """
-    alts = np.arange(0, 100001, 1000)
+    alts = np.arange(0, 100001, 1000.0)
 
     sk.constituent.VMRAltitudeAbsorber(sk.optical.O3DBM(), alts, np.ones_like(alts))
 

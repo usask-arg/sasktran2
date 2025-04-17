@@ -69,3 +69,12 @@ repos:
   hooks:
   - id: clang-format
     types_or: [c++, c]
+
+- repo: local
+  hooks:
+    - id: cargo-fmt
+      name: cargo fmt
+      entry: cargo fmt --all -- --check
+      language: system
+      types: [rust]
+      pass_filenames: false

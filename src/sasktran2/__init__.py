@@ -1,5 +1,9 @@
-# ruff: noqa: F401
+# ruff: noqa: F401, E402
 from __future__ import annotations
+
+import os
+
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 
 from . import (
     appconfig,
