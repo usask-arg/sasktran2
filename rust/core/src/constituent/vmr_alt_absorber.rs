@@ -2,7 +2,7 @@ use ndarray::{Array1, Array2, ArrayBase, Axis, Data, Ix2, Zip};
 
 use crate::atmosphere::AtmosphereStorageAccess;
 use crate::constituent::{Constituent, StorageInputs};
-use crate::optical::{OpticalProperty, OpticalPropertyExt};
+use crate::optical::{NullAuxInputs, OpticalProperty, OpticalPropertyExt};
 
 use super::{DerivMapping, DerivMappingGenerator, DerivMappingView, StorageOutputs};
 use crate::interpolation::linear::linear_interpolating_matrix;
@@ -100,7 +100,7 @@ where
             .as_ref()
             .ok_or_else(|| anyhow!("Optical property not set"))?;
 
-        let optical_quants = optical_prop.optical_quantities(inputs)?;
+        let optical_quants = optical_prop.optical_quantities(inputs, &NullAuxInputs {})?;
         let cross_section = optical_quants.cross_section;
 
         let eqn_state = inputs.dry_air_numberdensity_dict();
@@ -152,7 +152,7 @@ where
             .optical_property
             .as_ref()
             .ok_or_else(|| anyhow!("Optical property not set"))?;
-        let optical_quants = optical_prop.optical_quantities(inputs)?;
+        let optical_quants = optical_prop.optical_quantities(inputs, &NullAuxInputs {})?;
         let cross_section = optical_quants.cross_section;
 
         let altitudes_m = inputs.altitude_m();
@@ -255,7 +255,7 @@ where
             });
 
         if deriv_names.len() > 0 {
-            let d_aq = optical_prop.optical_derivatives(inputs)?;
+            let d_aq = optical_prop.optical_derivatives(inputs, &NullAuxInputs {})?;
 
             d_aq.iter().for_each(|(key, val)| {
                 let mapping_name = format!("wf_{}_{}_xs", constituent_name, key);

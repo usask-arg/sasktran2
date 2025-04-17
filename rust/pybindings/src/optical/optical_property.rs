@@ -27,6 +27,7 @@ impl OpticalProperty for PyOpticalProperty {
     fn optical_quantities_emplace(
         &self,
         inputs: &dyn StorageInputs,
+        aux_inputs: &dyn AuxOpticalInputs,
         optical_quantities: &mut OpticalQuantities,
     ) -> Result<()> {
         Python::with_gil(|py| {
@@ -37,18 +38,20 @@ impl OpticalProperty for PyOpticalProperty {
 
             if let Some(rust_optical) = rust_optical {
                 if let Ok(absorber) = rust_optical.downcast::<AbsorberDatabaseDim2>() {
-                    absorber
-                        .borrow()
-                        .db
-                        .optical_quantities_emplace(inputs, optical_quantities)?;
+                    absorber.borrow().db.optical_quantities_emplace(
+                        inputs,
+                        aux_inputs,
+                        optical_quantities,
+                    )?;
                     return Ok(());
                 }
 
                 if let Ok(absorber) = rust_optical.downcast::<AbsorberDatabaseDim3>() {
-                    absorber
-                        .borrow()
-                        .db
-                        .optical_quantities_emplace(inputs, optical_quantities)?;
+                    absorber.borrow().db.optical_quantities_emplace(
+                        inputs,
+                        aux_inputs,
+                        optical_quantities,
+                    )?;
                     return Ok(());
                 }
             }
@@ -72,6 +75,7 @@ impl OpticalProperty for PyOpticalProperty {
     fn optical_derivatives_emplace(
         &self,
         inputs: &dyn StorageInputs,
+        aux_inputs: &dyn AuxOpticalInputs,
         d_optical_quantities: &mut HashMap<String, OpticalQuantities>,
     ) -> Result<()> {
         Python::with_gil(|py| {
@@ -83,18 +87,20 @@ impl OpticalProperty for PyOpticalProperty {
 
             if let Some(rust_optical) = rust_optical {
                 if let Ok(absorber) = rust_optical.downcast::<AbsorberDatabaseDim2>() {
-                    absorber
-                        .borrow()
-                        .db
-                        .optical_derivatives_emplace(inputs, d_optical_quantities)?;
+                    absorber.borrow().db.optical_derivatives_emplace(
+                        inputs,
+                        aux_inputs,
+                        d_optical_quantities,
+                    )?;
                     return Ok(());
                 }
 
                 if let Ok(absorber) = rust_optical.downcast::<AbsorberDatabaseDim3>() {
-                    absorber
-                        .borrow()
-                        .db
-                        .optical_derivatives_emplace(inputs, d_optical_quantities)?;
+                    absorber.borrow().db.optical_derivatives_emplace(
+                        inputs,
+                        aux_inputs,
+                        d_optical_quantities,
+                    )?;
                     return Ok(());
                 }
             }

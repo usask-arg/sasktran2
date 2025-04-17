@@ -5,7 +5,7 @@ pub mod xsec_dbase;
 use std::collections::HashMap;
 
 use crate::constituent::StorageInputs;
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use ndarray::*;
 
 pub struct OpticalQuantities {
@@ -77,33 +77,72 @@ impl OpticalQuantities {
     }
 }
 
+pub trait AuxOpticalInputs {
+    fn get_parameter<'a>(&self, name: &str) -> Option<CowArray<'a, f64, Ix1>>;
+}
+
+// Null implementation
+pub struct NullAuxInputs;
+
+impl AuxOpticalInputs for NullAuxInputs {
+    fn get_parameter<'a>(&self, _name: &str) -> Option<CowArray<'a, f64, Ix1>> {
+        None
+    }
+}
+
 pub trait OpticalProperty {
     fn optical_quantities_emplace(
         &self,
-        _inputs: &dyn StorageInputs,
+        inputs: &dyn StorageInputs,
+        aux_inputs: &dyn AuxOpticalInputs,
         optical_quantities: &mut OpticalQuantities,
     ) -> Result<()>;
 
     fn optical_derivatives_emplace(
         &self,
         inputs: &dyn StorageInputs,
+        aux_inputs: &dyn AuxOpticalInputs,
         d_optical_quantities: &mut HashMap<String, OpticalQuantities>,
     ) -> Result<()>;
 }
 
+pub fn param_from_storage_or_aux<'a>(
+    inputs: &'a dyn StorageInputs,
+    aux_inputs: &'a dyn AuxOpticalInputs,
+    name: &'a str,
+) -> Result<CowArray<'a, f64, Ix1>> {
+    if let Some(param) = inputs.get_parameter(name) {
+        Ok(param.into())
+    } else {
+        if let Some(aux_param) = aux_inputs.get_parameter(name) {
+            Ok(aux_param)
+        } else {
+            Err(anyhow!(
+                "Parameter {} not found in inputs or aux inputs",
+                name
+            ))
+        }
+    }
+}
+
 pub trait OpticalPropertyExt: OpticalProperty {
-    fn optical_quantities(&self, inputs: &dyn StorageInputs) -> Result<OpticalQuantities> {
+    fn optical_quantities(
+        &self,
+        inputs: &dyn StorageInputs,
+        aux_inputs: &dyn AuxOpticalInputs,
+    ) -> Result<OpticalQuantities> {
         let mut out = OpticalQuantities::default();
-        self.optical_quantities_emplace(inputs, &mut out)?;
+        self.optical_quantities_emplace(inputs, aux_inputs, &mut out)?;
         Ok(out)
     }
 
     fn optical_derivatives(
         &self,
         inputs: &dyn StorageInputs,
+        aux_inputs: &dyn AuxOpticalInputs,
     ) -> Result<HashMap<String, OpticalQuantities>> {
         let mut out = HashMap::new();
-        self.optical_derivatives_emplace(inputs, &mut out)?;
+        self.optical_derivatives_emplace(inputs, aux_inputs, &mut out)?;
         Ok(out)
     }
 }

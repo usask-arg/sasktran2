@@ -9,11 +9,30 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use sk_core::interpolation::linear::Grid;
-use sk_core::optical::OpticalPropertyExt;
 use sk_core::optical::xsec_dbase::SKXsecDatabase;
 use sk_core::optical::xsec_dbase::XsecDatabaseInterp;
+use sk_core::optical::*;
 
 use crate::constituent::atmo_storage::AtmosphereStorage;
+
+// Newtype wrapper around Bound<'_, PyDict>
+pub struct PyDictWrapper<'a>(pub Option<&'a Bound<'a, PyDict>>);
+
+impl<'a> AuxOpticalInputs for PyDictWrapper<'a> {
+    fn get_parameter<'b>(&self, name: &str) -> Option<CowArray<'b, f64, Ix1>> {
+        if let Some(dict) = &self.0 {
+            if let Ok(value) = dict.get_item(name) {
+                if value.is_none() {
+                    return None;
+                }
+                let array: PyReadonlyArray1<f64> = value?.extract().ok()?;
+                // Create an owned copy of the array data to avoid lifetime issues
+                return Some(CowArray::from(array.as_array().to_owned()));
+            }
+        }
+        None
+    }
+}
 
 #[pyclass]
 /// An absorber database that depends on wavenumber and 1 parameter (e.g. temperature)
@@ -72,22 +91,37 @@ impl AbsorberDatabaseDim2 {
         Ok(Self { db })
     }
 
-    fn atmosphere_quantities<'py>(&self, atmo: Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    #[pyo3(signature = (atmo, **kwargs))]
+    fn atmosphere_quantities<'py>(
+        &self,
+        atmo: Bound<'py, PyAny>,
+        kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
         let rust_atmo = AtmosphereStorage::new(&atmo);
+        let aux_inputs = PyDictWrapper(kwargs);
 
-        let oq = self.db.optical_quantities(&rust_atmo.inputs).map_err(|e| {
-            PyValueError::new_err(format!("Failed to get optical quantities: {}", e))
-        })?;
+        let oq = self
+            .db
+            .optical_quantities(&rust_atmo.inputs, &aux_inputs)
+            .map_err(|e| {
+                PyValueError::new_err(format!("Failed to get optical quantities: {}", e))
+            })?;
 
         Ok(PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())?)
     }
 
-    fn optical_derivatives<'py>(&self, atmo: Bound<'py, PyAny>) -> PyResult<Bound<'py, PyDict>> {
+    #[pyo3(signature = (atmo, **kwargs))]
+    fn optical_derivatives<'py>(
+        &self,
+        atmo: Bound<'py, PyAny>,
+        kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<Bound<'py, PyDict>> {
         let rust_atmo = AtmosphereStorage::new(&atmo);
+        let aux_inputs = PyDictWrapper(kwargs);
 
         let oq = self
             .db
-            .optical_derivatives(&rust_atmo.inputs)
+            .optical_derivatives(&rust_atmo.inputs, &aux_inputs)
             .map_err(|e| {
                 PyValueError::new_err(format!("Failed to get optical quantities: {}", e))
             })?;
@@ -169,22 +203,37 @@ impl AbsorberDatabaseDim3 {
         Ok(Self { db })
     }
 
-    fn atmosphere_quantities<'py>(&self, atmo: Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    #[pyo3(signature = (atmo, **kwargs))]
+    fn atmosphere_quantities<'py>(
+        &self,
+        atmo: Bound<'py, PyAny>,
+        kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
         let rust_atmo = AtmosphereStorage::new(&atmo);
+        let aux_inputs = PyDictWrapper(kwargs);
 
-        let oq = self.db.optical_quantities(&rust_atmo.inputs).map_err(|e| {
-            PyValueError::new_err(format!("Failed to get optical quantities: {}", e))
-        })?;
+        let oq = self
+            .db
+            .optical_quantities(&rust_atmo.inputs, &aux_inputs)
+            .map_err(|e| {
+                PyValueError::new_err(format!("Failed to get optical quantities: {}", e))
+            })?;
 
         Ok(PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())?)
     }
 
-    fn optical_derivatives<'py>(&self, atmo: Bound<'py, PyAny>) -> PyResult<Bound<'py, PyDict>> {
+    #[pyo3(signature = (atmo, **kwargs))]
+    fn optical_derivatives<'py>(
+        &self,
+        atmo: Bound<'py, PyAny>,
+        kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<Bound<'py, PyDict>> {
         let rust_atmo = AtmosphereStorage::new(&atmo);
+        let aux_inputs = PyDictWrapper(kwargs);
 
         let oq = self
             .db
-            .optical_derivatives(&rust_atmo.inputs)
+            .optical_derivatives(&rust_atmo.inputs, &aux_inputs)
             .map_err(|e| {
                 PyValueError::new_err(format!("Failed to get optical quantities: {}", e))
             })?;

@@ -1,3 +1,4 @@
+use super::*;
 use crate::interpolation::OutOfBoundsMode;
 use crate::interpolation::linear::Grid;
 use crate::interpolation::linear::Interp1Weights;
@@ -8,8 +9,6 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 use std::ops::AddAssign;
 use std::path::PathBuf;
-
-use super::OpticalProperty;
 
 /// Returns back the indices required to sort a vector of f64 values.
 pub fn argsort_f64(data: &[f64]) -> Vec<usize> {
@@ -332,22 +331,18 @@ impl OpticalProperty for SKXsecDatabase<Ix2> {
     fn optical_quantities_emplace(
         &self,
         inputs: &dyn crate::constituent::StorageInputs,
-        optical_quantities: &mut super::OpticalQuantities,
+        aux_inputs: &dyn AuxOpticalInputs,
+        optical_quantities: &mut OpticalQuantities,
     ) -> anyhow::Result<()> {
-        let wavenumber_cminv = inputs
-            .get_parameter("wavenumbers_cminv")
-            .ok_or_else(|| anyhow::anyhow!("Wavenumber not found in inputs"))?;
-
-        let param = inputs
-            .get_parameter(&self.param_names[0])
-            .ok_or_else(|| anyhow::anyhow!("Parameter not found in inputs"))?;
+        let wavenumber_cminv = param_from_storage_or_aux(inputs, aux_inputs, "wavenumbers_cminv")?;
+        let param = param_from_storage_or_aux(inputs, aux_inputs, &self.param_names[0])?;
 
         let _ = optical_quantities.resize(param.len(), wavenumber_cminv.len());
 
         let xs = &mut optical_quantities.cross_section;
 
         Zip::from(xs.rows_mut())
-            .and(param)
+            .and(param.view())
             .par_for_each(|mut row, param| {
                 let params = Array1::from(vec![*param]);
 
@@ -360,15 +355,11 @@ impl OpticalProperty for SKXsecDatabase<Ix2> {
     fn optical_derivatives_emplace(
         &self,
         inputs: &dyn crate::constituent::StorageInputs,
+        aux_inputs: &dyn AuxOpticalInputs,
         d_optical_quantities: &mut HashMap<String, super::OpticalQuantities>,
     ) -> anyhow::Result<()> {
-        let wavenumber_cminv = inputs
-            .get_parameter("wavenumbers_cminv")
-            .ok_or_else(|| anyhow::anyhow!("Wavenumber not found in inputs"))?;
-
-        let param = inputs
-            .get_parameter(&self.param_names[0])
-            .ok_or_else(|| anyhow::anyhow!("Parameter not found in inputs"))?;
+        let wavenumber_cminv = param_from_storage_or_aux(inputs, aux_inputs, "wavenumbers_cminv")?;
+        let param = param_from_storage_or_aux(inputs, aux_inputs, &self.param_names[0])?;
 
         if d_optical_quantities.contains_key(&self.param_names[0]) {
             d_optical_quantities
@@ -388,7 +379,7 @@ impl OpticalProperty for SKXsecDatabase<Ix2> {
                 .unwrap()
                 .cross_section;
 
-        Zip::from(param)
+        Zip::from(param.view())
             .and(d_xs.rows_mut())
             .par_for_each(|param, mut row| {
                 let params = Array1::from(vec![*param]);
@@ -406,27 +397,20 @@ impl OpticalProperty for SKXsecDatabase<Ix3> {
     fn optical_quantities_emplace(
         &self,
         inputs: &dyn crate::constituent::StorageInputs,
+        aux_inputs: &dyn AuxOpticalInputs,
         optical_quantities: &mut super::OpticalQuantities,
     ) -> anyhow::Result<()> {
-        let wavenumber_cminv = inputs
-            .get_parameter("wavenumbers_cminv")
-            .ok_or_else(|| anyhow::anyhow!("Wavenumber not found in inputs"))?;
-
-        let param_0 = inputs
-            .get_parameter(&self.param_names[0])
-            .ok_or_else(|| anyhow::anyhow!("Parameter not found in inputs"))?;
-
-        let param_1 = inputs
-            .get_parameter(&self.param_names[1])
-            .ok_or_else(|| anyhow::anyhow!("Parameter not found in inputs"))?;
+        let wavenumber_cminv = param_from_storage_or_aux(inputs, aux_inputs, "wavenumbers_cminv")?;
+        let param_0 = param_from_storage_or_aux(inputs, aux_inputs, &self.param_names[0])?;
+        let param_1 = param_from_storage_or_aux(inputs, aux_inputs, &self.param_names[1])?;
 
         let _ = optical_quantities.resize(param_0.len(), wavenumber_cminv.len());
 
         let xs = &mut optical_quantities.cross_section;
 
         Zip::from(xs.rows_mut())
-            .and(param_0)
-            .and(param_1)
+            .and(param_0.view())
+            .and(param_1.view())
             .par_for_each(|mut row, param_0, param_1| {
                 let params = Array1::from(vec![*param_0, *param_1]);
 
@@ -439,19 +423,12 @@ impl OpticalProperty for SKXsecDatabase<Ix3> {
     fn optical_derivatives_emplace(
         &self,
         inputs: &dyn crate::constituent::StorageInputs,
+        aux_inputs: &dyn AuxOpticalInputs,
         d_optical_quantities: &mut HashMap<String, super::OpticalQuantities>,
     ) -> anyhow::Result<()> {
-        let wavenumber_cminv = inputs
-            .get_parameter("wavenumbers_cminv")
-            .ok_or_else(|| anyhow::anyhow!("Wavenumber not found in inputs"))?;
-
-        let param_0 = inputs
-            .get_parameter(&self.param_names[0])
-            .ok_or_else(|| anyhow::anyhow!("Parameter not found in inputs"))?;
-
-        let param_1 = inputs
-            .get_parameter(&self.param_names[1])
-            .ok_or_else(|| anyhow::anyhow!("Parameter not found in inputs"))?;
+        let wavenumber_cminv = param_from_storage_or_aux(inputs, aux_inputs, "wavenumbers_cminv")?;
+        let param_0 = param_from_storage_or_aux(inputs, aux_inputs, &self.param_names[0])?;
+        let param_1 = param_from_storage_or_aux(inputs, aux_inputs, &self.param_names[1])?;
 
         for i in 0..2 {
             if d_optical_quantities.contains_key(&self.param_names[i]) {
@@ -482,8 +459,8 @@ impl OpticalProperty for SKXsecDatabase<Ix3> {
 
             Zip::from(d_xs_0.rows_mut())
                 .and(d_xs_1.rows_mut())
-                .and(param_0)
-                .and(param_1)
+                .and(param_0.view())
+                .and(param_1.view())
                 .par_for_each(|mut row_0, mut row_1, param_0, param_1| {
                     let params = Array1::from(vec![*param_0, *param_1]);
 
