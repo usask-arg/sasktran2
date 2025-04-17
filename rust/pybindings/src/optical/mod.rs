@@ -1,5 +1,6 @@
 pub mod optical_property;
 pub mod optical_quantities;
+pub mod scat_dbase;
 
 use numpy::ndarray::*;
 use numpy::*;

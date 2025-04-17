@@ -127,12 +127,7 @@ impl OpticalProperty for PyOpticalProperty {
                     OpticalQuantities {
                         cross_section: cross_section.into(),
                         ssa: ssa.into(),
-                        a1: None,
-                        a2: None,
-                        a3: None,
-                        a4: None,
-                        b1: None,
-                        b2: None,
+                        legendre: None,
                     },
                 );
             });
