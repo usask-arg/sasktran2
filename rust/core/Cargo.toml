@@ -10,4 +10,4 @@ anyhow = "*"
 
 [lib]
 name = "sk_core"
-crate-type = ["rlib", "staticlib"]
+crate-type = ["rlib"]

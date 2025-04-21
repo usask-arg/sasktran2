@@ -1,7 +1,9 @@
-use super::*;
+use crate::atmosphere::traits::*;
 use crate::interpolation::OutOfBoundsMode;
-use crate::interpolation::linear::Grid;
+use crate::interpolation::grid1d::Grid1D;
 use crate::interpolation::linear::Interp1Weights;
+use crate::optical::storage::*;
+use crate::optical::traits::*;
 use ndarray::{Data, DataMut};
 use ndarray::{Zip, prelude::*};
 use std::collections::HashMap;
@@ -101,7 +103,7 @@ impl AddAssign for XsecDatabase {
 /// The last dimension
 pub struct SKXsecDatabase<D: Dimension> {
     xsec: Array<f64, D>,
-    wvnum: Grid,
+    wvnum: Grid1D,
     params: Vec<Array1<f64>>,
     param_names: Vec<String>,
 }
@@ -109,7 +111,7 @@ pub struct SKXsecDatabase<D: Dimension> {
 impl<D: Dimension> SKXsecDatabase<D> {
     pub fn new(
         xsec: Array<f64, D>,
-        wvnum: Grid,
+        wvnum: Grid1D,
         params: Vec<Array1<f64>>,
         param_names: Vec<String>,
     ) -> Option<Self> {
@@ -154,7 +156,7 @@ impl From<XsecDatabase> for SKXsecDatabase<Ix2> {
 
         SKXsecDatabase::<Ix2>::new(
             xsec,
-            Grid::new(unique_wvnum),
+            Grid1D::new(unique_wvnum),
             params,
             vec!["temperature_k".to_string()],
         )
@@ -330,7 +332,7 @@ impl XsecDatabaseInterp for SKXsecDatabase<Ix3> {
 impl OpticalProperty for SKXsecDatabase<Ix2> {
     fn optical_quantities_emplace(
         &self,
-        inputs: &dyn crate::constituent::StorageInputs,
+        inputs: &dyn StorageInputs,
         aux_inputs: &dyn AuxOpticalInputs,
         optical_quantities: &mut OpticalQuantities,
     ) -> anyhow::Result<()> {
@@ -354,9 +356,9 @@ impl OpticalProperty for SKXsecDatabase<Ix2> {
 
     fn optical_derivatives_emplace(
         &self,
-        inputs: &dyn crate::constituent::StorageInputs,
+        inputs: &dyn StorageInputs,
         aux_inputs: &dyn AuxOpticalInputs,
-        d_optical_quantities: &mut HashMap<String, super::OpticalQuantities>,
+        d_optical_quantities: &mut HashMap<String, OpticalQuantities>,
     ) -> anyhow::Result<()> {
         let wavenumber_cminv = param_from_storage_or_aux(inputs, aux_inputs, "wavenumbers_cminv")?;
         let param = param_from_storage_or_aux(inputs, aux_inputs, &self.param_names[0])?;
@@ -369,7 +371,7 @@ impl OpticalProperty for SKXsecDatabase<Ix2> {
         } else {
             d_optical_quantities.insert(
                 self.param_names[0].clone(),
-                super::OpticalQuantities::new(param.len(), wavenumber_cminv.len()),
+                OpticalQuantities::new(param.len(), wavenumber_cminv.len()),
             );
         }
 
@@ -396,9 +398,9 @@ impl OpticalProperty for SKXsecDatabase<Ix2> {
 impl OpticalProperty for SKXsecDatabase<Ix3> {
     fn optical_quantities_emplace(
         &self,
-        inputs: &dyn crate::constituent::StorageInputs,
+        inputs: &dyn StorageInputs,
         aux_inputs: &dyn AuxOpticalInputs,
-        optical_quantities: &mut super::OpticalQuantities,
+        optical_quantities: &mut OpticalQuantities,
     ) -> anyhow::Result<()> {
         let wavenumber_cminv = param_from_storage_or_aux(inputs, aux_inputs, "wavenumbers_cminv")?;
         let param_0 = param_from_storage_or_aux(inputs, aux_inputs, &self.param_names[0])?;
@@ -422,9 +424,9 @@ impl OpticalProperty for SKXsecDatabase<Ix3> {
 
     fn optical_derivatives_emplace(
         &self,
-        inputs: &dyn crate::constituent::StorageInputs,
+        inputs: &dyn StorageInputs,
         aux_inputs: &dyn AuxOpticalInputs,
-        d_optical_quantities: &mut HashMap<String, super::OpticalQuantities>,
+        d_optical_quantities: &mut HashMap<String, OpticalQuantities>,
     ) -> anyhow::Result<()> {
         let wavenumber_cminv = param_from_storage_or_aux(inputs, aux_inputs, "wavenumbers_cminv")?;
         let param_0 = param_from_storage_or_aux(inputs, aux_inputs, &self.param_names[0])?;
@@ -439,12 +441,12 @@ impl OpticalProperty for SKXsecDatabase<Ix3> {
             } else {
                 d_optical_quantities.insert(
                     self.param_names[i].clone(),
-                    super::OpticalQuantities::new(param_0.len(), wavenumber_cminv.len()),
+                    OpticalQuantities::new(param_0.len(), wavenumber_cminv.len()),
                 );
             }
         }
 
-        let map_ptr = d_optical_quantities as *mut HashMap<String, super::OpticalQuantities>;
+        let map_ptr = d_optical_quantities as *mut HashMap<String, OpticalQuantities>;
 
         // TODO: This is fixed in rust 1.86 with get_disjoint_mut
         unsafe {

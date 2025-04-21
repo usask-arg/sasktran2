@@ -1,7 +1,7 @@
 use ndarray::Array2;
 use numpy::*;
 use pyo3::prelude::*;
-use sk_core::constituent::{DerivMapping, DerivMappingView};
+use sk_core::atmosphere::{DerivMapping, DerivMappingView};
 
 pub struct PyDerivMapping<'py> {
     py_mapping: Bound<'py, PyAny>,

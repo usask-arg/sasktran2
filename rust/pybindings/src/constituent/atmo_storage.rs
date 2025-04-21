@@ -8,9 +8,8 @@ use numpy::{PyReadonlyArray1, PyReadwriteArray2, PyReadwriteArray3};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use sk_core::atmosphere::AtmosphereStorageAccess;
-use sk_core::constituent::{AtmosphereStorageOutputImmutView, AtmosphereStorageOutputView};
-
-use sk_core::constituent::{DerivMapping, DerivMappingGenerator, StorageInputs, StorageOutputs};
+use sk_core::atmosphere::traits::*;
+use sk_core::constituent::traits::*;
 
 use super::deriv_mapping::PyDerivMapping;
 

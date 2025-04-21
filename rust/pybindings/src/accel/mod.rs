@@ -2,7 +2,7 @@ use crate::constituent::deriv_mapping::PyDerivMapping;
 use ndarray::Zip;
 use numpy::*;
 use pyo3::prelude::*;
-use sk_core::constituent::DerivMapping;
+use sk_core::atmosphere::DerivMapping;
 
 #[pyfunction]
 pub fn assign_absorber_derivatives<'py>(

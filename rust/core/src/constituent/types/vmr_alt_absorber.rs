@@ -1,11 +1,13 @@
-use ndarray::{Array1, Array2, ArrayBase, Axis, Data, Ix2, Zip};
+use crate::atmosphere::*;
+use crate::constituent::traits::*;
+use crate::prelude::*;
 
 use crate::atmosphere::AtmosphereStorageAccess;
-use crate::constituent::{Constituent, StorageInputs};
-use crate::optical::{NullAuxInputs, OpticalProperty, OpticalPropertyExt};
+use crate::optical::traits::*;
 
-use super::{DerivMapping, DerivMappingGenerator, DerivMappingView, StorageOutputs};
 use crate::interpolation::linear::linear_interpolating_matrix;
+
+use ndarray::Ix2;
 
 use anyhow::{Result, anyhow};
 

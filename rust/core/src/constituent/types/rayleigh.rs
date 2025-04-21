@@ -1,13 +1,9 @@
-use ndarray::{Array1, Array2, Axis, Zip};
-
-use crate::atmosphere::AtmosphereStorageAccess;
-use crate::constituent::{Constituent, StorageInputs};
+use crate::atmosphere::*;
+use crate::constituent::traits::*;
 use crate::optical::rayleigh::rayleigh_cross_section_bates;
+use crate::prelude::*;
 
-use super::{DerivMapping, DerivMappingGenerator, StorageOutputs};
 use crate::interpolation::linear::Interp1;
-
-use anyhow::Result;
 
 pub enum RayleighMethod {
     Bates,

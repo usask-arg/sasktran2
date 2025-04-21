@@ -116,7 +116,7 @@ FetchContent_MakeAvailable(Corrosion)
 # Import targets defined in a package or workspace manifest `Cargo.toml` file
 corrosion_import_crate(MANIFEST_PATH Cargo.toml)
 
-target_link_libraries(sasktran2BuildProperties INTERFACE sk_core)
+# target_link_libraries(sasktran2BuildProperties INTERFACE sk_core)
 
 # add the additional compiler flags
 set(CMAKE_CXX_FLAGS " ${CompilerFlags} ${OpenMP_CXX_FLAGS} ${CMAKE_CXX_FLAGS}")

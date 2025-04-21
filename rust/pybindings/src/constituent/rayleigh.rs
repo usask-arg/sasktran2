@@ -6,8 +6,8 @@ use numpy::PyReadonlyArray1;
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
 
-use sk_core::constituent::Constituent;
-use sk_core::constituent::rayleigh::Rayleigh as RustRayleighCore;
+use sk_core::constituent::traits::Constituent;
+use sk_core::constituent::types::rayleigh::Rayleigh as RustRayleighCore;
 
 use crate::constituent::atmo_storage::AtmosphereStorage;
 

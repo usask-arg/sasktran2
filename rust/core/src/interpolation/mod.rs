@@ -1,3 +1,4 @@
+pub mod grid1d;
 pub mod linear;
 
 #[derive(Debug, Clone, Copy)]

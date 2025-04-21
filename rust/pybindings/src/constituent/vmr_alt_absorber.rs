@@ -7,8 +7,8 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
 
-use sk_core::constituent::Constituent;
-use sk_core::constituent::vmr_alt_absorber::VMRAltitudeAbsorber as VMRAltitudeAbsorberCore;
+use sk_core::constituent::traits::Constituent;
+use sk_core::constituent::types::vmr_alt_absorber::VMRAltitudeAbsorber as VMRAltitudeAbsorberCore;
 
 use crate::constituent::atmo_storage::AtmosphereStorage;
 use crate::optical::optical_property::PyOpticalProperty;

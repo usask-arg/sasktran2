@@ -5,9 +5,11 @@ use ndarray::Array2;
 use numpy::PyReadonlyArray2;
 use pyo3::types::PyDictMethods;
 use pyo3::{prelude::*, types::PyDict};
-use sk_core::{constituent::StorageInputs, optical::*};
+use sk_core::atmosphere::traits::StorageInputs;
+use sk_core::optical::storage::*;
+use sk_core::optical::traits::*;
 
-use super::{AbsorberDatabaseDim2, AbsorberDatabaseDim3};
+use crate::optical::xsec_dbase::{AbsorberDatabaseDim2, AbsorberDatabaseDim3};
 
 pub struct PyOpticalProperty {
     py_optical_property: Py<PyAny>,

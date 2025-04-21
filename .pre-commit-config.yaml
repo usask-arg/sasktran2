@@ -70,11 +70,8 @@ repos:
   - id: clang-format
     types_or: [c++, c]
 
-- repo: local
+- repo: https://github.com/doublify/pre-commit-rust
+  rev: v1.0
   hooks:
-    - id: cargo-fmt
-      name: cargo fmt
-      entry: cargo fmt --all -- --check
-      language: system
-      types: [rust]
-      pass_filenames: false
+  - id: fmt
+  - id: cargo-check

@@ -1,6 +1,7 @@
 use numpy::*;
 use pyo3::prelude::*;
-use sk_core::optical::{OpticalQuantities, legendre::LegendreAccess};
+use sk_core::optical::storage::OpticalQuantities;
+use sk_core::optical::util::legendre::LegendreAccess;
 
 #[pyclass]
 pub struct PyOpticalQuantities {

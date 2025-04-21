@@ -1,13 +1,14 @@
-use crate::interpolation::{OutOfBoundsMode, linear::*};
+use crate::atmosphere::traits::*;
+use crate::interpolation::{OutOfBoundsMode, grid1d::*, linear::*};
+use crate::optical::storage::*;
+use crate::optical::traits::*;
 use ndarray::*;
-
-use super::{OpticalProperty, param_from_storage_or_aux};
 
 pub struct ScatteringDatabase<D1: Dimension, D2: Dimension> {
     xsec: Array<f64, D1>,
     ssa: Array<f64, D1>,
     legendre: Array<f64, D2>,
-    wvnum: Grid,
+    wvnum: Grid1D,
     params: Vec<Array1<f64>>,
     param_names: Vec<String>,
 }
@@ -17,7 +18,7 @@ impl<D1: Dimension, D2: Dimension> ScatteringDatabase<D1, D2> {
         xsec: Array<f64, D1>,
         ssa: Array<f64, D1>,
         legendre: Array<f64, D2>,
-        wvnum: Grid,
+        wvnum: Grid1D,
         params: Vec<Array1<f64>>,
         param_names: Vec<String>,
     ) -> Self {
@@ -35,9 +36,9 @@ impl<D1: Dimension, D2: Dimension> ScatteringDatabase<D1, D2> {
 impl OpticalProperty for ScatteringDatabase<Ix2, Ix3> {
     fn optical_quantities_emplace(
         &self,
-        inputs: &dyn crate::constituent::StorageInputs,
-        aux_inputs: &dyn super::AuxOpticalInputs,
-        optical_quantities: &mut super::OpticalQuantities,
+        inputs: &dyn StorageInputs,
+        aux_inputs: &dyn AuxOpticalInputs,
+        optical_quantities: &mut OpticalQuantities,
     ) -> anyhow::Result<()> {
         let wavenumber_cminv = param_from_storage_or_aux(inputs, aux_inputs, "wavenumbers_cminv")?;
 
@@ -95,9 +96,9 @@ impl OpticalProperty for ScatteringDatabase<Ix2, Ix3> {
 
     fn optical_derivatives_emplace(
         &self,
-        _inputs: &dyn crate::constituent::StorageInputs,
-        _aux_inputs: &dyn super::AuxOpticalInputs,
-        _d_optical_quantities: &mut std::collections::HashMap<String, super::OpticalQuantities>,
+        _inputs: &dyn StorageInputs,
+        _aux_inputs: &dyn AuxOpticalInputs,
+        _d_optical_quantities: &mut std::collections::HashMap<String, OpticalQuantities>,
     ) -> anyhow::Result<()> {
         todo!()
     }

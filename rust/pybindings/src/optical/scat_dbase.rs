@@ -3,14 +3,14 @@ use numpy::*;
 use pyo3::exceptions::PyValueError;
 use pyo3::types::PyDict;
 use pyo3::{IntoPyObjectExt, prelude::*};
-use sk_core::interpolation::linear::Grid;
-use sk_core::optical::OpticalPropertyExt;
-use sk_core::optical::scat_dbase::ScatteringDatabase;
+use sk_core::interpolation::grid1d::Grid1D;
+use sk_core::optical::traits::*;
+use sk_core::optical::types::scat_dbase::ScatteringDatabase;
 
 use crate::constituent::atmo_storage::AtmosphereStorage;
 
-use super::PyDictWrapper;
 use super::optical_quantities::PyOpticalQuantities;
+use crate::optical::xsec_dbase::PyDictWrapper;
 
 #[pyclass]
 pub struct PyScatteringDatabaseDim2 {
@@ -33,7 +33,7 @@ impl PyScatteringDatabaseDim2 {
         let legendre = legendre.as_array();
         let wvnum = wvnum.as_array();
 
-        let wvnum_grid = Grid::new(wvnum.to_owned());
+        let wvnum_grid = Grid1D::new(wvnum.to_owned());
 
         Self {
             db: ScatteringDatabase::new(
