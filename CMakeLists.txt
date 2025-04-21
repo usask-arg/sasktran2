@@ -104,6 +104,20 @@ else()
   target_link_libraries(sasktran2BuildProperties INTERFACE spdloglib)
 endif()
 
+FetchContent_Declare(
+  Corrosion
+  GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
+  GIT_TAG v0.5 # Optionally specify a commit hash, version tag or branch here
+)
+# Set any global configuration variables such as `Rust_TOOLCHAIN` before this
+# line!
+FetchContent_MakeAvailable(Corrosion)
+
+# Import targets defined in a package or workspace manifest `Cargo.toml` file
+corrosion_import_crate(MANIFEST_PATH Cargo.toml)
+
+# target_link_libraries(sasktran2BuildProperties INTERFACE sk_core)
+
 # add the additional compiler flags
 set(CMAKE_CXX_FLAGS " ${CompilerFlags} ${OpenMP_CXX_FLAGS} ${CMAKE_CXX_FLAGS}")
 
@@ -316,9 +330,50 @@ if(BUILD_PYTHON)
   target_link_libraries(_core PRIVATE sasktran2)
 
   install(TARGETS _core DESTINATION sasktran2)
+  # corrosion_import_crate(MANIFEST_PATH rust/pybindings/Cargo.toml)
+  corrosion_set_env_vars(_core_rust PYO3_PYTHON=${Python_EXECUTABLE})
+
+  if(WIN32)
+    set(SHARED_LIB_EXT ".dll")
+    set(RUST_LIB_PREFIX "_") # no 'lib' prefix on Windows
+  elseif(APPLE)
+    set(SHARED_LIB_EXT ".dylib")
+    set(RUST_LIB_PREFIX "lib_")
+  else()
+    set(SHARED_LIB_EXT ".so")
+    set(RUST_LIB_PREFIX "lib_")
+  endif()
+
+  set(RUST_BUILD_NAME "${RUST_LIB_PREFIX}core_rust${SHARED_LIB_EXT}")
+  set(RUST_BUILD_PATH "${CMAKE_CURRENT_BINARY_DIR}/${RUST_BUILD_NAME}")
+
+  execute_process(
+    COMMAND ${Python_EXECUTABLE} -c
+            "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))"
+    OUTPUT_VARIABLE PYTHON_EXT_SUFFIX
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+  # Final path
+  set(PY_MODULE_OUTPUT
+      "${CMAKE_CURRENT_BINARY_DIR}/_core_rust${PYTHON_EXT_SUFFIX}")
+
+  get_target_property(RUST_CARGO_EXECUTABLE Rust::Cargo IMPORTED_LOCATION)
+  get_target_property(RUSTC_EXECUTABLE Rust::Rustc IMPORTED_LOCATION)
+
+  add_custom_command(
+    OUTPUT ${PY_MODULE_OUTPUT}
+    COMMAND ${CMAKE_COMMAND} -E copy ${RUST_BUILD_PATH} ${PY_MODULE_OUTPUT}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/rust/pybindings
+    COMMENT "Building and copying Rust PyO3 module to Python package"
+    VERBATIM)
+
+  add_custom_target(copy_core_rust ALL DEPENDS ${PY_MODULE_OUTPUT}
+                                               _cargo-build__core_rust)
+  install(FILES ${PY_MODULE_OUTPUT} DESTINATION sasktran2)
+
 else()
   install(
-    TARGETS sasktran2BuildProperties
+    TARGETS sasktran2BuildProperties sk_core
     EXPORT ${EXPORT_NAME}
     LIBRARY DESTINATION ${STATIC_LIB_INSTALL_DIR}
     INCLUDES

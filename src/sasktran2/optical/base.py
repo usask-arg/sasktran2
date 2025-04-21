@@ -39,6 +39,9 @@ class OpticalProperty(abc.ABC):
     ) -> dict:
         return {}
 
+    def _into_rust_object(self):
+        return None
+
     def __add__(self, other):
         return AdditiveOpticalProperty(self, other)
 

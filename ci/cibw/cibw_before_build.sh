@@ -5,6 +5,23 @@ set -xe
 PROJECT_DIR="$1"
 PLATFORM=$(PYTHONPATH=tools python -c "import openblas_support; print(openblas_support.get_plat())")
 
+# Check if Rust is installed
+if ! command -v rustc >/dev/null 2>&1; then
+    echo "Rust is not installed. Installing via rustup..."
+
+    # Install Rust (default to proceed automatically)
+    curl https://sh.rustup.rs -sSf | sh -s -- -y
+
+    # Source cargo environment for current session
+    echo "source $HOME/.cargo/env" >> ~/.bashrc && \
+    source $HOME/.cargo/env && \
+    rustc --version && cargo --version
+    export PATH="$HOME/.cargo/bin:$PATH"
+
+else
+    echo "Rust is already installed: $(rustc --version)"
+fi
+
 # Install Openblas
 if [[ $RUNNER_OS == "Linux" || $RUNNER_OS == "macOS" ]] ; then
     basedir=$(python tools/openblas_support.py)

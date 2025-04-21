@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import numpy as np
 
+from sasktran2._core_rust import PyVMRAltitudeAbsorber
 from sasktran2.atmosphere import Atmosphere
 from sasktran2.optical.base import OpticalProperty
-from sasktran2.util.interpolation import linear_interpolating_matrix
-from sasktran2.util.speed_helpers import assign_absorber_derivatives
 
 from .base import Constituent
 
 
 class VMRAltitudeAbsorber(Constituent):
+    _constituent: PyVMRAltitudeAbsorber
+
     def __init__(
         self,
         optical_property: OpticalProperty,
@@ -40,135 +41,25 @@ class VMRAltitudeAbsorber(Constituent):
         """
         super().__init__()
 
-        self._out_of_bounds_mode = out_of_bounds_mode
-        self._altitudes_m = altitudes_m
-        self._vmr = vmr
-        self._optical_property = optical_property
+        self._constituent = PyVMRAltitudeAbsorber(
+            optical_property,
+            altitudes_m.astype(np.float64),
+            vmr.astype(np.float64),
+            out_of_bounds_mode,
+        )
+
+        self._temp = optical_property
 
     @property
     def vmr(self):
-        return self._vmr
+        return self._constituent.vmr
 
     @vmr.setter
     def vmr(self, vmr: np.array):
-        self._vmr = vmr
+        self._constituent.vmr = vmr
 
     def add_to_atmosphere(self, atmo: Atmosphere):
-        if atmo.pressure_pa is None or atmo.temperature_k is None:
-            msg = "Both pressure_pa and temperature_k have to be specified in the atmosphere to use VMRAltitudeAbsorber"
-            raise ValueError(msg)
-
-        number_density = atmo.state_equation.dry_air_numberdensity["N"]
-
-        interp_matrix = linear_interpolating_matrix(
-            self._altitudes_m,
-            atmo.model_geometry.altitudes(),
-            self._out_of_bounds_mode.lower(),
-        )
-
-        interp_vmr = interp_matrix @ self._vmr
-
-        self._optical_quants = self._optical_property.atmosphere_quantities(
-            atmo, vmr=interp_vmr
-        )
-
-        atmo.storage.total_extinction += (
-            self._optical_quants.extinction
-            * (number_density * interp_vmr)[:, np.newaxis]
-        )
+        self._constituent.add_to_atmosphere(atmo)
 
     def register_derivative(self, atmo: Atmosphere, name: str):
-        dry_air_number_density = atmo.state_equation.dry_air_numberdensity
-
-        number_density = dry_air_number_density["N"]
-
-        interp_matrix = linear_interpolating_matrix(
-            self._altitudes_m,
-            atmo.model_geometry.altitudes(),
-            self._out_of_bounds_mode.lower(),
-        )
-        derivs = {}
-
-        deriv_mapping = atmo.storage.get_derivative_mapping(f"wf_{name}_vmr")
-
-        assign_absorber_derivatives(
-            deriv_mapping,
-            self._optical_quants.extinction,
-            self._optical_quants.ssa,
-            atmo.storage.ssa,
-            atmo.storage.total_extinction,
-        )
-
-        deriv_mapping.interpolator = interp_matrix * number_density[:, np.newaxis]
-        deriv_mapping.interp_dim = f"{name}_altitude"
-
-        interp_vmr = interp_matrix @ self._vmr
-
-        deriv_names = []
-        d_vals = []
-        if atmo.calculate_pressure_derivative:
-            deriv_names.append("pressure_pa")
-            d_vals.append(dry_air_number_density["dN_dP"])
-        if atmo.calculate_temperature_derivative:
-            deriv_names.append("temperature_k")
-            d_vals.append(dry_air_number_density["dN_dT"])
-        if atmo.calculate_specific_humidity_derivative:
-            deriv_names.append("specific_humidity")
-            d_vals.append(dry_air_number_density["dN_dsh"])
-
-        # Contributions from the change in number density due to a constant
-        # VMR and changing pressure/temperature
-        for deriv_name, vert_factor in zip(deriv_names, d_vals, strict=False):
-            deriv_mapping = atmo.storage.get_derivative_mapping(
-                f"wf_{name}_{deriv_name}"
-            )
-
-            assign_absorber_derivatives(
-                deriv_mapping,
-                self._optical_quants.extinction,
-                self._optical_quants.ssa,
-                atmo.storage.ssa,
-                atmo.storage.total_extinction,
-            )
-
-            # deriv_mapping.d_extinction[:] += self._optical_quants.extinction
-            # deriv_mapping.d_ssa[:] += (
-            #    self._optical_quants.extinction
-            #    * (self._optical_quants.ssa - atmo.storage.ssa)
-            #    / atmo.storage.total_extinction
-            # )
-            deriv_mapping.interpolator = (
-                np.eye(len(number_density)) * (vert_factor * interp_vmr)[np.newaxis, :]
-            )
-            deriv_mapping.interp_dim = "altitude"
-            deriv_mapping.assign_name = f"wf_{deriv_name}"
-
-        if len(deriv_names) > 0:
-            optical_derivs = self._optical_property.optical_derivatives(atmo=atmo)
-
-            for key, val in optical_derivs.items():
-                deriv_mapping = atmo.storage.get_derivative_mapping(
-                    f"wf_{name}_{key}_xs"
-                )
-                assign_absorber_derivatives(
-                    deriv_mapping,
-                    val.d_extinction,
-                    self._optical_quants.ssa,
-                    atmo.storage.ssa,
-                    atmo.storage.total_extinction,
-                )
-                # deriv_mapping.d_extinction[:] += val.d_extinction
-                # deriv_mapping.d_ssa[:] += (
-                #    val.d_extinction
-                #    * (self._optical_quants.ssa - atmo.storage.ssa)
-                #    / atmo.storage.total_extinction
-                # )
-
-                deriv_mapping.interpolator = (
-                    np.eye(len(number_density))
-                    * (number_density * interp_vmr)[np.newaxis, :]
-                )
-                deriv_mapping.interp_dim = "altitude"
-                deriv_mapping.assign_name = f"wf_{key}"
-
-        return derivs
+        self._constituent.register_derivative(atmo, name)

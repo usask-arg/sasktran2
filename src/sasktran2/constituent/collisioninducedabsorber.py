@@ -110,9 +110,9 @@ class CollisionInducedAbsorber(Constituent):
                 deriv_mapping = atmo.storage.get_derivative_mapping(
                     f"wf_{name}_{deriv_name}_{key}_xs"
                 )
-                deriv_mapping.d_extinction[:] += val.d_extinction
+                deriv_mapping.d_extinction[:] += val.cross_section
                 deriv_mapping.d_ssa[:] += (
-                    val.d_extinction
+                    val.cross_section
                     * (self._optical_quants.ssa - atmo.storage.ssa)
                     / atmo.storage.total_extinction
                 )

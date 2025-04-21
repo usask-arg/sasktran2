@@ -2,13 +2,14 @@
 (_installation)=
 # Installation
 
-The recommended way to install SASKTRAN2 is through `conda-forge`
-
-    conda install -c conda-forge sasktran2
-
-Wheels are also made available through `pip`
+The recommended way to install SASKTRAN2 is through `pip/uv`
 
     pip install sasktran2
+
+Packages are also provided on `conda-forge`
+
+    conda install conda-forge::sasktran2
+
 
 
 ```{note}
@@ -16,18 +17,12 @@ Python 3.10 support for SASKTRAN2 was dropped in 2025.01.0
 ```
 
 
-# Nightly Builds
-
-The latest nightly version of SASKTRAN2 is made available through
-
-    conda install -c usask-arg-nightly -c conda-forge sasktran2
-
 # Supported Platforms
 |   | macOS Intel | macOS Apple Silicon | Windows 64bit | manylinux x86_64 | manylinux aarch64 |
 |---------------|----|-----|-----|-----|-----|
-| Pip CPython 3.11  | ✅ | ✅  | ✅  | ✅  | ✅  |
-| Pip CPython 3.12  | ✅ | ✅  | ✅  | ✅  | ✅  |
-| Pip CPython 3.13  | ✅ | ✅  | ✅  | ✅  | ✅  |
+| Pypi CPython 3.11  | ✅ | ✅  | ✅  | ✅  | ✅  |
+| Pypi CPython 3.12  | ✅ | ✅  | ✅  | ✅  | ✅  |
+| Pypi CPython 3.13  | ✅ | ✅  | ✅  | ✅  | ✅  |
 | conda-forge Py 3.11  | ✅ | ✅  | ✅  | ✅  | ✅  |
 | conda-forge Py 3.12  | ✅ | ✅  | ✅  | ✅  | ✅  |
 | conda-forge Py 3.13  | ✅ | ✅  | ✅  | ✅  | ✅  |

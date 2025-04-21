@@ -6,10 +6,15 @@ from itertools import product
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import xarray as xr
 
 from sasktran2.mie import LinearizedMie
-from sasktran2.mie.distribution import ParticleSizeDistribution, integrate_mie
+from sasktran2.mie.distribution import (
+    ParticleSizeDistribution,
+    integrate_mie,
+    integrate_mie_cpp,
+)
 from sasktran2.mie.refractive import RefractiveIndex
 from sasktran2.optical.database import OpticalDatabaseGenericScatterer
 
@@ -23,8 +28,10 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
         refractive_index: RefractiveIndex,
         wavelengths_nm: np.array,
         db_root: Path | None = None,
-        backend: str = "sasktran2",
+        backend: str = "sasktran2_cpp",
         max_legendre_moments: int = 64,
+        num_size_quadrature: int = 1000,
+        num_threads=1,
         **kwargs,
     ) -> None:
         """
@@ -43,9 +50,11 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
         db_root : Path, optional
             The root directory to store the database, by default None
         backend : str, optional
-            The backend to use, by default "sasktran2". Currently supported
-            options are ["sasktran_legacy", "sasktran2]. "sasktran_legacy"
+            The backend to use, by default "sasktran2_cpp". Currently supported
+            options are ["sasktran_legacy", "sasktran2", "sasktran2_cpp"]. "sasktran_legacy"
             requires the module `sasktran` to be installed.
+        num_threads: int, optional
+            The number of threads to use for the calculation, by default 1. Only current works in the sasktran2_cpp backend
         kwargs
             Additional arguments to pass to the particle size distribution, these should match the psize_distribution.args() method
         """
@@ -62,6 +71,7 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
                 **kwargs,
                 "wavelengths": wavelengths_nm,
                 "max_legendre_moments": max_legendre_moments,
+                "backend": backend,
             },
             sort_keys=True,
             cls=NumpyEncoder,
@@ -85,6 +95,8 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
         self._wavelengths_nm = wavelengths_nm
         self._backend = backend
         self._max_legendre_moments = max_legendre_moments
+        self._num_threads = num_threads
+        self._num_size_quadrature = num_size_quadrature
 
         for arg in kwargs:
             if arg not in self._psize_args:
@@ -100,6 +112,8 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
             self._generate_sasktran_legacy()
         elif self._backend == "sasktran2":
             self._generate_sasktran2()
+        elif self._backend == "sasktran2_cpp":
+            self._generate_sasktran2_cpp()
         else:
             msg = f"Invalid backend {self._backend}"
             raise ValueError(msg)
@@ -124,8 +138,8 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
                 distribution,
                 refractive_index_fn,
                 wavelengths,
-                num_quad=1000,
-                maxintquantile=0.99999,
+                num_quad=self._num_size_quadrature,
+                maxintquantile=0.9999,
             )
 
             # vals xs is in units of nm^2, convert to cm^2 then to m^2
@@ -197,7 +211,7 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
         if len(self._kwargs) > 1:
             # Have to do a multi-index unstack
             ds = (
-                xr.concat(entries, dim="args")  # noqa: PD010
+                xr.concat(entries, dim="args")
                 .set_index(args=list(self._kwargs.keys()))
                 .unstack("args")
                 .rename_dims({"wavelength": "wavelength_nm"})
@@ -232,8 +246,8 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
                 distribution,
                 refractive_index_fn,
                 wavelengths,
-                num_quad=1000,
-                maxintquantile=0.99999,
+                num_quad=self._num_size_quadrature,
+                maxintquantile=0.999999,
                 compute_coeffs=True,
                 num_coeffs=self._max_legendre_moments,
             )
@@ -242,18 +256,7 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
             vals["xs_scattering"] *= 1e-14 * 1e-4
             vals["xs_absorption"] *= 1e-14 * 1e-4
 
-            ret_ds = xr.Dataset()
-
-            ret_ds["xs_scattering"] = vals["xs_scattering"]
-            ret_ds["xs_total"] = vals["xs_total"]
-            ret_ds["lm_a1"] = vals["lm_a1"]
-            ret_ds["lm_a2"] = vals["lm_a2"]
-            ret_ds["lm_a3"] = vals["lm_a3"]
-            ret_ds["lm_a4"] = vals["lm_a4"]
-            ret_ds["lm_b1"] = vals["lm_b1"]
-            ret_ds["lm_b2"] = vals["lm_b2"]
-
-            return ret_ds
+            return vals
 
         refractive = self._refractive_index.refractive_index_fn
 
@@ -273,7 +276,7 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
         if len(self._kwargs) > 1:
             # Have to do a multi-index unstack
             ds = (
-                xr.concat(entries, dim="args")  # noqa: PD010
+                xr.concat(entries, dim="args")
                 .set_index(args=list(self._kwargs.keys()))
                 .unstack("args")
                 .rename_dims({"wavelength": "wavelength_nm"})
@@ -292,6 +295,48 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
                 .rename_dims({"wavelength": "wavelength_nm"})
                 .rename_vars({"wavelength": "wavelength_nm"})
             )
+
+        ds.to_netcdf(self._data_file)
+
+    def _generate_sasktran2_cpp(self):
+        """
+        Generates the data file from sasktran2 using the cpp integration option rather than python
+        """
+        refractive = self._refractive_index.refractive_index_fn
+
+        prob_dists = []
+        for vals in product(*self._kwargs.values()):
+            psize_args = dict(zip(self._kwargs.keys(), vals, strict=True))
+
+            prob_dists.append(self._psize_dist.distribution(**psize_args))
+
+        ds = integrate_mie_cpp(
+            prob_dists,
+            refractive,
+            self._wavelengths_nm,
+            num_quad=31,
+            maxintquantile=0.99999,
+            num_coeffs=self._max_legendre_moments,
+            num_threads=self._num_threads,
+        )
+
+        if len(self._kwargs) > 1:
+            multi = pd.MultiIndex.from_product(
+                [self._kwargs[k] for k in self._kwargs],
+                names=list(self._kwargs.keys()),
+            )
+
+            ds = ds.assign_coords(
+                xr.Coordinates.from_pandas_multiindex(multi, "distribution")
+            )
+
+            # Have to do a multi-index unstack
+            ds = ds.unstack("distribution")
+        elif len(self._kwargs) == 1:
+            ds = ds.rename_dims({"distribution": next(iter(self._kwargs.keys()))})
+        else:
+            # length is 0
+            ds = ds.isel(distribution=0)
 
         ds.to_netcdf(self._data_file)
 

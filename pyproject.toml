@@ -6,7 +6,7 @@ build-backend = "scikit_build_core.build"
 [project]
 name = "sasktran2"
 dynamic = ["version"]
-dependencies = ['numpy', 'appdirs', 'pyyaml', 'xarray>=2023.0.0', 'scipy', 'netcdf4']
+dependencies = ['numpy', 'appdirs', 'pyyaml', 'xarray>=2023.0.0', 'scipy', 'netcdf4', 'lazy_loader']
 license = {text = "MIT"}
 description= "The SASKTRAN radiative transfer model Version 2"
 readme = "README.md"
@@ -170,6 +170,7 @@ extend-ignore = [
     "E501",   # Line too long
     "PD011", # wanting to use to_numpy instead of values
     "G004",   # Logging format
+    "PD010", # Pandas unstack
 ]
 unfixable = [
     "T20",  # Removes print statements

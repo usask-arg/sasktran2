@@ -1,6 +1,6 @@
 name: mamba_build
 dependencies:
-  - python=3.11
-  - boa
+  - python=3.13
+  - rattler-build
   - anaconda-client
   - conda

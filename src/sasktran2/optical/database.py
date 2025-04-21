@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-from copy import deepcopy
 from pathlib import Path
 
 import numpy as np
 import xarray as xr
 
-import sasktran2 as sk
+from sasktran2._core_rust import (
+    AbsorberDatabaseDim1,
+    AbsorberDatabaseDim2,
+    AbsorberDatabaseDim3,
+)
 from sasktran2.atmosphere import Atmosphere, NativeGridDerivative
 from sasktran2.optical.base import OpticalProperty, OpticalQuantities
 from sasktran2.polarization import LegendreStorageView
@@ -57,12 +60,9 @@ class OpticalDatabaseGenericAbsorber(OpticalDatabase):
         """
         super().__init__(db_filepath)
 
-        self._validate_db()
-
-        self._quants = None
-        self._cached_interp_handler = None
-
     def _validate_db(self):
+        if type(self._database) is not xr.Dataset:
+            return
         # Old file format used "temperature" and "pressure" instead of the standard keys
         # "temperature_k" and "pressure_pa", if so we rename them
 
@@ -75,101 +75,66 @@ class OpticalDatabaseGenericAbsorber(OpticalDatabase):
             msg = "xs must be defined in the optical database"
             raise ValueError(msg)
 
-    def optical_derivatives(self, atmo: Atmosphere, **kwargs) -> dict:
-        derivs = {}
-
-        interp_handler = self._construct_interp_handler(atmo, **kwargs)
-
-        # Split the interpolators into ones that are 'z' dependent and ones that are not
-
-        interp_handler_z = {}
-        interp_handler_noz = {}
-
-        for key, val in interp_handler.items():
-            if val[0] == "z":
-                interp_handler_z[key] = val
-            else:
-                interp_handler_noz[key] = val
-
-        # Get the derivatives of the cross section with respect to the z dependent variables
-        partial_interp = self._database["xs"].interp(**interp_handler_noz)
-
-        for key, val in interp_handler_z.items():
-            # Interpolate over the other variables
-            new_interpolants = {k: v for k, v in interp_handler_z.items() if k != key}
-
-            partial_interp2 = partial_interp.interp(**new_interpolants)
-
-            dT = partial_interp2.diff(key) / partial_interp2[key].diff(key)
-
-            interp_index = np.argmax(dT[key].to_numpy() > val[1][:, np.newaxis], axis=1)
-
-            if "z" in dT.dims:
-                dT = dT.isel(
-                    {
-                        "z": xr.DataArray(list(range(len(interp_index))), dims="z"),
-                        key: xr.DataArray(interp_index, dims="z"),
-                    }
-                )
-            else:
-                dT = dT.isel({key: interp_index})
-
-            derivs[key] = NativeGridDerivative(d_extinction=dT.to_numpy())
-            derivs[key].d_extinction[np.isnan(derivs[key].d_extinction)] = 0
-
-        return derivs
-
-    def _construct_interp_handler(self, atmo: Atmosphere, **kwargs) -> dict:
-        coords = self._database["xs"].coords
-
-        interp_handler = {}
-
-        # TODO: this could probably be refactored to iterate over atmosphere properties?
-        if "temperature_k" in coords:
-            if atmo.temperature_k is None:
-                msg = "temperature_k must be specified in Atmosphere to use OpticalDatabaseGenericAbsorber"
-                raise ValueError(msg)
-
-            interp_handler["temperature_k"] = ("z", atmo.temperature_k)
-
-        if "pressure_pa" in coords:
-            if atmo.pressure_pa is None:
-                msg = "pressure_pa must be specified in Atmosphere to use OpticalDatabaseGenericAbsorber"
-                raise ValueError(msg)
-
-            interp_handler["pressure_pa"] = ("z", atmo.pressure_pa)
-
-        if "wavelength_nm" in coords:
-            if atmo.wavelengths_nm is None:
-                msg = "wavelengths_nm must be specified in Atmosphere to use OpticalDatabaseGenericAbsorber"
-            interp_handler["wavelength_nm"] = atmo.wavelengths_nm
-
+        coords = list(self._database["xs"].coords)
         if "wavenumber_cminv" in coords:
-            if atmo.wavenumbers_cminv is None:
-                msg = "wavenumber_cminv must be specified in Atmosphere to use OpticalDatabaseGenericAbsorber"
-            interp_handler["wavenumber_cminv"] = atmo.wavenumbers_cminv
+            wavenumber_cminv = self._database["wavenumber_cminv"].to_numpy()
+        else:
+            wavenumber_cminv = 1e7 / self._database["wavelength_nm"].to_numpy()
+            coords[-1] = "wavenumber_cminv"
 
-        return interp_handler
+        if len(coords) == 3:
+            param0 = self._database[coords[0]].to_numpy()
+            param1 = self._database[coords[1]].to_numpy()
 
-    def atmosphere_quantities(self, atmo: sk.Atmosphere, **kwargs) -> OpticalQuantities:
-        interp_handler = self._construct_interp_handler(atmo, **kwargs)
+            sidx0 = np.argsort(param0)
+            sidx1 = np.argsort(param1)
+            sidx2 = np.argsort(wavenumber_cminv)
 
-        try:
-            np.testing.assert_equal(self._cached_interp_handler, interp_handler)
-            return self._quants
-        except (ValueError, AssertionError):
-            self._quants = OpticalQuantities(ssa=np.zeros_like(atmo.storage.ssa))
+            xs = self._database["xs"].to_numpy()[sidx0][:, sidx1][:, :, sidx2].copy()
 
-            self._quants.extinction = (
-                self._database["xs"].interp(**interp_handler).to_numpy()
+            self._database = AbsorberDatabaseDim3(
+                wavenumber_cminv[sidx2].astype(np.float64),
+                param0[sidx0].astype(np.float64),
+                param1[sidx1].astype(np.float64),
+                xs,
+                coords[:-1],
             )
+            self._coords = coords
+        elif len(coords) == 2:
+            param0 = self._database[coords[0]].to_numpy()
 
-            # Out of bounds, set to 0
-            self._quants.extinction[np.isnan(self._quants.extinction)] = 0
+            sidx0 = np.argsort(param0)
+            sidx1 = np.argsort(wavenumber_cminv)
 
-            self._cached_interp_handler = deepcopy(interp_handler)
+            xs = self._database["xs"].to_numpy()[sidx0][:, sidx1].copy()
 
-            return deepcopy(self._quants)
+            self._database = AbsorberDatabaseDim2(
+                wavenumber_cminv[sidx1].astype(np.float64),
+                param0[sidx0].astype(np.float64),
+                xs,
+                coords[:-1],
+            )
+            self._coords = coords
+        elif len(coords) == 1:
+            sidx1 = np.argsort(wavenumber_cminv)
+            xs = self._database["xs"].to_numpy()[sidx1].copy()
+
+            self._database = AbsorberDatabaseDim1(
+                wavenumber_cminv[sidx1].astype(np.float64),
+                xs,
+            )
+            self._coords = coords
+
+    def atmosphere_quantities(self, atmo, **kwargs):
+        # When called by the constituent this should be elided
+        return self._database.atmosphere_quantities(atmo)
+
+    def optical_derivatives(self, atmo, **kwargs):
+        # When called by the constituent this should be elided
+        return self._database.optical_derivatives(atmo)
+
+    def _into_rust_object(self):
+        return self._database
 
 
 class OpticalDatabaseGenericScatterer(OpticalDatabase):
