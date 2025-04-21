@@ -103,7 +103,7 @@ where
             .ok_or_else(|| anyhow!("Optical property not set"))?;
 
         let optical_quants = optical_prop.optical_quantities(inputs, &NullAuxInputs {})?;
-        let cross_section = optical_quants.cross_section;
+        let cross_section = &optical_quants.cross_section;
 
         let eqn_state = inputs.dry_air_numberdensity_dict();
 
@@ -122,6 +122,14 @@ where
         let interp_vmr = interp_matrix.dot(&self.vmr);
 
         let mut extinction = outputs.mut_view().total_extinction;
+
+        println!(
+            "Extinction shape: {:?}, interp_vmr shape: {:?}, number_density shape: {:?}, cross_section shape: {:?}",
+            extinction.shape(),
+            interp_vmr.shape(),
+            number_density.shape(),
+            cross_section.shape()
+        );
 
         Zip::from(extinction.axis_iter_mut(Axis(0)))
             .and(number_density)

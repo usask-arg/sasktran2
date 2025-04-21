@@ -35,7 +35,7 @@ fn with_optical_downcast(
         AbsorberDatabaseDim3
     );
 
-    Ok(())
+    Err(anyhow!("Failed to downcast to any of the known types"))
 }
 
 pub struct PyOpticalProperty {
