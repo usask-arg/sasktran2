@@ -43,6 +43,7 @@ pub trait StorageInputs {
             "temperature_k" => self.temperature_k(),
             "wavelengths_nm" => self.wavelengths_nm(),
             "wavenumbers_cminv" => self.wavenumbers_cminv(),
+            "altitude_m" => Some(self.altitude_m()),
             _ => None,
         }
     }

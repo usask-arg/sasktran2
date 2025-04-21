@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import numpy as np
 import sasktran2 as sk
-from sasktran2._core_rust import Rayleigh as RustRayleigh
 
 from ._rayleigh_reference import RayleighReference as PyRayleigh
 
@@ -55,7 +54,7 @@ def test_bates_identical():
         atmosphere["rayleigh"] = PyRayleigh()
         rad_py = engine.calculate_radiance(atmosphere)
 
-        atmosphere["rayleigh"] = RustRayleigh()
+        atmosphere["rayleigh"] = sk.constituent.Rayleigh()
         rad_rust = engine.calculate_radiance(atmosphere)
 
         # Verify the radiances and weighting functions are identical

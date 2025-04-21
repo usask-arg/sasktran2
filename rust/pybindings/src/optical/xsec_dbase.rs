@@ -28,6 +28,23 @@ impl<'a> AuxOpticalInputs for PyDictWrapper<'a> {
     }
 }
 
+pub trait HasDb {
+    fn db(&self) -> &dyn OpticalProperty;
+}
+
+#[pyclass]
+/// An absorber database that depends on wavenumber only
+///
+/// Parameters
+/// ----------
+/// wavenumber_cminv : ndarray
+///   Wavenumber in cm^-1
+/// xsec_m2 : ndarray
+///   Cross section in m^2/molecule [num_wavenumber]
+pub struct AbsorberDatabaseDim1 {
+    pub db: SKXsecDatabase<Ix1>,
+}
+
 #[pyclass]
 /// An absorber database that depends on wavenumber and 1 parameter (e.g. temperature)
 ///
@@ -58,6 +75,56 @@ pub struct AbsorberDatabaseDim2 {
 ///   Cross section in m^2/molecule [N, M, W]
 pub struct AbsorberDatabaseDim3 {
     pub db: SKXsecDatabase<Ix3>,
+}
+
+#[pymethods]
+impl AbsorberDatabaseDim1 {
+    #[new]
+    fn new(
+        wavenumber_cminv: PyReadonlyArray1<f64>,
+        xsec_m2: PyReadonlyArray1<f64>,
+    ) -> PyResult<Self> {
+        let arr_wvnum = wavenumber_cminv.as_array().to_owned();
+
+        let arr_xsec = xsec_m2.as_array().to_owned();
+
+        let db = SKXsecDatabase::<Ix1>::new(arr_xsec, Grid1D::new(arr_wvnum), vec![], vec![])
+            .ok_or_else(|| PyValueError::new_err("Failed to create SKXsecDatabase"))?;
+
+        Ok(Self { db })
+    }
+
+    #[pyo3(signature = (atmo, **kwargs))]
+    fn atmosphere_quantities<'py>(
+        &self,
+        atmo: Bound<'py, PyAny>,
+        kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let rust_atmo = AtmosphereStorage::new(&atmo);
+        let aux_inputs = PyDictWrapper(kwargs);
+
+        let oq = self
+            .db
+            .optical_quantities(&rust_atmo.inputs, &aux_inputs)
+            .map_err(|e| {
+                PyValueError::new_err(format!("Failed to get optical quantities: {}", e))
+            })?;
+
+        Ok(PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())?)
+    }
+
+    #[pyo3(signature = (atmo, **kwargs))]
+    #[allow(unused_variables)]
+    fn optical_derivatives<'py>(
+        &self,
+        atmo: Bound<'py, PyAny>,
+        kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        // This has no derivatives, just return an empty dictionary
+        let py_dict = PyDict::new(atmo.py());
+
+        Ok(py_dict)
+    }
 }
 
 #[pymethods]
@@ -270,5 +337,23 @@ impl AbsorberDatabaseDim3 {
         }
 
         (arr_xsec, arr_d_xsec)
+    }
+}
+
+impl HasDb for AbsorberDatabaseDim1 {
+    fn db(&self) -> &dyn OpticalProperty {
+        &self.db
+    }
+}
+
+impl HasDb for AbsorberDatabaseDim2 {
+    fn db(&self) -> &dyn OpticalProperty {
+        &self.db
+    }
+}
+
+impl HasDb for AbsorberDatabaseDim3 {
+    fn db(&self) -> &dyn OpticalProperty {
+        &self.db
     }
 }

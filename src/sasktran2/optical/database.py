@@ -5,7 +5,11 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
-from sasktran2._core_rust import AbsorberDatabaseDim2, AbsorberDatabaseDim3
+from sasktran2._core_rust import (
+    AbsorberDatabaseDim1,
+    AbsorberDatabaseDim2,
+    AbsorberDatabaseDim3,
+)
 from sasktran2.atmosphere import Atmosphere, NativeGridDerivative
 from sasktran2.optical.base import OpticalProperty, OpticalQuantities
 from sasktran2.polarization import LegendreStorageView
@@ -109,6 +113,15 @@ class OpticalDatabaseGenericAbsorber(OpticalDatabase):
                 param0[sidx0].astype(np.float64),
                 xs,
                 coords[:-1],
+            )
+            self._coords = coords
+        elif len(coords) == 1:
+            sidx1 = np.argsort(wavenumber_cminv)
+            xs = self._database["xs"].to_numpy()[sidx1].copy()
+
+            self._database = AbsorberDatabaseDim1(
+                wavenumber_cminv[sidx1].astype(np.float64),
+                xs,
             )
             self._coords = coords
 

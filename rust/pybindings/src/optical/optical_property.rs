@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use ndarray::Array2;
 use numpy::PyReadonlyArray2;
 use pyo3::types::PyDictMethods;
@@ -9,7 +9,34 @@ use sk_core::atmosphere::traits::StorageInputs;
 use sk_core::optical::storage::*;
 use sk_core::optical::traits::*;
 
-use crate::optical::xsec_dbase::{AbsorberDatabaseDim2, AbsorberDatabaseDim3};
+use crate::optical::xsec_dbase::*;
+
+fn with_optical_downcast(
+    bound_optical_property: &Bound<'_, PyAny>,
+    f: impl FnOnce(&dyn OpticalProperty) -> Result<()>,
+) -> Result<()> {
+    let rust_obj = bound_optical_property
+        .call_method0("_into_rust_object")
+        .map_err(|_| anyhow!("Failed to call _into_rust_object"))?;
+
+    macro_rules! try_downcast {
+        ($($ty:ty),*) => {
+            $(
+                if let Ok(obj) = rust_obj.downcast::<$ty>() {
+                    return f(obj.borrow().db());
+                }
+            )*
+        };
+    }
+
+    try_downcast!(
+        AbsorberDatabaseDim1,
+        AbsorberDatabaseDim2,
+        AbsorberDatabaseDim3
+    );
+
+    Ok(())
+}
 
 pub struct PyOpticalProperty {
     py_optical_property: Py<PyAny>,
@@ -34,28 +61,13 @@ impl OpticalProperty for PyOpticalProperty {
     ) -> Result<()> {
         Python::with_gil(|py| {
             let bound_optical_property = self.py_optical_property.bind(py);
-            let rust_optical = bound_optical_property
-                .call_method0("_into_rust_object")
-                .ok();
 
-            if let Some(rust_optical) = rust_optical {
-                if let Ok(absorber) = rust_optical.downcast::<AbsorberDatabaseDim2>() {
-                    absorber.borrow().db.optical_quantities_emplace(
-                        inputs,
-                        aux_inputs,
-                        optical_quantities,
-                    )?;
-                    return Ok(());
-                }
-
-                if let Ok(absorber) = rust_optical.downcast::<AbsorberDatabaseDim3>() {
-                    absorber.borrow().db.optical_quantities_emplace(
-                        inputs,
-                        aux_inputs,
-                        optical_quantities,
-                    )?;
-                    return Ok(());
-                }
+            if with_optical_downcast(bound_optical_property, |db| {
+                db.optical_quantities_emplace(inputs, aux_inputs, optical_quantities)
+            })
+            .is_ok()
+            {
+                return Ok(());
             }
 
             let bound_atmosphere = self.py_atmosphere.bind(py);
@@ -83,28 +95,12 @@ impl OpticalProperty for PyOpticalProperty {
         Python::with_gil(|py| {
             let bound_optical_property = self.py_optical_property.bind(py);
 
-            let rust_optical = bound_optical_property
-                .call_method0("_into_rust_object")
-                .ok();
-
-            if let Some(rust_optical) = rust_optical {
-                if let Ok(absorber) = rust_optical.downcast::<AbsorberDatabaseDim2>() {
-                    absorber.borrow().db.optical_derivatives_emplace(
-                        inputs,
-                        aux_inputs,
-                        d_optical_quantities,
-                    )?;
-                    return Ok(());
-                }
-
-                if let Ok(absorber) = rust_optical.downcast::<AbsorberDatabaseDim3>() {
-                    absorber.borrow().db.optical_derivatives_emplace(
-                        inputs,
-                        aux_inputs,
-                        d_optical_quantities,
-                    )?;
-                    return Ok(());
-                }
+            if with_optical_downcast(bound_optical_property, |db| {
+                db.optical_derivatives_emplace(inputs, aux_inputs, d_optical_quantities)
+            })
+            .is_ok()
+            {
+                return Ok(());
             }
 
             let bound_atmosphere = self.py_atmosphere.bind(py);

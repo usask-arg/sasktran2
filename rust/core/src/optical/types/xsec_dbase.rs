@@ -164,6 +164,47 @@ impl From<XsecDatabase> for SKXsecDatabase<Ix2> {
     }
 }
 
+impl XsecDatabaseInterp for SKXsecDatabase<Ix1> {
+    fn xs_emplace<S1, S2, S3>(
+        &self,
+        wvnum: &ArrayBase<S1, Ix1>,
+        _params: &ArrayBase<S2, Ix1>,
+        xs: &mut ArrayBase<S3, Ix1>,
+        _d_xs: Option<ArrayViewMut2<'_, f64>>,
+    ) -> Result<(), String>
+    where
+        S1: Data<Elem = f64>,
+        S2: Data<Elem = f64>,
+        S3: DataMut<Elem = f64>,
+    {
+        // Only have to interpolate in wavenumber
+        Zip::indexed(wvnum).for_each(|j, wv| {
+            let wvnum_weights = &self.wvnum.interp1_weights(*wv, OutOfBoundsMode::Zero);
+            let local_xs = self.xsec[wvnum_weights[0].0] * wvnum_weights[0].1
+                + self.xsec[wvnum_weights[1].0] * wvnum_weights[1].1;
+
+            xs[j] += local_xs;
+        });
+
+        Ok(())
+    }
+
+    fn d_xs_emplace<S1, S2, S3>(
+        &self,
+        _wvnum: &ArrayBase<S1, Ix1>,
+        _params: &ArrayBase<S2, Ix1>,
+        _d_xs: &mut Vec<ArrayBase<S3, Ix1>>,
+    ) -> Result<(), String>
+    where
+        S1: Data<Elem = f64>,
+        S2: Data<Elem = f64>,
+        S3: DataMut<Elem = f64>,
+    {
+        // No derivatives
+        Ok(())
+    }
+}
+
 impl XsecDatabaseInterp for SKXsecDatabase<Ix2> {
     fn xs_emplace<S1, S2, S3>(
         &self,
@@ -325,6 +366,44 @@ impl XsecDatabaseInterp for SKXsecDatabase<Ix3> {
         }
 
         // Have to iterate through all of the
+        Ok(())
+    }
+}
+
+impl OpticalProperty for SKXsecDatabase<Ix1> {
+    fn optical_quantities_emplace(
+        &self,
+        inputs: &dyn StorageInputs,
+        aux_inputs: &dyn AuxOpticalInputs,
+        optical_quantities: &mut OpticalQuantities,
+    ) -> anyhow::Result<()> {
+        let wavenumber_cminv = param_from_storage_or_aux(inputs, aux_inputs, "wavenumbers_cminv")?;
+
+        // Just grab this to get the number of geometry points, we don't actually interpolate in this dimension
+        let altitudes_m = param_from_storage_or_aux(inputs, aux_inputs, "altitude_m")?;
+
+        let _ = optical_quantities.resize(altitudes_m.len(), wavenumber_cminv.len());
+
+        let xs = &mut optical_quantities.cross_section;
+
+        Zip::from(xs.rows_mut())
+            .and(altitudes_m.view())
+            .par_for_each(|mut row, param| {
+                // Pass in altitude for no reason, but once again it's not used
+                let params = Array1::from(vec![*param]);
+
+                let _ = self.xs_emplace(&wavenumber_cminv, &params, &mut row, None);
+            });
+
+        Ok(())
+    }
+
+    fn optical_derivatives_emplace(
+        &self,
+        _inputs: &dyn StorageInputs,
+        _aux_inputs: &dyn AuxOpticalInputs,
+        _d_optical_quantities: &mut HashMap<String, OpticalQuantities>,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 }
