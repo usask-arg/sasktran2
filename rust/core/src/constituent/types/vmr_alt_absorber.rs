@@ -123,14 +123,6 @@ where
 
         let mut extinction = outputs.mut_view().total_extinction;
 
-        println!(
-            "Extinction shape: {:?}, interp_vmr shape: {:?}, number_density shape: {:?}, cross_section shape: {:?}",
-            extinction.shape(),
-            interp_vmr.shape(),
-            number_density.shape(),
-            cross_section.shape()
-        );
-
         Zip::from(extinction.axis_iter_mut(Axis(0)))
             .and(number_density)
             .and(&interp_vmr)
