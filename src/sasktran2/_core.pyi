@@ -37,6 +37,7 @@ __all__ = [
     "MODISStokes_1",
     "MODISStokes_3",
     "MieData",
+    "MieIntegrator",
     "MieOutput",
     "MultipleScatterSource",
     "NoSource",
@@ -1168,6 +1169,92 @@ class MieData:
         """
         Calculated Complex Scattering Amplitude [unitless] in second direction of incident polarization for given size parameters, cos(scattering angles) and refractive index. Shape (size, angle).
         """
+
+class MieIntegrator:
+    @staticmethod
+    def _pybind11_conduit_v1_(*args, **kwargs): ...
+    def __init__(
+        self,
+        cos_angles: numpy.ndarray[numpy.float64[m, 1]],
+        num_legendre: int = 16,
+        num_threads: int = 1,
+    ) -> None:
+        """
+        A MieIntegrator object created with the given cosine angles, number of legendre moments, and number of threads.
+
+        Parameters
+        ----------
+        cos_angles : np.ndarray
+            Array of cosine of angles to calculate the scattering amplitude at. Shape (angle).
+        num_legendre : int
+            Number of legendre moments to calculate.
+        num_threads : int
+            Number of threads to use for the Mie calculation. Default is 1.
+        """
+
+    def integrate_all(
+        self,
+        wavelength: float,
+        refractive_index: complex,
+        size_param: numpy.ndarray[numpy.float64[m, 1]],
+        pdf: numpy.ndarray[numpy.float64[m, n], numpy.ndarray.flags.f_contiguous],
+        size_weights: numpy.ndarray[numpy.float64[m, 1]],
+        angle_weights: numpy.ndarray[numpy.float64[m, 1]],
+        xs_total: numpy.ndarray[numpy.float64[m, 1], numpy.ndarray.flags.writeable],
+        xs_scattering: numpy.ndarray[
+            numpy.float64[m, 1], numpy.ndarray.flags.writeable
+        ],
+        p11: numpy.ndarray[
+            numpy.float64[m, n],
+            numpy.ndarray.flags.writeable,
+            numpy.ndarray.flags.f_contiguous,
+        ],
+        p12: numpy.ndarray[
+            numpy.float64[m, n],
+            numpy.ndarray.flags.writeable,
+            numpy.ndarray.flags.f_contiguous,
+        ],
+        p33: numpy.ndarray[
+            numpy.float64[m, n],
+            numpy.ndarray.flags.writeable,
+            numpy.ndarray.flags.f_contiguous,
+        ],
+        p34: numpy.ndarray[
+            numpy.float64[m, n],
+            numpy.ndarray.flags.writeable,
+            numpy.ndarray.flags.f_contiguous,
+        ],
+        lm_a1: numpy.ndarray[
+            numpy.float64[m, n],
+            numpy.ndarray.flags.writeable,
+            numpy.ndarray.flags.f_contiguous,
+        ],
+        lm_a2: numpy.ndarray[
+            numpy.float64[m, n],
+            numpy.ndarray.flags.writeable,
+            numpy.ndarray.flags.f_contiguous,
+        ],
+        lm_a3: numpy.ndarray[
+            numpy.float64[m, n],
+            numpy.ndarray.flags.writeable,
+            numpy.ndarray.flags.f_contiguous,
+        ],
+        lm_a4: numpy.ndarray[
+            numpy.float64[m, n],
+            numpy.ndarray.flags.writeable,
+            numpy.ndarray.flags.f_contiguous,
+        ],
+        lm_b1: numpy.ndarray[
+            numpy.float64[m, n],
+            numpy.ndarray.flags.writeable,
+            numpy.ndarray.flags.f_contiguous,
+        ],
+        lm_b2: numpy.ndarray[
+            numpy.float64[m, n],
+            numpy.ndarray.flags.writeable,
+            numpy.ndarray.flags.f_contiguous,
+        ],
+    ) -> None: ...
 
 class MieOutput:
     @staticmethod
