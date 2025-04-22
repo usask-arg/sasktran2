@@ -1,0 +1,32 @@
+#pragma once
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct DerivativeMapping DerivativeMapping;
+typedef struct SurfaceDerivativeMapping SurfaceDerivativeMapping;
+
+int sk_deriv_mapping_destroy(DerivativeMapping* mapping);
+int sk_deriv_mapping_set_zero(DerivativeMapping* mapping);
+int sk_deriv_mapping_get_d_ssa(DerivativeMapping* mapping, double** ssa);
+int sk_deriv_mapping_get_d_extinction(DerivativeMapping* mapping, double** extinction);
+int sk_deriv_mapping_get_scat_factor(DerivativeMapping* mapping, double** scat_factor);
+int sk_deriv_mapping_get_d_legendre(DerivativeMapping* mapping, double** d_legendre);
+int sk_deriv_mapping_get_d_emission(DerivativeMapping* mapping, double** d_emission);
+int sk_deriv_mapping_get_scat_deriv_index(DerivativeMapping* mapping, int* scat_deriv_index);
+int sk_deriv_mapping_set_scat_deriv_index(DerivativeMapping* mapping, int scat_deriv_index);
+
+int sk_deriv_mapping_get_num_location(DerivativeMapping* mapping, int* num_location);
+int sk_deriv_mapping_get_num_wavel(DerivativeMapping* mapping, int* num_wavel);
+int sk_deriv_mapping_get_num_legendre(DerivativeMapping* mapping, int* num_legendre);
+
+int sk_deriv_mapping_set_interp_dim(DerivativeMapping* mapping, const char* name);
+int sk_deriv_mapping_set_assign_name(DerivativeMapping* mapping, const char* name);
+int sk_deriv_mapping_set_log_radiance_space(DerivativeMapping* mapping, int log_radiance_space);
+int sk_deriv_mapping_is_scattering_derivative(DerivativeMapping* mapping, int* is_scattering_derivative);
+// INTERPOLATOR
+
+#ifdef __cplusplus
+}
+#endif

@@ -8,3 +8,4 @@ pub mod output;
 pub mod surface;
 pub mod viewing_geometry;
 pub mod prelude;
+pub mod deriv_mapping;

@@ -1,5 +1,7 @@
 use crate::ffi;
 use ndarray::*;
+use crate::prelude::*;
+use crate::deriv_mapping::DerivativeMapping;
 
 pub struct AtmosphereStorage {
     pub storage: *mut ffi::AtmosphereStorage,
@@ -19,15 +21,16 @@ impl AtmosphereStorage {
         num_location: usize,
         num_legendre: usize,
         num_deriv: usize,
+        stokes: Stokes
     ) -> Self {
         let mut ssa = Array2::<f64>::zeros((num_location, num_wavel).f());
         let mut total_extinction = Array2::<f64>::zeros((num_location, num_wavel).f());
         let mut emission_source = Array2::<f64>::zeros((num_location, num_wavel).f());
         let mut f = Array2::<f64>::zeros((num_location, num_wavel).f());
-        let mut leg_coeff = Array3::<f64>::zeros((num_legendre, num_location, num_wavel).f());
+        let mut leg_coeff = Array3::<f64>::zeros((num_legendre * stokes.num_legendre(), num_location, num_wavel).f());
 
         let mut d_leg_coeff =
-            Array4::<f64>::zeros((num_legendre, num_location, num_wavel, num_deriv).f());
+            Array4::<f64>::zeros((num_legendre * stokes.num_legendre(), num_location, num_wavel, num_deriv).f());
         let mut d_f = Array3::<f64>::zeros((num_location, num_wavel, num_deriv).f());
         let mut solar_irradiance = Array1::<f64>::zeros(num_wavel);
 
@@ -38,8 +41,8 @@ impl AtmosphereStorage {
                 ffi::sk_atmosphere_storage_create(
                     num_location as i32,
                     num_wavel as i32,
-                    num_legendre as i32,
-                    1, // nstokes
+                    (num_legendre * stokes.num_legendre()) as i32,
+                    stokes.num_stokes() as i32, // nstokes
                     num_deriv as i32,
                     ssa.as_mut_ptr(),
                     total_extinction.as_mut_ptr(),
@@ -60,6 +63,28 @@ impl AtmosphereStorage {
             d_f,
             solar_irradiance,
         }
+    }
+
+    pub fn get_derivative_mapping(
+        &self,
+        name: &str,
+    ) -> Result<DerivativeMapping, String> {
+        let mut mapping: *mut ffi::DerivativeMapping = std::ptr::null_mut();
+        let c_name = std::ffi::CString::new(name).unwrap();
+
+        let result = unsafe {
+            ffi::sk_atmosphere_storage_get_derivative_mapping(
+                self.storage,
+                c_name.as_ptr(),
+                &mut mapping,
+            )
+        };
+
+        if result != 0 {
+            return Err("Failed to get derivative mapping".to_string());
+        }
+
+        Ok(DerivativeMapping::new(mapping))
     }
 }
 
@@ -82,7 +107,11 @@ mod tests {
         let num_legendre = 3;
         let num_deriv = 2;
 
-        let storage = AtmosphereStorage::new(num_wavel, num_location, num_legendre, num_deriv);
+        let storage = AtmosphereStorage::new(num_wavel, num_location, num_legendre, num_deriv, Stokes::Stokes1);
+
+        let mapping = storage.get_derivative_mapping("wf_test").unwrap();
+
+        let d_ssa = mapping.d_ssa();
 
         assert_eq!(storage.ssa.shape(), &[num_location, num_wavel]);
         assert_eq!(storage.total_extinction.shape(), &[num_location, num_wavel]);

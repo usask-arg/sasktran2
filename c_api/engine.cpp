@@ -22,7 +22,7 @@ struct Engine {
         }
     }
 
-    void calculate_radiance(Atmosphere* atmosphere, OutputC* output) {
+    int calculate_radiance(Atmosphere* atmosphere, OutputC* output) {
         if (impl) {
             if (_config->impl.num_stokes() == 1) {
                 Sasktran2<1>* impl1 = dynamic_cast<Sasktran2<1>*>(impl.get());
@@ -30,9 +30,16 @@ struct Engine {
                     *static_cast<sasktran2::atmosphere::Atmosphere<1>*>(
                         atmosphere->impl.get()),
                     *static_cast<sasktran2::Output<1>*>(output->impl.get()));
+                return 0;
             } else if (_config->impl.num_stokes() == 3) {
+                Sasktran2<3>* impl3 = dynamic_cast<Sasktran2<3>*>(impl.get());
+                impl3->calculate_radiance(
+                    *static_cast<sasktran2::atmosphere::Atmosphere<3>*>(
+                        atmosphere->impl.get()),
+                    *static_cast<sasktran2::Output<3>*>(output->impl.get()));
+                return 0;
             } else {
-                // Handle error
+                return -2; // Error: invalid number of Stokes parameters
             }
         }
     }
@@ -48,6 +55,7 @@ void sk_engine_destroy(Engine* engine) { delete engine; }
 
 int sk_engine_calculate_radiance(Engine* engine, Atmosphere* atmosphere,
                                  OutputC* output) {
-    engine->calculate_radiance(atmosphere, output);
+    return engine->calculate_radiance(atmosphere, output);
 }
+
 }

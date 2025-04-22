@@ -1,5 +1,6 @@
 #pragma once
 
+#include "sasktran2/derivative_mapping.h"
 #include "sasktran2/output.h"
 #include <sasktran2.h>
 
@@ -7,6 +8,12 @@ struct Config {
     sasktran2::Config impl;
 
     Config() {}
+};
+
+struct DerivativeMapping {
+    sasktran2::DerivativeMapping* impl;
+
+    DerivativeMapping(sasktran2::DerivativeMapping* mapping) : impl(mapping) {fprintf(stderr, "Making Mapping\n");};
 };
 
 struct Geometry1D {
@@ -25,6 +32,9 @@ struct AtmosphereStorage {
                       double* total_extinction, double* emission_source,
                       double* f, double* leg_coeff, double* d_leg_coeff,
                       double* d_f, double* solar_irradiance);
+
+    int get_derivative_mapping(const char* name,
+                           DerivativeMapping** mapping);
 };
 
 struct Surface {
@@ -43,7 +53,7 @@ struct Atmosphere {
 struct OutputC {
     std::unique_ptr<sasktran2::OutputInterface> impl;
 
-    OutputC(double* radiance, int nrad);
+    OutputC(double* radiance, int nrad, int nstokes);
 };
 
 struct ViewingGeometry {

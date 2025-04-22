@@ -42,13 +42,34 @@ AtmosphereStorage::AtmosphereStorage(int nlocation, int nwavel,
     }
 }
 
+int AtmosphereStorage::get_derivative_mapping(const char* name,
+                                         DerivativeMapping** mapping) {
+    if (impl) {
+        auto storage1 = 
+            dynamic_cast<sasktran2::atmosphere::AtmosphereGridStorageFull<1>*>(
+                impl.get());
+        auto storage3 =
+            dynamic_cast<sasktran2::atmosphere::AtmosphereGridStorageFull<3>*>(
+                impl.get());
+        if(storage1) {
+            auto& map = storage1->get_derivative_mapping(name);
+            *mapping = new DerivativeMapping(&map);
+        } else if(storage3) {
+            auto& map = storage3->get_derivative_mapping(name);
+            *mapping = new DerivativeMapping(&map);
+        } else {
+            return -3; // Error: storage implementation is not AtmosphereGridStorageFull
+        }
+    } else {
+        return -2; // Error: storage implementation is null
+    }
+}
+
 Surface::Surface(int nwavel, int nstokes) {
     if (nstokes == 1) {
         impl = std::make_unique<sasktran2::atmosphere::Surface<1>>(nwavel);
     } else if (nstokes == 3) {
         impl = std::make_unique<sasktran2::atmosphere::Surface<3>>(nwavel);
-    } else if (nstokes == 4) {
-        impl = std::make_unique<sasktran2::atmosphere::Surface<4>>(nwavel);
     } else {
         impl = nullptr;
     }
@@ -119,6 +140,14 @@ sk_atmosphere_storage_create(int nlocation, int nwavel, int nphase_moments,
 
 void sk_atmosphere_storage_destroy(AtmosphereStorage* storage) {
     delete storage;
+}
+
+int sk_atmosphere_storage_get_derivative_mapping(AtmosphereStorage *storage, const char *name, DerivativeMapping **mapping) {
+    if (storage == nullptr) {
+        return -1; // Error: storage is null
+    }
+
+    return storage->get_derivative_mapping(name, mapping);
 }
 
 Surface* sk_surface_create(int nwavel, int nstokes) {

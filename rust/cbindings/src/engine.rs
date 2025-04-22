@@ -37,7 +37,7 @@ impl<'a> Engine<'a> {
         let num_los = self.viewing_geometry.num_rays()?;
         let num_wavel = atmosphere.num_wavel();
 
-        let output = Output::new(num_stokes, num_los, num_wavel);
+        let output = Output::new(num_wavel, num_los, num_stokes);
         unsafe {
             ffi::sk_engine_calculate_radiance(self.engine, atmosphere.atmosphere, output.output);
         }

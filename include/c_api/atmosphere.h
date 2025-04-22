@@ -1,9 +1,11 @@
 #pragma once
 
+#include "deriv_mapping.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
 typedef struct AtmosphereStorage AtmosphereStorage;
+typedef struct DerivativeMapping DerivativeMapping;
 typedef struct Atmosphere Atmosphere;
 typedef struct Surface Surface;
 
@@ -16,6 +18,8 @@ sk_atmosphere_storage_create(int nlocation, int nwavel, int nphase_moments,
                              double* d_f, double* solar_irradiance);
 
 void sk_atmosphere_storage_destroy(AtmosphereStorage* storage);
+int sk_atmosphere_storage_get_derivative_mapping(
+    AtmosphereStorage* storage, const char* name, DerivativeMapping** mapping);
 
 // ATMOSPHERE METHODS
 Atmosphere* sk_atmosphere_create(AtmosphereStorage* storage, Surface* surface,

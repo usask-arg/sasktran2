@@ -24,6 +24,106 @@ unsafe extern "C" {
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+pub struct DerivativeMapping {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct SurfaceDerivativeMapping {
+    _unused: [u8; 0],
+}
+unsafe extern "C" {
+    pub fn sk_deriv_mapping_destroy(mapping: *mut DerivativeMapping) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_deriv_mapping_set_zero(mapping: *mut DerivativeMapping) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_deriv_mapping_get_d_ssa(
+        mapping: *mut DerivativeMapping,
+        ssa: *mut *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_deriv_mapping_get_d_extinction(
+        mapping: *mut DerivativeMapping,
+        extinction: *mut *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_deriv_mapping_get_scat_factor(
+        mapping: *mut DerivativeMapping,
+        scat_factor: *mut *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_deriv_mapping_get_d_legendre(
+        mapping: *mut DerivativeMapping,
+        d_legendre: *mut *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_deriv_mapping_get_d_emission(
+        mapping: *mut DerivativeMapping,
+        d_emission: *mut *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_deriv_mapping_get_scat_deriv_index(
+        mapping: *mut DerivativeMapping,
+        scat_deriv_index: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_deriv_mapping_set_scat_deriv_index(
+        mapping: *mut DerivativeMapping,
+        scat_deriv_index: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_deriv_mapping_get_num_location(
+        mapping: *mut DerivativeMapping,
+        num_location: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_deriv_mapping_get_num_wavel(
+        mapping: *mut DerivativeMapping,
+        num_wavel: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_deriv_mapping_get_num_legendre(
+        mapping: *mut DerivativeMapping,
+        num_legendre: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_deriv_mapping_set_interp_dim(
+        mapping: *mut DerivativeMapping,
+        name: *const ::std::os::raw::c_char,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_deriv_mapping_set_assign_name(
+        mapping: *mut DerivativeMapping,
+        name: *const ::std::os::raw::c_char,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_deriv_mapping_set_log_radiance_space(
+        mapping: *mut DerivativeMapping,
+        log_radiance_space: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_deriv_mapping_is_scattering_derivative(
+        mapping: *mut DerivativeMapping,
+        is_scattering_derivative: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct AtmosphereStorage {
     _unused: [u8; 0],
 }
@@ -56,6 +156,13 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     pub fn sk_atmosphere_storage_destroy(storage: *mut AtmosphereStorage);
+}
+unsafe extern "C" {
+    pub fn sk_atmosphere_storage_get_derivative_mapping(
+        storage: *mut AtmosphereStorage,
+        name: *const ::std::os::raw::c_char,
+        mapping: *mut *mut DerivativeMapping,
+    ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
     pub fn sk_atmosphere_create(
@@ -119,13 +226,41 @@ unsafe extern "C" {
         num_stokes: *mut ::std::os::raw::c_int,
     ) -> ::std::os::raw::c_int;
 }
+unsafe extern "C" {
+    pub fn sk_config_set_num_stokes(
+        config: *mut Config,
+        num_stokes: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_set_multiple_scatter_source(
+        config: *mut Config,
+        multiple_scatter_source: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_set_single_scatter_source(
+        config: *mut Config,
+        single_scatter_source: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_set_num_streams(
+        config: *mut Config,
+        num_streams: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct OutputC {
     _unused: [u8; 0],
 }
 unsafe extern "C" {
-    pub fn sk_output_create(radiance: *mut f64, nrad: ::std::os::raw::c_int) -> *mut OutputC;
+    pub fn sk_output_create(
+        radiance: *mut f64,
+        nrad: ::std::os::raw::c_int,
+        nstokes: ::std::os::raw::c_int,
+    ) -> *mut OutputC;
 }
 unsafe extern "C" {
     pub fn sk_output_destroy(config: *mut OutputC);

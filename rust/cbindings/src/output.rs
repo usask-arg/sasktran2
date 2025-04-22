@@ -12,7 +12,7 @@ impl Output {
 
         let num_radiance = num_wavel * num_los * num_stokes;
         let radiance_ptr = radiance.as_mut_ptr();
-        let output = unsafe { ffi::sk_output_create(radiance_ptr, num_radiance as i32) };
+        let output = unsafe { ffi::sk_output_create(radiance_ptr, num_radiance as i32, num_stokes as i32) };
 
         Output {
             output: output,

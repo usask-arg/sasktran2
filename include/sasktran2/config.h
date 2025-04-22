@@ -26,10 +26,10 @@ namespace sasktran2 {
          *
          */
         enum class SingleScatterSource {
-            exact,
-            solartable,
-            discrete_ordinates,
-            none
+            exact = 0,
+            solartable = 1,
+            discrete_ordinates = 2,
+            none = 3
         };
 
         /** Enum determining the type of multiple scatter source to be included
@@ -45,10 +45,10 @@ namespace sasktran2 {
          *
          */
         enum class MultipleScatterSource {
-            discrete_ordinates,
-            hr,
-            twostream,
-            none
+            discrete_ordinates = 0,
+            hr = 1,
+            twostream = 2,
+            none = 3
         };
 
         /** Enum that determines the accuracy of the weighting function solution

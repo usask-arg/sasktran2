@@ -6,7 +6,7 @@ extern "C" {
 
 typedef struct OutputC OutputC;
 
-OutputC* sk_output_create(double* radiance, int nrad);
+OutputC* sk_output_create(double* radiance, int nrad, int nstokes);
 
 void sk_output_destroy(OutputC* config);
 
