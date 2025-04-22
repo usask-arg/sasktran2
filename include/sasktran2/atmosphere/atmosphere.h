@@ -26,16 +26,21 @@ namespace sasktran2::atmosphere {
      */
     template <int NSTOKES> class Atmosphere : public AtmosphereInterface {
       private:
-        AtmosphereGridStorageFull<NSTOKES>
-            m_storage;                /** The internal storage object */
-        Surface<NSTOKES> m_surface;   /** The surface */
+        std::shared_ptr<AtmosphereGridStorageFull<NSTOKES>>
+            m_storage_holder; /** The internal storage object */
+        std::shared_ptr<Surface<NSTOKES>> m_surface_holder; /** The surface */
+
+        AtmosphereGridStorageFull<NSTOKES>& m_storage; /** The internal storage
+                                                         object */
+        Surface<NSTOKES>& m_surface;                   /** The surface */
         bool m_calculate_derivatives; /** True if we are going to be calculating
                                          derivatives */
         bool m_include_emission_derivatives; /** True if we are going to include
                                                 emission derivatives */
 
       public:
-        /** Directly constructs the atmosphere from it's base objects
+        /** Directly constructs the atmosphere from it's base objects, taking
+         * ownership
          *
          * @param storage
          * @param surface
@@ -45,20 +50,15 @@ namespace sasktran2::atmosphere {
                    Surface<NSTOKES>&& surface,
                    bool calculate_derivatives = false);
 
-        /** Constructs the atmosphere storage from constituents
+        /** Directly constructs the atmosphere from it's base objects, sharing
+         * ownership
          *
-         * @param constituents
+         * @param storage
          * @param surface
-         * @param wavelengths
-         * @param geometry
-         * @param config
          * @param calculate_derivatives
          */
-        Atmosphere(const std::vector<Constituent>& constituents,
-                   Surface<NSTOKES>&& surface,
-                   const Eigen::VectorXd& wavelengths,
-                   const sasktran2::Geometry1D& geometry,
-                   const sasktran2::Config& config,
+        Atmosphere(AtmosphereGridStorageFull<NSTOKES>& storage,
+                   Surface<NSTOKES>& surface,
                    bool calculate_derivatives = false);
 
         /** Constructs an empty atmosphere that we can then modify afterwards

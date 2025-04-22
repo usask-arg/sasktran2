@@ -42,6 +42,7 @@ add_library(
   output/outputidealdense.cpp
   output/outputsensor.cpp
   output/outputderivmapped.cpp
+  output/outputc.cpp
   engine/engine.cpp
   hr/diffuse_point.cpp
   hr/diffuse_table.cpp

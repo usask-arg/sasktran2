@@ -1,3 +1,4 @@
+#include "sasktran2/atmosphere/grid_storage.h"
 #include "sasktran2/config.h"
 #include <sasktran2/atmosphere/atmosphere.h>
 
@@ -5,31 +6,33 @@ namespace sasktran2::atmosphere {
 
     template <int NSTOKES>
     Atmosphere<NSTOKES>::Atmosphere(
-        const std::vector<Constituent>& constituents,
-        Surface<NSTOKES>&& surface, const Eigen::VectorXd& wavelengths,
-        const sasktran2::Geometry1D& geometry, const sasktran2::Config& config,
-        bool calculate_derivatives)
-        : m_calculate_derivatives(calculate_derivatives),
-          m_surface(std::move(surface)),
-          m_storage(wavelengths.size(), geometry.size(),
-                    config.num_singlescatter_moments()) {}
-
-    template <int NSTOKES>
-    Atmosphere<NSTOKES>::Atmosphere(
         AtmosphereGridStorageFull<NSTOKES>&& storage,
         Surface<NSTOKES>&& surface, bool calculate_derivatives)
-        : m_storage(storage), m_surface(std::move(surface)),
+        : m_storage_holder(std::make_shared<AtmosphereGridStorageFull<NSTOKES>>(
+              std::move(storage))),
+          m_surface_holder(
+              std::make_shared<Surface<NSTOKES>>(std::move(surface))),
+          m_storage(*m_storage_holder), m_surface(*m_surface_holder),
           m_calculate_derivatives(calculate_derivatives),
           m_include_emission_derivatives(false) {}
+
+    template <int NSTOKES>
+    Atmosphere<NSTOKES>::Atmosphere(AtmosphereGridStorageFull<NSTOKES>& stor,
+                                    Surface<NSTOKES>& surf,
+                                    bool calculate_derivatives)
+        : m_storage(stor), m_surface(surf),
+          m_calculate_derivatives(calculate_derivatives) {}
 
     template <int NSTOKES>
     Atmosphere<NSTOKES>::Atmosphere(int nwavel,
                                     const sasktran2::Geometry1D& geometry,
                                     const sasktran2::Config& config,
                                     bool calculate_derivatives)
-        : m_storage(nwavel, geometry.size(),
-                    config.num_singlescatter_moments()),
-          m_calculate_derivatives(calculate_derivatives), m_surface(nwavel),
+        : m_storage_holder(std::make_shared<AtmosphereGridStorageFull<NSTOKES>>(
+              nwavel, geometry.size(), config.num_singlescatter_moments())),
+          m_calculate_derivatives(calculate_derivatives),
+          m_surface_holder(std::make_shared<Surface<NSTOKES>>(nwavel)),
+          m_storage(*m_storage_holder), m_surface(*m_surface_holder),
           m_include_emission_derivatives(
               (config.emission_source() !=
                sasktran2::Config::EmissionSource::none) &&

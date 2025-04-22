@@ -7,6 +7,10 @@
 #include <stdexcept>
 
 namespace sasktran2::atmosphere {
+    struct SurfaceInterface {
+        virtual ~SurfaceInterface() = default;
+    };
+
     // Forward declaration
     template <int NSTOKES> struct Surface;
 
@@ -359,7 +363,7 @@ namespace sasktran2::atmosphere {
      *
      * @tparam NSTOKES
      */
-    template <int NSTOKES> struct Surface {
+    template <int NSTOKES> struct Surface : SurfaceInterface {
       private:
         int m_num_wavel;
         std::shared_ptr<brdf::BRDF<NSTOKES>> m_brdf_object;

@@ -13,7 +13,10 @@ namespace sasktran2::atmosphere {
      * required information is total extinction, scattering extinction, and
      * phase information for each geometry grid point.
      */
-    class AtmosphereGridStorage {};
+    class AtmosphereGridStorage {
+      public:
+        virtual ~AtmosphereGridStorage() = default;
+    };
 
     template <int NSTOKES>
     class AtmosphereGridStorageFull : public AtmosphereGridStorage {
@@ -23,10 +26,24 @@ namespace sasktran2::atmosphere {
                                        for the
                                        atmosphere */
 
+        struct InternalStorage {
+            Eigen::MatrixXd ssa;              // location, wavel
+            Eigen::MatrixXd total_extinction; // location, wavel
+            Eigen::MatrixXd emission_source;  // location, wavel
+            Eigen::Matrix<sasktran2::types::leg_coeff, -1, -1>
+                f; // location, wavel, (Delta scaling factor)
+            Eigen::Tensor<double, 3> leg_coeff; // legendre order (polarized
+                                                // stacked), location, wavel
+            Eigen::Tensor<double, 4>
+                d_leg_coeff; // (legendre order, location, wavel, deriv)
+            Eigen::Tensor<double, 3> d_f;     // (location, wavel, deriv)
+            Eigen::VectorXd solar_irradiance; // wavel
+        };
+
       public:
-        Eigen::MatrixXd ssa;              // location, wavel
-        Eigen::MatrixXd total_extinction; // location, wavel
-        Eigen::MatrixXd emission_source;  // location, wavel
+        Eigen::Map<Eigen::MatrixXd> ssa;              // location, wavel
+        Eigen::Map<Eigen::MatrixXd> total_extinction; // location, wavel
+        Eigen::Map<Eigen::MatrixXd> emission_source;  // location, wavel
 
         // Unscaled quantities, necessary for temporary storage during
         // derivative propagations
@@ -34,7 +51,7 @@ namespace sasktran2::atmosphere {
         Eigen::MatrixXd unscaled_total_extinction; // location, wavel
 
         // Scattering parameters
-        Eigen::Matrix<sasktran2::types::leg_coeff, -1, -1>
+        Eigen::Map<Eigen::Matrix<sasktran2::types::leg_coeff, -1, -1>>
             f; // location, wavel, (Delta scaling factor)
 
         int applied_f_order;    // Order of the delta_m scaling
@@ -42,11 +59,12 @@ namespace sasktran2::atmosphere {
                                 // legendre scaling f
 
         int scatderivstart;
-        Eigen::Tensor<double, 3>
+        Eigen::TensorMap<Eigen::Tensor<double, 3>>
             leg_coeff; // legendre order (polarized stacked), location, wavel
-        Eigen::Tensor<double, 4>
+        Eigen::TensorMap<Eigen::Tensor<double, 4>>
             d_leg_coeff; // (legendre order, location, wavel, deriv)
-        Eigen::Tensor<double, 3> d_f; // (location, wavel, deriv)
+        Eigen::TensorMap<Eigen::Tensor<double, 3>>
+            d_f; // (location, wavel, deriv)
 
         Eigen::MatrixXi
             max_order; // Maximum order of the phase function for each location
@@ -57,23 +75,77 @@ namespace sasktran2::atmosphere {
 
         int numscatderiv;
 
-        Eigen::VectorXd solar_irradiance; // wavel
+        Eigen::Map<Eigen::VectorXd> solar_irradiance; // wavel
+
+        InternalStorage m_internal_storage;
+
       public:
-        AtmosphereGridStorageFull(int nwavel, int nlocation, int numlegendre) {
-            ssa.resize(nlocation, nwavel);
-            total_extinction.resize(nlocation, nwavel);
+        AtmosphereGridStorageFull(
+            Eigen::Map<Eigen::MatrixXd> ssa,
+            Eigen::Map<Eigen::MatrixXd> total_extinction,
+            Eigen::Map<Eigen::MatrixXd> emission_source,
+            Eigen::Map<Eigen::Matrix<sasktran2::types::leg_coeff, -1, -1>> f,
+            Eigen::TensorMap<Eigen::Tensor<double, 3>> leg_coeff,
+            Eigen::TensorMap<Eigen::Tensor<double, 4>> d_leg_coeff,
+            Eigen::TensorMap<Eigen::Tensor<double, 3>> d_f,
+            Eigen::Map<Eigen::VectorXd> solar_irradiance)
+            : ssa(ssa), total_extinction(total_extinction),
+              emission_source(emission_source), f(f), leg_coeff(leg_coeff),
+              d_leg_coeff(d_leg_coeff), d_f(d_f),
+              solar_irradiance(solar_irradiance) {
+            int nlocation = ssa.rows();
+            int nwavel = ssa.cols();
+
+            unscaled_ssa.resize(nlocation, nwavel);
+            unscaled_total_extinction.resize(nlocation, nwavel);
+
+            max_order.resize(nlocation, nwavel);
+
+            applied_f_location = -1;
+            applied_f_order = -1;
+
+            numscatderiv = d_leg_coeff.dimension(3);
+            scatderivstart = 2 * nlocation;
+        }
+
+        AtmosphereGridStorageFull(int nwavel, int nlocation, int numlegendre)
+            : ssa(nullptr, 0, 0), total_extinction(nullptr, 0, 0),
+              emission_source(nullptr, 0, 0), f(nullptr, 0, 0),
+              leg_coeff(nullptr, 0, 0, 0), d_leg_coeff(nullptr, 0, 0, 0, 0),
+              d_f(nullptr, 0, 0, 0), solar_irradiance(nullptr, 0) {
+            // Allocate internal storage
+            m_internal_storage.ssa.resize(nlocation, nwavel);
+            m_internal_storage.total_extinction.resize(nlocation, nwavel);
+            m_internal_storage.emission_source.resize(nlocation, nwavel);
+            m_internal_storage.f.resize(nlocation, nwavel);
+            m_internal_storage.solar_irradiance.resize(nwavel);
+            if constexpr (NSTOKES == 1) {
+                m_internal_storage.leg_coeff.resize(numlegendre, nlocation,
+                                                    nwavel);
+            } else {
+                m_internal_storage.leg_coeff.resize(numlegendre * 4, nlocation,
+                                                    nwavel);
+            }
+
+            // Placement new the internal storage into the member variables
+            new (&ssa) Eigen::Map<Eigen::MatrixXd>(
+                m_internal_storage.ssa.data(), nlocation, nwavel);
+            new (&total_extinction) Eigen::Map<Eigen::MatrixXd>(
+                m_internal_storage.total_extinction.data(), nlocation, nwavel);
+            new (&emission_source) Eigen::Map<Eigen::MatrixXd>(
+                m_internal_storage.emission_source.data(), nlocation, nwavel);
+            new (&f)
+                Eigen::Map<Eigen::Matrix<sasktran2::types::leg_coeff, -1, -1>>(
+                    m_internal_storage.f.data(), nlocation, nwavel);
+            new (&solar_irradiance) Eigen::Map<Eigen::VectorXd>(
+                m_internal_storage.solar_irradiance.data(), nwavel);
+            new (&leg_coeff) Eigen::TensorMap<Eigen::Tensor<double, 3>>(
+                m_internal_storage.leg_coeff.data(),
+                m_internal_storage.leg_coeff.dimension(0), nlocation, nwavel);
+
+            max_order.resize(nlocation, nwavel);
             unscaled_total_extinction.resize(nlocation, nwavel);
             unscaled_ssa.resize(nlocation, nwavel);
-            emission_source.resize(nlocation, nwavel);
-            f.resize(nlocation, nwavel);
-            max_order.resize(nlocation, nwavel);
-            solar_irradiance.resize(nwavel);
-
-            if constexpr (NSTOKES == 1) {
-                leg_coeff.resize(numlegendre, nlocation, nwavel);
-            } else {
-                leg_coeff.resize(numlegendre * 4, nlocation, nwavel);
-            }
 
             ssa.setZero();
             total_extinction.setZero();
@@ -101,8 +173,17 @@ namespace sasktran2::atmosphere {
             int nwavel = leg_coeff.dimension(2);
             scatderivstart = 2 * numgeo;
 
-            d_leg_coeff.resize(legendre, numgeo, nwavel, numderiv);
-            d_f.resize(numgeo, nwavel, numderiv);
+            m_internal_storage.d_leg_coeff.resize(legendre, numgeo, nwavel,
+                                                  numderiv);
+            m_internal_storage.d_f.resize(numgeo, nwavel, numderiv);
+
+            // Placement new into the internal maps
+            new (&d_leg_coeff) Eigen::TensorMap<Eigen::Tensor<double, 4>>(
+                m_internal_storage.d_leg_coeff.data(), legendre, numgeo, nwavel,
+                numderiv);
+
+            new (&d_f) Eigen::TensorMap<Eigen::Tensor<double, 3>>(
+                m_internal_storage.d_f.data(), numgeo, nwavel, numderiv);
 
             d_leg_coeff.setZero();
             d_f.setZero();

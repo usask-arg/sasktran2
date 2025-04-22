@@ -173,6 +173,33 @@ namespace sasktran2 {
         }
     };
 
+    /** An idealized output container where only the line of sight radiances are
+     * stored, and the derivatives are mapped based on the atmosphere derivative
+     * mappings.  This is the output class that is used by the C api, it differs
+     * from the OutputDerivMapped class in that memory is passed in through the
+     * API for the derivatives and radiances.  Therefore we don't provide any
+     * accessors
+     *
+     * @tparam NSTOKES
+     */
+    template <int NSTOKES> class OutputC : public Output<NSTOKES> {
+      private:
+        Eigen::Map<Eigen::VectorXd> m_radiance;
+
+        std::map<std::string, Eigen::MatrixXd> m_derivatives;
+        std::map<std::string, Eigen::MatrixXd> m_surface_derivatives;
+        std::vector<Eigen::MatrixXd> m_native_thread_storage;
+
+        void resize();
+
+      public:
+        OutputC(Eigen::Map<Eigen::VectorXd> radiance) : m_radiance(radiance){};
+
+        void assign(const sasktran2::Dual<double, sasktran2::dualstorage::dense,
+                                          NSTOKES>& radiance,
+                    int losidx, int wavelidx, int threadidx);
+    };
+
     /**
      */
     template <int NSTOKES> class OutputSpectralSensor : public Output<NSTOKES> {

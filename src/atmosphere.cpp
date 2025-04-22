@@ -50,7 +50,7 @@ void declareAtmosphereStorage(py::module_& m, const std::string& suffix) {
                                &AtmosphereGridStorage::derivative_mappings)
         .def_property(
             "ssa",
-            [](AtmosphereGridStorage& storage) -> Eigen::MatrixXd& {
+            [](AtmosphereGridStorage& storage) -> Eigen::Ref<Eigen::MatrixXd> {
                 return storage.ssa;
             },
             [](AtmosphereGridStorage& storage, const Eigen::MatrixXd& ssa) {
@@ -58,7 +58,7 @@ void declareAtmosphereStorage(py::module_& m, const std::string& suffix) {
             })
         .def_property(
             "total_extinction",
-            [](AtmosphereGridStorage& storage) -> Eigen::MatrixXd& {
+            [](AtmosphereGridStorage& storage) -> Eigen::Ref<Eigen::MatrixXd> {
                 return storage.total_extinction;
             },
             [](AtmosphereGridStorage& storage,
@@ -67,7 +67,7 @@ void declareAtmosphereStorage(py::module_& m, const std::string& suffix) {
             })
         .def_property(
             "emission_source",
-            [](AtmosphereGridStorage& storage) -> Eigen::MatrixXd& {
+            [](AtmosphereGridStorage& storage) -> Eigen::Ref<Eigen::MatrixXd> {
                 return storage.emission_source;
             },
             [](AtmosphereGridStorage& storage,
@@ -76,18 +76,20 @@ void declareAtmosphereStorage(py::module_& m, const std::string& suffix) {
             })
         .def_property(
             "f",
-            [](AtmosphereGridStorage& storage) -> const Eigen::MatrixXd& {
-                return storage.f;
-            },
+            [](AtmosphereGridStorage& storage)
+                -> Eigen::Ref<const Eigen::MatrixXd> { return storage.f; },
             nullptr)
         .def_property(
             "d_f",
             [](AtmosphereGridStorage& storage)
-                -> const Eigen::Tensor<double, 3>& { return storage.d_f; },
+                -> Eigen::TensorMap<Eigen::Tensor<double, 3>> {
+                return storage.d_f;
+            },
             nullptr)
         .def_property(
             "leg_coeff",
-            [](AtmosphereGridStorage& storage) -> Eigen::Tensor<double, 3>& {
+            [](AtmosphereGridStorage& storage)
+                -> Eigen::TensorMap<Eigen::Tensor<double, 3>> {
                 return storage.leg_coeff;
             },
             [](AtmosphereGridStorage& storage,
@@ -96,7 +98,8 @@ void declareAtmosphereStorage(py::module_& m, const std::string& suffix) {
             })
         .def_property(
             "d_leg_coeff",
-            [](AtmosphereGridStorage& storage) -> Eigen::Tensor<double, 4>& {
+            [](AtmosphereGridStorage& storage)
+                -> Eigen::TensorMap<Eigen::Tensor<double, 4>> {
                 return storage.d_leg_coeff;
             },
             [](AtmosphereGridStorage& storage,
@@ -107,7 +110,7 @@ void declareAtmosphereStorage(py::module_& m, const std::string& suffix) {
              &AtmosphereGridStorage::normalize_by_extinctions)
         .def_property(
             "solar_irradiance",
-            [](AtmosphereGridStorage& storage) -> Eigen::VectorXd& {
+            [](AtmosphereGridStorage& storage) -> Eigen::Ref<Eigen::VectorXd> {
                 return storage.solar_irradiance;
             },
             [](AtmosphereGridStorage& storage,

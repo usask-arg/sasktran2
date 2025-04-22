@@ -9,10 +9,10 @@ namespace sasktran2 {
      * included at the moment for future extensibility.
      */
     enum geometrytype {
-        planeparallel,
-        pseudospherical,
-        spherical,
-        ellipsoidal
+        planeparallel = 0,
+        pseudospherical = 1,
+        spherical = 2,
+        ellipsoidal = 3
     };
 
     /** Struct defining a single location inside the atmosphere.  The core of

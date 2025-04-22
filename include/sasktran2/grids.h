@@ -21,7 +21,7 @@ namespace sasktran2::grids {
      *  the lower boundary
      *
      */
-    enum interpolation { shell, linear, lower };
+    enum interpolation { shell = 0, linear = 1, lower = 2 };
 
     /** Keeps track of the spacing between grid points within a grid.
      *

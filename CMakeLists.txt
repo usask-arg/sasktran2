@@ -177,7 +177,7 @@ elseif(SKTRAN_BLAS_VENDOR MATCHES "Apple")
     sasktran2BuildProperties
     INTERFACE
       /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers
-      /Library/Developer/CommandLineTools/SDKs/MacOSX15.2.sdk/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers
+      /Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers
   )
   target_compile_definitions(sasktran2BuildProperties
                              INTERFACE SKTRAN_USE_ACCELERATE)
@@ -297,6 +297,8 @@ if(INCLUDE_TRACY)
 
 endif()
 
+add_subdirectory(c_api)
+
 option(BUILD_PYTHON "True if Building Python Files" ON)
 # We basically just include this for clion help
 if(BUILD_PYTHON)
@@ -373,7 +375,7 @@ if(BUILD_PYTHON)
 
 else()
   install(
-    TARGETS sasktran2BuildProperties sk_core
+    TARGETS sasktran2BuildProperties
     EXPORT ${EXPORT_NAME}
     LIBRARY DESTINATION ${STATIC_LIB_INSTALL_DIR}
     INCLUDES

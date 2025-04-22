@@ -1,0 +1,12 @@
+[package]
+name = "sasktran2-bindings"
+version = "0.1.0"
+edition = "2024"
+build = "build.rs"
+
+[build-dependencies]
+bindgen = "*"
+
+[dependencies]
+ndarray = "*"
+anyhow = "*"
