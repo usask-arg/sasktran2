@@ -459,7 +459,7 @@ def integrate_mie_cpp(
         v = mie.calculate(
             [x], refrac_index_fn(np.min(wavelengths)), np.array([]), False
         )
-        return v.values.Qext * repr_dist.pdf(r) * r**2 * np.pi
+        return (v.values.Qext * repr_dist.pdf(r) * r**2 * np.pi)[0]
 
     result = integrate.quad(integrand, 0, 2 * max_r, full_output=True, limit=200)
 

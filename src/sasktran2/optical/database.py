@@ -225,7 +225,7 @@ class OpticalDatabaseGenericScatterer(OpticalDatabase):
 
         ds_interp = (
             self._database.isel(legendre=slice(0, num_assign_legendre))
-            .drop(drop_vars)
+            .drop_vars(drop_vars)
             .interp(**interp_handler)
         )
 
@@ -312,7 +312,7 @@ class OpticalDatabaseGenericScatterer(OpticalDatabase):
         # Get the derivatives of the cross section with respect to the z dependent variables
         partial_interp = (
             self._database.isel(legendre=slice(0, num_assign_legendre))
-            .drop(drop_vars)
+            .drop_vars(drop_vars)
             .interp(**interp_handler_noz)
         )
 
