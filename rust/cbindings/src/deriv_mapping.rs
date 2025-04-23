@@ -1,6 +1,6 @@
 use crate::ffi;
-use ndarray::*;
 use crate::prelude::*;
+use ndarray::*;
 
 pub struct DerivativeMapping {
     pub mapping: *mut ffi::DerivativeMapping,
@@ -23,7 +23,10 @@ impl DerivativeMapping {
         let mut d_extinction: *mut f64 = std::ptr::null_mut();
         unsafe {
             ffi::sk_deriv_mapping_get_d_extinction(self.mapping, &mut d_extinction);
-            ArrayViewMut2::from_shape_ptr((self.num_location(), self.num_legendre()).f(), d_extinction)
+            ArrayViewMut2::from_shape_ptr(
+                (self.num_location(), self.num_legendre()).f(),
+                d_extinction,
+            )
         }
     }
 
@@ -31,7 +34,10 @@ impl DerivativeMapping {
         let mut scat_factor: *mut f64 = std::ptr::null_mut();
         unsafe {
             ffi::sk_deriv_mapping_get_scat_factor(self.mapping, &mut scat_factor);
-            ArrayViewMut2::from_shape_ptr((self.num_location(), self.num_legendre()).f(), scat_factor)
+            ArrayViewMut2::from_shape_ptr(
+                (self.num_location(), self.num_legendre()).f(),
+                scat_factor,
+            )
         }
     }
 
@@ -39,7 +45,10 @@ impl DerivativeMapping {
         let mut d_leg_coeff: *mut f64 = std::ptr::null_mut();
         unsafe {
             ffi::sk_deriv_mapping_get_d_legendre(self.mapping, &mut d_leg_coeff);
-            ArrayViewMut3::from_shape_ptr((self.num_legendre(), self.num_location(), self.num_wavel()).f(), d_leg_coeff)
+            ArrayViewMut3::from_shape_ptr(
+                (self.num_legendre(), self.num_location(), self.num_wavel()).f(),
+                d_leg_coeff,
+            )
         }
     }
 

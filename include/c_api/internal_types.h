@@ -13,7 +13,9 @@ struct Config {
 struct DerivativeMapping {
     sasktran2::DerivativeMapping* impl;
 
-    DerivativeMapping(sasktran2::DerivativeMapping* mapping) : impl(mapping) {fprintf(stderr, "Making Mapping\n");};
+    DerivativeMapping(sasktran2::DerivativeMapping* mapping) : impl(mapping) {
+        fprintf(stderr, "Making Mapping\n");
+    };
 };
 
 struct Geometry1D {
@@ -33,8 +35,7 @@ struct AtmosphereStorage {
                       double* f, double* leg_coeff, double* d_leg_coeff,
                       double* d_f, double* solar_irradiance);
 
-    int get_derivative_mapping(const char* name,
-                           DerivativeMapping** mapping);
+    int get_derivative_mapping(const char* name, DerivativeMapping** mapping);
 };
 
 struct Surface {

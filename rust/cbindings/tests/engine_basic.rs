@@ -1,5 +1,5 @@
-use sasktran2_bindings::prelude::*;
 use ndarray::s;
+use sasktran2_bindings::prelude::*;
 
 #[test]
 fn test_engine_basic() {
@@ -7,7 +7,11 @@ fn test_engine_basic() {
 
     atmosphere.storage.ssa.fill(1.0);
     atmosphere.storage.total_extinction.fill(0.0001);
-    atmosphere.storage.leg_coeff.slice_mut(s![0, .., ..]).fill(1.0);
+    atmosphere
+        .storage
+        .leg_coeff
+        .slice_mut(s![0, .., ..])
+        .fill(1.0);
 
     let mut altitude_grid = Vec::new();
     for i in 0..50 {
@@ -26,18 +30,12 @@ fn test_engine_basic() {
     let config = Config::new();
 
     let mut viewing_geometry = ViewingGeometry::new();
-    viewing_geometry.add_ground_viewing_solar(
-        0.6,
-        0.0,
-        200000.0,
-        1.0,
-    );
+    viewing_geometry.add_ground_viewing_solar(0.6, 0.0, 200000.0, 1.0);
 
     let engine = Engine::new(&config, &geometry, &viewing_geometry);
 
     let output = engine.calculate_radiance(&atmosphere).unwrap();
     println!("Radiance: {:?}", output.radiance);
-
 }
 
 #[test]

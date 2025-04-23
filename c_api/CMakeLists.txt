@@ -5,8 +5,15 @@ target_include_directories(
             $<INSTALL_INTERFACE:include>)
 
 # Add sub libraries
-add_library(csasktran2 geometry.cpp viewing_geometry.cpp atmosphere.cpp
-                       config.cpp engine.cpp output.cpp deriv_mapping.cpp)
+add_library(
+  csasktran2
+  geometry.cpp
+  viewing_geometry.cpp
+  atmosphere.cpp
+  config.cpp
+  engine.cpp
+  output.cpp
+  deriv_mapping.cpp)
 
 target_link_libraries(csasktran2 PUBLIC sasktran2)
 

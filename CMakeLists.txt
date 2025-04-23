@@ -302,36 +302,8 @@ add_subdirectory(c_api)
 option(BUILD_PYTHON "True if Building Python Files" ON)
 # We basically just include this for clion help
 if(BUILD_PYTHON)
-  project(${SKBUILD_PROJECT_NAME} LANGUAGES CXX)
+  add_subdirectory(pybind11)
 
-  set(CMAKE_CXX_STANDARD 17)
-
-  find_package(Python REQUIRED COMPONENTS Interpreter Development.Module)
-  find_package(pybind11 CONFIG REQUIRED)
-
-  python_add_library(
-    _core
-    MODULE
-    src/main.cpp
-    src/config.cpp
-    src/coordinates.cpp
-    src/derivative_mappings.cpp
-    src/geometry.cpp
-    src/geodetic.cpp
-    src/grids.cpp
-    src/surface.cpp
-    src/atmosphere.cpp
-    src/viewing_geometry.cpp
-    src/engine.cpp
-    src/mie.cpp
-    src/output.cpp
-    src/math.cpp
-    WITH_SOABI)
-
-  target_link_libraries(_core PRIVATE pybind11::headers)
-  target_link_libraries(_core PRIVATE sasktran2)
-
-  install(TARGETS _core DESTINATION sasktran2)
   # corrosion_import_crate(MANIFEST_PATH rust/pybindings/Cargo.toml)
   corrosion_set_env_vars(_core_rust PYO3_PYTHON=${Python_EXECUTABLE})
 

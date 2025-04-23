@@ -57,5 +57,4 @@ int sk_engine_calculate_radiance(Engine* engine, Atmosphere* atmosphere,
                                  OutputC* output) {
     return engine->calculate_radiance(atmosphere, output);
 }
-
 }

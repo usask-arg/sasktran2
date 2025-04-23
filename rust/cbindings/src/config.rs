@@ -14,7 +14,7 @@ pub enum SingleScatterSource {
     Exact = 0,
     SolarTable = 1,
     DiscreteOrdinates = 2,
-    None = 3
+    None = 3,
 }
 
 pub struct Config {
@@ -33,7 +33,10 @@ impl Config {
         let error_code = unsafe { ffi::sk_config_get_num_stokes(self.config, &mut num_stokes) };
 
         if error_code != 0 {
-            Err(anyhow!("Error getting number of stokes: error code {}", error_code))
+            Err(anyhow!(
+                "Error getting number of stokes: error code {}",
+                error_code
+            ))
         } else {
             Ok(num_stokes as usize)
         }
@@ -43,27 +46,38 @@ impl Config {
         let error_code = unsafe { ffi::sk_config_set_num_stokes(self.config, num_stokes as i32) };
 
         if error_code != 0 {
-            Err(anyhow!("Error setting number of stokes: error code {}", error_code))
+            Err(anyhow!(
+                "Error setting number of stokes: error code {}",
+                error_code
+            ))
         } else {
             Ok(self)
         }
     }
 
     pub fn with_multiple_scatter_source(self, source: MultipleScatterSource) -> Result<Self> {
-        let error_code = unsafe { ffi::sk_config_set_multiple_scatter_source(self.config, source as i32) };
+        let error_code =
+            unsafe { ffi::sk_config_set_multiple_scatter_source(self.config, source as i32) };
 
         if error_code != 0 {
-            Err(anyhow!("Error setting multiple scatter source: error code {}", error_code))
+            Err(anyhow!(
+                "Error setting multiple scatter source: error code {}",
+                error_code
+            ))
         } else {
             Ok(self)
         }
     }
 
     pub fn with_single_scatter_source(self, source: SingleScatterSource) -> Result<Self> {
-        let error_code = unsafe { ffi::sk_config_set_single_scatter_source(self.config, source as i32) };
+        let error_code =
+            unsafe { ffi::sk_config_set_single_scatter_source(self.config, source as i32) };
 
         if error_code != 0 {
-            Err(anyhow!("Error setting single scatter source: error code {}", error_code))
+            Err(anyhow!(
+                "Error setting single scatter source: error code {}",
+                error_code
+            ))
         } else {
             Ok(self)
         }
@@ -73,12 +87,14 @@ impl Config {
         let error_code = unsafe { ffi::sk_config_set_num_streams(self.config, num_streams as i32) };
 
         if error_code != 0 {
-            Err(anyhow!("Error setting number of streams: error code {}", error_code))
+            Err(anyhow!(
+                "Error setting number of streams: error code {}",
+                error_code
+            ))
         } else {
             Ok(self)
         }
     }
-
 }
 
 impl Drop for Config {

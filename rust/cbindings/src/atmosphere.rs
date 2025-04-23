@@ -1,13 +1,13 @@
 use crate::atmosphere_storage::AtmosphereStorage;
 use crate::ffi;
-use crate::surface::Surface;
 use crate::prelude::*;
+use crate::surface::Surface;
 
 pub struct Atmosphere {
     pub atmosphere: *mut ffi::Atmosphere,
     pub storage: AtmosphereStorage,
     pub surface: Surface,
-    nstokes: usize
+    nstokes: usize,
 }
 impl Atmosphere {
     pub fn new(
@@ -16,9 +16,10 @@ impl Atmosphere {
         num_legendre: usize,
         num_deriv: usize,
         calc_derivatives: bool,
-        stokes: Stokes
+        stokes: Stokes,
     ) -> Self {
-        let storage = AtmosphereStorage::new(num_wavel, num_location, num_legendre, num_deriv, stokes);
+        let storage =
+            AtmosphereStorage::new(num_wavel, num_location, num_legendre, num_deriv, stokes);
         let surface = Surface::new(num_wavel, stokes.num_stokes());
 
         // convert calc_derivatives to 0 for false
@@ -71,7 +72,7 @@ mod tests {
             num_legendre,
             num_deriv,
             calc_derivatives,
-            Stokes::Stokes1
+            Stokes::Stokes1,
         );
 
         assert_eq!(atmosphere.storage.ssa.shape(), &[num_location, num_wavel]);

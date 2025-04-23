@@ -1,7 +1,7 @@
 #[derive(Clone, Copy, Debug)]
 pub enum Stokes {
     Stokes1,
-    Stokes3
+    Stokes3,
 }
 
 impl Stokes {
@@ -20,12 +20,11 @@ impl Stokes {
     }
 }
 
-
-pub use anyhow::{Result, anyhow};
 pub use crate::atmosphere::Atmosphere;
 pub use crate::config::{Config, MultipleScatterSource, SingleScatterSource};
 pub use crate::engine::Engine;
 pub use crate::geometry::Geometry1D;
+pub use crate::geometry::{GeometryType, InterpolationMethod};
 pub use crate::output::Output;
-pub use crate::geometry::{InterpolationMethod, GeometryType};
 pub use crate::viewing_geometry::ViewingGeometry;
+pub use anyhow::{Result, anyhow};

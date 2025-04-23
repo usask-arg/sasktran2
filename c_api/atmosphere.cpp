@@ -43,22 +43,23 @@ AtmosphereStorage::AtmosphereStorage(int nlocation, int nwavel,
 }
 
 int AtmosphereStorage::get_derivative_mapping(const char* name,
-                                         DerivativeMapping** mapping) {
+                                              DerivativeMapping** mapping) {
     if (impl) {
-        auto storage1 = 
+        auto storage1 =
             dynamic_cast<sasktran2::atmosphere::AtmosphereGridStorageFull<1>*>(
                 impl.get());
         auto storage3 =
             dynamic_cast<sasktran2::atmosphere::AtmosphereGridStorageFull<3>*>(
                 impl.get());
-        if(storage1) {
+        if (storage1) {
             auto& map = storage1->get_derivative_mapping(name);
             *mapping = new DerivativeMapping(&map);
-        } else if(storage3) {
+        } else if (storage3) {
             auto& map = storage3->get_derivative_mapping(name);
             *mapping = new DerivativeMapping(&map);
         } else {
-            return -3; // Error: storage implementation is not AtmosphereGridStorageFull
+            return -3; // Error: storage implementation is not
+                       // AtmosphereGridStorageFull
         }
     } else {
         return -2; // Error: storage implementation is null
@@ -142,7 +143,9 @@ void sk_atmosphere_storage_destroy(AtmosphereStorage* storage) {
     delete storage;
 }
 
-int sk_atmosphere_storage_get_derivative_mapping(AtmosphereStorage *storage, const char *name, DerivativeMapping **mapping) {
+int sk_atmosphere_storage_get_derivative_mapping(AtmosphereStorage* storage,
+                                                 const char* name,
+                                                 DerivativeMapping** mapping) {
     if (storage == nullptr) {
         return -1; // Error: storage is null
     }

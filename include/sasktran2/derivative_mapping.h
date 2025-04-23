@@ -111,22 +111,22 @@ namespace sasktran2 {
 
         /**
          * @brief The number of wavelengths in the mapping
-         * 
-         * @return int 
+         *
+         * @return int
          */
         int num_wavel() const { return m_nwavel; }
 
         /**
          * @brief The number of internal locations in the mapping
-         * 
-         * @return int 
+         *
+         * @return int
          */
         int num_location() const { return m_ninternallocation; }
 
         /**
          * @brief The number of legendre terms in the mapping
-         * 
-         * @return int 
+         *
+         * @return int
          */
         int num_legendre() const { return m_nlegendre; }
 

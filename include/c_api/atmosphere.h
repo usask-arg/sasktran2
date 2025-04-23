@@ -18,8 +18,9 @@ sk_atmosphere_storage_create(int nlocation, int nwavel, int nphase_moments,
                              double* d_f, double* solar_irradiance);
 
 void sk_atmosphere_storage_destroy(AtmosphereStorage* storage);
-int sk_atmosphere_storage_get_derivative_mapping(
-    AtmosphereStorage* storage, const char* name, DerivativeMapping** mapping);
+int sk_atmosphere_storage_get_derivative_mapping(AtmosphereStorage* storage,
+                                                 const char* name,
+                                                 DerivativeMapping** mapping);
 
 // ATMOSPHERE METHODS
 Atmosphere* sk_atmosphere_create(AtmosphereStorage* storage, Surface* surface,

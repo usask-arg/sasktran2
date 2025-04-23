@@ -3,8 +3,8 @@ use crate::config::Config;
 use crate::ffi;
 use crate::geometry::Geometry1D;
 use crate::output::Output;
-use crate::viewing_geometry::ViewingGeometry;
 use crate::prelude::*;
+use crate::viewing_geometry::ViewingGeometry;
 
 pub struct Engine<'a> {
     pub engine: *mut ffi::Engine,

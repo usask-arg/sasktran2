@@ -4,8 +4,8 @@
 
 extern "C" {
 
-int sk_deriv_mapping_destroy(DerivativeMapping *mapping) {
-    if(mapping == nullptr) {
+int sk_deriv_mapping_destroy(DerivativeMapping* mapping) {
+    if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
     // Don't need to delete impl because it is owned by the atmosphere storage
@@ -14,7 +14,7 @@ int sk_deriv_mapping_destroy(DerivativeMapping *mapping) {
 }
 
 int sk_deriv_mapping_set_zero(DerivativeMapping* mapping) {
-    if(mapping == nullptr) {
+    if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
     mapping->impl->set_zero();
@@ -22,67 +22,72 @@ int sk_deriv_mapping_set_zero(DerivativeMapping* mapping) {
 }
 
 int sk_deriv_mapping_get_d_ssa(DerivativeMapping* mapping, double** ssa) {
-    if(mapping == nullptr) {
+    if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
 
-    if(!mapping->impl->native_mapping().d_ssa.has_value()) {
+    if (!mapping->impl->native_mapping().d_ssa.has_value()) {
         mapping->impl->allocate_ssa_derivatives();
     }
     *ssa = mapping->impl->native_mapping().d_ssa.value().data();
     return 0;
 }
 
-int sk_deriv_mapping_get_d_extinction(DerivativeMapping *mapping, double **extinction) {
-    if(mapping == nullptr) {
+int sk_deriv_mapping_get_d_extinction(DerivativeMapping* mapping,
+                                      double** extinction) {
+    if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
 
-    if(!mapping->impl->native_mapping().d_extinction.has_value()) {
+    if (!mapping->impl->native_mapping().d_extinction.has_value()) {
         mapping->impl->allocate_extinction_derivatives();
     }
     *extinction = mapping->impl->native_mapping().d_extinction.value().data();
     return 0;
 }
 
-int sk_deriv_mapping_get_scat_factor(DerivativeMapping *mapping, double **scat_factor) {
-    if(mapping == nullptr) {
+int sk_deriv_mapping_get_scat_factor(DerivativeMapping* mapping,
+                                     double** scat_factor) {
+    if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
 
-    if(!mapping->impl->native_mapping().scat_factor.has_value()) {
+    if (!mapping->impl->native_mapping().scat_factor.has_value()) {
         mapping->impl->allocate_legendre_derivatives();
     }
     *scat_factor = mapping->impl->native_mapping().scat_factor.value().data();
     return 0;
 }
 
-int sk_deriv_mapping_get_d_legendre(DerivativeMapping *mapping, double **d_legendre) {
-    if(mapping == nullptr) {
+int sk_deriv_mapping_get_d_legendre(DerivativeMapping* mapping,
+                                    double** d_legendre) {
+    if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
 
-    if(!mapping->impl->native_mapping().d_legendre.has_value()) {
+    if (!mapping->impl->native_mapping().d_legendre.has_value()) {
         mapping->impl->allocate_legendre_derivatives();
     }
     *d_legendre = mapping->impl->native_mapping().d_legendre.value().data();
     return 0;
 }
 
-int sk_deriv_mapping_get_d_emission(DerivativeMapping *mapping, double **d_emission) {
-    if(mapping == nullptr) {
+int sk_deriv_mapping_get_d_emission(DerivativeMapping* mapping,
+                                    double** d_emission) {
+    if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
 
-    if(!mapping->impl->native_mapping().d_emission.has_value()) {
+    if (!mapping->impl->native_mapping().d_emission.has_value()) {
         mapping->impl->allocate_emission_derivatives();
     }
     *d_emission = mapping->impl->native_mapping().d_emission.value().data();
     return 0;
 }
 
-int sk_deriv_mapping_get_scat_deriv_index(DerivativeMapping *mapping, int *scat_deriv_index) {
-    if(mapping == nullptr) {
+int sk_deriv_mapping_get_scat_deriv_index(DerivativeMapping* mapping,
+                                          int* scat_deriv_index) {
+    if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
 
@@ -90,8 +95,9 @@ int sk_deriv_mapping_get_scat_deriv_index(DerivativeMapping *mapping, int *scat_
     return 0;
 }
 
-int sk_deriv_mapping_set_scat_deriv_index(DerivativeMapping *mapping, int scat_deriv_index) {
-    if(mapping == nullptr) {
+int sk_deriv_mapping_set_scat_deriv_index(DerivativeMapping* mapping,
+                                          int scat_deriv_index) {
+    if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
 
@@ -99,8 +105,9 @@ int sk_deriv_mapping_set_scat_deriv_index(DerivativeMapping *mapping, int scat_d
     return 0;
 }
 
-int sk_deriv_mapping_set_interp_dim(DerivativeMapping *mapping, const char *name) {
-    if(mapping == nullptr) {
+int sk_deriv_mapping_set_interp_dim(DerivativeMapping* mapping,
+                                    const char* name) {
+    if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
 
@@ -108,8 +115,9 @@ int sk_deriv_mapping_set_interp_dim(DerivativeMapping *mapping, const char *name
     return 0;
 }
 
-int sk_deriv_mapping_set_assign_name(DerivativeMapping *mapping, const char *name) {
-    if(mapping == nullptr) {
+int sk_deriv_mapping_set_assign_name(DerivativeMapping* mapping,
+                                     const char* name) {
+    if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
 
@@ -117,8 +125,9 @@ int sk_deriv_mapping_set_assign_name(DerivativeMapping *mapping, const char *nam
     return 0;
 }
 
-int sk_deriv_mapping_set_log_radiance_space(DerivativeMapping *mapping, int log_radiance_space) {
-    if(mapping == nullptr) {
+int sk_deriv_mapping_set_log_radiance_space(DerivativeMapping* mapping,
+                                            int log_radiance_space) {
+    if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
 
@@ -126,17 +135,20 @@ int sk_deriv_mapping_set_log_radiance_space(DerivativeMapping *mapping, int log_
     return 0;
 }
 
-int sk_deriv_mapping_is_scattering_derivative(DerivativeMapping *mapping, int *is_scattering_derivative) {
-    if(mapping == nullptr) {
+int sk_deriv_mapping_is_scattering_derivative(DerivativeMapping* mapping,
+                                              int* is_scattering_derivative) {
+    if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
 
-    *is_scattering_derivative = mapping->impl->is_scattering_derivative() ? 1 : 0;
+    *is_scattering_derivative =
+        mapping->impl->is_scattering_derivative() ? 1 : 0;
     return 0;
 }
 
-int sk_deriv_mapping_get_num_legendre(DerivativeMapping *mapping, int *num_legendre) {
-    if(mapping == nullptr) {
+int sk_deriv_mapping_get_num_legendre(DerivativeMapping* mapping,
+                                      int* num_legendre) {
+    if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
 
@@ -144,8 +156,9 @@ int sk_deriv_mapping_get_num_legendre(DerivativeMapping *mapping, int *num_legen
     return 0;
 }
 
-int sk_deriv_mapping_get_num_location(DerivativeMapping *mapping, int *num_location) {
-    if(mapping == nullptr) {
+int sk_deriv_mapping_get_num_location(DerivativeMapping* mapping,
+                                      int* num_location) {
+    if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
 
@@ -153,14 +166,12 @@ int sk_deriv_mapping_get_num_location(DerivativeMapping *mapping, int *num_locat
     return 0;
 }
 
-int sk_deriv_mapping_get_num_wavel(DerivativeMapping *mapping, int *num_wavel) {
-    if(mapping == nullptr) {
+int sk_deriv_mapping_get_num_wavel(DerivativeMapping* mapping, int* num_wavel) {
+    if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
 
     *num_wavel = mapping->impl->num_wavel();
     return 0;
 }
-
-
 }

@@ -32,12 +32,14 @@ impl ViewingGeometry {
 
     pub fn num_rays(&self) -> Result<usize> {
         let mut num_rays = 0i32;
-        let error_code = unsafe {
-            ffi::sk_viewing_geometry_num_rays(self.viewing_geometry, &mut num_rays)
-        };
+        let error_code =
+            unsafe { ffi::sk_viewing_geometry_num_rays(self.viewing_geometry, &mut num_rays) };
 
         if error_code != 0 {
-            Err(anyhow!("Error getting number of rays: error code {}", error_code))
+            Err(anyhow!(
+                "Error getting number of rays: error code {}",
+                error_code
+            ))
         } else {
             Ok(num_rays as usize)
         }
