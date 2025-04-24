@@ -14,7 +14,6 @@ struct DerivativeMapping {
     sasktran2::DerivativeMapping* impl;
 
     DerivativeMapping(sasktran2::DerivativeMapping* mapping) : impl(mapping) {
-        fprintf(stderr, "Making Mapping\n");
     };
 };
 
@@ -30,10 +29,9 @@ struct AtmosphereStorage {
     std::unique_ptr<sasktran2::atmosphere::AtmosphereGridStorage> impl;
 
     AtmosphereStorage(int nlocation, int nwavel, int nphase_moments,
-                      int nstokes, int nderiv, double* ssa,
+                      int nstokes, double* ssa,
                       double* total_extinction, double* emission_source,
-                      double* f, double* leg_coeff, double* d_leg_coeff,
-                      double* d_f, double* solar_irradiance);
+                      double* leg_coeff, double* solar_irradiance);
 
     int get_derivative_mapping(const char* name, DerivativeMapping** mapping);
 };
@@ -55,6 +53,11 @@ struct OutputC {
     std::unique_ptr<sasktran2::OutputInterface> impl;
 
     OutputC(double* radiance, int nrad, int nstokes);
+
+    int assign_derivative_memory(const char* name,
+                           double* derivative_mapping,
+                            int nrad, int nstokes,
+                            int nderiv);
 };
 
 struct ViewingGeometry {

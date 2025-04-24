@@ -67,7 +67,7 @@ namespace sasktran2 {
          * typically just direct line of sight terms and no multiple scatter
          *
          */
-        enum class WeightingFunctionPrecision { full, reduced, limited };
+        enum class WeightingFunctionPrecision { full = 0, reduced = 1, limited = 2 };
 
         /** Enum determining the type of occulation source to include within the
          * model.
@@ -78,7 +78,7 @@ namespace sasktran2 {
          *
          *  'none' Removes the occultation source.
          */
-        enum class OccultationSource { standard, none };
+        enum class OccultationSource { standard = 0, none = 1};
 
         /** Enum determining the type of emission source to include within the
          * model.
@@ -88,7 +88,7 @@ namespace sasktran2 {
          *
          *  'none' Removes the emission source.
          */
-        enum class EmissionSource { standard, none };
+        enum class EmissionSource { standard = 0, none = 1 };
 
         /** Enum determining what basis to return back the Stokes vectors
          * components in
@@ -105,7 +105,7 @@ namespace sasktran2 {
          * look vector and observer position
          *
          */
-        enum class StokesBasis { standard, solar, observer };
+        enum class StokesBasis { standard = 0, solar = 1, observer = 2};
 
         /** Enum determining how to multithread the calculation.
          *
@@ -116,7 +116,7 @@ namespace sasktran2 {
          * one wavelength at a time
          *
          */
-        enum class ThreadingModel { wavelength, source };
+        enum class ThreadingModel { wavelength=0, source=1 };
 
         /** Enum determining the level of input validation to perform
          *
@@ -127,7 +127,7 @@ namespace sasktran2 {
          *     'disabled' Disables all input validation checks
          *
          */
-        enum class InputValidationMode { strict, standard, disabled };
+        enum class InputValidationMode { strict=0, standard=1, disabled=2 };
 
         /** Enum determining how to calculate the single scatter phase function
          *
@@ -139,7 +139,7 @@ namespace sasktran2 {
          * the Atmosphere class
          *
          */
-        enum class SingleScatterPhaseMode { from_legendre, user };
+        enum class SingleScatterPhaseMode { from_legendre=0, user=1 };
 
         Config();
 

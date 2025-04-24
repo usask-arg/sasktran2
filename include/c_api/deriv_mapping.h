@@ -37,6 +37,10 @@ int sk_deriv_mapping_set_log_radiance_space(DerivativeMapping* mapping,
                                             int log_radiance_space);
 int sk_deriv_mapping_is_scattering_derivative(DerivativeMapping* mapping,
                                               int* is_scattering_derivative);
+
+int sk_deriv_mapping_get_num_output(DerivativeMapping* mapping,
+                                   int* num_output);
+
 // INTERPOLATOR
 
 #ifdef __cplusplus

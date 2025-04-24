@@ -1,0 +1,80 @@
+use std::collections::HashMap;
+use std::ffi::CString;
+
+use sasktran2_sys::ffi;
+use ndarray::*;
+
+pub struct Output {
+    pub output: *mut ffi::OutputC,
+    pub radiance: Array3<f64>,
+    num_wavel: usize,
+    num_los: usize,
+    num_stokes: usize,
+    pub d_radiance: HashMap<String, Array4<f64>>,
+}
+
+impl Output {
+    pub fn new(num_wavel: usize, num_los: usize, num_stokes: usize) -> Self {
+        let mut radiance = Array3::<f64>::zeros((num_wavel, num_los, num_stokes));
+
+        let num_radiance = num_wavel * num_los * num_stokes;
+        let radiance_ptr = radiance.as_mut_ptr();
+        let output =
+            unsafe { ffi::sk_output_create(radiance_ptr, num_radiance as i32, num_stokes as i32) };
+
+        Output {
+            output: output,
+            radiance: radiance,
+            num_wavel: num_wavel,
+            num_los: num_los,
+            num_stokes: num_stokes,
+            d_radiance: HashMap::new(),
+        }
+    }
+
+    pub fn with_derivative(
+        &mut self,
+        deriv_name: &str,
+        num_deriv_output: usize,
+    ) -> &mut Self {
+        let mut d_radiance = Array4::<f64>::zeros((
+            num_deriv_output,
+            self.num_wavel,
+            self.num_los,
+            self.num_stokes,
+        ));
+        let d_radiance_ptr = d_radiance.as_mut_ptr();
+
+        let nrad = (self.num_wavel * self.num_los) as i32;
+        
+        let c_deriv_name = CString::new(deriv_name).unwrap();
+
+        let result = unsafe {
+            ffi::sk_output_assign_derivative_memory(self.output, c_deriv_name.as_ptr(), d_radiance_ptr, nrad, self.num_stokes as i32, num_deriv_output as i32)
+        };
+
+        if result != 0 {
+            panic!("Error assigning derivative memory");
+        }
+
+        self
+    }
+}
+
+impl Drop for Output {
+    fn drop(&mut self) {
+        unsafe {
+            ffi::sk_output_destroy(self.output);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_output() {
+        let mut output = Output::new(10, 10, 3);
+    }
+}

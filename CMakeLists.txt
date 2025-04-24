@@ -16,7 +16,7 @@ if(UNIX)
   add_definitions(
     "-Wno-inconsistent-missing-override -Wno-suggest-override -Wno-comment -Wno-deprecated-declarations -Wno-psabi"
   )
-  enable_language(Fortran)
+  #enable_language(Fortran)
 endif()
 
 execute_process(
@@ -103,18 +103,6 @@ else()
 
   target_link_libraries(sasktran2BuildProperties INTERFACE spdloglib)
 endif()
-
-FetchContent_Declare(
-  Corrosion
-  GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
-  GIT_TAG v0.5 # Optionally specify a commit hash, version tag or branch here
-)
-# Set any global configuration variables such as `Rust_TOOLCHAIN` before this
-# line!
-FetchContent_MakeAvailable(Corrosion)
-
-# Import targets defined in a package or workspace manifest `Cargo.toml` file
-corrosion_import_crate(MANIFEST_PATH Cargo.toml)
 
 # target_link_libraries(sasktran2BuildProperties INTERFACE sk_core)
 
@@ -304,7 +292,18 @@ option(BUILD_PYTHON "True if Building Python Files" ON)
 if(BUILD_PYTHON)
   add_subdirectory(pybind11)
 
-  # corrosion_import_crate(MANIFEST_PATH rust/pybindings/Cargo.toml)
+
+  FetchContent_Declare(
+  Corrosion
+  GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
+  GIT_TAG v0.5 # Optionally specify a commit hash, version tag or branch here
+  )
+  # Set any global configuration variables such as `Rust_TOOLCHAIN` before this
+  # line!
+  FetchContent_MakeAvailable(Corrosion)
+
+  # Import targets defined in a package or workspace manifest `Cargo.toml` file
+  corrosion_import_crate(MANIFEST_PATH Cargo.toml)
   corrosion_set_env_vars(_core_rust PYO3_PYTHON=${Python_EXECUTABLE})
 
   if(WIN32)
@@ -337,7 +336,7 @@ if(BUILD_PYTHON)
   add_custom_command(
     OUTPUT ${PY_MODULE_OUTPUT}
     COMMAND ${CMAKE_COMMAND} -E copy ${RUST_BUILD_PATH} ${PY_MODULE_OUTPUT}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/rust/pybindings
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/rust/sasktran2-py-ext
     COMMENT "Building and copying Rust PyO3 module to Python package"
     VERBATIM)
 

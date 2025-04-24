@@ -27,4 +27,26 @@ void sk_geometry1d_destroy(Geometry1D* geometry) { delete geometry; }
 int sk_geometry1d_get_num_altitudes(const Geometry1D* geometry) {
     return static_cast<int>(geometry->impl->altitude_grid().grid().size());
 }
+
+int sk_geometry1d_get_altitudes(const Geometry1D *geometry, double *altitudes) {
+    if (geometry == nullptr || altitudes == nullptr) {
+        return -1; // Error: null pointer
+    }
+    const auto& grid = geometry->impl->altitude_grid().grid();
+    for (size_t i = 0; i < grid.size(); ++i) {
+        altitudes[i] = grid[i];
+    }
+    return 0; // Success
+}
+
+int sk_geometry1d_get_refractive_index_ptr(const Geometry1D* geometry,
+                                       double** refractive_index) {
+    if (geometry == nullptr || refractive_index == nullptr) {
+        return -1; // Error: null pointer
+    }
+    auto& n = geometry->impl->refractive_index();
+    *refractive_index = n.data();
+    return 0; // Success
+}
+
 }

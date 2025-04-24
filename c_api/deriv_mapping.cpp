@@ -174,4 +174,14 @@ int sk_deriv_mapping_get_num_wavel(DerivativeMapping* mapping, int* num_wavel) {
     *num_wavel = mapping->impl->num_wavel();
     return 0;
 }
+
+int sk_deriv_mapping_get_num_output(DerivativeMapping *mapping, int *num_output) {
+    if (mapping == nullptr) {
+        return -1; // Error: mapping is null
+    }
+
+    *num_output = mapping->impl->num_output();
+    return 0;
+}
+
 }

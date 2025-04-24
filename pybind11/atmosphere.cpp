@@ -43,6 +43,9 @@ void declareAtmosphereStorage(py::module_& m, const std::string& suffix) {
         .def(py::init<int, int, int>())
         .def("resize_derivatives", &AtmosphereGridStorage::resize_derivatives,
              "num_deriv"_a)
+        .def("finalize_scattering_derivatives",
+             &AtmosphereGridStorage::finalize_scattering_derivatives,
+             "num_deriv"_a)
         .def("get_derivative_mapping",
              &AtmosphereGridStorage::get_derivative_mapping, "name"_a,
              py::return_value_policy::reference)

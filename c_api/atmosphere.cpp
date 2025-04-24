@@ -6,11 +6,10 @@
 
 AtmosphereStorage::AtmosphereStorage(int nlocation, int nwavel,
                                      int nphase_moments, int nstokes,
-                                     int nderiv, double* ssa,
+                                    double* ssa,
                                      double* total_extinction,
-                                     double* emission_source, double* f,
-                                     double* leg_coeff, double* d_leg_coeff,
-                                     double* d_f, double* solar_irradiance) {
+                                     double* emission_source,
+                                     double* leg_coeff, double* solar_irradiance) {
     // Create the Eigen Maps
     Eigen::Map<Eigen::MatrixXd> ssa_map(ssa, nlocation, nwavel);
     Eigen::Map<Eigen::MatrixXd> total_extinction_map(total_extinction,
@@ -19,24 +18,18 @@ AtmosphereStorage::AtmosphereStorage(int nlocation, int nwavel,
                                                     nwavel);
     Eigen::TensorMap<Eigen::Tensor<double, 3>> leg_coeff_map(
         leg_coeff, nphase_moments, nlocation, nwavel);
-    Eigen::TensorMap<Eigen::Tensor<double, 4>> d_leg_coeff_map(
-        d_leg_coeff, nphase_moments, nlocation, nwavel, nderiv);
-    Eigen::TensorMap<Eigen::Tensor<double, 3>> d_f_map(d_f, nlocation, nwavel,
-                                                       nderiv);
     Eigen::Map<Eigen::VectorXd> solar_irradiance_map(solar_irradiance, nwavel);
-    Eigen::Map<Eigen::Matrix<sasktran2::types::leg_coeff, -1, -1>> f_map(
-        f, nphase_moments, nlocation);
 
     if (nstokes == 1) {
         impl = std::make_unique<
             sasktran2::atmosphere::AtmosphereGridStorageFull<1>>(
-            ssa_map, total_extinction_map, emission_source_map, f_map,
-            leg_coeff_map, d_leg_coeff_map, d_f_map, solar_irradiance_map);
+            ssa_map, total_extinction_map, emission_source_map,
+            leg_coeff_map,  solar_irradiance_map);
     } else if (nstokes == 3) {
         impl = std::make_unique<
             sasktran2::atmosphere::AtmosphereGridStorageFull<3>>(
-            ssa_map, total_extinction_map, emission_source_map, f_map,
-            leg_coeff_map, d_leg_coeff_map, d_f_map, solar_irradiance_map);
+            ssa_map, total_extinction_map, emission_source_map,
+            leg_coeff_map,  solar_irradiance_map);
     } else {
         impl = nullptr;
     }
@@ -54,9 +47,11 @@ int AtmosphereStorage::get_derivative_mapping(const char* name,
         if (storage1) {
             auto& map = storage1->get_derivative_mapping(name);
             *mapping = new DerivativeMapping(&map);
+            return 0;
         } else if (storage3) {
             auto& map = storage3->get_derivative_mapping(name);
             *mapping = new DerivativeMapping(&map);
+            return 0;
         } else {
             return -3; // Error: storage implementation is not
                        // AtmosphereGridStorageFull
@@ -129,13 +124,12 @@ Atmosphere::Atmosphere(AtmosphereStorage* storage, Surface* surface,
 extern "C" {
 AtmosphereStorage*
 sk_atmosphere_storage_create(int nlocation, int nwavel, int nphase_moments,
-                             int nstokes, int nderiv, double* ssa,
+                             int nstokes, double* ssa,
                              double* total_extinction, double* emission_source,
-                             double* f, double* leg_coeff, double* d_leg_coeff,
-                             double* d_f, double* solar_irradiance) {
+                             double* leg_coeff, double* solar_irradiance) {
     return new AtmosphereStorage(nlocation, nwavel, nphase_moments, nstokes,
-                                 nderiv, ssa, total_extinction, emission_source,
-                                 f, leg_coeff, d_leg_coeff, d_f,
+                                 ssa, total_extinction, emission_source,
+                                 leg_coeff,
                                  solar_irradiance);
 }
 
@@ -152,6 +146,109 @@ int sk_atmosphere_storage_get_derivative_mapping(AtmosphereStorage* storage,
 
     return storage->get_derivative_mapping(name, mapping);
 }
+
+int sk_atmosphere_storage_get_derivative_mapping_by_index(AtmosphereStorage *storage, int index, DerivativeMapping **mapping) {
+    if(storage == nullptr) {
+        return -1; // Error: storage is null
+    }
+    if(storage->impl == nullptr) {
+        return -2; // Error: storage implementation is null
+    }
+
+    auto* impl1 = dynamic_cast<sasktran2::atmosphere::AtmosphereGridStorageFull<1>*>(storage->impl.get());
+    auto* impl3 = dynamic_cast<sasktran2::atmosphere::AtmosphereGridStorageFull<3>*>(storage->impl.get());
+
+    if(impl1) {
+        auto& mapping_list = impl1->derivative_mappings();
+        auto it = mapping_list.begin();
+        std::advance(it, index);
+
+        if(it != mapping_list.end()) {
+            auto& map = it->second;
+            *mapping = new DerivativeMapping(&map);
+            return 0;
+        } else {
+            return -3; // Error: index out of bounds
+        }
+    } else if (impl3) {
+        auto& mapping_list = impl1->derivative_mappings();
+        auto it = mapping_list.begin();
+        std::advance(it, index);
+
+        if(it != mapping_list.end()) {
+            auto& map = it->second;
+            *mapping = new DerivativeMapping(&map);
+            return 0;
+        } else {
+            return -3; // Error: index out of bounds
+        }
+    } else {
+        return -4; // Error: storage implementation is not AtmosphereGridStorageFull
+    }
+}
+
+int sk_atmosphere_storage_get_num_derivative_mappings(AtmosphereStorage *storage, int *num_mappings) {
+    if(storage == nullptr) {
+        return -1; // Error: storage is null
+    }
+    if(storage->impl == nullptr) {
+        return -2; // Error: storage implementation is null
+    }
+
+    auto* impl1 = dynamic_cast<sasktran2::atmosphere::AtmosphereGridStorageFull<1>*>(storage->impl.get());
+    auto* impl3 = dynamic_cast<sasktran2::atmosphere::AtmosphereGridStorageFull<3>*>(storage->impl.get());
+
+    if(impl1) {
+        *num_mappings = impl1->derivative_mappings().size();
+        return 0;
+    } else if (impl3) {
+        *num_mappings = impl3->derivative_mappings().size();
+        return 0;
+    } else {
+        return -3; // Error: storage implementation is not AtmosphereGridStorageFull
+    }
+}
+
+int sk_atmosphere_storage_get_derivative_mapping_name(AtmosphereStorage *storage, int index, const char **name) {
+    if(storage == nullptr) {
+        return -1; // Error: storage is null
+    }
+    if(storage->impl == nullptr) {
+        return -2; // Error: storage implementation is null
+    }
+
+    auto* impl1 = dynamic_cast<sasktran2::atmosphere::AtmosphereGridStorageFull<1>*>(storage->impl.get());
+    auto* impl3 = dynamic_cast<sasktran2::atmosphere::AtmosphereGridStorageFull<3>*>(storage->impl.get());
+
+    if(impl1) {
+        auto& mapping_list = impl1->derivative_mappings();
+        auto it = mapping_list.begin();
+        std::advance(it, index);
+
+        if(it != mapping_list.end()) {
+            auto& map = it->second;
+            *name = it->first.c_str();
+            return 0;
+        } else {
+            return -3; // Error: index out of bounds
+        }
+    } else if (impl3) {
+        auto& mapping_list = impl1->derivative_mappings();
+        auto it = mapping_list.begin();
+        std::advance(it, index);
+
+        if(it != mapping_list.end()) {
+            auto& map = it->second;
+            *name = it->first.c_str();
+            return 0;
+        } else {
+            return -3; // Error: index out of bounds
+        }
+    } else {
+        return -4; // Error: storage implementation is not AtmosphereGridStorageFull
+    }
+}
+
 
 Surface* sk_surface_create(int nwavel, int nstokes) {
     return new Surface(nwavel, nstokes);

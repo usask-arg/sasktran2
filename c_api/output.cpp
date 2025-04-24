@@ -16,10 +16,47 @@ OutputC::OutputC(double* radiance, int nrad, int nstokes) {
     }
 }
 
+int OutputC::assign_derivative_memory(const char* name,
+                                      double* derivative_mapping,
+                                      int nrad, int nstokes,
+                                      int nderiv
+                                    ) {
+    if (impl == nullptr) {
+        return -1; // Error: Output not initialized
+    }
+
+    // Memory structure is (nrad * nstokes, nderiv)
+    Eigen::Map<Eigen::MatrixXd> derivative_map(derivative_mapping, nrad * nstokes, nderiv);
+
+    auto* impl1 = dynamic_cast<sasktran2::OutputC<1>*>(impl.get());
+    auto* impl3 = dynamic_cast<sasktran2::OutputC<3>*>(impl.get());
+
+    if(impl1) {
+        impl1->set_derivative_mapping_memory(name, derivative_map);
+        return 0;
+    } else if (impl3) {
+        impl3->set_derivative_mapping_memory(name, derivative_map);
+        return 0;
+    } else {
+        // Handle error case
+        return -1;
+    }
+}
+
+
 extern "C" {
 OutputC* sk_output_create(double* radiance, int nrad, int nstokes) {
     return new OutputC(radiance, nrad, nstokes);
 }
 
 void sk_output_destroy(OutputC* output) { delete output; }
+
+int sk_output_assign_derivative_memory(OutputC *output, const char *name, double *derivative_mapping, int nrad, int nstokes, int nderiv) {
+    if(output->impl == nullptr) {
+        return -1; // Error: Output not initialized
+    }
+
+    output->assign_derivative_memory(name, derivative_mapping, nrad, nstokes, nderiv);
+}
+
 }

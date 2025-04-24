@@ -1,0 +1,119 @@
+use numpy::PyArray1;
+use numpy::PyArray2;
+use numpy::PyArray3;
+use pyo3::prelude::*;
+use crate::prelude::*;
+use sasktran2_rs::bindings::atmosphere;
+use sasktran2_rs::bindings::atmosphere_storage;
+use sasktran2_rs::bindings::prelude::Stokes;
+use crate::derivative_mapping::PyDerivativeMappingView;
+
+
+#[pyclass(unsendable)]
+pub struct PyAtmosphere {
+    pub atmosphere: atmosphere::Atmosphere,
+}
+
+#[pyclass(unsendable)]
+pub struct PyAtmosphereStorage {
+    pub storage: atmosphere_storage::AtmosphereStorage,
+}
+
+#[pyclass(unsendable)]
+pub struct PyAtmosphereStorageView {
+    storage: &'static atmosphere_storage::AtmosphereStorage,
+}
+
+#[pymethods]
+impl PyAtmosphere {
+    #[new]
+    fn new(
+        num_wavel: usize,
+        num_location: usize,
+        num_legendre: usize,
+        calc_derivatives: bool,
+        num_stokes: usize
+    ) -> PyResult<Self> {
+        let stokes = match num_stokes {
+            1 => Stokes::Stokes1,
+            3 => Stokes::Stokes3,
+            _ => panic!("num_stokes must be 1, 3"),
+        };
+
+        Ok(Self {
+            atmosphere: atmosphere::Atmosphere::new(
+                num_wavel,
+                num_location,
+                num_legendre,
+                calc_derivatives,
+                stokes
+            ),
+        })
+    }
+
+    #[getter]
+    fn get_storage(
+        &self,
+    ) -> PyResult<Py<PyAtmosphereStorageView>> {
+        let storage = &self.atmosphere.storage;
+        let storage_view = PyAtmosphereStorageView {
+            storage: unsafe { std::mem::transmute(storage) },
+        };
+        Python::with_gil(|py| {
+            Py::new(py, storage_view)
+        })
+    }
+}
+
+
+#[pymethods]
+impl PyAtmosphereStorageView {
+    #[getter]
+    fn get_ssa<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let array = &this.borrow().storage.ssa;
+
+        unsafe { Ok(PyArray2::borrow_from_array(array, this.into_any())) }
+    }
+
+    #[getter]
+    fn get_total_extinction<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let array = &this.borrow().storage.total_extinction;
+
+        unsafe { Ok(PyArray2::borrow_from_array(array, this.into_any())) }
+    }
+
+    #[getter]
+    fn get_emission_source<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let array = &this.borrow().storage.emission_source;
+
+        unsafe { Ok(PyArray2::borrow_from_array(array, this.into_any())) }
+    }
+
+    #[getter]
+    fn get_leg_coeff<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyArray3<f64>>> {
+        let array = &this.borrow().storage.leg_coeff;
+
+        unsafe { Ok(PyArray3::borrow_from_array(array, this.into_any())) }
+    }
+
+    #[getter]
+    fn get_solar_irradiance<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyArray1<f64>>> {
+        let array = &this.borrow().storage.solar_irradiance;
+
+        unsafe { Ok(PyArray1::borrow_from_array(array, this.into_any())) }
+    }
+
+    fn get_derivative_mapping<'py>(&self, name: &str) -> PyResult<Py<PyDerivativeMappingView>> {
+        let mapping = self.storage.get_derivative_mapping(name).unwrap();
+
+        // Call this a view because DerivativeMapping is really just a view into the C++
+        let mapping_view = PyDerivativeMappingView {
+            derivative_mapping: mapping,
+        };
+
+        Python::with_gil(|py| {
+            Py::new(py, mapping_view)
+        })
+    }
+
+}

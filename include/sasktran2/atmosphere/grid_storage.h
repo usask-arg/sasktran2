@@ -30,13 +30,8 @@ namespace sasktran2::atmosphere {
             Eigen::MatrixXd ssa;              // location, wavel
             Eigen::MatrixXd total_extinction; // location, wavel
             Eigen::MatrixXd emission_source;  // location, wavel
-            Eigen::Matrix<sasktran2::types::leg_coeff, -1, -1>
-                f; // location, wavel, (Delta scaling factor)
             Eigen::Tensor<double, 3> leg_coeff; // legendre order (polarized
                                                 // stacked), location, wavel
-            Eigen::Tensor<double, 4>
-                d_leg_coeff; // (legendre order, location, wavel, deriv)
-            Eigen::Tensor<double, 3> d_f;     // (location, wavel, deriv)
             Eigen::VectorXd solar_irradiance; // wavel
         };
 
@@ -51,7 +46,7 @@ namespace sasktran2::atmosphere {
         Eigen::MatrixXd unscaled_total_extinction; // location, wavel
 
         // Scattering parameters
-        Eigen::Map<Eigen::Matrix<sasktran2::types::leg_coeff, -1, -1>>
+        Eigen::Matrix<sasktran2::types::leg_coeff, -1, -1>
             f; // location, wavel, (Delta scaling factor)
 
         int applied_f_order;    // Order of the delta_m scaling
@@ -61,9 +56,9 @@ namespace sasktran2::atmosphere {
         int scatderivstart;
         Eigen::TensorMap<Eigen::Tensor<double, 3>>
             leg_coeff; // legendre order (polarized stacked), location, wavel
-        Eigen::TensorMap<Eigen::Tensor<double, 4>>
+        Eigen::Tensor<double, 4>
             d_leg_coeff; // (legendre order, location, wavel, deriv)
-        Eigen::TensorMap<Eigen::Tensor<double, 3>>
+        Eigen::Tensor<double, 3>
             d_f; // (location, wavel, deriv)
 
         Eigen::MatrixXi
@@ -84,14 +79,10 @@ namespace sasktran2::atmosphere {
             Eigen::Map<Eigen::MatrixXd> ssa,
             Eigen::Map<Eigen::MatrixXd> total_extinction,
             Eigen::Map<Eigen::MatrixXd> emission_source,
-            Eigen::Map<Eigen::Matrix<sasktran2::types::leg_coeff, -1, -1>> f,
             Eigen::TensorMap<Eigen::Tensor<double, 3>> leg_coeff,
-            Eigen::TensorMap<Eigen::Tensor<double, 4>> d_leg_coeff,
-            Eigen::TensorMap<Eigen::Tensor<double, 3>> d_f,
             Eigen::Map<Eigen::VectorXd> solar_irradiance)
             : ssa(ssa), total_extinction(total_extinction),
-              emission_source(emission_source), f(f), leg_coeff(leg_coeff),
-              d_leg_coeff(d_leg_coeff), d_f(d_f),
+              emission_source(emission_source), leg_coeff(leg_coeff),
               solar_irradiance(solar_irradiance) {
             int nlocation = ssa.rows();
             int nwavel = ssa.cols();
@@ -110,14 +101,14 @@ namespace sasktran2::atmosphere {
 
         AtmosphereGridStorageFull(int nwavel, int nlocation, int numlegendre)
             : ssa(nullptr, 0, 0), total_extinction(nullptr, 0, 0),
-              emission_source(nullptr, 0, 0), f(nullptr, 0, 0),
-              leg_coeff(nullptr, 0, 0, 0), d_leg_coeff(nullptr, 0, 0, 0, 0),
-              d_f(nullptr, 0, 0, 0), solar_irradiance(nullptr, 0) {
+              emission_source(nullptr, 0, 0), 
+              leg_coeff(nullptr, 0, 0, 0), 
+              solar_irradiance(nullptr, 0) {
             // Allocate internal storage
             m_internal_storage.ssa.resize(nlocation, nwavel);
             m_internal_storage.total_extinction.resize(nlocation, nwavel);
             m_internal_storage.emission_source.resize(nlocation, nwavel);
-            m_internal_storage.f.resize(nlocation, nwavel);
+            f.resize(nlocation, nwavel);
             m_internal_storage.solar_irradiance.resize(nwavel);
             if constexpr (NSTOKES == 1) {
                 m_internal_storage.leg_coeff.resize(numlegendre, nlocation,
@@ -134,9 +125,6 @@ namespace sasktran2::atmosphere {
                 m_internal_storage.total_extinction.data(), nlocation, nwavel);
             new (&emission_source) Eigen::Map<Eigen::MatrixXd>(
                 m_internal_storage.emission_source.data(), nlocation, nwavel);
-            new (&f)
-                Eigen::Map<Eigen::Matrix<sasktran2::types::leg_coeff, -1, -1>>(
-                    m_internal_storage.f.data(), nlocation, nwavel);
             new (&solar_irradiance) Eigen::Map<Eigen::VectorXd>(
                 m_internal_storage.solar_irradiance.data(), nwavel);
             new (&leg_coeff) Eigen::TensorMap<Eigen::Tensor<double, 3>>(
@@ -173,17 +161,9 @@ namespace sasktran2::atmosphere {
             int nwavel = leg_coeff.dimension(2);
             scatderivstart = 2 * numgeo;
 
-            m_internal_storage.d_leg_coeff.resize(legendre, numgeo, nwavel,
+            d_leg_coeff.resize(legendre, numgeo, nwavel,
                                                   numderiv);
-            m_internal_storage.d_f.resize(numgeo, nwavel, numderiv);
-
-            // Placement new into the internal maps
-            new (&d_leg_coeff) Eigen::TensorMap<Eigen::Tensor<double, 4>>(
-                m_internal_storage.d_leg_coeff.data(), legendre, numgeo, nwavel,
-                numderiv);
-
-            new (&d_f) Eigen::TensorMap<Eigen::Tensor<double, 3>>(
-                m_internal_storage.d_f.data(), numgeo, nwavel, numderiv);
+            d_f.resize(numgeo, nwavel, numderiv);
 
             d_leg_coeff.setZero();
             d_f.setZero();
@@ -194,6 +174,42 @@ namespace sasktran2::atmosphere {
             for (int i = 0; i < numderiv; ++i) {
                 d_max_order[i].resize(numgeo, nwavel);
                 d_max_order[i].setZero();
+            }
+        }
+
+        /**
+         * @brief Resizes the internal scattering derivative objects and copies the d_leg_coeff values
+         *
+         * This is called after all of the derivative mappings have been set
+         * 
+         * @param numderiv 
+         */
+        void finalize_scattering_derivatives(int numderiv) {
+            // This replaces some code that was in the Python interface before
+            /*
+                # Now we need to resize the phase derivative storage if necessary, and set the scattering derivatives
+                    self.storage.resize_derivatives(num_scat_derivs)
+
+                    scat_index = 0
+                    for _, mapping in self.storage.derivative_mappings.items():
+                        if mapping.is_scattering_derivative:
+                            self.storage.d_leg_coeff[:, :, :, scat_index] = mapping.d_leg_coeff
+                            mapping.scat_deriv_index = scat_index
+                            scat_index += 1
+
+            */
+            resize_derivatives(numderiv);
+            int scat_index = 0;
+            for (auto& [name, mapping] : m_derivative_mappings) {
+                if (mapping.is_scattering_derivative()) {
+                    NativeDerivativeMapping& native_mapping =
+                        mapping.native_mapping();
+                    d_leg_coeff.chip(scat_index, 3) = 
+                        native_mapping.d_legendre.value();
+
+                    native_mapping.scat_deriv_index = scat_index;
+                    scat_index++;
+                }
             }
         }
 

@@ -186,7 +186,7 @@ namespace sasktran2 {
       private:
         Eigen::Map<Eigen::VectorXd> m_radiance;
 
-        std::map<std::string, Eigen::MatrixXd> m_derivatives;
+        std::map<std::string, Eigen::Map<Eigen::MatrixXd>> m_derivatives;
         std::map<std::string, Eigen::MatrixXd> m_surface_derivatives;
         std::vector<Eigen::MatrixXd> m_native_thread_storage;
 
@@ -194,6 +194,13 @@ namespace sasktran2 {
 
       public:
         OutputC(Eigen::Map<Eigen::VectorXd> radiance) : m_radiance(radiance){};
+
+        void set_derivative_mapping_memory(
+            const std::string& name,
+            Eigen::Map<Eigen::MatrixXd> derivative_mapping) {
+              m_derivatives.insert(
+                  {name, derivative_mapping}); // Insert the mapping into the map
+        }
 
         void assign(const sasktran2::Dual<double, sasktran2::dualstorage::dense,
                                           NSTOKES>& radiance,

@@ -433,14 +433,7 @@ class Atmosphere:
 
         # Now we need to resize the phase derivative storage if necessary, and set the scattering derivatives
         if num_scat_derivs > 0:
-            self.storage.resize_derivatives(num_scat_derivs)
-
-            scat_index = 0
-            for _, mapping in self.storage.derivative_mappings.items():
-                if mapping.is_scattering_derivative:
-                    self.storage.d_leg_coeff[:, :, :, scat_index] = mapping.d_leg_coeff
-                    mapping.scat_deriv_index = scat_index
-                    scat_index += 1
+            self.storage.finalize_scattering_derivatives(num_scat_derivs)
 
         # Store the unscaled optical properties for use in the derivative mappings
         self._unscaled_ssa = copy(self.storage.ssa)
