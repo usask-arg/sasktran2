@@ -42,6 +42,7 @@ struct Engine {
                 return -2; // Error: invalid number of Stokes parameters
             }
         }
+        return -1; // Error: impl is null
     }
 };
 

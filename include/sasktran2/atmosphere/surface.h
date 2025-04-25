@@ -15,6 +15,12 @@ namespace sasktran2::atmosphere {
     template <int NSTOKES> struct Surface;
 
     namespace brdf {
+        /*
+         * Interface for the BRDF function. To erase the template
+         */
+        struct BRDFInterface {
+            virtual ~BRDFInterface() = default;
+        };
 
         /**
          * Base class that defines the interface for a Biderctional Reflectance
@@ -22,7 +28,7 @@ namespace sasktran2::atmosphere {
          *
          * @tparam NSTOKES
          */
-        template <int NSTOKES> struct BRDF {
+        template <int NSTOKES> struct BRDF : public BRDFInterface {
             virtual ~BRDF() = default;
 
             /**
@@ -365,29 +371,50 @@ namespace sasktran2::atmosphere {
      */
     template <int NSTOKES> struct Surface : SurfaceInterface {
       private:
+        struct InternalStorage {
+            Eigen::MatrixXd brdf_args;
+            Eigen::VectorXd emission;
+        };
+
+        InternalStorage m_internal_storage;
+
         int m_num_wavel;
         std::shared_ptr<brdf::BRDF<NSTOKES>> m_brdf_object;
-        Eigen::MatrixXd m_brdf_args;
+        Eigen::Map<Eigen::MatrixXd> m_brdf_args;
         std::vector<Eigen::MatrixXd> m_d_brdf_args;
-        Eigen::VectorXd m_emission;
+        Eigen::Map<Eigen::VectorXd> m_emission;
 
         std::map<std::string, SurfaceDerivativeMapping>
             m_derivative_mappings; /** Derivatives
                                 for the
                                 atmosphere */
 
-        void allocate(int num_wavel) {
-            m_brdf_args.resize(m_brdf_object->num_args(), num_wavel);
+        void alloc_derivatives() {
             m_d_brdf_args.resize(m_brdf_object->num_deriv());
             for (int i = 0; i < m_brdf_object->num_deriv(); ++i) {
-                m_d_brdf_args[i].resize(m_brdf_object->num_args(), num_wavel);
+                m_d_brdf_args[i].resize(m_brdf_object->num_args(), m_num_wavel);
 
                 m_d_brdf_args[i].setConstant(0.0);
                 m_d_brdf_args[i](i, Eigen::all).setConstant(1.0);
             }
+        }
+
+        void allocate(int num_wavel) {
+
+            m_internal_storage.brdf_args.resize(m_brdf_object->num_args(), num_wavel);
+            // placement new into the map
+            new (&m_brdf_args) Eigen::Map<Eigen::MatrixXd>(
+                m_internal_storage.brdf_args.data(), m_brdf_object->num_args(),
+                num_wavel);
+
+            alloc_derivatives();
+
             m_brdf_args.setZero();
-            m_emission.resize(num_wavel);
-            m_emission.setZero();
+            m_internal_storage.emission.resize(num_wavel);
+
+            // placement new into the map
+            new (&m_emission) Eigen::Map<Eigen::MatrixXd>(
+                m_internal_storage.emission.data(), num_wavel, 1);
         }
 
       public:
@@ -447,15 +474,34 @@ namespace sasktran2::atmosphere {
         /**
          * @brief Construct a new Surface object
          *
-         * Upon construction the BRDF object is set to a Lambertian BRDF
+         * Upon construction the BRDF object is set to a Lambertian BRDF if
+         * allocate_default_brdf is true (default)
          *
          * @param num_wavel
          */
-        Surface(int num_wavel) {
-            m_num_wavel = num_wavel;
-            m_brdf_object = std::make_shared<brdf::Lambertian<NSTOKES>>();
-            allocate(num_wavel);
+        Surface(int num_wavel, bool allocate_default_brdf = true) :
+            m_num_wavel(num_wavel),
+            m_brdf_args(nullptr, 0, 0),
+            m_emission(nullptr, 0, 0) {
+            if (allocate_default_brdf) {
+                m_brdf_object = std::make_shared<brdf::Lambertian<NSTOKES>>();
+                allocate(num_wavel);
+            }
+            m_emission.setZero();
         }
+
+
+        /**
+         * @brief 
+         * 
+         *
+         * @param num_wavel
+         */
+         Surface(int num_wavel, Eigen::Map<Eigen::VectorXd> emission) :
+         m_num_wavel(num_wavel),
+         m_brdf_args(nullptr, 0, 0),
+         m_emission(emission) {
+         }
 
         /**
          * @brief The internal BRDF object
@@ -477,18 +523,33 @@ namespace sasktran2::atmosphere {
         }
 
         /**
+         * @brief Set the brdf object object with shared memory
+         *
+         * @param brdf
+         */
+         void set_brdf_object_with_memory(std::shared_ptr<brdf::BRDF<NSTOKES>> brdf, Eigen::Map<Eigen::MatrixXd> brdf_args) {
+            m_brdf_object = std::move(brdf);
+            // placement new into the map
+            new (&m_brdf_args) Eigen::Map<Eigen::MatrixXd>(
+                brdf_args.data(), m_brdf_object->num_args(),
+                m_num_wavel);
+            // Only need to alloc the derivatives, not the full object
+            alloc_derivatives();
+        }
+
+        /**
          * @brief The arguments for the BRDF function
          *
          * @return Eigen::MatrixXd& shape (num_args, num_wavel)
          */
-        Eigen::MatrixXd& brdf_args() { return m_brdf_args; }
+        Eigen::Map<Eigen::MatrixXd>& brdf_args() { return m_brdf_args; }
 
         /**
          * @brief The arguments for the BRDF function
          *
          * @return const Eigen::MatrixXd& shape (num_args, num_wavel)
          */
-        const Eigen::MatrixXd& brdf_args() const { return m_brdf_args; }
+        const Eigen::Map<Eigen::MatrixXd>& brdf_args() const { return m_brdf_args; }
 
         /**
          * @brief The derivative arguments for the BRDF function
@@ -525,14 +586,14 @@ namespace sasktran2::atmosphere {
          *
          * @return Eigen::VectorXd& shape (num_wavel)
          */
-        Eigen::VectorXd& emission() { return m_emission; }
+        Eigen::Map<Eigen::VectorXd>& emission() { return m_emission; }
 
         /**
          * @brief The surface emission.
          *
          * @return const Eigen::VectorXd& shape (num_wavel)
          */
-        const Eigen::VectorXd& emission() const { return m_emission; }
+        const Eigen::Map<Eigen::VectorXd>& emission() const { return m_emission; }
     };
 
 } // namespace sasktran2::atmosphere

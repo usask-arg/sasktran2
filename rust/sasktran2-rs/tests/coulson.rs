@@ -1,11 +1,12 @@
 use std::f64::consts::PI;
 
 use ndarray::s;
-use sasktran2_bindings::{prelude::*, viewing_geometry};
+use sasktran2_rs::bindings::prelude::*;
+use anyhow::Result;
 
 #[test]
 fn test_coulson() -> Result<()> {
-    let mut atmosphere = Atmosphere::new(1, 2, 40, 0, true, Stokes::Stokes3);
+    let mut atmosphere = Atmosphere::new(1, 2, 40, true, Stokes::Stokes3);
 
     atmosphere.storage.ssa.fill(1.0);
     atmosphere.storage.total_extinction.fill(0.5);
@@ -37,7 +38,8 @@ fn test_coulson() -> Result<()> {
         .slice_mut(s![11, .., ..])
         .fill((6.0 as f64).sqrt() * -1.0 / 2.0);
 
-    let config = Config::new()
+    let mut binding = Config::new();
+    let config = binding
         .with_num_streams(40)?
         .with_multiple_scatter_source(MultipleScatterSource::DiscreteOrdinates)?
         .with_single_scatter_source(SingleScatterSource::DiscreteOrdinates)?

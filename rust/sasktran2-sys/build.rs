@@ -7,7 +7,7 @@ fn main() {
     let dst = cmake::Config::new("../../")
         .define("BUILD_SHARED_LIBS", "OFF")
         .define("CMAKE_INSTALL_PREFIX", &install_prefix)
-        .define("USE_OMP", "OFF")
+        .define("USE_OMP", "ON")
         .define("BUILD_PYTHON", "OFF")
         .define("SKTRAN_BLAS_VENDOR", "Apple")
         .build();

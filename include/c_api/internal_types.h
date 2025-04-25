@@ -1,7 +1,9 @@
 #pragma once
 
+#include "sasktran2/atmosphere/surface.h"
 #include "sasktran2/derivative_mapping.h"
 #include "sasktran2/output.h"
+#include <memory>
 #include <sasktran2.h>
 
 struct Config {
@@ -15,6 +17,10 @@ struct DerivativeMapping {
 
     DerivativeMapping(sasktran2::DerivativeMapping* mapping) : impl(mapping) {
     };
+};
+
+struct BRDF {
+    std::shared_ptr<sasktran2::atmosphere::brdf::BRDFInterface> impl;
 };
 
 struct Geometry1D {
@@ -39,7 +45,7 @@ struct AtmosphereStorage {
 struct Surface {
     std::unique_ptr<sasktran2::atmosphere::SurfaceInterface> impl;
 
-    Surface(int nwavel, int nstokes);
+    Surface(int nwavel, int nstokes, double* emission);
 };
 
 struct Atmosphere {

@@ -90,13 +90,16 @@ namespace sasktran2::atmosphere {
             unscaled_ssa.resize(nlocation, nwavel);
             unscaled_total_extinction.resize(nlocation, nwavel);
 
+            f.resize(nlocation, nwavel);
+            f.setZero();
+
             max_order.resize(nlocation, nwavel);
 
             applied_f_location = -1;
             applied_f_order = -1;
 
-            numscatderiv = d_leg_coeff.dimension(3);
-            scatderivstart = 2 * nlocation;
+            numscatderiv = 0;
+            scatderivstart = 0;
         }
 
         AtmosphereGridStorageFull(int nwavel, int nlocation, int numlegendre)
@@ -186,19 +189,17 @@ namespace sasktran2::atmosphere {
          */
         void finalize_scattering_derivatives(int numderiv) {
             // This replaces some code that was in the Python interface before
-            /*
-                # Now we need to resize the phase derivative storage if necessary, and set the scattering derivatives
-                    self.storage.resize_derivatives(num_scat_derivs)
+            int num_scat_deriv = 0;
+            for (auto& [name, mapping] : m_derivative_mappings) {
+                if (mapping.is_scattering_derivative()) {
+                    num_scat_deriv++;
+                }
+            }
+            if(num_scat_deriv == 0) {
+                return;
+            }
 
-                    scat_index = 0
-                    for _, mapping in self.storage.derivative_mappings.items():
-                        if mapping.is_scattering_derivative:
-                            self.storage.d_leg_coeff[:, :, :, scat_index] = mapping.d_leg_coeff
-                            mapping.scat_deriv_index = scat_index
-                            scat_index += 1
-
-            */
-            resize_derivatives(numderiv);
+            resize_derivatives(num_scat_deriv);
             int scat_index = 0;
             for (auto& [name, mapping] : m_derivative_mappings) {
                 if (mapping.is_scattering_derivative()) {
@@ -309,6 +310,18 @@ namespace sasktran2::atmosphere {
 
             // Clamp the SSA values to 1
             ssa = ssa.cwiseMin(1.0);
+        }
+
+        void set_zero() {
+            ssa.setZero();
+            total_extinction.setZero();
+            emission_source.setZero();
+            leg_coeff.setZero();
+            f.setZero();
+
+            for( auto& [name, mapping] : m_derivative_mappings) {
+                mapping.set_zero();
+            }
         }
 
         std::map<std::string, DerivativeMapping>& derivative_mappings() {

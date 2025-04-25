@@ -140,7 +140,7 @@ void declareSurface(py::module_& m, const std::string& suffix) {
         .def_property("brdf", &Surface::brdf_object, &Surface::set_brdf_object)
         .def_property(
             "brdf_args",
-            [](Surface& surface) -> Eigen::MatrixXd& {
+            [](Surface& surface) -> Eigen::Ref<Eigen::MatrixXd> {
                 return surface.brdf_args();
             },
             nullptr)
@@ -152,13 +152,13 @@ void declareSurface(py::module_& m, const std::string& suffix) {
             nullptr)
         .def_property(
             "albedo",
-            [](Surface& surface) -> Eigen::MatrixXd& {
+            [](Surface& surface) -> Eigen::Ref<Eigen::MatrixXd> {
                 return surface.brdf_args();
             },
             nullptr)
         .def_property(
             "emission",
-            [](Surface& surface) -> Eigen::VectorXd& {
+            [](Surface& surface) -> Eigen::Ref<Eigen::VectorXd> {
                 return surface.emission();
             },
             nullptr);

@@ -10,6 +10,7 @@ mod engine;
 mod derivative_mapping;
 mod atmosphere;
 mod output;
+mod brdf;
 
 use pyo3::prelude::*;
 
@@ -54,6 +55,9 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<atmosphere::PyAtmosphereStorage>()?;
     m.add_class::<atmosphere::PyAtmosphereStorageView>()?;
     m.add_class::<atmosphere::PyAtmosphere>()?;
+
+    // BRDFs
+    m.add_class::<brdf::PyLambertian>()?;
 
     // Helper functions    
     m.add_function(wrap_pyfunction!(accel::assign_absorber_derivatives, m)?)?;

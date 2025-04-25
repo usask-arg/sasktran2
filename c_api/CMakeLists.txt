@@ -13,6 +13,7 @@ add_library(
   config.cpp
   engine.cpp
   output.cpp
+  brdf.cpp
   deriv_mapping.cpp)
 
 target_link_libraries(csasktran2 PUBLIC sasktran2)

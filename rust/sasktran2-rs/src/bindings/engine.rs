@@ -36,11 +36,13 @@ impl<'a> Engine<'a> {
         let num_stokes = self.config.num_stokes()?;
         let num_los = self.viewing_geometry.num_rays()?;
         let num_wavel = atmosphere.num_wavel();
-
+        
         let mut output = Output::new(num_wavel, num_los, num_stokes);
 
+        let deriv_names = atmosphere.storage.derivative_mapping_names().map_err(|e| anyhow::anyhow!(e))?;
+
         // Assign the memory for the derivatives
-        for deriv_name in atmosphere.storage.derivative_mapping_names().map_err(|e| anyhow::anyhow!(e))?.iter() {
+        for deriv_name in deriv_names.iter() {
             let mapping = atmosphere.storage.get_derivative_mapping(deriv_name).map_err(|e| anyhow::anyhow!(e))?;
             let num_deriv_output = mapping.num_output();
 

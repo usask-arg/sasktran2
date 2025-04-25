@@ -36,6 +36,29 @@ unsafe extern "C" {
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+pub struct BRDF {
+    _unused: [u8; 0],
+}
+unsafe extern "C" {
+    pub fn sk_brdf_create_lambertian(nstokes: ::std::os::raw::c_int) -> *mut BRDF;
+}
+unsafe extern "C" {
+    pub fn sk_brdf_get_num_deriv(
+        config: *mut BRDF,
+        num_deriv: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_brdf_get_num_args(
+        config: *mut BRDF,
+        num_args: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_brdf_destroy(config: *mut BRDF);
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct DerivativeMapping {
     _unused: [u8; 0],
 }
@@ -140,6 +163,34 @@ unsafe extern "C" {
         num_output: *mut ::std::os::raw::c_int,
     ) -> ::std::os::raw::c_int;
 }
+unsafe extern "C" {
+    pub fn sk_deriv_mapping_get_assign_name(
+        mapping: *mut DerivativeMapping,
+        name: *mut *const ::std::os::raw::c_char,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_deriv_mapping_get_interp_dim(
+        mapping: *mut DerivativeMapping,
+        name: *mut *const ::std::os::raw::c_char,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_deriv_mapping_set_interpolator(
+        mapping: *mut DerivativeMapping,
+        interpolator: *mut f64,
+        dim1: ::std::os::raw::c_int,
+        dim2: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_deriv_mapping_get_interpolator(
+        mapping: *mut DerivativeMapping,
+        interpolator: *mut *mut f64,
+        dim1: *mut ::std::os::raw::c_int,
+        dim2: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct AtmosphereStorage {
@@ -202,6 +253,15 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn sk_atmosphere_storage_finalize_scattering_derivatives(
+        storage: *mut AtmosphereStorage,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_atmosphere_storage_set_zero(storage: *mut AtmosphereStorage)
+        -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     #[doc = " @brief Creates a new Atmosphere object.\n\n @param storage Pointer to atmosphere storage.\n @param surface Pointer to surface model.\n @param calculate_derivatives Whether to compute derivatives (non-zero = yes).\n @return Pointer to a new Atmosphere object."]
     pub fn sk_atmosphere_create(
         storage: *mut AtmosphereStorage,
@@ -214,15 +274,29 @@ unsafe extern "C" {
     pub fn sk_atmosphere_destroy(atmosphere: *mut Atmosphere);
 }
 unsafe extern "C" {
-    #[doc = " @brief Creates a new Surface object.\n\n @param nwavel Number of wavelengths.\n @param nstokes Number of Stokes parameters.\n @return Pointer to a new Surface object."]
+    pub fn sk_atmosphere_apply_delta_m_scaling(
+        atmosphere: *mut Atmosphere,
+        order: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    #[doc = " @brief Creates a new Surface object.\n\n @param nwavel Number of wavelengths.\n @param nstokes Number of Stokes parameters.\n @param emission Pointer to emission data. [nwavel]\n @return Pointer to a new Surface object."]
     pub fn sk_surface_create(
         nwavel: ::std::os::raw::c_int,
         nstokes: ::std::os::raw::c_int,
+        emission: *mut f64,
     ) -> *mut Surface;
 }
 unsafe extern "C" {
     #[doc = " @brief Destroys a previously created Surface object.\n\n @param surface The surface object to destroy."]
     pub fn sk_surface_destroy(surface: *mut Surface);
+}
+unsafe extern "C" {
+    pub fn sk_surface_set_brdf(
+        surface: *mut Surface,
+        brdf: *mut BRDF,
+        brdf_args: *mut f64,
+    ) -> ::std::os::raw::c_int;
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]

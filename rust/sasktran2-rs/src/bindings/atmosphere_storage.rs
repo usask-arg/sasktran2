@@ -110,6 +110,59 @@ impl AtmosphereStorage {
 
         Ok(names)
     }
+
+    // Called after ssa is initialized to scattering extinction, and legendre need to be normalized
+    pub fn normalize_by_extinctions(&mut self) {
+        // Start by dividing the leg_coeff by the ssa
+        // Since these are fortran ordered we iterate over the last axis first
+        Zip::from(self.leg_coeff.axis_iter_mut(Axis(2)))
+            .and(self.ssa.axis_iter(Axis(1)))
+            .par_for_each(|mut leg_coeff, ssa| {
+                Zip::from(ssa)
+                    .and(leg_coeff.axis_iter_mut(Axis(1)))
+                    .for_each(|ssa, mut leg_coeff| {
+                        let v = match ssa {
+                            0.0 => 1.0,
+                            _ => *ssa
+                        };
+                        leg_coeff.mapv_inplace(|l| { l / v});
+                    });
+            });
+
+        // Now we need to divide the ssa by the total extinction
+        Zip::from(self.ssa.axis_iter_mut(Axis(1)))
+            .and(self.total_extinction.axis_iter(Axis(1)))
+            .par_for_each(|ssa, total_extinction| {
+                Zip::from(ssa)
+                    .and(total_extinction)
+                    .for_each(|ssa, total_extinction| {
+                        let v = match *total_extinction {
+                            0.0 => 0.0,
+                            _ => *total_extinction
+                        };
+                        *ssa = *ssa / v;
+
+                        if *ssa > 1.0 {
+                            *ssa = 1.0;
+                        }
+                    });
+            });
+
+    }
+
+    pub fn finalize_scattering_derivatives(&mut self) {
+        unsafe {
+            ffi::sk_atmosphere_storage_finalize_scattering_derivatives(
+                self.storage,
+            );
+        }
+    }
+
+    pub fn set_zero(&mut self) {
+        unsafe {
+            ffi::sk_atmosphere_storage_set_zero(self.storage);
+        }
+    }
 }
 
 impl Drop for AtmosphereStorage {

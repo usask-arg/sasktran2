@@ -2,6 +2,7 @@ use super::atmosphere_storage::AtmosphereStorage;
 use sasktran2_sys::ffi;
 use super::prelude::*;
 use super::surface::Surface;
+use anyhow::{Result, anyhow};
 
 pub struct Atmosphere {
     pub atmosphere: *mut ffi::Atmosphere,
@@ -44,6 +45,23 @@ impl Atmosphere {
     pub fn num_location(&self) -> usize {
         self.storage.ssa.dim().0
     }
+
+    pub fn apply_delta_m_scaling(
+        &mut self,
+        order: usize,
+    ) -> Result<()> {
+        let result = unsafe {
+            ffi::sk_atmosphere_apply_delta_m_scaling(self.atmosphere, order as i32)
+        };
+        if result != 0 {
+            return Err(anyhow!(
+                "Error applying delta m scaling: {}",
+                result
+            ));
+        }
+        Ok(())
+    }
+
 }
 impl Drop for Atmosphere {
     fn drop(&mut self) {

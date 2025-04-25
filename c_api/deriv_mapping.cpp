@@ -184,4 +184,50 @@ int sk_deriv_mapping_get_num_output(DerivativeMapping *mapping, int *num_output)
     return 0;
 }
 
+int sk_deriv_mapping_get_assign_name(DerivativeMapping *mapping, const char **name) {
+    if (mapping == nullptr) {
+        return -1; // Error: mapping is null
+    }
+
+    *name = mapping->impl->get_assign_name().c_str();
+    return 0;
+}
+
+int sk_deriv_mapping_get_interp_dim(DerivativeMapping *mapping, const char **name) {
+    if (mapping == nullptr) {
+        return -1; // Error: mapping is null
+    }
+
+    *name = mapping->impl->get_interp_dim().c_str();
+    return 0;
+}
+
+int sk_deriv_mapping_set_interpolator(DerivativeMapping *mapping, double *interpolator, int dim1, int dim2) {
+    if (mapping == nullptr) {
+        return -1; // Error: mapping is null
+    }
+
+    Eigen::MatrixXd interpolator_matrix = Eigen::Map<Eigen::MatrixXd>(interpolator, dim1, dim2);
+    
+
+    mapping->impl->set_interpolator(interpolator_matrix);
+    return 0;
+}
+
+int sk_deriv_mapping_get_interpolator(DerivativeMapping *mapping, double **interpolator, int *dim1, int *dim2) {
+    if (mapping == nullptr) {
+        return -1; // Error: mapping is null
+    }
+    if(!mapping->impl->get_interpolator().has_value()) {
+        return -2; // Error: interpolator is not set
+    }
+
+    Eigen::MatrixXd& interpolator_matrix = mapping->impl->get_interpolator().value();
+    *dim1 = interpolator_matrix.rows();
+    *dim2 = interpolator_matrix.cols();
+    *interpolator = interpolator_matrix.data();
+
+    return 0;
+}
+
 }

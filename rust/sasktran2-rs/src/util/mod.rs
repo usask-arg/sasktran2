@@ -1,4 +1,5 @@
 use ndarray::*;
+use crate::prelude::*;
 
 /// Returns back the indices required to sort a vector of f64 values.
 pub fn argsort_f64(data: &[f64]) -> Vec<usize> {
@@ -31,6 +32,16 @@ where
     seen.sort_by(|a, b| a.partial_cmp(b).unwrap());
     Array1::from(seen)
 }
+
+pub fn create_pool(num_threads: usize) -> Result<rayon::ThreadPool> {
+    match rayon::ThreadPoolBuilder::new()
+       .num_threads(num_threads)
+       .build()
+    {
+       Err(e) => Err(e.into()),
+       Ok(pool) => Ok(pool),
+    }
+ }
 
 /// Returns back the indices required to sort a vector of f64 values.
 #[cfg(test)]

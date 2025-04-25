@@ -5,7 +5,9 @@ use pyo3::prelude::*;
 use crate::prelude::*;
 use sasktran2_rs::bindings::atmosphere;
 use sasktran2_rs::bindings::atmosphere_storage;
+use sasktran2_rs::bindings::surface;
 use sasktran2_rs::bindings::prelude::Stokes;
+use crate::brdf::*;
 use crate::derivative_mapping::PyDerivativeMappingView;
 
 
@@ -21,7 +23,12 @@ pub struct PyAtmosphereStorage {
 
 #[pyclass(unsendable)]
 pub struct PyAtmosphereStorageView {
-    storage: &'static atmosphere_storage::AtmosphereStorage,
+    storage: &'static mut atmosphere_storage::AtmosphereStorage,
+}
+
+#[pyclass(unsendable)]
+pub struct PyAtmosphereSurfaceView {
+    surface: &'static mut surface::Surface,
 }
 
 #[pymethods]
@@ -52,6 +59,7 @@ impl PyAtmosphere {
     }
 
     #[getter]
+    #[allow(mutable_transmutes)]
     fn get_storage(
         &self,
     ) -> PyResult<Py<PyAtmosphereStorageView>> {
@@ -62,6 +70,29 @@ impl PyAtmosphere {
         Python::with_gil(|py| {
             Py::new(py, storage_view)
         })
+    }
+
+    #[getter]
+    #[allow(mutable_transmutes)]
+    fn get_surface(
+        &self,
+    ) -> PyResult<Py<PyAtmosphereSurfaceView>> {
+        let surface = &self.atmosphere.surface;
+        let surface_view = PyAtmosphereSurfaceView {
+            surface: unsafe { std::mem::transmute(surface) },
+        };
+        Python::with_gil(|py| {
+            Py::new(py, surface_view)
+        })
+    }
+
+
+    fn apply_delta_m_scaling(
+        &mut self,
+        order: usize,
+    ) -> PyResult<()> {
+        self.atmosphere.apply_delta_m_scaling(order).into_pyresult()?;
+        Ok(())
     }
 }
 
@@ -116,4 +147,42 @@ impl PyAtmosphereStorageView {
         })
     }
 
+    fn normalize_by_extinctions(&mut self) -> PyResult<()> {
+        self.storage.normalize_by_extinctions();
+        Ok(())
+    }
+
+    fn finalize_scattering_derivatives(&mut self, _num_deriv: usize) -> PyResult<()> {
+        self.storage.finalize_scattering_derivatives();
+        Ok(())
+    }
+
+    fn set_zero(&mut self) -> PyResult<()> {
+        self.storage.set_zero();
+        Ok(())
+    }
+}
+
+#[pymethods]
+impl PyAtmosphereSurfaceView {
+    #[getter]
+    fn get_emission<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyArray1<f64>>> {
+        let array = &this.borrow().surface.emission;
+
+        unsafe { Ok(PyArray1::borrow_from_array(array, this.into_any())) }
+    }
+
+    #[getter]
+    fn get_brdf_args<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let array = &this.borrow().surface.brdf_args;
+
+        unsafe { Ok(PyArray2::borrow_from_array(array, this.into_any())) }
+    }
+
+    #[setter]
+    fn set_brdf<'py>(&mut self, brdf: Bound<'py, PyAny>) -> PyResult<()> {
+        set_py_brdf_in_surface(brdf, self.surface).into_pyresult()?;
+
+        Ok(())
+    }
 }

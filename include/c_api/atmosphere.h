@@ -8,7 +8,8 @@
 
  #pragma once
 
- #include "deriv_mapping.h"
+ #include "brdf.h"
+#include "deriv_mapping.h"
  
  #ifdef __cplusplus
  extern "C" {
@@ -38,6 +39,8 @@
   * user defined quantities.
   */
  typedef struct DerivativeMapping DerivativeMapping;
+
+ typedef struct SurfaceDerivativeMapping SurfaceDerivativeMapping;
  
  /**
   * @brief Opaque handle to an atmosphere object.
@@ -55,6 +58,8 @@
   * and emission properties.
   */
  typedef struct Surface Surface;
+
+ typedef struct BRDF BRDF;
  
  // ---------------------
  // STORAGE METHODS
@@ -117,6 +122,14 @@ int sk_atmosphere_storage_get_derivative_mapping_by_index(
  );
 
 
+ int sk_atmosphere_storage_finalize_scattering_derivatives(
+    AtmosphereStorage* storage
+ );
+
+ int sk_atmosphere_storage_set_zero(
+      AtmosphereStorage* storage
+ );
+
  // ---------------------
  // ATMOSPHERE METHODS
  // ---------------------
@@ -138,6 +151,8 @@ int sk_atmosphere_storage_get_derivative_mapping_by_index(
   * @param atmosphere The atmosphere object to destroy.
   */
  void sk_atmosphere_destroy(Atmosphere* atmosphere);
+
+ int sk_atmosphere_apply_delta_m_scaling(Atmosphere* atmosphere, int order);
  
  // ---------------------
  // SURFACE METHODS
@@ -148,9 +163,10 @@ int sk_atmosphere_storage_get_derivative_mapping_by_index(
   *
   * @param nwavel Number of wavelengths.
   * @param nstokes Number of Stokes parameters.
+  * @param emission Pointer to emission data. [nwavel]
   * @return Pointer to a new Surface object.
   */
- Surface* sk_surface_create(int nwavel, int nstokes);
+ Surface* sk_surface_create(int nwavel, int nstokes, double* emission);
  
  /**
   * @brief Destroys a previously created Surface object.
@@ -158,7 +174,25 @@ int sk_atmosphere_storage_get_derivative_mapping_by_index(
   * @param surface The surface object to destroy.
   */
  void sk_surface_destroy(Surface* surface);
+
+ int sk_surface_set_brdf(Surface* surface, BRDF* brdf, double* brdf_args);
  
+ int sk_surface_get_derivative_mapping(Surface* storage,
+   const char* name,
+   SurfaceDerivativeMapping** mapping);
+
+   int sk_surface_get_num_derivative_mappings(
+   Surface* storage,
+   int* num_mappings
+   );
+
+   int sk_surface_get_derivative_mapping_name(
+   Surface* storage,
+   int index,
+   const char** name
+   );
+
+
  #ifdef __cplusplus
  }
  #endif

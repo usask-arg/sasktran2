@@ -6,3 +6,4 @@
 #include "config.h"
 #include "engine.h"
 #include "deriv_mapping.h"
+#include "brdf.h"

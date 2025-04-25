@@ -8,3 +8,4 @@ ndarray = {version = "*", features = ["rayon"] }
 num = "*"
 anyhow = "*"
 sasktran2-sys = { version = "*", path = "../sasktran2-sys" }
+rayon = "*"

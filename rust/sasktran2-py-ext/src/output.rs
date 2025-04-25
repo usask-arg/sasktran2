@@ -1,5 +1,5 @@
-use numpy::PyArray3;
-use pyo3::prelude::*;
+use numpy::{PyArray3, PyArray4};
+use pyo3::{prelude::*, types::PyDict};
 use sasktran2_rs::bindings::output;
 
 #[pyclass(unsendable)]
@@ -21,5 +21,23 @@ impl PyOutput {
         let array = &this.borrow().output.radiance;
 
         unsafe { Ok(PyArray3::borrow_from_array(array, this.into_any())) }
+    }
+
+    #[getter]
+    fn get_d_radiance<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyDict>> {
+        let binding = &this.borrow().output;
+        let d_radiance = &binding.d_radiance;
+
+        let py_dict = PyDict::new(this.py());
+
+        for (key, value) in d_radiance.iter() {
+            let deriv = unsafe { PyArray4::borrow_from_array(value, this.clone().into_any()) };
+
+            py_dict.set_item(key, deriv)?;
+        }
+
+        Ok(py_dict)
+
+
     }
 }

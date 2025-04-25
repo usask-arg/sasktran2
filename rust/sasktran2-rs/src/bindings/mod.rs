@@ -7,4 +7,5 @@ pub mod geometry;
 pub mod output;
 pub mod surface;
 pub mod viewing_geometry;
+pub mod brdf;
 pub mod prelude;

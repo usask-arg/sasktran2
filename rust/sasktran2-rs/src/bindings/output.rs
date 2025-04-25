@@ -37,13 +37,13 @@ impl Output {
         deriv_name: &str,
         num_deriv_output: usize,
     ) -> &mut Self {
-        let mut d_radiance = Array4::<f64>::zeros((
+        let mut d_radiance_internal = Array4::<f64>::zeros((
             num_deriv_output,
             self.num_wavel,
             self.num_los,
             self.num_stokes,
         ));
-        let d_radiance_ptr = d_radiance.as_mut_ptr();
+        let d_radiance_ptr = d_radiance_internal.as_mut_ptr();
 
         let nrad = (self.num_wavel * self.num_los) as i32;
         
@@ -52,6 +52,8 @@ impl Output {
         let result = unsafe {
             ffi::sk_output_assign_derivative_memory(self.output, c_deriv_name.as_ptr(), d_radiance_ptr, nrad, self.num_stokes as i32, num_deriv_output as i32)
         };
+
+        self.d_radiance.insert(deriv_name.to_string(), d_radiance_internal);
 
         if result != 0 {
             panic!("Error assigning derivative memory");

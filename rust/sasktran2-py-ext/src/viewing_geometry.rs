@@ -15,8 +15,8 @@ impl PyGroundViewingSolar {
     fn new(
         cos_sza: f64,
         relative_azimuth: f64,
-        observer_altitude_m: f64,
         cos_viewing_zenith: f64,
+        observer_altitude_m: f64,
     ) -> Self {
         Self {
             cos_sza,

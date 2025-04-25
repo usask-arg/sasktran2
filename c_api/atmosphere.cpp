@@ -61,11 +61,15 @@ int AtmosphereStorage::get_derivative_mapping(const char* name,
     }
 }
 
-Surface::Surface(int nwavel, int nstokes) {
+Surface::Surface(int nwavel, int nstokes, double* emission) {
+    // Create the Eigen Map
+    Eigen::Map<Eigen::VectorXd> emission_map(emission, nwavel);
     if (nstokes == 1) {
-        impl = std::make_unique<sasktran2::atmosphere::Surface<1>>(nwavel);
+        impl = std::make_unique<sasktran2::atmosphere::Surface<1>>(nwavel, 
+                                                                 emission_map);
     } else if (nstokes == 3) {
-        impl = std::make_unique<sasktran2::atmosphere::Surface<3>>(nwavel);
+        impl = std::make_unique<sasktran2::atmosphere::Surface<3>>(nwavel, 
+                                                                 emission_map);
     } else {
         impl = nullptr;
     }
@@ -250,15 +254,127 @@ int sk_atmosphere_storage_get_derivative_mapping_name(AtmosphereStorage *storage
 }
 
 
-Surface* sk_surface_create(int nwavel, int nstokes) {
-    return new Surface(nwavel, nstokes);
+int sk_atmosphere_storage_set_zero(AtmosphereStorage *storage) {
+    if (storage == nullptr) {
+        return -1; // Error: storage is null
+    }
+    if (storage->impl == nullptr) {
+        return -2; // Error: storage implementation is null
+    }
+
+    auto* impl1 =
+        dynamic_cast<sasktran2::atmosphere::AtmosphereGridStorageFull<1>*>(
+            storage->impl.get());
+    auto* impl3 =
+        dynamic_cast<sasktran2::atmosphere::AtmosphereGridStorageFull<3>*>(
+            storage->impl.get());
+
+    if (impl1) {
+        impl1->set_zero();
+    } else if (impl3) {
+        impl3->set_zero();
+    } else {
+        return -3; // Error: storage implementation is not AtmosphereGridStorageFull
+    }
+    return 0;
+}
+
+Surface* sk_surface_create(int nwavel, int nstokes, double* emission) {
+    if (emission == nullptr) {
+        return nullptr; // Error: emission is null
+    }
+    return new Surface(nwavel, nstokes, emission);
 }
 
 void sk_surface_destroy(Surface* storage) { delete storage; }
+
+int sk_surface_set_brdf(Surface *surface, BRDF *brdf, double *brdf_args) {
+    if (surface == nullptr || brdf == nullptr) {
+        return -1; // Error: surface or brdf is null
+    }
+    if (surface->impl == nullptr || brdf->impl == nullptr) {
+        return -2; // Error: surface or brdf implementation is null
+    }
+
+    auto* impl1 = dynamic_cast<sasktran2::atmosphere::Surface<1>*>(surface->impl.get());
+    auto* impl3 = dynamic_cast<sasktran2::atmosphere::Surface<3>*>(surface->impl.get());
+
+    if (impl1) {
+        auto brdf1 = std::dynamic_pointer_cast<sasktran2::atmosphere::brdf::BRDF<1>>(brdf->impl);
+        if (!brdf1) {
+            return -4; // Error: brdf implementation is not BRDF<1>
+        }
+        int num_brdf_args = brdf1->num_args();
+        int nwavel = impl1->emission().size();
+        Eigen::Map<Eigen::MatrixXd> brdf_args_map(brdf_args, num_brdf_args, nwavel);
+
+        impl1->set_brdf_object_with_memory(brdf1, brdf_args_map);
+    } else if (impl3) {
+        auto brdf3 = std::dynamic_pointer_cast<sasktran2::atmosphere::brdf::BRDF<3>>(brdf->impl);
+        if (!brdf3) {
+            return -4; // Error: brdf implementation is not BRDF<1>
+        }
+        int num_brdf_args = brdf3->num_args();
+        int nwavel = impl3->emission().size();
+        Eigen::Map<Eigen::MatrixXd> brdf_args_map(brdf_args, num_brdf_args, nwavel);
+
+        impl3->set_brdf_object_with_memory(brdf3, brdf_args_map);
+    } else {
+        return -3; // Error: surface implementation is not Surface
+    }
+    return 0;
+}
+
 
 Atmosphere* sk_atmosphere_create(AtmosphereStorage* storage, Surface* surface,
                                  int calculate_derivatives) {
     return new Atmosphere(storage, surface, calculate_derivatives == 1);
 }
+
+int sk_atmosphere_apply_delta_m_scaling(Atmosphere *atmosphere, int order) {
+    if (atmosphere->impl) {
+        auto* impl1 =
+            dynamic_cast<sasktran2::atmosphere::Atmosphere<1>*>(atmosphere->impl.get());
+        auto* impl3 =
+            dynamic_cast<sasktran2::atmosphere::Atmosphere<3>*>(atmosphere->impl.get());
+
+        if (impl1) {
+            impl1->apply_delta_m_scaling(order);
+        } else if (impl3) {
+            impl3->apply_delta_m_scaling(order);
+        } else {
+            return -2; // Error: atmosphere implementation is not Atmosphere
+        }
+    } else {
+        return -1; // Error: atmosphere implementation is null
+    }
+    return 0;
+}
+
+int sk_atmosphere_storage_finalize_scattering_derivatives(AtmosphereStorage *storage) {
+    if (storage == nullptr) {
+        return -1; // Error: storage is null
+    }
+    if (storage->impl == nullptr) {
+        return -2; // Error: storage implementation is null
+    }
+
+    auto* impl1 =
+        dynamic_cast<sasktran2::atmosphere::AtmosphereGridStorageFull<1>*>(
+            storage->impl.get());
+    auto* impl3 =
+        dynamic_cast<sasktran2::atmosphere::AtmosphereGridStorageFull<3>*>(
+            storage->impl.get());
+
+    if (impl1) {
+        impl1->finalize_scattering_derivatives(0);
+    } else if (impl3) {
+        impl3->finalize_scattering_derivatives(0);
+    } else {
+        return -3; // Error: storage implementation is not AtmosphereGridStorageFull
+    }
+    return 0;
+}
+
 void sk_atmosphere_destroy(Atmosphere* atmosphere) { delete atmosphere; }
 }

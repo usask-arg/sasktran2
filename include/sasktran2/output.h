@@ -199,7 +199,13 @@ namespace sasktran2 {
             const std::string& name,
             Eigen::Map<Eigen::MatrixXd> derivative_mapping) {
               m_derivatives.insert(
-                  {name, derivative_mapping}); // Insert the mapping into the map
+                  {name, Eigen::Map<Eigen::MatrixXd>(nullptr, 0, 0)}); // create a null map
+              // then placement new into the map
+              Eigen::Map<Eigen::MatrixXd>* ref = &m_derivatives.at(name);
+
+              new (ref) Eigen::Map<Eigen::MatrixXd>(
+                  derivative_mapping.data(), derivative_mapping.rows(),
+                  derivative_mapping.cols());
         }
 
         void assign(const sasktran2::Dual<double, sasktran2::dualstorage::dense,

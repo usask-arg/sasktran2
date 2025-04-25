@@ -1,6 +1,7 @@
 #include "output.h"
 #include "sasktran2/config.h"
 #include "internal_types.h"
+#include <cstdio>
 #include <sasktran2.h>
 
 OutputC::OutputC(double* radiance, int nrad, int nstokes) {
@@ -56,7 +57,7 @@ int sk_output_assign_derivative_memory(OutputC *output, const char *name, double
         return -1; // Error: Output not initialized
     }
 
-    output->assign_derivative_memory(name, derivative_mapping, nrad, nstokes, nderiv);
+    return output->assign_derivative_memory(name, derivative_mapping, nrad, nstokes, nderiv);
 }
 
 }

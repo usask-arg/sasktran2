@@ -41,7 +41,17 @@ int sk_deriv_mapping_is_scattering_derivative(DerivativeMapping* mapping,
 int sk_deriv_mapping_get_num_output(DerivativeMapping* mapping,
                                    int* num_output);
 
-// INTERPOLATOR
+
+int sk_deriv_mapping_get_assign_name(DerivativeMapping* mapping,
+                                    const char** name);
+int sk_deriv_mapping_get_interp_dim(DerivativeMapping* mapping,
+                                    const char** name);
+int sk_deriv_mapping_set_interpolator(DerivativeMapping* mapping,
+                                      double* interpolator,
+                                      int dim1, int dim2);
+int sk_deriv_mapping_get_interpolator(DerivativeMapping* mapping,
+                                        double** interpolator,
+                                        int* dim1, int* dim2);
 
 #ifdef __cplusplus
 }
