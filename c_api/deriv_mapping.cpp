@@ -230,4 +230,107 @@ int sk_deriv_mapping_get_interpolator(DerivativeMapping *mapping, double **inter
     return 0;
 }
 
+int sk_surface_deriv_mapping_get_d_emission(SurfaceDerivativeMapping *mapping, double **emission) {
+    if (mapping == nullptr) {
+        return -1; // Error: mapping is null
+    }
+
+    if (!mapping->impl->native_surface_mapping().d_emission.has_value()) {
+        mapping->impl->allocate_emission_derivatives();
+    }
+    *emission = mapping->impl->native_surface_mapping().d_emission.value().data();
+    return 0;
+}
+
+int sk_surface_deriv_mapping_get_d_brdf(SurfaceDerivativeMapping *mapping, double **brdf) {
+    if (mapping == nullptr) {
+        return -1; // Error: mapping is null
+    }
+
+    if (!mapping->impl->native_surface_mapping().d_brdf.has_value()) {
+        mapping->impl->allocate_brdf_derivatives();
+    }
+    *brdf = mapping->impl->native_surface_mapping().d_brdf.value().data();
+    return 0;
+}
+
+int sk_surface_deriv_mapping_set_interpolator(SurfaceDerivativeMapping *mapping, double *interpolator, int dim1, int dim2) {
+    if (mapping == nullptr) {
+        return -1; // Error: mapping is null
+    }
+
+    Eigen::MatrixXd interpolator_matrix = Eigen::Map<Eigen::MatrixXd>(interpolator, dim1, dim2);
+    mapping->impl->set_interpolator(interpolator_matrix);
+    return 0;
+}
+
+int sk_surface_deriv_mapping_get_interpolator(SurfaceDerivativeMapping *mapping, double **interpolator, int *dim1, int *dim2) {
+    if (mapping == nullptr) {
+        return -1; // Error: mapping is null
+    }
+    if(!mapping->impl->get_interpolator().has_value()) {
+        return -2; // Error: interpolator is not set
+    }
+
+    Eigen::MatrixXd& interpolator_matrix = mapping->impl->get_interpolator().value();
+    *dim1 = interpolator_matrix.rows();
+    *dim2 = interpolator_matrix.cols();
+    *interpolator = interpolator_matrix.data();
+
+    return 0;
+}
+
+int sk_surface_deriv_mapping_get_interp_dim(SurfaceDerivativeMapping *mapping, const char **name) {
+    if (mapping == nullptr) {
+        return -1; // Error: mapping is null
+    }
+
+    *name = mapping->impl->get_interp_dim().c_str();
+    return 0;
+}
+
+int sk_surface_deriv_mapping_set_interp_dim(SurfaceDerivativeMapping *mapping, const char *name) {
+    if (mapping == nullptr) {
+        return -1; // Error: mapping is null
+    }
+
+    mapping->impl->set_interp_dim(name);
+    return 0;
+}
+
+int sk_surface_deriv_mapping_set_zero(SurfaceDerivativeMapping *mapping) {
+    if (mapping == nullptr) {
+        return -1; // Error: mapping is null
+    }
+
+    mapping->impl->set_zero();
+    return 0;
+}
+
+int sk_surface_deriv_mapping_get_num_wavel(SurfaceDerivativeMapping *mapping, int *num_wavel) {
+    if (mapping == nullptr) {
+        return -1; // Error: mapping is null
+    }
+
+    *num_wavel = mapping->impl->num_wavel();
+    return 0;
+}
+
+int sk_surface_deriv_mapping_get_num_brdf_args(SurfaceDerivativeMapping *mapping, int *num_brdf_args) {
+    if (mapping == nullptr) {
+        return -1; // Error: mapping is null
+    }
+
+    *num_brdf_args = mapping->impl->num_brdf_args();
+    return 0;
+}
+
+int sk_surface_deriv_mapping_destroy(SurfaceDerivativeMapping *mapping) {
+    if (mapping == nullptr) {
+        return -1; // Error: mapping is null
+    }
+    // Don't need to delete impl because it is owned by the atmosphere storage
+    delete mapping;
+    return 0;
+}
 }

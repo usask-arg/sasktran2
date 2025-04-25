@@ -145,3 +145,98 @@ impl Drop for DerivativeMapping {
         }
     }
 }
+
+
+pub struct SurfaceDerivativeMapping {
+    pub mapping: *mut ffi::SurfaceDerivativeMapping,
+}
+
+impl Drop for SurfaceDerivativeMapping {
+    fn drop(&mut self) {
+        unsafe {
+            ffi::sk_surface_deriv_mapping_destroy(self.mapping);
+        }
+    }
+}
+
+impl SurfaceDerivativeMapping {
+    pub fn new(mapping: *mut ffi::SurfaceDerivativeMapping) -> Self {
+        SurfaceDerivativeMapping { mapping: mapping }
+    }
+
+    pub fn set_zero(&mut self) {
+        unsafe {
+            ffi::sk_surface_deriv_mapping_set_zero(self.mapping);
+        }
+    }
+
+    pub fn get_interp_dim(&self) -> String {
+        let mut interp_dim: *const i8 = std::ptr::null();
+        unsafe {
+            ffi::sk_surface_deriv_mapping_get_interp_dim(self.mapping, &mut interp_dim);
+            let c_str = std::ffi::CStr::from_ptr(interp_dim);
+            c_str.to_string_lossy().into_owned()
+        }
+    }
+
+    pub fn set_interp_dim(&mut self, name: &str) {
+        let c_name = std::ffi::CString::new(name).unwrap();
+        unsafe {
+            ffi::sk_surface_deriv_mapping_set_interp_dim(self.mapping, c_name.as_ptr());
+        }
+    }
+
+    pub fn set_interpolator(&mut self, interpolator: &mut Array2<f64>) {
+        let (dim1, dim2) = interpolator.dim();
+        unsafe {
+            ffi::sk_surface_deriv_mapping_set_interpolator(
+                self.mapping,
+                interpolator.as_mut_ptr(),
+                dim1 as i32,
+                dim2 as i32,
+            );
+        }
+    }
+
+    pub fn get_interpolator(&self) -> ArrayView2<f64> {
+        let mut interpolator: *mut f64 = std::ptr::null_mut();
+        let mut dim1: i32 = 0;
+        let mut dim2: i32 = 0;
+        unsafe {
+            ffi::sk_surface_deriv_mapping_get_interpolator(self.mapping, &mut interpolator, &mut dim1, &mut dim2);
+            ArrayView2::from_shape_ptr((dim1 as usize, dim2 as usize).f(), interpolator)
+        }
+    }
+
+    fn num_brdf_args(&self) -> usize {
+        let mut num_brdf_args: i32 = 0;
+        unsafe {
+            ffi::sk_surface_deriv_mapping_get_num_brdf_args(self.mapping, &mut num_brdf_args);
+            num_brdf_args as usize
+        }
+    }
+
+    fn num_wavel(&self) -> usize {
+        let mut num_wavel: i32 = 0;
+        unsafe {
+            ffi::sk_surface_deriv_mapping_get_num_wavel(self.mapping, &mut num_wavel);
+            num_wavel as usize
+        }
+    }
+
+    pub fn d_emission(&self) -> ArrayViewMut1<f64> {
+        let mut d_emission: *mut f64 = std::ptr::null_mut();
+        unsafe {
+            ffi::sk_surface_deriv_mapping_get_d_emission(self.mapping, &mut d_emission);
+            ArrayViewMut1::from_shape_ptr((self.num_wavel()).f(), d_emission)
+        }
+    }
+
+    pub fn d_brdf(&self) -> ArrayViewMut2<f64> {
+        let mut d_brdf: *mut f64 = std::ptr::null_mut();
+        unsafe {
+            ffi::sk_surface_deriv_mapping_get_d_brdf(self.mapping, &mut d_brdf);
+            ArrayViewMut2::from_shape_ptr((self.num_wavel(), self.num_brdf_args()).f(), d_brdf)
+        }
+    }
+}

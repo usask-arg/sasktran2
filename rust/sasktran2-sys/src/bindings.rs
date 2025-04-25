@@ -191,6 +191,68 @@ unsafe extern "C" {
         dim2: *mut ::std::os::raw::c_int,
     ) -> ::std::os::raw::c_int;
 }
+unsafe extern "C" {
+    pub fn sk_surface_deriv_mapping_get_d_emission(
+        mapping: *mut SurfaceDerivativeMapping,
+        emission: *mut *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_surface_deriv_mapping_get_num_wavel(
+        mapping: *mut SurfaceDerivativeMapping,
+        num_wavel: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_surface_deriv_mapping_get_num_brdf_args(
+        mapping: *mut SurfaceDerivativeMapping,
+        num_brdf_args: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_surface_deriv_mapping_get_d_brdf(
+        mapping: *mut SurfaceDerivativeMapping,
+        brdf: *mut *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_surface_deriv_mapping_get_interpolator(
+        mapping: *mut SurfaceDerivativeMapping,
+        interpolator: *mut *mut f64,
+        dim1: *mut ::std::os::raw::c_int,
+        dim2: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_surface_deriv_mapping_set_interpolator(
+        mapping: *mut SurfaceDerivativeMapping,
+        interpolator: *mut f64,
+        dim1: ::std::os::raw::c_int,
+        dim2: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_surface_deriv_mapping_get_interp_dim(
+        mapping: *mut SurfaceDerivativeMapping,
+        name: *mut *const ::std::os::raw::c_char,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_surface_deriv_mapping_set_interp_dim(
+        mapping: *mut SurfaceDerivativeMapping,
+        name: *const ::std::os::raw::c_char,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_surface_deriv_mapping_set_zero(
+        mapping: *mut SurfaceDerivativeMapping,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_surface_deriv_mapping_destroy(
+        mapping: *mut SurfaceDerivativeMapping,
+    ) -> ::std::os::raw::c_int;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct AtmosphereStorage {
@@ -296,6 +358,26 @@ unsafe extern "C" {
         surface: *mut Surface,
         brdf: *mut BRDF,
         brdf_args: *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_surface_get_derivative_mapping(
+        storage: *mut Surface,
+        name: *const ::std::os::raw::c_char,
+        mapping: *mut *mut SurfaceDerivativeMapping,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_surface_get_num_derivative_mappings(
+        storage: *mut Surface,
+        num_mappings: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_surface_get_derivative_mapping_name(
+        storage: *mut Surface,
+        index: ::std::os::raw::c_int,
+        name: *mut *const ::std::os::raw::c_char,
     ) -> ::std::os::raw::c_int;
 }
 #[repr(C)]
@@ -694,6 +776,15 @@ unsafe extern "C" {
         nrad: ::std::os::raw::c_int,
         nstokes: ::std::os::raw::c_int,
         nderiv: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_output_assign_surface_derivative_memory(
+        output: *mut OutputC,
+        name: *const ::std::os::raw::c_char,
+        derivative_mapping: *mut f64,
+        nrad: ::std::os::raw::c_int,
+        nstokes: ::std::os::raw::c_int,
     ) -> ::std::os::raw::c_int;
 }
 #[repr(C)]

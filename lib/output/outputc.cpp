@@ -14,8 +14,8 @@ namespace sasktran2 {
 
         for (auto& [name, deriv] :
              this->m_atmosphere->surface().derivative_mappings()) {
-            m_surface_derivatives[name].resize(
-                NSTOKES * this->m_nwavel * this->m_nlos, 1);
+            //m_surface_derivatives[name].resize(
+            //    NSTOKES * this->m_nwavel * this->m_nlos, 1);
         }
 
         m_native_thread_storage.resize(this->m_config->num_threads());

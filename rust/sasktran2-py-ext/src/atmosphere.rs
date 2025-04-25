@@ -2,6 +2,7 @@ use numpy::PyArray1;
 use numpy::PyArray2;
 use numpy::PyArray3;
 use pyo3::prelude::*;
+use crate::derivative_mapping::PySurfaceDerivativeMappingView;
 use crate::prelude::*;
 use sasktran2_rs::bindings::atmosphere;
 use sasktran2_rs::bindings::atmosphere_storage;
@@ -184,5 +185,18 @@ impl PyAtmosphereSurfaceView {
         set_py_brdf_in_surface(brdf, self.surface).into_pyresult()?;
 
         Ok(())
+    }
+
+    fn get_derivative_mapping<'py>(&self, name: &str) -> PyResult<Py<PySurfaceDerivativeMappingView>> {
+        let mapping = self.surface.get_derivative_mapping(name).unwrap();
+
+        // Call this a view because DerivativeMapping is really just a view into the C++
+        let mapping_view = PySurfaceDerivativeMappingView {
+            derivative_mapping: mapping,
+        };
+
+        Python::with_gil(|py| {
+            Py::new(py, mapping_view)
+        })
     }
 }

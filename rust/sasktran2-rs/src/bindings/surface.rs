@@ -1,6 +1,7 @@
 use sasktran2_sys::ffi;
 use super::prelude::*;
 use super::brdf::{IsCBRDF, Lambertian};
+use super::deriv_mapping::SurfaceDerivativeMapping;
 use ndarray::*;
 
 pub struct Surface {
@@ -40,6 +41,60 @@ impl Surface {
         }
 
         Ok(())
+    }
+
+    pub fn get_derivative_mapping(&self, name: &str) -> Result<SurfaceDerivativeMapping, String> {
+        let mut mapping: *mut ffi::SurfaceDerivativeMapping = std::ptr::null_mut();
+        let c_name = std::ffi::CString::new(name).unwrap();
+
+        let result = unsafe {
+            ffi::sk_surface_get_derivative_mapping(
+                self.surface,
+                c_name.as_ptr(),
+                &mut mapping,
+            )
+        };
+
+        if result != 0 {
+            return Err("Failed to get derivative mapping".to_string());
+        }
+
+        Ok(SurfaceDerivativeMapping::new(mapping))
+    }
+
+    pub fn derivative_mapping_names(&self) -> Result<Vec<String>, String> {
+        let mut names: Vec<String> = Vec::new();
+
+        let mut num_mappings: i32 = 0;
+        let result = unsafe {
+            ffi::sk_surface_get_num_derivative_mappings(
+                self.surface,
+                &mut num_mappings,
+            )
+        };
+        if result != 0 {
+            return Err("Failed to get number of derivative mappings".to_string());
+        }
+
+        for i in 0..num_mappings {
+            let mut name_ptr: *const std::ffi::c_char = std::ptr::null();
+            let result = unsafe {
+                ffi::sk_surface_get_derivative_mapping_name(
+                    self.surface,
+                    i,
+                    &mut name_ptr,
+                )
+            };
+            if result != 0 {
+                return Err("Failed to get derivative mapping name".to_string());
+            }
+
+            let c_str = unsafe { std::ffi::CStr::from_ptr(name_ptr) };
+            let name = c_str.to_string_lossy().into_owned();
+            names.push(name);
+        }
+
+        Ok(names)
     }
 
 }

@@ -393,6 +393,20 @@ namespace sasktran2 {
          *
          */
         void set_zero();
+
+        /**
+         * @brief The number of wavelengths in the mapping
+         * 
+         * @return int 
+         */
+        int num_wavel() const { return m_nwavel; }
+
+        /**
+         * @brief The number of BRDF arguments in the mapping
+         *
+         * @return int
+         */
+        int num_brdf_args() const { return m_nbrdf_args; }
     };
 
     inline void assign_absorber_derivatives(

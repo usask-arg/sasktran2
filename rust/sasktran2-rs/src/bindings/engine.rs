@@ -49,6 +49,13 @@ impl<'a> Engine<'a> {
             output.with_derivative(deriv_name, num_deriv_output);
         }
 
+        let deriv_names = atmosphere.surface.derivative_mapping_names().map_err(|e| anyhow::anyhow!(e))?;
+        for deriv_name in deriv_names.iter() {
+            let mapping = atmosphere.surface.get_derivative_mapping(deriv_name).map_err(|e| anyhow::anyhow!(e))?;
+
+            output.with_surface_derivative(deriv_name);
+        }
+
         unsafe {
             ffi::sk_engine_calculate_radiance(self.engine, atmosphere.atmosphere, output.output);
         }

@@ -37,7 +37,20 @@ impl PyOutput {
         }
 
         Ok(py_dict)
+    }
+    #[getter]
+    fn get_d_radiance_surf<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyDict>> {
+        let binding = &this.borrow().output;
+        let d_radiance = &binding.d_radiance_surf;
 
+        let py_dict = PyDict::new(this.py());
 
+        for (key, value) in d_radiance.iter() {
+            let deriv = unsafe { PyArray3::borrow_from_array(value, this.clone().into_any()) };
+
+            py_dict.set_item(key, deriv)?;
+        }
+
+        Ok(py_dict)
     }
 }

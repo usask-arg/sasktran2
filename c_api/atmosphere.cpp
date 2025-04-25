@@ -325,6 +325,88 @@ int sk_surface_set_brdf(Surface *surface, BRDF *brdf, double *brdf_args) {
     return 0;
 }
 
+int sk_surface_get_derivative_mapping(Surface *storage, const char *name, SurfaceDerivativeMapping **mapping) {
+    if (storage == nullptr) {
+        return -1; // Error: storage is null
+    }
+    if (storage->impl == nullptr) {
+        return -2; // Error: storage implementation is null
+    }
+
+    auto* impl1 = dynamic_cast<sasktran2::atmosphere::Surface<1>*>(storage->impl.get());
+    auto* impl3 = dynamic_cast<sasktran2::atmosphere::Surface<3>*>(storage->impl.get());
+
+    if (impl1) {
+        auto& map = impl1->get_derivative_mapping(name);
+        *mapping = new SurfaceDerivativeMapping(&map);
+    } else if (impl3) {
+        auto& map = impl3->get_derivative_mapping(name);
+        *mapping = new SurfaceDerivativeMapping(&map);
+    } else {
+        return -3; // Error: storage implementation is not Surface
+    }
+    return 0;
+}
+
+int sk_surface_get_num_derivative_mappings(Surface *storage, int *num_mappings) {
+    if (storage == nullptr) {
+        return -1; // Error: storage is null
+    }
+    if (storage->impl == nullptr) {
+        return -2; // Error: storage implementation is null
+    }
+
+    auto* impl1 = dynamic_cast<sasktran2::atmosphere::Surface<1>*>(storage->impl.get());
+    auto* impl3 = dynamic_cast<sasktran2::atmosphere::Surface<3>*>(storage->impl.get());
+
+    if (impl1) {
+        *num_mappings = impl1->derivative_mappings().size();
+    } else if (impl3) {
+        *num_mappings = impl3->derivative_mappings().size();
+    } else {
+        return -3; // Error: storage implementation is not Surface
+    }
+    return 0;
+}
+
+int sk_surface_get_derivative_mapping_name(Surface *storage, int index, const char **name) {
+    if (storage == nullptr) {
+        return -1; // Error: storage is null
+    }
+    if (storage->impl == nullptr) {
+        return -2; // Error: storage implementation is null
+    }
+
+    auto* impl1 = dynamic_cast<sasktran2::atmosphere::Surface<1>*>(storage->impl.get());
+    auto* impl3 = dynamic_cast<sasktran2::atmosphere::Surface<3>*>(storage->impl.get());
+
+    if (impl1) {
+        auto& mapping_list = impl1->derivative_mappings();
+        auto it = mapping_list.begin();
+        std::advance(it, index);
+
+        if (it != mapping_list.end()) {
+            *name = it->first.c_str();
+            return 0;
+        } else {
+            return -3; // Error: index out of bounds
+        }
+    } else if (impl3) {
+        auto& mapping_list = impl3->derivative_mappings();
+        auto it = mapping_list.begin();
+        std::advance(it, index);
+
+        if (it != mapping_list.end()) {
+            *name = it->first.c_str();
+            return 0;
+        } else {
+            return -3; // Error: index out of bounds
+        }
+    } else {
+        return -4; // Error: storage implementation is not Surface
+    }
+}
+
 
 Atmosphere* sk_atmosphere_create(AtmosphereStorage* storage, Surface* surface,
                                  int calculate_derivatives) {

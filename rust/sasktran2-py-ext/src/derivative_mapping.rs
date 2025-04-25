@@ -75,3 +75,55 @@ impl PyDerivativeMappingView {
         self.derivative_mapping.set_interpolator(&mut interpolator);
     }
 }
+
+#[pyclass(unsendable)]
+pub struct PySurfaceDerivativeMappingView {
+    pub derivative_mapping: deriv_mapping::SurfaceDerivativeMapping,
+}
+
+#[pymethods]
+impl PySurfaceDerivativeMappingView {
+    #[getter]
+    fn get_d_emission<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyArray1<f64>>> {
+        let binding = this.borrow();
+        let array = &binding.derivative_mapping.d_emission();
+
+        unsafe { Ok(PyArray1::borrow_from_array(array, this.into_any())) }
+    }
+
+    #[getter]
+    fn get_d_brdf<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let binding = this.borrow();
+        let array = &binding.derivative_mapping.d_brdf();
+
+        unsafe { Ok(PyArray2::borrow_from_array(array, this.into_any())) }
+    }
+
+    #[getter]
+    fn get_interpolator<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let binding = this.borrow();
+        let array = &binding.derivative_mapping.get_interpolator();
+
+        unsafe { Ok(PyArray2::borrow_from_array(array, this.into_any())) }
+    }
+
+    #[setter]
+    fn set_interpolator(&mut self, interpolator: PyReadonlyArray2<f64>) {
+        let mut interpolator = interpolator.to_owned().as_array().to_owned();
+        self.derivative_mapping.set_interpolator(&mut interpolator);
+    }
+
+    #[getter]
+    fn get_interp_dim<'py>(&self) -> PyResult<String> {
+        Ok(self.derivative_mapping.get_interp_dim().to_string())
+    }
+
+    #[setter]
+    fn set_interp_dim(&mut self, name: &str) {
+        self.derivative_mapping.set_interp_dim(name);
+    }
+
+    fn set_zero(&mut self) {
+        self.derivative_mapping.set_zero();
+    }
+}

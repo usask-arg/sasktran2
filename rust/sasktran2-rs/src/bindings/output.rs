@@ -11,6 +11,7 @@ pub struct Output {
     num_los: usize,
     num_stokes: usize,
     pub d_radiance: HashMap<String, Array4<f64>>,
+    pub d_radiance_surf: HashMap<String, Array3<f64>>,
 }
 
 impl Output {
@@ -29,6 +30,7 @@ impl Output {
             num_los: num_los,
             num_stokes: num_stokes,
             d_radiance: HashMap::new(),
+            d_radiance_surf: HashMap::new(),
         }
     }
 
@@ -57,6 +59,40 @@ impl Output {
 
         if result != 0 {
             panic!("Error assigning derivative memory");
+        }
+
+        self
+    }
+
+    pub fn with_surface_derivative(
+        &mut self,
+        deriv_name: &str,
+    ) -> &mut Self {
+        let mut d_radiance_internal = Array3::<f64>::zeros((
+            self.num_wavel,
+            self.num_los,
+            self.num_stokes,
+        ));
+        let d_radiance_ptr = d_radiance_internal.as_mut_ptr();
+
+        let nrad = (self.num_wavel * self.num_los) as i32;
+
+        let c_deriv_name = CString::new(deriv_name).unwrap();
+
+        let result = unsafe {
+            ffi::sk_output_assign_surface_derivative_memory(
+                self.output,
+                c_deriv_name.as_ptr(),
+                d_radiance_ptr,
+                nrad,
+                self.num_stokes as i32,
+            )
+        };
+
+        self.d_radiance_surf.insert(deriv_name.to_string(), d_radiance_internal);
+
+        if result != 0 {
+            panic!("Error assigning surface derivative memory");
         }
 
         self

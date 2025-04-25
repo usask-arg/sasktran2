@@ -12,6 +12,9 @@ void sk_output_destroy(OutputC* config);
 int sk_output_assign_derivative_memory(
     OutputC* output, const char* name, double* derivative_mapping, int nrad, int nstokes, int nderiv);
 
+int sk_output_assign_surface_derivative_memory(
+    OutputC* output, const char* name, double* derivative_mapping, int nrad, int nstokes);
+
 #ifdef __cplusplus
 }
 #endif
