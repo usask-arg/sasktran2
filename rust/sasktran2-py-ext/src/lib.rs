@@ -46,6 +46,8 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Viewing geometry objects
     m.add_class::<viewing_geometry::PyGroundViewingSolar>()?;
+    m.add_class::<viewing_geometry::PyTangentAltitudeSolar>()?;
+    m.add_class::<viewing_geometry::PySolarAnglesObserverLocation>()?;
     m.add_class::<viewing_geometry::PyViewingGeometry>()?;
 
     // Engine
@@ -58,6 +60,8 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // BRDFs
     m.add_class::<brdf::PyLambertian>()?;
+    m.add_class::<brdf::PyKokhanovsky>()?;
+    m.add_class::<brdf::PyMODIS>()?;
 
     // Helper functions    
     m.add_function(wrap_pyfunction!(accel::assign_absorber_derivatives, m)?)?;

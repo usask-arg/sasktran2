@@ -23,6 +23,7 @@ struct Engine {
     }
 
     int calculate_radiance(Atmosphere* atmosphere, OutputC* output) {
+        try {
         if (impl) {
             if (_config->impl.num_stokes() == 1) {
                 Sasktran2<1>* impl1 = dynamic_cast<Sasktran2<1>*>(impl.get());
@@ -43,6 +44,11 @@ struct Engine {
             }
         }
         return -1; // Error: impl is null
+    }
+        catch (const std::exception& e) {
+            // Handle the exception, log it, etc.
+            return -3; // Error: exception occurred
+        }
     }
 };
 

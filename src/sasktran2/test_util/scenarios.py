@@ -127,8 +127,8 @@ def default_pure_scattering_atmosphere(
 
     atmo = Atmosphere(geometry, config, numwavel=1)
 
-    atmo.storage.total_extinction = extinction
-    atmo.storage.ssa = np.ones_like(extinction) * ssa
+    atmo.storage.total_extinction[:] = extinction
+    atmo.storage.ssa[:] = np.ones_like(extinction) * ssa
 
     atmo.leg_coeff.a1[0, :, 0] = 1
     atmo.leg_coeff.a1[2, :, 0] = 0.5

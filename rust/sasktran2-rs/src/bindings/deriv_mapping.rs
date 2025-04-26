@@ -29,6 +29,17 @@ impl DerivativeMapping {
         }
     }
 
+    pub fn d_emission(&self) -> ArrayViewMut2<f64> {
+        let mut d_emission: *mut f64 = std::ptr::null_mut();
+        unsafe {
+            ffi::sk_deriv_mapping_get_d_emission(self.mapping, &mut d_emission);
+            ArrayViewMut2::from_shape_ptr(
+                (self.num_location(), self.num_wavel()).f(),
+                d_emission,
+            )
+        }
+    }
+
     pub fn scat_factor(&self) -> ArrayViewMut2<f64> {
         let mut scat_factor: *mut f64 = std::ptr::null_mut();
         unsafe {
@@ -117,10 +128,16 @@ impl DerivativeMapping {
 
     pub fn set_interpolator(&mut self, interpolator: &mut Array2<f64>) {
         let (dim1, dim2) = interpolator.dim();
+
+        // Ensure that the interpolator is fortran ordered
+        let mut f_interpolator = Array2::zeros((dim1, dim2).f());
+        f_interpolator.assign(interpolator);
+
+        // The deriv mapping copies the data, so it's okay to use the local array
         unsafe {
             ffi::sk_deriv_mapping_set_interpolator(
                 self.mapping,
-                interpolator.as_mut_ptr(),
+                f_interpolator.as_mut_ptr(),
                 dim1 as i32,
                 dim2 as i32,
             );
@@ -134,6 +151,13 @@ impl DerivativeMapping {
         unsafe {
             ffi::sk_deriv_mapping_get_interpolator(self.mapping, &mut interpolator, &mut dim1, &mut dim2);
             ArrayView2::from_shape_ptr((dim1 as usize, dim2 as usize).f(), interpolator)
+        }
+    }
+
+    pub fn set_log_radiance_space(&mut self, log_radiance_space: bool) {
+        let log_radiance_space = if log_radiance_space { 0 } else { 1 };
+        unsafe {
+            ffi::sk_deriv_mapping_set_log_radiance_space(self.mapping, log_radiance_space);
         }
     }
 }
@@ -188,10 +212,15 @@ impl SurfaceDerivativeMapping {
 
     pub fn set_interpolator(&mut self, interpolator: &mut Array2<f64>) {
         let (dim1, dim2) = interpolator.dim();
+
+        // Ensure that the interpolator is fortran ordered
+        let mut f_interpolator = Array2::zeros((dim1, dim2).f());
+        f_interpolator.assign(interpolator);
+        // The deriv mapping copies the data, so it's okay to use the local array
         unsafe {
             ffi::sk_surface_deriv_mapping_set_interpolator(
                 self.mapping,
-                interpolator.as_mut_ptr(),
+                f_interpolator.as_mut_ptr(),
                 dim1 as i32,
                 dim2 as i32,
             );

@@ -110,7 +110,7 @@ class ThermalEmission(Constituent):
             raise ValueError(msg)
 
         # calculate radiance in W / (m^2 nm sr)
-        atmo.storage.emission_source += planck_blackbody_radiance(
+        atmo.storage.emission_source[:] += planck_blackbody_radiance(
             atmo.temperature_k, atmo.wavelengths_nm
         )
 
@@ -189,14 +189,14 @@ class SurfaceThermalEmission(Constituent):
             self.emissivity
             * d_planck_blackbody_radiance_d_temperature(
                 np.atleast_1d(self.temperature_k), atmo.wavelengths_nm
-            ).T
+            )
         )
         deriv_mapping.interp_dim = "dummy"
         deriv_mapping.interpolator = np.ones((len(atmo.wavelengths_nm), 1))
 
         # Surface emissivity derivative
         deriv_mapping = atmo.surface.get_derivative_mapping(f"wf_{name}_emissivity")
-        deriv_mapping.d_emission[:] = planck.flatten().reshape(-1, 1)
+        deriv_mapping.d_emission[:] = planck.flatten()
         deriv_mapping.interp_dim = "dummy"
 
         # If emissivity is scalear, we interpolate

@@ -11,7 +11,7 @@ def test_los_refraction_refractive_one():
         cos_sza=0.6,
         solar_azimuth=0,
         earth_radius_m=6372000,
-        altitude_grid_m=np.arange(0, 65001, 1000),
+        altitude_grid_m=np.arange(0, 65001, 1000.0),
         interpolation_method=sk.InterpolationMethod.LinearInterpolation,
         geometry_type=sk.GeometryType.Spherical,
     )
@@ -81,7 +81,7 @@ def test_multiple_scatter_refraction_refractive_one():
         cos_sza=0.6,
         solar_azimuth=0,
         earth_radius_m=6372000,
-        altitude_grid_m=np.arange(0, 65001, 1000),
+        altitude_grid_m=np.arange(0, 65001, 1000.0),
         interpolation_method=sk.InterpolationMethod.LinearInterpolation,
         geometry_type=sk.GeometryType.Spherical,
     )
@@ -153,7 +153,7 @@ def test_solar_refraction_refractive_one_discrete_ordinates():
         cos_sza=csz,
         solar_azimuth=0,
         earth_radius_m=6372000,
-        altitude_grid_m=np.arange(0, 65001, 1000),
+        altitude_grid_m=np.arange(0, 65001, 1000.0),
         interpolation_method=sk.InterpolationMethod.LinearInterpolation,
         geometry_type=sk.GeometryType.Spherical,
     )

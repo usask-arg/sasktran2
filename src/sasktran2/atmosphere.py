@@ -13,6 +13,7 @@ from sasktran2.units import (
     wavlength_nm_to_wavenumber_cminv,
 )
 from sasktran2.util.state import EquationOfState
+from sasktran2._core_rust import PyAtmosphere
 
 
 @dataclass
@@ -100,14 +101,8 @@ class Atmosphere:
         self._legendre_derivative = legendre_derivative
         self._specific_humidity_derivative = specific_humidity_derivative
 
-        if self._nstokes == 1:
-            self._atmosphere = sk.AtmosphereStokes_1(
-                nwavel, model_geometry, config, calculate_derivatives
-            )
-        elif self._nstokes == 3:
-            self._atmosphere = sk.AtmosphereStokes_3(
-                nwavel, model_geometry, config, calculate_derivatives
-            )
+        self._atmosphere = PyAtmosphere(nwavel, len(model_geometry.altitudes()), config.num_singlescatter_moments, calculate_derivatives, config.num_stokes)
+
 
         self._leg_coeff = LegendreStorageView(
             self._atmosphere.storage.leg_coeff, self._nstokes
@@ -318,17 +313,8 @@ class Atmosphere:
         Sets the internal storage object to 0.  Typically used in-between calculations to reset the
         atmosphere without reconstructing it.
         """
-        self.storage.ssa[:] = 0
-        self.storage.total_extinction[:] = 0
-        self.storage.leg_coeff[:] = 0
-        self.storage.emission_source[:] = 0
-
-        for _, ele in self.storage.derivative_mappings.items():
-            ele.set_zero()
-        for _, ele in self.surface.derivative_mappings.items():
-            ele.set_zero()
-
-        self.surface.emission[:] = 0
+        self.storage.set_zero()
+        self.surface.set_zero()
 
     @property
     def deriv_mappings(self) -> dict:
@@ -381,7 +367,6 @@ class Atmosphere:
         -------
         Union[sk.AtmosphereStokes_1, sk.AtmosphereStokes_3]
         """
-        num_scat_derivs = 0
 
         if len(self._constituents) > 0:
             logging.debug("Setting atmosphere from constituents")
@@ -398,9 +383,6 @@ class Atmosphere:
                 for name, constituent in self._constituents.items():
                     constituent.register_derivative(self, name)
 
-                for _, deriv in self.storage.derivative_mappings.items():
-                    if deriv.is_scattering_derivative:
-                        num_scat_derivs += 1
             logging.debug("Finished setting atmosphere from constituents")
         else:
             # using the raw interface
@@ -408,10 +390,12 @@ class Atmosphere:
                 deriv_mapping = self.storage.get_derivative_mapping("wf_extinction")
                 deriv_mapping.d_extinction[:] = 1
                 deriv_mapping.d_ssa[:] = 0.0
+                deriv_mapping.interp_dim = "altitude"
 
                 deriv_mapping = self.storage.get_derivative_mapping("wf_ssa")
                 deriv_mapping.d_extinction[:] = 0.0
                 deriv_mapping.d_ssa[:] = 1.0
+                deriv_mapping.interp_dim = "altitude"
 
                 deriv_mapping = self.surface.get_derivative_mapping("wf_albedo")
                 deriv_mapping.d_brdf[:] = 1.0
@@ -429,11 +413,10 @@ class Atmosphere:
                         deriv_mapping.d_extinction[:] = 0
                         deriv_mapping.d_ssa[:] = 0
                         deriv_mapping.scat_factor[:] = 1
-                        num_scat_derivs += 1
+                        deriv_mapping.interp_dim = "altitude"
 
         # Now we need to resize the phase derivative storage if necessary, and set the scattering derivatives
-        if num_scat_derivs > 0:
-            self.storage.finalize_scattering_derivatives(num_scat_derivs)
+        self.storage.finalize_scattering_derivatives(0)
 
         # Store the unscaled optical properties for use in the derivative mappings
         self._unscaled_ssa = copy(self.storage.ssa)

@@ -5,14 +5,7 @@ import numpy as np
 from sasktran2.atmosphere import Atmosphere
 from sasktran2.util.interpolation import linear_interpolating_matrix
 
-from ..._core import (  # noqa: F401
-    LambertianStokes_1,
-    LambertianStokes_3,
-    MODISStokes_1,
-    MODISStokes_3,
-    SnowKokhanovskyStokes_1,
-    SnowKokhanovskyStokes_3,
-)
+from ..._core_rust import PyLambertian, PyKokhanovsky, PyMODIS
 
 
 class WavelengthInterpolatorMixin:

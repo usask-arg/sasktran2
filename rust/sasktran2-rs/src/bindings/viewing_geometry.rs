@@ -30,6 +30,42 @@ impl ViewingGeometry {
         }
     }
 
+    pub fn add_tangent_altitude_solar(
+        &mut self,
+        tangent_altitude_m: f64,
+        relative_azimuth_angle: f64,
+        observer_altitude: f64,
+        cos_sza: f64,
+    ) {
+        unsafe {
+            ffi::sk_viewing_geometry_add_tangent_altitude_solar(
+                self.viewing_geometry,
+                tangent_altitude_m,
+                relative_azimuth_angle,
+                observer_altitude,
+                cos_sza,
+            );
+        }
+    }
+
+    pub fn add_solar_angles_observer_location(
+        &mut self,
+        cos_sza: f64,
+        relative_azimuth_angle: f64,
+        cos_viewing_zenith: f64,
+        observer_altitude: f64,
+    ) {
+        unsafe {
+            ffi::sk_viewing_geometry_add_solar_angles_observer_location(
+                self.viewing_geometry,
+                cos_sza,
+                relative_azimuth_angle,
+                cos_viewing_zenith,
+                observer_altitude,
+            );
+        }
+    }
+
     pub fn num_rays(&self) -> Result<usize> {
         let mut num_rays = 0i32;
         let error_code =

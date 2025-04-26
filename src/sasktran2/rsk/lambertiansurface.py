@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import numpy as np
 
-from sasktran2.rsk.atmosphere import Atmosphere
 
 from sasktran2.constituent.base import Constituent
 from sasktran2.constituent.brdf import WavelengthInterpolatorMixin
 from sasktran2._core_rust import PyLambertian
+import sasktran2 as sk
 
 
 class LambertianSurface(Constituent, WavelengthInterpolatorMixin):
@@ -57,14 +57,14 @@ class LambertianSurface(Constituent, WavelengthInterpolatorMixin):
     def albedo(self, albedo: np.array):
         self._albedo = np.atleast_1d(albedo)
 
-    def add_to_atmosphere(self, atmo: Atmosphere):
+    def add_to_atmosphere(self, atmo: sk.Atmosphere):
         atmo.surface.brdf = PyLambertian(atmo.nstokes)
 
         interp_matrix = self._interpolating_matrix(atmo)
 
         atmo.surface.brdf_args[0, :] = interp_matrix @ self._albedo
 
-    def register_derivative(self, atmo: Atmosphere, name: str):
+    def register_derivative(self, atmo: sk.Atmosphere, name: str):
         # Start by constructing the interpolation matrix
         interp_matrix = self._interpolating_matrix(atmo)
 

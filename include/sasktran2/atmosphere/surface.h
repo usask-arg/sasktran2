@@ -594,6 +594,22 @@ namespace sasktran2::atmosphere {
          * @return const Eigen::VectorXd& shape (num_wavel)
          */
         const Eigen::Map<Eigen::VectorXd>& emission() const { return m_emission; }
+
+        /**
+         * @brief Resets the internal storage to zero.
+         *
+         */
+        void set_zero() {
+            m_emission.setZero();
+
+            // We don't set the brdf_args to zero mostly for historic reasons. 
+            // BRDF constituents are assumed to set the brdf_args, not add to them
+            // m_brdf_args.setZero();
+
+            for( auto& [name, mapping] : m_derivative_mappings) {
+                mapping.set_zero();
+            }
+        }
     };
 
 } // namespace sasktran2::atmosphere

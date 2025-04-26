@@ -8,7 +8,7 @@ from sasktran2.optical import vacuum_wavelength_to_air_wavelength
 def map_surface_derivative(
     mapping, np_deriv: np.ndarray, dims: list[str]
 ) -> xr.DataArray:
-    if mapping.interpolator is None:
+    if mapping.interpolator is None or len(mapping.interpolator) == 0:
         return xr.DataArray(np_deriv, dims=dims)
     return xr.DataArray(
         np.einsum(
@@ -25,7 +25,7 @@ class Engine:
     _engine: PyEngine
 
     def __init__(self, config, geometry, viewing_geometry):
-        self._engine = PyEngine(config, geometry, viewing_geometry)
+        self._engine = PyEngine(config, geometry._geometry, viewing_geometry)
 
     def calculate_radiance(self, atmosphere):
         output = self._engine.calculate_radiance(atmosphere.internal_object())
@@ -35,10 +35,10 @@ class Engine:
         out_ds["radiance"] = xr.DataArray(
             output.radiance,
             dims=["wavelength_nm", "los", "stokes"],
-            coords={
-                "wavelength_nm": atmosphere.wavelengths_nm,
-            },
         )
+
+        if atmosphere.wavelengths_nm is not None:
+            out_ds.coords["wavelength_nm"] = atmosphere.wavelengths_nm
 
         for k, v in output.d_radiance.items():
             mapping = atmosphere.storage.get_derivative_mapping(k)
@@ -46,14 +46,11 @@ class Engine:
             name = k if mapping.assign_name == "" else mapping.assign_name
 
             if name in out_ds:
-                out_ds[name] += v 
+                out_ds[name] += v
             else:
                 out_ds[name] = xr.DataArray(
                     v,
                     dims=[mapping.interp_dim, "wavelength_nm", "los", "stokes"],
-                    coords={
-                        "wavelength_nm": atmosphere.wavelengths_nm,
-                    },
                 )
         for k, v in output.d_radiance_surf.items():
             mapping = atmosphere.surface.get_derivative_mapping(k)
@@ -66,4 +63,4 @@ class Engine:
             out_ds[k] = mapped_derivative
 
 
-        return output
+        return out_ds

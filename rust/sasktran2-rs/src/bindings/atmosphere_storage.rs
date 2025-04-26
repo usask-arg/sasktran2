@@ -86,6 +86,7 @@ impl AtmosphereStorage {
                 &mut num_mappings,
             )
         };
+
         if result != 0 {
             return Err("Failed to get number of derivative mappings".to_string());
         }

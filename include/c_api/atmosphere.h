@@ -192,6 +192,10 @@ int sk_atmosphere_storage_get_derivative_mapping_by_index(
    const char** name
    );
 
+   int sk_surface_set_zero(
+   Surface* storage
+   );
+
 
  #ifdef __cplusplus
  }

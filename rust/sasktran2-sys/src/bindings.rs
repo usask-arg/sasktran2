@@ -43,6 +43,12 @@ unsafe extern "C" {
     pub fn sk_brdf_create_lambertian(nstokes: ::std::os::raw::c_int) -> *mut BRDF;
 }
 unsafe extern "C" {
+    pub fn sk_brdf_create_kokhanovsky(nstokes: ::std::os::raw::c_int) -> *mut BRDF;
+}
+unsafe extern "C" {
+    pub fn sk_brdf_create_modis(nstokes: ::std::os::raw::c_int) -> *mut BRDF;
+}
+unsafe extern "C" {
     pub fn sk_brdf_get_num_deriv(
         config: *mut BRDF,
         num_deriv: *mut ::std::os::raw::c_int,
@@ -380,6 +386,9 @@ unsafe extern "C" {
         name: *mut *const ::std::os::raw::c_char,
     ) -> ::std::os::raw::c_int;
 }
+unsafe extern "C" {
+    pub fn sk_surface_set_zero(storage: *mut Surface) -> ::std::os::raw::c_int;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct ViewingGeometry {
@@ -399,6 +408,24 @@ unsafe extern "C" {
         observeraltitude: f64,
         cos_viewing_zenith: f64,
     );
+}
+unsafe extern "C" {
+    pub fn sk_viewing_geometry_add_tangent_altitude_solar(
+        geometry: *mut ViewingGeometry,
+        tangent_altitude_m: f64,
+        relative_azimuth_angle: f64,
+        observeraltitude: f64,
+        cos_sza: f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_viewing_geometry_add_solar_angles_observer_location(
+        geometry: *mut ViewingGeometry,
+        cos_sza: f64,
+        relative_azimuth_angle: f64,
+        cos_viewing_zenith: f64,
+        observeraltitude: f64,
+    ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
     pub fn sk_viewing_geometry_num_rays(

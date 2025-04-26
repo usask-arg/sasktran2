@@ -237,7 +237,7 @@ int sk_atmosphere_storage_get_derivative_mapping_name(AtmosphereStorage *storage
             return -3; // Error: index out of bounds
         }
     } else if (impl3) {
-        auto& mapping_list = impl1->derivative_mappings();
+        auto& mapping_list = impl3->derivative_mappings();
         auto it = mapping_list.begin();
         std::advance(it, index);
 
@@ -454,6 +454,27 @@ int sk_atmosphere_storage_finalize_scattering_derivatives(AtmosphereStorage *sto
         impl3->finalize_scattering_derivatives(0);
     } else {
         return -3; // Error: storage implementation is not AtmosphereGridStorageFull
+    }
+    return 0;
+}
+
+int sk_surface_set_zero(Surface *storage) {
+    if (storage == nullptr) {
+        return -1; // Error: storage is null
+    }
+    if (storage->impl == nullptr) {
+        return -2; // Error: storage implementation is null
+    }
+
+    auto* impl1 = dynamic_cast<sasktran2::atmosphere::Surface<1>*>(storage->impl.get());
+    auto* impl3 = dynamic_cast<sasktran2::atmosphere::Surface<3>*>(storage->impl.get());
+
+    if (impl1) {
+        impl1->set_zero();
+    } else if (impl3) {
+        impl3->set_zero();
+    } else {
+        return -3; // Error: storage implementation is not Surface
     }
     return 0;
 }

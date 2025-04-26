@@ -34,6 +34,14 @@ impl PyDerivativeMappingView {
     }
 
     #[getter]
+    fn get_d_emission<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let binding = this.borrow();
+        let array = &binding.derivative_mapping.d_emission();
+
+        unsafe { Ok(PyArray2::borrow_from_array(array, this.into_any())) }
+    }
+
+    #[getter]
     fn get_scat_factor<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyArray2<f64>>> {
         let binding = this.borrow();
         let array = &binding.derivative_mapping.scat_factor();
@@ -73,6 +81,11 @@ impl PyDerivativeMappingView {
     fn set_interpolator(&mut self, interpolator: PyReadonlyArray2<f64>) {
         let mut interpolator = interpolator.to_owned().as_array().to_owned();
         self.derivative_mapping.set_interpolator(&mut interpolator);
+    }
+
+    #[setter]
+    fn set_log_radiance_space(&mut self, log_radiance_space: bool) {
+        self.derivative_mapping.set_log_radiance_space(log_radiance_space);
     }
 }
 

@@ -180,6 +180,13 @@ impl PyAtmosphereSurfaceView {
         unsafe { Ok(PyArray2::borrow_from_array(array, this.into_any())) }
     }
 
+    #[getter]
+    fn get_albedo<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let array = &this.borrow().surface.brdf_args;
+
+        unsafe { Ok(PyArray2::borrow_from_array(array, this.into_any())) }
+    }
+
     #[setter]
     fn set_brdf<'py>(&mut self, brdf: Bound<'py, PyAny>) -> PyResult<()> {
         set_py_brdf_in_surface(brdf, self.surface).into_pyresult()?;
@@ -198,5 +205,10 @@ impl PyAtmosphereSurfaceView {
         Python::with_gil(|py| {
             Py::new(py, mapping_view)
         })
+    }
+
+    fn set_zero(&mut self) -> PyResult<()> {
+        self.surface.set_zero();
+        Ok(())
     }
 }

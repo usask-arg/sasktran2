@@ -11,8 +11,7 @@ from sasktran2.atmosphere import Atmosphere
 
 from ..base import Constituent
 from . import (
-    SnowKokhanovskyStokes_1,
-    SnowKokhanovskyStokes_3,
+    PyKokhanovsky,
     WavelengthInterpolatorMixin,
 )
 
@@ -81,11 +80,7 @@ class SnowKokhanovsky(Constituent, WavelengthInterpolatorMixin):
             )
             raise ValueError(msg)
 
-        atmo.surface.brdf = (
-            SnowKokhanovskyStokes_1()
-            if atmo.nstokes == 1
-            else SnowKokhanovskyStokes_3()
-        )
+        atmo.surface.brdf = PyKokhanovsky(atmo.nstokes)
 
         interp_matrix = self._interpolating_matrix(atmo)
 
@@ -97,7 +92,6 @@ class SnowKokhanovsky(Constituent, WavelengthInterpolatorMixin):
         L_interp = interp_matrix @ self._L
 
         atmo.surface.brdf_args[0, :] = (chi + M_interp) * L_interp / atmo.wavelengths_nm
-        atmo.surface.d_brdf_args[0][0, :] = 1
 
     def register_derivative(self, atmo: Atmosphere, name: str):
         # Start by constructing the interpolation matrix

@@ -19,6 +19,36 @@ BRDF* sk_brdf_create_lambertian(int nstokes) {
     return brdf;
 }
 
+BRDF* sk_brdf_create_kokhanovsky(int nstokes) {
+    BRDF* brdf = new BRDF();
+
+    if (nstokes == 1) {
+        brdf->impl = std::make_shared<sasktran2::atmosphere::brdf::SnowKokhanovsky<1>>();
+    } else if (nstokes == 3) {
+        brdf->impl = std::make_shared<sasktran2::atmosphere::brdf::SnowKokhanovsky<3>>();
+    } else {
+        delete brdf;
+        return nullptr;
+    }
+
+    return brdf;
+}
+
+BRDF* sk_brdf_create_modis(int nstokes) {
+    BRDF* brdf = new BRDF();
+
+    if (nstokes == 1) {
+        brdf->impl = std::make_shared<sasktran2::atmosphere::brdf::MODIS<1>>();
+    } else if (nstokes == 3) {
+        brdf->impl = std::make_shared<sasktran2::atmosphere::brdf::MODIS<3>>();
+    } else {
+        delete brdf;
+        return nullptr;
+    }
+
+    return brdf;
+}
+
 void sk_brdf_destroy(BRDF* brdf) {
     delete brdf;
 }

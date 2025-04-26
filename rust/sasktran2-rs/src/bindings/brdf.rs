@@ -13,10 +13,6 @@ impl Drop for BRDF {
     }
 }
 
-pub struct Lambertian {
-    internal: BRDF
-}
-
 pub trait IsCBRDF {
     fn as_cbrdf(&self) -> *mut ffi::BRDF;
     fn num_args(&self) -> Result<usize> {
@@ -29,6 +25,10 @@ pub trait IsCBRDF {
 
         return Ok(num_args as usize);
     }
+}
+
+pub struct Lambertian {
+    internal: BRDF
 }
 
 impl Lambertian {
@@ -44,6 +44,49 @@ impl Lambertian {
 }
 
 impl IsCBRDF for Lambertian {
+    fn as_cbrdf(&self) -> *mut ffi::BRDF {
+        self.internal.brdf
+    }
+}
+
+pub struct SnowKokhanovsky {
+    internal: BRDF
+}
+
+impl SnowKokhanovsky {
+    pub fn new(nstokes: usize) -> Self {
+        let brdf = unsafe { ffi::sk_brdf_create_kokhanovsky(nstokes as i32) };
+        if brdf.is_null() {
+            panic!("Failed to create Kokhanovsky BRDF");
+        }
+        SnowKokhanovsky {
+            internal: BRDF { brdf }
+        }
+    }
+}
+impl IsCBRDF for SnowKokhanovsky {
+    fn as_cbrdf(&self) -> *mut ffi::BRDF {
+        self.internal.brdf
+    }
+}
+
+pub struct MODIS {
+    internal: BRDF
+}
+
+impl MODIS {
+    pub fn new(nstokes: usize) -> Self {
+        let brdf = unsafe { ffi::sk_brdf_create_modis(nstokes as i32) };
+        if brdf.is_null() {
+            panic!("Failed to create MODIS BRDF");
+        }
+        MODIS {
+            internal: BRDF { brdf }
+        }
+    }
+}
+
+impl IsCBRDF for MODIS {
     fn as_cbrdf(&self) -> *mut ffi::BRDF {
         self.internal.brdf
     }

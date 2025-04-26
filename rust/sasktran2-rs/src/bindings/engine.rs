@@ -56,9 +56,14 @@ impl<'a> Engine<'a> {
             output.with_surface_derivative(deriv_name);
         }
 
-        unsafe {
-            ffi::sk_engine_calculate_radiance(self.engine, atmosphere.atmosphere, output.output);
+        let result = unsafe {
+            ffi::sk_engine_calculate_radiance(self.engine, atmosphere.atmosphere, output.output)
+        };
+
+        if result != 0 {
+            return Err(anyhow::anyhow!("Failed to calculate radiance: {}", result));
         }
+
         Ok(output)
     }
 }

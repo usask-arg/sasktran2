@@ -97,6 +97,14 @@ impl Surface {
         Ok(names)
     }
 
+    pub fn set_zero(&mut self) -> Result<()> {
+        let result = unsafe { ffi::sk_surface_set_zero(self.surface) };
+        if result != 0 {
+            return Err(anyhow!("Failed to set surface to zero: {}", result));
+        }
+        Ok(())
+    }
+
 }
 
 impl Drop for Surface {

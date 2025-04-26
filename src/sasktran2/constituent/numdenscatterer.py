@@ -87,21 +87,21 @@ class NumberDensityScatterer(Constituent):
 
         interp_numden = interp_matrix @ self._number_density
 
-        atmo.storage.total_extinction += (
+        atmo.storage.total_extinction[:] += (
             self._optical_quants.extinction * (interp_numden)[:, np.newaxis]
         )
 
         # Optical quants in SSA temporarily stores the SSA * extinction
-        atmo.storage.ssa += self._optical_quants.ssa * (interp_numden)[:, np.newaxis]
+        atmo.storage.ssa[:] += self._optical_quants.ssa * (interp_numden)[:, np.newaxis]
 
-        atmo.storage.leg_coeff += (
+        atmo.storage.leg_coeff[:] += (
             self._optical_quants.ssa[np.newaxis, :, :]
             * (interp_numden)[np.newaxis, :, np.newaxis]
             * self._optical_quants.leg_coeff
         )
 
         # Convert back to SSA for ease of use later in the derivatives
-        self._optical_quants.ssa /= self._optical_quants.extinction
+        self._optical_quants.ssa[:] /= self._optical_quants.extinction
         self._optical_quants.ssa[~np.isfinite(self._optical_quants.ssa)] = 1
 
     def register_derivative(self, atmo: Atmosphere, name: str):
