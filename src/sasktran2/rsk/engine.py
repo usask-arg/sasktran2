@@ -1,8 +1,8 @@
 from sasktran2._core_rust import PyEngine
 import xarray as xr
 import numpy as np
+from sasktran2.viewinggeo.base import ViewingGeometryContainer
 
-from sasktran2.optical import vacuum_wavelength_to_air_wavelength
 
 
 def map_surface_derivative(
@@ -25,7 +25,10 @@ class Engine:
     _engine: PyEngine
 
     def __init__(self, config, geometry, viewing_geometry):
-        self._engine = PyEngine(config, geometry._geometry, viewing_geometry)
+        self._engine = PyEngine(config, geometry._geometry, viewing_geometry._viewing_geometry)
+        self._config = config
+        self._geometry = geometry
+        self._viewing_geometry = viewing_geometry
 
     def calculate_radiance(self, atmosphere):
         output = self._engine.calculate_radiance(atmosphere.internal_object())
@@ -61,6 +64,9 @@ class Engine:
             if mapping.interp_dim == "dummy":
                 mapped_derivative = mapped_derivative.isel(**{mapping.interp_dim: 0})
             out_ds[k] = mapped_derivative
+
+        if isinstance(self._viewing_geometry, ViewingGeometryContainer):
+            out_ds = self._viewing_geometry.add_geometry_to_radiance(out_ds)
 
 
         return out_ds

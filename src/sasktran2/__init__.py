@@ -19,11 +19,9 @@ from . import (
     viewinggeo,
 )
 
+from .viewinggeo.wrappers import ViewingGeometry, GroundViewingSolar, TangentAltitudeSolar, SolarAnglesObserverLocation
+
 from ._core_rust import PyConfig as Config
-from ._core_rust import PyGroundViewingSolar as GroundViewingSolar
-from ._core_rust import PyViewingGeometry as ViewingGeometry
-from ._core_rust import PyTangentAltitudeSolar as TangentAltitudeSolar
-from ._core_rust import PySolarAnglesObserverLocation as SolarAnglesObserverLocation
 from .rsk import Engine
 
 from ._core_rust import (
