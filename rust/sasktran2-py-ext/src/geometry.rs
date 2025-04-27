@@ -1,8 +1,8 @@
 use crate::prelude::*;
+use numpy::PyArray1;
 use numpy::{PyReadonlyArray1, ToPyArray};
 use pyo3::prelude::*;
 use sasktran2_rs::bindings::geometry;
-use numpy::PyArray1;
 
 #[pyclass(eq, eq_int)]
 #[derive(PartialEq, Clone)]
@@ -10,7 +10,7 @@ pub enum GeometryType {
     Spherical,
     PlaneParallel,
     PseudoSpherical,
-    Ellipsoidal
+    Ellipsoidal,
 }
 
 #[pyclass(eq, eq_int)]
@@ -18,9 +18,8 @@ pub enum GeometryType {
 pub enum InterpolationMethod {
     LinearInterpolation,
     ShellInterpolation,
-    LowerInterpolation
+    LowerInterpolation,
 }
-
 
 #[pyclass(unsendable)]
 pub struct PyGeometry1D {
@@ -58,7 +57,7 @@ impl PyGeometry1D {
             earth_radius_m,
             altitude_grid_m.to_vec(),
             interpolation_method,
-            geometry_type
+            geometry_type,
         );
 
         Ok(PyGeometry1D { geometry })

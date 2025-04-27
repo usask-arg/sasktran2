@@ -1,5 +1,5 @@
-use sasktran2_sys::ffi;
 use crate::prelude::*;
+use sasktran2_sys::ffi;
 
 #[repr(i32)]
 pub enum InterpolationMethod {
@@ -50,9 +50,7 @@ impl Geometry1D {
     pub fn altitudes_m(&self) -> Result<Array1<f64>> {
         let mut altitudes = vec![0.0; self.get_num_altitudes() as usize];
         let altitudes_ptr = altitudes.as_mut_ptr();
-        let result = unsafe {
-            ffi::sk_geometry1d_get_altitudes(self.geometry, altitudes_ptr)
-        };
+        let result = unsafe { ffi::sk_geometry1d_get_altitudes(self.geometry, altitudes_ptr) };
         if result != 0 {
             return Err(anyhow::anyhow!("Failed to get altitudes"));
         }
@@ -69,11 +67,8 @@ impl Geometry1D {
             return Err(anyhow::anyhow!("Failed to get refractive index"));
         }
         let num_alt = self.get_num_altitudes() as usize;
-        unsafe {
-            Ok(ArrayViewMut1::from_shape_ptr(num_alt, refractive_index_ptr))
-        }
+        unsafe { Ok(ArrayViewMut1::from_shape_ptr(num_alt, refractive_index_ptr)) }
     }
-
 }
 
 impl Drop for Geometry1D {

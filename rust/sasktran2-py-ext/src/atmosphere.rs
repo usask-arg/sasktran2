@@ -1,16 +1,15 @@
+use crate::brdf::*;
+use crate::derivative_mapping::PyDerivativeMappingView;
+use crate::derivative_mapping::PySurfaceDerivativeMappingView;
+use crate::prelude::*;
 use numpy::PyArray1;
 use numpy::PyArray2;
 use numpy::PyArray3;
 use pyo3::prelude::*;
-use crate::derivative_mapping::PySurfaceDerivativeMappingView;
-use crate::prelude::*;
 use sasktran2_rs::bindings::atmosphere;
 use sasktran2_rs::bindings::atmosphere_storage;
-use sasktran2_rs::bindings::surface;
 use sasktran2_rs::bindings::prelude::Stokes;
-use crate::brdf::*;
-use crate::derivative_mapping::PyDerivativeMappingView;
-
+use sasktran2_rs::bindings::surface;
 
 #[pyclass(unsendable)]
 pub struct PyAtmosphere {
@@ -40,7 +39,7 @@ impl PyAtmosphere {
         num_location: usize,
         num_legendre: usize,
         calc_derivatives: bool,
-        num_stokes: usize
+        num_stokes: usize,
     ) -> PyResult<Self> {
         let stokes = match num_stokes {
             1 => Stokes::Stokes1,
@@ -54,49 +53,38 @@ impl PyAtmosphere {
                 num_location,
                 num_legendre,
                 calc_derivatives,
-                stokes
+                stokes,
             ),
         })
     }
 
     #[getter]
     #[allow(mutable_transmutes)]
-    fn get_storage(
-        &self,
-    ) -> PyResult<Py<PyAtmosphereStorageView>> {
+    fn get_storage(&self) -> PyResult<Py<PyAtmosphereStorageView>> {
         let storage = &self.atmosphere.storage;
         let storage_view = PyAtmosphereStorageView {
             storage: unsafe { std::mem::transmute(storage) },
         };
-        Python::with_gil(|py| {
-            Py::new(py, storage_view)
-        })
+        Python::with_gil(|py| Py::new(py, storage_view))
     }
 
     #[getter]
     #[allow(mutable_transmutes)]
-    fn get_surface(
-        &self,
-    ) -> PyResult<Py<PyAtmosphereSurfaceView>> {
+    fn get_surface(&self) -> PyResult<Py<PyAtmosphereSurfaceView>> {
         let surface = &self.atmosphere.surface;
         let surface_view = PyAtmosphereSurfaceView {
             surface: unsafe { std::mem::transmute(surface) },
         };
-        Python::with_gil(|py| {
-            Py::new(py, surface_view)
-        })
+        Python::with_gil(|py| Py::new(py, surface_view))
     }
 
-
-    fn apply_delta_m_scaling(
-        &mut self,
-        order: usize,
-    ) -> PyResult<()> {
-        self.atmosphere.apply_delta_m_scaling(order).into_pyresult()?;
+    fn apply_delta_m_scaling(&mut self, order: usize) -> PyResult<()> {
+        self.atmosphere
+            .apply_delta_m_scaling(order)
+            .into_pyresult()?;
         Ok(())
     }
 }
-
 
 #[pymethods]
 impl PyAtmosphereStorageView {
@@ -143,9 +131,7 @@ impl PyAtmosphereStorageView {
             derivative_mapping: mapping,
         };
 
-        Python::with_gil(|py| {
-            Py::new(py, mapping_view)
-        })
+        Python::with_gil(|py| Py::new(py, mapping_view))
     }
 
     fn normalize_by_extinctions(&mut self) -> PyResult<()> {
@@ -194,7 +180,10 @@ impl PyAtmosphereSurfaceView {
         Ok(())
     }
 
-    fn get_derivative_mapping<'py>(&self, name: &str) -> PyResult<Py<PySurfaceDerivativeMappingView>> {
+    fn get_derivative_mapping<'py>(
+        &self,
+        name: &str,
+    ) -> PyResult<Py<PySurfaceDerivativeMappingView>> {
         let mapping = self.surface.get_derivative_mapping(name).unwrap();
 
         // Call this a view because DerivativeMapping is really just a view into the C++
@@ -202,13 +191,11 @@ impl PyAtmosphereSurfaceView {
             derivative_mapping: mapping,
         };
 
-        Python::with_gil(|py| {
-            Py::new(py, mapping_view)
-        })
+        Python::with_gil(|py| Py::new(py, mapping_view))
     }
 
     fn set_zero(&mut self) -> PyResult<()> {
-        self.surface.set_zero();
+        self.surface.set_zero().into_pyresult()?;
         Ok(())
     }
 }

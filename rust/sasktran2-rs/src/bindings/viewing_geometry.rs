@@ -1,5 +1,5 @@
-use sasktran2_sys::ffi;
 use super::prelude::*;
+use sasktran2_sys::ffi;
 
 pub struct ViewingGeometry {
     pub viewing_geometry: *mut ffi::ViewingGeometry,

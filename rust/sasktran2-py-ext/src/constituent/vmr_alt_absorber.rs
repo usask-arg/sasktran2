@@ -38,8 +38,12 @@ impl PyVMRAltitudeAbsorber {
 
         if out_of_bounds_mode.is_some() {
             inner = match out_of_bounds_mode.unwrap() {
-                "zero" => inner.with_interp_mode(sasktran2_rs::interpolation::OutOfBoundsMode::Zero),
-                "extend" => inner.with_interp_mode(sasktran2_rs::interpolation::OutOfBoundsMode::Extend),
+                "zero" => {
+                    inner.with_interp_mode(sasktran2_rs::interpolation::OutOfBoundsMode::Zero)
+                }
+                "extend" => {
+                    inner.with_interp_mode(sasktran2_rs::interpolation::OutOfBoundsMode::Extend)
+                }
                 mode => {
                     return Err(PyValueError::new_err(format!(
                         "Invalid out_of_bounds_mode: {}",

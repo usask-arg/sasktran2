@@ -1,4 +1,3 @@
-use ndarray::*;
 use crate::prelude::*;
 
 /// Returns back the indices required to sort a vector of f64 values.
@@ -35,13 +34,13 @@ where
 
 pub fn create_pool(num_threads: usize) -> Result<rayon::ThreadPool> {
     match rayon::ThreadPoolBuilder::new()
-       .num_threads(num_threads)
-       .build()
+        .num_threads(num_threads)
+        .build()
     {
-       Err(e) => Err(e.into()),
-       Ok(pool) => Ok(pool),
+        Err(e) => Err(e.into()),
+        Ok(pool) => Ok(pool),
     }
- }
+}
 
 /// Returns back the indices required to sort a vector of f64 values.
 #[cfg(test)]

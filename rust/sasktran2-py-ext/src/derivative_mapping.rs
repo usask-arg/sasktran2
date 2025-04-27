@@ -1,6 +1,6 @@
+use numpy::*;
 use pyo3::prelude::*;
 use sasktran2_rs::bindings::deriv_mapping;
-use numpy::*;
 
 #[pyclass(unsendable)]
 pub struct PyDerivativeMappingView {
@@ -85,7 +85,8 @@ impl PyDerivativeMappingView {
 
     #[setter]
     fn set_log_radiance_space(&mut self, log_radiance_space: bool) {
-        self.derivative_mapping.set_log_radiance_space(log_radiance_space);
+        self.derivative_mapping
+            .set_log_radiance_space(log_radiance_space);
     }
 }
 

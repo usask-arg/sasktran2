@@ -1,8 +1,8 @@
 use super::atmosphere_storage::AtmosphereStorage;
-use sasktran2_sys::ffi;
 use super::prelude::*;
 use super::surface::Surface;
 use anyhow::{Result, anyhow};
+use sasktran2_sys::ffi;
 
 pub struct Atmosphere {
     pub atmosphere: *mut ffi::Atmosphere,
@@ -18,8 +18,7 @@ impl Atmosphere {
         calc_derivatives: bool,
         stokes: Stokes,
     ) -> Self {
-        let storage =
-            AtmosphereStorage::new(num_wavel, num_location, num_legendre, stokes);
+        let storage = AtmosphereStorage::new(num_wavel, num_location, num_legendre, stokes);
         let surface = Surface::new(num_wavel, stokes.num_stokes());
 
         // convert calc_derivatives to 0 for false
@@ -46,22 +45,18 @@ impl Atmosphere {
         self.storage.ssa.dim().0
     }
 
-    pub fn apply_delta_m_scaling(
-        &mut self,
-        order: usize,
-    ) -> Result<()> {
-        let result = unsafe {
-            ffi::sk_atmosphere_apply_delta_m_scaling(self.atmosphere, order as i32)
-        };
+    pub fn apply_delta_m_scaling(&mut self, order: usize) -> Result<()> {
+        let result =
+            unsafe { ffi::sk_atmosphere_apply_delta_m_scaling(self.atmosphere, order as i32) };
         if result != 0 {
-            return Err(anyhow!(
-                "Error applying delta m scaling: {}",
-                result
-            ));
+            return Err(anyhow!("Error applying delta m scaling: {}", result));
         }
         Ok(())
     }
 
+    pub fn num_stokes(&self) -> usize {
+        self.nstokes
+    }
 }
 impl Drop for Atmosphere {
     fn drop(&mut self) {

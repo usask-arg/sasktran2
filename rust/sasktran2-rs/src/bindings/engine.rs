@@ -1,10 +1,10 @@
 use super::atmosphere::Atmosphere;
 use super::config::Config;
-use sasktran2_sys::ffi;
 use super::geometry::Geometry1D;
 use super::output::Output;
 use super::prelude::*;
 use super::viewing_geometry::ViewingGeometry;
+use sasktran2_sys::ffi;
 
 pub struct Engine<'a> {
     pub engine: *mut ffi::Engine,
@@ -36,23 +36,30 @@ impl<'a> Engine<'a> {
         let num_stokes = self.config.num_stokes()?;
         let num_los = self.viewing_geometry.num_rays()?;
         let num_wavel = atmosphere.num_wavel();
-        
+
         let mut output = Output::new(num_wavel, num_los, num_stokes);
 
-        let deriv_names = atmosphere.storage.derivative_mapping_names().map_err(|e| anyhow::anyhow!(e))?;
+        let deriv_names = atmosphere
+            .storage
+            .derivative_mapping_names()
+            .map_err(|e| anyhow::anyhow!(e))?;
 
         // Assign the memory for the derivatives
         for deriv_name in deriv_names.iter() {
-            let mapping = atmosphere.storage.get_derivative_mapping(deriv_name).map_err(|e| anyhow::anyhow!(e))?;
+            let mapping = atmosphere
+                .storage
+                .get_derivative_mapping(deriv_name)
+                .map_err(|e| anyhow::anyhow!(e))?;
             let num_deriv_output = mapping.num_output();
 
             output.with_derivative(deriv_name, num_deriv_output);
         }
 
-        let deriv_names = atmosphere.surface.derivative_mapping_names().map_err(|e| anyhow::anyhow!(e))?;
+        let deriv_names = atmosphere
+            .surface
+            .derivative_mapping_names()
+            .map_err(|e| anyhow::anyhow!(e))?;
         for deriv_name in deriv_names.iter() {
-            let mapping = atmosphere.surface.get_derivative_mapping(deriv_name).map_err(|e| anyhow::anyhow!(e))?;
-
             output.with_surface_derivative(deriv_name);
         }
 

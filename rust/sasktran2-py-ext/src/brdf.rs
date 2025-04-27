@@ -1,7 +1,6 @@
 use anyhow::Result;
 use pyo3::prelude::*;
 
-
 pub fn set_py_brdf_in_surface<'py>(
     py_obj: Bound<'py, PyAny>,
     surface: &mut sasktran2_rs::bindings::surface::Surface,
@@ -19,7 +18,6 @@ pub fn set_py_brdf_in_surface<'py>(
         return Err(anyhow::anyhow!("Invalid BRDF type"));
     }
 }
-
 
 #[pyclass(unsendable)]
 pub struct PyLambertian {

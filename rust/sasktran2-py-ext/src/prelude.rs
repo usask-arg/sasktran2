@@ -1,6 +1,6 @@
 use anyhow::Result;
-use pyo3::prelude::*;
 use pyo3::exceptions::PyRuntimeError;
+use pyo3::prelude::*;
 
 pub trait IntoPyResult<T> {
     fn into_pyresult(self) -> PyResult<T>;

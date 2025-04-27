@@ -1,16 +1,16 @@
 pub mod prelude;
 
 mod accel;
-mod constituent;
-mod optical;
-mod config;
-mod geometry;
-mod viewing_geometry;
-mod engine;
-mod derivative_mapping;
 mod atmosphere;
-mod output;
 mod brdf;
+mod config;
+mod constituent;
+mod derivative_mapping;
+mod engine;
+mod geometry;
+mod optical;
+mod output;
+mod viewing_geometry;
 
 use pyo3::prelude::*;
 
@@ -63,7 +63,7 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<brdf::PyKokhanovsky>()?;
     m.add_class::<brdf::PyMODIS>()?;
 
-    // Helper functions    
+    // Helper functions
     m.add_function(wrap_pyfunction!(accel::assign_absorber_derivatives, m)?)?;
 
     Ok(())

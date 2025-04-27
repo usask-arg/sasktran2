@@ -1,7 +1,7 @@
 use super::deriv_mapping::DerivativeMapping;
-use sasktran2_sys::ffi;
 use super::prelude::*;
 use ndarray::*;
+use sasktran2_sys::ffi;
 
 pub struct AtmosphereStorage {
     pub storage: *mut ffi::AtmosphereStorage,
@@ -13,12 +13,7 @@ pub struct AtmosphereStorage {
 }
 
 impl AtmosphereStorage {
-    pub fn new(
-        num_wavel: usize,
-        num_location: usize,
-        num_legendre: usize,
-        stokes: Stokes,
-    ) -> Self {
+    pub fn new(num_wavel: usize, num_location: usize, num_legendre: usize, stokes: Stokes) -> Self {
         let mut ssa = Array2::<f64>::zeros((num_location, num_wavel).f());
         let mut total_extinction = Array2::<f64>::zeros((num_location, num_wavel).f());
         let mut emission_source = Array2::<f64>::zeros((num_location, num_wavel).f());
@@ -81,10 +76,7 @@ impl AtmosphereStorage {
 
         let mut num_mappings: i32 = 0;
         let result = unsafe {
-            ffi::sk_atmosphere_storage_get_num_derivative_mappings(
-                self.storage,
-                &mut num_mappings,
-            )
+            ffi::sk_atmosphere_storage_get_num_derivative_mappings(self.storage, &mut num_mappings)
         };
 
         if result != 0 {
@@ -124,9 +116,9 @@ impl AtmosphereStorage {
                     .for_each(|ssa, mut leg_coeff| {
                         let v = match ssa {
                             0.0 => 1.0,
-                            _ => *ssa
+                            _ => *ssa,
                         };
-                        leg_coeff.mapv_inplace(|l| { l / v});
+                        leg_coeff.mapv_inplace(|l| l / v);
                     });
             });
 
@@ -139,7 +131,7 @@ impl AtmosphereStorage {
                     .for_each(|ssa, total_extinction| {
                         let v = match *total_extinction {
                             0.0 => 0.0,
-                            _ => *total_extinction
+                            _ => *total_extinction,
                         };
                         *ssa = *ssa / v;
 
@@ -148,14 +140,11 @@ impl AtmosphereStorage {
                         }
                     });
             });
-
     }
 
     pub fn finalize_scattering_derivatives(&mut self) {
         unsafe {
-            ffi::sk_atmosphere_storage_finalize_scattering_derivatives(
-                self.storage,
-            );
+            ffi::sk_atmosphere_storage_finalize_scattering_derivatives(self.storage);
         }
     }
 
@@ -184,12 +173,8 @@ mod tests {
         let num_location = 5;
         let num_legendre = 3;
 
-        let storage = AtmosphereStorage::new(
-            num_wavel,
-            num_location,
-            num_legendre,
-            Stokes::Stokes1,
-        );
+        let storage =
+            AtmosphereStorage::new(num_wavel, num_location, num_legendre, Stokes::Stokes1);
 
         let mapping = storage.get_derivative_mapping("wf_test").unwrap();
 

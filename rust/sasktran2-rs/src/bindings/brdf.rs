@@ -20,7 +20,10 @@ pub trait IsCBRDF {
         let error_code = unsafe { ffi::sk_brdf_get_num_args(self.as_cbrdf(), &mut num_args) };
 
         if error_code != 0 {
-            return Err(anyhow!("Failed to get number of arguments for BRDF: {}", error_code));
+            return Err(anyhow!(
+                "Failed to get number of arguments for BRDF: {}",
+                error_code
+            ));
         }
 
         return Ok(num_args as usize);
@@ -28,7 +31,7 @@ pub trait IsCBRDF {
 }
 
 pub struct Lambertian {
-    internal: BRDF
+    internal: BRDF,
 }
 
 impl Lambertian {
@@ -38,7 +41,7 @@ impl Lambertian {
             panic!("Failed to create Lambertian BRDF");
         }
         Lambertian {
-            internal: BRDF { brdf }
+            internal: BRDF { brdf },
         }
     }
 }
@@ -50,7 +53,7 @@ impl IsCBRDF for Lambertian {
 }
 
 pub struct SnowKokhanovsky {
-    internal: BRDF
+    internal: BRDF,
 }
 
 impl SnowKokhanovsky {
@@ -60,7 +63,7 @@ impl SnowKokhanovsky {
             panic!("Failed to create Kokhanovsky BRDF");
         }
         SnowKokhanovsky {
-            internal: BRDF { brdf }
+            internal: BRDF { brdf },
         }
     }
 }
@@ -71,7 +74,7 @@ impl IsCBRDF for SnowKokhanovsky {
 }
 
 pub struct MODIS {
-    internal: BRDF
+    internal: BRDF,
 }
 
 impl MODIS {
@@ -81,7 +84,7 @@ impl MODIS {
             panic!("Failed to create MODIS BRDF");
         }
         MODIS {
-            internal: BRDF { brdf }
+            internal: BRDF { brdf },
         }
     }
 }

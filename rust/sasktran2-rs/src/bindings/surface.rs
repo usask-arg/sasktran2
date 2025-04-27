@@ -1,8 +1,8 @@
-use sasktran2_sys::ffi;
-use super::prelude::*;
 use super::brdf::{IsCBRDF, Lambertian};
 use super::deriv_mapping::SurfaceDerivativeMapping;
+use super::prelude::*;
 use ndarray::*;
+use sasktran2_sys::ffi;
 
 pub struct Surface {
     pub surface: *mut ffi::Surface,
@@ -15,7 +15,9 @@ impl Surface {
         let mut emission = Array1::zeros(num_wavel);
         let mut_ptr = emission.as_mut_ptr();
         let mut surf = Surface {
-            surface: unsafe { ffi::sk_surface_create(num_wavel as i32, num_stokes as i32, mut_ptr) },
+            surface: unsafe {
+                ffi::sk_surface_create(num_wavel as i32, num_stokes as i32, mut_ptr)
+            },
             emission: emission,
             brdf_args: Array2::zeros((0, num_wavel).f()),
         };
@@ -32,9 +34,7 @@ impl Surface {
         self.brdf_args = Array2::zeros((num_brdf_args, self.emission.len()).f());
         let mut_ptr = self.brdf_args.as_mut_ptr();
 
-        let result = unsafe {
-            ffi::sk_surface_set_brdf(self.surface, brdf.as_cbrdf(), mut_ptr)
-        };
+        let result = unsafe { ffi::sk_surface_set_brdf(self.surface, brdf.as_cbrdf(), mut_ptr) };
 
         if result != 0 {
             return Err(anyhow!("Failed to set BRDF for surface: {}", result));
@@ -48,11 +48,7 @@ impl Surface {
         let c_name = std::ffi::CString::new(name).unwrap();
 
         let result = unsafe {
-            ffi::sk_surface_get_derivative_mapping(
-                self.surface,
-                c_name.as_ptr(),
-                &mut mapping,
-            )
+            ffi::sk_surface_get_derivative_mapping(self.surface, c_name.as_ptr(), &mut mapping)
         };
 
         if result != 0 {
@@ -66,12 +62,8 @@ impl Surface {
         let mut names: Vec<String> = Vec::new();
 
         let mut num_mappings: i32 = 0;
-        let result = unsafe {
-            ffi::sk_surface_get_num_derivative_mappings(
-                self.surface,
-                &mut num_mappings,
-            )
-        };
+        let result =
+            unsafe { ffi::sk_surface_get_num_derivative_mappings(self.surface, &mut num_mappings) };
         if result != 0 {
             return Err("Failed to get number of derivative mappings".to_string());
         }
@@ -79,11 +71,7 @@ impl Surface {
         for i in 0..num_mappings {
             let mut name_ptr: *const std::ffi::c_char = std::ptr::null();
             let result = unsafe {
-                ffi::sk_surface_get_derivative_mapping_name(
-                    self.surface,
-                    i,
-                    &mut name_ptr,
-                )
+                ffi::sk_surface_get_derivative_mapping_name(self.surface, i, &mut name_ptr)
             };
             if result != 0 {
                 return Err("Failed to get derivative mapping name".to_string());
@@ -104,7 +92,6 @@ impl Surface {
         }
         Ok(())
     }
-
 }
 
 impl Drop for Surface {

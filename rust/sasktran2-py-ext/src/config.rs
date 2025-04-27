@@ -8,7 +8,7 @@ pub enum MultipleScatterSource {
     DiscreteOrdinates,
     SuccessiveOrders,
     TwoStream,
-    NoSource
+    NoSource,
 }
 
 #[pyclass(eq, eq_int)]
@@ -24,29 +24,29 @@ pub enum SingleScatterSource {
 #[derive(PartialEq, Clone)]
 pub enum OccultationSource {
     NoSource,
-    Standard
+    Standard,
 }
 
 #[pyclass(eq, eq_int)]
 #[derive(PartialEq, Clone)]
 pub enum EmissionSource {
     NoSource,
-    Standard
+    Standard,
 }
 
 #[pyclass(eq, eq_int)]
 #[derive(PartialEq, Clone)]
 pub enum StokesBasis {
-    Standard, 
+    Standard,
     Solar,
-    Observer
+    Observer,
 }
 
 #[pyclass(eq, eq_int)]
 #[derive(PartialEq, Clone)]
 pub enum ThreadingModel {
     Wavelength,
-    Source
+    Source,
 }
 
 #[pyclass(eq, eq_int)]
@@ -54,9 +54,8 @@ pub enum ThreadingModel {
 pub enum InputValidationMode {
     Strict,
     Standard,
-    Disabled
+    Disabled,
 }
-
 
 #[pyclass(unsendable)]
 pub struct PyConfig {
@@ -74,22 +73,35 @@ impl PyConfig {
     #[getter]
     fn get_multiple_scatter_source(&self) -> MultipleScatterSource {
         match self.config.multiple_scatter_source().unwrap() {
-            config::MultipleScatterSource::DiscreteOrdinates => MultipleScatterSource::DiscreteOrdinates,
-            config::MultipleScatterSource::SuccessiveOrders => MultipleScatterSource::SuccessiveOrders,
+            config::MultipleScatterSource::DiscreteOrdinates => {
+                MultipleScatterSource::DiscreteOrdinates
+            }
+            config::MultipleScatterSource::SuccessiveOrders => {
+                MultipleScatterSource::SuccessiveOrders
+            }
             config::MultipleScatterSource::TwoStream => MultipleScatterSource::TwoStream,
             config::MultipleScatterSource::None => MultipleScatterSource::NoSource,
         }
     }
 
     #[setter]
-    fn set_multiple_scatter_source(&mut self, source: PyRef<'_, MultipleScatterSource>) -> PyResult<()> {
+    fn set_multiple_scatter_source(
+        &mut self,
+        source: PyRef<'_, MultipleScatterSource>,
+    ) -> PyResult<()> {
         let source = match *source {
-            MultipleScatterSource::DiscreteOrdinates => config::MultipleScatterSource::DiscreteOrdinates,
-            MultipleScatterSource::SuccessiveOrders => config::MultipleScatterSource::SuccessiveOrders,
+            MultipleScatterSource::DiscreteOrdinates => {
+                config::MultipleScatterSource::DiscreteOrdinates
+            }
+            MultipleScatterSource::SuccessiveOrders => {
+                config::MultipleScatterSource::SuccessiveOrders
+            }
             MultipleScatterSource::TwoStream => config::MultipleScatterSource::TwoStream,
             MultipleScatterSource::NoSource => config::MultipleScatterSource::None,
         };
-        self.config.with_multiple_scatter_source(source).into_pyresult()?;
+        self.config
+            .with_multiple_scatter_source(source)
+            .into_pyresult()?;
 
         Ok(())
     }
@@ -143,7 +155,9 @@ impl PyConfig {
             InputValidationMode::Standard => config::InputValidationMode::Standard,
             InputValidationMode::Disabled => config::InputValidationMode::Disabled,
         };
-        self.config.with_input_validation_mode(mode).into_pyresult()?;
+        self.config
+            .with_input_validation_mode(mode)
+            .into_pyresult()?;
 
         Ok(())
     }
@@ -167,20 +181,29 @@ impl PyConfig {
         match source {
             config::SingleScatterSource::Exact => Ok(SingleScatterSource::Exact),
             config::SingleScatterSource::SolarTable => Ok(SingleScatterSource::Table),
-            config::SingleScatterSource::DiscreteOrdinates => Ok(SingleScatterSource::DiscreteOrdinates),
+            config::SingleScatterSource::DiscreteOrdinates => {
+                Ok(SingleScatterSource::DiscreteOrdinates)
+            }
             config::SingleScatterSource::None => Ok(SingleScatterSource::NoSource),
         }
     }
 
     #[setter]
-    fn set_single_scatter_source(&mut self, source: PyRef<'_, SingleScatterSource>) -> PyResult<()> {
+    fn set_single_scatter_source(
+        &mut self,
+        source: PyRef<'_, SingleScatterSource>,
+    ) -> PyResult<()> {
         let source = match *source {
             SingleScatterSource::Exact => config::SingleScatterSource::Exact,
             SingleScatterSource::Table => config::SingleScatterSource::SolarTable,
-            SingleScatterSource::DiscreteOrdinates => config::SingleScatterSource::DiscreteOrdinates,
+            SingleScatterSource::DiscreteOrdinates => {
+                config::SingleScatterSource::DiscreteOrdinates
+            }
             SingleScatterSource::NoSource => config::SingleScatterSource::None,
         };
-        self.config.with_single_scatter_source(source).into_pyresult()?;
+        self.config
+            .with_single_scatter_source(source)
+            .into_pyresult()?;
 
         Ok(())
     }
@@ -201,7 +224,9 @@ impl PyConfig {
             OccultationSource::Standard => config::OccultationSource::Standard,
             OccultationSource::NoSource => config::OccultationSource::None,
         };
-        self.config.with_occultation_source(source).into_pyresult()?;
+        self.config
+            .with_occultation_source(source)
+            .into_pyresult()?;
 
         Ok(())
     }
@@ -257,7 +282,9 @@ impl PyConfig {
 
     #[setter]
     fn set_delta_m_scaling(&mut self, delta_m_scaling: bool) -> PyResult<()> {
-        self.config.with_delta_m_scaling(delta_m_scaling).into_pyresult()?;
+        self.config
+            .with_delta_m_scaling(delta_m_scaling)
+            .into_pyresult()?;
 
         Ok(())
     }
@@ -269,7 +296,9 @@ impl PyConfig {
 
     #[setter]
     fn set_los_refraction(&mut self, los_refraction: bool) -> PyResult<()> {
-        self.config.with_los_refraction(los_refraction).into_pyresult()?;
+        self.config
+            .with_los_refraction(los_refraction)
+            .into_pyresult()?;
 
         Ok(())
     }
@@ -281,7 +310,9 @@ impl PyConfig {
 
     #[setter]
     fn set_output_los_optical_depth(&mut self, output_los_optical_depth: bool) -> PyResult<()> {
-        self.config.with_output_los_optical_depth(output_los_optical_depth).into_pyresult()?;
+        self.config
+            .with_output_los_optical_depth(output_los_optical_depth)
+            .into_pyresult()?;
 
         Ok(())
     }
@@ -293,7 +324,9 @@ impl PyConfig {
 
     #[setter]
     fn set_solar_refraction(&mut self, solar_refraction: bool) -> PyResult<()> {
-        self.config.with_solar_refraction(solar_refraction).into_pyresult()?;
+        self.config
+            .with_solar_refraction(solar_refraction)
+            .into_pyresult()?;
 
         Ok(())
     }
@@ -304,8 +337,13 @@ impl PyConfig {
     }
 
     #[setter]
-    fn set_multiple_scatter_refraction(&mut self, multiple_scatter_refraction: bool) -> PyResult<()> {
-        self.config.with_multiple_scatter_refraction(multiple_scatter_refraction).into_pyresult()?;
+    fn set_multiple_scatter_refraction(
+        &mut self,
+        multiple_scatter_refraction: bool,
+    ) -> PyResult<()> {
+        self.config
+            .with_multiple_scatter_refraction(multiple_scatter_refraction)
+            .into_pyresult()?;
 
         Ok(())
     }
@@ -324,24 +362,32 @@ impl PyConfig {
 
     #[getter]
     fn get_num_successive_orders_iterations(&self) -> PyResult<usize> {
-        self.config.num_successive_orders_iterations().into_pyresult()
+        self.config
+            .num_successive_orders_iterations()
+            .into_pyresult()
     }
 
     #[setter]
     fn set_num_successive_orders_iterations(&mut self, num_iterations: usize) -> PyResult<()> {
-        self.config.with_num_successive_orders_iterations(num_iterations).into_pyresult()?;
+        self.config
+            .with_num_successive_orders_iterations(num_iterations)
+            .into_pyresult()?;
 
         Ok(())
     }
 
     #[getter]
     fn init_successive_orders_with_discrete_ordinates(&self) -> PyResult<bool> {
-        self.config.init_successive_orders_with_discrete_ordinates().into_pyresult()
+        self.config
+            .init_successive_orders_with_discrete_ordinates()
+            .into_pyresult()
     }
 
     #[setter]
     fn set_init_successive_orders_with_discrete_ordinates(&mut self, init: bool) -> PyResult<()> {
-        self.config.with_init_successive_orders_with_discrete_ordinates(init).into_pyresult()?;
+        self.config
+            .with_init_successive_orders_with_discrete_ordinates(init)
+            .into_pyresult()?;
 
         Ok(())
     }
@@ -365,7 +411,9 @@ impl PyConfig {
 
     #[setter]
     fn set_num_forced_azimuth(&mut self, num_forced_azimuth: usize) -> PyResult<()> {
-        self.config.with_num_forced_azimuth(num_forced_azimuth).into_pyresult()?;
+        self.config
+            .with_num_forced_azimuth(num_forced_azimuth)
+            .into_pyresult()?;
 
         Ok(())
     }
@@ -389,7 +437,9 @@ impl PyConfig {
 
     #[setter]
     fn set_num_successive_orders_points(&mut self, num_points: usize) -> PyResult<()> {
-        self.config.with_num_successive_orders_points(num_points).into_pyresult()?;
+        self.config
+            .with_num_successive_orders_points(num_points)
+            .into_pyresult()?;
 
         Ok(())
     }
@@ -401,7 +451,9 @@ impl PyConfig {
 
     #[setter]
     fn set_num_singlescatter_moments(&mut self, num_moments: usize) -> PyResult<()> {
-        self.config.with_num_singlescatter_moments(num_moments).into_pyresult()?;
+        self.config
+            .with_num_singlescatter_moments(num_moments)
+            .into_pyresult()?;
 
         Ok(())
     }
@@ -413,7 +465,9 @@ impl PyConfig {
 
     #[setter]
     fn set_num_successive_orders_incoming(&mut self, num_incoming: usize) -> PyResult<()> {
-        self.config.with_num_successive_orders_incoming(num_incoming).into_pyresult()?;
+        self.config
+            .with_num_successive_orders_incoming(num_incoming)
+            .into_pyresult()?;
 
         Ok(())
     }
@@ -425,7 +479,9 @@ impl PyConfig {
 
     #[setter]
     fn set_num_successive_orders_outgoing(&mut self, num_outgoing: usize) -> PyResult<()> {
-        self.config.with_num_successive_orders_outgoing(num_outgoing).into_pyresult()?;
+        self.config
+            .with_num_successive_orders_outgoing(num_outgoing)
+            .into_pyresult()?;
 
         Ok(())
     }

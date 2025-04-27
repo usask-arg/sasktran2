@@ -93,10 +93,7 @@ impl PyViewingGeometry {
         }
     }
 
-    fn add_ray<'py>(
-        &mut self,
-        ray: Bound<'py, PyAny>
-    ) {
+    fn add_ray<'py>(&mut self, ray: Bound<'py, PyAny>) {
         if let Ok(ray) = ray.downcast::<PyGroundViewingSolar>() {
             let ray = ray.borrow();
             self.viewing_geometry.add_ground_viewing_solar(

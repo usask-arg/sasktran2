@@ -1,5 +1,5 @@
-use sasktran2_sys::ffi;
 use super::prelude::*;
+use sasktran2_sys::ffi;
 
 #[repr(i32)]
 pub enum MultipleScatterSource {
@@ -20,33 +20,33 @@ pub enum SingleScatterSource {
 #[repr(i32)]
 pub enum OccultationSource {
     None = 0,
-    Standard = 1
+    Standard = 1,
 }
 
 #[repr(i32)]
 pub enum EmissionSource {
     None = 0,
-    Standard = 1
+    Standard = 1,
 }
 
 #[repr(i32)]
 pub enum StokesBasis {
     Standard = 0,
     Solar = 1,
-    Observer = 2
+    Observer = 2,
 }
 
 #[repr(i32)]
 pub enum ThreadingModel {
     Wavelength = 0,
-    Source = 1
+    Source = 1,
 }
 
 #[repr(i32)]
 pub enum InputValidationMode {
     Strict = 0,
     Standard = 1,
-    Disabled = 2
+    Disabled = 2,
 }
 
 pub struct Config {
@@ -118,8 +118,9 @@ impl Config {
 
     pub fn input_validation_mode(&self) -> Result<InputValidationMode> {
         let mut input_validation_mode = 0i32;
-        let error_code =
-            unsafe { ffi::sk_config_get_input_validation_mode(self.config, &mut input_validation_mode) };
+        let error_code = unsafe {
+            ffi::sk_config_get_input_validation_mode(self.config, &mut input_validation_mode)
+        };
 
         if error_code != 0 {
             Err(anyhow!(
@@ -131,7 +132,10 @@ impl Config {
         }
     }
 
-    pub fn with_input_validation_mode(&mut self, input_validation_mode: InputValidationMode) -> Result<&mut Self> {
+    pub fn with_input_validation_mode(
+        &mut self,
+        input_validation_mode: InputValidationMode,
+    ) -> Result<&mut Self> {
         let error_code = unsafe {
             ffi::sk_config_set_input_validation_mode(self.config, input_validation_mode as i32)
         };
@@ -175,8 +179,9 @@ impl Config {
 
     pub fn multiple_scatter_source(&self) -> Result<MultipleScatterSource> {
         let mut multiple_scatter_source = 0i32;
-        let error_code =
-            unsafe { ffi::sk_config_get_multiple_scatter_source(self.config, &mut multiple_scatter_source) };
+        let error_code = unsafe {
+            ffi::sk_config_get_multiple_scatter_source(self.config, &mut multiple_scatter_source)
+        };
 
         if error_code != 0 {
             Err(anyhow!(
@@ -188,7 +193,10 @@ impl Config {
         }
     }
 
-    pub fn with_multiple_scatter_source(&mut self, source: MultipleScatterSource) -> Result<&mut Self> {
+    pub fn with_multiple_scatter_source(
+        &mut self,
+        source: MultipleScatterSource,
+    ) -> Result<&mut Self> {
         let error_code =
             unsafe { ffi::sk_config_set_multiple_scatter_source(self.config, source as i32) };
 
@@ -204,8 +212,9 @@ impl Config {
 
     pub fn single_scatter_source(&self) -> Result<SingleScatterSource> {
         let mut single_scatter_source = 0i32;
-        let error_code =
-            unsafe { ffi::sk_config_get_single_scatter_source(self.config, &mut single_scatter_source) };
+        let error_code = unsafe {
+            ffi::sk_config_get_single_scatter_source(self.config, &mut single_scatter_source)
+        };
 
         if error_code != 0 {
             Err(anyhow!(
@@ -276,8 +285,7 @@ impl Config {
     }
 
     pub fn with_emission_source(&mut self, source: EmissionSource) -> Result<&mut Self> {
-        let error_code =
-            unsafe { ffi::sk_config_set_emission_source(self.config, source as i32) };
+        let error_code = unsafe { ffi::sk_config_set_emission_source(self.config, source as i32) };
 
         if error_code != 0 {
             Err(anyhow!(
@@ -290,8 +298,7 @@ impl Config {
     }
     pub fn stokes_basis(&self) -> Result<StokesBasis> {
         let mut stokes_basis = 0i32;
-        let error_code =
-            unsafe { ffi::sk_config_get_stokes_basis(self.config, &mut stokes_basis) };
+        let error_code = unsafe { ffi::sk_config_get_stokes_basis(self.config, &mut stokes_basis) };
 
         if error_code != 0 {
             Err(anyhow!(
@@ -304,8 +311,7 @@ impl Config {
     }
 
     pub fn with_stokes_basis(&mut self, basis: StokesBasis) -> Result<&mut Self> {
-        let error_code =
-            unsafe { ffi::sk_config_set_stokes_basis(self.config, basis as i32) };
+        let error_code = unsafe { ffi::sk_config_set_stokes_basis(self.config, basis as i32) };
 
         if error_code != 0 {
             Err(anyhow!(
@@ -379,8 +385,9 @@ impl Config {
 
     pub fn output_los_optical_depth(&self) -> Result<bool> {
         let mut output_los_optical_depth = 0i32;
-        let error_code =
-            unsafe { ffi::sk_config_get_output_los_optical_depth(self.config, &mut output_los_optical_depth) };
+        let error_code = unsafe {
+            ffi::sk_config_get_output_los_optical_depth(self.config, &mut output_los_optical_depth)
+        };
 
         if error_code != 0 {
             Err(anyhow!(
@@ -392,9 +399,15 @@ impl Config {
         }
     }
 
-    pub fn with_output_los_optical_depth(&mut self, output_los_optical_depth: bool) -> Result<&mut Self> {
+    pub fn with_output_los_optical_depth(
+        &mut self,
+        output_los_optical_depth: bool,
+    ) -> Result<&mut Self> {
         let error_code = unsafe {
-            ffi::sk_config_set_output_los_optical_depth(self.config, if output_los_optical_depth { 1 } else { 0 })
+            ffi::sk_config_set_output_los_optical_depth(
+                self.config,
+                if output_los_optical_depth { 1 } else { 0 },
+            )
         };
 
         if error_code != 0 {
@@ -439,8 +452,12 @@ impl Config {
 
     pub fn multiple_scatter_refraction(&self) -> Result<bool> {
         let mut multiple_scatter_refraction = 0i32;
-        let error_code =
-            unsafe { ffi::sk_config_get_multiple_scatter_refraction(self.config, &mut multiple_scatter_refraction) };
+        let error_code = unsafe {
+            ffi::sk_config_get_multiple_scatter_refraction(
+                self.config,
+                &mut multiple_scatter_refraction,
+            )
+        };
 
         if error_code != 0 {
             Err(anyhow!(
@@ -452,9 +469,15 @@ impl Config {
         }
     }
 
-    pub fn with_multiple_scatter_refraction(&mut self, multiple_scatter_refraction: bool) -> Result<&mut Self> {
+    pub fn with_multiple_scatter_refraction(
+        &mut self,
+        multiple_scatter_refraction: bool,
+    ) -> Result<&mut Self> {
         let error_code = unsafe {
-            ffi::sk_config_set_multiple_scatter_refraction(self.config, if multiple_scatter_refraction { 1 } else { 0 })
+            ffi::sk_config_set_multiple_scatter_refraction(
+                self.config,
+                if multiple_scatter_refraction { 1 } else { 0 },
+            )
         };
 
         if error_code != 0 {
@@ -496,8 +519,9 @@ impl Config {
 
     pub fn num_successive_orders_iterations(&self) -> Result<usize> {
         let mut num_iterations = 0i32;
-        let error_code =
-            unsafe { ffi::sk_config_get_num_hr_spherical_iterations(self.config, &mut num_iterations) };
+        let error_code = unsafe {
+            ffi::sk_config_get_num_hr_spherical_iterations(self.config, &mut num_iterations)
+        };
 
         if error_code != 0 {
             Err(anyhow!(
@@ -509,7 +533,10 @@ impl Config {
         }
     }
 
-    pub fn with_num_successive_orders_iterations(&mut self, num_iterations: usize) -> Result<&mut Self> {
+    pub fn with_num_successive_orders_iterations(
+        &mut self,
+        num_iterations: usize,
+    ) -> Result<&mut Self> {
         let error_code = unsafe {
             ffi::sk_config_set_num_hr_spherical_iterations(self.config, num_iterations as i32)
         };
@@ -539,7 +566,10 @@ impl Config {
         }
     }
 
-    pub fn with_init_successive_orders_with_discrete_ordinates(&mut self, init: bool) -> Result<&mut Self> {
+    pub fn with_init_successive_orders_with_discrete_ordinates(
+        &mut self,
+        init: bool,
+    ) -> Result<&mut Self> {
         let error_code = unsafe {
             ffi::sk_config_set_initialize_hr_with_do(self.config, if init { 1 } else { 0 })
         };
@@ -612,8 +642,7 @@ impl Config {
 
     pub fn do_backprop(&self) -> Result<bool> {
         let mut do_backprop = 0i32;
-        let error_code =
-            unsafe { ffi::sk_config_get_do_backprop(self.config, &mut do_backprop) };
+        let error_code = unsafe { ffi::sk_config_get_do_backprop(self.config, &mut do_backprop) };
 
         if error_code != 0 {
             Err(anyhow!(
@@ -626,9 +655,8 @@ impl Config {
     }
 
     pub fn with_do_backprop(&mut self, do_backprop: bool) -> Result<&mut Self> {
-        let error_code = unsafe {
-            ffi::sk_config_set_do_backprop(self.config, if do_backprop { 1 } else { 0 })
-        };
+        let error_code =
+            unsafe { ffi::sk_config_set_do_backprop(self.config, if do_backprop { 1 } else { 0 }) };
 
         if error_code != 0 {
             Err(anyhow!(
@@ -715,10 +743,12 @@ impl Config {
         }
     }
 
-    pub fn with_num_successive_orders_incoming(&mut self, num_incoming: usize) -> Result<&mut Self> {
-        let error_code = unsafe {
-            ffi::sk_config_set_num_hr_incoming(self.config, num_incoming as i32)
-        };
+    pub fn with_num_successive_orders_incoming(
+        &mut self,
+        num_incoming: usize,
+    ) -> Result<&mut Self> {
+        let error_code =
+            unsafe { ffi::sk_config_set_num_hr_incoming(self.config, num_incoming as i32) };
 
         if error_code != 0 {
             Err(anyhow!(
@@ -745,10 +775,12 @@ impl Config {
         }
     }
 
-    pub fn with_num_successive_orders_outgoing(&mut self, num_outgoing: usize) -> Result<&mut Self> {
-        let error_code = unsafe {
-            ffi::sk_config_set_num_hr_outgoing(self.config, num_outgoing as i32)
-        };
+    pub fn with_num_successive_orders_outgoing(
+        &mut self,
+        num_outgoing: usize,
+    ) -> Result<&mut Self> {
+        let error_code =
+            unsafe { ffi::sk_config_set_num_hr_outgoing(self.config, num_outgoing as i32) };
 
         if error_code != 0 {
             Err(anyhow!(
@@ -759,7 +791,6 @@ impl Config {
             Ok(self)
         }
     }
-
 }
 
 impl Drop for Config {

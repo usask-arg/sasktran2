@@ -1,8 +1,8 @@
 use std::f64::consts::PI;
 
+use anyhow::Result;
 use ndarray::s;
 use sasktran2_rs::bindings::prelude::*;
-use anyhow::Result;
 
 #[test]
 fn test_coulson() -> Result<()> {
