@@ -1,17 +1,35 @@
 from __future__ import annotations
+import dbm
 
 import numpy as np
 import sasktran2 as sk
 
 
 def test_mie_simple_database():
-    _ = sk.database.MieDatabase(
+    db = sk.database.MieDatabase(
         sk.mie.distribution.LogNormalDistribution(),
         sk.mie.refractive.H2SO4(),
         np.array([532, 1020]),
         median_radius=np.array([100, 200]),
         mode_width=np.array([1.5, 1.6, 1.7]),
     )
+
+    db.clear()
+    ds1 = db.load_ds()
+
+    db = sk.database.MieDatabase(
+        sk.mie.distribution.LogNormalDistribution(),
+        sk.mie.refractive.H2SO4(),
+        np.array([532, 1020]),
+        median_radius=np.array([100, 200]),
+        mode_width=np.array([1.5, 1.6, 1.7]),
+        backend="sasktran2_rust"
+    )
+
+    db.clear()
+    ds2 = db.load_ds()
+
+    pass
 
 
 def test_mie_db_in_engine():

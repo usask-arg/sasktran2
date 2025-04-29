@@ -10,9 +10,10 @@ import xarray as xr
 from scipy.stats import gamma, lognorm, rv_continuous, triang, uniform
 
 from sasktran2 import mie
-from sasktran2._core import LinearizedMie
 from sasktran2.legendre import compute_greek_coefficients
-from sasktran2.mie import MieIntegrator, MieOutput
+from sasktran2._core import MieIntegrator, MieOutput
+from sasktran2._core_rust import PyMieIntegrator
+from .wrappers import LinearizedMie
 
 
 def _post_process(total: dict, wavelengths):
@@ -399,6 +400,203 @@ class FrozenDistribution(ParticleSizeDistribution):
 
     def args(self):
         return self._args
+
+
+def integrate_mie_rust(
+    prob_dists: list[rv_continuous],
+    refrac_index_fn,
+    wavelengths,
+    num_quad=31,
+    maxintquantile=0.99999,
+    num_coeffs=64,
+    num_threads=1,
+) -> xr.Dataset:
+    from scipy.special import roots_legendre
+
+    nodes, weights = roots_legendre(num_coeffs)
+
+    max_r = 0.0
+    min_r = 1e25
+    mean_r = 0.0
+    repr_dist = None
+    for prob_dist in prob_dists:
+        min_r = min(min_r, prob_dist.ppf(1 - maxintquantile))
+        max_r = max(max_r, prob_dist.ppf(maxintquantile))
+
+        if prob_dist.mean() > mean_r:
+            mean_r = prob_dist.mean()
+            repr_dist = prob_dist
+
+    # Determine a reasonable split point based on the input wavelengths and distributions
+    mean_size_param = 2 * np.pi * mean_r / np.nanmean(wavelengths)
+    if mean_size_param > 200:
+        # Very sharply peaked,
+        c = 0.995  # Works well enough
+    else:
+        if mean_size_param < 1:
+            # Really no peak, just do double quadrature
+            c = 0
+        else:
+            # A simple threshold is a linear function going from (1, 0.95) to (200, 0.995)
+            slope = (0.995 - 0.95) / (200 - 1)
+            c = slope * (mean_size_param - 1) + 0.95
+
+    nodes_left = (c - (-1)) / 2 * nodes + (c + (-1)) / 2
+    weights_left = (c - (-1)) / 2 * weights
+
+    nodes_right = (1 - c) / 2 * nodes + (1 + c) / 2
+    weights_right = (1 - c) / 2 * weights
+    a_weights = np.concatenate([weights_left, weights_right])
+    cos_angles = np.concatenate([nodes_left, nodes_right])
+
+    a_weights = np.array(a_weights, order="F")
+    cos_angles = np.array(cos_angles, order="C")
+
+    # Calculate the size distribution quadrature points, this is a bit tricky
+    mie = LinearizedMie(1)
+
+    def integrand(r):
+        x = 2 * np.pi * r / np.min(wavelengths)
+        v = mie.calculate(
+            [x], refrac_index_fn(np.min(wavelengths)), np.array([]), False
+        )
+        return v.values.Qext * repr_dist.pdf(r) * r**2 * np.pi
+
+    result = integrate.quad(integrand, 0, 2 * max_r, full_output=True, limit=200)
+
+    result = result[2]
+
+    # Now use the subintervals and a quadrature order to to the integration
+    g_x, g_w = roots_legendre(num_quad)
+
+    left = np.sort(result["alist"][: result["last"]])
+    right = np.sort(result["blist"][: result["last"]])
+    all_x = []
+    all_w = []
+    for a, b in zip(left, right, strict=False):
+        x = 0.5 * (g_x + 1) * (b - a) + a
+        w = g_w * (b - a) / 2
+        all_x.append(x)
+        all_w.append(w)
+    x = np.concatenate(all_x)
+    w = np.concatenate(all_w)
+
+    x = np.array(x, order="F")
+    w = np.array(w, order="F")
+
+    integrator = PyMieIntegrator(cos_angles, num_coeffs, num_threads)
+
+    pdf_matrix = np.zeros((len(prob_dists), len(x)))
+    for i, prob_dist in enumerate(prob_dists):
+        pdf_matrix[i] = prob_dist.pdf(x)
+
+        pdf_matrix[i] /= np.dot(pdf_matrix[i], w)
+
+    result = xr.Dataset(
+        {
+            "xs_scattering": (
+                ["wavelength_nm", "distribution"],
+                np.zeros((len(wavelengths), len(prob_dists))),
+            ),
+            "xs_total": (
+                ["wavelength_nm", "distribution"],
+                np.zeros((len(wavelengths), len(prob_dists))),
+            ),
+            "xs_absorption": (
+                ["wavelength_nm", "distribution"],
+                np.zeros((len(wavelengths), len(prob_dists))),
+            ),
+            "p11": (
+                ["wavelength_nm", "distribution", "cos_angle"],
+                np.zeros(
+                    (len(wavelengths), len(prob_dists), len(cos_angles))
+                ),
+            ),
+            "p12": (
+                ["wavelength_nm", "distribution", "cos_angle"],
+                np.zeros(
+                    (len(wavelengths), len(prob_dists), len(cos_angles))
+                ),
+            ),
+            "p33": (
+                ["wavelength_nm", "distribution", "cos_angle"],
+                np.zeros(
+                    (len(wavelengths), len(prob_dists), len(cos_angles))
+                ),
+            ),
+            "p34": (
+                ["wavelength_nm", "distribution", "cos_angle"],
+                np.zeros(
+                    (len(wavelengths), len(prob_dists), len(cos_angles))
+                ),
+            ),
+            "lm_a1": (
+                ["wavelength_nm", "distribution", "legendre"],
+                np.zeros((len(wavelengths), len(prob_dists), num_coeffs)),
+            ),
+            "lm_a2": (
+                ["wavelength_nm", "distribution", "legendre"],
+                np.zeros((len(wavelengths), len(prob_dists), num_coeffs)),
+            ),
+            "lm_a3": (
+                ["wavelength_nm", "distribution", "legendre"],
+                np.zeros((len(wavelengths), len(prob_dists), num_coeffs)),
+            ),
+            "lm_a4": (
+                ["wavelength_nm", "distribution", "legendre"],
+                np.zeros((len(wavelengths), len(prob_dists), num_coeffs)),
+            ),
+            "lm_b1": (
+                ["wavelength_nm", "distribution", "legendre"],
+                np.zeros((len(wavelengths), len(prob_dists), num_coeffs)),
+            ),
+            "lm_b2": (
+                ["wavelength_nm", "distribution", "legendre"],
+                np.zeros((len(wavelengths), len(prob_dists), num_coeffs)),
+            ),
+        },
+        coords={
+            "distribution": np.arange(len(prob_dists)),
+            "cos_angle": cos_angles,
+            "wavelength_nm": wavelengths,
+        },
+    )
+    for i, wavel in enumerate(wavelengths):
+        refrac_index = np.cdouble(refrac_index_fn(wavel))
+
+        size_param = 2 * np.pi * x / wavel
+
+        integrator.integrate(
+            float(wavel),
+            refrac_index,
+            size_param,
+            pdf_matrix,
+            w,
+            a_weights,
+            result["xs_total"].to_numpy()[i],
+            result["xs_scattering"].to_numpy()[i],
+            result["p11"].to_numpy()[i],
+            result["p12"].to_numpy()[i],
+            result["p33"].to_numpy()[i],
+            result["p34"].to_numpy()[i],
+            result["lm_a1"].to_numpy()[i],
+            result["lm_a2"].to_numpy()[i],
+            result["lm_a3"].to_numpy()[i],
+            result["lm_a4"].to_numpy()[i],
+            result["lm_b1"].to_numpy()[i],
+            result["lm_b2"].to_numpy()[i],
+        )
+
+    result["xs_absorption"].values = (
+        result["xs_total"].values - result["xs_scattering"].values
+    )
+
+    # Convert to m^2
+    result["xs_total"].values *= 1e-4 * 1e-14
+    result["xs_scattering"].values *= 1e-4 * 1e-14
+    result["xs_absorption"].values *= 1e-4 * 1e-14
+
+    return result
 
 
 def integrate_mie_cpp(

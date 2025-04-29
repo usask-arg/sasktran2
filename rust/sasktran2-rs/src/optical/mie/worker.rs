@@ -4,6 +4,13 @@ use ndarray::{Array1, Array2, Zip};
 use num::abs;
 use num::complex::Complex64;
 
+pub struct MieOutput {
+    pub Qext: Array1<f64>,
+    pub Qsca: Array1<f64>,
+    pub S1: Array2<Complex64>,
+    pub S2: Array2<Complex64>,
+}
+
 fn max_order(size_param: f64) -> usize {
     (size_param + 4.05 * size_param.powf(0.3333) + 2.0).round() as usize
 }
