@@ -142,6 +142,7 @@ if(USE_OMP)
     target_link_libraries(sasktran2BuildProperties INTERFACE OpenMP::OpenMP_CXX)
     target_compile_definitions(sasktran2BuildProperties
                                INTERFACE SKTRAN_OPENMP_SUPPORT)
+
   else()
     message(WARNING "OpenMP requested but not found, continuing without it")
   endif()
@@ -331,4 +332,5 @@ if(NOT LINKED_LIBS)
   set(LINKED_LIBS "None")
 endif()
 
-file(WRITE ${CMAKE_BINARY_DIR}/libs_to_link.txt "${LAPACK_LIBRARIES}")
+file(WRITE ${CMAKE_BINARY_DIR}/libs_to_link.txt
+     "${LAPACK_LIBRARIES}${OpenMP_CXX_LIBRARIES}")
