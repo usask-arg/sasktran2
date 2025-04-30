@@ -509,6 +509,7 @@ name = "sasktran2-rs"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "libc",
  "ndarray",
  "num",
  "rayon",

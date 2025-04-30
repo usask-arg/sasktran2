@@ -1,4 +1,6 @@
 use std::env;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
@@ -15,6 +17,34 @@ fn main() {
         .define("USE_OMP", use_omp)
         .define("SKTRAN_BLAS_VENDOR", sktran_blas_vendor)
         .build();
+
+    let lib_file_path = Path::new(&out_dir).join("build").join("libs_to_link.txt");
+
+    // Read the file content
+    let lib_contents =
+        fs::read_to_string(lib_file_path).expect("Failed to read library paths file");
+
+    // Iterate over each path in the file (assuming semicolon-separated)
+    for lib_path in lib_contents.trim().split(';') {
+        if !lib_path.is_empty() {
+            let path = PathBuf::from(lib_path);
+            // Extract the directory where the library is located
+            if let Some(parent) = path.parent() {
+                println!("cargo:rustc-link-search=native={}", parent.display());
+            }
+            // Extract the library name
+            if let Some(lib_name) = path.file_stem() {
+                // Assumes the library name starts with 'lib' as in 'libopenblas'
+                if let Some(name) = lib_name.to_str() {
+                    if name.starts_with("lib") {
+                        println!("cargo:rustc-link-lib=dylib={}", &name[3..]);
+                    } else {
+                        println!("cargo:rustc-link-lib=dylib={}", name);
+                    }
+                }
+            }
+        }
+    }
 
     println!("cargo:root={}", install_prefix.display());
 

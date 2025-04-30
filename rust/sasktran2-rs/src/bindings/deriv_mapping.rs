@@ -86,7 +86,7 @@ impl DerivativeMapping {
     }
 
     pub fn get_assign_name(&self) -> String {
-        let mut name: *const i8 = std::ptr::null();
+        let mut name: *const libc::c_char = std::ptr::null();
         unsafe {
             ffi::sk_deriv_mapping_get_assign_name(self.mapping, &mut name);
             let c_str = std::ffi::CStr::from_ptr(name);
@@ -109,7 +109,7 @@ impl DerivativeMapping {
     }
 
     pub fn get_interp_dim(&self) -> String {
-        let mut interp_dim: *const i8 = std::ptr::null();
+        let mut interp_dim: *const libc::c_char = std::ptr::null();
         unsafe {
             ffi::sk_deriv_mapping_get_interp_dim(self.mapping, &mut interp_dim);
             let c_str = std::ffi::CStr::from_ptr(interp_dim);
@@ -190,7 +190,7 @@ impl SurfaceDerivativeMapping {
     }
 
     pub fn get_interp_dim(&self) -> String {
-        let mut interp_dim: *const i8 = std::ptr::null();
+        let mut interp_dim: *const libc::c_char = std::ptr::null();
         unsafe {
             ffi::sk_surface_deriv_mapping_get_interp_dim(self.mapping, &mut interp_dim);
             let c_str = std::ffi::CStr::from_ptr(interp_dim);

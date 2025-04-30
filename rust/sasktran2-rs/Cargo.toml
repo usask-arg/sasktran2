@@ -9,3 +9,4 @@ num = "*"
 anyhow = "*"
 sasktran2-sys = { version = "*", path = "../sasktran2-sys" }
 rayon = "*"
+libc = "*"

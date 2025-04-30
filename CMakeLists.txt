@@ -216,6 +216,7 @@ else()
     # Try searching for openblas directly This path should only be taken with
     # the numpy precompiled openblas...
     find_package(OpenBLAS REQUIRED)
+    set(LINKED_LIBS ${OpenBLAS_LIBRARIES})
     if(NOT WIN32)
       target_link_libraries(sasktran2BuildProperties
                             INTERFACE ${OpenBLAS_LIBRARIES})
@@ -325,3 +326,9 @@ install(
 install(FILES "cmake/sasktran2Config.cmake"
               "${CMAKE_BINARY_DIR}/sasktran2ConfigVersion.cmake"
         DESTINATION lib/cmake/sasktran2)
+
+if(NOT LINKED_LIBS)
+  set(LINKED_LIBS "None")
+endif()
+
+file(WRITE ${CMAKE_BINARY_DIR}/libs_to_link.txt "${LAPACK_LIBRARIES}")
