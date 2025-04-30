@@ -41,5 +41,6 @@ fn main() {
         .expect("Couldn't write bindings!");
 
     // Also link C++ stdlib if needed
+    println!("cargo:rustc-link-lib=stdc++");
     // println!("cargo:rustc-link-lib=dylib=stdc++"); // Or libc++ on macOS
 }

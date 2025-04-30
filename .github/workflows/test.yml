@@ -141,14 +141,16 @@ jobs:
           python-version: 3.x
       - name: Build wheels
         uses: PyO3/maturin-action@v1
-        env:
-          SKTRAN_BLAS_VENDOR: OpenBLAS
-          USE_OMP: ON
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
           manylinux: auto
+          before-script-linux: |
+            sh ci/cibw/cibw_before_build.sh
+          docker-options: >
+            -e USE_OMP='ON'
+            -e SKTRAN_BLAS_VENDOR='OpenBLAS'
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:

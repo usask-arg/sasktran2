@@ -19,6 +19,10 @@ if(UNIX)
   # enable_language(Fortran)
 endif()
 
+if(NOT APPLE)
+  add_compile_options(-frtti) # Force RTTI on
+endif()
+
 execute_process(
   COMMAND git describe --tags
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
