@@ -16,22 +16,22 @@ struct Config {
 struct Geodetic {
     std::unique_ptr<sasktran2::math::geodetic::Geodetic> impl;
 
-    Geodetic(double equatorial_radius, double flattening_factor) : impl(std::make_unique<sasktran2::math::geodetic::Geodetic>(equatorial_radius, flattening_factor)) {
-    };
+    Geodetic(double equatorial_radius, double flattening_factor)
+        : impl(std::make_unique<sasktran2::math::geodetic::Geodetic>(
+              equatorial_radius, flattening_factor)){};
 };
 
 struct DerivativeMapping {
     sasktran2::DerivativeMapping* impl;
 
-    DerivativeMapping(sasktran2::DerivativeMapping* mapping) : impl(mapping) {
-    };
+    DerivativeMapping(sasktran2::DerivativeMapping* mapping) : impl(mapping){};
 };
 
 struct SurfaceDerivativeMapping {
     sasktran2::SurfaceDerivativeMapping* impl;
 
-    SurfaceDerivativeMapping(sasktran2::SurfaceDerivativeMapping* mapping) : impl(mapping) {
-    };
+    SurfaceDerivativeMapping(sasktran2::SurfaceDerivativeMapping* mapping)
+        : impl(mapping){};
 };
 
 struct BRDF {
@@ -50,9 +50,9 @@ struct AtmosphereStorage {
     std::unique_ptr<sasktran2::atmosphere::AtmosphereGridStorage> impl;
 
     AtmosphereStorage(int nlocation, int nwavel, int nphase_moments,
-                      int nstokes, double* ssa,
-                      double* total_extinction, double* emission_source,
-                      double* leg_coeff, double* solar_irradiance);
+                      int nstokes, double* ssa, double* total_extinction,
+                      double* emission_source, double* leg_coeff,
+                      double* solar_irradiance);
 
     int get_derivative_mapping(const char* name, DerivativeMapping** mapping);
 };
@@ -75,13 +75,11 @@ struct OutputC {
 
     OutputC(double* radiance, int nrad, int nstokes);
 
-    int assign_derivative_memory(const char* name,
-                           double* derivative_mapping,
-                            int nrad, int nstokes,
-                            int nderiv);
+    int assign_derivative_memory(const char* name, double* derivative_mapping,
+                                 int nrad, int nstokes, int nderiv);
     int assign_surface_derivative_memory(const char* name,
-                                          double* derivative_mapping,
-                                          int nrad, int nstokes);
+                                         double* derivative_mapping, int nrad,
+                                         int nstokes);
 };
 
 struct ViewingGeometry {

@@ -105,12 +105,7 @@ impl PyGeodetic {
         Ok((altitude_intercepts, look_vector_intercepts))
     }
 
-    fn from_lat_lon_alt(
-        &mut self,
-        latitude: f64,
-        longitude: f64,
-        altitude: f64,
-    ) -> PyResult<()> {
+    fn from_lat_lon_alt(&mut self, latitude: f64, longitude: f64, altitude: f64) -> PyResult<()> {
         self.output
             .from_lat_lon_alt(latitude, longitude, altitude)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{}", e)))
@@ -125,7 +120,8 @@ impl PyGeodetic {
         let observer = pyarray_to_slice(observer)?;
         let look_vector = pyarray_to_slice(look_vector)?;
 
-        let result = self.output
+        let result = self
+            .output
             .from_tangent_altitude(tangent_altitude, observer, look_vector)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{}", e)))?;
 
@@ -145,10 +141,7 @@ impl PyGeodetic {
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{}", e)))
     }
 
-    fn from_xyz(
-        &mut self,
-        location: PyReadonlyArray1<f64>,
-    ) -> PyResult<()> {
+    fn from_xyz(&mut self, location: PyReadonlyArray1<f64>) -> PyResult<()> {
         let location = pyarray_to_slice(location)?;
         let x = location[0];
         let y = location[1];

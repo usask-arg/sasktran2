@@ -15,7 +15,6 @@ int sk_brdf_get_num_args(BRDF* config, int* num_args);
 
 void sk_brdf_destroy(BRDF* config);
 
-
 #ifdef __cplusplus
 }
 #endif

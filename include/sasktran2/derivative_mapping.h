@@ -396,8 +396,8 @@ namespace sasktran2 {
 
         /**
          * @brief The number of wavelengths in the mapping
-         * 
-         * @return int 
+         *
+         * @return int
          */
         int num_wavel() const { return m_nwavel; }
 

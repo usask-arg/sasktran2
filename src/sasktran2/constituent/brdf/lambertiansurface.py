@@ -5,7 +5,7 @@ import numpy as np
 from sasktran2.atmosphere import Atmosphere
 
 from ..base import Constituent
-from . import WavelengthInterpolatorMixin, PyLambertian
+from . import PyLambertian, WavelengthInterpolatorMixin
 
 
 class LambertianSurface(Constituent, WavelengthInterpolatorMixin):

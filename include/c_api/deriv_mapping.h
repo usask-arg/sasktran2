@@ -39,52 +39,48 @@ int sk_deriv_mapping_is_scattering_derivative(DerivativeMapping* mapping,
                                               int* is_scattering_derivative);
 
 int sk_deriv_mapping_get_num_output(DerivativeMapping* mapping,
-                                   int* num_output);
-
+                                    int* num_output);
 
 int sk_deriv_mapping_get_assign_name(DerivativeMapping* mapping,
-                                    const char** name);
+                                     const char** name);
 int sk_deriv_mapping_get_interp_dim(DerivativeMapping* mapping,
                                     const char** name);
 int sk_deriv_mapping_set_interpolator(DerivativeMapping* mapping,
-                                      double* interpolator,
-                                      int dim1, int dim2);
+                                      double* interpolator, int dim1, int dim2);
 int sk_deriv_mapping_get_interpolator(DerivativeMapping* mapping,
-                                        double** interpolator,
-                                        int* dim1, int* dim2);
+                                      double** interpolator, int* dim1,
+                                      int* dim2);
 
 // Surface mapping methods
-int sk_surface_deriv_mapping_get_d_emission(
-    SurfaceDerivativeMapping* mapping, double** emission);
+int sk_surface_deriv_mapping_get_d_emission(SurfaceDerivativeMapping* mapping,
+                                            double** emission);
 
-int sk_surface_deriv_mapping_get_num_wavel(
-    SurfaceDerivativeMapping* mapping, int* num_wavel);
+int sk_surface_deriv_mapping_get_num_wavel(SurfaceDerivativeMapping* mapping,
+                                           int* num_wavel);
 
 int sk_surface_deriv_mapping_get_num_brdf_args(
     SurfaceDerivativeMapping* mapping, int* num_brdf_args);
 
-int sk_surface_deriv_mapping_get_d_brdf(
-    SurfaceDerivativeMapping* mapping, double** brdf);
+int sk_surface_deriv_mapping_get_d_brdf(SurfaceDerivativeMapping* mapping,
+                                        double** brdf);
 
-int sk_surface_deriv_mapping_get_interpolator(
-    SurfaceDerivativeMapping* mapping, double** interpolator, int* dim1,
-    int* dim2);
+int sk_surface_deriv_mapping_get_interpolator(SurfaceDerivativeMapping* mapping,
+                                              double** interpolator, int* dim1,
+                                              int* dim2);
 
-int sk_surface_deriv_mapping_set_interpolator(
-    SurfaceDerivativeMapping* mapping, double* interpolator, int dim1,
-    int dim2);
+int sk_surface_deriv_mapping_set_interpolator(SurfaceDerivativeMapping* mapping,
+                                              double* interpolator, int dim1,
+                                              int dim2);
 
-int sk_surface_deriv_mapping_get_interp_dim(
-    SurfaceDerivativeMapping* mapping, const char** name);
+int sk_surface_deriv_mapping_get_interp_dim(SurfaceDerivativeMapping* mapping,
+                                            const char** name);
 
-int sk_surface_deriv_mapping_set_interp_dim(
-    SurfaceDerivativeMapping* mapping, const char* name);
+int sk_surface_deriv_mapping_set_interp_dim(SurfaceDerivativeMapping* mapping,
+                                            const char* name);
 
-int sk_surface_deriv_mapping_set_zero(
-    SurfaceDerivativeMapping* mapping);
+int sk_surface_deriv_mapping_set_zero(SurfaceDerivativeMapping* mapping);
 
-int sk_surface_deriv_mapping_destroy(
-    SurfaceDerivativeMapping* mapping);
+int sk_surface_deriv_mapping_destroy(SurfaceDerivativeMapping* mapping);
 
 #ifdef __cplusplus
 }

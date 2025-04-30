@@ -8,14 +8,15 @@ namespace sasktran2 {
         int i = 0;
         for (auto& [name, deriv] :
              this->m_atmosphere->storage().derivative_mappings_const()) {
-            //m_derivatives[name].resize(NSTOKES * this->m_nwavel * this->m_nlos,
-            //                           deriv.num_output());
+            // m_derivatives[name].resize(NSTOKES * this->m_nwavel *
+            // this->m_nlos,
+            //                            deriv.num_output());
         }
 
         for (auto& [name, deriv] :
              this->m_atmosphere->surface().derivative_mappings()) {
-            //m_surface_derivatives[name].resize(
-            //    NSTOKES * this->m_nwavel * this->m_nlos, 1);
+            // m_surface_derivatives[name].resize(
+            //     NSTOKES * this->m_nwavel * this->m_nlos, 1);
         }
 
         m_native_thread_storage.resize(this->m_config->num_threads());

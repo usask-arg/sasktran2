@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from sasktran2._core_rust import PyGeodetic
 
+
 class Geodetic:
     _internal: PyGeodetic
+
     def __init__(self, radius: float, flattening: float):
         """
         A geodetic object that can be used to represent a location on the

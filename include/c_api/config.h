@@ -14,7 +14,7 @@ int sk_config_get_num_stokes(Config* config, int* num_stokes);
 int sk_config_set_num_stokes(Config* config, int num_stokes);
 
 int sk_config_get_multiple_scatter_source(Config* config,
-                                           int* multiple_scatter_source);
+                                          int* multiple_scatter_source);
 int sk_config_set_multiple_scatter_source(Config* config,
                                           int multiple_scatter_source);
 
@@ -45,16 +45,21 @@ int sk_config_set_apply_delta_scaling(Config* config, int apply_delta_scaling);
 // DO configuration methods
 int sk_config_get_num_do_sza(Config* config, int* num_sza);
 int sk_config_set_num_do_sza(Config* config, int num_sza);
-int sk_config_get_num_do_forced_azimuth(Config* config, int* num_forced_azimuth);
+int sk_config_get_num_do_forced_azimuth(Config* config,
+                                        int* num_forced_azimuth);
 int sk_config_set_num_do_forced_azimuth(Config* config, int num_forced_azimuth);
 int sk_config_get_do_backprop(Config* config, int* do_backprop);
 int sk_config_set_do_backprop(Config* config, int do_backprop);
-int sk_config_get_num_do_spherical_iterations(Config* config, int* num_iterations);
-int sk_config_set_num_do_spherical_iterations(Config* config, int num_iterations);
+int sk_config_get_num_do_spherical_iterations(Config* config,
+                                              int* num_iterations);
+int sk_config_set_num_do_spherical_iterations(Config* config,
+                                              int num_iterations);
 
 // HR configuration methods
-int sk_config_get_num_hr_spherical_iterations(Config* config, int* num_iterations);
-int sk_config_set_num_hr_spherical_iterations(Config* config, int num_iterations);
+int sk_config_get_num_hr_spherical_iterations(Config* config,
+                                              int* num_iterations);
+int sk_config_set_num_hr_spherical_iterations(Config* config,
+                                              int num_iterations);
 int sk_config_get_num_hr_incoming(Config* config, int* num_incoming);
 int sk_config_set_num_hr_incoming(Config* config, int num_incoming);
 int sk_config_get_num_hr_outgoing(Config* config, int* num_outgoing);
@@ -95,7 +100,6 @@ int sk_config_set_input_validation_mode(Config* config, int mode);
 // Diagnostic output configuration
 int sk_config_get_output_los_optical_depth(Config* config, int* output);
 int sk_config_set_output_los_optical_depth(Config* config, int output);
-
 
 #ifdef __cplusplus
 }

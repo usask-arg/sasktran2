@@ -175,7 +175,8 @@ int sk_deriv_mapping_get_num_wavel(DerivativeMapping* mapping, int* num_wavel) {
     return 0;
 }
 
-int sk_deriv_mapping_get_num_output(DerivativeMapping *mapping, int *num_output) {
+int sk_deriv_mapping_get_num_output(DerivativeMapping* mapping,
+                                    int* num_output) {
     if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
@@ -184,7 +185,8 @@ int sk_deriv_mapping_get_num_output(DerivativeMapping *mapping, int *num_output)
     return 0;
 }
 
-int sk_deriv_mapping_get_assign_name(DerivativeMapping *mapping, const char **name) {
+int sk_deriv_mapping_get_assign_name(DerivativeMapping* mapping,
+                                     const char** name) {
     if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
@@ -193,7 +195,8 @@ int sk_deriv_mapping_get_assign_name(DerivativeMapping *mapping, const char **na
     return 0;
 }
 
-int sk_deriv_mapping_get_interp_dim(DerivativeMapping *mapping, const char **name) {
+int sk_deriv_mapping_get_interp_dim(DerivativeMapping* mapping,
+                                    const char** name) {
     if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
@@ -202,27 +205,32 @@ int sk_deriv_mapping_get_interp_dim(DerivativeMapping *mapping, const char **nam
     return 0;
 }
 
-int sk_deriv_mapping_set_interpolator(DerivativeMapping *mapping, double *interpolator, int dim1, int dim2) {
+int sk_deriv_mapping_set_interpolator(DerivativeMapping* mapping,
+                                      double* interpolator, int dim1,
+                                      int dim2) {
     if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
 
-    Eigen::MatrixXd interpolator_matrix = Eigen::Map<Eigen::MatrixXd>(interpolator, dim1, dim2);
-    
+    Eigen::MatrixXd interpolator_matrix =
+        Eigen::Map<Eigen::MatrixXd>(interpolator, dim1, dim2);
 
     mapping->impl->set_interpolator(interpolator_matrix);
     return 0;
 }
 
-int sk_deriv_mapping_get_interpolator(DerivativeMapping *mapping, double **interpolator, int *dim1, int *dim2) {
+int sk_deriv_mapping_get_interpolator(DerivativeMapping* mapping,
+                                      double** interpolator, int* dim1,
+                                      int* dim2) {
     if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
-    if(!mapping->impl->get_interpolator().has_value()) {
+    if (!mapping->impl->get_interpolator().has_value()) {
         return -2; // Error: interpolator is not set
     }
 
-    Eigen::MatrixXd& interpolator_matrix = mapping->impl->get_interpolator().value();
+    Eigen::MatrixXd& interpolator_matrix =
+        mapping->impl->get_interpolator().value();
     *dim1 = interpolator_matrix.rows();
     *dim2 = interpolator_matrix.cols();
     *interpolator = interpolator_matrix.data();
@@ -230,7 +238,8 @@ int sk_deriv_mapping_get_interpolator(DerivativeMapping *mapping, double **inter
     return 0;
 }
 
-int sk_surface_deriv_mapping_get_d_emission(SurfaceDerivativeMapping *mapping, double **emission) {
+int sk_surface_deriv_mapping_get_d_emission(SurfaceDerivativeMapping* mapping,
+                                            double** emission) {
     if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
@@ -238,11 +247,13 @@ int sk_surface_deriv_mapping_get_d_emission(SurfaceDerivativeMapping *mapping, d
     if (!mapping->impl->native_surface_mapping().d_emission.has_value()) {
         mapping->impl->allocate_emission_derivatives();
     }
-    *emission = mapping->impl->native_surface_mapping().d_emission.value().data();
+    *emission =
+        mapping->impl->native_surface_mapping().d_emission.value().data();
     return 0;
 }
 
-int sk_surface_deriv_mapping_get_d_brdf(SurfaceDerivativeMapping *mapping, double **brdf) {
+int sk_surface_deriv_mapping_get_d_brdf(SurfaceDerivativeMapping* mapping,
+                                        double** brdf) {
     if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
@@ -254,25 +265,31 @@ int sk_surface_deriv_mapping_get_d_brdf(SurfaceDerivativeMapping *mapping, doubl
     return 0;
 }
 
-int sk_surface_deriv_mapping_set_interpolator(SurfaceDerivativeMapping *mapping, double *interpolator, int dim1, int dim2) {
+int sk_surface_deriv_mapping_set_interpolator(SurfaceDerivativeMapping* mapping,
+                                              double* interpolator, int dim1,
+                                              int dim2) {
     if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
 
-    Eigen::MatrixXd interpolator_matrix = Eigen::Map<Eigen::MatrixXd>(interpolator, dim1, dim2);
+    Eigen::MatrixXd interpolator_matrix =
+        Eigen::Map<Eigen::MatrixXd>(interpolator, dim1, dim2);
     mapping->impl->set_interpolator(interpolator_matrix);
     return 0;
 }
 
-int sk_surface_deriv_mapping_get_interpolator(SurfaceDerivativeMapping *mapping, double **interpolator, int *dim1, int *dim2) {
+int sk_surface_deriv_mapping_get_interpolator(SurfaceDerivativeMapping* mapping,
+                                              double** interpolator, int* dim1,
+                                              int* dim2) {
     if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
-    if(!mapping->impl->get_interpolator().has_value()) {
+    if (!mapping->impl->get_interpolator().has_value()) {
         return -2; // Error: interpolator is not set
     }
 
-    Eigen::MatrixXd& interpolator_matrix = mapping->impl->get_interpolator().value();
+    Eigen::MatrixXd& interpolator_matrix =
+        mapping->impl->get_interpolator().value();
     *dim1 = interpolator_matrix.rows();
     *dim2 = interpolator_matrix.cols();
     *interpolator = interpolator_matrix.data();
@@ -280,7 +297,8 @@ int sk_surface_deriv_mapping_get_interpolator(SurfaceDerivativeMapping *mapping,
     return 0;
 }
 
-int sk_surface_deriv_mapping_get_interp_dim(SurfaceDerivativeMapping *mapping, const char **name) {
+int sk_surface_deriv_mapping_get_interp_dim(SurfaceDerivativeMapping* mapping,
+                                            const char** name) {
     if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
@@ -289,7 +307,8 @@ int sk_surface_deriv_mapping_get_interp_dim(SurfaceDerivativeMapping *mapping, c
     return 0;
 }
 
-int sk_surface_deriv_mapping_set_interp_dim(SurfaceDerivativeMapping *mapping, const char *name) {
+int sk_surface_deriv_mapping_set_interp_dim(SurfaceDerivativeMapping* mapping,
+                                            const char* name) {
     if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
@@ -298,7 +317,7 @@ int sk_surface_deriv_mapping_set_interp_dim(SurfaceDerivativeMapping *mapping, c
     return 0;
 }
 
-int sk_surface_deriv_mapping_set_zero(SurfaceDerivativeMapping *mapping) {
+int sk_surface_deriv_mapping_set_zero(SurfaceDerivativeMapping* mapping) {
     if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
@@ -307,7 +326,8 @@ int sk_surface_deriv_mapping_set_zero(SurfaceDerivativeMapping *mapping) {
     return 0;
 }
 
-int sk_surface_deriv_mapping_get_num_wavel(SurfaceDerivativeMapping *mapping, int *num_wavel) {
+int sk_surface_deriv_mapping_get_num_wavel(SurfaceDerivativeMapping* mapping,
+                                           int* num_wavel) {
     if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
@@ -316,7 +336,8 @@ int sk_surface_deriv_mapping_get_num_wavel(SurfaceDerivativeMapping *mapping, in
     return 0;
 }
 
-int sk_surface_deriv_mapping_get_num_brdf_args(SurfaceDerivativeMapping *mapping, int *num_brdf_args) {
+int sk_surface_deriv_mapping_get_num_brdf_args(
+    SurfaceDerivativeMapping* mapping, int* num_brdf_args) {
     if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }
@@ -325,7 +346,7 @@ int sk_surface_deriv_mapping_get_num_brdf_args(SurfaceDerivativeMapping *mapping
     return 0;
 }
 
-int sk_surface_deriv_mapping_destroy(SurfaceDerivativeMapping *mapping) {
+int sk_surface_deriv_mapping_destroy(SurfaceDerivativeMapping* mapping) {
     if (mapping == nullptr) {
         return -1; // Error: mapping is null
     }

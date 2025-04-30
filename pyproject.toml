@@ -1,6 +1,6 @@
 [build-system]
-requires = ["scikit-build-core>=0.3.3", "pybind11", "setuptools-scm>=8.0", "cmake<3.30 ; platform_system=='Darwin'"]
-build-backend = "scikit_build_core.build"
+requires = ["maturin", "setuptools-scm>=8.0", "cmake<3.30 ; platform_system=='Darwin'"]
+build-backend = "maturin"
 
 
 [project]
@@ -50,7 +50,6 @@ build = { cmd = [
 test = { cmd = "pytest tests/", cwd = "." }
 pre-commit = { cmd = "pre-commit run -a", cwd = "." }
 docs = { cmd = "sphinx-build -b html docs/sphinx/source docs/sphinx/build", cwd = "." }
-update-stubs = { cmd = "pybind11-stubgen sasktran2._core -o src/", cwd = "." }
 
 
 [tool.pixi.dependencies]
@@ -72,19 +71,23 @@ spdlog = "*"
 c-compiler = "*"
 cxx-compiler = "*"
 fortran-compiler = "*"
-scikit-build-core = "*"
+maturin = "*"
 cmake = "*"
 pip = "*"
 setuptools_scm = "*"
-pybind11 = "*"
 matplotlib = "*"
-pybind11-stubgen = "*"
 pre-commit = "*"
 seaborn = ">=0.13.2,<0.14"
 
 [tool.pixi.environments]
 default = ["test", "solar", "hapi", "dev"]
 
+[tool.maturin]
+features = ["pyo3/extension-module"]
+manifest-path = "rust/sasktran2-py-ext/Cargo.toml"
+python-source = "src"
+python-packages = ["sasktran2"]
+module-name = "sasktran2._core_rust"
 
 [tool.scikit-build]
 wheel.expand-macos-universal-tags = true

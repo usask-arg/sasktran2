@@ -28,7 +28,7 @@ int sk_geometry1d_get_num_altitudes(const Geometry1D* geometry) {
     return static_cast<int>(geometry->impl->altitude_grid().grid().size());
 }
 
-int sk_geometry1d_get_altitudes(const Geometry1D *geometry, double *altitudes) {
+int sk_geometry1d_get_altitudes(const Geometry1D* geometry, double* altitudes) {
     if (geometry == nullptr || altitudes == nullptr) {
         return -1; // Error: null pointer
     }
@@ -40,7 +40,7 @@ int sk_geometry1d_get_altitudes(const Geometry1D *geometry, double *altitudes) {
 }
 
 int sk_geometry1d_get_refractive_index_ptr(const Geometry1D* geometry,
-                                       double** refractive_index) {
+                                           double** refractive_index) {
     if (geometry == nullptr || refractive_index == nullptr) {
         return -1; // Error: null pointer
     }
@@ -48,5 +48,4 @@ int sk_geometry1d_get_refractive_index_ptr(const Geometry1D* geometry,
     *refractive_index = n.data();
     return 0; // Success
 }
-
 }

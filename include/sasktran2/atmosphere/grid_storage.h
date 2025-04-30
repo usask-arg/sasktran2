@@ -27,12 +27,12 @@ namespace sasktran2::atmosphere {
                                        atmosphere */
 
         struct InternalStorage {
-            Eigen::MatrixXd ssa;              // location, wavel
-            Eigen::MatrixXd total_extinction; // location, wavel
-            Eigen::MatrixXd emission_source;  // location, wavel
+            Eigen::MatrixXd ssa;                // location, wavel
+            Eigen::MatrixXd total_extinction;   // location, wavel
+            Eigen::MatrixXd emission_source;    // location, wavel
             Eigen::Tensor<double, 3> leg_coeff; // legendre order (polarized
                                                 // stacked), location, wavel
-            Eigen::VectorXd solar_irradiance; // wavel
+            Eigen::VectorXd solar_irradiance;   // wavel
         };
 
       public:
@@ -58,8 +58,7 @@ namespace sasktran2::atmosphere {
             leg_coeff; // legendre order (polarized stacked), location, wavel
         Eigen::Tensor<double, 4>
             d_leg_coeff; // (legendre order, location, wavel, deriv)
-        Eigen::Tensor<double, 3>
-            d_f; // (location, wavel, deriv)
+        Eigen::Tensor<double, 3> d_f; // (location, wavel, deriv)
 
         Eigen::MatrixXi
             max_order; // Maximum order of the phase function for each location
@@ -104,8 +103,7 @@ namespace sasktran2::atmosphere {
 
         AtmosphereGridStorageFull(int nwavel, int nlocation, int numlegendre)
             : ssa(nullptr, 0, 0), total_extinction(nullptr, 0, 0),
-              emission_source(nullptr, 0, 0), 
-              leg_coeff(nullptr, 0, 0, 0), 
+              emission_source(nullptr, 0, 0), leg_coeff(nullptr, 0, 0, 0),
               solar_irradiance(nullptr, 0) {
             // Allocate internal storage
             m_internal_storage.ssa.resize(nlocation, nwavel);
@@ -164,8 +162,7 @@ namespace sasktran2::atmosphere {
             int nwavel = leg_coeff.dimension(2);
             scatderivstart = 2 * numgeo;
 
-            d_leg_coeff.resize(legendre, numgeo, nwavel,
-                                                  numderiv);
+            d_leg_coeff.resize(legendre, numgeo, nwavel, numderiv);
             d_f.resize(numgeo, nwavel, numderiv);
 
             d_leg_coeff.setZero();
@@ -181,11 +178,12 @@ namespace sasktran2::atmosphere {
         }
 
         /**
-         * @brief Resizes the internal scattering derivative objects and copies the d_leg_coeff values
+         * @brief Resizes the internal scattering derivative objects and copies
+         * the d_leg_coeff values
          *
          * This is called after all of the derivative mappings have been set
-         * 
-         * @param numderiv 
+         *
+         * @param numderiv
          */
         void finalize_scattering_derivatives(int numderiv) {
             // This replaces some code that was in the Python interface before
@@ -195,7 +193,7 @@ namespace sasktran2::atmosphere {
                     num_scat_deriv++;
                 }
             }
-            if(num_scat_deriv == 0) {
+            if (num_scat_deriv == 0) {
                 return;
             }
 
@@ -205,7 +203,7 @@ namespace sasktran2::atmosphere {
                 if (mapping.is_scattering_derivative()) {
                     NativeDerivativeMapping& native_mapping =
                         mapping.native_mapping();
-                    d_leg_coeff.chip(scat_index, 3) = 
+                    d_leg_coeff.chip(scat_index, 3) =
                         native_mapping.d_legendre.value();
 
                     native_mapping.scat_deriv_index = scat_index;
@@ -319,7 +317,7 @@ namespace sasktran2::atmosphere {
             leg_coeff.setZero();
             f.setZero();
 
-            for( auto& [name, mapping] : m_derivative_mappings) {
+            for (auto& [name, mapping] : m_derivative_mappings) {
                 mapping.set_zero();
             }
         }

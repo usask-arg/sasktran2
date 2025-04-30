@@ -10,9 +10,10 @@ import xarray as xr
 from scipy.stats import gamma, lognorm, rv_continuous, triang, uniform
 
 from sasktran2 import mie
-from sasktran2.legendre import compute_greek_coefficients
 from sasktran2._core_rust import PyMieIntegrator
-from .wrappers import LinearizedMie
+from sasktran2.legendre import compute_greek_coefficients
+
+from .wrappers import LinearizedMie, MieOutput
 
 
 def _post_process(total: dict, wavelengths):
@@ -507,27 +508,19 @@ def integrate_mie_cpp(
             ),
             "p11": (
                 ["wavelength_nm", "distribution", "cos_angle"],
-                np.zeros(
-                    (len(wavelengths), len(prob_dists), len(cos_angles))
-                ),
+                np.zeros((len(wavelengths), len(prob_dists), len(cos_angles))),
             ),
             "p12": (
                 ["wavelength_nm", "distribution", "cos_angle"],
-                np.zeros(
-                    (len(wavelengths), len(prob_dists), len(cos_angles))
-                ),
+                np.zeros((len(wavelengths), len(prob_dists), len(cos_angles))),
             ),
             "p33": (
                 ["wavelength_nm", "distribution", "cos_angle"],
-                np.zeros(
-                    (len(wavelengths), len(prob_dists), len(cos_angles))
-                ),
+                np.zeros((len(wavelengths), len(prob_dists), len(cos_angles))),
             ),
             "p34": (
                 ["wavelength_nm", "distribution", "cos_angle"],
-                np.zeros(
-                    (len(wavelengths), len(prob_dists), len(cos_angles))
-                ),
+                np.zeros((len(wavelengths), len(prob_dists), len(cos_angles))),
             ),
             "lm_a1": (
                 ["wavelength_nm", "distribution", "legendre"],

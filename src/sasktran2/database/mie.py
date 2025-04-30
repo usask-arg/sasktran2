@@ -13,7 +13,7 @@ from sasktran2.mie import LinearizedMie
 from sasktran2.mie.distribution import (
     ParticleSizeDistribution,
     integrate_mie,
-    integrate_mie_cpp
+    integrate_mie_cpp,
 )
 from sasktran2.mie.refractive import RefractiveIndex
 from sasktran2.optical.database import OpticalDatabaseGenericScatterer

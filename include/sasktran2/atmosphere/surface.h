@@ -401,7 +401,8 @@ namespace sasktran2::atmosphere {
 
         void allocate(int num_wavel) {
 
-            m_internal_storage.brdf_args.resize(m_brdf_object->num_args(), num_wavel);
+            m_internal_storage.brdf_args.resize(m_brdf_object->num_args(),
+                                                num_wavel);
             // placement new into the map
             new (&m_brdf_args) Eigen::Map<Eigen::MatrixXd>(
                 m_internal_storage.brdf_args.data(), m_brdf_object->num_args(),
@@ -479,10 +480,9 @@ namespace sasktran2::atmosphere {
          *
          * @param num_wavel
          */
-        Surface(int num_wavel, bool allocate_default_brdf = true) :
-            m_num_wavel(num_wavel),
-            m_brdf_args(nullptr, 0, 0),
-            m_emission(nullptr, 0, 0) {
+        Surface(int num_wavel, bool allocate_default_brdf = true)
+            : m_num_wavel(num_wavel), m_brdf_args(nullptr, 0, 0),
+              m_emission(nullptr, 0, 0) {
             if (allocate_default_brdf) {
                 m_brdf_object = std::make_shared<brdf::Lambertian<NSTOKES>>();
                 allocate(num_wavel);
@@ -490,18 +490,15 @@ namespace sasktran2::atmosphere {
             m_emission.setZero();
         }
 
-
         /**
-         * @brief 
-         * 
+         * @brief
+         *
          *
          * @param num_wavel
          */
-         Surface(int num_wavel, Eigen::Map<Eigen::VectorXd> emission) :
-         m_num_wavel(num_wavel),
-         m_brdf_args(nullptr, 0, 0),
-         m_emission(emission) {
-         }
+        Surface(int num_wavel, Eigen::Map<Eigen::VectorXd> emission)
+            : m_num_wavel(num_wavel), m_brdf_args(nullptr, 0, 0),
+              m_emission(emission) {}
 
         /**
          * @brief The internal BRDF object
@@ -527,12 +524,13 @@ namespace sasktran2::atmosphere {
          *
          * @param brdf
          */
-         void set_brdf_object_with_memory(std::shared_ptr<brdf::BRDF<NSTOKES>> brdf, Eigen::Map<Eigen::MatrixXd> brdf_args) {
+        void
+        set_brdf_object_with_memory(std::shared_ptr<brdf::BRDF<NSTOKES>> brdf,
+                                    Eigen::Map<Eigen::MatrixXd> brdf_args) {
             m_brdf_object = std::move(brdf);
             // placement new into the map
             new (&m_brdf_args) Eigen::Map<Eigen::MatrixXd>(
-                brdf_args.data(), m_brdf_object->num_args(),
-                m_num_wavel);
+                brdf_args.data(), m_brdf_object->num_args(), m_num_wavel);
             // Only need to alloc the derivatives, not the full object
             alloc_derivatives();
         }
@@ -549,7 +547,9 @@ namespace sasktran2::atmosphere {
          *
          * @return const Eigen::MatrixXd& shape (num_args, num_wavel)
          */
-        const Eigen::Map<Eigen::MatrixXd>& brdf_args() const { return m_brdf_args; }
+        const Eigen::Map<Eigen::MatrixXd>& brdf_args() const {
+            return m_brdf_args;
+        }
 
         /**
          * @brief The derivative arguments for the BRDF function
@@ -593,7 +593,9 @@ namespace sasktran2::atmosphere {
          *
          * @return const Eigen::VectorXd& shape (num_wavel)
          */
-        const Eigen::Map<Eigen::VectorXd>& emission() const { return m_emission; }
+        const Eigen::Map<Eigen::VectorXd>& emission() const {
+            return m_emission;
+        }
 
         /**
          * @brief Resets the internal storage to zero.
@@ -602,11 +604,11 @@ namespace sasktran2::atmosphere {
         void set_zero() {
             m_emission.setZero();
 
-            // We don't set the brdf_args to zero mostly for historic reasons. 
-            // BRDF constituents are assumed to set the brdf_args, not add to them
-            // m_brdf_args.setZero();
+            // We don't set the brdf_args to zero mostly for historic reasons.
+            // BRDF constituents are assumed to set the brdf_args, not add to
+            // them m_brdf_args.setZero();
 
-            for( auto& [name, mapping] : m_derivative_mappings) {
+            for (auto& [name, mapping] : m_derivative_mappings) {
                 mapping.set_zero();
             }
         }

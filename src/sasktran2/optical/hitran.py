@@ -4,11 +4,15 @@ import logging
 
 import numpy as np
 
+from sasktran2._core_rust import (
+    voigt_broaden,
+    voigt_broaden_uniform,
+    voigt_broaden_with_line_coupling,
+)
 from sasktran2.atmosphere import Atmosphere
 from sasktran2.database.aer_line import AERLineDatabase
 from sasktran2.database.hitran_line import HITRANLineDatabase
 from sasktran2.optical.base import OpticalProperty, OpticalQuantities
-from sasktran2._core_rust import voigt_broaden_uniform, voigt_broaden, voigt_broaden_with_line_coupling
 from sasktran2.util import get_hapi
 
 

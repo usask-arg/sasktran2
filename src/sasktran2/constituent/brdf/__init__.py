@@ -5,7 +5,7 @@ import numpy as np
 from sasktran2.atmosphere import Atmosphere
 from sasktran2.util.interpolation import linear_interpolating_matrix
 
-from ..._core_rust import PyLambertian, PyKokhanovsky, PyMODIS
+from ..._core_rust import PyKokhanovsky, PyLambertian, PyMODIS  # noqa: F401
 
 
 class WavelengthInterpolatorMixin:

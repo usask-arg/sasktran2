@@ -6,7 +6,7 @@ import os
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 os.environ.setdefault("RUST_BACKTRACE", "full")
 
-from ._core import Geodetic
+# from ._core import Geodetic
 
 from . import (
     appconfig,
@@ -21,12 +21,6 @@ from . import (
     util,
     viewinggeo,
 )
-
-from .viewinggeo.wrappers import ViewingGeometry, GroundViewingSolar, TangentAltitudeSolar, SolarAnglesObserverLocation
-
-from ._core_rust import PyConfig as Config
-from .rsk import Engine
-
 from ._core_rust import (
     EmissionSource,
     GeometryType,
@@ -36,11 +30,18 @@ from ._core_rust import (
     OccultationSource,
     SingleScatterSource,
     StokesBasis,
-    ThreadingModel
+    ThreadingModel,
 )
-
+from ._core_rust import PyConfig as Config
 from ._version import __version__
-from .geometry import Geometry1D
 from .atmosphere import Atmosphere
+from .engine import Engine
 from .geodetic import WGS84, SphericalGeoid
+from .geometry import Geometry1D
 from .output import Output, OutputDerivMapped, OutputIdeal
+from .viewinggeo.wrappers import (
+    GroundViewingSolar,
+    SolarAnglesObserverLocation,
+    TangentAltitudeSolar,
+    ViewingGeometry,
+)

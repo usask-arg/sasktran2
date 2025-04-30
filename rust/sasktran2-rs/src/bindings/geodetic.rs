@@ -145,7 +145,7 @@ impl Geodetic {
         altitude: f64,
         observer: [f64; 3],
         boresight: [f64; 3],
-    ) -> Result<([f64; 3])> {
+    ) -> Result<[f64; 3]> {
         let mut look_vector: [f64; 3] = [0.0; 3];
         let result = unsafe {
             ffi::sk_geodetic_from_tangent_altitude(

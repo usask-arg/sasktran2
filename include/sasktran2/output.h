@@ -187,7 +187,8 @@ namespace sasktran2 {
         Eigen::Map<Eigen::VectorXd> m_radiance;
 
         std::map<std::string, Eigen::Map<Eigen::MatrixXd>> m_derivatives;
-        std::map<std::string, Eigen::Map<Eigen::MatrixXd>> m_surface_derivatives;
+        std::map<std::string, Eigen::Map<Eigen::MatrixXd>>
+            m_surface_derivatives;
         std::vector<Eigen::MatrixXd> m_native_thread_storage;
 
         void resize();
@@ -198,27 +199,29 @@ namespace sasktran2 {
         void set_derivative_mapping_memory(
             const std::string& name,
             Eigen::Map<Eigen::MatrixXd> derivative_mapping) {
-              m_derivatives.insert(
-                  {name, Eigen::Map<Eigen::MatrixXd>(nullptr, 0, 0)}); // create a null map
-              // then placement new into the map
-              Eigen::Map<Eigen::MatrixXd>* ref = &m_derivatives.at(name);
+            m_derivatives.insert(
+                {name, Eigen::Map<Eigen::MatrixXd>(nullptr, 0,
+                                                   0)}); // create a null map
+            // then placement new into the map
+            Eigen::Map<Eigen::MatrixXd>* ref = &m_derivatives.at(name);
 
-              new (ref) Eigen::Map<Eigen::MatrixXd>(
-                  derivative_mapping.data(), derivative_mapping.rows(),
-                  derivative_mapping.cols());
+            new (ref) Eigen::Map<Eigen::MatrixXd>(derivative_mapping.data(),
+                                                  derivative_mapping.rows(),
+                                                  derivative_mapping.cols());
         }
 
         void set_surface_derivative_mapping_memory(
             const std::string& name,
             Eigen::Map<Eigen::MatrixXd> derivative_mapping) {
-              m_surface_derivatives.insert(
-                  {name, Eigen::Map<Eigen::MatrixXd>(nullptr, 0, 0)}); // create a null map
-              // then placement new into the map
-              Eigen::Map<Eigen::MatrixXd>* ref = &m_surface_derivatives.at(name);
+            m_surface_derivatives.insert(
+                {name, Eigen::Map<Eigen::MatrixXd>(nullptr, 0,
+                                                   0)}); // create a null map
+            // then placement new into the map
+            Eigen::Map<Eigen::MatrixXd>* ref = &m_surface_derivatives.at(name);
 
-              new (ref) Eigen::Map<Eigen::MatrixXd>(
-                  derivative_mapping.data(), derivative_mapping.rows(),
-                  derivative_mapping.cols());
+            new (ref) Eigen::Map<Eigen::MatrixXd>(derivative_mapping.data(),
+                                                  derivative_mapping.rows(),
+                                                  derivative_mapping.cols());
         }
 
         void assign(const sasktran2::Dual<double, sasktran2::dualstorage::dense,

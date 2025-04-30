@@ -20,32 +20,28 @@ void sk_viewing_geometry_add_ground_viewing_solar(ViewingGeometry* geometry,
 }
 
 int sk_viewing_geometry_add_tangent_altitude_solar(
-    ViewingGeometry* geometry,
-    double tangent_altitude_m,
-    double relative_azimuth_angle,
-    double observeraltitude,
-    double cos_sza) {
+    ViewingGeometry* geometry, double tangent_altitude_m,
+    double relative_azimuth_angle, double observeraltitude, double cos_sza) {
     if (geometry == nullptr) {
         return -1; // Error: null pointer
     }
     geometry->impl.observer_rays().emplace_back(
         std::make_unique<sasktran2::viewinggeometry::TangentAltitudeSolar>(
-            tangent_altitude_m, relative_azimuth_angle, observeraltitude, cos_sza));
+            tangent_altitude_m, relative_azimuth_angle, observeraltitude,
+            cos_sza));
     return 0; // Success
 }
 
 int sk_viewing_geometry_add_solar_angles_observer_location(
-    ViewingGeometry* geometry,
-    double cos_sza,
-    double relative_azimuth_angle,
-    double cos_viewing_zenith,
-    double observeraltitude) {
+    ViewingGeometry* geometry, double cos_sza, double relative_azimuth_angle,
+    double cos_viewing_zenith, double observeraltitude) {
     if (geometry == nullptr) {
         return -1; // Error: null pointer
     }
     geometry->impl.observer_rays().emplace_back(
         std::make_unique<sasktran2::viewinggeometry::ViewingUpSolar>(
-            cos_sza, relative_azimuth_angle, cos_viewing_zenith, observeraltitude));
+            cos_sza, relative_azimuth_angle, cos_viewing_zenith,
+            observeraltitude));
     return 0; // Success
 }
 

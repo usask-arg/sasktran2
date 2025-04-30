@@ -4,12 +4,16 @@ fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
     let install_prefix = std::path::Path::new(&out_dir).join("install");
 
+    let use_omp = env::var("USE_OMP").unwrap_or_else(|_| "OFF".to_string());
+    let sktran_blas_vendor = env::var("SKTRAN_BLAS_VENDOR").unwrap_or_else(|_| "Apple".to_string());
+    let do_stream_templates = env::var("DO_STREAM_TEMPLATES").unwrap_or_else(|_| "OFF".to_string());
+
     let dst = cmake::Config::new("../../")
         .define("BUILD_SHARED_LIBS", "OFF")
         .define("CMAKE_INSTALL_PREFIX", &install_prefix)
-        .define("USE_OMP", "OFF")
-        .define("BUILD_PYTHON", "OFF")
-        .define("SKTRAN_BLAS_VENDOR", "Apple")
+        .define("DO_STREAM_TEMPLATES", do_stream_templates)
+        .define("USE_OMP", use_omp)
+        .define("SKTRAN_BLAS_VENDOR", sktran_blas_vendor)
         .build();
 
     println!("cargo:root={}", install_prefix.display());
@@ -24,6 +28,7 @@ fn main() {
 
     println!("cargo:rerun-if-changed=../../include");
     println!("cargo:rerun-if-changed=../../lib");
+    println!("cargo:rerun-if-changed=../../CMakeLists.txt");
 
     let bindings = bindgen::Builder::default()
         .header("../../include/c_api/sasktran2.h")

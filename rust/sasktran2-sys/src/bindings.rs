@@ -275,7 +275,7 @@ pub struct Surface {
     _unused: [u8; 0],
 }
 unsafe extern "C" {
-    #[doc = " @brief Creates a new AtmosphereStorage object.\n\n @param nlocation Number of spatial locations.\n @param nwavel Number of wavelengths.\n @param nphase_moments Number of phase function moments.\n @param nstokes Number of Stokes parameters (usually 1 or 3).\n @param ssa Pointer to single scattering albedo data. [nlocation, nwavel]\n @param total_extinction Pointer to total extinction coefficient data. [nlocation, nwavel]\n @param emission_source Pointer to emission source data. [nlocation, nwavel]\n @param leg_coeff Pointer to Legendre coefficients. [nphase_moments, nlocation, nwavel]\n @param solar_irradiance Pointer to top-of-atmosphere solar irradiance.\n @return Pointer to a new AtmosphereStorage object."]
+    #[doc = " @brief Creates a new AtmosphereStorage object.\n\n @param nlocation Number of spatial locations.\n @param nwavel Number of wavelengths.\n @param nphase_moments Number of phase function moments.\n @param nstokes Number of Stokes parameters (usually 1 or 3).\n @param ssa Pointer to single scattering albedo data. [nlocation, nwavel]\n @param total_extinction Pointer to total extinction coefficient data.\n [nlocation, nwavel]\n @param emission_source Pointer to emission source data. [nlocation, nwavel]\n @param leg_coeff Pointer to Legendre coefficients. [nphase_moments,\n nlocation, nwavel]\n @param solar_irradiance Pointer to top-of-atmosphere solar irradiance.\n @return Pointer to a new AtmosphereStorage object."]
     pub fn sk_atmosphere_storage_create(
         nlocation: ::std::os::raw::c_int,
         nwavel: ::std::os::raw::c_int,

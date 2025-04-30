@@ -1,18 +1,15 @@
-use std::cmp::max;
 use std::f64::consts::FRAC_1_SQRT_2;
 
 use crate::math::errorfunctions::optimized::{
-    w_jpole, w_jpole_assign, w_jpole_real_assign, w_jpole_real_assign_uniform,
+    w_jpole_assign, w_jpole_real_assign, w_jpole_real_assign_uniform,
 };
 use crate::prelude::*;
-use num::complex::Complex64;
 
 pub const SQRT_PI: f64 = 1.7724538509055160272981674833411;
 
 trait LineShapes {
     fn lorentzian(self, y: f64) -> f64;
     fn gaussian(self, y: f64) -> f64;
-    fn voigt(self, y: f64) -> f64;
 }
 
 impl LineShapes for f64 {
@@ -28,14 +25,6 @@ impl LineShapes for f64 {
         let x = self;
 
         (-x * x).exp()
-    }
-
-    #[inline(always)]
-    fn voigt(self, y: f64) -> f64 {
-        let x = self;
-        let z = Complex64::new(x, y);
-
-        return w_jpole(z).re;
     }
 }
 
@@ -287,7 +276,6 @@ pub fn voigt_broaden(
     _num_threads: usize,
     subtract_pedastal: bool,
 ) -> Result<()> {
-    const EPSILON: f64 = 1e-4;
     const C2: f64 = 1.4387769;
     const SPEED_OF_LIGHT: f64 = 2.99792458e10;
     const NA: f64 = 6.02214179e23;
@@ -437,8 +425,8 @@ pub fn voigt_broaden_with_line_coupling(
     n_air: ArrayView1<f64>,
     iso_id: ArrayView1<i32>,
     partitions: ArrayView2<f64>,
-    Y_coupling: ArrayView2<f64>, // [line, geometry]
-    G_coupling: ArrayView2<f64>, // [line, geometry]
+    y_coupling: ArrayView2<f64>, // [line, geometry]
+    g_coupling: ArrayView2<f64>, // [line, geometry]
     mol_mass: ArrayView1<f64>,
     pressure: ArrayView1<f64>,
     pself: ArrayView1<f64>,
@@ -450,7 +438,6 @@ pub fn voigt_broaden_with_line_coupling(
     _num_threads: usize,
     subtract_pedastal: bool,
 ) -> Result<()> {
-    const EPSILON: f64 = 1e-4;
     const C2: f64 = 1.4387769;
     const SPEED_OF_LIGHT: f64 = 2.99792458e10;
     const NA: f64 = 6.02214179e23;
@@ -554,8 +541,8 @@ pub fn voigt_broaden_with_line_coupling(
                     let normalized_intensity = adjusted_line_intensity * norm_factor;
 
                     let scale_re =
-                        normalized_intensity * (1.0 + pressure * pressure * G_coupling[[i, g]]);
-                    let scale_im = normalized_intensity * (-pressure * Y_coupling[[i, g]]);
+                        normalized_intensity * (1.0 + pressure * pressure * g_coupling[[i, g]]);
+                    let scale_im = normalized_intensity * (-pressure * y_coupling[[i, g]]);
 
                     w_jpole_assign(
                         wavenumber_grid

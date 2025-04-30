@@ -1,18 +1,21 @@
-from sasktran2._core_rust import PyGeometry1D
-from sasktran2._core_rust import GeometryType, InterpolationMethod
+from __future__ import annotations
+
 import numpy as np
+
+from sasktran2._core_rust import GeometryType, InterpolationMethod, PyGeometry1D
+
 
 class Geometry1D:
     _geometry: PyGeometry1D
 
     def __init__(
-            self,
-            cos_sza: float,
-            solar_azimuth: float,
-            earth_radius_m: float,
-            altitude_grid_m: np.ndarray,
-            interpolation_method: InterpolationMethod,
-            geometry_type: GeometryType,
+        self,
+        cos_sza: float,
+        solar_azimuth: float,
+        earth_radius_m: float,
+        altitude_grid_m: np.ndarray,
+        interpolation_method: InterpolationMethod,
+        geometry_type: GeometryType,
     ):
         self._geometry = PyGeometry1D(
             cos_sza,

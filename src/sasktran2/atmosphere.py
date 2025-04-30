@@ -7,13 +7,13 @@ from dataclasses import dataclass
 import numpy as np
 
 import sasktran2 as sk
+from sasktran2._core_rust import PyAtmosphere
 from sasktran2.polarization import LegendreStorageView
 from sasktran2.units import (
     wavenumber_cminv_to_wavlength_nm,
     wavlength_nm_to_wavenumber_cminv,
 )
 from sasktran2.util.state import EquationOfState
-from sasktran2._core_rust import PyAtmosphere
 
 
 @dataclass
@@ -101,8 +101,13 @@ class Atmosphere:
         self._legendre_derivative = legendre_derivative
         self._specific_humidity_derivative = specific_humidity_derivative
 
-        self._atmosphere = PyAtmosphere(nwavel, len(model_geometry.altitudes()), config.num_singlescatter_moments, calculate_derivatives, config.num_stokes)
-
+        self._atmosphere = PyAtmosphere(
+            nwavel,
+            len(model_geometry.altitudes()),
+            config.num_singlescatter_moments,
+            calculate_derivatives,
+            config.num_stokes,
+        )
 
         self._leg_coeff = LegendreStorageView(
             self._atmosphere.storage.leg_coeff, self._nstokes

@@ -16,7 +16,7 @@ if(UNIX)
   add_definitions(
     "-Wno-inconsistent-missing-override -Wno-suggest-override -Wno-comment -Wno-deprecated-declarations -Wno-psabi"
   )
-  #enable_language(Fortran)
+  # enable_language(Fortran)
 endif()
 
 execute_process(
@@ -76,33 +76,43 @@ else()
   target_link_libraries(sasktran2BuildProperties INTERFACE eigenlib)
 endif()
 
-find_package(spdlog CONFIG)
+# find_package(spdlog CONFIG)
 
-if(spdlog_FOUND)
-  target_link_libraries(sasktran2BuildProperties
-                        INTERFACE spdlog::spdlog $<$<BOOL:${MINGW}>:ws2_32>)
-else()
-  set(SPDLOG_INSTALL_DIR "${CMAKE_BINARY_DIR}/spdlog-install/")
+# if(spdlog_FOUND) message(STATUS "Found spdlog")
+# target_link_libraries(sasktran2BuildProperties INTERFACE
+# spdlog::spdlog_header_only) else()
+set(SPDLOG_INSTALL_DIR "${CMAKE_BINARY_DIR}/spdlog-install/")
 
-  ExternalProject_Add(
-    spdlog
-    URL https://github.com/gabime/spdlog/archive/refs/tags/v1.12.0.tar.gz
-    SOURCE_DIR "${CMAKE_BINARY_DIR}/spdlog-src"
-    BINARY_DIR "${CMAKE_BINARY_DIR}/spdlog-build"
-    INSTALL_DIR "${SPDLOG_INSTALL_DIR}"
-    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
-               -DCMAKE_BUILD_TYPE=Release)
+ExternalProject_Add(
+  spdlog
+  URL https://github.com/gabime/spdlog/archive/refs/tags/v1.12.0.tar.gz
+  SOURCE_DIR "${CMAKE_BINARY_DIR}/spdlog-src"
+  BINARY_DIR "${CMAKE_BINARY_DIR}/spdlog-build"
+  INSTALL_DIR "${SPDLOG_INSTALL_DIR}"
+  CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+             -DCMAKE_BUILD_TYPE=Release
+             -DSPDLOG_BUILD_EXAMPLES=OFF
+             -DSPDLOG_BUILD_SHARED=OFF
+             -DSPDLOG_BUILD_STATIC=OFF
+             -DSPDLOG_BUILD_BENCH=OFF
+             -DSPDLOG_BUILD_TESTS=OFF
+             -DSPDLOG_FMT_EXTERNAL=OFF # <- make spdlog self-contained
+             -DSPDLOG_INSTALL=ON # <- Necessary for exported CMake targets
+)
 
-  file(MAKE_DIRECTORY ${SPDLOG_INSTALL_DIR}/include) # avoid race condition
+# Ensure the include dir exists before consuming
+file(MAKE_DIRECTORY ${SPDLOG_INSTALL_DIR}/include)
 
-  add_library(spdloglib INTERFACE IMPORTED GLOBAL)
-  add_dependencies(spdloglib spdlog)
+# Import the spdlog header-only target
+add_library(spdlog_header_only INTERFACE IMPORTED GLOBAL)
+add_dependencies(spdlog_header_only spdlog)
 
-  set_target_properties(spdloglib PROPERTIES INTERFACE_INCLUDE_DIRECTORIES
-                                             ${SPDLOG_INSTALL_DIR}/include/)
+set_target_properties(
+  spdlog_header_only PROPERTIES INTERFACE_INCLUDE_DIRECTORIES
+                                "${SPDLOG_INSTALL_DIR}/include")
 
-  target_link_libraries(sasktran2BuildProperties INTERFACE spdloglib)
-endif()
+target_link_libraries(sasktran2BuildProperties INTERFACE spdlog_header_only)
+# endif()
 
 # target_link_libraries(sasktran2BuildProperties INTERFACE sk_core)
 
@@ -121,12 +131,15 @@ set(EXPORT_NAME sasktran2Targets)
 option(USE_OMP "Enables OPENMP support in SASKTRAN" ON)
 
 if(USE_OMP)
-  find_package(OpenMP)
+  find_package(OpenMP QUIET)
 
   if(OpenMP_FOUND)
+    message(STATUS "OpenMP found, enabling support")
     target_link_libraries(sasktran2BuildProperties INTERFACE OpenMP::OpenMP_CXX)
     target_compile_definitions(sasktran2BuildProperties
                                INTERFACE SKTRAN_OPENMP_SUPPORT)
+  else()
+    message(WARNING "OpenMP requested but not found, continuing without it")
   endif()
 endif()
 
@@ -287,84 +300,24 @@ endif()
 
 add_subdirectory(c_api)
 
-option(BUILD_PYTHON "True if Building Python Files" ON)
-# We basically just include this for clion help
-if(BUILD_PYTHON)
-  add_subdirectory(pybind11)
+install(
+  TARGETS sasktran2BuildProperties
+  EXPORT ${EXPORT_NAME}
+  LIBRARY DESTINATION ${STATIC_LIB_INSTALL_DIR}
+  INCLUDES
+  DESTINATION ${INCLUDE_INSTALL_DIR})
 
+write_basic_package_version_file(
+  "${CMAKE_BINARY_DIR}/sasktran2ConfigVersion.cmake"
+  VERSION ${SASKTRAN2_VERSION}
+  COMPATIBILITY SameMajorVersion)
 
-  FetchContent_Declare(
-  Corrosion
-  GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
-  GIT_TAG v0.5 # Optionally specify a commit hash, version tag or branch here
-  )
-  # Set any global configuration variables such as `Rust_TOOLCHAIN` before this
-  # line!
-  FetchContent_MakeAvailable(Corrosion)
+install(
+  EXPORT ${EXPORT_NAME}
+  FILE sasktran2Targets.cmake
+  NAMESPACE sasktran2::
+  DESTINATION lib/cmake/sasktran2)
 
-  # Import targets defined in a package or workspace manifest `Cargo.toml` file
-  corrosion_import_crate(MANIFEST_PATH Cargo.toml)
-  corrosion_set_env_vars(_core_rust PYO3_PYTHON=${Python_EXECUTABLE})
-
-  if(WIN32)
-    set(SHARED_LIB_EXT ".dll")
-    set(RUST_LIB_PREFIX "_") # no 'lib' prefix on Windows
-  elseif(APPLE)
-    set(SHARED_LIB_EXT ".dylib")
-    set(RUST_LIB_PREFIX "lib_")
-  else()
-    set(SHARED_LIB_EXT ".so")
-    set(RUST_LIB_PREFIX "lib_")
-  endif()
-
-  set(RUST_BUILD_NAME "${RUST_LIB_PREFIX}core_rust${SHARED_LIB_EXT}")
-  set(RUST_BUILD_PATH "${CMAKE_CURRENT_BINARY_DIR}/${RUST_BUILD_NAME}")
-
-  execute_process(
-    COMMAND ${Python_EXECUTABLE} -c
-            "import sysconfig; print(sysconfig.get_config_var('EXT_SUFFIX'))"
-    OUTPUT_VARIABLE PYTHON_EXT_SUFFIX
-    OUTPUT_STRIP_TRAILING_WHITESPACE)
-
-  # Final path
-  set(PY_MODULE_OUTPUT
-      "${CMAKE_CURRENT_BINARY_DIR}/_core_rust${PYTHON_EXT_SUFFIX}")
-
-  get_target_property(RUST_CARGO_EXECUTABLE Rust::Cargo IMPORTED_LOCATION)
-  get_target_property(RUSTC_EXECUTABLE Rust::Rustc IMPORTED_LOCATION)
-
-  add_custom_command(
-    OUTPUT ${PY_MODULE_OUTPUT}
-    COMMAND ${CMAKE_COMMAND} -E copy ${RUST_BUILD_PATH} ${PY_MODULE_OUTPUT}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/rust/sasktran2-py-ext
-    COMMENT "Building and copying Rust PyO3 module to Python package"
-    VERBATIM)
-
-  add_custom_target(copy_core_rust ALL DEPENDS ${PY_MODULE_OUTPUT}
-                                               _cargo-build__core_rust)
-  install(FILES ${PY_MODULE_OUTPUT} DESTINATION sasktran2)
-
-else()
-  install(
-    TARGETS sasktran2BuildProperties
-    EXPORT ${EXPORT_NAME}
-    LIBRARY DESTINATION ${STATIC_LIB_INSTALL_DIR}
-    INCLUDES
-    DESTINATION ${INCLUDE_INSTALL_DIR})
-
-  write_basic_package_version_file(
-    "${CMAKE_BINARY_DIR}/sasktran2ConfigVersion.cmake"
-    VERSION ${SASKTRAN2_VERSION}
-    COMPATIBILITY SameMajorVersion)
-
-  install(
-    EXPORT ${EXPORT_NAME}
-    FILE sasktran2Targets.cmake
-    NAMESPACE sasktran2::
-    DESTINATION lib/cmake/sasktran2)
-
-  install(FILES "cmake/sasktran2Config.cmake"
-                "${CMAKE_BINARY_DIR}/sasktran2ConfigVersion.cmake"
-          DESTINATION lib/cmake/sasktran2)
-
-endif()
+install(FILES "cmake/sasktran2Config.cmake"
+              "${CMAKE_BINARY_DIR}/sasktran2ConfigVersion.cmake"
+        DESTINATION lib/cmake/sasktran2)

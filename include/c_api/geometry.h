@@ -15,11 +15,10 @@ void sk_geometry1d_destroy(Geometry1D* geometry);
 
 int sk_geometry1d_get_num_altitudes(const Geometry1D* geometry);
 
-int sk_geometry1d_get_altitudes(const Geometry1D* geometry,
-                                double* altitudes);
+int sk_geometry1d_get_altitudes(const Geometry1D* geometry, double* altitudes);
 
 int sk_geometry1d_get_refractive_index_ptr(const Geometry1D* geometry,
-                                      double** refractive_index);
+                                           double** refractive_index);
 
 #ifdef __cplusplus
 }

@@ -24,28 +24,31 @@ struct Engine {
 
     int calculate_radiance(Atmosphere* atmosphere, OutputC* output) {
         try {
-        if (impl) {
-            if (_config->impl.num_stokes() == 1) {
-                Sasktran2<1>* impl1 = dynamic_cast<Sasktran2<1>*>(impl.get());
-                impl1->calculate_radiance(
-                    *static_cast<sasktran2::atmosphere::Atmosphere<1>*>(
-                        atmosphere->impl.get()),
-                    *static_cast<sasktran2::Output<1>*>(output->impl.get()));
-                return 0;
-            } else if (_config->impl.num_stokes() == 3) {
-                Sasktran2<3>* impl3 = dynamic_cast<Sasktran2<3>*>(impl.get());
-                impl3->calculate_radiance(
-                    *static_cast<sasktran2::atmosphere::Atmosphere<3>*>(
-                        atmosphere->impl.get()),
-                    *static_cast<sasktran2::Output<3>*>(output->impl.get()));
-                return 0;
-            } else {
-                return -2; // Error: invalid number of Stokes parameters
+            if (impl) {
+                if (_config->impl.num_stokes() == 1) {
+                    Sasktran2<1>* impl1 =
+                        dynamic_cast<Sasktran2<1>*>(impl.get());
+                    impl1->calculate_radiance(
+                        *static_cast<sasktran2::atmosphere::Atmosphere<1>*>(
+                            atmosphere->impl.get()),
+                        *static_cast<sasktran2::Output<1>*>(
+                            output->impl.get()));
+                    return 0;
+                } else if (_config->impl.num_stokes() == 3) {
+                    Sasktran2<3>* impl3 =
+                        dynamic_cast<Sasktran2<3>*>(impl.get());
+                    impl3->calculate_radiance(
+                        *static_cast<sasktran2::atmosphere::Atmosphere<3>*>(
+                            atmosphere->impl.get()),
+                        *static_cast<sasktran2::Output<3>*>(
+                            output->impl.get()));
+                    return 0;
+                } else {
+                    return -2; // Error: invalid number of Stokes parameters
+                }
             }
-        }
-        return -1; // Error: impl is null
-    }
-        catch (const std::exception& e) {
+            return -1; // Error: impl is null
+        } catch (const std::exception& e) {
             // Handle the exception, log it, etc.
             return -3; // Error: exception occurred
         }
