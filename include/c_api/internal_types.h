@@ -13,6 +13,13 @@ struct Config {
     Config() {}
 };
 
+struct Geodetic {
+    std::unique_ptr<sasktran2::math::geodetic::Geodetic> impl;
+
+    Geodetic(double equatorial_radius, double flattening_factor) : impl(std::make_unique<sasktran2::math::geodetic::Geodetic>(equatorial_radius, flattening_factor)) {
+    };
+};
+
 struct DerivativeMapping {
     sasktran2::DerivativeMapping* impl;
 

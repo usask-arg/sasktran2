@@ -1,6 +1,23 @@
 from __future__ import annotations
 
-from sasktran2._core import Geodetic
+from sasktran2._core_rust import PyGeodetic
+
+class Geodetic:
+    _internal: PyGeodetic
+    def __init__(self, radius: float, flattening: float):
+        """
+        A geodetic object that can be used to represent a location on the
+        surface of the Earth. The geodetic object is based on the WGS84
+        ellipsoid.
+
+        Parameters
+        ----------
+        radius: float
+            Radius of the ellipsoid in [m]
+        flattening: float
+            Flattening of the ellipsoid (1 - b/a)
+        """
+        self._internal = PyGeodetic(radius, flattening)
 
 
 class WGS84(Geodetic):

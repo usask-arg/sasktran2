@@ -6,6 +6,8 @@ import os
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 os.environ.setdefault("RUST_BACKTRACE", "full")
 
+from ._core import Geodetic
+
 from . import (
     appconfig,
     climatology,
@@ -37,9 +39,6 @@ from ._core_rust import (
     ThreadingModel
 )
 
-from ._core import (
-    Geodetic,
-)
 from ._version import __version__
 from .geometry import Geometry1D
 from .atmosphere import Atmosphere

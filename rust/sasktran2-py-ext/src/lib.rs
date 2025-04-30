@@ -7,6 +7,7 @@ mod config;
 mod constituent;
 mod derivative_mapping;
 mod engine;
+mod geodetic;
 mod geometry;
 mod optical;
 mod output;
@@ -68,6 +69,12 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<optical::mie::PyMieOutput>()?;
     m.add_class::<optical::mie::PyMie>()?;
 
+    // Geodetic
+    m.add_class::<geodetic::PyGeodetic>()?;
+
+    // Wigner
+    m.add_class::<accel::wigner::WignerD>()?;
+
     // Helper functions
     m.add_function(wrap_pyfunction!(accel::assign_absorber_derivatives, m)?)?;
     m.add_function(wrap_pyfunction!(
@@ -75,7 +82,10 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
     m.add_function(wrap_pyfunction!(accel::broadening::voigt_broaden, m)?)?;
-    m.add_function(wrap_pyfunction!(accel::broadening::voigt_broaden_with_line_coupling, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        accel::broadening::voigt_broaden_with_line_coupling,
+        m
+    )?)?;
 
     Ok(())
 }

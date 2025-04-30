@@ -122,7 +122,14 @@ pub fn w_jpole_real_assign_uniform(
 }
 
 // Assigns the real part of result of the w(z) function to the provided slice.
-pub fn w_jpole_real_assign(wvnum: &[f64], c: f64, width: f64, y: f64, scale: f64, result: &mut [f64]) {
+pub fn w_jpole_real_assign(
+    wvnum: &[f64],
+    c: f64,
+    width: f64,
+    y: f64,
+    scale: f64,
+    result: &mut [f64],
+) {
     // real parts of the BJ poles
     const BJ_RE: [f64; 8] = [
         0.00383968430671409,
@@ -196,9 +203,16 @@ pub fn w_jpole_real_assign(wvnum: &[f64], c: f64, width: f64, y: f64, scale: f64
     }
 }
 
-
 // Assigns the real part of result of the w(z) function to the provided slice.
-pub fn w_jpole_assign(wvnum: &[f64], c: f64, width: f64, y: f64, scale_re: f64, scale_im: f64, result: &mut [f64]) {
+pub fn w_jpole_assign(
+    wvnum: &[f64],
+    c: f64,
+    width: f64,
+    y: f64,
+    scale_re: f64,
+    scale_im: f64,
+    result: &mut [f64],
+) {
     // real parts of the BJ poles
     const BJ_RE: [f64; 8] = [
         0.00383968430671409,
@@ -266,7 +280,7 @@ pub fn w_jpole_assign(wvnum: &[f64], c: f64, width: f64, y: f64, scale_re: f64, 
             let den = dx * dx + dy2[j];
             // numerator of complex division
             let num_im = BJ_IM[j] * dx - BJ_RE[j] * dy[j];
-            let num_re = BJ_RE[j]*dx + BJ_IM[j]*dy[j];
+            let num_re = BJ_RE[j] * dx + BJ_IM[j] * dy[j];
             sum_im += num_im / den;
             sum_re += num_re / den;
         }

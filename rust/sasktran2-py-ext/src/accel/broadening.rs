@@ -54,7 +54,6 @@ pub fn voigt_broaden_uniform<'py>(
     Ok(())
 }
 
-
 #[pyfunction]
 pub fn voigt_broaden<'py>(
     line_center: PyReadonlyArray1<'py, f64>,

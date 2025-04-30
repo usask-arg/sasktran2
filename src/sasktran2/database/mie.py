@@ -13,8 +13,7 @@ from sasktran2.mie import LinearizedMie
 from sasktran2.mie.distribution import (
     ParticleSizeDistribution,
     integrate_mie,
-    integrate_mie_cpp,
-    integrate_mie_rust
+    integrate_mie_cpp
 )
 from sasktran2.mie.refractive import RefractiveIndex
 from sasktran2.optical.database import OpticalDatabaseGenericScatterer
@@ -314,49 +313,6 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
             prob_dists.append(self._psize_dist.distribution(**psize_args))
 
         ds = integrate_mie_cpp(
-            prob_dists,
-            refractive,
-            self._wavelengths_nm,
-            num_quad=31,
-            maxintquantile=0.99999,
-            num_coeffs=self._max_legendre_moments,
-            num_threads=self._num_threads,
-        )
-
-        if len(self._kwargs) > 1:
-            multi = pd.MultiIndex.from_product(
-                [self._kwargs[k] for k in self._kwargs],
-                names=list(self._kwargs.keys()),
-            )
-
-            ds = ds.assign_coords(
-                xr.Coordinates.from_pandas_multiindex(multi, "distribution")
-            )
-
-            # Have to do a multi-index unstack
-            ds = ds.unstack("distribution")
-        elif len(self._kwargs) == 1:
-            ds = ds.rename_dims({"distribution": next(iter(self._kwargs.keys()))})
-        else:
-            # length is 0
-            ds = ds.isel(distribution=0)
-
-        ds.to_netcdf(self._data_file)
-
-
-    def _generate_sasktran2_rust(self):
-        """
-        Generates the data file from sasktran2 using the cpp integration option rather than python
-        """
-        refractive = self._refractive_index.refractive_index_fn
-
-        prob_dists = []
-        for vals in product(*self._kwargs.values()):
-            psize_args = dict(zip(self._kwargs.keys(), vals, strict=True))
-
-            prob_dists.append(self._psize_dist.distribution(**psize_args))
-
-        ds = integrate_mie_rust(
             prob_dists,
             refractive,
             self._wavelengths_nm,

@@ -2,7 +2,7 @@ use std::cmp::max;
 use std::f64::consts::FRAC_1_SQRT_2;
 
 use crate::math::errorfunctions::optimized::{
-    w_jpole, w_jpole_real_assign, w_jpole_real_assign_uniform, w_jpole_assign
+    w_jpole, w_jpole_assign, w_jpole_real_assign, w_jpole_real_assign_uniform,
 };
 use crate::prelude::*;
 use num::complex::Complex64;
@@ -338,12 +338,14 @@ pub fn voigt_broaden(
                 return;
             }
 
-            while start_wavenumber_idx < n_wavenumber as i64 && wavenumber_grid[start_wavenumber_idx as usize] < lc - line_contribution_width
+            while start_wavenumber_idx < n_wavenumber as i64
+                && wavenumber_grid[start_wavenumber_idx as usize] < lc - line_contribution_width
             {
                 start_wavenumber_idx += 1;
             }
 
-            while end_wavenumber_idx < n_wavenumber as i64 && wavenumber_grid[end_wavenumber_idx as usize] < lc + line_contribution_width
+            while end_wavenumber_idx < n_wavenumber as i64
+                && wavenumber_grid[end_wavenumber_idx as usize] < lc + line_contribution_width
             {
                 end_wavenumber_idx += 1;
             }
@@ -396,8 +398,8 @@ pub fn voigt_broaden(
                             ])
                             .as_slice()
                             .unwrap(),
-                            shifted_center,
-                            doppler_width,
+                        shifted_center,
+                        doppler_width,
                         y,
                         normalized_intensity,
                         result
@@ -424,8 +426,6 @@ pub fn voigt_broaden(
 
     Ok(())
 }
-
-
 
 pub fn voigt_broaden_with_line_coupling(
     line_center: ArrayView1<f64>,
@@ -501,12 +501,14 @@ pub fn voigt_broaden_with_line_coupling(
                 return;
             }
 
-            while start_wavenumber_idx < n_wavenumber as i64 && wavenumber_grid[start_wavenumber_idx as usize] < lc - line_contribution_width
+            while start_wavenumber_idx < n_wavenumber as i64
+                && wavenumber_grid[start_wavenumber_idx as usize] < lc - line_contribution_width
             {
                 start_wavenumber_idx += 1;
             }
 
-            while end_wavenumber_idx < n_wavenumber as i64 && wavenumber_grid[end_wavenumber_idx as usize] < lc + line_contribution_width
+            while end_wavenumber_idx < n_wavenumber as i64
+                && wavenumber_grid[end_wavenumber_idx as usize] < lc + line_contribution_width
             {
                 end_wavenumber_idx += 1;
             }
@@ -551,12 +553,9 @@ pub fn voigt_broaden_with_line_coupling(
 
                     let normalized_intensity = adjusted_line_intensity * norm_factor;
 
-                    let scale_re = normalized_intensity * (
-                        1.0 + pressure * pressure * G_coupling[[i, g]]
-                    );
-                    let scale_im = normalized_intensity * (
-                        -pressure * Y_coupling[[i, g]]
-                    );
+                    let scale_re =
+                        normalized_intensity * (1.0 + pressure * pressure * G_coupling[[i, g]]);
+                    let scale_im = normalized_intensity * (-pressure * Y_coupling[[i, g]]);
 
                     w_jpole_assign(
                         wavenumber_grid
@@ -565,8 +564,8 @@ pub fn voigt_broaden_with_line_coupling(
                             ])
                             .as_slice()
                             .unwrap(),
-                            shifted_center,
-                            doppler_width,
+                        shifted_center,
+                        doppler_width,
                         y,
                         scale_re,
                         scale_im,

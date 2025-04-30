@@ -836,3 +836,130 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn sk_engine_destroy(engine: *mut Engine);
 }
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct Geodetic {
+    _unused: [u8; 0],
+}
+unsafe extern "C" {
+    pub fn sk_geodetic_create(equatorial_radius: f64, flattening_factor: f64) -> *mut Geodetic;
+}
+unsafe extern "C" {
+    pub fn sk_geodetic_destroy(geodetic: *mut Geodetic);
+}
+unsafe extern "C" {
+    pub fn sk_geodetic_get_altitude(
+        geodetic: *const Geodetic,
+        altitude: *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_geodetic_get_latitude(
+        geodetic: *const Geodetic,
+        latitude: *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_geodetic_get_longitude(
+        geodetic: *const Geodetic,
+        longitude: *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_geodetic_get_location(
+        geodetic: *const Geodetic,
+        x: *mut f64,
+        y: *mut f64,
+        z: *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_geodetic_get_local_south(
+        geodetic: *const Geodetic,
+        x: *mut f64,
+        y: *mut f64,
+        z: *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_geodetic_get_local_up(
+        geodetic: *const Geodetic,
+        x: *mut f64,
+        y: *mut f64,
+        z: *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_geodetic_get_local_west(
+        geodetic: *const Geodetic,
+        x: *mut f64,
+        y: *mut f64,
+        z: *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_geodetic_get_altitude_intercepts(
+        geodetic: *const Geodetic,
+        altitude: f64,
+        observer_x: f64,
+        observer_y: f64,
+        observer_z: f64,
+        look_vector_x: f64,
+        look_vector_y: f64,
+        look_vector_z: f64,
+        x1: *mut f64,
+        y1: *mut f64,
+        z1: *mut f64,
+        x2: *mut f64,
+        y2: *mut f64,
+        z2: *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_geodetic_from_lat_lon_altitude(
+        geodetic: *const Geodetic,
+        latitude: f64,
+        longitude: f64,
+        altitude: f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_geodetic_from_tangent_altitude(
+        geodetic: *const Geodetic,
+        altitude: f64,
+        observer_x: f64,
+        observer_y: f64,
+        observer_z: f64,
+        boresight_x: f64,
+        boresight_y: f64,
+        boresight_z: f64,
+        look_vector_x: *mut f64,
+        look_vector_y: *mut f64,
+        look_vector_z: *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_geodetic_from_tangent_point(
+        geodetic: *const Geodetic,
+        observer_x: f64,
+        observer_y: f64,
+        observer_z: f64,
+        look_vector_x: f64,
+        look_vector_y: f64,
+        look_vector_z: f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_geodetic_from_xyz(
+        geodetic: *const Geodetic,
+        x: f64,
+        y: f64,
+        z: f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_geodetic_is_valid(
+        geodetic: *const Geodetic,
+        is_valid: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}

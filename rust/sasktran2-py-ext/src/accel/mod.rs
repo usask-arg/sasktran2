@@ -5,6 +5,7 @@ use pyo3::prelude::*;
 use sasktran2_rs::atmosphere::DerivMapping;
 
 pub mod broadening;
+pub mod wigner;
 
 #[pyfunction]
 pub fn assign_absorber_derivatives<'py>(

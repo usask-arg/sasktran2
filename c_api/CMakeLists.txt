@@ -13,6 +13,7 @@ add_library(
   config.cpp
   engine.cpp
   output.cpp
+  geodetic.cpp
   brdf.cpp
   deriv_mapping.cpp)
 
