@@ -49,7 +49,7 @@ elif [[ $RUNNER_OS == "Windows" ]]; then
 
     mkdir -p /c/opt/32/lib/pkgconfig
     mkdir -p /c/opt/64/lib/pkgconfig
-    target=$(python -c "import tools.openblas_support as obs; plat=obs.get_plat(); ilp64=obs.get_ilp64(); target=f'openblas_{plat}.zip'; obs.download_openblas(target, plat, ilp64);print(target)")
+    target=$(python -c "import tools.openblas_support as obs; plat=obs.get_plat(); ilp64=obs.get_ilp64(); target='openblas_{}.zip'.format(plat); obs.download_openblas(target, plat, ilp64);print(target)")
     if [[ $PLATFORM == 'win-32' ]]; then
         # 32-bit openBLAS
         # Download 32 bit openBLAS and put it into c/opt/32/lib
