@@ -74,6 +74,8 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
         accel::broadening::voigt_broaden_uniform,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(accel::broadening::voigt_broaden, m)?)?;
+    m.add_function(wrap_pyfunction!(accel::broadening::voigt_broaden_with_line_coupling, m)?)?;
 
     Ok(())
 }
