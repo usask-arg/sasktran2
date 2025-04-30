@@ -33,7 +33,6 @@ from ._core_rust import (
     ThreadingModel,
 )
 from ._core_rust import PyConfig as Config
-from ._version import __version__
 from .atmosphere import Atmosphere
 from .engine import Engine
 from .geodetic import WGS84, SphericalGeoid
