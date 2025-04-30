@@ -114,6 +114,9 @@ jobs:
         uses: prefix-dev/setup-pixi@v0.8.3
 
       - name: compile sasktran2
+        env:
+          SKTRAN_BLAS_VENDOR: OpenBLAS
+          USE_OMP: ON
         run: |
           pixi r build
 
@@ -138,6 +141,9 @@ jobs:
           python-version: 3.x
       - name: Build wheels
         uses: PyO3/maturin-action@v1
+        env:
+          SKTRAN_BLAS_VENDOR: OpenBLAS
+          USE_OMP: ON
         with:
           target: ${{ matrix.platform.target }}
           args: --release --out dist --find-interpreter
