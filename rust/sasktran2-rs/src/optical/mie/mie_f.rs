@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 
-use ndarray::{Array1, Array2, Zip, ArrayView1, ArrayViewMut1, ArrayView2, ArrayViewMut2};
+use ndarray::{Array1, Array2, ArrayView1, ArrayView2, ArrayViewMut1, Zip};
 use num::abs;
 use num::complex::Complex64;
 
@@ -15,7 +15,11 @@ pub struct MieOutput {
 }
 
 impl MieOutput {
-    pub fn new(size_param: ArrayView1<f64>, refractive_index: Complex64, cos_angles: ArrayView1<f64>) -> Self {
+    pub fn new(
+        size_param: ArrayView1<f64>,
+        refractive_index: Complex64,
+        cos_angles: ArrayView1<f64>,
+    ) -> Self {
         MieOutput {
             Qext: Array1::zeros(size_param.len()),
             Qsca: Array1::zeros(size_param.len()),
@@ -74,13 +78,15 @@ fn Dn_upwards(z: Complex64, N: usize, mut Dn: ArrayViewMut1<Complex64>) {
     }
 }
 
-fn calc_Dn(refractive_index: Complex64, size_param: f64, N: usize, mut Dn_array: ArrayViewMut1<Complex64>) {
+fn calc_Dn(
+    refractive_index: Complex64,
+    size_param: f64,
+    N: usize,
+    Dn_array: ArrayViewMut1<Complex64>,
+) {
     let z = refractive_index * size_param;
 
-    if refractive_index.re < 1.0
-        || refractive_index.re > 10.0
-        || abs(refractive_index.im) > 10.0
-    {
+    if refractive_index.re < 1.0 || refractive_index.re > 10.0 || abs(refractive_index.im) > 10.0 {
         Dn_downwards(z, N, Dn_array);
     } else {
         let temp = 3.9 - 10.8 * refractive_index.re + 13.78 * refractive_index.re.powf(2.0);
@@ -93,7 +99,14 @@ fn calc_Dn(refractive_index: Complex64, size_param: f64, N: usize, mut Dn_array:
     }
 }
 
-fn An_Bn(refractive_index: Complex64, size_param: f64, N: usize, mut An: ArrayViewMut1<Complex64>, mut Bn: ArrayViewMut1<Complex64>, Dn: ArrayView1<Complex64>) {
+fn An_Bn(
+    refractive_index: Complex64,
+    size_param: f64,
+    N: usize,
+    mut An: ArrayViewMut1<Complex64>,
+    mut Bn: ArrayViewMut1<Complex64>,
+    Dn: ArrayView1<Complex64>,
+) {
     let j = Complex64::new(0.0, 1.0);
 
     let mut psi_n_1: Complex64 = (size_param).sin().into();
@@ -184,8 +197,15 @@ fn tau_pi_matrices(cos_angles: ArrayView1<f64>, max_order: usize) -> (Array2<f64
     (tau, pi)
 }
 
-fn regular_Q_S(size_param: f64, N: usize, An: ArrayView1<Complex64>, Bn: ArrayView1<Complex64>,
-    tau: ArrayView2<f64>, pi: ArrayView2<f64>, mut S1: ArrayViewMut1<Complex64>, mut S2: ArrayViewMut1<Complex64>,
+fn regular_Q_S(
+    size_param: f64,
+    N: usize,
+    An: ArrayView1<Complex64>,
+    Bn: ArrayView1<Complex64>,
+    tau: ArrayView2<f64>,
+    pi: ArrayView2<f64>,
+    mut S1: ArrayViewMut1<Complex64>,
+    mut S2: ArrayViewMut1<Complex64>,
 ) -> (f64, f64) {
     let Qext: f64 = An
         .iter()
@@ -235,7 +255,13 @@ fn regular_Q_S(size_param: f64, N: usize, An: ArrayView1<Complex64>, Bn: ArrayVi
     )
 }
 
-fn small_Q_S(refractive_index: Complex64, size_param: f64, cos_angles: ArrayView1<f64>, mut S1: ArrayViewMut1<Complex64>, mut S2: ArrayViewMut1<Complex64>) -> (f64, f64) {
+fn small_Q_S(
+    refractive_index: Complex64,
+    size_param: f64,
+    cos_angles: ArrayView1<f64>,
+    mut S1: ArrayViewMut1<Complex64>,
+    mut S2: ArrayViewMut1<Complex64>,
+) -> (f64, f64) {
     let m_2 = refractive_index * refractive_index;
     let x_2 = size_param * size_param;
     let j = Complex64::new(0.0, 1.0);
@@ -263,7 +289,7 @@ fn small_Q_S(refractive_index: Complex64, size_param: f64, cos_angles: ArrayView
     Zip::from(&mut S1)
         .and(&mut S2)
         .and(&cos_angles)
-        .for_each(|mut s1, mut s2, &cos_theta| {
+        .for_each(|s1, s2, &cos_theta| {
             *s1 = 3.0 / 2.0
                 * size_param.powf(3.0)
                 * (a_hat1 + cos_theta * (b_hat1 + 5.0 / 3.0 * a_hat2));
@@ -284,10 +310,19 @@ fn small_Q_S(refractive_index: Complex64, size_param: f64, cos_angles: ArrayView
     }
 }
 
-pub fn mie(size_param: ArrayView1<f64>, refractive_index: Complex64, cos_angles: ArrayView1<f64>) -> MieOutput{
+pub fn mie(
+    size_param: ArrayView1<f64>,
+    refractive_index: Complex64,
+    cos_angles: ArrayView1<f64>,
+) -> MieOutput {
     let mut output = MieOutput::new(size_param, refractive_index, cos_angles);
 
-    let max_x = output.size_param.clone().into_iter().reduce(f64::max).unwrap_or(0.0);
+    let max_x = output
+        .size_param
+        .clone()
+        .into_iter()
+        .reduce(f64::max)
+        .unwrap_or(0.0);
 
     let N = max_order(max_x);
 
@@ -297,7 +332,6 @@ pub fn mie(size_param: ArrayView1<f64>, refractive_index: Complex64, cos_angles:
     let mut Bn = Array1::<Complex64>::zeros(N);
 
     let (tau, pi) = tau_pi_matrices(cos_angles, N);
-
 
     Zip::indexed(size_param)
         .and(&mut output.Qext)
@@ -321,7 +355,16 @@ pub fn mie(size_param: ArrayView1<f64>, refractive_index: Complex64, cos_angles:
                 let An_slice = An.slice(ndarray::s![..current_N]);
                 let Bn_slice = Bn.slice(ndarray::s![..current_N]);
 
-                (*Qext, *Qsca) = regular_Q_S(x, current_N, An_slice, Bn_slice, tau.view(), pi.view(), S1_slice, S2_slice);
+                (*Qext, *Qsca) = regular_Q_S(
+                    x,
+                    current_N,
+                    An_slice,
+                    Bn_slice,
+                    tau.view(),
+                    pi.view(),
+                    S1_slice,
+                    S2_slice,
+                );
             }
         });
 
@@ -402,7 +445,6 @@ mod tests {
 
         let size_param = Array1::from_elem(1, size_param);
         let cos_angles = default_cos_angles();
-
 
         let mie = mie(size_param.view(), refractive_index, cos_angles.view());
 

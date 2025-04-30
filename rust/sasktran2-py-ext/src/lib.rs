@@ -63,13 +63,17 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<brdf::PyKokhanovsky>()?;
     m.add_class::<brdf::PyMODIS>()?;
 
-    // Mie 
+    // Mie
     m.add_class::<optical::mie::PyMieIntegrator>()?;
     m.add_class::<optical::mie::PyMieOutput>()?;
     m.add_class::<optical::mie::PyMie>()?;
 
     // Helper functions
     m.add_function(wrap_pyfunction!(accel::assign_absorber_derivatives, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        accel::broadening::voigt_broaden_uniform,
+        m
+    )?)?;
 
     Ok(())
 }

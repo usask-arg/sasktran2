@@ -13,6 +13,7 @@ from sasktran2.spectroscopy import (
     voigt_broaden_uniform,
     voigt_broaden_with_line_coupling,
 )
+from sasktran2._core_rust import voigt_broaden_uniform as voigt_broaden_uniform_rust
 from sasktran2.util import get_hapi
 
 
@@ -45,9 +46,16 @@ class LineAbsorber(OpticalProperty):
         kwargs : dict
             Additional keyword arguments to pass to the line broadening function
         """
+        defaults = {
+            "line_contribution_width": 25.0,
+            "cull_factor": 0.0,
+            "subtract_pedastal": False,
+        }
+
         self._line_db = line_db.load_ds(molecule)
         self._molecule = molecule
-        self._kwargs = kwargs
+        self._kwargs = defaults
+        self._kwargs.update(kwargs)
         self._line_coupling = line_coupling
 
         if line_fn != "voigt":
@@ -124,6 +132,10 @@ class LineAbsorber(OpticalProperty):
             order="f",
         )
 
+        result = np.zeros(
+            (len(pressure_pa), (len(wavenumbers_cminv))),
+        )
+
         partial_pressures = kwargs.get("vmr", np.zeros(len(pressure_pa))) * pressure_pa
         logging.debug(f"Starting Broadening for {self._molecule}")
 
@@ -180,7 +192,7 @@ class LineAbsorber(OpticalProperty):
         )
 
         if uniform_grid:
-            voigt_broaden_uniform(
+            voigt_broaden_uniform_rust(
                 self._line_db.nu.to_numpy(),
                 self._line_db.sw.to_numpy(),
                 self._line_db.elower.to_numpy(),
@@ -188,20 +200,20 @@ class LineAbsorber(OpticalProperty):
                 self._line_db.gamma_self.to_numpy(),
                 self._line_db.delta_air.to_numpy(),
                 self._line_db.n_air.to_numpy(),
-                self._line_db.local_iso_id.to_numpy(),
+                self._line_db.local_iso_id.to_numpy().astype(np.int32),
                 partition_ratio,
                 molecular_mass,
                 pressure_pa / 101325.0,
                 partial_pressures / 101325.0,
-                temperature_k,
-                wavenumbers_cminv[0],
-                wavenumbers_cminv[1] - wavenumbers_cminv[0],
+                temperature_k.astype(np.float64),
+                wavenumbers_cminv[sidx][0],
+                wavenumbers_cminv[sidx][1] - wavenumbers_cminv[sidx][0],
                 result,
                 num_threads=num_threads,
                 **self._kwargs,
             )
 
-            result[sidx, :] = result
+            #result[:, sidx] = result
 
             return result / 1e4
 

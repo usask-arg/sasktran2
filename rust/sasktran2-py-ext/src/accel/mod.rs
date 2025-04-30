@@ -4,6 +4,8 @@ use numpy::*;
 use pyo3::prelude::*;
 use sasktran2_rs::atmosphere::DerivMapping;
 
+pub mod broadening;
+
 #[pyfunction]
 pub fn assign_absorber_derivatives<'py>(
     deriv_mapping: Bound<'py, PyAny>,
