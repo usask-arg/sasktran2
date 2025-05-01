@@ -74,7 +74,7 @@ jobs:
       - name: run openblas helper
         shell: bash -el {0}
         run: |
-          sh ci/cibw_before_build.sh
+          sh ci/cibw/cibw_before_build.sh
         env:
           RUNNER_OS: Windows
 
@@ -120,7 +120,7 @@ jobs:
       - name: run openblas helper
         shell: bash -el {0}
         run: |
-          sh ci/cibw_before_build.sh
+          sh ci/cibw/cibw_before_build.sh
         env:
           RUNNER_OS: Windows
 
