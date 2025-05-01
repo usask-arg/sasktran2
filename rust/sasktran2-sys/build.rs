@@ -42,10 +42,19 @@ fn main() {
             if let Some(lib_name) = path.file_stem() {
                 // Assumes the library name starts with 'lib' as in 'libopenblas'
                 if let Some(name) = lib_name.to_str() {
-                    if name.starts_with("lib") {
-                        println!("cargo:rustc-link-lib=dylib={}", &name[3..]);
-                    } else {
-                        println!("cargo:rustc-link-lib=dylib={}", name);
+
+                    if let Some(extension) = path.extension() {
+                        if let Some(extension) = extension.to_str() {
+                            if extension == "framework" {
+                                println!("cargo:rustc-link-lib=dylib={}", format!("{}.framework", name));
+                            } else {
+                                if name.starts_with("lib") {
+                                    println!("cargo:rustc-link-lib=dylib={}", &name[3..]);
+                                } else {
+                                    println!("cargo:rustc-link-lib=dylib={}", name);
+                                }
+                            }
+                        }
                     }
                 }
             }

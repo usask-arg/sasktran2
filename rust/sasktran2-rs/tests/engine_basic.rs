@@ -1,9 +1,9 @@
 use ndarray::s;
-use sasktran2_bindings::prelude::*;
+use sasktran2_rs::bindings::prelude::*;
 
 #[test]
 fn test_engine_basic() {
-    let mut atmosphere = Atmosphere::new(10, 50, 16, 0, false, Stokes::Stokes1);
+    let mut atmosphere = Atmosphere::new(10, 50, 16, false, Stokes::Stokes1);
 
     atmosphere.storage.ssa.fill(1.0);
     atmosphere.storage.total_extinction.fill(0.0001);
@@ -36,14 +36,4 @@ fn test_engine_basic() {
 
     let output = engine.calculate_radiance(&atmosphere).unwrap();
     println!("Radiance: {:?}", output.radiance);
-}
-
-#[test]
-fn what() {
-    use sasktran2_bindings::ffi::sk_deriv_mapping_get_d_ssa;
-    let mut ptr: *mut f64 = std::ptr::null_mut();
-    unsafe {
-        let result = sk_deriv_mapping_get_d_ssa(std::ptr::null_mut(), &mut ptr);
-        println!("result = {}, ptr = {:?}", result, ptr);
-    }
 }
