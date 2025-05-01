@@ -142,7 +142,9 @@ if(USE_OMP)
     target_link_libraries(sasktran2BuildProperties INTERFACE OpenMP::OpenMP_CXX)
     target_compile_definitions(sasktran2BuildProperties
                                INTERFACE SKTRAN_OPENMP_SUPPORT)
-
+    if(NOT LINKED_LIBS)
+      set(LINKED_LIBS "${OpenMP_CXX_LIBRARIES}")
+    endif()
   else()
     message(WARNING "OpenMP requested but not found, continuing without it")
   endif()
@@ -212,6 +214,11 @@ if(BLAS_FOUND)
                                                            LAPACK::LAPACK)
   target_compile_definitions(sasktran2BuildProperties
                              INTERFACE SKTRAN_NO_LAPACKE)
+
+  if(NOT LINKED_LIBS)
+    set(LINKED_LIBS "${BLAS_LIBRARIES} ${LAPACK_LIBRARIES}")
+  endif()
+
 else()
   if(SKTRAN_BLAS_VENDOR MATCHES "OpenBLAS")
     # Try searching for openblas directly This path should only be taken with
@@ -329,8 +336,7 @@ install(FILES "cmake/sasktran2Config.cmake"
         DESTINATION lib/cmake/sasktran2)
 
 if(NOT LINKED_LIBS)
-  set(LINKED_LIBS "None")
+  set(LINKED_LIBS "")
 endif()
 
-file(WRITE ${CMAKE_BINARY_DIR}/libs_to_link.txt
-     "${LAPACK_LIBRARIES}${OpenMP_CXX_LIBRARIES}")
+file(WRITE ${CMAKE_BINARY_DIR}/libs_to_link.txt "${LINKED_LIBS}")

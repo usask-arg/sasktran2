@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import numpy as np
+
 from sasktran2._core_rust import PyGeodetic
 
 
@@ -20,6 +22,70 @@ class Geodetic:
             Flattening of the ellipsoid (1 - b/a)
         """
         self._internal = PyGeodetic(radius, flattening)
+
+    @property
+    def latitude(self) -> float:
+        return self._internal.latitude
+
+    @property
+    def longitude(self) -> float:
+        return self._internal.longitude
+
+    @property
+    def altitude(self) -> float:
+        return self._internal.altitude
+
+    @property
+    def valid(self) -> bool:
+        return self._internal.is_valid()
+
+    def from_lat_lon_alt(self, latitude: float, longitude: float, altitude: float):
+        self._internal.from_lat_lon_alt(
+            float(latitude), float(longitude), float(altitude)
+        )
+
+    def from_xyz(self, xyz: np.ndarray):
+        self._internal.from_xyz(np.atleast_1d(xyz).astype(np.float64))
+
+    def from_tangent_altitude(
+        self, altitude: float, observer: np.ndarray, boresight: np.ndarray
+    ) -> np.ndarray:
+        return self._internal.from_tangent_altitude(
+            altitude,
+            np.atleast_1d(observer).astype(np.float64),
+            np.atleast_1d(boresight).astype(np.float64),
+        )
+
+    def from_tangent_point(self, observer, look_vector):
+        return self._internal.from_tangent_point(
+            np.atleast_1d(observer).astype(np.float64),
+            np.atleast_1d(look_vector).astype(np.float64),
+        )
+
+    @property
+    def location(self) -> np.ndarray:
+        return self._internal.location
+
+    @property
+    def local_south(self) -> np.ndarray:
+        return self._internal.local_south
+
+    @property
+    def local_up(self) -> np.ndarray:
+        return self._internal.local_up
+
+    @property
+    def local_west(self) -> np.ndarray:
+        return self._internal.local_west
+
+    def altitude_intercepts(
+        self, altitude: float, observer: np.ndarray, look_vector: np.ndarray
+    ) -> (np.ndarray, np.ndarray):
+        return self._internal.altitude_intercepts(
+            altitude,
+            np.atleast_1d(observer).astype(np.float64),
+            np.atleast_1d(look_vector).astype(np.float64),
+        )
 
 
 class WGS84(Geodetic):

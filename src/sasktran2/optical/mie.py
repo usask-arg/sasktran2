@@ -142,11 +142,11 @@ class Mie(OpticalProperty):
             quants.extinction[:] = ds["xs_total"].to_numpy()[np.newaxis, :]
             quants.ssa[:] = ds["xs_scattering"].to_numpy()[np.newaxis, :]
 
-            leg_coeff.a1[:] = ds["lm_a1"].to_numpy()[:, np.newaxis, :]
+            leg_coeff.a1[:] = ds["lm_a1"].to_numpy().T[:, np.newaxis, :]
             if atmo.nstokes == 3:
-                leg_coeff.a2[:] = ds["lm_a2"].to_numpy()[:, np.newaxis, :]
-                leg_coeff.b1[:] = ds["lm_b1"].to_numpy()[:, np.newaxis, :]
-                leg_coeff.a3[:] = ds["lm_a3"].to_numpy()[:, np.newaxis, :]
+                leg_coeff.a2[:] = ds["lm_a2"].to_numpy().T[:, np.newaxis, :]
+                leg_coeff.b1[:] = ds["lm_b1"].to_numpy().T[:, np.newaxis, :]
+                leg_coeff.a3[:] = ds["lm_a3"].to_numpy().T[:, np.newaxis, :]
 
         quants.extinction[np.isnan(quants.extinction)] = 0
         quants.ssa[np.isnan(quants.ssa)] = 0
