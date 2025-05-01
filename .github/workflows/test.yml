@@ -84,7 +84,7 @@ jobs:
           PKG_CONFIG_PATH: C:/opt/64/lib/pkgconfig
           CMAKE_PREFIX_PATH: C:/opt/64/
         run: |
-          cargo build -vvv
+          cargo build
 
   test-rust-macos:
     runs-on: macos-latest
@@ -200,6 +200,12 @@ jobs:
             -e USE_OMP=ON
             -e SKTRAN_BLAS_VENDOR=OpenBLAS
             -e RUNNER_OS=Linux
+
+      - name: test wheel import
+        run: |
+          pip install --force-reinstall --verbose dist/*.whl
+          python -c 'import sasktran2'
+
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -238,6 +244,18 @@ jobs:
           USE_OMP: ON
           SKTRAN_BLAS_VENDOR: OpenBLAS
           RUNNER_OS: MacOS
+
+      - name: delocate wheels
+        run: |
+          pip install delocate
+          delocate-wheel dist/*.whl
+          delocate-listdeps dist/*.whl
+
+      - name: test wheel import
+        run: |
+          pip install --force-reinstall --verbose dist/*.whl
+          python -c 'import sasktran2'
+
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -272,39 +290,19 @@ jobs:
           RUNNER_OS: Windows
           PKG_CONFIG_PATH: C:/opt/64/lib/pkgconfig
           CMAKE_PREFIX_PATH: C:/opt/64/
+
+      - name: delve wheels
+        run: |
+          pip install delvewheel
+          delvewheel repair dist/*.whl --force
+
+      - name: test wheel import
+        run: |
+          pip install --force-reinstall --verbose dist/*.whl
+          python -c 'import sasktran2'
+
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
           name: wheels-windows-${{ matrix.platform.target }}
-          path: dist
-
-
-  macos-accelerate:
-    runs-on: ${{ matrix.platform.runner }}
-    strategy:
-      matrix:
-        platform:
-          - runner: macos-14
-            target: aarch64
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: 3.x
-
-      - name: Build wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.platform.target }}
-          args: --release --out dist --find-interpreter
-          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        env:
-          USE_OMP: ON
-          SKTRAN_BLAS_VENDOR: Apple
-          RUNNER_OS: MacOS
-          MACOSX_DEPLOYMENT_TARGET: 14.0
-      - name: Upload wheels
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheels-macos-${{ matrix.platform.target }}-accelerate
           path: dist

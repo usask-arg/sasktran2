@@ -48,11 +48,11 @@ fn main() {
                             if extension == "framework" {
                                 println!("cargo:rustc-link-lib=framework={}", name);
                             } else {
-                                if name.starts_with("lib") {
-                                    println!("cargo:rustc-link-lib=dylib={}", &name[3..]);
-                                } else {
+                                // if name.starts_with("lib") {
+                                //    println!("cargo:rustc-link-lib=dylib={}", &name[3..]);
+                                // } else {
                                     println!("cargo:rustc-link-lib=dylib={}", name);
-                                }
+                                // }
                             }
                         }
                     }
