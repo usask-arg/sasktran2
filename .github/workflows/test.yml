@@ -71,13 +71,18 @@ jobs:
           fetch-depth: 0
           submodules: true
 
-      - name: install vcpkg dependencies
+      - name: run openblas helper
         shell: bash -el {0}
         run: |
-          vcpkg install openblas
+          sh ci/cibw_before_build.sh
+        env:
+          RUNNER_OS: Windows
 
       - name: test
         shell: bash -el {0}
+        env:
+          PKG_CONFIG_PATH: C:/opt/64/lib/pkgconfig
+          CMAKE_PREFIX_PATH: C:/opt/64/
         run: |
           cargo test
 
@@ -91,13 +96,10 @@ jobs:
           fetch-depth: 0
           submodules: true
 
-      - name: install brew dependencies
-        shell: bash -el {0}
-        run: |
-          brew install openblas
-
       - name: test
         shell: bash -el {0}
+        env:
+          SKTRAN_BLAS_VENDOR: Apple
         run: |
           cargo test
 
@@ -113,9 +115,20 @@ jobs:
       - name: install vcpkg dependencies
         shell: bash -el {0}
         run: |
-          vcpkg install openblas
+          vcpkg install catch2
+
+      - name: run openblas helper
+        shell: bash -el {0}
+        run: |
+          sh ci/cibw_before_build.sh
+        env:
+          RUNNER_OS: Windows
+
       - name: build
         shell: bash -el {0}
+        env:
+          PKG_CONFIG_PATH: C:/opt/64/lib/pkgconfig
+          CMAKE_PREFIX_PATH: C:/opt/64/
         run: |
           cmake -S . -B build  -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
           cmake --build build --config Release --target sasktran2_tests -j 2

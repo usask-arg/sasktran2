@@ -46,7 +46,8 @@ fn main() {
                     if let Some(extension) = path.extension() {
                         if let Some(extension) = extension.to_str() {
                             if extension == "framework" {
-                                println!("cargo:rustc-link-lib=dylib={}", format!("{}.framework", name));
+                                // Not necessary?
+                                // println!("cargo:rustc-link-lib=dylib={}", format!("{}.framework", name));
                             } else {
                                 if name.starts_with("lib") {
                                     println!("cargo:rustc-link-lib=dylib={}", &name[3..]);
