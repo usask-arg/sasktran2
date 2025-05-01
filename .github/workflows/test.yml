@@ -151,10 +151,10 @@ jobs:
           docker-options: >
             -e USE_OMP='ON'
             -e SKTRAN_BLAS_VENDOR='OpenBLAS'
-            -e CFLAGS="-fno-strict-aliasing -DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64"
-            -e LDFLAGS="-Wl,--strip-debug"
-            -e CXXFLAGS="-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64"
-            -e RUNNER_OS="Linux"
+            -e CFLAGS=-fno-strict-aliasing -DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64
+            -e LDFLAGS=-Wl,--strip-debug
+            -e CXXFLAGS=-DBLAS_SYMBOL_SUFFIX=64_ -DHAVE_BLAS_ILP64
+            -e RUNNER_OS=Linux
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
