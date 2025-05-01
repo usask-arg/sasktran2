@@ -19,6 +19,8 @@ add_library(
 
 target_link_libraries(csasktran2 PUBLIC sasktran2)
 
+set_target_properties(csasktran2 PROPERTIES OUTPUT_NAME csasktran2)
+
 install(
   TARGETS csasktran2
   EXPORT ${EXPORT_NAME}
