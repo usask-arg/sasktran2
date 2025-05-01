@@ -222,6 +222,8 @@ jobs:
           USE_OMP: ON
           SKTRAN_BLAS_VENDOR: OpenBLAS
           RUNNER_OS: Windows
+          PKG_CONFIG_PATH: C:/opt/64/lib/pkgconfig
+          CMAKE_PREFIX_PATH: C:/opt/64/
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:

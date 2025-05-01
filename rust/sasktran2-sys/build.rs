@@ -2,12 +2,18 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+
 fn main() {
+    // print all environment variables
+    for (key, value) in env::vars() {
+        println!("{}: {}", key, value);
+    }
+
     let out_dir = env::var("OUT_DIR").unwrap();
     let install_prefix = std::path::Path::new(&out_dir).join("install");
 
     let use_omp = env::var("USE_OMP").unwrap_or_else(|_| "OFF".to_string());
-    let sktran_blas_vendor = env::var("SKTRAN_BLAS_VENDOR").unwrap_or_else(|_| "Apple".to_string());
+    let sktran_blas_vendor = env::var("SKTRAN_BLAS_VENDOR").unwrap_or_else(|_| "OpenBLAS".to_string());
     let do_stream_templates = env::var("DO_STREAM_TEMPLATES").unwrap_or_else(|_| "OFF".to_string());
 
     let dst = cmake::Config::new("../../")
