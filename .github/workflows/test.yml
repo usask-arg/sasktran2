@@ -29,11 +29,6 @@ jobs:
           sudo apt update
           sudo apt install -y zlib1g-dev
 
-      - name: Setup mamba build environment
-        uses: mamba-org/setup-micromamba@v2
-        with:
-          environment-file: conda/dev_env.yml
-
       - name: build
         shell: bash -el {0}
         run: |
@@ -61,7 +56,37 @@ jobs:
         run: |
           cargo test
 
-  test-dev-env-windows:
+  test-rust-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: test
+        shell: bash -el {0}
+        run: |
+          cargo test
+
+  test-rust-macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: test
+        shell: bash -el {0}
+        run: |
+          cargo test
+
+  test-cpp-windows:
     runs-on: windows-2019
 
     steps:
@@ -71,25 +96,17 @@ jobs:
           fetch-depth: 0
           submodules: true
 
-      - name: Setup mamba build environment
-        uses: mamba-org/setup-micromamba@v2
-        with:
-          environment-file: conda/dev_env_windows.yml
-
-      - name: cmake configure debug
-        shell: bash -el {0}
-        run: |
-          cmake -S. -B build -DCMAKE_BUILD_TYPE=Release --debug-find
-
       - name: build
         shell: bash -el {0}
         run: |
-          pip install -e . -v
+          cmake -S . -B build  -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
+          cmake --build build --config Release --target sasktran2_tests -j 2
 
-      - name: printenv
+      - name: test
         shell: bash -el {0}
         run: |
-          printenv
+          cd build/lib
+          ctest --verbose
 
   test-pixi:
     runs-on: ${{ matrix.os }}
@@ -230,36 +247,33 @@ jobs:
           name: wheels-windows-${{ matrix.platform.target }}
           path: dist
 
-  test_wheels_cibuildwheel-accelerate:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ macos-14 ]
 
+  macos-accelerate:
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      matrix:
+        platform:
+          - runner: macos-14
+            target: aarch64
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          fetch-depth: 0
-          submodules: true
+          python-version: 3.x
 
-      - name: Set MACOSX_DEPLOYMENT_TARGET for macos-14
-        if: matrix.os == 'macos-14'
-        run: |
-          echo "MACOSX_DEPLOYMENT_TARGET=14.0" >> $GITHUB_ENV
-          echo "SKTRAN_BLAS_VENDOR=Apple" >> $GITHUB_ENV
-
-      - name: Build wheels single version
-        uses: pypa/cibuildwheel@v2.23.1
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.platform.target }}
+          args: --release --out dist --find-interpreter
+          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
         env:
-          DO_STREAM_TEMPLATES: "ON"
-          CIBW_SKIP: "pp* *musllinux* cp37-*"
-          CIBW_BUILD: "cp313-*"
-          CIBW_ENVIRONMENT_PASS_LINUX: DO_STREAM_TEMPLATES
+          USE_OMP: ON
+          SKTRAN_BLAS_VENDOR: Apple
+          RUNNER_OS: MacOS
+          MACOSX_DEPLOYMENT_TARGET: 14.0
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
         with:
-          output-dir: wheelhouse
-
-      - uses: actions/upload-artifact@v4
-        with:
-          path: ./wheelhouse/*.whl
-          name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}-accelerate
+          name: wheels-macos-${{ matrix.platform.target }}-accelerate
+          path: dist
