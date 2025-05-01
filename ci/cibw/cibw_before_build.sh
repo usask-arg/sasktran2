@@ -3,7 +3,7 @@
 set -xe
 
 PROJECT_DIR="$1"
-PLATFORM=$(PYTHONPATH=tools python -c "import openblas_support; print(openblas_support.get_plat())")
+PLATFORM=$(PYTHONPATH=tools python3 -c "import openblas_support; print(openblas_support.get_plat())")
 
 # Check if Rust is installed
 if ! command -v rustc >/dev/null 2>&1; then
@@ -24,7 +24,7 @@ fi
 
 # Install Openblas
 if [[ $RUNNER_OS == "Linux" || $RUNNER_OS == "macOS" ]] ; then
-    basedir=$(python tools/openblas_support.py)
+    basedir=$(python3 tools/openblas_support.py)
     if [[ $RUNNER_OS == "macOS" && $PLATFORM == "macosx-arm64" ]]; then
         # /usr/local/lib doesn't exist on cirrus-ci runners
         sudo mkdir -p /usr/local/lib /usr/local/include /usr/local/lib/cmake/openblas
@@ -40,8 +40,8 @@ if [[ $RUNNER_OS == "Linux" || $RUNNER_OS == "macOS" ]] ; then
     fi
 elif [[ $RUNNER_OS == "Windows" ]]; then
     # delvewheel is the equivalent of delocate/auditwheel for windows.
-    python -m pip install delvewheel
-    python -m pip install wheel
+    python3 -m pip install delvewheel
+    python3 -m pip install wheel
 
     # make the DLL available for tools/wheels/repair_windows.sh. If you change
     # this location you need to alter that script.
@@ -49,7 +49,7 @@ elif [[ $RUNNER_OS == "Windows" ]]; then
 
     mkdir -p /c/opt/32/lib/pkgconfig
     mkdir -p /c/opt/64/lib/pkgconfig
-    target=$(python -c "import tools.openblas_support as obs; plat=obs.get_plat(); ilp64=obs.get_ilp64(); target='openblas_{}.zip'.format(plat); obs.download_openblas(target, plat, ilp64);print(target)")
+    target=$(python3 -c "import tools.openblas_support as obs; plat=obs.get_plat(); ilp64=obs.get_ilp64(); target='openblas_{}.zip'.format(plat); obs.download_openblas(target, plat, ilp64);print(target)")
     if [[ $PLATFORM == 'win-32' ]]; then
         # 32-bit openBLAS
         # Download 32 bit openBLAS and put it into c/opt/32/lib
