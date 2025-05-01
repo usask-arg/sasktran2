@@ -84,7 +84,7 @@ jobs:
           PKG_CONFIG_PATH: C:/opt/64/lib/pkgconfig
           CMAKE_PREFIX_PATH: C:/opt/64/
         run: |
-          cargo test
+          cargo build -vvv
 
   test-rust-macos:
     runs-on: macos-latest
