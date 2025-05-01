@@ -76,5 +76,11 @@ fn main() {
     if cfg!(target_os = "linux") {
         println!("cargo:rustc-link-lib=stdc++");
     }
+
+    println!("Build artifacts at: {}", dst.display());
+    for entry in std::fs::read_dir(dst.join("build/lib")).unwrap() {
+        println!("Found lib: {:?}", entry.unwrap().path());
+    }
+
     // println!("cargo:rustc-link-lib=dylib=stdc++"); // Or libc++ on macOS
 }

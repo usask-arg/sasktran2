@@ -72,7 +72,7 @@ if [[ $RUNNER_OS == "macOS" ]]; then
     if [[ $PLATFORM == "macosx-arm64" ]]; then
         PLAT="arm64"
     fi
-    source $PROJECT_DIR/ci/cibw/gfortran_utils.sh
+    source ci/cibw/gfortran_utils.sh
     install_gfortran
     pip install "delocate==0.10.4"
 
