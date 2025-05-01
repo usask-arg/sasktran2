@@ -226,7 +226,13 @@ else()
     # Try searching for openblas directly This path should only be taken with
     # the numpy precompiled openblas...
     find_package(OpenBLAS REQUIRED)
-    set(LINKED_LIBS ${OpenBLAS_LIBRARIES})
+
+    if(NOT LINKED_LIBS)
+      set(LINKED_LIBS "${OpenBLAS_LIBRARIES}")
+    else()
+      set(LINKED_LIBS "${LINKED_LIBS}${OpenBLAS_LIBRARIES}")
+    endif()
+
     if(NOT WIN32)
       target_link_libraries(sasktran2BuildProperties
                             INTERFACE ${OpenBLAS_LIBRARIES})
