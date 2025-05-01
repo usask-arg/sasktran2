@@ -149,9 +149,9 @@ jobs:
           before-script-linux: |
             sh ci/cibw/cibw_before_build.sh
           docker-options: >
-            -e USE_OMP='ON'
-            -e SKTRAN_BLAS_VENDOR='OpenBLAS'
-            -e RUNNER_OS='Linux'
+            -e USE_OMP=ON
+            -e SKTRAN_BLAS_VENDOR=OpenBLAS
+            -e RUNNER_OS=Linux
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
