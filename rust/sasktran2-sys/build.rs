@@ -52,7 +52,7 @@ fn main() {
                                     // if we are on windows, we keep the 'lib' prefix
                                     // otherwise we remove it
                                     if cfg!(target_os = "windows") {
-                                        println!("cargo:rustc-link-lib=dylib={}", &name[3..]);
+                                        println!("cargo:rustc-link-lib=dylib={}", name);
                                     } else {
                                         println!("cargo:rustc-link-lib=dylib={}", &name[3..]);
                                     }
