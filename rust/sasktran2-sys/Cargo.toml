@@ -5,9 +5,13 @@ edition = "2024"
 build = "build.rs"
 links = "sasktran2"
 
+[features]
+default = []
+build-bindings = ["dep:bindgen"]
+
 [build-dependencies]
-bindgen = "*"
 cmake = "*"
+bindgen = { version = "*", optional = true }
 
 [dependencies]
 ndarray = "*"

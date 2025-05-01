@@ -59,16 +59,18 @@ fn main() {
     println!("cargo:rerun-if-changed=../../include");
     println!("cargo:rerun-if-changed=../../lib");
     println!("cargo:rerun-if-changed=../../CMakeLists.txt");
+    #[cfg(feature = "build-bindings")]
+    {
+        let bindings = bindgen::Builder::default()
+            .header("../../include/c_api/sasktran2.h")
+            .generate_inline_functions(true)
+            .generate()
+            .expect("Unable to generate bindings");
 
-    let bindings = bindgen::Builder::default()
-        .header("../../include/c_api/sasktran2.h")
-        .generate_inline_functions(true)
-        .generate()
-        .expect("Unable to generate bindings");
-
-    bindings
-        .write_to_file("src/bindings.rs")
-        .expect("Couldn't write bindings!");
+        bindings
+            .write_to_file("src/bindings.rs")
+            .expect("Couldn't write bindings!");
+    }
 
     // Also link C++ stdlib if needed
     if cfg!(target_os = "linux") {
