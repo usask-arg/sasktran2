@@ -63,9 +63,9 @@ fn main() {
 
     println!("cargo:root={}", install_prefix.display());
 
-    println!("cargo:rustc-link-search=native={}/build/lib", dst.display());
+    println!("cargo:rustc-link-search=native={}/install/lib", dst.display());
     println!(
-        "cargo:rustc-link-search=native={}/build/c_api",
+        "cargo:rustc-link-search=native={}/install/c_api",
         dst.display()
     );
     println!("cargo:rustc-link-lib=static=csasktran2");
