@@ -227,15 +227,15 @@ else()
     # the numpy precompiled openblas...
     find_package(OpenBLAS REQUIRED)
 
-    if(NOT LINKED_LIBS)
-      set(LINKED_LIBS "${OpenBLAS_LIBRARIES}")
-    else()
-      set(LINKED_LIBS "${LINKED_LIBS};${OpenBLAS_LIBRARIES}")
-    endif()
-
     if(NOT WIN32)
       target_link_libraries(sasktran2BuildProperties
                             INTERFACE ${OpenBLAS_LIBRARIES})
+
+      if(NOT LINKED_LIBS)
+        set(LINKED_LIBS "${OpenBLAS_LIBRARIES}")
+      else()
+        set(LINKED_LIBS "${LINKED_LIBS};${OpenBLAS_LIBRARIES}")
+      endif()
     else()
       string(REGEX REPLACE "[.]dll$" ".lib" OpenBLAS_LIBS_TEMP
                            ${OpenBLAS_LIBRARIES})
@@ -244,6 +244,12 @@ else()
       string(REGEX REPLACE "bin" "lib" OpenBLAS_LIBS ${OpenBLAS_LIBS_TEMP2})
 
       target_link_libraries(sasktran2BuildProperties INTERFACE ${OpenBLAS_LIBS})
+
+      if(NOT LINKED_LIBS)
+        set(LINKED_LIBS "${OpenBLAS_LIBRARIES}")
+      else()
+        set(LINKED_LIBS "${LINKED_LIBS};${OpenBLAS_LIBS}")
+      endif()
     endif()
     target_include_directories(sasktran2BuildProperties
                                INTERFACE ${OpenBLAS_INCLUDE_DIRS})

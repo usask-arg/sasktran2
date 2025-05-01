@@ -48,11 +48,17 @@ fn main() {
                             if extension == "framework" {
                                 println!("cargo:rustc-link-lib=framework={}", name);
                             } else {
-                                // if name.starts_with("lib") {
-                                //    println!("cargo:rustc-link-lib=dylib={}", &name[3..]);
-                                // } else {
+                                if name.starts_with("lib") {
+                                    // if we are on windows, we keep the 'lib' prefix
+                                    // otherwise we remove it
+                                    if cfg!(target_os = "windows") {
+                                        println!("cargo:rustc-link-lib=dylib={}", &name[3..]);
+                                    } else {
+                                        println!("cargo:rustc-link-lib=dylib={}", &name[3..]);
+                                    }
+                                } else {
                                     println!("cargo:rustc-link-lib=dylib={}", name);
-                                // }
+                                }
                             }
                         }
                     }
