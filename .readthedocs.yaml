@@ -6,11 +6,12 @@ build:
     python: "mambaforge-22.9"
 
   commands:
-    - curl https://sh.rustup.rs -sSf | sh -s -- -y && . "$HOME/.cargo/env"
-    - mamba install -c conda-forge -c nodefaults pixi
-    - pixi install -e default
-    - pixi r build
-    - pixi run -e default readthedocs
+    - |
+      curl https://sh.rustup.rs -sSf | sh -s -- -y && . "$HOME/.cargo/env"
+      mamba install -c conda-forge -c nodefaults pixi
+      pixi install -e default
+      pixi r build
+      pixi run -e default readthedocs
 
 sphinx:
    configuration: docs/source/conf.py
