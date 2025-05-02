@@ -33,7 +33,7 @@ fn main() {
         dst.define("CMAKE_BUILD_TYPE", build_type);
     }
 
-    dst.build();
+    let dst = dst.build();
 
     let lib_file_path = Path::new(&out_dir).join("build").join("libs_to_link.txt");
 
