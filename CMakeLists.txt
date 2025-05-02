@@ -280,6 +280,17 @@ if(${SKTRAN_BLAS_VENDOR} MATCHES "SCIPY_OPENBLAS")
     set(LINKED_LIBS "${LINKED_LIBS};${OPENBLAS_LIB_FULL}")
   endif()
 
+  if(APPLE)
+    set_target_properties(
+      sasktran2BuildProperties
+      PROPERTIES INSTALL_RPATH_USE_LINK_PATH FALSE
+                 BUILD_WITH_INSTALL_RPATH TRUE
+                 INSTALL_RPATH "" # Or set to a specific value you control
+    )
+
+    set_target_properties(sasktran2BuildProperties PROPERTIES MACOSX_RPATH OFF)
+  endif()
+
 else()
 
   set(BLA_VENDOR ${SKTRAN_BLAS_VENDOR})

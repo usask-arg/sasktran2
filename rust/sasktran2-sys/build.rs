@@ -21,8 +21,19 @@ fn main() {
         .define("CMAKE_INSTALL_PREFIX", &install_prefix)
         .define("DO_STREAM_TEMPLATES", do_stream_templates)
         .define("USE_OMP", use_omp)
-        .define("SKTRAN_BLAS_VENDOR", sktran_blas_vendor)
-        .build();
+        .define("SKTRAN_BLAS_VENDOR", sktran_blas_vendor);
+
+    if cfg!(target_os = "windows") {
+        let build_type = if cfg!(debug_assertions) {
+            "Debug"
+        } else {
+            dst.define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreadedDebugDLL"); // /MDd for Debu
+            "Release"
+        };
+        dst.define("CMAKE_BUILD_TYPE", build_type);
+    }
+
+    dst.build();
 
     let lib_file_path = Path::new(&out_dir).join("build").join("libs_to_link.txt");
 
