@@ -5,6 +5,10 @@ build:
   tools:
     python: "mambaforge-22.9"
 
+  jobs:
+    pre_build:
+      - curl https://sh.rustup.rs -sSf | sh -s -- -y && . "$HOME/.cargo/env"
+
   commands:
     - mamba install -c conda-forge -c nodefaults pixi
     - pixi install -e default

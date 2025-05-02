@@ -27,9 +27,9 @@ fn main() {
 
     if cfg!(target_os = "windows") {
         let build_type = if cfg!(debug_assertions) {
+            binding.define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreadedDebugDLL"); // /MDd for Debu
             "Debug"
         } else {
-            binding.define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreadedDebugDLL"); // /MDd for Debu
             "Release"
         };
         binding.define("CMAKE_BUILD_TYPE", build_type);
@@ -60,6 +60,9 @@ fn main() {
                         if let Some(extension) = extension.to_str() {
                             if extension == "framework" {
                                 println!("cargo:rustc-link-lib=framework={}", name);
+                            } else if extension == "dylib" {
+                                // Link with the full path since we are going to delocate later anyways
+                                println!("cargo:rustc-link-arg={}", path.display());
                             } else {
                                 if name.starts_with("lib") {
                                     // if we are on windows, we keep the 'lib' prefix
