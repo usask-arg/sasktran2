@@ -9,9 +9,9 @@ build:
     - |
       curl https://sh.rustup.rs -sSf | sh -s -- -y && . "$HOME/.cargo/env"
       curl -fsSL https://pixi.sh/install.sh | bash
-      pixi install -e default
-      pixi r build
-      pixi run -e default readthedocs
+      /home/docs/.pixi/bin/pixi install -e default
+      /home/docs/.pixi/bin/pixi r build
+      /home/docs/.pixi/bin/pixi run -e default readthedocs
 
 sphinx:
    configuration: docs/source/conf.py

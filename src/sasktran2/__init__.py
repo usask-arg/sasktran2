@@ -32,8 +32,8 @@ from ._core_rust import (
     StokesBasis,
     ThreadingModel,
 )
-from ._core_rust import PyConfig as Config
 from .atmosphere import Atmosphere
+from .config import Config
 from .engine import Engine
 from .geodetic import WGS84, SphericalGeoid
 from .geometry import Geometry1D

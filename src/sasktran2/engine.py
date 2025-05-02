@@ -28,7 +28,7 @@ class Engine:
 
     def __init__(self, config, geometry, viewing_geometry):
         self._engine = PyEngine(
-            config, geometry._geometry, viewing_geometry._viewing_geometry
+            config._config, geometry._geometry, viewing_geometry._viewing_geometry
         )
         self._config = config
         self._geometry = geometry
