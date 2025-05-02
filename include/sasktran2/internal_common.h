@@ -54,8 +54,18 @@
 // error/warnings emitted, useful for debugging in Python or for calculations
 // that are too slow in debug mode #define SASKTRAN_DEBUG_ASSERTS
 
+#ifdef SKTRAN_SCIPY_BLAS
+
+#define __EMSCRIPTEN__
+#define dgbsv_ scipy_dgbsv_64_
+#define dgbtrs_ scipy_dgbtrs_64_
+#include <lapack.h>
+#undef __EMSCRIPTEN__
+#else
+
 #include <Eigen/src/misc/lapacke.h>
 
+#endif
 #endif
 #endif
 

@@ -83,6 +83,7 @@ jobs:
         env:
           PKG_CONFIG_PATH: C:/opt/64/lib/pkgconfig
           CMAKE_PREFIX_PATH: C:/opt/64/
+          SKTRAN_BLAS_VENDOR: SCIPY_OPENBLAS
         run: |
           cargo build
 
@@ -198,7 +199,7 @@ jobs:
             sh ci/cibw/cibw_before_build.sh
           docker-options: >
             -e USE_OMP=ON
-            -e SKTRAN_BLAS_VENDOR=OpenBLAS
+            -e SKTRAN_BLAS_VENDOR=SCIPY_OPENBLAS
             -e RUNNER_OS=Linux
 
       - name: test wheel import

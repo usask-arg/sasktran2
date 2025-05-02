@@ -200,105 +200,176 @@ else()
   # fortran bug
   set(BLA_STATIC FALSE)
   set(BLA_SIZEOF_INTEGER 4)
-  target_compile_definitions(sasktran2BuildProperties INTERFACE EIGEN_USE_BLAS)
+  # target_compile_definitions(sasktran2BuildProperties INTERFACE
+  # EIGEN_USE_BLAS)
 endif()
-set(BLA_VENDOR ${SKTRAN_BLAS_VENDOR})
 
-set(CMAKE_FIND_LIBRARY_PREFIXES "" lib) # openblas include a "lib" prefix in
-                                        # it's names
-find_package(BLAS)
+if(${SKTRAN_BLAS_VENDOR} MATCHES "SCIPY_OPENBLAS")
+  # assume that scipy openblas is installed in the python environment
+  find_package(Python REQUIRED COMPONENTS Interpreter)
 
-if(BLAS_FOUND)
-  find_package(LAPACK REQUIRED)
-  target_link_libraries(sasktran2BuildProperties INTERFACE BLAS::BLAS
-                                                           LAPACK::LAPACK)
+  execute_process(COMMAND ${Python_EXECUTABLE} -m venv
+                          ${CMAKE_CURRENT_BINARY_DIR}/.openblas_venv)
+
+  set(OPENBLAS_PY_BIN ${CMAKE_CURRENT_BINARY_DIR}/.openblas_venv/bin/python)
+
+  execute_process(COMMAND ${OPENBLAS_PY_BIN} -m pip install scipy_openblas64)
+
+  execute_process(
+    COMMAND ${OPENBLAS_PY_BIN} -c
+            "import scipy_openblas64; print(scipy_openblas64.get_include_dir())"
+    OUTPUT_VARIABLE OPENBLAS_INCLUDE_DIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+  execute_process(
+    COMMAND ${OPENBLAS_PY_BIN} -c
+            "import scipy_openblas64; print(scipy_openblas64.get_library())"
+    OUTPUT_VARIABLE OPENBLAS_LIBRARY
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+  execute_process(
+    COMMAND ${OPENBLAS_PY_BIN} -c
+            "import scipy_openblas64; print(scipy_openblas64.get_lib_dir())"
+    OUTPUT_VARIABLE OPENBLAS_LIB_DIR
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+  set(OpenBLAS_DIR ${OPENBLAS_LIB_DIR}/cmake/openblas)
+
+  message(STATUS "Found OpenBLAS: ${OPENBLAS_LIBRARY}")
+  message(STATUS "Found OpenBLAS: ${OPENBLAS_INCLUDE_DIR}")
+  message(STATUS "Found OpenBLAS: ${OPENBLAS_LIB_DIR}")
+
+  set(BLA_VENDOR OpenBLAS)
+  set(SKTRAN_BLAS_VENDOR OpenBLAS)
+
   target_compile_definitions(sasktran2BuildProperties
                              INTERFACE SKTRAN_NO_LAPACKE)
+  target_compile_definitions(sasktran2BuildProperties
+                             INTERFACE SKTRAN_SCIPY_BLAS)
 
-  if(NOT LINKED_LIBS)
-    set(LINKED_LIBS "${BLAS_LIBRARIES};${LAPACK_LIBRARIES}")
-  else()
-    set(LINKED_LIBS "${LINKED_LIBS};${BLAS_LIBRARIES};${LAPACK_LIBRARIES}")
-  endif()
+  target_compile_definitions(sasktran2BuildProperties
+                             INTERFACE BLAS_SYMBOL_PREFIX=scipy_)
+  target_compile_definitions(sasktran2BuildProperties
+                             INTERFACE BLAS_SYMBOL_SUFFIX=64_)
+  target_compile_definitions(sasktran2BuildProperties
+                             INTERFACE DHAVE_BLAS_ILP64)
+  target_compile_definitions(sasktran2BuildProperties
+                             INTERFACE OPENBLAS_ILP64_NAMING_SCHEME)
 
+  target_compile_definitions(sasktran2BuildProperties INTERFACE LAPACK_ILP64)
+
+  target_include_directories(
+    sasktran2BuildProperties
+    INTERFACE $<BUILD_INTERFACE:${OPENBLAS_INCLUDE_DIR}>
+              $<INSTALL_INTERFACE:include>)
+
+  target_link_libraries(
+    sasktran2BuildProperties
+    INTERFACE
+      ${OPENBLAS_LIB_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}${OPENBLAS_LIBRARY}${CMAKE_SHARED_LIBRARY_SUFFIX}
+  )
 else()
-  if(SKTRAN_BLAS_VENDOR MATCHES "OpenBLAS")
-    # Try searching for openblas directly This path should only be taken with
-    # the numpy precompiled openblas...
-    find_package(OpenBLAS REQUIRED)
 
-    if(NOT WIN32)
-      target_link_libraries(sasktran2BuildProperties
-                            INTERFACE ${OpenBLAS_LIBRARIES})
+  set(BLA_VENDOR ${SKTRAN_BLAS_VENDOR})
 
-      if(NOT LINKED_LIBS)
-        set(LINKED_LIBS "${OpenBLAS_LIBRARIES}")
-      else()
-        set(LINKED_LIBS "${LINKED_LIBS};${OpenBLAS_LIBRARIES}")
-      endif()
-    else()
-      string(REGEX REPLACE "[.]dll$" ".lib" OpenBLAS_LIBS_TEMP
-                           ${OpenBLAS_LIBRARIES})
-      string(REGEX REPLACE "/c/" "c:/" OpenBLAS_LIBS_TEMP2
-                           ${OpenBLAS_LIBS_TEMP})
-      string(REGEX REPLACE "bin" "lib" OpenBLAS_LIBS ${OpenBLAS_LIBS_TEMP2})
+  set(CMAKE_FIND_LIBRARY_PREFIXES "" lib) # openblas include a "lib" prefix in
+                                          # it's names
+  find_package(BLAS)
 
-      target_link_libraries(sasktran2BuildProperties INTERFACE ${OpenBLAS_LIBS})
-
-      if(NOT LINKED_LIBS)
-        set(LINKED_LIBS "${OpenBLAS_LIBRARIES}")
-      else()
-        set(LINKED_LIBS "${LINKED_LIBS};${OpenBLAS_LIBS}")
-      endif()
-    endif()
-    target_include_directories(sasktran2BuildProperties
-                               INTERFACE ${OpenBLAS_INCLUDE_DIRS})
-
+  if(BLAS_FOUND)
+    message(STATUS "Found BLAS: ${BLAS_LIBRARIES}")
+    find_package(LAPACK REQUIRED)
+    target_link_libraries(sasktran2BuildProperties INTERFACE BLAS::BLAS
+                                                             LAPACK::LAPACK)
     target_compile_definitions(sasktran2BuildProperties
                                INTERFACE SKTRAN_NO_LAPACKE)
+
+    if(NOT LINKED_LIBS)
+      set(LINKED_LIBS "${BLAS_LIBRARIES};${LAPACK_LIBRARIES}")
+    else()
+      set(LINKED_LIBS "${LINKED_LIBS};${BLAS_LIBRARIES};${LAPACK_LIBRARIES}")
+    endif()
+
+  else()
+    if(SKTRAN_BLAS_VENDOR MATCHES "OpenBLAS")
+      # Try searching for openblas directly This path should only be taken with
+      # the numpy precompiled openblas...
+      find_package(OpenBLAS REQUIRED)
+      message(STATUS "Found OpenBLAS: ${OpenBLAS_LIBRARIES}")
+
+      if(NOT WIN32)
+        target_link_libraries(sasktran2BuildProperties
+                              INTERFACE ${OpenBLAS_LIBRARIES})
+
+        if(NOT LINKED_LIBS)
+          set(LINKED_LIBS "${OpenBLAS_LIBRARIES}")
+        else()
+          set(LINKED_LIBS "${LINKED_LIBS};${OpenBLAS_LIBRARIES}")
+        endif()
+      else()
+        string(REGEX REPLACE "[.]dll$" ".lib" OpenBLAS_LIBS_TEMP
+                             ${OpenBLAS_LIBRARIES})
+        string(REGEX REPLACE "/c/" "c:/" OpenBLAS_LIBS_TEMP2
+                             ${OpenBLAS_LIBS_TEMP})
+        string(REGEX REPLACE "bin" "lib" OpenBLAS_LIBS ${OpenBLAS_LIBS_TEMP2})
+
+        target_link_libraries(sasktran2BuildProperties
+                              INTERFACE ${OpenBLAS_LIBS})
+
+        if(NOT LINKED_LIBS)
+          set(LINKED_LIBS "${OpenBLAS_LIBRARIES}")
+        else()
+          set(LINKED_LIBS "${LINKED_LIBS};${OpenBLAS_LIBS}")
+        endif()
+      endif()
+      target_include_directories(sasktran2BuildProperties
+                                 INTERFACE ${OpenBLAS_INCLUDE_DIRS})
+
+      target_compile_definitions(sasktran2BuildProperties
+                                 INTERFACE SKTRAN_NO_LAPACKE)
+    endif()
   endif()
-endif()
 
-target_compile_definitions(
-  sasktran2BuildProperties
-  INTERFACE
-    $<$<AND:$<PLATFORM_ID:Windows>,$<STREQUAL:${BLA_VENDOR},OpenBLAS>>:__WIN64__> # for
-                                                                                  # compatibility
-                                                                                  # with
-                                                                                  # Eigen/src/misc/blas.h
-)
+  target_compile_definitions(
+    sasktran2BuildProperties
+    INTERFACE
+      $<$<AND:$<PLATFORM_ID:Windows>,$<STREQUAL:${BLA_VENDOR},OpenBLAS>>:__WIN64__> # for
+                                                                                    # compatibility
+                                                                                    # with
+                                                                                    # Eigen/src/misc/blas.h
+  )
 
-if(SKTRAN_BLAS_VENDOR MATCHES "Intel")
-  find_path(LAPACKE_H_INCLUDE_DIR mkl_lapacke.h REQUIRED) # include directory
-                                                          # for <lapacke.h>
-  target_include_directories(sasktran2BuildProperties
-                             INTERFACE ${LAPACKE_H_INCLUDE_DIR})
-  target_compile_definitions(sasktran2BuildProperties INTERFACE SKTRAN_USE_MKL)
-else()
+  if(SKTRAN_BLAS_VENDOR MATCHES "Intel")
+    find_path(LAPACKE_H_INCLUDE_DIR mkl_lapacke.h REQUIRED) # include directory
+                                                            # for <lapacke.h>
+    target_include_directories(sasktran2BuildProperties
+                               INTERFACE ${LAPACKE_H_INCLUDE_DIR})
+    target_compile_definitions(sasktran2BuildProperties
+                               INTERFACE SKTRAN_USE_MKL)
+  else()
+    if(WIN32)
+      # OpenBlas can give warnings about std::complex linkage on windows/visual
+      # studio, but we don't use any complex lapack functions anyway so just
+      # disable the warning
+      target_compile_options(sasktran2BuildProperties INTERFACE /wd4190)
+      target_compile_options(sasktran2BuildProperties INTERFACE /wd4005)
+    endif()
+
+    if(SKTRAN_BLAS_VENDOR MATCHES "Generic")
+      # find_package(LAPACKE CONFIG) if(LAPACKE_FOUND)
+      # target_link_libraries(sasktran2BuildProperties INTERFACE lapacke) else()
+      # target_link_libraries(sasktran2BuildProperties INTERFACE -llapacke)
+      # endif()
+    endif()
+  endif()
+
   if(WIN32)
-    # OpenBlas can give warnings about std::complex linkage on windows/visual
-    # studio, but we don't use any complex lapack functions anyway so just
-    # disable the warning
-    target_compile_options(sasktran2BuildProperties INTERFACE /wd4190)
-    target_compile_options(sasktran2BuildProperties INTERFACE /wd4005)
+    target_compile_options(sasktran2BuildProperties INTERFACE /bigobj)
+    target_compile_definitions(sasktran2BuildProperties
+                               INTERFACE EIGEN_STRONG_INLINE=inline)
   endif()
-
-  if(SKTRAN_BLAS_VENDOR MATCHES "Generic")
-    # find_package(LAPACKE CONFIG) if(LAPACKE_FOUND)
-    # target_link_libraries(sasktran2BuildProperties INTERFACE lapacke) else()
-    # target_link_libraries(sasktran2BuildProperties INTERFACE -llapacke)
-    # endif()
-  endif()
+  # -------- END LAPACK FINDING -------
 endif()
-
-if(WIN32)
-  target_compile_options(sasktran2BuildProperties INTERFACE /bigobj)
-  target_compile_definitions(sasktran2BuildProperties
-                             INTERFACE EIGEN_STRONG_INLINE=inline)
-endif()
-
-# -------- END LAPACK FINDING -------
-
 message(STATUS "Lapack Configuration Complete")
 
 add_subdirectory(lib)

@@ -482,7 +482,7 @@ namespace sasktran2::atmosphere {
          */
         Surface(int num_wavel, bool allocate_default_brdf = true)
             : m_num_wavel(num_wavel), m_brdf_args(nullptr, 0, 0),
-              m_emission(nullptr, 0, 0) {
+              m_emission(nullptr, 0) {
             if (allocate_default_brdf) {
                 m_brdf_object = std::make_shared<brdf::Lambertian<NSTOKES>>();
                 allocate(num_wavel);
