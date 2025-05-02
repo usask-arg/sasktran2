@@ -50,6 +50,7 @@ build = { cmd = [
 test = { cmd = "pytest tests/", cwd = "." }
 pre-commit = { cmd = "pre-commit run -a", cwd = "." }
 docs = { cmd = "sphinx-build -b html docs/sphinx/source docs/sphinx/build", cwd = "." }
+readthedocs = { cmd = "rm -rf $READTHEDOCS_OUTPUT/html && cp -r docs/build/ $READTHEDOCS_OUTPUT/html", depends-on = ["docs"] }
 
 
 [tool.pixi.dependencies]
