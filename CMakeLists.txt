@@ -211,7 +211,12 @@ if(${SKTRAN_BLAS_VENDOR} MATCHES "SCIPY_OPENBLAS")
   execute_process(COMMAND ${Python_EXECUTABLE} -m venv
                           ${CMAKE_CURRENT_BINARY_DIR}/.openblas_venv)
 
-  set(OPENBLAS_PY_BIN ${CMAKE_CURRENT_BINARY_DIR}/.openblas_venv/bin/python)
+  if(WIN32)
+    set(OPENBLAS_PY_BIN
+        ${CMAKE_CURRENT_BINARY_DIR}/.openblas_venv/Scripts/python.exe)
+  else()
+    set(OPENBLAS_PY_BIN ${CMAKE_CURRENT_BINARY_DIR}/.openblas_venv/bin/python)
+  endif()
 
   execute_process(COMMAND ${OPENBLAS_PY_BIN} -m pip install scipy_openblas64)
 
@@ -263,11 +268,18 @@ if(${SKTRAN_BLAS_VENDOR} MATCHES "SCIPY_OPENBLAS")
     INTERFACE $<BUILD_INTERFACE:${OPENBLAS_INCLUDE_DIR}>
               $<INSTALL_INTERFACE:include>)
 
-  target_link_libraries(
-    sasktran2BuildProperties
-    INTERFACE
-      ${OPENBLAS_LIB_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}${OPENBLAS_LIBRARY}${CMAKE_SHARED_LIBRARY_SUFFIX}
+  set(OPENBLAS_LIB_FULL
+      "${OPENBLAS_LIB_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}${OPENBLAS_LIBRARY}${CMAKE_SHARED_LIBRARY_SUFFIX}"
   )
+
+  target_link_libraries(sasktran2BuildProperties INTERFACE ${OPENBLAS_LIB_FULL})
+
+  if(NOT LINKED_LIBS)
+    set(LINKED_LIBS "${OPENBLAS_LIB_FULL}")
+  else()
+    set(LINKED_LIBS "${LINKED_LIBS};${OPENBLAS_LIB_FULL}")
+  endif()
+
 else()
 
   set(BLA_VENDOR ${SKTRAN_BLAS_VENDOR})
