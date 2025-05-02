@@ -35,7 +35,7 @@ from ._core_rust import (
 from .atmosphere import Atmosphere
 from .config import Config
 from .engine import Engine
-from .geodetic import WGS84, SphericalGeoid
+from .geodetic import WGS84, Geodetic, SphericalGeoid
 from .geometry import Geometry1D
 from .output import Output, OutputDerivMapped, OutputIdeal
 from .viewinggeo.wrappers import (

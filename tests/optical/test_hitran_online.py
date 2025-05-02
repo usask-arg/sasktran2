@@ -5,7 +5,7 @@ import pytest
 import sasktran2 as sk
 
 
-@pytest.skip("Online HITRAN test requires internet access")
+@pytest.mark.skip()
 def test_hitran_online():
     pytest.importorskip("hapi")
 
