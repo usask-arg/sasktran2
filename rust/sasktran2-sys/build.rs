@@ -2,7 +2,6 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-
 fn main() {
     // print all environment variables
     for (key, value) in env::vars() {
@@ -13,13 +12,9 @@ fn main() {
     let install_prefix = std::path::Path::new(&out_dir).join("install");
 
     let use_omp = env::var("USE_OMP").unwrap_or_else(|_| "OFF".to_string());
-    let sktran_blas_vendor = env::var("SKTRAN_BLAS_VENDOR").unwrap_or_else(|_| "OpenBLAS".to_string());
+    let sktran_blas_vendor =
+        env::var("SKTRAN_BLAS_VENDOR").unwrap_or_else(|_| "OpenBLAS".to_string());
     let do_stream_templates = env::var("DO_STREAM_TEMPLATES").unwrap_or_else(|_| "OFF".to_string());
-
-    // CMake can do: set(ENV{FORCE_LINK_BLAS} "1")
-    if sktran_blas_vendor == "SCIPY_OPENBLAS" {
-        println!("cargo:rustc-cfg=force_link_scipy_blas");
-    }
 
     let mut binding = cmake::Config::new("../../");
 
@@ -60,16 +55,10 @@ fn main() {
             if let Some(lib_name) = path.file_stem() {
                 // Assumes the library name starts with 'lib' as in 'libopenblas'
                 if let Some(name) = lib_name.to_str() {
-
                     if let Some(extension) = path.extension() {
                         if let Some(extension) = extension.to_str() {
                             if extension == "framework" {
                                 println!("cargo:rustc-link-lib=framework={}", name);
-                            } else if extension == "dylib" {    // Use full path linking on macOS
-                                println!("cargo:rustc-link-arg={}", path.display());
-
-                                // Also export a DEP var so downstream can re-link if needed
-                                println!("cargo:rustc-env=DEP_SASKTRAN2_OPENBLAS_PATH={}", path.display());
                             } else {
                                 if name.starts_with("lib") {
                                     // if we are on windows, we keep the 'lib' prefix
@@ -92,7 +81,10 @@ fn main() {
 
     println!("cargo:root={}", install_prefix.display());
 
-    println!("cargo:rustc-link-search=native={}/install/lib", dst.display());
+    println!(
+        "cargo:rustc-link-search=native={}/install/lib",
+        dst.display()
+    );
     println!(
         "cargo:rustc-link-search=native={}/install/c_api",
         dst.display()

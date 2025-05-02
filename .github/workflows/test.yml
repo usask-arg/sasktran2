@@ -310,18 +310,21 @@ jobs:
         shell: pwsh
 
       - name: delve wheels
+        shell: bash -el {0}
         run: |
           pip install delvewheel
           delvewheel repair dist/*.whl
+          rm -rf dist/*.whl
+          mv wheelhouse/*.whl dist/
 
       - name: test wheel import
         shell: bash -el {0}
         run: |
-          pip install --force-reinstall --verbose wheelhouse/*.whl
+          pip install --force-reinstall --verbose dist/*.whl
           python -c 'import sasktran2'
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
           name: wheels-windows-${{ matrix.platform.target }}
-          path: wheelhouse
+          path: dist
