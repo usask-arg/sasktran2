@@ -16,7 +16,9 @@ fn main() {
     let sktran_blas_vendor = env::var("SKTRAN_BLAS_VENDOR").unwrap_or_else(|_| "OpenBLAS".to_string());
     let do_stream_templates = env::var("DO_STREAM_TEMPLATES").unwrap_or_else(|_| "OFF".to_string());
 
-    let dst = cmake::Config::new("../../")
+    let mut binding = cmake::Config::new("../../");
+
+    binding
         .define("BUILD_SHARED_LIBS", "OFF")
         .define("CMAKE_INSTALL_PREFIX", &install_prefix)
         .define("DO_STREAM_TEMPLATES", do_stream_templates)
@@ -27,13 +29,13 @@ fn main() {
         let build_type = if cfg!(debug_assertions) {
             "Debug"
         } else {
-            dst.define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreadedDebugDLL"); // /MDd for Debu
+            binding.define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreadedDebugDLL"); // /MDd for Debu
             "Release"
         };
-        dst.define("CMAKE_BUILD_TYPE", build_type);
+        binding.define("CMAKE_BUILD_TYPE", build_type);
     }
 
-    let dst = dst.build();
+    let dst = binding.build();
 
     let lib_file_path = Path::new(&out_dir).join("build").join("libs_to_link.txt");
 
