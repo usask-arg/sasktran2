@@ -16,6 +16,11 @@ fn main() {
     let sktran_blas_vendor = env::var("SKTRAN_BLAS_VENDOR").unwrap_or_else(|_| "OpenBLAS".to_string());
     let do_stream_templates = env::var("DO_STREAM_TEMPLATES").unwrap_or_else(|_| "OFF".to_string());
 
+    // CMake can do: set(ENV{FORCE_LINK_BLAS} "1")
+    if sktran_blas_vendor == "SCIPY_OPENBLAS" {
+        println!("cargo:rustc-cfg=force_link_blas");
+    }
+
     let mut binding = cmake::Config::new("../../");
 
     binding

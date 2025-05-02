@@ -315,6 +315,7 @@ jobs:
           delvewheel repair dist/*.whl
 
       - name: test wheel import
+        shell: bash -el {0}
         run: |
           pip install --force-reinstall --verbose wheelhouse/*.whl
           python -c 'import sasktran2'
