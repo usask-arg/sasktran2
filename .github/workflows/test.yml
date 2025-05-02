@@ -289,7 +289,7 @@ jobs:
       - name: delve wheels
         run: |
           pip install delvewheel
-          delvewheel repair dist/*.whl --force
+          delvewheel repair dist/*.whl
 
       - name: test wheel import
         run: |

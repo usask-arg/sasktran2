@@ -60,10 +60,10 @@ fn main() {
                         if let Some(extension) = extension.to_str() {
                             if extension == "framework" {
                                 println!("cargo:rustc-link-lib=framework={}", name);
-                            } else if extension == "dylib" {
+                            } //else if extension == "dylib" {
                                 // Link with the full path since we are going to delocate later anyways
-                                println!("cargo:rustc-link-arg={}", path.display());
-                            } else {
+                               // println!("cargo:rustc-link-arg={}", path.display());
+                            else {
                                 if name.starts_with("lib") {
                                     // if we are on windows, we keep the 'lib' prefix
                                     // otherwise we remove it
