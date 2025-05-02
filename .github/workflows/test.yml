@@ -85,7 +85,7 @@ jobs:
           CMAKE_PREFIX_PATH: C:/opt/64/
           SKTRAN_BLAS_VENDOR: SCIPY_OPENBLAS
         run: |
-          cargo build
+          cargo build --release
 
   test-rust-macos:
     runs-on: macos-latest
@@ -240,6 +240,17 @@ jobs:
           SKTRAN_BLAS_VENDOR: SCIPY_OPENBLAS
           RUNNER_OS: MacOS
 
+      - name: Get OpenBLAS lib dir and set env var
+        id: get-lib-dir
+        run: |
+          echo "LIB_DIR=$(python -c 'import scipy_openblas64; print(scipy_openblas64.get_lib_dir())')" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Export OpenBLAS lib path (Unix)
+        run: |
+          echo "LD_LIBRARY_PATH=$LIB_DIR:\$LD_LIBRARY_PATH" >> $GITHUB_ENV
+        shell: bash
+
       - name: delocate wheels
         run: |
           pip install delocate
@@ -285,6 +296,16 @@ jobs:
           RUNNER_OS: Windows
           PKG_CONFIG_PATH: C:/opt/64/lib/pkgconfig
           CMAKE_PREFIX_PATH: C:/opt/64/
+
+      - name: Get OpenBLAS lib dir and set env var
+        run: |
+          echo "LIB_DIR=$(python -c 'import scipy_openblas64; print(scipy_openblas64.get_lib_dir())')" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Export OpenBLAS lib path (Windows)
+        run: |
+          echo "PATH=$env:LIB_DIR;$env:PATH" >> $env:GITHUB_ENV
+        shell: pwsh
 
       - name: delve wheels
         run: |
