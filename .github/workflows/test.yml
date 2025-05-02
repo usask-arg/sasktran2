@@ -249,7 +249,7 @@ jobs:
 
       - name: Export OpenBLAS lib path (Unix)
         run: |
-          echo "LD_LIBRARY_PATH=$LIB_DIR:\$LD_LIBRARY_PATH" >> $GITHUB_ENV
+          echo "DYLD_LIBRARY_PATH=$LIB_DIR:\$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
         shell: bash
 
       - name: delocate wheels
