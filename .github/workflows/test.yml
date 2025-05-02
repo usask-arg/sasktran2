@@ -243,6 +243,7 @@ jobs:
       - name: Get OpenBLAS lib dir and set env var
         id: get-lib-dir
         run: |
+          python -m pip install scipy_openblas64
           echo "LIB_DIR=$(python -c 'import scipy_openblas64; print(scipy_openblas64.get_lib_dir())')" >> $GITHUB_ENV
         shell: bash
 
@@ -299,6 +300,7 @@ jobs:
 
       - name: Get OpenBLAS lib dir and set env var
         run: |
+          python -m pip install scipy_openblas64
           echo "LIB_DIR=$(python -c 'import scipy_openblas64; print(scipy_openblas64.get_lib_dir())')" >> $GITHUB_ENV
         shell: bash
 
