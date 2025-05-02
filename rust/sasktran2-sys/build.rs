@@ -18,7 +18,7 @@ fn main() {
 
     // CMake can do: set(ENV{FORCE_LINK_BLAS} "1")
     if sktran_blas_vendor == "SCIPY_OPENBLAS" {
-        println!("cargo:rustc-cfg=force_link_blas");
+        println!("cargo:rustc-cfg=force_link_scipy_blas");
     }
 
     let mut binding = cmake::Config::new("../../");
