@@ -60,10 +60,12 @@ fn main() {
                         if let Some(extension) = extension.to_str() {
                             if extension == "framework" {
                                 println!("cargo:rustc-link-lib=framework={}", name);
-                            } //else if extension == "dylib" {
-                                // Link with the full path since we are going to delocate later anyways
-                               // println!("cargo:rustc-link-arg={}", path.display());
-                            else {
+                            } else if extension == "dylib" {    // Use full path linking on macOS
+                                println!("cargo:rustc-link-arg={}", path.display());
+
+                                // Also export a DEP var so downstream can re-link if needed
+                                println!("cargo:rustc-env=DEP_SASKTRAN2_OPENBLAS_PATH={}", path.display());
+                            } else {
                                 if name.starts_with("lib") {
                                     // if we are on windows, we keep the 'lib' prefix
                                     // otherwise we remove it

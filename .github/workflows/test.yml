@@ -316,11 +316,11 @@ jobs:
 
       - name: test wheel import
         run: |
-          pip install --force-reinstall --verbose dist/*.whl
+          pip install --force-reinstall --verbose wheelhouse/*.whl
           python -c 'import sasktran2'
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
           name: wheels-windows-${{ matrix.platform.target }}
-          path: dist
+          path: wheelhouse
