@@ -94,6 +94,7 @@ fn main() {
 
     println!("cargo:rerun-if-changed=../../include");
     println!("cargo:rerun-if-changed=../../lib");
+    println!("cargo:rerun-if-changed=../../c_api");
     println!("cargo:rerun-if-changed=../../CMakeLists.txt");
     #[cfg(feature = "build-bindings")]
     {

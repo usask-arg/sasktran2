@@ -11,13 +11,18 @@ struct Engine {
     Engine(Config* config, Geometry1D* geometry,
            ViewingGeometry* viewing_geometry)
         : _config(config) {
-        if (_config->impl.num_stokes() == 1) {
-            impl = std::make_unique<Sasktran2<1>>(
-                config->impl, geometry->impl.get(), viewing_geometry->impl);
-        } else if (config->impl.num_stokes() == 3) {
-            impl = std::make_unique<Sasktran2<3>>(
-                config->impl, geometry->impl.get(), viewing_geometry->impl);
-        } else {
+        try {
+            if (_config->impl.num_stokes() == 1) {
+                impl = std::make_unique<Sasktran2<1>>(
+                    config->impl, geometry->impl.get(), viewing_geometry->impl);
+            } else if (config->impl.num_stokes() == 3) {
+                impl = std::make_unique<Sasktran2<3>>(
+                    config->impl, geometry->impl.get(), viewing_geometry->impl);
+            } else {
+                impl = nullptr;
+            }
+        } catch (const std::exception& e) {
+            // Handle the exception, log it, etc.
             impl = nullptr;
         }
     }
