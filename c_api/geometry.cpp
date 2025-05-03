@@ -30,6 +30,7 @@ Geometry1D* sk_geometry1d_create(double cos_sza, double saa,
         delete geometry;
         return nullptr; // Error: failed to create Geometry1D
     }
+    return geometry;
 }
 
 void sk_geometry1d_destroy(Geometry1D* geometry) { delete geometry; }
