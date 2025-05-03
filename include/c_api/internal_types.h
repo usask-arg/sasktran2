@@ -67,7 +67,7 @@ struct Atmosphere {
     std::unique_ptr<sasktran2::atmosphere::AtmosphereInterface> impl;
 
     Atmosphere(AtmosphereStorage* storage, Surface* surface,
-               bool calculate_derivatives);
+               bool calculate_derivatives, bool calculate_emission_derivatives);
 };
 
 struct OutputC {

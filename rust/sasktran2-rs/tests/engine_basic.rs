@@ -1,9 +1,10 @@
 use ndarray::s;
 use sasktran2_rs::bindings::prelude::*;
+use sasktran2_rs::prelude::*;
 
 #[test]
-fn test_engine_basic() {
-    let mut atmosphere = Atmosphere::new(10, 50, 16, false, Stokes::Stokes1);
+fn test_engine_basic() -> Result<()> {
+    let mut atmosphere = Atmosphere::new(10, 50, 16, true, Stokes::Stokes1);
 
     atmosphere.storage.ssa.fill(1.0);
     atmosphere.storage.total_extinction.fill(0.0001);
@@ -27,7 +28,8 @@ fn test_engine_basic() {
         GeometryType::Spherical,
     );
 
-    let config = Config::new();
+    let mut config = Config::new();
+    let _ = config.with_emission_source(sasktran2_rs::bindings::config::EmissionSource::Standard)?;
 
     let mut viewing_geometry = ViewingGeometry::new();
     viewing_geometry.add_ground_viewing_solar(0.6, 0.0, 200000.0, 1.0);
@@ -36,4 +38,6 @@ fn test_engine_basic() {
 
     let output = engine.calculate_radiance(&atmosphere).unwrap();
     println!("Radiance: {:?}", output.radiance);
+
+    Ok(())
 }

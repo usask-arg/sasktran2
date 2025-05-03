@@ -75,7 +75,8 @@ Surface::Surface(int nwavel, int nstokes, double* emission) {
 }
 
 Atmosphere::Atmosphere(AtmosphereStorage* storage, Surface* surface,
-                       bool calculate_derivatives) {
+                       bool calculate_derivatives,
+                       bool calculate_emission_derivatives) {
     if (storage->impl) {
         if (surface->impl) {
             sasktran2::atmosphere::Surface<1>* surface1 =
@@ -91,7 +92,8 @@ Atmosphere::Atmosphere(AtmosphereStorage* storage, Surface* surface,
                 if (storage1) {
                     impl =
                         std::make_unique<sasktran2::atmosphere::Atmosphere<1>>(
-                            *storage1, *surface1, calculate_derivatives);
+                            *storage1, *surface1, calculate_derivatives,
+                            calculate_emission_derivatives);
                 } else {
                     impl = nullptr;
                 }
@@ -110,7 +112,8 @@ Atmosphere::Atmosphere(AtmosphereStorage* storage, Surface* surface,
                 if (storage3) {
                     impl =
                         std::make_unique<sasktran2::atmosphere::Atmosphere<3>>(
-                            *storage3, *surface3, calculate_derivatives);
+                            *storage3, *surface3, calculate_derivatives,
+                            calculate_emission_derivatives);
                 } else {
                     impl = nullptr;
                 }
@@ -441,8 +444,10 @@ int sk_surface_get_derivative_mapping_name(Surface* storage, int index,
 }
 
 Atmosphere* sk_atmosphere_create(AtmosphereStorage* storage, Surface* surface,
-                                 int calculate_derivatives) {
-    return new Atmosphere(storage, surface, calculate_derivatives == 1);
+                                 int calculate_derivatives,
+                                 int calculate_emission_derivatives) {
+    return new Atmosphere(storage, surface, calculate_derivatives == 1,
+                          calculate_emission_derivatives == 1);
 }
 
 int sk_atmosphere_apply_delta_m_scaling(Atmosphere* atmosphere, int order) {

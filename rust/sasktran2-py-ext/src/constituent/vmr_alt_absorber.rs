@@ -66,6 +66,22 @@ impl PyVMRAltitudeAbsorber {
         unsafe { PyArray1::borrow_from_array(array, this.into_any()) }
     }
 
+    #[setter]
+    fn set_vmr(&mut self, vmr: PyReadonlyArray1<f64>) -> PyResult<()> {
+        // Check if the length of the new vmr matches the length of the altitudes
+        if vmr.len() != self.inner.altitudes.len() {
+            return Err(PyValueError::new_err(format!(
+                "Length of vmr ({}) does not match length of altitudes ({})",
+                vmr.len(),
+                self.inner.altitudes.len()
+            )));
+        }
+
+        self.inner.vmr = vmr.as_array().to_owned();
+
+        Ok(())
+    }
+
     #[getter]
     fn get_altitudes_m<'py>(this: Bound<'py, Self>) -> Bound<'py, PyArray1<f64>> {
         let array = &this.borrow().inner.altitudes;

@@ -19,14 +19,14 @@ pub enum SingleScatterSource {
 
 #[repr(i32)]
 pub enum OccultationSource {
-    None = 0,
-    Standard = 1,
+    None = 1,
+    Standard = 0,
 }
 
 #[repr(i32)]
 pub enum EmissionSource {
-    None = 0,
-    Standard = 1,
+    None = 1,
+    Standard = 0,
 }
 
 #[repr(i32)]

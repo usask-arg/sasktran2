@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 
 import sasktran2 as sk
-from sasktran2._core_rust import PyAtmosphere
+from sasktran2._core_rust import EmissionSource, PyAtmosphere
 from sasktran2.polarization import LegendreStorageView
 from sasktran2.units import (
     wavenumber_cminv_to_wavlength_nm,
@@ -106,6 +106,7 @@ class Atmosphere:
             len(model_geometry.altitudes()),
             config.num_singlescatter_moments,
             calculate_derivatives,
+            config.emission_source != EmissionSource.NoSource,
             config.num_stokes,
         )
 

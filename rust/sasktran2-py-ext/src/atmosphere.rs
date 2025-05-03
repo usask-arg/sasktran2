@@ -39,6 +39,7 @@ impl PyAtmosphere {
         num_location: usize,
         num_legendre: usize,
         calc_derivatives: bool,
+        calc_emission_derivatives: bool,
         num_stokes: usize,
     ) -> PyResult<Self> {
         let stokes = match num_stokes {
@@ -53,6 +54,7 @@ impl PyAtmosphere {
                 num_location,
                 num_legendre,
                 calc_derivatives,
+                calc_emission_derivatives,
                 stokes,
             ),
         })

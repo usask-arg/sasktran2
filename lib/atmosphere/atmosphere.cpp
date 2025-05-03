@@ -19,9 +19,11 @@ namespace sasktran2::atmosphere {
     template <int NSTOKES>
     Atmosphere<NSTOKES>::Atmosphere(AtmosphereGridStorageFull<NSTOKES>& stor,
                                     Surface<NSTOKES>& surf,
-                                    bool calculate_derivatives)
+                                    bool calculate_derivatives,
+                                    bool include_emission_derivatives)
         : m_storage(stor), m_surface(surf),
-          m_calculate_derivatives(calculate_derivatives) {}
+          m_calculate_derivatives(calculate_derivatives),
+          m_include_emission_derivatives(include_emission_derivatives) {}
 
     template <int NSTOKES>
     Atmosphere<NSTOKES>::Atmosphere(int nwavel,

@@ -132,10 +132,13 @@ int sk_atmosphere_storage_set_zero(AtmosphereStorage* storage);
  * @param storage Pointer to atmosphere storage.
  * @param surface Pointer to surface model.
  * @param calculate_derivatives Whether to compute derivatives (non-zero = yes).
+ * @param calculate_emission_derivatives Whether to compute emission
+ * derivatives, (non-zero = yes)
  * @return Pointer to a new Atmosphere object.
  */
 Atmosphere* sk_atmosphere_create(AtmosphereStorage* storage, Surface* surface,
-                                 int calculate_derivatives);
+                                 int calculate_derivatives,
+                                 int calculate_emission_derivatives);
 
 /**
  * @brief Destroys a previously created Atmosphere object.

@@ -16,6 +16,7 @@ impl Atmosphere {
         num_location: usize,
         num_legendre: usize,
         calc_derivatives: bool,
+        calc_emission_derivatives: bool,
         stokes: Stokes,
     ) -> Self {
         let storage = AtmosphereStorage::new(num_wavel, num_location, num_legendre, stokes);
@@ -24,9 +25,10 @@ impl Atmosphere {
         // convert calc_derivatives to 0 for false
         // and 1 for true
         let calc_derivatives = if calc_derivatives { 1 } else { 0 };
+        let calc_emission_derivatives = if calc_emission_derivatives { 1 } else { 0 };
 
         let atmosphere = unsafe {
-            ffi::sk_atmosphere_create(storage.storage, surface.surface, calc_derivatives)
+            ffi::sk_atmosphere_create(storage.storage, surface.surface, calc_derivatives, calc_emission_derivatives)
         };
 
         Atmosphere {
@@ -82,6 +84,7 @@ mod tests {
             num_location,
             num_legendre,
             calc_derivatives,
+            false,
             Stokes::Stokes1,
         );
 

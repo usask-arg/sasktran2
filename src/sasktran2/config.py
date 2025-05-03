@@ -300,6 +300,22 @@ class Config:
         self._config.los_refraction = value
 
     @property
+    def solar_refraction(self) -> bool:
+        """
+        Controls whether or not refraction is enabled for the solar rays. Requires
+        the refractive index to be set in the Geometry object for refraction to work.  Defaults to False.
+        """
+        return self._config.solar_refraction
+
+    @solar_refraction.setter
+    def solar_refraction(self, value: bool):
+        """
+        Controls whether or not refraction is enabled for the solar rays. Requires
+        the refractive index to be set in the Geometry object for refraction to work.  Defaults to False.
+        """
+        self._config.solar_refraction = value
+
+    @property
     def output_los_optical_depth(self) -> bool:
         """
         If True, then the output from a calculate_radiance call will also contain an "optical_depth" variable

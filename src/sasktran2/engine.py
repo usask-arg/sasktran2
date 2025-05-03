@@ -41,11 +41,13 @@ class Engine:
 
         out_ds["radiance"] = xr.DataArray(
             output.radiance,
-            dims=["wavelength_nm", "los", "stokes"],
+            dims=["wavelength", "los", "stokes"],
         )
 
         if atmosphere.wavelengths_nm is not None:
-            out_ds.coords["wavelength_nm"] = atmosphere.wavelengths_nm
+            out_ds.coords["wavelength"] = atmosphere.wavelengths_nm
+
+        out_ds.coords["stokes"] = ["I", "Q", "U", "V"][: len(out_ds.stokes)]
 
         for k, v in output.d_radiance.items():
             mapping = atmosphere.storage.get_derivative_mapping(k)
@@ -57,7 +59,7 @@ class Engine:
             else:
                 out_ds[name] = xr.DataArray(
                     v,
-                    dims=[mapping.interp_dim, "wavelength_nm", "los", "stokes"],
+                    dims=[mapping.interp_dim, "wavelength", "los", "stokes"],
                 )
         for k, v in output.d_radiance_surf.items():
             mapping = atmosphere.surface.get_derivative_mapping(k)

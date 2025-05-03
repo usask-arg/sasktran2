@@ -56,6 +56,16 @@ def test_vmr_altitude_construction():
     sk.constituent.VMRAltitudeAbsorber(sk.optical.O3DBM(), alts, np.ones_like(alts))
 
 
+def test_vmr_altitude_setting():
+    alts = np.arange(0, 100001, 1000.0)
+
+    const = sk.constituent.VMRAltitudeAbsorber(
+        sk.optical.O3DBM(), alts, np.ones_like(alts)
+    )
+
+    const.vmr *= 2.0
+
+
 def test_vmr_altitude_wf_native_grid():
     """
     Tests that the VMRAltitudeAbsorber class calculates derivatives with respect to VMR correctly when

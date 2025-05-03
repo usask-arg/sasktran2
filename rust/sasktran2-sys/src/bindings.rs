@@ -330,11 +330,12 @@ unsafe extern "C" {
         -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Creates a new Atmosphere object.\n\n @param storage Pointer to atmosphere storage.\n @param surface Pointer to surface model.\n @param calculate_derivatives Whether to compute derivatives (non-zero = yes).\n @return Pointer to a new Atmosphere object."]
+    #[doc = " @brief Creates a new Atmosphere object.\n\n @param storage Pointer to atmosphere storage.\n @param surface Pointer to surface model.\n @param calculate_derivatives Whether to compute derivatives (non-zero = yes).\n @param calculate_emission_derivatives Whether to compute emission derivatives, (non-zero = yes)\n @return Pointer to a new Atmosphere object."]
     pub fn sk_atmosphere_create(
         storage: *mut AtmosphereStorage,
         surface: *mut Surface,
         calculate_derivatives: ::std::os::raw::c_int,
+        calculate_emission_derivatives: ::std::os::raw::c_int,
     ) -> *mut Atmosphere;
 }
 unsafe extern "C" {
