@@ -2,7 +2,20 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+fn cpp_src_path() -> PathBuf {
+    // if the vendor folder exists, we are in a sdist mode, use that
+    // otherwise we are in a dev mode, use the cpp folder
+    let vendor_path = PathBuf::from("vendor/");
+    if vendor_path.exists() {
+        return vendor_path;
+    }
+
+    PathBuf::from("../../cpp")
+}
+
 fn main() {
+    let cpp_src = cpp_src_path();
+
     let out_dir = env::var("OUT_DIR").unwrap();
     let install_prefix = std::path::Path::new(&out_dir).join("install");
 
@@ -18,7 +31,7 @@ fn main() {
         env::var("SKTRAN_BLAS_VENDOR").unwrap_or_else(|_| default_blas.to_string());
     let do_stream_templates = env::var("DO_STREAM_TEMPLATES").unwrap_or_else(|_| "OFF".to_string());
 
-    let mut binding = cmake::Config::new("../../cpp/");
+    let mut binding = cmake::Config::new(&cpp_src);
 
     binding
         .define("BUILD_SHARED_LIBS", "OFF")
@@ -94,10 +107,10 @@ fn main() {
     println!("cargo:rustc-link-lib=static=csasktran2");
     println!("cargo:rustc-link-lib=static=sasktran2");
 
-    println!("cargo:rerun-if-changed=../../cpp/include");
-    println!("cargo:rerun-if-changed=../../cpp/lib");
-    println!("cargo:rerun-if-changed=../../cpp/c_api");
-    println!("cargo:rerun-if-changed=../../cpp/CMakeLists.txt");
+    println!("cargo:rerun-if-changed={}/include", cpp_src.display());
+    println!("cargo:rerun-if-changed={}/lib", cpp_src.display());
+    println!("cargo:rerun-if-changed={}/c_api", cpp_src.display());
+    println!("cargo:rerun-if-changed={}/CMakeLists.txt", cpp_src.display());
     #[cfg(feature = "build-bindings")]
     {
         let bindings = bindgen::Builder::default()

@@ -13,7 +13,6 @@ def test_mie_simple_database():
         mode_width=np.array([1.5, 1.6, 1.7]),
     )
 
-    db.clear()
     _ = db.load_ds()
 
 
