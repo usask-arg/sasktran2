@@ -76,4 +76,15 @@ impl PyGeometry1D {
 
         unsafe { Ok(PyArray1::borrow_from_array(&array, this.into_any())) }
     }
+
+    #[setter]
+    fn set_refractive_index(&mut self, refractive_index: PyReadonlyArray1<f64>) -> PyResult<()> {
+        let binding = &mut self.geometry;
+        let refractive_index = refractive_index.as_array();
+
+        let mut view = binding.refractive_index_mut().into_pyresult()?;
+        view.assign(&refractive_index);
+
+        Ok(())
+    }
 }

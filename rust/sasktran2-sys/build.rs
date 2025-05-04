@@ -12,8 +12,15 @@ fn main() {
     let install_prefix = std::path::Path::new(&out_dir).join("install");
 
     let use_omp = env::var("USE_OMP").unwrap_or_else(|_| "OFF".to_string());
+
+    let default_blas = if cfg!(target_os = "macos") {
+        "Apple"
+    } else {
+        "OpenBLAS"
+    };
+
     let sktran_blas_vendor =
-        env::var("SKTRAN_BLAS_VENDOR").unwrap_or_else(|_| "OpenBLAS".to_string());
+        env::var("SKTRAN_BLAS_VENDOR").unwrap_or_else(|_| default_blas.to_string());
     let do_stream_templates = env::var("DO_STREAM_TEMPLATES").unwrap_or_else(|_| "OFF".to_string());
 
     let mut binding = cmake::Config::new("../../");

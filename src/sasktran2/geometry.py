@@ -28,3 +28,11 @@ class Geometry1D:
 
     def altitudes(self) -> np.ndarray:
         return self._geometry.altitudes()
+
+    @property
+    def refractive_index(self) -> np.ndarray:
+        return self._geometry.refractive_index
+
+    @refractive_index.setter
+    def refractive_index(self, value: np.ndarray) -> None:
+        self._geometry.refractive_index = value
