@@ -32,6 +32,7 @@ jobs:
       - name: build
         shell: bash -el {0}
         run: |
+          cd cpp
           cmake -S . -B build  -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
           cmake --build build --config Release --target sasktran2_tests -j 2
 
@@ -131,6 +132,7 @@ jobs:
           PKG_CONFIG_PATH: C:/opt/64/lib/pkgconfig
           CMAKE_PREFIX_PATH: C:/opt/64/
         run: |
+          cd cpp
           cmake -S . -B build  -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
           cmake --build build --config Release --target sasktran2_tests -j 2
 
@@ -211,7 +213,7 @@ jobs:
     needs: linux
     strategy:
       matrix:
-        python-version: [3.10, 3.13]
+        python-version: ["3.10", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -224,7 +226,7 @@ jobs:
 
       - name: install wheels
         run: |
-          pip install --force-reinstall --verbose -w dist/ sasktran2 pytest
+          pip install --force-reinstall --verbose -f dist/ sasktran2 pytest
 
       - name: run pytest
         run: |

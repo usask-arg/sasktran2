@@ -4,7 +4,7 @@ use sasktran2_rs::prelude::*;
 
 #[test]
 fn test_engine_basic() -> Result<()> {
-    let mut atmosphere = Atmosphere::new(10, 50, 16, true, Stokes::Stokes1);
+    let mut atmosphere = Atmosphere::new(10, 50, 16, true, false, Stokes::Stokes1);
 
     atmosphere.storage.ssa.fill(1.0);
     atmosphere.storage.total_extinction.fill(0.0001);
