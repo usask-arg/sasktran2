@@ -3,11 +3,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 fn main() {
-    // print all environment variables
-    for (key, value) in env::vars() {
-        println!("{}: {}", key, value);
-    }
-
     let out_dir = env::var("OUT_DIR").unwrap();
     let install_prefix = std::path::Path::new(&out_dir).join("install");
 
@@ -23,7 +18,7 @@ fn main() {
         env::var("SKTRAN_BLAS_VENDOR").unwrap_or_else(|_| default_blas.to_string());
     let do_stream_templates = env::var("DO_STREAM_TEMPLATES").unwrap_or_else(|_| "OFF".to_string());
 
-    let mut binding = cmake::Config::new("../../");
+    let mut binding = cmake::Config::new("../../cpp/");
 
     binding
         .define("BUILD_SHARED_LIBS", "OFF")
@@ -99,14 +94,14 @@ fn main() {
     println!("cargo:rustc-link-lib=static=csasktran2");
     println!("cargo:rustc-link-lib=static=sasktran2");
 
-    println!("cargo:rerun-if-changed=../../include");
-    println!("cargo:rerun-if-changed=../../lib");
-    println!("cargo:rerun-if-changed=../../c_api");
-    println!("cargo:rerun-if-changed=../../CMakeLists.txt");
+    println!("cargo:rerun-if-changed=../../cpp/include");
+    println!("cargo:rerun-if-changed=../../cpp/lib");
+    println!("cargo:rerun-if-changed=../../cpp/c_api");
+    println!("cargo:rerun-if-changed=../../cpp/CMakeLists.txt");
     #[cfg(feature = "build-bindings")]
     {
         let bindings = bindgen::Builder::default()
-            .header("../../include/c_api/sasktran2.h")
+            .header("../../cpp/include/c_api/sasktran2.h")
             .generate_inline_functions(true)
             .generate()
             .expect("Unable to generate bindings");
