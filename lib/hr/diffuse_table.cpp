@@ -507,7 +507,7 @@ namespace sasktran2::hr {
             saa_initial);
 
         return m_geometry.coordinates().look_vector_from_azimuth(
-            new_position, EIGEN_PI - saa_initial,
+            new_position, -saa_initial,
             temp.cos_zenith_angle(vector));
     }
 
