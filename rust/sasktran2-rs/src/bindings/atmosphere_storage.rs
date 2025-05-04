@@ -176,9 +176,7 @@ mod tests {
         let storage =
             AtmosphereStorage::new(num_wavel, num_location, num_legendre, Stokes::Stokes1);
 
-        let mapping = storage.get_derivative_mapping("wf_test").unwrap();
-
-        let d_ssa = mapping.d_ssa();
+        let _mapping = storage.get_derivative_mapping("wf_test").unwrap();
 
         println!("mapping_names {:?}", storage.derivative_mapping_names());
 

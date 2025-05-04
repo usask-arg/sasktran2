@@ -228,7 +228,7 @@ jobs:
 
       - name: install wheels
         run: |
-          pip install --force-reinstall --verbose -f dist/ sasktran2 pytest
+          pip install --force-reinstall --verbose dist/sasktran2-*.whl pytest
 
       - name: run pytest
         run: |

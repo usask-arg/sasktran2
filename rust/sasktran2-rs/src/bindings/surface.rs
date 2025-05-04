@@ -110,6 +110,6 @@ mod tests {
     fn test_surface() {
         let num_wavel = 10;
         let num_stokes = 3;
-        let mut surface = Surface::new(num_wavel, num_stokes);
+        let _surface = Surface::new(num_wavel, num_stokes);
     }
 }

@@ -112,6 +112,6 @@ mod tests {
 
     #[test]
     fn test_output() {
-        let mut output = Output::new(10, 10, 3);
+        let _output = Output::new(10, 10, 3);
     }
 }

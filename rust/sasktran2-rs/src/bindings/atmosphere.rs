@@ -79,7 +79,7 @@ mod tests {
         let num_legendre = 3;
         let calc_derivatives = true;
 
-        let mut atmosphere = Atmosphere::new(
+        let atmosphere = Atmosphere::new(
             num_wavel,
             num_location,
             num_legendre,

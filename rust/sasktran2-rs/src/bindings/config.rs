@@ -807,6 +807,6 @@ mod tests {
 
     #[test]
     fn test_config() {
-        let mut config = Config::new();
+        let _config = Config::new();
     }
 }

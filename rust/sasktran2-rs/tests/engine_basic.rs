@@ -1,6 +1,5 @@
 use ndarray::s;
 use sasktran2_rs::bindings::prelude::*;
-use sasktran2_rs::prelude::*;
 
 #[test]
 fn test_engine_basic() -> Result<()> {
