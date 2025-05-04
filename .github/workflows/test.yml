@@ -39,7 +39,7 @@ jobs:
       - name: test
         shell: bash -el {0}
         run: |
-          cd build/lib
+          cd cpp/build/lib
           ctest --verbose
 
   test-rust-ubuntu:
@@ -223,6 +223,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: wheels-linux-x86_64
+          path: dist
 
       - name: install wheels
         run: |
