@@ -169,6 +169,50 @@ jobs:
         run: |
           pixi r test
 
+  build-sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: set up symlink
+        run: |
+          cd rust/sasktran2-sys && ln -s ../../cpp vendor
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+      - name: Upload sdist
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-sdist
+          path: dist
+
+  test-build-sdist:
+    runs-on: ubuntu-latest
+    needs: build-sdist
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13"]
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: install apt dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y libopenblas-dev
+
+      - name: download sdist
+        uses: actions/download-artifact@v4
+        with:
+          name: wheels-sdist
+          path: dist
+
+      - name: install sdist
+        run: |
+          pip install --force-reinstall --verbose dist/sasktran2-*
 
   linux:
     runs-on: ${{ matrix.platform.runner }}
