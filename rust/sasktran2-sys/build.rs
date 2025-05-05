@@ -110,7 +110,10 @@ fn main() {
     println!("cargo:rerun-if-changed={}/include", cpp_src.display());
     println!("cargo:rerun-if-changed={}/lib", cpp_src.display());
     println!("cargo:rerun-if-changed={}/c_api", cpp_src.display());
-    println!("cargo:rerun-if-changed={}/CMakeLists.txt", cpp_src.display());
+    println!(
+        "cargo:rerun-if-changed={}/CMakeLists.txt",
+        cpp_src.display()
+    );
     #[cfg(feature = "build-bindings")]
     {
         let bindings = bindgen::Builder::default()

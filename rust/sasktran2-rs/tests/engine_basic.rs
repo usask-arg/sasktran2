@@ -28,7 +28,8 @@ fn test_engine_basic() -> Result<()> {
     );
 
     let mut config = Config::new();
-    let _ = config.with_emission_source(sasktran2_rs::bindings::config::EmissionSource::Standard)?;
+    let _ =
+        config.with_emission_source(sasktran2_rs::bindings::config::EmissionSource::Standard)?;
 
     let mut viewing_geometry = ViewingGeometry::new();
     viewing_geometry.add_ground_viewing_solar(0.6, 0.0, 200000.0, 1.0);

@@ -55,9 +55,7 @@ impl PyOutput {
     }
 
     #[getter]
-    fn get_los_optical_depth<'py>(
-        this: Bound<'py, Self>,
-    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
+    fn get_los_optical_depth<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyArray2<f64>>> {
         let array = &this.borrow().output.los_optical_depth();
         Ok(PyArray2::from_array(this.py(), array))
     }

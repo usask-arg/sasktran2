@@ -28,7 +28,12 @@ impl Atmosphere {
         let calc_emission_derivatives = if calc_emission_derivatives { 1 } else { 0 };
 
         let atmosphere = unsafe {
-            ffi::sk_atmosphere_create(storage.storage, surface.surface, calc_derivatives, calc_emission_derivatives)
+            ffi::sk_atmosphere_create(
+                storage.storage,
+                surface.surface,
+                calc_derivatives,
+                calc_emission_derivatives,
+            )
         };
 
         Atmosphere {

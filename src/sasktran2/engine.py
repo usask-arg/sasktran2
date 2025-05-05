@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import xarray as xr
 
+import sasktran2 as sk
 from sasktran2._core_rust import PyEngine
 from sasktran2.viewinggeo.base import ViewingGeometryContainer
 
@@ -26,7 +27,32 @@ def map_surface_derivative(
 class Engine:
     _engine: PyEngine
 
-    def __init__(self, config, geometry, viewing_geometry):
+    def __init__(
+        self,
+        config: sk.Config,
+        geometry: sk.Geometry1D,
+        viewing_geometry: sk.ViewingGeometry,
+    ):
+        """
+        An Engine is the main class that handles the radiative transfer calculation.  The calculation takes
+        place in two components.
+
+        First, upon construction of the Engine, the majority of the geometry information is computed and
+        cached.
+
+        The main calculation takes place when calling :py:meth:`~calculate_radiance` with an
+        :py:class:`sasktran2.Atmosphere` object where the actual radiative transfer calculation
+        is performed.
+
+        Parameters
+        ----------
+        config : sk.Config
+            Configuration object
+        model_geometry : sk.Geometry1D
+            Geometry for the model
+        viewing_geo : sk.ViewingGeometry
+            Viewing geometry
+        """
         self._engine = PyEngine(
             config._config, geometry._geometry, viewing_geometry._viewing_geometry
         )
@@ -34,7 +60,20 @@ class Engine:
         self._geometry = geometry
         self._viewing_geometry = viewing_geometry
 
-    def calculate_radiance(self, atmosphere):
+    def calculate_radiance(self, atmosphere: sk.Atmosphere) -> xr.Dataset:
+        """
+        Performs the radiative transfer calculation for a given atmosphere
+
+        Parameters
+        ----------
+        atmosphere : sk.Atmosphere
+            The atmosphere object containing the atmospheric profile and constituents
+
+        Returns
+        -------
+        xr.Dataset
+            An xarray dataset containing the radiance and derivatives
+        """
         output = self._engine.calculate_radiance(atmosphere.internal_object())
 
         out_ds = xr.Dataset()
