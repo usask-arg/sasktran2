@@ -151,7 +151,7 @@ impl DerivativeMapping {
     }
 
     pub fn set_log_radiance_space(&mut self, log_radiance_space: bool) {
-        let log_radiance_space = if log_radiance_space { 0 } else { 1 };
+        let log_radiance_space = if log_radiance_space { 1 } else { 0 };
         unsafe {
             ffi::sk_deriv_mapping_set_log_radiance_space(self.mapping, log_radiance_space);
         }
