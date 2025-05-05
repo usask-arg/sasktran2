@@ -107,6 +107,7 @@ jobs:
         shell: bash -el {0}
         env:
           SKTRAN_BLAS_VENDOR: Apple
+          USE_OMP: OFF
         run: |
           cargo test
 
@@ -297,10 +298,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x
-
-      - name: Set MACOSX_DEPLOYMENT_TARGET for macos-13
-        if: matrix.platform.runner == 'macos-13'
-        run: echo "MACOSX_DEPLOYMENT_TARGET=10.14" >> $GITHUB_ENV
 
       - name: install omp
         run: |
