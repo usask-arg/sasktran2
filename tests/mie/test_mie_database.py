@@ -112,8 +112,6 @@ def test_mie_db_in_engine_variable_psize():
         wavelengths_nm=np.arange(270, 1000, 50.0),
     )
 
-    mie_db.clear()
-
     aero_ext = np.zeros(len(model_geometry.altitudes()))
     aero_ext[0:30] = 1e-7
     atmosphere["aerosol"] = sk.constituent.ExtinctionScatterer(
@@ -169,8 +167,6 @@ def test_mie_db_in_engine_multivar_variable_psize():
         refractive_index=sk.mie.refractive.H2SO4(),
         wavelengths_nm=np.arange(270, 1000, 50.0),
     )
-
-    mie_db.clear()
 
     aero_ext = np.zeros(len(model_geometry.altitudes()))
     aero_ext[0:30] = 1e-7
