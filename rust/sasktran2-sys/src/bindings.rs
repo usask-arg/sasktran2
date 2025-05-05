@@ -330,7 +330,7 @@ unsafe extern "C" {
         -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
-    #[doc = " @brief Creates a new Atmosphere object.\n\n @param storage Pointer to atmosphere storage.\n @param surface Pointer to surface model.\n @param calculate_derivatives Whether to compute derivatives (non-zero = yes).\n @param calculate_emission_derivatives Whether to compute emission derivatives, (non-zero = yes)\n @return Pointer to a new Atmosphere object."]
+    #[doc = " @brief Creates a new Atmosphere object.\n\n @param storage Pointer to atmosphere storage.\n @param surface Pointer to surface model.\n @param calculate_derivatives Whether to compute derivatives (non-zero = yes).\n @param calculate_emission_derivatives Whether to compute emission\n derivatives, (non-zero = yes)\n @return Pointer to a new Atmosphere object."]
     pub fn sk_atmosphere_create(
         storage: *mut AtmosphereStorage,
         surface: *mut Surface,
@@ -813,6 +813,12 @@ unsafe extern "C" {
         derivative_mapping: *mut f64,
         nrad: ::std::os::raw::c_int,
         nstokes: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_output_get_los_optical_depth(
+        output: *mut OutputC,
+        od: *mut *mut f64,
     ) -> ::std::os::raw::c_int;
 }
 #[repr(C)]

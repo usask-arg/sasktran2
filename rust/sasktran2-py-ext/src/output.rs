@@ -1,4 +1,4 @@
-use numpy::{PyArray3, PyArray4};
+use numpy::{PyArray2, PyArray3, PyArray4};
 use pyo3::{prelude::*, types::PyDict};
 use sasktran2_rs::bindings::output;
 
@@ -52,5 +52,13 @@ impl PyOutput {
         }
 
         Ok(py_dict)
+    }
+
+    #[getter]
+    fn get_los_optical_depth<'py>(
+        this: Bound<'py, Self>,
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let array = &this.borrow().output.los_optical_depth();
+        Ok(PyArray2::from_array(this.py(), array))
     }
 }

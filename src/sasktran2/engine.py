@@ -74,4 +74,11 @@ class Engine:
         if isinstance(self._viewing_geometry, ViewingGeometryContainer):
             out_ds = self._viewing_geometry.add_geometry_to_radiance(out_ds)
 
+        if self._config.output_los_optical_depth:
+            los_od = output.los_optical_depth
+            out_ds["los_optical_depth"] = xr.DataArray(
+                los_od,
+                dims=["wavelength", "los"],
+            )
+
         return out_ds

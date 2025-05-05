@@ -334,8 +334,12 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
 
             # Have to do a multi-index unstack
             ds = ds.unstack("distribution")
+
         elif len(self._kwargs) == 1:
             ds = ds.rename_dims({"distribution": next(iter(self._kwargs.keys()))})
+            ds = ds.drop_vars("distribution")
+            for k, v in self._kwargs.items():
+                ds.coords[k] = v
         else:
             # length is 0
             ds = ds.isel(distribution=0)

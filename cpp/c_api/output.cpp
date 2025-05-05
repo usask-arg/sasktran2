@@ -98,4 +98,24 @@ int sk_output_assign_surface_derivative_memory(OutputC* output,
     return output->assign_surface_derivative_memory(name, derivative_mapping,
                                                     nrad, nstokes);
 }
+
+int sk_output_get_los_optical_depth(OutputC* output, double** od) {
+    if (output->impl == nullptr) {
+        return -1; // Error: Output not initialized
+    }
+
+    auto* impl1 = dynamic_cast<sasktran2::OutputC<1>*>(output->impl.get());
+    auto* impl3 = dynamic_cast<sasktran2::OutputC<3>*>(output->impl.get());
+
+    if (impl1) {
+        *od = impl1->los_optical_depth().data();
+        return 0;
+    } else if (impl3) {
+        *od = impl3->los_optical_depth().data();
+        return 0;
+    } else {
+        // Handle error case
+        return -1;
+    }
+}
 }
