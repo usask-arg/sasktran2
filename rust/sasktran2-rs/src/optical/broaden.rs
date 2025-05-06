@@ -32,13 +32,7 @@ impl LineShapes for f64 {
 }
 
 #[cfg(not(feature = "simd"))]
-fn lorentzian_assign_uniform(
-    x_start: f64,
-    x_delta: f64,
-    y: f64,
-    scale: f64,
-    result: &mut [f64],
-) {
+fn lorentzian_assign_uniform(x_start: f64, x_delta: f64, y: f64, scale: f64, result: &mut [f64]) {
     for (i, result) in result.iter_mut().enumerate() {
         let x = x_start + (i as f64) * x_delta;
         *result += x.lorentzian(y) * scale;
@@ -46,17 +40,19 @@ fn lorentzian_assign_uniform(
 }
 
 #[cfg(feature = "simd")]
-fn lorentzian_assign_uniform(
-    x_start: f64,
-    x_delta: f64,
-    y: f64,
-    scale: f64,
-    result: &mut [f64],
-) {
+fn lorentzian_assign_uniform(x_start: f64, x_delta: f64, y: f64, scale: f64, result: &mut [f64]) {
     let lanes = f64s::LEN;
     let mut x = f64s::splat(x_start);
-    let delta = f64s::from_slice(&[0.0, x_delta, 2.0 * x_delta, 3.0 * x_delta, 4.0 * x_delta,
-        5.0 * x_delta, 6.0 * x_delta, 7.0 * x_delta]);
+    let delta = f64s::from_slice(&[
+        0.0,
+        x_delta,
+        2.0 * x_delta,
+        3.0 * x_delta,
+        4.0 * x_delta,
+        5.0 * x_delta,
+        6.0 * x_delta,
+        7.0 * x_delta,
+    ]);
 
     x += delta;
 
@@ -85,13 +81,7 @@ fn lorentzian_assign_uniform(
     }
 }
 
-fn gaussian_assign_uniform(
-    x_start: f64,
-    x_delta: f64,
-    y: f64,
-    scale: f64,
-    result: &mut [f64],
-) {
+fn gaussian_assign_uniform(x_start: f64, x_delta: f64, y: f64, scale: f64, result: &mut [f64]) {
     for (i, result) in result.iter_mut().enumerate() {
         let x = x_start + (i as f64) * x_delta;
         *result += x.gaussian(y) * scale;
@@ -281,9 +271,16 @@ pub fn voigt_broaden_uniform(
                             let left = (zero_pivot - lorentzian_split) as usize;
                             let right = (zero_pivot + lorentzian_split) as usize;
 
-                            lorentzian_assign_uniform(x_start, x_delta, y, normalized_intensity, result.slice_mut(
-                                ndarray::s![start_wavenumber_idx..left],
-                            ).as_slice_mut().unwrap());
+                            lorentzian_assign_uniform(
+                                x_start,
+                                x_delta,
+                                y,
+                                normalized_intensity,
+                                result
+                                    .slice_mut(ndarray::s![start_wavenumber_idx..left])
+                                    .as_slice_mut()
+                                    .unwrap(),
+                            );
 
                             /*
                             Zip::indexed(result.slice_mut(ndarray::s![start_wavenumber_idx..left]))
@@ -309,9 +306,16 @@ pub fn voigt_broaden_uniform(
 
                             let x_start = x_start + ((right - left) as f64 * x_delta);
 
-                            lorentzian_assign_uniform(x_start, x_delta, y, normalized_intensity, result.slice_mut(
-                                ndarray::s![right..end_wavenumber_idx],
-                            ).as_slice_mut().unwrap());
+                            lorentzian_assign_uniform(
+                                x_start,
+                                x_delta,
+                                y,
+                                normalized_intensity,
+                                result
+                                    .slice_mut(ndarray::s![right..end_wavenumber_idx])
+                                    .as_slice_mut()
+                                    .unwrap(),
+                            );
 
                             /*
                             Zip::indexed(result.slice_mut(ndarray::s![right..end_wavenumber_idx]))

@@ -1,6 +1,6 @@
-use num::complex::Complex64;
 #[cfg(feature = "simd")]
 use super::super::simd::f64s;
+use num::complex::Complex64;
 
 pub const SQRT_PI: f64 = 1.7724538509055160272981674833411;
 
@@ -197,7 +197,8 @@ pub fn w_jpole_real_assign_uniform(
     for (i, result) in chunks.enumerate() {
         let i = i * lanes;
         let x_start = x_start + i as f64 * x_delta;
-        let x = f64s::splat(x_start) + f64s::splat(x_delta) * f64s::from_slice(&[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
+        let x = f64s::splat(x_start)
+            + f64s::splat(x_delta) * f64s::from_slice(&[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
 
         let mut sum_im = f64s::splat(0.0);
         for j in 0..8 {
@@ -315,7 +316,6 @@ pub fn w_jpole_real_assign(
     }
 }
 
-
 // Assigns the real part of result of the w(z) function to the provided slice.
 #[cfg(feature = "simd")]
 pub fn w_jpole_real_assign(
@@ -408,7 +408,7 @@ pub fn w_jpole_real_assign(
         }
     }
     let n = wvnum.len();
-    for i in n-remainder.len()..n {
+    for i in n - remainder.len()..n {
         let x = (wvnum[i] - c) / width;
         let mut sum_im = 0.0;
         for j in 0..8 {

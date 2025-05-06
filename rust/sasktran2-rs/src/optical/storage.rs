@@ -2,7 +2,6 @@ use ndarray::{IntoDimension, ShapeBuilder};
 
 use crate::prelude::*;
 
-
 pub struct OpticalQuantities {
     pub cross_section: Array2<f64>,
     pub ssa: Array2<f64>,

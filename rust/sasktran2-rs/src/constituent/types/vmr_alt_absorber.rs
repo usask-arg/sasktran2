@@ -7,11 +7,9 @@ use crate::optical::traits::*;
 
 use crate::interpolation::linear::linear_interpolating_matrix;
 
-use ndarray::{Ix2, ShapeBuilder};
+use ndarray::Ix2;
 
 use anyhow::{Result, anyhow};
-
-use crate::math::simd::axpy;
 
 pub fn assign_absorber_derivatives<'a, S1, S2, S3, S4>(
     mapping: &mut DerivMappingView,
@@ -125,7 +123,6 @@ where
 
         let mut extinction = outputs.mut_view().total_extinction;
 
-
         // Here extinction is (geometry, wavelength), with geometry being the fastest changing index
         // because of fortran ordering, so we loop this way even though it is not the most natural
 
@@ -140,7 +137,6 @@ where
                     .for_each(|ext, xs, vmr, n| {
                         *ext += *xs * *vmr * *n;
                     });
-
             });
 
         Ok(())

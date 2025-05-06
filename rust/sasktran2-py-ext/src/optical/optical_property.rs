@@ -128,7 +128,7 @@ impl OpticalProperty for PyOpticalProperty {
                         cross_section: cross_section.into(),
                         ssa: ssa.into(),
                         legendre: None,
-                        fortran_ordering: fortran_ordering
+                        fortran_ordering: fortran_ordering,
                     },
                 );
             });

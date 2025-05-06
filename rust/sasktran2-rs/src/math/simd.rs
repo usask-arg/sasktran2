@@ -1,9 +1,9 @@
 #[cfg(feature = "simd")]
-use std::simd::{f64x4, f64x8, f64x16};
+use std::simd::f64x8;
 
 #[cfg(feature = "simd")]
+#[allow(non_camel_case_types)]
 pub type f64s = f64x8;
-
 
 #[cfg(not(feature = "simd"))]
 pub fn axpy(a: f64, x: &[f64], y: &mut [f64]) {
