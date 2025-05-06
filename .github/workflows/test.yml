@@ -109,7 +109,7 @@ jobs:
           SKTRAN_BLAS_VENDOR: Apple
           USE_OMP: OFF
         run: |
-          cargo test
+          cargo test -p sasktran2-rs
 
   test-cpp-windows:
     runs-on: windows-2019

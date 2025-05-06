@@ -90,7 +90,7 @@ manifest-path = "rust/sasktran2-py-ext/Cargo.toml"
 python-source = "src"
 python-packages = ["sasktran2"]
 module-name = "sasktran2._core_rust"
-
+include = [{ path = "rust-toolchain.toml", format = "sdist" }]
 
 [tool.pytest.ini_options]
 minversion = "6.0"
