@@ -5,17 +5,12 @@ import pandas as pd
 import xarray as xr
 from scipy import interpolate
 
-from sasktran2._core import (
-    Geometry1D,
-    GeometryType,
-    InterpolationMethod,
-    TangentAltitudeSolar,
-    ViewingGeometry,
-)
 from sasktran2.geodetic import WGS84
+from sasktran2.geometry import Geometry1D, GeometryType, InterpolationMethod
 from sasktran2.solar import SolarGeometryHandlerBase
 
 from .base import ViewingGeometryContainer
+from .wrappers import TangentAltitudeSolar, ViewingGeometry
 
 
 class LimbVertical(ViewingGeometry, ViewingGeometryContainer):

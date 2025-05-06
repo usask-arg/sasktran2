@@ -22,7 +22,7 @@ class SolarIrradiance(Constituent):
             msg = "It is required to give the Atmosphere object wavelengths to use the SolarIrradiance constituent"
             raise ValueError(msg)
 
-        atmo.storage.solar_irradiance = self._model.irradiance(atmo.wavelengths_nm)
+        atmo.storage.solar_irradiance[:] = self._model.irradiance(atmo.wavelengths_nm)
 
     def register_derivative(self, atmo, name):
         pass

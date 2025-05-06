@@ -6,7 +6,7 @@ import importlib.util
 import io
 import logging
 
-from .._core import WignerD
+from .._core_rust import WignerD
 from . import interpolation
 
 _cached_hapi = None  # Cache variable to store the result of the import

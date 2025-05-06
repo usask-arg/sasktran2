@@ -10,9 +10,10 @@ import xarray as xr
 from scipy.stats import gamma, lognorm, rv_continuous, triang, uniform
 
 from sasktran2 import mie
-from sasktran2._core import LinearizedMie
+from sasktran2._core_rust import PyMieIntegrator
 from sasktran2.legendre import compute_greek_coefficients
-from sasktran2.mie import MieIntegrator, MieOutput
+
+from .wrappers import LinearizedMie, MieOutput
 
 
 def _post_process(total: dict, wavelengths):
@@ -483,75 +484,67 @@ def integrate_mie_cpp(
     x = np.array(x, order="F")
     w = np.array(w, order="F")
 
-    integrator = MieIntegrator(cos_angles, num_coeffs, num_threads)
+    integrator = PyMieIntegrator(cos_angles, num_coeffs, num_threads)
 
-    pdf_matrix = np.zeros((len(x), len(prob_dists)), order="F")
+    pdf_matrix = np.zeros((len(prob_dists), len(x)))
     for i, prob_dist in enumerate(prob_dists):
-        pdf_matrix[:, i] = prob_dist.pdf(x)
+        pdf_matrix[i] = prob_dist.pdf(x)
 
-        pdf_matrix[:, i] /= np.dot(pdf_matrix[:, i], w)
+        pdf_matrix[i] /= np.dot(pdf_matrix[i], w)
 
     result = xr.Dataset(
         {
             "xs_scattering": (
-                ["distribution", "wavelength_nm"],
-                np.zeros((len(prob_dists), len(wavelengths)), order="F"),
+                ["wavelength_nm", "distribution"],
+                np.zeros((len(wavelengths), len(prob_dists))),
             ),
             "xs_total": (
-                ["distribution", "wavelength_nm"],
-                np.zeros((len(prob_dists), len(wavelengths)), order="F"),
+                ["wavelength_nm", "distribution"],
+                np.zeros((len(wavelengths), len(prob_dists))),
             ),
             "xs_absorption": (
-                ["distribution", "wavelength_nm"],
-                np.zeros((len(prob_dists), len(wavelengths)), order="F"),
+                ["wavelength_nm", "distribution"],
+                np.zeros((len(wavelengths), len(prob_dists))),
             ),
             "p11": (
-                ["cos_angle", "distribution", "wavelength_nm"],
-                np.zeros(
-                    (len(cos_angles), len(prob_dists), len(wavelengths)), order="F"
-                ),
+                ["wavelength_nm", "distribution", "cos_angle"],
+                np.zeros((len(wavelengths), len(prob_dists), len(cos_angles))),
             ),
             "p12": (
-                ["cos_angle", "distribution", "wavelength_nm"],
-                np.zeros(
-                    (len(cos_angles), len(prob_dists), len(wavelengths)), order="F"
-                ),
+                ["wavelength_nm", "distribution", "cos_angle"],
+                np.zeros((len(wavelengths), len(prob_dists), len(cos_angles))),
             ),
             "p33": (
-                ["cos_angle", "distribution", "wavelength_nm"],
-                np.zeros(
-                    (len(cos_angles), len(prob_dists), len(wavelengths)), order="F"
-                ),
+                ["wavelength_nm", "distribution", "cos_angle"],
+                np.zeros((len(wavelengths), len(prob_dists), len(cos_angles))),
             ),
             "p34": (
-                ["cos_angle", "distribution", "wavelength_nm"],
-                np.zeros(
-                    (len(cos_angles), len(prob_dists), len(wavelengths)), order="F"
-                ),
+                ["wavelength_nm", "distribution", "cos_angle"],
+                np.zeros((len(wavelengths), len(prob_dists), len(cos_angles))),
             ),
             "lm_a1": (
-                ["legendre", "distribution", "wavelength_nm"],
-                np.zeros((num_coeffs, len(prob_dists), len(wavelengths)), order="F"),
+                ["wavelength_nm", "distribution", "legendre"],
+                np.zeros((len(wavelengths), len(prob_dists), num_coeffs)),
             ),
             "lm_a2": (
-                ["legendre", "distribution", "wavelength_nm"],
-                np.zeros((num_coeffs, len(prob_dists), len(wavelengths)), order="F"),
+                ["wavelength_nm", "distribution", "legendre"],
+                np.zeros((len(wavelengths), len(prob_dists), num_coeffs)),
             ),
             "lm_a3": (
-                ["legendre", "distribution", "wavelength_nm"],
-                np.zeros((num_coeffs, len(prob_dists), len(wavelengths)), order="F"),
+                ["wavelength_nm", "distribution", "legendre"],
+                np.zeros((len(wavelengths), len(prob_dists), num_coeffs)),
             ),
             "lm_a4": (
-                ["legendre", "distribution", "wavelength_nm"],
-                np.zeros((num_coeffs, len(prob_dists), len(wavelengths)), order="F"),
+                ["wavelength_nm", "distribution", "legendre"],
+                np.zeros((len(wavelengths), len(prob_dists), num_coeffs)),
             ),
             "lm_b1": (
-                ["legendre", "distribution", "wavelength_nm"],
-                np.zeros((num_coeffs, len(prob_dists), len(wavelengths)), order="F"),
+                ["wavelength_nm", "distribution", "legendre"],
+                np.zeros((len(wavelengths), len(prob_dists), num_coeffs)),
             ),
             "lm_b2": (
-                ["legendre", "distribution", "wavelength_nm"],
-                np.zeros((num_coeffs, len(prob_dists), len(wavelengths)), order="F"),
+                ["wavelength_nm", "distribution", "legendre"],
+                np.zeros((len(wavelengths), len(prob_dists), num_coeffs)),
             ),
         },
         coords={
@@ -565,25 +558,25 @@ def integrate_mie_cpp(
 
         size_param = 2 * np.pi * x / wavel
 
-        integrator.integrate_all(
+        integrator.integrate(
             float(wavel),
             refrac_index,
-            size_param.reshape(-1, 1),
+            size_param,
             pdf_matrix,
-            w.reshape(-1, 1),
-            a_weights.reshape(-1, 1),
-            result["xs_total"].to_numpy()[:, i],
-            result["xs_scattering"].to_numpy()[:, i],
-            result["p11"].to_numpy()[:, :, i],
-            result["p12"].to_numpy()[:, :, i],
-            result["p33"].to_numpy()[:, :, i],
-            result["p34"].to_numpy()[:, :, i],
-            result["lm_a1"].to_numpy()[:, :, i],
-            result["lm_a2"].to_numpy()[:, :, i],
-            result["lm_a3"].to_numpy()[:, :, i],
-            result["lm_a4"].to_numpy()[:, :, i],
-            result["lm_b1"].to_numpy()[:, :, i],
-            result["lm_b2"].to_numpy()[:, :, i],
+            w,
+            a_weights,
+            result["xs_total"].to_numpy()[i],
+            result["xs_scattering"].to_numpy()[i],
+            result["p11"].to_numpy()[i],
+            result["p12"].to_numpy()[i],
+            result["p33"].to_numpy()[i],
+            result["p34"].to_numpy()[i],
+            result["lm_a1"].to_numpy()[i],
+            result["lm_a2"].to_numpy()[i],
+            result["lm_a3"].to_numpy()[i],
+            result["lm_a4"].to_numpy()[i],
+            result["lm_b1"].to_numpy()[i],
+            result["lm_b2"].to_numpy()[i],
         )
 
     result["xs_absorption"].values = (

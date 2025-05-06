@@ -5,12 +5,13 @@ build:
   tools:
     python: "mambaforge-22.9"
 
-  jobs:
-    pre_build:
-      - curl https://sh.rustup.rs -sSf | sh -s -- -y && . "$HOME/.cargo/env" && pip install .
+  commands:
+    - |
+      curl https://sh.rustup.rs -sSf | sh -s -- -y && . "$HOME/.cargo/env"
+      curl -fsSL https://pixi.sh/install.sh | bash
+      /home/docs/.pixi/bin/pixi install -e default
+      /home/docs/.pixi/bin/pixi r build
+      /home/docs/.pixi/bin/pixi run -e default readthedocs
 
 sphinx:
-   configuration: docs/sphinx/source/conf.py
-
-conda:
-  environment: conda/dev_env.yml
+   configuration: docs/source/conf.py

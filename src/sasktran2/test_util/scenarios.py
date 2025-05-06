@@ -3,13 +3,10 @@ from __future__ import annotations
 import numpy as np
 
 import sasktran2 as sk
-from sasktran2._core import Config, Geometry1D
-from sasktran2.atmosphere import Atmosphere
-from sasktran2.climatology.us76 import add_us76_standard_atmosphere
 
 
 def default_pure_scattering_atmosphere(
-    config: Config, geometry: Geometry1D, ssa=1, albedo=0
+    config: sk.Config, geometry: sk.Geometry1D, ssa=1, albedo=0
 ):
     new_alt_grid = geometry.altitudes()
 
@@ -125,10 +122,10 @@ def default_pure_scattering_atmosphere(
         len(new_alt_grid), 1
     )
 
-    atmo = Atmosphere(geometry, config, numwavel=1)
+    atmo = sk.Atmosphere(geometry, config, numwavel=1)
 
-    atmo.storage.total_extinction = extinction
-    atmo.storage.ssa = np.ones_like(extinction) * ssa
+    atmo.storage.total_extinction[:] = extinction
+    atmo.storage.ssa[:] = np.ones_like(extinction) * ssa
 
     atmo.leg_coeff.a1[0, :, 0] = 1
     atmo.leg_coeff.a1[2, :, 0] = 0.5
@@ -137,7 +134,7 @@ def default_pure_scattering_atmosphere(
         atmo.leg_coeff.a2[2] = 3
         atmo.leg_coeff.b1[2] = np.sqrt(6.0) / 2
 
-    add_us76_standard_atmosphere(atmo)
+    sk.climatology.us76.add_us76_standard_atmosphere(atmo)
 
     atmo.surface.albedo[:] = albedo
 

@@ -62,7 +62,7 @@ class CollisionInducedAbsorber(Constituent):
 
         self._optical_quants = self._optical_property.atmosphere_quantities(atmo)
 
-        atmo.storage.total_extinction += (  # m^-1
+        atmo.storage.total_extinction[:] += (  # m^-1
             self._optical_quants.extinction  # m^5 (cross section)
             * (self._fraction_product * num_dens**2)[:, np.newaxis]
         )

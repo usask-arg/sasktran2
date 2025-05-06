@@ -1,0 +1,812 @@
+use super::prelude::*;
+use sasktran2_sys::ffi;
+
+#[repr(i32)]
+pub enum MultipleScatterSource {
+    DiscreteOrdinates = 0,
+    SuccessiveOrders = 1,
+    TwoStream = 2,
+    None = 3,
+}
+
+#[repr(i32)]
+pub enum SingleScatterSource {
+    Exact = 0,
+    SolarTable = 1,
+    DiscreteOrdinates = 2,
+    None = 3,
+}
+
+#[repr(i32)]
+pub enum OccultationSource {
+    None = 1,
+    Standard = 0,
+}
+
+#[repr(i32)]
+pub enum EmissionSource {
+    None = 1,
+    Standard = 0,
+}
+
+#[repr(i32)]
+pub enum StokesBasis {
+    Standard = 0,
+    Solar = 1,
+    Observer = 2,
+}
+
+#[repr(i32)]
+pub enum ThreadingModel {
+    Wavelength = 0,
+    Source = 1,
+}
+
+#[repr(i32)]
+pub enum InputValidationMode {
+    Strict = 0,
+    Standard = 1,
+    Disabled = 2,
+}
+
+pub struct Config {
+    pub config: *mut ffi::Config,
+}
+
+impl Config {
+    pub fn new() -> Self {
+        Config {
+            config: unsafe { ffi::sk_config_create() },
+        }
+    }
+
+    pub fn num_threads(&self) -> Result<usize> {
+        let mut num_threads = 0i32;
+        let error_code = unsafe { ffi::sk_config_get_num_threads(self.config, &mut num_threads) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting number of threads: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(num_threads as usize)
+        }
+    }
+
+    pub fn with_num_threads(&mut self, num_threads: usize) -> Result<&mut Self> {
+        let error_code = unsafe { ffi::sk_config_set_num_threads(self.config, num_threads as i32) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting number of threads: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn threading_model(&self) -> Result<ThreadingModel> {
+        let mut threading_model = 0i32;
+        let error_code =
+            unsafe { ffi::sk_config_get_threading_model(self.config, &mut threading_model) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting threading model: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(unsafe { std::mem::transmute(threading_model) })
+        }
+    }
+
+    pub fn with_threading_model(&mut self, threading_model: ThreadingModel) -> Result<&mut Self> {
+        let error_code =
+            unsafe { ffi::sk_config_set_threading_model(self.config, threading_model as i32) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting threading model: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn input_validation_mode(&self) -> Result<InputValidationMode> {
+        let mut input_validation_mode = 0i32;
+        let error_code = unsafe {
+            ffi::sk_config_get_input_validation_mode(self.config, &mut input_validation_mode)
+        };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting input validation mode: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(unsafe { std::mem::transmute(input_validation_mode) })
+        }
+    }
+
+    pub fn with_input_validation_mode(
+        &mut self,
+        input_validation_mode: InputValidationMode,
+    ) -> Result<&mut Self> {
+        let error_code = unsafe {
+            ffi::sk_config_set_input_validation_mode(self.config, input_validation_mode as i32)
+        };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting input validation mode: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn num_stokes(&self) -> Result<usize> {
+        let mut num_stokes = 0i32;
+        let error_code = unsafe { ffi::sk_config_get_num_stokes(self.config, &mut num_stokes) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting number of stokes: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(num_stokes as usize)
+        }
+    }
+
+    pub fn with_num_stokes(&mut self, num_stokes: usize) -> Result<&mut Self> {
+        let error_code = unsafe { ffi::sk_config_set_num_stokes(self.config, num_stokes as i32) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting number of stokes: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn multiple_scatter_source(&self) -> Result<MultipleScatterSource> {
+        let mut multiple_scatter_source = 0i32;
+        let error_code = unsafe {
+            ffi::sk_config_get_multiple_scatter_source(self.config, &mut multiple_scatter_source)
+        };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting multiple scatter source: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(unsafe { std::mem::transmute(multiple_scatter_source) })
+        }
+    }
+
+    pub fn with_multiple_scatter_source(
+        &mut self,
+        source: MultipleScatterSource,
+    ) -> Result<&mut Self> {
+        let error_code =
+            unsafe { ffi::sk_config_set_multiple_scatter_source(self.config, source as i32) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting multiple scatter source: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn single_scatter_source(&self) -> Result<SingleScatterSource> {
+        let mut single_scatter_source = 0i32;
+        let error_code = unsafe {
+            ffi::sk_config_get_single_scatter_source(self.config, &mut single_scatter_source)
+        };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting single scatter source: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(unsafe { std::mem::transmute(single_scatter_source) })
+        }
+    }
+
+    pub fn with_single_scatter_source(&mut self, source: SingleScatterSource) -> Result<&mut Self> {
+        let error_code =
+            unsafe { ffi::sk_config_set_single_scatter_source(self.config, source as i32) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting single scatter source: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn occultation_source(&self) -> Result<OccultationSource> {
+        let mut occultation_source = 0i32;
+        let error_code =
+            unsafe { ffi::sk_config_get_occultation_source(self.config, &mut occultation_source) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting occultation source: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(unsafe { std::mem::transmute(occultation_source) })
+        }
+    }
+
+    pub fn with_occultation_source(&mut self, source: OccultationSource) -> Result<&mut Self> {
+        let error_code =
+            unsafe { ffi::sk_config_set_occultation_source(self.config, source as i32) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting occultation source: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn emission_source(&self) -> Result<EmissionSource> {
+        let mut emission_source = 0i32;
+        let error_code =
+            unsafe { ffi::sk_config_get_emission_source(self.config, &mut emission_source) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting emission source: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(unsafe { std::mem::transmute(emission_source) })
+        }
+    }
+
+    pub fn with_emission_source(&mut self, source: EmissionSource) -> Result<&mut Self> {
+        let error_code = unsafe { ffi::sk_config_set_emission_source(self.config, source as i32) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting emission source: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+    pub fn stokes_basis(&self) -> Result<StokesBasis> {
+        let mut stokes_basis = 0i32;
+        let error_code = unsafe { ffi::sk_config_get_stokes_basis(self.config, &mut stokes_basis) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting stokes basis: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(unsafe { std::mem::transmute(stokes_basis) })
+        }
+    }
+
+    pub fn with_stokes_basis(&mut self, basis: StokesBasis) -> Result<&mut Self> {
+        let error_code = unsafe { ffi::sk_config_set_stokes_basis(self.config, basis as i32) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting stokes basis: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn delta_m_scaling(&self) -> Result<bool> {
+        let mut delta_m_scaling = 0i32;
+        let error_code =
+            unsafe { ffi::sk_config_get_apply_delta_scaling(self.config, &mut delta_m_scaling) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting delta m scaling: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(delta_m_scaling != 0)
+        }
+    }
+
+    pub fn with_delta_m_scaling(&mut self, delta_m_scaling: bool) -> Result<&mut Self> {
+        let error_code = unsafe {
+            ffi::sk_config_set_apply_delta_scaling(self.config, if delta_m_scaling { 1 } else { 0 })
+        };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting delta m scaling: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn los_refraction(&self) -> Result<bool> {
+        let mut los_refraction = 0i32;
+        let error_code =
+            unsafe { ffi::sk_config_get_los_refraction(self.config, &mut los_refraction) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting los refraction: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(los_refraction != 0)
+        }
+    }
+
+    pub fn with_los_refraction(&mut self, los_refraction: bool) -> Result<&mut Self> {
+        let error_code = unsafe {
+            ffi::sk_config_set_los_refraction(self.config, if los_refraction { 1 } else { 0 })
+        };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting los refraction: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn output_los_optical_depth(&self) -> Result<bool> {
+        let mut output_los_optical_depth = 0i32;
+        let error_code = unsafe {
+            ffi::sk_config_get_output_los_optical_depth(self.config, &mut output_los_optical_depth)
+        };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting output los optical depth: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(output_los_optical_depth != 0)
+        }
+    }
+
+    pub fn with_output_los_optical_depth(
+        &mut self,
+        output_los_optical_depth: bool,
+    ) -> Result<&mut Self> {
+        let error_code = unsafe {
+            ffi::sk_config_set_output_los_optical_depth(
+                self.config,
+                if output_los_optical_depth { 1 } else { 0 },
+            )
+        };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting output los optical depth: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn solar_refraction(&self) -> Result<bool> {
+        let mut solar_refraction = 0i32;
+        let error_code =
+            unsafe { ffi::sk_config_get_solar_refraction(self.config, &mut solar_refraction) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting solar refraction: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(solar_refraction != 0)
+        }
+    }
+
+    pub fn with_solar_refraction(&mut self, solar_refraction: bool) -> Result<&mut Self> {
+        let error_code = unsafe {
+            ffi::sk_config_set_solar_refraction(self.config, if solar_refraction { 1 } else { 0 })
+        };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting solar refraction: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn multiple_scatter_refraction(&self) -> Result<bool> {
+        let mut multiple_scatter_refraction = 0i32;
+        let error_code = unsafe {
+            ffi::sk_config_get_multiple_scatter_refraction(
+                self.config,
+                &mut multiple_scatter_refraction,
+            )
+        };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting multiple scatter refraction: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(multiple_scatter_refraction != 0)
+        }
+    }
+
+    pub fn with_multiple_scatter_refraction(
+        &mut self,
+        multiple_scatter_refraction: bool,
+    ) -> Result<&mut Self> {
+        let error_code = unsafe {
+            ffi::sk_config_set_multiple_scatter_refraction(
+                self.config,
+                if multiple_scatter_refraction { 1 } else { 0 },
+            )
+        };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting multiple scatter refraction: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn num_sza(&self) -> Result<usize> {
+        let mut num_sza = 0i32;
+        let error_code = unsafe { ffi::sk_config_get_num_do_sza(self.config, &mut num_sza) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting number of sza: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(num_sza as usize)
+        }
+    }
+
+    pub fn with_num_sza(&mut self, num_sza: usize) -> Result<&mut Self> {
+        let error_code = unsafe { ffi::sk_config_set_num_do_sza(self.config, num_sza as i32) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting number of sza: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn num_successive_orders_iterations(&self) -> Result<usize> {
+        let mut num_iterations = 0i32;
+        let error_code = unsafe {
+            ffi::sk_config_get_num_hr_spherical_iterations(self.config, &mut num_iterations)
+        };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting number of successive orders iterations: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(num_iterations as usize)
+        }
+    }
+
+    pub fn with_num_successive_orders_iterations(
+        &mut self,
+        num_iterations: usize,
+    ) -> Result<&mut Self> {
+        let error_code = unsafe {
+            ffi::sk_config_set_num_hr_spherical_iterations(self.config, num_iterations as i32)
+        };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting number of successive orders iterations: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn init_successive_orders_with_discrete_ordinates(&self) -> Result<bool> {
+        let mut init = 0i32;
+        let error_code =
+            unsafe { ffi::sk_config_get_initialize_hr_with_do(self.config, &mut init) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting init successive orders with discrete ordinates: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(init != 0)
+        }
+    }
+
+    pub fn with_init_successive_orders_with_discrete_ordinates(
+        &mut self,
+        init: bool,
+    ) -> Result<&mut Self> {
+        let error_code = unsafe {
+            ffi::sk_config_set_initialize_hr_with_do(self.config, if init { 1 } else { 0 })
+        };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting init successive orders with discrete ordinates: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn num_streams(&self) -> Result<usize> {
+        let mut num_streams = 0i32;
+        let error_code = unsafe { ffi::sk_config_get_num_streams(self.config, &mut num_streams) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting number of streams: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(num_streams as usize)
+        }
+    }
+
+    pub fn with_num_streams(&mut self, num_streams: usize) -> Result<&mut Self> {
+        let error_code = unsafe { ffi::sk_config_set_num_streams(self.config, num_streams as i32) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting number of streams: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn num_forced_azimuth(&self) -> Result<usize> {
+        let mut num_azimuth = 0i32;
+        let error_code =
+            unsafe { ffi::sk_config_get_num_do_forced_azimuth(self.config, &mut num_azimuth) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting number of forced azimuth: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(num_azimuth as usize)
+        }
+    }
+
+    pub fn with_num_forced_azimuth(&mut self, num_azimuth: usize) -> Result<&mut Self> {
+        let error_code =
+            unsafe { ffi::sk_config_set_num_do_forced_azimuth(self.config, num_azimuth as i32) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting number of forced azimuth: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn do_backprop(&self) -> Result<bool> {
+        let mut do_backprop = 0i32;
+        let error_code = unsafe { ffi::sk_config_get_do_backprop(self.config, &mut do_backprop) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting do backprop: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(do_backprop != 0)
+        }
+    }
+
+    pub fn with_do_backprop(&mut self, do_backprop: bool) -> Result<&mut Self> {
+        let error_code =
+            unsafe { ffi::sk_config_set_do_backprop(self.config, if do_backprop { 1 } else { 0 }) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting do backprop: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn num_successive_orders_points(&self) -> Result<usize> {
+        let mut num_points = 0i32;
+        let error_code =
+            unsafe { ffi::sk_config_get_num_hr_full_incoming_points(self.config, &mut num_points) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting number of successive orders points: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(num_points as usize)
+        }
+    }
+
+    pub fn with_num_successive_orders_points(&mut self, num_points: usize) -> Result<&mut Self> {
+        let error_code = unsafe {
+            ffi::sk_config_set_num_hr_full_incoming_points(self.config, num_points as i32)
+        };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting number of successive orders points: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn num_singlescatter_moments(&self) -> Result<usize> {
+        let mut num_moments = 0i32;
+        let error_code =
+            unsafe { ffi::sk_config_get_num_singlescatter_moments(self.config, &mut num_moments) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting number of single scatter moments: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(num_moments as usize)
+        }
+    }
+
+    pub fn with_num_singlescatter_moments(&mut self, num_moments: usize) -> Result<&mut Self> {
+        let error_code = unsafe {
+            ffi::sk_config_set_num_singlescatter_moments(self.config, num_moments as i32)
+        };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting number of single scatter moments: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn num_successive_orders_incoming(&self) -> Result<usize> {
+        let mut num_incoming = 0i32;
+        let error_code =
+            unsafe { ffi::sk_config_get_num_hr_incoming(self.config, &mut num_incoming) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting number of successive orders incoming: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(num_incoming as usize)
+        }
+    }
+
+    pub fn with_num_successive_orders_incoming(
+        &mut self,
+        num_incoming: usize,
+    ) -> Result<&mut Self> {
+        let error_code =
+            unsafe { ffi::sk_config_set_num_hr_incoming(self.config, num_incoming as i32) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting number of successive orders incoming: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn num_successive_orders_outgoing(&self) -> Result<usize> {
+        let mut num_outgoing = 0i32;
+        let error_code =
+            unsafe { ffi::sk_config_get_num_hr_outgoing(self.config, &mut num_outgoing) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting number of successive orders outgoing: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(num_outgoing as usize)
+        }
+    }
+
+    pub fn with_num_successive_orders_outgoing(
+        &mut self,
+        num_outgoing: usize,
+    ) -> Result<&mut Self> {
+        let error_code =
+            unsafe { ffi::sk_config_set_num_hr_outgoing(self.config, num_outgoing as i32) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting number of successive orders outgoing: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+}
+
+impl Drop for Config {
+    fn drop(&mut self) {
+        unsafe {
+            ffi::sk_config_destroy(self.config);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_config() {
+        let _config = Config::new();
+    }
+}

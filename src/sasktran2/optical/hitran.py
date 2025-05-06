@@ -4,15 +4,15 @@ import logging
 
 import numpy as np
 
-from sasktran2.atmosphere import Atmosphere
-from sasktran2.database.aer_line import AERLineDatabase
-from sasktran2.database.hitran_line import HITRANLineDatabase
-from sasktran2.optical.base import OpticalProperty, OpticalQuantities
-from sasktran2.spectroscopy import (
+from sasktran2._core_rust import (
     voigt_broaden,
     voigt_broaden_uniform,
     voigt_broaden_with_line_coupling,
 )
+from sasktran2.atmosphere import Atmosphere
+from sasktran2.database.aer_line import AERLineDatabase
+from sasktran2.database.hitran_line import HITRANLineDatabase
+from sasktran2.optical.base import OpticalProperty, OpticalQuantities
 from sasktran2.util import get_hapi
 
 
@@ -45,9 +45,16 @@ class LineAbsorber(OpticalProperty):
         kwargs : dict
             Additional keyword arguments to pass to the line broadening function
         """
+        defaults = {
+            "line_contribution_width": 25.0,
+            "cull_factor": 0.0,
+            "subtract_pedastal": False,
+        }
+
         self._line_db = line_db.load_ds(molecule)
         self._molecule = molecule
-        self._kwargs = kwargs
+        self._kwargs = defaults
+        self._kwargs.update(kwargs)
         self._line_coupling = line_coupling
 
         if line_fn != "voigt":
@@ -120,17 +127,13 @@ class LineAbsorber(OpticalProperty):
         sidx = np.argsort(wavenumbers_cminv)
 
         result = np.zeros(
-            (len(wavenumbers_cminv), (len(pressure_pa))),
-            order="f",
+            (len(pressure_pa), (len(wavenumbers_cminv))),
         )
 
         partial_pressures = kwargs.get("vmr", np.zeros(len(pressure_pa))) * pressure_pa
         logging.debug(f"Starting Broadening for {self._molecule}")
 
         if self._line_coupling:
-            Y_arr = np.zeros((len(temperature_k), len(self._line_db.nu)), order="f")
-            G_arr = np.zeros((len(temperature_k), len(self._line_db.nu)), order="f")
-
             Y = (
                 self._line_db["Y"]
                 .fillna(0.0)
@@ -142,8 +145,10 @@ class LineAbsorber(OpticalProperty):
                 .interp(temperature=temperature_k, kwargs={"fill_value": 0.0})
             )
 
-            Y_arr[:, :] = Y.to_numpy()
-            G_arr[:, :] = G.to_numpy()
+            Y_arr = np.zeros((len(self._line_db.nu), len(temperature_k)))
+            G_arr = np.zeros((len(self._line_db.nu), len(temperature_k)))
+            Y_arr[:, :] = Y.to_numpy().T
+            G_arr[:, :] = G.to_numpy().T
 
             voigt_broaden_with_line_coupling(
                 self._line_db.nu.to_numpy(),
@@ -153,7 +158,7 @@ class LineAbsorber(OpticalProperty):
                 self._line_db.gamma_self.to_numpy(),
                 self._line_db.delta_air.to_numpy(),
                 self._line_db.n_air.to_numpy(),
-                self._line_db.local_iso_id.to_numpy(),
+                self._line_db.local_iso_id.to_numpy().astype(np.int32),
                 partition_ratio,
                 Y_arr,
                 G_arr,
@@ -166,12 +171,12 @@ class LineAbsorber(OpticalProperty):
                 num_threads=num_threads,
                 **self._kwargs,
             )
-            result[sidx, :] = result
+            result[:, sidx] = result
 
             # Line coupling numerics can give very small negative values
             result[result < 0] = 0.0
 
-            return result / 1e4
+            return result.T / 1e4
 
         # else
         # Check if the input is uniform wavenumber grid
@@ -188,22 +193,22 @@ class LineAbsorber(OpticalProperty):
                 self._line_db.gamma_self.to_numpy(),
                 self._line_db.delta_air.to_numpy(),
                 self._line_db.n_air.to_numpy(),
-                self._line_db.local_iso_id.to_numpy(),
+                self._line_db.local_iso_id.to_numpy().astype(np.int32),
                 partition_ratio,
                 molecular_mass,
                 pressure_pa / 101325.0,
                 partial_pressures / 101325.0,
-                temperature_k,
-                wavenumbers_cminv[0],
-                wavenumbers_cminv[1] - wavenumbers_cminv[0],
+                temperature_k.astype(np.float64),
+                wavenumbers_cminv[sidx][0],
+                wavenumbers_cminv[sidx][1] - wavenumbers_cminv[sidx][0],
                 result,
                 num_threads=num_threads,
                 **self._kwargs,
             )
 
-            result[sidx, :] = result
+            result[:, sidx] = result
 
-            return result / 1e4
+            return result.T / 1e4
 
         voigt_broaden(
             self._line_db.nu.to_numpy(),
@@ -213,7 +218,7 @@ class LineAbsorber(OpticalProperty):
             self._line_db.gamma_self.to_numpy(),
             self._line_db.delta_air.to_numpy(),
             self._line_db.n_air.to_numpy(),
-            self._line_db.local_iso_id.to_numpy(),
+            self._line_db.local_iso_id.to_numpy().astype(np.int32),
             partition_ratio,
             molecular_mass,
             pressure_pa / 101325.0,
@@ -224,9 +229,9 @@ class LineAbsorber(OpticalProperty):
             num_threads=num_threads,
             **self._kwargs,
         )
-        result[sidx, :] = result
+        result[:, sidx] = result
 
-        return result / 1e4
+        return result.T / 1e4
 
     def cross_section_derivatives(
         self, wavelengths_nm: np.array, altitudes_m: np.array, **kwargs  # noqa: ARG002

@@ -3,24 +3,17 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from sasktran2._core import (
-    Geodetic,
-    GroundViewingSolar,
-    TangentAltitudeSolar,
-    ViewingGeometryBase,
-)
-from sasktran2.geodetic import WGS84
-from sasktran2.solar import SolarGeometryHandlerBase, SolarGeometryHandlerForced
+import sasktran2 as sk
 
 
 def ecef_to_sasktran2_ray(
     observer: np.array,
     look_vector: np.array,
     time: pd.Timestamp,
-    geoid: Geodetic | None = None,
-    solar_handler: SolarGeometryHandlerBase | None = None,
+    geoid: sk.Geodetic | None = None,
+    solar_handler: sk.SolarGeometryHandlerBase | None = None,
     ground_elevation: float = 0.0,
-) -> ViewingGeometryBase:
+) -> sk.ViewingGeometry:
     """
     Converts an observer, look vector in ECEF coordinates and time to a sasktran2 viewing ray object
 
@@ -42,10 +35,10 @@ def ecef_to_sasktran2_ray(
     sk.ViewingGeometryBase
     """
     if solar_handler is None:
-        solar_handler = SolarGeometryHandlerForced(0, 0)
+        solar_handler = sk.SolarGeometryHandlerForced(0, 0)
 
     if geoid is None:
-        geoid = WGS84()
+        geoid = sk.WGS84()
 
     # Start by determining the observer's geodetic coordinates
     geoid.from_xyz(observer)
@@ -71,7 +64,7 @@ def ecef_to_sasktran2_ray(
             )
         )
 
-        return TangentAltitudeSolar(
+        return sk.TangentAltitudeSolar(
             geoid.altitude,
             np.deg2rad(solar_azimuth - viewing_azimuth),
             obs_alt,
@@ -97,7 +90,7 @@ def ecef_to_sasktran2_ray(
             -np.dot(look_vector, geoid.local_south),
         )
 
-    return GroundViewingSolar(
+    return sk.GroundViewingSolar(
         np.cos(np.deg2rad(solar_zenith)),
         np.deg2rad(solar_azimuth - viewing_azimuth),
         cos_viewing_zenith,
