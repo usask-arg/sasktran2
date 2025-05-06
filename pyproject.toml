@@ -85,12 +85,12 @@ seaborn = ">=0.13.2,<0.14"
 default = ["test", "solar", "hapi", "dev"]
 
 [tool.maturin]
-features = ["pyo3/extension-module"]
+features = ["pyo3/extension-module", "nightly"]
 manifest-path = "rust/sasktran2-py-ext/Cargo.toml"
 python-source = "src"
 python-packages = ["sasktran2"]
 module-name = "sasktran2._core_rust"
-
+include = [{ path = "rust-toolchain.toml", format = "sdist" }]
 
 [tool.pytest.ini_options]
 minversion = "6.0"

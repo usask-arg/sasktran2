@@ -450,7 +450,7 @@ impl OpticalProperty for SKXsecDatabase<Ix2> {
         } else {
             d_optical_quantities.insert(
                 self.param_names[0].clone(),
-                OpticalQuantities::new(param.len(), wavenumber_cminv.len()),
+                OpticalQuantities::new(param.len(), wavenumber_cminv.len(), false),
             );
         }
 
@@ -520,7 +520,7 @@ impl OpticalProperty for SKXsecDatabase<Ix3> {
             } else {
                 d_optical_quantities.insert(
                     self.param_names[i].clone(),
-                    OpticalQuantities::new(param_0.len(), wavenumber_cminv.len()),
+                    OpticalQuantities::new(param_0.len(), wavenumber_cminv.len(), false),
                 );
             }
         }

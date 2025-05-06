@@ -19,7 +19,7 @@ fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
     let install_prefix = std::path::Path::new(&out_dir).join("install");
 
-    let use_omp = env::var("USE_OMP").unwrap_or_else(|_| "ON".to_string());
+    let use_omp = env::var("USE_OMP").unwrap_or_else(|_| "OFF".to_string());
 
     let default_blas = if cfg!(target_os = "macos") {
         "Apple"

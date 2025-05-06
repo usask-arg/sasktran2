@@ -17,8 +17,9 @@ impl PyOpticalQuantities {
 #[pymethods]
 impl PyOpticalQuantities {
     #[new]
-    fn py_new(num_geometry: usize, num_wavelengths: usize) -> Self {
-        let oq = OpticalQuantities::new(num_geometry, num_wavelengths);
+    #[pyo3(signature = (num_geometry, num_wavelengths, fortran_ordering = false))]
+    fn py_new(num_geometry: usize, num_wavelengths: usize, fortran_ordering: bool) -> Self {
+        let oq = OpticalQuantities::new(num_geometry, num_wavelengths, fortran_ordering);
         Self { oq }
     }
 

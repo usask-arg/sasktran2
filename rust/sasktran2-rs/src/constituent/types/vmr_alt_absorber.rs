@@ -123,14 +123,20 @@ where
 
         let mut extinction = outputs.mut_view().total_extinction;
 
-        Zip::from(extinction.axis_iter_mut(Axis(0)))
-            .and(number_density)
-            .and(&interp_vmr)
-            .and(cross_section.axis_iter(Axis(0)))
-            .par_for_each(|ext_row, num_dens, vmr, xs_row| {
-                Zip::from(ext_row).and(xs_row).for_each(|ext, xs| {
-                    *ext += *num_dens * *vmr * xs;
-                });
+        // Here extinction is (geometry, wavelength), with geometry being the fastest changing index
+        // because of fortran ordering, so we loop this way even though it is not the most natural
+
+        Zip::from(extinction.axis_iter_mut(Axis(1)))
+            .and(cross_section.axis_iter(Axis(1)))
+            .par_for_each(|ext_slice, xs_slice| {
+                // Then loop over the inner dimension
+                Zip::from(ext_slice)
+                    .and(xs_slice)
+                    .and(&interp_vmr)
+                    .and(number_density)
+                    .for_each(|ext, xs, vmr, n| {
+                        *ext += *xs * *vmr * *n;
+                    });
             });
 
         Ok(())
