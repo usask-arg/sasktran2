@@ -70,10 +70,12 @@ class LineAbsorber(OpticalProperty):
     def atmosphere_quantities(self, atmo: Atmosphere, **kwargs) -> OpticalQuantities:
         result = OpticalQuantities(
             extinction=np.zeros(
-                (len(atmo.model_geometry.altitudes()), len(atmo.wavelengths_nm))
+                (len(atmo.model_geometry.altitudes()), len(atmo.wavelengths_nm)),
+                order="F",
             ),
             ssa=np.zeros(
-                (len(atmo.model_geometry.altitudes()), len(atmo.wavelengths_nm))
+                (len(atmo.model_geometry.altitudes()), len(atmo.wavelengths_nm)),
+                order="F",
             ),
         )
 
@@ -84,7 +86,7 @@ class LineAbsorber(OpticalProperty):
             pressure_pa=atmo.pressure_pa,
             num_threads=atmo._config.num_threads,
             **kwargs,
-        ).T
+        )
         return result
 
     def optical_derivatives(self, atmo: Atmosphere, **kwargs) -> dict:  # noqa: ARG002
@@ -176,7 +178,7 @@ class LineAbsorber(OpticalProperty):
             # Line coupling numerics can give very small negative values
             result[result < 0] = 0.0
 
-            return result.T / 1e4
+            return result / 1e4
 
         # else
         # Check if the input is uniform wavenumber grid
@@ -208,7 +210,7 @@ class LineAbsorber(OpticalProperty):
 
             result[:, sidx] = result
 
-            return result.T / 1e4
+            return result / 1e4
 
         voigt_broaden(
             self._line_db.nu.to_numpy(),
@@ -231,7 +233,7 @@ class LineAbsorber(OpticalProperty):
         )
         result[:, sidx] = result
 
-        return result.T / 1e4
+        return result / 1e4
 
     def cross_section_derivatives(
         self, wavelengths_nm: np.array, altitudes_m: np.array, **kwargs  # noqa: ARG002

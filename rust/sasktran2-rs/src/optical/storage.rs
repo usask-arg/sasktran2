@@ -1,9 +1,13 @@
+use ndarray::{IntoDimension, ShapeBuilder};
+
 use crate::prelude::*;
+
 
 pub struct OpticalQuantities {
     pub cross_section: Array2<f64>,
     pub ssa: Array2<f64>,
     pub legendre: Option<Array3<f64>>,
+    pub fortran_ordering: bool,
 }
 
 impl Default for OpticalQuantities {
@@ -12,24 +16,31 @@ impl Default for OpticalQuantities {
             cross_section: Array2::zeros((0, 0)),
             ssa: Array2::zeros((0, 0)),
             legendre: None,
+            fortran_ordering: false,
         }
     }
 }
 
 impl OpticalQuantities {
-    pub fn new(num_geometry: usize, num_wavelengths: usize) -> Self {
+    pub fn new(num_geometry: usize, num_wavelengths: usize, fortran_ordering: bool) -> Self {
         let mut default = Self::default();
+        default.fortran_ordering = fortran_ordering;
         default.resize(num_geometry, num_wavelengths);
 
         default
     }
 
     pub fn resize(&mut self, num_geometry: usize, num_wavelengths: usize) -> &mut Self {
+        let dims = match self.fortran_ordering {
+            true => (num_geometry, num_wavelengths).f(),
+            false => (num_geometry, num_wavelengths).into_dimension().into(),
+        };
+
         if self.cross_section.dim() != (num_geometry, num_wavelengths) {
-            self.cross_section = Array2::zeros((num_geometry, num_wavelengths));
+            self.cross_section = Array2::zeros(dims);
         }
         if self.ssa.dim() != (num_geometry, num_wavelengths) {
-            self.ssa = Array2::zeros((num_geometry, num_wavelengths));
+            self.ssa = Array2::zeros(dims);
         }
 
         self

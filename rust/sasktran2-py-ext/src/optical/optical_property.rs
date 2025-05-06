@@ -120,12 +120,15 @@ impl OpticalProperty for PyOpticalProperty {
 
                 let k = key.extract::<String>().unwrap();
 
+                let fortran_ordering = !cross_section.is_standard_layout();
+
                 d_optical_quantities.insert(
                     k,
                     OpticalQuantities {
                         cross_section: cross_section.into(),
                         ssa: ssa.into(),
                         legendre: None,
+                        fortran_ordering: fortran_ordering
                     },
                 );
             });

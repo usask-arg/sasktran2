@@ -2,6 +2,10 @@
 name = "sasktran2-rs"
 version = "0.1.0"
 edition = "2024"
+build = "build.rs"
+
+[build-dependencies]
+version_check = "*"
 
 [dependencies]
 ndarray = {version = "*", features = ["rayon"] }
@@ -10,3 +14,7 @@ anyhow = "*"
 sasktran2-sys = { version = "*", path = "../sasktran2-sys" }
 rayon = "*"
 libc = "*"
+
+[features]
+nightly = ["simd"]
+simd = []

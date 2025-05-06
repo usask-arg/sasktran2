@@ -1,4 +1,6 @@
 use num::complex::Complex64;
+#[cfg(feature = "simd")]
+use super::super::simd::f64s;
 
 pub const SQRT_PI: f64 = 1.7724538509055160272981674833411;
 
@@ -41,6 +43,7 @@ pub fn w_jpole(z: Complex64) -> Complex64 {
 }
 
 // Assigns the real part of result of the w(z) function to the provided slice, assuming uniform x spacing
+#[cfg(not(feature = "simd"))]
 pub fn w_jpole_real_assign_uniform(
     x_start: f64,
     x_delta: f64,
@@ -121,7 +124,116 @@ pub fn w_jpole_real_assign_uniform(
     }
 }
 
+#[cfg(feature = "simd")]
+pub fn w_jpole_real_assign_uniform(
+    x_start: f64,
+    x_delta: f64,
+    y: f64,
+    scale: f64,
+    result: &mut [f64],
+) {
+    // real parts of the BJ poles
+    const BJ_RE: [f64; 8] = [
+        0.00383968430671409,
+        -0.321597857664957,
+        2.55515264319988,
+        -2.73739446984183,
+        0.00383968430671409,
+        -0.321597857664957,
+        2.55515264319988,
+        -2.73739446984183,
+    ];
+
+    // imaginary parts of the BJ poles
+    const BJ_IM: [f64; 8] = [
+        -0.0119854387180615,
+        -0.218883985607935,
+        0.613958600684469,
+        5.69007914897806,
+        0.0119854387180615,
+        0.218883985607935,
+        -0.613958600684469,
+        -5.69007914897806,
+    ];
+
+    // real parts of the CJ poles
+    const CJ_RE: [f64; 8] = [
+        2.51506776338386,
+        -1.68985621846204,
+        0.981465428659098,
+        -0.322078795578047,
+        -2.51506776338386,
+        1.68985621846204,
+        -0.981465428659098,
+        0.322078795578047,
+    ];
+
+    // imaginary parts of the CJ poles
+    const CJ_IM: [f64; 8] = [
+        -1.60713668042405,
+        -1.66471695485661,
+        -1.70017951305004,
+        -1.71891780447016,
+        -1.60713668042405,
+        -1.66471695485661,
+        -1.70017951305004,
+        -1.71891780447016,
+    ];
+
+    // do this *once* for each distinct y, not per‐x
+    let mut dy = [0.0; 8];
+    let mut dy2 = [0.0; 8];
+    for j in 0..8 {
+        dy[j] = y - CJ_IM[j];
+        dy2[j] = dy[j] * dy[j];
+    }
+
+    const INV_SQRT_PI: f64 = 1.0 / SQRT_PI;
+
+    let lanes = f64s::LEN;
+    let remainder = result.len() % lanes;
+    let chunks = result.chunks_exact_mut(lanes);
+
+    for (i, result) in chunks.enumerate() {
+        let i = i * lanes;
+        let x_start = x_start + i as f64 * x_delta;
+        let x = f64s::splat(x_start) + f64s::splat(x_delta) * f64s::from_slice(&[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
+
+        let mut sum_im = f64s::splat(0.0);
+        for j in 0..8 {
+            let dx = x - f64s::splat(CJ_RE[j]);
+            let den = dx * dx + f64s::splat(dy2[j]);
+            // numerator of complex division
+            let num_im = f64s::splat(BJ_IM[j]) * dx - f64s::splat(BJ_RE[j]) * f64s::splat(dy[j]);
+            sum_im += num_im / den;
+        }
+        // multiply by –i/√π:  (sum_re + i sum_im) * (0 – i)/√π
+        sum_im *= f64s::splat(INV_SQRT_PI * scale);
+        let arr = sum_im.to_array();
+        for j in 0..lanes {
+            result[j] += arr[j];
+        }
+    }
+
+    // Handle the remainder
+    let n = result.len();
+    for i in n - remainder..n {
+        let x = x_start + i as f64 * x_delta;
+        let mut sum_im = 0.0;
+        for j in 0..8 {
+            let dx = x - CJ_RE[j];
+            let den = dx * dx + dy2[j];
+            // numerator of complex division
+            let num_im = BJ_IM[j] * dx - BJ_RE[j] * dy[j];
+            sum_im += num_im / den;
+        }
+        // multiply by –i/√π:  (sum_re + i sum_im) * (0 – i)/√π
+        result[i] += sum_im * INV_SQRT_PI * scale;
+    }
+}
+
 // Assigns the real part of result of the w(z) function to the provided slice.
+#[cfg(not(feature = "simd"))]
 pub fn w_jpole_real_assign(
     wvnum: &[f64],
     c: f64,
@@ -200,6 +312,114 @@ pub fn w_jpole_real_assign(
         }
         // multiply by –i/√π:  (sum_re + i sum_im) * (0 – i)/√π
         *result += sum_im * INV_SQRT_PI * scale;
+    }
+}
+
+
+// Assigns the real part of result of the w(z) function to the provided slice.
+#[cfg(feature = "simd")]
+pub fn w_jpole_real_assign(
+    wvnum: &[f64],
+    c: f64,
+    width: f64,
+    y: f64,
+    scale: f64,
+    result: &mut [f64],
+) {
+    // real parts of the BJ poles
+    const BJ_RE: [f64; 8] = [
+        0.00383968430671409,
+        -0.321597857664957,
+        2.55515264319988,
+        -2.73739446984183,
+        0.00383968430671409,
+        -0.321597857664957,
+        2.55515264319988,
+        -2.73739446984183,
+    ];
+
+    // imaginary parts of the BJ poles
+    const BJ_IM: [f64; 8] = [
+        -0.0119854387180615,
+        -0.218883985607935,
+        0.613958600684469,
+        5.69007914897806,
+        0.0119854387180615,
+        0.218883985607935,
+        -0.613958600684469,
+        -5.69007914897806,
+    ];
+
+    // real parts of the CJ poles
+    const CJ_RE: [f64; 8] = [
+        2.51506776338386,
+        -1.68985621846204,
+        0.981465428659098,
+        -0.322078795578047,
+        -2.51506776338386,
+        1.68985621846204,
+        -0.981465428659098,
+        0.322078795578047,
+    ];
+
+    // imaginary parts of the CJ poles
+    const CJ_IM: [f64; 8] = [
+        -1.60713668042405,
+        -1.66471695485661,
+        -1.70017951305004,
+        -1.71891780447016,
+        -1.60713668042405,
+        -1.66471695485661,
+        -1.70017951305004,
+        -1.71891780447016,
+    ];
+
+    // do this *once* for each distinct y, not per‐x
+    let mut dy = [0.0; 8];
+    let mut dy2 = [0.0; 8];
+    for j in 0..8 {
+        dy[j] = y - CJ_IM[j];
+        dy2[j] = dy[j] * dy[j];
+    }
+
+    const INV_SQRT_PI: f64 = 1.0 / SQRT_PI;
+
+    let lanes = f64s::LEN;
+    let chunks = wvnum.chunks_exact(lanes);
+    let remainder = chunks.remainder();
+
+    // Process the chunks of 4 elements at a time
+    for (wvnum, result) in chunks.zip(result.chunks_exact_mut(lanes)) {
+        let wv = f64s::from_slice(wvnum);
+        let x = (wv - f64s::splat(c)) / f64s::splat(width);
+
+        let mut sum_im = f64s::splat(0.0);
+        for j in 0..8 {
+            let dx = x - f64s::splat(CJ_RE[j]);
+            let den = dx * dx + f64s::splat(dy2[j]);
+            // numerator of complex division
+            let num_im = f64s::splat(BJ_IM[j]) * dx - f64s::splat(BJ_RE[j]) * f64s::splat(dy[j]);
+            sum_im += num_im / den;
+        }
+        sum_im *= f64s::splat(INV_SQRT_PI * scale);
+        let arr = sum_im.to_array();
+        for i in 0..lanes {
+            result[i] += arr[i];
+        }
+    }
+    let n = wvnum.len();
+    for i in n-remainder.len()..n {
+        let x = (wvnum[i] - c) / width;
+        let mut sum_im = 0.0;
+        for j in 0..8 {
+            let dx = x - CJ_RE[j];
+            let den = dx * dx + dy2[j];
+            // numerator of complex division
+            let num_im = BJ_IM[j] * dx - BJ_RE[j] * dy[j];
+            sum_im += num_im / den;
+        }
+        // multiply by –i/√π:  (sum_re + i sum_im) * (0 – i)/√π
+        result[i] += sum_im * INV_SQRT_PI * scale;
     }
 }
 
