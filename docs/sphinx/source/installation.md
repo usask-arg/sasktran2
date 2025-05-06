@@ -13,13 +13,14 @@ Packages are also provided on `conda-forge`
 
 
 ```{note}
-Python 3.10 support for SASKTRAN2 was dropped in 2025.01.0
+Python 3.10 support for conda-forge SASKTRAN2 was dropped in 2025.01.0
 ```
 
 
 # Supported Platforms
 |   | macOS Intel | macOS Apple Silicon | Windows 64bit | manylinux x86_64 | manylinux aarch64 |
 |---------------|----|-----|-----|-----|-----|
+| Pypi CPython 3.10  | ✅ | ✅  | ✅  | ✅  | ✅  |
 | Pypi CPython 3.11  | ✅ | ✅  | ✅  | ✅  | ✅  |
 | Pypi CPython 3.12  | ✅ | ✅  | ✅  | ✅  | ✅  |
 | Pypi CPython 3.13  | ✅ | ✅  | ✅  | ✅  | ✅  |

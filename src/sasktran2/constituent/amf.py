@@ -39,5 +39,6 @@ class AirMassFactor(Constituent):
             / atmo.storage.total_extinction
         )
         deriv_mapping.log_radiance_space = True
+        deriv_mapping.interp_dim = "altitude"
 
         return derivs

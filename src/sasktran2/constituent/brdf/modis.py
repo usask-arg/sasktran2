@@ -6,8 +6,7 @@ from sasktran2.atmosphere import Atmosphere
 
 from ..base import Constituent
 from . import (
-    MODISStokes_1,
-    MODISStokes_3,
+    PyMODIS,
     WavelengthInterpolatorMixin,
 )
 
@@ -78,7 +77,7 @@ class MODIS(Constituent, WavelengthInterpolatorMixin):
             msg = "Atmosphere must have wavelengths defined before using MODIS"
             raise ValueError(msg)
 
-        atmo.surface.brdf = MODISStokes_1() if atmo.nstokes == 1 else MODISStokes_3()
+        atmo.surface.brdf = PyMODIS(atmo.nstokes)
 
         interp_matrix = self._interpolating_matrix(atmo)
         atmo.surface.brdf_args[0, :] = interp_matrix @ self._iso

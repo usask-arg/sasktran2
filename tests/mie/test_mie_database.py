@@ -5,13 +5,15 @@ import sasktran2 as sk
 
 
 def test_mie_simple_database():
-    _ = sk.database.MieDatabase(
+    db = sk.database.MieDatabase(
         sk.mie.distribution.LogNormalDistribution(),
         sk.mie.refractive.H2SO4(),
         np.array([532, 1020]),
         median_radius=np.array([100, 200]),
         mode_width=np.array([1.5, 1.6, 1.7]),
     )
+
+    _ = db.load_ds()
 
 
 def test_mie_db_in_engine():
@@ -63,6 +65,118 @@ def test_mie_db_in_engine():
         altitudes_m=model_geometry.altitudes(),
         extinction_per_m=aero_ext,
         extinction_wavelength_nm=745,
+    )
+
+    engine = sk.Engine(config, model_geometry, viewing_geo)
+    _ = engine.calculate_radiance(atmosphere)
+
+
+def test_mie_db_in_engine_variable_psize():
+    config = sk.Config()
+
+    model_geometry = sk.Geometry1D(
+        cos_sza=0.6,
+        solar_azimuth=0,
+        earth_radius_m=6372000,
+        altitude_grid_m=np.arange(0, 65001, 1000),
+        interpolation_method=sk.InterpolationMethod.LinearInterpolation,
+        geometry_type=sk.GeometryType.Spherical,
+    )
+
+    viewing_geo = sk.ViewingGeometry()
+
+    for alt in [10000, 20000, 30000, 40000]:
+        ray = sk.TangentAltitudeSolar(
+            tangent_altitude_m=alt,
+            relative_azimuth=0,
+            observer_altitude_m=200000,
+            cos_sza=0.6,
+        )
+        viewing_geo.add_ray(ray)
+
+    wavel = np.arange(280.0, 800.0, 0.1)
+    atmosphere = sk.Atmosphere(model_geometry, config, wavelengths_nm=wavel)
+
+    sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
+
+    atmosphere["rayleigh"] = sk.constituent.Rayleigh()
+    atmosphere["ozone"] = sk.climatology.mipas.constituent("O3", sk.optical.O3DBM())
+    atmosphere["no2"] = sk.climatology.mipas.constituent(
+        "NO2", sk.optical.NO2Vandaele()
+    )
+
+    mie_db = sk.database.MieDatabase(
+        sk.mie.distribution.LogNormalDistribution().freeze(mode_width=1.6),
+        median_radius=np.array([80, 100, 200]),
+        refractive_index=sk.mie.refractive.H2SO4(),
+        wavelengths_nm=np.arange(270, 1000, 50.0),
+    )
+
+    aero_ext = np.zeros(len(model_geometry.altitudes()))
+    aero_ext[0:30] = 1e-7
+    atmosphere["aerosol"] = sk.constituent.ExtinctionScatterer(
+        mie_db,
+        altitudes_m=model_geometry.altitudes(),
+        extinction_per_m=aero_ext,
+        extinction_wavelength_nm=745,
+        median_radius=np.ones_like(model_geometry.altitudes()) * 80.0,
+    )
+
+    engine = sk.Engine(config, model_geometry, viewing_geo)
+    _ = engine.calculate_radiance(atmosphere)
+
+
+def test_mie_db_in_engine_multivar_variable_psize():
+    config = sk.Config()
+
+    model_geometry = sk.Geometry1D(
+        cos_sza=0.6,
+        solar_azimuth=0,
+        earth_radius_m=6372000,
+        altitude_grid_m=np.arange(0, 65001, 1000),
+        interpolation_method=sk.InterpolationMethod.LinearInterpolation,
+        geometry_type=sk.GeometryType.Spherical,
+    )
+
+    viewing_geo = sk.ViewingGeometry()
+
+    for alt in [10000, 20000, 30000, 40000]:
+        ray = sk.TangentAltitudeSolar(
+            tangent_altitude_m=alt,
+            relative_azimuth=0,
+            observer_altitude_m=200000,
+            cos_sza=0.6,
+        )
+        viewing_geo.add_ray(ray)
+
+    wavel = np.arange(280.0, 800.0, 0.1)
+    atmosphere = sk.Atmosphere(model_geometry, config, wavelengths_nm=wavel)
+
+    sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
+
+    atmosphere["rayleigh"] = sk.constituent.Rayleigh()
+    atmosphere["ozone"] = sk.climatology.mipas.constituent("O3", sk.optical.O3DBM())
+    atmosphere["no2"] = sk.climatology.mipas.constituent(
+        "NO2", sk.optical.NO2Vandaele()
+    )
+
+    mie_db = sk.database.MieDatabase(
+        sk.mie.distribution.LogNormalDistribution(),
+        median_radius=np.array([80, 100, 200]),
+        mode_width=np.array([1.6, 1.7, 1.8]),
+        refractive_index=sk.mie.refractive.H2SO4(),
+        wavelengths_nm=np.arange(270, 1000, 50.0),
+    )
+
+    aero_ext = np.zeros(len(model_geometry.altitudes()))
+    aero_ext[0:30] = 1e-7
+    atmosphere["aerosol"] = sk.constituent.ExtinctionScatterer(
+        mie_db,
+        altitudes_m=model_geometry.altitudes(),
+        extinction_per_m=aero_ext,
+        extinction_wavelength_nm=745,
+        median_radius=np.ones_like(model_geometry.altitudes()) * 80.0,
+        mode_width=np.ones_like(model_geometry.altitudes()) * 1.6,
     )
 
     engine = sk.Engine(config, model_geometry, viewing_geo)

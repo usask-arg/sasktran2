@@ -1,15 +1,37 @@
 from __future__ import annotations
 
+import numpy as np
+import xarray as xr
+
 import sasktran2 as sk
+from sasktran2._core_rust import PyEngine
 from sasktran2.viewinggeo.base import ViewingGeometryContainer
 
 
+def map_surface_derivative(
+    mapping, np_deriv: np.ndarray, dims: list[str]
+) -> xr.DataArray:
+    if mapping.interpolator is None or len(mapping.interpolator) == 0:
+        return xr.DataArray(np_deriv, dims=dims)
+    return xr.DataArray(
+        np.einsum(
+            "ijk, il->lijk",
+            np_deriv,
+            mapping.interpolator,
+            optimize=True,
+        ),
+        dims=[mapping.interp_dim, *dims],
+    )
+
+
 class Engine:
+    _engine: PyEngine
+
     def __init__(
         self,
         config: sk.Config,
-        model_geometry: sk.Geometry1D,
-        viewing_geo: sk.ViewingGeometry,
+        geometry: sk.Geometry1D,
+        viewing_geometry: sk.ViewingGeometry,
     ):
         """
         An Engine is the main class that handles the radiative transfer calculation.  The calculation takes
@@ -31,56 +53,71 @@ class Engine:
         viewing_geo : sk.ViewingGeometry
             Viewing geometry
         """
-        self._nstokes = config.num_stokes
+        self._engine = PyEngine(
+            config._config, geometry._geometry, viewing_geometry._viewing_geometry
+        )
         self._config = config
+        self._geometry = geometry
+        self._viewing_geometry = viewing_geometry
 
-        if self._nstokes == 1:
-            self._engine = sk.EngineStokes_1(config, model_geometry, viewing_geo)
-        elif self._nstokes == 3:
-            self._engine = sk.EngineStokes_3(config, model_geometry, viewing_geo)
-
-        self._model_geometry = model_geometry
-        self._viewing_geometry = viewing_geo
-
-    def calculate_radiance(self, atmosphere: sk.Atmosphere, output: sk.Output = None):
+    def calculate_radiance(self, atmosphere: sk.Atmosphere) -> xr.Dataset:
         """
         Performs the radiative transfer calculation for a given atmosphere
 
         Parameters
         ----------
         atmosphere : sk.Atmosphere
-            _description_
-        output : sk.Output, optional
-            Optional abstract output type.  Can be specified to change the
-            output format. If set to None, the default :py:class:`sasktran2.OutputIdeal` class
-            is used, by default None
+            The atmosphere object containing the atmospheric profile and constituents
 
         Returns
         -------
-        varies
-            Exact return type depends upon what output is set to.  For the default
-            :py:class:`sasktran2.OutputIdeal`, the output format is an `xarray` Dataset.
-            See for example, :py:meth:`sasktran2.OutputIdeal.post_process`
+        xr.Dataset
+            An xarray dataset containing the radiance and derivatives
         """
-        engine_output = (
-            sk.OutputDerivMapped(self._nstokes) if output is None else output
+        output = self._engine.calculate_radiance(atmosphere.internal_object())
+
+        out_ds = xr.Dataset()
+
+        out_ds["radiance"] = xr.DataArray(
+            output.radiance,
+            dims=["wavelength", "los", "stokes"],
         )
 
-        self._engine.calculate_radiance(
-            atmosphere.internal_object(), engine_output.internal_output()
-        )
+        if atmosphere.wavelengths_nm is not None:
+            out_ds.coords["wavelength"] = atmosphere.wavelengths_nm
 
-        result = engine_output.post_process(
-            atmosphere, self._model_geometry, self._viewing_geometry
-        )
+        out_ds.coords["stokes"] = ["I", "Q", "U", "V"][: len(out_ds.stokes)]
+
+        for k, v in output.d_radiance.items():
+            mapping = atmosphere.storage.get_derivative_mapping(k)
+
+            name = k if mapping.assign_name == "" else mapping.assign_name
+
+            if name in out_ds:
+                out_ds[name] += v
+            else:
+                out_ds[name] = xr.DataArray(
+                    v,
+                    dims=[mapping.interp_dim, "wavelength", "los", "stokes"],
+                )
+        for k, v in output.d_radiance_surf.items():
+            mapping = atmosphere.surface.get_derivative_mapping(k)
+
+            mapped_derivative = map_surface_derivative(
+                mapping, v, ["wavelength", "los", "stokes"]
+            )
+            if mapping.interp_dim == "dummy":
+                mapped_derivative = mapped_derivative.isel(**{mapping.interp_dim: 0})
+            out_ds[k] = mapped_derivative
 
         if isinstance(self._viewing_geometry, ViewingGeometryContainer):
-            result = self._viewing_geometry.add_geometry_to_radiance(result)
+            out_ds = self._viewing_geometry.add_geometry_to_radiance(out_ds)
 
         if self._config.output_los_optical_depth:
-            result["optical_depth"] = (
-                ["wavelength", "los"],
-                engine_output.internal_output().los_optical_depth,
+            los_od = output.los_optical_depth
+            out_ds["los_optical_depth"] = xr.DataArray(
+                los_od,
+                dims=["wavelength", "los"],
             )
 
-        return result
+        return out_ds

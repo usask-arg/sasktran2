@@ -100,10 +100,10 @@ class RayleighReference(Constituent):
 
         self._ray_ext = np.outer(num_dens, scattering_xs)
         # Start by adding in the extinction
-        atmo.storage.total_extinction += self._ray_ext
+        atmo.storage.total_extinction[:] += self._ray_ext
 
         # SSA temporarily stores the scattering extinction
-        atmo.storage.ssa += self._ray_ext
+        atmo.storage.ssa[:] += self._ray_ext
 
         atmo.leg_coeff.a1[0] += self._ray_ext
         atmo.leg_coeff.a1[2] += (

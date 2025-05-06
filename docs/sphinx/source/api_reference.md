@@ -16,9 +16,6 @@
 [Optical Properties](api/optical.md)
 : The optical properties in `sasktran2.optical.*`
 
-[Output](api/output.rst)
-: Information on the available output formats
-
 [Viewing Geometry](api/viewing_geometry.rst)
 : Classes related to the viewing geometry construction
 

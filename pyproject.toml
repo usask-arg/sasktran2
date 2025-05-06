@@ -1,6 +1,6 @@
 [build-system]
-requires = ["scikit-build-core>=0.3.3", "pybind11", "setuptools-scm>=8.0", "cmake<3.30 ; platform_system=='Darwin'"]
-build-backend = "scikit_build_core.build"
+requires = ["maturin>=1.0,<2.0", "setuptools-scm>=8.0", "cmake<3.30 ; platform_system=='Darwin'"]
+build-backend = "maturin"
 
 
 [project]
@@ -18,6 +18,7 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -50,7 +51,7 @@ build = { cmd = [
 test = { cmd = "pytest tests/", cwd = "." }
 pre-commit = { cmd = "pre-commit run -a", cwd = "." }
 docs = { cmd = "sphinx-build -b html docs/sphinx/source docs/sphinx/build", cwd = "." }
-update-stubs = { cmd = "pybind11-stubgen sasktran2._core -o src/", cwd = "." }
+readthedocs = { cmd = "rm -rf $READTHEDOCS_OUTPUT/html && cp -r docs/sphinx/build/ $READTHEDOCS_OUTPUT/html", depends-on = ["docs"] }
 
 
 [tool.pixi.dependencies]
@@ -72,32 +73,23 @@ spdlog = "*"
 c-compiler = "*"
 cxx-compiler = "*"
 fortran-compiler = "*"
-scikit-build-core = "*"
+maturin = "*"
 cmake = "*"
 pip = "*"
 setuptools_scm = "*"
-pybind11 = "*"
 matplotlib = "*"
-pybind11-stubgen = "*"
 pre-commit = "*"
 seaborn = ">=0.13.2,<0.14"
 
 [tool.pixi.environments]
 default = ["test", "solar", "hapi", "dev"]
 
-
-[tool.scikit-build]
-wheel.expand-macos-universal-tags = true
-metadata.version.provider = "scikit_build_core.metadata.setuptools_scm"
-sdist.include = ["src/sasktran2/_version.py"]
-
-[tool.scikit-build.cmake.define]
-DO_STREAM_TEMPLATES = {env="DO_STREAM_TEMPLATES", default="OFF"}
-SKTRAN_BLAS_VENDOR = {env="SKTRAN_BLAS_VENDOR", default="OpenBLAS"}
-INCLUDE_TRACY = {env="INCLUDE_TRACY", default="OFF"}
-
-[tool.setuptools_scm]
-write_to = "src/sasktran2/_version.py"
+[tool.maturin]
+features = ["pyo3/extension-module"]
+manifest-path = "rust/sasktran2-py-ext/Cargo.toml"
+python-source = "src"
+python-packages = ["sasktran2"]
+module-name = "sasktran2._core_rust"
 
 
 [tool.pytest.ini_options]

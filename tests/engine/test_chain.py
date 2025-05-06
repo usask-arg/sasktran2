@@ -13,7 +13,7 @@ def test_scalar_full_chain():
         cos_sza=0.6,
         solar_azimuth=0,
         earth_radius_m=6372000,
-        altitude_grid_m=np.arange(0, 65001, 1000),
+        altitude_grid_m=np.arange(0, 65001, 1000.0),
         interpolation_method=sk.InterpolationMethod.LinearInterpolation,
         geometry_type=sk.GeometryType.Spherical,
     )
@@ -57,7 +57,7 @@ def test_vector_full_chain():
         cos_sza=0.6,
         solar_azimuth=0,
         earth_radius_m=6372000,
-        altitude_grid_m=np.arange(0, 65001, 1000),
+        altitude_grid_m=np.arange(0, 65001, 1000.0),
         interpolation_method=sk.InterpolationMethod.LinearInterpolation,
         geometry_type=sk.GeometryType.Spherical,
     )

@@ -114,6 +114,8 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
             self._generate_sasktran2()
         elif self._backend == "sasktran2_cpp":
             self._generate_sasktran2_cpp()
+        elif self._backend == "sasktran2_rust":
+            self._generate_sasktran2_rust()
         else:
             msg = f"Invalid backend {self._backend}"
             raise ValueError(msg)
@@ -332,8 +334,12 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
 
             # Have to do a multi-index unstack
             ds = ds.unstack("distribution")
+
         elif len(self._kwargs) == 1:
             ds = ds.rename_dims({"distribution": next(iter(self._kwargs.keys()))})
+            ds = ds.drop_vars("distribution")
+            for k, v in self._kwargs.items():
+                ds.coords[k] = v
         else:
             # length is 0
             ds = ds.isel(distribution=0)
