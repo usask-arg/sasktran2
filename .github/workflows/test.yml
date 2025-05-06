@@ -162,7 +162,7 @@ jobs:
           submodules: true
 
       - name: setup pixi
-        uses: prefix-dev/setup-pixi@v0.8.3
+        uses: prefix-dev/setup-pixi@v0.8.8
 
       - name: compile sasktran2
         env:
