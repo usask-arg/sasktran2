@@ -26,6 +26,9 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<optical::xsec_dbase::AbsorberDatabaseDim2>()?;
     m.add_class::<optical::xsec_dbase::AbsorberDatabaseDim3>()?;
 
+    // Optical properties
+    m.add_class::<optical::line_absorber::PyLineAbsorber>()?;
+
     // Optical quantity wrappers
     m.add_class::<optical::optical_quantities::PyOpticalQuantities>()?;
 

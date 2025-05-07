@@ -160,7 +160,7 @@ def _read_line_file_py(file_path: Path) -> xr.Dataset:
                 record[k] = cast(raw)
 
             # Check if we need to read the line-coupling parameters
-            if record["reference"][-2:] == "-1":
+            if record["reference"][-2:-1] == "-":
                 lc = next(f)  # read the next line
                 record["Y_200"] = float(lc[3:15])
                 record["G_200"] = float(lc[15:26])
