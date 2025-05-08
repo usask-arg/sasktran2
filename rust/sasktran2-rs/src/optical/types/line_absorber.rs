@@ -572,7 +572,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(xs.shape(), &[2, 7]);
+        assert_eq!(xs.shape(), &[2, 11]);
     }
 
     #[test]
