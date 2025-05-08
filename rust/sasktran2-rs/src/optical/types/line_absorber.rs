@@ -1,13 +1,20 @@
+use crate::interpolation::OutOfBoundsMode;
 use crate::interpolation::grid1d::Grid1DView;
+use crate::interpolation::linear::Interp1;
 use crate::prelude::*;
 
-use crate::math::errorfunctions::optimized::w_jpole_real_assign;
+use crate::math::errorfunctions::optimized::{w_jpole_assign, w_jpole_real_assign};
 use crate::optical::line::{AdjustedLineParameters, OpticalLine, OpticalLineDB};
 use crate::optical::traits::*;
+use crate::util::argsort_f64;
+
+#[cfg(feature = "simd")]
+use crate::math::simd::*;
 
 const SQRT_PI: f64 = 1.7724538509055160272981674833411;
 
 #[inline(always)]
+#[cfg(not(feature = "simd"))]
 fn lorentzian_assign(
     wvnum: &[f64],
     line_center: f64,
@@ -24,6 +31,42 @@ fn lorentzian_assign(
 }
 
 #[inline(always)]
+#[cfg(feature = "simd")]
+fn lorentzian_assign(
+    wvnum: &[f64],
+    line_center: f64,
+    doppler_width: f64,
+    y: f64,
+    scale: f64,
+    xs: &mut [f64],
+) {
+    let scale_s = f64s::splat(scale * y / SQRT_PI);
+    let lanes = f64s::LEN;
+
+    let wvnum_chunks = wvnum.chunks_exact(lanes);
+    let ys = f64s::splat(y);
+    let ys_sqr = ys * ys;
+    let remainder = wvnum_chunks.remainder();
+
+    for (wv, xs) in wvnum_chunks.zip(xs.chunks_exact_mut(lanes)) {
+        let x = (f64s::from_slice(wv) - f64s::splat(line_center)) / f64s::splat(doppler_width);
+        let denom = x * x + ys_sqr;
+
+        let result = f64s::from_slice(xs) + scale_s / denom;
+        xs.copy_from_slice(&result.to_array());
+    }
+
+    let n = wvnum.len();
+
+    for i in n - remainder.len()..n {
+        let x = (wvnum[i] - line_center) / doppler_width;
+        let denom = x * x + y * y;
+        xs[i] += scale * y / SQRT_PI / denom;
+    }
+}
+
+#[inline(always)]
+#[cfg(not(feature = "simd"))]
 fn gaussian_assign(
     wvnum: &[f64],
     line_center: f64,
@@ -39,11 +82,49 @@ fn gaussian_assign(
 }
 
 #[inline(always)]
+#[cfg(feature = "simd")]
+fn gaussian_assign(
+    wvnum: &[f64],
+    line_center: f64,
+    doppler_width: f64,
+    _y: f64,
+    scale: f64,
+    xs: &mut [f64],
+) {
+    let scale_s = f64s::splat(scale);
+    let lanes = f64s::LEN;
+
+    let wvnum_chunks = wvnum.chunks_exact(lanes);
+    let remainder = wvnum_chunks.remainder();
+
+    for (wv, xs) in wvnum_chunks.zip(xs.chunks_exact_mut(lanes)) {
+        let x = (f64s::from_slice(wv) - f64s::splat(line_center)) / f64s::splat(doppler_width);
+        let result = f64s::from_slice(xs) + scale_s * <f64s as std::simd::StdFloat>::exp(-x * x);
+        xs.copy_from_slice(&result.to_array());
+    }
+
+    let n = wvnum.len();
+
+    for i in n - remainder.len()..n {
+        let x = (wvnum[i] - line_center) / doppler_width;
+        let x = (-x * x).exp();
+        xs[i] += scale * x;
+    }
+}
+
+#[inline(always)]
 fn split_and_assign(
     adjusted_line: &AdjustedLineParameters,
     wavenumber_cminv: &Grid1DView,
     xs: &mut [f64],
 ) {
+    const EPSILON: f64 = 1.0e-4;
+    let n = wavenumber_cminv.x.len();
+
+    if n == 0 {
+        return;
+    }
+
     if 2.84 * adjusted_line.y * adjusted_line.y > 1.52 / EPSILON {
         lorentzian_assign(
             &wavenumber_cminv.x,
@@ -56,7 +137,7 @@ fn split_and_assign(
         return;
     }
 
-    let max_x = wavenumber_cminv.x[wavenumber_cminv.x.len() - 1];
+    let max_x = wavenumber_cminv.x[n - 1];
     let min_x = wavenumber_cminv.x[0];
 
     let max_abs_x = max_x.abs().max(min_x.abs());
@@ -73,12 +154,16 @@ fn split_and_assign(
         return;
     }
 
-    const EPSILON: f64 = 1.0e-4;
-
     let split_x = (1.52 / EPSILON - 2.84 * adjusted_line.y * adjusted_line.y).sqrt();
 
-    let left = wavenumber_cminv.lower_bound(-split_x);
-    let right = wavenumber_cminv.lower_bound(split_x);
+    // Convert to wvnum,
+    let split_x = split_x * adjusted_line.doppler_width;
+
+    let left = wavenumber_cminv.lower_bound(adjusted_line.line_center - split_x);
+    let right = wavenumber_cminv.lower_bound(adjusted_line.line_center + split_x);
+
+    let left = left.min(n);
+    let right = right.min(n);
 
     lorentzian_assign(
         &wavenumber_cminv.x[0..left],
@@ -89,14 +174,9 @@ fn split_and_assign(
         &mut xs[0..left],
     );
 
-    lorentzian_assign(
-        &wavenumber_cminv.x[right..],
-        adjusted_line.line_center,
-        adjusted_line.doppler_width,
-        adjusted_line.y,
-        adjusted_line.line_intensity_re,
-        &mut xs[right..],
-    );
+    if left == n {
+        return;
+    }
 
     w_jpole_real_assign(
         &wavenumber_cminv.x[left..right],
@@ -105,6 +185,19 @@ fn split_and_assign(
         adjusted_line.y,
         adjusted_line.line_intensity_re,
         &mut xs[left..right],
+    );
+
+    if right == wavenumber_cminv.x.len() {
+        return;
+    }
+
+    lorentzian_assign(
+        &wavenumber_cminv.x[right..n],
+        adjusted_line.line_center,
+        adjusted_line.doppler_width,
+        adjusted_line.y,
+        adjusted_line.line_intensity_re,
+        &mut xs[right..n],
     );
 }
 
@@ -126,6 +219,7 @@ pub struct LineAbsorber {
     line_contribution_width: f64,
     cull_factor: f64,
     subtract_pedestal: bool,
+    enable_line_coupling: bool,
     partition_generator: Option<Box<dyn PartitionFactor>>,
     mol_mass_generator: Option<Box<dyn MolecularMass>>,
 }
@@ -137,6 +231,7 @@ impl LineAbsorber {
             line_contribution_width: 25.0,
             cull_factor: 0.0,
             subtract_pedestal: false,
+            enable_line_coupling: false,
             partition_generator: None,
             mol_mass_generator: None,
         }
@@ -170,6 +265,11 @@ impl LineAbsorber {
         mol_mass_generator: Box<dyn MolecularMass>,
     ) -> Self {
         self.mol_mass_generator = Some(mol_mass_generator);
+        self
+    }
+
+    pub fn with_line_coupling(mut self, enable_line_coupling: bool) -> Self {
+        self.enable_line_coupling = enable_line_coupling;
         self
     }
 
@@ -237,16 +337,21 @@ impl LineAbsorber {
         const K_B: f64 = 1.38064852e-16;
         let max_p_self = pself.iter().copied().fold(0.0, f64::max);
         let max_p_self = match max_p_self {
-            0.0 => 1.0,
+            0.0 => 101325.0,
             _ => max_p_self,
         };
 
-        let wavenumber_grid = Grid1DView::new(wavenumber_cminv.as_slice().unwrap());
+        let enabling_line_coupling = self.enable_line_coupling;
+
+        let mut sorted_wvnum = wavenumber_cminv.as_slice().unwrap().to_owned();
+        sorted_wvnum.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+        let wavenumber_grid = Grid1DView::new(sorted_wvnum.as_slice());
 
         let mut xs = Array2::zeros((temperature.len(), wavenumber_cminv.len()));
 
-        let min_wvnum = wavenumber_cminv[0];
-        let max_wvnum = wavenumber_cminv[wavenumber_cminv.len() - 1];
+        let min_wvnum = sorted_wvnum[0];
+        let max_wvnum = sorted_wvnum[sorted_wvnum.len() - 1];
 
         let n_wavenumber = wavenumber_cminv.len();
 
@@ -258,24 +363,26 @@ impl LineAbsorber {
         let map = self.gen_mol_param(line_slice, temperature.as_slice().unwrap())?;
 
         for line in line_slice.iter() {
-            if line.line_intensity * 101325.0 * max_p_self / (K_B * 1e-7 * 296.0) < self.cull_factor
-            {
+            if line.line_intensity * max_p_self / (K_B * 1e-7 * 296.0) < self.cull_factor {
                 continue;
             }
 
             while start_wavenumber_idx < n_wavenumber
-                && wavenumber_cminv[start_wavenumber_idx]
+                && sorted_wvnum[start_wavenumber_idx]
                     < line.line_center - self.line_contribution_width
             {
                 start_wavenumber_idx += 1;
             }
 
             while end_wavenumber_idx < n_wavenumber
-                && wavenumber_cminv[end_wavenumber_idx]
+                && sorted_wvnum[end_wavenumber_idx]
                     < line.line_center + self.line_contribution_width
             {
                 end_wavenumber_idx += 1;
             }
+
+            let start_wavenumber_idx = start_wavenumber_idx.min(n_wavenumber - 1);
+            let end_wavenumber_idx = end_wavenumber_idx.min(n_wavenumber - 1);
 
             if start_wavenumber_idx == end_wavenumber_idx {
                 continue;
@@ -300,17 +407,65 @@ impl LineAbsorber {
                         )
                         .unwrap();
 
-                    split_and_assign(
-                        &adjusted_line,
-                        &sub_grid,
-                        xs.slice_mut(ndarray::s![start_wavenumber_idx..end_wavenumber_idx])
-                            .as_slice_mut()
-                            .unwrap(),
-                    );
+                    if !enabling_line_coupling || line.y_coupling.is_empty() {
+                        split_and_assign(
+                            &adjusted_line,
+                            &sub_grid,
+                            xs.slice_mut(ndarray::s![start_wavenumber_idx..end_wavenumber_idx])
+                                .as_slice_mut()
+                                .unwrap(),
+                        );
+                    } else {
+                        // Have to do line coupling
+                        // Interp the coupling values
+                        let temp_val = Array1::<f64>::from_vec(line.coupling_temperature.clone());
+                        let y_coupling = Array1::<f64>::from_vec(line.y_coupling.clone());
+                        let g_coupling = Array1::<f64>::from_vec(line.g_coupling.clone());
+
+                        let y_coupling =
+                            y_coupling.interp1(&temp_val, temperature, OutOfBoundsMode::Extend);
+                        let g_coupling =
+                            g_coupling.interp1(&temp_val, temperature, OutOfBoundsMode::Extend);
+
+                        let p_norm = pressure / 101325.0;
+
+                        let scale_re =
+                            adjusted_line.line_intensity_re * (1.0 + p_norm * p_norm * g_coupling);
+                        let scale_im = adjusted_line.line_intensity_re * (-p_norm * y_coupling);
+
+                        //let scale_re = adjusted_line.line_intensity_re;
+                        //let scale_im = adjusted_line.line_intensity_im;
+
+                        // Use the full faddeeva function
+                        w_jpole_assign(
+                            sub_grid.x,
+                            adjusted_line.line_center,
+                            adjusted_line.doppler_width,
+                            adjusted_line.y,
+                            scale_re,
+                            scale_im,
+                            xs.slice_mut(ndarray::s![start_wavenumber_idx..end_wavenumber_idx])
+                                .as_slice_mut()
+                                .unwrap(),
+                        );
+                    }
                 });
         }
 
-        Ok(xs)
+        if wavenumber_cminv.as_slice().unwrap().is_sorted() {
+            return Ok(xs);
+        } else {
+            // Have to sort the output
+            let sort_idx = argsort_f64(wavenumber_cminv.as_slice().unwrap());
+
+            let mut xs_sorted = Array2::zeros((temperature.len(), n_wavenumber));
+            for i in 0..temperature.len() {
+                for j in 0..n_wavenumber {
+                    xs_sorted[[i, j]] = xs[[i, sort_idx[j]]];
+                }
+            }
+            return Ok(xs_sorted);
+        }
     }
 }
 
@@ -318,7 +473,7 @@ impl OpticalProperty for LineAbsorber {
     fn optical_quantities_emplace(
         &self,
         inputs: &dyn crate::atmosphere::StorageInputs,
-        _aux_inputs: &dyn AuxOpticalInputs,
+        aux_inputs: &dyn AuxOpticalInputs,
         optical_quantities: &mut crate::optical::storage::OpticalQuantities,
     ) -> Result<()> {
         let wavenumber_cminv = inputs
@@ -333,7 +488,17 @@ impl OpticalProperty for LineAbsorber {
             .pressure_pa()
             .ok_or(anyhow::anyhow!("Pressure not found in inputs"))?;
 
-        let pself = Array1::zeros(temperature.len());
+        let mut pself = Array1::zeros(temperature.len());
+
+        if let Some(vmr) = aux_inputs.get_parameter("vmr") {
+            pself.assign(&vmr.view());
+
+            Zip::from(&mut pself)
+                .and(pressure)
+                .for_each(|pself, pressure| {
+                    *pself *= pressure;
+                });
+        }
 
         optical_quantities.cross_section =
             self.cross_section(wavenumber_cminv, temperature, pressure, pself.view())?;
@@ -391,7 +556,40 @@ mod tests {
             .with_partition_generator(Box::new(partition_factor))
             .with_molecular_mass_generator(Box::new(mol_mass));
 
-        let wavenumber_cminv = array![200.0, 1500.0, 2000.0];
+        let wavenumber_cminv = array![
+            200.0, 470.0, 470.1, 470.2, 470.3, 471.9, 472.0, 472.1, 474.0, 1500.0, 2000.0
+        ];
+        let temperature = array![296.0, 300.0];
+        let pressure = array![101325.0, 10.0];
+        let pself = array![0.0, 0.0];
+
+        let xs = line_absorber
+            .cross_section(
+                wavenumber_cminv.view(),
+                temperature.view(),
+                pressure.view(),
+                pself.view(),
+            )
+            .unwrap();
+
+        assert_eq!(xs.shape(), &[2, 7]);
+    }
+
+    #[test]
+    fn test_cross_section_unsorted() {
+        let o2_file = PathBuf::from("../../tests/data/02_CO2");
+
+        let line_absorber = LineAbsorber::new(read_aer_line_file(o2_file).unwrap());
+
+        let partition_factor = MockPartitionFactor {
+            partition_factor: 1.0,
+        };
+        let mol_mass = MockMolecularMass { mol_mass: 44.01 };
+        let line_absorber = line_absorber
+            .with_partition_generator(Box::new(partition_factor))
+            .with_molecular_mass_generator(Box::new(mol_mass));
+
+        let wavenumber_cminv = array![2000.0, 1500.0, 200.0];
         let temperature = array![296.0, 300.0];
         let pressure = array![101325.0, 101325.0];
         let pself = array![0.0, 0.0];
@@ -406,5 +604,48 @@ mod tests {
             .unwrap();
 
         assert_eq!(xs.shape(), &[2, 3]);
+
+        // REdo the test with sorted wavenumbers
+        let wavenumber_cminv = array![200.0, 1500.0, 2000.0];
+        let xs_sorted = line_absorber
+            .cross_section(
+                wavenumber_cminv.view(),
+                temperature.view(),
+                pressure.view(),
+                pself.view(),
+            )
+            .unwrap();
+        assert_eq!(xs_sorted.shape(), &[2, 3]);
+        assert_eq!(xs, xs_sorted);
+    }
+
+    #[test]
+    fn test_line_coupling_enabled() {
+        let o2_file = PathBuf::from("../../tests/data/02_CO2");
+
+        let line_absorber = LineAbsorber::new(read_aer_line_file(o2_file).unwrap());
+
+        let partition_factor = MockPartitionFactor {
+            partition_factor: 1.0,
+        };
+        let mol_mass = MockMolecularMass { mol_mass: 44.01 };
+        let line_absorber = line_absorber
+            .with_partition_generator(Box::new(partition_factor))
+            .with_molecular_mass_generator(Box::new(mol_mass))
+            .with_line_coupling(true);
+
+        let wavenumber_cminv = array![200.0, 472.0, 1500.0, 2000.0];
+        let temperature = array![296.0, 300.0];
+        let pressure = array![101325.0, 101325.0];
+        let pself = array![0.0, 0.0];
+
+        let xs = line_absorber
+            .cross_section(
+                wavenumber_cminv.view(),
+                temperature.view(),
+                pressure.view(),
+                pself.view(),
+            )
+            .unwrap();
     }
 }

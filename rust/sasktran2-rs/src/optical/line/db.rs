@@ -47,6 +47,7 @@ impl OpticalLine {
     ) -> Result<AdjustedLineParameters> {
         // in atm
         let pressure = pressure / 101325.0;
+        let pself = pself / 101325.0;
 
         let le = self.lower_energy;
         let lc = self.line_center;

@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use numpy::{PyArray2, PyReadonlyArray1};
 use pyo3::exceptions::PyValueError;
 use pyo3::types::PyDict;
 use pyo3::{IntoPyObjectExt, prelude::*};
@@ -54,11 +55,12 @@ pub struct PyLineAbsorber {
 #[pymethods]
 impl PyLineAbsorber {
     #[new]
-    #[pyo3(signature = (mol_name, directory, cull_factor=0.0, py_tips = None, py_molmass = None))]
+    #[pyo3(signature = (mol_name, directory, cull_factor=0.0, line_coupling=false, py_tips = None, py_molmass = None))]
     pub fn new<'py>(
         mol_name: &str,
         directory: &str,
-        cull_factor: Option<f64>,
+        cull_factor: f64,
+        line_coupling: bool,
         py_tips: Option<Bound<'py, PyAny>>,
         py_molmass: Option<Bound<'py, PyAny>>,
     ) -> PyResult<Self> {
@@ -86,10 +88,8 @@ impl PyLineAbsorber {
             line_absorber =
                 line_absorber.with_molecular_mass_generator(Box::new(py_molecular_mass));
         }
-
-        if let Some(cull_factor) = cull_factor {
-            line_absorber = line_absorber.with_cull_factor(cull_factor);
-        }
+        line_absorber = line_absorber.with_cull_factor(cull_factor);
+        line_absorber = line_absorber.with_line_coupling(line_coupling);
 
         Ok(Self {
             line_absorber: line_absorber,
@@ -113,6 +113,26 @@ impl PyLineAbsorber {
             })?;
 
         Ok(PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())?)
+    }
+
+    fn cross_section<'py>(
+        &self,
+        wavenumber_cminv: PyReadonlyArray1<'py, f64>,
+        temperature_k: PyReadonlyArray1<f64>,
+        pressure_pa: PyReadonlyArray1<f64>,
+        p_self: PyReadonlyArray1<f64>,
+    ) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let xs = self
+            .line_absorber
+            .cross_section(
+                wavenumber_cminv.as_array().view(),
+                temperature_k.as_array().view(),
+                pressure_pa.as_array().view(),
+                p_self.as_array().view(),
+            )
+            .into_pyresult()?;
+
+        Ok(PyArray2::from_array(wavenumber_cminv.py(), &xs))
     }
 }
 
