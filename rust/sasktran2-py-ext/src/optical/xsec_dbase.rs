@@ -16,9 +16,7 @@ impl<'a> AuxOpticalInputs for PyDictWrapper<'a> {
     fn get_parameter(&self, name: &str) -> Option<CowArray<'_, f64, Ix1>> {
         if let Some(dict) = &self.0 {
             if let Ok(value) = dict.get_item(name) {
-                if value.is_none() {
-                    return None;
-                }
+                value.as_ref()?;
                 let array: PyReadonlyArray1<f64> = value?.extract().ok()?;
                 // Create an owned copy of the array data to avoid lifetime issues
                 return Some(CowArray::from(array.as_array().to_owned()));
@@ -110,7 +108,7 @@ impl AbsorberDatabaseDim1 {
                 PyValueError::new_err(format!("Failed to get optical quantities: {}", e))
             })?;
 
-        Ok(PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())?)
+        PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())
     }
 
     #[pyo3(signature = (atmo, **kwargs))]
@@ -168,7 +166,7 @@ impl AbsorberDatabaseDim2 {
                 PyValueError::new_err(format!("Failed to get optical quantities: {}", e))
             })?;
 
-        Ok(PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())?)
+        PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())
     }
 
     #[pyo3(signature = (atmo, **kwargs))]
@@ -280,7 +278,7 @@ impl AbsorberDatabaseDim3 {
                 PyValueError::new_err(format!("Failed to get optical quantities: {}", e))
             })?;
 
-        Ok(PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())?)
+        PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())
     }
 
     #[pyo3(signature = (atmo, **kwargs))]

@@ -2,17 +2,18 @@ use crate::prelude::*;
 use std::{
     fs,
     io::{BufRead, BufReader},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use super::{OpticalLine, OpticalLineDB};
 
-pub fn aer_molecule_file(molecule: &str, directory: &PathBuf) -> Result<PathBuf> {
+pub fn aer_molecule_file(molecule: &str, directory: &Path) -> Result<PathBuf> {
     let dir = directory.join("line_files_By_Molecule");
 
     let mol_ending = "_".to_string() + molecule.to_ascii_uppercase().as_str();
 
     // Read directory and collect only directories (folders)
+    #[allow(clippy::filter_next)]
     let folder = fs::read_dir(&dir)
         .unwrap()
         .filter_map(|entry| entry.ok()) // Ignore errors

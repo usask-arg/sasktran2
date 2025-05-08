@@ -7,7 +7,7 @@ use crate::math::errorfunctions::optimized::{
 };
 use crate::prelude::*;
 
-pub const SQRT_PI: f64 = 1.7724538509055160272981674833411;
+pub const SQRT_PI: f64 = 1.772_453_850_905_516;
 
 trait LineShapes {
     fn lorentzian(self, y: f64) -> f64;
@@ -74,6 +74,7 @@ fn lorentzian_assign_uniform(x_start: f64, x_delta: f64, y: f64, scale: f64, res
     let remainder_len = result.len() % lanes;
     let n = result.len();
 
+    #[allow(clippy::needless_range_loop)]
     for i in n - remainder_len..n {
         let x = x_start + (i as f64) * x_delta;
         result[i] += x.lorentzian(y) * scale;
@@ -87,6 +88,7 @@ fn gaussian_assign_uniform(x_start: f64, x_delta: f64, y: f64, scale: f64, resul
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn voigt_broaden_uniform(
     line_center: ArrayView1<f64>,
     line_intensity: ArrayView1<f64>,
@@ -343,6 +345,7 @@ pub fn voigt_broaden_uniform(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn voigt_broaden(
     line_center: ArrayView1<f64>,
     line_intensity: ArrayView1<f64>,
@@ -503,6 +506,7 @@ pub fn voigt_broaden(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn voigt_broaden_with_line_coupling(
     line_center: ArrayView1<f64>,
     line_intensity: ArrayView1<f64>,

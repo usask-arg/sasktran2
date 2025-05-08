@@ -15,6 +15,7 @@ pub enum GeometryType {
 
 #[pyclass(eq, eq_int)]
 #[derive(PartialEq, Clone)]
+#[allow(clippy::enum_variant_names)]
 pub enum InterpolationMethod {
     LinearInterpolation,
     ShellInterpolation,

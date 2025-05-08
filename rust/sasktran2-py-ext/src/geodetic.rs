@@ -84,6 +84,7 @@ impl PyGeodetic {
         slice_to_pyarray(py, &local_west)
     }
 
+    #[allow(clippy::type_complexity)]
     fn altitude_intercepts<'py>(
         &self,
         py: Python<'py>,
@@ -105,12 +106,14 @@ impl PyGeodetic {
         Ok((altitude_intercepts, look_vector_intercepts))
     }
 
+    #[allow(clippy::wrong_self_convention)]
     fn from_lat_lon_alt(&mut self, latitude: f64, longitude: f64, altitude: f64) -> PyResult<()> {
         self.output
             .from_lat_lon_alt(latitude, longitude, altitude)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{}", e)))
     }
 
+    #[allow(clippy::wrong_self_convention)]
     fn from_tangent_altitude(
         &mut self,
         tangent_altitude: f64,
@@ -128,6 +131,7 @@ impl PyGeodetic {
         Ok(result)
     }
 
+    #[allow(clippy::wrong_self_convention)]
     fn from_tangent_point(
         &mut self,
         observer: PyReadonlyArray1<f64>,
@@ -141,6 +145,7 @@ impl PyGeodetic {
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{}", e)))
     }
 
+    #[allow(clippy::wrong_self_convention)]
     fn from_xyz(&mut self, location: PyReadonlyArray1<f64>) -> PyResult<()> {
         let location = pyarray_to_slice(location)?;
         let x = location[0];

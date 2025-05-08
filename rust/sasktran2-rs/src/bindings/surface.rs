@@ -18,7 +18,7 @@ impl Surface {
             surface: unsafe {
                 ffi::sk_surface_create(num_wavel as i32, num_stokes as i32, mut_ptr)
             },
-            emission: emission,
+            emission,
             brdf_args: Array2::zeros((0, num_wavel).f()),
         };
 

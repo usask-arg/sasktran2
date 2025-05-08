@@ -109,6 +109,7 @@ impl PyMieIntegrator {
         Ok(PyMieIntegrator { integrator })
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn integrate<'py>(
         &self,
         wavelength: f64,

@@ -7,7 +7,7 @@ pub struct DerivativeMapping {
 
 impl DerivativeMapping {
     pub fn new(mapping: *mut ffi::DerivativeMapping) -> Self {
-        DerivativeMapping { mapping: mapping }
+        DerivativeMapping { mapping }
     }
 
     pub fn d_ssa(&self) -> ArrayViewMut2<f64> {
@@ -180,7 +180,7 @@ impl Drop for SurfaceDerivativeMapping {
 
 impl SurfaceDerivativeMapping {
     pub fn new(mapping: *mut ffi::SurfaceDerivativeMapping) -> Self {
-        SurfaceDerivativeMapping { mapping: mapping }
+        SurfaceDerivativeMapping { mapping }
     }
 
     pub fn set_zero(&mut self) {

@@ -11,7 +11,7 @@ use crate::util::argsort_f64;
 #[cfg(feature = "simd")]
 use crate::math::simd::*;
 
-const SQRT_PI: f64 = 1.7724538509055160272981674833411;
+const SQRT_PI: f64 = 1.772_453_850_905_516;
 
 #[inline(always)]
 #[cfg(not(feature = "simd"))]
@@ -127,7 +127,7 @@ fn split_and_assign(
 
     if 2.84 * adjusted_line.y * adjusted_line.y > 1.52 / EPSILON {
         lorentzian_assign(
-            &wavenumber_cminv.x,
+            wavenumber_cminv.x,
             adjusted_line.line_center,
             adjusted_line.doppler_width,
             adjusted_line.y,
@@ -144,7 +144,7 @@ fn split_and_assign(
 
     if max_abs_x < 2.15 - 2.53 * adjusted_line.y / EPSILON {
         gaussian_assign(
-            &wavenumber_cminv.x,
+            wavenumber_cminv.x,
             adjusted_line.line_center,
             adjusted_line.doppler_width,
             adjusted_line.y,
@@ -319,9 +319,9 @@ impl LineAbsorber {
         let mut map = HashMap::new();
         for line in lines.iter() {
             let key = (line.mol_id, line.iso_id);
-            if !map.contains_key(&key) {
+            if let std::collections::hash_map::Entry::Vacant(e) = map.entry(key) {
                 let mol_param = self.mol_params(line.mol_id, line.iso_id, temperature)?;
-                map.insert(key, mol_param);
+                e.insert(mol_param);
             }
         }
         Ok(map)
@@ -453,7 +453,7 @@ impl LineAbsorber {
         }
 
         if wavenumber_cminv.as_slice().unwrap().is_sorted() {
-            return Ok(xs);
+            Ok(xs)
         } else {
             // Have to sort the output
             let sort_idx = argsort_f64(wavenumber_cminv.as_slice().unwrap());
@@ -464,7 +464,7 @@ impl LineAbsorber {
                     xs_sorted[[i, j]] = xs[[i, sort_idx[j]]];
                 }
             }
-            return Ok(xs_sorted);
+            Ok(xs_sorted)
         }
     }
 }
@@ -521,8 +521,8 @@ mod tests {
     use super::*;
     use crate::optical::line::aer_loader::read_aer_line_file;
     use crate::optical::types::line_absorber::{MolecularMass, PartitionFactor};
-    use ndarray::{Array1, Array2, array};
-    use std::{collections::HashMap, path::PathBuf};
+    use ndarray::array;
+    use std::path::PathBuf;
 
     struct MockPartitionFactor {
         pub partition_factor: f64,
@@ -639,7 +639,7 @@ mod tests {
         let pressure = array![101325.0, 101325.0];
         let pself = array![0.0, 0.0];
 
-        let xs = line_absorber
+        let _xs = line_absorber
             .cross_section(
                 wavenumber_cminv.view(),
                 temperature.view(),

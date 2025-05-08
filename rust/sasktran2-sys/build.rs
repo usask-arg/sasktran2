@@ -74,18 +74,19 @@ fn main() {
                         if let Some(extension) = extension.to_str() {
                             if extension == "framework" {
                                 println!("cargo:rustc-link-lib=framework={}", name);
-                            } else {
-                                if name.starts_with("lib") {
-                                    // if we are on windows, we keep the 'lib' prefix
-                                    // otherwise we remove it
-                                    if cfg!(target_os = "windows") {
-                                        println!("cargo:rustc-link-lib=dylib={}", name);
-                                    } else {
-                                        println!("cargo:rustc-link-lib=dylib={}", &name[3..]);
-                                    }
-                                } else {
+                            } else if name.starts_with("lib") {
+                                // if we are on windows, we keep the 'lib' prefix
+                                // otherwise we remove it
+                                if cfg!(target_os = "windows") {
                                     println!("cargo:rustc-link-lib=dylib={}", name);
+                                } else {
+                                    println!(
+                                        "cargo:rustc-link-lib=dylib={}",
+                                        name.strip_prefix("lib").unwrap_or(name)
+                                    );
                                 }
+                            } else {
+                                println!("cargo:rustc-link-lib=dylib={}", name);
                             }
                         }
                     }

@@ -61,6 +61,7 @@ impl MieIntegrator {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn integrate(
         &self,
         wavelength: f64,

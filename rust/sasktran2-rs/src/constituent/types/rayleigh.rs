@@ -21,6 +21,12 @@ pub struct Rayleigh {
     manual_wavelengths_nm: Option<Array1<f64>>,
 }
 
+impl Default for Rayleigh {
+    fn default() -> Self {
+        Rayleigh::new()
+    }
+}
+
 impl Rayleigh {
     pub fn new() -> Self {
         Rayleigh {
@@ -82,12 +88,12 @@ impl Rayleigh {
             }
             RayleighMethod::Manual => {
                 let xs = self.manual_xs.as_ref().unwrap().interp1(
-                    &self.manual_wavelengths_nm.as_ref().unwrap(),
+                    self.manual_wavelengths_nm.as_ref().unwrap(),
                     wavelength_nm,
                     crate::interpolation::OutOfBoundsMode::Extend,
                 );
                 let king = self.manual_king.as_ref().unwrap().interp1(
-                    &self.manual_wavelengths_nm.as_ref().unwrap(),
+                    self.manual_wavelengths_nm.as_ref().unwrap(),
                     wavelength_nm,
                     crate::interpolation::OutOfBoundsMode::Extend,
                 );
@@ -138,10 +144,8 @@ impl Constituent for Rayleigh {
 
                             legendre[9] += sigma * ndens * 6.0 * ((1.0 - delta) / (2.0 + delta));
 
-                            legendre[11] += sigma
-                                * ndens
-                                * (6.0 as f64).sqrt()
-                                * ((1.0 - delta) / (2.0 + delta));
+                            legendre[11] +=
+                                sigma * ndens * 6.0_f64.sqrt() * ((1.0 - delta) / (2.0 + delta));
                         } else {
                             panic!("Should never be here");
                         }
@@ -210,7 +214,7 @@ impl Constituent for Rayleigh {
                                         d_lp[8] += (1.0 - delta) / (2.0 + delta);
                                         d_lp[9] += 6.0 * ((1.0 - delta) / (2.0 + delta));
                                         d_lp[11] +=
-                                            (6.0 as f64).sqrt() * ((1.0 - delta) / (2.0 + delta));
+                                            6.0_f64.sqrt() * ((1.0 - delta) / (2.0 + delta));
                                     }
 
                                     Zip::from(d_lp).and(lp).for_each(|d_lp, lp| {
@@ -223,7 +227,7 @@ impl Constituent for Rayleigh {
                     );
             }
             deriv.set_interp_dim("altitude");
-            let interpolator: Array2<f64> = Array2::from_diag(&deriv_val);
+            let interpolator: Array2<f64> = Array2::from_diag(deriv_val);
             deriv.set_interpolator(&interpolator);
             let assign_name = "wf_".to_owned() + deriv_name;
             deriv.set_assign_name(&assign_name);

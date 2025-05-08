@@ -54,9 +54,9 @@ impl PyOpticalQuantities {
             let a1 = view.view();
             let a1 = LegendreAccess::<Ix3, 4>::new(a1).a1;
 
-            return unsafe { Some(PyArray3::borrow_from_array(&a1, this.into_any())) };
+            unsafe { Some(PyArray3::borrow_from_array(&a1, this.into_any())) }
         } else {
-            return None;
+            None
         }
     }
 }

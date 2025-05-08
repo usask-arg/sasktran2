@@ -14,7 +14,7 @@ impl<'a, D: Dimension> LegendreAccess<'a, D, 1> {
         let a1 = legendre.clone();
 
         Self {
-            a1: a1,
+            a1,
             a3: None,
             a2: None,
             a4: None,

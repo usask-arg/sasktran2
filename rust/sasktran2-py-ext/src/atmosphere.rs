@@ -65,7 +65,12 @@ impl PyAtmosphere {
     fn get_storage(&self) -> PyResult<Py<PyAtmosphereStorageView>> {
         let storage = &self.atmosphere.storage;
         let storage_view = PyAtmosphereStorageView {
-            storage: unsafe { std::mem::transmute(storage) },
+            storage: unsafe {
+                std::mem::transmute::<
+                    &sasktran2_rs::bindings::atmosphere_storage::AtmosphereStorage,
+                    &mut sasktran2_rs::bindings::atmosphere_storage::AtmosphereStorage,
+                >(storage)
+            },
         };
         Python::with_gil(|py| Py::new(py, storage_view))
     }
@@ -75,7 +80,12 @@ impl PyAtmosphere {
     fn get_surface(&self) -> PyResult<Py<PyAtmosphereSurfaceView>> {
         let surface = &self.atmosphere.surface;
         let surface_view = PyAtmosphereSurfaceView {
-            surface: unsafe { std::mem::transmute(surface) },
+            surface: unsafe {
+                std::mem::transmute::<
+                    &sasktran2_rs::bindings::surface::Surface,
+                    &mut sasktran2_rs::bindings::surface::Surface,
+                >(surface)
+            },
         };
         Python::with_gil(|py| Py::new(py, surface_view))
     }
@@ -125,7 +135,7 @@ impl PyAtmosphereStorageView {
         unsafe { Ok(PyArray1::borrow_from_array(array, this.into_any())) }
     }
 
-    fn get_derivative_mapping<'py>(&self, name: &str) -> PyResult<Py<PyDerivativeMappingView>> {
+    fn get_derivative_mapping(&self, name: &str) -> PyResult<Py<PyDerivativeMappingView>> {
         let mapping = self.storage.get_derivative_mapping(name).unwrap();
 
         // Call this a view because DerivativeMapping is really just a view into the C++
@@ -182,10 +192,7 @@ impl PyAtmosphereSurfaceView {
         Ok(())
     }
 
-    fn get_derivative_mapping<'py>(
-        &self,
-        name: &str,
-    ) -> PyResult<Py<PySurfaceDerivativeMappingView>> {
+    fn get_derivative_mapping(&self, name: &str) -> PyResult<Py<PySurfaceDerivativeMappingView>> {
         let mapping = self.surface.get_derivative_mapping(name).unwrap();
 
         // Call this a view because DerivativeMapping is really just a view into the C++

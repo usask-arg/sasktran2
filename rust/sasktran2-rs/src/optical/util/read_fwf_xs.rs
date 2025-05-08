@@ -23,10 +23,7 @@ impl AddAssign for XsecListAtConditions {
         self.wvnum.extend(other.wvnum);
 
         for (param, vals) in other.params {
-            self.params
-                .entry(param)
-                .or_insert_with(Vec::new)
-                .extend(vals);
+            self.params.entry(param).or_default().extend(vals);
         }
     }
 }
@@ -71,14 +68,14 @@ fn read_hitran_header(line: &str) -> Header {
     let wvnum_space = (wvnum_end - wvnum_start) / ((num_points - 1) as f64);
 
     Header {
-        short_mol_name: short_mol_name,
-        wvnum_start: wvnum_start,
-        wvnum_end: wvnum_end,
-        num_points: num_points,
-        temperature: temperature,
-        zero: zero,
-        wvnum_space: wvnum_space,
-        pressure: pressure,
+        short_mol_name,
+        wvnum_start,
+        wvnum_end,
+        num_points,
+        temperature,
+        zero,
+        wvnum_space,
+        pressure,
     }
 }
 
@@ -136,7 +133,7 @@ pub fn read_fwf_xsec(path: PathBuf) -> Option<XsecListAtConditions> {
     Some(XsecListAtConditions {
         xsec: all_xs,
         wvnum: all_wvnum,
-        params: params,
+        params,
     })
 }
 

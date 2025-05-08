@@ -115,7 +115,7 @@ pub fn rayleigh_cross_section_bates(
         + ar_percentage / 100.0 * ar_king_bates(wavelength_um)
         + co2_percentage / 100.0 * co2_king_bates(wavelength_um);
 
-    let num_dens: f64 = 2.686780111798444e+25;
+    let num_dens: f64 = 2.686_780_111_798_444e25;
 
     (
         32.0 * PI.powf(3.0) / (3.0 * num_dens.powf(2.0) * wavelength_um.powf(4.0))

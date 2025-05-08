@@ -19,6 +19,20 @@ concurrency:
 
 
 jobs:
+  clippy_check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install apt dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y zlib1g-dev gfortran libopenblas-dev liblapacke-dev catch2 libeigen3-dev
+
+      - name: Run Clippy
+        env:
+          RUSTFLAGS: "-Dwarnings"
+        run: cargo clippy --all-targets --all-features
+
   test-cpp-ubuntu:
     runs-on: ubuntu-latest
 

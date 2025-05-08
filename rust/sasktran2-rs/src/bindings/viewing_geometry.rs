@@ -5,6 +5,12 @@ pub struct ViewingGeometry {
     pub viewing_geometry: *mut ffi::ViewingGeometry,
 }
 
+impl Default for ViewingGeometry {
+    fn default() -> Self {
+        ViewingGeometry::new()
+    }
+}
+
 impl ViewingGeometry {
     pub fn new() -> Self {
         ViewingGeometry {

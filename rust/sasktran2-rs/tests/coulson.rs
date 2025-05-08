@@ -36,7 +36,7 @@ fn test_coulson() -> Result<()> {
         .storage
         .leg_coeff
         .slice_mut(s![11, .., ..])
-        .fill((6.0 as f64).sqrt() * -1.0 / 2.0);
+        .fill(6.0_f64.sqrt() * -1.0 / 2.0);
 
     let mut binding = Config::new();
     let config = binding
@@ -60,7 +60,7 @@ fn test_coulson() -> Result<()> {
     let mut viewing_geometry = ViewingGeometry::new();
     viewing_geometry.add_ground_viewing_solar(0.2, 0.0, 200000.0, 0.02);
 
-    let engine = Engine::new(&config, &geometry, &viewing_geometry);
+    let engine = Engine::new(config, &geometry, &viewing_geometry);
     let output = engine.calculate_radiance(&atmosphere).unwrap();
     println!("Radiance: {:?}", output.radiance);
 

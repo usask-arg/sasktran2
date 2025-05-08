@@ -39,7 +39,6 @@ use crate::constituent::atmo_storage::AtmosphereStorage;
 ///    Cross section in m2/molecule to use for the cross section, by default None, only used when method is "manual"
 /// king : numpy.ndarray, optional
 ///    King factor to use for the cross section, by default None, only used when method is "manual"
-
 pub struct PyRayleigh {
     inner: RustRayleighCore,
 }
@@ -51,6 +50,7 @@ impl PyRayleigh {
         signature = (method="bates", n2_percentage=None, o2_percentage=None, ar_percentage=None, co2_percentage=None, wavelengths_nm=None, xs=None, king_factor=None),
     )]
     /// Test dosstring new
+    #[allow(clippy::too_many_arguments)]
     fn new<'py>(
         method: &str,
         n2_percentage: Option<f64>,
@@ -113,7 +113,7 @@ impl PyRayleigh {
             inner = inner.with_co2_percentage(co2_percentage.unwrap());
         }
 
-        PyRayleigh { inner: inner }
+        PyRayleigh { inner }
     }
 
     ///

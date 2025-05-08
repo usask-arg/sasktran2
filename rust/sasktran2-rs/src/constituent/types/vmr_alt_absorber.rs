@@ -11,7 +11,7 @@ use ndarray::Ix2;
 
 use anyhow::{Result, anyhow};
 
-pub fn assign_absorber_derivatives<'a, S1, S2, S3, S4>(
+pub fn assign_absorber_derivatives<S1, S2, S3, S4>(
     mapping: &mut DerivMappingView,
     d_extinction: &ArrayBase<S1, Ix2>,
     d_ssa: &ArrayBase<S2, Ix2>,
@@ -264,7 +264,7 @@ where
                 mapping.set_interpolator(&interpolator);
             });
 
-        if deriv_names.len() > 0 {
+        if !deriv_names.is_empty() {
             let d_aq = optical_prop.optical_derivatives(inputs, &NullAuxInputs {})?;
 
             d_aq.iter().for_each(|(key, val)| {

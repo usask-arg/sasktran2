@@ -89,10 +89,7 @@ impl AddAssign for XsecDatabase {
         self.wvnum.extend(other.wvnum);
 
         for (param, vals) in other.params {
-            self.params
-                .entry(param)
-                .or_insert_with(Vec::new)
-                .extend(vals);
+            self.params.entry(param).or_default().extend(vals);
         }
     }
 }
@@ -131,12 +128,12 @@ impl From<XsecDatabase> for SKXsecDatabase<Ix2> {
         // We need to figure out how many dimensions we have
         let mut params: Vec<Array1<f64>> = vec![];
         let mut sidx: Vec<Vec<usize>> = vec![];
-        for (_, vals) in &db.params {
+        for vals in db.params.values() {
             let unique_vals = unique_values(&Array1::from_vec(vals.clone()));
 
             if unique_vals.len() > 1 {
                 params.push(Array1::from(unique_vals));
-                sidx.push(argsort_f64(&vals));
+                sidx.push(argsort_f64(vals));
             }
         }
 
@@ -595,14 +592,14 @@ fn read_hitran_header(line: &str) -> Header {
     let wvnum_space = (wvnum_end - wvnum_start) / ((num_points - 1) as f64);
 
     Header {
-        short_mol_name: short_mol_name,
-        wvnum_start: wvnum_start,
-        wvnum_end: wvnum_end,
-        num_points: num_points,
-        temperature: temperature,
-        zero: zero,
-        wvnum_space: wvnum_space,
-        pressure: pressure,
+        short_mol_name,
+        wvnum_start,
+        wvnum_end,
+        num_points,
+        temperature,
+        zero,
+        wvnum_space,
+        pressure,
     }
 }
 
@@ -660,7 +657,7 @@ pub fn read_fwf_xsec(path: PathBuf) -> Option<XsecDatabase> {
     Some(XsecDatabase {
         xsec: all_xs,
         wvnum: all_wvnum,
-        params: params,
+        params,
     })
 }
 
