@@ -63,6 +63,6 @@ impl PyScatteringDatabaseDim2 {
                 PyValueError::new_err(format!("Failed to get optical quantities: {}", e))
             })?;
 
-        Ok(PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())?)
+        PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())
     }
 }

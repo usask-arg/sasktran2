@@ -55,12 +55,12 @@ impl PyDerivativeMappingView {
     }
 
     #[getter]
-    fn get_assign_name<'py>(&self) -> PyResult<String> {
+    fn get_assign_name(&self) -> PyResult<String> {
         Ok(self.derivative_mapping.get_assign_name().to_string())
     }
 
     #[getter]
-    fn get_interp_dim<'py>(&self) -> PyResult<String> {
+    fn get_interp_dim(&self) -> PyResult<String> {
         Ok(self.derivative_mapping.get_interp_dim().to_string())
     }
 
@@ -128,7 +128,7 @@ impl PySurfaceDerivativeMappingView {
     }
 
     #[getter]
-    fn get_interp_dim<'py>(&self) -> PyResult<String> {
+    fn get_interp_dim(&self) -> PyResult<String> {
         Ok(self.derivative_mapping.get_interp_dim().to_string())
     }
 

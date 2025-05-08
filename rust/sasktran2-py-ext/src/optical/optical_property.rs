@@ -82,8 +82,8 @@ impl OpticalProperty for PyOpticalProperty {
 
             let ssa = Array2::zeros(cross_section.dim());
 
-            optical_quantities.cross_section = cross_section.into();
-            optical_quantities.ssa = ssa.into();
+            optical_quantities.cross_section = cross_section;
+            optical_quantities.ssa = ssa;
             Ok(())
         })
     }
@@ -127,10 +127,10 @@ impl OpticalProperty for PyOpticalProperty {
                 d_optical_quantities.insert(
                     k,
                     OpticalQuantities {
-                        cross_section: cross_section.into(),
-                        ssa: ssa.into(),
+                        cross_section,
+                        ssa,
                         legendre: None,
-                        fortran_ordering: fortran_ordering,
+                        fortran_ordering,
                     },
                 );
             });

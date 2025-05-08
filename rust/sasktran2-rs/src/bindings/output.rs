@@ -24,11 +24,11 @@ impl Output {
             unsafe { ffi::sk_output_create(radiance_ptr, num_radiance as i32, num_stokes as i32) };
 
         Output {
-            output: output,
-            radiance: radiance,
-            num_wavel: num_wavel,
-            num_los: num_los,
-            num_stokes: num_stokes,
+            output,
+            radiance,
+            num_wavel,
+            num_los,
+            num_stokes,
             d_radiance: HashMap::new(),
             d_radiance_surf: HashMap::new(),
         }

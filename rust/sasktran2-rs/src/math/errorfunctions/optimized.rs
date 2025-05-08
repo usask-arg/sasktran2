@@ -2,7 +2,7 @@
 use super::super::simd::f64s;
 use num::complex::Complex64;
 
-pub const SQRT_PI: f64 = 1.7724538509055160272981674833411;
+pub const SQRT_PI: f64 = 1.772_453_850_905_516;
 
 /// w(z) via an 8‐pole Padé sum (J‐pole approximation).
 #[inline(always)]
@@ -218,6 +218,7 @@ pub fn w_jpole_real_assign_uniform(
 
     // Handle the remainder
     let n = result.len();
+    #[allow(clippy::needless_range_loop)]
     for i in n - remainder..n {
         let x = x_start + i as f64 * x_delta;
         let mut sum_im = 0.0;

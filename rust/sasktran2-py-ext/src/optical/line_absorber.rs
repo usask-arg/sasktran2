@@ -91,9 +91,7 @@ impl PyLineAbsorber {
         line_absorber = line_absorber.with_cull_factor(cull_factor);
         line_absorber = line_absorber.with_line_coupling(line_coupling);
 
-        Ok(Self {
-            line_absorber: line_absorber,
-        })
+        Ok(Self { line_absorber })
     }
 
     #[pyo3(signature = (atmo, **kwargs))]
@@ -112,7 +110,7 @@ impl PyLineAbsorber {
                 PyValueError::new_err(format!("Failed to get optical quantities: {}", e))
             })?;
 
-        Ok(PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())?)
+        PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())
     }
 
     fn cross_section<'py>(

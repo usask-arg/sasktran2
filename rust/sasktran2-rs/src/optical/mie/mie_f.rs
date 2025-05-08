@@ -197,6 +197,7 @@ fn tau_pi_matrices(cos_angles: ArrayView1<f64>, max_order: usize) -> (Array2<f64
     (tau, pi)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn regular_Q_S(
     size_param: f64,
     N: usize,
@@ -271,7 +272,7 @@ fn small_Q_S(
     let mut D_1 = m_2 + 2.0 + (1.0 - 0.7 * m_2) * x_2
         - (8.0 * m_2 * m_2 - 385.0 * m_2 + 350.0) * x_2 * x_2 / 1400.0;
 
-    D_1 = D_1 + 2.0 * j * (m_2 - 1.0) * size_param.powf(3.0) * (1.0 - 0.1 * x_2) / 3.0;
+    D_1 += 2.0 * j * (m_2 - 1.0) * size_param.powf(3.0) * (1.0 - 0.1 * x_2) / 3.0;
 
     let a_hat1 = 2.0 * j * (m_2 - 1.0) / 3.0 * N_1 / D_1;
 

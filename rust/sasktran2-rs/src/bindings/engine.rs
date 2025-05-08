@@ -26,9 +26,9 @@ impl<'a> Engine<'a> {
                     viewing_geometry.viewing_geometry,
                 )
             },
-            config: config,
-            geometry: geometry,
-            viewing_geometry: viewing_geometry,
+            config,
+            geometry,
+            viewing_geometry,
         }
     }
 

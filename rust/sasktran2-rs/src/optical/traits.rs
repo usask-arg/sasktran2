@@ -16,14 +16,14 @@ impl AuxOpticalInputs for NullAuxInputs {
     }
 }
 
-impl<'a> AuxOpticalInputs for HashMap<String, Array1<f64>> {
+impl AuxOpticalInputs for HashMap<String, Array1<f64>> {
     fn get_parameter(&self, name: &str) -> Option<CowArray<'_, f64, Ix1>> {
         if let Some(param) = self.get(name) {
             let param = param.view();
             let carray = CowArray::from(param);
             return Some(carray);
         }
-        return None;
+        None
     }
 }
 
@@ -74,14 +74,12 @@ pub fn param_from_storage_or_aux<'a>(
 ) -> Result<CowArray<'a, f64, Ix1>> {
     if let Some(param) = inputs.get_parameter(name) {
         Ok(param.into())
+    } else if let Some(aux_param) = aux_inputs.get_parameter(name) {
+        Ok(aux_param)
     } else {
-        if let Some(aux_param) = aux_inputs.get_parameter(name) {
-            Ok(aux_param)
-        } else {
-            Err(anyhow!(
-                "Parameter {} not found in inputs or aux inputs",
-                name
-            ))
-        }
+        Err(anyhow!(
+            "Parameter {} not found in inputs or aux inputs",
+            name
+        ))
     }
 }

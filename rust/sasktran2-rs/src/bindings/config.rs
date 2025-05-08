@@ -53,6 +53,12 @@ pub struct Config {
     pub config: *mut ffi::Config,
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        Config::new()
+    }
+}
+
 impl Config {
     pub fn new() -> Self {
         Config {
@@ -98,7 +104,7 @@ impl Config {
                 error_code
             ))
         } else {
-            Ok(unsafe { std::mem::transmute(threading_model) })
+            Ok(unsafe { std::mem::transmute::<i32, ThreadingModel>(threading_model) })
         }
     }
 
@@ -128,7 +134,7 @@ impl Config {
                 error_code
             ))
         } else {
-            Ok(unsafe { std::mem::transmute(input_validation_mode) })
+            Ok(unsafe { std::mem::transmute::<i32, InputValidationMode>(input_validation_mode) })
         }
     }
 
@@ -189,7 +195,9 @@ impl Config {
                 error_code
             ))
         } else {
-            Ok(unsafe { std::mem::transmute(multiple_scatter_source) })
+            Ok(unsafe {
+                std::mem::transmute::<i32, MultipleScatterSource>(multiple_scatter_source)
+            })
         }
     }
 
@@ -222,7 +230,7 @@ impl Config {
                 error_code
             ))
         } else {
-            Ok(unsafe { std::mem::transmute(single_scatter_source) })
+            Ok(unsafe { std::mem::transmute::<i32, SingleScatterSource>(single_scatter_source) })
         }
     }
 
@@ -251,7 +259,7 @@ impl Config {
                 error_code
             ))
         } else {
-            Ok(unsafe { std::mem::transmute(occultation_source) })
+            Ok(unsafe { std::mem::transmute::<i32, OccultationSource>(occultation_source) })
         }
     }
 
@@ -280,7 +288,7 @@ impl Config {
                 error_code
             ))
         } else {
-            Ok(unsafe { std::mem::transmute(emission_source) })
+            Ok(unsafe { std::mem::transmute::<i32, EmissionSource>(emission_source) })
         }
     }
 
@@ -306,7 +314,7 @@ impl Config {
                 error_code
             ))
         } else {
-            Ok(unsafe { std::mem::transmute(stokes_basis) })
+            Ok(unsafe { std::mem::transmute::<i32, StokesBasis>(stokes_basis) })
         }
     }
 

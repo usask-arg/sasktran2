@@ -5,6 +5,7 @@ use sasktran2_rs::optical::broaden;
 use crate::prelude::IntoPyResult;
 
 #[pyfunction]
+#[allow(clippy::too_many_arguments)]
 pub fn voigt_broaden_uniform<'py>(
     line_center: PyReadonlyArray1<'py, f64>,
     line_intensity: PyReadonlyArray1<'py, f64>,
@@ -55,6 +56,7 @@ pub fn voigt_broaden_uniform<'py>(
 }
 
 #[pyfunction]
+#[allow(clippy::too_many_arguments)]
 pub fn voigt_broaden<'py>(
     line_center: PyReadonlyArray1<'py, f64>,
     line_intensity: PyReadonlyArray1<'py, f64>,
@@ -103,6 +105,7 @@ pub fn voigt_broaden<'py>(
 }
 
 #[pyfunction]
+#[allow(clippy::too_many_arguments)]
 pub fn voigt_broaden_with_line_coupling<'py>(
     line_center: PyReadonlyArray1<'py, f64>,
     line_intensity: PyReadonlyArray1<'py, f64>,

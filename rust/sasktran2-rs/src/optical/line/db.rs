@@ -6,7 +6,7 @@ const C2: f64 = 1.4387769;
 const SPEED_OF_LIGHT: f64 = 2.99792458e10;
 const NA: f64 = 6.02214179e23;
 const K_B: f64 = 1.38064852e-16;
-const SQRT_PI: f64 = 1.7724538509055160272981674833411;
+const SQRT_PI: f64 = 1.772_453_850_905_516;
 
 pub struct OpticalLine {
     pub line_center: f64,
@@ -79,11 +79,11 @@ impl OpticalLine {
         let y = gamma_val / doppler_width;
 
         Ok(AdjustedLineParameters {
-            line_center: line_center,
-            line_intensity_re: line_intensity_re,
+            line_center,
+            line_intensity_re,
             line_intensity_im: 0.0,
-            doppler_width: doppler_width,
-            y: y,
+            doppler_width,
+            y,
         })
     }
 }

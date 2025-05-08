@@ -54,7 +54,7 @@ impl PyVMRAltitudeAbsorber {
         }
 
         Ok(Self {
-            inner: inner,
+            inner,
             optical_property: optical_property.into(),
         })
     }

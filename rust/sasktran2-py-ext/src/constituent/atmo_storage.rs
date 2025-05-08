@@ -80,35 +80,21 @@ impl<'py> StorageInputs for AtmosphereStorageInputs<'py> {
     }
 
     fn pressure_pa(&self) -> Option<ArrayView1<f64>> {
-        if let Some(array) = &self.py_pressure_pa {
-            Some(array.as_array())
-        } else {
-            None
-        }
+        self.py_pressure_pa.as_ref().map(|array| array.as_array())
     }
 
     fn temperature_k(&self) -> Option<ArrayView1<f64>> {
-        if let Some(array) = &self.py_temperature_k {
-            Some(array.as_array())
-        } else {
-            None
-        }
+        self.py_temperature_k.as_ref().map(|array| array.as_array())
     }
 
     fn wavelengths_nm(&self) -> Option<ArrayView1<f64>> {
-        if let Some(array) = &self.py_wavelength_nm {
-            Some(array.as_array())
-        } else {
-            None
-        }
+        self.py_wavelength_nm.as_ref().map(|array| array.as_array())
     }
 
     fn wavenumbers_cminv(&self) -> Option<ArrayView1<f64>> {
-        if let Some(array) = &self.py_wavenumber_cminv {
-            Some(array.as_array())
-        } else {
-            None
-        }
+        self.py_wavenumber_cminv
+            .as_ref()
+            .map(|array| array.as_array())
     }
 
     fn air_numberdensity_dict(&self) -> HashMap<String, Array1<f64>> {

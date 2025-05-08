@@ -51,7 +51,6 @@ impl<'a> Grid1DView<'a> {
         let first_diff = x[1] - x[0];
         let is_uniform = x
             .windows(2)
-            .into_iter()
             .all(|w| (w[1] - w[0] - first_diff).abs() < 1e-10);
 
         let start = x.first().copied();

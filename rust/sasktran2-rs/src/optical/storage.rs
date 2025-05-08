@@ -22,11 +22,15 @@ impl Default for OpticalQuantities {
 
 impl OpticalQuantities {
     pub fn new(num_geometry: usize, num_wavelengths: usize, fortran_ordering: bool) -> Self {
-        let mut default = Self::default();
-        default.fortran_ordering = fortran_ordering;
-        default.resize(num_geometry, num_wavelengths);
+        let mut instance = Self {
+            cross_section: Array2::zeros((0, 0)),
+            ssa: Array2::zeros((0, 0)),
+            legendre: None,
+            fortran_ordering,
+        };
+        instance.resize(num_geometry, num_wavelengths);
 
-        default
+        instance
     }
 
     pub fn resize(&mut self, num_geometry: usize, num_wavelengths: usize) -> &mut Self {

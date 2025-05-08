@@ -23,9 +23,9 @@ impl<'py> PyDerivMapping<'py> {
             py_mapping.getattr("d_ssa").unwrap().extract().unwrap();
 
         PyDerivMapping {
-            py_mapping: py_mapping,
-            d_extinction: d_extinction,
-            d_ssa: d_ssa,
+            py_mapping,
+            d_extinction,
+            d_ssa,
             scat_factor: None,
             d_legendre: None,
         }

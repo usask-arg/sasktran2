@@ -1,6 +1,7 @@
 use super::prelude::*;
 use sasktran2_sys::ffi;
 
+#[allow(clippy::upper_case_acronyms)]
 struct BRDF {
     pub brdf: *mut ffi::BRDF,
 }
@@ -26,7 +27,7 @@ pub trait IsCBRDF {
             ));
         }
 
-        return Ok(num_args as usize);
+        Ok(num_args as usize)
     }
 }
 

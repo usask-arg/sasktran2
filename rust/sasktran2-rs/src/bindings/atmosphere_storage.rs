@@ -129,11 +129,8 @@ impl AtmosphereStorage {
                 Zip::from(ssa)
                     .and(total_extinction)
                     .for_each(|ssa, total_extinction| {
-                        let v = match *total_extinction {
-                            0.0 => 0.0,
-                            _ => *total_extinction,
-                        };
-                        *ssa = *ssa / v;
+                        let v = *total_extinction;
+                        *ssa /= v;
 
                         if *ssa > 1.0 {
                             *ssa = 1.0;

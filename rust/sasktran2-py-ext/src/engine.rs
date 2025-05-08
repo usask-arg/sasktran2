@@ -55,9 +55,6 @@ impl PyEngine {
             .calculate_radiance(&atmosphere.atmosphere)
             .into_pyresult()?;
 
-        Ok(Py::new(
-            atmosphere.py(),
-            crate::output::PyOutput { output },
-        )?)
+        Py::new(atmosphere.py(), crate::output::PyOutput { output })
     }
 }
