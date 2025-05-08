@@ -13,7 +13,7 @@ use sasktran2_rs::optical::types::xsec_dbase::*;
 pub struct PyDictWrapper<'a>(pub Option<&'a Bound<'a, PyDict>>);
 
 impl<'a> AuxOpticalInputs for PyDictWrapper<'a> {
-    fn get_parameter<'b>(&self, name: &str) -> Option<CowArray<'b, f64, Ix1>> {
+    fn get_parameter(&self, name: &str) -> Option<CowArray<'_, f64, Ix1>> {
         if let Some(dict) = &self.0 {
             if let Ok(value) = dict.get_item(name) {
                 if value.is_none() {

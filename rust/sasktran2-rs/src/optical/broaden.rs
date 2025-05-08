@@ -1,7 +1,6 @@
-use std::f64::consts::FRAC_1_SQRT_2;
-
 #[cfg(feature = "simd")]
 use crate::math::simd::f64s;
+use std::f64::consts::FRAC_1_SQRT_2;
 
 use crate::math::errorfunctions::optimized::{
     w_jpole_assign, w_jpole_real_assign, w_jpole_real_assign_uniform,

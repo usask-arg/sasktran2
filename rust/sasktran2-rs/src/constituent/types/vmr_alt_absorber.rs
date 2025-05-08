@@ -97,20 +97,6 @@ where
     fn add_to_atmosphere(&self, storage: &mut impl AtmosphereStorageAccess) -> Result<()> {
         let (inputs, outputs) = storage.split_inputs_outputs();
 
-        let optical_prop = self
-            .optical_property
-            .as_ref()
-            .ok_or_else(|| anyhow!("Optical property not set"))?;
-
-        let optical_quants = optical_prop.optical_quantities(inputs, &NullAuxInputs {})?;
-        let cross_section = &optical_quants.cross_section;
-
-        let eqn_state = inputs.dry_air_numberdensity_dict();
-
-        let number_density = eqn_state
-            .get("N")
-            .ok_or_else(|| anyhow!("Number density for N not found in air_numberdensity_dict"))?;
-
         let altitudes_m = inputs.altitude_m();
 
         let interp_matrix = linear_interpolating_matrix(
@@ -118,8 +104,24 @@ where
             &altitudes_m,
             crate::interpolation::OutOfBoundsMode::Extend,
         );
-
         let interp_vmr = interp_matrix.dot(&self.vmr);
+
+        let mut aux_inputs: HashMap<String, Array1<f64>> = HashMap::new();
+        aux_inputs.insert("vmr".to_string(), interp_vmr.clone());
+
+        let optical_prop = self
+            .optical_property
+            .as_ref()
+            .ok_or_else(|| anyhow!("Optical property not set"))?;
+
+        let optical_quants = optical_prop.optical_quantities(inputs, &aux_inputs)?;
+        let cross_section = &optical_quants.cross_section;
+
+        let eqn_state = inputs.dry_air_numberdensity_dict();
+
+        let number_density = eqn_state
+            .get("N")
+            .ok_or_else(|| anyhow!("Number density for N not found in air_numberdensity_dict"))?;
 
         let mut extinction = outputs.mut_view().total_extinction;
 

@@ -9,6 +9,7 @@ use sasktran2_rs::atmosphere::traits::StorageInputs;
 use sasktran2_rs::optical::storage::*;
 use sasktran2_rs::optical::traits::*;
 
+use crate::optical::line_absorber::PyLineAbsorber;
 use crate::optical::xsec_dbase::*;
 
 fn with_optical_downcast(
@@ -32,7 +33,8 @@ fn with_optical_downcast(
     try_downcast!(
         AbsorberDatabaseDim1,
         AbsorberDatabaseDim2,
-        AbsorberDatabaseDim3
+        AbsorberDatabaseDim3,
+        PyLineAbsorber
     );
 
     Err(anyhow!("Failed to downcast to any of the known types"))

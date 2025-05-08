@@ -9,6 +9,13 @@ pub struct Grid1D {
     dx: Option<f64>,
 }
 
+pub struct Grid1DView<'a> {
+    pub x: &'a [f64],
+    is_uniform: bool,
+    start: Option<f64>,
+    dx: Option<f64>,
+}
+
 impl Grid1D {
     pub fn new(x: Array1<f64>) -> Self {
         // Check if the distance between successive elements is uniform
@@ -25,6 +32,63 @@ impl Grid1D {
             is_uniform,
             start,
             dx,
+        }
+    }
+
+    pub fn view(&self) -> Grid1DView {
+        Grid1DView {
+            x: self.x.as_slice().unwrap(),
+            is_uniform: self.is_uniform,
+            start: self.start,
+            dx: self.dx,
+        }
+    }
+}
+
+impl<'a> Grid1DView<'a> {
+    pub fn new(x: &'a [f64]) -> Self {
+        // Check if the distance between successive elements is uniform
+        let first_diff = x[1] - x[0];
+        let is_uniform = x
+            .windows(2)
+            .into_iter()
+            .all(|w| (w[1] - w[0] - first_diff).abs() < 1e-10);
+
+        let start = x.first().copied();
+        let dx = if is_uniform { Some(x[1] - x[0]) } else { None };
+        Self {
+            x,
+            is_uniform,
+            start,
+            dx,
+        }
+    }
+
+    pub fn slice(&self, start: usize, end: usize) -> Self {
+        let x = &self.x[start..end];
+        let is_uniform = self.is_uniform;
+        let start = x.first().copied();
+        let dx = if is_uniform { Some(x[1] - x[0]) } else { None };
+        Self {
+            x,
+            is_uniform,
+            start,
+            dx,
+        }
+    }
+
+    pub fn lower_bound(&self, to_x: f64) -> usize {
+        if self.is_uniform {
+            if to_x < self.x[0] {
+                return 0;
+            } else if to_x > self.x[self.x.len() - 1] {
+                return self.x.len() - 1;
+            }
+            ((to_x - self.start.unwrap()) / self.dx.unwrap()).floor() as usize
+        } else {
+            self.x
+                .binary_search_by(|x| x.partial_cmp(&to_x).unwrap())
+                .unwrap_or_else(|i| i)
         }
     }
 }

@@ -4,15 +4,26 @@ use crate::prelude::*;
 use ndarray::{CowArray, Ix1};
 
 pub trait AuxOpticalInputs {
-    fn get_parameter<'a>(&self, name: &str) -> Option<CowArray<'a, f64, Ix1>>;
+    fn get_parameter(&self, name: &str) -> Option<CowArray<'_, f64, Ix1>>;
 }
 
 // Null implementation
 pub struct NullAuxInputs;
 
 impl AuxOpticalInputs for NullAuxInputs {
-    fn get_parameter<'a>(&self, _name: &str) -> Option<CowArray<'a, f64, Ix1>> {
+    fn get_parameter(&self, _name: &str) -> Option<CowArray<'_, f64, Ix1>> {
         None
+    }
+}
+
+impl<'a> AuxOpticalInputs for HashMap<String, Array1<f64>> {
+    fn get_parameter(&self, name: &str) -> Option<CowArray<'_, f64, Ix1>> {
+        if let Some(param) = self.get(name) {
+            let param = param.view();
+            let carray = CowArray::from(param);
+            return Some(carray);
+        }
+        return None;
     }
 }
 
