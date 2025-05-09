@@ -417,10 +417,40 @@ if(INCLUDE_TRACY)
 
 endif()
 
+##### RUST CORROSION
+find_package(Corrosion REQUIRED)
+include(Corrosion)
+
+corrosion_import_crate(
+  MANIFEST_PATH "${CMAKE_SOURCE_DIR}/../rust/sasktran2-raytracer/Cargo.toml"
+  CRATE_TYPES staticlib
+)
+
+corrosion_add_cxxbridge(sasktran2_raytracer_cxx
+        CRATE sasktran2_raytracer
+        REGEN_TARGET cxx_bindings
+        FILES lib.rs
+)
+
+target_link_libraries(sasktran2BuildProperties INTERFACE sasktran2_raytracer_cxx)
+
+#target_link_libraries(sasktran2BuildProperties
+#  INTERFACE sasktran2_raytracer
+#)
+
+# tell C++ where to find the generated header
+#target_include_directories(sasktran2
+#  PRIVATE
+#    $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/_deps/
+#      sasktran2-raytracer-src/target/cxxbridge/include>
+#)
+####
+
+
 add_subdirectory(c_api)
 
 install(
-  TARGETS sasktran2BuildProperties
+  TARGETS sasktran2BuildProperties sasktran2_raytracer sasktran2_raytracer_cxx
   EXPORT ${EXPORT_NAME}
   LIBRARY DESTINATION ${STATIC_LIB_INSTALL_DIR}
   INCLUDES

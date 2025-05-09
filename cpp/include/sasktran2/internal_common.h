@@ -76,3 +76,6 @@
 #include <spdlog/spdlog.h>
 #include <spdlog/fmt/ostr.h>
 #include <sasktran2/rext.h>
+
+#include <rust/cxx.h>
+#include <sasktran2_raytracer_cxx/lib.h>

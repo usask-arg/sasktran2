@@ -1,0 +1,22 @@
+[package]
+name = "sasktran2-raytracer"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+name = "sasktran2_raytracer"
+
+[build-dependencies]
+cxx-build = "1.0"
+
+[dependencies]
+ndarray = {version = "*", features = ["rayon"] }
+num = "*"
+anyhow = "*"
+rayon = "*"
+cxx = "1.0"
+
+[features]
+nightly = ["simd"]
+simd = []
