@@ -1,11 +1,11 @@
 [package]
-name = "sasktran2-raytracer"
+name = "sasktran2-core"
 version = "0.1.0"
 edition = "2024"
 
 [lib]
 crate-type = ["staticlib", "rlib"]
-name = "sasktran2_raytracer"
+name = "sasktran2_core"
 
 [build-dependencies]
 cxx-build = "1.0"

@@ -145,6 +145,7 @@ dependencies = [
  "numpy",
  "pyo3",
  "rayon",
+ "sasktran2-core",
  "sasktran2-rs",
 ]
 
@@ -628,7 +629,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eded382c5f5f786b989652c49544c4877d9f015cc22e145a5ea8ea66c2921cd2"
 
 [[package]]
-name = "sasktran2-raytracer"
+name = "sasktran2-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -648,6 +649,7 @@ dependencies = [
  "ndarray",
  "num",
  "rayon",
+ "sasktran2-core",
  "sasktran2-sys",
  "version_check",
 ]

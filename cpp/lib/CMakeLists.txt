@@ -17,8 +17,6 @@ add_library(
   dual/dual.cpp
   atmosphere/atmosphere.cpp
   atmosphere/surface.cpp
-  atmosphere/constituent.cpp
-  atmosphere/userdefined1d_constituent.cpp
   phasefunction/interpolator.cpp
   phasefunction/phasehandler.cpp
   sourceintegrator/sourceintegrator.cpp
@@ -46,7 +44,6 @@ add_library(
   engine/engine.cpp
   hr/diffuse_point.cpp
   hr/diffuse_table.cpp
-  mie/linearized_mie.cpp
   derivative_mapping/derivative_mapping.cpp
   sktran_disco/sktran_do.cpp
   sktran_disco/sktran_do_geometrylayerarray.cpp
@@ -66,8 +63,7 @@ add_library(
   sktran_disco/source_term/do_source_diffuse_storage.cpp
   sktran_disco/source_term/do_source.cpp
   sktran_disco/source_term/do_source_interpolated_pp.cpp
-  sktran_disco/source_term/do_source_planeparallel.cpp
-  external/faddeeva.cpp)
+  sktran_disco/source_term/do_source_planeparallel.cpp)
 
 option(BUILD_DOXYGEN "Build Doxygen Docs" ON)
 # Doxygen document build

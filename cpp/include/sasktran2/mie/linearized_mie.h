@@ -1,7 +1,9 @@
 #pragma once
 
+#include "rust/cxx.h"
 #include "sasktran2/mie/mie.h"
 #include <sasktran2/internal_common.h>
+#include <sasktran2_core_cxx/mie/mod.h>
 
 namespace sasktran2::mie {
     class LinearizedMieWorker {
@@ -65,31 +67,47 @@ namespace sasktran2::mie {
                       std::complex<double>& result);
     };
 
-    class LinearizedMie : public MieBase {
+    class RustMie : public MieBase {
       private:
-        std::vector<LinearizedMieWorker> m_thread_storage;
-        Eigen::MatrixXd m_tau_matrix;
-        Eigen::MatrixXd m_pi_matrix;
-
         int m_num_threads;
-
-        void allocate(double max_x, int num_angle);
 
         void internal_calculate(const Eigen::VectorXd& size_param,
                                 const std::complex<double>& refractive_index,
                                 const Eigen::VectorXd& cos_angles,
                                 bool calculate_derivative,
-                                MieOutput& output) override;
+                                MieOutput& output) override {
+            ::rust::Slice<const rust::f64> sp(size_param.data(),
+                                              size_param.size());
+            ::rust::Slice<const rust::f64> ca(cos_angles.data(),
+                                              cos_angles.size());
 
-        void tau_pi(const Eigen::VectorXd& cos_angles);
+            auto rust_output = ffi::mie_c(sp, refractive_index.real(),
+                                          refractive_index.imag(), ca);
+
+            auto qext = rust_output->Qext_vec();
+            auto qsca = rust_output->Qsca_vec();
+
+            auto s1_im = rust_output->S1_im_vec();
+            auto s1_re = rust_output->S1_re_vec();
+            auto s2_im = rust_output->S2_im_vec();
+            auto s2_re = rust_output->S2_re_vec();
+
+            int c = 0;
+            for (int i = 0; i < qext.size(); ++i) {
+                output.values.Qext(i) = qext[i];
+                output.values.Qsca(i) = qsca[i];
+
+                for (int j = 0; j < cos_angles.size(); ++j) {
+                    output.values.S1(i, j) =
+                        std::complex<double>(s1_re[c], s1_im[c]);
+                    output.values.S2(i, j) =
+                        std::complex<double>(s2_re[c], s2_im[c]);
+                    ++c;
+                }
+            }
+        }
 
       public:
-        LinearizedMie(int num_threads = 1);
-        ~LinearizedMie(){};
-
-        void
-        recalculate_scattering(Eigen::Ref<const Eigen::VectorXd> cos_angles,
-                               MieOutput& output);
+        RustMie(int num_threads = 1) : m_num_threads(num_threads){};
     };
-
 } // namespace sasktran2::mie
