@@ -445,7 +445,6 @@ corrosion_add_cxxbridge(
   REGEN_TARGET
   cxx_bindings
   FILES
-  lib.rs
   math/wigner.rs
   mie/mod.rs)
 
