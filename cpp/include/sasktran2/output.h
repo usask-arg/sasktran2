@@ -2,7 +2,6 @@
 
 #include "sasktran2/atmosphere/atmosphere.h"
 #include "sasktran2/config.h"
-#include "sasktran2/sensor.h"
 #include "sasktran2/geometry.h"
 #include "sasktran2/raytracing.h"
 #include <Eigen/src/Core/Matrix.h>
@@ -227,33 +226,5 @@ namespace sasktran2 {
         void assign(const sasktran2::Dual<double, sasktran2::dualstorage::dense,
                                           NSTOKES>& radiance,
                     int losidx, int wavelidx, int threadidx);
-    };
-
-    /**
-     */
-    template <int NSTOKES> class OutputSpectralSensor : public Output<NSTOKES> {
-      private:
-        const sasktran2::sensor::Sensor& m_sensor;
-
-        sasktran2::Dual<double, sasktran2::dualstorage::dense>
-            m_radiance; /**< Internal storage */
-
-        void resize();
-
-      public:
-        OutputSpectralSensor(const sasktran2::sensor::Sensor& sensor)
-            : m_sensor(sensor){};
-
-        void assign(const sasktran2::Dual<double, sasktran2::dualstorage::dense,
-                                          NSTOKES>& radiance,
-                    int losidx, int wavelidx);
-
-        /**
-         *
-         * @return The stored radiance container
-         */
-        sasktran2::Dual<double, sasktran2::dualstorage::dense>& radiance() {
-            return m_radiance;
-        }
     };
 } // namespace sasktran2
