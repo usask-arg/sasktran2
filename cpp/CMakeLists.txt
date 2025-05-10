@@ -418,8 +418,21 @@ if(INCLUDE_TRACY)
 endif()
 
 # RUST CORROSION
-find_package(Corrosion REQUIRED)
-include(Corrosion)
+find_package(Corrosion)
+
+if(Corrosion_FOUND)
+  include(Corrosion)
+else()
+
+  include(FetchContent)
+
+  FetchContent_Declare(
+    Corrosion
+    GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
+    GIT_TAG v0.5 # Optionally specify a commit hash, version tag or branch here
+  )
+  FetchContent_MakeAvailable(Corrosion)
+endif()
 
 corrosion_import_crate(
   MANIFEST_PATH "${CMAKE_SOURCE_DIR}/../rust/sasktran2-core/Cargo.toml"
