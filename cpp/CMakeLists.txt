@@ -434,9 +434,19 @@ else()
   FetchContent_MakeAvailable(Corrosion)
 endif()
 
-corrosion_import_crate(
-  MANIFEST_PATH "${CMAKE_SOURCE_DIR}/../rust/sasktran2-core/Cargo.toml"
-  CRATE_TYPES staticlib)
+option(VENDORED "Inside a vendored build" OFF)
+
+if(VENDORED)
+  corrosion_import_crate(
+    MANIFEST_PATH "${CMAKE_SOURCE_DIR}/../../rust/sasktran2-core/Cargo.toml"
+    CRATE_TYPES staticlib)
+else()
+
+  corrosion_import_crate(
+    MANIFEST_PATH "${CMAKE_SOURCE_DIR}/../rust/sasktran2-core/Cargo.toml"
+    CRATE_TYPES staticlib)
+
+endif()
 
 corrosion_add_cxxbridge(
   sasktran2_core_cxx
