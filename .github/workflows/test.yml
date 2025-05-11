@@ -195,7 +195,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: set up symlink
         run: |
-          cd rust/sasktran2-sys && ln -s ../../cpp vendor
+          cd rust/sasktran2-sys
+          mkdir vendor
+          ln -s ../../cpp libsasktran2
+          ln -s ../sasktran2-core sasktran2-core
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:

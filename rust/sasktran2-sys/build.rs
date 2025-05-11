@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 fn cpp_src_path() -> PathBuf {
     // if the vendor folder exists, we are in a sdist mode, use that
     // otherwise we are in a dev mode, use the cpp folder
-    let vendor_path = PathBuf::from("vendor/");
+    let vendor_path = PathBuf::from("vendor/libsasktran2");
     if vendor_path.exists() {
         return vendor_path;
     }
