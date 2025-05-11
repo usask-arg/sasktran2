@@ -438,7 +438,7 @@ option(VENDORED "Inside a vendored build" OFF)
 
 if(VENDORED)
   corrosion_import_crate(
-    MANIFEST_PATH "${CMAKE_SOURCE_DIR}/../../rust/sasktran2-core/Cargo.toml"
+    MANIFEST_PATH "${CMAKE_SOURCE_DIR}/../../sasktran2-core/Cargo.toml"
     CRATE_TYPES staticlib)
 else()
 
