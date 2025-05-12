@@ -9,7 +9,10 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use sasktran2_rs::atmosphere::AtmosphereStorageAccess;
 use sasktran2_rs::atmosphere::traits::*;
+use sasktran2_rs::bindings::config;
 use sasktran2_rs::constituent::traits::*;
+
+use crate::config::PyConfig;
 
 use super::deriv_mapping::PyDerivMapping;
 
@@ -72,6 +75,7 @@ pub struct AtmosphereStorageInputs<'py> {
     pub py_wavelength_nm: Option<PyReadonlyArray1<'py, f64>>,
     pub py_wavenumber_cminv: Option<PyReadonlyArray1<'py, f64>>,
     pub py_equation_of_state: Bound<'py, PyAny>,
+    pub py_config: Bound<'py, PyAny>,
 }
 
 impl<'py> StorageInputs for AtmosphereStorageInputs<'py> {
@@ -177,6 +181,7 @@ impl<'py> AtmosphereStorage<'py> {
         let legendre: PyReadwriteArray3<f64> = legendre_obj.extract().unwrap();
 
         let state_eqn_obj = atmo.getattr("state_equation").unwrap();
+        let config = atmo.getattr("_config").unwrap();
 
         let num_stokes_obj = atmo.getattr("nstokes").unwrap();
         let num_stokes: usize = num_stokes_obj.extract().unwrap();
@@ -217,6 +222,7 @@ impl<'py> AtmosphereStorage<'py> {
                 py_wavelength_nm: wavelengths_nm_array,
                 py_wavenumber_cminv: wavenumber_cminv_array,
                 py_equation_of_state: state_eqn_obj,
+                py_config: config,
             },
             outputs: AtmosphereStorageOutputs {
                 num_stokes,

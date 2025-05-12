@@ -1,4 +1,5 @@
 #include "sasktran2/engine.h"
+#include "engine.h"
 #include "internal_types.h"
 #include "output.h"
 #include "sasktran2/output.h"
@@ -27,7 +28,9 @@ struct Engine {
         }
     }
 
-    int calculate_radiance(Atmosphere* atmosphere, OutputC* output) {
+    int calculate_radiance(Atmosphere* atmosphere, OutputC* output,
+                           int only_initialize) {
+        bool initialize = only_initialize != 0;
         try {
             if (impl) {
                 if (_config->impl.num_stokes() == 1) {
@@ -36,8 +39,8 @@ struct Engine {
                     impl1->calculate_radiance(
                         *static_cast<sasktran2::atmosphere::Atmosphere<1>*>(
                             atmosphere->impl.get()),
-                        *static_cast<sasktran2::Output<1>*>(
-                            output->impl.get()));
+                        *static_cast<sasktran2::Output<1>*>(output->impl.get()),
+                        initialize);
                     return 0;
                 } else if (_config->impl.num_stokes() == 3) {
                     Sasktran2<3>* impl3 =
@@ -45,8 +48,8 @@ struct Engine {
                     impl3->calculate_radiance(
                         *static_cast<sasktran2::atmosphere::Atmosphere<3>*>(
                             atmosphere->impl.get()),
-                        *static_cast<sasktran2::Output<3>*>(
-                            output->impl.get()));
+                        *static_cast<sasktran2::Output<3>*>(output->impl.get()),
+                        initialize);
                     return 0;
                 } else {
                     return -2; // Error: invalid number of Stokes parameters
@@ -69,7 +72,49 @@ Engine* sk_engine_create(Config* config, Geometry1D* geometry,
 void sk_engine_destroy(Engine* engine) { delete engine; }
 
 int sk_engine_calculate_radiance(Engine* engine, Atmosphere* atmosphere,
-                                 OutputC* output) {
-    return engine->calculate_radiance(atmosphere, output);
+                                 OutputC* output, int only_initialize) {
+    return engine->calculate_radiance(atmosphere, output, only_initialize);
+}
+
+int sk_engine_calculate_radiance_thread(Engine* engine, Atmosphere* atmosphere,
+                                        OutputC* output, int wavelength_idx,
+                                        int thread_idx) {
+    try {
+        if (engine->impl) {
+            if (engine->_config->impl.num_stokes() == 1) {
+                Sasktran2<1>* impl1 =
+                    dynamic_cast<Sasktran2<1>*>(engine->impl.get());
+                impl1->calculate_radiance_thread(
+                    *static_cast<sasktran2::atmosphere::Atmosphere<1>*>(
+                        atmosphere->impl.get()),
+                    *static_cast<sasktran2::Output<1>*>(output->impl.get()),
+                    wavelength_idx, thread_idx);
+                return 0;
+            } else if (engine->_config->impl.num_stokes() == 3) {
+                Sasktran2<3>* impl3 =
+                    dynamic_cast<Sasktran2<3>*>(engine->impl.get());
+                impl3->calculate_radiance_thread(
+                    *static_cast<sasktran2::atmosphere::Atmosphere<3>*>(
+                        atmosphere->impl.get()),
+                    *static_cast<sasktran2::Output<3>*>(output->impl.get()),
+                    wavelength_idx, thread_idx);
+                return 0;
+            } else {
+                return -2; // Error: invalid number of Stokes parameters
+            }
+        }
+        return -1; // Error: impl is null
+    } catch (const std::exception& e) {
+        // Handle the exception, log it, etc.
+        return -3; // Error: exception occurred
+    }
+}
+
+int sk_openmp_support_enabled() {
+#ifdef SKTRAN_OPENMP_SUPPORT
+    return 1; // OpenMP support is enabled
+#else
+    return 0; // OpenMP support is not enabled
+#endif
 }
 }

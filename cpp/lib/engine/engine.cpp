@@ -277,7 +277,7 @@ void Sasktran2<NSTOKES>::validate_input_atmosphere(
 template <int NSTOKES>
 void Sasktran2<NSTOKES>::calculate_radiance(
     const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
-    sasktran2::Output<NSTOKES>& output) const {
+    sasktran2::Output<NSTOKES>& output, bool only_initialize) const {
 
 #ifdef SKTRAN_OPENMP_SUPPORT
     omp_set_num_threads(m_config.num_threads());
@@ -301,11 +301,17 @@ void Sasktran2<NSTOKES>::calculate_radiance(
     m_source_integrator->initialize_atmosphere(atmosphere);
 
     // Allocate memory, should be moved to thread storage?
-    std::vector<sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>>
-        radiance(m_config.num_threads(),
-                 {NSTOKES, atmosphere.num_deriv(), true});
+    auto& radiance = const_cast<std::vector<
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>>&>(
+        m_thread_radiance);
+    radiance.resize(m_config.num_threads(),
+                    {NSTOKES, atmosphere.num_deriv(), true});
 
     output.initialize(m_config, *m_geometry, m_traced_rays, atmosphere);
+
+    if (only_initialize) {
+        return;
+    }
 
 #pragma omp parallel for num_threads(m_config.num_wavelength_threads())
     for (int w = 0; w < atmosphere.num_wavel(); ++w) {
@@ -363,6 +369,60 @@ void Sasktran2<NSTOKES>::calculate_radiance(
         m_source_integrator->integrate_optical_depth(
             output.los_optical_depth());
     }
+}
+
+template <int NSTOKES>
+void Sasktran2<NSTOKES>::calculate_radiance_thread(
+    const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
+    sasktran2::Output<NSTOKES>& output, int wavelength_idx,
+    int thread_idx) const {
+
+    auto& radiance = const_cast<std::vector<
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>>&>(
+        m_thread_radiance)[thread_idx];
+
+    int w = wavelength_idx;
+    FrameMarkStart("Frame");
+
+    // Trigger source term generation for this wavelength
+    for (auto& source : m_source_terms) {
+        ZoneScopedN("Source Calculation");
+        source->calculate(w, thread_idx);
+    }
+
+#pragma omp parallel for num_threads(m_config.num_source_threads())            \
+    schedule(dynamic)
+    for (int i = 0; i < m_traced_rays.size(); ++i) {
+#ifdef SKTRAN_OPENMP_SUPPORT
+        int ray_threadidx = omp_get_thread_num() + thread_idx;
+#else
+        int ray_threadidx = thread_idx;
+#endif
+
+        // Set the radiance thread storage to 0
+        radiance.value.setZero();
+        radiance.deriv.setZero();
+
+        {
+            ZoneScopedN("Source Integration");
+            // Integrate all of the sources for the ray
+            m_source_integrator->integrate(radiance, m_los_source_terms, w, i,
+                                           thread_idx, ray_threadidx);
+        }
+
+        // Add on any start of ray sources
+        for (const SourceTermInterface<NSTOKES>* source : m_los_source_terms) {
+            source->start_of_ray_source(w, i, thread_idx, ray_threadidx,
+                                        radiance);
+        }
+
+        // And assign it to the output
+        output.assign(radiance, i, w, ray_threadidx);
+    }
+
+    // TODO: Is this where we should generate fluxes or other quantities
+    // that aren't through the integrator?
+    FrameMarkEnd("Frame");
 }
 
 template class Sasktran2<1>;

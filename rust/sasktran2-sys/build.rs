@@ -86,7 +86,10 @@ fn main() {
                                 if cfg!(target_os = "windows") {
                                     println!("cargo:rustc-link-lib=dylib={}", name);
                                 } else {
-                                    println!("cargo:rustc-link-lib=dylib={}", name.strip_prefix("lib").unwrap_or(name));
+                                    println!(
+                                        "cargo:rustc-link-lib=dylib={}",
+                                        name.strip_prefix("lib").unwrap_or(name)
+                                    );
                                 }
                             } else {
                                 println!("cargo:rustc-link-lib=dylib={}", name);

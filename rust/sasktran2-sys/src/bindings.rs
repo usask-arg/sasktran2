@@ -838,10 +838,23 @@ unsafe extern "C" {
         engine: *mut Engine,
         atmosphere: *mut Atmosphere,
         output: *mut OutputC,
+        only_initialize: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_engine_calculate_radiance_thread(
+        engine: *mut Engine,
+        atmosphere: *mut Atmosphere,
+        output: *mut OutputC,
+        wavelength_idx: ::std::os::raw::c_int,
+        thread_idx: ::std::os::raw::c_int,
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
     pub fn sk_engine_destroy(engine: *mut Engine);
+}
+unsafe extern "C" {
+    pub fn sk_openmp_support_enabled() -> ::std::os::raw::c_int;
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
