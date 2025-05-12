@@ -77,7 +77,7 @@ maturin = "*"
 cmake = "*"
 pip = "*"
 setuptools_scm = "*"
-matplotlib = "*"
+matplotlib = "<3.10"
 pre-commit = "*"
 seaborn = ">=0.13.2,<0.14"
 

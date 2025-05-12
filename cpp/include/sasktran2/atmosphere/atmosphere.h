@@ -3,7 +3,6 @@
 #include "../geometry.h"
 #include <sasktran2/config.h>
 #include <sasktran2/atmosphere/grid_storage.h>
-#include <sasktran2/atmosphere/constituent.h>
 #include <sasktran2/atmosphere/surface.h>
 
 namespace sasktran2::atmosphere {

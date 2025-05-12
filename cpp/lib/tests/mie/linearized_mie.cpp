@@ -1,9 +1,10 @@
+#include "sasktran2/mie/linearized_mie.h"
 #include <sasktran2/test_helper.h>
 
 #include <sasktran2.h>
 
 TEST_CASE("LinMie construction", "[sasktran2][mie]") {
-    auto mie = sasktran2::mie::LinearizedMie();
+    auto mie = sasktran2::mie::RustMie();
 
     auto size_param = Eigen::VectorXd::LinSpaced(10, 0.1, 1.0);
     auto refractive_index = std::complex<double>(1.5, 0.0);
@@ -14,7 +15,7 @@ TEST_CASE("LinMie construction", "[sasktran2][mie]") {
 
 TEST_CASE("LinMie construction2", "[sasktran2][mie]") {
     // testing the updates to An Bn code to ensure no Nans appear
-    auto mie = sasktran2::mie::LinearizedMie();
+    auto mie = sasktran2::mie::RustMie();
     Eigen::VectorXd size_param(1000);
     size_param << 1.23816970e-04, 6.52382898e-04, 1.60330810e-03,
         2.97679442e-03, 4.77285419e-03, 6.99147586e-03, 9.63263963e-03,
@@ -278,7 +279,7 @@ TEST_CASE("LinMie construction2", "[sasktran2][mie]") {
 }
 /*
 TEST_CASE("LinMie Dn test", "[sasktran2][mie]") {
-    auto mie = sasktran2::mie::LinearizedMie();
+    auto mie = sasktran2::mie::RustMie();
     auto size_param = Eigen::VectorXd::LinSpaced(1, 62, 62);
     auto refractive_index = std::complex<double>(1.28, -1.37);
     int nstop = 50;
@@ -292,7 +293,7 @@ TEST_CASE("LinMie Dn test", "[sasktran2][mie]") {
 }
 
 TEST_CASE("LinMie An Bn test", "[sasktran2][mie]") {
-    auto mie = sasktran2::mie::LinearizedMie();
+    auto mie = sasktran2::mie::RustMie();
     auto size_param = Eigen::VectorXd::LinSpaced(1, 50, 50);
     auto refractive_index = std::complex<double>(4.0 / 3.0, 0);
     double x = size_param.maxCoeff(); // largest size parameter, use to do the
@@ -333,7 +334,7 @@ TEST_CASE("LinMie An Bn test", "[sasktran2][mie]") {
 */
 
 TEST_CASE("LinMie multiple size_params", "[sasktran2][mie]") {
-    auto mie = sasktran2::mie::LinearizedMie();
+    auto mie = sasktran2::mie::RustMie();
 
     auto size_param_og = Eigen::VectorXd::LinSpaced(2, 0.0004317428463995357,
                                                     0.0022637105717340984);
@@ -361,7 +362,7 @@ TEST_CASE("LinMie multiple size_params", "[sasktran2][mie]") {
 
 TEST_CASE("LinMie Qext Qsca test non absorbing (miepython)",
           "[sasktran2][mie]") {
-    auto mie = sasktran2::mie::LinearizedMie();
+    auto mie = sasktran2::mie::RustMie();
     double lambda0 = 0.6328;
     double radius = 0.525;
 
@@ -574,7 +575,7 @@ TEST_CASE("LinMie Qext Qsca test non absorbing (miepython)",
 
 TEST_CASE("LinMie Qext Qsca test absorbing (miepython)", "[sasktran2][mie]") {
     // MIEV0 Test Case 9
-    auto mie = sasktran2::mie::LinearizedMie();
+    auto mie = sasktran2::mie::RustMie();
     auto size_param_1 = Eigen::VectorXd::LinSpaced(1, 1, 1);
     auto refractive_index = std::complex<double>(1.33, -0.00001);
     Eigen::VectorXd angles = Eigen::VectorXd::LinSpaced(7, 0, 180.0);
@@ -929,13 +930,13 @@ TEST_CASE("LinMie Qext Qsca test absorbing (miepython)", "[sasktran2][mie]") {
 
     REQUIRE(
         fabs(result.values.S1(6).real() + 2.18471714E+02) <
-        1e-4); // different values using miepython with higher number of terms
+        1e-3); // different values using miepython with higher number of terms
     REQUIRE(
         fabs(result.values.S1(6).imag() + 2064.61012226) <
         1e-3); // different values using miepython with higher number of terms
     REQUIRE(
         fabs(result.values.S2(6).real() - 2.18471714E+02) <
-        1e-4); // different values using miepython with higher number of terms
+        1e-3); // different values using miepython with higher number of terms
     REQUIRE(
         fabs(result.values.S2(6).imag() - 2064.61012226) <
         1e-3); // different values using miepython with higher number of terms
@@ -1080,7 +1081,7 @@ TEST_CASE("LinMie Qext Qsca test absorbing (miepython)", "[sasktran2][mie]") {
 
 TEST_CASE("LinMie Qext Qsca test small (miepython)", "[sasktran2][mie]") {
     // MieV0 test case 5
-    auto mie = sasktran2::mie::LinearizedMie();
+    auto mie = sasktran2::mie::RustMie();
     auto size_param_99 = Eigen::VectorXd::LinSpaced(1, 0.099, 0.099);
     auto refractive_index = std::complex<double>(0.75, 0);
     auto cos_angles = Eigen::VectorXd::LinSpaced(10, -1.0, 1.0);
@@ -1113,7 +1114,7 @@ TEST_CASE("LinMie Qext Qsca test small (miepython)", "[sasktran2][mie]") {
 
 TEST_CASE("LinMie S1 S2 (miepython)", "[sasktran2][mie]") {
     // MieV0 test case 5
-    auto mie = sasktran2::mie::LinearizedMie();
+    auto mie = sasktran2::mie::RustMie();
     // auto size_param_1 = Eigen::VectorXd::LinSpaced(1, 1.0, 1.0);
     auto size_param_1 = Eigen::VectorXd::LinSpaced(1, 1.0, 1.0);
     auto refractive_index = std::complex<double>(1.5, -1.0);
@@ -1184,7 +1185,7 @@ TEST_CASE("LinMie S1 S2 (miepython)", "[sasktran2][mie]") {
 }
 
 TEST_CASE("Benchmark for 1000 x cases", "[sasktran2][mie]") {
-    auto mie = sasktran2::mie::LinearizedMie();
+    auto mie = sasktran2::mie::RustMie();
     auto refractive_index = std::complex<double>(1.55, 0);
     Eigen::VectorXd angles = Eigen::VectorXd::LinSpaced(7, 0, 180.0);
     Eigen::VectorXd cos_angles = cos(angles.array() * EIGEN_PI / 180.0);

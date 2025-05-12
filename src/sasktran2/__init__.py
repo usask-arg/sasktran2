@@ -30,6 +30,7 @@ from ._core_rust import (
     OccultationSource,
     SingleScatterSource,
     StokesBasis,
+    ThreadingLib,
     ThreadingModel,
 )
 from .atmosphere import Atmosphere

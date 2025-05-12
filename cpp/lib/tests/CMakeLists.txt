@@ -26,8 +26,7 @@ add_executable(
   engine/benchmark/bench_do_wf.cpp
   engine/benchmark/bench_hr.cpp
   engine/benchmark/bench_occ.cpp
-  atmosphere/surface.cpp
-  math/test_broadening.cpp)
+  atmosphere/surface.cpp)
 
 # Some special logic to support both CATCH2 version 2 and 3 for now
 find_package(Catch2 2 CONFIG QUIET)

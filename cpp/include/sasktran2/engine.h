@@ -58,6 +58,9 @@ template <int NSTOKES> class Sasktran2 : public Sasktran2Interface {
     std::vector<SourceTermInterface<NSTOKES>*>
         m_thermal_source; /**< Thermal source terms (planck, photochemical) */
 
+    std::vector<sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>>
+        m_thread_radiance;
+
     /** Internal method to calculate all terms inside the engine that are only
      * geometry dependent
      */
@@ -122,5 +125,14 @@ template <int NSTOKES> class Sasktran2 : public Sasktran2Interface {
      */
     void calculate_radiance(
         const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
-        sasktran2::Output<NSTOKES>& output) const;
+        sasktran2::Output<NSTOKES>& output, bool only_initialize = false) const;
+
+    /**
+     * @brief
+     *
+     */
+    void calculate_radiance_thread(
+        const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
+        sasktran2::Output<NSTOKES>& output, int wavelength_idx,
+        int thread_idx) const;
 };

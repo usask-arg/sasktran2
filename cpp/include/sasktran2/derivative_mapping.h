@@ -408,22 +408,4 @@ namespace sasktran2 {
          */
         int num_brdf_args() const { return m_nbrdf_args; }
     };
-
-    inline void assign_absorber_derivatives(
-        DerivativeMapping& mapping, const Eigen::MatrixXd& d_extinction,
-        const Eigen::MatrixXd& d_ssa, const Eigen::MatrixXd& atmo_ssa,
-        const Eigen::MatrixXd& atmo_extinction) {
-        mapping.allocate_extinction_derivatives();
-        mapping.allocate_ssa_derivatives();
-
-        mapping.native_mapping().d_extinction.value() = d_extinction;
-        mapping.native_mapping().d_ssa.value() = (d_ssa - atmo_ssa);
-        mapping.native_mapping().d_ssa.value().array() *= d_extinction.array();
-        mapping.native_mapping().d_ssa.value().array() /=
-            atmo_extinction.array();
-
-        // d_extinction.cwiseProduct(d_ssa -
-        // atmo_ssa).cwiseQuotient(atmo_extinction);
-    }
-
 }; // namespace sasktran2

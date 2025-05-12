@@ -1,20 +1,21 @@
 [package]
-name = "sasktran2-rs"
+name = "sasktran2-core"
 version = "0.1.0"
 edition = "2024"
-build = "build.rs"
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+name = "sasktran2_core"
 
 [build-dependencies]
-version_check = "*"
+cxx-build = "1.0"
 
 [dependencies]
 ndarray = {version = "*", features = ["rayon"] }
 num = "*"
 anyhow = "*"
-sasktran2-sys = { version = "*", path = "../sasktran2-sys" }
-sasktran2-core = { version = "*", path = "../sasktran2-core" }
 rayon = "*"
-libc = "*"
+cxx = "1.0"
 
 [features]
 nightly = ["simd"]

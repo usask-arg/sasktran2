@@ -57,6 +57,13 @@ pub enum InputValidationMode {
     Disabled,
 }
 
+#[pyclass(eq, eq_int)]
+#[derive(PartialEq, Clone)]
+pub enum ThreadingLib {
+    Rayon,
+    OpenMP,
+}
+
 #[pyclass(unsendable)]
 pub struct PyConfig {
     pub config: config::Config,
@@ -482,6 +489,26 @@ impl PyConfig {
         self.config
             .with_num_successive_orders_outgoing(num_outgoing)
             .into_pyresult()?;
+
+        Ok(())
+    }
+
+    #[getter]
+    fn get_threading_lib(&self) -> PyResult<ThreadingLib> {
+        let lib = self.config.threading_lib();
+        match lib {
+            config::ThreadingLib::Rayon => Ok(ThreadingLib::Rayon),
+            config::ThreadingLib::OpenMP => Ok(ThreadingLib::OpenMP),
+        }
+    }
+
+    #[setter]
+    fn set_threading_lib(&mut self, lib: PyRef<'_, ThreadingLib>) -> PyResult<()> {
+        let lib = match *lib {
+            ThreadingLib::Rayon => config::ThreadingLib::Rayon,
+            ThreadingLib::OpenMP => config::ThreadingLib::OpenMP,
+        };
+        self.config.with_threading_lib(lib).into_pyresult()?;
 
         Ok(())
     }

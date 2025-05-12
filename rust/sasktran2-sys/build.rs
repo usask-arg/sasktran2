@@ -2,19 +2,24 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-fn cpp_src_path() -> PathBuf {
+fn cpp_src_path() -> (PathBuf, bool) {
     // if the vendor folder exists, we are in a sdist mode, use that
     // otherwise we are in a dev mode, use the cpp folder
     let vendor_path = PathBuf::from("vendor/");
     if vendor_path.exists() {
-        return vendor_path;
+        return (vendor_path, true);
     }
 
-    PathBuf::from("../../cpp")
+    (PathBuf::from("../../cpp"), false)
 }
 
 fn main() {
-    let cpp_src = cpp_src_path();
+    let (cpp_src, vendored) = cpp_src_path();
+
+    let vendored = match vendored {
+        true => "ON",
+        false => "OFF",
+    };
 
     let out_dir = env::var("OUT_DIR").unwrap();
     let install_prefix = std::path::Path::new(&out_dir).join("install");
@@ -38,6 +43,7 @@ fn main() {
         .define("CMAKE_INSTALL_PREFIX", &install_prefix)
         .define("DO_STREAM_TEMPLATES", do_stream_templates)
         .define("USE_OMP", use_omp)
+        .define("VENDORED", vendored)
         .define("SKTRAN_BLAS_VENDOR", sktran_blas_vendor);
 
     if cfg!(target_os = "windows") {

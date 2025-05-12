@@ -1,6 +1,7 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 
 pub mod math;
+pub mod threading;
 
 pub mod atmosphere;
 pub mod bindings;

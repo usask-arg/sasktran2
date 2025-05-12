@@ -7,7 +7,6 @@
 #include <sasktran2/math/wigner.h>
 #include <sasktran2/math/unitsphere.h>
 #include <sasktran2/math/geodetic.h>
-#include <sasktran2/math/spectroscopy.h>
 
 #include <sasktran2/core.h>
 #include <sasktran2/config.h>
@@ -17,7 +16,6 @@
 #include <sasktran2/refraction.h>
 #include <sasktran2/raytracing.h>
 #include <sasktran2/derivative_mapping.h>
-#include <sasktran2/sensor.h>
 #include <sasktran2/dual.h>
 #include <sasktran2/atmosphere/surface.h>
 #include <sasktran2/atmosphere/atmosphere.h>
@@ -28,7 +26,6 @@
 #include <sasktran2/hr/hr.h>
 #include <sasktran2/mie/mie.h>
 #include <sasktran2/mie/linearized_mie.h>
-#include <sasktran2/mie/integration.h>
 #include <sasktran2/engine.h>
 
 #include <sktran_disco/sktran_do_linearization_types.h>

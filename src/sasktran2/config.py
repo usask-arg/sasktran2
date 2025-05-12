@@ -8,6 +8,7 @@ from sasktran2._core_rust import (
     PyConfig,
     SingleScatterSource,
     StokesBasis,
+    ThreadingLib,
     ThreadingModel,
 )
 
@@ -20,6 +21,12 @@ class Config:
         Object which stores all of the configuration settings for the radiative transfer calculation.
         """
         self._config = PyConfig()
+
+    def _into_rust_object(self):
+        """
+        Returns the rust object which contains all of the configuration settings for the radiative transfer calculation.
+        """
+        return self._config
 
     @property
     def num_threads(self) -> int:
@@ -522,3 +529,17 @@ class Config:
         434, 590, 770, 974, 1202, 1454, 1730, 2030, 2354, 2702, 3074, 3470, 3890]. Default is 110.
         """
         self._config.num_successive_orders_outgoing = value
+
+    @property
+    def threading_lib(self) -> ThreadingLib:
+        """
+        Sets the threading library to use in the calculation.  Default is ThreadingLib.Rayon.
+        """
+        return self._config.threading_lib
+
+    @threading_lib.setter
+    def threading_lib(self, value: ThreadingLib):
+        """
+        Sets the threading library to use in the calculation.  Default is ThreadingLib.Rayon.
+        """
+        self._config.threading_lib = value

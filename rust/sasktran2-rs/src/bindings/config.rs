@@ -1,4 +1,5 @@
 use super::prelude::*;
+use crate::prelude::*;
 use sasktran2_sys::ffi;
 
 #[repr(i32)]
@@ -42,6 +43,12 @@ pub enum ThreadingModel {
     Source = 1,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ThreadingLib {
+    Rayon,
+    OpenMP,
+}
+
 #[repr(i32)]
 pub enum InputValidationMode {
     Strict = 0,
@@ -50,7 +57,11 @@ pub enum InputValidationMode {
 }
 
 pub struct Config {
+    // c++ object
     pub config: *mut ffi::Config,
+    // rust specific config settings
+    threading_lib: ThreadingLib,
+    pub thread_pool: rayon::ThreadPool,
 }
 
 impl Default for Config {
@@ -63,6 +74,8 @@ impl Config {
     pub fn new() -> Self {
         Config {
             config: unsafe { ffi::sk_config_create() },
+            threading_lib: ThreadingLib::OpenMP,
+            thread_pool: create_pool(1).unwrap(),
         }
     }
 
@@ -82,6 +95,12 @@ impl Config {
 
     pub fn with_num_threads(&mut self, num_threads: usize) -> Result<&mut Self> {
         let error_code = unsafe { ffi::sk_config_set_num_threads(self.config, num_threads as i32) };
+
+        if num_threads < 1 {
+            return Err(anyhow!("Number of threads must be greater than 0"));
+        }
+
+        self.thread_pool = create_pool(num_threads).unwrap();
 
         if error_code != 0 {
             Err(anyhow!(
@@ -798,6 +817,15 @@ impl Config {
         } else {
             Ok(self)
         }
+    }
+
+    pub fn with_threading_lib(&mut self, threading_lib: ThreadingLib) -> Result<&mut Self> {
+        self.threading_lib = threading_lib;
+        Ok(self)
+    }
+
+    pub fn threading_lib(&self) -> ThreadingLib {
+        self.threading_lib
     }
 }
 
