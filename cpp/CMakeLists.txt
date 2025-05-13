@@ -87,26 +87,7 @@ if(spdlog_FOUND)
   target_link_libraries(sasktran2BuildProperties
                         INTERFACE spdlog::spdlog_header_only)
 
-  # spdlog can still depend on fmt, so we need to check for that too
-  find_package(fmt CONFIG)
-  if(fmt_FOUND)
-    if(CMAKE_BUILD_TYPE)
-      string(TOUPPER "${CMAKE_BUILD_TYPE}" UPPER_BUILD_TYPE)
-      get_target_property(fmt_LIBRARIES fmt::fmt
-                          IMPORTED_LOCATION_${UPPER_BUILD_TYPE})
-    else()
-      get_target_property(fmt_LIBRARIES fmt::fmt IMPORTED_LOCATION)
-    endif()
-
-    if(NOT LINKED_LIBS)
-      set(LINKED_LIBS "${fmt_LIBRARIES}")
-    else()
-      set(LINKED_LIBS "${LINKED_LIBS};${fmt_LIBRARIES}")
-    endif()
-
-    message(STATUS "Found fmt at ${fmt_LIBRARIES}")
-  endif()
-
+  target_compile_definitions(sasktran2BuildProperties INTERFACE FMT_HEADER_ONLY)
 else()
 
   set(SPDLOG_INSTALL_DIR "${CMAKE_BINARY_DIR}/spdlog-install/")
