@@ -22,6 +22,7 @@ jobs:
   build:
     runs-on: ${{ matrix.platform.runner }}
     strategy:
+      fail-fast: false
       matrix:
         platform:
           - runner: ubuntu-24.04
@@ -39,4 +40,4 @@ jobs:
         - name: Build conda package
           uses: prefix-dev/rattler-build-action@v0.2.33
           with:
-            build-args: -r ci/rattler
+            recipe-path: ci/rattler/recipe.yaml
