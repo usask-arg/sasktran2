@@ -1,3 +1,5 @@
+use crate::threading;
+
 use super::atmosphere::Atmosphere;
 use super::config::{Config, ThreadingLib};
 use super::geometry::Geometry1D;
@@ -153,7 +155,9 @@ impl<'a> Engine<'a> {
             let safe_output = SafeFFIOutput(output.output);
             let safe_atmosphere = SafeFFIAtmosphere(atmosphere.atmosphere);
 
-            self.config.thread_pool.install(|| {
+            let thread_pool = threading::thread_pool()?;
+
+            thread_pool.install(|| {
                 (0..num_wavel)
                     .into_par_iter()
                     .with_min_len(min_length)

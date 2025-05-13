@@ -100,7 +100,7 @@ impl PyLineAbsorber {
         atmo: Bound<'py, PyAny>,
         kwargs: Option<&Bound<'py, PyDict>>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let rust_atmo = AtmosphereStorage::new(&atmo);
+        let rust_atmo = AtmosphereStorage::new(&atmo)?;
         let aux_inputs = PyDictWrapper(kwargs);
 
         let oq = self

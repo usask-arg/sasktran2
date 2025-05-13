@@ -75,7 +75,6 @@ pub struct AtmosphereStorageInputs<'py> {
     pub py_wavelength_nm: Option<PyReadonlyArray1<'py, f64>>,
     pub py_wavenumber_cminv: Option<PyReadonlyArray1<'py, f64>>,
     pub py_equation_of_state: Bound<'py, PyAny>,
-    pub py_config: Bound<'py, PyAny>,
 }
 
 impl<'py> StorageInputs for AtmosphereStorageInputs<'py> {
@@ -164,7 +163,7 @@ pub struct AtmosphereStorage<'py> {
 }
 
 impl<'py> AtmosphereStorage<'py> {
-    pub fn new(atmo: &Bound<'py, PyAny>) -> Self {
+    pub fn new(atmo: &Bound<'py, PyAny>) -> PyResult<Self> {
         let pressure_pa_array = get_optional_array1::<f64>(atmo, "pressure_pa").unwrap();
         let temperature_k_array = get_optional_array1::<f64>(atmo, "temperature_k").unwrap();
         let wavelengths_nm_array = get_optional_array1::<f64>(atmo, "wavelengths_nm").unwrap();
@@ -181,7 +180,6 @@ impl<'py> AtmosphereStorage<'py> {
         let legendre: PyReadwriteArray3<f64> = legendre_obj.extract().unwrap();
 
         let state_eqn_obj = atmo.getattr("state_equation").unwrap();
-        let config = atmo.getattr("_config").unwrap();
 
         let num_stokes_obj = atmo.getattr("nstokes").unwrap();
         let num_stokes: usize = num_stokes_obj.extract().unwrap();
@@ -208,7 +206,7 @@ impl<'py> AtmosphereStorage<'py> {
             .extract()
             .unwrap_or(false);
 
-        AtmosphereStorage {
+        Ok(AtmosphereStorage {
             num_stokes,
             deriv_generator: PyDerivativeGenerator { storage },
             inputs: AtmosphereStorageInputs {
@@ -222,7 +220,6 @@ impl<'py> AtmosphereStorage<'py> {
                 py_wavelength_nm: wavelengths_nm_array,
                 py_wavenumber_cminv: wavenumber_cminv_array,
                 py_equation_of_state: state_eqn_obj,
-                py_config: config,
             },
             outputs: AtmosphereStorageOutputs {
                 num_stokes,
@@ -230,7 +227,7 @@ impl<'py> AtmosphereStorage<'py> {
                 py_ssa: ssa,
                 py_legendre: legendre,
             },
-        }
+        })
     }
 
     pub fn num_geometry(&self) -> usize {

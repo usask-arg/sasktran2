@@ -6,4 +6,4 @@ pub use ndarray::{
     ArrayViewMut2, ArrayViewMut3, Axis, Data, DataMut, Dimension, Zip, array,
 };
 
-pub use crate::threading::create_pool;
+pub use crate::threading;

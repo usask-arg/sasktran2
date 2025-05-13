@@ -119,7 +119,7 @@ impl PyRayleigh {
     ///
     /// Test docstring add to atmosphere
     pub fn add_to_atmosphere<'py>(&self, atmo: &Bound<'py, PyAny>) -> PyResult<()> {
-        let mut rust_atmo = AtmosphereStorage::new(atmo);
+        let mut rust_atmo = AtmosphereStorage::new(atmo)?;
 
         let _ = self.inner.add_to_atmosphere(&mut rust_atmo);
 
@@ -127,7 +127,7 @@ impl PyRayleigh {
     }
 
     pub fn register_derivative(&self, atmo: &'_ Bound<'_, PyAny>, name: &str) -> PyResult<()> {
-        let mut rust_atmo = AtmosphereStorage::new(atmo);
+        let mut rust_atmo = AtmosphereStorage::new(atmo)?;
 
         let _ = self.inner.register_derivatives(&mut rust_atmo, name);
 
