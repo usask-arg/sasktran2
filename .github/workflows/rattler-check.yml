@@ -1,0 +1,34 @@
+name: 'rattler-build'
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+
+jobs:
+  build:
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - runner: ubuntu-24.04
+            target: x86_64
+          - runner: ubuntu-24.04-arm
+            target: aarch64
+          - runner: macos-13
+            target: x86_64
+          - runner: macos-14
+            target: aarch64
+          - runner: windows-latest
+            target: x86_64
+    steps:
+        - uses: actions/checkout@v4
+        - name: Build conda package
+          uses: prefix-dev/rattler-build-action@v0.2.33
+          with:
+            recipe-path: ci/rattler/recipe.yaml
+            build-args: -c conda-forge/label/rust_dev -c conda-forge

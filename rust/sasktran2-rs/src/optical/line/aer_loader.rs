@@ -24,6 +24,7 @@ pub fn aer_molecule_file(molecule: &str, directory: &Path) -> Result<PathBuf> {
                 .unwrap()
                 .to_str()
                 .unwrap()
+                .to_uppercase()
                 .ends_with(&mol_ending)
         })
         .next()

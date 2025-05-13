@@ -80,45 +80,48 @@ else()
   target_link_libraries(sasktran2BuildProperties INTERFACE eigenlib)
 endif()
 
-# find_package(spdlog CONFIG)
+find_package(spdlog CONFIG)
 
-# if(spdlog_FOUND) message(STATUS "Found spdlog")
-# target_link_libraries(sasktran2BuildProperties INTERFACE
-# spdlog::spdlog_header_only) else()
-set(SPDLOG_INSTALL_DIR "${CMAKE_BINARY_DIR}/spdlog-install/")
+if(spdlog_FOUND)
+  message(STATUS "Found spdlog")
+  target_link_libraries(sasktran2BuildProperties
+                        INTERFACE spdlog::spdlog_header_only)
 
-ExternalProject_Add(
-  spdlog
-  URL https://github.com/gabime/spdlog/archive/refs/tags/v1.12.0.tar.gz
-  SOURCE_DIR "${CMAKE_BINARY_DIR}/spdlog-src"
-  BINARY_DIR "${CMAKE_BINARY_DIR}/spdlog-build"
-  INSTALL_DIR "${SPDLOG_INSTALL_DIR}"
-  CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
-             -DCMAKE_BUILD_TYPE=Release
-             -DSPDLOG_BUILD_EXAMPLES=OFF
-             -DSPDLOG_BUILD_SHARED=OFF
-             -DSPDLOG_BUILD_STATIC=OFF
-             -DSPDLOG_BUILD_BENCH=OFF
-             -DSPDLOG_BUILD_TESTS=OFF
-             -DSPDLOG_FMT_EXTERNAL=OFF # <- make spdlog self-contained
-             -DSPDLOG_INSTALL=ON # <- Necessary for exported CMake targets
-)
+  target_compile_definitions(sasktran2BuildProperties INTERFACE FMT_HEADER_ONLY)
+else()
 
-# Ensure the include dir exists before consuming
-file(MAKE_DIRECTORY ${SPDLOG_INSTALL_DIR}/include)
+  set(SPDLOG_INSTALL_DIR "${CMAKE_BINARY_DIR}/spdlog-install/")
 
-# Import the spdlog header-only target
-add_library(spdlog_header_only INTERFACE IMPORTED GLOBAL)
-add_dependencies(spdlog_header_only spdlog)
+  ExternalProject_Add(
+    spdlog
+    URL https://github.com/gabime/spdlog/archive/refs/tags/v1.12.0.tar.gz
+    SOURCE_DIR "${CMAKE_BINARY_DIR}/spdlog-src"
+    BINARY_DIR "${CMAKE_BINARY_DIR}/spdlog-build"
+    INSTALL_DIR "${SPDLOG_INSTALL_DIR}"
+    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+               -DCMAKE_BUILD_TYPE=Release
+               -DSPDLOG_BUILD_EXAMPLES=OFF
+               -DSPDLOG_BUILD_SHARED=OFF
+               -DSPDLOG_BUILD_STATIC=OFF
+               -DSPDLOG_BUILD_BENCH=OFF
+               -DSPDLOG_BUILD_TESTS=OFF
+               -DSPDLOG_FMT_EXTERNAL=OFF # <- make spdlog self-contained
+               -DSPDLOG_INSTALL=ON # <- Necessary for exported CMake targets
+  )
 
-set_target_properties(
-  spdlog_header_only PROPERTIES INTERFACE_INCLUDE_DIRECTORIES
-                                "${SPDLOG_INSTALL_DIR}/include")
+  # Ensure the include dir exists before consuming
+  file(MAKE_DIRECTORY ${SPDLOG_INSTALL_DIR}/include)
 
-target_link_libraries(sasktran2BuildProperties INTERFACE spdlog_header_only)
-# endif()
+  # Import the spdlog header-only target
+  add_library(spdlog_header_only INTERFACE IMPORTED GLOBAL)
+  add_dependencies(spdlog_header_only spdlog)
 
-# target_link_libraries(sasktran2BuildProperties INTERFACE sk_core)
+  set_target_properties(
+    spdlog_header_only PROPERTIES INTERFACE_INCLUDE_DIRECTORIES
+                                  "${SPDLOG_INSTALL_DIR}/include")
+
+  target_link_libraries(sasktran2BuildProperties INTERFACE spdlog_header_only)
+endif()
 
 # add the additional compiler flags
 set(CMAKE_CXX_FLAGS " ${CompilerFlags} ${OpenMP_CXX_FLAGS} ${CMAKE_CXX_FLAGS}")
@@ -144,6 +147,8 @@ if(USE_OMP)
                                INTERFACE SKTRAN_OPENMP_SUPPORT)
     if(NOT LINKED_LIBS)
       set(LINKED_LIBS "${OpenMP_CXX_LIBRARIES}")
+    else()
+      set(LINKED_LIBS "${LINKED_LIBS};${OpenMP_CXX_LIBRARIES}")
     endif()
   else()
     message(WARNING "OpenMP requested but not found, continuing without it")

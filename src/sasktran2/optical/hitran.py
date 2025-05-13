@@ -10,7 +10,6 @@ from sasktran2._core_rust import (
     voigt_broaden_with_line_coupling,
 )
 from sasktran2.atmosphere import Atmosphere
-from sasktran2.database.aer_line import AERLineDatabase
 from sasktran2.database.hitran_line import HITRANLineDatabase
 from sasktran2.optical.base import OpticalProperty, OpticalQuantities
 from sasktran2.util import get_hapi
@@ -244,8 +243,3 @@ class LineAbsorber(OpticalProperty):
 class HITRANAbsorber(LineAbsorber):
     def __init__(self, molecule: str, **kwargs):
         super().__init__(molecule, HITRANLineDatabase(), **kwargs)
-
-
-class AERLineAbsorber(LineAbsorber):
-    def __init__(self, molecule: str, **kwargs):
-        super().__init__(molecule, AERLineDatabase(), **kwargs)

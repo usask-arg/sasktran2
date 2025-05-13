@@ -80,6 +80,7 @@ setuptools_scm = "*"
 matplotlib = "<3.10"
 pre-commit = "*"
 seaborn = ">=0.13.2,<0.14"
+zenodo_get = "*"
 
 [tool.pixi.environments]
 default = ["test", "solar", "hapi", "dev"]

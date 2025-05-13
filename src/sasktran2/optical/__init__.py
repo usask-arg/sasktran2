@@ -7,8 +7,8 @@ from sasktran2.constants import K_BOLTZMANN
 from sasktran2.database.web import StandardDatabase
 
 from . import database, refraction  # noqa: F401
+from .aerline import AERLineAbsorber  # noqa: F401
 from .hitran import (
-    AERLineAbsorber,  # noqa: F401
     HITRANAbsorber,  # noqa: F401
 )
 from .mie import Mie  # noqa: F401
