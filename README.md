@@ -17,7 +17,7 @@ The preferred method to install SASKTRAN2 is through the pre-compiled Conda pack
 ```
 conda install -c conda-forge sasktran2
 ```
-these packages are made available for Python versions 3.11, 3.12, 3.13 on Windows/Linux/Mac platforms.
+these packages are made available for Python versions 3.10, 3.11, 3.12, 3.13 on Windows/Linux/Mac platforms.
 For Mac, both x86_64 and Arm packages are available.
 For Linux, arm/ppc are also supported.
 
@@ -32,24 +32,6 @@ pip install .
 ```
 
 When building from source it is required that a Blas/LAPACK implementation is findable by CMake.
-
-We also provide an example `conda` environment that can be used to build the code.  For Mac/Linux
-we recommend,
-
-```
-conda env create -f conda/dev_env.yml
-```
-
-For Windows you need to first install Visual Studio 2022, and then
-```
-conda env create -f conda/dev_env_windows.yml
-```
-
-Then the package can be installed with.
-```
-conda activate sasktran2-dev-env
-pip install .
-```
 
 ## Usage
 Documentation can be found at https://sasktran2.readthedocs.io/
