@@ -44,7 +44,7 @@ requirements:
         - llvm-openmp
     - if: build_platform == 'linux-64'
       then:
-        - libomp
+        - libgomp
 
   host:
     - python
