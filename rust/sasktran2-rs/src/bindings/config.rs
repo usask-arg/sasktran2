@@ -61,7 +61,6 @@ pub struct Config {
     pub config: *mut ffi::Config,
     // rust specific config settings
     threading_lib: ThreadingLib,
-    pub thread_pool: rayon::ThreadPool,
 }
 
 impl Default for Config {
@@ -75,7 +74,6 @@ impl Config {
         Config {
             config: unsafe { ffi::sk_config_create() },
             threading_lib: ThreadingLib::OpenMP,
-            thread_pool: create_pool(1).unwrap(),
         }
     }
 
@@ -100,7 +98,7 @@ impl Config {
             return Err(anyhow!("Number of threads must be greater than 0"));
         }
 
-        self.thread_pool = create_pool(num_threads).unwrap();
+        threading::set_num_threads(num_threads)?;
 
         if error_code != 0 {
             Err(anyhow!(

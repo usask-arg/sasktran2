@@ -392,64 +392,69 @@ impl LineAbsorber {
 
             let mol_param = map.get(&(line.mol_id, line.iso_id)).unwrap();
 
-            Zip::indexed(temperature)
-                .and(pressure)
-                .and(pself)
-                .and(xs.axis_iter_mut(Axis(0)))
-                .par_for_each(|g, &temperature, &pressure, &pself, mut xs| {
-                    let adjusted_line = line
-                        .adjusted_parameters(
-                            temperature,
-                            pressure,
-                            pself,
-                            mol_param.partition_factor[g],
-                            mol_param.mol_mass,
-                        )
-                        .unwrap();
+            let thread_pool = crate::threading::thread_pool()?;
 
-                    if !enabling_line_coupling || line.y_coupling.is_empty() {
-                        split_and_assign(
-                            &adjusted_line,
-                            &sub_grid,
-                            xs.slice_mut(ndarray::s![start_wavenumber_idx..end_wavenumber_idx])
-                                .as_slice_mut()
-                                .unwrap(),
-                        );
-                    } else {
-                        // Have to do line coupling
-                        // Interp the coupling values
-                        let temp_val = Array1::<f64>::from_vec(line.coupling_temperature.clone());
-                        let y_coupling = Array1::<f64>::from_vec(line.y_coupling.clone());
-                        let g_coupling = Array1::<f64>::from_vec(line.g_coupling.clone());
+            thread_pool.install(|| {
+                Zip::indexed(temperature)
+                    .and(pressure)
+                    .and(pself)
+                    .and(xs.axis_iter_mut(Axis(0)))
+                    .par_for_each(|g, &temperature, &pressure, &pself, mut xs| {
+                        let adjusted_line = line
+                            .adjusted_parameters(
+                                temperature,
+                                pressure,
+                                pself,
+                                mol_param.partition_factor[g],
+                                mol_param.mol_mass,
+                            )
+                            .unwrap();
 
-                        let y_coupling =
-                            y_coupling.interp1(&temp_val, temperature, OutOfBoundsMode::Extend);
-                        let g_coupling =
-                            g_coupling.interp1(&temp_val, temperature, OutOfBoundsMode::Extend);
+                        if !enabling_line_coupling || line.y_coupling.is_empty() {
+                            split_and_assign(
+                                &adjusted_line,
+                                &sub_grid,
+                                xs.slice_mut(ndarray::s![start_wavenumber_idx..end_wavenumber_idx])
+                                    .as_slice_mut()
+                                    .unwrap(),
+                            );
+                        } else {
+                            // Have to do line coupling
+                            // Interp the coupling values
+                            let temp_val =
+                                Array1::<f64>::from_vec(line.coupling_temperature.clone());
+                            let y_coupling = Array1::<f64>::from_vec(line.y_coupling.clone());
+                            let g_coupling = Array1::<f64>::from_vec(line.g_coupling.clone());
 
-                        let p_norm = pressure / 101325.0;
+                            let y_coupling =
+                                y_coupling.interp1(&temp_val, temperature, OutOfBoundsMode::Extend);
+                            let g_coupling =
+                                g_coupling.interp1(&temp_val, temperature, OutOfBoundsMode::Extend);
 
-                        let scale_re =
-                            adjusted_line.line_intensity_re * (1.0 + p_norm * p_norm * g_coupling);
-                        let scale_im = adjusted_line.line_intensity_re * (-p_norm * y_coupling);
+                            let p_norm = pressure / 101325.0;
 
-                        //let scale_re = adjusted_line.line_intensity_re;
-                        //let scale_im = adjusted_line.line_intensity_im;
+                            let scale_re = adjusted_line.line_intensity_re
+                                * (1.0 + p_norm * p_norm * g_coupling);
+                            let scale_im = adjusted_line.line_intensity_re * (-p_norm * y_coupling);
 
-                        // Use the full faddeeva function
-                        w_jpole_assign(
-                            sub_grid.x,
-                            adjusted_line.line_center,
-                            adjusted_line.doppler_width,
-                            adjusted_line.y,
-                            scale_re,
-                            scale_im,
-                            xs.slice_mut(ndarray::s![start_wavenumber_idx..end_wavenumber_idx])
-                                .as_slice_mut()
-                                .unwrap(),
-                        );
-                    }
-                });
+                            //let scale_re = adjusted_line.line_intensity_re;
+                            //let scale_im = adjusted_line.line_intensity_im;
+
+                            // Use the full faddeeva function
+                            w_jpole_assign(
+                                sub_grid.x,
+                                adjusted_line.line_center,
+                                adjusted_line.doppler_width,
+                                adjusted_line.y,
+                                scale_re,
+                                scale_im,
+                                xs.slice_mut(ndarray::s![start_wavenumber_idx..end_wavenumber_idx])
+                                    .as_slice_mut()
+                                    .unwrap(),
+                            );
+                        }
+                    });
+            });
         }
 
         if wavenumber_cminv.as_slice().unwrap().is_sorted() {

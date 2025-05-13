@@ -98,7 +98,7 @@ impl AbsorberDatabaseDim1 {
         atmo: Bound<'py, PyAny>,
         kwargs: Option<&Bound<'py, PyDict>>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let rust_atmo = AtmosphereStorage::new(&atmo);
+        let rust_atmo = AtmosphereStorage::new(&atmo)?;
         let aux_inputs = PyDictWrapper(kwargs);
 
         let oq = self
@@ -156,7 +156,7 @@ impl AbsorberDatabaseDim2 {
         atmo: Bound<'py, PyAny>,
         kwargs: Option<&Bound<'py, PyDict>>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let rust_atmo = AtmosphereStorage::new(&atmo);
+        let rust_atmo = AtmosphereStorage::new(&atmo)?;
         let aux_inputs = PyDictWrapper(kwargs);
 
         let oq = self
@@ -175,7 +175,7 @@ impl AbsorberDatabaseDim2 {
         atmo: Bound<'py, PyAny>,
         kwargs: Option<&Bound<'py, PyDict>>,
     ) -> PyResult<Bound<'py, PyDict>> {
-        let rust_atmo = AtmosphereStorage::new(&atmo);
+        let rust_atmo = AtmosphereStorage::new(&atmo)?;
         let aux_inputs = PyDictWrapper(kwargs);
 
         let oq = self
@@ -218,16 +218,21 @@ impl AbsorberDatabaseDim2 {
         unsafe {
             let mut mut_view = arr_xsec.as_array_mut();
             let mut mut_d_view = arr_d_xsec.as_array_mut();
-            Zip::from(mut_view.rows_mut())
-                .and(mut_d_view.axis_iter_mut(Axis(1)))
-                .and(arr_params)
-                .par_for_each(|mut row, d_row, param| {
-                    let params = Array1::from(vec![*param]);
 
-                    let _ = self
-                        .db
-                        .xs_emplace(&arr_wvnum, &params, &mut row, Some(d_row));
-                });
+            let thread_pool = sasktran2_rs::threading::thread_pool().unwrap();
+
+            thread_pool.install(|| {
+                Zip::from(mut_view.rows_mut())
+                    .and(mut_d_view.axis_iter_mut(Axis(1)))
+                    .and(arr_params)
+                    .par_for_each(|mut row, d_row, param| {
+                        let params = Array1::from(vec![*param]);
+
+                        let _ = self
+                            .db
+                            .xs_emplace(&arr_wvnum, &params, &mut row, Some(d_row));
+                    });
+            });
         }
 
         (arr_xsec, arr_d_xsec)
@@ -268,7 +273,7 @@ impl AbsorberDatabaseDim3 {
         atmo: Bound<'py, PyAny>,
         kwargs: Option<&Bound<'py, PyDict>>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let rust_atmo = AtmosphereStorage::new(&atmo);
+        let rust_atmo = AtmosphereStorage::new(&atmo)?;
         let aux_inputs = PyDictWrapper(kwargs);
 
         let oq = self
@@ -287,7 +292,7 @@ impl AbsorberDatabaseDim3 {
         atmo: Bound<'py, PyAny>,
         kwargs: Option<&Bound<'py, PyDict>>,
     ) -> PyResult<Bound<'py, PyDict>> {
-        let rust_atmo = AtmosphereStorage::new(&atmo);
+        let rust_atmo = AtmosphereStorage::new(&atmo)?;
         let aux_inputs = PyDictWrapper(kwargs);
 
         let oq = self
@@ -324,14 +329,19 @@ impl AbsorberDatabaseDim3 {
         unsafe {
             let mut mut_view = arr_xsec.as_array_mut();
             let mut mut_d_view = arr_d_xsec.as_array_mut();
-            Zip::from(mut_view.rows_mut())
-                .and(mut_d_view.axis_iter_mut(Axis(1)))
-                .and(arr_params.axis_iter(Axis(1)))
-                .par_for_each(|mut row, d_row, param| {
-                    let _ = self
-                        .db
-                        .xs_emplace(&arr_wvnum, &param, &mut row, Some(d_row));
-                });
+
+            let thread_pool = sasktran2_rs::threading::thread_pool().unwrap();
+
+            thread_pool.install(|| {
+                Zip::from(mut_view.rows_mut())
+                    .and(mut_d_view.axis_iter_mut(Axis(1)))
+                    .and(arr_params.axis_iter(Axis(1)))
+                    .par_for_each(|mut row, d_row, param| {
+                        let _ = self
+                            .db
+                            .xs_emplace(&arr_wvnum, &param, &mut row, Some(d_row));
+                    });
+            });
         }
 
         (arr_xsec, arr_d_xsec)

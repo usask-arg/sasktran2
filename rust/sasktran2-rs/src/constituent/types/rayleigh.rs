@@ -118,39 +118,47 @@ impl Constituent for Rayleigh {
         let num_dens = inputs.air_numberdensity_dict()["N"].to_owned();
         let num_stokes = inputs.num_stokes();
 
-        Zip::from(total_extinction_array.columns_mut())
-            .and(ssa_array.columns_mut())
-            .and(legendre_array.axis_iter_mut(Axis(2)))
-            .and(wavelengths_nm)
-            .par_for_each(|extinction_col, ssa_col, mut legendre_col, wavelength_nm| {
-                let (sigma, king) = self.cross_section(*wavelength_nm);
+        let thread_pool = crate::threading::thread_pool()?;
 
-                let delta = 6.0 * (king - 1.0) / (3.0 + 7.0 * king);
+        thread_pool.install(|| {
+            Zip::from(total_extinction_array.columns_mut())
+                .and(ssa_array.columns_mut())
+                .and(legendre_array.axis_iter_mut(Axis(2)))
+                .and(wavelengths_nm)
+                .par_for_each(|extinction_col, ssa_col, mut legendre_col, wavelength_nm| {
+                    let (sigma, king) = self.cross_section(*wavelength_nm);
 
-                Zip::from(extinction_col)
-                    .and(ssa_col)
-                    .and(legendre_col.columns_mut())
-                    .and(&num_dens)
-                    .for_each(|extinction, ssa, mut legendre, ndens| {
-                        *extinction += sigma * ndens;
-                        *ssa += sigma * ndens;
+                    let delta = 6.0 * (king - 1.0) / (3.0 + 7.0 * king);
 
-                        if num_stokes == 1 {
-                            legendre[0] += sigma * ndens;
-                            legendre[2] += sigma * ndens * (1.0 - delta) / (2.0 + delta);
-                        } else if num_stokes == 3 {
-                            legendre[0] += sigma * ndens;
-                            legendre[8] += sigma * ndens * (1.0 - delta) / (2.0 + delta);
+                    Zip::from(extinction_col)
+                        .and(ssa_col)
+                        .and(legendre_col.columns_mut())
+                        .and(&num_dens)
+                        .for_each(|extinction, ssa, mut legendre, ndens| {
+                            *extinction += sigma * ndens;
+                            *ssa += sigma * ndens;
 
-                            legendre[9] += sigma * ndens * 6.0 * ((1.0 - delta) / (2.0 + delta));
+                            if num_stokes == 1 {
+                                legendre[0] += sigma * ndens;
+                                legendre[2] += sigma * ndens * (1.0 - delta) / (2.0 + delta);
+                            } else if num_stokes == 3 {
+                                legendre[0] += sigma * ndens;
+                                legendre[8] += sigma * ndens * (1.0 - delta) / (2.0 + delta);
 
-                            legendre[11] +=
-                                sigma * ndens * 6.0_f64.sqrt() * ((1.0 - delta) / (2.0 + delta));
-                        } else {
-                            panic!("Should never be here");
-                        }
-                    });
-            });
+                                legendre[9] +=
+                                    sigma * ndens * 6.0 * ((1.0 - delta) / (2.0 + delta));
+
+                                legendre[11] += sigma
+                                    * ndens
+                                    * 6.0_f64.sqrt()
+                                    * ((1.0 - delta) / (2.0 + delta));
+                            } else {
+                                panic!("Should never be here");
+                            }
+                        });
+                });
+        });
+
         Ok(())
     }
 
@@ -172,6 +180,8 @@ impl Constituent for Rayleigh {
 
         let num_stokes = inputs.num_stokes();
 
+        let thread_pool = crate::threading::thread_pool()?;
+
         for (deriv_name, deriv_val) in deriv_names.iter().zip(deriv_vals.iter()) {
             let full_name = "wf_".to_owned() + constituent_name + "_" + deriv_name;
             let mut deriv = derivative_generator
@@ -180,51 +190,53 @@ impl Constituent for Rayleigh {
             {
                 let mut deriv_view = deriv.mut_view();
 
-                Zip::indexed(deriv_view.d_extinction.columns_mut())
-                    .and(deriv_view.d_ssa.columns_mut())
-                    .and(deriv_view.d_legendre.unwrap().axis_iter_mut(Axis(2)))
-                    .and(deriv_view.scat_factor.unwrap().columns_mut())
-                    .and(outputs.legendre.axis_iter(Axis(2)))
-                    .par_for_each(
-                        |i, d_k_row, d_ssa_row, mut d_leg_row, scat_f_row, leg_row| {
-                            let k_row = outputs.total_extinction.column(i);
-                            let ssa_row = outputs.ssa.column(i);
+                thread_pool.install(|| {
+                    Zip::indexed(deriv_view.d_extinction.columns_mut())
+                        .and(deriv_view.d_ssa.columns_mut())
+                        .and(deriv_view.d_legendre.unwrap().axis_iter_mut(Axis(2)))
+                        .and(deriv_view.scat_factor.unwrap().columns_mut())
+                        .and(outputs.legendre.axis_iter(Axis(2)))
+                        .par_for_each(
+                            |i, d_k_row, d_ssa_row, mut d_leg_row, scat_f_row, leg_row| {
+                                let k_row = outputs.total_extinction.column(i);
+                                let ssa_row = outputs.ssa.column(i);
 
-                            let (sigma, king) = self.cross_section(wavelengths_nm[i]);
+                                let (sigma, king) = self.cross_section(wavelengths_nm[i]);
 
-                            let delta = 6.0 * (king - 1.0) / (3.0 + 7.0 * king);
+                                let delta = 6.0 * (king - 1.0) / (3.0 + 7.0 * king);
 
-                            Zip::indexed(d_k_row)
-                                .and(d_ssa_row)
-                                .and(d_leg_row.columns_mut())
-                                .and(scat_f_row)
-                                .and(leg_row.columns())
-                                .for_each(|j, d_k, d_ssa, mut d_lp, scat_f, lp| {
-                                    let ssa = ssa_row[j];
-                                    let k = k_row[j];
+                                Zip::indexed(d_k_row)
+                                    .and(d_ssa_row)
+                                    .and(d_leg_row.columns_mut())
+                                    .and(scat_f_row)
+                                    .and(leg_row.columns())
+                                    .for_each(|j, d_k, d_ssa, mut d_lp, scat_f, lp| {
+                                        let ssa = ssa_row[j];
+                                        let k = k_row[j];
 
-                                    *d_k += sigma;
-                                    *d_ssa += sigma * (1.0 - ssa) / k;
+                                        *d_k += sigma;
+                                        *d_ssa += sigma * (1.0 - ssa) / k;
 
-                                    d_lp[0] += 1.0;
+                                        d_lp[0] += 1.0;
 
-                                    if num_stokes == 1 {
-                                        d_lp[2] += (1.0 - delta) / (2.0 + delta);
-                                    } else if num_stokes == 3 {
-                                        d_lp[8] += (1.0 - delta) / (2.0 + delta);
-                                        d_lp[9] += 6.0 * ((1.0 - delta) / (2.0 + delta));
-                                        d_lp[11] +=
-                                            6.0_f64.sqrt() * ((1.0 - delta) / (2.0 + delta));
-                                    }
+                                        if num_stokes == 1 {
+                                            d_lp[2] += (1.0 - delta) / (2.0 + delta);
+                                        } else if num_stokes == 3 {
+                                            d_lp[8] += (1.0 - delta) / (2.0 + delta);
+                                            d_lp[9] += 6.0 * ((1.0 - delta) / (2.0 + delta));
+                                            d_lp[11] +=
+                                                6.0_f64.sqrt() * ((1.0 - delta) / (2.0 + delta));
+                                        }
 
-                                    Zip::from(d_lp).and(lp).for_each(|d_lp, lp| {
-                                        *d_lp -= lp;
+                                        Zip::from(d_lp).and(lp).for_each(|d_lp, lp| {
+                                            *d_lp -= lp;
+                                        });
+
+                                        *scat_f += sigma / (ssa * k);
                                     });
-
-                                    *scat_f += sigma / (ssa * k);
-                                });
-                        },
-                    );
+                            },
+                        );
+                });
             }
             deriv.set_interp_dim("altitude");
             let interpolator: Array2<f64> = Array2::from_diag(deriv_val);

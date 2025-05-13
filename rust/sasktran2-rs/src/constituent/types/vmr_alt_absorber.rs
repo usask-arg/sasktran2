@@ -19,39 +19,43 @@ pub fn assign_absorber_derivatives<S1, S2, S3, S4>(
     atmo_extinction: &ArrayBase<S4, Ix2>,
 ) -> Result<()>
 where
-    S1: Data<Elem = f64>,
-    S2: Data<Elem = f64>,
-    S3: Data<Elem = f64>,
-    S4: Data<Elem = f64>,
+    S1: Data<Elem = f64> + Sync,
+    S2: Data<Elem = f64> + Sync,
+    S3: Data<Elem = f64> + Sync,
+    S4: Data<Elem = f64> + Sync,
 {
-    Zip::from(mapping.d_extinction.columns_mut())
-        .and(mapping.d_ssa.columns_mut())
-        .and(d_extinction.columns())
-        .and(d_ssa.columns())
-        .and(atmo_ssa.columns())
-        .and(atmo_extinction.columns())
-        .par_for_each(
-            |mut mapping_d_extinction_row,
-             mut mapping_d_ssa_row,
-             d_extinction_row,
-             d_ssa_row,
-             atmo_ssa_row,
-             atmo_extinction_row| {
-                mapping_d_extinction_row.assign(&d_extinction_row);
-                mapping_d_ssa_row.assign(&d_ssa_row);
+    let thread_pool = crate::threading::thread_pool()?;
 
-                Zip::from(mapping_d_ssa_row)
-                    .and(atmo_ssa_row)
-                    .and(d_extinction_row)
-                    .and(atmo_extinction_row)
-                    .for_each(
-                        |mapping_d_ssa, atmo_ssa_val, d_extinction_val, atmo_extinction_val| {
-                            *mapping_d_ssa = (*mapping_d_ssa - atmo_ssa_val) * d_extinction_val
-                                / atmo_extinction_val;
-                        },
-                    );
-            },
-        );
+    thread_pool.install(|| {
+        Zip::from(mapping.d_extinction.columns_mut())
+            .and(mapping.d_ssa.columns_mut())
+            .and(d_extinction.columns())
+            .and(d_ssa.columns())
+            .and(atmo_ssa.columns())
+            .and(atmo_extinction.columns())
+            .par_for_each(
+                |mut mapping_d_extinction_row,
+                 mut mapping_d_ssa_row,
+                 d_extinction_row,
+                 d_ssa_row,
+                 atmo_ssa_row,
+                 atmo_extinction_row| {
+                    mapping_d_extinction_row.assign(&d_extinction_row);
+                    mapping_d_ssa_row.assign(&d_ssa_row);
+
+                    Zip::from(mapping_d_ssa_row)
+                        .and(atmo_ssa_row)
+                        .and(d_extinction_row)
+                        .and(atmo_extinction_row)
+                        .for_each(
+                            |mapping_d_ssa, atmo_ssa_val, d_extinction_val, atmo_extinction_val| {
+                                *mapping_d_ssa = (*mapping_d_ssa - atmo_ssa_val) * d_extinction_val
+                                    / atmo_extinction_val;
+                            },
+                        );
+                },
+            );
+    });
 
     Ok(())
 }
@@ -128,18 +132,22 @@ where
         // Here extinction is (geometry, wavelength), with geometry being the fastest changing index
         // because of fortran ordering, so we loop this way even though it is not the most natural
 
-        Zip::from(extinction.axis_iter_mut(Axis(1)))
-            .and(cross_section.axis_iter(Axis(1)))
-            .par_for_each(|ext_slice, xs_slice| {
-                // Then loop over the inner dimension
-                Zip::from(ext_slice)
-                    .and(xs_slice)
-                    .and(&interp_vmr)
-                    .and(number_density)
-                    .for_each(|ext, xs, vmr, n| {
-                        *ext += *xs * *vmr * *n;
-                    });
-            });
+        let thread_pool = crate::threading::thread_pool()?;
+
+        thread_pool.install(|| {
+            Zip::from(extinction.axis_iter_mut(Axis(1)))
+                .and(cross_section.axis_iter(Axis(1)))
+                .par_for_each(|ext_slice, xs_slice| {
+                    // Then loop over the inner dimension
+                    Zip::from(ext_slice)
+                        .and(xs_slice)
+                        .and(&interp_vmr)
+                        .and(number_density)
+                        .for_each(|ext, xs, vmr, n| {
+                            *ext += *xs * *vmr * *n;
+                        });
+                });
+        });
 
         Ok(())
     }

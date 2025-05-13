@@ -92,7 +92,7 @@ impl PyVMRAltitudeAbsorber {
     ///
     /// Test docstring add to atmosphere
     pub fn add_to_atmosphere<'py>(&mut self, atmo: Bound<'py, PyAny>) -> PyResult<()> {
-        let mut rust_atmo = AtmosphereStorage::new(&atmo);
+        let mut rust_atmo = AtmosphereStorage::new(&atmo)?;
 
         let py_optical =
             PyOpticalProperty::new(self.optical_property.clone_ref(atmo.py()), atmo.into());
@@ -104,7 +104,7 @@ impl PyVMRAltitudeAbsorber {
     }
 
     pub fn register_derivative(&mut self, atmo: Bound<'_, PyAny>, name: &str) -> PyResult<()> {
-        let mut rust_atmo = AtmosphereStorage::new(&atmo);
+        let mut rust_atmo = AtmosphereStorage::new(&atmo)?;
 
         let py_optical =
             PyOpticalProperty::new(self.optical_property.clone_ref(atmo.py()), atmo.into());
