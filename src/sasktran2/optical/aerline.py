@@ -16,11 +16,11 @@ class AERLineAbsorber(OpticalProperty):
 
         # Ensure the db is downloaded
         db = AERLineDatabase()
-        db.path(None)
+        db_path = db.path(None)
 
         self._internal = PyLineAbsorber(
             molecule,
-            "/Users/djz828/Library/Application Support/sasktran2/database/aer_lines/aer_v_3.8.1",
+            db_path.as_posix(),
             cull_factor,
             line_coupling,
             hapi.partitionSum,
