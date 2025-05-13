@@ -31,9 +31,6 @@ requirements:
     - ${{ compiler('cxx') }}
     #- ${{ stdlib('c') }}
     - ${{ compiler('rust') }}
-    - if: build_platform == 'win-64'
-      then:
-        - posix
     - cmake
     - if: unix
       then:
@@ -74,7 +71,7 @@ tests:
   - python:
       pip_check: true
       imports:
-        - polars
+        - sasktran2
       python_version: ${{ python_min }}.*
   - script:
       - python -c "from sasktran2 import *"
