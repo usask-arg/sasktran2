@@ -1,0 +1,91 @@
+context:
+  version: "2025.4.0"
+  python_min: '3.10'
+
+# Note: This recipe is specifically designed to work well with the autotick bot.
+# Also refer to https://github.com/conda-forge/rust-feedstock/blob/main/recipe/meta.yaml.
+package:
+  name: sasktran2
+  version: ${{ version }}
+
+source:
+  path: ../../
+
+build:
+  number: 0
+  # skip: not (match(python, python_min ~ ".*") and is_abi3)
+  python:
+    version_independent: true
+  script: ${{ PYTHON }} -m pip install . -vvv
+
+
+requirements:
+  build:
+    - if: build_platform != target_platform
+      then:
+        - python
+        - cross-python_${{ target_platform }}
+        - crossenv
+        - maturin >=1.3.2,<2
+    - ${{ compiler('c') }}
+    - ${{ compiler('cxx') }}
+    #- ${{ stdlib('c') }}
+    - ${{ compiler('rust') }}
+    - if: build_platform == 'win-64'
+      then:
+        - posix
+    - cmake
+    - if: unix
+      then:
+        - make
+    - cargo-bundle-licenses
+    - if: build_platform == 'osx-64'
+      then:
+        - llvm-openmp
+    - if: build_platform == 'linux-64'
+      then:
+        - libomp
+
+  host:
+    - python
+    - python-abi3
+    - pip
+    - maturin >=1.3.2,<2
+    - eigen
+    - libblas
+    - libcblas
+    - liblapack
+    - liblapacke
+    - libtmglib
+    - zlib
+    - spdlog
+  run:
+    - python
+    - numpy
+    - spdlog
+    - fmt
+    - appdirs
+    - pyyaml
+    - xarray
+    - netcdf4
+    - scipy
+
+tests:
+  - python:
+      pip_check: true
+      imports:
+        - polars
+      python_version: ${{ python_min }}.*
+  - script:
+      - python -c "from sasktran2 import *"
+
+about:
+  summary: The SASKTRAN radiative transfer model Version 2
+  license: MIT
+  license_file: license.md
+  documentation: https://sasktran2.readthedocs.io/
+  homepage: https://github.com/usask-arg/sasktran2
+
+extra:
+  recipe-maintainers:
+    - dannyzed

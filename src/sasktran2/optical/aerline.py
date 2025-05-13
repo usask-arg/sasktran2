@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from sasktran2._core_rust import PyLineAbsorber
+from sasktran2.database.aer_line import AERLineDatabase
 from sasktran2.optical.base import OpticalProperty
 from sasktran2.util import get_hapi
 
@@ -12,6 +13,10 @@ class AERLineAbsorber(OpticalProperty):
 
     def __init__(self, molecule: str, cull_factor: float = 0.0, line_coupling=False):
         hapi = get_hapi()
+
+        # Ensure the db is downloaded
+        db = AERLineDatabase()
+        db.path(None)
 
         self._internal = PyLineAbsorber(
             molecule,
@@ -44,5 +49,8 @@ class AERLineAbsorber(OpticalProperty):
             p_self = np.zeros_like(pressure_pa)
 
         return self._internal.cross_section(
-            1e7 / wavelengths_nm, temperature_k, pressure_pa, p_self
+            1e7 / wavelengths_nm,
+            np.atleast_1d(temperature_k).astype(float),
+            np.atleast_1d(pressure_pa).astype(float),
+            np.atleast_1d(p_self).astype(float),
         )

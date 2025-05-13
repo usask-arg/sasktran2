@@ -229,29 +229,10 @@ class AERLineDatabase(CachedDatabase):
 
         self._version_map = {"3.8.1": "5120012"}
 
-    def _get_molecule_id(self, name: str):
-        for i in range(1, 48):
-            mol_name = self._hapi.moleculeName(i)
-
-            if mol_name.lower() == name.lower():
-                return i
-        msg = f"Could not find molecule {name}"
-        raise ValueError(msg)
-
-    def path(self, key: str, **kwargs) -> Path:
+    def path(self, _key: str, **kwargs) -> Path:
         dir = self._db_root
         version_dir = dir.joinpath(f"aer_v_{self._version}")
-        mol_id = self._get_molecule_id(key)
-        mol_dir = version_dir.joinpath(
-            f"line_files_By_Molecule/{mol_id:02d}_{key.upper()}"
-        )
-
-        nc_file = mol_dir.joinpath(f"{mol_id:02d}_{key.upper()}.nc")
-
-        if nc_file.exists():
-            return nc_file
-
-        # Else, check if the AER database is downloaded, if not download it
+        # check if the AER database is downloaded, if not download it
 
         if not version_dir.exists():
             from zenodo_get import zenodo_get
@@ -275,25 +256,16 @@ class AERLineDatabase(CachedDatabase):
             # Delete the tar file
             file.unlink()
 
-        # Now get the raw data file
-        mol_data_file = mol_dir.joinpath(f"{mol_id:02d}_{key.upper()}")
-        if not mol_data_file.exists():
-            msg = f"Could not find line file for molecule {key}, tried {mol_data_file.as_posix()}"
-            raise FileNotFoundError(msg)
+        return version_dir
 
-        # And convert to netcdf
-        ds = _read_line_file_py(mol_data_file)
-        ds.to_netcdf(nc_file)
-
-        return nc_file
-
-    def load_ds(self, key: str, **kwargs) -> xr.Dataset:
-        return xr.open_dataset(self.path(key, **kwargs))
+    def load_ds(self, _key: str, **kwargs) -> xr.Dataset:
+        return None
 
     def clear(self):
         # Delete the entire database folder
-        if self._db_root.exists():
-            for file in self._db_root.glob("*"):
+        folder = self._db_root.joinpath(f"aer_v_{self._version}")
+        if folder.exists():
+            for file in folder.glob("*"):
                 if file.is_dir():
                     for subfile in file.glob("*"):
                         subfile.unlink()

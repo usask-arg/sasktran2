@@ -28,7 +28,7 @@ builds
 data
 /Repos_SasktranV3/*.a
 build/
-
+ci/rattler/output/
 _build
 __pycache__
 .run

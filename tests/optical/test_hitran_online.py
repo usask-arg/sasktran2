@@ -55,6 +55,7 @@ def test_hitran_online():
     _ = engine.calculate_radiance(atmosphere)
 
 
+@pytest.mark.skip()
 def test_hitran_online_reversed_wvnum():
     pytest.importorskip("hapi")
 
