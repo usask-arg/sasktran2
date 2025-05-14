@@ -9,6 +9,8 @@ if(UNIX AND NOT APPLE)
   set(LINUX TRUE)
 endif()
 
+message(STATUS "CARGO TARGET: ${Rust_CARGO_TARGET}")
+
 # Export all symbols on windows
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 

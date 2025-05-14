@@ -2,7 +2,16 @@ name: 'rattler-build'
 
 on:
   workflow_dispatch:
-
+  schedule:
+    - cron: '0 0 * * *'
+  release:
+    types:
+      - published
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [ opened, reopened, synchronize, labeled ]
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -31,4 +40,4 @@ jobs:
           uses: prefix-dev/rattler-build-action@v0.2.33
           with:
             recipe-path: ci/rattler/recipe.yaml
-            build-args: -c conda-forge/label/rust_dev -c conda-forge
+            build-args: -c conda-forge/label/rust_dev,conda-forge
