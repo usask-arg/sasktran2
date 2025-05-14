@@ -4,43 +4,6 @@ use ndarray::{Array1, Array2, ArrayView1, ArrayView2, ArrayViewMut1, Zip};
 use num::abs;
 use num::complex::Complex64;
 
-// This binding is fairly innefficient, and the mie code is not used by the c++ code
-// we only bind so that we can use the existing c++ test harness to validate
-// the rust Mie implementation
-#[cxx::bridge(namespace = "sasktran2::mie::ffi")]
-mod ffi {
-    extern "Rust" {
-        type MieOutput;
-        fn mie_c(
-            size_param: &[f64],
-            refractive_index_real: f64,
-            refractive_index_imag: f64,
-            cos_angles: &[f64],
-        ) -> Box<MieOutput>;
-
-        fn Qext_vec(&self) -> Vec<f64>;
-        fn Qsca_vec(&self) -> Vec<f64>;
-        fn S1_re_vec(&self) -> Vec<f64>;
-        fn S1_im_vec(&self) -> Vec<f64>;
-        fn S2_re_vec(&self) -> Vec<f64>;
-        fn S2_im_vec(&self) -> Vec<f64>;
-    }
-}
-
-fn mie_c(
-    size_param: &[f64],
-    refractive_index_real: f64,
-    refractive_index_imag: f64,
-    cos_angles: &[f64],
-) -> Box<MieOutput> {
-    let size_param = ArrayView1::from(size_param);
-    let cos_angles = ArrayView1::from(cos_angles);
-
-    let refractive_index = Complex64::new(refractive_index_real, refractive_index_imag);
-
-    Box::new(mie(size_param, refractive_index, cos_angles))
-}
-
 pub struct MieOutput {
     pub Qext: Array1<f64>,
     pub Qsca: Array1<f64>,
@@ -66,54 +29,6 @@ impl MieOutput {
             refractive_index,
             cos_angles: cos_angles.to_owned(),
         }
-    }
-
-    fn Qext_vec(&self) -> Vec<f64> {
-        self.Qext.to_vec()
-    }
-
-    fn Qsca_vec(&self) -> Vec<f64> {
-        self.Qsca.to_vec()
-    }
-
-    fn S1_re_vec(&self) -> Vec<f64> {
-        self.S1
-            .clone()
-            .into_flat()
-            .to_vec()
-            .iter()
-            .map(|&e| e.re)
-            .collect()
-    }
-
-    fn S1_im_vec(&self) -> Vec<f64> {
-        self.S1
-            .clone()
-            .into_flat()
-            .to_vec()
-            .iter()
-            .map(|&e| e.im)
-            .collect()
-    }
-
-    fn S2_re_vec(&self) -> Vec<f64> {
-        self.S2
-            .clone()
-            .into_flat()
-            .to_vec()
-            .iter()
-            .map(|&e| e.re)
-            .collect()
-    }
-
-    fn S2_im_vec(&self) -> Vec<f64> {
-        self.S2
-            .clone()
-            .into_flat()
-            .to_vec()
-            .iter()
-            .map(|&e| e.im)
-            .collect()
     }
 }
 

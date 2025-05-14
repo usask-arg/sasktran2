@@ -9,8 +9,6 @@
 #include <iostream>
 #include <optional>
 
-#include <rust/cxx.h>
-
 #ifdef SKTRAN_TRACY
 #include <tracy/Tracy.hpp>
 #else

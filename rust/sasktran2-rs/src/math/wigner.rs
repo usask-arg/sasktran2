@@ -1,18 +1,5 @@
 use std::f64;
 
-#[cxx::bridge(namespace = "sasktran2::math::ffi")]
-mod ffi {
-    extern "Rust" {
-        type WignerDCalculator;
-        fn make_wigner_calculator(m: i32, n: i32) -> Box<WignerDCalculator>;
-        fn d(&self, theta: f64, l: i32) -> f64;
-    }
-}
-
-fn make_wigner_calculator(m: i32, n: i32) -> Box<WignerDCalculator> {
-    Box::new(WignerDCalculator::new(m, n))
-}
-
 /// A struct for computing Wigner D functions (and Legendre polynomials).
 #[derive(Debug)]
 pub struct WignerDCalculator {

@@ -2,8 +2,8 @@
 
 use num::complex::Complex64;
 
+use crate::math::wigner::WignerDCalculator;
 use crate::prelude::*;
-use sasktran2_core::math::wigner::WignerDCalculator;
 
 use super::mie_f;
 

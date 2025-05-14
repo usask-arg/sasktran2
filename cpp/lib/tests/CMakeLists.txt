@@ -13,7 +13,6 @@ add_executable(
   engine/wf/test_wf_singlescatter_scalar.cpp
   engine/wf/test_wf_vector.cpp
   engine/hr/test_hr_basic.cpp
-  mie/linearized_mie.cpp
   sktran_disco/test_util.cpp
   sktran_disco/tests_lowlevel.cpp
   sktran_disco/legacy/test_scalar.cpp

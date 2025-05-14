@@ -2,6 +2,9 @@
 (_changelog)=
 # Changelog
 
+## 2025.5.2
+- Rerelease again to fix conda-forge
+
 ## 2025.5.1
 - Rerelease to fix broken conda-forge packages
 
