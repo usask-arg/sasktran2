@@ -40,4 +40,4 @@ jobs:
           uses: prefix-dev/rattler-build-action@v0.2.33
           with:
             recipe-path: ci/rattler/recipe.yaml
-            build-args: -c conda-forge/label/rust_dev,conda-forge
+            build-args: -c conda-forge/label/rust_dev -c conda-forge

@@ -31,7 +31,9 @@ jobs:
       - name: Run Clippy
         env:
           RUSTFLAGS: "-Dwarnings"
-        run: cargo clippy --all-targets --all-features
+        run: |
+          rustup component add clippy
+          cargo clippy --all-targets --all-features
 
   test-cpp-ubuntu:
     runs-on: ubuntu-latest
