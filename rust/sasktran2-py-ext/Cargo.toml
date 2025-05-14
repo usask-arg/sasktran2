@@ -1,6 +1,6 @@
 [package]
 name = "core_rust"
-version = "2025.5.1"
+version = "2025.5.2"
 edition = "2024"
 
 [lib]
@@ -12,7 +12,6 @@ pyo3 = { version = "0.24.1", features = ["extension-module", "abi3-py39"] }
 ndarray = { version = "0.16.1", features = ["rayon"]}
 numpy = { version = "0.24" }
 sasktran2-rs = { path = "../sasktran2-rs" }
-sasktran2-core = { path = "../sasktran2-core" }
 rayon = "*"
 anyhow = "*"
 

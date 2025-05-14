@@ -12,7 +12,6 @@ ndarray = {version = "*", features = ["rayon"] }
 num = "*"
 anyhow = "*"
 sasktran2-sys = { version = "*", path = "../sasktran2-sys" }
-sasktran2-core = { version = "*", path = "../sasktran2-core" }
 rayon = "*"
 libc = "*"
 

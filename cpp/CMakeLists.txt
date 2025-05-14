@@ -424,76 +424,10 @@ if(INCLUDE_TRACY)
 
 endif()
 
-# RUST CORROSION
-find_package(Corrosion)
-
-if(Corrosion_FOUND)
-  include(Corrosion)
-else()
-
-  include(FetchContent)
-
-  FetchContent_Declare(
-    Corrosion
-    GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
-    GIT_TAG v0.5 # Optionally specify a commit hash, version tag or branch here
-  )
-  FetchContent_MakeAvailable(Corrosion)
-endif()
-
-option(VENDORED "Inside a vendored build" OFF)
-
-if(VENDORED)
-  corrosion_import_crate(
-    MANIFEST_PATH "${CMAKE_SOURCE_DIR}/../../sasktran2-core/Cargo.toml"
-    CRATE_TYPES staticlib)
-else()
-
-  corrosion_import_crate(
-    MANIFEST_PATH "${CMAKE_SOURCE_DIR}/../rust/sasktran2-core/Cargo.toml"
-    CRATE_TYPES staticlib)
-
-endif()
-
-corrosion_add_cxxbridge(
-  sasktran2_core_cxx
-  CRATE
-  sasktran2_core
-  REGEN_TARGET
-  cxx_bindings
-  FILES
-  math/wigner.rs
-  mie/mod.rs)
-
-target_link_libraries(sasktran2BuildProperties INTERFACE sasktran2_core_cxx)
-
-# 1. grab the name you gave the library (no “lib” prefix or “.a” suffix)
-get_target_property(_name sasktran2_core_cxx OUTPUT_NAME)
-# 1. grab the folder where CMake will drop it
-get_target_property(_dir sasktran2_core ARCHIVE_OUTPUT_DIRECTORY)
-# 1. stitch together with the platform prefix/suffix:
-set(SASKTRAN2_CORE_CXX_PATH
-    "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_STATIC_LIBRARY_PREFIX}sasktran2_core_cxx${CMAKE_STATIC_LIBRARY_SUFFIX}"
-)
-
-if(NOT LINKED_LIBS)
-  set(LINKED_LIBS "${SASKTRAN2_CORE_CXX_PATH}")
-else()
-  set(LINKED_LIBS "${LINKED_LIBS};${SASKTRAN2_CORE_CXX_PATH}")
-endif()
-
-# target_link_libraries(sasktran2BuildProperties INTERFACE sasktran2_raytracer )
-
-# tell C++ where to find the generated header
-# target_include_directories(sasktran2 PRIVATE
-# $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/_deps/
-# sasktran2-raytracer-src/target/cxxbridge/include> )
-#
-
 add_subdirectory(c_api)
 
 install(
-  TARGETS sasktran2BuildProperties sasktran2_core sasktran2_core_cxx
+  TARGETS sasktran2BuildProperties
   EXPORT ${EXPORT_NAME}
   LIBRARY DESTINATION ${STATIC_LIB_INSTALL_DIR}
   INCLUDES

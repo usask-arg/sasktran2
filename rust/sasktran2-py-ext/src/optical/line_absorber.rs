@@ -27,8 +27,12 @@ impl PartitionFactor for PyPartitionFactor {
             let tips = self.py_tips.bind(py);
             let args = (mol_id, iso_id, temperature);
 
-            let result = tips.call1(args).unwrap_or_else(|_| panic!("Failed to call partition factor function with args: {:?}",
-                    args));
+            let result = tips.call1(args).unwrap_or_else(|_| {
+                panic!(
+                    "Failed to call partition factor function with args: {:?}",
+                    args
+                )
+            });
             result.extract().unwrap()
         });
         result
@@ -41,9 +45,12 @@ impl MolecularMass for PyMolecularMass {
             let molmass = self.py_molmass.bind(py);
             let args = (mol_id, iso_id);
 
-            let result = molmass.call1(args).unwrap_or_else(
-                |_| panic!("Failed to call molecular mass function with args: {:?}", args),
-            );
+            let result = molmass.call1(args).unwrap_or_else(|_| {
+                panic!(
+                    "Failed to call molecular mass function with args: {:?}",
+                    args
+                )
+            });
             result.extract().unwrap()
         });
         result

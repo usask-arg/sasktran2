@@ -1,4 +1,6 @@
-#include "sasktran2/mie/linearized_mie.h"
+// NOT INCLUDED
+// LEAVE THIS CODE IN UNTIL ALL TESTS ARE MOVED TO THE NEW IMPL
+
 #include <sasktran2/test_helper.h>
 
 #include <sasktran2.h>

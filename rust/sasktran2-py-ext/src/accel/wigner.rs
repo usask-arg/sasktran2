@@ -1,6 +1,6 @@
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1};
 use pyo3::prelude::*;
-use sasktran2_core::math::wigner::WignerDCalculator;
+use sasktran2_rs::math::wigner::WignerDCalculator;
 
 #[pyclass]
 pub struct WignerD {
