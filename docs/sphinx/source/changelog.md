@@ -2,6 +2,12 @@
 (_changelog)=
 # Changelog
 
+## 2025.5.1
+- Rerelease to fix broken conda-forge packages
+
+## 2025.5.0
+- Numerous backend updates for improved speed
+
 ## 2025.04.0
 - Added sk.SolarAnglesObserverLocation to define a viewing ray from a position and local viewing angles
 

@@ -38,11 +38,14 @@ fn main() {
 
     let mut binding = cmake::Config::new(&cpp_src);
 
+    let target = std::env::var("TARGET").unwrap();
+
     binding
         .define("BUILD_SHARED_LIBS", "OFF")
         .define("CMAKE_INSTALL_PREFIX", &install_prefix)
         .define("DO_STREAM_TEMPLATES", do_stream_templates)
         .define("USE_OMP", use_omp)
+        .define("Rust_CARGO_TARGET", target)
         .define("VENDORED", vendored)
         .define("SKTRAN_BLAS_VENDOR", sktran_blas_vendor);
 

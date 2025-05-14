@@ -65,7 +65,7 @@ add_library(
   sktran_disco/source_term/do_source_interpolated_pp.cpp
   sktran_disco/source_term/do_source_planeparallel.cpp)
 
-option(BUILD_DOXYGEN "Build Doxygen Docs" ON)
+option(BUILD_DOXYGEN "Build Doxygen Docs" OFF)
 # Doxygen document build
 find_package(Doxygen)
 if(DOXYGEN_FOUND)
