@@ -6,7 +6,7 @@ build-backend = "maturin"
 [project]
 name = "sasktran2"
 dynamic = ["version"]
-dependencies = ['numpy', 'appdirs', 'pyyaml', 'xarray>=2023.0.0', 'scipy', 'netcdf4', 'lazy_loader']
+dependencies = ['numpy', 'appdirs', 'pyyaml', 'xarray>=2023.0.0', 'scipy', 'netcdf4']
 license = {text = "MIT"}
 description= "The SASKTRAN radiative transfer model Version 2"
 readme = "README.md"
