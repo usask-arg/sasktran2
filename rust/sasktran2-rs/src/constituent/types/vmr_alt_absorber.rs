@@ -170,8 +170,6 @@ where
             .optical_property
             .as_ref()
             .ok_or_else(|| anyhow!("Optical property not set"))?;
-        let optical_quants = optical_prop.optical_quantities(inputs, &NullAuxInputs {})?;
-        let cross_section = optical_quants.cross_section;
 
         let altitudes_m = inputs.altitude_m();
         let interp_matrix = linear_interpolating_matrix(
@@ -181,6 +179,12 @@ where
         );
 
         let interp_vmr = interp_matrix.dot(&self.vmr);
+
+        let optical_quants = optical_prop.optical_quantities(inputs, &NullAuxInputs {})?;
+        let cross_section = optical_quants.cross_section;
+
+        let mut aux_inputs: HashMap<String, Array1<f64>> = HashMap::new();
+        aux_inputs.insert("vmr".to_string(), interp_vmr.clone());
 
         let wf_name = format!("wf_{}_vmr", constituent_name);
         let mut deriv_mapping = deriv_generator.get_derivative_mapping(&wf_name);

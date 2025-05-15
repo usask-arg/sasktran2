@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+import sasktran2 as sk
 from sasktran2.optical import AERLineAbsorber
 
 species_list = [
@@ -80,3 +81,42 @@ def test_aer_line_cross_section(species):
     _ = absorber.cross_sections(
         wavenumbers, [0.0], pressure_pa=[101325], temperature_k=[273.15]
     )
+
+
+def test_aer_line_in_engine():
+    pytest.importorskip("zenodo_get")
+    pytest.importorskip("hapi")
+
+    config = sk.Config()
+    config.multiple_scatter_source = sk.MultipleScatterSource.TwoStream
+    config.num_streams = 2
+
+    geometry = sk.Geometry1D(
+        0.6,
+        0.0,
+        6371000.0,
+        np.arange(0, 65001, 1000.0),
+        sk.InterpolationMethod.LinearInterpolation,
+        sk.GeometryType.PseudoSpherical,
+    )
+
+    viewinggeo = sk.ViewingGeometry()
+    viewinggeo.add_ray(sk.GroundViewingSolar(0.6, 0.0, 1.0, 200000.0))
+
+    wavelengths = np.linspace(1592.0, 1622, 30)
+
+    atmosphere = sk.Atmosphere(
+        geometry, config, wavelengths, calculate_derivatives=True
+    )
+
+    atmosphere["rayleigh"] = sk.constituent.Rayleigh()
+    atmosphere["surface"] = sk.constituent.LambertianSurface(0.3)
+    atmosphere["co2"] = sk.climatology.mipas.constituent(
+        "CO2", sk.optical.AERLineAbsorber("CO2")
+    )
+
+    sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
+
+    engine = sk.Engine(config, geometry, viewinggeo)
+
+    _ = engine.calculate_radiance(atmosphere)

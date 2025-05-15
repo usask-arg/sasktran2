@@ -508,6 +508,12 @@ impl OpticalProperty for LineAbsorber {
         optical_quantities.cross_section =
             self.cross_section(wavenumber_cminv, temperature, pressure, pself.view())?;
 
+        if optical_quantities.ssa.shape() == optical_quantities.cross_section.shape() {
+            optical_quantities.ssa *= 0.0;
+        } else {
+            optical_quantities.ssa = Array2::zeros(optical_quantities.cross_section.raw_dim());
+        }
+
         Ok(())
     }
 
