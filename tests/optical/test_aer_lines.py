@@ -84,6 +84,9 @@ def test_aer_line_cross_section(species):
 
 
 def test_aer_line_in_engine():
+    pytest.importorskip("zenodo_get")
+    pytest.importorskip("hapi")
+
     config = sk.Config()
     config.multiple_scatter_source = sk.MultipleScatterSource.TwoStream
     config.num_streams = 2
