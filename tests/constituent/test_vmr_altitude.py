@@ -53,7 +53,10 @@ def test_vmr_altitude_construction():
     """
     alts = np.arange(0, 100001, 1000.0)
 
-    sk.constituent.VMRAltitudeAbsorber(sk.optical.O3DBM(), alts, np.ones_like(alts))
+    const = sk.constituent.VMRAltitudeAbsorber(sk.optical.O3DBM(), alts, np.ones_like(alts))
+
+    np.testing.assert_allclose(alts, const.altitudes_m)
+    np.testing.assert_allclose(np.ones_like(alts), const.vmr)
 
 
 def test_vmr_altitude_setting():

@@ -58,6 +58,10 @@ class VMRAltitudeAbsorber(Constituent):
     def vmr(self, vmr: np.array):
         self._constituent.vmr = vmr
 
+    @property
+    def altitudes_m(self):
+        return self._constituent.altitudes_m
+
     def add_to_atmosphere(self, atmo: Atmosphere):
         self._constituent.add_to_atmosphere(atmo)
 
