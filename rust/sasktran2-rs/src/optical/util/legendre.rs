@@ -56,31 +56,31 @@ impl<'a, D: Dimension> LegendreAccess<'a, D, 4> {
         Self {
             a1: legendre
                 .clone()
-                .slice_axis_move(Axis(0), Slice::new(0, None, 6)),
+                .slice_axis_move(Axis(D::NDIM.unwrap() - 1), Slice::new(0, None, 6)),
             a2: Some(
                 legendre
                     .clone()
-                    .slice_axis_move(Axis(0), Slice::new(1, None, 6)),
+                    .slice_axis_move(Axis(D::NDIM.unwrap() - 1), Slice::new(1, None, 6)),
             ),
             a3: Some(
                 legendre
                     .clone()
-                    .slice_axis_move(Axis(0), Slice::new(2, None, 6)),
+                    .slice_axis_move(Axis(D::NDIM.unwrap() - 1), Slice::new(2, None, 6)),
             ),
             a4: Some(
                 legendre
                     .clone()
-                    .slice_axis_move(Axis(0), Slice::new(3, None, 6)),
+                    .slice_axis_move(Axis(D::NDIM.unwrap() - 1), Slice::new(3, None, 6)),
             ),
             b1: Some(
                 legendre
                     .clone()
-                    .slice_axis_move(Axis(0), Slice::new(4, None, 6)),
+                    .slice_axis_move(Axis(D::NDIM.unwrap() - 1), Slice::new(4, None, 6)),
             ),
             b2: Some(
                 legendre
                     .clone()
-                    .slice_axis_move(Axis(0), Slice::new(5, None, 6)),
+                    .slice_axis_move(Axis(D::NDIM.unwrap() - 1), Slice::new(5, None, 6)),
             ),
         }
     }

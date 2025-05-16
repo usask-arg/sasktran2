@@ -59,9 +59,9 @@ impl OpticalQuantities {
 
         if self.legendre.is_none() {
             self.legendre = Some(Array3::zeros((
-                num_params * num_legendre,
                 self.cross_section.dim().0,
                 self.cross_section.dim().1,
+                num_params * num_legendre,
             )));
         }
 

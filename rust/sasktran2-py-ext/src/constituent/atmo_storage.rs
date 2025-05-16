@@ -66,6 +66,7 @@ impl StorageOutputs for AtmosphereStorageOutputs<'_> {
 
 pub struct AtmosphereStorageInputs<'py> {
     pub num_stokes: usize,
+    pub num_legendre: usize,
     pub calculate_pressure_derivative: bool,
     pub calculate_temperature_derivative: bool,
     pub calculate_specific_humidity_derivative: bool,
@@ -149,6 +150,10 @@ impl<'py> StorageInputs for AtmosphereStorageInputs<'py> {
     fn calculate_specific_humidity_derivative(&self) -> bool {
         self.calculate_specific_humidity_derivative
     }
+
+    fn num_singlescatter_moments(&self) -> usize {
+        self.num_legendre
+    }
 }
 
 pub struct PyDerivativeGenerator<'py> {
@@ -178,6 +183,8 @@ impl<'py> AtmosphereStorage<'py> {
 
         let legendre_obj = storage.getattr("leg_coeff").unwrap();
         let legendre: PyReadwriteArray3<f64> = legendre_obj.extract().unwrap();
+
+        let num_legendre = legendre.shape()[0];
 
         let state_eqn_obj = atmo.getattr("state_equation").unwrap();
 
@@ -211,6 +218,7 @@ impl<'py> AtmosphereStorage<'py> {
             deriv_generator: PyDerivativeGenerator { storage },
             inputs: AtmosphereStorageInputs {
                 num_stokes,
+                num_legendre,
                 calculate_pressure_derivative,
                 calculate_temperature_derivative,
                 calculate_specific_humidity_derivative,

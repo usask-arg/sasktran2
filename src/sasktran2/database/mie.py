@@ -16,12 +16,15 @@ from sasktran2.mie.distribution import (
     integrate_mie_cpp,
 )
 from sasktran2.mie.refractive import RefractiveIndex
-from sasktran2.optical.database import OpticalDatabaseGenericScatterer
+from sasktran2.optical.database import (
+    OpticalDatabaseGenericScatterer,
+    OpticalDatabaseGenericScatterer2,
+)
 
 from .base import CachedDatabase
 
 
-class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
+class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer2):
     def __init__(
         self,
         psize_distribution: ParticleSizeDistribution,
@@ -105,7 +108,7 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScatterer):
 
         self._kwargs = kwargs
 
-        OpticalDatabaseGenericScatterer.__init__(self, self.path())
+        OpticalDatabaseGenericScatterer2.__init__(self, self.path())
 
     def generate(self):
         if self._backend == "sasktran_legacy":

@@ -22,6 +22,7 @@ pub struct DerivMappingView<'py> {
 pub trait StorageInputs {
     // Configuration options
     fn num_stokes(&self) -> usize;
+    fn num_singlescatter_moments(&self) -> usize;
     fn calculate_pressure_derivative(&self) -> bool;
     fn calculate_temperature_derivative(&self) -> bool;
     fn calculate_specific_humidity_derivative(&self) -> bool;
