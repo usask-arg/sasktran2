@@ -17,7 +17,7 @@ from sasktran2.mie.distribution import (
 )
 from sasktran2.mie.refractive import RefractiveIndex
 from sasktran2.optical.database import (
-    OpticalDatabaseGenericScatterer,
+    OpticalDatabaseGenericScatterer,  # noqa: F401
     OpticalDatabaseGenericScatterer2,
 )
 

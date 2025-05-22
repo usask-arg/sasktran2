@@ -49,19 +49,13 @@ impl OpticalQuantities {
         self
     }
 
-    pub fn with_scatterer(&mut self, num_legendre: usize, num_stokes: usize) -> &mut Self {
-        let num_params = match num_stokes {
-            1 => 1,
-            3 => 4,
-            4 => 6,
-            _ => panic!("Invalid number of Stokes parameters"),
-        };
-
+    // Here num_legendre is the STACKED dimension (i.e., num_orders * stokes_factor)
+    pub fn with_scatterer(&mut self, num_legendre: usize, _num_stokes: usize) -> &mut Self {
         if self.legendre.is_none() {
             self.legendre = Some(Array3::zeros((
                 self.cross_section.dim().0,
                 self.cross_section.dim().1,
-                num_params * num_legendre,
+                num_legendre,
             )));
         }
 

@@ -1,6 +1,7 @@
 use super::StorageInputs;
 
 #[derive(Default)]
+#[allow(dead_code)]
 pub struct ManualStorageInputs {
     num_stokes: Option<usize>,
     num_singlescatter_moments: Option<usize>,

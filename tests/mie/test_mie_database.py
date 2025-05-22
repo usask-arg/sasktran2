@@ -180,7 +180,10 @@ def test_mie_db_in_engine_multivar_variable_psize():
     )
 
     engine = sk.Engine(config, model_geometry, viewing_geo)
-    _ = engine.calculate_radiance(atmosphere)
+    rad = engine.calculate_radiance(atmosphere)
+
+    assert "wf_aerosol_mode_width" in rad
+    assert "wf_aerosol_median_radius" in rad
 
 
 def test_mie_database_against_online():
