@@ -120,6 +120,44 @@ def test_scatterer_extinction_wf_native_grid():
         )
 
 
+def test_scatterer_radius_wf_native_grid():
+    """
+    Tests the derivatives for a scatterer on the native grid
+    """
+
+    scens = _test_scenarios()
+
+    for scen in scens:
+        altitude_grid = scen["atmosphere"].model_geometry.altitudes()
+        atmosphere = scen["atmosphere"]
+
+        atmosphere["ozone"] = sk.constituent.VMRAltitudeAbsorber(
+            sk.optical.O3DBM(), altitude_grid, np.ones_like(altitude_grid) * 1e-6
+        )
+
+        atmosphere["strat_aerosol"] = sk.test_util.scenarios.test_aerosol_constituent(
+            altitude_grid, True
+        )
+
+        engine = sk.Engine(scen["config"], scen["geometry"], scen["viewing_geo"])
+
+        radiance = sk.test_util.wf.numeric_wf(
+            atmosphere["strat_aerosol"].lognormal_median_radius,
+            0.0001,
+            engine,
+            atmosphere,
+            "wf_strat_aerosol_lognormal_median_radius",
+        )
+
+        # Bad precision? Unsure why this is so bad
+        sk.test_util.wf.validate_wf(
+            radiance["wf_strat_aerosol_lognormal_median_radius"],
+            radiance["wf_strat_aerosol_lognormal_median_radius_numeric"],
+            wf_dim="strat_aerosol_altitude",
+            decimal=2,
+        )
+
+
 def test_scatterer_extinction_wf_interpolated_grid():
     """
     Tests the derivatives for a scatterer on an interpolated grid

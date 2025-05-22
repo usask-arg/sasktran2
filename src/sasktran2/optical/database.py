@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import copy
 from pathlib import Path
 
 import numpy as np
@@ -9,10 +10,15 @@ from sasktran2._core_rust import (
     AbsorberDatabaseDim1,
     AbsorberDatabaseDim2,
     AbsorberDatabaseDim3,
+    PyScatteringDatabaseDim1,
+    PyScatteringDatabaseDim2,
+    PyScatteringDatabaseDim3,
 )
 from sasktran2.atmosphere import Atmosphere, NativeGridDerivative
 from sasktran2.optical.base import OpticalProperty, OpticalQuantities
 from sasktran2.polarization import LegendreStorageView
+
+from .quantities import OpticalQuantities as RustOpticalQuantities
 
 
 class OpticalDatabase(OpticalProperty):
@@ -135,6 +141,113 @@ class OpticalDatabaseGenericAbsorber(OpticalDatabase):
 
     def _into_rust_object(self):
         return self._database
+
+
+class OpticalDatabaseGenericScattererRust(OpticalDatabase):
+    def __init__(self, db_filepath: Path) -> None:
+        """
+        A purely scattering optical property defined by a database file.  The database must contain the following
+
+        - xs_total : The total cross section in [m^2]
+        - xs_scattering : The scattering cross section in [m^2]
+        - lm_a1 : the legendre coefficients for the phase function
+
+        All variables must be a function of either wavelength_nm or wavenumber_cminv, and optionally any other dimension such
+        as particle size.
+
+        This differs from OpticalDatabaseGenericScatterer in that it uses the Rust backend for the interpolation,
+        other than that the two classes are identical.
+
+        Parameters
+        ----------
+        db_filepath : Path
+            Path to the database file
+        """
+        super().__init__(db_filepath)
+
+        self._validate_db()
+
+        # Reorient the dimensions
+        dims = list(self._database["xs_total"].isel(wavelength_nm=0).dims)
+        db = self._database.transpose(*dims, "wavelength_nm", "legendre", ...)
+
+        # construct internal object
+        xs = db["xs_total"].to_numpy()
+        ssa = db["xs_scattering"].to_numpy()
+
+        db_shape = db["lm_a1"].shape
+        leg_shape = np.atleast_1d(copy(db_shape))
+        leg_shape[-1] *= 6
+
+        legendre = np.zeros(leg_shape)
+        legendre[..., 0::6] = db["lm_a1"].to_numpy()
+        legendre[..., 1::6] = db["lm_a2"].to_numpy()
+        legendre[..., 2::6] = db["lm_a3"].to_numpy()
+        legendre[..., 3::6] = db["lm_a4"].to_numpy()
+        legendre[..., 4::6] = db["lm_b1"].to_numpy()
+        legendre[..., 5::6] = db["lm_b2"].to_numpy()
+
+        wvnum = 1e7 / db["wavelength_nm"].to_numpy()
+        sidx = np.argsort(wvnum)
+
+        if len(xs.shape) == 1:
+            self._db = PyScatteringDatabaseDim1(
+                xs[sidx], ssa[sidx], legendre[sidx], wvnum[sidx]
+            )
+        elif len(xs.shape) == 2:
+            param_names = list(db["xs_total"].dims)[:-1]
+            param0 = db[param_names[0]].to_numpy()
+            self._db = PyScatteringDatabaseDim2(
+                xs[:, sidx],
+                ssa[:, sidx],
+                legendre[:, sidx, :],
+                wvnum[sidx],
+                np.atleast_1d(param0).astype(np.float64),
+                param_names,
+            )
+        elif len(xs.shape) == 3:
+            param_names = list(db["xs_total"].dims)[:-1]
+            param0 = db[param_names[0]].to_numpy()
+            param1 = db[param_names[1]].to_numpy()
+            self._db = PyScatteringDatabaseDim3(
+                xs[:, :, sidx],
+                ssa[:, :, sidx],
+                legendre[:, :, sidx, :],
+                wvnum[sidx],
+                np.atleast_1d(param0).astype(np.float64),
+                np.atleast_1d(param1).astype(np.float64),
+                param_names,
+            )
+
+    def _validate_db(self):
+        self._database["lm_a1"] /= self._database["lm_a1"].isel(legendre=0)
+
+    def cross_sections(
+        self, wavelengths_nm: np.array, altitudes_m: np.array, **kwargs
+    ) -> OpticalQuantities:
+        return self._db.cross_sections(
+            np.atleast_1d(wavelengths_nm).astype(float),
+            np.atleast_1d(altitudes_m).astype(float),
+            **kwargs,
+        )
+
+    def atmosphere_quantities(self, atmo: Atmosphere, **kwargs) -> OpticalQuantities:
+        return RustOpticalQuantities(self._db.atmosphere_quantities(atmo, **kwargs))
+
+    def optical_derivatives(self, atmo: Atmosphere, **kwargs) -> dict:
+        result = self._db.optical_derivatives(atmo, **kwargs)
+
+        return {k: RustOpticalQuantities(v) for k, v in result.items()}
+
+    def cross_section_derivatives(
+        self, wavelengths_nm: np.array, altitudes_m: np.array, **kwargs
+    ) -> dict:
+        result = self._db.cross_section_derivatives(
+            np.atleast_1d(wavelengths_nm).astype(float),
+            np.atleast_1d(altitudes_m).astype(float),
+            **kwargs,
+        )
+        return {k: v.extinction.flatten() for k, v in result.items()}
 
 
 class OpticalDatabaseGenericScatterer(OpticalDatabase):

@@ -59,4 +59,15 @@ impl PyOpticalQuantities {
             None
         }
     }
+
+    #[getter]
+    fn get_leg_coeff<'py>(this: Bound<'py, Self>) -> Option<Bound<'py, PyArray3<f64>>> {
+        let array = &this.borrow().oq.legendre;
+
+        if let Some(array) = array {
+            unsafe { Some(PyArray3::borrow_from_array(array, this.into_any())) }
+        } else {
+            None
+        }
+    }
 }
