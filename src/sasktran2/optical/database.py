@@ -143,7 +143,7 @@ class OpticalDatabaseGenericAbsorber(OpticalDatabase):
         return self._database
 
 
-class OpticalDatabaseGenericScatterer2(OpticalDatabase):
+class OpticalDatabaseGenericScattererRust(OpticalDatabase):
     def __init__(self, db_filepath: Path) -> None:
         """
         A purely scattering optical property defined by a database file.  The database must contain the following
@@ -154,6 +154,9 @@ class OpticalDatabaseGenericScatterer2(OpticalDatabase):
 
         All variables must be a function of either wavelength_nm or wavenumber_cminv, and optionally any other dimension such
         as particle size.
+
+        This differs from OpticalDatabaseGenericScatterer in that it uses the Rust backend for the interpolation,
+        other than that the two classes are identical.
 
         Parameters
         ----------
