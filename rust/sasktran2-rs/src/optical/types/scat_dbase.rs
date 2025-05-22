@@ -216,10 +216,6 @@ impl OpticalProperty for ScatteringDatabase<Ix1, Ix2> {
             .as_mut()
             .ok_or_else(|| anyhow::anyhow!("Legendre coefficients not initialized"))?;
 
-        println!("num moments: {}", inputs.num_singlescatter_moments());
-        println!("num stokes: {}", num_stokes);
-        println!("optical dim {:?}", legendre.dim());
-
         Zip::from(xs.rows_mut())
             .and(ssa.rows_mut())
             .and(legendre.axis_iter_mut(Axis(0)))
@@ -276,7 +272,7 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix2, Ix3> {
             4 => 6,
             _ => panic!("Invalid number of Stokes parameters"),
         };
-        let leg_order = (self.legendre.dim().1 / 6).min(legendre.dim().1 / num_legendre);
+        let leg_order = (self.legendre.dim().2 / 6).min(legendre.dim().1 / num_legendre);
 
         let weights_0 = &self.params[0].interp1_weights(params[0], OutOfBoundsMode::Extend);
 
@@ -291,8 +287,8 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix2, Ix3> {
                 let local_ssa = self.ssa[[i0, wvnum_weights[0].0]] * wvnum_weights[0].1
                     + self.ssa[[i0, wvnum_weights[1].0]] * wvnum_weights[1].1;
 
-                xs[j] += local_xs;
-                ssa[j] += local_ssa;
+                xs[j] += local_xs * (*weight0);
+                ssa[j] += local_ssa * (*weight0);
 
                 let legendre_result = legendre.index_axis_mut(Axis(0), j);
 
@@ -340,7 +336,7 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix2, Ix3> {
             4 => 6,
             _ => panic!("Invalid number of Stokes parameters"),
         };
-        let leg_order = (self.legendre.dim().1 / 6).min(legendre.dim().1 / num_legendre);
+        let leg_order = (self.legendre.dim().2 / 6).min(legendre.dim().1 / num_legendre);
 
         let weights_0 = &self.params[0].interp1_weights(params[0], OutOfBoundsMode::Extend);
 
@@ -355,8 +351,8 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix2, Ix3> {
                 let local_ssa = self.ssa[[i0, wvnum_weights[0].0]] * wvnum_weights[0].1
                     + self.ssa[[i0, wvnum_weights[1].0]] * wvnum_weights[1].1;
 
-                xs[j] += local_xs;
-                ssa[j] += local_ssa;
+                xs[j] += local_xs * (*d_weight0);
+                ssa[j] += local_ssa * (*d_weight0);
 
                 let legendre_result = legendre.index_axis_mut(Axis(0), j);
 
@@ -497,7 +493,7 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix3, Ix4> {
             4 => 6,
             _ => panic!("Invalid number of Stokes parameters"),
         };
-        let leg_order = (self.legendre.dim().1 / 6).min(legendre.dim().1 / num_legendre);
+        let leg_order = (self.legendre.dim().3 / 6).min(legendre.dim().1 / num_legendre);
 
         let weights_0 = &self.params[0].interp1_weights(params[0], OutOfBoundsMode::Extend);
         let weights_1 = &self.params[1].interp1_weights(params[1], OutOfBoundsMode::Extend);
@@ -516,8 +512,8 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix3, Ix4> {
                     let local_ssa = self.ssa[[i0, i1, wvnum_weights[0].0]] * wvnum_weights[0].1
                         + self.ssa[[i0, i1, wvnum_weights[1].0]] * wvnum_weights[1].1;
 
-                    xs[j] += local_xs;
-                    ssa[j] += local_ssa;
+                    xs[j] += local_xs * (*weight0 * *weight1);
+                    ssa[j] += local_ssa * (*weight0 * *weight1);
 
                     let legendre_result = legendre.index_axis_mut(Axis(0), j);
 
@@ -570,7 +566,7 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix3, Ix4> {
         let xs = &mut d_xs[0];
         let ssa = &mut d_ssa[0];
         let legendre = &mut d_leg[0];
-        let leg_order = (self.legendre.dim().1 / 6).min(legendre.dim().1 / num_legendre);
+        let leg_order = (self.legendre.dim().3 / 6).min(legendre.dim().1 / num_legendre);
 
         for (i0, _, weight0) in weights_0.iter() {
             let i0 = *i0;
@@ -586,8 +582,8 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix3, Ix4> {
                     let local_ssa = self.ssa[[i0, i1, wvnum_weights[0].0]] * wvnum_weights[0].1
                         + self.ssa[[i0, i1, wvnum_weights[1].0]] * wvnum_weights[1].1;
 
-                    xs[j] += local_xs;
-                    ssa[j] += local_ssa;
+                    xs[j] += local_xs * (*weight0 * *weight1);
+                    ssa[j] += local_ssa * (*weight0 * *weight1);
 
                     let legendre_result = legendre.index_axis_mut(Axis(0), j);
 
