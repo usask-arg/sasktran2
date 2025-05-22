@@ -226,7 +226,9 @@ class OpticalDatabaseGenericScattererRust(OpticalDatabase):
         self, wavelengths_nm: np.array, altitudes_m: np.array, **kwargs
     ) -> OpticalQuantities:
         return self._db.cross_sections(
-            np.atleast_1d(wavelengths_nm).astype(float), altitudes_m, **kwargs
+            np.atleast_1d(wavelengths_nm).astype(float),
+            np.atleast_1d(altitudes_m).astype(float),
+            **kwargs,
         )
 
     def atmosphere_quantities(self, atmo: Atmosphere, **kwargs) -> OpticalQuantities:
@@ -241,7 +243,9 @@ class OpticalDatabaseGenericScattererRust(OpticalDatabase):
         self, wavelengths_nm: np.array, altitudes_m: np.array, **kwargs
     ) -> dict:
         result = self._db.cross_section_derivatives(
-            np.atleast_1d(wavelengths_nm).astype(float), altitudes_m, **kwargs
+            np.atleast_1d(wavelengths_nm).astype(float),
+            np.atleast_1d(altitudes_m).astype(float),
+            **kwargs,
         )
         return {k: v.extinction.flatten() for k, v in result.items()}
 
