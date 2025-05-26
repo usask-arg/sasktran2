@@ -256,6 +256,24 @@ class Geodetic:
             np.atleast_1d(look_vector).astype(np.float64),
         )
 
+    def osculating_spheroid(self) -> tuple[float, np.ndarray]:
+        """
+        Returns the osculating spheroid at the current location.
+
+        The osculating spheroid is the best fit sphere to the geoid at the current location.
+
+        Returns
+        -------
+        float
+            The radius of the osculating spheroid in meters.
+        np.ndarray
+            A three element array containing the offset of the center of the geoid to the center of the osculating
+            spheroid in geocentric coordinates.
+        """
+        result = self._internal.osculating_spheroid()
+
+        return result[0], np.atleast_1d(result[1]).astype(np.float64)
+
 
 class WGS84(Geodetic):
     def __init__(self):

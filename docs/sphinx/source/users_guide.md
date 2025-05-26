@@ -33,9 +33,6 @@
 [Input Validation](users_guide/input_validation.md)
 : Information on how user input values are automatically validated
 
-[More Examples](examples/examples.rst)
-: Miscallaneous examples of model usage
-
 
 ```{toctree}
 :maxdepth: 4
@@ -53,5 +50,4 @@ users_guide/performance.md
 users_guide/phase.md
 users_guide/geodetic.md
 users_guide/input_validation.md
-examples/examples
 ```

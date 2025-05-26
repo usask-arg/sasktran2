@@ -1,6 +1,9 @@
 use super::prelude::*;
 use sasktran2_sys::ffi;
 
+/// Wrapper around the c++ viewing geometry object
+/// This works a little differently than the c++ api in that we provide functions to add rays
+/// instead of having separate types passed in
 pub struct ViewingGeometry {
     pub viewing_geometry: *mut ffi::ViewingGeometry,
 }
@@ -114,5 +117,59 @@ mod tests {
             observer_altitude,
             cos_viewing_zenith,
         );
+    }
+
+    #[test]
+    fn test_viewing_geometry_tangent_altitude() {
+        let mut viewing_geometry = ViewingGeometry::new();
+        let tangent_altitude_m = 30000.0;
+        let relative_azimuth_angle = 0.0;
+        let observer_altitude = 700000.0;
+        let cos_sza = 0.6;
+
+        viewing_geometry.add_tangent_altitude_solar(
+            tangent_altitude_m,
+            relative_azimuth_angle,
+            observer_altitude,
+            cos_sza,
+        );
+
+        assert_eq!(viewing_geometry.num_rays().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_viewing_geometry_solar_angles_observer() {
+        let mut viewing_geometry = ViewingGeometry::new();
+        let cos_sza = 0.7;
+        let relative_azimuth_angle = 45.0;
+        let cos_viewing_zenith = 0.8;
+        let observer_altitude = 8000000.0;
+
+        viewing_geometry.add_solar_angles_observer_location(
+            cos_sza,
+            relative_azimuth_angle,
+            cos_viewing_zenith,
+            observer_altitude,
+        );
+
+        assert_eq!(viewing_geometry.num_rays().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_multiple_rays() {
+        let mut viewing_geometry = ViewingGeometry::new();
+
+        // Add three different ray types
+        viewing_geometry.add_ground_viewing_solar(0.5, 0.0, 6371000.0, 1.0);
+        viewing_geometry.add_tangent_altitude_solar(30000.0, 90.0, 700000.0, 0.6);
+        viewing_geometry.add_solar_angles_observer_location(0.7, 180.0, 0.8, 8000000.0);
+
+        assert_eq!(viewing_geometry.num_rays().unwrap(), 3);
+    }
+
+    #[test]
+    fn test_default_creation() {
+        let viewing_geometry = ViewingGeometry::default();
+        assert_eq!(viewing_geometry.num_rays().unwrap(), 0);
     }
 }

@@ -16,7 +16,6 @@
     :toctree: generated/
 
     sasktran2.mie.MieOutput
-    sasktran2.mie.MieData
 
 ```
 
@@ -27,6 +26,9 @@
 
     sasktran2.mie.distribution.ParticleSizeDistribution
     sasktran2.mie.distribution.LogNormalDistribution
+    sasktran2.mie.distribution.UniformDistribution
+    sasktran2.mie.distribution.TriangularDistribution
+    sasktran2.mie.distribution.GammaDistribution
 
 ```
 

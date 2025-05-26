@@ -65,35 +65,6 @@ namespace sasktran2::math::geodetic {
         void exact_geocentric_to_geodetic(double r, double z, double* fi,
                                           double* h);
 
-        /**
-         * @brief Get the osculating spheroid parameters
-         *
-         * Code was taken from tangentpoint.cxx on 2012-11-23, the docstring for
-         *that function follows below
-         *
-         *
-         * Calculates the spheroid that best fits the ellipsoid surface (height
-         *=0) at the current location. This algorithm best fits the spheroid in
-         *a latitudinal direction (ie North South)
-         *
-         *  The radius of curvature is given by:-
-         *
-         *             [       (dy)^2 ] ^3/2
-         *             [   1 + (--)   ]
-         *             [       (dx)   ]
-         *      R =  -----------------------
-         *                d2y
-         *                ---
-         *                dx2
-         *
-         *  For an ellipse:
-         *  R = 1/ab [ a^2y^2/b^2 + b^2x^2/a^2]^3/2
-         *
-         * @param radius
-         * @param offset
-         */
-        void get_osculating_spheroid(double* radius, Eigen::Vector3d* offset);
-
       public:
         /**
          * @brief Construct a new Geodetic object
@@ -223,5 +194,34 @@ namespace sasktran2::math::geodetic {
          * @return false
          */
         bool is_valid() const { return m_is_valid; }
+
+        /**
+         * @brief Get the osculating spheroid parameters
+         *
+         * Code was taken from tangentpoint.cxx on 2012-11-23, the docstring for
+         *that function follows below
+         *
+         *
+         * Calculates the spheroid that best fits the ellipsoid surface (height
+         *=0) at the current location. This algorithm best fits the spheroid in
+         *a latitudinal direction (ie North South)
+         *
+         *  The radius of curvature is given by:-
+         *
+         *             [       (dy)^2 ] ^3/2
+         *             [   1 + (--)   ]
+         *             [       (dx)   ]
+         *      R =  -----------------------
+         *                d2y
+         *                ---
+         *                dx2
+         *
+         *  For an ellipse:
+         *  R = 1/ab [ a^2y^2/b^2 + b^2x^2/a^2]^3/2
+         *
+         * @param radius
+         * @param offset
+         */
+        void get_osculating_spheroid(double* radius, Eigen::Vector3d* offset);
     };
 } // namespace sasktran2::math::geodetic

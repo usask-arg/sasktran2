@@ -1,6 +1,7 @@
 use crate::threading;
 
 use super::atmosphere::Atmosphere;
+use super::common::openmp_support_enabled;
 use super::config::{Config, ThreadingLib};
 use super::geometry::Geometry1D;
 use super::output::Output;
@@ -10,6 +11,8 @@ use rayon::current_thread_index;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use sasktran2_sys::ffi;
 
+/// Wrapper around the c++ sasktran2 Engine object.  Note that we also keep references to the
+/// rust Config, Geometry1D and ViewingGeometry objects which is why the lifetime is required
 pub struct Engine<'a> {
     pub engine: *mut ffi::Engine,
     pub config: &'a Config,
@@ -38,6 +41,7 @@ pub struct SafeFFIAtmosphere(pub *mut ffi::Atmosphere);
 unsafe impl Send for SafeFFIAtmosphere {}
 unsafe impl Sync for SafeFFIAtmosphere {}
 
+/// Allows us to call the c++ thread-safe function from multiple threads
 fn safe_calc_thread(
     engine: &SafeFFIEngine,
     atmosphere: &SafeFFIAtmosphere,
@@ -57,6 +61,7 @@ fn safe_calc_thread(
 }
 
 impl<'a> Engine<'a> {
+    /// Creates a new engine object
     pub fn new(
         config: &'a Config,
         geometry: &'a Geometry1D,
@@ -74,11 +79,6 @@ impl<'a> Engine<'a> {
             geometry,
             viewing_geometry,
         }
-    }
-
-    fn openmp_support_enabled(&self) -> bool {
-        let openmp = unsafe { ffi::sk_openmp_support_enabled() };
-        openmp != 0
     }
 
     pub fn calculate_radiance(&self, atmosphere: &Atmosphere) -> Result<Output> {
@@ -116,7 +116,9 @@ impl<'a> Engine<'a> {
         // openMP support is not enabled.  Also only use it if the number of threads is greater than 1.
         let use_rayon_threading = (self.config.threading_lib() == ThreadingLib::Rayon
             && self.config.num_threads()? > 1)
-            || (!self.openmp_support_enabled() && self.config.num_threads()? > 1);
+            || (!openmp_support_enabled() && self.config.num_threads()? > 1)
+                && self.config.threading_model()?
+                    == crate::bindings::config::ThreadingModel::Wavelength;
 
         if !use_rayon_threading {
             let result = unsafe {

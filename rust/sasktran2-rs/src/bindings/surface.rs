@@ -4,6 +4,7 @@ use super::prelude::*;
 use ndarray::*;
 use sasktran2_sys::ffi;
 
+/// C++ wrapper around the Surface object
 pub struct Surface {
     pub surface: *mut ffi::Surface,
     pub emission: Array1<f64>,
@@ -111,5 +112,36 @@ mod tests {
         let num_wavel = 10;
         let num_stokes = 3;
         let _surface = Surface::new(num_wavel, num_stokes);
+    }
+
+    #[test]
+    fn test_surface_set_brdf() {
+        let num_wavel = 5;
+        let num_stokes = 1;
+        let mut surface = Surface::new(num_wavel, num_stokes);
+
+        let brdf = Lambertian::new(num_stokes);
+        let result = surface.set_brdf(&brdf);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_surface_set_zero() {
+        let num_wavel = 3;
+        let num_stokes = 1;
+        let mut surface = Surface::new(num_wavel, num_stokes);
+
+        let result = surface.set_zero();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_surface_derivative_mapping_names() {
+        let num_wavel = 2;
+        let num_stokes = 1;
+        let surface = Surface::new(num_wavel, num_stokes);
+
+        let names = surface.derivative_mapping_names().unwrap();
+        assert!(names.is_empty());
     }
 }

@@ -161,4 +161,10 @@ impl PyGeodetic {
             .is_valid()
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{}", e)))
     }
+
+    fn osculating_spheroid(&mut self) -> PyResult<(f64, [f64; 3])> {
+        self.output
+            .osculating_spheroid()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{}", e)))
+    }
 }

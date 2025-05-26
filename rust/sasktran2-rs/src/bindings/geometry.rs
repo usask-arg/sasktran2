@@ -15,6 +15,7 @@ pub enum GeometryType {
     Ellipsoidal = 3,
 }
 
+/// Wrapper around the c++ Geometry1D object
 pub struct Geometry1D {
     pub geometry: *mut ffi::Geometry1D,
 }
@@ -103,5 +104,108 @@ mod tests {
 
         let num_altitudes = geometry.get_num_altitudes();
         assert_eq!(num_altitudes, 3, "Number of altitudes should be 3");
+    }
+
+    #[test]
+    fn test_geometry1d_altitudes() {
+        let cos_sza = 0.5;
+        let saa = 0.0;
+        let earth_radius = 6371000.0;
+        let grid_values = vec![7000.0, 8000.0, 9000.0];
+
+        let geometry = Geometry1D::new(
+            cos_sza,
+            saa,
+            earth_radius,
+            grid_values.clone(),
+            InterpolationMethod::Linear,
+            GeometryType::Spherical,
+        );
+
+        let altitudes = geometry.altitudes_m().unwrap();
+        assert_eq!(
+            altitudes.len(),
+            grid_values.len(),
+            "Altitude array length should match input grid values"
+        );
+
+        for (i, &val) in grid_values.iter().enumerate() {
+            assert_eq!(
+                altitudes[i], val,
+                "Altitude values should match input grid values"
+            );
+        }
+    }
+
+    #[test]
+    fn test_geometry1d_refractive_index() {
+        let cos_sza = 0.6;
+        let saa = 45.0;
+        let earth_radius = 6371000.0;
+        let grid_values = vec![10000.0, 20000.0, 30000.0, 40000.0];
+
+        let geometry = Geometry1D::new(
+            cos_sza,
+            saa,
+            earth_radius,
+            grid_values,
+            InterpolationMethod::Shell,
+            GeometryType::PseudoSpherical,
+        );
+
+        let mut ref_index = geometry.refractive_index_mut().unwrap();
+        assert_eq!(
+            ref_index.len(),
+            4,
+            "Refractive index array length should match grid size"
+        );
+
+        // Default values should be zeros
+        for val in ref_index.iter() {
+            assert_eq!(*val, 1.0, "Default refractive index should be 1.0");
+        }
+
+        // Test we can modify the refractive index
+        ref_index[0] = 1.0;
+        ref_index[1] = 1.1;
+        assert_eq!(ref_index[0], 1.0);
+        assert_eq!(ref_index[1], 1.1);
+    }
+
+    #[test]
+    fn test_different_interpolation_methods() {
+        let earth_radius = 6371000.0;
+        let grid_values = vec![5000.0, 10000.0];
+
+        let geom_linear = Geometry1D::new(
+            0.5,
+            0.0,
+            earth_radius,
+            grid_values.clone(),
+            InterpolationMethod::Linear,
+            GeometryType::Spherical,
+        );
+
+        let geom_shell = Geometry1D::new(
+            0.5,
+            0.0,
+            earth_radius,
+            grid_values.clone(),
+            InterpolationMethod::Shell,
+            GeometryType::Spherical,
+        );
+
+        let geom_lower = Geometry1D::new(
+            0.5,
+            0.0,
+            earth_radius,
+            grid_values,
+            InterpolationMethod::Lower,
+            GeometryType::Spherical,
+        );
+
+        assert!(!geom_linear.geometry.is_null());
+        assert!(!geom_shell.geometry.is_null());
+        assert!(!geom_lower.geometry.is_null());
     }
 }

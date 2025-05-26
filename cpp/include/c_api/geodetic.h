@@ -52,6 +52,10 @@ int sk_geodetic_from_xyz(const Geodetic* geodetic, double x, double y,
 
 int sk_geodetic_is_valid(const Geodetic* geodetic, int* is_valid);
 
+int sk_geodetic_get_osculating_spheroid(const Geodetic* geodetic,
+                                        double* radius, double* offset_x,
+                                        double* offset_y, double* offset_z);
+
 #ifdef __cplusplus
 }
 #endif
