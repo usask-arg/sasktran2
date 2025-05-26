@@ -929,25 +929,25 @@ mod tests {
         let mut config = Config::new();
 
         config.with_delta_m_scaling(true).unwrap();
-        assert_eq!(config.delta_m_scaling().unwrap(), true);
+        assert!(config.delta_m_scaling().unwrap());
 
         config.with_delta_m_scaling(false).unwrap();
-        assert_eq!(config.delta_m_scaling().unwrap(), false);
+        assert!(!config.delta_m_scaling().unwrap());
 
         config.with_los_refraction(true).unwrap();
-        assert_eq!(config.los_refraction().unwrap(), true);
+        assert!(config.los_refraction().unwrap());
 
         config.with_output_los_optical_depth(true).unwrap();
-        assert_eq!(config.output_los_optical_depth().unwrap(), true);
+        assert!(config.output_los_optical_depth().unwrap());
 
         config.with_solar_refraction(true).unwrap();
-        assert_eq!(config.solar_refraction().unwrap(), true);
+        assert!(config.solar_refraction().unwrap());
 
         config.with_multiple_scatter_refraction(true).unwrap();
-        assert_eq!(config.multiple_scatter_refraction().unwrap(), true);
+        assert!(config.multiple_scatter_refraction().unwrap());
 
         config.with_do_backprop(true).unwrap();
-        assert_eq!(config.do_backprop().unwrap(), true);
+        assert!(config.do_backprop().unwrap());
     }
 
     #[test]
@@ -986,21 +986,19 @@ mod tests {
         config
             .with_init_successive_orders_with_discrete_ordinates(true)
             .unwrap();
-        assert_eq!(
+        assert!(
             config
                 .init_successive_orders_with_discrete_ordinates()
-                .unwrap(),
-            true
+                .unwrap()
         );
 
         config
             .with_init_successive_orders_with_discrete_ordinates(false)
             .unwrap();
-        assert_eq!(
-            config
+        assert!(
+            !config
                 .init_successive_orders_with_discrete_ordinates()
-                .unwrap(),
-            false
+                .unwrap()
         );
     }
 }
