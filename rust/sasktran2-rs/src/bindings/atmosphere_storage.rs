@@ -3,6 +3,9 @@ use super::prelude::*;
 use ndarray::*;
 use sasktran2_sys::ffi;
 
+/// Binding of the sasktran2 AtmosphereStorage object
+/// Memory for the storage is allocated on the rust side and views passed into the C++ side
+/// Note that the storage arrays are in Fortran order to match the C++ side
 pub struct AtmosphereStorage {
     pub storage: *mut ffi::AtmosphereStorage,
     pub ssa: Array2<f64>,
@@ -13,6 +16,7 @@ pub struct AtmosphereStorage {
 }
 
 impl AtmosphereStorage {
+    /// Creates a new AtmosphereStorage object with the appropriate memory allocated
     pub fn new(num_wavel: usize, num_location: usize, num_legendre: usize, stokes: Stokes) -> Self {
         let mut ssa = Array2::<f64>::zeros((num_location, num_wavel).f());
         let mut total_extinction = Array2::<f64>::zeros((num_location, num_wavel).f());
@@ -52,6 +56,7 @@ impl AtmosphereStorage {
         }
     }
 
+    /// Returns back the derivative mapping for name if it exists, if not creates a new one
     pub fn get_derivative_mapping(&self, name: &str) -> Result<DerivativeMapping, String> {
         let mut mapping: *mut ffi::DerivativeMapping = std::ptr::null_mut();
         let c_name = std::ffi::CString::new(name).unwrap();
@@ -71,6 +76,7 @@ impl AtmosphereStorage {
         Ok(DerivativeMapping::new(mapping))
     }
 
+    /// Returns back a vector of all the derivative mapping names
     pub fn derivative_mapping_names(&self) -> Result<Vec<String>, String> {
         let mut names: Vec<String> = Vec::new();
 
@@ -104,7 +110,8 @@ impl AtmosphereStorage {
         Ok(names)
     }
 
-    // Called after ssa is initialized to scattering extinction, and legendre need to be normalized
+    /// Called after ssa is initialized to scattering extinction, and legendre need to be normalized.
+    /// This divides the legendre coefficients by the ssa and then normalizes the ssa by the total extinction
     pub fn normalize_by_extinctions(&mut self) {
         // Start by dividing the leg_coeff by the ssa
         // Since these are fortran ordered we iterate over the last axis first
@@ -143,12 +150,14 @@ impl AtmosphereStorage {
         });
     }
 
+    /// Finalizes the scattering derivatives for the storage, done on the c++ side
     pub fn finalize_scattering_derivatives(&mut self) {
         unsafe {
             ffi::sk_atmosphere_storage_finalize_scattering_derivatives(self.storage);
         }
     }
 
+    /// Sets the storage to zero, done on the c++ side
     pub fn set_zero(&mut self) {
         unsafe {
             ffi::sk_atmosphere_storage_set_zero(self.storage);
@@ -167,6 +176,51 @@ impl Drop for AtmosphereStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_atmosphere_storage_new() {
+        let num_wavel = 10;
+        let num_location = 5;
+        let num_legendre = 3;
+
+        let storage =
+            AtmosphereStorage::new(num_wavel, num_location, num_legendre, Stokes::Stokes1);
+
+        assert_eq!(storage.ssa.shape(), &[num_location, num_wavel]);
+        assert_eq!(storage.total_extinction.shape(), &[num_location, num_wavel]);
+        assert_eq!(storage.emission_source.shape(), &[num_location, num_wavel]);
+        assert_eq!(
+            storage.leg_coeff.shape(),
+            &[
+                num_legendre * Stokes::Stokes1.num_legendre(),
+                num_location,
+                num_wavel
+            ]
+        );
+        assert_eq!(storage.solar_irradiance.shape(), &[num_wavel]);
+    }
+
+    #[test]
+    fn test_atmosphere_storage_set_zero() {
+        let num_wavel = 10;
+        let num_location = 5;
+        let num_legendre = 3;
+
+        let mut storage =
+            AtmosphereStorage::new(num_wavel, num_location, num_legendre, Stokes::Stokes1);
+
+        storage.ssa.fill(1.0);
+        storage.total_extinction.fill(1.0);
+        storage.emission_source.fill(1.0);
+        storage.leg_coeff.fill(1.0);
+
+        storage.set_zero();
+
+        assert_eq!(storage.ssa.sum(), 0.0);
+        assert_eq!(storage.total_extinction.sum(), 0.0);
+        assert_eq!(storage.emission_source.sum(), 0.0);
+        assert_eq!(storage.leg_coeff.sum(), 0.0);
+    }
 
     #[test]
     fn test_atmosphere_storage() {

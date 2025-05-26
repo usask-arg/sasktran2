@@ -57,3 +57,4 @@ rust/core/target/
 rust/pybindings/target/
 target
 .openblas_venv
+docs/mkdocs/site/

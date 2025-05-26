@@ -38,7 +38,6 @@ from .config import Config
 from .engine import Engine
 from .geodetic import WGS84, Geodetic, SphericalGeoid
 from .geometry import Geometry1D
-from .output import Output, OutputDerivMapped, OutputIdeal
 from .viewinggeo.wrappers import (
     GroundViewingSolar,
     SolarAnglesObserverLocation,

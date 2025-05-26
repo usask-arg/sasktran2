@@ -44,7 +44,6 @@ api/model_geometry
 api/atmosphere
 api/constituents
 api/optical
-api/output
 api/viewing_geometry
 api/climatology
 api/geodetic

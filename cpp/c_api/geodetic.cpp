@@ -162,3 +162,18 @@ int sk_geodetic_is_valid(const Geodetic* geodetic, int* is_valid) {
     *is_valid = geodetic->impl->is_valid() ? 1 : 0;
     return 0; // Success
 }
+
+int sk_geodetic_get_osculating_spheroid(const Geodetic* geodetic,
+                                        double* radius, double* offset_x,
+                                        double* offset_y, double* offset_z) {
+    if (geodetic == nullptr || radius == nullptr || offset_x == nullptr ||
+        offset_y == nullptr || offset_z == nullptr) {
+        return -1; // Error: null pointer
+    }
+    Eigen::Vector3d offset;
+    geodetic->impl->get_osculating_spheroid(radius, &offset);
+    *offset_x = offset.x();
+    *offset_y = offset.y();
+    *offset_z = offset.z();
+    return 0; // Success
+}

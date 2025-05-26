@@ -1,6 +1,7 @@
 use ndarray::*;
 use sasktran2_sys::ffi;
 
+/// Wrapper around the c++ DerivativeMapping object, just for internal use
 pub struct DerivativeMapping {
     pub mapping: *mut ffi::DerivativeMapping,
 }

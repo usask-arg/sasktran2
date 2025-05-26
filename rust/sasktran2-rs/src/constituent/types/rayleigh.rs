@@ -247,3 +247,6 @@ impl Constituent for Rayleigh {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {}

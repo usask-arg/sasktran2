@@ -12,7 +12,7 @@ definition of a `reference point` is also required to provide context to the vie
 Similar to other SASKTRAN2 components, there are multiple ways to construct the model geometry.
 The standard one, and the one you probably want, is {py:class}`sasktran2.Geometry1D`,
 
-```{code-cell}
+```{code-cell} ipython3
 import sasktran2 as sk
 import numpy as np
 
@@ -25,8 +25,7 @@ model_geometry = sk.Geometry1D(cos_sza=0.6,
 
 ```
 
-The Reference Point
--------------------
+## The Reference Point
 Sometimes we refer to a location known as the `reference point`, which can be somewhat abstract and hard to understand
 the significance of.  In the above construction, the reference point is a location with a cosine solar zenith angle
 of 0.6, a solar azimuth angle of 0, and a spherical Earth radius of 6372 km.
@@ -36,16 +35,27 @@ to be the most accurate.  For nadir viewing lines of sight, typically this means
 the ground viewing point.  For limb viewing lines of sight, the reference point is often best represented as the mean
 tangent point of all the lines of sight.
 
-The Location Grid
------------------
+### Calculating the "Earth Radius"
+When in `Spherical` or `PseudoSpherical` mode, the "Earth Radius" is required to calculate path lengths in a spherical
+atmosphere.  The calculation is most accurate when we use an effective radius of the Earth, i.e., a radius that matches
+the curvature of the underlying ellipsoid.  SASKTRAN2 contains a build in method to calculate this effective radius,
+
+```{code-cell} ipython3
+geoid = sk.WGS84()
+
+geoid.from_lat_lon_alt(10.0, 0.0, 0.0)
+
+geoid.osculating_spheroid()[0]
+```
+
+## The Location Grid
 The location grid is an abstract array of locations inside the atmosphere representative of the specific model geometry.
 In the above construction it is simply an altitude grid above the surface.
 
 The important thing to remember is that internally atmospheric quantities are sampled, and specified at, this location grid.
 Therefore, it's resolution can have huge impacts on the accuracy and time complexity of the radiative transfer calculation.
 
-Interpolation Method
---------------------
+## Interpolation Method
 The interpolation method defines how we treat atmospheric properties inbetween the location grid points.
 The method used above, `LinearInterpolation`, says that we should treat quantities such as extinction as varying
 linearly between atmospheric grid points.  This usually comes into play when evaluating integrals of these quantities
@@ -56,12 +66,10 @@ solution techniques, notably the discrete ordinates method, have to implicitly a
 thus incompatible with linearly varying optical properties.
 
 
-Geometry Type
--------------
+## Geometry Type
 The geometry type is the global geometry for the radiative transfer calculation.  Think spherical, or plane parallel.
 
-Available Geometries
---------------------
+## Available Geometries
 ```{eval-rst}
 .. autosummary::
 

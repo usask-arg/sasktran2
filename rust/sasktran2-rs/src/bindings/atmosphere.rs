@@ -4,6 +4,8 @@ use super::surface::Surface;
 use anyhow::{Result, anyhow};
 use sasktran2_sys::ffi;
 
+/// Wrapping of the c++ sasktran2 Atmosphere object, which consists of the AtmosphereStorage and
+/// Surface objects
 pub struct Atmosphere {
     pub atmosphere: *mut ffi::Atmosphere,
     pub storage: AtmosphereStorage,
@@ -11,6 +13,7 @@ pub struct Atmosphere {
     nstokes: usize,
 }
 impl Atmosphere {
+    /// Creates a new Atmosphere object with the appropriate memory allocated
     pub fn new(
         num_wavel: usize,
         num_location: usize,
@@ -44,14 +47,17 @@ impl Atmosphere {
         }
     }
 
+    /// Number of wavelengths in the atmosphere
     pub fn num_wavel(&self) -> usize {
         self.storage.ssa.dim().1
     }
 
+    /// Number of geometry grid points in the atmosphere
     pub fn num_location(&self) -> usize {
         self.storage.ssa.dim().0
     }
 
+    /// Applies delta_m scaling to the atmosphere, applied on the c++ side
     pub fn apply_delta_m_scaling(&mut self, order: usize) -> Result<()> {
         let result =
             unsafe { ffi::sk_atmosphere_apply_delta_m_scaling(self.atmosphere, order as i32) };
@@ -61,6 +67,7 @@ impl Atmosphere {
         Ok(())
     }
 
+    /// Number of stokes parameters
     pub fn num_stokes(&self) -> usize {
         self.nstokes
     }
@@ -97,5 +104,26 @@ mod tests {
 
         // check that atmosphere storage is not null
         assert!(!atmosphere.atmosphere.is_null());
+    }
+
+    #[test]
+    fn test_apply_delta_m_scaling() {
+        let num_wavel = 10;
+        let num_location = 5;
+        let num_legendre = 3;
+        let calc_derivatives = true;
+
+        let mut atmosphere = Atmosphere::new(
+            num_wavel,
+            num_location,
+            num_legendre,
+            calc_derivatives,
+            false,
+            Stokes::Stokes1,
+        );
+
+        // apply delta m scaling
+        let result = atmosphere.apply_delta_m_scaling(2);
+        assert!(result.is_ok());
     }
 }

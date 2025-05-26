@@ -69,7 +69,7 @@ The quick start guide will help you set up your first radiative transfer calcula
 :::
 
 :::{grid-item-card} {octicon}`tools;1.5em;sd-mr-1` User's Guide
-:link: _weighting_functions
+:link: _users_guide
 :link-type: ref
 
 The user's guide demonstrates SASKTRAN2's features through example, including powerful features
@@ -113,8 +113,17 @@ Bourassa, A. E., Degenstein, D. A., and Llewellyn, E. J.: SASKTRAN: A Spherical 
 installation
 quickstart
 users_guide
+examples/examples
 api_reference
 changelog
+```
+
+```{toctree}
+:maxdepth: 4
+:hidden:
+:caption: Publications
+
+publications/index.md
 ```
 
 ```{toctree}

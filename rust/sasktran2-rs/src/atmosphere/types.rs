@@ -1,5 +1,8 @@
 use super::StorageInputs;
 
+/// Object allowing the inputs for the storage to be set manually
+/// This is typically used by functions like optical_property.cross_section that wants to piggy back on
+/// optical_property.atmosphere_quantities(atmo)
 #[derive(Default)]
 #[allow(dead_code)]
 pub struct ManualStorageInputs {

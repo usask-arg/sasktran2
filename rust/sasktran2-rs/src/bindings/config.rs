@@ -3,6 +3,7 @@ use crate::prelude::*;
 use sasktran2_sys::ffi;
 
 #[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MultipleScatterSource {
     DiscreteOrdinates = 0,
     SuccessiveOrders = 1,
@@ -11,6 +12,7 @@ pub enum MultipleScatterSource {
 }
 
 #[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SingleScatterSource {
     Exact = 0,
     SolarTable = 1,
@@ -19,18 +21,21 @@ pub enum SingleScatterSource {
 }
 
 #[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum OccultationSource {
     None = 1,
     Standard = 0,
 }
 
 #[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum EmissionSource {
     None = 1,
     Standard = 0,
 }
 
 #[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum StokesBasis {
     Standard = 0,
     Solar = 1,
@@ -38,6 +43,7 @@ pub enum StokesBasis {
 }
 
 #[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ThreadingModel {
     Wavelength = 0,
     Source = 1,
@@ -50,12 +56,15 @@ pub enum ThreadingLib {
 }
 
 #[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum InputValidationMode {
     Strict = 0,
     Standard = 1,
     Disabled = 2,
 }
 
+/// A wrapper around the c++ Config object, implemented on the c++ side, see
+/// cpp/include/sasktran2/config.h
 pub struct Config {
     // c++ object
     pub config: *mut ffi::Config,
@@ -842,5 +851,154 @@ mod tests {
     #[test]
     fn test_config() {
         let _config = Config::new();
+    }
+
+    #[test]
+    fn test_config_defaults() {
+        let config = Config::new();
+
+        // Test default values
+        assert_eq!(config.num_threads().unwrap(), 1);
+        assert_eq!(
+            config.threading_model().unwrap(),
+            ThreadingModel::Wavelength
+        );
+        assert_eq!(
+            config.input_validation_mode().unwrap(),
+            InputValidationMode::Strict
+        );
+        assert_eq!(config.num_stokes().unwrap(), 1);
+        assert_eq!(
+            config.multiple_scatter_source().unwrap(),
+            MultipleScatterSource::None
+        );
+        assert_eq!(
+            config.single_scatter_source().unwrap(),
+            SingleScatterSource::Exact
+        );
+        assert_eq!(config.stokes_basis().unwrap(), StokesBasis::Standard);
+    }
+
+    #[test]
+    fn test_config_setters() {
+        let mut config = Config::new();
+
+        // Test setters and getters
+        config.with_num_threads(4).unwrap();
+        assert_eq!(config.num_threads().unwrap(), 4);
+
+        config.with_threading_model(ThreadingModel::Source).unwrap();
+        assert_eq!(config.threading_model().unwrap(), ThreadingModel::Source);
+
+        config
+            .with_input_validation_mode(InputValidationMode::Strict)
+            .unwrap();
+        assert_eq!(
+            config.input_validation_mode().unwrap(),
+            InputValidationMode::Strict
+        );
+
+        config.with_num_stokes(3).unwrap();
+        assert_eq!(config.num_stokes().unwrap(), 3);
+
+        config.with_threading_lib(ThreadingLib::Rayon).unwrap();
+        assert_eq!(config.threading_lib(), ThreadingLib::Rayon);
+
+        config
+            .with_multiple_scatter_source(MultipleScatterSource::SuccessiveOrders)
+            .unwrap();
+        assert_eq!(
+            config.multiple_scatter_source().unwrap(),
+            MultipleScatterSource::SuccessiveOrders
+        );
+
+        config
+            .with_single_scatter_source(SingleScatterSource::SolarTable)
+            .unwrap();
+        assert_eq!(
+            config.single_scatter_source().unwrap(),
+            SingleScatterSource::SolarTable
+        );
+
+        config.with_stokes_basis(StokesBasis::Observer).unwrap();
+        assert_eq!(config.stokes_basis().unwrap(), StokesBasis::Observer);
+    }
+
+    #[test]
+    fn test_boolean_options() {
+        let mut config = Config::new();
+
+        config.with_delta_m_scaling(true).unwrap();
+        assert!(config.delta_m_scaling().unwrap());
+
+        config.with_delta_m_scaling(false).unwrap();
+        assert!(!config.delta_m_scaling().unwrap());
+
+        config.with_los_refraction(true).unwrap();
+        assert!(config.los_refraction().unwrap());
+
+        config.with_output_los_optical_depth(true).unwrap();
+        assert!(config.output_los_optical_depth().unwrap());
+
+        config.with_solar_refraction(true).unwrap();
+        assert!(config.solar_refraction().unwrap());
+
+        config.with_multiple_scatter_refraction(true).unwrap();
+        assert!(config.multiple_scatter_refraction().unwrap());
+
+        config.with_do_backprop(true).unwrap();
+        assert!(config.do_backprop().unwrap());
+    }
+
+    #[test]
+    fn test_numerical_parameters() {
+        let mut config = Config::new();
+
+        config.with_num_sza(10).unwrap();
+        assert_eq!(config.num_sza().unwrap(), 10);
+
+        config.with_num_streams(8).unwrap();
+        assert_eq!(config.num_streams().unwrap(), 8);
+
+        config.with_num_forced_azimuth(6).unwrap();
+        assert_eq!(config.num_forced_azimuth().unwrap(), 6);
+
+        config.with_num_successive_orders_iterations(5).unwrap();
+        assert_eq!(config.num_successive_orders_iterations().unwrap(), 5);
+
+        config.with_num_successive_orders_points(100).unwrap();
+        assert_eq!(config.num_successive_orders_points().unwrap(), 100);
+
+        config.with_num_singlescatter_moments(16).unwrap();
+        assert_eq!(config.num_singlescatter_moments().unwrap(), 16);
+
+        config.with_num_successive_orders_incoming(20).unwrap();
+        assert_eq!(config.num_successive_orders_incoming().unwrap(), 20);
+
+        config.with_num_successive_orders_outgoing(30).unwrap();
+        assert_eq!(config.num_successive_orders_outgoing().unwrap(), 30);
+    }
+
+    #[test]
+    fn test_init_successive_orders() {
+        let mut config = Config::new();
+
+        config
+            .with_init_successive_orders_with_discrete_ordinates(true)
+            .unwrap();
+        assert!(
+            config
+                .init_successive_orders_with_discrete_ordinates()
+                .unwrap()
+        );
+
+        config
+            .with_init_successive_orders_with_discrete_ordinates(false)
+            .unwrap();
+        assert!(
+            !config
+                .init_successive_orders_with_discrete_ordinates()
+                .unwrap()
+        );
     }
 }

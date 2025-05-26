@@ -29,6 +29,8 @@ extensions = [
     'myst_nb',
     "sphinx.ext.viewcode",
     "sphinx.ext.intersphinx",
+    "sphinx_github_changelog",
+    "sphinxcontrib.bibtex",
     #"sphinx_copybutton",
     "sphinx_design",
     #"sphinx_examples",
@@ -40,6 +42,8 @@ extensions = [
     # For the kitchen sink
     "sphinx.ext.todo",
 ]
+
+bibtex_bibfiles = ['publications/sasktran.bib', 'publications/applications.bib']
 
 autosummary_generate = True
 

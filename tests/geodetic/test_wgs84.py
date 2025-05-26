@@ -80,3 +80,12 @@ def test_geodetic_from_tangent_point():
     np.testing.assert_almost_equal(
         geo.location, np.array([1176731.78951674, 3233044.02045169, -5364459.08730841])
     )
+
+
+def test_osculating_spheroid():
+    geo = _wgs84()
+
+    # Test case from sasktran1 geodetic
+    geo.from_lat_lon_alt(latitude=60, longitude=30, altitude=0)
+
+    _ = geo.osculating_spheroid()

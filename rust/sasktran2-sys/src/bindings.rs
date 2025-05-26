@@ -983,3 +983,12 @@ unsafe extern "C" {
         is_valid: *mut ::std::os::raw::c_int,
     ) -> ::std::os::raw::c_int;
 }
+unsafe extern "C" {
+    pub fn sk_geodetic_get_osculating_spheroid(
+        geodetic: *const Geodetic,
+        radius: *mut f64,
+        offset_x: *mut f64,
+        offset_y: *mut f64,
+        offset_z: *mut f64,
+    ) -> ::std::os::raw::c_int;
+}

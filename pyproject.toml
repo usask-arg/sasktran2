@@ -28,7 +28,7 @@ classifiers = [
 test = ["pytest"]
 solar = ["astropy"]
 hapi = ["hitran-api"]
-dev = ["ruff", "sphinx", "sphinx_book_theme", "myst-nb", "sphinx_design"]
+dev = ["ruff", "sphinx", "sphinx_book_theme", "myst-nb", "sphinx_design", "sphinx-github-changelog", "sphinxcontrib-bibtex"]
 complete = ["sasktran2[solar,hapi]"]
 
 [tool.pixi.project]
