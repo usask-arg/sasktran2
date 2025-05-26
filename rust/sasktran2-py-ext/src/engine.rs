@@ -25,7 +25,7 @@ impl PyEngine {
         config: PyRef<PyConfig>,
         geometry: PyRef<PyGeometry1D>,
         viewing_geometry: PyRef<PyViewingGeometry>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         // Should be okay since we are storing Py<> objects inside the PyEngine
         // so these will always outlive Engine
         let engine = unsafe {
@@ -35,15 +35,15 @@ impl PyEngine {
                 std::mem::transmute::<&ViewingGeometry, &'static ViewingGeometry>(
                     &viewing_geometry.viewing_geometry,
                 ),
-            )
+            ).into_pyresult()?
         };
 
-        Self {
+        Ok(Self {
             engine,
             _config: config.into(),
             _geometry: geometry.into(),
             _viewing_geometry: viewing_geometry.into(),
-        }
+        })
     }
 
     fn calculate_radiance(

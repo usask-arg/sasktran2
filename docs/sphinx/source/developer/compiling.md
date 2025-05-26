@@ -8,7 +8,6 @@ different ways you can install the dependencies to do this, for most users using
 :maxdepth: 4
 :hidden:
 
-windows.md
 ide/vscode.md
 ```
 

@@ -66,8 +66,9 @@ impl<'a> Engine<'a> {
         config: &'a Config,
         geometry: &'a Geometry1D,
         viewing_geometry: &'a ViewingGeometry,
-    ) -> Self {
-        Engine {
+    ) -> Result<Self> {
+        crate::threading::set_num_threads(config.num_threads().unwrap_or(1))?;
+        Ok(Engine {
             engine: unsafe {
                 ffi::sk_engine_create(
                     config.config,
@@ -78,10 +79,12 @@ impl<'a> Engine<'a> {
             config,
             geometry,
             viewing_geometry,
-        }
+        })
     }
 
     pub fn calculate_radiance(&self, atmosphere: &Atmosphere) -> Result<Output> {
+        crate::threading::set_num_threads(self.config.num_threads()?)?;
+
         let num_stokes = self.config.num_stokes()?;
         let num_los = self.viewing_geometry.num_rays()?;
         let num_wavel = atmosphere.num_wavel();
@@ -218,7 +221,7 @@ mod tests {
         );
         let viewing_geometry = ViewingGeometry::new();
 
-        let engine = Engine::new(&config, &geometry, &viewing_geometry);
+        let engine = Engine::new(&config, &geometry, &viewing_geometry).unwrap();
 
         assert!(!engine.engine.is_null());
     }
