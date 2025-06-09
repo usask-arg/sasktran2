@@ -50,17 +50,9 @@ fn main() {
         .define("SKTRAN_BLAS_VENDOR", sktran_blas_vendor);
 
     if cfg!(target_os = "windows") {
-        // Force single-config Ninja generator for consistent Release builds
-        binding.generator("Ninja");
-
-        // Explicitly set Release mode for Ninja (respected only on single-config)
-        binding.define("CMAKE_BUILD_TYPE", "Release");
-
+        binding.profile("Release");
         // Use release-mode MSVC runtime
         binding.define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreadedDLL");
-
-        // Avoid CMake trying to detect a Fortran compiler
-        binding.define("CMAKE_DISABLE_FIND_PACKAGE_Fortran", "ON");
     }
 
     let dst = binding.build();
