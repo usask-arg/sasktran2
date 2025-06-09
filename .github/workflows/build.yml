@@ -424,6 +424,31 @@ jobs:
           name: wheels-windows-${{ matrix.platform.target }}
           path: dist
 
+  windows-test-wheels:
+    runs-on: windows-latest
+    needs: windows
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: download wheels
+        uses: actions/download-artifact@v4
+        with:
+          name: wheels-windows-x86_64
+          path: dist
+
+      - name: install wheels
+        run: |
+          pip install --force-reinstall --verbose dist/sasktran2-*.whl pytest
+
+      - name: run pytest
+        run: |
+          pytest .
 
   upload_wheels:
     runs-on: ubuntu-latest
