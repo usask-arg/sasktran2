@@ -55,6 +55,7 @@ fn main() {
 
     if cfg!(target_os = "windows") {
         binding
+            .build_arg("--config").build_arg("Release")
             .define("CMAKE_VERBOSE_MAKEFILE", "ON")
             .define("CMAKE_CONFIGURATION_TYPES", "Release")
             .profile("Release");
