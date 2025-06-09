@@ -50,9 +50,17 @@ fn main() {
         .define("SKTRAN_BLAS_VENDOR", sktran_blas_vendor);
 
     if cfg!(target_os = "windows") {
-        // Just always build in release mode on Windows, we don't support debug builds on windows yet
-        binding.build_arg("--config").build_arg("Release");
+        // Force single-config Ninja generator for consistent Release builds
+        binding.generator("Ninja");
+
+        // Explicitly set Release mode for Ninja (respected only on single-config)
         binding.define("CMAKE_BUILD_TYPE", "Release");
+
+        // Use release-mode MSVC runtime
+        binding.define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreadedDLL");
+
+        // Avoid CMake trying to detect a Fortran compiler
+        binding.define("CMAKE_DISABLE_FIND_PACKAGE_Fortran", "ON");
     }
 
     let dst = binding.build();
