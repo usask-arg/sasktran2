@@ -14,10 +14,6 @@ fn cpp_src_path() -> (PathBuf, bool) {
 }
 
 fn main() {
-    let profile = std::env::var("PROFILE").unwrap_or_else(|_| "unknown".into());
-    println!("cargo:warning=Building sasktran2 in PROFILE = {}", profile);
-
-
     let (cpp_src, vendored) = cpp_src_path();
 
     let vendored = match vendored {
@@ -55,7 +51,6 @@ fn main() {
 
     if cfg!(target_os = "windows") {
         binding
-            .build_arg("--config").build_arg("Release")
             .define("CMAKE_VERBOSE_MAKEFILE", "ON")
             .define("CMAKE_CONFIGURATION_TYPES", "Release")
             .profile("Release");
