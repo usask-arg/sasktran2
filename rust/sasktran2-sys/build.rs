@@ -50,8 +50,8 @@ fn main() {
         .define("SKTRAN_BLAS_VENDOR", sktran_blas_vendor);
 
     if cfg!(target_os = "windows") {
-        binding.generator("Ninja");
         // Just always build in release mode on Windows, we don't support debug builds on windows yet
+        binding.build_arg("--config").build_arg("Release");
         binding.define("CMAKE_BUILD_TYPE", "Release");
     }
 
