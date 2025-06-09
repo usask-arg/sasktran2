@@ -56,6 +56,7 @@ fn main() {
     if cfg!(target_os = "windows") {
         binding
             .define("CMAKE_VERBOSE_MAKEFILE", "ON")
+            .define("CMAKE_CONFIGURATION_TYPES", "Release")
             .profile("Release");
         // Use release-mode MSVC runtime
         binding.define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreadedDLL");
