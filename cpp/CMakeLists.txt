@@ -37,7 +37,10 @@ else()
   set(SASKTRAN2_VERSION 0.0.0)
 endif()
 
-project(sasktran2 VERSION ${SASKTRAN2_VERSION})
+project(
+  sasktran2
+  VERSION ${SASKTRAN2_VERSION}
+  LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 
