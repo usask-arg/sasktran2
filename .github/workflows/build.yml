@@ -443,6 +443,7 @@ jobs:
           path: dist
 
       - name: install wheels
+        shell: bash -el {0}
         run: |
           pip install --force-reinstall --verbose dist/sasktran2-*.whl pytest
 
