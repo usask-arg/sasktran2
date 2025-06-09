@@ -21,6 +21,12 @@ if(UNIX)
   # enable_language(Fortran)
 endif()
 
+if(WIN32)
+  # force MSVC Release => /O2 /DNDEBUG /Zi
+  set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE}   /O2 /DNDEBUG")
+  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /DNDEBUG")
+endif()
+
 if(NOT APPLE)
   add_compile_options(-frtti) # Force RTTI on
 endif()
@@ -37,7 +43,10 @@ else()
   set(SASKTRAN2_VERSION 0.0.0)
 endif()
 
-project(sasktran2 VERSION ${SASKTRAN2_VERSION})
+project(
+  sasktran2
+  VERSION ${SASKTRAN2_VERSION}
+  LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -126,7 +135,7 @@ else()
 endif()
 
 # add the additional compiler flags
-set(CMAKE_CXX_FLAGS " ${CompilerFlags} ${OpenMP_CXX_FLAGS} ${CMAKE_CXX_FLAGS}")
+add_compile_options(${CompilerFlags} ${OpenMP_CXX_FLAGS})
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)

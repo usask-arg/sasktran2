@@ -50,13 +50,11 @@ fn main() {
         .define("SKTRAN_BLAS_VENDOR", sktran_blas_vendor);
 
     if cfg!(target_os = "windows") {
-        let build_type = if cfg!(debug_assertions) {
-            binding.define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreadedDebugDLL"); // /MDd for Debu
-            "Debug"
-        } else {
-            "Release"
-        };
-        binding.define("CMAKE_BUILD_TYPE", build_type);
+        binding
+            .define("CMAKE_CONFIGURATION_TYPES", "Release")
+            .profile("Release");
+        // Use release-mode MSVC runtime
+        binding.define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreadedDLL");
     }
 
     let dst = binding.build();
