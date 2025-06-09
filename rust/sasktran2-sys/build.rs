@@ -50,14 +50,8 @@ fn main() {
         .define("SKTRAN_BLAS_VENDOR", sktran_blas_vendor);
 
     if cfg!(target_os = "windows") {
-        let profile = std::env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
-        let build_type = if profile == "release" {
-            binding.define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreadedDebugDLL"); // /MDd for Debu
-            "Debug"
-        } else {
-            "Release"
-        };
-        binding.define("CMAKE_BUILD_TYPE", build_type);
+        // Just always build in release mode on Windows, we don't support debug builds on windows yet
+        binding.define("CMAKE_BUILD_TYPE", "Release");
     }
 
     let dst = binding.build();
