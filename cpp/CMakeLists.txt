@@ -21,6 +21,12 @@ if(UNIX)
   # enable_language(Fortran)
 endif()
 
+if(WIN32)
+  # force MSVC Release => /O2 /DNDEBUG /Zi
+  set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE}   /O2 /DNDEBUG")
+  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /DNDEBUG")
+endif()
+
 if(NOT APPLE)
   add_compile_options(-frtti) # Force RTTI on
 endif()
