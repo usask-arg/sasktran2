@@ -5,6 +5,7 @@ pub struct AtmosphereStorageOutputView<'a> {
     pub total_extinction: ArrayViewMut2<'a, f64>,
     pub ssa: ArrayViewMut2<'a, f64>,
     pub legendre: ArrayViewMut3<'a, f64>,
+    pub emission_source: ArrayViewMut2<'a, f64>,
 }
 
 /// Immutable view of the atmosphere storage output (ssa, ext, legendre)
@@ -12,6 +13,7 @@ pub struct AtmosphereStorageOutputImmutView<'a> {
     pub total_extinction: ArrayView2<'a, f64>,
     pub ssa: ArrayView2<'a, f64>,
     pub legendre: ArrayView3<'a, f64>,
+    pub emission_source: ArrayView2<'a, f64>,
 }
 
 /// Mutable view of the derivative mapping (d_extinction, d_ssa, d_legendre)
@@ -20,6 +22,7 @@ pub struct DerivMappingView<'py> {
     pub d_ssa: ArrayViewMut2<'py, f64>,
     pub d_legendre: Option<ArrayViewMut3<'py, f64>>,
     pub scat_factor: Option<ArrayViewMut2<'py, f64>>,
+    pub d_emission: ArrayViewMut2<'py, f64>,
 }
 
 /// All of the atmosphere inputs from the storage that the various constituents

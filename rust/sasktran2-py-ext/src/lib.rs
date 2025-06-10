@@ -19,6 +19,7 @@ use pyo3::prelude::*;
 #[pymodule]
 fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Constituents
+    m.add_class::<constituent::emission::PyThermalEmission>()?;
     m.add_class::<constituent::rayleigh::PyRayleigh>()?;
     m.add_class::<constituent::vmr_alt_absorber::PyVMRAltitudeAbsorber>()?;
 
