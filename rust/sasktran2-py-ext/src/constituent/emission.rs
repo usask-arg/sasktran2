@@ -24,7 +24,7 @@ impl PyThermalEmission {
     #[pyo3(
         signature = (),
     )]
-    fn new<'py>() -> Self {
+    fn new() -> Self {
         let inner = RustThermalEmissionCore::new();
 
         PyThermalEmission { inner }
