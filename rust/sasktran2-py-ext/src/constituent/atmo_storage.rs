@@ -44,6 +44,7 @@ pub struct AtmosphereStorageOutputs<'py> {
     pub py_total_extinction: PyReadwriteArray2<'py, f64>,
     pub py_ssa: PyReadwriteArray2<'py, f64>,
     pub py_legendre: PyReadwriteArray3<'py, f64>,
+    pub py_emission_source: PyReadwriteArray2<'py, f64>,
 }
 
 impl StorageOutputs for AtmosphereStorageOutputs<'_> {
@@ -52,6 +53,7 @@ impl StorageOutputs for AtmosphereStorageOutputs<'_> {
             total_extinction: self.py_total_extinction.as_array_mut(),
             ssa: self.py_ssa.as_array_mut(),
             legendre: self.py_legendre.as_array_mut(),
+            emission_source: self.py_emission_source.as_array_mut(),
         }
     }
 
@@ -60,6 +62,7 @@ impl StorageOutputs for AtmosphereStorageOutputs<'_> {
             total_extinction: self.py_total_extinction.as_array(),
             ssa: self.py_ssa.as_array(),
             legendre: self.py_legendre.as_array(),
+            emission_source: self.py_emission_source.as_array(),
         }
     }
 }
@@ -185,6 +188,9 @@ impl<'py> AtmosphereStorage<'py> {
         let legendre: PyReadwriteArray3<f64> = legendre_obj.extract().unwrap();
 
         let num_legendre = legendre.shape()[0];
+        
+        let emission_source_obj = storage.getattr("emission_source").unwrap();
+        let emission_source: PyReadwriteArray2<f64> = emission_source_obj.extract().unwrap();
 
         let state_eqn_obj = atmo.getattr("state_equation").unwrap();
 
@@ -234,6 +240,7 @@ impl<'py> AtmosphereStorage<'py> {
                 py_total_extinction: total_extinction,
                 py_ssa: ssa,
                 py_legendre: legendre,
+                py_emission_source: emission_source,
             },
         })
     }
