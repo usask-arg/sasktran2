@@ -188,7 +188,7 @@ impl<'py> AtmosphereStorage<'py> {
         let legendre: PyReadwriteArray3<f64> = legendre_obj.extract().unwrap();
 
         let num_legendre = legendre.shape()[0];
-        
+
         let emission_source_obj = storage.getattr("emission_source").unwrap();
         let emission_source: PyReadwriteArray2<f64> = emission_source_obj.extract().unwrap();
 

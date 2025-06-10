@@ -22,7 +22,7 @@ impl<'py> PyDerivMapping<'py> {
 
         let d_ssa: PyReadwriteArray2<'py, f64> =
             py_mapping.getattr("d_ssa").unwrap().extract().unwrap();
-        
+
         let d_emission: PyReadwriteArray2<'py, f64> =
             py_mapping.getattr("d_emission").unwrap().extract().unwrap();
 
