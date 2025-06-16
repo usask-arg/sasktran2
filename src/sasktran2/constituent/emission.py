@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 import sasktran2 as sk
-from sasktran2.atmosphere import Atmosphere
+from sasktran2._core_rust import PyThermalEmission
 from sasktran2.constants import K_BOLTZMANN, PLANCK, SPEED_OF_LIGHT
 
 from .base import Constituent
@@ -83,6 +83,8 @@ def d_planck_blackbody_radiance_d_temperature(
 
 
 class ThermalEmission(Constituent):
+    _thermal_emission: PyThermalEmission
+
     def __init__(self):
         """
         An implementation of thermal emissions calculated from the Planck function. The emission is
@@ -91,7 +93,7 @@ class ThermalEmission(Constituent):
         This Constituent requires that the atmosphere object have `temperature_k` and
         `wavelength_nm` defined inside the :py:class:`sasktran2.Atmosphere` object.
         """
-        return
+        self._thermal_emission = PyThermalEmission()
 
     def add_to_atmosphere(self, atmo: sk.Atmosphere):
         """
@@ -99,34 +101,13 @@ class ThermalEmission(Constituent):
         ----------
         atmo : sk.Atmosphere
 
+
         :meta private:
         """
-        if atmo.wavelengths_nm is None:
-            msg = "It is required to give the Atmosphere object wavelengths to use the ThermalEmission constituent"
-            raise ValueError(msg)
-
-        if atmo.temperature_k is None:
-            msg = "It is required to set the temperature_k property in the Atmosphere object to use the ThermalEmission Constituent"
-            raise ValueError(msg)
-
-        # calculate radiance in W / (m^2 nm sr)
-        atmo.storage.emission_source[:] += planck_blackbody_radiance(
-            atmo.temperature_k, atmo.wavelengths_nm
-        )
+        self._thermal_emission.add_to_atmosphere(atmo)
 
     def register_derivative(self, atmo: sk.Atmosphere, name: str):
-        derivs = {}
-
-        deriv_mapping = atmo.storage.get_derivative_mapping(f"{name}_temperature_k")
-        deriv_mapping.d_ssa[:] = 0
-        deriv_mapping.d_extinction[:] = 0
-        deriv_mapping.d_emission[:] += d_planck_blackbody_radiance_d_temperature(
-            atmo.temperature_k, atmo.wavelengths_nm
-        )
-        deriv_mapping.interp_dim = "altitude"
-        deriv_mapping.assign_name = "wf_temperature_k"
-
-        return derivs
+        self._thermal_emission.register_derivative(atmo, name)
 
 
 class SurfaceThermalEmission(Constituent):
@@ -170,7 +151,7 @@ class SurfaceThermalEmission(Constituent):
     def emissivity(self, emissivity: np.ndarray):
         self._emissivity = np.atleast_1d(emissivity)
 
-    def add_to_atmosphere(self, atmo: Atmosphere):
+    def add_to_atmosphere(self, atmo: sk.Atmosphere):
         atmo.surface.emission[:] += (
             self.emissivity
             * planck_blackbody_radiance(

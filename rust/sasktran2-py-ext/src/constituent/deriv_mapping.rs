@@ -9,6 +9,7 @@ pub struct PyDerivMapping<'py> {
     pub d_ssa: PyReadwriteArray2<'py, f64>,
     pub scat_factor: Option<PyReadwriteArray2<'py, f64>>,
     pub d_legendre: Option<PyReadwriteArray3<'py, f64>>,
+    pub d_emission: PyReadwriteArray2<'py, f64>,
 }
 
 impl<'py> PyDerivMapping<'py> {
@@ -22,12 +23,16 @@ impl<'py> PyDerivMapping<'py> {
         let d_ssa: PyReadwriteArray2<'py, f64> =
             py_mapping.getattr("d_ssa").unwrap().extract().unwrap();
 
+        let d_emission: PyReadwriteArray2<'py, f64> =
+            py_mapping.getattr("d_emission").unwrap().extract().unwrap();
+
         PyDerivMapping {
             py_mapping,
             d_extinction,
             d_ssa,
             scat_factor: None,
             d_legendre: None,
+            d_emission,
         }
     }
 }
@@ -57,6 +62,7 @@ impl<'py> DerivMapping<'_> for PyDerivMapping<'py> {
             d_ssa: self.d_ssa.as_array_mut(),
             d_legendre: self.d_legendre.as_mut().map(|arr| arr.as_array_mut()),
             scat_factor: self.scat_factor.as_mut().map(|arr| arr.as_array_mut()),
+            d_emission: self.d_emission.as_array_mut(),
         }
     }
 
