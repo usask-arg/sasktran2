@@ -21,7 +21,7 @@ jobs:
         # here to be able to comment on the PR
 
       - name: Download benchmarks
-        uses: dawidd6/action-download-artifact@v10
+        uses: dawidd6/action-download-artifact@v11
         with:
           workflow: benchmark.yml
           workflow_conclusion: success
@@ -42,7 +42,7 @@ jobs:
 
       - name: Download benchmarks
         if: ${{ steps.pr_number_reader.outputs.content != '' }}
-        uses: dawidd6/action-download-artifact@v10
+        uses: dawidd6/action-download-artifact@v11
         with:
           workflow: benchmark.yml
           workflow_conclusion: success
