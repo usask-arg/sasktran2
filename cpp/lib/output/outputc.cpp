@@ -41,6 +41,9 @@ namespace sasktran2 {
             m_radiance(linear_index) = radiance.value(0);
         }
 
+        bool include_emission_derivatives =
+            this->m_atmosphere->include_emission_derivatives();
+
         // Do the atmosphere mappings
         for (auto& [name, deriv] : m_derivatives) {
             Eigen::Ref<const Eigen::Matrix<double, NSTOKES, -1>>
@@ -84,7 +87,8 @@ namespace sasktran2 {
                 }
             }
 
-            if (mapping.native_mapping().d_emission.has_value()) {
+            if (mapping.native_mapping().d_emission.has_value() &&
+                include_emission_derivatives) {
                 // Include the emission terms
                 Eigen::Ref<const Eigen::Matrix<double, NSTOKES, -1>>
                     d_rad_by_d_emission = radiance.d_emission(
@@ -180,7 +184,8 @@ namespace sasktran2 {
             }
 
             // Then do the emission derivatives
-            if (mapping.native_surface_mapping().d_emission.has_value()) {
+            if (mapping.native_surface_mapping().d_emission.has_value() &&
+                include_emission_derivatives) {
                 double d_rad_by_d_emission = radiance.deriv(
                     0,
                     this->m_atmosphere->surface_emission_deriv_start_index());

@@ -131,5 +131,9 @@ namespace sasktran2::atmosphere {
          * DerivativeMappings
          */
         int num_output_deriv() const;
+
+        bool include_emission_derivatives() const {
+            return m_include_emission_derivatives;
+        }
     };
 } // namespace sasktran2::atmosphere
