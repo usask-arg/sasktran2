@@ -16,6 +16,7 @@ use super::xsec_dbase::{HasDb, PyDictWrapper};
 
 #[pyclass(eq, eq_int)]
 #[derive(PartialEq, Clone)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum LineDatabaseType {
     HITRAN,
     AER,
