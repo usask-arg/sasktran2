@@ -45,9 +45,9 @@ pub fn read_hitran_line_file(data_path: PathBuf) -> Result<OpticalLineDB> {
     let file = fs::File::open(data_path)?;
     let reader = BufReader::new(file);
 
-    let mut line_iterator = reader.lines();
+    let line_iterator = reader.lines();
     let mut lines: Vec<OpticalLine> = Vec::with_capacity(line_iterator.size_hint().1.unwrap_or(0));
-    while let Some(line_result) = line_iterator.next() {
+    for line_result in line_iterator {
         let line = line_result?;
 
         // Check if this is a full line
