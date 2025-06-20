@@ -75,6 +75,7 @@ pub struct PyLineAbsorber {
 impl PyLineAbsorber {
     #[new]
     #[pyo3(signature = (db_type, mol_name, directory, cull_factor=0.0, line_coupling=false, py_tips = None, py_molmass = None, line_contribution_width=25.0))]
+    #[allow(clippy::too_many_arguments)]
     pub fn new<'py>(
         db_type: PyRef<'_, LineDatabaseType>,
         mol_name: &str,
