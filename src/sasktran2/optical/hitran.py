@@ -19,6 +19,7 @@ class LineAbsorber(OpticalProperty):
         molecule: str,
         cull_factor: float = 0.0,
         line_coupling=False,
+        line_contribution_width: float = 0.0,
     ):
         hapi = get_hapi()
 
@@ -33,6 +34,7 @@ class LineAbsorber(OpticalProperty):
             line_coupling,
             hapi.partitionSum,
             hapi.molecularMass,
+            line_contribution_width,
         )
 
     def atmosphere_quantities(self, atmo, **kwargs):

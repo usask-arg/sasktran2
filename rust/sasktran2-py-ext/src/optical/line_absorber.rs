@@ -74,7 +74,7 @@ pub struct PyLineAbsorber {
 #[pymethods]
 impl PyLineAbsorber {
     #[new]
-    #[pyo3(signature = (db_type, mol_name, directory, cull_factor=0.0, line_coupling=false, py_tips = None, py_molmass = None))]
+    #[pyo3(signature = (db_type, mol_name, directory, cull_factor=0.0, line_coupling=false, py_tips = None, py_molmass = None, line_contribution_width=25.0))]
     pub fn new<'py>(
         db_type: PyRef<'_, LineDatabaseType>,
         mol_name: &str,
@@ -83,6 +83,7 @@ impl PyLineAbsorber {
         line_coupling: bool,
         py_tips: Option<Bound<'py, PyAny>>,
         py_molmass: Option<Bound<'py, PyAny>>,
+        line_contribution_width: f64,
     ) -> PyResult<Self> {
         let directory = std::path::PathBuf::from(directory);
 
@@ -111,6 +112,7 @@ impl PyLineAbsorber {
         }
         line_absorber = line_absorber.with_cull_factor(cull_factor);
         line_absorber = line_absorber.with_line_coupling(line_coupling);
+        line_absorber = line_absorber.with_line_contribution_width(line_contribution_width);
 
         Ok(Self { line_absorber })
     }
