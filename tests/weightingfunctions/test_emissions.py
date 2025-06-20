@@ -28,7 +28,7 @@ def _test_scenarios():
     wavelengths = np.arange(7370, 7380, 0.01)
     hitran_db = sk.optical.database.OpticalDatabaseGenericAbsorber(
         sk.database.StandardDatabase().path(
-            "hitran/CH4/sasktran2/6f006bcb051f81fc57d1bd09315589bfe77b4348.nc"
+            "hitran/CH4/sasktran2/60fc6c547a1b2e1181f3296dead288d84fa7c178.nc"
         )
     )
 
@@ -89,7 +89,7 @@ def _ground_test_scenarios():
     wavelengths = np.arange(7370, 7380, 0.01)
     hitran_db = sk.optical.database.OpticalDatabaseGenericAbsorber(
         sk.database.StandardDatabase().path(
-            "hitran/CH4/sasktran2/6f006bcb051f81fc57d1bd09315589bfe77b4348.nc"
+            "hitran/CH4/sasktran2/60fc6c547a1b2e1181f3296dead288d84fa7c178.nc"
         )
     )
 

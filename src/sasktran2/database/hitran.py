@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
+from sasktran2.optical.aerline import AERLineAbsorber
 from sasktran2.optical.database import (
     OpticalDatabaseGenericAbsorber,
 )
@@ -136,6 +137,7 @@ class HITRANDatabase(CachedDatabase, OpticalDatabaseGenericAbsorber):
         db_root: Path | None = None,
         backend: str = "sasktran2",
         profile: str = "voigt",
+        line_list: str = "hitran",
     ) -> None:
         """
 
@@ -163,6 +165,10 @@ class HITRANDatabase(CachedDatabase, OpticalDatabaseGenericAbsorber):
             The line shape profile to use in the cross section calculation. Currently, only the "hapi" backend supports options other
             than the default "voigt". Supported options are ["voigt", "sdvoigt", "ht", "priority", "lorentz", "doppler"].
             Default is "voigt".
+        line_list : str, optional
+            The line list database to use in the cross section calculation. Only the "sasktran2" backend supports options other
+            than the default "hitran". Supported options are ["hitran", "aer"].
+            Default is "hitran".
         """
 
         class NumpyEncoder(json.JSONEncoder):
@@ -179,6 +185,15 @@ class HITRANDatabase(CachedDatabase, OpticalDatabaseGenericAbsorber):
             )
             self._profile = "voigt"
 
+        self._line_list = line_list.lower()
+        if backend != "sasktran2" and line_list != "hitran":
+            logging.warning(
+                "%s line list is not supported by %s backend. Switching to hitran",
+                line_list,
+                backend,
+            )
+            self._line_list = "hitran"
+
         hasher = hashlib.sha1()
         encoded = json.dumps(
             {
@@ -187,6 +202,7 @@ class HITRANDatabase(CachedDatabase, OpticalDatabaseGenericAbsorber):
                 "wavenumber_resolution": wavenumber_resolution,
                 "reduction_factor": reduction_factor,
                 "profile": self._profile,
+                "line_list": self._line_list,
             },
             sort_keys=True,
             cls=NumpyEncoder,
@@ -346,19 +362,28 @@ class HITRANDatabase(CachedDatabase, OpticalDatabaseGenericAbsorber):
             self._start_wavenumber, self._end_wavenumber, self._wavenumber_resolution
         )
 
-        calculator = HITRANAbsorber(
-            self._molecule, line_contribution_width=self._wavenumber_wing / 2
-        )
+        if self._line_list == "hitran":
+            calculator = HITRANAbsorber(
+                self._molecule, line_contribution_width=self._wavenumber_wing / 2
+            )
+        elif self._line_list == "aer":
+            calculator = AERLineAbsorber(
+                self._molecule, line_contribution_width=self._wavenumber_wing / 2
+            )
+        else:
+            msg = f"Invalid line_list {self._line_list}"
+            raise ValueError(msg)
+
         xs = np.zeros((len(PRESSURE_GRID), len(TEMP_GRID), len(hires_wavenumber_grid)))
 
         for i, temperature in enumerate(TEMP_GRID):
             xs[:, i, :] = calculator.cross_sections(
+                wavenumber_cminv_to_wavlength_nm(hires_wavenumber_grid),
+                np.ones(len(PRESSURE_GRID)) * 0,
                 temperature_k=np.ones(len(PRESSURE_GRID)) * temperature,
                 pressure_pa=PRESSURE_GRID,
-                wavelengths_nm=wavenumber_cminv_to_wavlength_nm(hires_wavenumber_grid),
                 num_threads=self._num_threads,
-                altitudes_m=np.ones(len(PRESSURE_GRID)) * 0,
-            ).T
+            )
         ds = xr.Dataset(
             {"xs": (["pressure", "temperature", "wavenumber_cminv"], xs)},
             coords={

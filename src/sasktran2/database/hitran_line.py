@@ -26,6 +26,7 @@ class HITRANLineDatabase(CachedDatabase):
         if not (data_file.exists() and header_file.exists()):
             # download lines for this molecule
             self._download_line_db(key)
+        return self._db_root
 
     def load_ds(self, key: str, **kwargs) -> xr.Dataset:
         nc_file = self._db_root.joinpath(f"{key}.nc")
