@@ -19,7 +19,7 @@ class LineAbsorber(OpticalProperty):
         molecule: str,
         cull_factor: float = 0.0,
         line_coupling=False,
-        line_contribution_width: float = 0.0,
+        line_contribution_width: float = 25.0,
     ):
         hapi = get_hapi()
 
