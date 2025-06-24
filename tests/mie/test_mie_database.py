@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import wave
+
 import numpy as np
 import sasktran2 as sk
 
@@ -266,3 +268,42 @@ def test_mie_database_against_online():
     )
 
     np.testing.assert_array_almost_equal(p_diff, 0.0, decimal=3)
+
+
+def test_mie_database_aux_derivs():
+    db = sk.database.MieDatabase(
+        sk.mie.distribution.LogNormalDistribution().freeze(mode_width=1.6),
+        sk.mie.refractive.H2SO4(),
+        np.array([532.0, 1020.0]),
+        median_radius=np.array([100.0, 200.0]),
+    )
+
+    ds = db.load_ds()
+
+    wl = np.array([532.0001, 1019.9999])
+
+    mr = 150.0
+    dr = 0.01
+
+    deriv = (
+        ds.interp(wavelength_nm=wl).interp(median_radius=mr + dr)
+        - ds.interp(wavelength_nm=wl).interp(median_radius=mr - dr)
+    ) / (2 * dr)
+    q1 = ds.interp(wavelength_nm=wl).interp(median_radius=np.array([mr, mr, mr]))[
+        "xs_total"
+    ]
+
+    geo = sk.Geometry1D(
+        0.0,
+        0.0,
+        637100.0,
+        np.array([0.0, 1.0, 2.0]),
+        sk.InterpolationMethod.LinearInterpolation,
+        sk.GeometryType.Spherical,
+    )
+    atmo = sk.Atmosphere(geo, sk.Config(), wavelengths_nm=wl)
+
+    analytic_deriv = db.optical_derivatives(atmo, median_radius=np.array([mr, mr, mr]))
+    quants = db.cross_sections(
+        wl, np.array([0.0, 0.0, 0.0]), median_radius=np.array([mr, mr, mr])
+    )

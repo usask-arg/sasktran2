@@ -60,6 +60,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g")
+
 # Add an interface target for storing build properties common to all sasktran
 # modules
 add_library(sasktran2BuildProperties INTERFACE)
@@ -175,6 +177,8 @@ if(DO_STREAM_TEMPLATES)
   message(STATUS "Enabling Full DO Stream Template Compilation")
 endif()
 
+target_compile_definitions(sasktran2BuildProperties INTERFACE EIGEN_DONT_PARALLELIZE)
+
 # -------- LAPACK FINDING -----------
 # We support multiple blas vendors, but these can require some funny options
 set(SKTRAN_BLAS_VENDOR
@@ -201,7 +205,7 @@ elseif(SKTRAN_BLAS_VENDOR MATCHES "Apple")
     sasktran2BuildProperties
     INTERFACE
       /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers
-      /Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers
+      /Library/Developer/CommandLineTools/SDKs/MacOSX15.5.sdk/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers
   )
   target_compile_definitions(sasktran2BuildProperties
                              INTERFACE SKTRAN_USE_ACCELERATE)

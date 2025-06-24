@@ -284,6 +284,7 @@ namespace sasktran2::hr {
         // But the DO Source should be initialized with the LOS rays
         if (m_config->initialize_hr_with_do()) {
             m_do_source->initialize_geometry(los_rays);
+            m_do_native_source->initialize_geometry(los_rays);
         }
 
         int temp;
@@ -321,6 +322,9 @@ namespace sasktran2::hr {
             m_do_source->storage().create_location_source_interpolator(
                 locations, directions, ground_point,
                 m_do_to_diffuse_outgoing_interpolator);
+
+            m_do_native_source->storage().create_location_radiance_interpolator(
+                locations, directions, ground_point, m_do_to_diffuse_incoming_interpolator);
         }
     }
 
@@ -483,9 +487,20 @@ namespace sasktran2::hr {
                     sasktran2::DOSourceInterpolatedPostProcessing<NSTOKES, -1>>(
                     m_geometry, m_raytracer, false));
 
+            m_initial_owned_sources.emplace_back(
+                std::make_unique<
+                    sasktran2::DOSourceNativeSolution<NSTOKES, -1>>(
+                        m_geometry, m_raytracer
+                    ));
+
             m_do_source =
                 static_cast<DOSourceInterpolatedPostProcessing<NSTOKES, -1>*>(
                     m_initial_owned_sources[1].get());
+
+            m_do_native_source = 
+                static_cast<DOSourceNativeSolution<NSTOKES, -1>*>(
+                    m_initial_owned_sources[2].get()
+                );
         }
 
         for (auto& source : m_initial_owned_sources) {

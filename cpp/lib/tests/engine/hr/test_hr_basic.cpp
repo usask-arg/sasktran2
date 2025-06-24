@@ -25,7 +25,7 @@ TEST_CASE("Basic Calculation HR", "[sasktran2][engine][hr]") {
     sasktran2::Geometry1D geo(std::move(coords), std::move(grid));
 
     // Construct the Atmosphere
-    int nwavel = 100;
+    int nwavel = 1;
     sasktran2::atmosphere::AtmosphereGridStorageFull<1> storage(nwavel,
                                                                 geo.size(), 16);
     sasktran2::atmosphere::Surface<1> surface(nwavel);
@@ -92,7 +92,8 @@ TEST_CASE("Basic Calculation HR", "[sasktran2][engine][hr]") {
 
     config.set_num_threads(1);
     // config.set_num_do_spherical_iterations(0);
-    config.set_num_hr_incoming(350);
+    config.set_num_hr_incoming(110);
+    config.set_initialize_hr_with_do(true);
     config.set_num_do_sza(1);
 
     // Make the engine

@@ -126,8 +126,17 @@ namespace sasktran2::hr {
             m_do_to_diffuse_outgoing_interpolator; /** Mapping from the DO
                                                       source terms to the
                                                       outgoing sphere sources */
+
+        Eigen::SparseMatrix<double, Eigen::RowMajor>
+            m_do_to_diffuse_incoming_interpolator; /** Mapping from the DO
+                                                      source terms to the
+                                                      incoming sphere sources */
+
         DOSourceInterpolatedPostProcessing<NSTOKES, -1>*
             m_do_source; /** Reference to the DO source */
+
+        DOSourceNativeSolution<NSTOKES, -1>*
+            m_do_native_source; /** Reference to the native DO source object */
 
         // Accumulation matrix sparsity
         Eigen::VectorXi m_inner_indicies;

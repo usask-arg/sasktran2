@@ -108,6 +108,59 @@ namespace sasktran2 {
         bool converged;
     };
 
+    template <int NSTOKES, int CNSTR = -1>
+    class DORadianceStorage {
+        private:
+          struct DORadianceThreadStorage {
+            sasktran2::Dual<double, sasktran2::dualstorage::denseRowMajor>
+                radiances; // [stokes, azimuth, quadrature_ angle, SZA, layer]
+          };
+
+          std::vector<DORadianceThreadStorage> m_storage;
+          std::unique_ptr<sasktran2::grids::AltitudeGrid>
+              m_altitude_grid;
+          const sasktran2::grids::Grid& m_sza_grid;
+          std::unique_ptr<sasktran2::grids::Grid> m_cos_angle_grid;
+
+
+        int m_ground_start;
+        int m_num_azi;
+
+        const sasktran2::Geometry1D& m_geometry;
+        const Config& m_config;
+        const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere;
+
+        int linear_storage_index(int angleidx, int layeridx, int szaidx,
+                                 int aziidx) const;
+        int ground_start_index() const { return m_ground_start; };
+        int ground_storage_index(int angleidx, int szaidx, int aziidx) const;
+
+        public:
+            DORadianceStorage(
+                const sasktran_disco::GeometryLayerArray<NSTOKES, CNSTR>&
+                    layer_geometry,
+                const sasktran_disco::PersistentConfiguration<NSTOKES, CNSTR>&
+                    do_config,
+                const sasktran2::grids::Grid& m_sza_grid, const Config& config,
+                const sasktran2::Geometry1D& geometry);
+
+            void accumulate_sources(
+                sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>& optical_layer,
+                sasktran_disco::AEOrder m,
+                sasktran2::DOSourceThreadStorage<NSTOKES, CNSTR>& thread_storage,
+                int szaidx, int thread_idx);
+
+        void initialize_atmosphere(
+            const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmo);
+
+            void create_location_radiance_interpolator(
+                const std::vector<Eigen::Vector3d>& locations,
+                const std::vector<Eigen::Vector3d>& directions,
+                const std::vector<bool>& ground_hit_flag,
+                Eigen::SparseMatrix<double, Eigen::RowMajor>& interpolator);
+
+    };
+
     template <int NSTOKES, int CNSTR = -1> class DOSourceDiffuseStorage {
       private:
         struct DOSourceDiffuseThreadStorage {
@@ -397,6 +450,80 @@ namespace sasktran2 {
 
         DOSourceDiffuseStorage<NSTOKES, CNSTR>& storage() const {
             return *m_diffuse_storage;
+        }
+    };
+
+    template <int NSTOKES, int CNSTR = -1>
+    class DOSourceNativeSolution : public DOSource<NSTOKES, CNSTR> {
+      private:
+        const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere;
+
+      protected:
+        std::unique_ptr<sasktran_disco::VectorDim2<
+            std::array<Eigen::SparseVector<double>, NSTOKES>>>
+            m_los_source_interpolator;
+
+        sasktran_disco::VectorDim1<std::unique_ptr<Eigen::SparseVector<double>>>
+            m_los_ground_source_interpolator;
+
+        sasktran_disco::VectorDim2<
+            std::array<Eigen::SparseVector<double>, NSTOKES>>*
+            m_source_interpolator_view;
+
+        std::unique_ptr<DORadianceStorage<NSTOKES, CNSTR>>
+            m_radiance_storage;
+
+        virtual void accumulate_solved_azimuth(
+            sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>& optical_layer,
+            DOSourceThreadStorage<NSTOKES, CNSTR>& thread_storage, int szaidx,
+            sasktran_disco::AEOrder m, int threadidx);
+
+      public:
+        DOSourceNativeSolution(
+            const sasktran2::Geometry1D& geometry,
+            const sasktran2::raytracing::RayTracerBase& raytracer);
+
+        virtual void calculate(int wavelidx, int threadidx);
+        virtual void initialize_geometry(
+            const std::vector<sasktran2::raytracing::TracedRay>& los_rays)
+            override;
+        virtual void initialize_atmosphere(
+            const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere)
+            override;
+        virtual void
+        initialize_config(const sasktran2::Config& config) override;
+
+        void integrated_source(
+            int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+            int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
+            const sasktran2::SparseODDualView& shell_od,
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+                source,
+            typename SourceTermInterface<
+                NSTOKES>::IntegrationDirection direction =
+                SourceTermInterface<NSTOKES>::IntegrationDirection::none) const override {};
+
+        /**
+         * @brief Not used for the DO Interpolated Post Processing source.
+         *
+         * @param wavelidx
+         * @param losidx
+         * @param wavel_threadidx
+         * @param threadidx
+         * @param source
+         */
+        virtual void start_of_ray_source(
+            int wavelidx, int losidx, int wavel_threadidx, int threadidx,
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+                source) const override{};
+
+        void end_of_ray_source(
+            int wavelidx, int losidx, int wavel_threadidx, int threadidx,
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+                source) const override {};
+
+        DORadianceStorage<NSTOKES, CNSTR>& storage() const {
+            return *m_radiance_storage;
         }
     };
 
