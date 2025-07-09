@@ -99,19 +99,19 @@ impl PyRayleigh {
 
         if let Some(n2_percentage) = n2_percentage {
             inner = inner.with_n2_percentage(n2_percentage);
-        } 
+        }
 
         if let Some(o2_percentage) = o2_percentage {
             inner = inner.with_o2_percentage(o2_percentage);
-        } 
+        }
 
         if let Some(ar_percentage) = ar_percentage {
             inner = inner.with_ar_percentage(ar_percentage);
-        } 
+        }
 
         if let Some(co2_percentage) = co2_percentage {
             inner = inner.with_co2_percentage(co2_percentage);
-        } 
+        }
 
         PyRayleigh { inner }
     }

@@ -76,26 +76,25 @@ fn main() {
             // Extract the library name
             if let Some(lib_name) = path.file_stem() {
                 // Assumes the library name starts with 'lib' as in 'libopenblas'
-                if let Some(name) = lib_name.to_str() {
-                    if let Some(extension) = path.extension() {
-                        if let Some(extension) = extension.to_str() {
-                            if extension == "framework" {
-                                println!("cargo:rustc-link-lib=framework={}", name);
-                            } else if name.starts_with("lib") {
-                                // if we are on windows, we keep the 'lib' prefix
-                                // otherwise we remove it
-                                if cfg!(target_os = "windows") {
-                                    println!("cargo:rustc-link-lib=dylib={}", name);
-                                } else {
-                                    println!(
-                                        "cargo:rustc-link-lib=dylib={}",
-                                        name.strip_prefix("lib").unwrap_or(name)
-                                    );
-                                }
-                            } else {
-                                println!("cargo:rustc-link-lib=dylib={}", name);
-                            }
+                if let Some(name) = lib_name.to_str()
+                    && let Some(extension) = path.extension()
+                    && let Some(extension) = extension.to_str()
+                {
+                    if extension == "framework" {
+                        println!("cargo:rustc-link-lib=framework={name}");
+                    } else if name.starts_with("lib") {
+                        // if we are on windows, we keep the 'lib' prefix
+                        // otherwise we remove it
+                        if cfg!(target_os = "windows") {
+                            println!("cargo:rustc-link-lib=dylib={name}");
+                        } else {
+                            println!(
+                                "cargo:rustc-link-lib=dylib={}",
+                                name.strip_prefix("lib").unwrap_or(name)
+                            );
                         }
+                    } else {
+                        println!("cargo:rustc-link-lib=dylib={name}");
                     }
                 }
             }

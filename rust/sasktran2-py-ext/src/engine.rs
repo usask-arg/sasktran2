@@ -35,7 +35,8 @@ impl PyEngine {
                 std::mem::transmute::<&ViewingGeometry, &'static ViewingGeometry>(
                     &viewing_geometry.viewing_geometry,
                 ),
-            ).into_pyresult()?
+            )
+            .into_pyresult()?
         };
 
         Ok(Self {

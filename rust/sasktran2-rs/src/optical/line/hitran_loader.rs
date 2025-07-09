@@ -17,7 +17,10 @@ pub fn hitran_molecule_file(molecule: &str, directory: &Path) -> Result<PathBuf>
     if mol_filepath.is_file() {
         Ok(mol_filepath)
     } else {
-        Err(anyhow::anyhow!("No HITRAN data file for molecule {}", molecule))
+        Err(anyhow::anyhow!(
+            "No HITRAN data file for molecule {}",
+            molecule
+        ))
     }
 }
 

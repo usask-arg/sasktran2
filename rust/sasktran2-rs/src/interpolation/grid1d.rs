@@ -67,7 +67,11 @@ impl<'a> Grid1DView<'a> {
         let x = &self.x[start..end];
         let is_uniform = self.is_uniform;
         let start = x.first().copied();
-        let dx = if is_uniform { Some(self.x[1] - self.x[0]) } else { None };
+        let dx = if is_uniform {
+            Some(self.x[1] - self.x[0])
+        } else {
+            None
+        };
         Self {
             x,
             is_uniform,

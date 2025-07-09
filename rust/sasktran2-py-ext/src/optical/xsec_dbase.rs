@@ -15,12 +15,13 @@ pub struct PyDictWrapper<'a>(pub Option<&'a Bound<'a, PyDict>>);
 impl<'a> AuxOpticalInputs for PyDictWrapper<'a> {
     fn get_parameter(&self, name: &str) -> Option<CowArray<'_, f64, Ix1>> {
         if let Some(dict) = &self.0
-            && let Ok(value) = dict.get_item(name) {
-                value.as_ref()?;
-                let array: PyReadonlyArray1<f64> = value?.extract().ok()?;
-                // Create an owned copy of the array data to avoid lifetime issues
-                return Some(CowArray::from(array.as_array().to_owned()));
-            }
+            && let Ok(value) = dict.get_item(name)
+        {
+            value.as_ref()?;
+            let array: PyReadonlyArray1<f64> = value?.extract().ok()?;
+            // Create an owned copy of the array data to avoid lifetime issues
+            return Some(CowArray::from(array.as_array().to_owned()));
+        }
         None
     }
 }
@@ -103,9 +104,7 @@ impl AbsorberDatabaseDim1 {
         let oq = self
             .db
             .optical_quantities(&rust_atmo.inputs, &aux_inputs)
-            .map_err(|e| {
-                PyValueError::new_err(format!("Failed to get optical quantities: {e}"))
-            })?;
+            .map_err(|e| PyValueError::new_err(format!("Failed to get optical quantities: {e}")))?;
 
         PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())
     }
@@ -161,9 +160,7 @@ impl AbsorberDatabaseDim2 {
         let oq = self
             .db
             .optical_quantities(&rust_atmo.inputs, &aux_inputs)
-            .map_err(|e| {
-                PyValueError::new_err(format!("Failed to get optical quantities: {e}"))
-            })?;
+            .map_err(|e| PyValueError::new_err(format!("Failed to get optical quantities: {e}")))?;
 
         PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())
     }
@@ -180,9 +177,7 @@ impl AbsorberDatabaseDim2 {
         let oq = self
             .db
             .optical_derivatives(&rust_atmo.inputs, &aux_inputs)
-            .map_err(|e| {
-                PyValueError::new_err(format!("Failed to get optical quantities: {e}"))
-            })?;
+            .map_err(|e| PyValueError::new_err(format!("Failed to get optical quantities: {e}")))?;
 
         let py = atmo.py();
         let py_dict = PyDict::new(py);
@@ -278,9 +273,7 @@ impl AbsorberDatabaseDim3 {
         let oq = self
             .db
             .optical_quantities(&rust_atmo.inputs, &aux_inputs)
-            .map_err(|e| {
-                PyValueError::new_err(format!("Failed to get optical quantities: {e}"))
-            })?;
+            .map_err(|e| PyValueError::new_err(format!("Failed to get optical quantities: {e}")))?;
 
         PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())
     }
@@ -297,9 +290,7 @@ impl AbsorberDatabaseDim3 {
         let oq = self
             .db
             .optical_derivatives(&rust_atmo.inputs, &aux_inputs)
-            .map_err(|e| {
-                PyValueError::new_err(format!("Failed to get optical quantities: {e}"))
-            })?;
+            .map_err(|e| PyValueError::new_err(format!("Failed to get optical quantities: {e}")))?;
 
         let py = atmo.py();
         let py_dict = PyDict::new(py);
