@@ -58,7 +58,7 @@ impl Geometry1D {
         Ok(Array1::from(altitudes))
     }
 
-    pub fn refractive_index_mut(&self) -> Result<ArrayViewMut1<f64>> {
+    pub fn refractive_index_mut(&self) -> Result<ArrayViewMut1<'_, f64>> {
         let mut refractive_index = vec![0.0; self.get_num_altitudes() as usize];
         let mut refractive_index_ptr = refractive_index.as_mut_ptr();
         let result = unsafe {

@@ -187,7 +187,7 @@ impl MieIntegrator {
                             *lm_a3 += (temp1 - temp2) / 2.0;
 
                             *lm_b1 += w * lpoly_02 * p12;
-                            *lm_b2 += (-1.0) * w * lpoly_02 * p34;
+                            *lm_b2 += -w * lpoly_02 * p34;
                         });
                     });
             });

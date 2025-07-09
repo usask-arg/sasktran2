@@ -139,7 +139,7 @@ mod tests {
 
         let result = linear_interpolating_matrix(&from_grid, &to_grid, OutOfBoundsMode::Zero);
 
-        println!("{:?}", result);
+        println!("{result:?}");
     }
 
     #[test]

@@ -11,7 +11,7 @@ impl DerivativeMapping {
         DerivativeMapping { mapping }
     }
 
-    pub fn d_ssa(&self) -> ArrayViewMut2<f64> {
+    pub fn d_ssa(&self) -> ArrayViewMut2<'_, f64> {
         let mut d_ssa: *mut f64 = std::ptr::null_mut();
         unsafe {
             ffi::sk_deriv_mapping_get_d_ssa(self.mapping, &mut d_ssa);
@@ -19,7 +19,7 @@ impl DerivativeMapping {
         }
     }
 
-    pub fn d_extinction(&self) -> ArrayViewMut2<f64> {
+    pub fn d_extinction(&self) -> ArrayViewMut2<'_, f64> {
         let mut d_extinction: *mut f64 = std::ptr::null_mut();
         unsafe {
             ffi::sk_deriv_mapping_get_d_extinction(self.mapping, &mut d_extinction);
@@ -27,7 +27,7 @@ impl DerivativeMapping {
         }
     }
 
-    pub fn d_emission(&self) -> ArrayViewMut2<f64> {
+    pub fn d_emission(&self) -> ArrayViewMut2<'_, f64> {
         let mut d_emission: *mut f64 = std::ptr::null_mut();
         unsafe {
             ffi::sk_deriv_mapping_get_d_emission(self.mapping, &mut d_emission);
@@ -35,7 +35,7 @@ impl DerivativeMapping {
         }
     }
 
-    pub fn scat_factor(&self) -> ArrayViewMut2<f64> {
+    pub fn scat_factor(&self) -> ArrayViewMut2<'_, f64> {
         let mut scat_factor: *mut f64 = std::ptr::null_mut();
         unsafe {
             ffi::sk_deriv_mapping_get_scat_factor(self.mapping, &mut scat_factor);
@@ -43,7 +43,7 @@ impl DerivativeMapping {
         }
     }
 
-    pub fn d_leg_coeff(&self) -> ArrayViewMut3<f64> {
+    pub fn d_leg_coeff(&self) -> ArrayViewMut3<'_, f64> {
         let mut d_leg_coeff: *mut f64 = std::ptr::null_mut();
         unsafe {
             ffi::sk_deriv_mapping_get_d_legendre(self.mapping, &mut d_leg_coeff);
@@ -136,7 +136,7 @@ impl DerivativeMapping {
         }
     }
 
-    pub fn get_interpolator(&self) -> ArrayView2<f64> {
+    pub fn get_interpolator(&self) -> ArrayView2<'_, f64> {
         let mut interpolator: *mut f64 = std::ptr::null_mut();
         let mut dim1: i32 = 0;
         let mut dim2: i32 = 0;
@@ -223,7 +223,7 @@ impl SurfaceDerivativeMapping {
         }
     }
 
-    pub fn get_interpolator(&self) -> ArrayView2<f64> {
+    pub fn get_interpolator(&self) -> ArrayView2<'_, f64> {
         let mut interpolator: *mut f64 = std::ptr::null_mut();
         let mut dim1: i32 = 0;
         let mut dim2: i32 = 0;
@@ -254,7 +254,7 @@ impl SurfaceDerivativeMapping {
         }
     }
 
-    pub fn d_emission(&self) -> ArrayViewMut1<f64> {
+    pub fn d_emission(&self) -> ArrayViewMut1<'_, f64> {
         let mut d_emission: *mut f64 = std::ptr::null_mut();
         unsafe {
             ffi::sk_surface_deriv_mapping_get_d_emission(self.mapping, &mut d_emission);
@@ -262,7 +262,7 @@ impl SurfaceDerivativeMapping {
         }
     }
 
-    pub fn d_brdf(&self) -> ArrayViewMut2<f64> {
+    pub fn d_brdf(&self) -> ArrayViewMut2<'_, f64> {
         let mut d_brdf: *mut f64 = std::ptr::null_mut();
         unsafe {
             ffi::sk_surface_deriv_mapping_get_d_brdf(self.mapping, &mut d_brdf);

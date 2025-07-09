@@ -110,7 +110,7 @@ impl PyGeodetic {
     fn from_lat_lon_alt(&mut self, latitude: f64, longitude: f64, altitude: f64) -> PyResult<()> {
         self.output
             .from_lat_lon_alt(latitude, longitude, altitude)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{}", e)))
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))
     }
 
     #[allow(clippy::wrong_self_convention)]
@@ -126,7 +126,7 @@ impl PyGeodetic {
         let result = self
             .output
             .from_tangent_altitude(tangent_altitude, observer, look_vector)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{}", e)))?;
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))?;
 
         Ok(result)
     }
@@ -142,7 +142,7 @@ impl PyGeodetic {
 
         self.output
             .from_tangent_point(observer, look_vector)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{}", e)))
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))
     }
 
     #[allow(clippy::wrong_self_convention)]
@@ -153,18 +153,18 @@ impl PyGeodetic {
         let z = location[2];
         self.output
             .from_xyz(x, y, z)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{}", e)))
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))
     }
 
     fn is_valid(&self) -> PyResult<bool> {
         self.output
             .is_valid()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{}", e)))
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))
     }
 
     fn osculating_spheroid(&mut self) -> PyResult<(f64, [f64; 3])> {
         self.output
             .osculating_spheroid()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{}", e)))
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{e}")))
     }
 }

@@ -35,7 +35,7 @@ impl Grid1D {
         }
     }
 
-    pub fn view(&self) -> Grid1DView {
+    pub fn view(&self) -> Grid1DView<'_> {
         Grid1DView {
             x: self.x.as_slice().unwrap(),
             is_uniform: self.is_uniform,
@@ -67,7 +67,11 @@ impl<'a> Grid1DView<'a> {
         let x = &self.x[start..end];
         let is_uniform = self.is_uniform;
         let start = x.first().copied();
-        let dx = if is_uniform { Some(self.x[1] - self.x[0]) } else { None };
+        let dx = if is_uniform {
+            Some(self.x[1] - self.x[0])
+        } else {
+            None
+        };
         Self {
             x,
             is_uniform,

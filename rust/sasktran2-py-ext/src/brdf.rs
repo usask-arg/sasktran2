@@ -15,7 +15,7 @@ pub fn set_py_brdf_in_surface<'py>(
         let binding = brdf.borrow();
         surface.set_brdf(&binding.internal)
     } else {
-        return Err(anyhow::anyhow!("Invalid BRDF type"));
+        Err(anyhow::anyhow!("Invalid BRDF type"))
     }
 }
 

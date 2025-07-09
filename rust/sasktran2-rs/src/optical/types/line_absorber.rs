@@ -358,7 +358,10 @@ impl LineAbsorber {
         let mut start_wavenumber_idx: usize = 0;
         let mut end_wavenumber_idx: usize = 0;
 
-        let line_slice = self.db.between_slice(min_wvnum - self.line_contribution_width, max_wvnum + self.line_contribution_width);
+        let line_slice = self.db.between_slice(
+            min_wvnum - self.line_contribution_width,
+            max_wvnum + self.line_contribution_width,
+        );
 
         let map = self.gen_mol_param(line_slice, temperature.as_slice().unwrap())?;
 
