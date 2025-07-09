@@ -59,7 +59,7 @@ impl PyScatteringDatabaseDim1 {
             .db
             .optical_quantities(&rust_atmo.inputs, &aux_inputs)
             .map_err(|e| {
-                PyValueError::new_err(format!("Failed to get optical quantities: {}", e))
+                PyValueError::new_err(format!("Failed to get optical quantities: {e}"))
             })?;
 
         PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())
@@ -98,7 +98,7 @@ impl PyScatteringDatabaseDim1 {
             .db
             .optical_quantities(&inputs, &aux_inputs)
             .map_err(|e| {
-                PyValueError::new_err(format!("Failed to get optical quantities: {}", e))
+                PyValueError::new_err(format!("Failed to get optical quantities: {e}"))
             })?;
 
         PyOpticalQuantities::new(oq).into_bound_py_any(py)
@@ -169,7 +169,7 @@ impl PyScatteringDatabaseDim2 {
             .db
             .optical_quantities(&rust_atmo.inputs, &aux_inputs)
             .map_err(|e| {
-                PyValueError::new_err(format!("Failed to get optical quantities: {}", e))
+                PyValueError::new_err(format!("Failed to get optical quantities: {e}"))
             })?;
 
         PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())
@@ -189,7 +189,7 @@ impl PyScatteringDatabaseDim2 {
             .db
             .optical_derivatives(&rust_atmo.inputs, &aux_inputs)
             .map_err(|e| {
-                PyValueError::new_err(format!("Failed to get optical quantities: {}", e))
+                PyValueError::new_err(format!("Failed to get optical quantities: {e}"))
             })?;
 
         let py = atmo.py();
@@ -223,7 +223,7 @@ impl PyScatteringDatabaseDim2 {
             .db
             .optical_quantities(&inputs, &aux_inputs)
             .map_err(|e| {
-                PyValueError::new_err(format!("Failed to get optical quantities: {}", e))
+                PyValueError::new_err(format!("Failed to get optical quantities: {e}"))
             })?;
 
         PyOpticalQuantities::new(oq).into_bound_py_any(py)
@@ -249,7 +249,7 @@ impl PyScatteringDatabaseDim2 {
             .db
             .optical_derivatives(&inputs, &aux_inputs)
             .map_err(|e| {
-                PyValueError::new_err(format!("Failed to get optical quantities: {}", e))
+                PyValueError::new_err(format!("Failed to get optical quantities: {e}"))
             })?;
 
         let py_dict = PyDict::new(py);
@@ -314,7 +314,7 @@ impl PyScatteringDatabaseDim3 {
             .db
             .optical_quantities(&rust_atmo.inputs, &aux_inputs)
             .map_err(|e| {
-                PyValueError::new_err(format!("Failed to get optical quantities: {}", e))
+                PyValueError::new_err(format!("Failed to get optical quantities: {e}"))
             })?;
 
         PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())
@@ -334,7 +334,7 @@ impl PyScatteringDatabaseDim3 {
             .db
             .optical_derivatives(&rust_atmo.inputs, &aux_inputs)
             .map_err(|e| {
-                PyValueError::new_err(format!("Failed to get optical quantities: {}", e))
+                PyValueError::new_err(format!("Failed to get optical quantities: {e}"))
             })?;
 
         let py = atmo.py();
@@ -368,7 +368,7 @@ impl PyScatteringDatabaseDim3 {
             .db
             .optical_quantities(&inputs, &aux_inputs)
             .map_err(|e| {
-                PyValueError::new_err(format!("Failed to get optical quantities: {}", e))
+                PyValueError::new_err(format!("Failed to get optical quantities: {e}"))
             })?;
 
         PyOpticalQuantities::new(oq).into_bound_py_any(py)
@@ -394,7 +394,7 @@ impl PyScatteringDatabaseDim3 {
             .db
             .optical_derivatives(&inputs, &aux_inputs)
             .map_err(|e| {
-                PyValueError::new_err(format!("Failed to get optical quantities: {}", e))
+                PyValueError::new_err(format!("Failed to get optical quantities: {e}"))
             })?;
 
         let py_dict = PyDict::new(py);

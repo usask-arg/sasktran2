@@ -38,8 +38,7 @@ impl PartitionFactor for PyPartitionFactor {
 
             let result = tips.call1(args).unwrap_or_else(|_| {
                 panic!(
-                    "Failed to call partition factor function with args: {:?}",
-                    args
+                    "Failed to call partition factor function with args: {args:?}"
                 )
             });
             result.extract().unwrap()
@@ -56,8 +55,7 @@ impl MolecularMass for PyMolecularMass {
 
             let result = molmass.call1(args).unwrap_or_else(|_| {
                 panic!(
-                    "Failed to call molecular mass function with args: {:?}",
-                    args
+                    "Failed to call molecular mass function with args: {args:?}"
                 )
             });
             result.extract().unwrap()
@@ -131,7 +129,7 @@ impl PyLineAbsorber {
             .line_absorber
             .optical_quantities(&rust_atmo.inputs, &aux_inputs)
             .map_err(|e| {
-                PyValueError::new_err(format!("Failed to get optical quantities: {}", e))
+                PyValueError::new_err(format!("Failed to get optical quantities: {e}"))
             })?;
 
         PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())

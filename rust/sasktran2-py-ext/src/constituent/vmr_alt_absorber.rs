@@ -46,8 +46,7 @@ impl PyVMRAltitudeAbsorber {
                 }
                 mode => {
                     return Err(PyValueError::new_err(format!(
-                        "Invalid out_of_bounds_mode: {}",
-                        mode
+                        "Invalid out_of_bounds_mode: {mode}"
                     )));
                 }
             }
