@@ -99,6 +99,7 @@ impl PyVMRAltitudeAbsorber {
 
         let _ = self.inner.with_optical_property(py_optical);
         let _ = self.inner.add_to_atmosphere(&mut rust_atmo);
+        let _ = self.inner.with_no_optical_property();
 
         Ok(())
     }
@@ -114,6 +115,8 @@ impl PyVMRAltitudeAbsorber {
         self.inner
             .register_derivatives(&mut rust_atmo, name)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+        let _ = self.inner.with_no_optical_property();
 
         Ok(())
     }

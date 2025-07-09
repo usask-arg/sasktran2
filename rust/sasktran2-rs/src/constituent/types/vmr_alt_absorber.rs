@@ -92,6 +92,11 @@ where
         self.interp_mode = interp_mode;
         self
     }
+
+    pub fn with_no_optical_property(&mut self) -> &mut Self {
+        self.optical_property = None;
+        self
+    }
 }
 
 impl<T> Constituent for VMRAltitudeAbsorber<T>

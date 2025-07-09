@@ -156,6 +156,12 @@ impl<'a> Engine<'a> {
             // And then take the sqrt
             let min_length = (num_wavel as f64 / wavel_per_thread as f64).sqrt() as usize;
 
+            let min_length = if num_threads >= num_wavel {
+                1
+            } else {
+                min_length
+            };
+
             let safe_engine = SafeFFIEngine(self.engine);
             let safe_output = SafeFFIOutput(output.output);
             let safe_atmosphere = SafeFFIAtmosphere(atmosphere.atmosphere);
