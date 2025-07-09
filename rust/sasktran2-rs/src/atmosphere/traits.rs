@@ -47,20 +47,20 @@ pub trait StorageInputs {
 
     // Geometry properties
     /// Altitudes in meters of the grid
-    fn altitude_m(&self) -> ArrayView1<f64>;
+    fn altitude_m(&self) -> ArrayView1<'_, f64>;
 
     // Atmospheric properties
     /// Presusre in pa at altitude_m
-    fn pressure_pa(&self) -> Option<ArrayView1<f64>>;
+    fn pressure_pa(&self) -> Option<ArrayView1<'_, f64>>;
 
     /// Temperaure in kelvin at altitude_m
-    fn temperature_k(&self) -> Option<ArrayView1<f64>>;
+    fn temperature_k(&self) -> Option<ArrayView1<'_, f64>>;
 
     /// Wavelengths in nm
-    fn wavelengths_nm(&self) -> Option<ArrayView1<f64>>;
+    fn wavelengths_nm(&self) -> Option<ArrayView1<'_, f64>>;
 
     /// Wavenumbers in cm^-1
-    fn wavenumbers_cminv(&self) -> Option<ArrayView1<f64>>;
+    fn wavenumbers_cminv(&self) -> Option<ArrayView1<'_, f64>>;
 
     /// hashmap of air number density factors ("N", "dN_dT", "dN_dP", "dN_dq")
     /// This is number density of air (including water vapor)
@@ -71,7 +71,7 @@ pub trait StorageInputs {
     fn dry_air_numberdensity_dict(&self) -> HashMap<String, Array1<f64>>;
 
     /// Allows to get parameters by string name instead of function
-    fn get_parameter(&self, name: &str) -> Option<ArrayView1<f64>> {
+    fn get_parameter(&self, name: &str) -> Option<ArrayView1<'_, f64>> {
         match name {
             "pressure_pa" => self.pressure_pa(),
             "temperature_k" => self.temperature_k(),
@@ -85,14 +85,14 @@ pub trait StorageInputs {
 
 /// Trait allowing an object to return back views into the atmosphere storage
 pub trait StorageOutputs {
-    fn mut_view(&mut self) -> AtmosphereStorageOutputView;
-    fn view(&self) -> AtmosphereStorageOutputImmutView;
+    fn mut_view(&mut self) -> AtmosphereStorageOutputView<'_>;
+    fn view(&self) -> AtmosphereStorageOutputImmutView<'_>;
 }
 
 /// Trait indicating a single derivative mapping
 pub trait DerivMapping<'py> {
     fn with_scatterer(self) -> Self;
-    fn mut_view(&mut self) -> DerivMappingView;
+    fn mut_view(&mut self) -> DerivMappingView<'_>;
     fn set_interpolator(&mut self, interpolator: &Array2<f64>);
     fn set_interp_dim(&mut self, interp_dim: &str);
     fn set_assign_name(&mut self, assign_name: &str);

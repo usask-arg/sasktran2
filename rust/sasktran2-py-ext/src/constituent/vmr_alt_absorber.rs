@@ -36,8 +36,8 @@ impl PyVMRAltitudeAbsorber {
             vmr.as_array().to_owned(),
         );
 
-        if out_of_bounds_mode.is_some() {
-            inner = match out_of_bounds_mode.unwrap() {
+        if let Some(out_of_bounds_mode) = out_of_bounds_mode {
+            inner = match out_of_bounds_mode {
                 "zero" => {
                     inner.with_interp_mode(sasktran2_rs::interpolation::OutOfBoundsMode::Zero)
                 }

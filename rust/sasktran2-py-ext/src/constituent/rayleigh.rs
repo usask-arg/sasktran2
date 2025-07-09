@@ -97,21 +97,21 @@ impl PyRayleigh {
             inner = inner.with_manual_xs(xs, king, wavelengths_nm);
         }
 
-        if n2_percentage.is_some() {
-            inner = inner.with_n2_percentage(n2_percentage.unwrap());
-        }
+        if let Some(n2_percentage) = n2_percentage {
+            inner = inner.with_n2_percentage(n2_percentage);
+        } 
 
-        if o2_percentage.is_some() {
-            inner = inner.with_o2_percentage(o2_percentage.unwrap());
-        }
+        if let Some(o2_percentage) = o2_percentage {
+            inner = inner.with_o2_percentage(o2_percentage);
+        } 
 
-        if ar_percentage.is_some() {
-            inner = inner.with_ar_percentage(ar_percentage.unwrap());
-        }
+        if let Some(ar_percentage) = ar_percentage {
+            inner = inner.with_ar_percentage(ar_percentage);
+        } 
 
-        if co2_percentage.is_some() {
-            inner = inner.with_co2_percentage(co2_percentage.unwrap());
-        }
+        if let Some(co2_percentage) = co2_percentage {
+            inner = inner.with_co2_percentage(co2_percentage);
+        } 
 
         PyRayleigh { inner }
     }

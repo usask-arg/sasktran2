@@ -35,7 +35,7 @@ impl Grid1D {
         }
     }
 
-    pub fn view(&self) -> Grid1DView {
+    pub fn view(&self) -> Grid1DView<'_> {
         Grid1DView {
             x: self.x.as_slice().unwrap(),
             is_uniform: self.is_uniform,
