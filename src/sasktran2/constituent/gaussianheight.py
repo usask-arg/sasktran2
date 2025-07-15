@@ -28,7 +28,7 @@ class GaussianHeight(Constituent):
 
         Parameters
         ----------
-        TODO
+        TODO: documentation
         """
         super().__init__()
 
@@ -44,7 +44,6 @@ class GaussianHeight(Constituent):
 
         self._kwargs = kwargs
 
-    # TODO: not sure if getattr and setattr are needed...
     def __getattr__(self, __name: str) -> Any:
         if __name in self.__dict__.get("_kwargs", {}):
             return self._kwargs[__name]
@@ -94,32 +93,45 @@ class GaussianHeight(Constituent):
 
         interped_kwargs = {k: alt_interp_matrix @ v for k, v in self._kwargs.items()}
 
-        # Cloud top is defined as cloud height + 2 sigma
         # Unnormalized gaussian since we will normalize to vertical optical depth anyways
-        # g
-        self._gaussian = np.exp(-4*np.log(2)*(atmo.model_geometry.altitudes() - self._cloud_height_m)**2 / self._cloud_width_fwhm_m**2)
+        self._gaussian = np.exp(
+            -4
+            * np.log(2)
+            * (atmo.model_geometry.altitudes() - self._cloud_height_m) ** 2
+            / self._cloud_width_fwhm_m**2
+        )
 
-        # k_o
         self._optical_quants = self._optical_property.atmosphere_quantities(
             atmo, **interped_kwargs
         )
 
-        # k_ol
-        self._ext_at_wavel = (self._optical_quants.extinction @ wavel_interp_matrix.T).flatten()
-        # g * k_ol
-        gaussian_extinction = self._gaussian * self._ext_at_wavel.flatten()
-        # Integrate[g * k_ol]
-        self._current_vert_optical_depth = np.trapezoid(gaussian_extinction, atmo.model_geometry.altitudes())
-        # g * k_o * Integrate[g * k_ol]
-        self._extinction = self._optical_quants.extinction * (self._gaussian * self._vertical_optical_depth / self._current_vert_optical_depth)[:, np.newaxis]
-
-        atmo.storage.total_extinction[:] += (
-            self._extinction
+        # TODO: should this be done by calling optical property with wavelength instead of interpolation?
+        self._xs_at_wavel = (
+            self._optical_quants.extinction @ wavel_interp_matrix.T
+        ).flatten()
+        gaussian_xs = self._gaussian * self._xs_at_wavel.flatten()
+        self._gaussian_od = np.trapezoid(gaussian_xs, atmo.model_geometry.altitudes())
+        number_density = (
+            self._gaussian * self._vertical_optical_depth / self._gaussian_od
         )
 
-        atmo.storage.ssa[:] += self._optical_quants.ssa
-        # TODO: what do?
-        # atmo.storage.leg_coeff[:] += self._optical_quants.leg_coeff
+        atmo.storage.total_extinction[:] += (
+            self._optical_quants.extinction * (number_density)[:, np.newaxis]
+        )
+
+        atmo.storage.ssa[:] += (
+            self._optical_quants.ssa * (number_density)[:, np.newaxis]
+        )
+
+        atmo.storage.leg_coeff[:] += (
+            self._optical_quants.ssa[np.newaxis, :, :]
+            * (number_density)[np.newaxis, :, np.newaxis]
+            * self._optical_quants.leg_coeff
+        )
+
+        # Convert back to SSA for ease of use later in the derivatives
+        self._optical_quants.ssa[:] /= self._optical_quants.extinction
+        self._optical_quants.ssa[~np.isfinite(self._optical_quants.ssa)] = 1
 
     def register_derivative(self, atmo: Atmosphere, name):
         alt_interp_matrix = linear_interpolating_matrix(
@@ -129,74 +141,139 @@ class GaussianHeight(Constituent):
         )
         interped_kwargs = {k: alt_interp_matrix @ v for k, v in self._kwargs.items()}
 
-        # TODO: matrix to interp from alt grid to scalar (single-value array), then set mapping dimension to "scalar"
-
         derivs = {}  # necessary?
 
         # common terms
-        d_gaussian_d_height = self._gaussian * 8 * np.log(2) * (atmo.model_geometry.altitudes() - self._cloud_height_m) / self._cloud_width_fwhm_m**2
-        d_gaussian_d_width = self._gaussian * 8 * np.log(2) * (atmo.model_geometry.altitudes() - self._cloud_height_m)**2 / self._cloud_width_fwhm_m**3
-        ext_over_tau = self._optical_quants.extinction / self._vertical_optical_depth
+        d_gaussian_d_height = (
+            self._gaussian
+            * 8
+            * np.log(2)
+            * (atmo.model_geometry.altitudes() - self._cloud_height_m)
+            / self._cloud_width_fwhm_m**2
+        )
+        d_gaussian_d_width = (
+            self._gaussian
+            * 8
+            * np.log(2)
+            * (atmo.model_geometry.altitudes() - self._cloud_height_m) ** 2
+            / self._cloud_width_fwhm_m**3
+        )
+        outer_term = self._vertical_optical_depth / self._gaussian_od
+
+        d_extinction = self._optical_quants.extinction
+        d_ssa = (
+            self._optical_quants.extinction
+            * (self._optical_quants.ssa - atmo.storage.ssa)
+            / atmo.storage.total_extinction
+        )
+        d_leg_coeff = self._optical_quants.leg_coeff - atmo.storage.leg_coeff
+        scat_factor = (self._optical_quants.ssa * self._optical_quants.extinction) / (
+            atmo.storage.ssa * atmo.storage.total_extinction
+        )
 
         # height derivative
-        h_deriv_mapping = atmo.storage.get_derivative_mapping(
-            f"wf_{name}_cloud_height_m"
+        h_deriv_mapping = atmo.storage.get_derivative_mapping(f"wf_{name}_height_m")
+        h1 = d_gaussian_d_height
+        h2 = (
+            self._gaussian
+            * np.trapezoid(
+                self._xs_at_wavel * d_gaussian_d_height, atmo.model_geometry.altitudes()
+            )
+            / self._gaussian_od
         )
-        h1 = self._gaussian * np.trapezoid(self._ext_at_wavel * d_gaussian_d_height, atmo.model_geometry.altitudes())
-        h2 = d_gaussian_d_height * self._current_vert_optical_depth
-        h_deriv_mapping.d_extinction[:] += ext_over_tau * (h1 + h2)[:, np.newaxis]
-        h_deriv_mapping.d_ssa[:] += (
-            self._optical_quants.extinction
-            * (self._optical_quants.ssa - atmo.storage.ssa)
-            / atmo.storage.total_extinction
-        )
-        h_deriv_mapping.d_leg_coeff[:] += (
-            self._optical_quants.leg_coeff - atmo.storage.leg_coeff
-        )
-        # h_deriv_mapping.interp_dim = 'altitude'
-        h_deriv_mapping.interp_dim = 'cloud_height_m'
-        h_deriv_mapping.interpolator = np.ones_like(atmo.model_geometry.altitudes())[:, np.newaxis]
+        h_deriv_mapping.d_extinction[:] += d_extinction
+        h_deriv_mapping.d_ssa[:] += d_ssa
+        h_deriv_mapping.d_leg_coeff[:] += d_leg_coeff
+        h_deriv_mapping.scat_factor[:] += scat_factor
+        h_deriv_mapping.interp_dim = "cloud_height_m"
+        h_deriv_mapping.interpolator = outer_term * (h1 - h2)[:, np.newaxis]
 
         # width derivative
-        w_deriv_mapping = atmo.storage.get_derivative_mapping(
-            f"wf_{name}_cloud_width_fwhm_m"
+        w_deriv_mapping = atmo.storage.get_derivative_mapping(f"wf_{name}_width_fwhm_m")
+        w1 = d_gaussian_d_width
+        w2 = (
+            self._gaussian
+            * np.trapezoid(
+                self._xs_at_wavel * d_gaussian_d_width, atmo.model_geometry.altitudes()
+            )
+            / self._gaussian_od
         )
-        w1 = self._gaussian * np.trapezoid(self._ext_at_wavel * d_gaussian_d_width, atmo.model_geometry.altitudes())
-        w2 = d_gaussian_d_width * self._current_vert_optical_depth
-        w_deriv_mapping.d_extinction[:] += ext_over_tau * (w1 + w2)[:, np.newaxis]
-        w_deriv_mapping.d_ssa[:] += (
-            self._optical_quants.extinction
-            * (self._optical_quants.ssa - atmo.storage.ssa)
-            / atmo.storage.total_extinction
+        w_deriv_mapping.d_extinction[:] += d_extinction
+        w_deriv_mapping.d_ssa[:] += d_ssa
+        w_deriv_mapping.d_leg_coeff[:] += d_leg_coeff
+        w_deriv_mapping.scat_factor[:] += scat_factor
+        w_deriv_mapping.interp_dim = (
+            "cloud_width_fwhm"  # TODO: change to cloud_width_fwhm_m
         )
-        w_deriv_mapping.d_leg_coeff[:] += (
-            self._optical_quants.leg_coeff - atmo.storage.leg_coeff
-        )
-        # w_deriv_mapping.interp_dim = 'altitude'
-        w_deriv_mapping.interp_dim = 'cloud_width_fwhm'  # TODO: change to cloud_width_fwhm_m
-        w_deriv_mapping.interpolator = np.ones_like(atmo.model_geometry.altitudes())[:, np.newaxis]
+        w_deriv_mapping.interpolator = outer_term * (w1 - w2)[:, np.newaxis]
 
         # optical depth derivative
         tau_deriv_mapping = atmo.storage.get_derivative_mapping(
             f"wf_{name}_vertical_optical_depth"
         )
-        tau_deriv_mapping.d_extinction[:] += -self._extinction / self._vertical_optical_depth
-        tau_deriv_mapping.d_ssa[:] += (
-            self._optical_quants.extinction
-            * (self._optical_quants.ssa - atmo.storage.ssa)
-            / atmo.storage.total_extinction
-        )
-        tau_deriv_mapping.d_leg_coeff[:] += (
-            self._optical_quants.leg_coeff - atmo.storage.leg_coeff
-        )
-        # tau_deriv_mapping.interp_dim = 'altitude'
-        tau_deriv_mapping.interp_dim = 'vertical_optical_depth'
+        tau_deriv_mapping.d_extinction[:] += d_extinction
+        tau_deriv_mapping.d_ssa[:] += d_ssa
+        tau_deriv_mapping.d_leg_coeff[:] += d_leg_coeff
+        tau_deriv_mapping.scat_factor[:] += scat_factor
+        tau_deriv_mapping.interp_dim = "vertical_optical_depth"
         # tau_interp_matrix = linear_interpolating_matrix(
         #     -self._extinction / self._vertical_optical_depth
         # )
-        tau_deriv_mapping.interpolator = np.ones_like(atmo.model_geometry.altitudes())[:, np.newaxis]
+        tau_deriv_mapping.interpolator = (
+            self._gaussian[:, np.newaxis] / self._gaussian_od
+        )
+
+        # # TODO: not sure...
+        # optical_derivs = self._optical_property.optical_derivatives(
+        #     atmo, **interped_kwargs
+        # )
+
+        # for key, val in optical_derivs.items():
+        #     deriv_mapping = atmo.storage.get_derivative_mapping(f"wf_{name}_{key}")
+
+        #     deriv_mapping.d_extinction[:] += val.d_extinction
+        #     # First, the optical property returns back d_scattering extinction in the d_ssa container,
+        #     # convert this to d_ssa
+        #     deriv_mapping.d_ssa[:] += (
+        #         val.d_ssa - val.d_extinction * self._optical_quants.ssa
+        #     ) / self._optical_quants.extinction
+        #     deriv_mapping.d_leg_coeff[:] += val.d_leg_coeff
+
+        #     # Start with leg_coeff
+        #     deriv_mapping.d_leg_coeff[:] += (
+        #         self._optical_quants.leg_coeff - atmo.storage.leg_coeff
+        #     ) * (
+        #         1 / self._optical_quants.ssa * deriv_mapping.d_ssa
+        #         + 1 / self._optical_quants.extinction * deriv_mapping.d_extinction
+        #     )[
+        #         np.newaxis, :, :
+        #     ]
+
+        #     # Then adjust d_ssa
+        #     deriv_mapping.d_ssa[:] *= self._optical_quants.extinction
+        #     deriv_mapping.d_ssa[:] += deriv_mapping.d_extinction * (
+        #         self._optical_quants.ssa - atmo.storage.ssa
+        #     )
+        #     deriv_mapping.d_ssa[:] /= atmo.storage.total_extinction
+
+        #     # TODO: The model should probably handle this
+        #     norm_factor = deriv_mapping.d_leg_coeff.max(axis=0)
+        #     norm_factor[norm_factor == 0] = 1
+
+        #     deriv_mapping.scat_factor[:] = (
+        #         self._optical_quants.ssa * self._optical_quants.extinction
+        #     ) / (atmo.storage.ssa * atmo.storage.total_extinction)
+
+        #     deriv_mapping.d_leg_coeff[:] /= norm_factor[np.newaxis, :, :]
+        #     deriv_mapping.scat_factor[:] *= norm_factor
+
+        #     deriv_mapping.interpolator = (
+        #         alt_interp_matrix * self._number_density[np.newaxis, :]
+        #     )
+        #     deriv_mapping.interp_dim = f"{name}_altitude"
 
         return derivs
+
 
 # class SpeciesGaussianHeight(Species):
 #     def __init__(self, optical_property: sk.OpticalProperty, altitude_grid: np.array, name: str, cloud_height_m: float,
