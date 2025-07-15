@@ -36,8 +36,8 @@ impl PyVMRAltitudeAbsorber {
             vmr.as_array().to_owned(),
         );
 
-        if out_of_bounds_mode.is_some() {
-            inner = match out_of_bounds_mode.unwrap() {
+        if let Some(out_of_bounds_mode) = out_of_bounds_mode {
+            inner = match out_of_bounds_mode {
                 "zero" => {
                     inner.with_interp_mode(sasktran2_rs::interpolation::OutOfBoundsMode::Zero)
                 }
@@ -46,8 +46,7 @@ impl PyVMRAltitudeAbsorber {
                 }
                 mode => {
                     return Err(PyValueError::new_err(format!(
-                        "Invalid out_of_bounds_mode: {}",
-                        mode
+                        "Invalid out_of_bounds_mode: {mode}"
                     )));
                 }
             }
@@ -99,6 +98,7 @@ impl PyVMRAltitudeAbsorber {
 
         let _ = self.inner.with_optical_property(py_optical);
         let _ = self.inner.add_to_atmosphere(&mut rust_atmo);
+        let _ = self.inner.with_no_optical_property();
 
         Ok(())
     }
@@ -114,6 +114,8 @@ impl PyVMRAltitudeAbsorber {
         self.inner
             .register_derivatives(&mut rust_atmo, name)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+        let _ = self.inner.with_no_optical_property();
 
         Ok(())
     }

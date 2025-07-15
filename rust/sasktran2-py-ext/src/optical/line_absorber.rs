@@ -37,10 +37,7 @@ impl PartitionFactor for PyPartitionFactor {
             let args = (mol_id, iso_id, temperature);
 
             let result = tips.call1(args).unwrap_or_else(|_| {
-                panic!(
-                    "Failed to call partition factor function with args: {:?}",
-                    args
-                )
+                panic!("Failed to call partition factor function with args: {args:?}")
             });
             result.extract().unwrap()
         });
@@ -55,10 +52,7 @@ impl MolecularMass for PyMolecularMass {
             let args = (mol_id, iso_id);
 
             let result = molmass.call1(args).unwrap_or_else(|_| {
-                panic!(
-                    "Failed to call molecular mass function with args: {:?}",
-                    args
-                )
+                panic!("Failed to call molecular mass function with args: {args:?}")
             });
             result.extract().unwrap()
         });
@@ -89,8 +83,14 @@ impl PyLineAbsorber {
         let directory = std::path::PathBuf::from(directory);
 
         let db = match *db_type {
-            LineDatabaseType::AER => read_aer_line_file(aer_molecule_file(mol_name, &directory).into_pyresult()?).into_pyresult()?,
-            LineDatabaseType::HITRAN => read_hitran_line_file(hitran_molecule_file(mol_name, &directory).into_pyresult()?).into_pyresult()?,
+            LineDatabaseType::AER => {
+                read_aer_line_file(aer_molecule_file(mol_name, &directory).into_pyresult()?)
+                    .into_pyresult()?
+            }
+            LineDatabaseType::HITRAN => {
+                read_hitran_line_file(hitran_molecule_file(mol_name, &directory).into_pyresult()?)
+                    .into_pyresult()?
+            }
         };
 
         let mut line_absorber = line_absorber::LineAbsorber::new(db);
@@ -130,9 +130,7 @@ impl PyLineAbsorber {
         let oq = self
             .line_absorber
             .optical_quantities(&rust_atmo.inputs, &aux_inputs)
-            .map_err(|e| {
-                PyValueError::new_err(format!("Failed to get optical quantities: {}", e))
-            })?;
+            .map_err(|e| PyValueError::new_err(format!("Failed to get optical quantities: {e}")))?;
 
         PyOpticalQuantities::new(oq).into_bound_py_any(atmo.py())
     }
