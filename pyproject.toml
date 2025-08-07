@@ -86,6 +86,7 @@ zenodo_get = "*"
 default = ["test", "solar", "hapi", "dev"]
 
 [tool.maturin]
+profile = "profiling"
 features = ["pyo3/extension-module", "nightly"]
 manifest-path = "rust/sasktran2-py-ext/Cargo.toml"
 python-source = "src"
