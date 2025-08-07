@@ -101,6 +101,10 @@ int sk_config_set_input_validation_mode(Config* config, int mode);
 int sk_config_get_output_los_optical_depth(Config* config, int* output);
 int sk_config_set_output_los_optical_depth(Config* config, int output);
 
+// Logging configuration
+int sk_config_get_log_level(Config* config, int* log_level);
+int sk_config_set_log_level(Config* config, int log_level);
+
 #ifdef __cplusplus
 }
 #endif

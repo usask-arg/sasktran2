@@ -35,7 +35,7 @@ impl Grid1D {
         }
     }
 
-    pub fn view(&self) -> Grid1DView {
+    pub fn view(&self) -> Grid1DView<'_> {
         Grid1DView {
             x: self.x.as_slice().unwrap(),
             is_uniform: self.is_uniform,
@@ -67,7 +67,11 @@ impl<'a> Grid1DView<'a> {
         let x = &self.x[start..end];
         let is_uniform = self.is_uniform;
         let start = x.first().copied();
-        let dx = if is_uniform { Some(x[1] - x[0]) } else { None };
+        let dx = if is_uniform {
+            Some(self.x[1] - self.x[0])
+        } else {
+            None
+        };
         Self {
             x,
             is_uniform,
@@ -116,7 +120,7 @@ impl Interp1Weights for Grid1D {
             let w =
                 (to_x - self.start.unwrap() - (idx as f64) * self.dx.unwrap()) / self.dx.unwrap();
             let d_w = 1.0 / self.dx.unwrap();
-            [(idx, 1.0 - w, -d_w), (idx + 1, w, d_w)]
+            [(idx, 1.0 - w, -d_w), (std::cmp::min(idx + 1, self.x.len() - 1), w, d_w)]
         } else {
             self.x.interp1_weights(to_x, out_of_bounds_mode)
         }
@@ -133,6 +137,18 @@ mod tests {
 
         let weights = grid.interp1_weights(1.5, OutOfBoundsMode::Zero);
         assert_eq!(weights, [(1, 0.5, -1.0), (2, 0.5, 1.0)]);
+    }
+
+    #[test]
+    fn test_interp1_weights_uniform_grid_edges() {
+        let grid = Grid1D::new(array![0.0, 1.0, 2.0, 3.0]);
+
+        let weights = grid.interp1_weights(0.0, OutOfBoundsMode::Zero);
+        assert_eq!(weights, [(0, 1.0, -1.0), (1, 0.0, 1.0)]);
+
+        let weights = grid.interp1_weights(3.0, OutOfBoundsMode::Zero);
+        assert_eq!(weights, [(3, 1.0, -1.0), (3, 0.0, 1.0)]);
+
     }
 
     #[test]

@@ -482,4 +482,25 @@ int sk_config_set_output_los_optical_depth(Config* config, int output) {
     config->impl.set_output_los_optical_depth(output != 0);
     return 0; // Success
 }
+
+int sk_config_get_log_level(Config* config, int* log_level) {
+    if (config == nullptr || log_level == nullptr) {
+        return -1; // Error: null pointer
+    }
+    *log_level = static_cast<int>(config->impl.log_level());
+    return 0; // Success
+}
+
+int sk_config_set_log_level(Config* config, int log_level) {
+    if (config == nullptr) {
+        return -1; // Error: null pointer
+    }
+    // Validate log level range (0=trace to 6=off)
+    if (log_level < 0 || log_level > 6) {
+        return -2; // Error: invalid log level
+    }
+    config->impl.set_log_level(
+        static_cast<spdlog::level::level_enum>(log_level));
+    return 0; // Success
+}
 }

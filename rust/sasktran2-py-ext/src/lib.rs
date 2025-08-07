@@ -33,6 +33,7 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Optical properties
     m.add_class::<optical::line_absorber::PyLineAbsorber>()?;
+    m.add_class::<optical::line_absorber::LineDatabaseType>()?;
 
     // Optical quantity wrappers
     m.add_class::<optical::optical_quantities::PyOpticalQuantities>()?;
@@ -47,6 +48,7 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<config::ThreadingModel>()?;
     m.add_class::<config::InputValidationMode>()?;
     m.add_class::<config::ThreadingLib>()?;
+    m.add_class::<config::LogLevel>()?;
     m.add_class::<config::PyConfig>()?;
 
     // Geometry objects
@@ -83,17 +85,6 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Wigner
     m.add_class::<accel::wigner::WignerD>()?;
-
-    // Helper functions
-    m.add_function(wrap_pyfunction!(
-        accel::broadening::voigt_broaden_uniform,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(accel::broadening::voigt_broaden, m)?)?;
-    m.add_function(wrap_pyfunction!(
-        accel::broadening::voigt_broaden_with_line_coupling,
-        m
-    )?)?;
 
     // Information functions
     m.add_function(wrap_pyfunction!(common::openmp_support_enabled, m)?)?;

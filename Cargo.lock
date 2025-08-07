@@ -95,7 +95,7 @@ dependencies = [
 
 [[package]]
 name = "core_rust"
-version = "2025.6.0"
+version = "2025.8.0"
 dependencies = [
  "anyhow",
  "ndarray",

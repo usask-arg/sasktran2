@@ -48,7 +48,7 @@ pub struct AtmosphereStorageOutputs<'py> {
 }
 
 impl StorageOutputs for AtmosphereStorageOutputs<'_> {
-    fn mut_view(&mut self) -> AtmosphereStorageOutputView {
+    fn mut_view(&mut self) -> AtmosphereStorageOutputView<'_> {
         AtmosphereStorageOutputView {
             total_extinction: self.py_total_extinction.as_array_mut(),
             ssa: self.py_ssa.as_array_mut(),
@@ -86,19 +86,19 @@ impl<'py> StorageInputs for AtmosphereStorageInputs<'py> {
         self.num_stokes
     }
 
-    fn pressure_pa(&self) -> Option<ArrayView1<f64>> {
+    fn pressure_pa(&self) -> Option<ArrayView1<'_, f64>> {
         self.py_pressure_pa.as_ref().map(|array| array.as_array())
     }
 
-    fn temperature_k(&self) -> Option<ArrayView1<f64>> {
+    fn temperature_k(&self) -> Option<ArrayView1<'_, f64>> {
         self.py_temperature_k.as_ref().map(|array| array.as_array())
     }
 
-    fn wavelengths_nm(&self) -> Option<ArrayView1<f64>> {
+    fn wavelengths_nm(&self) -> Option<ArrayView1<'_, f64>> {
         self.py_wavelength_nm.as_ref().map(|array| array.as_array())
     }
 
-    fn wavenumbers_cminv(&self) -> Option<ArrayView1<f64>> {
+    fn wavenumbers_cminv(&self) -> Option<ArrayView1<'_, f64>> {
         self.py_wavenumber_cminv
             .as_ref()
             .map(|array| array.as_array())
@@ -138,7 +138,7 @@ impl<'py> StorageInputs for AtmosphereStorageInputs<'py> {
         dict
     }
 
-    fn altitude_m(&self) -> ArrayView1<f64> {
+    fn altitude_m(&self) -> ArrayView1<'_, f64> {
         self.py_altitude_m.as_array()
     }
 

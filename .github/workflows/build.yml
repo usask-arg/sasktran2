@@ -128,7 +128,7 @@ jobs:
           cargo test -p sasktran2-rs
 
   test-cpp-windows:
-    runs-on: windows-2019
+    runs-on: windows-latest
 
     steps:
       - name: Checkout repository
@@ -166,7 +166,7 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-          - os: windows-2019
+          - os: windows-latest
           - os: macos-13
           - os: macos-14
 
@@ -178,7 +178,7 @@ jobs:
           submodules: true
 
       - name: setup pixi
-        uses: prefix-dev/setup-pixi@v0.8.10
+        uses: prefix-dev/setup-pixi@v0.8.14
 
       - name: compile sasktran2
         env:

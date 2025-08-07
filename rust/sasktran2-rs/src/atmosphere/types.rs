@@ -70,23 +70,23 @@ impl StorageInputs for ManualStorageInputs {
         todo!()
     }
 
-    fn altitude_m(&self) -> ndarray::ArrayView1<f64> {
+    fn altitude_m(&self) -> ndarray::ArrayView1<'_, f64> {
         self.altitude_m.as_ref().expect("altitude_m not set").view()
     }
 
-    fn pressure_pa(&self) -> Option<ndarray::ArrayView1<f64>> {
+    fn pressure_pa(&self) -> Option<ndarray::ArrayView1<'_, f64>> {
         todo!()
     }
 
-    fn temperature_k(&self) -> Option<ndarray::ArrayView1<f64>> {
+    fn temperature_k(&self) -> Option<ndarray::ArrayView1<'_, f64>> {
         todo!()
     }
 
-    fn wavelengths_nm(&self) -> Option<ndarray::ArrayView1<f64>> {
+    fn wavelengths_nm(&self) -> Option<ndarray::ArrayView1<'_, f64>> {
         self.wavelengths_nm.as_ref().map(|x| x.view())
     }
 
-    fn wavenumbers_cminv(&self) -> Option<ndarray::ArrayView1<f64>> {
+    fn wavenumbers_cminv(&self) -> Option<ndarray::ArrayView1<'_, f64>> {
         self.wavenumbers_cminv.as_ref().map(|x| x.view())
     }
 

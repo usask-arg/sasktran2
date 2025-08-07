@@ -35,7 +35,8 @@ impl PyEngine {
                 std::mem::transmute::<&ViewingGeometry, &'static ViewingGeometry>(
                     &viewing_geometry.viewing_geometry,
                 ),
-            ).into_pyresult()?
+            )
+            .into_pyresult()?
         };
 
         Ok(Self {
@@ -48,6 +49,7 @@ impl PyEngine {
 
     fn calculate_radiance(
         &self,
+        py: Python,
         atmosphere: PyRef<crate::atmosphere::PyAtmosphere>,
     ) -> PyResult<Py<crate::output::PyOutput>> {
         let output = self
@@ -55,6 +57,6 @@ impl PyEngine {
             .calculate_radiance(&atmosphere.atmosphere)
             .into_pyresult()?;
 
-        Py::new(atmosphere.py(), crate::output::PyOutput { output })
+        Py::new(py, crate::output::PyOutput { output })
     }
 }

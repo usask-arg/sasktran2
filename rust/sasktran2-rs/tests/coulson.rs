@@ -36,7 +36,7 @@ fn test_coulson() -> Result<()> {
         .storage
         .leg_coeff
         .slice_mut(s![11, .., ..])
-        .fill(6.0_f64.sqrt() * -1.0 / 2.0);
+        .fill(-6.0_f64.sqrt() / 2.0);
 
     let mut binding = Config::new();
     let config = binding

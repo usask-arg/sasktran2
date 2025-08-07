@@ -358,7 +358,10 @@ impl LineAbsorber {
         let mut start_wavenumber_idx: usize = 0;
         let mut end_wavenumber_idx: usize = 0;
 
-        let line_slice = self.db.between_slice(min_wvnum, max_wvnum);
+        let line_slice = self.db.between_slice(
+            min_wvnum - self.line_contribution_width,
+            max_wvnum + self.line_contribution_width,
+        );
 
         let map = self.gen_mol_param(line_slice, temperature.as_slice().unwrap())?;
 
@@ -382,7 +385,6 @@ impl LineAbsorber {
             }
 
             let start_wavenumber_idx = start_wavenumber_idx.min(n_wavenumber - 1);
-            let end_wavenumber_idx = end_wavenumber_idx.min(n_wavenumber - 1);
 
             if start_wavenumber_idx == end_wavenumber_idx {
                 continue;
@@ -531,6 +533,7 @@ impl OpticalProperty for LineAbsorber {
 mod tests {
     use super::*;
     use crate::optical::line::aer_loader::read_aer_line_file;
+    use crate::optical::line::hitran_loader::read_hitran_line_file;
     use crate::optical::types::line_absorber::{MolecularMass, PartitionFactor};
     use ndarray::array;
     use std::path::PathBuf;
@@ -584,6 +587,37 @@ mod tests {
             .unwrap();
 
         assert_eq!(xs.shape(), &[2, 11]);
+    }
+
+    #[test]
+    fn test_cross_section_hitran() {
+        let o2_file = PathBuf::from("../../tests/data/CO2.data");
+
+        let line_absorber = LineAbsorber::new(read_hitran_line_file(o2_file).unwrap());
+
+        let partition_factor = MockPartitionFactor {
+            partition_factor: 1.0,
+        };
+        let mol_mass = MockMolecularMass { mol_mass: 44.01 };
+        let line_absorber = line_absorber
+            .with_partition_generator(Box::new(partition_factor))
+            .with_molecular_mass_generator(Box::new(mol_mass));
+
+        let wavenumber_cminv = array![480.0, 485.0, 490.0];
+        let temperature = array![296.0, 300.0];
+        let pressure = array![101325.0, 10.0];
+        let pself = array![0.0, 0.0];
+
+        let xs = line_absorber
+            .cross_section(
+                wavenumber_cminv.view(),
+                temperature.view(),
+                pressure.view(),
+                pself.view(),
+            )
+            .unwrap();
+
+        assert_eq!(xs.shape(), &[2, 3]);
     }
 
     #[test]

@@ -92,6 +92,11 @@ where
         self.interp_mode = interp_mode;
         self
     }
+
+    pub fn with_no_optical_property(&mut self) -> &mut Self {
+        self.optical_property = None;
+        self
+    }
 }
 
 impl<T> Constituent for VMRAltitudeAbsorber<T>
@@ -186,7 +191,7 @@ where
         let mut aux_inputs: HashMap<String, Array1<f64>> = HashMap::new();
         aux_inputs.insert("vmr".to_string(), interp_vmr.clone());
 
-        let wf_name = format!("wf_{}_vmr", constituent_name);
+        let wf_name = format!("wf_{constituent_name}_vmr");
         let mut deriv_mapping = deriv_generator.get_derivative_mapping(&wf_name);
         let mut mapping = deriv_mapping.mut_view();
 
@@ -198,7 +203,7 @@ where
             &outputs.total_extinction,
         )?;
 
-        let interp_dim = format!("{}_altitude", constituent_name);
+        let interp_dim = format!("{constituent_name}_altitude");
         deriv_mapping.set_interp_dim(&interp_dim);
 
         // interp_matrix is (num_altitudes, num_vmr)
@@ -255,7 +260,7 @@ where
             .iter()
             .zip(d_vals.iter())
             .for_each(|(deriv_name, vert_factor)| {
-                let mapping_name = format!("wf_{}_{}", constituent_name, deriv_name);
+                let mapping_name = format!("wf_{constituent_name}_{deriv_name}");
                 let mut mapping = deriv_generator.get_derivative_mapping(&mapping_name);
                 let mut mapping_view = mapping.mut_view();
 
@@ -268,7 +273,7 @@ where
                 );
 
                 mapping.set_interp_dim("altitude");
-                mapping.set_assign_name(format!("wf_{}", deriv_name).as_str());
+                mapping.set_assign_name(format!("wf_{deriv_name}").as_str());
 
                 let diagonal = (&interp_vmr) * vert_factor;
 
@@ -280,7 +285,7 @@ where
             let d_aq = optical_prop.optical_derivatives(inputs, &NullAuxInputs {})?;
 
             d_aq.iter().for_each(|(key, val)| {
-                let mapping_name = format!("wf_{}_{}_xs", constituent_name, key);
+                let mapping_name = format!("wf_{constituent_name}_{key}_xs");
                 let mut mapping = deriv_generator.get_derivative_mapping(&mapping_name);
                 let mut mapping_view = mapping.mut_view();
 
@@ -293,7 +298,7 @@ where
                 );
 
                 mapping.set_interp_dim("altitude");
-                mapping.set_assign_name(format!("wf_{}", key).as_str());
+                mapping.set_assign_name(format!("wf_{key}").as_str());
 
                 let diagonal = (&interp_vmr) * number_density;
 

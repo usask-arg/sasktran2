@@ -63,6 +63,18 @@ pub enum InputValidationMode {
     Disabled = 2,
 }
 
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LogLevel {
+    Trace = 0,
+    Debug = 1,
+    Info = 2,
+    Warn = 3,
+    Error = 4,
+    Critical = 5,
+    Off = 6,
+}
+
 /// A wrapper around the c++ Config object, implemented on the c++ side, see
 /// cpp/include/sasktran2/config.h
 pub struct Config {
@@ -834,6 +846,33 @@ impl Config {
     pub fn threading_lib(&self) -> ThreadingLib {
         self.threading_lib
     }
+
+    pub fn log_level(&self) -> Result<LogLevel> {
+        let mut log_level = 0i32;
+        let error_code = unsafe { ffi::sk_config_get_log_level(self.config, &mut log_level) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting log level: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(unsafe { std::mem::transmute::<i32, LogLevel>(log_level) })
+        }
+    }
+
+    pub fn with_log_level(&mut self, log_level: LogLevel) -> Result<&mut Self> {
+        let error_code = unsafe { ffi::sk_config_set_log_level(self.config, log_level as i32) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting log level: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
 }
 
 impl Drop for Config {
@@ -877,6 +916,7 @@ mod tests {
             SingleScatterSource::Exact
         );
         assert_eq!(config.stokes_basis().unwrap(), StokesBasis::Standard);
+        assert_eq!(config.log_level().unwrap(), LogLevel::Warn);
     }
 
     #[test]
@@ -922,6 +962,9 @@ mod tests {
 
         config.with_stokes_basis(StokesBasis::Observer).unwrap();
         assert_eq!(config.stokes_basis().unwrap(), StokesBasis::Observer);
+
+        config.with_log_level(LogLevel::Debug).unwrap();
+        assert_eq!(config.log_level().unwrap(), LogLevel::Debug);
     }
 
     #[test]

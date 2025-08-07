@@ -56,7 +56,7 @@ impl<'py> DerivMapping<'_> for PyDerivMapping<'py> {
         self
     }
 
-    fn mut_view(&mut self) -> DerivMappingView {
+    fn mut_view(&mut self) -> DerivMappingView<'_> {
         DerivMappingView {
             d_extinction: self.d_extinction.as_array_mut(),
             d_ssa: self.d_ssa.as_array_mut(),

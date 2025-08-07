@@ -213,6 +213,6 @@ mod tests {
         let calc = WignerDCalculator::new(1, 1);
         let val = calc.d(std::f64::consts::PI / 3.0, 2);
         // For a real test, you would compare with some known expected result
-        println!("d^2_{{1,1}}(π/3) = {}", val);
+        println!("d^2_{{1,1}}(π/3) = {val}");
     }
 }

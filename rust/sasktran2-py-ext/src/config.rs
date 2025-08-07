@@ -64,6 +64,18 @@ pub enum ThreadingLib {
     OpenMP,
 }
 
+#[pyclass(eq, eq_int)]
+#[derive(PartialEq, Clone)]
+pub enum LogLevel {
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
+    Critical,
+    Off,
+}
+
 #[pyclass(unsendable)]
 pub struct PyConfig {
     pub config: config::Config,
@@ -509,6 +521,37 @@ impl PyConfig {
             ThreadingLib::OpenMP => config::ThreadingLib::OpenMP,
         };
         self.config.with_threading_lib(lib).into_pyresult()?;
+
+        Ok(())
+    }
+
+    #[getter]
+    fn get_log_level(&self) -> PyResult<LogLevel> {
+        let level = self.config.log_level().into_pyresult()?;
+
+        match level {
+            config::LogLevel::Trace => Ok(LogLevel::Trace),
+            config::LogLevel::Debug => Ok(LogLevel::Debug),
+            config::LogLevel::Info => Ok(LogLevel::Info),
+            config::LogLevel::Warn => Ok(LogLevel::Warn),
+            config::LogLevel::Error => Ok(LogLevel::Error),
+            config::LogLevel::Critical => Ok(LogLevel::Critical),
+            config::LogLevel::Off => Ok(LogLevel::Off),
+        }
+    }
+
+    #[setter]
+    fn set_log_level(&mut self, level: PyRef<'_, LogLevel>) -> PyResult<()> {
+        let level = match *level {
+            LogLevel::Trace => config::LogLevel::Trace,
+            LogLevel::Debug => config::LogLevel::Debug,
+            LogLevel::Info => config::LogLevel::Info,
+            LogLevel::Warn => config::LogLevel::Warn,
+            LogLevel::Error => config::LogLevel::Error,
+            LogLevel::Critical => config::LogLevel::Critical,
+            LogLevel::Off => config::LogLevel::Off,
+        };
+        self.config.with_log_level(level).into_pyresult()?;
 
         Ok(())
     }
