@@ -26,6 +26,7 @@ from ._core_rust import (
     GeometryType,
     InputValidationMode,
     InterpolationMethod,
+    LogLevel,
     MultipleScatterSource,
     OccultationSource,
     SingleScatterSource,

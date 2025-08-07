@@ -781,6 +781,18 @@ unsafe extern "C" {
         output: ::std::os::raw::c_int,
     ) -> ::std::os::raw::c_int;
 }
+unsafe extern "C" {
+    pub fn sk_config_get_log_level(
+        config: *mut Config,
+        log_level: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_set_log_level(
+        config: *mut Config,
+        log_level: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct OutputC {

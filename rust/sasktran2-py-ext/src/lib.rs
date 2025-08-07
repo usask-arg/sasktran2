@@ -48,6 +48,7 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<config::ThreadingModel>()?;
     m.add_class::<config::InputValidationMode>()?;
     m.add_class::<config::ThreadingLib>()?;
+    m.add_class::<config::LogLevel>()?;
     m.add_class::<config::PyConfig>()?;
 
     // Geometry objects

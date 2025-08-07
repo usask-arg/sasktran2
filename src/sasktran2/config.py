@@ -3,6 +3,7 @@ from __future__ import annotations
 from sasktran2._core_rust import (
     EmissionSource,
     InputValidationMode,
+    LogLevel,
     MultipleScatterSource,
     OccultationSource,
     PyConfig,
@@ -543,3 +544,59 @@ class Config:
         Sets the threading library to use in the calculation.  Default is ThreadingLib.Rayon.
         """
         self._config.threading_lib = value
+
+    @property
+    def log_level(self) -> LogLevel:
+        """
+        Controls the level of logging output from the spdlog library.
+
+        `sasktran2.LogLevel.Trace`
+            Most verbose logging level, includes all messages
+
+        `sasktran2.LogLevel.Debug`
+            Debug information for development
+
+        `sasktran2.LogLevel.Info`
+            General informational messages
+
+        `sasktran2.LogLevel.Warn` (Default)
+            Warning messages only
+
+        `sasktran2.LogLevel.Error`
+            Error messages only
+
+        `sasktran2.LogLevel.Critical`
+            Only critical errors
+
+        `sasktran2.LogLevel.Off`
+            Disables all logging output
+        """
+        return self._config.log_level
+
+    @log_level.setter
+    def log_level(self, value: LogLevel):
+        """
+        Controls the level of logging output from the spdlog library.
+
+        `sasktran2.LogLevel.Trace`
+            Most verbose logging level, includes all messages
+
+        `sasktran2.LogLevel.Debug`
+            Debug information for development
+
+        `sasktran2.LogLevel.Info`
+            General informational messages
+
+        `sasktran2.LogLevel.Warn` (Default)
+            Warning messages only
+
+        `sasktran2.LogLevel.Error`
+            Error messages only
+
+        `sasktran2.LogLevel.Critical`
+            Only critical errors
+
+        `sasktran2.LogLevel.Off`
+            Disables all logging output
+        """
+        self._config.log_level = value
