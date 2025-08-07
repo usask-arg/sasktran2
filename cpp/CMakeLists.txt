@@ -177,7 +177,8 @@ if(DO_STREAM_TEMPLATES)
   message(STATUS "Enabling Full DO Stream Template Compilation")
 endif()
 
-target_compile_definitions(sasktran2BuildProperties INTERFACE EIGEN_DONT_PARALLELIZE)
+target_compile_definitions(sasktran2BuildProperties
+                           INTERFACE EIGEN_DONT_PARALLELIZE)
 
 # -------- LAPACK FINDING -----------
 # We support multiple blas vendors, but these can require some funny options

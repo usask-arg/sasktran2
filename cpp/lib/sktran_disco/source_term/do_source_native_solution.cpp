@@ -4,31 +4,28 @@
 
 namespace sasktran2 {
     template <int NSTOKES, int CNSTR>
-    DOSourceNativeSolution<NSTOKES, CNSTR>::
-        DOSourceNativeSolution(
-            const sasktran2::Geometry1D& geometry,
-            const sasktran2::raytracing::RayTracerBase& raytracer)
+    DOSourceNativeSolution<NSTOKES, CNSTR>::DOSourceNativeSolution(
+        const sasktran2::Geometry1D& geometry,
+        const sasktran2::raytracing::RayTracerBase& raytracer)
         : DOSource<NSTOKES, CNSTR>(geometry, raytracer) {}
 
     template <int NSTOKES, int CNSTR>
-    void DOSourceNativeSolution<NSTOKES, CNSTR>::
-        accumulate_solved_azimuth(
-            sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>& optical_layer,
-            DOSourceThreadStorage<NSTOKES, CNSTR>& thread_storage, int szaidx,
-            sasktran_disco::AEOrder m, int threadidx) {
+    void DOSourceNativeSolution<NSTOKES, CNSTR>::accumulate_solved_azimuth(
+        sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>& optical_layer,
+        DOSourceThreadStorage<NSTOKES, CNSTR>& thread_storage, int szaidx,
+        sasktran_disco::AEOrder m, int threadidx) {
         m_radiance_storage->accumulate_sources(optical_layer, m, thread_storage,
-                                              szaidx, threadidx);
+                                               szaidx, threadidx);
     }
 
     template <int NSTOKES, int CNSTR>
-    void DOSourceNativeSolution<NSTOKES, CNSTR>::calculate(
-        int wavelidx, int threadidx) {
+    void DOSourceNativeSolution<NSTOKES, CNSTR>::calculate(int wavelidx,
+                                                           int threadidx) {
         DOSource<NSTOKES, CNSTR>::calculate(wavelidx, threadidx);
     }
 
     template <int NSTOKES, int CNSTR>
-    void
-    DOSourceNativeSolution<NSTOKES, CNSTR>::initialize_geometry(
+    void DOSourceNativeSolution<NSTOKES, CNSTR>::initialize_geometry(
         const std::vector<sasktran2::raytracing::TracedRay>& los_rays) {
         DOSource<NSTOKES, CNSTR>::initialize_geometry(los_rays);
 
@@ -44,8 +41,7 @@ namespace sasktran2 {
     }
 
     template <int NSTOKES, int CNSTR>
-    void
-    DOSourceNativeSolution<NSTOKES, CNSTR>::initialize_atmosphere(
+    void DOSourceNativeSolution<NSTOKES, CNSTR>::initialize_atmosphere(
         const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere) {
         m_atmosphere = &atmosphere;
 
@@ -61,4 +57,4 @@ namespace sasktran2 {
     }
 
     SASKTRAN_DISCO_INSTANTIATE_TEMPLATE(DOSourceNativeSolution);
-}
+} // namespace sasktran2

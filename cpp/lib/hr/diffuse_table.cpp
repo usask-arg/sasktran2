@@ -324,7 +324,8 @@ namespace sasktran2::hr {
                 m_do_to_diffuse_outgoing_interpolator);
 
             m_do_native_source->storage().create_location_radiance_interpolator(
-                locations, directions, ground_point, m_do_to_diffuse_incoming_interpolator);
+                locations, directions, ground_point,
+                m_do_to_diffuse_incoming_interpolator);
         }
     }
 
@@ -490,17 +491,15 @@ namespace sasktran2::hr {
             m_initial_owned_sources.emplace_back(
                 std::make_unique<
                     sasktran2::DOSourceNativeSolution<NSTOKES, -1>>(
-                        m_geometry, m_raytracer
-                    ));
+                    m_geometry, m_raytracer));
 
             m_do_source =
                 static_cast<DOSourceInterpolatedPostProcessing<NSTOKES, -1>*>(
                     m_initial_owned_sources[1].get());
 
-            m_do_native_source = 
+            m_do_native_source =
                 static_cast<DOSourceNativeSolution<NSTOKES, -1>*>(
-                    m_initial_owned_sources[2].get()
-                );
+                    m_initial_owned_sources[2].get());
         }
 
         for (auto& source : m_initial_owned_sources) {
