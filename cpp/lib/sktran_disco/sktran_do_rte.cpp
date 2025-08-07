@@ -429,7 +429,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveHomogeneous(
             // Failed to compute the eigenvalues
             // Sometimes this happens when the matrix is approximately diagonal
             if (eigmtx.isDiagonal(1e-6)) {
-                spdlog::warn(
+                spdlog::info(
                     "Error computing eigenvalues of the homogenous solution, "
                     "but the eigenmatrix is approximately diagonal, using "
                     "diagonal elements as eigenvalues");
@@ -437,29 +437,27 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveHomogeneous(
                 MX_plus.setIdentity();
                 reigval_imag.setZero();
             } else {
-                // throw an error and output all
-                // of the layer information
-                spdlog::error(
+                // output layer information for debugging, but still
+                // just use the diagonal terms
+                spdlog::info(
                     "Failed to compute the eigensolution for layer {}, "
                     "order {}, ssa {}",
                     layer.index(), m, layer.dual_ssa().value);
 
-                spdlog::error("Layer Legendre Coefficients: ");
+                spdlog::info("Layer Legendre Coefficients: ");
 
                 for (int i = 0; i < layer.legendre_coeff().size(); ++i) {
                     if constexpr (NSTOKES == 3) {
-                        spdlog::error("{}: a1: {}, a2: {}, a3: {}, b1: {}", i,
-                                      layer.legendre_coeff()[i].a1,
-                                      layer.legendre_coeff()[i].a2,
-                                      layer.legendre_coeff()[i].a3,
-                                      layer.legendre_coeff()[i].b1);
+                        spdlog::info("{}: a1: {}, a2: {}, a3: {}, b1: {}", i,
+                                     layer.legendre_coeff()[i].a1,
+                                     layer.legendre_coeff()[i].a2,
+                                     layer.legendre_coeff()[i].a3,
+                                     layer.legendre_coeff()[i].b1);
                     } else {
-                        spdlog::error("{}: a1: {}", i,
-                                      layer.legendre_coeff()[i].a1);
+                        spdlog::info("{}: a1: {}", i,
+                                     layer.legendre_coeff()[i].a1);
                     }
                 }
-                spdlog::error("Eigenmatrix: ");
-                std::cout << eigmtx;
                 // Still use diagonal terms instead of throwing an error
                 eigvalsq = eigmtx.diagonal();
                 MX_plus.setIdentity();

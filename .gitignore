@@ -58,3 +58,4 @@ rust/pybindings/target/
 target
 .openblas_venv
 docs/mkdocs/site/
+CLAUDE.md
