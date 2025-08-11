@@ -227,7 +227,7 @@ jobs:
           sudo apt install -y libopenblas-dev
 
       - name: download sdist
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: wheels-sdist
           path: dist
@@ -287,7 +287,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: download wheels
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: wheels-linux-x86_64
           path: dist
@@ -437,7 +437,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: download wheels
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: wheels-windows-x64
           path: dist
@@ -461,7 +461,7 @@ jobs:
       id-token: write
     if: (github.event_name == 'release')
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           pattern: wheels-*
           path: dist
