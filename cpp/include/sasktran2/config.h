@@ -1,5 +1,7 @@
 #pragma once
 
+#include <spdlog/spdlog.h>
+
 namespace sasktran2 {
 
     /** User Configuration object for the SASKTRAN2 model, all values have
@@ -604,6 +606,23 @@ namespace sasktran2 {
         }
 
         /**
+         * @brief Get the current log level
+         *
+         * @return spdlog::level::level_enum The current log level
+         */
+        spdlog::level::level_enum log_level() const { return m_log_level; }
+
+        /**
+         * @brief Set the log level for spdlog
+         *
+         * @param level The log level to set
+         */
+        void set_log_level(spdlog::level::level_enum level) {
+            m_log_level = level;
+            spdlog::set_level(level);
+        }
+
+        /**
          * @brief Validates that the config is valid
          *
          */
@@ -657,5 +676,8 @@ namespace sasktran2 {
 
         // Diagnostic output control
         bool m_output_los_optical_depth;
+
+        // Logging configuration
+        spdlog::level::level_enum m_log_level;
     };
 } // namespace sasktran2

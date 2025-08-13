@@ -15,12 +15,16 @@ namespace sasktran2 {
           m_threading_model(ThreadingModel::wavelength),
           m_initialize_hr_with_do_solution(false),
           m_output_los_optical_depth(false),
-          m_input_validation_mode(InputValidationMode::strict) {
+          m_input_validation_mode(InputValidationMode::strict),
+          m_log_level(spdlog::level::warn) {
         set_multiple_scatter_source(MultipleScatterSource::none);
         set_single_scatter_source(SingleScatterSource::exact);
         set_occultation_source(OccultationSource::none);
         set_emission_source(EmissionSource::none);
         set_stokes_basis(StokesBasis::standard);
+
+        // Set initial log level
+        spdlog::set_level(m_log_level);
     }
 
     void Config::validate_config() const {
