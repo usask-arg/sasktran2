@@ -21,8 +21,6 @@ class GaussianHeightExtinction(Constituent):
         vertical_optical_depth_wavel_nm: float,
         altitudes_m: np.array,
         out_of_bounds_mode: str = "zero",
-        fractional_change=0.01,
-        numerical_debug=False,
         **kwargs,
     ) -> None:
         """
@@ -61,9 +59,6 @@ class GaussianHeightExtinction(Constituent):
         self._vertical_optical_depth_wavel_nm = vertical_optical_depth_wavel_nm
 
         self._kwargs = kwargs
-
-        self._fractional_change = fractional_change
-        self._numerical_debug = numerical_debug
 
     def __getattr__(self, __name: str) -> Any:
         if __name in self.__dict__.get("_kwargs", {}):
