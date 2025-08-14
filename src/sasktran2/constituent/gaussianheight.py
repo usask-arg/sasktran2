@@ -244,13 +244,7 @@ class GaussianHeightExtinction(Constituent):
         optical_derivs = self._optical_property.optical_derivatives(
             atmo, **interped_kwargs
         )
-
-        extinction_to_numden_factors = self._optical_property.cross_sections(
-            np.array([self._vertical_optical_depth_wavel_nm]),
-            altitudes_m=self._altitudes_m,
-            **self._kwargs,
-        ).extinction.flatten()
-        vertical_deriv_factor = 1 / extinction_to_numden_factors
+        vertical_deriv_factor = 1 / self._xs_at_wavel
         d_vertical_deriv_factor = self._optical_property.cross_section_derivatives(
             np.array([self._vertical_optical_depth_wavel_nm]),
             altitudes_m=self._altitudes_m,
