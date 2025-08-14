@@ -43,8 +43,6 @@ sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
 atmosphere['rayleigh'] = sk.constituent.Rayleigh()
 atmosphere['ozone'] = sk.climatology.mipas.constituent("O3", sk.optical.O3DBM())
 atmosphere['no2'] = sk.climatology.mipas.constituent("NO2", sk.optical.NO2Vandaele())
-
-output_no_cloud = engine.calculate_radiance(atmosphere)
 ```
 
 For this example we specify the cloud optical properties using a Mie
