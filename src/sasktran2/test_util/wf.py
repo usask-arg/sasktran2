@@ -64,3 +64,42 @@ def numeric_wf(
     )
 
     return base_radiance
+
+
+def numeric_wf_scalar(
+    input_var: np.ndarray,
+    fractional_change: float,
+    engine: sk.Engine,
+    atmosphere: sk.Atmosphere,
+    analytic_wf_name: str,
+) -> xr.Dataset:
+    base_radiance = engine.calculate_radiance(atmosphere)
+
+    dx = input_var * fractional_change
+
+    if dx == 0:
+        dx = np.nanmean(input_var) * fractional_change
+
+    input_var += dx
+    radiance_above = engine.calculate_radiance(atmosphere)
+
+    if input_var >= dx:
+        # central diff
+        input_var -= 2 * dx
+        radiance_below = engine.calculate_radiance(atmosphere)
+        input_var += dx
+
+        central_diff_wf = (radiance_above["radiance"] - radiance_below["radiance"]) / (
+            2 * dx
+        )
+    else:
+        # forward diff
+        central_diff_wf = (radiance_above["radiance"] - base_radiance["radiance"]) / (
+            dx
+        )
+
+        input_var -= dx
+
+    base_radiance[analytic_wf_name + "_numeric"] = central_diff_wf
+
+    return base_radiance
