@@ -11,6 +11,7 @@ Constituents
     sasktran2.constituent.NumberDensityScatterer
     sasktran2.constituent.ExtinctionScatterer
     sasktran2.constituent.CollisionInducedAbsorber
+    sasktran2.constituent.GaussianHeightExtinction
 
 .. _constituents_api_brdf:
 

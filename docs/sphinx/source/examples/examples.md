@@ -8,6 +8,7 @@
 :maxdepth: 1
 
 aerosol/basic
+aerosol/cloud
 ```
 
 ## Configuring the model
