@@ -14,7 +14,7 @@ jobs:
       CONDA_ENV_FILE: conda/dev_env.yml
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -48,7 +48,7 @@ jobs:
       CONDA_ENV_FILE: conda/dev_env.yml
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           ref: main
@@ -63,7 +63,7 @@ jobs:
         run: |
           pip install .
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           ref: ''
