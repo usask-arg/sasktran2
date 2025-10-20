@@ -22,7 +22,9 @@ from .quantities import OpticalQuantities as RustOpticalQuantities
 
 
 class OpticalDatabase(OpticalProperty):
-    def __init__(self, db_filepath: Path) -> None:
+    def __init__(
+        self, db_filepath: Path | None = None, db: xr.Dataset | None = None
+    ) -> None:
         """
         An optical property that is defined by a database file.  This is just a base class to handle file loading,
         derived classes must be used as actual optical properties.
@@ -38,15 +40,15 @@ class OpticalDatabase(OpticalProperty):
             If xarray is not installed
         """
         super().__init__()
-        self._file = db_filepath
+        if db_filepath is None and db is None:
+            msg = "Either db_filepath or db must be provided to OpticalDatabase"
+            raise ValueError(msg)
 
-        try:
-            import xarray as xr
-        except ImportError:
-            msg = "xarray must be installed to use OpticalDatabaseGenericAbsorber"
-            raise msg from OSError
-
-        self._database = xr.open_dataset(self._file)
+        if db is not None:
+            self._database = db
+        else:
+            self._file = db_filepath
+            self._database = xr.open_dataset(self._file)
         self._validate_db()
 
 

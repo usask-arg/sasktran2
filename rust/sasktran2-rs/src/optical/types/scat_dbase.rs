@@ -89,20 +89,20 @@ pub trait ScatteringDatabaseInterp {
         S5: DataMut<Elem = f64>;
 }
 
-pub struct ScatteringDatabase<D1: Dimension, D2: Dimension> {
+pub struct ScatteringDatabase<D1: Dimension> {
     xsec: Array<f64, D1>,
     ssa: Array<f64, D1>,
-    legendre: Array<f64, D2>,
+    legendre: Array<f64, D1::Larger>,
     wvnum: Grid1D,
     params: Vec<Array1<f64>>,
     param_names: Vec<String>,
 }
 
-impl<D1: Dimension, D2: Dimension> ScatteringDatabase<D1, D2> {
+impl<D1: Dimension> ScatteringDatabase<D1> {
     pub fn new(
         xsec: Array<f64, D1>,
         ssa: Array<f64, D1>,
-        legendre: Array<f64, D2>,
+        legendre: Array<f64, D1::Larger>,
         wvnum: Grid1D,
         params: Vec<Array1<f64>>,
         param_names: Vec<String>,
@@ -116,9 +116,49 @@ impl<D1: Dimension, D2: Dimension> ScatteringDatabase<D1, D2> {
             param_names,
         }
     }
+
+    pub fn from_asymmetry_parameter(
+        xsec: Array<f64, D1>,
+        ssa: Array<f64, D1>,
+        g: Array<f64, D1>,
+        num_stored_legendre: usize,
+        wvnum: Grid1D,
+        params: Vec<Array1<f64>>,
+        param_names: Vec<String>,
+    ) -> Self {
+        // Only implemented for fixed dims, wont panic
+        let ndim = D1::NDIM.unwrap();
+        let mut dims = D1::Larger::zeros(ndim + 1);
+
+        for i in 0..ndim {
+            dims[i] = xsec.shape()[i];
+        }
+        dims[ndim] = 6 * num_stored_legendre;
+
+        let mut legendre = Array::<f64, D1::Larger>::zeros(dims);
+        for (i, mut leg) in legendre.axis_iter_mut(ndarray::Axis(ndim)).enumerate() {
+            let l = i / 6;
+            let coeff_type = i % 6;
+
+            if coeff_type == 0 {
+                let a1 = g.mapv(|g_elem| (2.0 * (l as f64) + 1.0) * g_elem.powi(l as i32));
+
+                leg.assign(&a1);
+            }
+        }
+
+        Self {
+            xsec,
+            ssa,
+            legendre,
+            wvnum,
+            params,
+            param_names,
+        }
+    }
 }
 
-impl ScatteringDatabaseInterp for ScatteringDatabase<Ix1, Ix2> {
+impl ScatteringDatabaseInterp for ScatteringDatabase<Ix1> {
     fn scat_prop_emplace<S1, S2, S3, S4, S5>(
         &self,
         wvnum: &ArrayBase<S1, Ix1>,
@@ -192,7 +232,7 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix1, Ix2> {
     }
 }
 
-impl OpticalProperty for ScatteringDatabase<Ix1, Ix2> {
+impl OpticalProperty for ScatteringDatabase<Ix1> {
     fn optical_quantities_emplace(
         &self,
         inputs: &dyn StorageInputs,
@@ -249,7 +289,7 @@ impl OpticalProperty for ScatteringDatabase<Ix1, Ix2> {
     }
 }
 
-impl ScatteringDatabaseInterp for ScatteringDatabase<Ix2, Ix3> {
+impl ScatteringDatabaseInterp for ScatteringDatabase<Ix2> {
     fn scat_prop_emplace<S1, S2, S3, S4, S5>(
         &self,
         wvnum: &ArrayBase<S1, Ix1>,
@@ -374,7 +414,7 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix2, Ix3> {
     }
 }
 
-impl OpticalProperty for ScatteringDatabase<Ix2, Ix3> {
+impl OpticalProperty for ScatteringDatabase<Ix2> {
     fn optical_quantities_emplace(
         &self,
         inputs: &dyn StorageInputs,
@@ -470,7 +510,7 @@ impl OpticalProperty for ScatteringDatabase<Ix2, Ix3> {
     }
 }
 
-impl ScatteringDatabaseInterp for ScatteringDatabase<Ix3, Ix4> {
+impl ScatteringDatabaseInterp for ScatteringDatabase<Ix3> {
     fn scat_prop_emplace<S1, S2, S3, S4, S5>(
         &self,
         wvnum: &ArrayBase<S1, Ix1>,
@@ -647,7 +687,7 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix3, Ix4> {
     }
 }
 
-impl OpticalProperty for ScatteringDatabase<Ix3, Ix4> {
+impl OpticalProperty for ScatteringDatabase<Ix3> {
     fn optical_quantities_emplace(
         &self,
         inputs: &dyn StorageInputs,
