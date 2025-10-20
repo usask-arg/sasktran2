@@ -21,8 +21,11 @@
 [Setting the Surface BRDF](users_guide/brdf.md)
 : How to use the built in surface reflectance models
 
+[Specifying Aerosols and Clouds](users_guide/aerosols.md)
+: How aerosols and clouds can be included in the model
+
 [Including Mie Scatterers](users_guide/mie.md)
-: Adding Mie scattering particles to your atmospheric state
+: In-depth details on how to use the build in Mie scattering database generation
 
 [Ray Tracing and Refraction](users_guide/refraction.md)
 : Including refractive effects in the ray-tracing

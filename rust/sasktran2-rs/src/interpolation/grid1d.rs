@@ -120,7 +120,10 @@ impl Interp1Weights for Grid1D {
             let w =
                 (to_x - self.start.unwrap() - (idx as f64) * self.dx.unwrap()) / self.dx.unwrap();
             let d_w = 1.0 / self.dx.unwrap();
-            [(idx, 1.0 - w, -d_w), (std::cmp::min(idx + 1, self.x.len() - 1), w, d_w)]
+            [
+                (idx, 1.0 - w, -d_w),
+                (std::cmp::min(idx + 1, self.x.len() - 1), w, d_w),
+            ]
         } else {
             self.x.interp1_weights(to_x, out_of_bounds_mode)
         }
@@ -148,7 +151,6 @@ mod tests {
 
         let weights = grid.interp1_weights(3.0, OutOfBoundsMode::Zero);
         assert_eq!(weights, [(3, 1.0, -1.0), (3, 0.0, 1.0)]);
-
     }
 
     #[test]
