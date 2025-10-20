@@ -45,6 +45,7 @@ required_components
 weighting_functions
 users_guide/solar_irradiance.md
 users_guide/emissions.md
+users_guide/aerosol.md
 users_guide/mie.md
 users_guide/refraction.md
 users_guide/polarization.md
