@@ -8,6 +8,7 @@ from sasktran2.database.web import StandardDatabase
 
 from . import database, refraction  # noqa: F401
 from .aerline import AERLineAbsorber  # noqa: F401
+from .henyey import HenyeyGreenstein  # noqa: F401
 from .hitran import (
     HITRANAbsorber,  # noqa: F401
 )

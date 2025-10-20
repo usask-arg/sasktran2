@@ -1,7 +1,7 @@
 use numpy::ndarray::*;
 use numpy::*;
 use pyo3::exceptions::PyValueError;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyType};
 use pyo3::{IntoPyObjectExt, prelude::*};
 use sasktran2_rs::atmosphere::types::ManualStorageInputs;
 use sasktran2_rs::interpolation::grid1d::Grid1D;
@@ -15,7 +15,7 @@ use crate::optical::xsec_dbase::PyDictWrapper;
 
 #[pyclass]
 pub struct PyScatteringDatabaseDim1 {
-    pub db: ScatteringDatabase<Ix1, Ix2>,
+    pub db: ScatteringDatabase<Ix1>,
 }
 
 #[pymethods]
@@ -39,6 +39,35 @@ impl PyScatteringDatabaseDim1 {
                 xsec.to_owned(),
                 ssa.to_owned(),
                 legendre.to_owned(),
+                wvnum_grid,
+                Vec::new(),
+                Vec::new(),
+            ),
+        }
+    }
+
+    #[classmethod]
+    pub fn from_asymmetry_parameter(
+        _cls: &Bound<'_, PyType>,
+        xsec: PyReadonlyArray1<f64>,
+        ssa: PyReadonlyArray1<f64>,
+        g: PyReadonlyArray1<f64>,
+        max_num_moments: usize,
+        wvnum: PyReadonlyArray1<f64>,
+    ) -> Self {
+        let xsec = xsec.as_array();
+        let ssa = ssa.as_array();
+        let g = g.as_array();
+        let wvnum = wvnum.as_array();
+
+        let wvnum_grid = Grid1D::new(wvnum.to_owned());
+
+        Self {
+            db: ScatteringDatabase::from_asymmetry_parameter(
+                xsec.to_owned(),
+                ssa.to_owned(),
+                g.to_owned(),
+                max_num_moments,
                 wvnum_grid,
                 Vec::new(),
                 Vec::new(),
@@ -118,7 +147,7 @@ impl PyScatteringDatabaseDim1 {
 
 #[pyclass]
 pub struct PyScatteringDatabaseDim2 {
-    pub db: ScatteringDatabase<Ix2, Ix3>,
+    pub db: ScatteringDatabase<Ix2>,
 }
 
 #[pymethods]
@@ -145,6 +174,39 @@ impl PyScatteringDatabaseDim2 {
                 xsec.to_owned(),
                 ssa.to_owned(),
                 legendre.to_owned(),
+                wvnum_grid,
+                vec![params],
+                param_names,
+            ),
+        }
+    }
+
+    #[classmethod]
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_asymmetry_parameter(
+        _cls: &Bound<'_, PyType>,
+        xsec: PyReadonlyArray2<f64>,
+        ssa: PyReadonlyArray2<f64>,
+        g: PyReadonlyArray2<f64>,
+        max_num_moments: usize,
+        wvnum: PyReadonlyArray1<f64>,
+        params: PyReadonlyArray1<f64>,
+        param_names: Vec<String>,
+    ) -> Self {
+        let xsec = xsec.as_array();
+        let ssa = ssa.as_array();
+        let g = g.as_array();
+        let wvnum = wvnum.as_array();
+
+        let wvnum_grid = Grid1D::new(wvnum.to_owned());
+        let params = params.as_array().to_owned();
+
+        Self {
+            db: ScatteringDatabase::from_asymmetry_parameter(
+                xsec.to_owned(),
+                ssa.to_owned(),
+                g.to_owned(),
+                max_num_moments,
                 wvnum_grid,
                 vec![params],
                 param_names,
@@ -253,7 +315,7 @@ impl PyScatteringDatabaseDim2 {
 
 #[pyclass]
 pub struct PyScatteringDatabaseDim3 {
-    pub db: ScatteringDatabase<Ix3, Ix4>,
+    pub db: ScatteringDatabase<Ix3>,
 }
 
 #[pymethods]
@@ -282,6 +344,41 @@ impl PyScatteringDatabaseDim3 {
                 xsec.to_owned(),
                 ssa.to_owned(),
                 legendre.to_owned(),
+                wvnum_grid,
+                vec![param0, param1],
+                param_names,
+            ),
+        }
+    }
+
+    #[classmethod]
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_asymmetry_parameter(
+        _cls: &Bound<'_, PyType>,
+        xsec: PyReadonlyArray3<f64>,
+        ssa: PyReadonlyArray3<f64>,
+        g: PyReadonlyArray3<f64>,
+        max_num_moments: usize,
+        wvnum: PyReadonlyArray1<f64>,
+        param0: PyReadonlyArray1<f64>,
+        param1: PyReadonlyArray1<f64>,
+        param_names: Vec<String>,
+    ) -> Self {
+        let xsec = xsec.as_array();
+        let ssa = ssa.as_array();
+        let g = g.as_array();
+        let wvnum = wvnum.as_array();
+
+        let wvnum_grid = Grid1D::new(wvnum.to_owned());
+        let param0 = param0.as_array().to_owned();
+        let param1 = param1.as_array().to_owned();
+
+        Self {
+            db: ScatteringDatabase::from_asymmetry_parameter(
+                xsec.to_owned(),
+                ssa.to_owned(),
+                g.to_owned(),
+                max_num_moments,
                 wvnum_grid,
                 vec![param0, param1],
                 param_names,
