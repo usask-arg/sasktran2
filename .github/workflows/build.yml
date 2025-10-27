@@ -178,7 +178,7 @@ jobs:
           submodules: true
 
       - name: setup pixi
-        uses: prefix-dev/setup-pixi@v0.9.0
+        uses: prefix-dev/setup-pixi@v0.9.2
 
       - name: compile sasktran2
         env:
@@ -204,7 +204,7 @@ jobs:
           command: sdist
           args: --out dist
       - name: Upload sdist
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: wheels-sdist
           path: dist
@@ -217,7 +217,7 @@ jobs:
       matrix:
         python-version: ["3.13"]
     steps:
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -227,7 +227,7 @@ jobs:
           sudo apt install -y libopenblas-dev
 
       - name: download sdist
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           name: wheels-sdist
           path: dist
@@ -247,7 +247,7 @@ jobs:
             target: aarch64
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: 3.x
       - name: Build wheels
@@ -268,7 +268,7 @@ jobs:
           python -c 'import sasktran2'
 
       - name: Upload wheels
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: wheels-linux-${{ matrix.platform.target }}
           path: dist
@@ -283,11 +283,11 @@ jobs:
         python-version: ["3.10", "3.13"]
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
       - name: download wheels
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           name: wheels-linux-x86_64
           path: dist
@@ -311,7 +311,7 @@ jobs:
             target: aarch64
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: 3.x
 
@@ -359,7 +359,7 @@ jobs:
           python -c 'import sasktran2'
 
       - name: Upload wheels
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: wheels-macos-${{ matrix.platform.target }}
           path: dist
@@ -373,7 +373,7 @@ jobs:
             target: x64
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: 3.x
           architecture: ${{ matrix.platform.target }}
@@ -419,7 +419,7 @@ jobs:
           python -c 'import sasktran2'
 
       - name: Upload wheels
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: wheels-windows-${{ matrix.platform.target }}
           path: dist
@@ -433,11 +433,11 @@ jobs:
         python-version: ["3.13"]
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
       - name: download wheels
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           name: wheels-windows-x64
           path: dist
@@ -461,13 +461,13 @@ jobs:
       id-token: write
     if: (github.event_name == 'release')
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v6
         with:
           pattern: wheels-*
           path: dist
           merge-multiple: true
 
       - name: Publish package to PyPI
-        uses: pypa/gh-action-pypi-publish@v1.12.4
+        uses: pypa/gh-action-pypi-publish@v1.13.0
         with:
           verbose: true
