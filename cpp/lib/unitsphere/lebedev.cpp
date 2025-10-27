@@ -3,14 +3,19 @@
 
 namespace sasktran2::math {
     LebedevSphere::LebedevSphere(int npoints) {
-        Eigen::MatrixXd result;
-        unitsphere::lebedev::get_lebedev_data(npoints, result);
+        // 1) Load points/weights + faces
+        Eigen::MatrixXd xyzw;  // 4×N
+        Eigen::MatrixXi faces; // 3×F
+        unitsphere::lebedev::get_lebedev_data(npoints, xyzw, faces);
 
-        Eigen::AngleAxis<double> rot(0.1, Eigen::Vector3d(0, 1, 0));
+        // 2) Optional rotation (pure rotation preserves triangle orientation)
+        const Eigen::AngleAxisd rot(0.01, Eigen::Vector3d::UnitY());
+        const Eigen::AngleAxisd rot2(0.01, Eigen::Vector3d::UnitZ());
 
-        const_cast<Eigen::MatrixXd&>(m_xyz) =
-            rot.matrix() * result(Eigen::seq(0, 2), Eigen::all);
-        const_cast<Eigen::VectorXd&>(m_weights) = result(3, Eigen::all);
+        const_cast<Eigen::MatrixXd&>(m_xyz) = xyzw.topRows<3>(); // 3×N
+        const_cast<Eigen::VectorXd&>(m_weights) =
+            xyzw.row(3).transpose();                   // N×1
+        const_cast<Eigen::MatrixXi&>(m_faces) = faces; // 3×F
     }
 
     template <int N>
