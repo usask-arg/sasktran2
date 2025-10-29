@@ -336,7 +336,16 @@ jobs:
           RUNNER_OS: MacOS
 
       - name: Get OpenBLAS lib dir and set env var
+        id: get-lib-dir-13
+        if: matrix.platform.runner == 'macos-13'
+        run: |
+          python -m pip install scipy_openblas64==0.3.30.0.2
+          echo "LIB_DIR=$(python -c 'import scipy_openblas64; print(scipy_openblas64.get_lib_dir())')" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Get OpenBLAS lib dir and set env var
         id: get-lib-dir
+        if: matrix.platform.runner != 'macos-13'
         run: |
           python -m pip install scipy_openblas64
           echo "LIB_DIR=$(python -c 'import scipy_openblas64; print(scipy_openblas64.get_lib_dir())')" >> $GITHUB_ENV

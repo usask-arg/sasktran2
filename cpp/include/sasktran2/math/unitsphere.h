@@ -68,6 +68,11 @@ namespace sasktran2::math {
         const Eigen::MatrixXd m_xyz;
         const Eigen::VectorXd m_weights;
 
+        const Eigen::MatrixXi m_faces;
+        const Eigen::MatrixXi m_face_adj;
+
+        std::vector<std::vector<int>> m_vertex_faces;
+
       public:
         /**
          * @brief Constructs a LebedevSphere with a specified number of points.
