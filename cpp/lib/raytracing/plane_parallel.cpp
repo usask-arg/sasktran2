@@ -8,29 +8,38 @@ namespace sasktran2::raytracing {
         // Set the ray to 0
         result.reset();
 
+        // Copy the ray, we have to dither it if horizontal
+        sasktran2::viewinggeometry::ViewingRay ray_copy = ray;
+
         if (ray.look_away.z() == 0) {
-            spdlog::error(
-                "Trying to trace a horizontal ray in plane parallel mode");
+            // In plane parallel, perfectly horizontal rays are a problem, so we
+            // dither them a tiny bit
+            const double dither_angle = 1e-6;
+            const Eigen::Vector3d axis =
+                ray.look_away.cross(Eigen::Vector3d::UnitZ());
+
+            const Eigen::AngleAxisd rot(dither_angle, axis.normalized());
+            ray_copy.look_away = rot * ray.look_away;
         }
 
-        if (ray.observer.position.z() - m_earth_radius >=
+        if (ray_copy.observer.position.z() - m_earth_radius >=
             m_alt_grid.grid()(Eigen::last)) {
             // Outside atmosphere, probably
-            if (ray.look_away.z() > 0) {
+            if (ray_copy.look_away.z() > 0) {
                 // We are looking up, so this is just an empty ray
                 result.observer_and_look = ray;
                 result.ground_is_hit = false;
                 return;
             }
 
-            trace_ray_observer_outside_looking_ground(ray, result);
+            trace_ray_observer_outside_looking_ground(ray_copy, result);
         } else {
             // We are inside the atmosphere
-            if (ray.look_away.z() > 0) {
+            if (ray_copy.look_away.z() > 0) {
                 // Looking up
-                trace_ray_observer_inside_looking_up(ray, result);
+                trace_ray_observer_inside_looking_up(ray_copy, result);
             } else {
-                trace_ray_observer_inside_looking_ground(ray, result);
+                trace_ray_observer_inside_looking_ground(ray_copy, result);
             }
         }
 
