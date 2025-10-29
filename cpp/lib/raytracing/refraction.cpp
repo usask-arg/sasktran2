@@ -1,3 +1,4 @@
+#include <cmath>
 #include <sasktran2/refraction.h>
 #include "sktran_disco/sktran_do.h"
 
@@ -119,6 +120,14 @@ namespace sasktran2::raytracing::refraction {
         // The integral only gives the extra curvature path length, so we add on
         // the staright line path length
         result.first += sqrt(r2 * r2 - rt * rt) - sqrt(r1 * r1 - rt * rt);
+
+        if (std::isnan(result.first) || std::isnan(result.second)) {
+            spdlog::warn("NaN encountered in refraction integrals: r1={}, "
+                         "r2={}, rt={}, nt={}",
+                         r1, r2, rt, nt);
+            result.first = 0;
+            result.second = 0;
+        }
 
         return result;
     }

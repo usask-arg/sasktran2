@@ -1,3 +1,4 @@
+#include "sasktran2/internal_common.h"
 #include <sasktran2/raytracing.h>
 #include <sasktran2/refraction.h>
 
@@ -17,7 +18,7 @@ namespace sasktran2::raytracing {
             ray.observer.radius() *
             sqrt(std::max(0.0, 1 - ray.cos_viewing() * ray.cos_viewing()));
 
-        if (include_refraction) {
+        if (!result.is_straight) {
             // If including refraction, adjust the tangent radius
             rt = refraction::tangent_radius(m_geometry, rt,
                                             result.interpolation_index_weights);
@@ -159,10 +160,16 @@ namespace sasktran2::raytracing {
                 layer.layer_distance =
                     (layer.exit.position - layer.entrance.position).norm();
 
-                // Which gives us the curvature
-                layer.curvature_factor =
-                    refraction_result.first / layer.layer_distance;
-
+                // There is an odd edge case from layer dithering where we can
+                // get 0 layer distance if we are looking perfectly tangent
+                // inside the atmosphere
+                if (layer.layer_distance == 0) {
+                    layer.curvature_factor = 1.0;
+                } else {
+                    // Which gives us the curvature
+                    layer.curvature_factor =
+                        refraction_result.first / layer.layer_distance;
+                }
             } else {
                 // Layer is straight
                 layer.curvature_factor = 1;
