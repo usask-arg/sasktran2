@@ -234,7 +234,14 @@ if(${SKTRAN_BLAS_VENDOR} MATCHES "SCIPY_OPENBLAS")
     set(OPENBLAS_PY_BIN ${CMAKE_CURRENT_BINARY_DIR}/.openblas_venv/bin/python)
   endif()
 
-  execute_process(COMMAND ${OPENBLAS_PY_BIN} -m pip install scipy_openblas64)
+  # scipy openblas wheels on macosx x86_64 are broken, we will likely drop
+  # support for macosx x86_64 soon anyway so for now just pin the version
+  if(APPLE AND CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
+    execute_process(COMMAND ${OPENBLAS_PY_BIN} -m pip install
+                            scipy_openblas64==0.3.30.0.2)
+  else()
+    execute_process(COMMAND ${OPENBLAS_PY_BIN} -m pip install scipy_openblas64)
+  endif()
 
   execute_process(
     COMMAND ${OPENBLAS_PY_BIN} -c
