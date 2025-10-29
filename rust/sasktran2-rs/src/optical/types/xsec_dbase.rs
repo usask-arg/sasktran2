@@ -116,8 +116,8 @@ impl From<XsecDatabase> for SKXsecDatabase<Ix2> {
 
         let mut xsec = Array2::zeros((params[0].len(), unique_wvnum.len()));
 
-        for i in 0..params[0].len() {
-            xsec.slice_mut(s![i, ..]).assign(&db.xsec[sidx[0][i]]);
+        for (i, s) in sidx[0].iter().enumerate() {
+            xsec.slice_mut(s![i, ..]).assign(&db.xsec[*s]);
         }
 
         SKXsecDatabase::<Ix2>::new(
