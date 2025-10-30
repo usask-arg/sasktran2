@@ -429,9 +429,22 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn sk_viewing_geometry_add_flux_observer_solar(
+        geometry: *mut ViewingGeometry,
+        cos_sza: f64,
+        observeraltitude: f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn sk_viewing_geometry_num_rays(
         geometry: *mut ViewingGeometry,
         num_rays: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_viewing_geometry_num_flux_observers(
+        geometry: *mut ViewingGeometry,
+        num_observers: *mut ::std::os::raw::c_int,
     ) -> ::std::os::raw::c_int;
 }
 #[repr(C)]

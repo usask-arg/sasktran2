@@ -45,6 +45,16 @@ int sk_viewing_geometry_add_solar_angles_observer_location(
     return 0; // Success
 }
 
+int sk_viewing_geometry_add_flux_observer_solar(ViewingGeometry *geometry, double cos_sza, double observeraltitude) {
+    if (geometry == nullptr) {
+        return -1; // Error: null pointer
+    }
+    geometry->impl.flux_observers().emplace_back(
+        std::make_unique<sasktran2::viewinggeometry::FluxObserverSolar>(
+            cos_sza, observeraltitude));
+    return 0; // Success
+}
+
 int sk_viewing_geometry_num_rays(ViewingGeometry* geometry, int* num_rays) {
     if (geometry == nullptr || num_rays == nullptr) {
         return -1; // Error: null pointer
@@ -52,4 +62,13 @@ int sk_viewing_geometry_num_rays(ViewingGeometry* geometry, int* num_rays) {
     *num_rays = static_cast<int>(geometry->impl.observer_rays().size());
     return 0; // Success
 }
+
+int sk_viewing_geometry_num_flux_observers(ViewingGeometry *geometry, int *num_observers) {
+    if (geometry == nullptr || num_observers == nullptr) {
+        return -1; // Error: null pointer
+    }
+    *num_observers = static_cast<int>(geometry->impl.flux_observers().size());
+    return 0; // Success
+}
+
 }
