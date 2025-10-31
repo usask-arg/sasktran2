@@ -103,10 +103,7 @@ impl ViewingGeometry {
     pub fn num_flux_observers(&self) -> Result<usize> {
         let mut num_observers = 0i32;
         let error_code = unsafe {
-            ffi::sk_viewing_geometry_num_flux_observers(
-                self.viewing_geometry,
-                &mut num_observers,
-            )
+            ffi::sk_viewing_geometry_num_flux_observers(self.viewing_geometry, &mut num_observers)
         };
 
         if error_code != 0 {

@@ -4,6 +4,7 @@
 #include "sasktran2/config.h"
 #include "sasktran2/geometry.h"
 #include "sasktran2/raytracing.h"
+#include <sasktran2/viewinggeometry_internal.h>
 #include <Eigen/src/Core/Matrix.h>
 #include <sasktran2/internal_common.h>
 #include <sasktran2/dual.h>
@@ -36,6 +37,7 @@ namespace sasktran2 {
 
       protected:
         int m_nlos;
+        int m_nfluxpos;
         int m_nwavel;
         int m_nderiv;
         int m_ngeometry;
@@ -60,7 +62,8 @@ namespace sasktran2 {
         virtual void initialize(
             const sasktran2::Config& config,
             const sasktran2::Geometry1D& geometry,
-            const std::vector<sasktran2::raytracing::TracedRay>& rays,
+            const sasktran2::viewinggeometry::InternalViewingGeometry&
+                internal_viewing,
             const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere);
 
         /** Method the Sasktran2 engine calls for each integrated line of

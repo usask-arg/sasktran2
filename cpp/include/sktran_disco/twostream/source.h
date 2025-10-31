@@ -4,6 +4,7 @@
 #include "sasktran2/geometry.h"
 #include "sasktran2/math/scattering.h"
 #include "sasktran2/source_interface.h"
+#include "sasktran2/viewinggeometry_internal.h"
 #include "sktran_disco/sktran_do_geometrylayerarray.h"
 #include "sktran_disco/sktran_do_pconfig.h"
 #include "sktran_disco/sktran_do_specs.h"
@@ -49,11 +50,11 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
     };
 
     virtual void initialize_geometry(
-        const std::vector<sasktran2::raytracing::TracedRay>& los_rays) {
+        const sasktran2::viewinggeometry::InternalViewingGeometry& internal_viewing) override {
         m_pconfig.configure(m_spec, *m_config,
                             m_geometry.coordinates().cos_sza_at_reference(),
-                            m_geometry.size() - 1, los_rays);
-        m_los_rays = &los_rays;
+                            m_geometry.size() - 1, internal_viewing.traced_rays);
+        m_los_rays = &internal_viewing.traced_rays;
 
         m_geometry_layers =
             std::make_unique<sasktran_disco::GeometryLayerArray<1>>(m_pconfig,

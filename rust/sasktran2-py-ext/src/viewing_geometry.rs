@@ -79,6 +79,23 @@ impl PySolarAnglesObserverLocation {
     }
 }
 
+#[pyclass]
+pub struct PyFluxObserverSolar {
+    cos_sza: f64,
+    observer_altitude_m: f64,
+}
+
+#[pymethods]
+impl PyFluxObserverSolar {
+    #[new]
+    fn new(cos_sza: f64, observer_altitude_m: f64) -> Self {
+        Self {
+            cos_sza,
+            observer_altitude_m,
+        }
+    }
+}
+
 #[pyclass(unsendable)]
 pub struct PyViewingGeometry {
     pub viewing_geometry: viewing_geometry::ViewingGeometry,
@@ -122,6 +139,14 @@ impl PyViewingGeometry {
                 ray.cos_viewing_zenith,
                 ray.observer_altitude_m,
             );
+        }
+    }
+
+    fn add_flux_observer<'py>(&mut self, observer: Bound<'py, PyAny>) {
+        if let Ok(observer) = observer.downcast::<PyFluxObserverSolar>() {
+            let observer = observer.borrow();
+            self.viewing_geometry
+                .add_flux_observer_solar(observer.cos_sza, observer.observer_altitude_m);
         }
     }
 }

@@ -299,10 +299,10 @@ namespace sasktran2 {
 
         /** Initializes the geometry
          *
-         * @param los_rays
+         * @param internal_viewing Information on the internal viewing geometry, los_rays and flux observers
          */
         virtual void initialize_geometry(
-            const std::vector<sasktran2::raytracing::TracedRay>& los_rays);
+            const sasktran2::viewinggeometry::InternalViewingGeometry& internal_viewing);
 
         /** Initializes the atmosphere
          *
@@ -358,7 +358,7 @@ namespace sasktran2 {
 
         virtual void calculate(int wavelidx, int threadidx);
         virtual void initialize_geometry(
-            const std::vector<sasktran2::raytracing::TracedRay>& los_rays)
+            const sasktran2::viewinggeometry::InternalViewingGeometry& internal_viewing)
             override;
         virtual void initialize_atmosphere(
             const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere)
@@ -438,7 +438,7 @@ namespace sasktran2 {
         virtual void calculate(int wavelidx, int threadidx);
 
         virtual void initialize_geometry(
-            const std::vector<sasktran2::raytracing::TracedRay>& los_rays)
+            const sasktran2::viewinggeometry::InternalViewingGeometry& internal_viewing)
             override;
         virtual void initialize_atmosphere(
             const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere)

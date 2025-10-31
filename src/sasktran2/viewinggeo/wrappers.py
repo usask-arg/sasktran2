@@ -5,6 +5,7 @@ from sasktran2._core_rust import (
     PySolarAnglesObserverLocation,
     PyTangentAltitudeSolar,
     PyViewingGeometry,
+    PyFluxObserverSolar,
 )
 
 
@@ -14,14 +15,23 @@ class ViewingGeometry:
     def __init__(self):
         self._viewing_geometry = PyViewingGeometry()
         self._rays = []
+        self._flux_observers = []
 
     def add_ray(self, ray):
         self._rays.append(ray)
         self._viewing_geometry.add_ray(ray._internal)
 
+    def add_flux_observer(self, observer):
+        self._flux_observers.append(observer)
+        self._viewing_geometry.add_flux_observer(observer._internal)
+
     @property
     def observer_rays(self):
         return self._rays
+
+    @property
+    def flux_observers(self):
+        return self._flux_observers
 
 
 class TangentAltitudeSolar:
@@ -145,3 +155,32 @@ class SolarAnglesObserverLocation:
         #            "Up Viewing Ray: cos_sza: {}, relative_azimuth_angle: {}, "
         #    "cos_viewing_zenith: {}, observer_altitude: {}",
         return f"Up Viewing Ray: cos_sza: {self._cos_sza}, relative_azimuth_angle: {self._relative_azimuth}, cos_viewing_zenith: {self._cos_viewing_zenith}, observer_altitude: {self._observer_altitude_m}"
+
+
+class FluxObserverSolar:
+    _internal: PyFluxObserverSolar
+
+    def __init__(
+        self,
+        cos_sza: float,
+        observer_altitude_m: float,
+    ):
+        """
+        Defines a flux observer that is defined at a location defined from the solar angles.
+
+        Parameters
+        ----------
+        cos_sza: float
+            Cosine of solar zenith angle at the observer point [unitless]
+        observer_altitude_m: float
+            Observer altitude relative to the earth [m]
+        """
+        self._internal = PyFluxObserverSolar(
+            cos_sza, observer_altitude_m
+        )
+
+        self._cos_sza = cos_sza
+        self._observer_altitude_m = observer_altitude_m
+
+    def __repr__(self):
+        return f"Flux Observer: cos_sza: {self._cos_sza}, observer_altitude: {self._observer_altitude_m}"

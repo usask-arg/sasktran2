@@ -155,15 +155,16 @@ namespace sasktran2::solartransmission {
 
     template <typename S, int NSTOKES>
     void SingleScatterSource<S, NSTOKES>::initialize_geometry(
-        const std::vector<sasktran2::raytracing::TracedRay>& los_rays) {
+        const sasktran2::viewinggeometry::InternalViewingGeometry&
+            internal_viewing) {
         ZoneScopedN("Initialize Single Scatter Source Geometry");
-        this->m_solar_transmission.initialize_geometry(los_rays);
+        this->m_solar_transmission.initialize_geometry(internal_viewing.traced_rays);
 
         if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
             // Generates the geometry matrix so that matrix * extinction = solar
             // od at grid points
             this->m_solar_transmission.generate_geometry_matrix(
-                los_rays, m_geometry_matrix, m_ground_hit_flag);
+                internal_viewing.traced_rays, m_geometry_matrix, m_ground_hit_flag);
 
             // Usually faster to calculate the matrix densely and then convert
             // to sparse
@@ -171,16 +172,16 @@ namespace sasktran2::solartransmission {
         }
         if constexpr (std::is_same_v<S, SolarTransmissionTable>) {
             this->m_solar_transmission.generate_interpolation_matrix(
-                los_rays, m_geometry_sparse, m_ground_hit_flag);
+                internal_viewing.traced_rays, m_geometry_sparse, m_ground_hit_flag);
         }
 
         // We need some mapping between the layers inside each ray to our
         // calculated solar transmission
-        m_index_map.resize(los_rays.size());
+        m_index_map.resize(internal_viewing.traced_rays.size());
         m_num_cells = 0;
         int c = 0;
-        for (int i = 0; i < los_rays.size(); ++i) {
-            m_index_map[i].resize(los_rays[i].layers.size());
+        for (int i = 0; i < internal_viewing.traced_rays.size(); ++i) {
+            m_index_map[i].resize(internal_viewing.traced_rays[i].layers.size());
 
             for (int j = 0; j < m_index_map[i].size(); ++j) {
                 m_index_map[i][j] = c;
@@ -189,12 +190,12 @@ namespace sasktran2::solartransmission {
             // Final exit layer
             ++c;
 
-            m_num_cells += (int)los_rays[i].layers.size();
+            m_num_cells += (int)internal_viewing.traced_rays[i].layers.size();
         }
-        this->m_phase_handler.initialize_geometry(los_rays, m_index_map);
+        this->m_phase_handler.initialize_geometry(internal_viewing.traced_rays, m_index_map);
 
         // Store the rays for later
-        m_los_rays = &los_rays;
+        m_los_rays = &internal_viewing.traced_rays;
     }
 
     template <typename S, int NSTOKES>

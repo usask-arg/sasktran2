@@ -1,3 +1,4 @@
+#include "sasktran2/viewinggeometry_internal.h"
 #include <sasktran2/solartransmission.h>
 #include <sasktran2/dual.h>
 #include <sasktran2/config.h>
@@ -10,7 +11,7 @@ namespace sasktran2::solartransmission {
 
     template <int NSTOKES>
     void OccultationSource<NSTOKES>::initialize_geometry(
-        const std::vector<sasktran2::raytracing::TracedRay>& los_rays) {}
+        const sasktran2::viewinggeometry::InternalViewingGeometry& internal_viewing) {}
 
     template <int NSTOKES>
     void OccultationSource<NSTOKES>::integrated_source(

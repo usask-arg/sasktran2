@@ -181,8 +181,8 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
 
 template <int NSTOKES> void Sasktran2<NSTOKES>::calculate_geometry() {
     // Trace every ray that we are given
-    m_traced_rays.clear();
-    m_traced_rays.resize(m_viewing_geometry.observer_rays().size());
+    m_internal_viewing_geometry.traced_rays.clear();
+    m_internal_viewing_geometry.traced_rays.resize(m_viewing_geometry.observer_rays().size());
 
     for (int i = 0; i < m_viewing_geometry.observer_rays().size(); ++i) {
         const auto& viewing_ray = m_viewing_geometry.observer_rays()[i];
@@ -200,15 +200,15 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::calculate_geometry() {
         }
 #endif
 
-        m_raytracer->trace_ray(ray, m_traced_rays[i],
+        m_raytracer->trace_ray(ray, m_internal_viewing_geometry.traced_rays[i],
                                m_config.los_refraction());
     }
 
     // Initialize the integrator
-    m_source_integrator->initialize_geometry(m_traced_rays, *m_geometry);
+    m_source_integrator->initialize_geometry(m_internal_viewing_geometry.traced_rays, *m_geometry);
 
     for (auto& source : m_source_terms) {
-        source->initialize_geometry(m_traced_rays);
+        source->initialize_geometry(m_internal_viewing_geometry);
     }
 }
 
@@ -307,7 +307,7 @@ void Sasktran2<NSTOKES>::calculate_radiance(
     radiance.resize(m_config.num_threads(),
                     {NSTOKES, atmosphere.num_deriv(), true});
 
-    output.initialize(m_config, *m_geometry, m_traced_rays, atmosphere);
+    output.initialize(m_config, *m_geometry, m_internal_viewing_geometry, atmosphere);
 
     if (only_initialize) {
         return;
@@ -330,7 +330,7 @@ void Sasktran2<NSTOKES>::calculate_radiance(
 
 #pragma omp parallel for num_threads(m_config.num_source_threads())            \
     schedule(dynamic)
-        for (int i = 0; i < m_traced_rays.size(); ++i) {
+        for (int i = 0; i < m_internal_viewing_geometry.traced_rays.size(); ++i) {
 #ifdef SKTRAN_OPENMP_SUPPORT
             int ray_threadidx = omp_get_thread_num() + thread_idx;
 #else
@@ -392,7 +392,7 @@ void Sasktran2<NSTOKES>::calculate_radiance_thread(
 
 #pragma omp parallel for num_threads(m_config.num_source_threads())            \
     schedule(dynamic)
-    for (int i = 0; i < m_traced_rays.size(); ++i) {
+    for (int i = 0; i < m_internal_viewing_geometry.traced_rays.size(); ++i) {
 #ifdef SKTRAN_OPENMP_SUPPORT
         int ray_threadidx = omp_get_thread_num() + thread_idx;
 #else

@@ -1,5 +1,6 @@
 #include "sasktran2/do_source.h"
 #include "sasktran2/geometry.h"
+#include "sasktran2/viewinggeometry_internal.h"
 #include "sktran_disco/sktran_do_types.h"
 
 namespace sasktran2 {
@@ -122,8 +123,8 @@ namespace sasktran2 {
 
     template <int NSTOKES, int CNSTR>
     void DOSource<NSTOKES, CNSTR>::initialize_geometry(
-        const std::vector<sasktran2::raytracing::TracedRay>& los_rays) {
-        m_los_rays = &los_rays;
+        const sasktran2::viewinggeometry::InternalViewingGeometry& internal_viewing) {
+        m_los_rays = &internal_viewing.traced_rays;
 
         // Create the SZA grid
         generate_sza_grid();
@@ -136,7 +137,7 @@ namespace sasktran2 {
                 sza_calculator.persistent_config->configure(
                     sza_calculator.userspec, *m_config, cos_sza,
                     (int)m_geometry.altitude_grid().grid().size() - 1,
-                    los_rays);
+                    internal_viewing.traced_rays);
 
                 sza_calculator.geometry_layers = std::make_unique<
                     sasktran_disco::GeometryLayerArray<NSTOKES, CNSTR>>(
@@ -149,7 +150,7 @@ namespace sasktran2 {
                 m_config->num_do_streams());
         }
 
-        construct_los_location_interpolator(los_rays);
+        construct_los_location_interpolator(internal_viewing.traced_rays);
     }
 
     template <int NSTOKES, int CNSTR>

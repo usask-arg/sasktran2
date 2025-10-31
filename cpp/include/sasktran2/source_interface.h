@@ -2,6 +2,7 @@
 
 #include <sasktran2/internal_common.h>
 #include <sasktran2/raytracing.h>
+#include <sasktran2/viewinggeometry_internal.h>
 #include <sasktran2/dual.h>
 #include <sasktran2/config.h>
 #include <sasktran2/atmosphere/atmosphere.h>
@@ -30,10 +31,10 @@ template <int NSTOKES> class SourceTermInterface {
      * the source term.  This method is called after the line of sight rays ar
      * traced.
      *
-     * @param los_rays The traced line of sight rays
+     * @param internal_viewing Information on the internal viewing geometry, los_rays and flux observers
      */
     virtual void initialize_geometry(
-        const std::vector<sasktran2::raytracing::TracedRay>& los_rays){};
+        const sasktran2::viewinggeometry::InternalViewingGeometry& internal_viewing){};
 
     /**
      *

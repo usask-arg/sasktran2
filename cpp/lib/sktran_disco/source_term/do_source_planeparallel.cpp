@@ -2,6 +2,7 @@
 #include "sasktran2/do_source.h"
 #include "sasktran2/geometry.h"
 #include "sasktran2/raytracing.h"
+#include "sasktran2/viewinggeometry_internal.h"
 #include "sktran_disco/sktran_do.h"
 #include "sktran_disco/sktran_do_polarization_types.h"
 #include "sktran_disco/sktran_do_types.h"
@@ -207,13 +208,13 @@ namespace sasktran2 {
     template <int NSTOKES, int CNSTR>
     void
     DOSourcePlaneParallelPostProcessing<NSTOKES, CNSTR>::initialize_geometry(
-        const std::vector<sasktran2::raytracing::TracedRay>& los_rays) {
-        m_do_los.resize(los_rays.size());
-        m_lp_coszen.resize(los_rays.size());
+        const sasktran2::viewinggeometry::InternalViewingGeometry& internal_viewing) {
+        m_do_los.resize(internal_viewing.traced_rays.size());
+        m_lp_coszen.resize(internal_viewing.traced_rays.size());
 
         for (int i = 0; i < m_do_los.size(); ++i) {
             auto& do_los = m_do_los[i];
-            const auto& ray = los_rays[i];
+            const auto& ray = internal_viewing.traced_rays[i];
 
             do_los.coszenith = -ray.observer_and_look.look_away.z();
 
@@ -255,7 +256,7 @@ namespace sasktran2 {
                 sza_calculator.persistent_config->configure(
                     sza_calculator.userspec, *m_config, cos_sza,
                     (int)m_geometry.altitude_grid().grid().size() - 1,
-                    los_rays);
+                    internal_viewing.traced_rays);
 
                 sza_calculator.geometry_layers = std::make_unique<
                     sasktran_disco::GeometryLayerArray<NSTOKES, CNSTR>>(

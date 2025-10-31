@@ -4,6 +4,7 @@
 #include <sasktran2/atmosphere/atmosphere.h>
 #include <sasktran2/viewinggeometry.h>
 #include <sasktran2/raytracing.h>
+#include <sasktran2/viewinggeometry_internal.h>
 #include <sasktran2/solartransmission.h>
 #include <sasktran2/emission_source.h>
 #include <sasktran2/source_integrator.h>
@@ -39,8 +40,10 @@ template <int NSTOKES> class Sasktran2 : public Sasktran2Interface {
     std::unique_ptr<const sasktran2::raytracing::RayTracerBase>
         m_raytracer; /**< Ray tracer that is internally constructed */
 
-    std::vector<sasktran2::raytracing::TracedRay>
-        m_traced_rays; /**< Traced observer rays */
+    sasktran2::viewinggeometry::InternalViewingGeometry
+        m_internal_viewing_geometry; /**< Internal viewing geometry
+                                        representation */
+
     std::unique_ptr<sasktran2::SourceIntegrator<NSTOKES>>
         m_source_integrator; /** integrator for the source terms */
 

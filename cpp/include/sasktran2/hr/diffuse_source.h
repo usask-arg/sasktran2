@@ -1,5 +1,6 @@
 #pragma once
 
+#include "sasktran2/viewinggeometry_internal.h"
 #include <sasktran2/internal_common.h>
 #include <sasktran2/source_interface.h>
 #include <sasktran2/source_integrator.h>
@@ -72,8 +73,8 @@ namespace sasktran2::hr {
         std::unique_ptr<sasktran2::grids::SourceLocationInterpolator>
             m_location_interpolator; /** Interpolates location */
 
-        std::vector<sasktran2::raytracing::TracedRay>
-            m_incoming_traced_rays; /** Traced incoming rays to all diffuse
+        sasktran2::viewinggeometry::InternalViewingGeometry
+            m_internal_viewing;        /** Traced incoming rays to all diffuse
                                        points */
 
         std::vector<std::unique_ptr<DiffusePoint<NSTOKES>>>
@@ -171,10 +172,10 @@ namespace sasktran2::hr {
          * calculating the source term.  This method is called after the line of
          * sight rays ar traced.
          *
-         * @param los_rays The traced line of sight rays
+         * @param internal_viewing Information on the internal viewing geometry, los_rays and flux observers
          */
         virtual void initialize_geometry(
-            const std::vector<sasktran2::raytracing::TracedRay>& los_rays);
+            const sasktran2::viewinggeometry::InternalViewingGeometry& internal_viewing) override;
 
         /**
          *
