@@ -14,16 +14,26 @@ pub struct Output {
     num_stokes: usize,
     pub d_radiance: HashMap<String, Array4<f64>>,
     pub d_radiance_surf: HashMap<String, Array3<f64>>,
+
+    pub d_flux: HashMap<String, Array3<f64>>,
+    pub d_flux_surf: HashMap<String, Array2<f64>>,
+
+    pub flux: Array3<f64>
 }
 
 impl Output {
-    pub fn new(num_wavel: usize, num_los: usize, num_stokes: usize) -> Self {
+    pub fn new(num_wavel: usize, num_los: usize, num_flux_obs: usize, num_flux_types: usize, num_stokes: usize) -> Self {
         let mut radiance = Array3::<f64>::zeros((num_wavel, num_los, num_stokes));
 
+        // TODO: Get this from the config, based on if upwelling/downwelling fluxes are requested
+        let mut flux = Array3::<f64>::zeros((num_flux_types, num_wavel, num_flux_obs));
+
         let num_radiance = num_wavel * num_los * num_stokes;
+        let num_flux = num_wavel * num_flux_obs * num_flux_types;
         let radiance_ptr = radiance.as_mut_ptr();
+        let flux_ptr = flux.as_mut_ptr();
         let output =
-            unsafe { ffi::sk_output_create(radiance_ptr, num_radiance as i32, num_stokes as i32) };
+            unsafe { ffi::sk_output_create(radiance_ptr, num_radiance as i32, num_stokes as i32, flux_ptr, num_flux as i32) };
 
         Output {
             output,
@@ -33,6 +43,9 @@ impl Output {
             num_stokes,
             d_radiance: HashMap::new(),
             d_radiance_surf: HashMap::new(),
+            d_flux: HashMap::new(),
+            d_flux_surf: HashMap::new(),
+            flux,
         }
     }
 
@@ -127,12 +140,12 @@ mod tests {
 
     #[test]
     fn test_output() {
-        let _output = Output::new(10, 10, 3);
+        let _output = Output::new(10, 10, 0, 3);
     }
 
     #[test]
     fn test_output_with_derivative() {
-        let mut output = Output::new(10, 10, 3);
+        let mut output = Output::new(10, 10, 0, 3);
         output.with_derivative("test_deriv", 5);
         assert!(output.d_radiance.contains_key("test_deriv"));
         assert_eq!(output.d_radiance["test_deriv"].shape(), &[5, 10, 10, 3]);
@@ -140,7 +153,7 @@ mod tests {
 
     #[test]
     fn test_output_with_surface_derivative() {
-        let mut output = Output::new(10, 10, 3);
+        let mut output = Output::new(10, 10, 0, 3);
         output.with_surface_derivative("test_surf_deriv");
         assert!(output.d_radiance_surf.contains_key("test_surf_deriv"));
         assert_eq!(
@@ -151,7 +164,7 @@ mod tests {
 
     #[test]
     fn test_output_dimensions() {
-        let output = Output::new(5, 8, 2);
+        let output = Output::new(5, 8,0, 2);
         assert_eq!(output.radiance.shape(), &[5, 8, 2]);
     }
 }

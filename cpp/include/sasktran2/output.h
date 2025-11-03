@@ -38,6 +38,7 @@ namespace sasktran2 {
       protected:
         int m_nlos;
         int m_nfluxpos;
+        int m_nfluxtype;
         int m_nwavel;
         int m_nderiv;
         int m_ngeometry;
@@ -78,6 +79,10 @@ namespace sasktran2 {
         assign(const sasktran2::Dual<double, sasktran2::dualstorage::dense,
                                      NSTOKES>& radiance,
                int losidx, int wavelidx, int threadidx) = 0;
+
+        virtual void assign_flux(
+            const sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& flux,
+            int fluxidx, int wavelidx, int threadidx, int flux_type_idx) { spdlog::error("Flux assignment not implemented for this output type"); };
 
         /**
          *
@@ -187,6 +192,7 @@ namespace sasktran2 {
     template <int NSTOKES> class OutputC : public Output<NSTOKES> {
       private:
         Eigen::Map<Eigen::VectorXd> m_radiance;
+        Eigen::Map<Eigen::VectorXd> m_flux;
 
         std::map<std::string, Eigen::Map<Eigen::MatrixXd>> m_derivatives;
         std::map<std::string, Eigen::Map<Eigen::MatrixXd>>
@@ -196,7 +202,7 @@ namespace sasktran2 {
         void resize();
 
       public:
-        OutputC(Eigen::Map<Eigen::VectorXd> radiance) : m_radiance(radiance){};
+        OutputC(Eigen::Map<Eigen::VectorXd> radiance, Eigen::Map<Eigen::VectorXd> flux) : m_radiance(radiance), m_flux(flux) {};
 
         void set_derivative_mapping_memory(
             const std::string& name,
@@ -228,6 +234,10 @@ namespace sasktran2 {
 
         void assign(const sasktran2::Dual<double, sasktran2::dualstorage::dense,
                                           NSTOKES>& radiance,
-                    int losidx, int wavelidx, int threadidx);
+                    int losidx, int wavelidx, int threadidx) override;
+
+        void assign_flux(
+            const sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& flux,
+            int fluxidx, int wavelidx, int threadidx, int flux_type_idx) override;
     };
 } // namespace sasktran2

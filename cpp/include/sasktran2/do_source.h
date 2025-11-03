@@ -475,6 +475,13 @@ namespace sasktran2 {
             int wavelidx, int losidx, int wavel_threadidx, int threadidx,
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
                 source) const override;
+
+        virtual void flux(
+        int wavelidx, int fluxidx, int wavelt_threadidx, int threadidx,
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& flux,
+        sasktran2::Config::FluxType flux_type
+    ) const override;
+        
     };
 
 } // namespace sasktran2

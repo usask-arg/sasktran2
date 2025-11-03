@@ -318,5 +318,14 @@ namespace sasktran2 {
         source.deriv += m_radiances[threadidx][losidx].deriv;
     }
 
+    template <int NSTOKES, int CNSTR>
+    void DOSourcePlaneParallelPostProcessing<NSTOKES, CNSTR>::flux(
+        int wavelidx, int fluxidx, int wavel_threadidx, int threadidx
+        , sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& flux, sasktran2::Config::FluxType flux_type)
+        const {
+
+            flux.value.setConstant(5.0);
+        }
+
     SASKTRAN_DISCO_INSTANTIATE_TEMPLATE(DOSourcePlaneParallelPostProcessing);
 } // namespace sasktran2

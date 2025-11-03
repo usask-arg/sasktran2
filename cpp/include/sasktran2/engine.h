@@ -61,8 +61,14 @@ template <int NSTOKES> class Sasktran2 : public Sasktran2Interface {
     std::vector<SourceTermInterface<NSTOKES>*>
         m_thermal_source; /**< Thermal source terms (planck, photochemical) */
 
+    // Thread storage to avoid reallocs on the derivatives of radiance
     std::vector<sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>>
         m_thread_radiance;
+
+    // Thread storage to avoid reallocs on the derivatives of flux
+    // Can't reuse radiance storage because flux NSTOKES is always 1 for flux
+    std::vector<sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>>
+        m_thread_flux;
 
     /** Internal method to calculate all terms inside the engine that are only
      * geometry dependent

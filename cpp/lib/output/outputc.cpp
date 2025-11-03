@@ -1,3 +1,4 @@
+#include "sasktran2/config.h"
 #include <sasktran2/output.h>
 
 namespace sasktran2 {
@@ -233,6 +234,16 @@ namespace sasktran2 {
             m_radiance(linear_index + 3) = radiance.value(3);
         }
     }
+
+    template <int NSTOKES>
+    void OutputC<NSTOKES>::assign_flux(
+        const sasktran2::Dual<double, sasktran2::dualstorage::dense
+                                    , 1>& flux,
+        int fluxidx, int wavelidx, int threadidx, int flux_type_idx) {
+            int linear_index = flux_type_idx * (this->m_nwavel * this->m_nfluxpos) + wavelidx * this->m_nfluxpos + fluxidx;
+
+            m_flux(linear_index) = flux.value(0);
+        }
 
     template class OutputC<1>;
     template class OutputC<3>;

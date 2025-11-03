@@ -4,13 +4,14 @@
 #include <cstdio>
 #include <sasktran2.h>
 
-OutputC::OutputC(double* radiance, int nrad, int nstokes) {
+OutputC::OutputC(double* radiance, int nrad, int nstokes, double* flux, int nflux) {
     Eigen::Map<Eigen::VectorXd> radiance_map(radiance, nrad);
+    Eigen::Map<Eigen::VectorXd> flux_map(flux, nflux);
 
     if (nstokes == 1) {
-        impl = std::make_unique<sasktran2::OutputC<1>>(radiance_map);
+        impl = std::make_unique<sasktran2::OutputC<1>>(radiance_map, flux_map);
     } else if (nstokes == 3) {
-        impl = std::make_unique<sasktran2::OutputC<3>>(radiance_map);
+        impl = std::make_unique<sasktran2::OutputC<3>>(radiance_map, flux_map);
     } else {
         // Handle error case
         impl = nullptr;
@@ -70,8 +71,8 @@ int OutputC::assign_surface_derivative_memory(const char* name,
 }
 
 extern "C" {
-OutputC* sk_output_create(double* radiance, int nrad, int nstokes) {
-    return new OutputC(radiance, nrad, nstokes);
+OutputC* sk_output_create(double* radiance, int nrad, int nstokes, double* flux, int nflux) {
+    return new OutputC(radiance, nrad, nstokes, flux, nflux);
 }
 
 void sk_output_destroy(OutputC* output) { delete output; }
@@ -118,4 +119,5 @@ int sk_output_get_los_optical_depth(OutputC* output, double** od) {
         return -1;
     }
 }
+
 }

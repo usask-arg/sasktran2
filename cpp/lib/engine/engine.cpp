@@ -204,6 +204,13 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::calculate_geometry() {
                                m_config.los_refraction());
     }
 
+    // Construct the flux observer points
+    m_internal_viewing_geometry.flux_observers.resize(m_viewing_geometry.flux_observers().size());
+    for (int i = 0; i < m_viewing_geometry.flux_observers().size(); ++i) {
+        m_internal_viewing_geometry.flux_observers[i] = 
+            m_viewing_geometry.flux_observers()[i]->construct_flux_observer(m_geometry->coordinates());
+    }
+
     // Initialize the integrator
     m_source_integrator->initialize_geometry(m_internal_viewing_geometry.traced_rays, *m_geometry);
 
@@ -306,6 +313,12 @@ void Sasktran2<NSTOKES>::calculate_radiance(
         m_thread_radiance);
     radiance.resize(m_config.num_threads(),
                     {NSTOKES, atmosphere.num_deriv(), true});
+    
+    auto& flux = const_cast<std::vector<
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>>&>(
+        m_thread_flux);
+    flux.resize(m_config.num_threads(),
+                    {1, atmosphere.num_deriv(), true});
 
     output.initialize(m_config, *m_geometry, m_internal_viewing_geometry, atmosphere);
 
@@ -360,8 +373,32 @@ void Sasktran2<NSTOKES>::calculate_radiance(
             output.assign(radiance[ray_threadidx], i, w, ray_threadidx);
         }
 
-        // TODO: Is this where we should generate fluxes or other quantities
-        // that aren't through the integrator?
+#pragma omp parallel for num_threads(m_config.num_source_threads())            \
+    schedule(dynamic)
+        for (int i = 0; i < m_internal_viewing_geometry.flux_observers.size(); ++i) {
+#ifdef SKTRAN_OPENMP_SUPPORT
+            int ray_threadidx = omp_get_thread_num() + thread_idx;
+#else
+            int ray_threadidx = 0;
+#endif
+            for(int flux_type_idx = 0; flux_type_idx < m_config.get_flux_types().size(); ++flux_type_idx) {
+                auto flux_type = m_config.get_flux_types()[flux_type_idx];
+                // Set the flux thread storage to 0
+                flux[ray_threadidx].value.setZero();
+                flux[ray_threadidx].deriv.setZero();
+
+                for (const SourceTermInterface<NSTOKES>* source :
+                     m_los_source_terms) {
+                    source->flux(
+                        w, i, thread_idx, ray_threadidx, flux[ray_threadidx],
+                        flux_type);
+                }
+
+                output.assign_flux(
+                    flux[ray_threadidx], i, w, ray_threadidx, flux_type_idx
+                );
+            }
+        }
         FrameMarkEnd("Frame");
     }
 
@@ -380,6 +417,10 @@ void Sasktran2<NSTOKES>::calculate_radiance_thread(
     auto& radiance = const_cast<std::vector<
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>>&>(
         m_thread_radiance)[thread_idx];
+
+    auto& flux = const_cast<std::vector<
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>>&>(
+        m_thread_flux)[thread_idx];
 
     int w = wavelength_idx;
     FrameMarkStart("Frame");
@@ -419,6 +460,34 @@ void Sasktran2<NSTOKES>::calculate_radiance_thread(
         // And assign it to the output
         output.assign(radiance, i, w, ray_threadidx);
     }
+
+
+#pragma omp parallel for num_threads(m_config.num_source_threads())            \
+    schedule(dynamic)
+        for (int i = 0; i < m_internal_viewing_geometry.flux_observers.size(); ++i) {
+#ifdef SKTRAN_OPENMP_SUPPORT
+            int ray_threadidx = omp_get_thread_num() + thread_idx;
+#else
+            int ray_threadidx = 0;
+#endif
+            for(int flux_type_idx = 0; flux_type_idx < m_config.get_flux_types().size(); ++flux_type_idx) {
+                auto flux_type = m_config.get_flux_types()[flux_type_idx];
+                // Set the flux thread storage to 0
+                flux.value.setZero();
+                flux.deriv.setZero();
+
+                for (const SourceTermInterface<NSTOKES>* source :
+                     m_los_source_terms) {
+                    source->flux(
+                        w, i, thread_idx, ray_threadidx, flux,
+                        flux_type);
+                }
+
+                output.assign_flux(
+                    flux, i, w, ray_threadidx, flux_type_idx
+                );
+            }
+        }
 
     // TODO: Is this where we should generate fluxes or other quantities
     // that aren't through the integrator?

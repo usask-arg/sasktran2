@@ -73,7 +73,7 @@ struct Atmosphere {
 struct OutputC {
     std::unique_ptr<sasktran2::OutputInterface> impl;
 
-    OutputC(double* radiance, int nrad, int nstokes);
+    OutputC(double* radiance, int nrad, int nstokes, double* flux, int nflux);
 
     int assign_derivative_memory(const char* name, double* derivative_mapping,
                                  int nrad, int nstokes, int nderiv);

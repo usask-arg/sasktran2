@@ -44,4 +44,5 @@ from .viewinggeo.wrappers import (
     SolarAnglesObserverLocation,
     TangentAltitudeSolar,
     ViewingGeometry,
+    FluxObserverSolar
 )

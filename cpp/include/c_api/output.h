@@ -6,7 +6,7 @@ extern "C" {
 
 typedef struct OutputC OutputC;
 
-OutputC* sk_output_create(double* radiance, int nrad, int nstokes);
+OutputC* sk_output_create(double* radiance, int nrad, int nstokes, double* flux, int nflux);
 void sk_output_destroy(OutputC* config);
 
 int sk_output_assign_derivative_memory(OutputC* output, const char* name,

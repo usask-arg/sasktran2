@@ -873,6 +873,20 @@ impl Config {
             Ok(self)
         }
     }
+
+    pub fn num_flux_types(&self) -> Result<usize> {
+        let mut num_flux_types = 0i32;
+        let error_code = unsafe { ffi::sk_config_get_num_flux_types(self.config, &mut num_flux_types) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting number of flux types: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(num_flux_types as usize)
+        }
+    }
 }
 
 impl Drop for Config {

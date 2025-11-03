@@ -83,6 +83,18 @@ class Engine:
             dims=["wavelength", "los", "stokes"],
         )
 
+
+        if len(self._viewing_geometry.flux_observers) > 0:
+            # TODO: Grab this from the config
+            flux_types = ["upwelling", "downwelling"]
+
+            for i, flux_type in enumerate(flux_types):
+                out_ds[f"{flux_type}_flux"] = xr.DataArray(
+                    output.flux[i],
+                    dims=["wavelength", "flux_location"],
+                )
+
+
         if atmosphere.wavelengths_nm is not None:
             out_ds.coords["wavelength"] = atmosphere.wavelengths_nm
 

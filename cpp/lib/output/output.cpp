@@ -13,6 +13,8 @@ namespace sasktran2 {
         const sasktran2::viewinggeometry::InternalViewingGeometry& internal_viewing,
         const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere) {
         m_nlos = internal_viewing.traced_rays.size();
+        m_nfluxpos = internal_viewing.flux_observers.size();
+        m_nfluxtype = (int)config.get_flux_types().size();
         m_nwavel = atmosphere.num_wavel();
         m_nderiv = atmosphere.num_deriv();
         m_ngeometry = atmosphere.storage().total_extinction.rows();

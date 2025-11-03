@@ -806,6 +806,12 @@ unsafe extern "C" {
         log_level: ::std::os::raw::c_int,
     ) -> ::std::os::raw::c_int;
 }
+unsafe extern "C" {
+    pub fn sk_config_get_num_flux_types(
+        config: *mut Config,
+        num_flux_types: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct OutputC {
@@ -816,6 +822,8 @@ unsafe extern "C" {
         radiance: *mut f64,
         nrad: ::std::os::raw::c_int,
         nstokes: ::std::os::raw::c_int,
+        flux: *mut f64,
+        nflux: ::std::os::raw::c_int,
     ) -> *mut OutputC;
 }
 unsafe extern "C" {

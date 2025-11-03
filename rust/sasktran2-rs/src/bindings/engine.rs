@@ -87,9 +87,11 @@ impl<'a> Engine<'a> {
 
         let num_stokes = self.config.num_stokes()?;
         let num_los = self.viewing_geometry.num_rays()?;
+        let num_flux = self.viewing_geometry.num_flux_observers()?;
+        let num_flux_types = self.config.num_flux_types()?;
         let num_wavel = atmosphere.num_wavel();
 
-        let mut output = Output::new(num_wavel, num_los, num_stokes);
+        let mut output = Output::new(num_wavel, num_los, num_flux, num_flux_types, num_stokes);
 
         let deriv_names = atmosphere
             .storage

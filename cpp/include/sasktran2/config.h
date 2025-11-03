@@ -151,6 +151,14 @@ namespace sasktran2 {
          */
         enum class SingleScatterPhaseMode { from_legendre = 0, user = 1 };
 
+        enum class FluxType {
+            upwelling = 0,
+            downwelling = 1,
+            actinic = 2,
+            divergence = 3
+        };
+
+
         Config();
 
         /**
@@ -623,6 +631,13 @@ namespace sasktran2 {
         }
 
         /**
+         * @brief Get the flux types object
+         * 
+         * @return const std::vector<FluxType>& 
+         */
+        const std::vector<FluxType>& get_flux_types() const { return m_flux_types; }
+
+        /**
          * @brief Validates that the config is valid
          *
          */
@@ -656,6 +671,8 @@ namespace sasktran2 {
         bool m_los_refraction;
         bool m_solar_refraction;
         bool m_ms_refraction;
+
+        std::vector<FluxType> m_flux_types;
 
         SingleScatterSource m_single_scatter_source;
         MultipleScatterSource m_multiple_scatter_source;

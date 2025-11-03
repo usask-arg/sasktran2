@@ -103,4 +103,12 @@ template <int NSTOKES> class SourceTermInterface {
         int wavelidx, int losidx, int wavel_threadidx, int threadidx,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const = 0;
+
+    virtual void flux(
+        int wavelidx, int fluxidx, int wavelt_threadidx, int threadidx,
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& flux,
+        sasktran2::Config::FluxType flux_type
+    ) const {
+            spdlog::error("Flux calculation not implemented for this source term");
+        }
 };
