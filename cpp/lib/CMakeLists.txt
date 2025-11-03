@@ -59,8 +59,10 @@ add_library(
   sktran_disco/sktran_do_testing.cpp
   sktran_disco/sktran_do_types.cpp
   sktran_disco/sktran_do_postprocessing.cpp
+  sktran_disco/source_term/do_radiance_storage.cpp
   sktran_disco/source_term/do_source_legendrestorage.cpp
   sktran_disco/source_term/do_source_diffuse_storage.cpp
+  sktran_disco/source_term/do_source_native_solution.cpp
   sktran_disco/source_term/do_source.cpp
   sktran_disco/source_term/do_source_interpolated_pp.cpp
   sktran_disco/source_term/do_source_planeparallel.cpp)
