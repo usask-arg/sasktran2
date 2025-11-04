@@ -109,7 +109,7 @@ def test_flux_full_chain():
     viewing_geo = sk.ViewingGeometry()
 
     viewing_geo.add_flux_observer(
-        sk.FluxObserverSolar(0.6, 30000)
+        sk.FluxObserverSolar(0.6, 65000)
     )
 
     wavel = np.arange(280.0, 800.0, 10)

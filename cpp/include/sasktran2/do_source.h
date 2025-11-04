@@ -5,6 +5,7 @@
 #include "sasktran2/dual.h"
 #include "sasktran2/geometry.h"
 #include "sasktran2/raytracing.h"
+#include "sasktran2/viewinggeometry_internal.h"
 #include <sasktran2/internal_common.h>
 #include <sasktran2/source_interface.h>
 #include <sasktran2/solartransmission.h>
@@ -407,6 +408,7 @@ namespace sasktran2 {
         const sasktran2::Geometry1D& m_geometry;
         const sasktran2::Config* m_config;
         const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere;
+        const sasktran2::viewinggeometry::InternalViewingGeometry* m_internal_viewing;
 
         std::vector<sasktran_disco::LineOfSight>
             m_do_los; /**< Lines of sight converted to the LOS objects the DO
@@ -425,11 +427,23 @@ namespace sasktran2 {
         std::vector<sasktran_disco::Radiance<NSTOKES>> m_integral;
 
         // Output
+        // [thread, los]
         sasktran_disco::VectorDim2<
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>>
             m_radiances;
 
+
+        // [thread, flux_observer, flux_type]
+        sasktran_disco::VectorDim2<
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, -1>>
+            m_flux;
+
         int m_nstr;
+
+        void compute_flux(
+            int threadidx, 
+            sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>& optical_layer
+        );
 
       public:
         DOSourcePlaneParallelPostProcessing(

@@ -4,6 +4,7 @@
 #include "sasktran2/raytracing.h"
 #include "sasktran2/viewinggeometry_internal.h"
 #include "sktran_disco/sktran_do.h"
+#include "sktran_disco/sktran_do_opticallayer.h"
 #include "sktran_disco/sktran_do_polarization_types.h"
 #include "sktran_disco/sktran_do_types.h"
 
@@ -44,6 +45,12 @@ namespace sasktran2 {
             m_radiances[threadidx][j].deriv.setZero();
         }
 
+        spdlog::warn("Starting DO PostProcessing calculation");
+        for(int j = 0; j < m_internal_viewing->flux_observers.size(); ++j) {
+            m_flux[threadidx][j].resize(m_config->get_flux_types().size(), m_atmosphere->num_deriv(), true);
+        }
+
+
         int num_azi = m_config->num_do_streams();
 
         if (m_config->num_do_forced_azimuth() > 0) {
@@ -52,6 +59,10 @@ namespace sasktran2 {
 
         for (int m = 0; m < num_azi; ++m) {
             rte.solve(m);
+
+            if(m == 0) {
+                compute_flux(threadidx, optical_layer);
+            }
 
             ZoneScopedN("DO PostProcessing");
             for (int j = 0; j < m_do_los.size(); ++j) {
@@ -205,10 +216,104 @@ namespace sasktran2 {
         }
     }
 
+    template<int NSTOKES, int CNSTR>
+    void DOSourcePlaneParallelPostProcessing<NSTOKES, CNSTR>::compute_flux(int threadidx, 
+            sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>& optical_layer
+        ) {
+            spdlog::warn("Computing fluxes in DOSourcePlaneParallelPostProcessing");
+
+            using MatrixView = Eigen::Map<Eigen::MatrixXd>;
+            using ConstMatrixView = Eigen::Map<const Eigen::MatrixXd>;
+            using ConstTensorView = Eigen::TensorMap<const Eigen::Tensor<double, 3>>; // For d_homog
+
+            const int nstr = m_config->num_do_streams();
+
+            // Go through all of our flux types
+            for(int flux_type_idx = 0; flux_type_idx < m_config->get_flux_types().size(); ++flux_type_idx) {
+                sasktran2::Config::FluxType flux_type = m_config->get_flux_types()[flux_type_idx];
+
+                // And flux observers
+                for(int flux_obs_idx = 0; flux_obs_idx < m_internal_viewing->flux_observers.size(); ++flux_obs_idx) {
+                    const auto& flux_observer = m_internal_viewing->flux_observers[flux_obs_idx];
+
+                    // Then figure out what layer we are in
+                    double altitude = flux_observer.observer.radius() - m_geometry.coordinates().earth_radius();
+                    const sasktran_disco::OpticalLayer<NSTOKES, CNSTR>& layer = *optical_layer.layerAtAltitude(altitude);
+
+                    double layer_fraction =
+                        (layer.altitude(sasktran_disco::Location::CEILING) - altitude) /
+                        (layer.altitude(sasktran_disco::Location::CEILING) -
+                        layer.altitude(sasktran_disco::Location::FLOOR));
+                    double x = layer_fraction * layer.dual_thickness().value;
+
+                    // For the layer, we need the homogeneous solutions and the BVP
+                    // coefficients
+                    const auto& solution = layer.solution(0);
+
+                    const auto& h_minus = solution.value.dual_homog_minus();
+                    const auto& h_plus = solution.value.dual_homog_plus();
+
+                    const auto& g_plus_bottom = solution.value.dual_Gplus_bottom();
+                    const auto& g_plus_top = solution.value.dual_Gplus_top();
+                    const auto& g_minus_bottom = solution.value.dual_Gminus_bottom();
+                    const auto& g_minus_top = solution.value.dual_Gminus_top();
+
+                    ConstMatrixView homog_plus_matrix(
+                        h_plus.value.data(), nstr / 2 * NSTOKES, nstr / 2 * NSTOKES);
+                    ConstMatrixView homog_minus_matrix(
+                        h_minus.value.data(), nstr / 2 * NSTOKES, nstr / 2 * NSTOKES);
+
+                    const auto& eigval = solution.value.dual_eigval();
+
+                    const auto& dual_L = solution.boundary.L_coeffs;
+                    const auto& dual_M = solution.boundary.M_coeffs;
+
+                    // l = QUADRATURE ANGLE INDEX
+                    for (int l = 0; l < nstr / 2; ++l) {
+                        double quadrature_weight = (*m_thread_storage[threadidx].sza_calculators[0]
+                                                        .persistent_config
+                                                        ->quadrature_weights())[l];
+
+                        // j = SOLUTION INDEX
+                        for (int j = 0; j < nstr / 2 * NSTOKES; ++j) {
+                            double L = dual_L.value(j);
+                            double M = dual_M.value(j);
+
+                            int h_lidx = l * NSTOKES;
+
+                            double exp_f = std::exp(-layer.dual_thickness().value * eigval.value(j));
+
+                            if(flux_type == sasktran2::Config::FluxType::downwelling) {
+                                m_flux[threadidx][flux_obs_idx].value(flux_type_idx) += quadrature_weight * 0.5 * (1 + exp_f) * 
+                                (L * homog_plus_matrix(h_lidx, j) + M * homog_minus_matrix(h_lidx, j));
+                            }
+
+                            if(flux_type == sasktran2::Config::FluxType::upwelling) {
+                                m_flux[threadidx][flux_obs_idx].value(flux_type_idx) += quadrature_weight * 0.5 * (1 + exp_f) *
+                            (L * homog_minus_matrix(h_lidx, j) + M * homog_plus_matrix(h_lidx, j));
+                            }
+                        }
+
+                        if(flux_type == sasktran2::Config::FluxType::downwelling) {
+                            m_flux[threadidx][flux_obs_idx].value(flux_type_idx) += quadrature_weight * 0.5 * (g_minus_bottom.value(l * NSTOKES) + 
+                               g_minus_top.value(l * NSTOKES));
+                        }
+
+                        if(flux_type == sasktran2::Config::FluxType::upwelling) {
+                            m_flux[threadidx][flux_obs_idx].value(flux_type_idx) += quadrature_weight * 0.5 * (g_plus_bottom.value(l * NSTOKES)
+                                 + g_plus_top.value(l * NSTOKES));
+                        }
+                    }   
+                }
+            }
+        }
+
     template <int NSTOKES, int CNSTR>
     void
     DOSourcePlaneParallelPostProcessing<NSTOKES, CNSTR>::initialize_geometry(
         const sasktran2::viewinggeometry::InternalViewingGeometry& internal_viewing) {
+        m_internal_viewing = &internal_viewing;
+
         m_do_los.resize(internal_viewing.traced_rays.size());
         m_lp_coszen.resize(internal_viewing.traced_rays.size());
 
@@ -282,6 +387,16 @@ namespace sasktran2 {
                 m_do_los.size(),
                 sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>(
                     NSTOKES, m_atmosphere->num_deriv())));
+
+        m_flux.resize(
+            m_thread_storage.size(),
+            std::vector<sasktran2::Dual<double, sasktran2::dualstorage::dense,
+                                        -1>>(
+                                            m_internal_viewing->flux_observers.size(),
+                                            sasktran2::Dual<double, sasktran2::dualstorage::dense, -1>(
+                                                m_config->get_flux_types().size(), m_atmosphere->num_deriv())
+                                        ));
+        
         m_integral.resize(m_thread_storage.size(), m_atmosphere->num_deriv());
     }
 
@@ -323,8 +438,12 @@ namespace sasktran2 {
         int wavelidx, int fluxidx, int wavel_threadidx, int threadidx
         , sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& flux, sasktran2::Config::FluxType flux_type)
         const {
+            const DOSourceThreadStorage<NSTOKES, CNSTR>& storage = m_thread_storage[threadidx];
+            const DOSingleSZACalculator<NSTOKES, CNSTR>& sza_calc = storage.sza_calculators[0];
 
-            flux.value.setConstant(5.0);
+
+            flux.value.setConstant(m_flux[threadidx][fluxidx].value(
+                static_cast<int>(flux_type)));
         }
 
     SASKTRAN_DISCO_INSTANTIATE_TEMPLATE(DOSourcePlaneParallelPostProcessing);
