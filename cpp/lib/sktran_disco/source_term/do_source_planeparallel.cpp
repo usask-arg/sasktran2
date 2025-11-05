@@ -6,6 +6,7 @@
 #include "sktran_disco/sktran_do.h"
 #include "sktran_disco/sktran_do_opticallayer.h"
 #include "sktran_disco/sktran_do_polarization_types.h"
+#include "sktran_disco/sktran_do_postprocessing.h"
 #include "sktran_disco/sktran_do_types.h"
 
 namespace sasktran2 {
@@ -45,7 +46,6 @@ namespace sasktran2 {
             m_radiances[threadidx][j].deriv.setZero();
         }
 
-        spdlog::warn("Starting DO PostProcessing calculation");
         for(int j = 0; j < m_internal_viewing->flux_observers.size(); ++j) {
             m_flux[threadidx][j].resize(m_config->get_flux_types().size(), m_atmosphere->num_deriv(), true);
         }
@@ -220,7 +220,8 @@ namespace sasktran2 {
     void DOSourcePlaneParallelPostProcessing<NSTOKES, CNSTR>::compute_flux(int threadidx, 
             sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>& optical_layer
         ) {
-            spdlog::warn("Computing fluxes in DOSourcePlaneParallelPostProcessing");
+            // TODO: I think we can do this more efficiently by collapsing the homogeneous
+            // solution vectors first?
 
             using MatrixView = Eigen::Map<Eigen::MatrixXd>;
             using ConstMatrixView = Eigen::Map<const Eigen::MatrixXd>;
@@ -228,17 +229,30 @@ namespace sasktran2 {
 
             const int nstr = m_config->num_do_streams();
 
+            const auto& input_derivatives = optical_layer.inputDerivatives();
+            const int num_total_derivatives = input_derivatives.numDerivative();
+
+            Eigen::VectorXd temp_deriv(num_total_derivatives);
+
             // Go through all of our flux types
             for(int flux_type_idx = 0; flux_type_idx < m_config->get_flux_types().size(); ++flux_type_idx) {
+
                 sasktran2::Config::FluxType flux_type = m_config->get_flux_types()[flux_type_idx];
 
                 // And flux observers
                 for(int flux_obs_idx = 0; flux_obs_idx < m_internal_viewing->flux_observers.size(); ++flux_obs_idx) {
+                    auto& flux = m_flux[threadidx][flux_obs_idx];
+
+                    temp_deriv.setZero();
                     const auto& flux_observer = m_internal_viewing->flux_observers[flux_obs_idx];
 
                     // Then figure out what layer we are in
                     double altitude = flux_observer.observer.radius() - m_geometry.coordinates().earth_radius();
                     const sasktran_disco::OpticalLayer<NSTOKES, CNSTR>& layer = *optical_layer.layerAtAltitude(altitude);
+                    int p = layer.index();
+
+                    const int num_layer_derivatives = input_derivatives.numDerivativeLayer(p);
+                    const int layer_d_start = input_derivatives.layerStartIndex(p);
 
                     double layer_fraction =
                         (layer.altitude(sasktran_disco::Location::CEILING) - altitude) /
@@ -250,60 +264,168 @@ namespace sasktran2 {
                     // coefficients
                     const auto& solution = layer.solution(0);
 
+                    auto& Dm = layer.postprocessing_cache().Dm[0];
+                    auto& Dp = layer.postprocessing_cache().Dp[0];
+
+                    auto& Hp = layer.postprocessing_cache().hp[0];
+                    auto& Hm = layer.postprocessing_cache().hm[0];
+
                     const auto& h_minus = solution.value.dual_homog_minus();
                     const auto& h_plus = solution.value.dual_homog_plus();
 
-                    const auto& g_plus_bottom = solution.value.dual_Gplus_bottom();
-                    const auto& g_plus_top = solution.value.dual_Gplus_top();
-                    const auto& g_minus_bottom = solution.value.dual_Gminus_bottom();
-                    const auto& g_minus_top = solution.value.dual_Gminus_top();
+                    const auto& dual_Aplus = solution.value.dual_green_A_plus();
+                    const auto& dual_Aminus = solution.value.dual_green_A_minus();
 
                     ConstMatrixView homog_plus_matrix(
                         h_plus.value.data(), nstr / 2 * NSTOKES, nstr / 2 * NSTOKES);
                     ConstMatrixView homog_minus_matrix(
                         h_minus.value.data(), nstr / 2 * NSTOKES, nstr / 2 * NSTOKES);
 
+                    ConstTensorView d_homog_plus(
+                        h_plus.deriv.data(), num_layer_derivatives, nstr / 2 * NSTOKES, nstr / 2 * NSTOKES
+                    );
+
+                    ConstTensorView d_homog_minus(
+                        h_minus.deriv.data(), num_layer_derivatives, nstr / 2 * NSTOKES, nstr / 2 * NSTOKES
+                    );
+
                     const auto& eigval = solution.value.dual_eigval();
+                    const auto& transmission = layer.ceiling_beam_transmittanc();
+                    const auto& average_secant = layer.dual_average_secant();
+                    const auto& dual_thickness = layer.dual_thickness();
 
                     const auto& dual_L = solution.boundary.L_coeffs;
                     const auto& dual_M = solution.boundary.M_coeffs;
 
-                    // l = QUADRATURE ANGLE INDEX
-                    for (int l = 0; l < nstr / 2; ++l) {
-                        double quadrature_weight = (*m_thread_storage[threadidx].sza_calculators[0]
+                    // j = SOLUTION INDEX
+                    for (int j = 0; j < nstr / 2 * NSTOKES; ++j) {
+                        sasktran_disco::postprocessing::d_minus_sampled(dual_thickness, eigval, j, layer_fraction, transmission, average_secant, layer_d_start, Dm);
+                        sasktran_disco::postprocessing::d_plus_sampled(dual_thickness, eigval, j, layer_fraction, transmission, average_secant, layer_d_start, Dp);
+
+                        sasktran_disco::postprocessing::h_plus_sampled(dual_thickness, eigval, j, layer_fraction, Hp);
+                        sasktran_disco::postprocessing::h_minus_sampled(dual_thickness, eigval, j, layer_fraction, Hm);
+
+                        // l = QUADRATURE ANGLE INDEX
+                        for (int l = 0; l < nstr / 2; ++l) {
+                            double quadrature_weight = (*m_thread_storage[threadidx].sza_calculators[0]
                                                         .persistent_config
                                                         ->quadrature_weights())[l];
 
-                        // j = SOLUTION INDEX
-                        for (int j = 0; j < nstr / 2 * NSTOKES; ++j) {
                             double L = dual_L.value(j);
                             double M = dual_M.value(j);
 
                             int h_lidx = l * NSTOKES;
 
-                            double exp_f = std::exp(-layer.dual_thickness().value * eigval.value(j));
-
                             if(flux_type == sasktran2::Config::FluxType::downwelling) {
-                                m_flux[threadidx][flux_obs_idx].value(flux_type_idx) += quadrature_weight * 0.5 * (1 + exp_f) * 
-                                (L * homog_plus_matrix(h_lidx, j) + M * homog_minus_matrix(h_lidx, j));
+                                double homog_plus_factor = quadrature_weight *
+                                    (L * Hp.value + dual_Aplus.value(j) * Dm.value);
+
+                                double homog_minus_factor = quadrature_weight *
+                                    (M * Hm.value + dual_Aminus.value(j) * Dp.value);
+
+                                m_flux[threadidx][flux_obs_idx].value(flux_type_idx) +=
+                                    homog_minus_factor * homog_minus_matrix(h_lidx, j) +
+                                    homog_plus_factor * homog_plus_matrix(h_lidx, j);
+
+                                // Derivatives
+                                // L, M, Dm, Dp have total derivatives
+                                for(int d = 0; d < num_total_derivatives; ++d) {
+                                    temp_deriv(d) +=
+                                        quadrature_weight * homog_plus_matrix(h_lidx, j) * (
+                                            dual_L.deriv(d, j) * Hp.value +
+                                            Dm.deriv(d) * dual_Aplus.value(j)
+                                        ) +
+                                        quadrature_weight * homog_minus_matrix(h_lidx, j) * (
+                                            dual_M.deriv(d, j) * Hm.value +
+                                            Dp.deriv(d) * dual_Aminus.value(j)
+                                        )
+                                        ;
+                                }
+                                // And then Hm, Hp, Aplus, Aminus, and homog matrices have layer derivatives
+                                for(int d = 0; d < num_layer_derivatives; ++d) {
+                                    temp_deriv(d + layer_d_start) +=
+                                        quadrature_weight * homog_plus_matrix(h_lidx, j) * (
+                                            Hp.deriv(d) * L +
+                                            dual_Aplus.deriv(d, j) * Dm.value
+                                        ) + 
+                                        quadrature_weight * homog_minus_matrix(h_lidx, j) * (
+                                            Hm.deriv(d) * M +
+                                            dual_Aminus.deriv(d, j) * Dp.value
+                                        ) +
+                                        homog_plus_factor * d_homog_plus(d, h_lidx, j) +
+                                        homog_minus_factor * d_homog_minus(d, h_lidx, j);
+                                }
+
                             }
 
                             if(flux_type == sasktran2::Config::FluxType::upwelling) {
-                                m_flux[threadidx][flux_obs_idx].value(flux_type_idx) += quadrature_weight * 0.5 * (1 + exp_f) *
-                            (L * homog_minus_matrix(h_lidx, j) + M * homog_plus_matrix(h_lidx, j));
+                                double homog_minus_factor = quadrature_weight *
+                                    (L * Hp.value + dual_Aplus.value(j) * Dm.value);
+
+                                double homog_plus_factor = quadrature_weight *
+                                    (M * Hm.value + dual_Aminus.value(j) * Dp.value);
+
+                                m_flux[threadidx][flux_obs_idx].value(flux_type_idx) +=
+                                    homog_minus_factor * homog_minus_matrix(h_lidx, j) +
+                                    homog_plus_factor * homog_plus_matrix(h_lidx, j);
+
+                                // Derivatives
+                                // L, M, Dm, Dp have total derivatives
+                                for(int d = 0; d < num_total_derivatives; ++d) {
+                                    temp_deriv(d) +=
+                                        quadrature_weight * homog_minus_matrix(h_lidx, j) * (
+                                            dual_L.deriv(d, j) * Hp.value +
+                                            Dm.deriv(d) * dual_Aplus.value(j)
+                                        ) +
+                                        quadrature_weight * homog_plus_matrix(h_lidx, j) * (
+                                            dual_M.deriv(d, j) * Hm.value +
+                                            Dp.deriv(d) * dual_Aminus.value(j)
+                                        )
+                                        ;
+                                }
+                                // And then Hm, Hp, Aplus, Aminus, and homog matrices have layer derivatives
+                                for(int d = 0; d < num_layer_derivatives; ++d) {
+                                    temp_deriv(d + layer_d_start) +=
+                                        quadrature_weight * homog_minus_matrix(h_lidx, j) * (
+                                            Hp.deriv(d) * L +
+                                            dual_Aplus.deriv(d, j) * Dm.value
+                                        ) + 
+                                        quadrature_weight * homog_plus_matrix(h_lidx, j) * (
+                                            Hm.deriv(d) * M +
+                                            dual_Aminus.deriv(d, j) * Dp.value
+                                        ) +
+                                        homog_plus_factor * d_homog_plus(d, h_lidx, j) +
+                                        homog_minus_factor * d_homog_minus(d, h_lidx, j);
+                                }
+
+
                             }
                         }
+                    }
+                    
+                    if (num_total_derivatives > 0) {
+                        flux.deriv(flux_type_idx, Eigen::all)
+                            .setZero();
+                    }
+                    for (int k = 0; k < num_total_derivatives; ++k) {
+                        for (int l = 0;
+                                l < input_derivatives.layerDerivatives()[k]
+                                        .group_and_triangle_fraction.size();
+                                ++l) {
+                            const std::pair<sasktran_disco::uint, double>&
+                                group_fraction =
+                                    input_derivatives.layerDerivatives()[k]
+                                        .group_and_triangle_fraction[l];
+                            const auto& extinction =
+                                input_derivatives.layerDerivatives()[k]
+                                    .extinctions[l];
 
-                        if(flux_type == sasktran2::Config::FluxType::downwelling) {
-                            m_flux[threadidx][flux_obs_idx].value(flux_type_idx) += quadrature_weight * 0.5 * (g_minus_bottom.value(l * NSTOKES) + 
-                               g_minus_top.value(l * NSTOKES));
+                            flux.deriv(
+                                flux_type_idx, group_fraction.first) +=
+                                group_fraction.second * temp_deriv(k) *
+                                extinction;
                         }
-
-                        if(flux_type == sasktran2::Config::FluxType::upwelling) {
-                            m_flux[threadidx][flux_obs_idx].value(flux_type_idx) += quadrature_weight * 0.5 * (g_plus_bottom.value(l * NSTOKES)
-                                 + g_plus_top.value(l * NSTOKES));
-                        }
-                    }   
+                    }
                 }
             }
         }
@@ -438,12 +560,11 @@ namespace sasktran2 {
         int wavelidx, int fluxidx, int wavel_threadidx, int threadidx
         , sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& flux, sasktran2::Config::FluxType flux_type)
         const {
-            const DOSourceThreadStorage<NSTOKES, CNSTR>& storage = m_thread_storage[threadidx];
-            const DOSingleSZACalculator<NSTOKES, CNSTR>& sza_calc = storage.sza_calculators[0];
-
-
             flux.value.setConstant(m_flux[threadidx][fluxidx].value(
                 static_cast<int>(flux_type)));
+
+            flux.deriv = m_flux[threadidx][fluxidx].deriv.row(
+                static_cast<int>(flux_type));
         }
 
     SASKTRAN_DISCO_INSTANTIATE_TEMPLATE(DOSourcePlaneParallelPostProcessing);

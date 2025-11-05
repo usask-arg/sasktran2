@@ -18,6 +18,16 @@ int sk_output_assign_surface_derivative_memory(OutputC* output,
                                                double* derivative_mapping,
                                                int nrad, int nstokes);
 
+
+int sk_output_assign_flux_derivative_memory(OutputC* output, const char* name,
+                                       double* derivative_mapping, int nrad,
+                                    int nderiv);
+
+int sk_output_assign_surface_flux_derivative_memory(OutputC* output,
+                                               const char* name,
+                                               double* derivative_mapping,
+                                               int nrad);
+
 int sk_output_get_los_optical_depth(OutputC* output, double** od);
 
 #ifdef __cplusplus

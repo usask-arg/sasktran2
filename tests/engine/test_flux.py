@@ -8,7 +8,7 @@ import xarray as xr
 
 
 def test_upwelling_flux():
-    alts = [35999]
+    alts = [64750]
 
     for alt in alts:
         config = sk.Config()
@@ -66,7 +66,6 @@ def test_upwelling_flux():
         rad = engine.calculate_radiance(atmosphere)
 
         rad["upwelling_flux_numeric"] = rad["radiance"].isel(stokes=0) @ integrand
-
 
         np.testing.assert_allclose(
             rad["upwelling_flux"].isel(flux_location=0).values,

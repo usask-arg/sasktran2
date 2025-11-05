@@ -849,6 +849,23 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn sk_output_assign_flux_derivative_memory(
+        output: *mut OutputC,
+        name: *const ::std::os::raw::c_char,
+        derivative_mapping: *mut f64,
+        nrad: ::std::os::raw::c_int,
+        nderiv: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_output_assign_surface_flux_derivative_memory(
+        output: *mut OutputC,
+        name: *const ::std::os::raw::c_char,
+        derivative_mapping: *mut f64,
+        nrad: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn sk_output_get_los_optical_depth(
         output: *mut OutputC,
         od: *mut *mut f64,

@@ -70,7 +70,7 @@ impl PyOutput {
         let py_dict = PyDict::new(this.py());
 
         for (key, value) in d_flux.iter() {
-            let deriv = unsafe { PyArray3::borrow_from_array(value, this.clone().into_any()) };
+            let deriv = unsafe { PyArray4::borrow_from_array(value, this.clone().into_any()) };
 
             py_dict.set_item(key, deriv)?;
         }
@@ -85,7 +85,7 @@ impl PyOutput {
         let py_dict = PyDict::new(this.py());
 
         for (key, value) in d_flux.iter() {
-            let deriv = unsafe { PyArray2::borrow_from_array(value, this.clone().into_any()) };
+            let deriv = unsafe { PyArray3::borrow_from_array(value, this.clone().into_any()) };
 
             py_dict.set_item(key, deriv)?;
         }

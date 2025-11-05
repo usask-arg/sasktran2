@@ -1,6 +1,7 @@
 #pragma once
 #include "sktran_disco/sktran_do.h"
 #include "sktran_disco/sktran_do_linearization_types.h"
+#include "sktran_disco/sktran_do_memory.h"
 
 namespace sasktran_disco {
 
@@ -448,6 +449,10 @@ namespace sasktran_disco {
          */
         void E(double mu, double x, double thickness,
                const Dual<double>& transmission, Dual<double>& xform) const;
+
+        PostProcessingCache<NSTOKES, CNSTR>& postprocessing_cache() const {
+            return static_cast<PostProcessingCache<NSTOKES, CNSTR>&>(m_postprocessing_cache);
+        }
 
       protected:
         double M_SSA;                /** Layer single scatter albedo */
