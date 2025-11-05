@@ -504,12 +504,11 @@ int sk_config_set_log_level(Config* config, int log_level) {
     return 0; // Success
 }
 
-int sk_config_get_num_flux_types(Config *config, int *num_flux_types) {
+int sk_config_get_num_flux_types(Config* config, int* num_flux_types) {
     if (config == nullptr || num_flux_types == nullptr) {
         return -1; // Error: null pointer
     }
     *num_flux_types = static_cast<int>(config->impl.get_flux_types().size());
     return 0; // Success
 }
-
 }

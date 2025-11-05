@@ -28,11 +28,13 @@ namespace sasktran2::viewinggeometry {
     };
 
     /**
-     * The necessary information to define a location where upwelling and downwelling fluxes are calculated
-     * 
+     * The necessary information to define a location where upwelling and
+     * downwelling fluxes are calculated
+     *
      */
     struct FluxObserver {
-        sasktran2::Location observer; /**< Observer location for the flux output */
+        sasktran2::Location
+            observer; /**< Observer location for the flux output */
     };
 
     /** Generally an observing viewing geometry is defined as an observer
@@ -71,9 +73,9 @@ namespace sasktran2::viewinggeometry {
     };
 
     /**
-     *  Allows for conversion between user specified coordinates (such as SZA, lat/lon, etc)
-     *  and internal coordinates for flux observers
-     * 
+     *  Allows for conversion between user specified coordinates (such as SZA,
+     * lat/lon, etc) and internal coordinates for flux observers
+     *
      */
     class FluxGeometryBase {
       public:
@@ -235,17 +237,18 @@ namespace sasktran2::viewinggeometry {
       private:
         double m_cos_sza;
         double m_observer_altitude;
-      
+
       public:
         FluxObserverSolar(double cos_sza, double observer_altitude);
 
-        /** Constructs the flux observer from the user provided angles and altitudes
+        /** Constructs the flux observer from the user provided angles and
+         * altitudes
          *
          * @param geometry Internal sasktran Coordinates
          * @return FluxObserver
          */
-        FluxObserver
-        construct_flux_observer(const sasktran2::Coordinates& geometry) override final;
+        FluxObserver construct_flux_observer(
+            const sasktran2::Coordinates& geometry) override final;
 
         std::string to_string() const override final;
     };
@@ -273,7 +276,6 @@ namespace sasktran2::viewinggeometry {
         observer_rays() {
             return m_observer_rays;
         }
-
 
         std::vector<
             std::unique_ptr<sasktran2::viewinggeometry::FluxGeometryBase>>&
@@ -308,8 +310,7 @@ namespace sasktran2::viewinggeometry {
          *
          * @param flux_observer
          */
-        void
-        add_flux_observer(
+        void add_flux_observer(
             const sasktran2::viewinggeometry::FluxGeometryBase& flux_observer);
     };
 

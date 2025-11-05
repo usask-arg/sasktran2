@@ -26,11 +26,12 @@ namespace sasktran2::emission {
          * needed to detect ground hits and whether to include
          * surface emissions at the end of the ray.
          *
-         *  @param internal_viewing Information on the internal viewing geometry, los_rays and flux observers
+         *  @param internal_viewing Information on the internal viewing
+         * geometry, los_rays and flux observers
          */
         void initialize_geometry(
-            const sasktran2::viewinggeometry::InternalViewingGeometry& internal_viewing)
-            override;
+            const sasktran2::viewinggeometry::InternalViewingGeometry&
+                internal_viewing) override;
 
         /**
          *

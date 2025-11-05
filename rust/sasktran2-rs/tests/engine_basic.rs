@@ -42,7 +42,6 @@ fn test_engine_basic() -> Result<()> {
     Ok(())
 }
 
-
 #[test]
 fn test_flux_basic() -> Result<()> {
     let mut atmosphere = Atmosphere::new(10, 50, 16, true, true, Stokes::Stokes1);
@@ -71,10 +70,8 @@ fn test_flux_basic() -> Result<()> {
 
     let mut config = Config::new();
 
-    let _ = 
-        config.with_multiple_scatter_source(MultipleScatterSource::DiscreteOrdinates);
-    let _ = 
-        config.with_single_scatter_source(SingleScatterSource::DiscreteOrdinates);
+    let _ = config.with_multiple_scatter_source(MultipleScatterSource::DiscreteOrdinates);
+    let _ = config.with_single_scatter_source(SingleScatterSource::DiscreteOrdinates);
 
     let mut viewing_geometry = ViewingGeometry::new();
     viewing_geometry.add_flux_observer_solar(0.6, 30000.0);

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from sasktran2._core_rust import (
+    PyFluxObserverSolar,
     PyGroundViewingSolar,
     PySolarAnglesObserverLocation,
     PyTangentAltitudeSolar,
     PyViewingGeometry,
-    PyFluxObserverSolar,
 )
 
 
@@ -175,9 +175,7 @@ class FluxObserverSolar:
         observer_altitude_m: float
             Observer altitude relative to the earth [m]
         """
-        self._internal = PyFluxObserverSolar(
-            cos_sza, observer_altitude_m
-        )
+        self._internal = PyFluxObserverSolar(cos_sza, observer_altitude_m)
 
         self._cos_sza = cos_sza
         self._observer_altitude_m = observer_altitude_m

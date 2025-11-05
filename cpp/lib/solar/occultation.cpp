@@ -11,7 +11,8 @@ namespace sasktran2::solartransmission {
 
     template <int NSTOKES>
     void OccultationSource<NSTOKES>::initialize_geometry(
-        const sasktran2::viewinggeometry::InternalViewingGeometry& internal_viewing) {}
+        const sasktran2::viewinggeometry::InternalViewingGeometry&
+            internal_viewing) {}
 
     template <int NSTOKES>
     void OccultationSource<NSTOKES>::integrated_source(

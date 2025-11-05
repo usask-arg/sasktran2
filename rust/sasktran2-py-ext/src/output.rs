@@ -8,7 +8,13 @@ pub struct PyOutput {
 }
 
 impl PyOutput {
-    pub fn new(num_wavel: usize, num_los: usize, num_flux: usize, num_flux_types: usize, num_stokes: usize) -> Self {
+    pub fn new(
+        num_wavel: usize,
+        num_los: usize,
+        num_flux: usize,
+        num_flux_types: usize,
+        num_stokes: usize,
+    ) -> Self {
         let output = output::Output::new(num_wavel, num_los, num_flux, num_flux_types, num_stokes);
         Self { output }
     }
@@ -60,7 +66,6 @@ impl PyOutput {
 
         Ok(py_dict)
     }
-
 
     #[getter]
     fn get_d_flux<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyDict>> {

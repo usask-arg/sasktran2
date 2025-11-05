@@ -123,7 +123,8 @@ namespace sasktran2 {
 
     template <int NSTOKES, int CNSTR>
     void DOSource<NSTOKES, CNSTR>::initialize_geometry(
-        const sasktran2::viewinggeometry::InternalViewingGeometry& internal_viewing) {
+        const sasktran2::viewinggeometry::InternalViewingGeometry&
+            internal_viewing) {
         m_los_rays = &internal_viewing.traced_rays;
 
         // Create the SZA grid

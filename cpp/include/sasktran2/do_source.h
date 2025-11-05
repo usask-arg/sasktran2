@@ -300,10 +300,12 @@ namespace sasktran2 {
 
         /** Initializes the geometry
          *
-         * @param internal_viewing Information on the internal viewing geometry, los_rays and flux observers
+         * @param internal_viewing Information on the internal viewing geometry,
+         * los_rays and flux observers
          */
         virtual void initialize_geometry(
-            const sasktran2::viewinggeometry::InternalViewingGeometry& internal_viewing);
+            const sasktran2::viewinggeometry::InternalViewingGeometry&
+                internal_viewing);
 
         /** Initializes the atmosphere
          *
@@ -359,8 +361,8 @@ namespace sasktran2 {
 
         virtual void calculate(int wavelidx, int threadidx);
         virtual void initialize_geometry(
-            const sasktran2::viewinggeometry::InternalViewingGeometry& internal_viewing)
-            override;
+            const sasktran2::viewinggeometry::InternalViewingGeometry&
+                internal_viewing) override;
         virtual void initialize_atmosphere(
             const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere)
             override;
@@ -408,7 +410,8 @@ namespace sasktran2 {
         const sasktran2::Geometry1D& m_geometry;
         const sasktran2::Config* m_config;
         const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere;
-        const sasktran2::viewinggeometry::InternalViewingGeometry* m_internal_viewing;
+        const sasktran2::viewinggeometry::InternalViewingGeometry*
+            m_internal_viewing;
 
         std::vector<sasktran_disco::LineOfSight>
             m_do_los; /**< Lines of sight converted to the LOS objects the DO
@@ -432,7 +435,6 @@ namespace sasktran2 {
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>>
             m_radiances;
 
-
         // [thread, flux_observer, flux_type]
         sasktran_disco::VectorDim2<
             sasktran2::Dual<double, sasktran2::dualstorage::dense, -1>>
@@ -441,9 +443,8 @@ namespace sasktran2 {
         int m_nstr;
 
         void compute_flux(
-            int threadidx, 
-            sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>& optical_layer
-        );
+            int threadidx,
+            sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>& optical_layer);
 
       public:
         DOSourcePlaneParallelPostProcessing(
@@ -452,8 +453,8 @@ namespace sasktran2 {
         virtual void calculate(int wavelidx, int threadidx);
 
         virtual void initialize_geometry(
-            const sasktran2::viewinggeometry::InternalViewingGeometry& internal_viewing)
-            override;
+            const sasktran2::viewinggeometry::InternalViewingGeometry&
+                internal_viewing) override;
         virtual void initialize_atmosphere(
             const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere)
             override;
@@ -490,12 +491,10 @@ namespace sasktran2 {
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
                 source) const override;
 
-        virtual void flux(
-        int wavelidx, int fluxidx, int wavelt_threadidx, int threadidx,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& flux,
-        sasktran2::Config::FluxType flux_type
-    ) const override;
-        
+        virtual void
+        flux(int wavelidx, int fluxidx, int wavelt_threadidx, int threadidx,
+             sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& flux,
+             sasktran2::Config::FluxType flux_type) const override;
     };
 
 } // namespace sasktran2

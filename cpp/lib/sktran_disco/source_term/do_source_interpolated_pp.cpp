@@ -46,10 +46,12 @@ namespace sasktran2 {
 
         if (m_will_integrate_sources) {
             m_los_source_interpolator =
-                m_diffuse_storage->geometry_interpolator(internal_viewing.traced_rays);
+                m_diffuse_storage->geometry_interpolator(
+                    internal_viewing.traced_rays);
             m_source_interpolator_view = m_los_source_interpolator.get();
 
-            m_los_ground_source_interpolator.resize(internal_viewing.traced_rays.size());
+            m_los_ground_source_interpolator.resize(
+                internal_viewing.traced_rays.size());
 
             for (int i = 0; i < internal_viewing.traced_rays.size(); ++i) {
                 if (internal_viewing.traced_rays[i].ground_is_hit) {
@@ -57,8 +59,12 @@ namespace sasktran2 {
                         std::make_unique<Eigen::SparseVector<double>>();
 
                     m_diffuse_storage->create_ground_source_interpolator(
-                        internal_viewing.traced_rays[i].layers[0].entrance.position,
-                        internal_viewing.traced_rays[i].layers[0].average_look_away,
+                        internal_viewing.traced_rays[i]
+                            .layers[0]
+                            .entrance.position,
+                        internal_viewing.traced_rays[i]
+                            .layers[0]
+                            .average_look_away,
                         *m_los_ground_source_interpolator[i]);
                 }
             }

@@ -108,9 +108,7 @@ def test_flux_full_chain():
 
     viewing_geo = sk.ViewingGeometry()
 
-    viewing_geo.add_flux_observer(
-        sk.FluxObserverSolar(0.6, 65000)
-    )
+    viewing_geo.add_flux_observer(sk.FluxObserverSolar(0.6, 65000))
 
     wavel = np.arange(280.0, 800.0, 10)
     atmosphere = sk.Atmosphere(model_geometry, config, wavelengths_nm=wavel)

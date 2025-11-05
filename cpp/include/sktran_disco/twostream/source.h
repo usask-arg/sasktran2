@@ -50,10 +50,11 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
     };
 
     virtual void initialize_geometry(
-        const sasktran2::viewinggeometry::InternalViewingGeometry& internal_viewing) override {
-        m_pconfig.configure(m_spec, *m_config,
-                            m_geometry.coordinates().cos_sza_at_reference(),
-                            m_geometry.size() - 1, internal_viewing.traced_rays);
+        const sasktran2::viewinggeometry::InternalViewingGeometry&
+            internal_viewing) override {
+        m_pconfig.configure(
+            m_spec, *m_config, m_geometry.coordinates().cos_sza_at_reference(),
+            m_geometry.size() - 1, internal_viewing.traced_rays);
         m_los_rays = &internal_viewing.traced_rays;
 
         m_geometry_layers =

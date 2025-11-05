@@ -451,7 +451,8 @@ namespace sasktran_disco {
                const Dual<double>& transmission, Dual<double>& xform) const;
 
         PostProcessingCache<NSTOKES, CNSTR>& postprocessing_cache() const {
-            return static_cast<PostProcessingCache<NSTOKES, CNSTR>&>(m_postprocessing_cache);
+            return static_cast<PostProcessingCache<NSTOKES, CNSTR>&>(
+                m_postprocessing_cache);
         }
 
       protected:

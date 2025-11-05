@@ -9,7 +9,8 @@
 namespace sasktran2::emission {
     template <int NSTOKES>
     void EmissionSource<NSTOKES>::initialize_geometry(
-        const sasktran2::viewinggeometry::InternalViewingGeometry& internal_viewing) {
+        const sasktran2::viewinggeometry::InternalViewingGeometry&
+            internal_viewing) {
         // Store the rays for later
         m_los_rays = &internal_viewing.traced_rays;
     }

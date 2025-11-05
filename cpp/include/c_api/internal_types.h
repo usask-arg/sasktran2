@@ -81,10 +81,12 @@ struct OutputC {
                                          double* derivative_mapping, int nrad,
                                          int nstokes);
 
-    int assign_flux_derivative_memory(const char* name, double* derivative_mapping,
-                                 int nrad, int nderiv);
+    int assign_flux_derivative_memory(const char* name,
+                                      double* derivative_mapping, int nrad,
+                                      int nderiv);
     int assign_surface_flux_derivative_memory(const char* name,
-                                         double* derivative_mapping, int nrad);
+                                              double* derivative_mapping,
+                                              int nrad);
 };
 
 struct ViewingGeometry {

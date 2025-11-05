@@ -81,8 +81,12 @@ namespace sasktran2 {
                int losidx, int wavelidx, int threadidx) = 0;
 
         virtual void assign_flux(
-            const sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& flux,
-            int fluxidx, int wavelidx, int threadidx, int flux_type_idx) { spdlog::error("Flux assignment not implemented for this output type"); };
+            const sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>&
+                flux,
+            int fluxidx, int wavelidx, int threadidx, int flux_type_idx) {
+            spdlog::error(
+                "Flux assignment not implemented for this output type");
+        };
 
         /**
          *
@@ -206,7 +210,9 @@ namespace sasktran2 {
         void resize();
 
       public:
-        OutputC(Eigen::Map<Eigen::VectorXd> radiance, Eigen::Map<Eigen::VectorXd> flux) : m_radiance(radiance), m_flux(flux) {};
+        OutputC(Eigen::Map<Eigen::VectorXd> radiance,
+                Eigen::Map<Eigen::VectorXd> flux)
+            : m_radiance(radiance), m_flux(flux){};
 
         void set_derivative_mapping_memory(
             const std::string& name,
@@ -236,7 +242,6 @@ namespace sasktran2 {
                                                   derivative_mapping.cols());
         }
 
-
         void set_flux_derivative_mapping_memory(
             const std::string& name,
             Eigen::Map<Eigen::MatrixXd> derivative_mapping) {
@@ -258,7 +263,8 @@ namespace sasktran2 {
                 {name, Eigen::Map<Eigen::MatrixXd>(nullptr, 0,
                                                    0)}); // create a null map
             // then placement new into the map
-            Eigen::Map<Eigen::MatrixXd>* ref = &m_flux_surface_derivatives.at(name);
+            Eigen::Map<Eigen::MatrixXd>* ref =
+                &m_flux_surface_derivatives.at(name);
 
             new (ref) Eigen::Map<Eigen::MatrixXd>(derivative_mapping.data(),
                                                   derivative_mapping.rows(),
@@ -269,8 +275,10 @@ namespace sasktran2 {
                                           NSTOKES>& radiance,
                     int losidx, int wavelidx, int threadidx) override;
 
-        void assign_flux(
-            const sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& flux,
-            int fluxidx, int wavelidx, int threadidx, int flux_type_idx) override;
+        void
+        assign_flux(const sasktran2::Dual<double, sasktran2::dualstorage::dense,
+                                          1>& flux,
+                    int fluxidx, int wavelidx, int threadidx,
+                    int flux_type_idx) override;
     };
 } // namespace sasktran2

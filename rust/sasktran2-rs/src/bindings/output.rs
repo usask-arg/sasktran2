@@ -20,11 +20,17 @@ pub struct Output {
     pub d_flux: HashMap<String, Array4<f64>>,
     pub d_flux_surf: HashMap<String, Array3<f64>>,
 
-    pub flux: Array3<f64>
+    pub flux: Array3<f64>,
 }
 
 impl Output {
-    pub fn new(num_wavel: usize, num_los: usize, num_flux_obs: usize, num_flux_types: usize, num_stokes: usize) -> Self {
+    pub fn new(
+        num_wavel: usize,
+        num_los: usize,
+        num_flux_obs: usize,
+        num_flux_types: usize,
+        num_stokes: usize,
+    ) -> Self {
         let mut radiance = Array3::<f64>::zeros((num_wavel, num_los, num_stokes));
 
         // TODO: Get this from the config, based on if upwelling/downwelling fluxes are requested
@@ -34,8 +40,15 @@ impl Output {
         let num_flux = num_wavel * num_flux_obs * num_flux_types;
         let radiance_ptr = radiance.as_mut_ptr();
         let flux_ptr = flux.as_mut_ptr();
-        let output =
-            unsafe { ffi::sk_output_create(radiance_ptr, num_radiance as i32, num_stokes as i32, flux_ptr, num_flux as i32) };
+        let output = unsafe {
+            ffi::sk_output_create(
+                radiance_ptr,
+                num_radiance as i32,
+                num_stokes as i32,
+                flux_ptr,
+                num_flux as i32,
+            )
+        };
 
         Output {
             output,
@@ -87,17 +100,21 @@ impl Output {
         // And the flux derivative
         let num_flux = (self.num_flux_obs * self.num_wavel * self.num_flux_types) as i32;
         if num_flux > 0 {
-            let mut d_flux_internal = 
-                Array4::<f64>::zeros((
-                    num_deriv_output,
-                    self.num_flux_types,
-                    self.num_wavel,
-                    self.num_flux_obs
-                ));
-            
+            let mut d_flux_internal = Array4::<f64>::zeros((
+                num_deriv_output,
+                self.num_flux_types,
+                self.num_wavel,
+                self.num_flux_obs,
+            ));
+
             let result = unsafe {
                 ffi::sk_output_assign_flux_derivative_memory(
-                    self.output, c_deriv_name.as_ptr(), d_flux_internal.as_mut_ptr(), num_flux, num_deriv_output as i32)
+                    self.output,
+                    c_deriv_name.as_ptr(),
+                    d_flux_internal.as_mut_ptr(),
+                    num_flux,
+                    num_deriv_output as i32,
+                )
             };
 
             self.d_flux.insert(deriv_name.to_string(), d_flux_internal);
@@ -214,7 +231,7 @@ mod tests {
 
     #[test]
     fn test_output_dimensions() {
-        let output = Output::new(5, 8,0, 2);
+        let output = Output::new(5, 8, 0, 2);
         assert_eq!(output.radiance.shape(), &[5, 8, 2]);
     }
 }

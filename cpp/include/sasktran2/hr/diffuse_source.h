@@ -74,8 +74,8 @@ namespace sasktran2::hr {
             m_location_interpolator; /** Interpolates location */
 
         sasktran2::viewinggeometry::InternalViewingGeometry
-            m_internal_viewing;        /** Traced incoming rays to all diffuse
-                                       points */
+            m_internal_viewing; /** Traced incoming rays to all diffuse
+                                points */
 
         std::vector<std::unique_ptr<DiffusePoint<NSTOKES>>>
             m_diffuse_points; /** Stacked vector of all interior diffuse points,
@@ -172,10 +172,12 @@ namespace sasktran2::hr {
          * calculating the source term.  This method is called after the line of
          * sight rays ar traced.
          *
-         * @param internal_viewing Information on the internal viewing geometry, los_rays and flux observers
+         * @param internal_viewing Information on the internal viewing geometry,
+         * los_rays and flux observers
          */
         virtual void initialize_geometry(
-            const sasktran2::viewinggeometry::InternalViewingGeometry& internal_viewing) override;
+            const sasktran2::viewinggeometry::InternalViewingGeometry&
+                internal_viewing) override;
 
         /**
          *

@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import numpy as np
 import sasktran2 as sk
-from scipy.special import roots_legendre
 import xarray as xr
-
+from scipy.special import roots_legendre
 
 
 def test_upwelling_flux():
@@ -28,25 +27,16 @@ def test_upwelling_flux():
 
         viewing_geo = sk.ViewingGeometry()
 
-        viewing_geo.add_flux_observer(
-            sk.FluxObserverSolar(0.6, alt)
-        )
+        viewing_geo.add_flux_observer(sk.FluxObserverSolar(0.6, alt))
 
         nodes, weights = roots_legendre(config.num_streams / 2)
         nodes = 0.5 * nodes + 0.5
         weights *= 0.5
 
         for n in nodes:
-            viewing_geo.add_ray(
-                sk.SolarAnglesObserverLocation(
-                    0.6, 0.0, -n, alt
-                )
-            )
+            viewing_geo.add_ray(sk.SolarAnglesObserverLocation(0.6, 0.0, -n, alt))
 
-        integrand = xr.DataArray(
-            data=weights,
-            dims=["los"]
-        )
+        integrand = xr.DataArray(data=weights, dims=["los"])
 
         wavel = np.arange(300.0, 800.0, 10)
         atmosphere = sk.Atmosphere(model_geometry, config, wavelengths_nm=wavel)

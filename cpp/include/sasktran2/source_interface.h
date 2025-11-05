@@ -31,10 +31,12 @@ template <int NSTOKES> class SourceTermInterface {
      * the source term.  This method is called after the line of sight rays ar
      * traced.
      *
-     * @param internal_viewing Information on the internal viewing geometry, los_rays and flux observers
+     * @param internal_viewing Information on the internal viewing geometry,
+     * los_rays and flux observers
      */
     virtual void initialize_geometry(
-        const sasktran2::viewinggeometry::InternalViewingGeometry& internal_viewing){};
+        const sasktran2::viewinggeometry::InternalViewingGeometry&
+            internal_viewing){};
 
     /**
      *
@@ -104,11 +106,10 @@ template <int NSTOKES> class SourceTermInterface {
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const = 0;
 
-    virtual void flux(
-        int wavelidx, int fluxidx, int wavelt_threadidx, int threadidx,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& flux,
-        sasktran2::Config::FluxType flux_type
-    ) const {
-            spdlog::error("Flux calculation not implemented for this source term");
-        }
+    virtual void
+    flux(int wavelidx, int fluxidx, int wavelt_threadidx, int threadidx,
+         sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& flux,
+         sasktran2::Config::FluxType flux_type) const {
+        spdlog::error("Flux calculation not implemented for this source term");
+    }
 };

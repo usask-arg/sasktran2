@@ -158,7 +158,6 @@ namespace sasktran2 {
             divergence = 3
         };
 
-
         Config();
 
         /**
@@ -632,10 +631,12 @@ namespace sasktran2 {
 
         /**
          * @brief Get the flux types object
-         * 
-         * @return const std::vector<FluxType>& 
+         *
+         * @return const std::vector<FluxType>&
          */
-        const std::vector<FluxType>& get_flux_types() const { return m_flux_types; }
+        const std::vector<FluxType>& get_flux_types() const {
+            return m_flux_types;
+        }
 
         /**
          * @brief Validates that the config is valid

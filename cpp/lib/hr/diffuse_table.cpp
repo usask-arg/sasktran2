@@ -243,7 +243,8 @@ namespace sasktran2::hr {
 
                 m_raytracer.trace_ray(
                     viewing_ray,
-                    m_internal_viewing.traced_rays[m_diffuse_incoming_index_map[i] + j],
+                    m_internal_viewing
+                        .traced_rays[m_diffuse_incoming_index_map[i] + j],
                     m_config->multiple_scatter_refraction());
             }
         }
@@ -258,7 +259,8 @@ namespace sasktran2::hr {
 
         // find the min/max SZA from the LOS rays and generate the cos_sza_grid
         std::pair<double, double> min_max_cos_sza =
-            sasktran2::raytracing::min_max_cos_sza_of_all_rays(internal_viewing.traced_rays);
+            sasktran2::raytracing::min_max_cos_sza_of_all_rays(
+                internal_viewing.traced_rays);
 
         // create the location interpolator
         m_location_interpolator = std::make_unique<
@@ -296,8 +298,8 @@ namespace sasktran2::hr {
 
         construct_accumulation_sparsity();
 
-        generate_source_interpolation_weights(internal_viewing.traced_rays, m_los_source_weights,
-                                              temp);
+        generate_source_interpolation_weights(internal_viewing.traced_rays,
+                                              m_los_source_weights, temp);
 
         if (m_config->initialize_hr_with_do()) {
             // Have to create a vector of all locations and directions
