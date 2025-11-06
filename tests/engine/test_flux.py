@@ -7,7 +7,7 @@ from scipy.special import roots_legendre
 
 
 def test_upwelling_flux():
-    alts = [64750]
+    alts = [64750, 30000, 65000, 999.99]
 
     for alt in alts:
         config = sk.Config()
@@ -51,6 +51,8 @@ def test_upwelling_flux():
             np.ones_like(model_geometry.altitudes()) * 1e-6,
         )
 
+        atmosphere["surface"] = sk.constituent.LambertianSurface(0.3)
+
         engine = sk.Engine(config, model_geometry, viewing_geo)
 
         rad = engine.calculate_radiance(atmosphere)
@@ -60,7 +62,7 @@ def test_upwelling_flux():
         np.testing.assert_allclose(
             rad["upwelling_flux"].isel(flux_location=0).values,
             rad["upwelling_flux_numeric"].values,
-            rtol=2e-4,
+            rtol=2e-8,
             atol=0.0,
         )
 

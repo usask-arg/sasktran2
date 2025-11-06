@@ -248,7 +248,7 @@ namespace sasktran2 {
                  flux_obs_idx < m_internal_viewing->flux_observers.size();
                  ++flux_obs_idx) {
                 auto& flux = m_flux[threadidx][flux_obs_idx];
-                flux.value.setZero();
+                flux.value(flux_type_idx) = 0.0;
 
                 temp_deriv.setZero();
                 const auto& flux_observer =
