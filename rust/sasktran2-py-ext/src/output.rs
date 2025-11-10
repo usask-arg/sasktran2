@@ -8,8 +8,14 @@ pub struct PyOutput {
 }
 
 impl PyOutput {
-    pub fn new(num_wavel: usize, num_los: usize, num_stokes: usize) -> Self {
-        let output = output::Output::new(num_wavel, num_los, num_stokes);
+    pub fn new(
+        num_wavel: usize,
+        num_los: usize,
+        num_flux: usize,
+        num_flux_types: usize,
+        num_stokes: usize,
+    ) -> Self {
+        let output = output::Output::new(num_wavel, num_los, num_flux, num_flux_types, num_stokes);
         Self { output }
     }
 }
@@ -19,6 +25,13 @@ impl PyOutput {
     #[getter]
     fn get_radiance<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyArray3<f64>>> {
         let array = &this.borrow().output.radiance;
+
+        unsafe { Ok(PyArray3::borrow_from_array(array, this.into_any())) }
+    }
+
+    #[getter]
+    fn get_flux<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyArray3<f64>>> {
+        let array = &this.borrow().output.flux;
 
         unsafe { Ok(PyArray3::borrow_from_array(array, this.into_any())) }
     }
@@ -46,6 +59,37 @@ impl PyOutput {
         let py_dict = PyDict::new(this.py());
 
         for (key, value) in d_radiance.iter() {
+            let deriv = unsafe { PyArray3::borrow_from_array(value, this.clone().into_any()) };
+
+            py_dict.set_item(key, deriv)?;
+        }
+
+        Ok(py_dict)
+    }
+
+    #[getter]
+    fn get_d_flux<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyDict>> {
+        let binding = &this.borrow().output;
+        let d_flux = &binding.d_flux;
+
+        let py_dict = PyDict::new(this.py());
+
+        for (key, value) in d_flux.iter() {
+            let deriv = unsafe { PyArray4::borrow_from_array(value, this.clone().into_any()) };
+
+            py_dict.set_item(key, deriv)?;
+        }
+
+        Ok(py_dict)
+    }
+    #[getter]
+    fn get_d_flux_surf<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyDict>> {
+        let binding = &this.borrow().output;
+        let d_flux = &binding.d_flux_surf;
+
+        let py_dict = PyDict::new(this.py());
+
+        for (key, value) in d_flux.iter() {
             let deriv = unsafe { PyArray3::borrow_from_array(value, this.clone().into_any()) };
 
             py_dict.set_item(key, deriv)?;

@@ -1,4 +1,5 @@
 #include "sasktran2/geometry.h"
+#include "sasktran2/viewinggeometry_internal.h"
 #include <algorithm>
 #ifdef SKTRAN_OPENMP_SUPPORT
 #include <omp.h>
@@ -197,7 +198,7 @@ namespace sasktran2::hr {
             start_outgoing_idx += m_diffuse_points[i]->num_outgoing();
         }
 
-        m_incoming_traced_rays.resize(start_incoming_idx);
+        m_internal_viewing.traced_rays.resize(start_incoming_idx);
 
         for (auto& storage : m_thread_storage) {
             storage.m_incoming_radiances.resize(start_incoming_idx * NSTOKES, 0,
@@ -242,7 +243,8 @@ namespace sasktran2::hr {
 
                 m_raytracer.trace_ray(
                     viewing_ray,
-                    m_incoming_traced_rays[m_diffuse_incoming_index_map[i] + j],
+                    m_internal_viewing
+                        .traced_rays[m_diffuse_incoming_index_map[i] + j],
                     m_config->multiple_scatter_refraction());
             }
         }
@@ -250,13 +252,15 @@ namespace sasktran2::hr {
 
     template <int NSTOKES>
     void DiffuseTable<NSTOKES>::initialize_geometry(
-        const std::vector<sasktran2::raytracing::TracedRay>& los_rays) {
+        const sasktran2::viewinggeometry::InternalViewingGeometry&
+            internal_viewing) {
         ZoneScopedN("Initialize HR Geometry");
         // TODO: This is the 1D case, need to add separate logic for 2d/3d
 
         // find the min/max SZA from the LOS rays and generate the cos_sza_grid
         std::pair<double, double> min_max_cos_sza =
-            sasktran2::raytracing::min_max_cos_sza_of_all_rays(los_rays);
+            sasktran2::raytracing::min_max_cos_sza_of_all_rays(
+                internal_viewing.traced_rays);
 
         // create the location interpolator
         m_location_interpolator = std::make_unique<
@@ -272,29 +276,30 @@ namespace sasktran2::hr {
         trace_incoming_rays();
 
         // Set up the integrator
-        m_integrator.initialize_geometry(m_incoming_traced_rays,
+        m_integrator.initialize_geometry(m_internal_viewing.traced_rays,
                                          this->m_geometry);
         // And the initial sources
         // This is a little tricky, any source that is used for the incoming
         // rays needs to be initialized with the traced incoming rays
+
         for (auto& source : m_initial_sources) {
-            source->initialize_geometry(m_incoming_traced_rays);
+            source->initialize_geometry(m_internal_viewing);
         }
 
         // But the DO Source should be initialized with the LOS rays
         if (m_config->initialize_hr_with_do()) {
-            m_do_source->initialize_geometry(los_rays);
+            m_do_source->initialize_geometry(internal_viewing);
         }
 
         int temp;
-        generate_source_interpolation_weights(m_incoming_traced_rays,
+        generate_source_interpolation_weights(m_internal_viewing.traced_rays,
                                               m_diffuse_source_weights,
                                               m_total_num_diffuse_weights);
 
         construct_accumulation_sparsity();
 
-        generate_source_interpolation_weights(los_rays, m_los_source_weights,
-                                              temp);
+        generate_source_interpolation_weights(internal_viewing.traced_rays,
+                                              m_los_source_weights, temp);
 
         if (m_config->initialize_hr_with_do()) {
             // Have to create a vector of all locations and directions
@@ -897,7 +902,7 @@ namespace sasktran2::hr {
             }
 
 #pragma omp parallel for num_threads(nthreads)
-            for (int rayidx = 0; rayidx < m_incoming_traced_rays.size();
+            for (int rayidx = 0; rayidx < m_internal_viewing.traced_rays.size();
                  ++rayidx) {
                 int ray_threadidx;
 

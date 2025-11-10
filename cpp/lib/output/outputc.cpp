@@ -1,3 +1,4 @@
+#include "sasktran2/config.h"
 #include <sasktran2/output.h>
 
 namespace sasktran2 {
@@ -231,6 +232,132 @@ namespace sasktran2 {
         if constexpr (NSTOKES == 4) {
             // V component is a strict copy
             m_radiance(linear_index + 3) = radiance.value(3);
+        }
+    }
+
+    template <int NSTOKES>
+    void OutputC<NSTOKES>::assign_flux(
+        const sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& flux,
+        int fluxidx, int wavelidx, int threadidx, int flux_type_idx) {
+        int linear_index = flux_type_idx * (this->m_nwavel * this->m_nfluxpos) +
+                           wavelidx * this->m_nfluxpos + fluxidx;
+
+        m_flux(linear_index) = flux.value(0);
+
+        auto& deriv_storage = m_native_thread_storage[threadidx];
+
+        // Quantities necessary for derivative propagation
+
+        bool include_emission_derivatives =
+            this->m_atmosphere->include_emission_derivatives();
+
+        // Do the atmosphere mappings
+        for (auto& [name, deriv] : m_flux_derivatives) {
+            Eigen::Ref<const Eigen::Matrix<double, 1, -1>> d_rad_by_d_ssa =
+                flux.d_ssa(this->m_ngeometry); // Col vector [1 X N]
+            Eigen::Ref<const Eigen::Matrix<double, 1, -1>> d_rad_by_d_k =
+                flux.d_extinction(this->m_ngeometry); // col vector [1 X N]
+
+            const auto& mapping =
+                this->m_atmosphere->storage().derivative_mappings_const().at(
+                    name);
+
+            const auto& d_ssa =
+                mapping.native_mapping().d_ssa.value(); // [N x wavelength]
+            const auto& d_extinction =
+                mapping.native_mapping()
+                    .d_extinction.value(); // [N x wavelength]
+
+            deriv_storage(0, Eigen::all).array() =
+                d_ssa.col(wavelidx).transpose().array() *
+                    d_rad_by_d_ssa(0, Eigen::all).array() +
+                d_extinction.col(wavelidx).transpose().array() *
+                    d_rad_by_d_k(0, Eigen::all).array();
+
+            if (mapping.is_scattering_derivative()) {
+                // Have to include the scattering terms
+                Eigen::Ref<const Eigen::Matrix<double, 1, -1>> d_rad_by_d_scat =
+                    flux.d_scatterer(this->m_ngeometry,
+                                     mapping.get_scattering_index());
+                const auto& scat_factor =
+                    mapping.native_mapping()
+                        .scat_factor.value(); // [N x wavelength]
+
+                deriv_storage(0, Eigen::all).array() +=
+                    scat_factor.col(wavelidx).transpose().array() *
+                    d_rad_by_d_scat(0, Eigen::all).array();
+            }
+
+            if (mapping.native_mapping().d_emission.has_value() &&
+                include_emission_derivatives) {
+                // Include the emission terms
+                Eigen::Ref<const Eigen::Matrix<double, 1, -1>>
+                    d_rad_by_d_emission = flux.d_emission(
+                        this->m_ngeometry,
+                        this->m_atmosphere->num_scattering_deriv_groups());
+
+                const auto& d_emission =
+                    mapping.native_mapping().d_emission.value();
+
+                // Emission terms only ever affect the stokes = 0 component
+                deriv_storage(0, Eigen::all).array() +=
+                    d_emission.col(wavelidx).transpose().array() *
+                    d_rad_by_d_emission(0, Eigen::all).array();
+            }
+
+            // If we are interpolating in geometry, then apply the interpolator
+            // before assigning
+            if (mapping.get_interpolator_const().has_value()) {
+                const auto& interpolator =
+                    mapping.get_interpolator_const().value(); // [N x M]
+
+                // Always have to assign the stokes = 0 component
+                deriv(linear_index, Eigen::all).array() =
+                    deriv_storage(0, Eigen::all) * interpolator;
+            } else {
+                // Similarly always assign stokes = 0
+                deriv(linear_index, Eigen::all).array() =
+                    deriv_storage(0, Eigen::all).array();
+            }
+            if (mapping.log_radiance_space()) {
+                deriv(linear_index, Eigen::all).array() /= flux.value(0);
+            }
+        }
+
+        // Then do the surface mappings
+        for (auto& [name, deriv] : m_flux_surface_derivatives) {
+
+            Eigen::Ref<const Eigen::Matrix<double, 1, -1>> d_rad_by_d_surface =
+                flux.d_brdf(this->m_ngeometry,
+                            this->m_atmosphere->num_scattering_deriv_groups(),
+                            this->m_atmosphere->surface()
+                                .num_deriv()); // [stokes X num_brdf_deriv]
+            const auto& mapping =
+                this->m_atmosphere->surface().derivative_mappings().at(name);
+
+            // Do the BRDF derivatives
+            if (mapping.native_surface_mapping().d_brdf.has_value()) {
+                // Just assign the stokes = 0 component
+                // TODO: Revisit when we have polarized brdfs?
+                deriv(linear_index, 0) =
+                    d_rad_by_d_surface(0, Eigen::all)
+                        .dot(
+                            mapping.native_surface_mapping().d_brdf.value().row(
+                                wavelidx));
+            }
+
+            // Then do the emission derivatives
+            if (mapping.native_surface_mapping().d_emission.has_value() &&
+                include_emission_derivatives) {
+                double d_rad_by_d_emission = flux.deriv(
+                    0,
+                    this->m_atmosphere->surface_emission_deriv_start_index());
+                // Just assign the stokes = 0 component
+                deriv(linear_index, 0) =
+                    d_rad_by_d_emission *
+                    mapping.native_surface_mapping().d_emission.value()(
+                        wavelidx, 0);
+            }
         }
     }
 

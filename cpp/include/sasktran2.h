@@ -15,6 +15,7 @@
 #include <sasktran2/viewinggeometry.h>
 #include <sasktran2/refraction.h>
 #include <sasktran2/raytracing.h>
+#include <sasktran2/viewinggeometry_internal.h>
 #include <sasktran2/derivative_mapping.h>
 #include <sasktran2/dual.h>
 #include <sasktran2/atmosphere/surface.h>

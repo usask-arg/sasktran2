@@ -28,6 +28,7 @@ add_library(
   viewinggeometry/groundviewing.cpp
   viewinggeometry/tangentaltitudesolar.cpp
   viewinggeometry/viewinggeometrycontainer.cpp
+  viewinggeometry/fluxobserversolar.cpp
   raytracing/spherical_shell.cpp
   raytracing/plane_parallel.cpp
   raytracing/refraction.cpp

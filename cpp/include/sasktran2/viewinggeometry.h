@@ -2,6 +2,7 @@
 
 #include <sasktran2/internal_common.h>
 #include <sasktran2/geometry.h>
+#include <string>
 
 namespace sasktran2::viewinggeometry {
 
@@ -24,6 +25,16 @@ namespace sasktran2::viewinggeometry {
             // properly
             return observer.cos_zenith_angle(look_away);
         }
+    };
+
+    /**
+     * The necessary information to define a location where upwelling and
+     * downwelling fluxes are calculated
+     *
+     */
+    struct FluxObserver {
+        sasktran2::Location
+            observer; /**< Observer location for the flux output */
     };
 
     /** Generally an observing viewing geometry is defined as an observer
@@ -59,6 +70,34 @@ namespace sasktran2::viewinggeometry {
         virtual std::string to_string() const = 0;
 
         virtual ~ViewingGeometryBase(){};
+    };
+
+    /**
+     *  Allows for conversion between user specified coordinates (such as SZA,
+     * lat/lon, etc) and internal coordinates for flux observers
+     *
+     */
+    class FluxGeometryBase {
+      public:
+        /** Interface function where Derived classes are given information on
+         * the internal geometry/coordinate system and then are responsible for
+         * constructing a flux observer position.
+         *
+         * @param geometry The internal SASKTRAN geometry
+         * @return ViewingRay
+         */
+        virtual FluxObserver
+        construct_flux_observer(const sasktran2::Coordinates& geometry) = 0;
+
+        /**
+         *  A string representation of the viewing geometry. Primarily used
+         * through the Python interface
+         *
+         * @return std::string
+         */
+        virtual std::string to_string() const = 0;
+
+        virtual ~FluxGeometryBase(){};
     };
 
     /** A singular line of sight that is defined from parameters at the tangent
@@ -194,6 +233,26 @@ namespace sasktran2::viewinggeometry {
         std::string to_string() const override final;
     };
 
+    class FluxObserverSolar : public FluxGeometryBase {
+      private:
+        double m_cos_sza;
+        double m_observer_altitude;
+
+      public:
+        FluxObserverSolar(double cos_sza, double observer_altitude);
+
+        /** Constructs the flux observer from the user provided angles and
+         * altitudes
+         *
+         * @param geometry Internal sasktran Coordinates
+         * @return FluxObserver
+         */
+        FluxObserver construct_flux_observer(
+            const sasktran2::Coordinates& geometry) override final;
+
+        std::string to_string() const override final;
+    };
+
     /** A container that defines all of the viewing rays
      *
      */
@@ -202,6 +261,10 @@ namespace sasktran2::viewinggeometry {
         std::vector<
             std::unique_ptr<sasktran2::viewinggeometry::ViewingGeometryBase>>
             m_observer_rays;
+
+        std::vector<
+            std::unique_ptr<sasktran2::viewinggeometry::FluxGeometryBase>>
+            m_flux_observers;
 
       public:
         /**
@@ -214,6 +277,12 @@ namespace sasktran2::viewinggeometry {
             return m_observer_rays;
         }
 
+        std::vector<
+            std::unique_ptr<sasktran2::viewinggeometry::FluxGeometryBase>>&
+        flux_observers() {
+            return m_flux_observers;
+        }
+
         /**
          *
          * @return The viewing rays
@@ -224,12 +293,25 @@ namespace sasktran2::viewinggeometry {
             return m_observer_rays;
         }
 
+        const std::vector<
+            std::unique_ptr<sasktran2::viewinggeometry::FluxGeometryBase>>&
+        flux_observers() const {
+            return m_flux_observers;
+        }
+
         /**
          *
          * @param ray
          */
         void
         add_ray(const sasktran2::viewinggeometry::ViewingGeometryBase& ray);
+
+        /**
+         *
+         * @param flux_observer
+         */
+        void add_flux_observer(
+            const sasktran2::viewinggeometry::FluxGeometryBase& flux_observer);
     };
 
 } // namespace sasktran2::viewinggeometry

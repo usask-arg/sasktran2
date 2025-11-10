@@ -32,7 +32,7 @@ struct PyMolecularMass {
 
 impl PartitionFactor for PyPartitionFactor {
     fn partition_factor(&self, mol_id: i32, iso_id: i32, temperature: f64) -> f64 {
-        let result: f64 = Python::with_gil(|py| {
+        let result: f64 = Python::attach(|py| {
             let tips = self.py_tips.bind(py);
             let args = (mol_id, iso_id, temperature);
 
@@ -47,7 +47,7 @@ impl PartitionFactor for PyPartitionFactor {
 
 impl MolecularMass for PyMolecularMass {
     fn molecular_mass(&self, mol_id: i32, iso_id: i32) -> f64 {
-        let result: f64 = Python::with_gil(|py| {
+        let result: f64 = Python::attach(|py| {
             let molmass = self.py_molmass.bind(py);
             let args = (mol_id, iso_id);
 

@@ -39,6 +39,16 @@ impl ViewingGeometry {
         }
     }
 
+    pub fn add_flux_observer_solar(&mut self, cos_sza: f64, observer_altitude: f64) {
+        unsafe {
+            let _ = ffi::sk_viewing_geometry_add_flux_observer_solar(
+                self.viewing_geometry,
+                cos_sza,
+                observer_altitude,
+            );
+        }
+    }
+
     pub fn add_tangent_altitude_solar(
         &mut self,
         tangent_altitude_m: f64,
@@ -87,6 +97,22 @@ impl ViewingGeometry {
             ))
         } else {
             Ok(num_rays as usize)
+        }
+    }
+
+    pub fn num_flux_observers(&self) -> Result<usize> {
+        let mut num_observers = 0i32;
+        let error_code = unsafe {
+            ffi::sk_viewing_geometry_num_flux_observers(self.viewing_geometry, &mut num_observers)
+        };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting number of flux observers: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(num_observers as usize)
         }
     }
 }
@@ -170,6 +196,18 @@ mod tests {
     #[test]
     fn test_default_creation() {
         let viewing_geometry = ViewingGeometry::default();
+        assert_eq!(viewing_geometry.num_rays().unwrap(), 0);
+    }
+
+    #[test]
+    fn test_flux_observer_add_and_count() {
+        let mut viewing_geometry = ViewingGeometry::new();
+        assert_eq!(viewing_geometry.num_flux_observers().unwrap(), 0);
+
+        viewing_geometry.add_flux_observer_solar(0.5, 700000.0);
+
+        assert_eq!(viewing_geometry.num_flux_observers().unwrap(), 1);
+        // Ensure standard rays count is unaffected
         assert_eq!(viewing_geometry.num_rays().unwrap(), 0);
     }
 }

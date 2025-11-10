@@ -61,6 +61,7 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<viewing_geometry::PyGroundViewingSolar>()?;
     m.add_class::<viewing_geometry::PyTangentAltitudeSolar>()?;
     m.add_class::<viewing_geometry::PySolarAnglesObserverLocation>()?;
+    m.add_class::<viewing_geometry::PyFluxObserverSolar>()?;
     m.add_class::<viewing_geometry::PyViewingGeometry>()?;
 
     // Engine

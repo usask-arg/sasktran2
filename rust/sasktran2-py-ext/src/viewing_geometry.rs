@@ -79,6 +79,23 @@ impl PySolarAnglesObserverLocation {
     }
 }
 
+#[pyclass]
+pub struct PyFluxObserverSolar {
+    cos_sza: f64,
+    observer_altitude_m: f64,
+}
+
+#[pymethods]
+impl PyFluxObserverSolar {
+    #[new]
+    fn new(cos_sza: f64, observer_altitude_m: f64) -> Self {
+        Self {
+            cos_sza,
+            observer_altitude_m,
+        }
+    }
+}
+
 #[pyclass(unsendable)]
 pub struct PyViewingGeometry {
     pub viewing_geometry: viewing_geometry::ViewingGeometry,
@@ -94,7 +111,7 @@ impl PyViewingGeometry {
     }
 
     fn add_ray<'py>(&mut self, ray: Bound<'py, PyAny>) {
-        if let Ok(ray) = ray.downcast::<PyGroundViewingSolar>() {
+        if let Ok(ray) = ray.cast::<PyGroundViewingSolar>() {
             let ray = ray.borrow();
             self.viewing_geometry.add_ground_viewing_solar(
                 ray.cos_sza,
@@ -104,7 +121,7 @@ impl PyViewingGeometry {
             );
         }
 
-        if let Ok(ray) = ray.downcast::<PyTangentAltitudeSolar>() {
+        if let Ok(ray) = ray.cast::<PyTangentAltitudeSolar>() {
             let ray = ray.borrow();
             self.viewing_geometry.add_tangent_altitude_solar(
                 ray.tangent_altitude_m,
@@ -114,7 +131,7 @@ impl PyViewingGeometry {
             );
         }
 
-        if let Ok(ray) = ray.downcast::<PySolarAnglesObserverLocation>() {
+        if let Ok(ray) = ray.cast::<PySolarAnglesObserverLocation>() {
             let ray = ray.borrow();
             self.viewing_geometry.add_solar_angles_observer_location(
                 ray.cos_sza,
@@ -122,6 +139,14 @@ impl PyViewingGeometry {
                 ray.cos_viewing_zenith,
                 ray.observer_altitude_m,
             );
+        }
+    }
+
+    fn add_flux_observer<'py>(&mut self, observer: Bound<'py, PyAny>) {
+        if let Ok(observer) = observer.cast::<PyFluxObserverSolar>() {
+            let observer = observer.borrow();
+            self.viewing_geometry
+                .add_flux_observer_solar(observer.cos_sza, observer.observer_altitude_m);
         }
     }
 }

@@ -105,6 +105,9 @@ int sk_config_set_output_los_optical_depth(Config* config, int output);
 int sk_config_get_log_level(Config* config, int* log_level);
 int sk_config_set_log_level(Config* config, int log_level);
 
+// Flux configuraton
+int sk_config_get_num_flux_types(Config* config, int* num_flux_types);
+
 #ifdef __cplusplus
 }
 #endif

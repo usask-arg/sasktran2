@@ -23,7 +23,7 @@ fn with_optical_downcast(
     macro_rules! try_downcast {
         ($($ty:ty),*) => {
             $(
-                if let Ok(obj) = rust_obj.downcast::<$ty>() {
+                if let Ok(obj) = rust_obj.cast::<$ty>() {
                     return f(obj.borrow().db());
                 }
             )*
@@ -61,7 +61,7 @@ impl OpticalProperty for PyOpticalProperty {
         aux_inputs: &dyn AuxOpticalInputs,
         optical_quantities: &mut OpticalQuantities,
     ) -> Result<()> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let bound_optical_property = self.py_optical_property.bind(py);
 
             if with_optical_downcast(bound_optical_property, |db| {
@@ -77,7 +77,10 @@ impl OpticalProperty for PyOpticalProperty {
             let aq = bound_optical_property
                 .call_method1("atmosphere_quantities", (bound_atmosphere,))?;
 
-            let cross_section: PyReadonlyArray2<f64> = aq.getattr("extinction")?.extract()?;
+            let cross_section: PyReadonlyArray2<f64> =
+                aq.getattr("extinction")?.extract().map_err(|e| {
+                    anyhow!("Failed to extract extinction array from atmosphere_quantities: {e}")
+                })?;
             let cross_section = cross_section.as_array().to_owned();
 
             let ssa = Array2::zeros(cross_section.dim());
@@ -94,7 +97,7 @@ impl OpticalProperty for PyOpticalProperty {
         aux_inputs: &dyn AuxOpticalInputs,
         d_optical_quantities: &mut HashMap<String, OpticalQuantities>,
     ) -> Result<()> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let bound_optical_property = self.py_optical_property.bind(py);
 
             if with_optical_downcast(bound_optical_property, |db| {
@@ -109,7 +112,7 @@ impl OpticalProperty for PyOpticalProperty {
 
             let d_aq: Bound<'_, PyDict> = bound_optical_property
                 .call_method1("optical_derivatives", (bound_atmosphere,))?
-                .downcast_into()
+                .cast_into()
                 .unwrap();
 
             // Convert to PyDict

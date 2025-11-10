@@ -110,7 +110,7 @@ impl<'py> StorageInputs for AtmosphereStorageInputs<'py> {
         let air_numden: Bound<'py, PyDict> = state_eqn
             .getattr("air_numberdensity")
             .unwrap()
-            .downcast_into()
+            .cast_into()
             .unwrap();
 
         let mut dict = HashMap::new();
@@ -127,7 +127,7 @@ impl<'py> StorageInputs for AtmosphereStorageInputs<'py> {
         let air_numden: Bound<'py, PyDict> = state_eqn
             .getattr("dry_air_numberdensity")
             .unwrap()
-            .downcast_into()
+            .cast_into()
             .unwrap();
 
         let mut dict = HashMap::new();

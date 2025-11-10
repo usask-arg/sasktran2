@@ -17,6 +17,7 @@ pub struct PyAtmosphere {
 }
 
 #[pyclass(unsendable)]
+#[allow(dead_code)]
 pub struct PyAtmosphereStorage {
     pub storage: atmosphere_storage::AtmosphereStorage,
 }
@@ -72,7 +73,7 @@ impl PyAtmosphere {
                 >(storage)
             },
         };
-        Python::with_gil(|py| Py::new(py, storage_view))
+        Python::attach(|py| Py::new(py, storage_view))
     }
 
     #[getter]
@@ -87,7 +88,7 @@ impl PyAtmosphere {
                 >(surface)
             },
         };
-        Python::with_gil(|py| Py::new(py, surface_view))
+        Python::attach(|py| Py::new(py, surface_view))
     }
 
     fn apply_delta_m_scaling(&mut self, order: usize) -> PyResult<()> {
@@ -143,7 +144,7 @@ impl PyAtmosphereStorageView {
             derivative_mapping: mapping,
         };
 
-        Python::with_gil(|py| Py::new(py, mapping_view))
+        Python::attach(|py| Py::new(py, mapping_view))
     }
 
     fn normalize_by_extinctions(&mut self) -> PyResult<()> {
@@ -200,7 +201,7 @@ impl PyAtmosphereSurfaceView {
             derivative_mapping: mapping,
         };
 
-        Python::with_gil(|py| Py::new(py, mapping_view))
+        Python::attach(|py| Py::new(py, mapping_view))
     }
 
     fn set_zero(&mut self) -> PyResult<()> {

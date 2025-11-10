@@ -26,11 +26,12 @@ namespace sasktran2::emission {
          * needed to detect ground hits and whether to include
          * surface emissions at the end of the ray.
          *
-         *  @param los_rays The traced line of sight rays
+         *  @param internal_viewing Information on the internal viewing
+         * geometry, los_rays and flux observers
          */
         void initialize_geometry(
-            const std::vector<sasktran2::raytracing::TracedRay>& los_rays)
-            override;
+            const sasktran2::viewinggeometry::InternalViewingGeometry&
+                internal_viewing) override;
 
         /**
          *
