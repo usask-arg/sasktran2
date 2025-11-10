@@ -15,7 +15,7 @@ def map_surface_derivative(
         return xr.DataArray(np_deriv, dims=dims)
     return xr.DataArray(
         np.einsum(
-            "ijk, il->lijk",
+            "ij..., il->lij...",
             np_deriv,
             mapping.interpolator,
             optimize=True,
@@ -135,6 +135,23 @@ class Engine:
                         v[:, i],
                         dims=[mapping.interp_dim, "wavelength", "flux_location"],
                     )
+
+        for k, v in output.d_flux_surf.items():
+            mapping = atmosphere.surface.get_derivative_mapping(k)
+
+            base_name = k
+
+            for i, flux_type in enumerate(flux_types):
+                name = f"{base_name}_{flux_type}_flux"
+
+                mapped_derivative = map_surface_derivative(
+                    mapping, v[i], ["wavelength", "flux_location"]
+                )
+                if mapping.interp_dim == "dummy":
+                    mapped_derivative = mapped_derivative.isel(
+                        **{mapping.interp_dim: 0}
+                    )
+                out_ds[name] = mapped_derivative
 
         if isinstance(self._viewing_geometry, ViewingGeometryContainer):
             out_ds = self._viewing_geometry.add_geometry_to_radiance(out_ds)

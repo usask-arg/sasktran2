@@ -24,6 +24,9 @@
 [Specifying Aerosols and Clouds](users_guide/aerosols.md)
 : How aerosols and clouds can be included in the model
 
+[Calculating Fluxes](users_guide/flux.md)
+: Internal flux calculation capability
+
 [Including Mie Scatterers](users_guide/mie.md)
 : In-depth details on how to use the build in Mie scattering database generation
 
@@ -45,7 +48,8 @@ required_components
 weighting_functions
 users_guide/solar_irradiance.md
 users_guide/emissions.md
-users_guide/aerosol.md
+users_guide/aerosols.md
+users_guide/flux.md
 users_guide/mie.md
 users_guide/refraction.md
 users_guide/polarization.md

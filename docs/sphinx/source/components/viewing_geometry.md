@@ -113,4 +113,28 @@ Note here we re-used our solar handler from the previous section.
 
 
 ## Flux Output
-Flux output is planned for a future version.
+Fluxes can be internally calcluated in `sasktran2` by specifying a location to calculate
+the fluxes at with the {py:meth}`sasktran2.ViewingGeometry.add_flux_observer` method.
+
+```{note}
+Currently flux output is only supported when using the `DiscreteOrdinates` source, in `PlaneParallel` mode, i.e.
+
+```python
+config = sk.Config()
+config.single_scatter_source = sk.SingleScatterSource.DiscreteOrdinates
+config.multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
+
+model_geometry = sk.Geometry1D(...,
+                               geometry_type=sk.GeometryType.PlaneParallel)
+
+
+```
+
+
+## Flux Observer Policies
+
+```{eval-rst}
+.. autosummary::
+
+    sasktran2.FluxObserverSolar
+```
