@@ -207,12 +207,12 @@ mod tests {
 
     #[test]
     fn test_output() {
-        let _output = Output::new(10, 10, 0, 3);
+        let _output = Output::new(10, 10, 0, 2, 3);
     }
 
     #[test]
     fn test_output_with_derivative() {
-        let mut output = Output::new(10, 10, 0, 3);
+        let mut output = Output::new(10, 10, 0, 2, 3);
         output.with_derivative("test_deriv", 5);
         assert!(output.d_radiance.contains_key("test_deriv"));
         assert_eq!(output.d_radiance["test_deriv"].shape(), &[5, 10, 10, 3]);
@@ -220,7 +220,7 @@ mod tests {
 
     #[test]
     fn test_output_with_surface_derivative() {
-        let mut output = Output::new(10, 10, 0, 3);
+        let mut output = Output::new(10, 10, 0, 2, 3);
         output.with_surface_derivative("test_surf_deriv");
         assert!(output.d_radiance_surf.contains_key("test_surf_deriv"));
         assert_eq!(
@@ -231,7 +231,7 @@ mod tests {
 
     #[test]
     fn test_output_dimensions() {
-        let output = Output::new(5, 8, 0, 2);
+        let output = Output::new(5, 8, 0, 2, 2);
         assert_eq!(output.radiance.shape(), &[5, 8, 2]);
     }
 }
