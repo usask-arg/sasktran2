@@ -40,6 +40,7 @@ from .engine import Engine
 from .geodetic import WGS84, Geodetic, SphericalGeoid
 from .geometry import Geometry1D
 from .viewinggeo.wrappers import (
+    FluxObserverSolar,
     GroundViewingSolar,
     SolarAnglesObserverLocation,
     TangentAltitudeSolar,

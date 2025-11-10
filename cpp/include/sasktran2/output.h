@@ -4,6 +4,7 @@
 #include "sasktran2/config.h"
 #include "sasktran2/geometry.h"
 #include "sasktran2/raytracing.h"
+#include <sasktran2/viewinggeometry_internal.h>
 #include <Eigen/src/Core/Matrix.h>
 #include <sasktran2/internal_common.h>
 #include <sasktran2/dual.h>
@@ -36,6 +37,8 @@ namespace sasktran2 {
 
       protected:
         int m_nlos;
+        int m_nfluxpos;
+        int m_nfluxtype;
         int m_nwavel;
         int m_nderiv;
         int m_ngeometry;
@@ -60,7 +63,8 @@ namespace sasktran2 {
         virtual void initialize(
             const sasktran2::Config& config,
             const sasktran2::Geometry1D& geometry,
-            const std::vector<sasktran2::raytracing::TracedRay>& rays,
+            const sasktran2::viewinggeometry::InternalViewingGeometry&
+                internal_viewing,
             const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere);
 
         /** Method the Sasktran2 engine calls for each integrated line of
@@ -75,6 +79,14 @@ namespace sasktran2 {
         assign(const sasktran2::Dual<double, sasktran2::dualstorage::dense,
                                      NSTOKES>& radiance,
                int losidx, int wavelidx, int threadidx) = 0;
+
+        virtual void assign_flux(
+            const sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>&
+                flux,
+            int fluxidx, int wavelidx, int threadidx, int flux_type_idx) {
+            spdlog::error(
+                "Flux assignment not implemented for this output type");
+        };
 
         /**
          *
@@ -184,16 +196,23 @@ namespace sasktran2 {
     template <int NSTOKES> class OutputC : public Output<NSTOKES> {
       private:
         Eigen::Map<Eigen::VectorXd> m_radiance;
+        Eigen::Map<Eigen::VectorXd> m_flux;
 
         std::map<std::string, Eigen::Map<Eigen::MatrixXd>> m_derivatives;
         std::map<std::string, Eigen::Map<Eigen::MatrixXd>>
             m_surface_derivatives;
+
+        std::map<std::string, Eigen::Map<Eigen::MatrixXd>> m_flux_derivatives;
+        std::map<std::string, Eigen::Map<Eigen::MatrixXd>>
+            m_flux_surface_derivatives;
         std::vector<Eigen::MatrixXd> m_native_thread_storage;
 
         void resize();
 
       public:
-        OutputC(Eigen::Map<Eigen::VectorXd> radiance) : m_radiance(radiance){};
+        OutputC(Eigen::Map<Eigen::VectorXd> radiance,
+                Eigen::Map<Eigen::VectorXd> flux)
+            : m_radiance(radiance), m_flux(flux){};
 
         void set_derivative_mapping_memory(
             const std::string& name,
@@ -223,8 +242,43 @@ namespace sasktran2 {
                                                   derivative_mapping.cols());
         }
 
+        void set_flux_derivative_mapping_memory(
+            const std::string& name,
+            Eigen::Map<Eigen::MatrixXd> derivative_mapping) {
+            m_flux_derivatives.insert(
+                {name, Eigen::Map<Eigen::MatrixXd>(nullptr, 0,
+                                                   0)}); // create a null map
+            // then placement new into the map
+            Eigen::Map<Eigen::MatrixXd>* ref = &m_flux_derivatives.at(name);
+
+            new (ref) Eigen::Map<Eigen::MatrixXd>(derivative_mapping.data(),
+                                                  derivative_mapping.rows(),
+                                                  derivative_mapping.cols());
+        }
+
+        void set_flux_surface_derivative_mapping_memory(
+            const std::string& name,
+            Eigen::Map<Eigen::MatrixXd> derivative_mapping) {
+            m_flux_surface_derivatives.insert(
+                {name, Eigen::Map<Eigen::MatrixXd>(nullptr, 0,
+                                                   0)}); // create a null map
+            // then placement new into the map
+            Eigen::Map<Eigen::MatrixXd>* ref =
+                &m_flux_surface_derivatives.at(name);
+
+            new (ref) Eigen::Map<Eigen::MatrixXd>(derivative_mapping.data(),
+                                                  derivative_mapping.rows(),
+                                                  derivative_mapping.cols());
+        }
+
         void assign(const sasktran2::Dual<double, sasktran2::dualstorage::dense,
                                           NSTOKES>& radiance,
-                    int losidx, int wavelidx, int threadidx);
+                    int losidx, int wavelidx, int threadidx) override;
+
+        void
+        assign_flux(const sasktran2::Dual<double, sasktran2::dualstorage::dense,
+                                          1>& flux,
+                    int fluxidx, int wavelidx, int threadidx,
+                    int flux_type_idx) override;
     };
 } // namespace sasktran2

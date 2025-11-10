@@ -1,5 +1,6 @@
 #include <sasktran2/raytracing.h>
 #include "sasktran2/source_algorithms.h"
+#include "sasktran2/viewinggeometry_internal.h"
 #include <sasktran2/emission_source.h>
 #include <sasktran2/dual.h>
 #include <sasktran2/config.h>
@@ -8,9 +9,10 @@
 namespace sasktran2::emission {
     template <int NSTOKES>
     void EmissionSource<NSTOKES>::initialize_geometry(
-        const std::vector<sasktran2::raytracing::TracedRay>& los_rays) {
+        const sasktran2::viewinggeometry::InternalViewingGeometry&
+            internal_viewing) {
         // Store the rays for later
-        m_los_rays = &los_rays;
+        m_los_rays = &internal_viewing.traced_rays;
     }
 
     template <int NSTOKES>

@@ -12,18 +12,43 @@ pub struct Output {
     num_wavel: usize,
     num_los: usize,
     num_stokes: usize,
+    num_flux_obs: usize,
+    num_flux_types: usize,
     pub d_radiance: HashMap<String, Array4<f64>>,
     pub d_radiance_surf: HashMap<String, Array3<f64>>,
+
+    pub d_flux: HashMap<String, Array4<f64>>,
+    pub d_flux_surf: HashMap<String, Array3<f64>>,
+
+    pub flux: Array3<f64>,
 }
 
 impl Output {
-    pub fn new(num_wavel: usize, num_los: usize, num_stokes: usize) -> Self {
+    pub fn new(
+        num_wavel: usize,
+        num_los: usize,
+        num_flux_obs: usize,
+        num_flux_types: usize,
+        num_stokes: usize,
+    ) -> Self {
         let mut radiance = Array3::<f64>::zeros((num_wavel, num_los, num_stokes));
 
+        // TODO: Get this from the config, based on if upwelling/downwelling fluxes are requested
+        let mut flux = Array3::<f64>::zeros((num_flux_types, num_wavel, num_flux_obs));
+
         let num_radiance = num_wavel * num_los * num_stokes;
+        let num_flux = num_wavel * num_flux_obs * num_flux_types;
         let radiance_ptr = radiance.as_mut_ptr();
-        let output =
-            unsafe { ffi::sk_output_create(radiance_ptr, num_radiance as i32, num_stokes as i32) };
+        let flux_ptr = flux.as_mut_ptr();
+        let output = unsafe {
+            ffi::sk_output_create(
+                radiance_ptr,
+                num_radiance as i32,
+                num_stokes as i32,
+                flux_ptr,
+                num_flux as i32,
+            )
+        };
 
         Output {
             output,
@@ -31,8 +56,13 @@ impl Output {
             num_wavel,
             num_los,
             num_stokes,
+            num_flux_obs,
+            num_flux_types,
             d_radiance: HashMap::new(),
             d_radiance_surf: HashMap::new(),
+            d_flux: HashMap::new(),
+            d_flux_surf: HashMap::new(),
+            flux,
         }
     }
 
@@ -67,6 +97,33 @@ impl Output {
             panic!("Error assigning derivative memory");
         }
 
+        // And the flux derivative
+        let num_flux = (self.num_flux_obs * self.num_wavel * self.num_flux_types) as i32;
+        if num_flux > 0 {
+            let mut d_flux_internal = Array4::<f64>::zeros((
+                num_deriv_output,
+                self.num_flux_types,
+                self.num_wavel,
+                self.num_flux_obs,
+            ));
+
+            let result = unsafe {
+                ffi::sk_output_assign_flux_derivative_memory(
+                    self.output,
+                    c_deriv_name.as_ptr(),
+                    d_flux_internal.as_mut_ptr(),
+                    num_flux,
+                    num_deriv_output as i32,
+                )
+            };
+
+            self.d_flux.insert(deriv_name.to_string(), d_flux_internal);
+
+            if result != 0 {
+                panic!("Error assigning flux derivative memory");
+            }
+        }
+
         self
     }
 
@@ -94,6 +151,29 @@ impl Output {
 
         if result != 0 {
             panic!("Error assigning surface derivative memory");
+        }
+
+        let nflux = (self.num_wavel * self.num_flux_obs * self.num_flux_types) as i32;
+        if nflux > 0 {
+            let mut d_flux_internal =
+                Array3::<f64>::zeros((self.num_flux_types, self.num_wavel, self.num_flux_obs));
+            let d_flux_ptr = d_flux_internal.as_mut_ptr();
+
+            let result = unsafe {
+                ffi::sk_output_assign_surface_flux_derivative_memory(
+                    self.output,
+                    c_deriv_name.as_ptr(),
+                    d_flux_ptr,
+                    nflux,
+                )
+            };
+
+            self.d_flux_surf
+                .insert(deriv_name.to_string(), d_flux_internal);
+
+            if result != 0 {
+                panic!("Error assigning surface flux derivative memory");
+            }
         }
 
         self
@@ -127,12 +207,12 @@ mod tests {
 
     #[test]
     fn test_output() {
-        let _output = Output::new(10, 10, 3);
+        let _output = Output::new(10, 10, 0, 2, 3);
     }
 
     #[test]
     fn test_output_with_derivative() {
-        let mut output = Output::new(10, 10, 3);
+        let mut output = Output::new(10, 10, 0, 2, 3);
         output.with_derivative("test_deriv", 5);
         assert!(output.d_radiance.contains_key("test_deriv"));
         assert_eq!(output.d_radiance["test_deriv"].shape(), &[5, 10, 10, 3]);
@@ -140,7 +220,7 @@ mod tests {
 
     #[test]
     fn test_output_with_surface_derivative() {
-        let mut output = Output::new(10, 10, 3);
+        let mut output = Output::new(10, 10, 0, 2, 3);
         output.with_surface_derivative("test_surf_deriv");
         assert!(output.d_radiance_surf.contains_key("test_surf_deriv"));
         assert_eq!(
@@ -151,7 +231,7 @@ mod tests {
 
     #[test]
     fn test_output_dimensions() {
-        let output = Output::new(5, 8, 2);
+        let output = Output::new(5, 8, 0, 2, 2);
         assert_eq!(output.radiance.shape(), &[5, 8, 2]);
     }
 }

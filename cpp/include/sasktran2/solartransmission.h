@@ -350,11 +350,12 @@ namespace sasktran2::solartransmission {
          * transmission object, usually this involves tracing the required rays
          * and setting up any internal matrices.
          *
-         *  @param los_rays The traced line of sight rays
+         *  @param internal_viewing Information on the internal viewing
+         * geometry, los_rays and flux observers
          */
         void initialize_geometry(
-            const std::vector<sasktran2::raytracing::TracedRay>& los_rays)
-            override;
+            const sasktran2::viewinggeometry::InternalViewingGeometry&
+                internal_viewing) override;
 
         /**
          *
@@ -429,11 +430,12 @@ namespace sasktran2::solartransmission {
          * calculating the source term.  This method is called after the line of
          * sight rays ar traced.
          *
-         * @param los_rays The traced line of sight rays
+         * @param internal_viewing Information on the internal viewing geometry,
+         * los_rays and flux observers
          */
         void initialize_geometry(
-            const std::vector<sasktran2::raytracing::TracedRay>& los_rays)
-            override;
+            const sasktran2::viewinggeometry::InternalViewingGeometry&
+                internal_viewing) override;
 
         /**
          *

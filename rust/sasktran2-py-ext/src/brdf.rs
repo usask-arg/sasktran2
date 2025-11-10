@@ -5,13 +5,13 @@ pub fn set_py_brdf_in_surface<'py>(
     py_obj: Bound<'py, PyAny>,
     surface: &mut sasktran2_rs::bindings::surface::Surface,
 ) -> Result<()> {
-    if let Ok(brdf) = py_obj.downcast::<PyMODIS>() {
+    if let Ok(brdf) = py_obj.cast::<PyMODIS>() {
         let binding = brdf.borrow();
         surface.set_brdf(&binding.internal)
-    } else if let Ok(brdf) = py_obj.downcast::<PyKokhanovsky>() {
+    } else if let Ok(brdf) = py_obj.cast::<PyKokhanovsky>() {
         let binding = brdf.borrow();
         surface.set_brdf(&binding.internal)
-    } else if let Ok(brdf) = py_obj.downcast::<PyLambertian>() {
+    } else if let Ok(brdf) = py_obj.cast::<PyLambertian>() {
         let binding = brdf.borrow();
         surface.set_brdf(&binding.internal)
     } else {

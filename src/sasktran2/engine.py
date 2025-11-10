@@ -15,7 +15,7 @@ def map_surface_derivative(
         return xr.DataArray(np_deriv, dims=dims)
     return xr.DataArray(
         np.einsum(
-            "ijk, il->lijk",
+            "ij..., il->lij...",
             np_deriv,
             mapping.interpolator,
             optimize=True,
@@ -83,6 +83,16 @@ class Engine:
             dims=["wavelength", "los", "stokes"],
         )
 
+        flux_types = ["upwelling", "downwelling"]
+        if len(self._viewing_geometry.flux_observers) > 0:
+            # TODO: Grab this from the config
+
+            for i, flux_type in enumerate(flux_types):
+                out_ds[f"{flux_type}_flux"] = xr.DataArray(
+                    output.flux[i],
+                    dims=["wavelength", "flux_location"],
+                )
+
         if atmosphere.wavelengths_nm is not None:
             out_ds.coords["wavelength"] = atmosphere.wavelengths_nm
 
@@ -109,6 +119,39 @@ class Engine:
             if mapping.interp_dim == "dummy":
                 mapped_derivative = mapped_derivative.isel(**{mapping.interp_dim: 0})
             out_ds[k] = mapped_derivative
+
+        for k, v in output.d_flux.items():
+            mapping = atmosphere.storage.get_derivative_mapping(k)
+
+            base_name = k if mapping.assign_name == "" else mapping.assign_name
+
+            for i, flux_type in enumerate(flux_types):
+                name = f"{base_name}_{flux_type}_flux"
+
+                if name in out_ds:
+                    out_ds[name] += v[:, i]
+                else:
+                    out_ds[name] = xr.DataArray(
+                        v[:, i],
+                        dims=[mapping.interp_dim, "wavelength", "flux_location"],
+                    )
+
+        for k, v in output.d_flux_surf.items():
+            mapping = atmosphere.surface.get_derivative_mapping(k)
+
+            base_name = k
+
+            for i, flux_type in enumerate(flux_types):
+                name = f"{base_name}_{flux_type}_flux"
+
+                mapped_derivative = map_surface_derivative(
+                    mapping, v[i], ["wavelength", "flux_location"]
+                )
+                if mapping.interp_dim == "dummy":
+                    mapped_derivative = mapped_derivative.isel(
+                        **{mapping.interp_dim: 0}
+                    )
+                out_ds[name] = mapped_derivative
 
         if isinstance(self._viewing_geometry, ViewingGeometryContainer):
             out_ds = self._viewing_geometry.add_geometry_to_radiance(out_ds)

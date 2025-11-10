@@ -4,13 +4,15 @@
 #include <cstdio>
 #include <sasktran2.h>
 
-OutputC::OutputC(double* radiance, int nrad, int nstokes) {
+OutputC::OutputC(double* radiance, int nrad, int nstokes, double* flux,
+                 int nflux) {
     Eigen::Map<Eigen::VectorXd> radiance_map(radiance, nrad);
+    Eigen::Map<Eigen::VectorXd> flux_map(flux, nflux);
 
     if (nstokes == 1) {
-        impl = std::make_unique<sasktran2::OutputC<1>>(radiance_map);
+        impl = std::make_unique<sasktran2::OutputC<1>>(radiance_map, flux_map);
     } else if (nstokes == 3) {
-        impl = std::make_unique<sasktran2::OutputC<3>>(radiance_map);
+        impl = std::make_unique<sasktran2::OutputC<3>>(radiance_map, flux_map);
     } else {
         // Handle error case
         impl = nullptr;
@@ -69,9 +71,61 @@ int OutputC::assign_surface_derivative_memory(const char* name,
     }
 }
 
+int OutputC::assign_flux_derivative_memory(const char* name,
+                                           double* derivative_mapping, int nrad,
+                                           int nderiv) {
+    if (impl == nullptr) {
+        return -1; // Error: Output not initialized
+    }
+
+    // Memory structure is (nrad , nderiv)
+    Eigen::Map<Eigen::MatrixXd> derivative_map(derivative_mapping, nrad,
+                                               nderiv);
+
+    auto* impl1 = dynamic_cast<sasktran2::OutputC<1>*>(impl.get());
+    auto* impl3 = dynamic_cast<sasktran2::OutputC<3>*>(impl.get());
+
+    if (impl1) {
+        impl1->set_flux_derivative_mapping_memory(name, derivative_map);
+        return 0;
+    } else if (impl3) {
+        impl3->set_flux_derivative_mapping_memory(name, derivative_map);
+        return 0;
+    } else {
+        // Handle error case
+        return -1;
+    }
+}
+
+int OutputC::assign_surface_flux_derivative_memory(const char* name,
+                                                   double* derivative_mapping,
+                                                   int nrad) {
+    if (impl == nullptr) {
+        return -1; // Error: Output not initialized
+    }
+
+    // Memory structure is (nrad * nstokes, 1)
+    Eigen::Map<Eigen::MatrixXd> derivative_map(derivative_mapping, nrad, 1);
+
+    auto* impl1 = dynamic_cast<sasktran2::OutputC<1>*>(impl.get());
+    auto* impl3 = dynamic_cast<sasktran2::OutputC<3>*>(impl.get());
+
+    if (impl1) {
+        impl1->set_flux_surface_derivative_mapping_memory(name, derivative_map);
+        return 0;
+    } else if (impl3) {
+        impl3->set_flux_surface_derivative_mapping_memory(name, derivative_map);
+        return 0;
+    } else {
+        // Handle error case
+        return -1;
+    }
+}
+
 extern "C" {
-OutputC* sk_output_create(double* radiance, int nrad, int nstokes) {
-    return new OutputC(radiance, nrad, nstokes);
+OutputC* sk_output_create(double* radiance, int nrad, int nstokes, double* flux,
+                          int nflux) {
+    return new OutputC(radiance, nrad, nstokes, flux, nflux);
 }
 
 void sk_output_destroy(OutputC* output) { delete output; }
@@ -97,6 +151,29 @@ int sk_output_assign_surface_derivative_memory(OutputC* output,
 
     return output->assign_surface_derivative_memory(name, derivative_mapping,
                                                     nrad, nstokes);
+}
+
+int sk_output_assign_flux_derivative_memory(OutputC* output, const char* name,
+                                            double* derivative_mapping,
+                                            int nrad, int nderiv) {
+    if (output->impl == nullptr) {
+        return -1; // Error: Output not initialized
+    }
+
+    return output->assign_flux_derivative_memory(name, derivative_mapping, nrad,
+                                                 nderiv);
+}
+
+int sk_output_assign_surface_flux_derivative_memory(OutputC* output,
+                                                    const char* name,
+                                                    double* derivative_mapping,
+                                                    int nrad) {
+    if (output->impl == nullptr) {
+        return -1; // Error: Output not initialized
+    }
+
+    return output->assign_surface_flux_derivative_memory(
+        name, derivative_mapping, nrad);
 }
 
 int sk_output_get_los_optical_depth(OutputC* output, double** od) {

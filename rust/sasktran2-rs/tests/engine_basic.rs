@@ -41,3 +41,45 @@ fn test_engine_basic() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_flux_basic() -> Result<()> {
+    let mut atmosphere = Atmosphere::new(10, 50, 16, true, true, Stokes::Stokes1);
+
+    atmosphere.storage.ssa.fill(1.0);
+    atmosphere.storage.total_extinction.fill(0.0001);
+    atmosphere
+        .storage
+        .leg_coeff
+        .slice_mut(s![0, .., ..])
+        .fill(1.0);
+
+    let mut altitude_grid = Vec::new();
+    for i in 0..50 {
+        altitude_grid.push(i as f64 * 1000.0);
+    }
+
+    let geometry = Geometry1D::new(
+        0.6,
+        0.0,
+        6371000.0,
+        altitude_grid,
+        InterpolationMethod::Linear,
+        GeometryType::PlaneParallel,
+    );
+
+    let mut config = Config::new();
+
+    let _ = config.with_multiple_scatter_source(MultipleScatterSource::DiscreteOrdinates);
+    let _ = config.with_single_scatter_source(SingleScatterSource::DiscreteOrdinates);
+
+    let mut viewing_geometry = ViewingGeometry::new();
+    viewing_geometry.add_flux_observer_solar(0.6, 30000.0);
+
+    let engine = Engine::new(&config, &geometry, &viewing_geometry)?;
+
+    let output = engine.calculate_radiance(&atmosphere).unwrap();
+    println!("Radiance: {:?}", output.radiance);
+
+    Ok(())
+}

@@ -17,6 +17,13 @@ Viewing Policies
     sasktran2.GroundViewingSolar
     sasktran2.SolarAnglesObserverLocation
 
+Flux Viewing Policies
+---------------------
+.. autosummary::
+    :toctree: generated/
+
+    sasktran2.FluxObserverSolar
+
 
 Solar Geometry
 --------------

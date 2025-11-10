@@ -30,8 +30,9 @@ namespace sasktran2 {
     template <int NSTOKES, int CNSTR>
     void
     DOSourceInterpolatedPostProcessing<NSTOKES, CNSTR>::initialize_geometry(
-        const std::vector<sasktran2::raytracing::TracedRay>& los_rays) {
-        DOSource<NSTOKES, CNSTR>::initialize_geometry(los_rays);
+        const sasktran2::viewinggeometry::InternalViewingGeometry&
+            internal_viewing) {
+        DOSource<NSTOKES, CNSTR>::initialize_geometry(internal_viewing);
 
         m_diffuse_storage =
             std::make_unique<sasktran2::DOSourceDiffuseStorage<NSTOKES, CNSTR>>(
@@ -45,19 +46,25 @@ namespace sasktran2 {
 
         if (m_will_integrate_sources) {
             m_los_source_interpolator =
-                m_diffuse_storage->geometry_interpolator(los_rays);
+                m_diffuse_storage->geometry_interpolator(
+                    internal_viewing.traced_rays);
             m_source_interpolator_view = m_los_source_interpolator.get();
 
-            m_los_ground_source_interpolator.resize(los_rays.size());
+            m_los_ground_source_interpolator.resize(
+                internal_viewing.traced_rays.size());
 
-            for (int i = 0; i < los_rays.size(); ++i) {
-                if (los_rays[i].ground_is_hit) {
+            for (int i = 0; i < internal_viewing.traced_rays.size(); ++i) {
+                if (internal_viewing.traced_rays[i].ground_is_hit) {
                     m_los_ground_source_interpolator[i] =
                         std::make_unique<Eigen::SparseVector<double>>();
 
                     m_diffuse_storage->create_ground_source_interpolator(
-                        los_rays[i].layers[0].entrance.position,
-                        los_rays[i].layers[0].average_look_away,
+                        internal_viewing.traced_rays[i]
+                            .layers[0]
+                            .entrance.position,
+                        internal_viewing.traced_rays[i]
+                            .layers[0]
+                            .average_look_away,
                         *m_los_ground_source_interpolator[i]);
                 }
             }

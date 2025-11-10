@@ -235,17 +235,27 @@ class AERLineDatabase(CachedDatabase):
         # check if the AER database is downloaded, if not download it
 
         if not version_dir.exists():
-            from zenodo_get import zenodo_get
 
             try:
+                # Zenodo_get < 2
+                from zenodo_get import zenodo_get
+
                 zenodo_get(
                     shlex.split(
                         f'--record {self._version_map[self._version]} -o "{dir.as_posix()}"'
                     )
                 )
             except ImportError as e:
-                msg = "zenodo_get is required to download the AER line database"
-                raise ImportError(msg) from e
+                try:
+                    # zenodo_get >= 2
+                    from zenodo_get import download
+
+                    download(
+                        self._version_map[self._version], output_dir=dir.as_posix()
+                    )
+                except ImportError:
+                    msg = "zenodo_get is required to download the AER line database"
+                    raise ImportError(msg) from e
 
             file = dir.joinpath(f"aer_v_{self._version}.tar.gz")
             # Extract the tar file

@@ -25,6 +25,9 @@ namespace sasktran2 {
 
         // Set initial log level
         spdlog::set_level(m_log_level);
+
+        m_flux_types.push_back(FluxType::upwelling);
+        m_flux_types.push_back(FluxType::downwelling);
     }
 
     void Config::validate_config() const {

@@ -22,6 +22,7 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<constituent::emission::PyThermalEmission>()?;
     m.add_class::<constituent::rayleigh::PyRayleigh>()?;
     m.add_class::<constituent::vmr_alt_absorber::PyVMRAltitudeAbsorber>()?;
+    m.add_class::<constituent::manual::PyManual>()?;
 
     // Optical databases
     m.add_class::<optical::xsec_dbase::AbsorberDatabaseDim1>()?;
@@ -60,6 +61,7 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<viewing_geometry::PyGroundViewingSolar>()?;
     m.add_class::<viewing_geometry::PyTangentAltitudeSolar>()?;
     m.add_class::<viewing_geometry::PySolarAnglesObserverLocation>()?;
+    m.add_class::<viewing_geometry::PyFluxObserverSolar>()?;
     m.add_class::<viewing_geometry::PyViewingGeometry>()?;
 
     // Engine

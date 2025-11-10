@@ -328,7 +328,7 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::integrate_source(
         const auto& eigval = solution.value.dual_eigval();
 
         double expfactor =
-            exp(-1 * (dual_thickness.value - x) * average_secant.value);
+            exp(-1 * (dual_thickness.value) * average_secant.value);
 
         Dp.value =
             (-1 * transmission.value * expfactor * hm.value + Eform.value) /
@@ -362,7 +362,6 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::integrate_source(
                 hm.deriv(k) * (-transmission.value * expfactor) /
                 (average_secant.value + eigval.value(i));
             Dp.deriv(layerStart + k) +=
-                (dual_thickness.value - x) / dual_thickness.value *
                 dual_thickness.deriv(k) *
                 (transmission.value * average_secant.value * hm.value *
                  expfactor) /
