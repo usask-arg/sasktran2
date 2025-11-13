@@ -77,7 +77,7 @@ def test_aer_line_cross_section(species):
         pytest.skip("H2 data is misformed and not fully supported")
 
     absorber = AERLineAbsorber(species)
-    wavenumbers = np.arange(1000, 2000, 10.0)
+    wavenumbers = np.arange(1000, 5000, 10.0)
     _ = absorber.cross_sections(
         wavenumbers, [0.0], pressure_pa=[101325], temperature_k=[273.15]
     )
