@@ -36,7 +36,7 @@ def test_upwelling_flux():
         for n in nodes:
             viewing_geo.add_ray(sk.SolarAnglesObserverLocation(0.6, 0.0, -n, alt))
 
-        integrand = xr.DataArray(data=weights, dims=["los"])
+        integrand = xr.DataArray(data=weights * nodes * 2.0 * np.pi, dims=["los"])
 
         wavel = np.arange(300.0, 800.0, 10)
         atmosphere = sk.Atmosphere(model_geometry, config, wavelengths_nm=wavel)

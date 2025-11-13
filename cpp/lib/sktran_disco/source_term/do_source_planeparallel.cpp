@@ -330,7 +330,12 @@ namespace sasktran2 {
                         double quadrature_weight =
                             (*m_thread_storage[threadidx]
                                   .sza_calculators[0]
-                                  .persistent_config->quadrature_weights())[l];
+                                  .persistent_config->quadrature_weights())[l] *
+                            (*m_thread_storage[threadidx]
+                                  .sza_calculators[0]
+                                  .persistent_config
+                                  ->quadrature_cos_angle())[l] *
+                            EIGEN_PI * 2.0;
 
                         double L = dual_L.value(j);
                         double M = dual_M.value(j);
