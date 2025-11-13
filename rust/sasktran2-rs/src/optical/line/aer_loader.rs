@@ -81,7 +81,12 @@ pub fn read_aer_line_file(data_path: PathBuf) -> Result<OpticalLineDB> {
         }
 
         let mol_id: i32 = line[0..2].trim().parse()?;
-        let iso_id: i32 = line[2..3].parse()?;
+        let iso_id: i32 = match line[2..3].trim() {
+            "0" => 10,
+            "A" => 11,
+            "B" => 12,
+            other => other.parse()?,
+        };
 
         let transition_wavenumber: f64 = line[3..15].trim().parse()?;
         let _r_squared: f64 = line[25..35].trim().parse()?;
