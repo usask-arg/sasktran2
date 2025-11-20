@@ -167,9 +167,16 @@ namespace sasktran2 {
             const auto& interpolator =
                 *m_los_ground_source_interpolator[losidx];
 
-            // TODO: Only lambertian,
-            source.value(0) += interpolator.dot(
+            double ground_source = interpolator.dot(
                 m_diffuse_storage->linear_source(wavel_threadidx).value);
+
+            if (ground_source != ground_source) {
+                spdlog::info("NaN detected in ground source calculation");
+                ground_source = 0.0;
+            }
+
+            // TODO: Only lambertian,
+            source.value(0) += ground_source;
 
             if (this->m_config->wf_precision() ==
                 sasktran2::Config::WeightingFunctionPrecision::full) {

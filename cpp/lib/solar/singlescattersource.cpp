@@ -1,3 +1,4 @@
+#include "sasktran2/grids.h"
 #include "sasktran2/raytracing.h"
 #include "sasktran2/source_algorithms.h"
 #include "sasktran2/source_interface.h"
@@ -244,21 +245,58 @@ namespace sasktran2::solartransmission {
         double k_start = 0;
         double k_end = 0;
 
-        scattering_source(
-            m_phase_handler, wavel_threadidx, losidx, layeridx, wavelidx,
-            layer.entrance.interpolation_weights, true, solar_trans_entrance,
-            *m_atmosphere,
-            Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
-                m_geometry_sparse, entrance_index),
-            calculate_derivatives, start_phase, ssa_start, k_start);
+        if (m_geometry.altitude_grid().interpolation_method() ==
+            grids::interpolation::lower) {
+            if (layer.r_exit > layer.r_entrance) {
+                scattering_source(
+                    m_phase_handler, wavel_threadidx, losidx, layeridx,
+                    wavelidx, layer.entrance.interpolation_weights, true,
+                    solar_trans_entrance, *m_atmosphere,
+                    Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
+                        m_geometry_sparse, entrance_index),
+                    calculate_derivatives, start_phase, ssa_start, k_start);
 
-        scattering_source(
-            m_phase_handler, wavel_threadidx, losidx, layeridx, wavelidx,
-            layer.exit.interpolation_weights, false, solar_trans_exit,
-            *m_atmosphere,
-            Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
-                m_geometry_sparse, exit_index),
-            calculate_derivatives, end_phase, ssa_end, k_end);
+                scattering_source(
+                    m_phase_handler, wavel_threadidx, losidx, layeridx,
+                    wavelidx, layer.entrance.interpolation_weights, true,
+                    solar_trans_exit, *m_atmosphere,
+                    Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
+                        m_geometry_sparse, exit_index),
+                    calculate_derivatives, end_phase, ssa_start, k_start);
+            } else {
+                scattering_source(
+                    m_phase_handler, wavel_threadidx, losidx, layeridx,
+                    wavelidx, layer.exit.interpolation_weights, false,
+                    solar_trans_entrance, *m_atmosphere,
+                    Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
+                        m_geometry_sparse, entrance_index),
+                    calculate_derivatives, start_phase, ssa_end, k_end);
+
+                scattering_source(
+                    m_phase_handler, wavel_threadidx, losidx, layeridx,
+                    wavelidx, layer.exit.interpolation_weights, false,
+                    solar_trans_exit, *m_atmosphere,
+                    Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
+                        m_geometry_sparse, exit_index),
+                    calculate_derivatives, end_phase, ssa_end, k_end);
+            }
+        } else {
+            scattering_source(
+                m_phase_handler, wavel_threadidx, losidx, layeridx, wavelidx,
+                layer.entrance.interpolation_weights, true,
+                solar_trans_entrance, *m_atmosphere,
+                Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
+                    m_geometry_sparse, entrance_index),
+                calculate_derivatives, start_phase, ssa_start, k_start);
+
+            scattering_source(
+                m_phase_handler, wavel_threadidx, losidx, layeridx, wavelidx,
+                layer.exit.interpolation_weights, false, solar_trans_exit,
+                *m_atmosphere,
+                Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
+                    m_geometry_sparse, exit_index),
+                calculate_derivatives, end_phase, ssa_end, k_end);
+        }
 
         double source_factor1 = (1 - shell_od.exp_minus_od) / shell_od.od;
         // Note dsource_factor = d_od * (1/od - source_factor * (1 + 1/od))
@@ -269,8 +307,10 @@ namespace sasktran2::solartransmission {
         // in a 1D atmosphere
 
         source.value.array() +=
-            source_factor1 * (start_phase.value.array() * layer.od_quad_start +
-                              end_phase.value.array() * layer.od_quad_end);
+            source_factor1 *
+            (start_phase.value.array() * layer.od_quad_start_fraction +
+             end_phase.value.array() * layer.od_quad_end_fraction) *
+            layer.layer_distance;
 
         if (calculate_derivatives) {
             // Now for the derivatives, start with dsource_factor which is
@@ -293,8 +333,10 @@ namespace sasktran2::solartransmission {
         if (source.value.hasNaN()) {
             static bool message = false;
             if (!message) {
-                spdlog::error("SS Source NaN {} {}", source_factor1,
-                              layer.od_quad_start_fraction);
+                spdlog::error("SS Source NaN {} {} {} {} {} {}", source_factor1,
+                              layer.od_quad_start_fraction,
+                              layer.od_quad_end_fraction, layer.layer_distance,
+                              start_phase.value(1), end_phase.value(1));
                 message = true;
             }
         }

@@ -26,7 +26,7 @@ namespace sasktran2 {
             sasktran2::grids::outofbounds::extend,
             sasktran2::grids::interpolation::linear);
 
-        Eigen::VectorXd cos_angles = Eigen::ArrayXd::LinSpaced(40, -1, 1);
+        Eigen::VectorXd cos_angles = Eigen::ArrayXd::LinSpaced(100, -1, 1);
 
         m_cos_angle_grid = std::make_unique<sasktran2::grids::Grid>(
             std::move(cos_angles), sasktran2::grids::gridspacing::variable,
@@ -158,8 +158,7 @@ namespace sasktran2 {
 
                             if (include_azimuth_weights) {
                                 for (int k = 0; k < m_num_azi; ++k) {
-                                    double azi_factor =
-                                        cos(k * (EIGEN_PI - azi));
+                                    double azi_factor = cos(k * (azi));
                                     int index = linear_storage_index(
                                         angle_index[angleidx],
                                         alt_index[altidx], sza_index[szaidx],
@@ -171,8 +170,7 @@ namespace sasktran2 {
                                         sparsevec[0].coeffRef(index) =
                                             azi_factor * weight;
                                     } else if constexpr (NSTOKES == 3) {
-                                        double sin_azi_factor =
-                                            sin(k * (EIGEN_PI - azi));
+                                        double sin_azi_factor = sin(k * (azi));
 
                                         sparsevec[0].coeffRef(index * NSTOKES) =
                                             azi_factor * weight;
@@ -460,6 +458,11 @@ namespace sasktran2 {
         const auto& input_derivatives = optical_layer.inputDerivatives();
 
         for (int aidx = 0; aidx < m_cos_angle_grid->grid().size(); ++aidx) {
+            if (m_cos_angle_grid->grid()(aidx) < 0) {
+                // Should be 0 solar transmission?
+                continue;
+            }
+
             int source_index = ground_storage_index(aidx, szaidx, m);
 
             double mu_out = m_cos_angle_grid->grid()(aidx);

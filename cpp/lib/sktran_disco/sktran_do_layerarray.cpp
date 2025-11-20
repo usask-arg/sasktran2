@@ -669,6 +669,15 @@ void sasktran_disco::OpticalLayerArray<NSTOKES,
         m_transmission[index].value = 0.0;
         m_transmission[index].deriv.setZero();
 
+        if (m_chapman_factors(layer->index(), 0) < 0) {
+            // Transmission is 0,
+            m_transmission[index].value = -1.0;
+            layer->dual_average_secant().value = 1.0 / this->M_CSZ;
+            layer->dual_average_secant().deriv.setZero();
+            ++index;
+            continue;
+        }
+
         for (LayerIndex p = 0; p <= layer->index(); ++p) {
             const auto& dual_thickness = m_layers[p]->dual_thickness();
 
@@ -709,8 +718,14 @@ void sasktran_disco::OpticalLayerArray<NSTOKES,
     m_transmission[0].value = directIntensityTOA();
     index = 1;
     for (auto& layer : m_layers) {
-        m_transmission[index].value =
-            std::exp(-m_transmission[index].value) * directIntensityTOA();
+        if (m_transmission[index].value < 0) {
+            // Transmission is 0
+            m_transmission[index].value = 0.0;
+        } else {
+            m_transmission[index].value =
+                std::exp(-m_transmission[index].value) * directIntensityTOA();
+        }
+
         if (compute_deriv) {
             m_transmission[index].deriv =
                 -m_transmission[index].deriv * m_transmission[index].value;

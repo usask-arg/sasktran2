@@ -1,3 +1,4 @@
+#include "sasktran2/math/scattering.h"
 #include <sasktran2/geometry.h>
 #include <sasktran2/math/trig.h>
 #include <sasktran2/validation/validation.h>
@@ -269,6 +270,71 @@ namespace sasktran2 {
 
         result.first = cos(2 * rot_rangle);
         result.second = sin(2 * rot_rangle);
+
+        return result;
+    }
+
+    std::pair<double, double> Coordinates::stokes_standard_to_observer_z(
+        const Eigen::Vector3d& look_vector,
+        const Eigen::Vector3d& position) const {
+
+        auto position_norm = position.normalized();
+
+        // obs lat
+        double cos_obs_lat = position_norm.dot(m_z_unit);
+        if (cos_obs_lat >= 1) {
+            std::pair<double, double> result;
+            result.first = 1.0;
+            result.second = 0.0;
+        }
+
+        // Rotate in this plane so the observer is on the z-axis
+        Eigen::AngleAxis<double> to_z_transform(
+            -acos(cos_obs_lat), m_z_unit.cross(position_norm).normalized());
+
+        Eigen::Vector3d rotated_look = to_z_transform.matrix() * look_vector;
+
+        Eigen::Vector3d rotated_sun = to_z_transform.matrix() * m_sun_unit;
+
+        auto perp_z_start =
+            (m_z_unit - m_z_unit.dot(look_vector) * look_vector).normalized();
+        auto perp_true_sun_start =
+            (m_sun_unit - m_sun_unit.dot(look_vector) * look_vector)
+                .normalized();
+
+        auto perp_z_rot =
+            (m_z_unit - m_z_unit.dot(rotated_look) * rotated_look).normalized();
+        auto perp_true_sun_rot =
+            (rotated_sun - rotated_sun.dot(rotated_look) * rotated_look)
+                .normalized();
+
+        double cos_angle_start = perp_z_start.dot(perp_true_sun_start);
+        double cos_angle_rot = perp_z_rot.dot(perp_true_sun_rot);
+
+        if (cos_angle_start > 1) {
+            cos_angle_start = 1;
+        }
+        if (cos_angle_start < -1) {
+            cos_angle_start = -1;
+        }
+
+        if (cos_angle_rot > 1) {
+            cos_angle_rot = 1;
+        }
+        if (cos_angle_rot < -1) {
+            cos_angle_rot = -1;
+        }
+
+        double rot_rangle_start = acos(cos_angle_start);
+        double rot_rangle_rot = acos(cos_angle_rot);
+
+        std::pair<double, double> result;
+
+        result.first = cos(2 * (rot_rangle_start - rot_rangle_rot));
+        result.second = -sin(2 * (rot_rangle_start - rot_rangle_rot));
+
+        // result.first = 1.0;
+        // result.second = 0.0;
 
         return result;
     }

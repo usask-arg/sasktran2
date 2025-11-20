@@ -1,4 +1,5 @@
 #include "sasktran2/geometry.h"
+#include "sasktran2/raytracing.h"
 #include "sasktran2/refraction.h"
 #include "sktran_disco/sktran_do.h"
 #include "sktran_disco/sktran_do_geometrylayerarray.h"
@@ -60,8 +61,8 @@ sasktran_disco::GeometryLayerArray<NSTOKES, CNSTR>::GeometryLayerArray(
         m_chapman_factors.diagonal().setConstant(1 / this->M_CSZ);
     } else {
         // Now we have the layer locations, we can calculate the chapman factors
-        calculate_chapman_factors(geometry.coordinates().earth_radius(),
-                                  geometry);
+        calculate_chapman_factors_raytracer(
+            geometry.coordinates().earth_radius(), geometry);
     }
 }
 
@@ -114,6 +115,68 @@ void sasktran_disco::GeometryLayerArray<NSTOKES, CNSTR>::
                      sqrt(rfloor * rfloor - rp * rp * sinthetasq)) /
                     (rceil - rfloor);
             }
+        }
+    }
+}
+
+template <int NSTOKES, int CNSTR>
+void sasktran_disco::GeometryLayerArray<NSTOKES, CNSTR>::
+    calculate_chapman_factors_raytracer(double earth_rad,
+                                        const sasktran2::Geometry1D& geometry) {
+
+    double earth_radius = geometry.coordinates().earth_radius();
+
+    m_chapman_factors.setZero();
+    auto ray_tracer = sasktran2::raytracing::SphericalShellRayTracer(geometry);
+
+    double csz = this->M_CSZ;
+    bool refraction = this->M_SOLAR_REFRACTION;
+
+    sasktran2::viewinggeometry::ViewingRay ray;
+    ray.look_away = geometry.coordinates().sun_unit();
+
+    sasktran2::raytracing::TracedRay result;
+
+    // For every layer, we have to construct a ray from the sun to the bottom of
+    // the layer
+    for (sasktran_disco::LayerIndex p = 0; p < this->M_NLYR; ++p) {
+
+        ray.observer.position = geometry.coordinates().solar_coordinate_vector(
+            csz, 0.0, m_floor_h(p));
+
+        ray_tracer.trace_ray(ray, result, refraction);
+
+        if (result.ground_is_hit) {
+            // No transmission, but this means the chapman factors are actually
+            // really large, so we set it negative and detect it later
+            m_chapman_factors.row(p).setConstant(-1.0);
+            continue;
+        }
+
+        // Now we have the traced ray, we can extract the chapman factors
+        for (auto& layer : result.layers) {
+            double layer_distance = layer.layer_distance;
+            double vertical_layer_distance = (m_ceiling_h(p) - m_floor_h(p));
+
+            // Now we have to figure out which layer this corresponds to,
+            double lower_altitude =
+                std::min(layer.entrance.radius(), layer.exit.radius()) -
+                earth_radius;
+
+            // Start at the top and work down until we find the layer where the
+            // floor radius is <
+            sasktran_disco::LayerIndex q = 0;
+            for (; q < this->M_NLYR; ++q) {
+                if (lower_altitude >= m_floor_h(q) &&
+                    lower_altitude <= m_ceiling_h(q)) {
+                    break;
+                }
+            }
+            if (q == this->M_NLYR) {
+                // We will just assume we are at the bottom layer
+                q = this->M_NLYR - 1;
+            }
+            m_chapman_factors(p, q) = layer_distance / vertical_layer_distance;
         }
     }
 }

@@ -186,6 +186,28 @@ namespace sasktran2::raytracing {
         layer.average_look_away =
             (layer.exit.position - layer.entrance.position).normalized();
 
+        if (interpolation == grids::interpolation::lower) {
+            // For lower interpolation we just use the point with the lower
+            // altitude
+            if (r0 < r1) {
+                layer.od_quad_start =
+                    layer.layer_distance * layer.curvature_factor;
+                layer.od_quad_end = 0.0;
+
+                layer.od_quad_start_fraction = 0.5;
+                layer.od_quad_end_fraction = 0.5;
+            } else {
+                layer.od_quad_start = 0.0;
+                layer.od_quad_end =
+                    layer.layer_distance * layer.curvature_factor;
+
+                layer.od_quad_start_fraction = 0.5;
+                layer.od_quad_end_fraction = 0.5;
+            }
+
+            return;
+        }
+
         if (abs(dr) < 0.001 ||
             geometry_type == sasktran2::geometrytype::planeparallel ||
             interpolation == grids::interpolation::shell) {

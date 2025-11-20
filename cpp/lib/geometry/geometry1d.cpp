@@ -20,10 +20,34 @@ namespace sasktran2 {
     void Geometry1D::assign_interpolation_weights(
         const Location& loc,
         std::vector<std::pair<int, double>>& index_weights) const {
+        double alt;
+
+        if (coordinates().geometry_type() ==
+            sasktran2::geometrytype::planeparallel) {
+            alt = loc.position.z() - coordinates().earth_radius();
+        } else {
+            alt = loc.radius() - coordinates().earth_radius();
+        }
+
         if (loc.on_exact_altitude && loc.lower_alt_index >= 0) {
             index_weights.resize(1);
             index_weights[0].first = loc.lower_alt_index;
             index_weights[0].second = 1;
+
+#ifdef SASKTRAN_DEBUG_ASSERTS
+            if (fabs(alt - m_alt_grid.grid()[loc.lower_alt_index]) > 1) {
+                spdlog::error("Location marked as on exact altitude but "
+                              "altitude does not match grid value");
+
+                std::cout << "Location altitude: " << alt << ", grid value: "
+                          << m_alt_grid.grid()[loc.lower_alt_index]
+                          << std::endl;
+
+                sasktran2::validation::throw_configuration_error();
+            }
+#endif
+
+            return;
         }
 
         std::array<double, 2> weight;
@@ -31,9 +55,8 @@ namespace sasktran2 {
 
         int num_contrib;
 
-        m_alt_grid.calculate_interpolation_weights(
-            loc.radius() - coordinates().earth_radius(), index, weight,
-            num_contrib);
+        m_alt_grid.calculate_interpolation_weights(alt, index, weight,
+                                                   num_contrib);
 
         index_weights.resize(num_contrib);
 
