@@ -193,7 +193,9 @@ namespace sasktran2::raytracing {
                     layer.average_look_away * layer.layer_distance;
             }
 
-            add_od_quadrature(layer);
+            add_od_quadrature(
+                layer, sasktran2::geometrytype::spherical,
+                m_geometry.altitude_grid().interpolation_method());
             add_interpolation_weights(layer, m_geometry);
             add_solar_parameters(m_geometry.coordinates().sun_unit(), layer);
         }

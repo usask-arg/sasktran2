@@ -22,7 +22,7 @@ def test_los_refraction_refractive_one():
     for alt in [10000, 20000, 30000, 40000]:
         ray = sk.TangentAltitudeSolar(
             tangent_altitude_m=alt,
-            relative_azimuth=0,
+            relative_azimuth=0.1,
             observer_altitude_m=200000,
             cos_sza=0.6,
         )

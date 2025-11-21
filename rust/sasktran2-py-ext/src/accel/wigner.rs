@@ -30,4 +30,20 @@ impl WignerD {
         }
         Ok(py_result)
     }
+
+    fn d_vec<'py>(
+        &self,
+        py: Python<'py>,
+        theta: f64,
+        l_values: PyReadonlyArray1<i32>,
+    ) -> PyResult<Bound<'py, PyArray1<f64>>> {
+        let l_values = l_values.as_slice()?;
+
+        let py_result = PyArray1::zeros(py, (l_values.len(),), false);
+
+        unsafe {
+            self.wigner.vector_d(theta, py_result.as_slice_mut()?);
+        }
+        Ok(py_result)
+    }
 }

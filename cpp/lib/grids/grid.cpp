@@ -78,13 +78,23 @@ namespace sasktran2::grids {
                     weight[1] = 0;
                     return;
                 } else {
-                    // Set to the last value
-                    index[0] = (int)m_grid_values.size() - 1;
-                    index[1] = 0;
-                    weight[0] = 1;
-                    weight[1] = 0;
-                    num_contributing = 1;
-                    return;
+                    // Set to the last value, but note in lower interpolation
+                    // we never use the last value
+                    if (m_interp_method == interpolation::lower) {
+                        index[0] = (int)m_grid_values.size() - 2;
+                        index[1] = 0;
+                        weight[0] = 1;
+                        weight[1] = 0;
+                        num_contributing = 1;
+                        return;
+                    } else {
+                        index[0] = (int)m_grid_values.size() - 1;
+                        index[1] = 0;
+                        weight[0] = 1;
+                        weight[1] = 0;
+                        num_contributing = 1;
+                        return;
+                    }
                 }
             } else {
                 index[0] = i;
@@ -109,6 +119,7 @@ namespace sasktran2::grids {
 
                 if (m_interp_method == interpolation::lower) {
                     weight[0] = 1.0;
+                    weight[1] = 0.0; // Safety
                     num_contributing = 1;
                 }
             }
@@ -152,12 +163,22 @@ namespace sasktran2::grids {
                 return;
             } else {
                 // Set to the last
-                index[0] = (int)m_grid_values.size() - 1;
-                index[1] = 0;
-                weight[0] = 1;
-                weight[1] = 0;
-                num_contributing = 1;
-                return;
+                // But note in lower interpolation we never use the last value
+                if (m_interp_method == interpolation::lower) {
+                    index[0] = (int)m_grid_values.size() - 2;
+                    index[1] = 0;
+                    weight[0] = 1;
+                    weight[1] = 0;
+                    num_contributing = 1;
+                    return;
+                } else {
+                    index[0] = (int)m_grid_values.size() - 1;
+                    index[1] = 0;
+                    weight[0] = 1;
+                    weight[1] = 0;
+                    num_contributing = 1;
+                    return;
+                }
             }
         }
 
@@ -181,6 +202,7 @@ namespace sasktran2::grids {
             num_contributing = 2;
         } else if (m_interp_method == interpolation::lower) {
             weight[0] = 1.0;
+            weight[1] = 0.0; // Safety
             num_contributing = 1;
         } else {
             // Perform linear interpolation
@@ -207,6 +229,62 @@ namespace sasktran2::grids {
 
             num_contributing = 1;
             return;
+        }
+
+        if (m_interp_method == interpolation::lower) {
+            for (int i = 0; i < m_grid_values.size() - 1; ++i) {
+                if (x + 0.1 >= m_grid_values(i) && x < m_grid_values(i + 1)) {
+                    index[0] = i;
+                    index[1] = 0;
+
+                    weight[0] = 1.0;
+                    weight[1] = 0.0;
+
+                    num_contributing = 1;
+                    return;
+                }
+            }
+            // If we get here we are out of bounds
+            if (x < m_grid_values(0)) {
+                // out of bounds on the lower side
+                if (m_out_of_bounds_mode == outofbounds::setzero) {
+                    num_contributing = 0;
+                    // For safety set the index and weights to 0
+                    index[0] = 0;
+                    index[1] = 0;
+                    weight[0] = 0;
+                    weight[1] = 0;
+                    return;
+                } else {
+                    // Set to the first value
+                    index[0] = 0;
+                    index[1] = 0;
+                    weight[0] = 1;
+                    weight[1] = 0;
+                    num_contributing = 1;
+                    return;
+                }
+            } else {
+                // out of bounds on the upper side
+                if (m_out_of_bounds_mode == outofbounds::setzero) {
+                    num_contributing = 0;
+                    // For safety set the index and weights to 0
+                    index[0] = 0;
+                    index[1] = 0;
+                    weight[0] = 0;
+                    weight[1] = 0;
+                    return;
+                } else {
+                    // Set to the last value, but note in lower interpolation
+                    // we never use the last value
+                    index[0] = (int)m_grid_values.size() - 2;
+                    index[1] = 0;
+                    weight[0] = 1;
+                    weight[1] = 0;
+                    num_contributing = 1;
+                    return;
+                }
+            }
         }
 
         if (m_grid_spacing == gridspacing::constant) {
