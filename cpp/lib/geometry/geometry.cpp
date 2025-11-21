@@ -282,7 +282,7 @@ namespace sasktran2 {
 
         // obs lat
         double cos_obs_lat = position_norm.dot(m_z_unit);
-        if (cos_obs_lat >= 1) {
+        if (cos_obs_lat >= 1 - 1e-4) {
             std::pair<double, double> result;
             result.first = 1.0;
             result.second = 0.0;
@@ -333,8 +333,31 @@ namespace sasktran2 {
         result.first = cos(2 * (rot_rangle_start - rot_rangle_rot));
         result.second = -sin(2 * (rot_rangle_start - rot_rangle_rot));
 
-        // result.first = 1.0;
-        // result.second = 0.0;
+        if (result.first != result.first || result.second != result.second) {
+            static bool message = true;
+            if (message) {
+                spdlog::error(
+                    "NaN in stokes_standard_to_observer_z calculation");
+                message = false;
+                std::cout << "look_vector: " << look_vector.transpose() << "\n";
+                std::cout << "position: " << position.transpose() << "\n";
+                std::cout << "rotated_look: " << rotated_look.transpose()
+                          << "\n";
+                std::cout << "rotated_sun: " << rotated_sun.transpose() << "\n";
+                std::cout << "perp_z_start: " << perp_z_start.transpose()
+                          << "\n";
+                std::cout << "perp_true_sun_start: "
+                          << perp_true_sun_start.transpose() << "\n";
+                std::cout << "perp_z_rot: " << perp_z_rot.transpose() << "\n";
+                std::cout << "perp_true_sun_rot: "
+                          << perp_true_sun_rot.transpose() << "\n";
+                std::cout << "cos_angle_start: " << cos_angle_start << "\n";
+                std::cout << "cos_angle_rot: " << cos_angle_rot << "\n";
+                std::cout << "rot_rangle_start: " << rot_rangle_start << "\
+n";
+                std::cout << "rot_rangle_rot: " << rot_rangle_rot << "\n";
+            }
+        }
 
         return result;
     }

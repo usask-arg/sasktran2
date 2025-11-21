@@ -40,7 +40,7 @@ def test_chain_with_viewing_container():
     model_geo = geo.model_geometry(np.arange(0, 65000, 1000.0))
 
     config = sk.Config()
-    config.multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
+    # config.multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
     config.num_streams = 2
 
     wavel = np.arange(280.0, 800.0, 10)

@@ -60,5 +60,5 @@ def test_bates_identical():
         # Verify the radiances and weighting functions are identical
         for var in rad_py:
             np.testing.assert_array_almost_equal(
-                (rad_py[var] / rad_rust[var]).to_numpy(), 1.0, decimal=8
+                (rad_py[var] - rad_rust[var]).to_numpy(), 0.0, decimal=8
             )

@@ -155,20 +155,21 @@ void sasktran_disco::GeometryLayerArray<NSTOKES, CNSTR>::
 
         // Now we have the traced ray, we can extract the chapman factors
         for (auto& layer : result.layers) {
-            double layer_distance = layer.layer_distance;
+            double layer_distance =
+                layer.layer_distance * layer.curvature_factor;
             double vertical_layer_distance = (m_ceiling_h(p) - m_floor_h(p));
 
             // Now we have to figure out which layer this corresponds to,
-            double lower_altitude =
-                std::min(layer.entrance.radius(), layer.exit.radius()) -
+            double average_alttude =
+                (layer.entrance.radius() + layer.exit.radius()) / 2.0 -
                 earth_radius;
 
             // Start at the top and work down until we find the layer where the
             // floor radius is <
             sasktran_disco::LayerIndex q = 0;
             for (; q < this->M_NLYR; ++q) {
-                if (lower_altitude >= m_floor_h(q) &&
-                    lower_altitude <= m_ceiling_h(q)) {
+                if (average_alttude >= m_floor_h(q) &&
+                    average_alttude <= m_ceiling_h(q)) {
                     break;
                 }
             }
