@@ -458,11 +458,6 @@ namespace sasktran2 {
         const auto& input_derivatives = optical_layer.inputDerivatives();
 
         for (int aidx = 0; aidx < m_cos_angle_grid->grid().size(); ++aidx) {
-            if (m_cos_angle_grid->grid()(aidx) < 0) {
-                // Should be 0 solar transmission?
-                continue;
-            }
-
             int source_index = ground_storage_index(aidx, szaidx, m);
 
             double mu_out = m_cos_angle_grid->grid()(aidx);

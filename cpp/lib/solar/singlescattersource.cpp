@@ -120,6 +120,14 @@ namespace sasktran2::solartransmission {
             Eigen::Vector<double, NSTOKES> source_value =
                 solar_trans * brdf(Eigen::all, 0) * mu_in;
 
+#ifdef SASKTRAN_DEBUG_ASSERTS
+            if (source_value.hasNaN()) {
+                spdlog::warn(
+                    "NaN detected in single scatter ground source calculation");
+                source_value.setZero();
+            }
+#endif
+
             source.value.array() += source_value.array();
             if (source.deriv.size() > 0) {
                 // Add on the solar transmission derivative factors
@@ -306,11 +314,31 @@ namespace sasktran2::solartransmission {
         // phase term will have local SSA/scattering derivatives and is ~dense
         // in a 1D atmosphere
 
-        source.value.array() +=
+        // std::cout << solar_trans_entrance << " " << solar_trans_exit << "\n";
+
+        Eigen::Vector<double, NSTOKES> source_val =
             source_factor1 *
             (start_phase.value.array() * layer.od_quad_start_fraction +
              end_phase.value.array() * layer.od_quad_end_fraction) *
             layer.layer_distance;
+
+#ifdef SASKTRAN_DEBUG_ASSERTS
+        if (source_val.hasNaN()) {
+            static bool message = false;
+            if (!message) {
+                spdlog::error("SS Source NaN {} {} {} {} {} {}", source_factor1,
+                              layer.od_quad_start_fraction,
+                              layer.od_quad_end_fraction, layer.layer_distance,
+                              start_phase.value(1), end_phase.value(1));
+                message = true;
+            }
+            if constexpr (NSTOKES == 3) {
+                source_val.setConstant(0.0);
+            }
+        }
+#endif
+
+        source.value.array() += source_val.array();
 
         if (calculate_derivatives) {
             // Now for the derivatives, start with dsource_factor which is

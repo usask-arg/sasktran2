@@ -122,6 +122,14 @@ namespace sasktran2 {
                 (*m_source_interpolator_view)[losidx][layeridx][s].dot(
                     m_diffuse_storage->linear_source(wavel_threadidx).value);
 
+#ifdef SASKTRAN_DEBUG_ASSERTS
+            if (source.value != source.value) {
+                spdlog::info(
+                    "NaN detected in DO integrated source calculation");
+                source_value = 0.0;
+            }
+#endif
+
             source.value(s) += omega * source_factor * source_value;
 
             if (m_atmosphere->num_deriv() > 0) {

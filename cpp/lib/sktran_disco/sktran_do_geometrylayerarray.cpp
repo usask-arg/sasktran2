@@ -157,7 +157,6 @@ void sasktran_disco::GeometryLayerArray<NSTOKES, CNSTR>::
         for (auto& layer : result.layers) {
             double layer_distance =
                 layer.layer_distance * layer.curvature_factor;
-            double vertical_layer_distance = (m_ceiling_h(p) - m_floor_h(p));
 
             // Now we have to figure out which layer this corresponds to,
             double average_alttude =
@@ -177,7 +176,8 @@ void sasktran_disco::GeometryLayerArray<NSTOKES, CNSTR>::
                 // We will just assume we are at the bottom layer
                 q = this->M_NLYR - 1;
             }
-            m_chapman_factors(p, q) = layer_distance / vertical_layer_distance;
+            double vertical_layer_distance = (m_ceiling_h(q) - m_floor_h(q));
+            m_chapman_factors(p, q) += layer_distance / vertical_layer_distance;
         }
     }
 }
