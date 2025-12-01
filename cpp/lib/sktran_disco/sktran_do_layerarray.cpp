@@ -673,7 +673,10 @@ void sasktran_disco::OpticalLayerArray<NSTOKES,
             // Transmission is 0,
             m_transmission[index].value = -1.0;
             layer->dual_average_secant().value = 1.0 / this->M_CSZ;
-            layer->dual_average_secant().deriv.setZero();
+            if (compute_deriv) {
+                layer->dual_average_secant().deriv =
+                    Eigen::VectorXd::Zero(m_input_derivatives.numDerivative());
+            }
             ++index;
             continue;
         }
