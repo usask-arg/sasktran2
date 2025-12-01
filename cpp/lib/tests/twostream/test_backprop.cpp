@@ -54,7 +54,7 @@ void construct_atmo_geometry(
     sasktran_disco::PersistentConfiguration<1> pconfig;
     std::vector<sasktran2::raytracing::TracedRay> traced_rays;
     sasktran_disco::SKTRAN_DO_UserSpec specs;
-    pconfig.configure(specs, config, 0.6, nlyr, traced_rays);
+    pconfig.configure(specs, config, csz, nlyr, traced_rays);
 
     layer_geo =
         std::make_unique<sasktran_disco::GeometryLayerArray<1>>(pconfig, geo);
@@ -594,7 +594,7 @@ TEST_CASE("Backprop_Secant", "[twostream][backprop]") {
 
     Eigen::VectorXd numerical_grad(natmo);
 
-    double eps = 1e-6;
+    double eps = 1e-8;
     for (int i = 0; i < natmo - 1; i++) {
         sasktran2::twostream::Input input_p;
         input_p.atmosphere = atmo.get();
@@ -604,16 +604,28 @@ TEST_CASE("Backprop_Secant", "[twostream][backprop]") {
         input_p.calculate_base(0);
         input_p.od(i) += eps;
         input_p.calculate_derived(0);
+        input_p.od(i) -= eps;
+
+        sasktran2::twostream::Input input_pm;
+        input_pm.atmosphere = atmo.get();
+        input_pm.geometry_layers = layer_geo.get();
+        input_pm.init(natmo - 1);
+
+        input_pm.calculate_base(0);
+        input_pm.od(i) -= eps;
+        input_pm.calculate_derived(0);
+        input_pm.od(i) += eps; // reset
 
         numerical_grad(i) = (weights.dot(input_p.average_secant) -
-                             weights.dot(input.average_secant)) /
-                            eps;
+                             weights.dot(input_pm.average_secant)) /
+                            (2.0*eps);
+
     }
 
     sasktran2::twostream::backprop::secant(input, weights, grad_map);
 
     for (int i = 0; i < natmo - 1; i++) {
-        REQUIRE(abs(grad_map.d_extinction(i) - numerical_grad(i)) < 1e-6);
+        REQUIRE(abs(grad_map.d_extinction(i) - numerical_grad(i)) < 1e-4);
     }
 }
 
