@@ -618,8 +618,7 @@ TEST_CASE("Backprop_Secant", "[twostream][backprop]") {
 
         numerical_grad(i) = (weights.dot(input_p.average_secant) -
                              weights.dot(input_pm.average_secant)) /
-                            (2.0*eps);
-
+                            (2.0 * eps);
     }
 
     sasktran2::twostream::backprop::secant(input, weights, grad_map);
