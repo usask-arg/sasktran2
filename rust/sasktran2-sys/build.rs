@@ -26,6 +26,23 @@ fn main() {
 
     let use_omp = env::var("USE_OMP").unwrap_or_else(|_| "OFF".to_string());
 
+    // Use cxx_build to 
+    cxx_build::bridge("src/lib.rs")
+        .flag_if_supported("-std=c++17");
+    
+    // CXX-build puts headers in OUT_DIR/cxxbridge/
+    let rust_cxx_include = PathBuf::from(&out_dir).join("cxxbridge").join("include");
+    let rust_cxx_sources = PathBuf::from(&out_dir).join("cxxbridge").join("sources");
+    
+    // Expose these paths for potential downstream crates
+    println!("cargo:include={}", rust_cxx_include.display());
+    
+    let rust_lib_dir = Path::new(&out_dir)
+        .parent().unwrap()  // out
+        .parent().unwrap()  // build
+        .parent().unwrap()  // debug or release
+        .to_path_buf();
+
     let default_blas = if cfg!(target_os = "macos") {
         "Apple"
     } else {
@@ -47,7 +64,9 @@ fn main() {
         .define("USE_OMP", use_omp)
         .define("Rust_CARGO_TARGET", target)
         .define("VENDORED", vendored)
-        .define("SKTRAN_BLAS_VENDOR", sktran_blas_vendor);
+        .define("SKTRAN_BLAS_VENDOR", sktran_blas_vendor)
+        .define("SASKTRAN2_RUST_LIB_DIR", &rust_lib_dir)
+        .define("SASKTRAN2_RUST_INCLUDE_DIR", &rust_cxx_include);  // Add these two line
 
     if cfg!(target_os = "windows") {
         binding

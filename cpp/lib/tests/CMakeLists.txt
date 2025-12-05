@@ -25,6 +25,7 @@ add_executable(
   engine/benchmark/bench_do_wf.cpp
   engine/benchmark/bench_hr.cpp
   engine/benchmark/bench_occ.cpp
+  rust/test_integration.cpp
   atmosphere/surface.cpp)
 
 # Some special logic to support both CATCH2 version 2 and 3 for now

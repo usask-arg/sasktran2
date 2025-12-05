@@ -15,6 +15,8 @@
 #include <sasktran2/tracy_dummy.h>
 #endif
 
+//#include <sasktran2/rust.h>
+
 #include <sasktran2/types.h>
 
 // Minimimum size shells have to be to have contributions

@@ -144,4 +144,6 @@ namespace sasktran2::math {
             }
         }
     };
+
+    std::unique_ptr<WignerDCalculator> new_wigner_d_calculator(int m, int n);
 } // namespace sasktran2::math

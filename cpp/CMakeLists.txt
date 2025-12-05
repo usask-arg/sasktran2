@@ -418,6 +418,33 @@ else()
 endif()
 message(STATUS "Lapack Configuration Complete")
 
+# -------- RUST LIBRARY INTEGRATION -------
+option(ENABLE_RUST_COMPONENTS "Enable Rust components" ON)
+
+if(ENABLE_RUST_COMPONENTS)
+  if(DEFINED SASKTRAN2_RUST_LIB_DIR AND DEFINED SASKTRAN2_RUST_INCLUDE_DIR)
+    target_compile_definitions(sasktran2BuildProperties INTERFACE SKTRAN_RUST_SUPPORT)
+    # We're in a Cargo-driven build (Maturin/build.rs)
+    message(STATUS "Linking Rust library from Cargo build")
+    message(STATUS "  Library dir: ${SASKTRAN2_RUST_LIB_DIR}")
+    message(STATUS "  Include dir: ${SASKTRAN2_RUST_INCLUDE_DIR}")
+    target_include_directories(sasktran2BuildProperties INTERFACE ${SASKTRAN2_RUST_INCLUDE_DIR})
+    
+    set(SASKTRAN2_RUST_CXX_SOURCES "")
+    file(GLOB_RECURSE SASKTRAN2_RUST_CXX_SOURCES 
+      "${SASKTRAN2_RUST_INCLUDE_DIR}/../sources/sasktran2-sys/src/*.cc"
+    )
+    if(SASKTRAN2_RUST_CXX_SOURCES)
+      message(STATUS "  Found CXX bridge sources: ${SASKTRAN2_RUST_CXX_SOURCES}")
+    else()
+      message(STATUS "No CXX bridge sources found in: ${SASKTRAN2_RUST_SOURCES_DIR}")
+    endif()
+  else()
+    message(WARNING "Rust library not found, continuing without Rust components")
+  endif()
+endif()
+# -------- END RUST LIBRARY INTEGRATION -------
+
 add_subdirectory(lib)
 
 option(INCLUDE_TRACY "Include Tracy Profiling" OFF)
@@ -437,6 +464,7 @@ if(INCLUDE_TRACY)
   FetchContent_MakeAvailable(tracy)
 
   target_link_libraries(sasktran2BuildProperties INTERFACE TracyClient)
+
 
 endif()
 

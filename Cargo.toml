@@ -1,7 +1,8 @@
 [workspace]
 resolver = "2"
 members = [
+    "rust/sasktran2-core",
     "rust/sasktran2-sys",
     "rust/sasktran2-rs",
-    "rust/sasktran2-py-ext",
+    "rust/sasktran2-py-ext"
 ]
