@@ -59,6 +59,7 @@ fn main() {
 
     binding
         .define("BUILD_SHARED_LIBS", "OFF")
+        .define("BUILD_TESTS", "ON")
         .define("CMAKE_INSTALL_PREFIX", &install_prefix)
         .define("DO_STREAM_TEMPLATES", do_stream_templates)
         .define("USE_OMP", use_omp)
@@ -105,12 +106,24 @@ fn main() {
                         // if we are on windows, we keep the 'lib' prefix
                         // otherwise we remove it
                         if cfg!(target_os = "windows") {
-                            println!("cargo:rustc-link-lib=dylib={name}");
+                            if(extension == ".dll") {
+                                println!("cargo:rustc-link-lib=dylib={name}");
+                            } else {
+                                println!("cargo:rustc-link-lib=static={}", name);
+                            }
+                            
                         } else {
+                            if(extension == "a") {
+                                println!(
+                                    "cargo:rustc-link-lib=static={}",
+                                    name.strip_prefix("lib").unwrap_or(name)
+                                );
+                            } else {
                             println!(
                                 "cargo:rustc-link-lib=dylib={}",
                                 name.strip_prefix("lib").unwrap_or(name)
                             );
+                        }
                         }
                     } else {
                         println!("cargo:rustc-link-lib=dylib={name}");
@@ -127,11 +140,17 @@ fn main() {
         dst.display()
     );
     println!(
+        "cargo:rustc-link-search=native={}/install/tests",
+        dst.display()
+    );
+    println!(
         "cargo:rustc-link-search=native={}/install/c_api",
         dst.display()
     );
     println!("cargo:rustc-link-lib=static=csasktran2");
     println!("cargo:rustc-link-lib=static=sasktran2");
+    println!("cargo:rustc-link-lib=dylib=sasktran2_tests");
+
 
     println!("cargo:rerun-if-changed={}/include", cpp_src.display());
     println!("cargo:rerun-if-changed={}/lib", cpp_src.display());

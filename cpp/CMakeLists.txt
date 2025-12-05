@@ -496,4 +496,36 @@ if(NOT LINKED_LIBS)
   set(LINKED_LIBS "")
 endif()
 
+if(BUILD_TESTS)
+  find_package(Catch2 3 CONFIG REQUIRED)
+  # Get the actual .a file paths from the Catch2 target
+  get_target_property(CATCH2_MAIN_LOC Catch2::Catch2WithMain IMPORTED_LOCATION)
+  if(NOT CATCH2_MAIN_LOC)
+    # Try debug variant
+    get_target_property(CATCH2_MAIN_LOC Catch2::Catch2WithMain IMPORTED_LOCATION_DEBUG)
+  endif()
+  if(NOT CATCH2_MAIN_LOC)
+    # Try release variant
+    get_target_property(CATCH2_MAIN_LOC Catch2::Catch2WithMain IMPORTED_LOCATION_RELEASE)
+  endif()
+  message("Catch2::Catch2WithMain location: ${CATCH2_MAIN_LOC}")
+  
+  # Also check the Catch2::Catch2 target
+  get_target_property(CATCH2_LOC Catch2::Catch2 IMPORTED_LOCATION)
+  if(NOT CATCH2_LOC)
+    get_target_property(CATCH2_LOC Catch2::Catch2 IMPORTED_LOCATION_DEBUG)
+  endif()
+  if(NOT CATCH2_LOC)
+    get_target_property(CATCH2_LOC Catch2::Catch2 IMPORTED_LOCATION_RELEASE)
+  endif()
+  message("Catch2::Catch2 location: ${CATCH2_LOC}")
+
+  if(NOT LINKED_LIBS)
+    set(LINKED_LIBS "${CATCH2_LOC}")
+  else()
+    set(LINKED_LIBS "${LINKED_LIBS};${CATCH2_LOC}")
+  endif()
+
+endif()
+
 file(WRITE ${CMAKE_BINARY_DIR}/libs_to_link.txt "${LINKED_LIBS}")

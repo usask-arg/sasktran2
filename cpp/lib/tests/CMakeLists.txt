@@ -1,5 +1,6 @@
-add_executable(
+add_library(
   sasktran2_tests
+  SHARED
   test_main.cpp
   dual/test_dual.cpp
   viewinggeometry/test_tangentaltitude.cpp
@@ -38,33 +39,35 @@ target_link_libraries(
           $<$<PLATFORM_ID:Linux>:rt>)
 if(Catch2_FOUND)
   # Found Catch2 Version 2
-  target_link_libraries(sasktran2_tests PRIVATE Catch2::Catch2)
+  # Error, no longer support catch2
+  message(FATAL_ERROR "Catch2 Version 2 is no longer supported, please upgrade to Catch2 Version 3")
 else()
   # Look for Catch2 Version 3
   message("Could not find Catch2 Version 2, Looking for Version 3")
   find_package(Catch2 3 CONFIG REQUIRED)
-  target_link_libraries(sasktran2_tests PRIVATE Catch2::Catch2WithMain)
+  target_link_libraries(sasktran2_tests PRIVATE Catch2::Catch2)
   target_compile_definitions(sasktran2_tests PUBLIC SKTRAN_CATCH2_VERSION3)
+endif()
+
+# Ensure all test object files are linked when consumed as a static lib
+# macOS needs -force_load, Linux needs --whole-archive/--no-whole-archive
+if(APPLE)
+  target_link_options(
+    sasktran2_tests
+    INTERFACE "-Wl,-force_load,$<TARGET_FILE:sasktran2_tests>")
+else()
+  target_link_options(
+    sasktran2_tests
+    INTERFACE "-Wl,--whole-archive" "-lsasktran2_tests" "-Wl,--no-whole-archive")
 endif()
 
 if(INCLUDE_TRACY)
   target_link_libraries(sasktran2_tests INTERFACE TracyClient)
 endif()
 
-add_test(NAME TestSASKTRAN2 COMMAND sasktran2_tests)
-
-# This is just a hack to copy dependent DLLs on windows when building inside a
-# conda environment.  We copy all the DLLs in CMAKE_PREFIX_PATH/bin over to the
-# tests directory if this option is set.
-option(COPY_TESTING_DLLS "Test to on to copy DLLs to the testing directory" OFF)
-
-if(COPY_TESTING_DLLS)
-  file(GLOB DLLS "${CMAKE_PREFIX_PATH}/bin/*.dll")
-  foreach(DLL IN LISTS DLLS)
-    add_custom_command(
-      TARGET sasktran2_tests
-      POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${DLL}
-              $<TARGET_FILE_DIR:sasktran2_tests>)
-  endforeach()
-endif()
+install(
+  TARGETS sasktran2_tests
+  EXPORT ${EXPORT_NAME}
+  LIBRARY DESTINATION ${STATIC_LIB_INSTALL_DIR}
+  INCLUDES
+  DESTINATION ${INCLUDE_INSTALL_DIR})
