@@ -63,7 +63,8 @@ fn main() {
             }
             None
         })
-        .unwrap_or_else(|| rust_lib_dir.join("libsasktran2_core.a"));
+        .unwrap();
+        // .unwrap_or_else(|| rust_lib_dir.join("libsasktran2_core.a"));
 
     // println!("cargo:warning=Using staticlib: {}", core_staticlib_path.display());
 
