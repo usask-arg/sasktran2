@@ -443,7 +443,12 @@ if(ENABLE_RUST_COMPONENTS)
         STATUS "No CXX bridge sources found in: ${SASKTRAN2_RUST_SOURCES_DIR}")
     endif()
 
-    set(SASKTRAN2_RUST_LIB "${SASKTRAN2_RUST_LIB_DIR}/libsasktran2_core.a")
+    # Use explicit path to staticlib if provided, otherwise construct it
+    if(DEFINED SASKTRAN2_RUST_CORE_LIB)
+      set(SASKTRAN2_RUST_LIB "${SASKTRAN2_RUST_CORE_LIB}")
+    else()
+      set(SASKTRAN2_RUST_LIB "${SASKTRAN2_RUST_LIB_DIR}/libsasktran2_core.a")
+    endif()
     message(
       STATUS "Linking Rust library from CMake build: ${SASKTRAN2_RUST_LIB}")
     target_link_libraries(sasktran2BuildProperties

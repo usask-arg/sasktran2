@@ -44,6 +44,29 @@ fn main() {
         .unwrap()
         .to_path_buf();
 
+    // Find the actual libsasktran2_core.a in deps/ (has hash in filename)
+    let deps_dir = rust_lib_dir.join("deps");
+
+    println!("cargo:warning=Looking for sasktran2_core in: {}", deps_dir.display());
+
+    let core_staticlib_path = fs::read_dir(&deps_dir)
+        .ok()
+        .and_then(|entries| {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy();
+                // println!("cargo:warning=Checking: {}", name_str);
+                if name_str.starts_with("libsasktran2_core-") && name_str.ends_with(".a") {
+                    // println!("cargo:warning=Found match: {}", name_str);
+                    return Some(entry.path());
+                }
+            }
+            None
+        })
+        .unwrap_or_else(|| rust_lib_dir.join("libsasktran2_core.a"));
+
+    // println!("cargo:warning=Using staticlib: {}", core_staticlib_path.display());
+
     let default_blas = if cfg!(target_os = "macos") {
         "Apple"
     } else {
@@ -67,6 +90,7 @@ fn main() {
         .define("VENDORED", vendored)
         .define("SKTRAN_BLAS_VENDOR", sktran_blas_vendor)
         .define("SASKTRAN2_RUST_LIB_DIR", &rust_lib_dir)
+        .define("SASKTRAN2_RUST_CORE_LIB", &core_staticlib_path)
         .define("SASKTRAN2_RUST_INCLUDE_DIR", &rust_cxx_include);
 
     // Pass sasktran2-core include to CMake if available
@@ -140,9 +164,21 @@ fn main() {
         "cargo:rustc-link-search=native={}",
         rust_lib_dir.display()
     );
+
+    // Add search path for deps/ where the hashed staticlib lives
+    println!(
+        "cargo:rustc-link-search=native={}",
+        deps_dir.display()
+    );
+
     println!("cargo:rustc-link-lib=static=csasktran2");
     println!("cargo:rustc-link-lib=static=sasktran2");
-    println!("cargo:rustc-link-lib=static=sasktran2_core");
+
+    // Link the sasktran2_core staticlib by its stem name (Cargo will find the hashed version)
+    if let Some(stem) = core_staticlib_path.file_stem().and_then(|s| s.to_str()) {
+        let lib_name = stem.strip_prefix("lib").unwrap_or(stem);
+        println!("cargo:rustc-link-lib=static={}", lib_name);
+    }
 
     println!("cargo:rerun-if-changed={}/include", cpp_src.display());
     println!("cargo:rerun-if-changed={}/lib", cpp_src.display());

@@ -18,12 +18,10 @@ build-bindings = ["dep:bindgen"]
 nightly = ["simd"]
 simd = []
 
-[library]
-crate-type = ["staticlib", "rlib"]
-
 [build-dependencies]
 cmake = "*"
 bindgen = { version = "*", optional = true }
+sasktran2-core = { version = "*", path = "../sasktran2-core" }
 
 [dependencies]
 ndarray = "*"

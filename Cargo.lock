@@ -665,6 +665,7 @@ dependencies = [
  "ndarray",
  "num",
  "rayon",
+ "sasktran2-core",
  "sasktran2-sys",
  "version_check",
 ]
