@@ -48,6 +48,10 @@ build = { cmd = [
     "-e",
     ".",
 ] }
+develop = { cmd = [
+    "maturin",
+    "develop",
+    ] }
 test = { cmd = "pytest tests/", cwd = "." }
 pre-commit = { cmd = "pre-commit run -a", cwd = "." }
 docs = { cmd = "sphinx-build -b html docs/sphinx/source docs/sphinx/build", cwd = "." }

@@ -422,25 +422,70 @@ message(STATUS "Lapack Configuration Complete")
 option(ENABLE_RUST_COMPONENTS "Enable Rust components" ON)
 
 if(ENABLE_RUST_COMPONENTS)
+  target_compile_definitions(sasktran2BuildProperties
+                             INTERFACE SKTRAN_RUST_SUPPORT)
   if(DEFINED SASKTRAN2_RUST_LIB_DIR AND DEFINED SASKTRAN2_RUST_INCLUDE_DIR)
-    target_compile_definitions(sasktran2BuildProperties INTERFACE SKTRAN_RUST_SUPPORT)
     # We're in a Cargo-driven build (Maturin/build.rs)
     message(STATUS "Linking Rust library from Cargo build")
     message(STATUS "  Library dir: ${SASKTRAN2_RUST_LIB_DIR}")
     message(STATUS "  Include dir: ${SASKTRAN2_RUST_INCLUDE_DIR}")
-    target_include_directories(sasktran2BuildProperties INTERFACE ${SASKTRAN2_RUST_INCLUDE_DIR})
-    
+    target_include_directories(sasktran2BuildProperties
+                               INTERFACE ${SASKTRAN2_RUST_INCLUDE_DIR})
+
     set(SASKTRAN2_RUST_CXX_SOURCES "")
-    file(GLOB_RECURSE SASKTRAN2_RUST_CXX_SOURCES 
-      "${SASKTRAN2_RUST_INCLUDE_DIR}/../sources/sasktran2-sys/src/*.cc"
-    )
+    file(GLOB_RECURSE SASKTRAN2_RUST_CXX_SOURCES
+         "${SASKTRAN2_RUST_INCLUDE_DIR}/../sources/sasktran2-core/src/*.cc")
     if(SASKTRAN2_RUST_CXX_SOURCES)
-      message(STATUS "  Found CXX bridge sources: ${SASKTRAN2_RUST_CXX_SOURCES}")
+      message(
+        STATUS "  Found CXX bridge sources: ${SASKTRAN2_RUST_CXX_SOURCES}")
     else()
-      message(STATUS "No CXX bridge sources found in: ${SASKTRAN2_RUST_SOURCES_DIR}")
+      message(
+        STATUS "No CXX bridge sources found in: ${SASKTRAN2_RUST_SOURCES_DIR}")
     endif()
+
+    set(SASKTRAN2_RUST_LIB "${SASKTRAN2_RUST_LIB_DIR}/libsasktran2_core.a")
+    message(
+      STATUS "Linking Rust library from CMake build: ${SASKTRAN2_RUST_LIB}")
+    target_link_libraries(sasktran2BuildProperties
+                          INTERFACE ${SASKTRAN2_RUST_LIB})
+
   else()
-    message(WARNING "Rust library not found, continuing without Rust components")
+    message(
+      WARNING
+        "Rust library not specified, continuing using the base folder, ensure you run cargo build first"
+    )
+    target_include_directories(
+      sasktran2BuildProperties
+      INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../target/cxxbridge/>
+        $<INSTALL_INTERFACE:include>)
+    set(SASKTRAN2_RUST_CXX_SOURCES "")
+    file(GLOB_RECURSE SASKTRAN2_RUST_CXX_SOURCES
+         "${CMAKE_SOURCE_DIR}/../target/cxxbridge/sasktran2-core/src/*.cc")
+    if(SASKTRAN2_RUST_CXX_SOURCES)
+      message(
+        STATUS "  Found CXX bridge sources: ${SASKTRAN2_RUST_CXX_SOURCES}")
+    else()
+      message(
+        STATUS "No CXX bridge sources found in: ${SASKTRAN2_RUST_SOURCES_DIR}")
+    endif()
+
+    # Link the sasktran2-core static lib Location is target/debug or
+    # target/release depending on build type
+
+    # match the directory to the cmake build type
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+      set(RUST_BUILD_TYPE "debug")
+    else()
+      set(RUST_BUILD_TYPE "release")
+    endif()
+    set(SASKTRAN2_RUST_LIB
+        "${CMAKE_CURRENT_SOURCE_DIR}/../target/${RUST_BUILD_TYPE}/libsasktran2_core.a"
+    )
+    message(
+      STATUS "Linking Rust library from CMake build: ${SASKTRAN2_RUST_LIB}")
+    target_link_libraries(sasktran2BuildProperties
+                          INTERFACE ${SASKTRAN2_RUST_LIB})
   endif()
 endif()
 # -------- END RUST LIBRARY INTEGRATION -------
@@ -464,7 +509,6 @@ if(INCLUDE_TRACY)
   FetchContent_MakeAvailable(tracy)
 
   target_link_libraries(sasktran2BuildProperties INTERFACE TracyClient)
-
 
 endif()
 

@@ -1,11 +1,15 @@
 #include "sasktran2/math/wigner.h"
-#include "sasktran2/rust.h"
+#include "sasktran2-core/src/math/wigner.rs.h"
 
 namespace sasktran2::math {
-       std::unique_ptr<WignerDCalculator> new_wigner_d_calculator(int m, int n) {
 
-        std::cout << test() << std::endl;
+#ifdef SKTRAN_RUST_SUPPORT
+    WignerDCalculator::WignerDCalculator(int m, int n)
+        : m_calculator(sasktran2::rust::math::new_wigner_d_calculator(m, n)) {}
 
-        return std::make_unique<WignerDCalculator>(m, n);
-    } 
-}
+    double WignerDCalculator::d(double theta, int l) {
+        return m_calculator->d(theta, l);
+    }
+
+#endif
+} // namespace sasktran2::math

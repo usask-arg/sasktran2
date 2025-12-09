@@ -2,15 +2,21 @@
 name = "sasktran2-core"
 version = "0.1.0"
 edition = "2024"
+links = "sasktran2_core"
 
 [build-dependencies]
 version_check = "*"
+cxx-build = "1.0"
 
 [dependencies]
 ndarray = {version = "*", features = ["rayon"] }
 num = "*"
 anyhow = "*"
+cxx = "1.0"
 
 [features]
 nightly = ["simd"]
 simd = []
+
+[lib]
+crate-type = ["staticlib", "rlib"]

@@ -66,8 +66,7 @@ add_library(
   sktran_disco/source_term/do_source.cpp
   sktran_disco/source_term/do_source_interpolated_pp.cpp
   sktran_disco/source_term/do_source_planeparallel.cpp
-  ${SASKTRAN2_RUST_CXX_SOURCES}
-  )
+  ${SASKTRAN2_RUST_CXX_SOURCES})
 
 option(BUILD_DOXYGEN "Build Doxygen Docs" OFF)
 # Doxygen document build

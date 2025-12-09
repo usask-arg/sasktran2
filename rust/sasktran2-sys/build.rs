@@ -26,21 +26,22 @@ fn main() {
 
     let use_omp = env::var("USE_OMP").unwrap_or_else(|_| "OFF".to_string());
 
-    // Use cxx_build to 
-    cxx_build::bridge("src/lib.rs")
-        .flag_if_supported("-std=c++17");
-    
+    // Get the rust include directory from DEP_SASKTRAN2 OUT_DIR build properties
+    let out_dir = env::var("OUT_DIR").unwrap();
+
     // CXX-build puts headers in OUT_DIR/cxxbridge/
-    let rust_cxx_include = PathBuf::from(&out_dir).join("cxxbridge").join("include");
-    let rust_cxx_sources = PathBuf::from(&out_dir).join("cxxbridge").join("sources");
-    
-    // Expose these paths for potential downstream crates
-    println!("cargo:include={}", rust_cxx_include.display());
-    
+    // Access sasktran2-core's CXX bridge include via the automatic DEP variable
+    let core_cxx_dir = env::var("DEP_SASKTRAN2_CORE_CXXBRIDGE_DIR0").unwrap();
+    let rust_cxx_include = PathBuf::from(core_cxx_dir);
+
+    // lib_dir is OUT_DIR/../../../
     let rust_lib_dir = Path::new(&out_dir)
-        .parent().unwrap()  // out
-        .parent().unwrap()  // build
-        .parent().unwrap()  // debug or release
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
         .to_path_buf();
 
     let default_blas = if cfg!(target_os = "macos") {
@@ -66,7 +67,12 @@ fn main() {
         .define("VENDORED", vendored)
         .define("SKTRAN_BLAS_VENDOR", sktran_blas_vendor)
         .define("SASKTRAN2_RUST_LIB_DIR", &rust_lib_dir)
-        .define("SASKTRAN2_RUST_INCLUDE_DIR", &rust_cxx_include);  // Add these two line
+        .define("SASKTRAN2_RUST_INCLUDE_DIR", &rust_cxx_include);
+
+    // Pass sasktran2-core include to CMake if available
+    if let Ok(core_include) = env::var("DEP_SASKTRAN2_CORE_INCLUDE") {
+        binding.define("SASKTRAN2_CORE_INCLUDE_DIR", &core_include);
+    }
 
     if cfg!(target_os = "windows") {
         binding
@@ -130,8 +136,13 @@ fn main() {
         "cargo:rustc-link-search=native={}/install/c_api",
         dst.display()
     );
+    println!(
+        "cargo:rustc-link-search=native={}",
+        rust_lib_dir.display()
+    );
     println!("cargo:rustc-link-lib=static=csasktran2");
     println!("cargo:rustc-link-lib=static=sasktran2");
+    println!("cargo:rustc-link-lib=static=sasktran2_core");
 
     println!("cargo:rerun-if-changed={}/include", cpp_src.display());
     println!("cargo:rerun-if-changed={}/lib", cpp_src.display());

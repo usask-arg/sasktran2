@@ -24,10 +24,8 @@ crate-type = ["staticlib", "rlib"]
 [build-dependencies]
 cmake = "*"
 bindgen = { version = "*", optional = true }
-cxx-build = "1.0"
 
 [dependencies]
 ndarray = "*"
 anyhow = "*"
-cxx = "1.0"
 sasktran2-core = { version = "*", path = "../sasktran2-core" }

@@ -649,6 +649,8 @@ name = "sasktran2-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "cxx",
+ "cxx-build",
  "ndarray",
  "num",
  "version_check",
@@ -674,8 +676,6 @@ dependencies = [
  "anyhow",
  "bindgen",
  "cmake",
- "cxx",
- "cxx-build",
  "ndarray",
  "sasktran2-core",
 ]

@@ -53,6 +53,7 @@ jobs:
       - name: build
         shell: bash -el {0}
         run: |
+          cargo build --release -p sasktran2-core
           cd cpp
           cmake -S . -B build  -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
           cmake --build build --config Release --target sasktran2_tests -j 2
@@ -154,6 +155,7 @@ jobs:
           PKG_CONFIG_PATH: C:/opt/64/lib/pkgconfig
           CMAKE_PREFIX_PATH: C:/opt/64/
         run: |
+          cargo build --release -p sasktran2-core
           cd cpp
           cmake -S . -B build  -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
           cmake --build build --config Release --target sasktran2_tests -j 2

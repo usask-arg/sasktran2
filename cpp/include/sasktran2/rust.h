@@ -4,6 +4,4 @@
 
 #include "rust/cxx.h"
 
-#include "sasktran2-sys/src/lib.rs.h"
-
 #endif

@@ -10,6 +10,20 @@ pub struct WignerDCalculator {
     m_zeta: i32,
 }
 
+#[cxx::bridge(namespace="sasktran2::rust::math")]
+pub mod ffi {
+    extern "Rust" {
+        type WignerDCalculator;
+
+        fn new_wigner_d_calculator(m: i32, n: i32) -> Box<WignerDCalculator>;
+        fn d(&self, theta: f64, l: i32) -> f64;
+    }
+}
+
+fn new_wigner_d_calculator(m: i32, n: i32) -> Box<WignerDCalculator> {
+    Box::new(WignerDCalculator::new(m, n))
+}
+
 impl WignerDCalculator {
     /// Creates a new WignerDCalculator for d^l_{m,n}.
     pub fn new(m: i32, n: i32) -> Self {

@@ -1,9 +1,33 @@
 #pragma once
 
 #include <sasktran2/internal_common.h>
+#include "sasktran2-core/src/math/wigner.rs.h"
 
 namespace sasktran2::math {
 
+#ifdef SKTRAN_RUST_SUPPORT
+
+    class WignerDCalculator {
+      private:
+        ::rust::Box<sasktran2::rust::math::WignerDCalculator> m_calculator;
+
+      public:
+        /** Constructs the calculator for \f$d^l_{mn}\f$ for a given m and n
+         *
+         * @param m
+         * @param n
+         */
+        WignerDCalculator(int m, int n);
+
+        /** Calculates \f$d^l_{mn}(\theta)\f$
+         *
+         * @param theta Angle in radians
+         * @param l
+         * @return \f$d^l_{mn}(\theta)\f$
+         */
+        double d(double theta, int l);
+    };
+#else
     /** Calculates the Wigner D functions using recurrence relations found from
      * Mischenko.  The "first" Wigner D function is the standard Legendre
      * polynomial, so this class is used to calculate Legendre polynomials as
@@ -144,6 +168,5 @@ namespace sasktran2::math {
             }
         }
     };
-
-    std::unique_ptr<WignerDCalculator> new_wigner_d_calculator(int m, int n);
+#endif
 } // namespace sasktran2::math
