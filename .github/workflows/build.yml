@@ -154,6 +154,7 @@ jobs:
         env:
           PKG_CONFIG_PATH: C:/opt/64/lib/pkgconfig
           CMAKE_PREFIX_PATH: C:/opt/64/
+          SKTRAN_BLAS_VENDOR: SCIPY_OPENBLAS
         run: |
           cargo build --release -p sasktran2-core
           cd cpp
@@ -169,7 +170,7 @@ jobs:
         include:
           - os: ubuntu-latest
           - os: windows-latest
-          - os: macos-13
+          - os: macos-15-intel
           - os: macos-14
 
     steps:
@@ -307,7 +308,7 @@ jobs:
     strategy:
       matrix:
         platform:
-          - runner: macos-13
+          - runner: macos-15-intel
             target: x86_64
           - runner: macos-14
             target: aarch64
