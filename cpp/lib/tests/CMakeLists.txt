@@ -36,6 +36,11 @@ target_link_libraries(
   PRIVATE sasktran2 $<$<PLATFORM_ID:Windows>:bcrypt>
           $<$<PLATFORM_ID:Linux,Darwin>:dl> $<$<PLATFORM_ID:Linux>:gfortran>
           $<$<PLATFORM_ID:Linux>:rt>)
+
+if(WIN32)
+  target_link_libraries(sasktran2_tests PRIVATE ws2_32 userenv ntdll)
+endif()
+
 if(Catch2_FOUND)
   # Found Catch2 Version 2
   target_link_libraries(sasktran2_tests PRIVATE Catch2::Catch2)
