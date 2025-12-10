@@ -35,36 +35,12 @@ fn main() {
     let rust_cxx_include = PathBuf::from(core_cxx_dir);
 
     // lib_dir is OUT_DIR/../../../
-    let rust_lib_dir = Path::new(&out_dir)
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf();
-
-    // Find the actual libsasktran2_core.a in deps/ (has hash in filename)
-    let deps_dir = rust_lib_dir.join("deps");
-
-    println!("cargo:warning=Looking for sasktran2_core in: {}", deps_dir.display());
-
-    let core_staticlib_path = fs::read_dir(&deps_dir)
-        .ok()
-        .and_then(|entries| {
-            for entry in entries.flatten() {
-                let name = entry.file_name();
-                let name_str = name.to_string_lossy();
-                // println!("cargo:warning=Checking: {}", name_str);
-                if name_str.starts_with("libsasktran2_core-") && name_str.ends_with(".a") {
-                    // println!("cargo:warning=Found match: {}", name_str);
-                    return Some(entry.path());
-                }
-            }
-            None
-        })
-        .unwrap();
-        // .unwrap_or_else(|| rust_lib_dir.join("libsasktran2_core.a"));
+    let rust_lib_dir = rust_cxx_include.parent().unwrap().parent().unwrap();
+    let core_staticlib_path = rust_lib_dir.join(if cfg!(target_os = "windows") {
+        "sasktran2_core.lib"
+    } else {
+        "libsasktran2_core.a"
+    });
 
     // println!("cargo:warning=Using staticlib: {}", core_staticlib_path.display());
 
@@ -166,20 +142,9 @@ fn main() {
         rust_lib_dir.display()
     );
 
-    // Add search path for deps/ where the hashed staticlib lives
-    println!(
-        "cargo:rustc-link-search=native={}",
-        deps_dir.display()
-    );
-
     println!("cargo:rustc-link-lib=static=csasktran2");
     println!("cargo:rustc-link-lib=static=sasktran2");
-
-    // Link the sasktran2_core staticlib by its stem name (Cargo will find the hashed version)
-    if let Some(stem) = core_staticlib_path.file_stem().and_then(|s| s.to_str()) {
-        let lib_name = stem.strip_prefix("lib").unwrap_or(stem);
-        println!("cargo:rustc-link-lib=static={}", lib_name);
-    }
+    println!("cargo:rustc-link-lib=static=sasktran2_core");
 
     println!("cargo:rerun-if-changed={}/include", cpp_src.display());
     println!("cargo:rerun-if-changed={}/lib", cpp_src.display());

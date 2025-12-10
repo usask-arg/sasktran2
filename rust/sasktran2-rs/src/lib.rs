@@ -1,4 +1,5 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
+extern crate sasktran2_core;
 
 pub mod math;
 pub mod threading;
