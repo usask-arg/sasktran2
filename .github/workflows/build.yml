@@ -158,7 +158,7 @@ jobs:
         run: |
           cargo build --release -p sasktran2-core
           cd cpp
-          cmake -S . -B build  -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+          cmake -S . -B build  -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DSKTRAN_BLAS_VENDOR=SCIPY_OPENBLAS
           cmake --build build --config Release --target sasktran2_tests -j 2
 
   test-pixi:

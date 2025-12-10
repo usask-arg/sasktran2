@@ -435,6 +435,11 @@ if(ENABLE_RUST_COMPONENTS)
     set(SASKTRAN2_RUST_CXX_SOURCES "")
     file(GLOB_RECURSE SASKTRAN2_RUST_CXX_SOURCES
          "${SASKTRAN2_RUST_INCLUDE_DIR}/../sources/sasktran2-core/src/*.cc")
+
+    # Replace all backslashes with forward slashes for Windows compatibility
+    string(REPLACE "\\" "/" SASKTRAN2_RUST_CXX_SOURCES
+                   "${SASKTRAN2_RUST_CXX_SOURCES}")
+
     if(SASKTRAN2_RUST_CXX_SOURCES)
       message(
         STATUS "  Found CXX bridge sources: ${SASKTRAN2_RUST_CXX_SOURCES}")
