@@ -66,7 +66,7 @@ fn main() {
         .define("Rust_CARGO_TARGET", target)
         .define("VENDORED", vendored)
         .define("SKTRAN_BLAS_VENDOR", sktran_blas_vendor)
-        .define("SASKTRAN2_RUST_LIB_DIR", &rust_lib_dir)
+        .define("SASKTRAN2_RUST_LIB_DIR", rust_lib_dir)
         .define("SASKTRAN2_RUST_CORE_LIB", &core_staticlib_path)
         .define("SASKTRAN2_RUST_INCLUDE_DIR", &rust_cxx_include);
 
@@ -137,14 +137,9 @@ fn main() {
         "cargo:rustc-link-search=native={}/install/c_api",
         dst.display()
     );
-    println!(
-        "cargo:rustc-link-search=native={}",
-        rust_lib_dir.display()
-    );
 
     println!("cargo:rustc-link-lib=static=csasktran2");
     println!("cargo:rustc-link-lib=static=sasktran2");
-    println!("cargo:rustc-link-lib=static=sasktran2_core");
 
     println!("cargo:rerun-if-changed={}/include", cpp_src.display());
     println!("cargo:rerun-if-changed={}/lib", cpp_src.display());
