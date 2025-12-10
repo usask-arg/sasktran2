@@ -500,9 +500,15 @@ if(ENABLE_RUST_COMPONENTS)
     else()
       set(RUST_BUILD_TYPE "release")
     endif()
-    set(SASKTRAN2_RUST_LIB
-        "${CMAKE_CURRENT_SOURCE_DIR}/../target/${RUST_BUILD_TYPE}/libsasktran2_core.a"
-    )
+    if(WIN32)
+      set(SASKTRAN2_RUST_LIB
+          "${CMAKE_CURRENT_SOURCE_DIR}/../target/${RUST_BUILD_TYPE}/sasktran2_core.lib"
+      )
+    else()
+      set(SASKTRAN2_RUST_LIB
+          "${CMAKE_CURRENT_SOURCE_DIR}/../target/${RUST_BUILD_TYPE}/libsasktran2_core.a"
+      )
+    endif()
     message(
       STATUS "Linking Rust library from CMake build: ${SASKTRAN2_RUST_LIB}")
     target_link_libraries(sasktran2BuildProperties
