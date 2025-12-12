@@ -23,19 +23,9 @@ void sasktran_disco::getStreamsAndWeights(uint num_streams,
     }
 
 #ifdef SKTRAN_RUST_SUPPORT
-
     // get the n/2 gauss points and weights
     sasktran2::rust::math::gauss_quad_nodes_weights(order, temp_angles,
                                                     temp_weights);
-
-    // Copy to have negative angles
-    for (int i = 0; i < order; i++) {
-        angles[i + order] = temp_angles[i];
-        weights[i + order] = temp_weights[i];
-
-        angles[order - i - 1] = -temp_angles[i];
-        weights[order - i - 1] = temp_weights[i];
-    }
 
 #else
     // Scope configuration
@@ -72,6 +62,10 @@ void sasktran_disco::getStreamsAndWeights(uint num_streams,
         temp_weights[base_pos + offset] = quadrature_weights[idx];
     }
 #endif
+    for (int i = 0; i < temp_angles.size(); ++i) {
+        std::cout << "Angle " << i << ": " << temp_angles[i]
+                  << ", Weight: " << temp_weights[i] << std::endl;
+    }
 
     // Scale quadrature points from [-1 0], [0 1].
     for (uint idx = 0; idx < order; ++idx) {
@@ -80,8 +74,6 @@ void sasktran_disco::getStreamsAndWeights(uint num_streams,
         weights[idx] = 0.5 * temp_weights[idx];
         weights[idx + order] = 0.5 * temp_weights[idx];
     }
-
-    double x;
 }
 
 const double* sasktran_disco::getQuadratureAbscissae(uint nterms) {

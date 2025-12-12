@@ -21,7 +21,7 @@ fn gauss_quad_nodes_weights(
 ) -> Result<()> {
     let quad = GaussLegendre::new(n)?;
 
-    for (node, w) in quad.iter() {
+    for (node, w) in quad.iter().rev() {
         nodes.as_mut().push(*node);
         weights.as_mut().push(*w);
     }
