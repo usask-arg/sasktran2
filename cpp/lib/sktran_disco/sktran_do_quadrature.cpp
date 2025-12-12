@@ -62,11 +62,6 @@ void sasktran_disco::getStreamsAndWeights(uint num_streams,
         temp_weights[base_pos + offset] = quadrature_weights[idx];
     }
 #endif
-    for (int i = 0; i < temp_angles.size(); ++i) {
-        std::cout << "Angle " << i << ": " << temp_angles[i]
-                  << ", Weight: " << temp_weights[i] << std::endl;
-    }
-
     // Scale quadrature points from [-1 0], [0 1].
     for (uint idx = 0; idx < order; ++idx) {
         angles[idx] = 0.5 * temp_angles[idx] + 0.5;
