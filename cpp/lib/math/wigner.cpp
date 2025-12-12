@@ -11,5 +11,12 @@ namespace sasktran2::math {
         return m_calculator->d(theta, l);
     }
 
+    void WignerDCalculator::vec_d_emplace(double theta, int max_l,
+                                          double* out_array) {
+        ::rust::Slice<double> slice(out_array, max_l);
+
+        m_calculator->vector_d(theta, slice);
+    }
+
 #endif
 } // namespace sasktran2::math

@@ -10,13 +10,14 @@ pub struct WignerDCalculator {
     m_zeta: i32,
 }
 
-#[cxx::bridge(namespace="sasktran2::rust::math")]
+#[cxx::bridge(namespace = "sasktran2::rust::math")]
 pub mod ffi {
     extern "Rust" {
         type WignerDCalculator;
 
         fn new_wigner_d_calculator(m: i32, n: i32) -> Box<WignerDCalculator>;
         fn d(&self, theta: f64, l: i32) -> f64;
+        fn vector_d(&self, theta: f64, output: &mut [f64]);
     }
 }
 
