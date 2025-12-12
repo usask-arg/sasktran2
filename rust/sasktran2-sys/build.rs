@@ -26,6 +26,24 @@ fn main() {
 
     let use_omp = env::var("USE_OMP").unwrap_or_else(|_| "OFF".to_string());
 
+    // Get the rust include directory from DEP_SASKTRAN2 OUT_DIR build properties
+    let out_dir = env::var("OUT_DIR").unwrap();
+
+    // CXX-build puts headers in OUT_DIR/cxxbridge/
+    // Access sasktran2-core's CXX bridge include via the automatic DEP variable
+    let core_cxx_dir = env::var("DEP_SASKTRAN2_CORE_CXXBRIDGE_DIR0").unwrap();
+    let rust_cxx_include = PathBuf::from(core_cxx_dir);
+
+    // lib_dir is OUT_DIR/../../../
+    let rust_lib_dir = rust_cxx_include.parent().unwrap().parent().unwrap();
+    let core_staticlib_path = rust_lib_dir.join(if cfg!(target_os = "windows") {
+        "sasktran2_core.lib"
+    } else {
+        "libsasktran2_core.a"
+    });
+
+    // println!("cargo:warning=Using staticlib: {}", core_staticlib_path.display());
+
     let default_blas = if cfg!(target_os = "macos") {
         "Apple"
     } else {
@@ -47,7 +65,15 @@ fn main() {
         .define("USE_OMP", use_omp)
         .define("Rust_CARGO_TARGET", target)
         .define("VENDORED", vendored)
-        .define("SKTRAN_BLAS_VENDOR", sktran_blas_vendor);
+        .define("SKTRAN_BLAS_VENDOR", sktran_blas_vendor)
+        .define("SASKTRAN2_RUST_LIB_DIR", rust_lib_dir)
+        .define("SASKTRAN2_RUST_CORE_LIB", &core_staticlib_path)
+        .define("SASKTRAN2_RUST_INCLUDE_DIR", &rust_cxx_include);
+
+    // Pass sasktran2-core include to CMake if available
+    if let Ok(core_include) = env::var("DEP_SASKTRAN2_CORE_INCLUDE") {
+        binding.define("SASKTRAN2_CORE_INCLUDE_DIR", &core_include);
+    }
 
     if cfg!(target_os = "windows") {
         binding
@@ -111,6 +137,7 @@ fn main() {
         "cargo:rustc-link-search=native={}/install/c_api",
         dst.display()
     );
+
     println!("cargo:rustc-link-lib=static=csasktran2");
     println!("cargo:rustc-link-lib=static=sasktran2");
 

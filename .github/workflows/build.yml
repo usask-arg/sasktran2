@@ -53,6 +53,7 @@ jobs:
       - name: build
         shell: bash -el {0}
         run: |
+          cargo build --release -p sasktran2-core
           cd cpp
           cmake -S . -B build  -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
           cmake --build build --config Release --target sasktran2_tests -j 2
@@ -153,9 +154,11 @@ jobs:
         env:
           PKG_CONFIG_PATH: C:/opt/64/lib/pkgconfig
           CMAKE_PREFIX_PATH: C:/opt/64/
+          SKTRAN_BLAS_VENDOR: SCIPY_OPENBLAS
         run: |
+          cargo build --release -p sasktran2-core
           cd cpp
-          cmake -S . -B build  -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+          cmake -S . -B build  -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DSKTRAN_BLAS_VENDOR=SCIPY_OPENBLAS
           cmake --build build --config Release --target sasktran2_tests -j 2
 
   test-pixi:
@@ -167,7 +170,7 @@ jobs:
         include:
           - os: ubuntu-latest
           - os: windows-latest
-          - os: macos-13
+          - os: macos-15-intel
           - os: macos-14
 
     steps:
@@ -305,7 +308,7 @@ jobs:
     strategy:
       matrix:
         platform:
-          - runner: macos-13
+          - runner: macos-15-intel
             target: x86_64
           - runner: macos-14
             target: aarch64
