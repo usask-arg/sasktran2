@@ -60,13 +60,16 @@ namespace sasktran2 {
             sasktran2::validation::throw_configuration_error();
         }
 
+#ifndef SKTRAN_RUST_SUPPORT
         if (m_ndostreams > 40) {
             spdlog::critical(
-                "Invalid number of streams: {}, must be less than 40",
+                "Invalid number of streams: {}, must be less than 40. Compile "
+                "with rust support enabled to use more streams.",
                 m_ndostreams);
 
             sasktran2::validation::throw_configuration_error();
         }
+#endif
 
         if (m_ndostreams % 2 != 0) {
             spdlog::critical("Invalid number of streams: {}, must be even",

@@ -13,6 +13,7 @@ ndarray = {version = "*", features = ["rayon"] }
 num = "*"
 anyhow = "*"
 cxx = "1.0"
+gauss-quad = "0.2.4"
 
 [features]
 nightly = ["simd"]

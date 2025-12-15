@@ -30,11 +30,20 @@ sasktran_disco::SKTRAN_DO_UserSpec*
 sasktran_disco::SKTRAN_DO_UserSpec::setNumberOfStreams(
     unsigned int num_streams) {
     using namespace sasktran_disco;
+
+#ifdef SKTRAN_RUST_SUPPORT
+    // check that number of streams is GE 4 and even
+    if (num_streams < 2 || num_streams % 2 == 1) {
+        throw InvalidConfiguration("Number of streams must be an even number "
+                                   "greater than or equal to 2!");
+    }
+#else
     // check that number of streams is GE 4 and even
     if (num_streams < 2 || num_streams % 2 == 1 || num_streams > 40) {
         throw InvalidConfiguration(
             "Number of streams must be an even number in the range [2, 40]!");
     }
+#endif
     m_nstr = (uint)num_streams;
     return this;
 }

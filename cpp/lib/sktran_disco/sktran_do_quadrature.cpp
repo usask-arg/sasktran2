@@ -1,11 +1,15 @@
 #include "sktran_disco/sktran_do.h"
 #include "sktran_disco/sktran_do_quadrature.h"
+#include "sasktran2-core/src/math/gaussquad.rs.h"
 
 void sasktran_disco::getStreamsAndWeights(uint num_streams,
                                           VectorDim1<double>& angles,
                                           VectorDim1<double>& weights) {
-    // Scope configuration
-    using namespace tables;
+    // Get quadrature points from table
+    std::vector<double> temp_angles;
+    std::vector<double> temp_weights;
+    uint order = num_streams / 2;
+
     angles.resize(num_streams);
     weights.resize(num_streams);
 
@@ -18,17 +22,21 @@ void sasktran_disco::getStreamsAndWeights(uint num_streams,
         return;
     }
 
+#ifdef SKTRAN_RUST_SUPPORT
+    // get the n/2 gauss points and weights
+    sasktran2::rust::math::gauss_quad_nodes_weights(order, temp_angles,
+                                                    temp_weights);
+
+#else
+    // Scope configuration
+    using namespace tables;
+
     // Determine start and end position in array
-    uint order = num_streams / 2;
     uint len = (order + 1) / 2;
     uint n = (order + 1) / 2 - 1;
     uint offset = (order == 2 || order % 2 == 1) ? 0 : len;
     uint start_idx = (order == 2) ? 0 : n * (n + 1) - 1 + offset;
     uint end_idx = start_idx + len;
-
-    // Get quadrature points from table
-    std::vector<double> temp_angles;
-    std::vector<double> temp_weights;
 
     // Calculate start and stop indices in tables
     uint idx = 0;
@@ -53,32 +61,13 @@ void sasktran_disco::getStreamsAndWeights(uint num_streams,
         temp_weights[base_neg - offset] = quadrature_weights[idx];
         temp_weights[base_pos + offset] = quadrature_weights[idx];
     }
-
+#endif
     // Scale quadrature points from [-1 0], [0 1].
     for (uint idx = 0; idx < order; ++idx) {
         angles[idx] = 0.5 * temp_angles[idx] + 0.5;
         angles[idx + order] = -0.5 * temp_angles[idx] - 0.5;
         weights[idx] = 0.5 * temp_weights[idx];
         weights[idx + order] = 0.5 * temp_weights[idx];
-    }
-}
-
-void sasktran_disco::getStreamsAndWeights(
-    const std::vector<double>& given_angles,
-    const std::vector<double>& given_weights, VectorDim1<double>& angles,
-    VectorDim1<double>& weights) {
-    if (!std::is_sorted(given_angles.cbegin(), given_angles.cend())) {
-        throw InvalidConfiguration(
-            "Quadrature points must be sorted in increasing order.");
-    }
-    const uint NSTR = (uint)(2 * given_angles.size());
-    angles.resize(NSTR);
-    weights.resize(NSTR);
-    for (uint i = 0; i < NSTR / 2; ++i) {
-        angles[i] = 0.5 * given_angles[i] + 0.5;
-        angles[i + NSTR / 2] = -0.5 * given_angles[i] - 0.5;
-        weights[i] = 0.5 * given_weights[i];
-        weights[i + NSTR / 2] = 0.5 * given_weights[i];
     }
 }
 

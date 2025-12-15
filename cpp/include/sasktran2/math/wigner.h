@@ -26,6 +26,8 @@ namespace sasktran2::math {
          * @return \f$d^l_{mn}(\theta)\f$
          */
         double d(double theta, int l);
+
+        void vec_d_emplace(double theta, int max_l, double* out_array);
     };
 #else
     /** Calculates the Wigner D functions using recurrence relations found from
@@ -167,6 +169,11 @@ namespace sasktran2::math {
                 return val_l;
             }
         }
-    };
+
+        void vec_d_emplace(double theta, int max_l, double* out_array) {
+            for (int l = 0; l <= max_l; ++l) {
+                out_array[l] = d(theta, l);
+            }
+        };
 #endif
 } // namespace sasktran2::math
