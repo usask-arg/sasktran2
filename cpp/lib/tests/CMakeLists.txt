@@ -25,6 +25,7 @@ add_executable(
   engine/benchmark/bench_do_wf.cpp
   engine/benchmark/bench_hr.cpp
   engine/benchmark/bench_occ.cpp
+  rust/test_integration.cpp
   atmosphere/surface.cpp)
 
 # Some special logic to support both CATCH2 version 2 and 3 for now
@@ -35,6 +36,11 @@ target_link_libraries(
   PRIVATE sasktran2 $<$<PLATFORM_ID:Windows>:bcrypt>
           $<$<PLATFORM_ID:Linux,Darwin>:dl> $<$<PLATFORM_ID:Linux>:gfortran>
           $<$<PLATFORM_ID:Linux>:rt>)
+
+if(WIN32)
+  target_link_libraries(sasktran2_tests PRIVATE ws2_32 userenv ntdll)
+endif()
+
 if(Catch2_FOUND)
   # Found Catch2 Version 2
   target_link_libraries(sasktran2_tests PRIVATE Catch2::Catch2)

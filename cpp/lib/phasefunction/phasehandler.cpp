@@ -142,12 +142,14 @@ namespace sasktran2::solartransmission {
         }
 
         for (int i = 0; i < m_scatter_angles.size(); ++i) {
-            for (int j = 0; j < m_config->num_singlescatter_moments(); ++j) {
-                m_wigner_d00(j, i) = d00.d(m_scatter_angles[i][0], j);
+            d00.vec_d_emplace(m_scatter_angles[i][0],
+                              m_config->num_singlescatter_moments(),
+                              &m_wigner_d00(0, i));
 
-                if constexpr (NSTOKES == 3) {
-                    m_wigner_d02(j, i) = d02.d(m_scatter_angles[i][0], j);
-                }
+            if constexpr (NSTOKES == 3) {
+                d02.vec_d_emplace(m_scatter_angles[i][0],
+                                  m_config->num_singlescatter_moments(),
+                                  &m_wigner_d02(0, i));
             }
         }
     }

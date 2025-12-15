@@ -15,6 +15,7 @@ add_library(
   grids/source_location_interpolator.cpp
   grids/altitude_sza_source_location_interpolator.cpp
   dual/dual.cpp
+  math/wigner.cpp
   atmosphere/atmosphere.cpp
   atmosphere/surface.cpp
   phasefunction/interpolator.cpp
@@ -64,7 +65,8 @@ add_library(
   sktran_disco/source_term/do_source_diffuse_storage.cpp
   sktran_disco/source_term/do_source.cpp
   sktran_disco/source_term/do_source_interpolated_pp.cpp
-  sktran_disco/source_term/do_source_planeparallel.cpp)
+  sktran_disco/source_term/do_source_planeparallel.cpp
+  ${SASKTRAN2_RUST_CXX_SOURCES})
 
 option(BUILD_DOXYGEN "Build Doxygen Docs" OFF)
 # Doxygen document build

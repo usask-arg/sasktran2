@@ -291,9 +291,15 @@ if(${SKTRAN_BLAS_VENDOR} MATCHES "SCIPY_OPENBLAS")
     INTERFACE $<BUILD_INTERFACE:${OPENBLAS_INCLUDE_DIR}>
               $<INSTALL_INTERFACE:include>)
 
-  set(OPENBLAS_LIB_FULL
-      "${OPENBLAS_LIB_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}${OPENBLAS_LIBRARY}${CMAKE_SHARED_LIBRARY_SUFFIX}"
-  )
+  if(WIN32)
+    # OPENBLAS_LIBRARY already includes the "lib" prefix, so don't add another.
+    set(OPENBLAS_LIB_FULL
+        "${OPENBLAS_LIB_DIR}/${OPENBLAS_LIBRARY}${CMAKE_IMPORT_LIBRARY_SUFFIX}")
+  else()
+    set(OPENBLAS_LIB_FULL
+        "${OPENBLAS_LIB_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}${OPENBLAS_LIBRARY}${CMAKE_SHARED_LIBRARY_SUFFIX}"
+    )
+  endif()
 
   target_link_libraries(sasktran2BuildProperties INTERFACE ${OPENBLAS_LIB_FULL})
 
@@ -417,6 +423,99 @@ else()
   # -------- END LAPACK FINDING -------
 endif()
 message(STATUS "Lapack Configuration Complete")
+
+# -------- RUST LIBRARY INTEGRATION -------
+option(ENABLE_RUST_COMPONENTS "Enable Rust components" ON)
+
+if(ENABLE_RUST_COMPONENTS)
+  target_compile_definitions(sasktran2BuildProperties
+                             INTERFACE SKTRAN_RUST_SUPPORT)
+  if(DEFINED SASKTRAN2_RUST_LIB_DIR AND DEFINED SASKTRAN2_RUST_INCLUDE_DIR)
+    # We're in a Cargo-driven build (Maturin/build.rs)
+    message(STATUS "Linking Rust library from Cargo build")
+    message(STATUS "  Library dir: ${SASKTRAN2_RUST_LIB_DIR}")
+    message(STATUS "  Include dir: ${SASKTRAN2_RUST_INCLUDE_DIR}")
+    target_include_directories(sasktran2BuildProperties
+                               INTERFACE ${SASKTRAN2_RUST_INCLUDE_DIR})
+
+    set(SASKTRAN2_RUST_CXX_SOURCES "")
+    file(GLOB_RECURSE SASKTRAN2_RUST_CXX_SOURCES
+         "${SASKTRAN2_RUST_INCLUDE_DIR}/../sources/sasktran2-core/src/*.cc")
+
+    # Replace all backslashes with forward slashes for Windows compatibility
+    string(REPLACE "\\" "/" SASKTRAN2_RUST_CXX_SOURCES
+                   "${SASKTRAN2_RUST_CXX_SOURCES}")
+
+    if(SASKTRAN2_RUST_CXX_SOURCES)
+      message(
+        STATUS "  Found CXX bridge sources: ${SASKTRAN2_RUST_CXX_SOURCES}")
+    else()
+      message(
+        STATUS "No CXX bridge sources found in: ${SASKTRAN2_RUST_SOURCES_DIR}")
+    endif()
+
+    # Use explicit path to staticlib if provided, otherwise construct it
+    if(DEFINED SASKTRAN2_RUST_CORE_LIB)
+      set(SASKTRAN2_RUST_LIB "${SASKTRAN2_RUST_CORE_LIB}")
+    else()
+      set(SASKTRAN2_RUST_LIB "${SASKTRAN2_RUST_LIB_DIR}/libsasktran2_core.a")
+    endif()
+    message(
+      STATUS "Linking Rust library from CMake build: ${SASKTRAN2_RUST_LIB}")
+    target_link_libraries(sasktran2BuildProperties
+                          INTERFACE ${SASKTRAN2_RUST_LIB})
+
+  else()
+    message(
+      WARNING
+        "Rust library not specified, continuing using the base folder, ensure you run cargo build first"
+    )
+    target_include_directories(
+      sasktran2BuildProperties
+      INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../target/cxxbridge/>
+        $<INSTALL_INTERFACE:include>)
+    set(SASKTRAN2_RUST_CXX_SOURCES "")
+    file(GLOB_RECURSE SASKTRAN2_RUST_CXX_SOURCES
+         "${CMAKE_SOURCE_DIR}/../target/cxxbridge/sasktran2-core/src/*.cc")
+
+    # Replace all backslashes with forward slashes for Windows compatibility
+    string(REPLACE "\\" "/" SASKTRAN2_RUST_CXX_SOURCES
+                   "${SASKTRAN2_RUST_CXX_SOURCES}")
+
+    if(SASKTRAN2_RUST_CXX_SOURCES)
+      message(
+        STATUS "  Found CXX bridge sources: ${SASKTRAN2_RUST_CXX_SOURCES}")
+    else()
+      message(
+        STATUS "No CXX bridge sources found in: ${SASKTRAN2_RUST_SOURCES_DIR}")
+    endif()
+
+    # Link the sasktran2-core static lib Location is target/debug or
+    # target/release depending on build type
+
+    # match the directory to the cmake build type
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+      set(RUST_BUILD_TYPE "debug")
+    else()
+      set(RUST_BUILD_TYPE "release")
+    endif()
+    if(WIN32)
+      set(SASKTRAN2_RUST_LIB
+          "${CMAKE_CURRENT_SOURCE_DIR}/../target/${RUST_BUILD_TYPE}/sasktran2_core.lib"
+      )
+    else()
+      set(SASKTRAN2_RUST_LIB
+          "${CMAKE_CURRENT_SOURCE_DIR}/../target/${RUST_BUILD_TYPE}/libsasktran2_core.a"
+      )
+    endif()
+    message(
+      STATUS "Linking Rust library from CMake build: ${SASKTRAN2_RUST_LIB}")
+    target_link_libraries(sasktran2BuildProperties
+                          INTERFACE ${SASKTRAN2_RUST_LIB})
+  endif()
+endif()
+# -------- END RUST LIBRARY INTEGRATION -------
 
 add_subdirectory(lib)
 
