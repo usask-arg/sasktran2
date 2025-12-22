@@ -207,7 +207,7 @@ jobs:
           command: sdist
           args: --out dist
       - name: Upload sdist
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: wheels-sdist
           path: dist
@@ -230,7 +230,7 @@ jobs:
           sudo apt install -y libopenblas-dev
 
       - name: download sdist
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: wheels-sdist
           path: dist
@@ -271,7 +271,7 @@ jobs:
           python -c 'import sasktran2'
 
       - name: Upload wheels
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: wheels-linux-${{ matrix.platform.target }}
           path: dist
@@ -290,7 +290,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: download wheels
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: wheels-linux-x86_64
           path: dist
@@ -371,7 +371,7 @@ jobs:
           python -c 'import sasktran2'
 
       - name: Upload wheels
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: wheels-macos-${{ matrix.platform.target }}
           path: dist
@@ -431,7 +431,7 @@ jobs:
           python -c 'import sasktran2'
 
       - name: Upload wheels
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: wheels-windows-${{ matrix.platform.target }}
           path: dist
@@ -449,7 +449,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: download wheels
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: wheels-windows-x64
           path: dist
@@ -473,7 +473,7 @@ jobs:
       id-token: write
     if: (github.event_name == 'release')
     steps:
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v7
         with:
           pattern: wheels-*
           path: dist
