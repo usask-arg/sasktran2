@@ -52,7 +52,7 @@ jobs:
               | tee benchmarks.log
         working-directory: ${{ env.ASV_DIR }}
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: asv-benchmark-results-${{ runner.os }}
@@ -74,7 +74,7 @@ jobs:
         run: echo -n > pr_number.txt
 
       - name: Upload results as artifacts
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: pr_number
           path: pr_number.txt
