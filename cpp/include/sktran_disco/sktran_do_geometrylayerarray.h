@@ -41,6 +41,13 @@ namespace sasktran_disco {
         void calculate_chapman_factors(double earth_rad,
                                        const sasktran2::Geometry1D& geometry);
 
+        /**
+         * @brief Calculates the chapman factors using the sasktran2 raytracer
+         *
+         */
+        void calculate_chapman_factors_raytracer(
+            double earth_rad, const sasktran2::Geometry1D& geometry);
+
       public:
         GeometryLayerArray(
             const PersistentConfiguration<NSTOKES, CNSTR>& config,

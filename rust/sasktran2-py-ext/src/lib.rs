@@ -90,6 +90,7 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Information functions
     m.add_function(wrap_pyfunction!(common::openmp_support_enabled, m)?)?;
+    m.add_function(wrap_pyfunction!(common::lto_test, m)?)?;
 
     Ok(())
 }

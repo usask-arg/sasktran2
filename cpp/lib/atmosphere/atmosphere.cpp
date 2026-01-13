@@ -126,7 +126,8 @@ namespace sasktran2::atmosphere {
         // still have to subtract f/1-f for multiple scatter
         for (int w = 0; w < m_storage.f.cols(); ++w) {     // wavel loop
             for (int i = 0; i < m_storage.f.rows(); ++i) { // location loop
-                for (int j = 0; j < m_storage.max_stored_legendre();
+                for (int j = 0;
+                     j < m_storage.max_stored_legendre() * stokes_stack;
                      ++j) { // legendre loop
                     m_storage.leg_coeff(j, i, w) /= (1 - m_storage.f(i, w));
 

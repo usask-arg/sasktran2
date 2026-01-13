@@ -23,8 +23,8 @@ def _storage_delta(atmosphere: sk.Atmosphere, constituent):
 
 def _test_scenarios():
     config = sk.Config()
-    config.multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
-    config.num_streams = 2
+    # config.multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
+    config.num_streams = 4
 
     altitude_grid = np.arange(0, 65001, 1000.0)
 

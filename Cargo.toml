@@ -6,3 +6,8 @@ members = [
     "rust/sasktran2-rs",
     "rust/sasktran2-py-ext"
 ]
+
+[profile.lto]
+inherits = "release"
+lto = "thin"        # or true/"fat" depending on goals
+codegen-units = 1   # helps LTO do more, slower compile
