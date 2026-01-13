@@ -588,6 +588,7 @@ namespace sasktran2::raytracing {
         /** Constructs the plane parallel ray tracer.  Note that we always trace
          * rays on the same grid that the extinction profile is specified on,
          * i.e., the global model geometry grid.
+
          *
          * @param geometry Geometry object that is used to obtain the altitude
          * grid as well as earth radius

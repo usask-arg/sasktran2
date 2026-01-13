@@ -125,6 +125,8 @@ namespace sasktran2 {
     void DOSource<NSTOKES, CNSTR>::initialize_geometry(
         const sasktran2::viewinggeometry::InternalViewingGeometry&
             internal_viewing) {
+
+        ZoneScopedN("Initialize DO Source Geometry");
         m_los_rays = &internal_viewing.traced_rays;
 
         // Create the SZA grid

@@ -32,6 +32,9 @@ namespace sasktran2 {
     DOSourceInterpolatedPostProcessing<NSTOKES, CNSTR>::initialize_geometry(
         const sasktran2::viewinggeometry::InternalViewingGeometry&
             internal_viewing) {
+
+        ZoneScopedN("Initialize DO Source Interpolated Geometry");
+
         DOSource<NSTOKES, CNSTR>::initialize_geometry(internal_viewing);
 
         m_diffuse_storage =
@@ -45,6 +48,7 @@ namespace sasktran2 {
                 *this->m_sza_grid, *this->m_config, this->m_geometry);
 
         if (m_will_integrate_sources) {
+            ZoneScopedN("DO Source Interpolated Geometry Interpolators");
             m_los_source_interpolator =
                 m_diffuse_storage->geometry_interpolator(
                     internal_viewing.traced_rays);

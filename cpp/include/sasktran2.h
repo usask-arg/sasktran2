@@ -28,3 +28,5 @@
 #include <sasktran2/engine.h>
 
 #include <sktran_disco/sktran_do_linearization_types.h>
+
+#include <sasktran2/testing/lto.h>

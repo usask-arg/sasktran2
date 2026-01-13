@@ -60,6 +60,7 @@ fn main() {
 
     binding
         .define("BUILD_SHARED_LIBS", "OFF")
+        .define("INCLUDE_TRACY", "OFF")
         .define("CMAKE_INSTALL_PREFIX", &install_prefix)
         .define("DO_STREAM_TEMPLATES", do_stream_templates)
         .define("USE_OMP", use_omp)
@@ -140,6 +141,7 @@ fn main() {
 
     println!("cargo:rustc-link-lib=static=csasktran2");
     println!("cargo:rustc-link-lib=static=sasktran2");
+    //println!("cargo:rustc-link-lib=static=TracyClient");
 
     println!("cargo:rerun-if-changed={}/include", cpp_src.display());
     println!("cargo:rerun-if-changed={}/lib", cpp_src.display());

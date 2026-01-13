@@ -171,15 +171,18 @@ namespace sasktran2::solartransmission {
             internal_viewing.traced_rays);
 
         if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
-            // Generates the geometry matrix so that matrix * extinction = solar
-            // od at grid points
-            this->m_solar_transmission.generate_geometry_matrix(
-                internal_viewing.traced_rays, m_geometry_matrix,
-                m_ground_hit_flag);
+            {
+                ZoneScopedN("Single Scatter Source Exact Geometry Matrix");
+                // Generates the geometry matrix so that matrix * extinction =
+                // solar od at grid points
+                this->m_solar_transmission.generate_geometry_matrix(
+                    internal_viewing.traced_rays, m_geometry_matrix,
+                    m_ground_hit_flag);
 
-            // Usually faster to calculate the matrix densely and then convert
-            // to sparse
-            m_geometry_sparse = m_geometry_matrix.sparseView();
+                // Usually faster to calculate the matrix densely and then
+                // convert to sparse
+                m_geometry_sparse = m_geometry_matrix.sparseView();
+            }
         }
         if constexpr (std::is_same_v<S, SolarTransmissionTable>) {
             this->m_solar_transmission.generate_interpolation_matrix(
@@ -205,8 +208,11 @@ namespace sasktran2::solartransmission {
 
             m_num_cells += (int)internal_viewing.traced_rays[i].layers.size();
         }
-        this->m_phase_handler.initialize_geometry(internal_viewing.traced_rays,
-                                                  m_index_map);
+        {
+            ZoneScopedN("Single Scatter Source Phase Geometry");
+            this->m_phase_handler.initialize_geometry(
+                internal_viewing.traced_rays, m_index_map);
+        }
 
         // Store the rays for later
         m_los_rays = &internal_viewing.traced_rays;

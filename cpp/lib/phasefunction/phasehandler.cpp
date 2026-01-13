@@ -8,6 +8,8 @@ namespace sasktran2::solartransmission {
         const std::vector<sasktran2::raytracing::TracedRay>& los_rays,
         const std::vector<std::vector<int>>& index_map) {
 
+        ZoneScopedN("Phase Handler Initialize Geometry");
+
         int num_internal = 0;
         int num_scatter = 0;
         double theta, C1, C2, S1, S2;
@@ -142,6 +144,7 @@ namespace sasktran2::solartransmission {
         }
 
         for (int i = 0; i < m_scatter_angles.size(); ++i) {
+            ZoneScopedN("Phase Handler SS Wigner Calculation");
             d00.vec_d_emplace(m_scatter_angles[i][0],
                               m_config->num_singlescatter_moments(),
                               &m_wigner_d00(0, i));
