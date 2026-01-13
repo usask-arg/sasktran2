@@ -1,3 +1,5 @@
+#[allow(unused_imports)]
+use sasktran2_rs::bindings::prelude::*;
 use sasktran2_sys::ffi::run_lto_tests;
 
 #[test]
