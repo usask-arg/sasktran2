@@ -32,6 +32,9 @@ namespace sasktran2 {
     DOSourceInterpolatedPostProcessing<NSTOKES, CNSTR>::initialize_geometry(
         const sasktran2::viewinggeometry::InternalViewingGeometry&
             internal_viewing) {
+
+        ZoneScopedN("Initialize DO Source Interpolated Geometry");
+
         DOSource<NSTOKES, CNSTR>::initialize_geometry(internal_viewing);
 
         m_diffuse_storage =
@@ -45,6 +48,7 @@ namespace sasktran2 {
                 *this->m_sza_grid, *this->m_config, this->m_geometry);
 
         if (m_will_integrate_sources) {
+            ZoneScopedN("DO Source Interpolated Geometry Interpolators");
             m_los_source_interpolator =
                 m_diffuse_storage->geometry_interpolator(
                     internal_viewing.traced_rays);
@@ -122,6 +126,14 @@ namespace sasktran2 {
                 (*m_source_interpolator_view)[losidx][layeridx][s].dot(
                     m_diffuse_storage->linear_source(wavel_threadidx).value);
 
+#ifdef SASKTRAN_DEBUG_ASSERTS
+            if (source.value != source.value) {
+                spdlog::info(
+                    "NaN detected in DO integrated source calculation");
+                source_value = 0.0;
+            }
+#endif
+
             source.value(s) += omega * source_factor * source_value;
 
             if (m_atmosphere->num_deriv() > 0) {
@@ -167,9 +179,16 @@ namespace sasktran2 {
             const auto& interpolator =
                 *m_los_ground_source_interpolator[losidx];
 
-            // TODO: Only lambertian,
-            source.value(0) += interpolator.dot(
+            double ground_source = interpolator.dot(
                 m_diffuse_storage->linear_source(wavel_threadidx).value);
+
+            if (ground_source != ground_source) {
+                spdlog::info("NaN detected in ground source calculation");
+                ground_source = 0.0;
+            }
+
+            // TODO: Only lambertian,
+            source.value(0) += ground_source;
 
             if (this->m_config->wf_precision() ==
                 sasktran2::Config::WeightingFunctionPrecision::full) {

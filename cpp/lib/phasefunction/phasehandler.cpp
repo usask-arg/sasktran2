@@ -8,6 +8,8 @@ namespace sasktran2::solartransmission {
         const std::vector<sasktran2::raytracing::TracedRay>& los_rays,
         const std::vector<std::vector<int>>& index_map) {
 
+        ZoneScopedN("Phase Handler Initialize Geometry");
+
         int num_internal = 0;
         int num_scatter = 0;
         double theta, C1, C2, S1, S2;
@@ -29,12 +31,21 @@ namespace sasktran2::solartransmission {
             // Straight rays we can just use the first layer to get the
             // scattering angle, scattering angle does not change along the ray
             if (ray.is_straight) {
+                auto result =
+                    m_geometry.coordinates().stokes_standard_to_observer_z(
+                        ray.layers[0].average_look_away,
+                        ray.observer_and_look.observer.position);
+
                 math::stokes_scattering_factors(
                     -1 * m_geometry.coordinates().sun_unit(),
                     -1 * ray.layers[0].average_look_away, theta, C1, C2, S1, S2,
                     negation);
                 if constexpr (NSTOKES == 3) {
-                    m_scatter_angles.push_back({theta, C2, S2});
+                    double adjusted_C2 = C2 * result.first - S2 * result.second;
+                    double adjusted_S2 = C2 * result.second + S2 * result.first;
+
+                    m_scatter_angles.push_back(
+                        {theta, adjusted_C2, adjusted_S2});
                 } else {
                     m_scatter_angles.push_back({theta});
                 }
@@ -49,12 +60,23 @@ namespace sasktran2::solartransmission {
 
                 // If the ray isn't straight every layer has a scattering angle
                 if (!ray.is_straight) {
+                    auto result =
+                        m_geometry.coordinates().stokes_standard_to_observer_z(
+                            ray.layers[0].average_look_away,
+                            ray.observer_and_look.observer.position);
+
                     math::stokes_scattering_factors(
                         -1 * m_geometry.coordinates().sun_unit(),
                         -1 * ray.layers[0].average_look_away, theta, C1, C2, S1,
                         S2, negation);
                     if constexpr (NSTOKES == 3) {
-                        m_scatter_angles.push_back({theta, C2, S2});
+                        double adjusted_C2 =
+                            C2 * result.first - S2 * result.second;
+                        double adjusted_S2 =
+                            C2 * result.second + S2 * result.first;
+
+                        m_scatter_angles.push_back(
+                            {theta, adjusted_C2, adjusted_S2});
                     } else {
                         m_scatter_angles.push_back({theta});
                     }
@@ -122,6 +144,7 @@ namespace sasktran2::solartransmission {
         }
 
         for (int i = 0; i < m_scatter_angles.size(); ++i) {
+            ZoneScopedN("Phase Handler SS Wigner Calculation");
             d00.vec_d_emplace(m_scatter_angles[i][0],
                               m_config->num_singlescatter_moments(),
                               &m_wigner_d00(0, i));

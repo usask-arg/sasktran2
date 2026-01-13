@@ -15,6 +15,7 @@ add_library(
   output.cpp
   geodetic.cpp
   brdf.cpp
+  testing.cpp
   deriv_mapping.cpp)
 
 target_link_libraries(csasktran2 PUBLIC sasktran2)

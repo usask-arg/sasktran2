@@ -251,6 +251,10 @@ namespace sasktran2 {
         stokes_standard_to_observer(const Eigen::Vector3d& look_vector,
                                     const Eigen::Vector3d& position) const;
 
+        std::pair<double, double>
+        stokes_standard_to_observer_z(const Eigen::Vector3d& look_vector,
+                                      const Eigen::Vector3d& position) const;
+
         /**
          * @brief Calculates the vector position above the earth at the
          * reference point

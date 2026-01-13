@@ -1042,3 +1042,6 @@ unsafe extern "C" {
         offset_z: *mut f64,
     ) -> ::std::os::raw::c_int;
 }
+unsafe extern "C" {
+    pub fn run_lto_tests();
+}
