@@ -15,8 +15,8 @@ class GaussianHeightExtinction(Constituent):
     def __init__(
         self,
         optical_property: OpticalProperty,
-        cloud_height_m: float,
-        cloud_width_fwhm_m: float,
+        height_m: float,
+        width_fwhm_m: float,
         vertical_optical_depth: float,
         vertical_optical_depth_wavel_nm: float,
         altitudes_m: np.array,
@@ -30,9 +30,9 @@ class GaussianHeightExtinction(Constituent):
         ----------
         optical_property : OpticalProperty
             The optical property defining the scattering information
-        cloud_height_m : float
+        height_m : float
             Height of the centre of the gaussian extinction profile in [m]
-        cloud_width_fwhm_m : float
+        width_fwhm_m : float
             FWHM of the gaussian extinction profile in [m]
         vertical_optical_depth : float
             Vertical optical depth
@@ -52,8 +52,8 @@ class GaussianHeightExtinction(Constituent):
         self._optical_property = optical_property
 
         # Save inputs as array datatype so that they are mutable
-        self._cloud_height_m = np.array(cloud_height_m, dtype=float)
-        self._cloud_width_fwhm_m = np.array(cloud_width_fwhm_m, dtype=float)
+        self._height_m = np.array(height_m, dtype=float)
+        self._width_fwhm_m = np.array(width_fwhm_m, dtype=float)
         self._vertical_optical_depth = np.array(vertical_optical_depth, dtype=float)
 
         self._vertical_optical_depth_wavel_nm = vertical_optical_depth_wavel_nm
@@ -72,20 +72,20 @@ class GaussianHeightExtinction(Constituent):
             super().__setattr__(__name, __value)
 
     @property
-    def cloud_height_m(self):
-        return self._cloud_height_m
+    def height_m(self):
+        return self._height_m
 
-    @cloud_height_m.setter
-    def cloud_height_m(self, cloud_height_m: np.ndarray):
-        self._cloud_height_m = cloud_height_m
+    @height_m.setter
+    def height_m(self, height_m: np.ndarray):
+        self._height_m = height_m
 
     @property
-    def cloud_width_fwhm_m(self):
-        return self._cloud_width_fwhm_m
+    def width_fwhm_m(self):
+        return self._width_fwhm_m
 
-    @cloud_width_fwhm_m.setter
-    def cloud_width_fwhm_m(self, cloud_width_fwhm_m: np.ndarray):
-        self._cloud_width_fwhm_m = cloud_width_fwhm_m
+    @width_fwhm_m.setter
+    def width_fwhm_m(self, width_fwhm_m: np.ndarray):
+        self._width_fwhm_m = width_fwhm_m
 
     @property
     def vertical_optical_depth(self):
@@ -114,8 +114,8 @@ class GaussianHeightExtinction(Constituent):
         self._gaussian = np.exp(
             -4
             * np.log(2)
-            * (self._altitudes_m - self._cloud_height_m) ** 2
-            / self._cloud_width_fwhm_m**2
+            * (self._altitudes_m - self._height_m) ** 2
+            / self._width_fwhm_m**2
         )
 
         self._optical_quants = self._optical_property.atmosphere_quantities(
@@ -164,15 +164,15 @@ class GaussianHeightExtinction(Constituent):
             self._gaussian
             * 8
             * np.log(2)
-            * (self._altitudes_m - self._cloud_height_m)
-            / self._cloud_width_fwhm_m**2
+            * (self._altitudes_m - self._height_m)
+            / self._width_fwhm_m**2
         )
         d_gaussian_d_width = (
             self._gaussian
             * 8
             * np.log(2)
-            * (self._altitudes_m - self._cloud_height_m) ** 2
-            / self._cloud_width_fwhm_m**3
+            * (self._altitudes_m - self._height_m) ** 2
+            / self._width_fwhm_m**3
         )
         outer_term = (
             self._vertical_optical_depth / self._gaussian_od / self._xs_at_wavel
@@ -201,9 +201,9 @@ class GaussianHeightExtinction(Constituent):
         h_deriv_mapping.d_ssa[:] += d_ssa
         h_deriv_mapping.d_leg_coeff[:] += d_leg_coeff
         h_deriv_mapping.scat_factor[:] += scat_factor
-        h_deriv_mapping.interp_dim = "cloud_height_m"
+        h_deriv_mapping.interp_dim = f"{name}_height_m"
         h_deriv_mapping.interpolator = interp_matrix @ (
-            outer_term * (h1 - h2)[:, np.newaxis]
+            (outer_term * (h1 - h2))[:, np.newaxis]
         )
 
         # width derivative
@@ -218,9 +218,9 @@ class GaussianHeightExtinction(Constituent):
         w_deriv_mapping.d_ssa[:] += d_ssa
         w_deriv_mapping.d_leg_coeff[:] += d_leg_coeff
         w_deriv_mapping.scat_factor[:] += scat_factor
-        w_deriv_mapping.interp_dim = "cloud_width_fwhm_m"
+        w_deriv_mapping.interp_dim = f"{name}_width_fwhm_m"
         w_deriv_mapping.interpolator = interp_matrix @ (
-            outer_term * (w1 - w2)[:, np.newaxis]
+            (outer_term * (w1 - w2))[:, np.newaxis]
         )
 
         # optical depth derivative
@@ -231,7 +231,7 @@ class GaussianHeightExtinction(Constituent):
         tau_deriv_mapping.d_ssa[:] += d_ssa
         tau_deriv_mapping.d_leg_coeff[:] += d_leg_coeff
         tau_deriv_mapping.scat_factor[:] += scat_factor
-        tau_deriv_mapping.interp_dim = "vertical_optical_depth"
+        tau_deriv_mapping.interp_dim = f"{name}_vertical_optical_depth"
         tau_deriv_mapping.interpolator = interp_matrix @ (
             (self._gaussian / self._gaussian_od / self._xs_at_wavel)[:, np.newaxis]
         )
