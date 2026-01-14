@@ -82,8 +82,7 @@ namespace sasktran2::viewinggeometry {
             m_cos_sza, 0.0, m_observer_altitude);
 
         result.look_away = geometry.look_vector_from_azimuth(
-            ground_vector, -(EIGEN_PI - m_relative_azimuth_angle),
-            m_cos_viewing_zenith);
+            ground_vector, m_relative_azimuth_angle, m_cos_viewing_zenith);
 
         result.observer.position = ground_vector;
 

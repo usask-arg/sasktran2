@@ -180,12 +180,15 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
 }
 
 template <int NSTOKES> void Sasktran2<NSTOKES>::calculate_geometry() {
+    FrameMarkStart("Geometry");
+    ZoneScopedN("calculate_geometry");
     // Trace every ray that we are given
     m_internal_viewing_geometry.traced_rays.clear();
     m_internal_viewing_geometry.traced_rays.resize(
         m_viewing_geometry.observer_rays().size());
 
     for (int i = 0; i < m_viewing_geometry.observer_rays().size(); ++i) {
+        ZoneScopedN("Trace LOS Ray");
         const auto& viewing_ray = m_viewing_geometry.observer_rays()[i];
         sasktran2::viewinggeometry::ViewingRay ray =
             viewing_ray->construct_ray(m_geometry->coordinates());
@@ -219,8 +222,11 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::calculate_geometry() {
         m_internal_viewing_geometry.traced_rays, *m_geometry);
 
     for (auto& source : m_source_terms) {
+        ZoneScopedN("Source Term Geometry Init");
         source->initialize_geometry(m_internal_viewing_geometry);
     }
+
+    FrameMarkEnd("Geometry");
 }
 
 template <int NSTOKES>

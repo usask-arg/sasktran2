@@ -109,63 +109,71 @@ impl WignerDCalculator {
         }
     }
 
-    /// Computes d^l_{m,n}(theta).
+    /// Computes d^l_{m,n}(theta) for l = 0..output.len()-1, writing into `output[l]`.
     pub fn vector_d(&self, theta: f64, output: &mut [f64]) {
-        for (l, elem) in output.iter_mut().enumerate() {
-            if (l as i32) < self.m_lmin {
-                *elem = 0.0;
-            } else {
-                let x = theta.cos();
-                // Value at current l
-                let mut val_l = self.recurrence_start(theta);
-                // Value at current (l - 1)
-                let mut val_lm1 = 0.0;
+        let lmin = self.m_lmin;
+        let last_l = output.len().saturating_sub(1) as i32;
 
-                // If n == 0, use the associated Legendre function recurrence.
-                if self.m_n == 0 {
-                    for lidx in (self.m_lmin + 1)..=(l as i32) {
-                        let lidx_f = lidx as f64;
-                        let mm = (lidx * lidx - self.m_m * self.m_m) as f64;
-                        // multiplier = 1 / (sqrt(lidx*lidx - m_m*m_m) * lidx)
-                        let multiplier = 1.0 / (mm.sqrt() * lidx_f);
+        // If output is empty, nothing to do.
+        if output.is_empty() {
+            return;
+        }
 
-                        // (2*lidx - 1)*(lidx * x)
-                        let curfactor = (2 * lidx - 1) as f64 * (lidx_f * x);
+        // Zero everything below lmin, and also handle the case last_l < lmin.
+        let upto = (lmin.max(0) as usize).min(output.len());
+        output[..upto].fill(0.0);
+        if last_l < lmin {
+            return;
+        }
 
-                        // lidx * sqrt((lidx - 1)^2 - m_m^2)
-                        let priorfactor = lidx_f
-                            * (((lidx - 1) * (lidx - 1) - self.m_m * self.m_m) as f64).sqrt();
+        let x = theta.cos();
 
-                        let temp = val_l;
-                        val_l = multiplier * (curfactor * val_l - priorfactor * val_lm1);
-                        val_lm1 = temp;
-                    }
-                } else {
-                    // Use F.4.1 from Mischenko
-                    for lidx in (self.m_lmin + 1)..=(l as i32) {
-                        let lidx_f = lidx as f64;
-                        let mm = (lidx * lidx - self.m_m * self.m_m) as f64;
-                        let nn = (lidx * lidx - self.m_n * self.m_n) as f64;
+        // Base value at l = lmin
+        let mut val_l = self.recurrence_start(theta);
+        let mut val_lm1 = 0.0;
 
-                        // multiplier = 1 / ((lidx - 1) * sqrt(lidx^2 - m_m^2) * sqrt(lidx^2 - m_n^2))
-                        let multiplier = 1.0 / (((lidx - 1) as f64) * mm.sqrt() * nn.sqrt());
+        // Store l = lmin (if it falls in range)
+        output[lmin as usize] = val_l;
 
-                        // (2*lidx - 1)* (lidx * (lidx-1) * x - m_n*m_m)
-                        let curfactor = (2 * lidx - 1) as f64
-                            * (lidx_f * (lidx_f - 1.0) * x - (self.m_n * self.m_m) as f64);
+        if self.m_n == 0 {
+            // Associated Legendre-style recurrence
+            for lidx in (lmin + 1)..=last_l {
+                let l = lidx as f64;
 
-                        // lidx * sqrt((lidx-1)^2 - m_m^2) * sqrt((lidx-1)^2 - m_n^2)
-                        let priorfactor = lidx_f
-                            * (((lidx - 1) * (lidx - 1) - self.m_m * self.m_m) as f64).sqrt()
-                            * (((lidx - 1) * (lidx - 1) - self.m_n * self.m_n) as f64).sqrt();
+                let mm = (lidx * lidx - self.m_m * self.m_m) as f64;
+                let inv = 1.0 / (mm.sqrt() * l);
 
-                        let temp = val_l;
-                        val_l = multiplier * (curfactor * val_l - priorfactor * val_lm1);
-                        val_lm1 = temp;
-                    }
-                }
+                let cur = (2 * lidx - 1) as f64 * (l * x);
+                let prior = l * (((lidx - 1) * (lidx - 1) - self.m_m * self.m_m) as f64).sqrt();
 
-                *elem = val_l;
+                let prev = val_l;
+                val_l = inv * (cur * val_l - prior * val_lm1);
+                val_lm1 = prev;
+
+                output[lidx as usize] = val_l;
+            }
+        } else {
+            // F.4.1 from Mishchenko
+            let mn = (self.m_n * self.m_m) as f64;
+            for lidx in (lmin + 1)..=last_l {
+                let l = lidx as f64;
+
+                let mm = (lidx * lidx - self.m_m * self.m_m) as f64;
+                let nn = (lidx * lidx - self.m_n * self.m_n) as f64;
+
+                let inv = 1.0 / (((lidx - 1) as f64) * mm.sqrt() * nn.sqrt());
+
+                let cur = (2 * lidx - 1) as f64 * (l * (l - 1.0) * x - mn);
+
+                let prior = l
+                    * (((lidx - 1) * (lidx - 1) - self.m_m * self.m_m) as f64).sqrt()
+                    * (((lidx - 1) * (lidx - 1) - self.m_n * self.m_n) as f64).sqrt();
+
+                let prev = val_l;
+                val_l = inv * (cur * val_l - prior * val_lm1);
+                val_lm1 = prev;
+
+                output[lidx as usize] = val_l;
             }
         }
     }
@@ -229,5 +237,26 @@ mod tests {
         let val = calc.d(std::f64::consts::PI / 3.0, 2);
         // For a real test, you would compare with some known expected result
         println!("d^2_{{1,1}}(π/3) = {val}");
+    }
+
+    #[test]
+    fn test_vector_same_as_scalar() {
+        let calc = WignerDCalculator::new(0, 0);
+        let theta = std::f64::consts::PI / 4.0;
+        let lmax = 5;
+
+        let mut vec_output = vec![0.0; (lmax + 1) as usize];
+        calc.vector_d(theta, &mut vec_output);
+
+        for l in 0..=lmax {
+            let scalar_val = calc.d(theta, l);
+            assert!(
+                (scalar_val - vec_output[l as usize]).abs() < 1e-10,
+                "Mismatch at l={}: scalar={} vs vector={}",
+                l,
+                scalar_val,
+                vec_output[l as usize]
+            );
+        }
     }
 }

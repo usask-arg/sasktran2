@@ -6,3 +6,10 @@ pub fn openmp_support_enabled() -> bool {
     let openmp = unsafe { ffi::sk_openmp_support_enabled() };
     openmp != 0
 }
+
+pub fn lto_test() -> bool {
+    unsafe {
+        ffi::run_lto_tests();
+    }
+    true
+}

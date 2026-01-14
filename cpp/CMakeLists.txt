@@ -4,6 +4,37 @@ include(CMakePackageConfigHelpers) # Provides function/macro
 include(ExternalProject)
 include(FetchContent)
 
+option(ENABLE_LTO "Enables LTO Between the C++ and Rust core" OFF)
+
+if(ENABLE_LTO)
+  message(STATUS "Enabling LTO between C++ and Rust components")
+
+  # LTO only works with LLVM
+  find_program(LLVM_AR NAMES llvm-ar REQUIRED)
+  find_program(LLVM_RANLIB NAMES llvm-ranlib REQUIRED)
+
+  set(CMAKE_AR
+      "${LLVM_AR}"
+      CACHE FILEPATH "" FORCE)
+  set(CMAKE_RANLIB
+      "${LLVM_RANLIB}"
+      CACHE FILEPATH "" FORCE)
+
+  # These are specifically used by IPO/LTO logic:
+  set(CMAKE_C_COMPILER_AR
+      "${LLVM_AR}"
+      CACHE FILEPATH "" FORCE)
+  set(CMAKE_C_COMPILER_RANLIB
+      "${LLVM_RANLIB}"
+      CACHE FILEPATH "" FORCE)
+  set(CMAKE_CXX_COMPILER_AR
+      "${LLVM_AR}"
+      CACHE FILEPATH "" FORCE)
+  set(CMAKE_CXX_COMPILER_RANLIB
+      "${LLVM_RANLIB}"
+      CACHE FILEPATH "" FORCE)
+endif()
+
 # Convenience
 if(UNIX AND NOT APPLE)
   set(LINUX TRUE)
@@ -49,6 +80,17 @@ project(
   LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
+
+if(ENABLE_LTO)
+  include(CheckIPOSupported)
+  check_ipo_supported(RESULT IPO_SUPPORTED OUTPUT IPO_ERROR)
+  if(IPO_SUPPORTED)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+  else()
+    message(WARNING "IPO/LTO not supported: ${IPO_ERROR}")
+  endif()
+
+endif()
 
 if(APPLE)
   # This is nominally a windows definition but for some reason BOOST < 1.8.3 has

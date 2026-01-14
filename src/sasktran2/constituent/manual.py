@@ -16,6 +16,7 @@ class Manual(Constituent):
         extinction: np.ndarray,
         ssa: np.ndarray,
         legendre_moments: np.ndarray | None = None,
+        delta_scale: bool = False,
     ) -> None:
         """
         An implementation of a manual constituent where the user provides the extinction, single
@@ -36,8 +37,31 @@ class Manual(Constituent):
             Single scattering albedo (unitless). Shape [num_altitudes, num_wavelengths]
         legendre_moments : numpy.ndarray | None, optional
             Legendre moments (unitless), by default None. Shape [num_moments, num_altitudes, num_wavelengths]
+        delta_scale : bool, optional
+            Whether to apply delta-scaling to the scattering properties, by default False.
 
         """
+        if delta_scale:
+            f = legendre_moments[::4][-1] / (2.0 * legendre_moments.shape[0] / 4 + 1)
+            extinction *= 1.0 - ssa * f
+            ssa *= (1.0 - f) / (1.0 - ssa * f)
+
+            for i in range(int(legendre_moments.shape[0] / 4)):
+                # a1
+                legendre_moments[4 * i] -= f * (2.0 * i + 1)
+                legendre_moments[4 * i] /= 1.0 - f
+
+                # a2
+                legendre_moments[4 * i + 1] -= f * (2.0 * i + 1)
+                legendre_moments[4 * i + 1] /= 1.0 - f
+
+                # a3
+                legendre_moments[4 * i + 2] -= f * (2.0 * i + 1)
+                legendre_moments[4 * i + 2] /= 1.0 - f
+
+                # b1
+                legendre_moments[4 * i + 3] /= 1.0 - f
+
         self._inner = PyManual(
             extinction=extinction,
             ssa=ssa,
