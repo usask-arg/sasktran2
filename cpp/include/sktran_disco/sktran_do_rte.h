@@ -81,6 +81,10 @@ namespace sasktran_disco {
         void solveParticularGreen(AEOrder m,
                                   OpticalLayer<NSTOKES, CNSTR>& layer);
 
+        // Solves the particular solution in layer p for thermal emission
+        void solveParticularGreenThermal(
+            AEOrder m, OpticalLayer<NSTOKES, CNSTR>& layer);
+
         // Calculates the homogeneous coefficients which satisfy boundary
         // conditions.
         void solveBVP(AEOrder m);

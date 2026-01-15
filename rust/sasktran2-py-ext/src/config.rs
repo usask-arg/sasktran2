@@ -32,6 +32,7 @@ pub enum OccultationSource {
 pub enum EmissionSource {
     NoSource,
     Standard,
+    DiscreteOrdinates,
 }
 
 #[pyclass(eq, eq_int)]
@@ -257,6 +258,7 @@ impl PyConfig {
         match source {
             config::EmissionSource::Standard => Ok(EmissionSource::Standard),
             config::EmissionSource::None => Ok(EmissionSource::NoSource),
+            config::EmissionSource::DiscreteOrdinates => Ok(EmissionSource::DiscreteOrdinates),
         }
     }
 
@@ -265,6 +267,7 @@ impl PyConfig {
         let source = match *source {
             EmissionSource::Standard => config::EmissionSource::Standard,
             EmissionSource::NoSource => config::EmissionSource::None,
+            EmissionSource::DiscreteOrdinates => config::EmissionSource::DiscreteOrdinates,
         };
         self.config.with_emission_source(source).into_pyresult()?;
 

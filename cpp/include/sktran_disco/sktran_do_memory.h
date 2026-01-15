@@ -25,6 +25,7 @@ namespace sasktran_disco {
             J; /** To store the individual radiance sources */
 
         std::vector<LayerDual<double>> hp, hm; /** Homogenous multipliers */
+        std::vector<LayerDual<double>> Eform_thermal; /** thermal */
 
         std::vector<Dual<double>> Dm, Dp,
             Eform; /** Greens function multipliers*/
@@ -60,11 +61,13 @@ namespace sasktran_disco {
             Dm.resize(NSTR / 2 * NSTOKES);
             Dp.resize(NSTR / 2 * NSTOKES);
             Eform.resize(NSTR / 2 * NSTOKES);
+            Eform_thermal.resize(NSTR / 2 * NSTOKES);
 
             for (int i = 0; i < NSTR / 2 * NSTOKES; ++i) {
                 // Layer Duals
                 hp[i].resize(numlayerderiv);
                 hm[i].resize(numlayerderiv);
+                Eform_thermal[i].resize(numlayerderiv);
 
                 // Full Duals
                 Dm[i].resize(numtotalderiv);
@@ -85,6 +88,10 @@ namespace sasktran_disco {
     template <int NSTOKES, int CNSTR = -1> struct LayerCache {
         LayerDual<double> dual_thickness; /** The thickness of the layer */
         LayerDual<double> dual_ssa;       /** Single scatter albedo */
+
+        LayerDual<double> dual_thermal_b0; /** Thermal emission constant in b0 exp(-b1 x) */
+        LayerDual<double> dual_thermal_b1; /** Thermal emission constant in b1 exp(-b1 x) */
+
         Dual<double> average_secant;      /** Average secant */
 
         LayerCache(uint NSTR) {}
@@ -145,6 +152,7 @@ namespace sasktran_disco {
 
         std::vector<VectorLayerDual<double>> p_Qplus, p_Qminus;
         Dual<double> p_Cplus, p_Cminus;
+        std::vector<LayerDual<double>> p_Cplus_thermal, p_Cminus_thermal;
         std::vector<LayerDual<double>> p_norm;
 
         sasktran_disco::TripleProductDerivativeHolder<NSTOKES> h_l_upwelling;

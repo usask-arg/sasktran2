@@ -276,6 +276,10 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
       m_transmission(config.pool().thread_data().transmission()),
       m_surface(config.pool().thread_data().surface_storage(),
                 atmosphere.surface(), wavelidx) {
+
+    bool include_thermal_emission = sk_config.emission_source() ==
+            sasktran2::Config::EmissionSource::discrete_ordinates;
+
     m_wavel_index = wavelidx;
     m_direct_toa = atmosphere.storage().solar_irradiance(wavelidx);
     // Allocations
@@ -303,6 +307,8 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
         double od = 0.0;
         double ssa = 0.0;
         double f = 0.0;
+        double b0 = 0.0; // thermal b0 * exp(-b1 x)
+        double b1 = 0.0; // thermal b0 * exp(-b1 x)
 
         // Copy the legendre coefficients to a new vector
         std::unique_ptr<
@@ -320,11 +326,15 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
                     atmosphere.storage().total_extinction(q, wavelidx);
                 double kscat = atmosphere.storage().ssa(q, wavelidx) * kext;
 
+                double b0_level = atmosphere.storage().emission_source(q, wavelidx);
+
                 // Store extinction in od during weighting
                 od += kext * weight;
 
                 // Store scattering extinction in ssa
                 ssa += kscat * weight;
+
+                b0 += b0_level * weight;
 
                 // Numerator of f
                 f = atmosphere.storage().f(q, wavelidx);
@@ -393,8 +403,7 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
             new OpticalLayer<NSTOKES, CNSTR>(config, p, scat_ext, total_ext,
                                              std::move(lephasef), ceiling_depth,
                                              floor_depth, ceil_h, floor_h,
-                                             m_input_derivatives)));
-
+                                             m_input_derivatives, include_thermal_emission, b0, b1)));
         ceiling_depth = floor_depth;
     }
 
