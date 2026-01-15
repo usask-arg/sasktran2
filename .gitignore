@@ -59,3 +59,4 @@ target
 .openblas_venv
 docs/mkdocs/site/
 CLAUDE.md
+disort4.0.99/*

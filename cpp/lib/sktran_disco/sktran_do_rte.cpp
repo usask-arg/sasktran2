@@ -545,19 +545,22 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::assignParticularQ(
     AEOrder m, const OpticalLayer<NSTOKES, CNSTR>& layer,
     VectorLayerDual<double>& Qplus, VectorLayerDual<double>& Qminus) {
 
+    int nderiv = Qminus.deriv.rows();
+    bool include_deriv = nderiv > 0;
+
     for (uint i = 0; i < this->M_NSTR / 2; ++i) {
         single_scat_st<NSTOKES, CNSTR, true>(
             layer.legendre_coeff(), (*this->M_LP_MU)[m][i],
             (*this->M_LP_CSZ)[m], m, layer.index(), layer.dual_ssa(),
             (*this->M_WT)[i], m_layers.inputDerivatives(),
-            &Qminus.value(NSTOKES * i), &Qminus.deriv(0, NSTOKES * i),
+            &Qminus.value(NSTOKES * i), include_deriv? &Qminus.deriv(0, NSTOKES * i) : nullptr,
             Qminus.deriv.rows());
 
         single_scat_st<NSTOKES, CNSTR, false>(
             layer.legendre_coeff(), (*this->M_LP_MU)[m][i],
             (*this->M_LP_CSZ)[m], m, layer.index(), layer.dual_ssa(),
             (*this->M_WT)[i], m_layers.inputDerivatives(),
-            &Qplus.value(NSTOKES * i), &Qplus.deriv(0, NSTOKES * i),
+            &Qplus.value(NSTOKES * i), include_deriv? &Qplus.deriv(0, NSTOKES * i) : nullptr,
             Qplus.deriv.rows());
     }
 }

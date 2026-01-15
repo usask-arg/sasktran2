@@ -136,15 +136,17 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::integrate_source(
 
     if (include_ss) {
         Q.deriv.setZero();
+        int numderiv = Q.deriv.rows();
+        bool include_deriv = numderiv > 0;
         if constexpr (NSTOKES == 1) {
             single_scat_st<NSTOKES, CNSTR, true>(
                 *m_lephasef, lp_mu, (*this->M_LP_CSZ)[m], m, p, m_dual_ssa, 1.0,
-                m_input_derivs, &Q.value, &Q.deriv(layerStart, 0),
+                m_input_derivs, &Q.value, include_deriv? &Q.deriv(layerStart, 0) : nullptr,
                 Q.deriv.rows());
         } else {
             single_scat_st<NSTOKES, CNSTR, true>(
                 *m_lephasef, lp_mu, (*this->M_LP_CSZ)[m], m, p, m_dual_ssa, 1.0,
-                m_input_derivs, &Q.value(0), &Q.deriv(layerStart, 0),
+                m_input_derivs, &Q.value(0),  include_deriv? &Q.deriv(layerStart, 0) : nullptr,
                 Q.deriv.rows());
         }
     } else {
