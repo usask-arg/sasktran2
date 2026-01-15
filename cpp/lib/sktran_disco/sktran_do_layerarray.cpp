@@ -250,6 +250,21 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::
             m_ground_reflection[m][los.unsorted_index].deriv =
                 direct_contrib.deriv + diffuse_contrib.deriv;
         }
+
+        // Thermal source
+        if ( m == 0 ){
+            double thermal_emission =
+                m_surface.sk2_surface().emission()[m_wavel_index];
+
+            if constexpr (NSTOKES == 1) {
+                m_ground_reflection[m][los.unsorted_index].value +=
+                    thermal_emission;
+            } else {
+                m_ground_reflection[m][los.unsorted_index].value(0) +=
+                    thermal_emission;
+            }
+        }
+
     } else {
         m_ground_reflection[m][los.unsorted_index].value =
             diffuse_contrib.value;

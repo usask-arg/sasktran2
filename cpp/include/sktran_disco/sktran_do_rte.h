@@ -225,15 +225,24 @@ namespace sasktran_disco {
             // TODO: Polarized surface
             int s1 = out % NSTOKES;
 
+            double result = 0.0;
+
+            if( m == 0 ) {
+                // include thermal source
+                result += m_layers.surface().sk2_surface().emission()[m_layers.wavelength_index()];
+            }
+
             if (m_layers.surface().sk2_surface().max_azimuthal_order() <= m ||
                 s1 != 0) {
-                return 0;
+                return result;
             } else {
-                return this->M_CSZ *
+                result += this->M_CSZ *
                        m_layers.surface().storage().brdf.stream_solar(out /
                                                                       NSTOKES) /
                        PI * layer.beamTransmittance(Location::FLOOR);
             }
+
+            return result;
         }
 
         inline double d_ground_direct_sun(
@@ -241,6 +250,7 @@ namespace sasktran_disco {
             StreamIndex out, const LayerInputDerivative<NSTOKES>& deriv,
             uint derivindex) const {
             // TODO: Polarized surface
+            // TODO: Linearization of emission source
             int s1 = out % NSTOKES;
 
             if (m_layers.surface().sk2_surface().max_azimuthal_order() <= m ||
