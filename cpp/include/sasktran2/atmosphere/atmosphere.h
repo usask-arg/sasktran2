@@ -111,6 +111,12 @@ namespace sasktran2::atmosphere {
             return surface_deriv_start_index() + m_surface.num_deriv();
         }
 
+        int emission_deriv_start_index() const {
+            return scat_deriv_start_index() +
+                   num_scattering_deriv_groups() *
+                       m_storage.total_extinction.rows();
+        }
+
         /**
          *  Number of internal derivative values (extinction, ssa, phase,
          * albedo, etc)

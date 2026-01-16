@@ -67,8 +67,8 @@ fn test_disort7b_thermal_emission() -> Result<()> {
         num_wavelengths,
         num_altitudes,
         num_legendre+1,
-        false, // calculate_derivatives - must be false for DO emission (not implemented)
-        false, // calculate_emission_derivatives
+        true, // calculate_derivatives - must be false for DO emission (not implemented)
+        true, // calculate_emission_derivatives
         Stokes::Stokes1,
     );
     

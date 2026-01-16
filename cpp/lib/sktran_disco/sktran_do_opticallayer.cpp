@@ -60,12 +60,31 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::configureDerivative() {
 
     m_dual_thickness.value = M_OPTICAL_THICKNESS;
     m_dual_ssa.value = M_SSA;
+
+    m_dual_thermal_b0.resize(m_input_derivs.numDerivativeLayer(M_INDEX));
+    m_dual_thermal_b0.layer_index = M_INDEX;
+    m_dual_thermal_b0.layer_start = (uint)m_input_derivs.layerStartIndex(M_INDEX);
+
+    m_dual_thermal_b1.resize(m_input_derivs.numDerivativeLayer(M_INDEX));
+    m_dual_thermal_b1.layer_index = M_INDEX;
+    m_dual_thermal_b1.layer_start = (uint)m_input_derivs.layerStartIndex(M_INDEX);
+
     for (uint i = 0; i < m_input_derivs.numDerivativeLayer(M_INDEX); ++i) {
         m_dual_thickness.deriv(i) =
             m_input_derivs.layerDerivatives()[m_dual_thickness.layer_start + i]
                 .d_optical_depth;
         m_dual_ssa.deriv(i) =
             m_input_derivs.layerDerivatives()[m_dual_ssa.layer_start + i].d_SSA;
+
+        m_dual_thermal_b0.deriv(i) =
+            m_input_derivs.layerDerivatives()[m_dual_thermal_b0.layer_start + i]
+                .d_thermal_b0;
+
+        m_dual_thermal_b1.deriv(i) =
+            m_input_derivs.layerDerivatives()[m_dual_thermal_b1.layer_start +
+                i].d_thermal_b1;
+
+        // TODO: thermal derivatives
     }
 
     LayerIndex p = index();
@@ -247,7 +266,9 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::integrate_source(
     auto& Dm = m_postprocessing_cache.Dm[0];
     auto& Dp = m_postprocessing_cache.Dp[0];
     auto& Eform = m_postprocessing_cache.Eform[0];
-    auto& Eform_thermal = m_postprocessing_cache.Eform_thermal[0];
+    auto& Eform_thermal = m_postprocessing_cache.Eform_thermal;
+    auto& Dm_thermal = m_postprocessing_cache.Dm_thermal;
+    auto& Dp_thermal = m_postprocessing_cache.Dp_thermal;
 
     E(mu, x, M_OPTICAL_THICKNESS, transmission, Eform);
 
@@ -398,84 +419,81 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::integrate_source(
             double expfactor =
                 exp(-1 * (dual_thickness.value) * b1.value);
 
-            Dp.value =
+            Dp_thermal.value =
                 (-1 * b0.value * expfactor * hm.value + Eform_thermal.value) /
                 (b1.value + solution.value.dual_eigval().value(i));
-            Dm.value =
+            Dm_thermal.value =
                 (b0.value * hp.value - Eform_thermal.value) /
                 (b1.value - solution.value.dual_eigval().value(i));
 
-            Dp.deriv.noalias() =
+            Dp_thermal.deriv.noalias() =
                 b1.deriv *
                 (b0.value * hm.value * dual_thickness.value * expfactor -
                 Dp.value) /
                 (b1.value + eigval.value(i));
-            Dp.deriv.noalias() +=
+            Dp_thermal.deriv.noalias() +=
                 Eform_thermal.deriv / (b1.value + eigval.value(i));
-            Dp.deriv.noalias() += b0.deriv * (-hm.value * expfactor) /
+            Dp_thermal.deriv.noalias() += b0.deriv * (-hm.value * expfactor) /
                                 (b1.value + eigval.value(i));
 
-            Dm.deriv.noalias() = b1.deriv * (-Dm.value) /
+            Dm_thermal.deriv.noalias() = b1.deriv * (-Dm.value) /
                                 (b1.value - eigval.value(i));
-            Dm.deriv.noalias() += b0.deriv * (hp.value) /
+            Dm_thermal.deriv.noalias() += b0.deriv * (hp.value) /
                                 (b1.value - eigval.value(i));
-            Dm.deriv.noalias() +=
+            Dm_thermal.deriv.noalias() +=
                 Eform_thermal.deriv * -1.0 / (b1.value - eigval.value(i));
 
             for (uint k = 0; k < numderiv; ++k) {
-                Dp.deriv(layerStart + k) +=
+                Dp_thermal.deriv(layerStart + k) +=
                     eigval.deriv(k, i) * (-Dp.value) /
                     (b1.value + eigval.value(i));
-                Dp.deriv(layerStart + k) +=
+                Dp_thermal.deriv(layerStart + k) +=
                     hm.deriv(k) * (-b0.value * expfactor) /
                     (b1.value + eigval.value(i));
-                Dp.deriv(layerStart + k) +=
+                Dp_thermal.deriv(layerStart + k) +=
                     dual_thickness.deriv(k) *
                     (b0.value * b1.value * hm.value *
                     expfactor) /
                     (b1.value + eigval.value(i));
 
-                Dm.deriv(layerStart + k) +=
+                Dm_thermal.deriv(layerStart + k) +=
                     hp.deriv(k) * b0.value /
                     (b1.value - eigval.value(i));
-                Dm.deriv(layerStart + k) +=
+                Dm_thermal.deriv(layerStart + k) +=
                     eigval.deriv(k, i) * (Dm.value) /
                     (b1.value - eigval.value(i));
             }
 
             if constexpr (NSTOKES == 1) {
-                V.value += dual_Aplus_thermal.value(i) * Y_plus_matrix(0, i) * Dm.value +
-                        dual_Aminus_thermal.value(i) * Y_minus_matrix(0, i) * Dp.value;
+                V.value += dual_Aplus_thermal.value(i) * Y_plus_matrix(0, i) * Dm_thermal.value +
+                        dual_Aminus_thermal.value(i) * Y_minus_matrix(0, i) * Dp_thermal.value;
             } else {
                 V.value +=
-                    dual_Aplus_thermal.value(i) * Y_plus_matrix(Eigen::all, i) * Dm.value +
-                    dual_Aminus_thermal.value(i) * Y_minus_matrix(Eigen::all, i) * Dp.value;
+                    dual_Aplus_thermal.value(i) * Y_plus_matrix(Eigen::all, i) * Dm_thermal.value +
+                    dual_Aminus_thermal.value(i) * Y_minus_matrix(Eigen::all, i) * Dp_thermal.value;
             }
 
             // Y and A only have layer derivatives
             for (uint k = 0; k < numderiv; ++k) {
                 V.deriv(layerStart + k, Eigen::all).noalias() +=
-                    dual_Aplus_thermal.value(i) * Y_plus_deriv[k](Eigen::all, i) * Dm.value;
+                    dual_Aplus_thermal.value(i) * Y_plus_deriv[k](Eigen::all, i) * Dm_thermal.value;
                 V.deriv(layerStart + k, Eigen::all).noalias() +=
                     dual_Aminus_thermal.value(i) * Y_minus_deriv[k](Eigen::all, i) *
-                    Dp.value;
+                    Dp_thermal.value;
 
                 V.deriv(layerStart + k, Eigen::all).noalias() +=
                     dual_Aplus_thermal.deriv(k, i) * Y_plus_matrix(Eigen::all, i) *
-                    Dm.value;
+                    Dm_thermal.value;
                 V.deriv(layerStart + k, Eigen::all).noalias() +=
                     dual_Aminus_thermal.deriv(k, i) * Y_minus_matrix(Eigen::all, i) *
-                    Dp.value;
-            }
-            // But D has full derivatives
-            // TODO: check this for thermal?
-            for (uint k = 0; k < numtotalderiv; ++k) {
-                V.deriv(k, Eigen::all).noalias() += dual_Aplus_thermal.value(i) *
+                    Dp_thermal.value;
+
+                V.deriv(layerStart + k, Eigen::all).noalias() += dual_Aplus_thermal.value(i) *
                                                     Y_plus_matrix(Eigen::all, i) *
-                                                    Dm.deriv(k);
-                V.deriv(k, Eigen::all).noalias() += dual_Aminus_thermal.value(i) *
+                                                    Dm_thermal.deriv(k);
+                V.deriv(layerStart + k, Eigen::all).noalias() += dual_Aminus_thermal.value(i) *
                                                     Y_minus_matrix(Eigen::all, i) *
-                                                    Dp.deriv(k);
+                                                    Dp_thermal.deriv(k);
             }
         }
     }
@@ -483,17 +501,31 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::integrate_source(
     result.value = J.value + V.value + Q.value * Eform.value;
     result.deriv.noalias() = J.deriv + V.deriv + Q.deriv * Eform.value;
 
+    result.deriv.setZero();
+    if constexpr (NSTOKES == 1)
+        result.value = 0.0;
+    else
+        result.value.setZero();
+
     if(m_include_thermal_emission && m == 0) {
         // scattering term for thermal is (1 - w), so just add Eform_thermal to the STOKES=0 term
         if constexpr (NSTOKES == 1) {
-            result.value += Eform_thermal.value * (1 - M_SSA);
+            result.value += Eform_thermal.value;// * (1 - M_SSA);
         } else {
-            result.value(0) += Eform_thermal.value * (1 - M_SSA);
+            result.value(0) += Eform_thermal.value;// * (1 - M_SSA);
         }
 
-        // TODO: Derivatives wrt Eform_thermal and SSA
+        for(uint k = 0; k < numderiv; ++k) {
+            if constexpr (NSTOKES == 1) {
+                result.deriv(k + layerStart) += Eform_thermal.deriv(k);// * (1 - M_SSA);
+                //result.deriv(k + layerStart) += -Eform_thermal.value * m_dual_ssa.deriv(k);
+            } else {
+                result.deriv(k + layerStart, 0) += Eform_thermal.deriv(k) * (1 - M_SSA);
+                result.deriv(k + layerStart, 0) += -Eform_thermal.value * m_dual_ssa.deriv(k);
+            }
+        }
     }
-
+    return;
     for (uint k = 0; k < numtotalderiv; ++k) {
         if constexpr (NSTOKES == 1) {
             result.deriv(k) += Q.value * Eform.deriv(k);
@@ -920,8 +952,7 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::E_thermal(
     // Then add in the terms that do not contain cross derivatives
     if (numDeriv > 0) {
         xform
-            .deriv(Eigen::seq(layerStart, layerStart + numDeriv - 1),
-                   Eigen::all)
+            .deriv
             .noalias() += b0.value / den *
                           (e2 * dual_thickness.deriv *
                                (b1.value + layerfraction / mu) -

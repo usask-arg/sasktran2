@@ -42,6 +42,9 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::configureCache() {
     m_cache.p_Qplus.resize(m_layers.numLayers());
     m_cache.p_Qminus.resize(m_layers.numLayers());
 
+    m_cache.p_Cminus_thermal.resize(m_layers.numLayers());
+    m_cache.p_Cplus_thermal.resize(m_layers.numLayers());
+
     for (uint k = 0; k < m_layers.numLayers(); ++k) {
         const uint numderiv =
             (uint)m_layers.inputDerivatives().numDerivativeLayer(k);
@@ -55,11 +58,11 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::configureCache() {
         m_cache.p_Qminus[k].resize(this->M_NSTR / 2 * NSTOKES, numderiv, k,
                                    layerstart);
 
-        m_cache.p_norm.emplace_back(LayerDual<double>(numderiv, k, layerstart));
-        m_cache.p_Cplus_thermal.emplace_back(
-            LayerDual<double>(numderiv, k, layerstart));
-        m_cache.p_Cminus_thermal.emplace_back(
-            LayerDual<double>(numderiv, k, layerstart));
+        m_cache.p_Cplus_thermal[k].resize(numderiv);
+        m_cache.p_Cplus_thermal[k].layer_start = layerstart;
+
+        m_cache.p_Cminus_thermal[k].resize(numderiv);
+        m_cache.p_Cminus_thermal[k].layer_start = layerstart;
     }
 
     m_cache.h_l_downwelling.resize(this->M_NSTR);

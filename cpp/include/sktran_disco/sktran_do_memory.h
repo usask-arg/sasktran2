@@ -25,7 +25,7 @@ namespace sasktran_disco {
             J; /** To store the individual radiance sources */
 
         std::vector<LayerDual<double>> hp, hm; /** Homogenous multipliers */
-        std::vector<LayerDual<double>> Eform_thermal; /** thermal */
+        LayerDual<double> Eform_thermal, Dm_thermal, Dp_thermal; /** thermal */
 
         std::vector<Dual<double>> Dm, Dp,
             Eform; /** Greens function multipliers*/
@@ -61,13 +61,14 @@ namespace sasktran_disco {
             Dm.resize(NSTR / 2 * NSTOKES);
             Dp.resize(NSTR / 2 * NSTOKES);
             Eform.resize(NSTR / 2 * NSTOKES);
-            Eform_thermal.resize(NSTR / 2 * NSTOKES);
+            Eform_thermal.resize(numlayerderiv);
+            Dm_thermal.resize(numlayerderiv);
+            Dp_thermal.resize(numlayerderiv);
 
             for (int i = 0; i < NSTR / 2 * NSTOKES; ++i) {
                 // Layer Duals
                 hp[i].resize(numlayerderiv);
                 hm[i].resize(numlayerderiv);
-                Eform_thermal[i].resize(numlayerderiv);
 
                 // Full Duals
                 Dm[i].resize(numtotalderiv);

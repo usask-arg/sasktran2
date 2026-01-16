@@ -475,6 +475,23 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
                     }
                 }
 
+                // if we are doing thermal emission each layer needs a derivative for b0 and b1
+                if(atmosphere.include_emission_derivatives()) {
+                    LayerInputDerivative<NSTOKES>& deriv_b0 =
+                        m_input_derivatives.addDerivative(this->M_NSTR, p);
+                    deriv_b0.d_thermal_b0 = 1;
+                    for (int i = 0; i < num_atmo_grid; ++i)
+                    {
+                        if (atmosphere_mapping(p, i) > 0) {
+                            // How d atmosphere emission source influences layer b0
+                            deriv_b0.group_and_triangle_fraction.emplace_back(
+                                atmosphere.emission_deriv_start_index() + i,
+                                atmosphere_mapping(p, i));
+                            deriv_b0.extinctions.emplace_back(1);
+                        }
+                    }
+                }
+
                 LayerInputDerivative<NSTOKES>& deriv_ssa =
                     m_input_derivatives.addDerivative(this->M_NSTR, p);
                 deriv_ssa.d_SSA = 1;
