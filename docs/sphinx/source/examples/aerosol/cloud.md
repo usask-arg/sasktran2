@@ -55,8 +55,8 @@ mie = sk.optical.database.OpticalDatabaseGenericScatterer(
 )
 atmosphere['cloud'] = sk.constituent.GaussianHeightExtinction(
     optical_property=mie,
-    cloud_height_m=15500,
-    cloud_width_fwhm_m=4000,
+    height_m=15500,
+    width_fwhm_m=4000,
     vertical_optical_depth=0.1,
     vertical_optical_depth_wavel_nm=550,
     altitudes_m=altitude_grid_m,
