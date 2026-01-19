@@ -30,22 +30,20 @@ def test_disort_thermal_only_example():
     )
 
     viewing_geo = sk.ViewingGeometry()
-    viewing_geo.add_ray(
-        sk.GroundViewingSolar(
-            0.6, 0.0, 1.0, 200000.0
-        )
-    )
+    viewing_geo.add_ray(sk.GroundViewingSolar(0.6, 0.0, 1.0, 200000.0))
 
-    atmosphere = sk.Atmosphere(model_geometry, config, numwavel=1, calculate_derivatives=False)
+    atmosphere = sk.Atmosphere(
+        model_geometry, config, numwavel=1, calculate_derivatives=False
+    )
 
     atmosphere.storage.total_extinction[:] = od / 1000.0
     atmosphere.storage.ssa[:] = ssa
     atmosphere.storage.solar_irradiance[:] = 0.0
-    atmosphere.storage.emission_source[:] = 1.09657540E-05
+    atmosphere.storage.emission_source[:] = 1.09657540e-05
 
-    for l in range(17):
-        coeff = g**l * (2 * l + 1)
-        atmosphere.leg_coeff.a1[l][:] = coeff
+    for l_idx in range(17):
+        coeff = g**l_idx * (2 * l_idx + 1)
+        atmosphere.leg_coeff.a1[l_idx][:] = coeff
 
     atmosphere._atmosphere.apply_delta_m_scaling(config.num_streams)
 
@@ -53,7 +51,9 @@ def test_disort_thermal_only_example():
 
     rad = engine.calculate_radiance(atmosphere)
 
-    np.testing.assert_allclose(rad["radiance"].values[0, 0, 0], 7.93075833E-06, rtol=1e-6)
+    np.testing.assert_allclose(
+        rad["radiance"].values[0, 0, 0], 7.93075833e-06, rtol=1e-6
+    )
 
 
 def test_disort_thermal_only_with_surface_example():
@@ -84,24 +84,22 @@ def test_disort_thermal_only_with_surface_example():
     )
 
     viewing_geo = sk.ViewingGeometry()
-    viewing_geo.add_ray(
-        sk.GroundViewingSolar(
-            0.6, 0.0, 1.0, 200000.0
-        )
-    )
+    viewing_geo.add_ray(sk.GroundViewingSolar(0.6, 0.0, 1.0, 200000.0))
 
-    atmosphere = sk.Atmosphere(model_geometry, config, numwavel=1, calculate_derivatives=False)
+    atmosphere = sk.Atmosphere(
+        model_geometry, config, numwavel=1, calculate_derivatives=False
+    )
 
     atmosphere.storage.total_extinction[:] = od / 1000.0
     atmosphere.storage.ssa[:] = ssa
     atmosphere.storage.solar_irradiance[:] = 0.0
-    atmosphere.storage.emission_source[:] = 1.09657540E-05
+    atmosphere.storage.emission_source[:] = 1.09657540e-05
 
-    atmosphere.surface.emission[:] = 1.09657540E-05
+    atmosphere.surface.emission[:] = 1.09657540e-05
 
-    for l in range(17):
-        coeff = g**l * (2 * l + 1)
-        atmosphere.leg_coeff.a1[l][:] = coeff
+    for l_idx in range(17):
+        coeff = g**l_idx * (2 * l_idx + 1)
+        atmosphere.leg_coeff.a1[l_idx][:] = coeff
 
     atmosphere._atmosphere.apply_delta_m_scaling(config.num_streams)
 
@@ -109,4 +107,6 @@ def test_disort_thermal_only_with_surface_example():
 
     rad = engine.calculate_radiance(atmosphere)
 
-    np.testing.assert_allclose(rad["radiance"].values[0, 0, 0], 1.02396134E-05, rtol=1e-6)
+    np.testing.assert_allclose(
+        rad["radiance"].values[0, 0, 0], 1.02396134e-05, rtol=1e-6
+    )

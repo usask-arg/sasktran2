@@ -111,6 +111,7 @@ def _ground_test_scenarios():
     atmosphere["surface_emission"] = sk.constituent.SurfaceThermalEmission(300, 0.9)
 
     sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
+    atmosphere["solar_irradiance"] = sk.constituent.SolarIrradiance()
 
     atmosphere["rayleigh"] = sk.constituent.Rayleigh()
 
@@ -125,11 +126,12 @@ def _ground_test_scenarios():
         }
     )
 
-
     config = sk.Config()
     config.emission_source = sk.EmissionSource.DiscreteOrdinates
     config.single_scatter_source = sk.SingleScatterSource.DiscreteOrdinates
     config.multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
+    config.num_streams = 4
+    config.num_forced_azimuth = 1
 
     altitude_grid = np.arange(0, 65001, 5000.0)
 
@@ -139,7 +141,7 @@ def _ground_test_scenarios():
         6327000,
         altitude_grid,
         sk.InterpolationMethod.LinearInterpolation,
-        sk.GeometryType.Spherical,
+        sk.GeometryType.PlaneParallel,
     )
 
     viewing_geo = sk.ViewingGeometry()
@@ -218,7 +220,7 @@ def test_wf_temperature_with_emission():
     Checks that the WFs are correct for a VMR constituent When emissions are present
     """
 
-    scens =  _ground_test_scenarios()
+    scens = _ground_test_scenarios()
 
     for scen in scens:
         atmosphere = scen["atmosphere"]

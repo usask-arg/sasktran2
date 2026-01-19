@@ -97,8 +97,10 @@ namespace sasktran_disco {
         double d_albedo; /** Derivative of the surface albedo with respect to
                             the parameter */
 
-        double d_thermal_b0; /** Derivative of the thermal b0 coeff in b0 exp(-b1 x) */
-        double d_thermal_b1; /** Derivative of the thermal b1 coeff in b0 exp(-b1 x) */
+        double d_thermal_b0; /** Derivative of the thermal b0 coeff in b0
+                                exp(-b1 x) */
+        double d_thermal_b1; /** Derivative of the thermal b1 coeff in b0
+                                exp(-b1 x) */
 
         int surface_deriv_index;
 
@@ -535,9 +537,9 @@ namespace sasktran_disco {
                                   layer_start);
 
             m_green_A_minus_thermal.resize(nstr / 2 * NSTOKES, nderivlayer, l,
-                                   layer_start);
+                                           layer_start);
             m_green_A_plus_thermal.resize(nstr / 2 * NSTOKES, nderivlayer, l,
-                                  layer_start);
+                                          layer_start);
 
             m_Gplus_top.resize(nstr / 2 * NSTOKES, nderivtotal);
             m_Gplus_bottom.resize(nstr / 2 * NSTOKES, nderivtotal);

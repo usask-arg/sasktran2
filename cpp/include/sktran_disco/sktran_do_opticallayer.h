@@ -44,10 +44,8 @@ namespace sasktran_disco {
             double optical_depth_ceiling, double optical_depth_floor,
             double altitude_ceiling, double altitude_floor,
             const InputDerivatives<NSTOKES>& input_derivs,
-            bool include_thermal_emission,
-            double thermal_b0,
-            double thermal_b1
-        );
+            bool include_thermal_emission, double thermal_b0,
+            double thermal_b1);
 
         /**
          *  Called after the optical properties are set, does things like
@@ -316,8 +314,8 @@ namespace sasktran_disco {
 
         /**
          * @brief Returns the b0 term in b0 exp(-b1 x) for thermal emission
-         * 
-         * @return const LayerDual<double>& 
+         *
+         * @return const LayerDual<double>&
          */
         inline const LayerDual<double>& dual_thermal_b0() const {
             return m_dual_thermal_b0;
@@ -325,8 +323,8 @@ namespace sasktran_disco {
 
         /**
          * @brief Returns the b1 term in b0 exp(-b1 x) for thermal emission
-         * 
-         * @return const LayerDual<double>& 
+         *
+         * @return const LayerDual<double>&
          */
         inline const LayerDual<double>& dual_thermal_b1() const {
             return m_dual_thermal_b1;
@@ -334,9 +332,9 @@ namespace sasktran_disco {
 
         /**
          * @brief
-         * 
-         * @return true 
-         * @return false 
+         *
+         * @return true
+         * @return false
          */
         inline const bool include_thermal_emission() const {
             return m_include_thermal_emission;
@@ -451,7 +449,7 @@ namespace sasktran_disco {
                const Dual<double>& transmission, Dual<double>& xform) const;
 
         void E_thermal(double mu, double x, double thickness,
-                LayerDual<double>& xform) const;
+                       LayerDual<double>& xform) const;
 
         PostProcessingCache<NSTOKES, CNSTR>& postprocessing_cache() const {
             return static_cast<PostProcessingCache<NSTOKES, CNSTR>&>(
@@ -474,7 +472,8 @@ namespace sasktran_disco {
             m_lephasef;           /** Legendre phase expansion */
         const LayerIndex M_INDEX; /** Layer index */
 
-        const bool m_include_thermal_emission; /** Whether to include thermal emission*/
+        const bool m_include_thermal_emission; /** Whether to include thermal
+                                                  emission*/
 
         LayerCache<NSTOKES>& m_layercache; /** Layer cache */
 
@@ -486,10 +485,12 @@ namespace sasktran_disco {
         const InputDerivatives<NSTOKES>&
             m_input_derivs;                  /** User input derivatives */
         LayerDual<double>& m_dual_thickness; /** Dual of the optical thickness*/
-        LayerDual<double>& m_dual_ssa;  /** Dual of the single scatter albedo */
-        LayerDual<double>& m_dual_thermal_b0; /** Dual of the thermal b0 coeff in b0 exp(-b1 x) */
-        LayerDual<double>& m_dual_thermal_b1; /** Dual of the thermal b1 coeff in b0 exp(-b1 x) */
-        Dual<double>& m_average_secant; /** Dual of the average secant */
+        LayerDual<double>& m_dual_ssa; /** Dual of the single scatter albedo */
+        LayerDual<double>& m_dual_thermal_b0; /** Dual of the thermal b0 coeff
+                                                 in b0 exp(-b1 x) */
+        LayerDual<double>& m_dual_thermal_b1; /** Dual of the thermal b1 coeff
+                                                 in b0 exp(-b1 x) */
+        Dual<double>& m_average_secant;       /** Dual of the average secant */
 
         Dual<double>* m_bt_ceiling; /** Dual of transmission at the top of
                                              the layer */

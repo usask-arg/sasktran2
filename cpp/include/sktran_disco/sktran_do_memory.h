@@ -90,10 +90,12 @@ namespace sasktran_disco {
         LayerDual<double> dual_thickness; /** The thickness of the layer */
         LayerDual<double> dual_ssa;       /** Single scatter albedo */
 
-        LayerDual<double> dual_thermal_b0; /** Thermal emission constant in b0 exp(-b1 x) */
-        LayerDual<double> dual_thermal_b1; /** Thermal emission constant in b1 exp(-b1 x) */
+        LayerDual<double>
+            dual_thermal_b0; /** Thermal emission constant in b0 exp(-b1 x) */
+        LayerDual<double>
+            dual_thermal_b1; /** Thermal emission constant in b1 exp(-b1 x) */
 
-        Dual<double> average_secant;      /** Average secant */
+        Dual<double> average_secant; /** Average secant */
 
         LayerCache(uint NSTR) {}
     };

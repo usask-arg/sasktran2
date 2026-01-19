@@ -82,8 +82,8 @@ namespace sasktran_disco {
                                   OpticalLayer<NSTOKES, CNSTR>& layer);
 
         // Solves the particular solution in layer p for thermal emission
-        void solveParticularGreenThermal(
-            AEOrder m, OpticalLayer<NSTOKES, CNSTR>& layer);
+        void solveParticularGreenThermal(AEOrder m,
+                                         OpticalLayer<NSTOKES, CNSTR>& layer);
 
         // Calculates the homogeneous coefficients which satisfy boundary
         // conditions.
@@ -227,9 +227,11 @@ namespace sasktran_disco {
 
             double result = 0.0;
 
-            if( m == 0 ) {
+            if (m == 0) {
                 // include thermal source
-                result += m_layers.surface().sk2_surface().emission()[m_layers.wavelength_index()];
+                result += m_layers.surface()
+                              .sk2_surface()
+                              .emission()[m_layers.wavelength_index()];
             }
 
             if (m_layers.surface().sk2_surface().max_azimuthal_order() <= m ||
@@ -237,9 +239,9 @@ namespace sasktran_disco {
                 return result;
             } else {
                 result += this->M_CSZ *
-                       m_layers.surface().storage().brdf.stream_solar(out /
-                                                                      NSTOKES) /
-                       PI * layer.beamTransmittance(Location::FLOOR);
+                          m_layers.surface().storage().brdf.stream_solar(
+                              out / NSTOKES) /
+                          PI * layer.beamTransmittance(Location::FLOOR);
             }
 
             return result;
