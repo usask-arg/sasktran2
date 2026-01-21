@@ -1467,25 +1467,15 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreenThermal(
                            exp(-thickness.value * b1.value)) /
                           (b1.value - eigval.value(i));
 
-            // If we are doing backprop, then we don't need the derivatives,
-            // unless we are in the last layer Then we still do the full
-            // calculation for the ground source
-            if (this->M_BACKPROP_BVP && SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
-                // TODO: Backprop terms for thermal
-                spdlog::error(
-                    "Backprop for thermal Green's functions not implemented");
-            } else {
-                Cplus.deriv.noalias() =
-                    (exp(-thickness.value * eigval.value(i)) -
-                     exp(-thickness.value * b1.value)) /
-                    (b1.value - eigval.value(i)) * b0.deriv;
-                Cplus.deriv.noalias() +=
-                    b1.deriv *
-                    (b0.value * thickness.value *
-                         exp(-1.0 * thickness.value * b1.value) -
-                     Cplus.value) /
-                    (b1.value - eigval.value(i));
-            }
+            Cplus.deriv.noalias() = (exp(-thickness.value * eigval.value(i)) -
+                                     exp(-thickness.value * b1.value)) /
+                                    (b1.value - eigval.value(i)) * b0.deriv;
+            Cplus.deriv.noalias() +=
+                b1.deriv *
+                (b0.value * thickness.value *
+                     exp(-1.0 * thickness.value * b1.value) -
+                 Cplus.value) /
+                (b1.value - eigval.value(i));
 
             for (uint k = 0; k < numLayerDeriv; ++k) {
                 Cplus.deriv(k) +=
@@ -1507,21 +1497,15 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreenThermal(
                 thickness.value *
                 (1 - thickness.value / 2 * (b1.value - eigval.value(i)));
 
-            if (this->M_BACKPROP_BVP && SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
-                // TODO: Backprop terms for thermal Cplus
-                spdlog::error(
-                    "Backprop for thermal Green's functions not implemented");
-            } else {
-                Cplus.deriv.noalias() =
-                    exp(-1.0 * thickness.value * eigval.value(i)) *
-                    thickness.value *
-                    (1 - thickness.value / 2 * (b1.value - eigval.value(i))) *
-                    b0.deriv;
-                ;
-                Cplus.deriv.noalias() +=
-                    -1.0 * b1.deriv * thickness.value / 2.0 * thickness.value *
-                    b0.value * exp(-1.0 * thickness.value * eigval.value(i));
-            }
+            Cplus.deriv.noalias() =
+                exp(-1.0 * thickness.value * eigval.value(i)) *
+                thickness.value *
+                (1 - thickness.value / 2 * (b1.value - eigval.value(i))) *
+                b0.deriv;
+            ;
+            Cplus.deriv.noalias() +=
+                -1.0 * b1.deriv * thickness.value / 2.0 * thickness.value *
+                b0.value * exp(-1.0 * thickness.value * eigval.value(i));
 
             for (uint k = 0; k < numLayerDeriv; ++k) {
                 Cplus.deriv(k) +=
@@ -1546,21 +1530,15 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreenThermal(
                                     exp(-thickness.value * eigval.value(i))) /
                            (b1.value + eigval.value(i));
 
-            if (this->M_BACKPROP_BVP && SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
-                // TODO: Backprop terms for thermal Cminus
-                spdlog::error(
-                    "Backprop for thermal Green's functions not implemented");
-            } else {
-                Cminus.deriv.noalias() =
-                    (1 - exp(-thickness.value * b1.value) *
-                             exp(-thickness.value * eigval.value(i))) /
-                    (b1.value + eigval.value(i)) * b0.deriv;
-                Cminus.deriv.noalias() +=
-                    b1.deriv / (b1.value + eigval.value(i)) *
-                    (b0.value * thickness.value *
-                         exp(-thickness.value * (b1.value + eigval.value(i))) -
-                     Cminus.value);
-            }
+            Cminus.deriv.noalias() =
+                (1 - exp(-thickness.value * b1.value) *
+                         exp(-thickness.value * eigval.value(i))) /
+                (b1.value + eigval.value(i)) * b0.deriv;
+            Cminus.deriv.noalias() +=
+                b1.deriv / (b1.value + eigval.value(i)) *
+                (b0.value * thickness.value *
+                     exp(-thickness.value * (b1.value + eigval.value(i))) -
+                 Cminus.value);
 
             for (uint k = 0; k < numLayerDeriv; ++k) {
                 Cminus.deriv(k) +=
@@ -1578,21 +1556,11 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreenThermal(
                 b0.value * thickness.value *
                 (1 - thickness.value / 2 * (b1.value + eigval.value(i)));
 
-            if (this->M_BACKPROP_BVP && SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
-                m_cache.m_trans_to_Cminus(p * N * NSTOKES + i, p) =
-                    thickness.value *
-                    (1 - thickness.value / 2 * (b1.value + eigval.value(i)));
-                m_cache.m_secant_to_Cminus(p * N * NSTOKES + i, p) =
-                    -1.0 * thickness.value / 2 * thickness.value * b0.value;
-
-                Cminus.deriv.setZero();
-            } else {
-                Cminus.deriv =
-                    b0.deriv * thickness.value *
-                    (1 - thickness.value / 2 * (b1.value + eigval.value(i)));
-                Cminus.deriv += b1.deriv * -1.0 * thickness.value / 2 *
-                                thickness.value * b0.value;
-            }
+            Cminus.deriv =
+                b0.deriv * thickness.value *
+                (1 - thickness.value / 2 * (b1.value + eigval.value(i)));
+            Cminus.deriv += b1.deriv * -1.0 * thickness.value / 2 *
+                            thickness.value * b0.value;
 
             for (uint k = 0; k < numLayerDeriv; ++k) {
                 Cminus.deriv(k) += eigval.deriv(k, i) * b0.value *
@@ -1622,54 +1590,18 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreenThermal(
                 Eigen::seq(layerStart, layerStart + numLayerDeriv - 1);
 
             if (numLayerDeriv > 0) {
-                if (!(this->M_BACKPROP_BVP &&
-                      SASKTRAN_DISCO_ENABLE_FULL_BACKPROP)) {
-                    Gplus_top.deriv(local_deriv, j).noalias() +=
-                        Aminus.value(i) * homog_minus.value(h_start + j) *
-                        Cminus.deriv;
-                    Gminus_top.deriv(local_deriv, j).noalias() +=
-                        negation * Aminus.value(i) *
-                        homog_plus.value(h_start + j) * Cminus.deriv;
-                    Gplus_bottom.deriv(local_deriv, j).noalias() +=
-                        Aplus.value(i) * homog_plus.value(h_start + j) *
-                        Cplus.deriv;
-                    Gminus_bottom.deriv(local_deriv, j).noalias() +=
-                        negation * Aplus.value(i) *
-                        homog_minus.value(h_start + j) * Cplus.deriv;
-                } else {
-                    // Special case for the ground layer, we keep track of
-                    // Gplus_bottom derivatives
-                    if (p == this->M_NLYR - 1) {
-                        Gplus_bottom.deriv(local_deriv, j).noalias() +=
-                            Aplus.value(i) * homog_plus.value(h_start + j) *
-                            Cplus.deriv;
-
-                        Gminus_bottom.deriv(local_deriv, j).noalias() +=
-                            negation * Aplus.value(i) *
-                            homog_minus.value(h_start + j) * Cplus.deriv;
-                    }
-
-                    for (uint k = 0; k < numLayerDeriv; ++k) {
-                        Gplus_top.deriv(layerStart + k, j) +=
-                            Aminus.value(i) * homog_minus.value(h_start + j) *
-                            Cminus.deriv(layerStart + k);
-                        Gminus_top.deriv(layerStart + k, j) +=
-                            negation * Aminus.value(i) *
-                            homog_plus.value(h_start + j) *
-                            Cminus.deriv(layerStart + k);
-
-                        // Avoid double counting for the bottom G's
-                        if (p != this->M_NLYR - 1) {
-                            Gplus_bottom.deriv(layerStart + k, j) +=
-                                Aplus.value(i) * homog_plus.value(h_start + j) *
-                                Cplus.deriv(layerStart + k);
-                            Gminus_bottom.deriv(layerStart + k, j) +=
-                                negation * Aplus.value(i) *
-                                homog_minus.value(h_start + j) *
-                                Cplus.deriv(layerStart + k);
-                        }
-                    }
-                }
+                Gplus_top.deriv(local_deriv, j).noalias() +=
+                    Aminus.value(i) * homog_minus.value(h_start + j) *
+                    Cminus.deriv;
+                Gminus_top.deriv(local_deriv, j).noalias() +=
+                    negation * Aminus.value(i) * homog_plus.value(h_start + j) *
+                    Cminus.deriv;
+                Gplus_bottom.deriv(local_deriv, j).noalias() +=
+                    Aplus.value(i) * homog_plus.value(h_start + j) *
+                    Cplus.deriv;
+                Gminus_bottom.deriv(local_deriv, j).noalias() +=
+                    negation * Aplus.value(i) * homog_minus.value(h_start + j) *
+                    Cplus.deriv;
 
                 for (uint k = 0; k < numLayerDeriv; ++k) {
                     Gplus_top.deriv(layerStart + k, j) +=
