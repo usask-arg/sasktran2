@@ -252,19 +252,25 @@ namespace sasktran_disco {
             StreamIndex out, const LayerInputDerivative<NSTOKES>& deriv,
             uint derivindex) const {
             // TODO: Polarized surface
-            // TODO: Linearization of emission source
             int s1 = out % NSTOKES;
+
+            double result = 0.0;
+
+            if (m == 0) {
+                // include thermal source
+                result += deriv.d_surface_emission;
+            }
 
             if (m_layers.surface().sk2_surface().max_azimuthal_order() <= m ||
                 s1 != 0) {
-                return 0;
+                return result;
             } else {
-                double result = this->M_CSZ *
-                                m_layers.surface().storage().brdf.stream_solar(
-                                    out / NSTOKES) /
-                                PI *
-                                layer.d_beamTransmittance(Location::FLOOR,
-                                                          deriv, derivindex);
+                result += this->M_CSZ *
+                          m_layers.surface().storage().brdf.stream_solar(
+                              out / NSTOKES) /
+                          PI *
+                          layer.d_beamTransmittance(Location::FLOOR, deriv,
+                                                    derivindex);
 
                 double d_albedo =
                     deriv.d_albedo * m_layers.surface()
@@ -274,8 +280,9 @@ namespace sasktran_disco {
 
                 result += this->M_CSZ * d_albedo / PI *
                           layer.beamTransmittance(Location::FLOOR);
-                return result;
             }
+
+            return result;
         }
 
         inline double u_minus(AEOrder m,

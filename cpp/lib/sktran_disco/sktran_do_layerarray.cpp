@@ -263,6 +263,19 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::
                 m_ground_reflection[m][los.unsorted_index].value(0) +=
                     thermal_emission;
             }
+
+            // Derivatives wrt to surface emission parameters
+            for (int k = 0; k < numLayerDeriv; ++k) {
+                double d_thermal_emission =
+                    1.0 * input_deriv
+                              .layerDerivatives()[input_deriv.layerStartIndex(
+                                                      layer.index()) +
+                                                  k]
+                              .d_surface_emission;
+
+                m_ground_reflection[m][los.unsorted_index].deriv(
+                    k + layerStart) += d_thermal_emission;
+            }
         }
 
     } else {
@@ -526,6 +539,19 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
                 deriv_albedo.extinctions.emplace_back(1);
             }
 
+            // And if we are including emission, one more derivative for the
+            // emission surface
+            if (atmosphere.include_emission_derivatives()) {
+                LayerInputDerivative<NSTOKES>& deriv_albedo =
+                    m_input_derivatives.addDerivative(this->M_NSTR,
+                                                      this->M_NLYR - 1);
+                deriv_albedo.d_surface_emission = 1;
+                deriv_albedo.surface_deriv_index = 0;
+                deriv_albedo.group_and_triangle_fraction.emplace_back(
+                    atmosphere.surface_emission_deriv_start_index(), 1);
+                deriv_albedo.extinctions.emplace_back(1);
+            }
+
             m_input_derivatives.set_geometry_configured();
             m_input_derivatives.sort(this->M_NLYR);
 
@@ -575,7 +601,7 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
                     }
                 }
 
-            } else if (deriv.d_albedo == 0) {
+            } else if (deriv.d_albedo == 0 && deriv.d_surface_emission == 0) {
                 // Scattering derivative
                 for (int l = 0; l < deriv.group_and_triangle_fraction.size();
                      ++l) {

@@ -97,6 +97,9 @@ namespace sasktran_disco {
         double d_albedo; /** Derivative of the surface albedo with respect to
                             the parameter */
 
+        double d_surface_emission; /** Derivative of the surface emission
+                                      parameters */
+
         double d_thermal_b0; /** Derivative of the thermal b0 coeff in b0
                                 exp(-b1 x) */
         double d_thermal_b1; /** Derivative of the thermal b1 coeff in b0

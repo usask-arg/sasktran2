@@ -1403,9 +1403,10 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreenThermal(
         // For the thermal source, the Q vectors are just the quadrature weights
         // * (1 - w) in the NSTOKES=0 term
         for (uint j = 0; j < N * NSTOKES; j += NSTOKES) {
-            // TODO: Derivatives wrt to Q
-            double Q =
-                (*this->M_WT)[j / NSTOKES] * (1.0 - layer.dual_ssa().value);
+            double Q_factor = (*this->M_WT)[j / NSTOKES];
+            double Q = Q_factor * (1.0 - layer.dual_ssa().value);
+
+            // dQ = -Q_factor * layer.dual_ssa().deriv;
             double negation = 1.0;
             norm.value +=
                 (*this->M_WT)[j / NSTOKES] * (*this->M_MU)[j / NSTOKES] *
@@ -1432,6 +1433,17 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreenThermal(
                 Aminus.deriv(k, i) +=
                     Q * homog_plus.deriv(k, h_start + j) * negation;
                 Aminus.deriv(k, i) += Q * homog_minus.deriv(k, h_start + j);
+
+                // Q derivatives
+                Aplus.deriv(k, i) -= Q_factor * layer.dual_ssa().deriv(k) *
+                                     homog_plus.value(h_start + j);
+                Aplus.deriv(k, i) -= Q_factor * layer.dual_ssa().deriv(k) *
+                                     homog_minus.value(h_start + j) * negation;
+
+                Aminus.deriv(k, i) -= Q_factor * layer.dual_ssa().deriv(k) *
+                                      homog_plus.value(h_start + j) * negation;
+                Aminus.deriv(k, i) -= Q_factor * layer.dual_ssa().deriv(k) *
+                                      homog_minus.value(h_start + j);
             }
         }
         Aplus.value(i) /= norm.value;
@@ -1512,18 +1524,17 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreenThermal(
             }
 
             for (uint k = 0; k < numLayerDeriv; ++k) {
-                Cplus.deriv(k + layerStart) +=
+                Cplus.deriv(k) +=
                     eigval.deriv(k, i) * Cplus.value * -1.0 * thickness.value;
-                Cplus.deriv(k + layerStart) +=
-                    eigval.deriv(k, i) * thickness.value / 2.0 *
-                    thickness.value * b0.value *
-                    exp(-1.0 * thickness.value * eigval.value(i));
+                Cplus.deriv(k) += eigval.deriv(k, i) * thickness.value / 2.0 *
+                                  thickness.value * b0.value *
+                                  exp(-1.0 * thickness.value * eigval.value(i));
 
-                Cplus.deriv(k + layerStart) +=
+                Cplus.deriv(k) +=
                     thickness.deriv(k) * b0.value *
                     exp(-1.0 * thickness.value * eigval.value(i)) *
                     (1 - thickness.value * (b1.value - eigval.value(i)));
-                Cplus.deriv(k + layerStart) +=
+                Cplus.deriv(k) +=
                     -1.0 * eigval.value(i) * Cplus.value * thickness.deriv(k);
             }
         }
@@ -1552,12 +1563,12 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreenThermal(
             }
 
             for (uint k = 0; k < numLayerDeriv; ++k) {
-                Cminus.deriv(k + layerStart) +=
+                Cminus.deriv(k) +=
                     eigval.deriv(k, i) / (b1.value + eigval.value(i)) *
                     (b0.value * thickness.value *
                          exp(-thickness.value * (b1.value + eigval.value(i))) -
                      Cminus.value);
-                Cminus.deriv(k + layerStart) +=
+                Cminus.deriv(k) +=
                     thickness.deriv(k) * b0.value *
                     exp(-1 * thickness.value * (b1.value + eigval.value(i)));
             }
@@ -1584,10 +1595,9 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreenThermal(
             }
 
             for (uint k = 0; k < numLayerDeriv; ++k) {
-                Cminus.deriv(k + layerStart) += eigval.deriv(k, i) * b0.value *
-                                                thickness.value *
-                                                thickness.value / 2 * -1.0;
-                Cminus.deriv(k + layerStart) +=
+                Cminus.deriv(k) += eigval.deriv(k, i) * b0.value *
+                                   thickness.value * thickness.value / 2 * -1.0;
+                Cminus.deriv(k) +=
                     thickness.deriv(k) * b0.value *
                     (1 - thickness.value * (b1.value + eigval.value(i)));
             }
@@ -1608,81 +1618,86 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreenThermal(
             Gminus_bottom.value(j) += negation * Aplus.value(i) * Cplus.value *
                                       homog_minus.value(h_start + j);
 
-            if (!(this->M_BACKPROP_BVP &&
-                  SASKTRAN_DISCO_ENABLE_FULL_BACKPROP)) {
-                Gplus_top.deriv(Eigen::all, j).noalias() +=
-                    Aminus.value(i) * homog_minus.value(h_start + j) *
-                    Cminus.deriv;
-                Gminus_top.deriv(Eigen::all, j).noalias() +=
-                    negation * Aminus.value(i) * homog_plus.value(h_start + j) *
-                    Cminus.deriv;
-                Gplus_bottom.deriv(Eigen::all, j).noalias() +=
-                    Aplus.value(i) * homog_plus.value(h_start + j) *
-                    Cplus.deriv;
-                Gminus_bottom.deriv(Eigen::all, j).noalias() +=
-                    negation * Aplus.value(i) * homog_minus.value(h_start + j) *
-                    Cplus.deriv;
-            } else {
-                // Special case for the ground layer, we keep track of
-                // Gplus_bottom derivatives
-                if (p == this->M_NLYR - 1) {
-                    Gplus_bottom.deriv(Eigen::all, j).noalias() +=
+            auto local_deriv =
+                Eigen::seq(layerStart, layerStart + numLayerDeriv - 1);
+
+            if (numLayerDeriv > 0) {
+                if (!(this->M_BACKPROP_BVP &&
+                      SASKTRAN_DISCO_ENABLE_FULL_BACKPROP)) {
+                    Gplus_top.deriv(local_deriv, j).noalias() +=
+                        Aminus.value(i) * homog_minus.value(h_start + j) *
+                        Cminus.deriv;
+                    Gminus_top.deriv(local_deriv, j).noalias() +=
+                        negation * Aminus.value(i) *
+                        homog_plus.value(h_start + j) * Cminus.deriv;
+                    Gplus_bottom.deriv(local_deriv, j).noalias() +=
                         Aplus.value(i) * homog_plus.value(h_start + j) *
                         Cplus.deriv;
-
-                    Gminus_bottom.deriv(Eigen::all, j).noalias() +=
+                    Gminus_bottom.deriv(local_deriv, j).noalias() +=
                         negation * Aplus.value(i) *
                         homog_minus.value(h_start + j) * Cplus.deriv;
+                } else {
+                    // Special case for the ground layer, we keep track of
+                    // Gplus_bottom derivatives
+                    if (p == this->M_NLYR - 1) {
+                        Gplus_bottom.deriv(local_deriv, j).noalias() +=
+                            Aplus.value(i) * homog_plus.value(h_start + j) *
+                            Cplus.deriv;
+
+                        Gminus_bottom.deriv(local_deriv, j).noalias() +=
+                            negation * Aplus.value(i) *
+                            homog_minus.value(h_start + j) * Cplus.deriv;
+                    }
+
+                    for (uint k = 0; k < numLayerDeriv; ++k) {
+                        Gplus_top.deriv(layerStart + k, j) +=
+                            Aminus.value(i) * homog_minus.value(h_start + j) *
+                            Cminus.deriv(layerStart + k);
+                        Gminus_top.deriv(layerStart + k, j) +=
+                            negation * Aminus.value(i) *
+                            homog_plus.value(h_start + j) *
+                            Cminus.deriv(layerStart + k);
+
+                        // Avoid double counting for the bottom G's
+                        if (p != this->M_NLYR - 1) {
+                            Gplus_bottom.deriv(layerStart + k, j) +=
+                                Aplus.value(i) * homog_plus.value(h_start + j) *
+                                Cplus.deriv(layerStart + k);
+                            Gminus_bottom.deriv(layerStart + k, j) +=
+                                negation * Aplus.value(i) *
+                                homog_minus.value(h_start + j) *
+                                Cplus.deriv(layerStart + k);
+                        }
+                    }
                 }
 
                 for (uint k = 0; k < numLayerDeriv; ++k) {
                     Gplus_top.deriv(layerStart + k, j) +=
-                        Aminus.value(i) * homog_minus.value(h_start + j) *
-                        Cminus.deriv(layerStart + k);
+                        Aminus.deriv(k, i) * Cminus.value *
+                        homog_minus.value(h_start + j);
                     Gminus_top.deriv(layerStart + k, j) +=
-                        negation * Aminus.value(i) *
-                        homog_plus.value(h_start + j) *
-                        Cminus.deriv(layerStart + k);
+                        negation * Aminus.deriv(k, i) * Cminus.value *
+                        homog_plus.value(h_start + j);
+                    Gplus_bottom.deriv(layerStart + k, j) +=
+                        Aplus.deriv(k, i) * Cplus.value *
+                        homog_plus.value(h_start + j);
+                    Gminus_bottom.deriv(layerStart + k, j) +=
+                        negation * Aplus.deriv(k, i) * Cplus.value *
+                        homog_minus.value(h_start + j);
 
-                    // Avoid double counting for the bottom G's
-                    if (p != this->M_NLYR - 1) {
-                        Gplus_bottom.deriv(layerStart + k, j) +=
-                            Aplus.value(i) * homog_plus.value(h_start + j) *
-                            Cplus.deriv(layerStart + k);
-                        Gminus_bottom.deriv(layerStart + k, j) +=
-                            negation * Aplus.value(i) *
-                            homog_minus.value(h_start + j) *
-                            Cplus.deriv(layerStart + k);
-                    }
+                    Gplus_top.deriv(layerStart + k, j) +=
+                        Aminus.value(i) * Cminus.value *
+                        homog_minus.deriv(k, h_start + j);
+                    Gminus_top.deriv(layerStart + k, j) +=
+                        negation * Aminus.value(i) * Cminus.value *
+                        homog_plus.deriv(k, h_start + j);
+                    Gplus_bottom.deriv(layerStart + k, j) +=
+                        Aplus.value(i) * Cplus.value *
+                        homog_plus.deriv(k, h_start + j);
+                    Gminus_bottom.deriv(layerStart + k, j) +=
+                        negation * Aplus.value(i) * Cplus.value *
+                        homog_minus.deriv(k, h_start + j);
                 }
-            }
-
-            for (uint k = 0; k < numLayerDeriv; ++k) {
-                Gplus_top.deriv(layerStart + k, j) +=
-                    Aminus.deriv(k, i) * Cminus.value *
-                    homog_minus.value(h_start + j);
-                Gminus_top.deriv(layerStart + k, j) +=
-                    negation * Aminus.deriv(k, i) * Cminus.value *
-                    homog_plus.value(h_start + j);
-                Gplus_bottom.deriv(layerStart + k, j) +=
-                    Aplus.deriv(k, i) * Cplus.value *
-                    homog_plus.value(h_start + j);
-                Gminus_bottom.deriv(layerStart + k, j) +=
-                    negation * Aplus.deriv(k, i) * Cplus.value *
-                    homog_minus.value(h_start + j);
-
-                Gplus_top.deriv(layerStart + k, j) +=
-                    Aminus.value(i) * Cminus.value *
-                    homog_minus.deriv(k, h_start + j);
-                Gminus_top.deriv(layerStart + k, j) +=
-                    negation * Aminus.value(i) * Cminus.value *
-                    homog_plus.deriv(k, h_start + j);
-                Gplus_bottom.deriv(layerStart + k, j) +=
-                    Aplus.value(i) * Cplus.value *
-                    homog_plus.deriv(k, h_start + j);
-                Gminus_bottom.deriv(layerStart + k, j) +=
-                    negation * Aplus.value(i) * Cplus.value *
-                    homog_minus.deriv(k, h_start + j);
             }
         }
     }

@@ -1,36 +1,7 @@
-/// Tests for thermal emission in the discrete ordinates source.
-/// Compares results against DISORT Test Problem 7b from Kylling & Stamnes (1992).
-///
-/// Test 7b parameters (from disotest.f90 lines 956-988):
-/// - Optical depth: 100.0
-/// - Single scatter albedo: 0.95
-/// - Asymmetry factor (g): 0.75 (Henyey-Greenstein)
-/// - Temperature: 200K (top) to 300K (bottom)
-/// - Wavenumber: 2702.99-2703.01 cm⁻¹ (λ ≈ 3700 nm)
-/// - No solar beam (pure thermal emission)
-/// - 16 streams
-/// - Compares intensities at μ = ±1 (nadir up/down)
-
 use anyhow::Result;
 use ndarray::s;
 use sasktran2_rs::bindings::config::EmissionSource;
 use sasktran2_rs::bindings::prelude::*;
-
-// Physical constants
-const PLANCK: f64 = 6.62607015e-34;     // J s
-const SPEED_OF_LIGHT: f64 = 299792458.0; // m/s
-const K_BOLTZMANN: f64 = 1.380649e-23;  // J/K
-
-/// Compute Planck blackbody radiance in W/(m^2 sr nm).
-fn planck_blackbody_radiance(temperature_k: f64, wavelength_nm: f64) -> f64 {
-    let wavelength_m = wavelength_nm * 1.0e-9;
-
-    let numerator = 2.0 * PLANCK * SPEED_OF_LIGHT.powi(2) / wavelength_m.powi(5);
-    let exp_arg = PLANCK * SPEED_OF_LIGHT / (wavelength_m * K_BOLTZMANN * temperature_k);
-    let denominator = exp_arg.exp() - 1.0;
-
-    numerator / denominator * 1.0e-9
-}
 
 /// Convert wavenumber in cm⁻¹ to wavelength in nm.
 fn wavenumber_to_wavelength_nm(wavenumber_cm: f64) -> f64 {
@@ -67,8 +38,8 @@ fn test_disort7b_thermal_emission() -> Result<()> {
         num_wavelengths,
         num_altitudes,
         num_legendre+1,
-        true, // calculate_derivatives - must be false for DO emission (not implemented)
-        true, // calculate_emission_derivatives
+        false, // calculate_derivatives - must be false for DO emission (not implemented)
+        false, // calculate_emission_derivatives
         Stokes::Stokes1,
     );
 

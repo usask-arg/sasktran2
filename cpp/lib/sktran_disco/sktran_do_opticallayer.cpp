@@ -426,7 +426,7 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::integrate_source(
             Dp_thermal.deriv.noalias() =
                 b1.deriv *
                 (b0.value * hm.value * dual_thickness.value * expfactor -
-                 Dp.value) /
+                 Dp_thermal.value) /
                 (b1.value + eigval.value(i));
             Dp_thermal.deriv.noalias() +=
                 Eform_thermal.deriv / (b1.value + eigval.value(i));
@@ -441,22 +441,20 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::integrate_source(
                 Eform_thermal.deriv * -1.0 / (b1.value - eigval.value(i));
 
             for (uint k = 0; k < numderiv; ++k) {
-                Dp_thermal.deriv(layerStart + k) +=
-                    eigval.deriv(k, i) * (-Dp_thermal.value) /
-                    (b1.value + eigval.value(i));
-                Dp_thermal.deriv(layerStart + k) +=
-                    hm.deriv(k) * (-b0.value * expfactor) /
-                    (b1.value + eigval.value(i));
-                Dp_thermal.deriv(layerStart + k) +=
+                Dp_thermal.deriv(k) += eigval.deriv(k, i) *
+                                       (-Dp_thermal.value) /
+                                       (b1.value + eigval.value(i));
+                Dp_thermal.deriv(k) += hm.deriv(k) * (-b0.value * expfactor) /
+                                       (b1.value + eigval.value(i));
+                Dp_thermal.deriv(k) +=
                     dual_thickness.deriv(k) *
                     (b0.value * b1.value * hm.value * expfactor) /
                     (b1.value + eigval.value(i));
 
-                Dm_thermal.deriv(layerStart + k) +=
+                Dm_thermal.deriv(k) +=
                     hp.deriv(k) * b0.value / (b1.value - eigval.value(i));
-                Dm_thermal.deriv(layerStart + k) +=
-                    eigval.deriv(k, i) * (Dm_thermal.value) /
-                    (b1.value - eigval.value(i));
+                Dm_thermal.deriv(k) += eigval.deriv(k, i) * (Dm_thermal.value) /
+                                       (b1.value - eigval.value(i));
             }
 
             if constexpr (NSTOKES == 1) {
