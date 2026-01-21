@@ -336,8 +336,38 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
         double od = 0.0;
         double ssa = 0.0;
         double f = 0.0;
-        double b0 = 0.0; // thermal b0 * exp(-b1 x)
-        double b1 = 0.0; // thermal b0 * exp(-b1 x)
+
+        // thermal emission: S(x) = b0 * exp(-b1 * x)
+        // where x = optical depth from top of layer
+        // b0 = emission at top (ceiling), b1 = ln(B_top/B_bot) / layer_od
+        // Note: q index runs from bottom (q=0) to top of atmosphere
+        // so higher q = higher altitude = layer ceiling
+        int min_q = -1; // bottom of layer (lower altitude, lower q)
+        int max_q = -1; // top of layer (higher altitude, higher q)
+        for (int q = 0; q < m_optical_interpolator.cols(); ++q) {
+            if (m_optical_interpolator(p, q) > 0) {
+                if (min_q == -1 || q < min_q) {
+                    min_q = q;
+                }
+                if (max_q == -1 || q > max_q) {
+                    max_q = q;
+                }
+            }
+        }
+
+        // Get emission at top (ceiling) and bottom (floor) of layer
+        double b0_top = 0.0;
+        double b0_bot = 0.0;
+        if (max_q >= 0) {
+            b0_top =
+                atmosphere.storage().emission_source(max_q, wavelidx); // top
+        }
+        if (min_q >= 0 && min_q != max_q) {
+            b0_bot =
+                atmosphere.storage().emission_source(min_q, wavelidx); // bottom
+        } else {
+            b0_bot = b0_top; // Single point layer
+        }
 
         // Copy the legendre coefficients to a new vector
         std::unique_ptr<
@@ -355,16 +385,11 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
                     atmosphere.storage().total_extinction(q, wavelidx);
                 double kscat = atmosphere.storage().ssa(q, wavelidx) * kext;
 
-                double b0_level =
-                    atmosphere.storage().emission_source(q, wavelidx);
-
                 // Store extinction in od during weighting
                 od += kext * weight;
 
                 // Store scattering extinction in ssa
                 ssa += kscat * weight;
-
-                b0 += b0_level * weight;
 
                 // Numerator of f
                 f = atmosphere.storage().f(q, wavelidx);
@@ -395,6 +420,7 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
                 }
             }
         }
+
         if (ssa > 0) {
             // Divide the phase elements by the scattering extinction
             for (uint k = 0; k < this->M_NSTR; ++k) {
@@ -428,6 +454,18 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
         double scat_ext = total_ext * ssa;
         scat_ext = std::max(scat_ext,
                             total_ext * this->m_userspec->getSSAEqual1Dither());
+
+        // Calculate thermal emission coefficients
+        // S(x) = b0 * exp(-b1 * x) where x is optical depth from layer top
+        // At x=0: S(0) = b0 = b0_top (emission at ceiling)
+        // At x=od: S(od) = b0 * exp(-b1 * od) = b0_bot
+        // Therefore: b1 = ln(b0_top / b0_bot) / od
+        double b0 = b0_top;
+        double b1 = 0.0;
+        if (od > 1e-10 && b0_top > 1e-30 && b0_bot > 1e-30 &&
+            std::abs(b0_top - b0_bot) > 1e-15 * std::max(b0_top, b0_bot)) {
+            b1 = std::log(b0_top / b0_bot) / od;
+        }
 
         m_layers.push_back(std::unique_ptr<OpticalLayer<NSTOKES, CNSTR>>(
             new OpticalLayer<NSTOKES, CNSTR>(
@@ -493,17 +531,74 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
                 // if we are doing thermal emission each layer needs a
                 // derivative for b0 and b1
                 if (atmosphere.include_emission_derivatives()) {
+                    // Find the min and max q indices for this layer
+                    // q=0 is bottom of atmosphere, higher q = higher altitude
+                    int min_q_deriv = -1;
+                    int max_q_deriv = -1;
+                    for (int i = 0; i < num_atmo_grid; ++i) {
+                        if (atmosphere_mapping(p, i) > 0) {
+                            if (min_q_deriv == -1 || i < min_q_deriv) {
+                                min_q_deriv = i;
+                            }
+                            if (max_q_deriv == -1 || i > max_q_deriv) {
+                                max_q_deriv = i;
+                            }
+                        }
+                    }
+
+                    // b0 = emission at top of layer (max_q)
+                    // d_b0/d_emission_top = 1
                     LayerInputDerivative<NSTOKES>& deriv_b0 =
                         m_input_derivatives.addDerivative(this->M_NSTR, p);
                     deriv_b0.d_thermal_b0 = 1;
+                    if (max_q_deriv >= 0) {
+                        // Only link to the top (ceiling) emission source
+                        deriv_b0.group_and_triangle_fraction.emplace_back(
+                            atmosphere.emission_deriv_start_index() +
+                                max_q_deriv,
+                            1.0);
+                        deriv_b0.extinctions.emplace_back(1);
+                    }
+
+                    // b1 = ln(b0_top / b0_bot) / od
+                    // d_b1/d_emission_top = 1 / (b0_top * od)
+                    // d_b1/d_emission_bot = -1 / (b0_bot * od)
+                    // d_b1/d_od = -b1 / od = -ln(b0_top/b0_bot) / od^2
+                    // Note: We store the partial derivative factors in
+                    // extinctions and apply them during the derivative
+                    // calculation phase
+                    LayerInputDerivative<NSTOKES>& deriv_b1 =
+                        m_input_derivatives.addDerivative(this->M_NSTR, p);
+                    deriv_b1.d_thermal_b1 = 1;
+
+                    // Link to top emission source (for d_b1/d_emission_top)
+                    if (max_q_deriv >= 0) {
+                        deriv_b1.group_and_triangle_fraction.emplace_back(
+                            atmosphere.emission_deriv_start_index() +
+                                max_q_deriv,
+                            1.0); // Weight will be computed in reassignment
+                                  // phase
+                        deriv_b1.extinctions.emplace_back(1);
+                    }
+                    // Link to bottom emission source (for d_b1/d_emission_bot)
+                    if (min_q_deriv >= 0 && min_q_deriv != max_q_deriv) {
+                        deriv_b1.group_and_triangle_fraction.emplace_back(
+                            atmosphere.emission_deriv_start_index() +
+                                min_q_deriv,
+                            1.0); // Weight will be computed in reassignment
+                                  // phase
+                        deriv_b1.extinctions.emplace_back(1);
+                    }
+                    // Link to optical depth (for d_b1/d_od)
+                    // We need to add contributions from all atmosphere grid
+                    // points that affect the layer optical depth
                     for (int i = 0; i < num_atmo_grid; ++i) {
                         if (atmosphere_mapping(p, i) > 0) {
-                            // How d atmosphere emission source influences layer
-                            // b0
-                            deriv_b0.group_and_triangle_fraction.emplace_back(
-                                atmosphere.emission_deriv_start_index() + i,
-                                atmosphere_mapping(p, i));
-                            deriv_b0.extinctions.emplace_back(1);
+                            deriv_b1.group_and_triangle_fraction.emplace_back(
+                                i, atmosphere_mapping(p, i) *
+                                       (ptrb_layer.altitude(Location::CEILING) -
+                                        ptrb_layer.altitude(Location::FLOOR)));
+                            deriv_b1.extinctions.emplace_back(1);
                         }
                     }
                 }
@@ -568,11 +663,70 @@ sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::OpticalLayerArray(
                 m_layers[deriv.layer_index].get();
 
             // Have to check what kind of derivative this is
-            if (deriv.d_optical_depth > 0 || deriv.d_thermal_b0 > 0 ||
-                deriv.d_thermal_b1 > 0) {
-                // OD derivative, don't have to do anything here, or a thermal
-                // emission derivative
+            if (deriv.d_optical_depth > 0) {
+                // OD derivative, don't have to do anything here
+            } else if (deriv.d_thermal_b0 > 0) {
+                // b0 derivative - b0 = emission at top
+                // d_b0/d_emission_top = 1, already set correctly
+            } else if (deriv.d_thermal_b1 > 0) {
+                // b1 = ln(b0_top / b0_bot) / od
+                // d_b1/d_emission_top = 1 / (b0_top * od)
+                // d_b1/d_emission_bot = -1 / (b0_bot * od)
+                // d_b1/d_od = -b1 / od
+
+                double b0_val = layer->dual_thermal_b0().value;
+                double b1_val = layer->dual_thermal_b1().value;
+                double od_val =
+                    layer->opticalDepth(sasktran_disco::Location::INSIDE);
+
+                // The group_and_triangle_fraction entries are:
+                // [0]: top emission source (if exists)
+                // [1]: bottom emission source (if different from top)
+                // [2+]: optical depth contributions
+                int emission_deriv_start =
+                    atmosphere.emission_deriv_start_index();
+                int idx = 0;
+                for (int l = 0; l < deriv.group_and_triangle_fraction.size();
+                     ++l) {
+                    auto& group = deriv.group_and_triangle_fraction[l];
+                    auto& extinction = deriv.extinctions[l];
+
+                    if (group.first >= emission_deriv_start &&
+                        group.first < emission_deriv_start + num_atmo_grid) {
+                        // This is an emission source derivative
+                        int atmo_idx = group.first - emission_deriv_start;
+                        double emission_val =
+                            atmosphere.storage().emission_source(atmo_idx,
+                                                                 wavelidx);
+                        // Check if this is the top or bottom
+                        // Top has b0_val = emission_val (approximately)
+                        if (emission_val > 0 && od_val > 1e-10) {
+                            if (idx == 0) {
+                                // First emission source is top
+                                // d_b1/d_emission_top = 1/(b0_top * od)
+                                extinction = 1.0 / (emission_val * od_val);
+                            } else {
+                                // Second emission source is bottom
+                                // d_b1/d_emission_bot = -1/(b0_bot * od)
+                                extinction = -1.0 / (emission_val * od_val);
+                            }
+                        } else {
+                            extinction = 0.0;
+                        }
+                        idx++;
+                    } else {
+                        // This is an optical depth contribution
+                        // d_b1/d_od = -b1 / od (already scaled by atmosphere
+                        // mapping in group.second)
+                        if (od_val > 1e-10) {
+                            extinction = -b1_val / od_val;
+                        } else {
+                            extinction = 0.0;
+                        }
+                    }
+                }
             } else if (deriv.d_SSA > 0) {
+
                 // SSA derivative
 
                 for (int l = 0; l < deriv.group_and_triangle_fraction.size();

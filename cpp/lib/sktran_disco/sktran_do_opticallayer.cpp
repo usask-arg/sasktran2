@@ -80,8 +80,6 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::configureDerivative() {
         m_dual_thermal_b1.deriv(i) =
             m_input_derivs.layerDerivatives()[m_dual_thermal_b1.layer_start + i]
                 .d_thermal_b1;
-
-        // TODO: thermal derivatives
     }
 
     LayerIndex p = index();
@@ -529,7 +527,6 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::integrate_source(
             }
         }
     }
-    // return;
     for (uint k = 0; k < numtotalderiv; ++k) {
         if constexpr (NSTOKES == 1) {
             result.deriv(k) += Q.value * Eform.deriv(k);
