@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from matplotlib.pylab import f
 import numpy as np
 import xarray as xr
 
@@ -27,10 +28,14 @@ def numeric_wf(
     engine: sk.Engine,
     atmosphere: sk.Atmosphere,
     analytic_wf_name: str,
+    calc_vars=None,
 ) -> xr.Dataset:
+    if calc_vars is None:
+        calc_vars = ["radiance"]
+
     base_radiance = engine.calculate_radiance(atmosphere)
 
-    central_diff_wf = np.zeros_like(base_radiance[analytic_wf_name].to_numpy())
+    central_diff_wf = {v: np.zeros_like(base_radiance[analytic_wf_name + ("" if v == "radiance" else f"_{v}")].to_numpy()) for v in calc_vars}
 
     for i in range(len(input_var)):
         dx = input_var[i] * fractional_change
@@ -47,21 +52,25 @@ def numeric_wf(
             radiance_below = engine.calculate_radiance(atmosphere)
             input_var[i] += dx
 
-            central_diff_wf[i] = (
-                radiance_above["radiance"] - radiance_below["radiance"]
-            ) / (2 * dx)
+            for v in calc_vars:
+                central_diff_wf[v][i] = (
+                    radiance_above[v] - radiance_below[v]
+                ) / (2 * dx)
         else:
             # forward diff
-            central_diff_wf[i] = (
-                radiance_above["radiance"] - base_radiance["radiance"]
-            ) / (dx)
+            for v in calc_vars:
+                central_diff_wf[v][i] = (
+                    radiance_above[v] - base_radiance[v]
+                ) / (dx)
 
             input_var[i] -= dx
-
-    base_radiance[analytic_wf_name + "_numeric"] = (
-        base_radiance[analytic_wf_name].dims,
-        central_diff_wf,
-    )
+    for v in calc_vars:
+        append_name = "" if v == "radiance" else f"_{v}"
+        analytic_wf_name_full = analytic_wf_name + append_name
+        base_radiance[analytic_wf_name_full + "_numeric"] = (
+            base_radiance[analytic_wf_name_full].dims,
+            central_diff_wf[v],
+        )
 
     return base_radiance
 

@@ -259,6 +259,7 @@ namespace sasktran2 {
                                   m_geometry.coordinates().earth_radius();
                 const sasktran_disco::OpticalLayer<NSTOKES, CNSTR>& layer =
                     *optical_layer.layerAtAltitude(altitude);
+                const bool include_emissions = layer.include_thermal_emission();
                 int p = layer.index();
 
                 const int num_layer_derivatives =
@@ -279,6 +280,9 @@ namespace sasktran2 {
                 auto& Dm = layer.postprocessing_cache().Dm[0];
                 auto& Dp = layer.postprocessing_cache().Dp[0];
 
+                auto& Dm_thermal = layer.postprocessing_cache().Dm_thermal;
+                auto& Dp_thermal = layer.postprocessing_cache().Dp_thermal;
+
                 auto& Hp = layer.postprocessing_cache().hp[0];
                 auto& Hm = layer.postprocessing_cache().hm[0];
 
@@ -287,6 +291,10 @@ namespace sasktran2 {
 
                 const auto& dual_Aplus = solution.value.dual_green_A_plus();
                 const auto& dual_Aminus = solution.value.dual_green_A_minus();
+                const auto& dual_Aplus_thermal =
+                    solution.value.dual_green_A_plus_thermal();
+                const auto& dual_Aminus_thermal =
+                    solution.value.dual_green_A_minus_thermal();
 
                 ConstMatrixView homog_plus_matrix(h_plus.value.data(),
                                                   nstr / 2 * NSTOKES,
@@ -307,6 +315,8 @@ namespace sasktran2 {
                 const auto& transmission = layer.ceiling_beam_transmittanc();
                 const auto& average_secant = layer.dual_average_secant();
                 const auto& dual_thickness = layer.dual_thickness();
+                const auto& dual_b0 = layer.dual_thermal_b0();
+                const auto& dual_b1 = layer.dual_thermal_b1();
 
                 const auto& dual_L = solution.boundary.L_coeffs;
                 const auto& dual_M = solution.boundary.M_coeffs;
@@ -319,6 +329,17 @@ namespace sasktran2 {
                     sasktran_disco::postprocessing::d_plus_sampled(
                         dual_thickness, eigval, j, layer_fraction, transmission,
                         average_secant, layer_d_start, Dp);
+
+                    if(include_emissions) {
+                        sasktran_disco::postprocessing::d_minus_sampled_thermal(
+                            dual_thickness, eigval, j, layer_fraction,
+                            dual_b1, dual_b0, layer_d_start, Dm_thermal
+                        );
+                        sasktran_disco::postprocessing::d_plus_sampled_thermal(
+                            dual_thickness, eigval, j, layer_fraction,
+                            dual_b0, dual_b1, layer_d_start, Dp_thermal
+                        );
+                    }
 
                     sasktran_disco::postprocessing::h_plus_sampled(
                         dual_thickness, eigval, j, layer_fraction, Hp);
@@ -352,6 +373,19 @@ namespace sasktran2 {
                                 quadrature_weight *
                                 (M * Hm.value +
                                  dual_Aminus.value(j) * Dp.value);
+
+                            if(include_emissions) {
+                                homog_plus_factor +=
+                                    quadrature_weight *
+                                    (
+                                     dual_Aplus_thermal.value(j) *
+                                         Dm_thermal.value);
+                                homog_minus_factor +=
+                                    quadrature_weight *
+                                    (
+                                     dual_Aminus_thermal.value(j) *
+                                         Dp_thermal.value);
+                            }
 
                             m_flux[threadidx][flux_obs_idx].value(
                                 flux_type_idx) +=
@@ -403,6 +437,19 @@ namespace sasktran2 {
                                 (M * Hm.value +
                                  dual_Aminus.value(j) * Dp.value);
 
+                            if(include_emissions) {
+                                homog_minus_factor +=
+                                    quadrature_weight *
+                                    (
+                                     dual_Aplus_thermal.value(j) *
+                                         Dm_thermal.value);
+                                homog_plus_factor +=
+                                    quadrature_weight *
+                                    (
+                                     dual_Aminus_thermal.value(j) *
+                                         Dp_thermal.value);
+                            }
+
                             m_flux[threadidx][flux_obs_idx].value(
                                 flux_type_idx) +=
                                 homog_minus_factor *
@@ -439,6 +486,27 @@ namespace sasktran2 {
                                         d_homog_plus(d, h_lidx, j) +
                                     homog_minus_factor *
                                         d_homog_minus(d, h_lidx, j);
+                            }
+                            if(include_emissions) {
+                                for (int d = 0; d < num_layer_derivatives; ++d) {
+                                    temp_deriv(d + layer_d_start) +=
+                                        quadrature_weight *
+                                            homog_minus_matrix(h_lidx, j) *
+                                            (
+                                            dual_Aplus_thermal.deriv(d, j) * Dm_thermal.value) +
+                                        quadrature_weight *
+                                            homog_plus_matrix(h_lidx, j) *
+                                            (
+                                            dual_Aminus_thermal.deriv(d, j) * Dp_thermal.value) +
+                                    quadrature_weight *
+                                        homog_minus_matrix(h_lidx, j) *
+                                        (
+                                         Dm_thermal.deriv(d) * dual_Aplus_thermal.value(j)) +
+                                    quadrature_weight *
+                                        homog_plus_matrix(h_lidx, j) *
+                                        (
+                                         Dp_thermal.deriv(d) * dual_Aminus_thermal.value(j));
+                                }
                             }
                         }
                     }
