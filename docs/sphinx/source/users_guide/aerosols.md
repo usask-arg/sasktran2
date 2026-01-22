@@ -87,8 +87,8 @@ And we will specify the cloud with a Gaussian height profile and add it to the a
 ```{code-cell}
 cloud = sk.constituent.GaussianHeightExtinction(
     optical_property=hg,
-    cloud_height_m=2000,
-    cloud_width_fwhm_m=500,
+    height_m=2000,
+    width_fwhm_m=500,
     vertical_optical_depth=10,
     vertical_optical_depth_wavel_nm=550,
     altitudes_m=altitude_grid,
