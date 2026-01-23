@@ -7,12 +7,32 @@ file_format: mystnb
 
 To include any type of emissions as part of the radiation source, they must first be enabled in the configuration.
 
+`SASKTRAN` supports emissions in two ways. The first is the `sk.EmissionSource.Standard` and is recommended when atmospheric
+scattering can be neglected, or when working in spherical geometry.
+
 ```{code-cell}
 import sasktran2 as sk
 
 config = sk.Config()
 config.emission_source = sk.EmissionSource.Standard
 ```
+
+When atmospheric scattering is important (e.g. clouds or large amounts of aerosols are present) the Discrete Ordinates source term
+can be used to handle coupling between emission and scttering
+
+```{code-cell}
+import sasktran2 as sk
+
+config = sk.Config()
+config.single_scatter_source = sk.SingleScatterSource.DiscreteOrdinates
+config.multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
+config.emission_source = sk.EmissionSource.DiscreteOrdinates
+```
+
+Note that this source only works in plane parallel (or pseudo-spherical) geometry.
+
+As a general rule of thumb, use `sk.EmissionSource.Standard` in spherical geometry, and `sk.EmissionSource.DiscreteOrdinates` in plane parallel geometry.
+
 
 By default, {py:attr}`sasktran2.Config.emission_source` is set to `sk.EmissionSource.NoSource`, where emissions are not added to
 the source and any emissions present in the model atmosphere will be ignored.
@@ -115,3 +135,62 @@ atmosphere["solar_irradiance"] = sk.constituent.SolarIrradiance()
 ```
 
 See [Solar Irradiance](_users_solar_irradiance) documentation for more details.
+
+## The Discrete Ordinates Thermal Source
+As mentioned above, the Discrete Ordinates thermal source term is capable of including coupling betwene
+scattering and emission sources.  It is only suitable in the Plane Parallel geometry (or pseudo-spherical geometry) currently.
+
+Here we repeat the above example with the Discrete Ordinates source term instead.
+
+```{code-cell}
+import sasktran2 as sk
+import matplotlib.pyplot as plt
+import numpy as np
+
+config = sk.Config()
+config.single_scatter_source = sk.SingleScatterSource.DiscreteOrdinates
+config.multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
+config.emission_source = sk.EmissionSource.DiscreteOrdinates
+
+config.num_streams = 4
+
+model_geometry = sk.Geometry1D(cos_sza=0.6,
+                                solar_azimuth=0,
+                                earth_radius_m=6372000,
+                                altitude_grid_m=np.arange(0, 100001, 1000),
+                                interpolation_method=sk.InterpolationMethod.LinearInterpolation,
+                                geometry_type=sk.GeometryType.PlaneParallel)
+
+viewing_geo = sk.ViewingGeometry()
+
+ray = sk.GroundViewingSolar(0.6, 0, 0.8, 200000)
+viewing_geo.add_ray(ray)
+
+wavelengths = np.arange(7370, 7380, 0.01)
+
+hitran_db = sk.database.HITRANDatabase(
+    molecule="CH4",
+    start_wavenumber=1355,
+    end_wavenumber=1357,
+    wavenumber_resolution=0.01,
+    reduction_factor=1,
+    backend="sasktran2",
+    profile="voigt"
+)
+
+atmosphere = sk.Atmosphere(model_geometry, config, wavelengths_nm=wavelengths, calculate_derivatives=False)
+
+sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
+atmosphere['ch4'] = sk.climatology.mipas.constituent('CH4', hitran_db)
+atmosphere['emission'] = sk.constituent.ThermalEmission()
+atmosphere['surface_emission'] = atmosphere['surface_emission'] = sk.constituent.SurfaceThermalEmission(temperature_k=300, emissivity=0.9)
+
+engine = sk.Engine(config, model_geometry, viewing_geo)
+rad = engine.calculate_radiance(atmosphere)
+
+rad.isel(stokes=0)["radiance"].plot()
+plt.xlabel('Wavelength [nm]')
+plt.ylabel('Radiance [W/m^2/nm/ster]')
+```
+
+In this case the results are almost identical because the atmosphere does not contain any scatterers.
