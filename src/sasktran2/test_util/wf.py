@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from matplotlib.pylab import f
 import numpy as np
 import xarray as xr
 
@@ -35,7 +34,14 @@ def numeric_wf(
 
     base_radiance = engine.calculate_radiance(atmosphere)
 
-    central_diff_wf = {v: np.zeros_like(base_radiance[analytic_wf_name + ("" if v == "radiance" else f"_{v}")].to_numpy()) for v in calc_vars}
+    central_diff_wf = {
+        v: np.zeros_like(
+            base_radiance[
+                analytic_wf_name + ("" if v == "radiance" else f"_{v}")
+            ].to_numpy()
+        )
+        for v in calc_vars
+    }
 
     for i in range(len(input_var)):
         dx = input_var[i] * fractional_change
@@ -53,15 +59,13 @@ def numeric_wf(
             input_var[i] += dx
 
             for v in calc_vars:
-                central_diff_wf[v][i] = (
-                    radiance_above[v] - radiance_below[v]
-                ) / (2 * dx)
+                central_diff_wf[v][i] = (radiance_above[v] - radiance_below[v]) / (
+                    2 * dx
+                )
         else:
             # forward diff
             for v in calc_vars:
-                central_diff_wf[v][i] = (
-                    radiance_above[v] - base_radiance[v]
-                ) / (dx)
+                central_diff_wf[v][i] = (radiance_above[v] - base_radiance[v]) / (dx)
 
             input_var[i] -= dx
     for v in calc_vars:

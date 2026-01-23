@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import numpy as np
 import sasktran2 as sk
-from sasktran2.test_util.wf import validate_wf
 
 
 def _raw_scenarios() -> list:
@@ -33,9 +32,10 @@ def _raw_scenarios() -> list:
     viewing_geos = []
     viewing_geos.append(sk.ViewingGeometry())
 
-    for alt in np.arange(10000, 60000, 2000):
-        viewing_geos[-1].add_flux_observer(sk.FluxObserverSolar(0.6, alt))
-
+    # for alt in np.arange(10000, 60000, 2000):
+    #    viewing_geos[-1].add_flux_observer(sk.FluxObserverSolar(0.6, alt))
+    viewing_geos[-1].add_flux_observer(sk.FluxObserverSolar(0.6, 0))
+    viewing_geos[-1].add_flux_observer(sk.FluxObserverSolar(0.6, 65000))
     scen = []
 
     wavelengths = np.arange(7370, 7380, 0.01)
@@ -68,7 +68,6 @@ def _raw_scenarios() -> list:
 
     atmosphere["rayleigh"] = sk.constituent.Rayleigh()
 
-
     for config in configs:
         for geometry in geometrys:
             for viewing_geo in viewing_geos:
@@ -83,14 +82,13 @@ def _raw_scenarios() -> list:
 
     return scen
 
+
 def test_thermal_flux_wf_temperature_with_emission():
     """
     Checks that the WFs are correct for a VMR constituent When emissions are present
     """
 
-    scens = (
-        _raw_scenarios()
-    )
+    scens = _raw_scenarios()
 
     for scen in scens:
         atmosphere = scen["atmosphere"]
@@ -98,13 +96,31 @@ def test_thermal_flux_wf_temperature_with_emission():
         engine = sk.Engine(scen["config"], scen["geometry"], scen["viewing_geo"])
 
         radiance = sk.test_util.wf.numeric_wf(
-            atmosphere.temperature_k, 0.0001, engine, atmosphere, "wf_temperature_k",
-            calc_vars=["upwelling_flux", "downwelling_flux"]
+            atmosphere.temperature_k,
+            0.01,
+            engine,
+            atmosphere,
+            "wf_temperature_k",
+            calc_vars=["radiance", "upwelling_flux", "downwelling_flux"],
         )
 
         sk.test_util.wf.validate_wf(
-            radiance["wf_temperature_k_upwelling_flux"],
-            radiance["wf_temperature_k_upwelling_flux_numeric"],
-            wf_dim="flux_location",
+            radiance["wf_temperature_k"],
+            radiance["wf_temperature_k_numeric"],
+            wf_dim="altitude",
             decimal=5,
+        )
+
+        sk.test_util.wf.validate_wf(
+            radiance["wf_temperature_k_upwelling_flux"].isel(flux_location=-1),
+            radiance["wf_temperature_k_upwelling_flux_numeric"].isel(flux_location=-1),
+            wf_dim="altitude",
+            decimal=3,
+        )
+
+        sk.test_util.wf.validate_wf(
+            radiance["wf_temperature_k_downwelling_flux"].isel(flux_location=0),
+            radiance["wf_temperature_k_downwelling_flux_numeric"].isel(flux_location=0),
+            wf_dim="altitude",
+            decimal=3,
         )

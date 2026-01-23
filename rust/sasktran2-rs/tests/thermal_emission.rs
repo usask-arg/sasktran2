@@ -38,8 +38,8 @@ fn test_disort7b_thermal_emission() -> Result<()> {
         num_wavelengths,
         num_altitudes,
         num_legendre+1,
-        false, // calculate_derivatives - must be false for DO emission (not implemented)
-        false, // calculate_emission_derivatives
+        true, // calculate_derivatives - must be false for DO emission (not implemented)
+        true, // calculate_emission_derivatives
         Stokes::Stokes1,
     );
 
@@ -97,6 +97,8 @@ fn test_disort7b_thermal_emission() -> Result<()> {
     let mut viewing_geometry = ViewingGeometry::new();
     // Looking straight up from ground (nadir viewing from TOA perspective)
     viewing_geometry.add_ground_viewing_solar(0.5, 0.0, 200000.0, 1.0);
+
+    viewing_geometry.add_flux_observer_solar(0.6, 5000.0);
 
     // Create and run engine
     let engine = Engine::new(&config, &geometry, &viewing_geometry)?;

@@ -69,6 +69,7 @@ def test_upwelling_flux():
         assert "upwelling_flux" in rad
         assert "downwelling_flux" in rad
 
+
 def test_upwelling_flux_thermal():
     alts = [64750, 30000, 65000, 999.99]
 
