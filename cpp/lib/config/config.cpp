@@ -115,6 +115,42 @@ namespace sasktran2 {
                 sasktran2::validation::throw_configuration_error();
             }
         }
+
+        // Validation for discrete_ordinates emission source
+        if (m_emission_source == EmissionSource::discrete_ordinates) {
+            if (m_single_scatter_source !=
+                SingleScatterSource::discrete_ordinates) {
+                spdlog::critical("emission_source=discrete_ordinates requires "
+                                 "single_scatter_source=discrete_ordinates");
+                sasktran2::validation::throw_configuration_error();
+            }
+            if (m_multiple_scatter_source !=
+                MultipleScatterSource::discrete_ordinates) {
+                spdlog::critical("emission_source=discrete_ordinates requires "
+                                 "multiple_scatter_source=discrete_ordinates");
+                sasktran2::validation::throw_configuration_error();
+            }
+        }
+    }
+
+    void Config::validate_config_geometry(int geotype) const {
+        if (input_validation_mode() == InputValidationMode::disabled) {
+            return;
+        }
+
+        // emission_source=discrete_ordinates only works with plane parallel or
+        // spherical geometry (pseudospherical is treated as plane parallel for
+        // DO purposes)
+        if (m_emission_source == EmissionSource::discrete_ordinates) {
+            // geotype values: 0=planeparallel, 1=pseudospherical, 2=spherical,
+            // 3=ellipsoidal
+            if (geotype != 0 && geotype != 1 && geotype != 2) {
+                spdlog::critical(
+                    "emission_source=discrete_ordinates requires plane "
+                    "parallel, pseudospherical, or spherical geometry");
+                sasktran2::validation::throw_configuration_error();
+            }
+        }
     }
 
 } // namespace sasktran2

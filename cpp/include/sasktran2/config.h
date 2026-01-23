@@ -653,6 +653,13 @@ namespace sasktran2 {
          */
         void validate_config() const;
 
+        /**
+         * @brief Validates config settings that depend on geometry type
+         *
+         * @param geotype The geometry type being used
+         */
+        void validate_config_geometry(int geotype) const;
+
       private:
         // TODO: Refactor these into individual source configs?
 
