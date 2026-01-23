@@ -71,8 +71,8 @@ def test_extinction_cloud_optical_depth_wf_native_grid():
         atmosphere["cloud"] = sk.constituent.GaussianHeightExtinction(
             optical_property=mie,
             altitudes_m=altitude_grid,
-            cloud_height_m=cloud_height_m,
-            cloud_width_fwhm_m=cloud_width_fwhm,
+            height_m=cloud_height_m,
+            width_fwhm_m=cloud_width_fwhm,
             vertical_optical_depth=vertical_optical_depth,
             vertical_optical_depth_wavel_nm=vertical_optical_depth_wavel_nm,
             lognormal_median_radius=np.ones_like(altitude_grid) * 105.0,
@@ -91,7 +91,7 @@ def test_extinction_cloud_optical_depth_wf_native_grid():
         sk.test_util.wf.validate_wf(
             radiance["wf_cloud_vertical_optical_depth"],
             radiance["wf_cloud_vertical_optical_depth_numeric"],
-            wf_dim="vertical_optical_depth",
+            wf_dim="cloud_vertical_optical_depth",
             decimal=4,
         )
 
@@ -119,8 +119,8 @@ def test_extinction_cloud_height_wf_native_grid():
         atmosphere["cloud"] = sk.constituent.GaussianHeightExtinction(
             optical_property=mie,
             altitudes_m=altitude_grid,
-            cloud_height_m=cloud_height_m,
-            cloud_width_fwhm_m=cloud_width_fwhm,
+            height_m=cloud_height_m,
+            width_fwhm_m=cloud_width_fwhm,
             vertical_optical_depth=vertical_optical_depth,
             vertical_optical_depth_wavel_nm=vertical_optical_depth_wavel_nm,
             lognormal_median_radius=np.ones_like(altitude_grid) * 105.0,
@@ -129,7 +129,7 @@ def test_extinction_cloud_height_wf_native_grid():
         engine = sk.Engine(scen["config"], scen["geometry"], scen["viewing_geo"])
 
         radiance = sk.test_util.wf.numeric_wf_scalar(
-            atmosphere["cloud"].cloud_height_m,
+            atmosphere["cloud"].height_m,
             0.0001,
             engine,
             atmosphere,
@@ -167,8 +167,8 @@ def test_extinction_cloud_width_wf_native_grid():
         atmosphere["cloud"] = sk.constituent.GaussianHeightExtinction(
             optical_property=mie,
             altitudes_m=altitude_grid,
-            cloud_height_m=cloud_height_m,
-            cloud_width_fwhm_m=cloud_width_fwhm,
+            height_m=cloud_height_m,
+            width_fwhm_m=cloud_width_fwhm,
             vertical_optical_depth=vertical_optical_depth,
             vertical_optical_depth_wavel_nm=vertical_optical_depth_wavel_nm,
             lognormal_median_radius=np.ones_like(altitude_grid) * 105.0,
@@ -177,7 +177,7 @@ def test_extinction_cloud_width_wf_native_grid():
         engine = sk.Engine(scen["config"], scen["geometry"], scen["viewing_geo"])
 
         radiance = sk.test_util.wf.numeric_wf_scalar(
-            atmosphere["cloud"].cloud_width_fwhm_m,
+            atmosphere["cloud"].width_fwhm_m,
             0.00001,
             engine,
             atmosphere,
@@ -215,8 +215,8 @@ def test_extinction_cloud_radius_wf_native_grid():
         atmosphere["cloud"] = sk.constituent.GaussianHeightExtinction(
             optical_property=mie,
             altitudes_m=altitude_grid,
-            cloud_height_m=cloud_height_m,
-            cloud_width_fwhm_m=cloud_width_fwhm,
+            height_m=cloud_height_m,
+            width_fwhm_m=cloud_width_fwhm,
             vertical_optical_depth=vertical_optical_depth,
             vertical_optical_depth_wavel_nm=vertical_optical_depth_wavel_nm,
             lognormal_median_radius=np.ones_like(altitude_grid) * 105.0,
@@ -265,8 +265,8 @@ def test_extinction_cloud_optical_depth_wf_interpolated_grid():
         atmosphere["cloud"] = sk.constituent.GaussianHeightExtinction(
             optical_property=mie,
             altitudes_m=new_altitudes,
-            cloud_height_m=cloud_height_m,
-            cloud_width_fwhm_m=cloud_width_fwhm,
+            height_m=cloud_height_m,
+            width_fwhm_m=cloud_width_fwhm,
             vertical_optical_depth=vertical_optical_depth,
             vertical_optical_depth_wavel_nm=vertical_optical_depth_wavel_nm,
             lognormal_median_radius=np.ones_like(new_altitudes) * 105.0,
@@ -285,7 +285,7 @@ def test_extinction_cloud_optical_depth_wf_interpolated_grid():
         sk.test_util.wf.validate_wf(
             radiance["wf_cloud_vertical_optical_depth"],
             radiance["wf_cloud_vertical_optical_depth_numeric"],
-            wf_dim="vertical_optical_depth",
+            wf_dim="cloud_vertical_optical_depth",
             decimal=4,
         )
 
@@ -314,8 +314,8 @@ def test_extinction_cloud_height_wf_interpolated_grid():
         atmosphere["cloud"] = sk.constituent.GaussianHeightExtinction(
             optical_property=mie,
             altitudes_m=new_altitudes,
-            cloud_height_m=cloud_height_m,
-            cloud_width_fwhm_m=cloud_width_fwhm,
+            height_m=cloud_height_m,
+            width_fwhm_m=cloud_width_fwhm,
             vertical_optical_depth=vertical_optical_depth,
             vertical_optical_depth_wavel_nm=vertical_optical_depth_wavel_nm,
             lognormal_median_radius=np.ones_like(new_altitudes) * 105.0,
@@ -324,7 +324,7 @@ def test_extinction_cloud_height_wf_interpolated_grid():
         engine = sk.Engine(scen["config"], scen["geometry"], scen["viewing_geo"])
 
         radiance = sk.test_util.wf.numeric_wf_scalar(
-            atmosphere["cloud"].cloud_height_m,
+            atmosphere["cloud"].height_m,
             0.001,
             engine,
             atmosphere,
@@ -363,8 +363,8 @@ def test_extinction_cloud_width_wf_interpolated_grid():
         atmosphere["cloud"] = sk.constituent.GaussianHeightExtinction(
             optical_property=mie,
             altitudes_m=new_altitudes,
-            cloud_height_m=cloud_height_m,
-            cloud_width_fwhm_m=cloud_width_fwhm,
+            height_m=cloud_height_m,
+            width_fwhm_m=cloud_width_fwhm,
             vertical_optical_depth=vertical_optical_depth,
             vertical_optical_depth_wavel_nm=vertical_optical_depth_wavel_nm,
             lognormal_median_radius=np.ones_like(new_altitudes) * 105.0,
@@ -373,7 +373,7 @@ def test_extinction_cloud_width_wf_interpolated_grid():
         engine = sk.Engine(scen["config"], scen["geometry"], scen["viewing_geo"])
 
         radiance = sk.test_util.wf.numeric_wf_scalar(
-            atmosphere["cloud"].cloud_width_fwhm_m,
+            atmosphere["cloud"].width_fwhm_m,
             0.00001,
             engine,
             atmosphere,
@@ -413,8 +413,8 @@ def test_extinction_cloud_radius_wf_interpolated_grid():
         atmosphere["cloud"] = sk.constituent.GaussianHeightExtinction(
             optical_property=mie,
             altitudes_m=new_altitudes,
-            cloud_height_m=cloud_height_m,
-            cloud_width_fwhm_m=cloud_width_fwhm,
+            height_m=cloud_height_m,
+            width_fwhm_m=cloud_width_fwhm,
             vertical_optical_depth=vertical_optical_depth,
             vertical_optical_depth_wavel_nm=vertical_optical_depth_wavel_nm,
             lognormal_median_radius=np.ones_like(new_altitudes) * 105.0,
