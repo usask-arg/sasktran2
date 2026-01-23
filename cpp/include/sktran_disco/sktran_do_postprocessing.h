@@ -185,4 +185,124 @@ namespace sasktran_disco::postprocessing {
         d_plus.value *= transmission.value / denom;
         d_plus.deriv *= 1 / denom;
     }
+
+    /** Calculates the green's function solution multipier, d_minus, sampled at
+     * a relative location layer_fraction within the layer
+     *
+     * @param thickness
+     * @param eigval
+     * @param solution_index
+     * @param layer_relative_location
+     * @param transmission
+     * @param average_secant
+     * @param layerderivstart
+     * @param d_minus
+     */
+    template <int CNSTR = -1>
+    inline void d_minus_sampled_thermal(
+        const sasktran_disco::LayerDual<double>& thickness,
+        const sasktran_disco::VectorLayerDual<double, CNSTR>& eigval,
+        sasktran_disco::SolutionIndex solution_index,
+        double layer_relative_location,
+        const sasktran_disco::LayerDual<double>& b1,
+        const sasktran_disco::LayerDual<double>& b0, int layerderivstart,
+        sasktran_disco::LayerDual<double>& d_minus) {
+        // Convenience factors
+        double x = thickness.value * layer_relative_location;
+        double denom = b1.value - eigval.value(solution_index);
+
+        // Start by calculating the value without the transmission factor and
+        // denom (avoids a potential division by 0 later)
+        d_minus.value =
+            (exp(-x * eigval.value(solution_index)) - exp(-x * b1.value));
+
+        // Add in the total derivatives (transmission and secant derivatives)
+        // Start with transmission deriv
+        d_minus.deriv = b0.deriv * d_minus.value;
+
+        // Start with secant derivative
+        d_minus.deriv += b1.deriv * b0.value *
+                         (-d_minus.value / denom + exp(-x * b1.value) * x);
+
+        // Dense derivatives are done, now we have layer derivatives
+        for (int k = 0; k < thickness.deriv.size(); ++k) {
+            // Eigenvalue derivatives
+            d_minus.deriv(k) += eigval.deriv(k, solution_index) * b0.value *
+                                (-x * exp(-x * eigval.value(solution_index)) +
+                                 d_minus.value / denom);
+
+            // Thickness derivatives, x = fraction * thickness => dx = fraction
+            // * dthickness
+            d_minus.deriv(k) += layer_relative_location * thickness.deriv(k) *
+                                b0.value *
+                                (exp(-x * b1.value) * b1.value -
+                                 exp(-x * eigval.value(solution_index)) *
+                                     eigval.value(solution_index));
+        }
+
+        // All value factors are missing transmission / denom
+        d_minus.value *= b0.value / denom;
+
+        // Derivatives are just missing 1/denom
+        d_minus.deriv *= 1 / denom;
+    }
+
+    /** Calculates the green's function solution multipier, d_plus, sampled at a
+     * relative location layer_fraction within the layer
+     *
+     * @param thickness
+     * @param eigval
+     * @param solution_index
+     * @param layer_relative_location
+     * @param transmission
+     * @param average_secant
+     * @param layerderivstart
+     * @param d_plus
+     */
+    template <int CNSTR = -1>
+    inline void d_plus_sampled_thermal(
+        const sasktran_disco::LayerDual<double>& thickness,
+        const sasktran_disco::VectorLayerDual<double, CNSTR>& eigval,
+        sasktran_disco::SolutionIndex solution_index,
+        double layer_relative_location,
+        const sasktran_disco::LayerDual<double>& b0,
+        const sasktran_disco::LayerDual<double>& b1, int layerderivstart,
+        sasktran_disco::LayerDual<double>& d_plus) {
+        // Convenience quantities
+        double x = thickness.value * layer_relative_location;
+        double denom = (eigval.value(solution_index) + b1.value);
+        double expfactor2 =
+            exp(-thickness.value * b1.value) *
+            exp(-(thickness.value - x) * eigval.value(solution_index));
+
+        d_plus.value = (exp(-x * b1.value) - expfactor2);
+
+        // Derivative time, start with transmission
+        d_plus.deriv = b0.deriv * d_plus.value;
+
+        // The only other dense derivative is from average_secant
+        d_plus.deriv += b1.deriv * b0.value *
+                        (-d_plus.value / denom + -x * exp(-x * b1.value) +
+                         thickness.value * expfactor2);
+
+        // Now we need our layer derivatives from eigval/thickness
+        for (int k = 0; k < thickness.deriv.size(); ++k) {
+            // Eigenvalue derivatives
+            d_plus.deriv(k) +=
+                eigval.deriv(k, solution_index) * b0.value *
+                (-d_plus.value / denom + expfactor2 * (thickness.value - x));
+
+            // Thickness derivatives
+            d_plus.deriv(k) +=
+                thickness.deriv(k) * b0.value *
+                (-exp(-x * b1.value) * layer_relative_location * b1.value +
+                 expfactor2 * b1.value +
+                 expfactor2 *
+                     (eigval.value(solution_index) -
+                      layer_relative_location * eigval.value(solution_index)));
+        }
+
+        d_plus.value *= b0.value / denom;
+        d_plus.deriv *= 1 / denom;
+    }
 } // namespace sasktran_disco::postprocessing

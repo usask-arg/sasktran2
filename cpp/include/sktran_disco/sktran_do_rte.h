@@ -81,6 +81,10 @@ namespace sasktran_disco {
         void solveParticularGreen(AEOrder m,
                                   OpticalLayer<NSTOKES, CNSTR>& layer);
 
+        // Solves the particular solution in layer p for thermal emission
+        void solveParticularGreenThermal(AEOrder m,
+                                         OpticalLayer<NSTOKES, CNSTR>& layer);
+
         // Calculates the homogeneous coefficients which satisfy boundary
         // conditions.
         void solveBVP(AEOrder m);
@@ -221,15 +225,26 @@ namespace sasktran_disco {
             // TODO: Polarized surface
             int s1 = out % NSTOKES;
 
+            double result = 0.0;
+
+            if (m == 0) {
+                // include thermal source
+                result += m_layers.surface()
+                              .sk2_surface()
+                              .emission()[m_layers.wavelength_index()];
+            }
+
             if (m_layers.surface().sk2_surface().max_azimuthal_order() <= m ||
                 s1 != 0) {
-                return 0;
+                return result;
             } else {
-                return this->M_CSZ *
-                       m_layers.surface().storage().brdf.stream_solar(out /
-                                                                      NSTOKES) /
-                       PI * layer.beamTransmittance(Location::FLOOR);
+                result += this->M_CSZ *
+                          m_layers.surface().storage().brdf.stream_solar(
+                              out / NSTOKES) /
+                          PI * layer.beamTransmittance(Location::FLOOR);
             }
+
+            return result;
         }
 
         inline double d_ground_direct_sun(
@@ -239,16 +254,23 @@ namespace sasktran_disco {
             // TODO: Polarized surface
             int s1 = out % NSTOKES;
 
+            double result = 0.0;
+
+            if (m == 0) {
+                // include thermal source
+                result += deriv.d_surface_emission;
+            }
+
             if (m_layers.surface().sk2_surface().max_azimuthal_order() <= m ||
                 s1 != 0) {
-                return 0;
+                return result;
             } else {
-                double result = this->M_CSZ *
-                                m_layers.surface().storage().brdf.stream_solar(
-                                    out / NSTOKES) /
-                                PI *
-                                layer.d_beamTransmittance(Location::FLOOR,
-                                                          deriv, derivindex);
+                result += this->M_CSZ *
+                          m_layers.surface().storage().brdf.stream_solar(
+                              out / NSTOKES) /
+                          PI *
+                          layer.d_beamTransmittance(Location::FLOOR, deriv,
+                                                    derivindex);
 
                 double d_albedo =
                     deriv.d_albedo * m_layers.surface()
@@ -258,8 +280,9 @@ namespace sasktran_disco {
 
                 result += this->M_CSZ * d_albedo / PI *
                           layer.beamTransmittance(Location::FLOOR);
-                return result;
             }
+
+            return result;
         }
 
         inline double u_minus(AEOrder m,

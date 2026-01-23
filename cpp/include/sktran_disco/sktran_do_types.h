@@ -96,6 +96,15 @@ namespace sasktran_disco {
                             the parameter */
         double d_albedo; /** Derivative of the surface albedo with respect to
                             the parameter */
+
+        double d_surface_emission; /** Derivative of the surface emission
+                                      parameters */
+
+        double d_thermal_b0; /** Derivative of the thermal b0 coeff in b0
+                                exp(-b1 x) */
+        double d_thermal_b1; /** Derivative of the thermal b1 coeff in b0
+                                exp(-b1 x) */
+
         int surface_deriv_index;
 
         LayerIndex layer_index; /** Layer index that is varying */
@@ -530,6 +539,11 @@ namespace sasktran_disco {
             m_green_A_plus.resize(nstr / 2 * NSTOKES, nderivlayer, l,
                                   layer_start);
 
+            m_green_A_minus_thermal.resize(nstr / 2 * NSTOKES, nderivlayer, l,
+                                           layer_start);
+            m_green_A_plus_thermal.resize(nstr / 2 * NSTOKES, nderivlayer, l,
+                                          layer_start);
+
             m_Gplus_top.resize(nstr / 2 * NSTOKES, nderivtotal);
             m_Gplus_bottom.resize(nstr / 2 * NSTOKES, nderivtotal);
             m_Gminus_top.resize(nstr / 2 * NSTOKES, nderivtotal);
@@ -604,6 +618,22 @@ namespace sasktran_disco {
             return m_green_A_plus;
         }
 
+        inline VectorLayerDualType& dual_green_A_minus_thermal() {
+            return m_green_A_minus_thermal;
+        }
+
+        inline const VectorLayerDualType& dual_green_A_minus_thermal() const {
+            return m_green_A_minus_thermal;
+        }
+
+        inline VectorLayerDualType& dual_green_A_plus_thermal() {
+            return m_green_A_plus_thermal;
+        }
+
+        inline const VectorLayerDualType& dual_green_A_plus_thermal() const {
+            return m_green_A_plus_thermal;
+        }
+
         inline VectorDualType& dual_Gplus_top() { return m_Gplus_top; }
 
         inline const VectorDualType& dual_Gplus_top() const {
@@ -640,6 +670,9 @@ namespace sasktran_disco {
 
         VectorLayerDualType m_green_A_plus;
         VectorLayerDualType m_green_A_minus;
+
+        VectorLayerDualType m_green_A_plus_thermal;
+        VectorLayerDualType m_green_A_minus_thermal;
 
         VectorDualType m_Gplus_top;
         VectorDualType m_Gplus_bottom;

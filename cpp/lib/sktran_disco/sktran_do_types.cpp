@@ -165,9 +165,12 @@ SASKTRAN_DISCO_INSTANTIATE_TEMPLATE(sasktran_disco::LPTripleProduct)
 
 template <int NSTOKES, int CNSTR>
 void sasktran_disco::LayerInputDerivative<NSTOKES, CNSTR>::setZero() {
-    d_SSA = 0.0;           // Change in layer SSA
-    d_optical_depth = 0.0; // Change in layer optical depth
-    d_albedo = 0.0;        // Change in layer albedo ( only for surface)
+    d_SSA = 0.0;              // Change in layer SSA
+    d_optical_depth = 0.0;    // Change in layer optical depth
+    d_albedo = 0.0;           // Change in layer albedo ( only for surface)
+    d_surface_emission = 0.0; // Change in surface emission parameter
+    d_thermal_b0 = 0.0;       // Change in layer thermal b0 coeff
+    d_thermal_b1 = 0.0;       // Change in layer thermal b1 coeff
     for (uint i = 0; i < d_legendre_coeff.size(); ++i) {
         d_legendre_coeff[i].a1 = 0.0; // Change in layer legendre coeff
 

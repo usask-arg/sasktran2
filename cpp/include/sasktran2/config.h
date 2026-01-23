@@ -93,8 +93,17 @@ namespace sasktran2 {
          * grid storage class.
          *
          *  'none' Removes the emission source.
+         *
+         *  'discrete_ordinates' Lets the discrete ordinates solution include
+         * the emission term. Only has an effect in Plane Parallel or
+         * PseudoSpherical geometry where the multiple scatter source is also
+         * discrete_ordinates
          */
-        enum class EmissionSource { standard = 0, none = 1 };
+        enum class EmissionSource {
+            standard = 0,
+            none = 1,
+            discrete_ordinates = 2
+        };
 
         /** Enum determining what basis to return back the Stokes vectors
          * components in
@@ -643,6 +652,13 @@ namespace sasktran2 {
          *
          */
         void validate_config() const;
+
+        /**
+         * @brief Validates config settings that depend on geometry type
+         *
+         * @param geotype The geometry type being used
+         */
+        void validate_config_geometry(int geotype) const;
 
       private:
         // TODO: Refactor these into individual source configs?

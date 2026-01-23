@@ -19,6 +19,9 @@ model_geometry = sk.Geometry1D(...,
                                geometry_type=sk.GeometryType.PlaneParallel)
 
 
+# Thermal sources can also be included when performing flux calculations by adding
+
+config.emission_source = sk.MultipleScatterSource.DiscreteOrdinates
 ```
 
 Flux calculations are setup the exact same way as standard radiance calculations, except we tell the
