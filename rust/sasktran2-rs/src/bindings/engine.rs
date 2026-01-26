@@ -68,14 +68,23 @@ impl<'a> Engine<'a> {
         viewing_geometry: &'a ViewingGeometry,
     ) -> Result<Self> {
         crate::threading::set_num_threads(config.num_threads().unwrap_or(1))?;
+
+        // Create the ffi engine first
+        let engine = unsafe {
+            ffi::sk_engine_create(
+                config.config,
+                geometry.geometry,
+                viewing_geometry.viewing_geometry,
+            )
+        };
+
+        // Check for null pointer
+        if engine.is_null() {
+            return Err(anyhow::anyhow!("Failed to create Engine"));
+        }
+
         Ok(Engine {
-            engine: unsafe {
-                ffi::sk_engine_create(
-                    config.config,
-                    geometry.geometry,
-                    viewing_geometry.viewing_geometry,
-                )
-            },
+            engine,
             config,
             geometry,
             viewing_geometry,

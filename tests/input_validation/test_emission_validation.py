@@ -22,19 +22,12 @@ def _default_settings(geometry_type=sk.GeometryType.Spherical):
 
     viewing_geo = sk.ViewingGeometry()
 
-    for alt in [10000, 20000, 30000, 40000]:
-        ray = sk.TangentAltitudeSolar(
-            tangent_altitude_m=alt,
-            relative_azimuth=0,
-            observer_altitude_m=200000,
-            cos_sza=0.6,
-        )
-        viewing_geo.add_ray(ray)
+    viewing_geo.add_ray(sk.GroundViewingSolar(0.6, 0.0, 1.0, 200000))
 
     return config, model_geometry, viewing_geo
 
 
-def test_emission_do_requires_single_scatter_do(capfd):
+def test_emission_do_requires_single_scatter_do():
     """Test that emission_source=DiscreteOrdinates requires single_scatter_source=DiscreteOrdinates.
 
     Note: Due to how exceptions are handled in the Rust FFI layer, the exception
@@ -46,17 +39,16 @@ def test_emission_do_requires_single_scatter_do(capfd):
     config.emission_source = sk.EmissionSource.DiscreteOrdinates
     config.single_scatter_source = sk.SingleScatterSource.Exact  # Wrong setting
 
-    _ = sk.Engine(config, model_geometry, viewing_geo)
+    try:
+        _ = sk.Engine(config, model_geometry, viewing_geo)
+        msg = "Expected exception was not raised."
+        raise AssertionError(msg)
+    except RuntimeError:
+        # Should fail
+        pass
 
-    # Verify the validation message was logged (captures C++ stdout)
-    captured = capfd.readouterr()
-    assert (
-        "emission_source=discrete_ordinates requires single_scatter_source=discrete_ordinates"
-        in captured.out
-    )
 
-
-def test_emission_do_requires_multiple_scatter_do(capfd):
+def test_emission_do_requires_multiple_scatter_do():
     """Test that emission_source=DiscreteOrdinates requires multiple_scatter_source=DiscreteOrdinates.
 
     Note: Due to how exceptions are handled in the Rust FFI layer, the exception
@@ -68,14 +60,13 @@ def test_emission_do_requires_multiple_scatter_do(capfd):
     config.emission_source = sk.EmissionSource.DiscreteOrdinates
     config.multiple_scatter_source = sk.MultipleScatterSource.NoSource  # Wrong setting
 
-    _ = sk.Engine(config, model_geometry, viewing_geo)
-
-    # Verify the validation message was logged (captures C++ stdout)
-    captured = capfd.readouterr()
-    assert (
-        "emission_source=discrete_ordinates requires multiple_scatter_source=discrete_ordinates"
-        in captured.out
-    )
+    try:
+        _ = sk.Engine(config, model_geometry, viewing_geo)
+        msg = "Expected exception was not raised."
+        raise AssertionError(msg)
+    except RuntimeError:
+        # Should fail
+        pass
 
 
 def test_emission_do_valid_with_plane_parallel():

@@ -25,6 +25,8 @@ struct Engine {
         } catch (const std::exception& e) {
             // Handle the exception, log it, etc.
             impl = nullptr;
+            // Prinit the error message
+            spdlog::error("Error initializing Engine: {}", e.what());
         }
     }
 
@@ -66,7 +68,16 @@ struct Engine {
 extern "C" {
 Engine* sk_engine_create(Config* config, Geometry1D* geometry,
                          ViewingGeometry* viewing_geometry) {
-    return new Engine(config, geometry, viewing_geometry);
+
+    // create a new engine instance
+    Engine* engine = new Engine(config, geometry, viewing_geometry);
+
+    if (engine->impl == nullptr) {
+        delete engine;
+        return nullptr;
+    }
+
+    return engine;
 }
 
 void sk_engine_destroy(Engine* engine) { delete engine; }
