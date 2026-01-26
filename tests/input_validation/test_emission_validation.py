@@ -22,14 +22,7 @@ def _default_settings(geometry_type=sk.GeometryType.Spherical):
 
     viewing_geo = sk.ViewingGeometry()
 
-    for alt in [10000, 20000, 30000, 40000]:
-        ray = sk.TangentAltitudeSolar(
-            tangent_altitude_m=alt,
-            relative_azimuth=0,
-            observer_altitude_m=200000,
-            cos_sza=0.6,
-        )
-        viewing_geo.add_ray(ray)
+    viewing_geo.add_ray(sk.GroundViewingSolar(0.6, 0.0, 1.0, 200000))
 
     return config, model_geometry, viewing_geo
 
