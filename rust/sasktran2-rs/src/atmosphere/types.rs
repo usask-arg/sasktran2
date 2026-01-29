@@ -106,11 +106,11 @@ impl StorageInputs for ManualStorageInputs {
     }
 
     fn wavenumbers_cminv_left(&self) -> Option<ndarray::ArrayView1<'_, f64>> {
-        todo!()
+        None
     }
 
     fn wavenumbers_cminv_right(&self) -> Option<ndarray::ArrayView1<'_, f64>> {
-        todo!()
+        None
     }
 }
 
