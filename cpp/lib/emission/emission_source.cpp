@@ -23,7 +23,8 @@ namespace sasktran2::emission {
     }
 
     template <int NSTOKES, Config::EmissionSource EMISSION_SOURCE_TYPE>
-    void EmissionSource<NSTOKES, EMISSION_SOURCE_TYPE>::integrated_source_constant(
+    void
+    EmissionSource<NSTOKES, EMISSION_SOURCE_TYPE>::integrated_source_constant(
         int wavelidx, int losidx, int layeridx, int wavel_threadidx,
         int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
         const sasktran2::SparseODDualView& shell_od,
@@ -58,27 +59,27 @@ namespace sasktran2::emission {
         double source_factor1;
         double emission_cell;
 
-        if constexpr (EMISSION_SOURCE_TYPE == Config::EmissionSource::standard) {
+        if constexpr (EMISSION_SOURCE_TYPE ==
+                      Config::EmissionSource::standard) {
             // Average value of layer boundaries
             source_factor1 = (1 - shell_od.exp_minus_od);
-            emission_cell =
-                source_factor1 *
-                ((1 - ssa_start) * emission_start * layer.od_quad_start_fraction +
-                (1 - ssa_end) * emission_end * layer.od_quad_end_fraction);
+            emission_cell = source_factor1 * ((1 - ssa_start) * emission_start *
+                                                  layer.od_quad_start_fraction +
+                                              (1 - ssa_end) * emission_end *
+                                                  layer.od_quad_end_fraction);
 
-        } else if constexpr (
-            EMISSION_SOURCE_TYPE == Config::EmissionSource::volume_emission_rate) {
-            // Volume emission rate source, so no (1 - ssa) term, and the source factor is the cell path length
+        } else if constexpr (EMISSION_SOURCE_TYPE ==
+                             Config::EmissionSource::volume_emission_rate) {
+            // Volume emission rate source, so no (1 - ssa) term, and the source
+            // factor is the cell path length
             source_factor1 = layer.layer_distance;
-            emission_cell =
-                source_factor1 *
-                (emission_start * layer.od_quad_start_fraction +
-                    emission_end * layer.od_quad_end_fraction);
+            emission_cell = source_factor1 *
+                            (emission_start * layer.od_quad_start_fraction +
+                             emission_end * layer.od_quad_end_fraction);
 
         } else {
             // Cant be here
         }
-
 
         if constexpr (NSTOKES == 1) {
             source.value.array() += emission_cell;
@@ -87,55 +88,57 @@ namespace sasktran2::emission {
         }
 
         if (calculate_derivative) {
-            if constexpr (EMISSION_SOURCE_TYPE == Config::EmissionSource::standard) {
-                // For standard emission source, the derivatives are more complex
-                // Now for the derivatives, start with dsource_factor which is
-                // sparse
+            if constexpr (EMISSION_SOURCE_TYPE ==
+                          Config::EmissionSource::standard) {
+                // For standard emission source, the derivatives are more
+                // complex Now for the derivatives, start with dsource_factor
+                // which is sparse
                 Eigen::Ref<Eigen::Matrix<double, NSTOKES, -1>> d_ssa =
                     source.d_ssa(m_atmosphere->storage().ssa.rows());
                 Eigen::Ref<Eigen::Matrix<double, NSTOKES, -1>> d_emission =
-                    source.d_emission(m_atmosphere->storage().ssa.rows(),
-                                    m_atmosphere->num_scattering_deriv_groups());
+                    source.d_emission(
+                        m_atmosphere->storage().ssa.rows(),
+                        m_atmosphere->num_scattering_deriv_groups());
 
                 for (auto it = shell_od.deriv_iter; it; ++it) {
                     source.deriv(0, it.index()) +=
                         it.value() * (1 - source_factor1) *
                         ((1 - ssa_start) * emission_start *
-                            layer.od_quad_start_fraction +
-                        (1 - ssa_end) * emission_end * layer.od_quad_end_fraction);
+                             layer.od_quad_start_fraction +
+                         (1 - ssa_end) * emission_end *
+                             layer.od_quad_end_fraction);
                 }
 
                 // And the SSA/emission derivatives
                 for (auto& ele : layer.entrance.interpolation_weights) {
                     d_ssa(0, ele.first) -= ele.second * emission_start *
-                                        source_factor1 *
-                                        layer.od_quad_start_fraction;
+                                           source_factor1 *
+                                           layer.od_quad_start_fraction;
                     d_emission(0, ele.first) += ele.second * (1 - ssa_start) *
                                                 source_factor1 *
                                                 layer.od_quad_start_fraction;
                 }
                 for (auto& ele : layer.exit.interpolation_weights) {
                     d_ssa(0, ele.first) -= ele.second * emission_end *
-                                        source_factor1 *
-                                        layer.od_quad_end_fraction;
+                                           source_factor1 *
+                                           layer.od_quad_end_fraction;
                     d_emission(0, ele.first) += ele.second * (1 - ssa_end) *
                                                 source_factor1 *
                                                 layer.od_quad_end_fraction;
                 }
-            } else if constexpr (
-                EMISSION_SOURCE_TYPE == Config::EmissionSource::volume_emission_rate) {
+            } else if constexpr (EMISSION_SOURCE_TYPE ==
+                                 Config::EmissionSource::volume_emission_rate) {
                 Eigen::Ref<Eigen::Matrix<double, NSTOKES, -1>> d_emission =
-                    source.d_emission(m_atmosphere->storage().ssa.rows(),
-                                    m_atmosphere->num_scattering_deriv_groups());
+                    source.d_emission(
+                        m_atmosphere->storage().ssa.rows(),
+                        m_atmosphere->num_scattering_deriv_groups());
                 // And the emission derivatives
                 for (auto& ele : layer.entrance.interpolation_weights) {
-                    d_emission(0, ele.first) += ele.second * 
-                                                source_factor1 *
+                    d_emission(0, ele.first) += ele.second * source_factor1 *
                                                 layer.od_quad_start_fraction;
                 }
                 for (auto& ele : layer.exit.interpolation_weights) {
-                    d_emission(0, ele.first) += ele.second *
-                                                source_factor1 *
+                    d_emission(0, ele.first) += ele.second * source_factor1 *
                                                 layer.od_quad_end_fraction;
                 }
             } else {
@@ -186,7 +189,9 @@ namespace sasktran2::emission {
     template class EmissionSource<1, Config::EmissionSource::standard>;
     template class EmissionSource<3, Config::EmissionSource::standard>;
 
-    template class EmissionSource<1, Config::EmissionSource::volume_emission_rate>;
-    template class EmissionSource<3, Config::EmissionSource::volume_emission_rate>;
+    template class EmissionSource<1,
+                                  Config::EmissionSource::volume_emission_rate>;
+    template class EmissionSource<3,
+                                  Config::EmissionSource::volume_emission_rate>;
 
 } // namespace sasktran2::emission

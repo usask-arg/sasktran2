@@ -99,8 +99,8 @@ namespace sasktran2 {
          * PseudoSpherical geometry where the multiple scatter source is also
          * discrete_ordinates
          *
-         * 'volume_emission_rate' Uses the emission source defined in the atmosphere grid
-         * storage class as a volume emission rate
+         * 'volume_emission_rate' Uses the emission source defined in the
+         * atmosphere grid storage class as a volume emission rate
          */
         enum class EmissionSource {
             standard = 0,
