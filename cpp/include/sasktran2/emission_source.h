@@ -8,7 +8,7 @@
 
 namespace sasktran2::emission {
 
-    template <int NSTOKES>
+    template <int NSTOKES, Config::EmissionSource EMISSION_SOURCE_TYPE = Config::EmissionSource::standard>
     class EmissionSource : public SourceTermInterface<NSTOKES> {
       private:
         const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere;

@@ -70,7 +70,16 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
     if (m_config.emission_source() ==
         sasktran2::Config::EmissionSource::standard) {
         m_source_terms.emplace_back(
-            std::make_unique<sasktran2::emission::EmissionSource<NSTOKES>>());
+            std::make_unique<sasktran2::emission::EmissionSource<NSTOKES, sasktran2::Config::EmissionSource::standard>>());
+
+        m_los_source_terms.push_back(
+            m_source_terms[m_source_terms.size() - 1].get());
+    }
+
+    if (m_config.emission_source() ==
+        sasktran2::Config::EmissionSource::volume_emission_rate) {
+        m_source_terms.emplace_back(
+            std::make_unique<sasktran2::emission::EmissionSource<NSTOKES, sasktran2::Config::EmissionSource::volume_emission_rate>>());
 
         m_los_source_terms.push_back(
             m_source_terms[m_source_terms.size() - 1].get());

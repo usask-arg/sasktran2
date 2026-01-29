@@ -90,7 +90,7 @@ namespace sasktran2 {
          * model.
          *
          *  'standard' Uses the emission source defined in the atmosphere
-         * grid storage class.
+         * grid storage class. Assuming it is the plank function
          *
          *  'none' Removes the emission source.
          *
@@ -98,11 +98,15 @@ namespace sasktran2 {
          * the emission term. Only has an effect in Plane Parallel or
          * PseudoSpherical geometry where the multiple scatter source is also
          * discrete_ordinates
+         *
+         * 'volume_emission_rate' Uses the emission source defined in the atmosphere grid
+         * storage class as a volume emission rate
          */
         enum class EmissionSource {
             standard = 0,
             none = 1,
-            discrete_ordinates = 2
+            discrete_ordinates = 2,
+            volume_emission_rate = 3
         };
 
         /** Enum determining what basis to return back the Stokes vectors
