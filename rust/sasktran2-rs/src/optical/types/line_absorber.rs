@@ -527,6 +527,10 @@ impl OpticalProperty for LineAbsorber {
     ) -> Result<()> {
         Ok(())
     }
+
+    fn is_scatterer(&self) -> bool {
+        false
+    }
 }
 
 #[cfg(test)]

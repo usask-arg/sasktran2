@@ -17,8 +17,8 @@ fn wavenumber_to_wavelength_nm(wavenumber_cm: f64) -> f64 {
 fn test_disort7b_thermal_emission() -> Result<()> {
     // Test parameters from disotest.f90 lines 956-988
     let total_optical_depth = 100.0;
-    let ssa = 0.95;          // Single scatter albedo
-    let g: f64 = 0.75;       // Asymmetry factor (H-G)
+    let ssa = 0.95; // Single scatter albedo
+    let g: f64 = 0.75; // Asymmetry factor (H-G)
     let nstreams = 16;
 
     // Temperature profile: 200K at top, 300K at bottom
@@ -37,7 +37,7 @@ fn test_disort7b_thermal_emission() -> Result<()> {
     let mut atmosphere = Atmosphere::new(
         num_wavelengths,
         num_altitudes,
-        num_legendre+1,
+        num_legendre + 1,
         true, // calculate_derivatives - must be false for DO emission (not implemented)
         true, // calculate_emission_derivatives
         Stokes::Stokes1,
@@ -49,19 +49,22 @@ fn test_disort7b_thermal_emission() -> Result<()> {
 
     // Set optical properties
     // For a single layer with 2 grid points spanning the layer
-    atmosphere.storage.total_extinction.fill(total_optical_depth / 1000.0); // ext per meter
+    atmosphere
+        .storage
+        .total_extinction
+        .fill(total_optical_depth / 1000.0); // ext per meter
     atmosphere.storage.ssa.fill(ssa);
-    atmosphere.storage.solar_irradiance.fill(0.0);  // No solar beam (pure thermal)
+    atmosphere.storage.solar_irradiance.fill(0.0); // No solar beam (pure thermal)
 
     // Set thermal emission source term
     // Index 0 = bottom (300K), index 1 = top (200K)
-    let emission_bottom = 1.09657540E-05;// planck_blackbody_radiance(temp_bottom, wavelength_nm);
-    let emission_top = 1.09657540E-05;// planck_blackbody_radiance(temp_top, wavelength_nm);
+    let emission_bottom = 1.09657540E-05; // planck_blackbody_radiance(temp_bottom, wavelength_nm);
+    let emission_top = 1.09657540E-05; // planck_blackbody_radiance(temp_top, wavelength_nm);
     atmosphere.storage.emission_source[[0, 0]] = emission_bottom;
     atmosphere.storage.emission_source[[1, 0]] = emission_top;
 
     // Set Henyey-Greenstein phase function Legendre coefficients: P_l = g^l
-    for l in 0..num_legendre+1 {
+    for l in 0..num_legendre + 1 {
         let coeff = g.powi(l as i32) * (2.0 * l as f64 + 1.0);
         atmosphere
             .storage
@@ -83,9 +86,9 @@ fn test_disort7b_thermal_emission() -> Result<()> {
     atmosphere.apply_delta_m_scaling(16)?;
 
     let geometry = Geometry1D::new(
-        0.5,  // cos_sza (not used for pure thermal)
-        0.0,  // saa
-        6371000.0,  // Earth radius
+        0.5,       // cos_sza (not used for pure thermal)
+        0.0,       // saa
+        6371000.0, // Earth radius
         altitude_grid.clone(),
         InterpolationMethod::Linear,
         GeometryType::PlaneParallel,
@@ -117,28 +120,41 @@ fn test_disort7b_thermal_emission() -> Result<()> {
     println!("  T = [{} K (top), {} K (bottom)]", temp_top, temp_bottom);
     println!("  ν = 2703 cm⁻¹ (λ = {:.2} nm)", wavelength_nm);
     println!();
-    println!("Planck emission at bottom ({}K): {:.6e} W/(m^2 sr nm)",
-             temp_bottom, emission_bottom);
-    println!("Planck emission at top ({}K): {:.6e} W/(m^2 sr nm)",
-             temp_top, emission_top);
+    println!(
+        "Planck emission at bottom ({}K): {:.6e} W/(m^2 sr nm)",
+        temp_bottom, emission_bottom
+    );
+    println!(
+        "Planck emission at top ({}K): {:.6e} W/(m^2 sr nm)",
+        temp_top, emission_top
+    );
     println!();
     println!("Computed radiance: {:?}", output.radiance);
     println!();
     println!("Expected (DISORT Test 7b):");
-    println!("  Upwelling intensity at TOA (μ=+1): {:.5e}", expected_upwelling_toa);
+    println!(
+        "  Upwelling intensity at TOA (μ=+1): {:.5e}",
+        expected_upwelling_toa
+    );
     println!("  Downwelling intensity at bottom (μ=-1): 7.52311e-06");
 
     // Sanity checks
     for val in output.radiance.iter() {
         assert!(val.is_finite(), "Radiance should be finite, got {}", val);
-        assert!(*val >= 0.0, "Radiance should be non-negative for thermal emission");
+        assert!(
+            *val >= 0.0,
+            "Radiance should be non-negative for thermal emission"
+        );
     }
 
     // Compare to expected value (with tolerance for numerical differences)
     // Note: Units and normalization may differ between DISORT and sasktran2
     if !output.radiance.is_empty() && output.radiance[[0, 0, 0]] > 0.0 {
-        let computed = output.radiance[[0, 0, 0]];// * (1.0e7 / 2702.99 - 1.0e7 / 2703.01); // Integrate over wavenumber band
-        println!("Computed upwelling intensity at TOA (integrated over band): {:.5e}", computed);
+        let computed = output.radiance[[0, 0, 0]]; // * (1.0e7 / 2702.99 - 1.0e7 / 2703.01); // Integrate over wavenumber band
+        println!(
+            "Computed upwelling intensity at TOA (integrated over band): {:.5e}",
+            computed
+        );
         let ratio = computed / expected_upwelling_toa;
         println!();
         println!("Computed/Expected ratio: {:.8}", ratio);

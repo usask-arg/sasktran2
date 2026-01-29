@@ -44,6 +44,7 @@ class Atmosphere:
         temperature_derivative: bool = True,
         specific_humidity_derivative: bool = True,
         legendre_derivative: bool = True,
+        finite_resolution_mode: bool = False,
     ):
         """
         The main specification for the atmospheric state.
@@ -73,6 +74,11 @@ class Atmosphere:
             Whether or not the model should calculate derivatives with respect to temperature., by default True
         legendre_derivative: bool, optional
             Whether or not the model should calculate derivatives with respect to the legendre coefficients., by default True
+        finite_resolution_mode: bool, optional
+            Whether or not the model is running in finite resolution mode.  In finite resolution mode,
+            cross sections are averaged inbetween the specified wavenumber boundaries.  The input wavenumbers are assumed
+            to be the edges of the bins.  The number of line calculations to perform is therefore len(wavenumber_cminv) - 1.
+            by default False.
         """
         self._wavelengths_nm = None
         self._wavenumbers_cminv = None
@@ -91,6 +97,17 @@ class Atmosphere:
 
         if wavenumber_cminv is not None:
             self.wavenumbers_cminv = wavenumber_cminv.astype(np.float64)
+
+        if finite_resolution_mode:
+            # Adjust the wavenumbers to be the wavenumber centers and assign the bin edges
+            self._wavenumbers_cminv_left = self.wavenumbers_cminv[:-1]
+            self._wavenumbers_cminv_right = self.wavenumbers_cminv[1:]
+            self.wavenumbers_cminv = 0.5 * (
+                self._wavenumbers_cminv_left + self._wavenumbers_cminv_right
+            )
+        else:
+            self._wavenumbers_cminv_left = None
+            self._wavenumbers_cminv_right = None
 
         nwavel = len(self.wavelengths_nm) if numwavel is None else numwavel
 
@@ -313,6 +330,28 @@ class Atmosphere:
     def wavenumbers_cminv(self, wav: np.array):
         self._wavenumbers_cminv = wav
         self._wavelengths_nm = wavenumber_cminv_to_wavlength_nm(wav)
+
+    @property
+    def wavenumbers_cminv_left(self) -> np.ndarray | None:
+        """
+        The left edges of the wavenumber bins in finite resolution mode in [:math:`\\text{cm}^{-1}`].
+
+        Returns
+        -------
+        Optional[np.array]
+        """
+        return self._wavenumbers_cminv_left
+
+    @property
+    def wavenumbers_cminv_right(self) -> np.ndarray | None:
+        """
+        The right edges of the wavenumber bins in finite resolution mode in [:math:`\\text{cm}^{-1}`].
+
+        Returns
+        -------
+        Optional[np.array]
+        """
+        return self._wavenumbers_cminv_right
 
     def _zero_storage(self):
         """
