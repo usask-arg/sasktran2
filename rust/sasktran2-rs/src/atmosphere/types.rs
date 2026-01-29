@@ -104,16 +104,15 @@ impl StorageInputs for ManualStorageInputs {
     ) -> std::collections::HashMap<String, ndarray::Array1<f64>> {
         todo!()
     }
-    
+
     fn wavenumbers_cminv_left(&self) -> Option<ndarray::ArrayView1<'_, f64>> {
         todo!()
     }
-    
+
     fn wavenumbers_cminv_right(&self) -> Option<ndarray::ArrayView1<'_, f64>> {
         todo!()
     }
 }
-
 
 pub struct StorageInputsQuadrature<'a> {
     base_input: &'a dyn StorageInputs,
@@ -124,7 +123,6 @@ pub struct StorageInputsQuadrature<'a> {
 
 impl StorageInputsQuadrature<'_> {
     pub fn from_base_input(base_input: &dyn StorageInputs) -> StorageInputsQuadrature<'_> {
-
         StorageInputsQuadrature {
             base_input,
             hires_wvnum: Array1::<f64>::zeros(0),
@@ -146,16 +144,10 @@ impl StorageInputsQuadrature<'_> {
         self.quadrature_w = weights;
         self.quadrature_x = nodes;
 
-        let num_base = self.base_input
-            .wavenumbers_cminv()
-            .unwrap()
-            .len();
+        let num_base = self.base_input.wavenumbers_cminv().unwrap().len();
 
         // Construct a new wavenumber grid
-        let mut wavenumbers_cminv = Array1::<f64>::zeros(
-            num_base
-                * order,
-        );
+        let mut wavenumbers_cminv = Array1::<f64>::zeros(num_base * order);
         let wavenum_left = self.base_input.wavenumbers_cminv_left().unwrap();
         let wavenum_right = self.base_input.wavenumbers_cminv_right().unwrap();
 
@@ -178,7 +170,9 @@ impl StorageInputsQuadrature<'_> {
         // Apply quadrature reduction to OpticalQuantities
         let mut oq_reduced = OpticalQuantities::default();
 
-        let num_result = self.base_input.wavenumbers_cminv_left()
+        let num_result = self
+            .base_input
+            .wavenumbers_cminv_left()
             .ok_or_else(|| anyhow!("wavenumbers_cminv_left not set"))?
             .len();
 
@@ -188,14 +182,18 @@ impl StorageInputsQuadrature<'_> {
 
         for i in 0..num_result {
             for j in 0..num_geo {
-                oq_reduced.cross_section[[j, i]] =
-                    self.quadrature_w.iter().enumerate().map(|(k, w)| {
-                        oq.cross_section[[j, self.quadrature_x.len() * i + k]] * w
-                    }).sum();
-                oq_reduced.ssa[[j, i]] =
-                    self.quadrature_w.iter().enumerate().map(|(k, w)| {
-                        oq.ssa[[j, self.quadrature_x.len() * i + k]] * w
-                    }).sum();
+                oq_reduced.cross_section[[j, i]] = self
+                    .quadrature_w
+                    .iter()
+                    .enumerate()
+                    .map(|(k, w)| oq.cross_section[[j, self.quadrature_x.len() * i + k]] * w)
+                    .sum();
+                oq_reduced.ssa[[j, i]] = self
+                    .quadrature_w
+                    .iter()
+                    .enumerate()
+                    .map(|(k, w)| oq.ssa[[j, self.quadrature_x.len() * i + k]] * w)
+                    .sum();
             }
         }
 

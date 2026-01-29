@@ -529,7 +529,7 @@ impl OpticalProperty for LineAbsorber {
     }
 
     fn is_scatterer(&self) -> bool {
-        false        
+        false
     }
 }
 

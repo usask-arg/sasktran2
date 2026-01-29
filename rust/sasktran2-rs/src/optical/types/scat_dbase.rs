@@ -287,7 +287,7 @@ impl OpticalProperty for ScatteringDatabase<Ix1> {
 
         Ok(())
     }
-    
+
     fn is_scatterer(&self) -> bool {
         true
     }
@@ -512,7 +512,7 @@ impl OpticalProperty for ScatteringDatabase<Ix2> {
 
         Ok(())
     }
-    
+
     fn is_scatterer(&self) -> bool {
         true
     }
@@ -826,7 +826,7 @@ impl OpticalProperty for ScatteringDatabase<Ix3> {
 
         Ok(())
     }
-    
+
     fn is_scatterer(&self) -> bool {
         true
     }

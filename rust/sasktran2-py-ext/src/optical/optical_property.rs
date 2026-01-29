@@ -141,7 +141,7 @@ impl OpticalProperty for PyOpticalProperty {
             Ok(())
         })
     }
-    
+
     fn is_scatterer(&self) -> bool {
         // TODO: grab from python?
         false

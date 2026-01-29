@@ -94,9 +94,8 @@ pub trait StorageInputs {
     }
 
     fn finite_resolution_quadrature_order(&self) -> usize {
-        4
+        1
     }
-
 }
 
 /// Trait allowing an object to return back views into the atmosphere storage

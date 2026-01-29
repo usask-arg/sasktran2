@@ -372,7 +372,7 @@ impl OpticalProperty for SKXsecDatabase<Ix1> {
     ) -> anyhow::Result<()> {
         Ok(())
     }
-    
+
     fn is_scatterer(&self) -> bool {
         false
     }
@@ -442,7 +442,7 @@ impl OpticalProperty for SKXsecDatabase<Ix2> {
 
         Ok(())
     }
-    
+
     fn is_scatterer(&self) -> bool {
         false
     }
@@ -527,7 +527,7 @@ impl OpticalProperty for SKXsecDatabase<Ix3> {
 
         Ok(())
     }
-    
+
     fn is_scatterer(&self) -> bool {
         false
     }

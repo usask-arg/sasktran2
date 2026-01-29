@@ -58,14 +58,14 @@ pub trait OpticalPropertyExt: OpticalProperty {
 
         if inputs.finite_resolution_mode() && !self.is_scatterer() && quadrature_order > 1 {
             // Have to apply quadrature
-            let quadrature_inputs = StorageInputsQuadrature::from_base_input(inputs).with_quadrature_order(quadrature_order)?;
+            let quadrature_inputs = StorageInputsQuadrature::from_base_input(inputs)
+                .with_quadrature_order(quadrature_order)?;
             self.optical_quantities_emplace(&quadrature_inputs, aux_inputs, &mut out)?;
             quadrature_inputs.reduce(&out)
         } else {
             self.optical_quantities_emplace(inputs, aux_inputs, &mut out)?;
             Ok(out)
         }
-
     }
 
     fn optical_derivatives(
