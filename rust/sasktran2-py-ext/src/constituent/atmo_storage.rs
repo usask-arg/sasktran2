@@ -78,6 +78,8 @@ pub struct AtmosphereStorageInputs<'py> {
     pub py_temperature_k: Option<PyReadonlyArray1<'py, f64>>,
     pub py_wavelength_nm: Option<PyReadonlyArray1<'py, f64>>,
     pub py_wavenumber_cminv: Option<PyReadonlyArray1<'py, f64>>,
+    pub py_wavenumber_cminv_left: Option<PyReadonlyArray1<'py, f64>>,
+    pub py_wavenumber_cminv_right: Option<PyReadonlyArray1<'py, f64>>,
     pub py_equation_of_state: Bound<'py, PyAny>,
 }
 
@@ -100,6 +102,18 @@ impl<'py> StorageInputs for AtmosphereStorageInputs<'py> {
 
     fn wavenumbers_cminv(&self) -> Option<ArrayView1<'_, f64>> {
         self.py_wavenumber_cminv
+            .as_ref()
+            .map(|array| array.as_array())
+    }
+
+    fn wavenumbers_cminv_left(&self) -> Option<ArrayView1<'_, f64>> {
+        self.py_wavenumber_cminv_left
+            .as_ref()
+            .map(|array| array.as_array())
+    }
+
+    fn wavenumbers_cminv_right(&self) -> Option<ArrayView1<'_, f64>> {
+        self.py_wavenumber_cminv_right
             .as_ref()
             .map(|array| array.as_array())
     }
@@ -176,6 +190,10 @@ impl<'py> AtmosphereStorage<'py> {
         let temperature_k_array = get_optional_array1::<f64>(atmo, "temperature_k").unwrap();
         let wavelengths_nm_array = get_optional_array1::<f64>(atmo, "wavelengths_nm").unwrap();
         let wavenumber_cminv_array = get_optional_array1::<f64>(atmo, "wavenumbers_cminv").unwrap();
+        let wavenumber_cminv_left_array =
+            get_optional_array1::<f64>(atmo, "wavenumbers_cminv_left").unwrap();
+        let wavenumber_cminv_right_array =
+            get_optional_array1::<f64>(atmo, "wavenumbers_cminv_right").unwrap();
 
         let storage = atmo.getattr("storage").unwrap();
         let total_extinction_obj = storage.getattr("total_extinction").unwrap();
@@ -233,6 +251,8 @@ impl<'py> AtmosphereStorage<'py> {
                 py_temperature_k: temperature_k_array,
                 py_wavelength_nm: wavelengths_nm_array,
                 py_wavenumber_cminv: wavenumber_cminv_array,
+                py_wavenumber_cminv_left: wavenumber_cminv_left_array,
+                py_wavenumber_cminv_right: wavenumber_cminv_right_array,
                 py_equation_of_state: state_eqn_obj,
             },
             outputs: AtmosphereStorageOutputs {

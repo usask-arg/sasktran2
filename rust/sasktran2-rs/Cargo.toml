@@ -13,6 +13,7 @@ num = "*"
 anyhow = "*"
 sasktran2-sys = { version = "*", path = "../sasktran2-sys" }
 sasktran2-core = { version = "*", path = "../sasktran2-core" }
+gauss-quad = "0.2.4"
 rayon = "*"
 libc = "*"
 
