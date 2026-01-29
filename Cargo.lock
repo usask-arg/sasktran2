@@ -828,6 +828,7 @@ name = "sasktran2-rs"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "gauss-quad",
  "libc",
  "ndarray",
  "num",

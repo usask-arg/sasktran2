@@ -62,6 +62,12 @@ pub trait StorageInputs {
     /// Wavenumbers in cm^-1
     fn wavenumbers_cminv(&self) -> Option<ArrayView1<'_, f64>>;
 
+    /// Left wavenumber in cm^-1, this is only when running in finite resolution mode
+    fn wavenumbers_cminv_left(&self) -> Option<ArrayView1<'_, f64>>;
+
+    /// Right wavenumber in cm^-1, this is only when running in finite resolution mode
+    fn wavenumbers_cminv_right(&self) -> Option<ArrayView1<'_, f64>>;
+
     /// hashmap of air number density factors ("N", "dN_dT", "dN_dP", "dN_dq")
     /// This is number density of air (including water vapor)
     fn air_numberdensity_dict(&self) -> HashMap<String, Array1<f64>>;
@@ -81,6 +87,16 @@ pub trait StorageInputs {
             _ => None,
         }
     }
+
+    /// True if running in finite resolution mode
+    fn finite_resolution_mode(&self) -> bool {
+        self.wavenumbers_cminv_left().is_some() && self.wavenumbers_cminv_right().is_some()
+    }
+
+    fn finite_resolution_quadrature_order(&self) -> usize {
+        4
+    }
+
 }
 
 /// Trait allowing an object to return back views into the atmosphere storage

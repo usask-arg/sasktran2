@@ -1,4 +1,5 @@
 use crate::atmosphere::traits::*;
+use crate::atmosphere::types::StorageInputsQuadrature;
 use crate::optical::storage::*;
 use crate::prelude::*;
 use ndarray::{CowArray, Ix1};
@@ -41,6 +42,8 @@ pub trait OpticalProperty {
         aux_inputs: &dyn AuxOpticalInputs,
         d_optical_quantities: &mut HashMap<String, OpticalQuantities>,
     ) -> Result<()>;
+
+    fn is_scatterer(&self) -> bool;
 }
 
 pub trait OpticalPropertyExt: OpticalProperty {
@@ -50,8 +53,19 @@ pub trait OpticalPropertyExt: OpticalProperty {
         aux_inputs: &dyn AuxOpticalInputs,
     ) -> Result<OpticalQuantities> {
         let mut out = OpticalQuantities::default();
-        self.optical_quantities_emplace(inputs, aux_inputs, &mut out)?;
-        Ok(out)
+
+        let quadrature_order = inputs.finite_resolution_quadrature_order();
+
+        if inputs.finite_resolution_mode() && !self.is_scatterer() && quadrature_order > 1 {
+            // Have to apply quadrature
+            let quadrature_inputs = StorageInputsQuadrature::from_base_input(inputs).with_quadrature_order(quadrature_order)?;
+            self.optical_quantities_emplace(&quadrature_inputs, aux_inputs, &mut out)?;
+            quadrature_inputs.reduce(&out)
+        } else {
+            self.optical_quantities_emplace(inputs, aux_inputs, &mut out)?;
+            Ok(out)
+        }
+
     }
 
     fn optical_derivatives(
