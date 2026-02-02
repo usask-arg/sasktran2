@@ -33,6 +33,7 @@ pub enum EmissionSource {
     None = 1,
     Standard = 0,
     DiscreteOrdinates = 2,
+    VolumeEmissionRate = 3,
 }
 
 #[repr(i32)]

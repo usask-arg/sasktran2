@@ -33,6 +33,9 @@
 [Ray Tracing and Refraction](users_guide/refraction.md)
 : Including refractive effects in the ray-tracing
 
+[Photochemical Emission](users_guide/volume_emission.md)
+: Photochemical emission support as a source term
+
 [Built in Geodesy Tools](users_guide/geodetic.md)
 : Methods to work with datums such as WGS84
 
@@ -56,6 +59,7 @@ users_guide/polarization.md
 users_guide/brdf.md
 users_guide/performance.md
 users_guide/phase.md
+users_guide/volume_emission.md
 users_guide/geodetic.md
 users_guide/input_validation.md
 ```

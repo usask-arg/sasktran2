@@ -33,6 +33,7 @@ pub enum EmissionSource {
     NoSource,
     Standard,
     DiscreteOrdinates,
+    VolumeEmissionRate,
 }
 
 #[pyclass(eq, eq_int)]
@@ -259,6 +260,7 @@ impl PyConfig {
             config::EmissionSource::Standard => Ok(EmissionSource::Standard),
             config::EmissionSource::None => Ok(EmissionSource::NoSource),
             config::EmissionSource::DiscreteOrdinates => Ok(EmissionSource::DiscreteOrdinates),
+            config::EmissionSource::VolumeEmissionRate => Ok(EmissionSource::VolumeEmissionRate),
         }
     }
 
@@ -268,6 +270,7 @@ impl PyConfig {
             EmissionSource::Standard => config::EmissionSource::Standard,
             EmissionSource::NoSource => config::EmissionSource::None,
             EmissionSource::DiscreteOrdinates => config::EmissionSource::DiscreteOrdinates,
+            EmissionSource::VolumeEmissionRate => config::EmissionSource::VolumeEmissionRate,
         };
         self.config.with_emission_source(source).into_pyresult()?;
 

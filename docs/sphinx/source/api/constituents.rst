@@ -12,6 +12,7 @@ Constituents
     sasktran2.constituent.ExtinctionScatterer
     sasktran2.constituent.CollisionInducedAbsorber
     sasktran2.constituent.GaussianHeightExtinction
+    sasktran2.constituent.MonochromaticVolumeEmissionRate
     sasktran2.constituent.Manual
 
 .. _constituents_api_brdf:

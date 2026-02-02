@@ -13,3 +13,4 @@ from .numdenscatterer import ExtinctionScatterer, NumberDensityScatterer
 from .rayleigh import Rayleigh
 from .solar import SolarIrradiance
 from .vmraltitudeabsorber import VMRAltitudeAbsorber
+from .volumeemissionrate import MonochromaticVolumeEmissionRate
