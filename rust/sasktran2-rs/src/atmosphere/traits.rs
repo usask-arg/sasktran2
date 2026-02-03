@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use crate::atmosphere::types::SpectralGrid;
 
 /// Mutable view of the atmosphere storage output (ssa, ext, legendre)
 pub struct AtmosphereStorageOutputView<'a> {
@@ -32,6 +33,8 @@ pub trait StorageInputs {
     /// Number of stokes parameters
     fn num_stokes(&self) -> usize;
 
+    fn spectral_integration_mode(&self) -> crate::bindings::config::SpectralGridMode;
+
     /// Number of single scatter moments, note this includes the polarization factor
     /// i.e. NSTOKES=3 would have 4 * num_legendre_order moments
     fn num_singlescatter_moments(&self) -> usize;
@@ -56,17 +59,14 @@ pub trait StorageInputs {
     /// Temperaure in kelvin at altitude_m
     fn temperature_k(&self) -> Option<ArrayView1<'_, f64>>;
 
-    /// Wavelengths in nm
-    fn wavelengths_nm(&self) -> Option<ArrayView1<'_, f64>>;
+    /// When in spectral mode we have spectral information
+    fn spectral_grid(&self) -> Option<&SpectralGrid>;
 
-    /// Wavenumbers in cm^-1
-    fn wavenumbers_cminv(&self) -> Option<ArrayView1<'_, f64>>;
-
-    /// Left wavenumber in cm^-1, this is only when running in finite resolution mode
-    fn wavenumbers_cminv_left(&self) -> Option<ArrayView1<'_, f64>>;
-
-    /// Right wavenumber in cm^-1, this is only when running in finite resolution mode
-    fn wavenumbers_cminv_right(&self) -> Option<ArrayView1<'_, f64>>;
+    /// When in spectral mode we may have a fine spectral grid for high-res features
+    /// that the atmosphere/engine then integrates over
+    fn fine_spectral_grid(&self) -> Option<&SpectralGrid> {
+        None
+    }
 
     /// hashmap of air number density factors ("N", "dN_dT", "dN_dP", "dN_dq")
     /// This is number density of air (including water vapor)
@@ -81,20 +81,11 @@ pub trait StorageInputs {
         match name {
             "pressure_pa" => self.pressure_pa(),
             "temperature_k" => self.temperature_k(),
-            "wavelengths_nm" => self.wavelengths_nm(),
-            "wavenumbers_cminv" => self.wavenumbers_cminv(),
+            "wavelengths_nm" => self.spectral_grid().map(|grid| grid.central_wavelengths_nm()),
+            "wavenumbers_cminv" => self.spectral_grid().map(|grid| grid.central_wavenumber_cminv()),
             "altitude_m" => Some(self.altitude_m()),
             _ => None,
         }
-    }
-
-    /// True if running in finite resolution mode
-    fn finite_resolution_mode(&self) -> bool {
-        self.wavenumbers_cminv_left().is_some() && self.wavenumbers_cminv_right().is_some()
-    }
-
-    fn finite_resolution_quadrature_order(&self) -> usize {
-        1
     }
 }
 

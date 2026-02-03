@@ -20,6 +20,7 @@ from . import (
     test_util,
     util,
     viewinggeo,
+    basis
 )
 from ._core_rust import (
     EmissionSource,

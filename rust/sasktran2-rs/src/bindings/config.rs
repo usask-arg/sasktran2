@@ -77,6 +77,13 @@ pub enum LogLevel {
     Off = 6,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SpectralGridMode {
+    Monochromatic, // Delta function sampling
+    AtmosphereIntegratedLineShape, // Lineshape is specified for each grid point, atmosphere optical properties are integrated over the lineshape
+    EngineIntegratedLineShape, // Lineshape is specified for each grid point, radiative transfer engine integrates over the lineshape
+}
+
 /// A wrapper around the c++ Config object, implemented on the c++ side, see
 /// cpp/include/sasktran2/config.h
 pub struct Config {
@@ -84,6 +91,7 @@ pub struct Config {
     pub config: *mut ffi::Config,
     // rust specific config settings
     threading_lib: ThreadingLib,
+    spectral_grid_mode: SpectralGridMode,
 }
 
 impl Default for Config {
@@ -97,6 +105,7 @@ impl Config {
         Config {
             config: unsafe { ffi::sk_config_create() },
             threading_lib: ThreadingLib::OpenMP,
+            spectral_grid_mode: SpectralGridMode::Monochromatic,
         }
     }
 
@@ -847,6 +856,18 @@ impl Config {
 
     pub fn threading_lib(&self) -> ThreadingLib {
         self.threading_lib
+    }
+
+    pub fn with_spectral_grid_mode(
+        &mut self,
+        spectral_grid_mode: SpectralGridMode,
+    ) -> Result<&mut Self> {
+        self.spectral_grid_mode = spectral_grid_mode;
+        Ok(self)
+    }
+
+    pub fn spectral_grid_mode(&self) -> SpectralGridMode {
+        self.spectral_grid_mode
     }
 
     pub fn log_level(&self) -> Result<LogLevel> {

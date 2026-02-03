@@ -48,8 +48,8 @@ impl Constituent for ThermalEmission {
         let (inputs, outputs) = storage.split_inputs_outputs();
         let mut outputs = outputs.mut_view();
 
-        let wavelengths_nm = inputs.wavelengths_nm().unwrap();
-        let temperature_k = inputs.temperature_k().unwrap();
+        let wavelengths_nm = inputs.spectral_grid().ok_or_else(|| anyhow::anyhow!("spectral_grid not available"))?.central_wavelengths_nm();
+        let temperature_k = inputs.temperature_k().ok_or_else(|| anyhow::anyhow!("temperature_k not available"))?;
 
         let emission_source_array = &mut outputs.emission_source;
 
@@ -77,7 +77,7 @@ impl Constituent for ThermalEmission {
     ) -> Result<()> {
         let (inputs, _, derivative_generator) = storage.split_inputs_outputs_deriv();
 
-        let wavelengths_nm = inputs.wavelengths_nm().unwrap();
+        let wavelengths_nm = inputs.spectral_grid().ok_or_else(|| anyhow::anyhow!("spectral_grid not available"))?.central_wavelengths_nm();
         let temperature_k = inputs.temperature_k().unwrap();
 
         let thread_pool = crate::threading::thread_pool()?;

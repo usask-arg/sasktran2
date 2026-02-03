@@ -2,14 +2,17 @@ use crate::brdf::*;
 use crate::derivative_mapping::PyDerivativeMappingView;
 use crate::derivative_mapping::PySurfaceDerivativeMappingView;
 use crate::prelude::*;
+use crate::pyrebasis::grid::PyGrid;
 use numpy::PyArray1;
 use numpy::PyArray2;
 use numpy::PyArray3;
 use pyo3::prelude::*;
+use sasktran2_rs::atmosphere::types::LineshapeCoordinate;
 use sasktran2_rs::bindings::atmosphere;
 use sasktran2_rs::bindings::atmosphere_storage;
 use sasktran2_rs::bindings::prelude::Stokes;
 use sasktran2_rs::bindings::surface;
+use sasktran2_rs::atmosphere::types::SpectralGrid;
 
 #[pyclass(unsendable)]
 pub struct PyAtmosphere {
@@ -42,12 +45,17 @@ impl PyAtmosphere {
         calc_derivatives: bool,
         calc_emission_derivatives: bool,
         num_stokes: usize,
+        spectral_grid: Option<PyRef<PyGrid>>,
     ) -> PyResult<Self> {
         let stokes = match num_stokes {
             1 => Stokes::Stokes1,
             3 => Stokes::Stokes3,
             _ => panic!("num_stokes must be 1, 3"),
         };
+
+        let atmo_spectral_grid = spectral_grid
+            .map(|sg| SpectralGrid::from_grid(sg.grid.clone(), LineshapeCoordinate::WavelengthNm).into_pyresult())
+            .transpose()?;
 
         Ok(Self {
             atmosphere: atmosphere::Atmosphere::new(
@@ -57,6 +65,7 @@ impl PyAtmosphere {
                 calc_derivatives,
                 calc_emission_derivatives,
                 stokes,
+                atmo_spectral_grid
             ),
         })
     }

@@ -12,6 +12,7 @@ pyo3 = { version = "0.27.1", features = ["extension-module", "abi3-py39"] }
 ndarray = { version = "0.16.1", features = ["rayon"]}
 numpy = { version = "0.27" }
 sasktran2-rs = { path = "../sasktran2-rs" }
+rebasis = { path = "../rebasis" }
 rayon = "*"
 anyhow = "*"
 
