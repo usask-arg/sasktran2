@@ -49,8 +49,13 @@ impl Atmosphere {
             surface,
             nstokes: stokes.num_stokes(),
             spectral_grid,
-            fine_spectral_grid: None
+            fine_spectral_grid: None,
         }
+    }
+
+    pub fn with_fine_spectral_grid(mut self, fine_spectral_grid: SpectralGrid) -> Self {
+        self.fine_spectral_grid = Some(fine_spectral_grid);
+        self
     }
 
     /// Number of wavelengths in the atmosphere
@@ -104,7 +109,7 @@ mod tests {
             calc_derivatives,
             false,
             Stokes::Stokes1,
-            None
+            None,
         );
 
         assert_eq!(atmosphere.storage.ssa.shape(), &[num_location, num_wavel]);
@@ -127,7 +132,7 @@ mod tests {
             calc_derivatives,
             false,
             Stokes::Stokes1,
-            None
+            None,
         );
 
         // apply delta m scaling

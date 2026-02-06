@@ -1,5 +1,6 @@
-use crate::prelude::*;
 use crate::atmosphere::types::SpectralGrid;
+use crate::prelude::*;
+use rebasis::grid::MappingMatrix;
 
 /// Mutable view of the atmosphere storage output (ssa, ext, legendre)
 pub struct AtmosphereStorageOutputView<'a> {
@@ -62,9 +63,7 @@ pub trait StorageInputs {
     /// When in spectral mode we have spectral information
     fn spectral_grid(&self) -> Option<&SpectralGrid>;
 
-    /// When in spectral mode we may have a fine spectral grid for high-res features
-    /// that the atmosphere/engine then integrates over
-    fn fine_spectral_grid(&self) -> Option<&SpectralGrid> {
+    fn spectral_mapping_matrix(&self) -> Option<MappingMatrix> {
         None
     }
 
@@ -81,8 +80,12 @@ pub trait StorageInputs {
         match name {
             "pressure_pa" => self.pressure_pa(),
             "temperature_k" => self.temperature_k(),
-            "wavelengths_nm" => self.spectral_grid().map(|grid| grid.central_wavelengths_nm()),
-            "wavenumbers_cminv" => self.spectral_grid().map(|grid| grid.central_wavenumber_cminv()),
+            "wavelengths_nm" => self
+                .spectral_grid()
+                .map(|grid| grid.central_wavelengths_nm()),
+            "wavenumbers_cminv" => self
+                .spectral_grid()
+                .map(|grid| grid.central_wavenumber_cminv()),
             "altitude_m" => Some(self.altitude_m()),
             _ => None,
         }

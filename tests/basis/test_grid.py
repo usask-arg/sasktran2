@@ -21,9 +21,8 @@ def test_mapping():
 
     grid2 = Grid([delta])
 
-    result = grid1.mapping_to(grid2)
+    grid1.mapping_to(grid2)
 
-    pass
 
 def test_grid_from_rectangles():
     grid_points = np.arange(0, 10, 0.01)
@@ -31,6 +30,5 @@ def test_grid_from_rectangles():
     grid1 = Grid.from_rectangles(grid_points)
 
     np.testing.assert_array_equal(
-        grid1.mapping_to(grid1),
-        np.eye(len(grid_points), dtype=float)
+        grid1.mapping_to(grid1), np.eye(len(grid_points), dtype=float)
     )

@@ -1,15 +1,19 @@
-from sasktran2._core_rust import PyGrid
-from .basis import Basis, Rectangle, Delta, Triangle
+from __future__ import annotations
+
 import numpy as np
+
+from sasktran2._core_rust import PyGrid
+
+from .basis import Basis, Delta, Rectangle, Triangle
 
 
 def _left_right_splits(x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
     Splits an array into left and right boundaries for grid points.
-    
+
     Parameters:
         x (np.ndarray): Array of grid points.
-        
+
     Returns:
         tuple[np.ndarray, np.ndarray]: Left and right boundaries.
     """
@@ -24,13 +28,14 @@ def _left_right_splits(x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
     return left, right
 
+
 def _left_right_triangle_splits(x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
     Splits an array into left and right boundaries for grid points.
-    
+
     Parameters:
         x (np.ndarray): Array of grid points.
-        
+
     Returns:
         tuple[np.ndarray, np.ndarray]: Left and right boundaries.
     """
@@ -56,28 +61,31 @@ class Grid:
 
         left, right = _left_right_splits(gp)
 
-        basis_list = [Rectangle(l, r) for l, r in zip(left, right)]  # noqa: E741
+        basis_list = [Rectangle(le, r) for le, r in zip(left, right, strict=False)]
 
         return cls(basis_list)
-    
+
     @classmethod
     def from_deltas(cls, grid_points: np.ndarray):
         gp = np.atleast_1d(grid_points)
         basis_list = [Delta(x) for x in gp]
         return cls(basis_list)
-    
+
     @classmethod
     def from_triangles(cls, grid_points: np.ndarray):
         gp = np.atleast_1d(grid_points)
         left, right = _left_right_triangle_splits(gp)
-        basis_list = [Triangle(l, r, c) for l, r, c in zip(left, right, grid_points)]  # noqa: E741
+        basis_list = [
+            Triangle(le, r, c)
+            for le, r, c in zip(left, right, grid_points, strict=False)
+        ]
 
         return cls(basis_list)
 
     def _internal_object(self) -> PyGrid:
         return self._grid
-    
-    def mapping_to(self, grid: 'Grid', normalize=True) -> np.ndarray:
+
+    def mapping_to(self, grid: Grid, normalize=True) -> np.ndarray:
         mapping = self._grid.mapping_to(grid._internal_object())
 
         if normalize:

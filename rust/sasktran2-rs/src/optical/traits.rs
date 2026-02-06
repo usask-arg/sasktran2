@@ -1,6 +1,7 @@
-use crate::atmosphere::traits::*;
+use crate::optical::reduction::reduce_optical;
 use crate::optical::storage::*;
 use crate::prelude::*;
+use crate::{atmosphere::traits::*, bindings::config};
 use ndarray::{CowArray, Ix1};
 
 pub trait AuxOpticalInputs {
@@ -53,22 +54,16 @@ pub trait OpticalPropertyExt: OpticalProperty {
     ) -> Result<OpticalQuantities> {
         let mut out = OpticalQuantities::default();
         self.optical_quantities_emplace(inputs, aux_inputs, &mut out)?;
-        Ok(out)
 
-        /* 
-        let quadrature_order = inputs.finite_resolution_quadrature_order();
-
-        if inputs.finite_resolution_mode() && !self.is_scatterer() && quadrature_order > 1 {
-            // Have to apply quadrature
-            let quadrature_inputs = StorageInputsQuadrature::from_base_input(inputs)
-                .with_quadrature_order(quadrature_order)?;
-            self.optical_quantities_emplace(&quadrature_inputs, aux_inputs, &mut out)?;
-            quadrature_inputs.reduce(&out)
-        } else {
-            self.optical_quantities_emplace(inputs, aux_inputs, &mut out)?;
-            Ok(out)
+        match inputs.spectral_integration_mode() {
+            config::SpectralGridMode::AtmosphereIntegratedLineShape => {
+                let mapping_matrix = inputs
+                    .spectral_mapping_matrix()
+                    .ok_or_else(|| anyhow!("Should never be here"))?;
+                Ok(reduce_optical(&out, &mapping_matrix))
+            }
+            _ => Ok(out),
         }
-        */
     }
 
     fn optical_derivatives(

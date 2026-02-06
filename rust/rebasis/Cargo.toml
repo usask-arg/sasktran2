@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 ndarray = "*"
 integrate = "0.1.11"
+anyhow = "*"
 
 [features]
 nightly = []

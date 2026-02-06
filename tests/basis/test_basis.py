@@ -4,4 +4,4 @@ from sasktran2.basis import Rectangle
 
 
 def test_rectangle():
-    rect = Rectangle(3.0, 4.0)
+    Rectangle(3.0, 4.0)

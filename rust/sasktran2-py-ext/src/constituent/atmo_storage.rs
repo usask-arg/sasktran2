@@ -15,6 +15,8 @@ use sasktran2_rs::constituent::traits::*;
 use crate::atmosphere::PyAtmosphere;
 use crate::config::{PyConfig, SpectralGridMode};
 
+use rebasis::grid::mapping_matrix;
+
 use super::deriv_mapping::PyDerivMapping;
 
 fn get_optional_array1<'py, T: Element>(
@@ -152,19 +154,28 @@ impl<'py> StorageInputs for AtmosphereStorageInputs<'py> {
     fn num_singlescatter_moments(&self) -> usize {
         self.num_legendre
     }
-    
+
     fn spectral_grid(&self) -> Option<&sasktran2_rs::atmosphere::types::SpectralGrid> {
+        if let Some(sg) = self.py_atmo.atmosphere.fine_spectral_grid.as_ref() {
+            return Some(sg);
+        }
+
         self.py_atmo.atmosphere.spectral_grid.as_ref()
     }
 
-    fn fine_spectral_grid(&self) -> Option<&sasktran2_rs::atmosphere::types::SpectralGrid> {
-        self.py_atmo.atmosphere.fine_spectral_grid.as_ref()
+    fn spectral_mapping_matrix(&self) -> Option<rebasis::grid::MappingMatrix> {
+        if let Some(f_sg) = self.py_atmo.atmosphere.fine_spectral_grid.as_ref()
+            && let Some(sg) = self.py_atmo.atmosphere.spectral_grid.as_ref()
+        {
+            let mapping = mapping_matrix(f_sg.basis_grid(), sg.basis_grid());
+            return Some(mapping);
+        }
+        None
     }
 
     fn spectral_integration_mode(&self) -> config::SpectralGridMode {
         self.spectral_integration_mode
     }
-
 }
 
 pub struct PyDerivativeGenerator<'py> {
@@ -209,7 +220,8 @@ impl<'py> AtmosphereStorage<'py> {
         let num_stokes_obj = atmo.getattr("nstokes").unwrap();
         let num_stokes: usize = num_stokes_obj.extract().unwrap();
 
-        let spectral_integration_mode: SpectralGridMode = atmo.getattr("spectral_integration_mode")?.extract()?;
+        let spectral_integration_mode: SpectralGridMode =
+            atmo.getattr("spectral_integration_mode")?.extract()?;
         let spectral_integration_mode = match spectral_integration_mode {
             SpectralGridMode::Monochromatic => config::SpectralGridMode::Monochromatic,
             SpectralGridMode::AtmosphereIntegratedLineShape => {
@@ -243,9 +255,9 @@ impl<'py> AtmosphereStorage<'py> {
             .unwrap_or(false);
 
         // Get the rust atmosphere object
-        let rust_obj = atmo
-        .call_method0("_into_rust_object")
-        .map_err(|_| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("Failed to call _into_rust_object"))?;
+        let rust_obj = atmo.call_method0("_into_rust_object").map_err(|_| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("Failed to call _into_rust_object")
+        })?;
 
         // downcast into the PyAtmosphere object and borrow it for the 'py lifetime
         let rust_atmo = rust_obj

@@ -8,10 +8,10 @@ from sasktran2._core_rust import (
     OccultationSource,
     PyConfig,
     SingleScatterSource,
+    SpectralGridMode,
     StokesBasis,
     ThreadingLib,
     ThreadingModel,
-    SpectralGridMode,
 )
 
 
@@ -617,7 +617,7 @@ class Config:
             Each wavelength grid point represents an integrated line shape over the radiative transfer engine.
         """
         return self._config.spectral_grid_mode
-    
+
     @spectral_grid_mode.setter
     def spectral_grid_mode(self, mode: SpectralGridMode):
         """
@@ -632,4 +632,4 @@ class Config:
         `sasktran2.SpectralGridMode.EngineIntegratedLineShape`
             Each wavelength grid point represents an integrated line shape over the radiative transfer engine.
         """
-        self._config.with_spectral_grid_mode(mode)
+        self._config.spectral_grid_mode = mode

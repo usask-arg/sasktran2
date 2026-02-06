@@ -1,9 +1,7 @@
-use crate::optical::storage::OpticalQuantities;
+use crate::util::argsort_f64;
 use anyhow::*;
-use gauss_quad::GaussLegendre;
 use ndarray::{Array1, ArrayView1};
 use rebasis::grid::Grid;
-use crate::util::{argsort_f64, is_sorted};
 
 use super::StorageInputs;
 
@@ -25,7 +23,6 @@ pub struct SpectralGrid {
     right_wavelengths_nm: Array1<f64>,
     basis_grid: Grid,
     wavenumber_sort_idx: Vec<usize>,
-    sorted: bool,
     coordinate: LineshapeCoordinate,
 }
 
@@ -33,17 +30,14 @@ impl SpectralGrid {
     pub fn from_grid(grid: Grid, natural_coordinate: LineshapeCoordinate) -> Result<Self> {
         match natural_coordinate {
             LineshapeCoordinate::WavenumberCminv => {
-                let center_wave = Array1::from_vec(grid.vec_basis().iter().map(|b| {
-                    b.center()
-                }).collect());
+                let center_wave =
+                    Array1::from_vec(grid.vec_basis().iter().map(|b| b.center()).collect());
 
-                let left_wave = Array1::from_vec(grid.vec_basis().iter().map(|b| {
-                    b.lower_limit()
-                }).collect());
+                let left_wave =
+                    Array1::from_vec(grid.vec_basis().iter().map(|b| b.lower_limit()).collect());
 
-                let right_wave = Array1::from_vec(grid.vec_basis().iter().map(|b| {
-                    b.upper_limit()
-                }).collect());
+                let right_wave =
+                    Array1::from_vec(grid.vec_basis().iter().map(|b| b.upper_limit()).collect());
 
                 let left_wavelength = right_wave.mapv(|x| 1.0e7 / x);
                 let right_wavelength = left_wave.mapv(|x| 1.0e7 / x);
@@ -51,7 +45,6 @@ impl SpectralGrid {
                 let center_wavelength = center_wave.mapv(|x| 1.0e7 / x);
 
                 let sort_idx = argsort_f64(center_wave.as_slice().unwrap());
-                let sorted = is_sorted(center_wave.as_slice().unwrap());
 
                 Ok(SpectralGrid {
                     central_wavenumbers_cminv: center_wave,
@@ -62,22 +55,18 @@ impl SpectralGrid {
                     right_wavelengths_nm: right_wavelength,
                     basis_grid: grid,
                     wavenumber_sort_idx: sort_idx,
-                    sorted,
                     coordinate: LineshapeCoordinate::WavenumberCminv,
                 })
             }
             LineshapeCoordinate::WavelengthNm => {
-                let center_wave = Array1::from_vec(grid.vec_basis().iter().map(|b| {
-                    b.center()
-                }).collect());
+                let center_wave =
+                    Array1::from_vec(grid.vec_basis().iter().map(|b| b.center()).collect());
 
-                let left_wave = Array1::from_vec(grid.vec_basis().iter().map(|b| {
-                    b.lower_limit()
-                }).collect());
+                let left_wave =
+                    Array1::from_vec(grid.vec_basis().iter().map(|b| b.lower_limit()).collect());
 
-                let right_wave = Array1::from_vec(grid.vec_basis().iter().map(|b| {
-                    b.upper_limit()
-                }).collect());
+                let right_wave =
+                    Array1::from_vec(grid.vec_basis().iter().map(|b| b.upper_limit()).collect());
 
                 let left_wavenumber = right_wave.mapv(|x| 1.0e7 / x);
                 let right_wavenumber = left_wave.mapv(|x| 1.0e7 / x);
@@ -85,7 +74,6 @@ impl SpectralGrid {
                 let center_wavenumber = center_wave.mapv(|x| 1.0e7 / x);
 
                 let sort_idx = argsort_f64(center_wave.as_slice().unwrap());
-                let sorted = is_sorted(center_wave.as_slice().unwrap());
 
                 Ok(SpectralGrid {
                     central_wavenumbers_cminv: center_wavenumber,
@@ -96,19 +84,16 @@ impl SpectralGrid {
                     right_wavelengths_nm: right_wave,
                     basis_grid: grid,
                     wavenumber_sort_idx: sort_idx,
-                    sorted,
                     coordinate: LineshapeCoordinate::WavelengthNm,
                 })
             }
         }
-
-
     }
 
     pub fn from_wavelengths_nm(wavelengths_nm: &Array1<f64>) -> Result<Self> {
         let basis_vec = wavelengths_nm
             .iter()
-            .map(|&wvnum| rebasis::basis::Delta::new(wvnum ))
+            .map(|&wvnum| rebasis::basis::Delta::new(wvnum))
             .map(rebasis::basis::BasisType::Delta)
             .collect();
 
@@ -120,7 +105,7 @@ impl SpectralGrid {
     pub fn from_wavenumbers_cminv(wavenumbers_cminv: &Array1<f64>) -> Result<Self> {
         let basis_vec = wavenumbers_cminv
             .iter()
-            .map(|&wvnum| rebasis::basis::Delta::new(wvnum ))
+            .map(|&wvnum| rebasis::basis::Delta::new(wvnum))
             .map(rebasis::basis::BasisType::Delta)
             .collect();
 
@@ -263,5 +248,4 @@ impl StorageInputs for ManualStorageInputs {
     fn spectral_integration_mode(&self) -> crate::bindings::config::SpectralGridMode {
         crate::bindings::config::SpectralGridMode::Monochromatic
     }
-
 }

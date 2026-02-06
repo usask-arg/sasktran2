@@ -24,7 +24,10 @@ impl BasisType {
             (BasisType::Delta(d), BasisType::Triangle(t)) => integrate_triangle_delta(t, d),
             (BasisType::Gaussian(g), BasisType::Delta(d)) => integrate_gaussian_delta(g, d),
             (BasisType::Delta(d), BasisType::Gaussian(g)) => integrate_gaussian_delta(g, d),
-            (b1, b2) => integrate_numeric(b1, b2)
+            (BasisType::Triangle(t1), BasisType::Triangle(t2)) => {
+                integrate_triangle_triangle(t1, t2)
+            }
+            (b1, b2) => integrate_numeric(b1, b2),
         }
     }
 
@@ -63,21 +66,24 @@ impl BasisType {
             BasisType::Triangle(t) => t.center(),
         }
     }
-
 }
 
 #[derive(Debug, Clone)]
 pub struct Rectangle {
     left: f64,
     right: f64,
-    norm_factor: f64
+    norm_factor: f64,
 }
 
 impl Rectangle {
     pub fn new(left: f64, right: f64) -> Self {
         let norm_factor = 1.0 / (right - left);
 
-        Rectangle { left, right, norm_factor }
+        Rectangle {
+            left,
+            right,
+            norm_factor,
+        }
     }
 }
 
@@ -105,7 +111,7 @@ impl Basis for Rectangle {
 
 #[derive(Debug, Clone)]
 pub struct Delta {
-    center: f64
+    center: f64,
 }
 
 impl Delta {
@@ -123,7 +129,7 @@ impl Basis for Delta {
         self.center
     }
 
-    fn evaluate(&self, x: f64) -> f64 {
+    fn evaluate(&self, _x: f64) -> f64 {
         0.0
     }
 
@@ -137,14 +143,19 @@ pub struct Gaussian {
     center: f64,
     stdev: f64,
     max_stdev: i32,
-    norm_factor: f64
+    norm_factor: f64,
 }
 
 impl Gaussian {
     pub fn new(center: f64, stdev: f64, max_stdev: i32) -> Self {
         let norm_factor = 1.0 / (stdev * (2.0 * std::f64::consts::PI).sqrt());
 
-        Gaussian { center, stdev, max_stdev, norm_factor }
+        Gaussian {
+            center,
+            stdev,
+            max_stdev,
+            norm_factor,
+        }
     }
 }
 
@@ -172,7 +183,7 @@ pub struct Triangle {
     left: f64,
     right: f64,
     center: f64,
-    norm_factor: f64
+    norm_factor: f64,
 }
 
 impl Triangle {
@@ -183,7 +194,12 @@ impl Triangle {
         // = (right - left) * height / 2
         // then if we want this to equal 1, we need to set height = 2 / (right - left)
 
-        Triangle { left, right, center, norm_factor: 2.0 / (right - left) }
+        Triangle {
+            left,
+            right,
+            center,
+            norm_factor: 2.0 / (right - left),
+        }
     }
 }
 
@@ -226,7 +242,7 @@ mod tests {
         let b = BasisType::Rectangle(Rectangle::new(0.0, 1.0));
 
         let rect2 = BasisType::Rectangle(Rectangle::new(0.0, 1.0));
-        let delta = BasisType::Delta(Delta {center: 0.5});
+        let delta = BasisType::Delta(Delta { center: 0.5 });
 
         let result = b.overlap_integral(&rect2);
         assert_eq!(result, 1.0);

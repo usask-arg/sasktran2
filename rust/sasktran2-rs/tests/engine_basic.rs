@@ -3,7 +3,7 @@ use sasktran2_rs::bindings::prelude::*;
 
 #[test]
 fn test_engine_basic() -> Result<()> {
-    let mut atmosphere = Atmosphere::new(10, 50, 16, true, true, Stokes::Stokes1);
+    let mut atmosphere = Atmosphere::new(10, 50, 16, true, true, Stokes::Stokes1, None);
 
     atmosphere.storage.ssa.fill(1.0);
     atmosphere.storage.total_extinction.fill(0.0001);
@@ -44,7 +44,7 @@ fn test_engine_basic() -> Result<()> {
 
 #[test]
 fn test_flux_basic() -> Result<()> {
-    let mut atmosphere = Atmosphere::new(10, 50, 16, true, true, Stokes::Stokes1);
+    let mut atmosphere = Atmosphere::new(10, 50, 16, true, true, Stokes::Stokes1, None);
 
     atmosphere.storage.ssa.fill(1.0);
     atmosphere.storage.total_extinction.fill(0.0001);

@@ -6,7 +6,7 @@ use sasktran2_rs::bindings::prelude::*;
 
 #[test]
 fn test_coulson() -> Result<()> {
-    let mut atmosphere = Atmosphere::new(1, 2, 40, true, false, Stokes::Stokes3);
+    let mut atmosphere = Atmosphere::new(1, 2, 40, true, false, Stokes::Stokes3, None);
 
     atmosphere.storage.ssa.fill(1.0);
     atmosphere.storage.total_extinction.fill(0.5);

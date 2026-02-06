@@ -44,7 +44,7 @@ class Atmosphere:
         temperature_derivative: bool = True,
         specific_humidity_derivative: bool = True,
         legendre_derivative: bool = True,
-        spectral_grid: sk.basis.Grid | None = None,
+        spectral_grid: sk.basis.Grid | None = None,  # noqa: ARG002
     ):
         """
         The main specification for the atmospheric state.
@@ -88,14 +88,17 @@ class Atmosphere:
             raise ValueError(msg)
 
         grid = None
+        wavenumber_space = None
 
         if wavelengths_nm is not None:
             self.wavelengths_nm = wavelengths_nm.astype(np.float64)
             grid = sk.basis.Grid.from_triangles(self.wavelengths_nm)
+            wavenumber_space = False
 
         if wavenumber_cminv is not None:
             self.wavenumbers_cminv = wavenumber_cminv.astype(np.float64)
             grid = sk.basis.Grid.from_triangles(self.wavenumbers_cminv)
+            wavenumber_space = True
 
         nwavel = len(self.wavelengths_nm) if numwavel is None else numwavel
 
@@ -107,7 +110,6 @@ class Atmosphere:
         self._legendre_derivative = legendre_derivative
         self._specific_humidity_derivative = specific_humidity_derivative
 
-
         self._atmosphere = PyAtmosphere(
             nwavel,
             len(model_geometry.altitudes()),
@@ -115,7 +117,9 @@ class Atmosphere:
             calculate_derivatives,
             config.emission_source != EmissionSource.NoSource,
             config.num_stokes,
-            grid._internal_object() if grid is not None else None
+            grid._internal_object() if grid is not None else None,
+            None,
+            wavenumber_space,
         )
 
         self._leg_coeff = LegendreStorageView(
@@ -366,7 +370,7 @@ class Atmosphere:
         np.ndarray
         """
         return self._unscaled_extinction
-    
+
     @property
     def spectral_integration_mode(self) -> sk.SpectralGridMode:
         """

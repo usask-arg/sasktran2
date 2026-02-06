@@ -69,9 +69,9 @@ pub enum ThreadingLib {
 #[pyclass(eq, eq_int)]
 #[derive(PartialEq, Clone)]
 pub enum SpectralGridMode {
-    Monochromatic=0, // Delta function sampling
-    AtmosphereIntegratedLineShape=1, // Lineshape is specified for each grid point, atmosphere optical
-    EngineIntegratedLineShape=2
+    Monochromatic = 0,                 // Delta function sampling
+    AtmosphereIntegratedLineShape = 1, // Lineshape is specified for each grid point, atmosphere optical
+    EngineIntegratedLineShape = 2,
 }
 
 #[pyclass(eq, eq_int)]
@@ -190,7 +190,7 @@ impl PyConfig {
             }
             SpectralGridMode::EngineIntegratedLineShape => {
                 config::SpectralGridMode::EngineIntegratedLineShape
-            }   
+            }
         };
 
         self.config.with_spectral_grid_mode(mode).into_pyresult()?;

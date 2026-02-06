@@ -108,7 +108,10 @@ impl Constituent for Rayleigh {
     fn add_to_atmosphere(&self, storage: &mut impl AtmosphereStorageAccess) -> Result<()> {
         let (inputs, outputs) = storage.split_inputs_outputs();
 
-        let wavelengths_nm = inputs.spectral_grid().ok_or_else(|| anyhow::anyhow!("spectral_grid not available"))?.central_wavelengths_nm();
+        let wavelengths_nm = inputs
+            .spectral_grid()
+            .ok_or_else(|| anyhow::anyhow!("spectral_grid not available"))?
+            .central_wavelengths_nm();
         let mut outputs = outputs.mut_view();
 
         let total_extinction_array = &mut outputs.total_extinction;
@@ -172,7 +175,10 @@ impl Constituent for Rayleigh {
         let outputs = outputs.view();
 
         let air_dens = inputs.air_numberdensity_dict();
-        let wavelengths_nm = inputs.spectral_grid().ok_or_else(|| anyhow::anyhow!("spectral_grid not available"))?.central_wavelengths_nm();
+        let wavelengths_nm = inputs
+            .spectral_grid()
+            .ok_or_else(|| anyhow::anyhow!("spectral_grid not available"))?
+            .central_wavelengths_nm();
 
         let deriv_names = ["pressure_pa", "temperature_k"];
         let deriv_vals = [&air_dens["dN_dP"], &air_dens["dN_dT"]];

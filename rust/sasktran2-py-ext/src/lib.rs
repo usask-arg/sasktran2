@@ -12,8 +12,8 @@ mod geodetic;
 mod geometry;
 mod optical;
 mod output;
-mod viewing_geometry;
 mod pyrebasis;
+mod viewing_geometry;
 
 use pyo3::prelude::*;
 

@@ -79,7 +79,7 @@ pub enum LogLevel {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SpectralGridMode {
-    Monochromatic, // Delta function sampling
+    Monochromatic,                 // Delta function sampling
     AtmosphereIntegratedLineShape, // Lineshape is specified for each grid point, atmosphere optical properties are integrated over the lineshape
     EngineIntegratedLineShape, // Lineshape is specified for each grid point, radiative transfer engine integrates over the lineshape
 }
