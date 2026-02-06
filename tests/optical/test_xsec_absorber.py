@@ -214,3 +214,101 @@ def test_xsec_different_temperatures(chcnft1_file):
     assert result1.cross_section.shape == result2.cross_section.shape
     assert np.all(result1.cross_section >= 0)
     assert np.all(result2.cross_section >= 0)
+
+
+def test_xsec_from_lbl_database_single_file():
+    """Test loading a species with a single cross section file from LBLRTM database."""
+    # CCL4 has only one spectral band
+    absorber = sk.optical.XsecAbsorber.from_lbl_database('CCL4')
+    assert absorber is not None
+    
+    # Test that it can compute quantities
+    config = sk.Config()
+    altitude_grid = np.array([10000])
+    geometry = sk.Geometry1D(
+        0.6, 0, 6327000, altitude_grid,
+        sk.InterpolationMethod.LinearInterpolation,
+        sk.GeometryType.Spherical,
+    )
+    
+    wavenumbers_cminv = np.linspace(790, 800, 10)
+    wavelengths_nm = 1e7 / wavenumbers_cminv
+    atmosphere = sk.Atmosphere(geometry, config, wavelengths_nm=wavelengths_nm)
+    atmosphere.temperature_k[:] = 296.0
+    atmosphere.pressure_pa[:] = 101325.0
+    
+    result = absorber.atmosphere_quantities(
+        atmo=atmosphere,
+        wavenumbers_cminv=wavenumbers_cminv
+    )
+    assert result.cross_section.shape == (1, 10)
+    assert np.all(result.cross_section >= 0)
+
+
+def test_xsec_from_lbl_database_multi_file():
+    """Test loading a species with multiple cross section files from LBLRTM database."""
+    # HNO3 has multiple spectral bands (4 different wavenumber ranges)
+    absorber = sk.optical.XsecAbsorber.from_lbl_database('HNO3')
+    assert absorber is not None
+    
+    # Test across different wavenumber ranges covered by different files
+    config = sk.Config()
+    altitude_grid = np.array([10000])
+    geometry = sk.Geometry1D(
+        0.6, 0, 6327000, altitude_grid,
+        sk.InterpolationMethod.LinearInterpolation,
+        sk.GeometryType.Spherical,
+    )
+    
+    # Test in first band range (0-109 cm^-1)
+    wavenumbers_cminv = np.linspace(50, 100, 10)
+    wavelengths_nm = 1e7 / wavenumbers_cminv
+    atmosphere = sk.Atmosphere(geometry, config, wavelengths_nm=wavelengths_nm)
+    atmosphere.temperature_k[:] = 296.0
+    atmosphere.pressure_pa[:] = 101325.0
+    
+    result1 = absorber.atmosphere_quantities(
+        atmo=atmosphere,
+        wavenumbers_cminv=wavenumbers_cminv
+    )
+    assert result1.cross_section.shape == (1, 10)
+    
+    # Test in second band range (332-984 cm^-1)
+    wavenumbers_cminv = np.linspace(500, 700, 10)
+    wavelengths_nm = 1e7 / wavenumbers_cminv
+    atmosphere = sk.Atmosphere(geometry, config, wavelengths_nm=wavelengths_nm)
+    
+    result2 = absorber.atmosphere_quantities(
+        atmo=atmosphere,
+        wavenumbers_cminv=wavenumbers_cminv
+    )
+    assert result2.cross_section.shape == (1, 10)
+
+
+def test_xsec_from_lbl_database_case_insensitive():
+    """Test that species names are case insensitive."""
+    absorber1 = sk.optical.XsecAbsorber.from_lbl_database('CCL4')
+    absorber2 = sk.optical.XsecAbsorber.from_lbl_database('ccl4')
+    absorber3 = sk.optical.XsecAbsorber.from_lbl_database('CcL4')
+    
+    # All should be valid  
+    assert absorber1 is not None
+    assert absorber2 is not None
+    assert absorber3 is not None
+
+
+def test_xsec_from_lbl_database_invalid_species():
+    """Test that an invalid species name raises ValueError."""
+    with pytest.raises(ValueError, match="No cross section files found"):
+        sk.optical.XsecAbsorber.from_lbl_database('INVALID_SPECIES')
+
+
+def test_xsec_from_lbl_database_common_species():
+    """Test loading several common species to ensure database access works."""
+    # Test a few common species
+    common_species = ['F11', 'F12', 'SF6', 'NO2', 'CH3CN']
+    
+    for species in common_species:
+        absorber = sk.optical.XsecAbsorber.from_lbl_database(species)
+        assert absorber is not None, f"Failed to load {species}"
+
