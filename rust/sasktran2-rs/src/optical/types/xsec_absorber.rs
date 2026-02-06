@@ -1,30 +1,26 @@
-use ndarray::*;
-use std::collections::HashMap;
-use std::fs;
-use std::io::{BufRead, BufReader};
-use std::ops::AddAssign;
-use std::path::PathBuf;
+use std::{fs, io::{BufRead, BufReader}, ops::AddAssign, path::PathBuf};
+
+use crate::{optical::traits::OpticalProperty, prelude::*};
+
+pub struct XsecAtCondition {
+    pub wvnum: Array1<f64>,
+    pub xsec: Array1<f64>,
+    pub temperature_k: f64,
+    pub pressure_pa: f64,
+}
+
 
 /// Raw storage structure that holds the cross section data from something like the
 /// HITRAN fwf files, or the LBLRTM files.  This is basically lists of cross section data as a function
 /// of wavenumber at a given temperature and pressure.  We assume wavenumber is specified in
 /// vacuum cm^-1, and the cross section is in cm^2/molecule.
-pub struct XsecListAtConditions {
-    pub xsec: Vec<Array1<f64>>,
-    pub wvnum: Vec<Array1<f64>>,
-    pub params: HashMap<String, Vec<f64>>,
-}
+pub struct XsecDatabase(pub Vec<XsecAtCondition>);
 
 /// Let's us concatenate two XsecDatabase objects together.  This is useful for combining
 /// databases from different pressure/temperatures together
-impl AddAssign for XsecListAtConditions {
+impl AddAssign for XsecDatabase {
     fn add_assign(&mut self, other: Self) {
-        self.xsec.extend(other.xsec);
-        self.wvnum.extend(other.wvnum);
-
-        for (param, vals) in other.params {
-            self.params.entry(param).or_default().extend(vals);
-        }
+        self.0.extend(other.0);
     }
 }
 
@@ -79,17 +75,14 @@ fn read_hitran_header(line: &str) -> Header {
     }
 }
 
-pub fn read_fwf_xsec(path: PathBuf) -> Option<XsecListAtConditions> {
+pub fn read_fwf_xsec(path: PathBuf) -> Option<XsecDatabase> {
     let file = fs::File::open(path).unwrap();
     let reader = BufReader::new(file);
 
-    let mut all_xs: Vec<Array1<f64>> = vec![];
-    let mut all_wvnum: Vec<Array1<f64>> = vec![];
+    let mut conditions: Vec<XsecAtCondition> = vec![];
 
     let mut xs: Vec<f64> = vec![];
     let mut wvnum: Vec<f64> = vec![];
-    let mut pressure: Vec<f64> = vec![];
-    let mut temperature: Vec<f64> = vec![];
 
     let mut header = Header::new();
     let mut cur_wvnum = 0.0;
@@ -113,10 +106,12 @@ pub fn read_fwf_xsec(path: PathBuf) -> Option<XsecListAtConditions> {
 
                 cur_index += 1;
                 if cur_index >= header.num_points {
-                    all_xs.push(Array1::from(xs.clone()));
-                    all_wvnum.push(Array1::from(wvnum.clone()));
-                    pressure.push(header.pressure);
-                    temperature.push(header.temperature);
+                    conditions.push(XsecAtCondition {
+                        wvnum: Array1::from(wvnum.clone()),
+                        xsec: Array1::from(xs.clone()),
+                        temperature_k: header.temperature,
+                        pressure_pa: header.pressure,
+                    });
 
                     xs.clear();
                     wvnum.clear();
@@ -126,25 +121,13 @@ pub fn read_fwf_xsec(path: PathBuf) -> Option<XsecListAtConditions> {
         }
     }
 
-    let mut params = HashMap::new();
-    params.insert("pressure".to_string(), pressure);
-    params.insert("temperature".to_string(), temperature);
-
-    Some(XsecListAtConditions {
-        xsec: all_xs,
-        wvnum: all_wvnum,
-        params,
-    })
+    Some(XsecDatabase(conditions))
 }
 
-pub fn read_fwf_folder(folder: PathBuf) -> Option<XsecListAtConditions> {
+pub fn read_fwf_folder(folder: PathBuf) -> Option<XsecDatabase> {
     let paths = fs::read_dir(folder).unwrap();
 
-    let mut combined_ds = XsecListAtConditions {
-        xsec: vec![],
-        wvnum: vec![],
-        params: HashMap::new(),
-    };
+    let mut combined_ds = XsecDatabase(vec![]);
 
     for path in paths {
         let path = path.unwrap().path();
@@ -156,4 +139,29 @@ pub fn read_fwf_folder(folder: PathBuf) -> Option<XsecListAtConditions> {
     }
 
     Some(combined_ds)
+}
+
+
+impl OpticalProperty for XsecDatabase {
+    fn optical_quantities_emplace(
+        &self,
+        inputs: &dyn crate::atmosphere::StorageInputs,
+        aux_inputs: &dyn crate::optical::traits::AuxOpticalInputs,
+        optical_quantities: &mut crate::optical::storage::OpticalQuantities,
+    ) -> Result<()> {
+        todo!()
+    }
+
+    fn optical_derivatives_emplace(
+        &self,
+        inputs: &dyn crate::atmosphere::StorageInputs,
+        aux_inputs: &dyn crate::optical::traits::AuxOpticalInputs,
+        d_optical_quantities: &mut HashMap<String, crate::optical::storage::OpticalQuantities>,
+    ) -> Result<()> {
+        todo!()
+    }
+
+    fn is_scatterer(&self) -> bool {
+        false
+    }
 }
