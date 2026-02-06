@@ -17,7 +17,7 @@ pub struct XsecAtCondition {
 /// Raw storage structure that holds the cross section data from something like the
 /// HITRAN fwf files, or the LBLRTM files.  This is basically lists of cross section data as a function
 /// of wavenumber at a given temperature and pressure.  We assume wavenumber is specified in
-/// vacuum cm^-1, and the cross section is in cm^2/molecule.
+/// vacuum cm^-1, and the cross section is in cm^2/molecule (inside the file).
 pub struct XsecDatabase(pub Vec<XsecAtCondition>);
 
 /// Let's us concatenate two XsecDatabase objects together.  This is useful for combining
@@ -56,77 +56,135 @@ impl Header {
 }
 
 fn read_hitran_header(line: &str) -> Header {
-    let short_mol_name = line[10..20].trim().to_string();
-    let wvnum_start: f64 = line[20..31].trim().parse().unwrap();
-    let wvnum_end: f64 = line[31..42].trim().parse().unwrap();
-    let num_points: i64 = line[42..50].trim().parse().unwrap();
-    let temperature: f64 = line[50..58].trim().parse().unwrap();
-    let zero: f64 = line[59..62].trim().parse().unwrap();
-    // let wvnum_space: f64 = line[62..71].trim().parse().unwrap();  // unsure on this one...
-    let pressure: f64 = line[71..80].trim().parse().unwrap();
-
-    let wvnum_space = (wvnum_end - wvnum_start) / ((num_points - 1) as f64);
-
-    Header {
-        short_mol_name,
-        wvnum_start,
-        wvnum_end,
-        num_points,
-        temperature,
-        zero,
-        wvnum_space,
-        pressure,
+    // HITRAN xsc files have multiple format variants
+    // Extract numbers by splitting on whitespace and parsing
+    
+    let tokens: Vec<&str> = line.split_whitespace().collect();
+    let mut numbers: Vec<f64> = Vec::new();
+    
+    // Extract all valid numbers from tokens
+    for token in tokens.iter() {
+        if let Ok(num) = token.parse::<f64>() {
+            numbers.push(num);
+        }
+    }
+    
+    // The general pattern is: wvnum_start wvnum_end num_points temperature pressure [...]
+    // We need at least 5 numbers
+    if numbers.len() >= 5 {  
+        // Find num_points - it should be a large integer value (> 1000 typically)
+        let mut num_points_idx = 2;  // Default: 3rd number
+        
+        for (idx, num) in numbers.iter().enumerate() {
+            if *num > 1000.0 && num.fract().abs() < 0.0001 {
+                num_points_idx = idx;
+                break;
+            }
+        }
+        
+        let wvnum_start = numbers[0];
+        let wvnum_end = numbers[1];
+        let num_points = numbers[num_points_idx] as i64;
+        
+        // Temperature and pressure typically follow num_points
+        let temp_idx = num_points_idx + 1;
+        let press_idx = num_points_idx + 2;
+        
+        let temperature = if temp_idx < numbers.len() { numbers[temp_idx] } else { 296.0 };
+        let pressure = if press_idx < numbers.len() { numbers[press_idx] } else { 101325.0 };
+        
+        let mut header = Header {
+            short_mol_name: String::new(),
+            wvnum_start,
+            wvnum_end,
+            num_points,
+            temperature,
+            zero: 0.0,
+            wvnum_space: 0.0,
+            pressure,
+        };
+        
+        header.wvnum_space = (wvnum_end - wvnum_start) / ((num_points - 1) as f64);
+        header
+    } else {
+        Header::new()
     }
 }
 
 pub fn read_fwf_xsec(path: PathBuf) -> Option<XsecDatabase> {
     let file = fs::File::open(path).unwrap();
     let reader = BufReader::new(file);
-
+    let mut lines = reader.lines();
+    
     let mut conditions: Vec<XsecAtCondition> = vec![];
-
-    let mut xs: Vec<f64> = vec![];
-    let mut wvnum: Vec<f64> = vec![];
-
-    let mut header = Header::new();
-    let mut cur_wvnum = 0.0;
-    let mut cur_index = 0;
-
-    for line_result in reader.lines() {
-        let line = line_result.ok()?;
-
-        // Check if this is header information
-        if line.len() == 102 {
-            header = read_hitran_header(&line);
-            cur_wvnum = header.wvnum_start;
-        } else {
+    
+    // Process file: each entry starts with a header, followed by data lines
+    while let Some(header_line) = lines.next() {
+        let header_line = header_line.ok()?;
+        
+        // Parse the header to get num_points and other metadata
+        let header = read_hitran_header(&header_line);
+        
+        // Now read exactly num_points data values
+        let mut xs: Vec<f64> = Vec::with_capacity(header.num_points as usize);
+        let mut wvnum: Vec<f64> = Vec::with_capacity(header.num_points as usize);
+        let mut cur_wvnum = header.wvnum_start;
+        
+        'data_reading: while xs.len() < header.num_points as usize {
+            let data_line = match lines.next() {
+                Some(Ok(line)) => line,
+                _ => break 'data_reading,  // EOF or error
+            };
+            
+            // Parse up to 10 values from this line (10 chars each)
             for i in 0..10 {
+                if xs.len() >= header.num_points as usize {
+                    break 'data_reading;
+                }
+                
                 let start = i * 10;
                 let end = start + 10;
-                let value: f64 = line[start..end].trim().parse().unwrap();
-                xs.push(value);
-                wvnum.push(cur_wvnum);
-                cur_wvnum += header.wvnum_space;
-
-                cur_index += 1;
-                if cur_index >= header.num_points {
-                    conditions.push(XsecAtCondition {
-                        wvnum: Grid1D::new(Array1::from(wvnum.clone())),
-                        xsec: Array1::from(xs.clone()),
-                        temperature_k: header.temperature,
-                        pressure_pa: header.pressure,
-                    });
-
-                    xs.clear();
-                    wvnum.clear();
+                
+                // Check bounds
+                if start >= data_line.len() {
                     break;
+                }
+                
+                // Extract field
+                let field = if end <= data_line.len() {
+                    &data_line[start..end]
+                } else {
+                    &data_line[start..]
+                };
+                
+                // Parse value
+                let trimmed = field.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                
+                if let Ok(value) = trimmed.parse::<f64>() {
+                    xs.push(value / 1.0e4); // Convert from cm^2/molecule to m^2/molecule
+                    wvnum.push(cur_wvnum);
+                    cur_wvnum += header.wvnum_space;
                 }
             }
         }
+        
+        // Only add the condition if we got the expected number of points
+        if xs.len() == header.num_points as usize {
+            conditions.push(XsecAtCondition {
+                wvnum: Grid1D::new(Array1::from(wvnum)),
+                xsec: Array1::from(xs),
+                temperature_k: header.temperature,
+                pressure_pa: header.pressure,
+            });
+        }
     }
-
+    
     Some(XsecDatabase(conditions))
 }
+
 
 pub fn read_fwf_folder(folder: PathBuf) -> Option<XsecDatabase> {
     let paths = fs::read_dir(folder).unwrap();
@@ -334,5 +392,108 @@ impl OpticalProperty for XsecDatabase {
 
     fn is_scatterer(&self) -> bool {
         false
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn test_data_path(filename: &str) -> PathBuf {
+        // Assuming tests are run from the workspace root
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("tests/data")
+            .join(filename)
+    }
+
+    #[test]
+    fn test_read_single_file() {
+        let path = test_data_path("CHClFCF3_287.0_0.0_675.2-715.0_00.xsc");
+        let db = read_fwf_xsec(path);
+        
+        assert!(db.is_some());
+        let db = db.unwrap();
+        assert!(!db.0.is_empty());
+        
+        // Check that we loaded the data
+        let first_condition = &db.0[0];
+        assert!(first_condition.wvnum.x.len() > 0);
+        assert_eq!(first_condition.wvnum.x.len(), first_condition.xsec.len());
+        
+        // Check temperature and pressure from the filename
+        assert!((first_condition.temperature_k - 287.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn test_read_chcnft1_file() {
+        let path = test_data_path("CHCNFT1");
+        let db = read_fwf_xsec(path);
+        
+        assert!(db.is_some());
+        let db = db.unwrap();
+        assert!(!db.0.is_empty());
+        
+        // Check basic properties
+        let first_condition = &db.0[0];
+        assert!(!first_condition.wvnum.x.is_empty());
+        assert!((first_condition.temperature_k - 324.1).abs() < 1.0);
+    }
+
+    #[test]
+    fn test_get_pt_interp_weights() {
+        let path = test_data_path("CHClFCF3_287.0_0.0_675.2-715.0_00.xsc");
+        let db = read_fwf_xsec(path).expect("Failed to read test file");
+        
+        // Test at the exact temperature and pressure in the file
+        let weights = db.get_pt_interp_weights(0.0, 287.0);
+        
+        // Should get some weights
+        assert!(!weights.is_empty());
+        
+        // Weights should sum to ~1.0
+        let weight_sum: f64 = weights.iter().map(|(_, w, _)| w).sum();
+        assert!((weight_sum - 1.0).abs() < 1e-10);
+        
+        // All d_weights should be finite
+        for (_, _, d_weight) in &weights {
+            assert!(d_weight.is_finite());
+        }
+    }
+
+    #[test]
+    fn test_temperature_interpolation_weights() {
+        let path = test_data_path("CHCNFT1");
+        let db = read_fwf_xsec(path).expect("Failed to read test file");
+        
+        // Test interpolation between temperatures if multiple exist
+        let weights = db.get_pt_interp_weights(0.0, 320.0);
+        
+        assert!(!weights.is_empty());
+        
+        // Check weights sum to 1
+        let weight_sum: f64 = weights.iter().map(|(_, w, _)| w).sum();
+        assert!((weight_sum - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_wavenumber_grid() {
+        let path = test_data_path("CHClFCF3_287.0_0.0_675.2-715.0_00.xsc");
+        let db = read_fwf_xsec(path).expect("Failed to read test file");
+        
+        let condition = &db.0[0];
+        
+        // Check that wavenumber grid is monotonically increasing
+        for i in 1..condition.wvnum.x.len() {
+            assert!(condition.wvnum.x[i] > condition.wvnum.x[i-1]);
+        }
+        
+        // Check that cross sections are non-negative
+        for xs in condition.xsec.iter() {
+            assert!(*xs >= 0.0);
+        }
     }
 }

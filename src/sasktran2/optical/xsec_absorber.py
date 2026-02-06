@@ -4,6 +4,7 @@ from pathlib import Path
 
 from sasktran2._core_rust import PyXsecAbsorber
 from sasktran2.optical.base import OpticalProperty
+from sasktran2.database.web import StandardDatabase
 
 
 class XsecAbsorber(OpticalProperty):
@@ -55,6 +56,13 @@ class XsecAbsorber(OpticalProperty):
         else:
             msg = "source must be a path to a file, folder, or list of file paths"
             raise TypeError(msg)
+        
+    @classmethod
+    def from_lbl_database(cls, species_name: str) -> XsecAbsorber:
+        db = StandardDatabase()
+        header = db.path("cross_sections/lblrtm/FSCDXS")
+
+        pass
 
     def atmosphere_quantities(self, atmo, **kwargs):
         """
