@@ -151,8 +151,9 @@ impl XsecDatabase {
     /// 
     /// This is a simple algorithm that does not interpolate in pressure and finds
     /// the two closest temperatures to interpolate between. Returns a vector of
-    /// (index, weight) tuples for the cross sections to use.
-    fn get_pt_interp_weights(&self, pressure_pa: f64, temperature_k: f64) -> Vec<(usize, f64)> {
+    /// (index, weight, d_weight) tuples for the cross sections to use, where
+    /// d_weight is the derivative of the weight with respect to temperature.
+    fn get_pt_interp_weights(&self, pressure_pa: f64, temperature_k: f64) -> Vec<(usize, f64, f64)> {
         // Find the closest pressure (no pressure interpolation)
         let mut closest_pressure_idx = 0usize;
         let mut min_pressure_diff = f64::INFINITY;
@@ -178,8 +179,8 @@ impl XsecDatabase {
         conditions_at_pressure.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
         
         if conditions_at_pressure.len() == 1 {
-            // Only one temperature available, use it with weight 1.0
-            return vec![(conditions_at_pressure[0].0, 1.0)];
+            // Only one temperature available, use it with weight 1.0 and zero derivative
+            return vec![(conditions_at_pressure[0].0, 1.0, 0.0)];
         }
         
         // Find the two closest temperatures
@@ -209,15 +210,21 @@ impl XsecDatabase {
             upper_idx = lower_idx + 1;
         }
         
-        // Calculate interpolation weight
+        // Calculate interpolation weights and derivatives
         let temp_lower = conditions_at_pressure[lower_idx].1;
         let temp_upper = conditions_at_pressure[upper_idx].1;
-        let weight_upper = (temperature_k - temp_lower) / (temp_upper - temp_lower);
+        let temp_diff = temp_upper - temp_lower;
+        
+        let weight_upper = (temperature_k - temp_lower) / temp_diff;
         let weight_lower = 1.0 - weight_upper;
         
+        // Derivatives with respect to temperature
+        let d_weight_upper = 1.0 / temp_diff;
+        let d_weight_lower = -1.0 / temp_diff;
+        
         vec![
-            (conditions_at_pressure[lower_idx].0, weight_lower),
-            (conditions_at_pressure[upper_idx].0, weight_upper),
+            (conditions_at_pressure[lower_idx].0, weight_lower, d_weight_lower),
+            (conditions_at_pressure[upper_idx].0, weight_upper, d_weight_upper),
         ]
     }
 }
@@ -248,7 +255,7 @@ impl OpticalProperty for XsecDatabase {
                 let weights = self.get_pt_interp_weights(*press, *temp);
                 
                 // For each set of conditions, interpolate in wavenumber and accumulate
-                for (idx, weight) in weights {
+                for (idx, weight, _d_weight) in weights {
                     let condition = &self.0[idx];
                     
                     // Interpolate in wavenumber for each point
@@ -267,11 +274,61 @@ impl OpticalProperty for XsecDatabase {
 
     fn optical_derivatives_emplace(
         &self,
-        _inputs: &dyn crate::atmosphere::StorageInputs,
-        _aux_inputs: &dyn crate::optical::traits::AuxOpticalInputs,
-        _d_optical_quantities: &mut HashMap<String, crate::optical::storage::OpticalQuantities>,
+        inputs: &dyn crate::atmosphere::StorageInputs,
+        aux_inputs: &dyn crate::optical::traits::AuxOpticalInputs,
+        d_optical_quantities: &mut HashMap<String, crate::optical::storage::OpticalQuantities>,
     ) -> Result<()> {
-        // No derivatives for now
+        use crate::optical::traits::param_from_storage_or_aux;
+        use ndarray::Zip;
+        
+        let wavenumber_cminv = param_from_storage_or_aux(inputs, aux_inputs, "wavenumbers_cminv")?;
+        let temperature_k = param_from_storage_or_aux(inputs, aux_inputs, "temperature_k")?;
+        let pressure_pa = param_from_storage_or_aux(inputs, aux_inputs, "pressure_pa")?;
+        
+        // Create or resize derivative storage for temperature
+        if d_optical_quantities.contains_key("temperature_k") {
+            d_optical_quantities
+                .get_mut("temperature_k")
+                .unwrap()
+                .resize(temperature_k.len(), wavenumber_cminv.len());
+        } else {
+            d_optical_quantities.insert(
+                "temperature_k".to_string(),
+                crate::optical::storage::OpticalQuantities::new(
+                    temperature_k.len(),
+                    wavenumber_cminv.len(),
+                    false,
+                ),
+            );
+        }
+        
+        let d_xs = &mut d_optical_quantities
+            .get_mut("temperature_k")
+            .unwrap()
+            .cross_section;
+        
+        Zip::from(d_xs.rows_mut())
+            .and(temperature_k.view())
+            .and(pressure_pa.view())
+            .par_for_each(|mut row, temp, press| {
+                // Get interpolation weights and derivatives for this pressure/temperature
+                let weights = self.get_pt_interp_weights(*press, *temp);
+                
+                // For each set of conditions, interpolate in wavenumber and accumulate derivatives
+                for (idx, _weight, d_weight) in weights {
+                    let condition = &self.0[idx];
+                    
+                    // Interpolate in wavenumber for each point
+                    for (j, wv) in wavenumber_cminv.iter().enumerate() {
+                        let wvnum_weights = condition.wvnum.interp1_weights(*wv, OutOfBoundsMode::Zero);
+                        let local_xs = condition.xsec[wvnum_weights[0].0] * wvnum_weights[0].1
+                            + condition.xsec[wvnum_weights[1].0] * wvnum_weights[1].1;
+                        
+                        row[j] += local_xs * d_weight;
+                    }
+                }
+            });
+        
         Ok(())
     }
 
