@@ -446,7 +446,7 @@ mod tests {
 
         // Check that we loaded the data
         let first_condition = &db.0[0];
-        assert!(first_condition.wvnum.x.len() > 0);
+        assert!(!first_condition.wvnum.x.is_empty());
         assert_eq!(first_condition.wvnum.x.len(), first_condition.xsec.len());
 
         // Check temperature and pressure from the filename
