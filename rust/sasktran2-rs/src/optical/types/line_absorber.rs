@@ -59,7 +59,6 @@ fn lorentzian_assign(
     }
 
     let n = wvnum.len();
-    let inv_doppler_scalar = 1.0 / doppler_width;
 
     for i in n - remainder.len()..n {
         let x = wvnum[i] - line_center;
