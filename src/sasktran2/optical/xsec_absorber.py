@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from sasktran2._core_rust import PyXsecAbsorber
-from sasktran2.optical.base import OpticalProperty
 from sasktran2.database.web import StandardDatabase
+from sasktran2.optical.base import OpticalProperty
 
 
 class XsecAbsorber(OpticalProperty):
@@ -41,7 +41,7 @@ class XsecAbsorber(OpticalProperty):
     _internal: PyXsecAbsorber
 
     def __init__(self, source: str | Path | list[str] | list[Path]):
-        if isinstance(source, (str, Path)):
+        if isinstance(source, str | Path):
             source_path = Path(source)
             if source_path.is_dir():
                 # Load from folder
@@ -56,7 +56,7 @@ class XsecAbsorber(OpticalProperty):
         else:
             msg = "source must be a path to a file, folder, or list of file paths"
             raise TypeError(msg)
-        
+
     @classmethod
     def from_lbl_database(cls, species_name: str) -> XsecAbsorber:
         """
@@ -69,7 +69,7 @@ class XsecAbsorber(OpticalProperty):
         ----------
         species_name : str
             Name of the species. Case insensitive.
-            
+
             Supported species:
             ACET, ACETICACI, BRO, C2CL2F4 (F114), C2CL3F3 (F113), C2CLF5 (F115),
             C2F6, C2HCl2F3CF2, CCL2FCH3, CCL4, CCLF3 (F13), CF3CH2CF3, CF3CH3,
@@ -82,7 +82,7 @@ class XsecAbsorber(OpticalProperty):
         -------
         XsecAbsorber
             XsecAbsorber instance with the loaded cross section data
-            
+
         Raises
         ------
         ValueError
@@ -100,40 +100,40 @@ class XsecAbsorber(OpticalProperty):
         # Parse the FSCDXS file to find entries for this species
         file_list = []
         species_upper = species_name.upper()
-        
-        with open(fscdxs_path) as f:
+
+        with fscdxs_path.open() as f:
             # Skip header line
             next(f)
-            
+
             for line in f:
                 # Skip empty lines
                 if not line.strip():
                     continue
-                    
+
                 # Parse the molecule name (first field, whitespace separated)
                 parts = line.split()
                 if not parts:
                     continue
-                    
+
                 molecule = parts[0]
-                
+
                 # Check if this line matches our species
                 if molecule.upper() == species_upper:
                     # Extract file names from the line
                     # Files can be concatenated like: xs/HNO3AT6xs/HNO3AT5xs/HNO3AT4...
                     # Split the entire line on 'xs/' to extract all filenames
-                    line_parts = line.split('xs/')
+                    line_parts = line.split("xs/")
                     for part in line_parts[1:]:  # Skip first part (before first 'xs/')
                         # Extract just the filename (everything before next space or end)
-                        filename = part.split()[0] if part.strip() else ''
+                        filename = part.split()[0] if part.strip() else ""
                         if filename:
                             file_path = db.path(f"cross_sections/lblrtm/xs/{filename}")
                             file_list.append(file_path)
-        
+
         if not file_list:
             msg = f"No cross section files found for species '{species_name}' in LBLRTM database"
             raise ValueError(msg)
-        
+
         # Create and return the XsecAbsorber from the file list
         return cls(file_list)
 

@@ -23,11 +23,12 @@ fn lorentzian_assign(
     scale: f64,
     xs: &mut [f64],
 ) {
-    let scale = scale * y / SQRT_PI;
-    let inv_doppler = 1.0 / doppler_width;
+    let scale = scale * y / SQRT_PI * doppler_width * doppler_width;
+    let gamma = y * doppler_width;
+    let gamma_sq = gamma * gamma;
     for (wv, xs) in wvnum.iter().zip(xs.iter_mut()) {
-        let x = (wv - line_center) * inv_doppler;
-        *xs += scale / (x * x + y * y);
+        let x = wv - line_center;
+        *xs += scale / (x * x + gamma_sq);
     }
 }
 
@@ -41,17 +42,16 @@ fn lorentzian_assign(
     scale: f64,
     xs: &mut [f64],
 ) {
-    let scale_s = f64s::splat(scale * y / SQRT_PI);
-    let inv_doppler = f64s::splat(1.0 / doppler_width);
+    let scale_s = f64s::splat(scale * y / SQRT_PI * doppler_width * doppler_width);
+    let gamma = y * doppler_width;
+    let ys_sqr = f64s::splat(gamma * gamma);
     let lanes = f64s::LEN;
 
     let wvnum_chunks = wvnum.chunks_exact(lanes);
-    let ys = f64s::splat(y);
-    let ys_sqr = ys * ys;
     let remainder = wvnum_chunks.remainder();
 
     for (wv, xs) in wvnum_chunks.zip(xs.chunks_exact_mut(lanes)) {
-        let x = (f64s::from_slice(wv) - f64s::splat(line_center)) * inv_doppler;
+        let x = f64s::from_slice(wv) - f64s::splat(line_center);
         let denom = x * x + ys_sqr;
 
         let result = f64s::from_slice(xs) + scale_s / denom;
@@ -62,9 +62,9 @@ fn lorentzian_assign(
     let inv_doppler_scalar = 1.0 / doppler_width;
 
     for i in n - remainder.len()..n {
-        let x = (wvnum[i] - line_center) * inv_doppler_scalar;
-        let denom = x * x + y * y;
-        xs[i] += scale * y / SQRT_PI / denom;
+        let x = wvnum[i] - line_center;
+        let denom = x * x + gamma * gamma;
+        xs[i] += scale * y / SQRT_PI * doppler_width * doppler_width / denom;
     }
 }
 
@@ -117,7 +117,6 @@ fn gaussian_assign(
         xs[i] += scale * x;
     }
 }
-
 
 fn split_and_assign(
     adjusted_line: &AdjustedLineParameters,
@@ -351,7 +350,7 @@ impl LineAbsorber {
 
         let wvnum_slice = wavenumber_cminv.as_slice().unwrap();
         let is_sorted = wvnum_slice.is_sorted();
-        
+
         // Only sort if not already sorted
         let sorted_wvnum;
         let wavenumber_grid = if is_sorted {
@@ -380,7 +379,6 @@ impl LineAbsorber {
             max_wvnum + self.line_contribution_width,
         );
 
-
         let map = self.gen_mol_param(line_slice, temperature.as_slice().unwrap())?;
 
         let mut batch_lines: Vec<&crate::optical::line::OpticalLine> = Vec::with_capacity(64);
@@ -395,9 +393,9 @@ impl LineAbsorber {
         let mut batch_mol_params: Vec<&MolParam> = Vec::with_capacity(64);
 
         let mut process_batch = |lines: &[&crate::optical::line::OpticalLine],
-                             indices: &[(usize, usize)],
-                             coupling: &[CouplingData],
-                             params: &[&MolParam]| {
+                                 indices: &[(usize, usize)],
+                                 coupling: &[CouplingData],
+                                 params: &[&MolParam]| {
             let thread_pool = crate::threading::thread_pool().unwrap(); // Safe unwrap as called previously
             thread_pool.install(|| {
                 Zip::indexed(temperature)
@@ -405,12 +403,14 @@ impl LineAbsorber {
                     .and(pself)
                     .and(xs.axis_iter_mut(Axis(0)))
                     .par_for_each(|g, &temperature, &pressure, &pself, mut xs| {
-                       for (i, line) in lines.iter().enumerate() {
-                           let (start_wavenumber_idx, end_wavenumber_idx) = indices[i];
-                           let (temp_val, y_coupling_vec, g_coupling_vec): &CouplingData = &coupling[i];
-                           let mol_param = params[i];
+                        for (i, line) in lines.iter().enumerate() {
+                            let (start_wavenumber_idx, end_wavenumber_idx) = indices[i];
+                            let (temp_val, y_coupling_vec, g_coupling_vec): &CouplingData =
+                                &coupling[i];
+                            let mol_param = params[i];
 
-                           let sub_grid = wavenumber_grid.slice(start_wavenumber_idx, end_wavenumber_idx);
+                            let sub_grid =
+                                wavenumber_grid.slice(start_wavenumber_idx, end_wavenumber_idx);
 
                             let adjusted_line = line
                                 .adjusted_parameters(
@@ -422,19 +422,27 @@ impl LineAbsorber {
                                 )
                                 .unwrap();
 
-                            if let (Some(temp_val), Some(y_coupling_vec), Some(g_coupling_vec)) = 
-                                (temp_val, y_coupling_vec, g_coupling_vec) {
+                            if let (Some(temp_val), Some(y_coupling_vec), Some(g_coupling_vec)) =
+                                (temp_val, y_coupling_vec, g_coupling_vec)
+                            {
                                 // Line coupling case
-                                let y_coupling =
-                                    y_coupling_vec.interp1(temp_val, temperature, OutOfBoundsMode::Extend);
-                                let g_coupling =
-                                    g_coupling_vec.interp1(temp_val, temperature, OutOfBoundsMode::Extend);
+                                let y_coupling = y_coupling_vec.interp1(
+                                    temp_val,
+                                    temperature,
+                                    OutOfBoundsMode::Extend,
+                                );
+                                let g_coupling = g_coupling_vec.interp1(
+                                    temp_val,
+                                    temperature,
+                                    OutOfBoundsMode::Extend,
+                                );
 
                                 let p_norm = pressure / 101325.0;
 
                                 let scale_re = adjusted_line.line_intensity_re
                                     * (1.0 + p_norm * p_norm * g_coupling);
-                                let scale_im = adjusted_line.line_intensity_re * (-p_norm * y_coupling);
+                                let scale_im =
+                                    adjusted_line.line_intensity_re * (-p_norm * y_coupling);
 
                                 w_jpole_assign(
                                     sub_grid.x,
@@ -443,21 +451,25 @@ impl LineAbsorber {
                                     adjusted_line.y,
                                     scale_re,
                                     scale_im,
-                                    xs.slice_mut(ndarray::s![start_wavenumber_idx..end_wavenumber_idx])
-                                        .as_slice_mut()
-                                        .unwrap(),
+                                    xs.slice_mut(ndarray::s![
+                                        start_wavenumber_idx..end_wavenumber_idx
+                                    ])
+                                    .as_slice_mut()
+                                    .unwrap(),
                                 );
                             } else {
                                 // Standard case
                                 split_and_assign(
                                     &adjusted_line,
                                     &sub_grid,
-                                    xs.slice_mut(ndarray::s![start_wavenumber_idx..end_wavenumber_idx])
-                                        .as_slice_mut()
-                                        .unwrap(),
+                                    xs.slice_mut(ndarray::s![
+                                        start_wavenumber_idx..end_wavenumber_idx
+                                    ])
+                                    .as_slice_mut()
+                                    .unwrap(),
                                 );
                             }
-                       }
+                        }
                     });
             });
         };
@@ -504,7 +516,12 @@ impl LineAbsorber {
             batch_mol_params.push(map.get(&(line.mol_id, line.iso_id)).unwrap());
 
             if batch_lines.len() >= 64 {
-                process_batch(&batch_lines, &batch_indices, &batch_coupling, &batch_mol_params);
+                process_batch(
+                    &batch_lines,
+                    &batch_indices,
+                    &batch_coupling,
+                    &batch_mol_params,
+                );
                 batch_lines.clear();
                 batch_indices.clear();
                 batch_coupling.clear();
@@ -513,7 +530,12 @@ impl LineAbsorber {
         }
 
         if !batch_lines.is_empty() {
-            process_batch(&batch_lines, &batch_indices, &batch_coupling, &batch_mol_params);
+            process_batch(
+                &batch_lines,
+                &batch_indices,
+                &batch_coupling,
+                &batch_mol_params,
+            );
         }
 
         if is_sorted {
