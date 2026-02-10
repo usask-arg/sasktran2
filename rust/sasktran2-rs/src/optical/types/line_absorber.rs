@@ -23,10 +23,12 @@ fn lorentzian_assign(
     scale: f64,
     xs: &mut [f64],
 ) {
-    let scale = scale * y / SQRT_PI;
+    let scale = scale * y / SQRT_PI * doppler_width * doppler_width;
+    let gamma = y * doppler_width;
+    let gamma_sq = gamma * gamma;
     for (wv, xs) in wvnum.iter().zip(xs.iter_mut()) {
-        let x = (wv - line_center) / doppler_width;
-        *xs += scale / (x * x + y * y);
+        let x = wv - line_center;
+        *xs += scale / (x * x + gamma_sq);
     }
 }
 
@@ -40,16 +42,16 @@ fn lorentzian_assign(
     scale: f64,
     xs: &mut [f64],
 ) {
-    let scale_s = f64s::splat(scale * y / SQRT_PI);
+    let scale_s = f64s::splat(scale * y / SQRT_PI * doppler_width * doppler_width);
+    let gamma = y * doppler_width;
+    let ys_sqr = f64s::splat(gamma * gamma);
     let lanes = f64s::LEN;
 
     let wvnum_chunks = wvnum.chunks_exact(lanes);
-    let ys = f64s::splat(y);
-    let ys_sqr = ys * ys;
     let remainder = wvnum_chunks.remainder();
 
     for (wv, xs) in wvnum_chunks.zip(xs.chunks_exact_mut(lanes)) {
-        let x = (f64s::from_slice(wv) - f64s::splat(line_center)) / f64s::splat(doppler_width);
+        let x = f64s::from_slice(wv) - f64s::splat(line_center);
         let denom = x * x + ys_sqr;
 
         let result = f64s::from_slice(xs) + scale_s / denom;
@@ -59,9 +61,9 @@ fn lorentzian_assign(
     let n = wvnum.len();
 
     for i in n - remainder.len()..n {
-        let x = (wvnum[i] - line_center) / doppler_width;
-        let denom = x * x + y * y;
-        xs[i] += scale * y / SQRT_PI / denom;
+        let x = wvnum[i] - line_center;
+        let denom = x * x + gamma * gamma;
+        xs[i] += scale * y / SQRT_PI * doppler_width * doppler_width / denom;
     }
 }
 
@@ -75,8 +77,9 @@ fn gaussian_assign(
     scale: f64,
     xs: &mut [f64],
 ) {
+    let inv_doppler = 1.0 / doppler_width;
     for (wv, xs) in wvnum.iter().zip(xs.iter_mut()) {
-        let x = (wv - line_center) / doppler_width;
+        let x = (wv - line_center) * inv_doppler;
         *xs += scale * (-x * x).exp();
     }
 }
@@ -92,27 +95,28 @@ fn gaussian_assign(
     xs: &mut [f64],
 ) {
     let scale_s = f64s::splat(scale);
+    let inv_doppler = f64s::splat(1.0 / doppler_width);
     let lanes = f64s::LEN;
 
     let wvnum_chunks = wvnum.chunks_exact(lanes);
     let remainder = wvnum_chunks.remainder();
 
     for (wv, xs) in wvnum_chunks.zip(xs.chunks_exact_mut(lanes)) {
-        let x = (f64s::from_slice(wv) - f64s::splat(line_center)) / f64s::splat(doppler_width);
+        let x = (f64s::from_slice(wv) - f64s::splat(line_center)) * inv_doppler;
         let result = f64s::from_slice(xs) + scale_s * <f64s as std::simd::StdFloat>::exp(-x * x);
         xs.copy_from_slice(&result.to_array());
     }
 
     let n = wvnum.len();
+    let inv_doppler_scalar = 1.0 / doppler_width;
 
     for i in n - remainder.len()..n {
-        let x = (wvnum[i] - line_center) / doppler_width;
+        let x = (wvnum[i] - line_center) * inv_doppler_scalar;
         let x = (-x * x).exp();
         xs[i] += scale * x;
     }
 }
 
-#[inline(always)]
 fn split_and_assign(
     adjusted_line: &AdjustedLineParameters,
     wavenumber_cminv: &Grid1DView,
@@ -343,15 +347,26 @@ impl LineAbsorber {
 
         let enabling_line_coupling = self.enable_line_coupling;
 
-        let mut sorted_wvnum = wavenumber_cminv.as_slice().unwrap().to_owned();
-        sorted_wvnum.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let wvnum_slice = wavenumber_cminv.as_slice().unwrap();
+        let is_sorted = wvnum_slice.is_sorted();
 
-        let wavenumber_grid = Grid1DView::new(sorted_wvnum.as_slice());
+        // Only sort if not already sorted
+        let sorted_wvnum;
+        let wavenumber_grid = if is_sorted {
+            Grid1DView::new(wvnum_slice)
+        } else {
+            sorted_wvnum = {
+                let mut tmp = wvnum_slice.to_owned();
+                tmp.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                tmp
+            };
+            Grid1DView::new(sorted_wvnum.as_slice())
+        };
 
         let mut xs = Array2::zeros((temperature.len(), wavenumber_cminv.len()));
 
-        let min_wvnum = sorted_wvnum[0];
-        let max_wvnum = sorted_wvnum[sorted_wvnum.len() - 1];
+        let min_wvnum = wavenumber_grid.x[0];
+        let max_wvnum = wavenumber_grid.x[wavenumber_grid.x.len() - 1];
 
         let n_wavenumber = wavenumber_cminv.len();
 
@@ -365,106 +380,169 @@ impl LineAbsorber {
 
         let map = self.gen_mol_param(line_slice, temperature.as_slice().unwrap())?;
 
-        for line in line_slice.iter() {
-            if line.line_intensity * max_p_self / (K_B * 1e-7 * 296.0) < self.cull_factor {
-                continue;
-            }
+        let mut batch_lines: Vec<&crate::optical::line::OpticalLine> = Vec::with_capacity(64);
+        let mut batch_indices: Vec<(usize, usize)> = Vec::with_capacity(64);
+        // Store coupling data: (temp_val, y_coupling_vec, g_coupling_vec)
+        type CouplingData = (
+            Option<Array1<f64>>,
+            Option<Array1<f64>>,
+            Option<Array1<f64>>,
+        );
+        let mut batch_coupling: Vec<CouplingData> = Vec::with_capacity(64);
+        let mut batch_mol_params: Vec<&MolParam> = Vec::with_capacity(64);
 
-            while start_wavenumber_idx < n_wavenumber
-                && sorted_wvnum[start_wavenumber_idx]
-                    < line.line_center - self.line_contribution_width
-            {
-                start_wavenumber_idx += 1;
-            }
-
-            while end_wavenumber_idx < n_wavenumber
-                && sorted_wvnum[end_wavenumber_idx]
-                    < line.line_center + self.line_contribution_width
-            {
-                end_wavenumber_idx += 1;
-            }
-
-            let start_wavenumber_idx = start_wavenumber_idx.min(n_wavenumber - 1);
-
-            if start_wavenumber_idx == end_wavenumber_idx {
-                continue;
-            }
-
-            let sub_grid = wavenumber_grid.slice(start_wavenumber_idx, end_wavenumber_idx);
-
-            let mol_param = map.get(&(line.mol_id, line.iso_id)).unwrap();
-
-            let thread_pool = crate::threading::thread_pool()?;
-
+        let mut process_batch = |lines: &[&crate::optical::line::OpticalLine],
+                                 indices: &[(usize, usize)],
+                                 coupling: &[CouplingData],
+                                 params: &[&MolParam]| {
+            let thread_pool = crate::threading::thread_pool().unwrap(); // Safe unwrap as called previously
             thread_pool.install(|| {
                 Zip::indexed(temperature)
                     .and(pressure)
                     .and(pself)
                     .and(xs.axis_iter_mut(Axis(0)))
                     .par_for_each(|g, &temperature, &pressure, &pself, mut xs| {
-                        let adjusted_line = line
-                            .adjusted_parameters(
-                                temperature,
-                                pressure,
-                                pself,
-                                mol_param.partition_factor[g],
-                                mol_param.mol_mass,
-                            )
-                            .unwrap();
+                        for (i, line) in lines.iter().enumerate() {
+                            let (start_wavenumber_idx, end_wavenumber_idx) = indices[i];
+                            let (temp_val, y_coupling_vec, g_coupling_vec): &CouplingData =
+                                &coupling[i];
+                            let mol_param = params[i];
 
-                        if !enabling_line_coupling || line.y_coupling.is_empty() {
-                            split_and_assign(
-                                &adjusted_line,
-                                &sub_grid,
-                                xs.slice_mut(ndarray::s![start_wavenumber_idx..end_wavenumber_idx])
+                            let sub_grid =
+                                wavenumber_grid.slice(start_wavenumber_idx, end_wavenumber_idx);
+
+                            let adjusted_line = line
+                                .adjusted_parameters(
+                                    temperature,
+                                    pressure,
+                                    pself,
+                                    mol_param.partition_factor[g],
+                                    mol_param.mol_mass,
+                                )
+                                .unwrap();
+
+                            if let (Some(temp_val), Some(y_coupling_vec), Some(g_coupling_vec)) =
+                                (temp_val, y_coupling_vec, g_coupling_vec)
+                            {
+                                // Line coupling case
+                                let y_coupling = y_coupling_vec.interp1(
+                                    temp_val,
+                                    temperature,
+                                    OutOfBoundsMode::Extend,
+                                );
+                                let g_coupling = g_coupling_vec.interp1(
+                                    temp_val,
+                                    temperature,
+                                    OutOfBoundsMode::Extend,
+                                );
+
+                                let p_norm = pressure / 101325.0;
+
+                                let scale_re = adjusted_line.line_intensity_re
+                                    * (1.0 + p_norm * p_norm * g_coupling);
+                                let scale_im =
+                                    adjusted_line.line_intensity_re * (-p_norm * y_coupling);
+
+                                w_jpole_assign(
+                                    sub_grid.x,
+                                    adjusted_line.line_center,
+                                    adjusted_line.doppler_width,
+                                    adjusted_line.y,
+                                    scale_re,
+                                    scale_im,
+                                    xs.slice_mut(ndarray::s![
+                                        start_wavenumber_idx..end_wavenumber_idx
+                                    ])
                                     .as_slice_mut()
                                     .unwrap(),
-                            );
-                        } else {
-                            // Have to do line coupling
-                            // Interp the coupling values
-                            let temp_val =
-                                Array1::<f64>::from_vec(line.coupling_temperature.clone());
-                            let y_coupling = Array1::<f64>::from_vec(line.y_coupling.clone());
-                            let g_coupling = Array1::<f64>::from_vec(line.g_coupling.clone());
-
-                            let y_coupling =
-                                y_coupling.interp1(&temp_val, temperature, OutOfBoundsMode::Extend);
-                            let g_coupling =
-                                g_coupling.interp1(&temp_val, temperature, OutOfBoundsMode::Extend);
-
-                            let p_norm = pressure / 101325.0;
-
-                            let scale_re = adjusted_line.line_intensity_re
-                                * (1.0 + p_norm * p_norm * g_coupling);
-                            let scale_im = adjusted_line.line_intensity_re * (-p_norm * y_coupling);
-
-                            //let scale_re = adjusted_line.line_intensity_re;
-                            //let scale_im = adjusted_line.line_intensity_im;
-
-                            // Use the full faddeeva function
-                            w_jpole_assign(
-                                sub_grid.x,
-                                adjusted_line.line_center,
-                                adjusted_line.doppler_width,
-                                adjusted_line.y,
-                                scale_re,
-                                scale_im,
-                                xs.slice_mut(ndarray::s![start_wavenumber_idx..end_wavenumber_idx])
+                                );
+                            } else {
+                                // Standard case
+                                split_and_assign(
+                                    &adjusted_line,
+                                    &sub_grid,
+                                    xs.slice_mut(ndarray::s![
+                                        start_wavenumber_idx..end_wavenumber_idx
+                                    ])
                                     .as_slice_mut()
                                     .unwrap(),
-                            );
+                                );
+                            }
                         }
                     });
             });
+        };
+
+        for line in line_slice.iter() {
+            if line.line_intensity * max_p_self / (K_B * 1e-7 * 296.0) < self.cull_factor {
+                continue;
+            }
+
+            // Find start index - don't reset to 0 since lines are sorted
+            while start_wavenumber_idx < n_wavenumber
+                && wavenumber_grid.x[start_wavenumber_idx]
+                    < line.line_center - self.line_contribution_width
+            {
+                start_wavenumber_idx += 1;
+            }
+
+            // Reset end index to start for this line, then search forward
+            while end_wavenumber_idx < n_wavenumber
+                && wavenumber_grid.x[end_wavenumber_idx]
+                    < line.line_center + self.line_contribution_width
+            {
+                end_wavenumber_idx += 1;
+            }
+
+            if start_wavenumber_idx >= n_wavenumber || start_wavenumber_idx == end_wavenumber_idx {
+                continue;
+            }
+
+            // Pre-allocate line coupling arrays if needed
+            let coupling_data = if enabling_line_coupling && !line.y_coupling.is_empty() {
+                (
+                    Some(Array1::<f64>::from_vec(line.coupling_temperature.clone())),
+                    Some(Array1::<f64>::from_vec(line.y_coupling.clone())),
+                    Some(Array1::<f64>::from_vec(line.g_coupling.clone())),
+                )
+            } else {
+                (None, None, None)
+            };
+
+            batch_lines.push(line);
+            batch_indices.push((start_wavenumber_idx, end_wavenumber_idx));
+            batch_coupling.push(coupling_data);
+            batch_mol_params.push(map.get(&(line.mol_id, line.iso_id)).unwrap());
+
+            if batch_lines.len() >= 64 {
+                process_batch(
+                    &batch_lines,
+                    &batch_indices,
+                    &batch_coupling,
+                    &batch_mol_params,
+                );
+                batch_lines.clear();
+                batch_indices.clear();
+                batch_coupling.clear();
+                batch_mol_params.clear();
+            }
         }
 
-        if wavenumber_cminv.as_slice().unwrap().is_sorted() {
+        if !batch_lines.is_empty() {
+            process_batch(
+                &batch_lines,
+                &batch_indices,
+                &batch_coupling,
+                &batch_mol_params,
+            );
+        }
+
+        if is_sorted {
             Ok(xs)
         } else {
             println!("Unsored wavenumber grid, have to sort output");
             // Have to sort the output
-            let sort_idx = argsort_f64(wavenumber_cminv.as_slice().unwrap());
+            let sort_idx = argsort_f64(wvnum_slice);
 
             let mut xs_sorted = Array2::zeros((temperature.len(), n_wavenumber));
             for i in 0..temperature.len() {

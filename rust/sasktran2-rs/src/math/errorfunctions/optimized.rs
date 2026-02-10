@@ -302,8 +302,10 @@ pub fn w_jpole_real_assign(
 
     const INV_SQRT_PI: f64 = 1.0 / SQRT_PI;
 
+    let inv_width = 1.0 / width;
+
     for (wvnum, result) in wvnum.iter().zip(result.iter_mut()) {
-        let x = (wvnum - c) / width;
+        let x = (wvnum - c) * inv_width;
         let mut sum_im = 0.0;
         for j in 0..8 {
             let dx = x - CJ_RE[j];
@@ -389,10 +391,12 @@ pub fn w_jpole_real_assign(
     let chunks = wvnum.chunks_exact(lanes);
     let remainder = chunks.remainder();
 
+    let inv_width = f64s::splat(1.0 / width);
+
     // Process the chunks of 4 elements at a time
     for (wvnum, result) in chunks.zip(result.chunks_exact_mut(lanes)) {
         let wv = f64s::from_slice(wvnum);
-        let x = (wv - f64s::splat(c)) / f64s::splat(width);
+        let x = (wv - f64s::splat(c)) * inv_width;
 
         let mut sum_im = f64s::splat(0.0);
         for j in 0..8 {
@@ -408,15 +412,26 @@ pub fn w_jpole_real_assign(
         sum_im.copy_to_slice(result);
     }
     let n = wvnum.len();
+    let inv_width_scalar = 1.0 / width;
+
     for i in n - remainder.len()..n {
-        let x = (wvnum[i] - c) / width;
+        let x = (wvnum[i] - c) * inv_width_scalar;
         let mut sum_im = 0.0;
-        for j in 0..8 {
-            let dx = x - CJ_RE[j];
-            let den = dx * dx + dy2[j];
-            // numerator of complex division
-            let num_im = BJ_IM[j] * dx - BJ_RE[j] * dy[j];
-            sum_im += num_im / den;
+        for j in 0..4 {
+            let dx_j = x - CJ_RE[j];
+            let dx_k = x + CJ_RE[j]; // CJ_RE[j+4] = -CJ_RE[j]
+
+            let den_j = dx_j * dx_j + dy2[j];
+            let den_k = dx_k * dx_k + dy2[j]; // dy2[j+4] = dy2[j]
+
+            // num_im[j] = BJ_IM[j]*dx_j - BJ_RE[j]*dy[j]
+            // num_im[k] = BJ_IM[k]*dx_k - BJ_RE[k]*dy[k]
+            //           = -BJ_IM[j]*dx_k - BJ_RE[j]*dy[j]
+            let t1 = BJ_RE[j] * dy[j];
+            let num_j = BJ_IM[j] * dx_j - t1;
+            let num_k = -BJ_IM[j] * dx_k - t1;
+
+            sum_im += (num_j * den_k + num_k * den_j) / (den_j * den_k);
         }
         // multiply by –i/√π:  (sum_re + i sum_im) * (0 – i)/√π
         result[i] += sum_im * INV_SQRT_PI * scale;
@@ -494,8 +509,10 @@ pub fn w_jpole_assign(
 
     const INV_SQRT_PI: f64 = 1.0 / SQRT_PI;
 
+    let inv_width = 1.0 / width;
+
     for (wvnum, result) in wvnum.iter().zip(result.iter_mut()) {
-        let x = (wvnum - c) / width;
+        let x = (wvnum - c) * inv_width;
         let mut sum_im = 0.0;
         let mut sum_re = 0.0;
         for j in 0..8 {
