@@ -11,6 +11,16 @@ pub fn argsort_f64(data: &[f64]) -> Vec<usize> {
     indices
 }
 
+pub fn argsort<T>(data: &[T], cmp: impl Fn(&T, &T) -> std::cmp::Ordering) -> Vec<usize> {
+    let mut indices = (0..data.len()).collect::<Vec<_>>();
+    indices.sort_by(|&i, &j| cmp(&data[i], &data[j]));
+    indices
+}
+
+pub fn is_sorted(data: &[f64]) -> bool {
+    data.windows(2).all(|w| w[0] <= w[1])
+}
+
 /// Returns a sorted array of unique values from the input array.
 pub fn unique_values<S, D>(array: &ArrayBase<S, D>) -> Array1<f64>
 where

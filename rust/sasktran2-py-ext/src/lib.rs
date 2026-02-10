@@ -12,6 +12,7 @@ mod geodetic;
 mod geometry;
 mod optical;
 mod output;
+mod pyrebasis;
 mod viewing_geometry;
 
 use pyo3::prelude::*;
@@ -51,6 +52,7 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<config::ThreadingModel>()?;
     m.add_class::<config::InputValidationMode>()?;
     m.add_class::<config::ThreadingLib>()?;
+    m.add_class::<config::SpectralGridMode>()?;
     m.add_class::<config::LogLevel>()?;
     m.add_class::<config::PyConfig>()?;
 
@@ -93,6 +95,10 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Information functions
     m.add_function(wrap_pyfunction!(common::openmp_support_enabled, m)?)?;
     m.add_function(wrap_pyfunction!(common::lto_test, m)?)?;
+
+    // rebasis
+    m.add_class::<pyrebasis::basis::PyBasis>()?;
+    m.add_class::<pyrebasis::grid::PyGrid>()?;
 
     Ok(())
 }

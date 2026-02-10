@@ -4,6 +4,7 @@ members = [
     "rust/sasktran2-core",
     "rust/sasktran2-sys",
     "rust/sasktran2-rs",
+    "rust/rebasis",
     "rust/sasktran2-py-ext"
 ]
 

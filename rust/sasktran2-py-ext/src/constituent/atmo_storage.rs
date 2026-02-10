@@ -12,7 +12,10 @@ use sasktran2_rs::atmosphere::traits::*;
 use sasktran2_rs::bindings::config;
 use sasktran2_rs::constituent::traits::*;
 
-use crate::config::PyConfig;
+use crate::atmosphere::PyAtmosphere;
+use crate::config::{PyConfig, SpectralGridMode};
+
+use rebasis::grid::mapping_matrix;
 
 use super::deriv_mapping::PyDerivMapping;
 
@@ -70,6 +73,7 @@ impl StorageOutputs for AtmosphereStorageOutputs<'_> {
 pub struct AtmosphereStorageInputs<'py> {
     pub num_stokes: usize,
     pub num_legendre: usize,
+    pub spectral_integration_mode: config::SpectralGridMode,
     pub calculate_pressure_derivative: bool,
     pub calculate_temperature_derivative: bool,
     pub calculate_specific_humidity_derivative: bool,
@@ -81,6 +85,7 @@ pub struct AtmosphereStorageInputs<'py> {
     pub py_wavenumber_cminv_left: Option<PyReadonlyArray1<'py, f64>>,
     pub py_wavenumber_cminv_right: Option<PyReadonlyArray1<'py, f64>>,
     pub py_equation_of_state: Bound<'py, PyAny>,
+    pub py_atmo: PyRef<'py, crate::atmosphere::PyAtmosphere>,
 }
 
 impl<'py> StorageInputs for AtmosphereStorageInputs<'py> {
@@ -94,28 +99,6 @@ impl<'py> StorageInputs for AtmosphereStorageInputs<'py> {
 
     fn temperature_k(&self) -> Option<ArrayView1<'_, f64>> {
         self.py_temperature_k.as_ref().map(|array| array.as_array())
-    }
-
-    fn wavelengths_nm(&self) -> Option<ArrayView1<'_, f64>> {
-        self.py_wavelength_nm.as_ref().map(|array| array.as_array())
-    }
-
-    fn wavenumbers_cminv(&self) -> Option<ArrayView1<'_, f64>> {
-        self.py_wavenumber_cminv
-            .as_ref()
-            .map(|array| array.as_array())
-    }
-
-    fn wavenumbers_cminv_left(&self) -> Option<ArrayView1<'_, f64>> {
-        self.py_wavenumber_cminv_left
-            .as_ref()
-            .map(|array| array.as_array())
-    }
-
-    fn wavenumbers_cminv_right(&self) -> Option<ArrayView1<'_, f64>> {
-        self.py_wavenumber_cminv_right
-            .as_ref()
-            .map(|array| array.as_array())
     }
 
     fn air_numberdensity_dict(&self) -> HashMap<String, Array1<f64>> {
@@ -171,6 +154,28 @@ impl<'py> StorageInputs for AtmosphereStorageInputs<'py> {
     fn num_singlescatter_moments(&self) -> usize {
         self.num_legendre
     }
+
+    fn spectral_grid(&self) -> Option<&sasktran2_rs::atmosphere::types::SpectralGrid> {
+        self.py_atmo.atmosphere.spectral_grid.as_ref()
+    }
+
+    fn fine_spectral_grid(&self) -> Option<&sasktran2_rs::atmosphere::types::SpectralGrid> {
+        self.py_atmo.atmosphere.fine_spectral_grid.as_ref()
+    }
+
+    fn spectral_mapping_matrix(&self) -> Option<rebasis::grid::MappingMatrix> {
+        if let Some(f_sg) = self.py_atmo.atmosphere.fine_spectral_grid.as_ref()
+            && let Some(sg) = self.py_atmo.atmosphere.spectral_grid.as_ref()
+        {
+            let mapping = mapping_matrix(f_sg.basis_grid(), sg.basis_grid());
+            return Some(mapping);
+        }
+        None
+    }
+
+    fn spectral_integration_mode(&self) -> config::SpectralGridMode {
+        self.spectral_integration_mode
+    }
 }
 
 pub struct PyDerivativeGenerator<'py> {
@@ -215,6 +220,18 @@ impl<'py> AtmosphereStorage<'py> {
         let num_stokes_obj = atmo.getattr("nstokes").unwrap();
         let num_stokes: usize = num_stokes_obj.extract().unwrap();
 
+        let spectral_integration_mode: SpectralGridMode =
+            atmo.getattr("spectral_integration_mode")?.extract()?;
+        let spectral_integration_mode = match spectral_integration_mode {
+            SpectralGridMode::Monochromatic => config::SpectralGridMode::Monochromatic,
+            SpectralGridMode::AtmosphereIntegratedLineShape => {
+                config::SpectralGridMode::AtmosphereIntegratedLineShape
+            }
+            SpectralGridMode::EngineIntegratedLineShape => {
+                config::SpectralGridMode::EngineIntegratedLineShape
+            }
+        };
+
         let geometry_obj = atmo.getattr("model_geometry").unwrap();
         let altitudes_m = geometry_obj.call_method0("altitudes").unwrap();
         let altitudes_m: PyReadonlyArray1<f64> = altitudes_m.extract().unwrap();
@@ -237,12 +254,28 @@ impl<'py> AtmosphereStorage<'py> {
             .extract()
             .unwrap_or(false);
 
+        // Get the rust atmosphere object
+        let rust_obj = atmo.call_method0("_into_rust_object").map_err(|_| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("Failed to call _into_rust_object")
+        })?;
+
+        // downcast into the PyAtmosphere object and borrow it for the 'py lifetime
+        let rust_atmo = rust_obj
+            .cast::<crate::atmosphere::PyAtmosphere>()
+            .map_err(|_| {
+                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                    "Failed to downcast to PyAtmosphere",
+                )
+            })?
+            .borrow();
+
         Ok(AtmosphereStorage {
             num_stokes,
             deriv_generator: PyDerivativeGenerator { storage },
             inputs: AtmosphereStorageInputs {
                 num_stokes,
                 num_legendre,
+                spectral_integration_mode,
                 calculate_pressure_derivative,
                 calculate_temperature_derivative,
                 calculate_specific_humidity_derivative,
@@ -254,6 +287,7 @@ impl<'py> AtmosphereStorage<'py> {
                 py_wavenumber_cminv_left: wavenumber_cminv_left_array,
                 py_wavenumber_cminv_right: wavenumber_cminv_right_array,
                 py_equation_of_state: state_eqn_obj,
+                py_atmo: rust_atmo,
             },
             outputs: AtmosphereStorageOutputs {
                 num_stokes,

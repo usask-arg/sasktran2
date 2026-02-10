@@ -8,6 +8,7 @@ from sasktran2._core_rust import (
     OccultationSource,
     PyConfig,
     SingleScatterSource,
+    SpectralGridMode,
     StokesBasis,
     ThreadingLib,
     ThreadingModel,
@@ -600,3 +601,35 @@ class Config:
             Disables all logging output
         """
         self._config.log_level = value
+
+    @property
+    def spectral_grid_mode(self) -> SpectralGridMode:
+        """
+        Sets the spectral grid mode to use in the calculation.
+
+        `sasktran2.SpectralGridMode.Monochromatic` (Default)
+            Each wavelength grid point represents a delta function sampling of the spectrum.
+
+        `sasktran2.SpectralGridMode.AtmosphereIntegratedLineShape`
+            Each wavelength grid point represents an integrated line shape over the atmosphere.
+
+        `sasktran2.SpectralGridMode.EngineIntegratedLineShape`
+            Each wavelength grid point represents an integrated line shape over the radiative transfer engine.
+        """
+        return self._config.spectral_grid_mode
+
+    @spectral_grid_mode.setter
+    def spectral_grid_mode(self, mode: SpectralGridMode):
+        """
+        Sets the spectral grid mode to use in the calculation.
+
+        `sasktran2.SpectralGridMode.Monochromatic` (Default)
+            Each wavelength grid point represents a delta function sampling of the spectrum.
+
+        `sasktran2.SpectralGridMode.AtmosphereIntegratedLineShape`
+            Each wavelength grid point represents an integrated line shape over the atmosphere.
+
+        `sasktran2.SpectralGridMode.EngineIntegratedLineShape`
+            Each wavelength grid point represents an integrated line shape over the radiative transfer engine.
+        """
+        self._config.spectral_grid_mode = mode

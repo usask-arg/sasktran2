@@ -2,10 +2,13 @@ use crate::brdf::*;
 use crate::derivative_mapping::PyDerivativeMappingView;
 use crate::derivative_mapping::PySurfaceDerivativeMappingView;
 use crate::prelude::*;
+use crate::pyrebasis::grid::PyGrid;
 use numpy::PyArray1;
 use numpy::PyArray2;
 use numpy::PyArray3;
 use pyo3::prelude::*;
+use sasktran2_rs::atmosphere::types::LineshapeCoordinate;
+use sasktran2_rs::atmosphere::types::SpectralGrid;
 use sasktran2_rs::bindings::atmosphere;
 use sasktran2_rs::bindings::atmosphere_storage;
 use sasktran2_rs::bindings::prelude::Stokes;
@@ -35,6 +38,7 @@ pub struct PyAtmosphereSurfaceView {
 #[pymethods]
 impl PyAtmosphere {
     #[new]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         num_wavel: usize,
         num_location: usize,
@@ -42,6 +46,9 @@ impl PyAtmosphere {
         calc_derivatives: bool,
         calc_emission_derivatives: bool,
         num_stokes: usize,
+        spectral_grid: Option<PyRef<PyGrid>>,
+        hires_spectral_grid: Option<PyRef<PyGrid>>,
+        wavenumber_space: Option<bool>,
     ) -> PyResult<Self> {
         let stokes = match num_stokes {
             1 => Stokes::Stokes1,
@@ -49,16 +56,43 @@ impl PyAtmosphere {
             _ => panic!("num_stokes must be 1, 3"),
         };
 
-        Ok(Self {
-            atmosphere: atmosphere::Atmosphere::new(
-                num_wavel,
-                num_location,
-                num_legendre,
-                calc_derivatives,
-                calc_emission_derivatives,
-                stokes,
-            ),
-        })
+        let atmo_spectral_grid = if let Some(sg) = spectral_grid {
+            let coord = if wavenumber_space.unwrap_or(false) {
+                LineshapeCoordinate::WavenumberCminv
+            } else {
+                LineshapeCoordinate::WavelengthNm
+            };
+            Some(SpectralGrid::from_grid(sg.grid.clone(), coord).into_pyresult()?)
+        } else {
+            None
+        };
+
+        let hires_atmo_spectral_grid = if let Some(sg) = hires_spectral_grid {
+            let coord = if wavenumber_space.unwrap_or(false) {
+                LineshapeCoordinate::WavenumberCminv
+            } else {
+                LineshapeCoordinate::WavelengthNm
+            };
+            Some(SpectralGrid::from_grid(sg.grid.clone(), coord).into_pyresult()?)
+        } else {
+            None
+        };
+
+        let mut atmosphere = atmosphere::Atmosphere::new(
+            num_wavel,
+            num_location,
+            num_legendre,
+            calc_derivatives,
+            calc_emission_derivatives,
+            stokes,
+            atmo_spectral_grid,
+        );
+
+        if let Some(fine_sg) = hires_atmo_spectral_grid {
+            atmosphere = atmosphere.with_fine_spectral_grid(fine_sg);
+        }
+
+        Ok(Self { atmosphere })
     }
 
     #[getter]

@@ -44,7 +44,7 @@ class Atmosphere:
         temperature_derivative: bool = True,
         specific_humidity_derivative: bool = True,
         legendre_derivative: bool = True,
-        finite_resolution_mode: bool = False,
+        spectral_grid: sk.basis.Grid | None = None,  # noqa: ARG002
     ):
         """
         The main specification for the atmospheric state.
@@ -74,11 +74,6 @@ class Atmosphere:
             Whether or not the model should calculate derivatives with respect to temperature., by default True
         legendre_derivative: bool, optional
             Whether or not the model should calculate derivatives with respect to the legendre coefficients., by default True
-        finite_resolution_mode: bool, optional
-            Whether or not the model is running in finite resolution mode.  In finite resolution mode,
-            cross sections are averaged inbetween the specified wavenumber boundaries.  The input wavenumbers are assumed
-            to be the edges of the bins.  The number of line calculations to perform is therefore len(wavenumber_cminv) - 1.
-            by default False.
         """
         self._wavelengths_nm = None
         self._wavenumbers_cminv = None
@@ -92,26 +87,23 @@ class Atmosphere:
             msg = "One of wavelengths_nm, wavenumber_cminv, numwavel must be set when constructing the Atmosphere object"
             raise ValueError(msg)
 
+        grid = None
+        wavenumber_space = None
+
         if wavelengths_nm is not None:
             self.wavelengths_nm = wavelengths_nm.astype(np.float64)
+            grid = sk.basis.Grid.from_triangles(self.wavelengths_nm)
+            wavenumber_space = False
 
         if wavenumber_cminv is not None:
             self.wavenumbers_cminv = wavenumber_cminv.astype(np.float64)
-
-        if finite_resolution_mode:
-            # Adjust the wavenumbers to be the wavenumber centers and assign the bin edges
-            self._wavenumbers_cminv_left = self.wavenumbers_cminv[:-1]
-            self._wavenumbers_cminv_right = self.wavenumbers_cminv[1:]
-            self.wavenumbers_cminv = 0.5 * (
-                self._wavenumbers_cminv_left + self._wavenumbers_cminv_right
-            )
-        else:
-            self._wavenumbers_cminv_left = None
-            self._wavenumbers_cminv_right = None
+            grid = sk.basis.Grid.from_triangles(self.wavenumbers_cminv)
+            wavenumber_space = True
 
         nwavel = len(self.wavelengths_nm) if numwavel is None else numwavel
 
         self._nstokes = config.num_stokes
+        self._spectral_integration_mode = config.spectral_grid_mode
         self._calculate_derivatives = calculate_derivatives
         self._pressure_derivative = pressure_derivative
         self._temperature_derivative = temperature_derivative
@@ -125,6 +117,9 @@ class Atmosphere:
             calculate_derivatives,
             config.emission_source != EmissionSource.NoSource,
             config.num_stokes,
+            grid._internal_object() if grid is not None else None,
+            grid._internal_object() if grid is not None else None,
+            wavenumber_space,
         )
 
         self._leg_coeff = LegendreStorageView(
@@ -331,28 +326,6 @@ class Atmosphere:
         self._wavenumbers_cminv = wav
         self._wavelengths_nm = wavenumber_cminv_to_wavlength_nm(wav)
 
-    @property
-    def wavenumbers_cminv_left(self) -> np.ndarray | None:
-        """
-        The left edges of the wavenumber bins in finite resolution mode in [:math:`\\text{cm}^{-1}`].
-
-        Returns
-        -------
-        Optional[np.array]
-        """
-        return self._wavenumbers_cminv_left
-
-    @property
-    def wavenumbers_cminv_right(self) -> np.ndarray | None:
-        """
-        The right edges of the wavenumber bins in finite resolution mode in [:math:`\\text{cm}^{-1}`].
-
-        Returns
-        -------
-        Optional[np.array]
-        """
-        return self._wavenumbers_cminv_right
-
     def _zero_storage(self):
         """
         Sets the internal storage object to 0.  Typically used in-between calculations to reset the
@@ -399,8 +372,22 @@ class Atmosphere:
         return self._unscaled_extinction
 
     @property
+    def spectral_integration_mode(self) -> sk.SpectralGridMode:
+        """
+        The spectral integration mode for the atmosphere
+
+        Returns
+        -------
+        sk.SpectralGridMode
+        """
+        return self._spectral_integration_mode
+
+    @property
     def leg_coeff(self) -> LegendreStorageView:
         return self._leg_coeff
+
+    def _into_rust_object(self) -> PyAtmosphere:
+        return self._atmosphere
 
     def internal_object(self) -> sk.AtmosphereStokes_1 | sk.AtmosphereStokes_3:
         """

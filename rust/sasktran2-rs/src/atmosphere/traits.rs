@@ -1,4 +1,6 @@
+use crate::atmosphere::types::SpectralGrid;
 use crate::prelude::*;
+use rebasis::grid::MappingMatrix;
 
 /// Mutable view of the atmosphere storage output (ssa, ext, legendre)
 pub struct AtmosphereStorageOutputView<'a> {
@@ -32,6 +34,8 @@ pub trait StorageInputs {
     /// Number of stokes parameters
     fn num_stokes(&self) -> usize;
 
+    fn spectral_integration_mode(&self) -> crate::bindings::config::SpectralGridMode;
+
     /// Number of single scatter moments, note this includes the polarization factor
     /// i.e. NSTOKES=3 would have 4 * num_legendre_order moments
     fn num_singlescatter_moments(&self) -> usize;
@@ -56,17 +60,15 @@ pub trait StorageInputs {
     /// Temperaure in kelvin at altitude_m
     fn temperature_k(&self) -> Option<ArrayView1<'_, f64>>;
 
-    /// Wavelengths in nm
-    fn wavelengths_nm(&self) -> Option<ArrayView1<'_, f64>>;
+    /// When in spectral mode we have spectral information
+    fn spectral_grid(&self) -> Option<&SpectralGrid>;
 
-    /// Wavenumbers in cm^-1
-    fn wavenumbers_cminv(&self) -> Option<ArrayView1<'_, f64>>;
+    /// When in spectral mode we have spectral information
+    fn fine_spectral_grid(&self) -> Option<&SpectralGrid>;
 
-    /// Left wavenumber in cm^-1, this is only when running in finite resolution mode
-    fn wavenumbers_cminv_left(&self) -> Option<ArrayView1<'_, f64>>;
-
-    /// Right wavenumber in cm^-1, this is only when running in finite resolution mode
-    fn wavenumbers_cminv_right(&self) -> Option<ArrayView1<'_, f64>>;
+    fn spectral_mapping_matrix(&self) -> Option<MappingMatrix> {
+        None
+    }
 
     /// hashmap of air number density factors ("N", "dN_dT", "dN_dP", "dN_dq")
     /// This is number density of air (including water vapor)
@@ -81,20 +83,73 @@ pub trait StorageInputs {
         match name {
             "pressure_pa" => self.pressure_pa(),
             "temperature_k" => self.temperature_k(),
-            "wavelengths_nm" => self.wavelengths_nm(),
-            "wavenumbers_cminv" => self.wavenumbers_cminv(),
+            "wavelengths_nm" => self
+                .spectral_grid()
+                .map(|grid| grid.central_wavelengths_nm()),
+            "wavenumbers_cminv" => self
+                .spectral_grid()
+                .map(|grid| grid.central_wavenumber_cminv()),
             "altitude_m" => Some(self.altitude_m()),
             _ => None,
         }
     }
+}
 
-    /// True if running in finite resolution mode
-    fn finite_resolution_mode(&self) -> bool {
-        self.wavenumbers_cminv_left().is_some() && self.wavenumbers_cminv_right().is_some()
+pub struct UpsampledStorageInputs<'a> {
+    pub base: &'a dyn StorageInputs,
+}
+
+impl StorageInputs for UpsampledStorageInputs<'_> {
+    fn num_stokes(&self) -> usize {
+        self.base.num_stokes()
     }
 
-    fn finite_resolution_quadrature_order(&self) -> usize {
-        1
+    fn spectral_integration_mode(&self) -> crate::bindings::config::SpectralGridMode {
+        self.base.spectral_integration_mode()
+    }
+
+    fn num_singlescatter_moments(&self) -> usize {
+        self.base.num_singlescatter_moments()
+    }
+
+    fn calculate_pressure_derivative(&self) -> bool {
+        self.base.calculate_pressure_derivative()
+    }
+
+    fn calculate_temperature_derivative(&self) -> bool {
+        self.base.calculate_temperature_derivative()
+    }
+
+    fn calculate_specific_humidity_derivative(&self) -> bool {
+        self.base.calculate_specific_humidity_derivative()
+    }
+
+    fn altitude_m(&self) -> ArrayView1<'_, f64> {
+        self.base.altitude_m()
+    }
+
+    fn pressure_pa(&self) -> Option<ArrayView1<'_, f64>> {
+        self.base.pressure_pa()
+    }
+
+    fn temperature_k(&self) -> Option<ArrayView1<'_, f64>> {
+        self.base.temperature_k()
+    }
+
+    fn spectral_grid(&self) -> Option<&SpectralGrid> {
+        self.base.fine_spectral_grid()
+    }
+
+    fn fine_spectral_grid(&self) -> Option<&SpectralGrid> {
+        self.base.fine_spectral_grid()
+    }
+
+    fn air_numberdensity_dict(&self) -> HashMap<String, Array1<f64>> {
+        self.base.air_numberdensity_dict()
+    }
+
+    fn dry_air_numberdensity_dict(&self) -> HashMap<String, Array1<f64>> {
+        self.base.dry_air_numberdensity_dict()
     }
 }
 

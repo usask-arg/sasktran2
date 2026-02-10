@@ -160,6 +160,7 @@ dependencies = [
  "numpy",
  "pyo3",
  "rayon",
+ "rebasis",
  "sasktran2-rs",
 ]
 
@@ -406,6 +407,18 @@ name = "indoc"
 version = "2.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4c7245a08504955605670dbf141fceab975f15ca21570696aebe9d2e71576bd"
+
+[[package]]
+name = "integrate"
+version = "0.1.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "952ae1bd82582e0b844273dceb71c576cc66a757452bd5e9310ef7ffda62711b"
+dependencies = [
+ "itertools",
+ "num",
+ "num-traits",
+ "rayon",
+]
 
 [[package]]
 name = "itertools"
@@ -767,6 +780,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rebasis"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "integrate",
+ "ndarray",
+]
+
+[[package]]
 name = "regex"
 version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -833,6 +855,7 @@ dependencies = [
  "ndarray",
  "num",
  "rayon",
+ "rebasis",
  "sasktran2-core",
  "sasktran2-sys",
  "version_check",

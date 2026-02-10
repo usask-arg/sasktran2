@@ -1,6 +1,7 @@
 use super::atmosphere_storage::AtmosphereStorage;
 use super::prelude::*;
 use super::surface::Surface;
+use crate::atmosphere::types::SpectralGrid;
 use anyhow::{Result, anyhow};
 use sasktran2_sys::ffi;
 
@@ -10,6 +11,8 @@ pub struct Atmosphere {
     pub atmosphere: *mut ffi::Atmosphere,
     pub storage: AtmosphereStorage,
     pub surface: Surface,
+    pub spectral_grid: Option<SpectralGrid>,
+    pub fine_spectral_grid: Option<SpectralGrid>,
     nstokes: usize,
 }
 impl Atmosphere {
@@ -21,6 +24,7 @@ impl Atmosphere {
         calc_derivatives: bool,
         calc_emission_derivatives: bool,
         stokes: Stokes,
+        spectral_grid: Option<SpectralGrid>,
     ) -> Self {
         let storage = AtmosphereStorage::new(num_wavel, num_location, num_legendre, stokes);
         let surface = Surface::new(num_wavel, stokes.num_stokes());
@@ -44,7 +48,14 @@ impl Atmosphere {
             storage,
             surface,
             nstokes: stokes.num_stokes(),
+            spectral_grid,
+            fine_spectral_grid: None,
         }
+    }
+
+    pub fn with_fine_spectral_grid(mut self, fine_spectral_grid: SpectralGrid) -> Self {
+        self.fine_spectral_grid = Some(fine_spectral_grid);
+        self
     }
 
     /// Number of wavelengths in the atmosphere
@@ -98,6 +109,7 @@ mod tests {
             calc_derivatives,
             false,
             Stokes::Stokes1,
+            None,
         );
 
         assert_eq!(atmosphere.storage.ssa.shape(), &[num_location, num_wavel]);
@@ -120,6 +132,7 @@ mod tests {
             calc_derivatives,
             false,
             Stokes::Stokes1,
+            None,
         );
 
         // apply delta m scaling

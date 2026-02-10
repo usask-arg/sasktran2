@@ -68,6 +68,14 @@ pub enum ThreadingLib {
 
 #[pyclass(eq, eq_int)]
 #[derive(PartialEq, Clone)]
+pub enum SpectralGridMode {
+    Monochromatic = 0,                 // Delta function sampling
+    AtmosphereIntegratedLineShape = 1, // Lineshape is specified for each grid point, atmosphere optical
+    EngineIntegratedLineShape = 2,
+}
+
+#[pyclass(eq, eq_int)]
+#[derive(PartialEq, Clone)]
 pub enum LogLevel {
     Trace,
     Debug,
@@ -155,6 +163,37 @@ impl PyConfig {
             ThreadingModel::Source => config::ThreadingModel::Source,
         };
         self.config.with_threading_model(model).into_pyresult()?;
+
+        Ok(())
+    }
+
+    #[getter]
+    fn spectral_grid_mode(&self) -> PyResult<SpectralGridMode> {
+        let mode = self.config.spectral_grid_mode();
+        match mode {
+            config::SpectralGridMode::Monochromatic => Ok(SpectralGridMode::Monochromatic),
+            config::SpectralGridMode::AtmosphereIntegratedLineShape => {
+                Ok(SpectralGridMode::AtmosphereIntegratedLineShape)
+            }
+            config::SpectralGridMode::EngineIntegratedLineShape => {
+                Ok(SpectralGridMode::EngineIntegratedLineShape)
+            }
+        }
+    }
+
+    #[setter]
+    fn set_spectral_grid_mode(&mut self, mode: PyRef<'_, SpectralGridMode>) -> PyResult<()> {
+        let mode = match *mode {
+            SpectralGridMode::Monochromatic => config::SpectralGridMode::Monochromatic,
+            SpectralGridMode::AtmosphereIntegratedLineShape => {
+                config::SpectralGridMode::AtmosphereIntegratedLineShape
+            }
+            SpectralGridMode::EngineIntegratedLineShape => {
+                config::SpectralGridMode::EngineIntegratedLineShape
+            }
+        };
+
+        self.config.with_spectral_grid_mode(mode).into_pyresult()?;
 
         Ok(())
     }

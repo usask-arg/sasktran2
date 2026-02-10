@@ -37,7 +37,9 @@ def _test_scenarios():
 
     wavel = np.arange(280.0, 800.0, 0.5)
     atmosphere = sk.Atmosphere(
-        geometry, config, wavelengths_nm=wavel, finite_resolution_mode=False
+        geometry,
+        config,
+        wavelengths_nm=wavel,
     )
 
     sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)

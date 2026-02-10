@@ -1,8 +1,10 @@
+use crate::atmosphere::types::SpectralGrid;
 use crate::atmosphere::*;
 use crate::constituent::traits::*;
-use crate::interpolation::grid1d::Grid1D;
-use crate::interpolation::linear::{Interp1Weights, linear_interpolating_matrix};
+use crate::interpolation::linear::linear_interpolating_matrix;
 use crate::prelude::*;
+use rebasis::basis::Delta;
+use rebasis::grid::{Grid, MappingMatrix, mapping_matrix};
 
 pub struct MonochromaticVolumeEmissionRate {
     pub ver: Array1<f64>,
@@ -25,6 +27,22 @@ impl MonochromaticVolumeEmissionRate {
         self.interp_mode = interp_mode;
         self
     }
+
+    fn mapping_values(&self, spectral_grid: &SpectralGrid) -> MappingMatrix {
+        let internal_grid = match spectral_grid.coordinate() {
+            crate::atmosphere::types::LineshapeCoordinate::WavelengthNm => {
+                let delta = Delta::new(self.wavelength_nm);
+                Grid::new(vec![rebasis::basis::BasisType::Delta(delta)])
+            }
+            crate::atmosphere::types::LineshapeCoordinate::WavenumberCminv => {
+                let delta = Delta::new(1e7 / self.wavelength_nm);
+                Grid::new(vec![rebasis::basis::BasisType::Delta(delta)])
+            }
+        };
+
+        // shape (spectral,)
+        mapping_matrix(&internal_grid, spectral_grid.basis_grid())
+    }
 }
 
 impl Constituent for MonochromaticVolumeEmissionRate {
@@ -42,70 +60,19 @@ impl Constituent for MonochromaticVolumeEmissionRate {
         let interp_ver = interp_matrix.dot(&self.ver);
 
         let mut emission = outputs.mut_view().emission_source;
-        let emission_wavenumber = 1e7 / self.wavelength_nm;
 
-        if inputs.finite_resolution_mode() {
-            let wavenumber_left = inputs.wavenumbers_cminv_left().ok_or(anyhow!(
-                "Must be in Finite resolution mode to add volume emission rate constituent"
-            ))?;
-            let wavenumber_right = inputs.wavenumbers_cminv_right().ok_or(anyhow!(
-                "Must be in Finite resolution mode to add volume emission rate constituent"
-            ))?;
+        let mapping_vals = self.mapping_values(inputs.spectral_grid().ok_or(anyhow!(
+            "Spectral grid must be set to add volume emission rate constituent"
+        ))?);
 
-            Zip::from(emission.axis_iter_mut(Axis(1)))
-                .and(wavenumber_left)
-                .and(wavenumber_right)
-                .for_each(|mut emission_slice, &wn_left, &wn_right| {
-                    let min_wvnum = wn_left.min(wn_right);
-                    let max_wvnum = wn_left.max(wn_right);
+        let mapping_vals = mapping_vals.matrix.column(0).to_owned();
 
-                    if emission_wavenumber >= min_wvnum && emission_wavenumber < max_wvnum {
-                        // multiply by width in nm
-                        let width = 1e7 / min_wvnum - 1e7 / max_wvnum;
-                        Zip::from(&mut emission_slice).and(&interp_ver).for_each(
-                            |emission_val, &ver_val| {
-                                *emission_val += ver_val / width / FOUR_PI;
-                            },
-                        );
-                    }
-                });
-        } else {
-            // set up a sorted wavelength grid
-            let wavelength_nm = inputs.wavelengths_nm().ok_or(anyhow!(
-                "Wavelengths must be set to add volume emission rate constituent"
-            ))?;
-
-            let mut sorted_wvlen = wavelength_nm.as_slice().unwrap().to_owned();
-            sorted_wvlen.sort_by(|a, b| a.partial_cmp(b).unwrap());
-
-            let wavelen_grid = Grid1D::new(sorted_wvlen.into());
-
-            // Find the interpolation index
-            let interp_weights = wavelen_grid.interp1_weights(
-                self.wavelength_nm,
-                crate::interpolation::OutOfBoundsMode::Zero,
+        for (i, &map_val) in mapping_vals.iter().enumerate() {
+            Zip::from(emission.column_mut(i)).and(&interp_ver).for_each(
+                |emission_val, &ver_val| {
+                    *emission_val += map_val * ver_val / FOUR_PI;
+                },
             );
-
-            for interp_weight in interp_weights {
-                let left_width = match interp_weight.0 {
-                    0 => 0.0,
-                    _ => (wavelen_grid.x[interp_weight.0] - wavelen_grid.x[interp_weight.0 - 1])
-                        .abs(),
-                };
-                let right_width = match interp_weight.0 + 1 {
-                    x if x >= wavelen_grid.x.len() => 0.0,
-                    _ => (wavelen_grid.x[interp_weight.0 + 1] - wavelen_grid.x[interp_weight.0])
-                        .abs(),
-                };
-
-                let width = 0.5 * (left_width + right_width);
-
-                Zip::from(emission.column_mut(interp_weight.0))
-                    .and(&interp_ver)
-                    .for_each(|emission_val, &ver_val| {
-                        *emission_val += interp_weight.1 * ver_val / width / FOUR_PI;
-                    });
-            }
         }
 
         Ok(())
@@ -128,8 +95,6 @@ impl Constituent for MonochromaticVolumeEmissionRate {
             crate::interpolation::OutOfBoundsMode::Zero,
         );
 
-        let emission_wavenumber = 1e7 / self.wavelength_nm;
-
         let full_name = "wf_".to_owned() + constituent_name + "_ver";
         let mut deriv = derivative_generator.get_derivative_mapping(&full_name);
 
@@ -140,64 +105,16 @@ impl Constituent for MonochromaticVolumeEmissionRate {
         let deriv_view = deriv.mut_view();
         let mut d_emission = deriv_view.d_emission;
 
-        if inputs.finite_resolution_mode() {
-            let wavenumber_left = inputs.wavenumbers_cminv_left().ok_or(anyhow!(
-                "Must be in Finite resolution mode to add volume emission rate constituent"
-            ))?;
-            let wavenumber_right = inputs.wavenumbers_cminv_right().ok_or(anyhow!(
-                "Must be in Finite resolution mode to add volume emission rate constituent"
-            ))?;
+        let mapping_vals = self.mapping_values(inputs.spectral_grid().ok_or(anyhow!(
+            "Spectral grid must be set to add volume emission rate constituent"
+        ))?);
 
-            Zip::from(d_emission.axis_iter_mut(Axis(1)))
-                .and(wavenumber_left)
-                .and(wavenumber_right)
-                .for_each(|mut emission_slice, &wn_left, &wn_right| {
-                    let min_wvnum = wn_left.min(wn_right);
-                    let max_wvnum = wn_left.max(wn_right);
+        let mapping_vals = mapping_vals.matrix.column(0).to_owned();
 
-                    if emission_wavenumber >= min_wvnum && emission_wavenumber < max_wvnum {
-                        // multiply by width in nm
-                        let width = 1e7 / min_wvnum - 1e7 / max_wvnum;
-                        Zip::from(&mut emission_slice).for_each(|emission_val| {
-                            *emission_val += 1.0 / width / FOUR_PI;
-                        });
-                    }
-                });
-        } else {
-            // set up a sorted wavelength grid
-            let wavelength_nm = inputs.wavelengths_nm().ok_or(anyhow!(
-                "Wavelengths must be set to add volume emission rate constituent"
-            ))?;
-
-            let mut sorted_wvlen = wavelength_nm.as_slice().unwrap().to_owned();
-            sorted_wvlen.sort_by(|a, b| a.partial_cmp(b).unwrap());
-
-            let wavelen_grid = Grid1D::new(sorted_wvlen.into());
-
-            // Find the interpolation index
-            let interp_weights = wavelen_grid.interp1_weights(
-                self.wavelength_nm,
-                crate::interpolation::OutOfBoundsMode::Zero,
-            );
-
-            for interp_weight in interp_weights {
-                let left_width = match interp_weight.0 {
-                    0 => 0.0,
-                    _ => (wavelen_grid.x[interp_weight.0] - wavelen_grid.x[interp_weight.0 - 1])
-                        .abs(),
-                };
-                let right_width = match interp_weight.0 + 1 {
-                    x if x >= wavelen_grid.x.len() => 0.0,
-                    _ => (wavelen_grid.x[interp_weight.0 + 1] - wavelen_grid.x[interp_weight.0])
-                        .abs(),
-                };
-
-                let width = 0.5 * (left_width + right_width);
-
-                Zip::from(d_emission.column_mut(interp_weight.0)).for_each(|emission_val| {
-                    *emission_val += interp_weight.1 / width / FOUR_PI;
-                });
-            }
+        for (i, &map_val) in mapping_vals.iter().enumerate() {
+            Zip::from(d_emission.column_mut(i)).for_each(|emission_val| {
+                *emission_val += map_val / FOUR_PI;
+            });
         }
 
         Ok(())

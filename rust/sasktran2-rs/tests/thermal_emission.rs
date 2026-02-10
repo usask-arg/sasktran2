@@ -41,6 +41,7 @@ fn test_disort7b_thermal_emission() -> Result<()> {
         true, // calculate_derivatives - must be false for DO emission (not implemented)
         true, // calculate_emission_derivatives
         Stokes::Stokes1,
+        None,
     );
 
     // Create altitude grid (2 points: 0 = bottom, 1 = top)

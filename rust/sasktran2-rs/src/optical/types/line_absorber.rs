@@ -540,6 +540,7 @@ impl LineAbsorber {
         if is_sorted {
             Ok(xs)
         } else {
+            println!("Unsored wavenumber grid, have to sort output");
             // Have to sort the output
             let sort_idx = argsort_f64(wvnum_slice);
 
@@ -562,8 +563,9 @@ impl OpticalProperty for LineAbsorber {
         optical_quantities: &mut crate::optical::storage::OpticalQuantities,
     ) -> Result<()> {
         let wavenumber_cminv = inputs
-            .wavenumbers_cminv()
-            .ok_or(anyhow::anyhow!("Wavenumbers not found in inputs"))?;
+            .spectral_grid()
+            .ok_or(anyhow::anyhow!("Wavenumbers not found in inputs"))?
+            .central_wavenumber_cminv();
 
         let temperature = inputs
             .temperature_k()

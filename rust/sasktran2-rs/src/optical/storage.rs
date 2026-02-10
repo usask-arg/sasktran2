@@ -45,7 +45,6 @@ impl OpticalQuantities {
         if self.ssa.dim() != (num_geometry, num_wavelengths) {
             self.ssa = Array2::zeros(dims);
         }
-
         self
     }
 

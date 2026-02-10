@@ -10,6 +10,7 @@ os.environ.setdefault("RUST_BACKTRACE", "full")
 
 from . import (
     appconfig,
+    basis,
     climatology,
     constituent,
     database,
@@ -30,6 +31,7 @@ from ._core_rust import (
     MultipleScatterSource,
     OccultationSource,
     SingleScatterSource,
+    SpectralGridMode,
     StokesBasis,
     ThreadingLib,
     ThreadingModel,
