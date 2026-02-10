@@ -1,8 +1,7 @@
 use crate::atmosphere::types::SpectralGrid;
 use crate::atmosphere::*;
 use crate::constituent::traits::*;
-use crate::interpolation::grid1d::Grid1D;
-use crate::interpolation::linear::{Interp1Weights, linear_interpolating_matrix};
+use crate::interpolation::linear::linear_interpolating_matrix;
 use crate::prelude::*;
 use rebasis::basis::Delta;
 use rebasis::grid::{Grid, MappingMatrix, mapping_matrix};
