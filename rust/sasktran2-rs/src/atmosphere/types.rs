@@ -245,6 +245,10 @@ impl StorageInputs for ManualStorageInputs {
         self.spectral_grid.as_ref()
     }
 
+    fn fine_spectral_grid(&self) -> Option<&SpectralGrid> {
+        self.spectral_grid.as_ref()
+    }
+
     fn spectral_integration_mode(&self) -> crate::bindings::config::SpectralGridMode {
         crate::bindings::config::SpectralGridMode::Monochromatic
     }

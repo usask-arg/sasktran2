@@ -59,6 +59,9 @@ class Grid:
     def from_rectangles(cls, grid_points: np.ndarray):
         gp = np.atleast_1d(grid_points)
 
+        if len(gp) < 2:
+            return cls.from_deltas(gp)
+
         left, right = _left_right_splits(gp)
 
         basis_list = [Rectangle(le, r) for le, r in zip(left, right, strict=False)]
@@ -74,6 +77,10 @@ class Grid:
     @classmethod
     def from_triangles(cls, grid_points: np.ndarray):
         gp = np.atleast_1d(grid_points)
+
+        if len(gp) < 2:
+            return cls.from_deltas(gp)
+
         left, right = _left_right_triangle_splits(gp)
         basis_list = [
             Triangle(le, r, c)

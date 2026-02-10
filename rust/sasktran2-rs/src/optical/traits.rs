@@ -1,5 +1,6 @@
 use crate::optical::reduction::reduce_optical;
 use crate::optical::storage::*;
+use crate::optical::traits::UpsampledStorageInputs;
 use crate::prelude::*;
 use crate::{atmosphere::traits::*, bindings::config};
 use ndarray::{CowArray, Ix1};
@@ -53,7 +54,15 @@ pub trait OpticalPropertyExt: OpticalProperty {
         aux_inputs: &dyn AuxOpticalInputs,
     ) -> Result<OpticalQuantities> {
         let mut out = OpticalQuantities::default();
-        self.optical_quantities_emplace(inputs, aux_inputs, &mut out)?;
+
+        if inputs.spectral_integration_mode()
+            == config::SpectralGridMode::AtmosphereIntegratedLineShape
+        {
+            let upsampled_inputs = UpsampledStorageInputs { base: inputs };
+            self.optical_quantities_emplace(&upsampled_inputs, aux_inputs, &mut out)?;
+        } else {
+            self.optical_quantities_emplace(inputs, aux_inputs, &mut out)?;
+        }
 
         match inputs.spectral_integration_mode() {
             config::SpectralGridMode::AtmosphereIntegratedLineShape => {

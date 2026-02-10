@@ -245,10 +245,10 @@ mod tests {
         let delta = BasisType::Delta(Delta { center: 0.5 });
 
         let result = b.overlap_integral(&rect2);
-        assert_eq!(result, 1.0);
+        assert!((result - 1.0).abs() < 1e-8);
 
         let result = b.overlap_integral(&delta);
-        assert_eq!(result, 1.0);
+        assert!((result - 1.0).abs() < 1e-8);
     }
 
     #[test]

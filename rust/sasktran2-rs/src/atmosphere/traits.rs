@@ -63,6 +63,9 @@ pub trait StorageInputs {
     /// When in spectral mode we have spectral information
     fn spectral_grid(&self) -> Option<&SpectralGrid>;
 
+    /// When in spectral mode we have spectral information
+    fn fine_spectral_grid(&self) -> Option<&SpectralGrid>;
+
     fn spectral_mapping_matrix(&self) -> Option<MappingMatrix> {
         None
     }
@@ -89,6 +92,64 @@ pub trait StorageInputs {
             "altitude_m" => Some(self.altitude_m()),
             _ => None,
         }
+    }
+}
+
+pub struct UpsampledStorageInputs<'a> {
+    pub base: &'a dyn StorageInputs,
+}
+
+impl StorageInputs for UpsampledStorageInputs<'_> {
+    fn num_stokes(&self) -> usize {
+        self.base.num_stokes()
+    }
+
+    fn spectral_integration_mode(&self) -> crate::bindings::config::SpectralGridMode {
+        self.base.spectral_integration_mode()
+    }
+
+    fn num_singlescatter_moments(&self) -> usize {
+        self.base.num_singlescatter_moments()
+    }
+
+    fn calculate_pressure_derivative(&self) -> bool {
+        self.base.calculate_pressure_derivative()
+    }
+
+    fn calculate_temperature_derivative(&self) -> bool {
+        self.base.calculate_temperature_derivative()
+    }
+
+    fn calculate_specific_humidity_derivative(&self) -> bool {
+        self.base.calculate_specific_humidity_derivative()
+    }
+
+    fn altitude_m(&self) -> ArrayView1<'_, f64> {
+        self.base.altitude_m()
+    }
+
+    fn pressure_pa(&self) -> Option<ArrayView1<'_, f64>> {
+        self.base.pressure_pa()
+    }
+
+    fn temperature_k(&self) -> Option<ArrayView1<'_, f64>> {
+        self.base.temperature_k()
+    }
+
+    fn spectral_grid(&self) -> Option<&SpectralGrid> {
+        self.base.fine_spectral_grid()
+    }
+
+    fn fine_spectral_grid(&self) -> Option<&SpectralGrid> {
+        self.base.fine_spectral_grid()
+    }
+
+    fn air_numberdensity_dict(&self) -> HashMap<String, Array1<f64>> {
+        self.base.air_numberdensity_dict()
+    }
+
+    fn dry_air_numberdensity_dict(&self) -> HashMap<String, Array1<f64>> {
+        self.base.dry_air_numberdensity_dict()
     }
 }
 

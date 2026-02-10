@@ -118,7 +118,7 @@ class Atmosphere:
             config.emission_source != EmissionSource.NoSource,
             config.num_stokes,
             grid._internal_object() if grid is not None else None,
-            None,
+            grid._internal_object() if grid is not None else None,
             wavenumber_space,
         )
 

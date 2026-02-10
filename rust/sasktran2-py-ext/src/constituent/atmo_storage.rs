@@ -156,11 +156,11 @@ impl<'py> StorageInputs for AtmosphereStorageInputs<'py> {
     }
 
     fn spectral_grid(&self) -> Option<&sasktran2_rs::atmosphere::types::SpectralGrid> {
-        if let Some(sg) = self.py_atmo.atmosphere.fine_spectral_grid.as_ref() {
-            return Some(sg);
-        }
-
         self.py_atmo.atmosphere.spectral_grid.as_ref()
+    }
+
+    fn fine_spectral_grid(&self) -> Option<&sasktran2_rs::atmosphere::types::SpectralGrid> {
+        self.py_atmo.atmosphere.fine_spectral_grid.as_ref()
     }
 
     fn spectral_mapping_matrix(&self) -> Option<rebasis::grid::MappingMatrix> {
