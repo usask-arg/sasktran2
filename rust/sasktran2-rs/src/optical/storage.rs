@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use ndarray::{IntoDimension, ShapeBuilder};
 
 use crate::prelude::*;
@@ -36,8 +34,6 @@ impl OpticalQuantities {
     }
 
     pub fn resize(&mut self, num_geometry: usize, num_wavelengths: usize) -> &mut Self {
-        let start = Instant::now();
-
         let dims = match self.fortran_ordering {
             true => (num_geometry, num_wavelengths).f(),
             false => (num_geometry, num_wavelengths).into_dimension().into(),
@@ -49,8 +45,6 @@ impl OpticalQuantities {
         if self.ssa.dim() != (num_geometry, num_wavelengths) {
             self.ssa = Array2::zeros(dims);
         }
-        let elapsed = start.elapsed();
-        println!("optical_quantities walltime: {:?}", elapsed);
         self
     }
 
