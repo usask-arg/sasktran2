@@ -106,7 +106,8 @@ namespace sasktran2 {
             standard = 0,
             none = 1,
             discrete_ordinates = 2,
-            volume_emission_rate = 3
+            volume_emission_rate = 3,
+            twostream = 4
         };
 
         /** Enum determining what basis to return back the Stokes vectors

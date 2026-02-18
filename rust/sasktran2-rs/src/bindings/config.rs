@@ -34,6 +34,7 @@ pub enum EmissionSource {
     Standard = 0,
     DiscreteOrdinates = 2,
     VolumeEmissionRate = 3,
+    TwoStream = 4
 }
 
 #[repr(i32)]

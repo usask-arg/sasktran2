@@ -72,7 +72,7 @@ TEST_CASE("Backprop_OpticalDepth", "[twostream][backprop]") {
     Eigen::RowVectorXd grad(3 * natmo);
     grad.setZero();
 
-    sasktran2::twostream::backprop::GradientMap grad_map(*atmo, grad.data());
+    sasktran2::twostream::backprop::GradientMap<sasktran2::twostream::SourceType::ONLY_SOLAR>  grad_map(*atmo, grad.data());
 
     // Let our output quantity be random weights * od
     Eigen::RowVectorXd weights = Eigen::RowVectorXd::Random(natmo - 1);
@@ -119,7 +119,7 @@ TEST_CASE("Backprop_SSA", "[twostream][backprop]") {
     Eigen::RowVectorXd grad(3 * natmo);
     grad.setZero();
 
-    sasktran2::twostream::backprop::GradientMap grad_map(*atmo, grad.data());
+    sasktran2::twostream::backprop::GradientMap<sasktran2::twostream::SourceType::ONLY_SOLAR>  grad_map(*atmo, grad.data());
 
     // Let our output quantity be random weights * ssa
     Eigen::RowVectorXd weights = Eigen::RowVectorXd::Random(natmo - 1);
@@ -166,7 +166,7 @@ TEST_CASE("Backprop_Homog", "[twostream][backprop]") {
     Eigen::RowVectorXd grad(3 * natmo);
     grad.setZero();
 
-    sasktran2::twostream::backprop::GradientMap grad_map(*atmo, grad.data());
+    sasktran2::twostream::backprop::GradientMap<sasktran2::twostream::SourceType::ONLY_SOLAR>  grad_map(*atmo, grad.data());
 
     // Let our output quantity be random weights * homog.k and Xplus/Xminus
     std::array<Eigen::RowVectorXd, 2> weights;
@@ -267,7 +267,7 @@ TEST_CASE("Backprop_Particular", "[twostream][backprop]") {
     Eigen::RowVectorXd grad(3 * natmo);
     grad.setZero();
 
-    sasktran2::twostream::backprop::GradientMap grad_map(*atmo, grad.data());
+    sasktran2::twostream::backprop::GradientMap<sasktran2::twostream::SourceType::ONLY_SOLAR>  grad_map(*atmo, grad.data());
 
     // Let our output quantity be random weights * homog.k and Xplus/Xminus
     std::array<Eigen::RowVectorXd, 2> weights_Gplus_top;
@@ -384,7 +384,7 @@ TEST_CASE("Backprop_BVP", "[twostream][backprop]") {
     Eigen::RowVectorXd grad(3 * natmo);
     grad.setZero();
 
-    std::vector<sasktran2::twostream::backprop::GradientMap> grad_map;
+    std::vector<sasktran2::twostream::backprop::GradientMap<sasktran2::twostream::SourceType::ONLY_SOLAR> > grad_map;
     grad_map.emplace_back(*atmo, grad.data());
 
     // Let our output quantity be random weights * homog.k and Xplus/Xminus
@@ -462,7 +462,7 @@ TEST_CASE("Backprop_Full_SSA", "[twostream][backprop]") {
     bvp_storage[0].resize(2 * (natmo - 1), 1);
     bvp_storage[1].resize(2 * (natmo - 1), 1);
 
-    sasktran2::twostream::backprop::GradientMap grad_map(*atmo, grad.data());
+    sasktran2::twostream::backprop::GradientMap<sasktran2::twostream::SourceType::ONLY_SOLAR>  grad_map(*atmo, grad.data());
 
     // Let our output quantity be random weights * homog.k and Xplus/Xminus
     Eigen::RowVectorXd weights;
@@ -531,7 +531,7 @@ TEST_CASE("Backprop_Transmission", "[twostream][backprop]") {
     Eigen::RowVectorXd grad(3 * natmo);
     grad.setZero();
 
-    sasktran2::twostream::backprop::GradientMap grad_map(*atmo, grad.data());
+    sasktran2::twostream::backprop::GradientMap<sasktran2::twostream::SourceType::ONLY_SOLAR>  grad_map(*atmo, grad.data());
 
     // Let our output quantity be random weights * od
     Eigen::RowVectorXd weights = Eigen::RowVectorXd::Random(natmo);
@@ -580,7 +580,7 @@ TEST_CASE("Backprop_Secant", "[twostream][backprop]") {
     Eigen::RowVectorXd grad(3 * natmo);
     grad.setZero();
 
-    sasktran2::twostream::backprop::GradientMap grad_map(*atmo, grad.data());
+    sasktran2::twostream::backprop::GradientMap<sasktran2::twostream::SourceType::ONLY_SOLAR>  grad_map(*atmo, grad.data());
 
     // Let our output quantity be random weights * od
     Eigen::RowVectorXd weights = Eigen::RowVectorXd::Random(natmo - 1);
@@ -640,7 +640,7 @@ TEST_CASE("Backprop_Particular_ext", "[twostream][backprop]") {
     Eigen::RowVectorXd grad(3 * natmo);
     grad.setZero();
 
-    sasktran2::twostream::backprop::GradientMap grad_map(*atmo, grad.data());
+    sasktran2::twostream::backprop::GradientMap<sasktran2::twostream::SourceType::ONLY_SOLAR>  grad_map(*atmo, grad.data());
 
     // Let our output quantity be random weights * homog.k and Xplus/Xminus
     std::array<Eigen::RowVectorXd, 2> weights_Gplus_top;
@@ -756,7 +756,7 @@ TEST_CASE("Backprop_BVP_ext", "[twostream][backprop]") {
     Eigen::RowVectorXd grad(3 * natmo);
     grad.setZero();
 
-    std::vector<sasktran2::twostream::backprop::GradientMap> grad_map;
+    std::vector<sasktran2::twostream::backprop::GradientMap<sasktran2::twostream::SourceType::ONLY_SOLAR> > grad_map;
     grad_map.emplace_back(*atmo, grad.data());
 
     // Let our output quantity be random weights * homog.k and Xplus/Xminus
@@ -835,7 +835,7 @@ TEST_CASE("Backprop_Full_ext", "[twostream][backprop]") {
     bvp_storage[0].resize(2 * (natmo - 1), 1);
     bvp_storage[1].resize(2 * (natmo - 1), 1);
 
-    sasktran2::twostream::backprop::GradientMap grad_map(*atmo, grad.data());
+    sasktran2::twostream::backprop::GradientMap<sasktran2::twostream::SourceType::ONLY_SOLAR>  grad_map(*atmo, grad.data());
 
     // Let our output quantity be random weights * homog.k and Xplus/Xminus
     Eigen::RowVectorXd weights;
@@ -913,7 +913,7 @@ TEST_CASE("Backprop_Full_b1", "[twostream][backprop]") {
     bvp_storage[0].resize(2 * (natmo - 1), 1);
     bvp_storage[1].resize(2 * (natmo - 1), 1);
 
-    sasktran2::twostream::backprop::GradientMap grad_map(*atmo, grad.data());
+    sasktran2::twostream::backprop::GradientMap<sasktran2::twostream::SourceType::ONLY_SOLAR>  grad_map(*atmo, grad.data());
 
     // Let our output quantity be random weights * homog.k and Xplus/Xminus
     Eigen::RowVectorXd weights;
@@ -982,7 +982,7 @@ TEST_CASE("Backprop_Particular_b1", "[twostream][backprop]") {
     Eigen::RowVectorXd grad(natmo * 3);
     grad.setZero();
 
-    sasktran2::twostream::backprop::GradientMap grad_map(*atmo, grad.data());
+    sasktran2::twostream::backprop::GradientMap<sasktran2::twostream::SourceType::ONLY_SOLAR>  grad_map(*atmo, grad.data());
 
     // Let our output quantity be random weights * homog.k and Xplus/Xminus
     std::array<Eigen::RowVectorXd, 2> weights_Gplus_top;
@@ -1099,7 +1099,7 @@ TEST_CASE("Backprop_BVP_b1", "[twostream][backprop]") {
     Eigen::RowVectorXd grad(natmo * 3);
     grad.setZero();
 
-    std::vector<sasktran2::twostream::backprop::GradientMap> grad_map;
+    std::vector<sasktran2::twostream::backprop::GradientMap<sasktran2::twostream::SourceType::ONLY_SOLAR> > grad_map;
     grad_map.emplace_back(*atmo, grad.data());
 
     // Let our output quantity be random weights * homog.k and Xplus/Xminus

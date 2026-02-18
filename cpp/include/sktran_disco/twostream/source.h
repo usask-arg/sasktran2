@@ -81,8 +81,9 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
         }
 
         for (auto& backprop : m_bvp_backprop_storage) {
-            backprop[0].resize(2 * (m_geometry.size() - 1), 1);
-            backprop[1].resize(2 * (m_geometry.size() - 1), 1);
+            for (auto& matrix : backprop) {
+                matrix.resize(2 * (m_geometry.size() - 1), 1);
+            }
         }
         m_los_attenuation_factors.resize(m_los_rays->size());
 
@@ -204,7 +205,7 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
                                    sources.final_weight_factors(Eigen::last) *
                                    sources.beamtrans.value(Eigen::last);
 
-            sasktran2::twostream::backprop::GradientMap grad(
+            sasktran2::twostream::backprop::GradientMap<SOURCE_TYPE> grad(
                 *input.atmosphere, internal_gradient.data());
 
             // assign d_albedo
