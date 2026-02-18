@@ -17,6 +17,7 @@ namespace sasktran2::twostream {
     template <SourceType source_type>
     inline int pentadiagonal_solve(BVPCoeffs<source_type>& bvp, Eigen::MatrixXd& rhs,
                                    bool transpose = false) {
+        ZoneScopedN("Twostream Pentadiagonal Solve");
 
         int N = bvp.a.size();
         // Diagonals are e,c,d,a,b
@@ -124,6 +125,7 @@ namespace sasktran2::twostream {
      */
     template <SourceType source_type>
     inline void solve_layers(const Input<source_type>& input, Solution<source_type>& solution) {
+        ZoneScopedN("Twostream Solve Layers");
         solution.homog[0].d.value.array() =
             (input.ssa.array() * input.b1.array() * input.mu - 1 / input.mu);
         solution.homog[0].s.value.array() =
@@ -808,6 +810,7 @@ namespace sasktran2::twostream {
      */
     template <SourceType source_type>
     inline void solve_bvp(const Input<source_type>& input, Solution<source_type>& solution) {
+        ZoneScopedN("solve_bvp");
         // Solve the BVP
 
         for (int i = 0; i < num_azimuth<source_type>(); ++i) {
@@ -870,6 +873,9 @@ namespace sasktran2::twostream {
                 bvp.d(j2 + 2) = -homog.X_plus.value(j + 1);
                 bvp.a(j2 + 2) =
                     -homog.X_minus.value(j + 1) * homog.omega.value(j + 1);
+
+
+                continue;
 
                 bvp.d_c_by_ssa(j2 + 1, j) =
                     homog.X_minus.d_ssa(j) * homog.omega.value(j) +
@@ -997,6 +1003,7 @@ namespace sasktran2::twostream {
     inline void post_process(const Input<source_type>& input, double viewing_zenith,
                              double azimuth, const Solution<source_type>& solution,
                              Sources<source_type>& sources) {
+        ZoneScopedN("twostream post process");
         if constexpr (has_solar<source_type>()) {
             // Lpsums
             sources.lpsum_plus[0].value.array() =

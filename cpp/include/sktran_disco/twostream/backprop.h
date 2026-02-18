@@ -32,6 +32,7 @@ namespace sasktran2::twostream::backprop {
     inline void map_to_atmosphere(
         const Input<Source>& input, const GradientMap<Source>& internal_grad,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& source) {
+        ZoneScopedN("Twostream Backprop Map To Atmosphere");
         int n = input.nlyr + 1;
         const auto& M = input.geometry_layers->interpolating_matrix();
 
@@ -464,6 +465,7 @@ namespace sasktran2::twostream::backprop {
                     const std::array<ParticularSolution<Source>, num_azimuth<Source>()>& solution,
                     std::array<Eigen::MatrixXd, num_azimuth<Source>()>& d_coeffs,
                     std::vector<GradientMap<Source>>& grad) {
+        ZoneScopedN("Twostream Backprop BVP");
         for (int i = 0; i < 2; ++i) {
             // We have to solve the adjoint equation to get the gradient
             pentadiagonal_solve(bvp_coeffs[i], d_coeffs[i], true);

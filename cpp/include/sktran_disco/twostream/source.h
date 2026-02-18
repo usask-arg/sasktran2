@@ -53,6 +53,7 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
     virtual void initialize_geometry(
         const sasktran2::viewinggeometry::InternalViewingGeometry&
             internal_viewing) override {
+        ZoneScopedN("Twostream Initialize Geometry");
         m_pconfig.configure(
             m_spec, *m_config, m_geometry.coordinates().cos_sza_at_reference(),
             m_geometry.size() - 1, internal_viewing.traced_rays);
@@ -115,12 +116,20 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
     };
 
     virtual void calculate(int wavelidx, int threadidx) {
+        ZoneScopedN("Twostream Calculate");
         auto& input = m_inputs[threadidx];
         auto& solution = m_solutions[threadidx];
 
-        input.calculate(wavelidx);
+        {
+            ZoneScopedN("Twostream Input Calcultaion");
+            input.calculate(wavelidx);
+        }
 
-        sasktran2::twostream::solve(input, solution);
+        {
+            ZoneScopedN("Twostream Solution");
+            sasktran2::twostream::solve(input, solution);
+        }
+
     };
 
     virtual void integrated_source(
@@ -158,6 +167,7 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
         int wavelidx, int losidx, int wavel_threadidx, int threadidx,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const override {
+        ZoneScopedN("Twostream Start of Ray Source");
         auto& sources = m_sources[threadidx];
         const auto& ray = (*m_los_rays)[losidx];
         auto& solution = m_solutions[threadidx];
