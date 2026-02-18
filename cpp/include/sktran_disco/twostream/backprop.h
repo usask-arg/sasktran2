@@ -44,34 +44,32 @@ namespace sasktran2::twostream::backprop {
                 if (a == 0) {
                     continue;
                 }
+                const double layer_thickness = input.geometry_layers->layer_ceiling()(j) -
+                                     input.geometry_layers->layer_floor()(j);
 
                 // Have a weight contribution
 
                 // For extinction we just have to multiply by the weight and the
                 // layer thickness
                 source.deriv(i) += a * internal_grad.d_extinction(j) *
-                                   (input.geometry_layers->layer_ceiling()(j) -
-                                    input.geometry_layers->layer_floor()(j));
+                                   layer_thickness;
 
                 // For SSA,
                 source.deriv(i + n) +=
                     a * internal_grad.d_ssa(j) *
                     input.atmosphere->storage().total_extinction(
                         i, input.wavelidx) /
-                    (input.od(j) / (input.geometry_layers->layer_ceiling()(j) -
-                                    input.geometry_layers->layer_floor()(j)));
+                    (input.od(j) / layer_thickness);
 
                 source.deriv(i) +=
                     a * internal_grad.d_ssa(j) *
                     (input.atmosphere->storage().ssa(i, input.wavelidx) -
                      input.ssa(j)) /
-                    (input.od(j) / (input.geometry_layers->layer_ceiling()(j) -
-                                    input.geometry_layers->layer_floor()(j)));
+                    (input.od(j) / layer_thickness);
 
                 // for b1, find the contribution to atmo b1
                 double denom = (input.ssa(j) * input.od(j) /
-                                (input.geometry_layers->layer_ceiling()(j) -
-                                 input.geometry_layers->layer_floor()(j)));
+                                layer_thickness);
                 double b1_deriv =
                     a * internal_grad.d_b1(j) *
                     (input.atmosphere->storage().ssa(i, input.wavelidx) *

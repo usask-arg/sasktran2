@@ -27,7 +27,7 @@ namespace sasktran2::twostream {
         void resize(int n) {
             value.resize(n);
             value.setZero();
-
+            
             if constexpr (ssa_deriv) {
                 d_ssa.resize(n);
                 d_ssa.setZero();
@@ -110,11 +110,13 @@ namespace sasktran2::twostream {
             if constexpr (has_thermal<source_type>()) {
                 b0_thermal.resize(nlyr);
                 b1_thermal.resize(nlyr);
+                exp_thermal.resize(nlyr);
             }
             
             if constexpr (has_solar<source_type>()) {
-            transmission.resize(nlyr + 1);
-            average_secant.resize(nlyr);
+                transmission.resize(nlyr + 1);
+                average_secant.resize(nlyr);
+                expsec.resize(nlyr);
             }
 
             albedo = 0.0;
@@ -128,13 +130,12 @@ namespace sasktran2::twostream {
             this->wavelidx = wavelidx;
 
             // Start by interpolating extinction to the layers
-            od.array() =
+            od.noalias() =
                 (interpolating_matrix *
-                 (atmosphere->storage().total_extinction.col(wavelidx)))
-                    .array();
+                 (atmosphere->storage().total_extinction.col(wavelidx)));
 
             // And interpolate the scattering extinction
-            ssa = (interpolating_matrix *
+            ssa.noalias() = (interpolating_matrix *
                    (atmosphere->storage().ssa.col(wavelidx).cwiseProduct(
                        atmosphere->storage().total_extinction.col(wavelidx))));
 
@@ -146,7 +147,7 @@ namespace sasktran2::twostream {
                 &atmosphere->storage().leg_coeff(1, 0, wavelidx), nlyr + 1,
                 Eigen::InnerStride<>(stride));
 
-            b1 = (interpolating_matrix *
+            b1.noalias() = (interpolating_matrix *
                   (atmosphere->storage().ssa.col(wavelidx).cwiseProduct(
                        atmosphere->storage().total_extinction.col(wavelidx)))
                       .cwiseProduct(grid_b1));
@@ -172,7 +173,7 @@ namespace sasktran2::twostream {
 
 
             if constexpr (has_thermal<source_type>()) {
-                b0_thermal = interpolating_matrix *
+                b0_thermal.noalias() = interpolating_matrix *
                              atmosphere->storage().emission_source.col(wavelidx);
                 b1_thermal.setZero();
             }
@@ -181,7 +182,7 @@ namespace sasktran2::twostream {
         void calculate_derived(int wavelidx) {
             if constexpr (has_solar<source_type>()) {
                 transmission(0) = 0;
-                transmission(Eigen::seq(1, nlyr)) =
+                transmission(Eigen::seq(1, nlyr)).noalias() =
                     -1 * (geometry_layers->chapman_factors() * od);
 
                 average_secant.array() =
@@ -193,10 +194,10 @@ namespace sasktran2::twostream {
                     transmission.array().exp() *
                     atmosphere->storage().solar_irradiance(wavelidx);
 
-                expsec = (-1.0 * average_secant.array() * od.array()).exp();
+                expsec.array() = (-1.0 * average_secant.array() * od.array()).exp();
             }
             if constexpr (has_thermal<source_type>()) {
-                exp_thermal = (-b1_thermal.array() * od.array()).exp();
+                exp_thermal.array() = (-b1_thermal.array() * od.array()).exp();
             }
         }
 
@@ -311,17 +312,17 @@ namespace sasktran2::twostream {
         Eigen::VectorXd _storage;
 
         void init(int nlyr) {
-            _storage.resize(nlyr * 4);
+            _storage.resize((nlyr+1) * 5);
 
             _storage.setZero();
         }
 
         double& operator()(int a, int b) {
             int j = (a-1) / 2;
-            int a_offset = (a-1) % 2;
+            int a_offset = (a) % 3;
             int b_offset = b - j;
 
-            int index = j * 4 + 2*a_offset + b_offset;
+            int index = j * 5 + 3*a_offset + b_offset;
 
 
             return _storage[index];

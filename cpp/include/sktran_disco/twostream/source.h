@@ -186,8 +186,9 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
 
         double azimuth = -ray.observer_and_look.relative_azimuth;
 
-        sources.final_weight_factors.array() =
-            (-m_los_attenuation_factors[losidx] * input.od).array().exp();
+        sources.final_weight_factors.noalias() =
+            (-m_los_attenuation_factors[losidx] * input.od);
+        sources.final_weight_factors = sources.final_weight_factors.array().exp();
 
         sasktran2::twostream::post_process(input, viewing_zenith, azimuth,
                                            solution, sources);
