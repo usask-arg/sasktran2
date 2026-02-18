@@ -875,8 +875,6 @@ namespace sasktran2::twostream {
                     -homog.X_minus.value(j + 1) * homog.omega.value(j + 1);
 
 
-                continue;
-
                 bvp.d_c_by_ssa(j2 + 1, j) =
                     homog.X_minus.d_ssa(j) * homog.omega.value(j) +
                     homog.X_minus.value(j) * homog.omega.d_ssa(j);

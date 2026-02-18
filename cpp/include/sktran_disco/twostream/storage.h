@@ -88,6 +88,10 @@ namespace sasktran2::twostream {
         Eigen::VectorXd expsec;         /** exp(-od * secant) in each [layer] */
         Eigen::VectorXd exp_thermal; /** exp(-b1_thermal * od) in each [layer] */
 
+        Eigen::SparseMatrix<double> interpolating_matrix; /** Matrix to interpolate from the
+                                                   atmosphere grid to the geometry
+                                                   layers */
+
         double csz;    /** Cosine of the solar zenith angle*/
         double mu;     /** Quadrature angle */
         double albedo; /** Surface albedo */
@@ -116,6 +120,8 @@ namespace sasktran2::twostream {
             albedo = 0.0;
 
             mu = 0.5;
+
+            interpolating_matrix = geometry_layers->interpolating_matrix().sparseView();
         }
 
         void calculate_base(int wavelidx) {
@@ -123,12 +129,12 @@ namespace sasktran2::twostream {
 
             // Start by interpolating extinction to the layers
             od.array() =
-                (geometry_layers->interpolating_matrix() *
+                (interpolating_matrix *
                  (atmosphere->storage().total_extinction.col(wavelidx)))
                     .array();
 
             // And interpolate the scattering extinction
-            ssa = (geometry_layers->interpolating_matrix() *
+            ssa = (interpolating_matrix *
                    (atmosphere->storage().ssa.col(wavelidx).cwiseProduct(
                        atmosphere->storage().total_extinction.col(wavelidx))));
 
@@ -140,7 +146,7 @@ namespace sasktran2::twostream {
                 &atmosphere->storage().leg_coeff(1, 0, wavelidx), nlyr + 1,
                 Eigen::InnerStride<>(stride));
 
-            b1 = (geometry_layers->interpolating_matrix() *
+            b1 = (interpolating_matrix *
                   (atmosphere->storage().ssa.col(wavelidx).cwiseProduct(
                        atmosphere->storage().total_extinction.col(wavelidx)))
                       .cwiseProduct(grid_b1));
@@ -166,7 +172,7 @@ namespace sasktran2::twostream {
 
 
             if constexpr (has_thermal<source_type>()) {
-                b0_thermal = geometry_layers->interpolating_matrix() *
+                b0_thermal = interpolating_matrix *
                              atmosphere->storage().emission_source.col(wavelidx);
                 b1_thermal.setZero();
             }
@@ -301,6 +307,26 @@ namespace sasktran2::twostream {
         }
     };
 
+    struct BVPDerivMatrix {
+        Eigen::VectorXd _storage;
+
+        void init(int nlyr) {
+            _storage.resize(nlyr * 4);
+
+            _storage.setZero();
+        }
+
+        double& operator()(int a, int b) {
+            int j = (a-1) / 2;
+            int a_offset = (a-1) % 2;
+            int b_offset = b - j;
+
+            int index = j * 4 + 2*a_offset + b_offset;
+
+
+            return _storage[index];
+        }
+    };
     /**
      *  Storage for the boundary value problem coefficients and cached
      * quantities
@@ -326,14 +352,14 @@ namespace sasktran2::twostream {
         Eigen::RowVectorXd d_e, d_c, d_d, d_b, d_a;
 
         // Gradient mappings of the diagonals with respect to ssa
-        Eigen::MatrixXd d_e_by_ssa, d_c_by_ssa, d_d_by_ssa, d_b_by_ssa,
+        BVPDerivMatrix d_e_by_ssa, d_c_by_ssa, d_d_by_ssa, d_b_by_ssa,
             d_a_by_ssa;
 
         // Gradient mappings of the diagonals with respect to b1
-        Eigen::MatrixXd d_e_by_b1, d_c_by_b1, d_d_by_b1, d_b_by_b1, d_a_by_b1;
+        BVPDerivMatrix d_e_by_b1, d_c_by_b1, d_d_by_b1, d_b_by_b1, d_a_by_b1;
 
         // Gradient mappings of the diagonals with respect to od
-        Eigen::MatrixXd d_e_by_od, d_c_by_od, d_d_by_od, d_b_by_od, d_a_by_od;
+        BVPDerivMatrix d_e_by_od, d_c_by_od, d_d_by_od, d_b_by_od, d_a_by_od;
 
         // Temporary storage
         Eigen::RowVectorXd d_temp_ssa;
@@ -401,41 +427,23 @@ namespace sasktran2::twostream {
             d_temp_secant.resize(nlyr);
             d_temp_secant.setZero();
 
-            d_e_by_ssa.resize(nlyr * 2, nlyr);
-            d_c_by_ssa.resize(nlyr * 2, nlyr);
-            d_d_by_ssa.resize(nlyr * 2, nlyr);
-            d_b_by_ssa.resize(nlyr * 2, nlyr);
-            d_a_by_ssa.resize(nlyr * 2, nlyr);
+            d_e_by_ssa.init(nlyr);
+            d_c_by_ssa.init(nlyr);
+            d_d_by_ssa.init(nlyr);
+            d_b_by_ssa.init(nlyr);
+            d_a_by_ssa.init(nlyr);
 
-            d_e_by_ssa.setZero();
-            d_c_by_ssa.setZero();
-            d_d_by_ssa.setZero();
-            d_b_by_ssa.setZero();
-            d_a_by_ssa.setZero();
+            d_e_by_b1.init(nlyr);
+            d_c_by_b1.init(nlyr);
+            d_d_by_b1.init(nlyr);
+            d_b_by_b1.init(nlyr);
+            d_a_by_b1.init(nlyr);
 
-            d_e_by_b1.resize(nlyr * 2, nlyr);
-            d_c_by_b1.resize(nlyr * 2, nlyr);
-            d_d_by_b1.resize(nlyr * 2, nlyr);
-            d_b_by_b1.resize(nlyr * 2, nlyr);
-            d_a_by_b1.resize(nlyr * 2, nlyr);
-
-            d_e_by_b1.setZero();
-            d_c_by_b1.setZero();
-            d_d_by_b1.setZero();
-            d_b_by_b1.setZero();
-            d_a_by_b1.setZero();
-
-            d_e_by_od.resize(nlyr * 2, nlyr);
-            d_c_by_od.resize(nlyr * 2, nlyr);
-            d_d_by_od.resize(nlyr * 2, nlyr);
-            d_b_by_od.resize(nlyr * 2, nlyr);
-            d_a_by_od.resize(nlyr * 2, nlyr);
-
-            d_e_by_od.setZero();
-            d_c_by_od.setZero();
-            d_d_by_od.setZero();
-            d_b_by_od.setZero();
-            d_a_by_od.setZero();
+            d_e_by_od.init(nlyr);
+            d_c_by_od.init(nlyr);
+            d_d_by_od.init(nlyr);
+            d_b_by_od.init(nlyr);
+            d_a_by_od.init(nlyr);
         }
     };
 

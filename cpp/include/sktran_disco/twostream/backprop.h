@@ -466,7 +466,7 @@ namespace sasktran2::twostream::backprop {
                     std::array<Eigen::MatrixXd, num_azimuth<Source>()>& d_coeffs,
                     std::vector<GradientMap<Source>>& grad) {
         ZoneScopedN("Twostream Backprop BVP");
-        for (int i = 0; i < 2; ++i) {
+        for (int i = 0; i < num_azimuth<Source>(); ++i) {
             // We have to solve the adjoint equation to get the gradient
             pentadiagonal_solve(bvp_coeffs[i], d_coeffs[i], true);
 
