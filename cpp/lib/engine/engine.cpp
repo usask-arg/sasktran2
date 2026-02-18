@@ -3,6 +3,7 @@
 #include "sasktran2/geometry.h"
 #include "sasktran2/raytracing.h"
 #include "sasktran2/source_interface.h"
+#include "sktran_disco/twostream/meta.h"
 #include <memory>
 #include <sasktran2.h>
 #include <sasktran2/validation/validation.h>
@@ -177,7 +178,7 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
                sasktran2::Config::MultipleScatterSource::twostream) {
         if constexpr (NSTOKES == 1) {
             m_source_terms.emplace_back(
-                std::make_unique<TwoStreamSource<NSTOKES>>(*m_geometry));
+                std::make_unique<TwoStreamSource<NSTOKES, sasktran2::twostream::SourceType::ONLY_SOLAR>>(*m_geometry));
             m_los_source_terms.push_back(
                 m_source_terms[m_source_terms.size() - 1].get());
         } else {

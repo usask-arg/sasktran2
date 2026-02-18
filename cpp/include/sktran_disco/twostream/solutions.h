@@ -13,7 +13,8 @@ namespace sasktran2::twostream {
      * @param bvp
      * @return int
      */
-    inline int pentadiagonal_solve(BVPCoeffs& bvp, Eigen::MatrixXd& rhs,
+    template <SourceType source_type>
+    inline int pentadiagonal_solve(BVPCoeffs<source_type>& bvp, Eigen::MatrixXd& rhs,
                                    bool transpose = false) {
 
         int N = bvp.a.size();
@@ -120,7 +121,8 @@ namespace sasktran2::twostream {
      * @param input
      * @param solution
      */
-    inline void solve_layers(const Input& input, Solution& solution) {
+    template <SourceType source_type>
+    inline void solve_layers(const Input<source_type>& input, Solution<source_type>& solution) {
         solution.homog[0].d.value.array() =
             (input.ssa.array() * input.b1.array() * input.mu - 1 / input.mu);
         solution.homog[0].s.value.array() =
@@ -567,7 +569,8 @@ namespace sasktran2::twostream {
      * @param input
      * @param solution
      */
-    inline void solve_bvp(const Input& input, Solution& solution) {
+    template <SourceType source_type>
+    inline void solve_bvp(const Input<source_type>& input, Solution<source_type>& solution) {
         // Solve the BVP
 
         for (int i = 0; i < 2; ++i) {
@@ -725,7 +728,8 @@ namespace sasktran2::twostream {
      * @param input
      * @param solution
      */
-    inline void solve(const Input& input, Solution& solution) {
+    template <SourceType source_type>
+    inline void solve(const Input<source_type>& input, Solution<source_type>& solution) {
         // Assign the homogneous and particular solutions
         solve_layers(input, solution);
 
@@ -743,9 +747,10 @@ namespace sasktran2::twostream {
      * @param solution
      * @param sources
      */
-    inline void post_process(const Input& input, double viewing_zenith,
-                             double azimuth, const Solution& solution,
-                             Sources& sources) {
+    template <SourceType source_type>
+    inline void post_process(const Input<source_type>& input, double viewing_zenith,
+                             double azimuth, const Solution<source_type>& solution,
+                             Sources<source_type>& sources) {
         // Lpsums
         sources.lpsum_plus[0].value.array() =
             0.5 * (input.ssa.array() - input.ssa.array() * input.b1.array() *

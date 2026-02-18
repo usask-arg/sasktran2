@@ -11,15 +11,16 @@
 #include "sktran_disco/twostream/backprop.h"
 #include "storage.h"
 #include "solutions.h"
+#include "meta.h"
 #include <memory>
 
-template <int NSTOKES>
+template <int NSTOKES, sasktran2::twostream::SourceType SOURCE_TYPE>
 class TwoStreamSource : public SourceTermInterface<NSTOKES> {
   private:
-    mutable std::vector<sasktran2::twostream::Solution> m_solutions;
-    std::vector<sasktran2::twostream::Input> m_inputs;
-    mutable std::vector<sasktran2::twostream::Sources> m_sources;
-    mutable std::vector<std::array<Eigen::MatrixXd, 2>> m_bvp_backprop_storage;
+    mutable std::vector<sasktran2::twostream::Solution<SOURCE_TYPE>> m_solutions;
+    std::vector<sasktran2::twostream::Input<SOURCE_TYPE>> m_inputs;
+    mutable std::vector<sasktran2::twostream::Sources<SOURCE_TYPE>> m_sources;
+    mutable std::vector<std::array<Eigen::MatrixXd, sasktran2::twostream::num_azimuth<SOURCE_TYPE>()>> m_bvp_backprop_storage;
 
     const sasktran2::Geometry1D& m_geometry;
     const sasktran2::Config* m_config;

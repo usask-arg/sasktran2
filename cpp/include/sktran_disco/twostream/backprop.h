@@ -4,6 +4,7 @@
 #include <sasktran2.h>
 #include "sktran_disco/twostream/solutions.h"
 #include "storage.h"
+#include "meta.h"
 
 namespace sasktran2::twostream::backprop {
 
@@ -26,8 +27,9 @@ namespace sasktran2::twostream::backprop {
                   deriv_start[atmo.storage().total_extinction.rows() - 1]) {}
     };
 
+    template <SourceType Source>
     inline void map_to_atmosphere(
-        const Input& input, const GradientMap& internal_grad,
+        const Input<Source>& input, const GradientMap& internal_grad,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& source) {
         int n = input.nlyr + 1;
         const auto& M = input.geometry_layers->interpolating_matrix();
@@ -120,8 +122,8 @@ namespace sasktran2::twostream::backprop {
      * @param d_od
      * @param grad
      */
-    template <typename Derived>
-    inline void od(const Input& input, const Eigen::MatrixBase<Derived>& d_od,
+    template <typename Derived, SourceType Source>
+    inline void od(const Input<Source>& input, const Eigen::MatrixBase<Derived>& d_od,
                    GradientMap& grad) {
         // return;
         grad.d_extinction += d_od;
@@ -135,8 +137,8 @@ namespace sasktran2::twostream::backprop {
      * @param d_ssa
      * @param grad
      */
-    template <typename Derived>
-    inline void ssa(const Input& input, const Eigen::MatrixBase<Derived>& d_ssa,
+    template <typename Derived, SourceType Source>
+    inline void ssa(const Input<Source>& input, const Eigen::MatrixBase<Derived>& d_ssa,
                     GradientMap& grad) {
         grad.d_ssa += d_ssa;
     }
@@ -149,15 +151,15 @@ namespace sasktran2::twostream::backprop {
      * @param d_ssa
      * @param grad
      */
-    template <typename Derived>
-    inline void b1(const Input& input, const Eigen::MatrixBase<Derived>& d_b1,
+    template <typename Derived, SourceType Source>
+    inline void b1(const Input<Source>& input, const Eigen::MatrixBase<Derived>& d_b1,
                    GradientMap& grad) {
 
         grad.d_b1 += d_b1;
     }
 
-    template <typename Derived>
-    inline void transmission(const Input& input,
+    template <typename Derived, SourceType Source>
+    inline void transmission(const Input<Source>& input,
                              const Eigen::MatrixBase<Derived>& d_transmission,
                              GradientMap& grad) {
         // Transmission is calculated through
@@ -181,8 +183,8 @@ namespace sasktran2::twostream::backprop {
         }
     }
 
-    template <typename Derived>
-    inline void secant(const Input& input,
+    template <typename Derived, SourceType Source>
+    inline void secant(const Input<Source>& input,
                        const Eigen::MatrixBase<Derived>& d_secant,
                        GradientMap& grad) {
         // Let M = chapman factors
@@ -208,10 +210,11 @@ namespace sasktran2::twostream::backprop {
         }
     }
 
-    inline void homog_X(const Input& input,
-                        const std::array<HomogSolution, 2>& solution,
-                        std::array<Eigen::RowVectorXd, 2>& d_X_plus,
-                        std::array<Eigen::RowVectorXd, 2>& d_X_minus,
+    template <SourceType Source>
+    inline void homog_X(const Input<Source>& input,
+                        const std::array<HomogSolution<Source>, num_azimuth<Source>()>& solution,
+                        std::array<Eigen::RowVectorXd, num_azimuth<Source>()>& d_X_plus,
+                        std::array<Eigen::RowVectorXd, num_azimuth<Source>()>& d_X_minus,
                         GradientMap& grad) {
         // We also have
         // X_plus = 0.5 * (1 - s / k)
@@ -234,9 +237,10 @@ namespace sasktran2::twostream::backprop {
                 grad);
         }
     }
-    inline void homog_k(const Input& input,
-                        const std::array<HomogSolution, 2>& solution,
-                        std::array<Eigen::RowVectorXd, 2>& d_k,
+    template <SourceType Source>
+    inline void homog_k(const Input<Source>& input,
+                        const std::array<HomogSolution<Source>, num_azimuth<Source>()>& solution,
+                        std::array<Eigen::RowVectorXd, num_azimuth<Source>()>& d_k,
                         GradientMap& grad) {
         // To start, we have k = sqrt(s * d) and so then
         // The gradient wrt to s is 0.5 / k * d
@@ -248,9 +252,11 @@ namespace sasktran2::twostream::backprop {
                 grad);
         }
     }
-    inline void homog_omega(const Input& input,
-                            const std::array<HomogSolution, 2>& solution,
-                            std::array<Eigen::RowVectorXd, 2>& d_omega,
+
+    template <SourceType Source>
+    inline void homog_omega(const Input<Source>& input,
+                            const std::array<HomogSolution<Source>, num_azimuth<Source>()>& solution,
+                            std::array<Eigen::RowVectorXd, num_azimuth<Source>()>& d_omega,
                             GradientMap& grad) {
         for (int i = 0; i < 2; ++i) {
             // This is now grad wrt to ssa
@@ -260,9 +266,10 @@ namespace sasktran2::twostream::backprop {
         }
     }
 
+    template <SourceType Source>
     inline void particular_Q_plus(
-        const Input& input, const std::array<ParticularSolution, 2>& solution,
-        std::array<Eigen::RowVectorXd, 2>& d_Q_plus, GradientMap& grad) {
+        const Input<Source>& input, const std::array<ParticularSolution<Source>, num_azimuth<Source>()>& solution,
+        std::array<Eigen::RowVectorXd, num_azimuth<Source>()>& d_Q_plus, GradientMap& grad) {
         for (int i = 0; i < 2; ++i) {
             // This is now grad wrt to ssa
             ssa(input,
@@ -271,9 +278,10 @@ namespace sasktran2::twostream::backprop {
         }
     }
 
+    template <SourceType Source>
     inline void particular_Q_minus(
-        const Input& input, const std::array<ParticularSolution, 2>& solution,
-        std::array<Eigen::RowVectorXd, 2>& d_Q_minus, GradientMap& grad) {
+        const Input<Source>& input, const std::array<ParticularSolution<Source>, num_azimuth<Source>()>& solution,
+        std::array<Eigen::RowVectorXd, num_azimuth<Source>()>& d_Q_minus, GradientMap& grad) {
         for (int i = 0; i < 2; ++i) {
             // This is now grad wrt to ssa
             ssa(input,
@@ -283,9 +291,10 @@ namespace sasktran2::twostream::backprop {
         }
     }
 
+    template <SourceType Source>
     inline void particular_norm(
-        const Input& input, const std::array<ParticularSolution, 2>& solution,
-        std::array<Eigen::RowVectorXd, 2>& d_norm, GradientMap& grad) {
+        const Input<Source>& input, const std::array<ParticularSolution<Source>, num_azimuth<Source>()>& solution,
+        std::array<Eigen::RowVectorXd, num_azimuth<Source>()>& d_norm, GradientMap& grad) {
         for (int i = 0; i < 2; ++i) {
             // This is now grad wrt to ssa
             ssa(input,
@@ -294,9 +303,10 @@ namespace sasktran2::twostream::backprop {
         }
     }
 
+    template <SourceType Source>
     inline void particular_Aplus(
-        const Input& input, const std::array<ParticularSolution, 2>& solution,
-        std::array<Eigen::RowVectorXd, 2>& d_Aplus, GradientMap& grad) {
+        const Input<Source>& input, const std::array<ParticularSolution<Source>, num_azimuth<Source>()>& solution,
+        std::array<Eigen::RowVectorXd, num_azimuth<Source>()>& d_Aplus, GradientMap& grad) {
         for (int i = 0; i < 2; ++i) {
             // This is now grad wrt to ssa
             ssa(input,
@@ -305,8 +315,9 @@ namespace sasktran2::twostream::backprop {
         }
     }
 
+    template <SourceType Source>
     inline void particular_Aminus(
-        const Input& input, const std::array<ParticularSolution, 2>& solution,
+        const Input<Source>& input, const std::array<ParticularSolution<Source>, num_azimuth<Source>()>& solution,
         std::array<Eigen::RowVectorXd, 2>& d_Aminus, GradientMap& grad) {
         for (int i = 0; i < 2; ++i) {
             // This is now grad wrt to ssa
@@ -316,10 +327,11 @@ namespace sasktran2::twostream::backprop {
         }
     }
 
+    template <SourceType Source>
     inline void
-    particular_G_plus_top(const Input& input,
-                          const std::array<ParticularSolution, 2>& solution,
-                          const std::array<Eigen::RowVectorXd, 2>& d_G_plus_top,
+    particular_G_plus_top(const Input<Source>& input,
+                          const std::array<ParticularSolution<Source>, num_azimuth<Source>()>& solution,
+                          const std::array<Eigen::RowVectorXd, num_azimuth<Source>()>& d_G_plus_top,
                           GradientMap& grad) {
         for (int i = 0; i < 2; ++i) {
             ssa(input,
@@ -348,9 +360,10 @@ namespace sasktran2::twostream::backprop {
         }
     }
 
+    template <SourceType Source>
     inline void particular_G_plus_bottom(
-        const Input& input, const std::array<ParticularSolution, 2>& solution,
-        const std::array<Eigen::RowVectorXd, 2>& d_G_plus_bottom,
+        const Input<Source>& input, const std::array<ParticularSolution<Source>, num_azimuth<Source>()>& solution,
+        const std::array<Eigen::RowVectorXd, num_azimuth<Source>()>& d_G_plus_bottom,
         GradientMap& grad) {
         for (int i = 0; i < 2; ++i) {
             ssa(input,
@@ -379,9 +392,10 @@ namespace sasktran2::twostream::backprop {
         }
     }
 
+    template <SourceType Source>
     inline void particular_G_minus_top(
-        const Input& input, const std::array<ParticularSolution, 2>& solution,
-        const std::array<Eigen::RowVectorXd, 2>& d_G_minus_top,
+        const Input<Source>& input, const std::array<ParticularSolution<Source>, num_azimuth<Source>()>& solution,
+        const std::array<Eigen::RowVectorXd, num_azimuth<Source>()>& d_G_minus_top,
         GradientMap& grad) {
         for (int i = 0; i < 2; ++i) {
             ssa(input,
@@ -410,9 +424,10 @@ namespace sasktran2::twostream::backprop {
         }
     }
 
+    template <SourceType Source>
     inline void particular_G_minus_bottom(
-        const Input& input, const std::array<ParticularSolution, 2>& solution,
-        const std::array<Eigen::RowVectorXd, 2>& d_G_minus_bottom,
+        const Input<Source>& input, const std::array<ParticularSolution<Source>, num_azimuth<Source>()>& solution,
+        const std::array<Eigen::RowVectorXd, num_azimuth<Source>()>& d_G_minus_bottom,
         GradientMap& grad) {
         for (int i = 0; i < 2; ++i) {
             // This is now grad wrt to ssa
@@ -442,10 +457,11 @@ namespace sasktran2::twostream::backprop {
         }
     }
 
-    inline void bvp(const Input& input, std::array<BVPCoeffs, 2>& bvp_coeffs,
-                    const std::array<HomogSolution, 2>& homog,
-                    const std::array<ParticularSolution, 2>& solution,
-                    std::array<Eigen::MatrixXd, 2>& d_coeffs,
+    template <SourceType Source>
+    inline void bvp(const Input<Source>& input, std::array<BVPCoeffs<Source>, num_azimuth<Source>()>& bvp_coeffs,
+                    const std::array<HomogSolution<Source>, num_azimuth<Source>()>& homog,
+                    const std::array<ParticularSolution<Source>, num_azimuth<Source>()>& solution,
+                    std::array<Eigen::MatrixXd, num_azimuth<Source>()>& d_coeffs,
                     std::vector<GradientMap>& grad) {
         for (int i = 0; i < 2; ++i) {
             // We have to solve the adjoint equation to get the gradient
@@ -824,10 +840,11 @@ namespace sasktran2::twostream::backprop {
         secant(input, bvp_coeffs[0].d_temp_secant, grad[0]);
     }
 
-    inline void full(const Input& input, Solution& solution,
-                     const Sources& sources,
+    template <SourceType Source>
+    inline void full(const Input<Source>& input, Solution<Source>& solution,
+                     const Sources<Source>& sources,
                      const Eigen::RowVectorXd& source_weights,
-                     std::array<Eigen::MatrixXd, 2>& d_coeffs,
+                     std::array<Eigen::MatrixXd, num_azimuth<Source>()>& d_coeffs,
                      GradientMap& grad, double ground_weight = 0.0) {
         // Direct source terms
         ssa(input,

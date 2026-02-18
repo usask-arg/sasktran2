@@ -2,6 +2,7 @@
 #include "sasktran2/atmosphere/atmosphere.h"
 #include "sktran_disco/sktran_do_geometrylayerarray.h"
 #include <sasktran2/internal_common.h>
+#include "meta.h"
 
 namespace sasktran2::twostream {
 
@@ -12,7 +13,7 @@ namespace sasktran2::twostream {
      *
      */
     template <bool ssa_deriv, bool od_deriv, bool b1_deriv,
-              bool trans_deriv = false, bool secant_deriv = false>
+              bool trans_deriv, bool secant_deriv, SourceType source_type>
     struct LayerVector {
         Eigen::VectorXd value;
         Eigen::VectorXd d_ssa;
@@ -38,12 +39,12 @@ namespace sasktran2::twostream {
                 d_b1.setZero();
             }
 
-            if constexpr (trans_deriv) {
+            if constexpr (trans_deriv && has_solar<source_type>()) {
                 d_transmission.resize(n + 1);
                 d_transmission.setZero();
             }
 
-            if constexpr (secant_deriv) {
+            if constexpr (secant_deriv && has_solar<source_type>()) {
                 d_secant.resize(n);
                 d_secant.setZero();
             }
@@ -55,6 +56,7 @@ namespace sasktran2::twostream {
      * as well as some derived cached values
      *
      */
+    template <SourceType source_type>
     struct Input {
         const sasktran_disco::GeometryLayerArray<1>*
             geometry_layers; /** Pointer to the geometry layer information */
@@ -170,17 +172,18 @@ namespace sasktran2::twostream {
      *  Storage for the homogeneous solution and cached quantities
      *
      */
+    template <SourceType source_type>
     struct HomogSolution {
-        LayerVector<true, false, true> k; /** Eigen value, [lyr] */
-        LayerVector<true, false, true>
+        LayerVector<true, false, true, false, false, source_type> k; /** Eigen value, [lyr] */
+        LayerVector<true, false, true, false, false, source_type>
             X_plus; /** Position eigen vector [lyr] */
-        LayerVector<true, false, true>
+        LayerVector<true, false, true, false, false, source_type>
             X_minus; /** Negative eigen vector [wlyr] */
 
         // Temporaries
-        LayerVector<true, false, true> d;    /** Temporary [lyr] */
-        LayerVector<true, false, true> s;    /** Temporary [lyr] */
-        LayerVector<true, true, true> omega; /** exp(-k*od) [lyr]*/
+        LayerVector<true, false, true, false, false, source_type> d;    /** Temporary [lyr] */
+        LayerVector<true, false, true, false, false, source_type> s;    /** Temporary [lyr] */
+        LayerVector<true, true, true, false, false, source_type> omega; /** exp(-k*od) [lyr]*/
 
         /**
          *  Initializes the storage for a given number of layers
@@ -203,24 +206,25 @@ namespace sasktran2::twostream {
      *  Storage for the particular solution and cached quantities
      *
      */
+    template <SourceType source_type>
     struct ParticularSolution {
-        LayerVector<true, true, true, true, true>
+        LayerVector<true, true, true, true, true, source_type>
             G_plus_top; /** G+ at top of the [lyr] */
-        LayerVector<true, true, true, true, true>
+        LayerVector<true, true, true, true, true, source_type>
             G_plus_bottom; /** G+ at bottom of the [lyr]*/
-        LayerVector<true, true, true, true, true>
+        LayerVector<true, true, true, true, true, source_type>
             G_minus_top; /** G- at the top of the [lyr] */
-        LayerVector<true, true, true, true, true>
+        LayerVector<true, true, true, true, true, source_type>
             G_minus_bottom; /** G- at the bottom of the [lyr] */
-        LayerVector<true, false, true> A_plus;  /** A+ in the layer [lyr] */
-        LayerVector<true, false, true> A_minus; /** A- in the [lyr] */
+        LayerVector<true, false, true, false, false, source_type> A_plus;  /** A+ in the layer [lyr] */
+        LayerVector<true, false, true, false, false, source_type> A_minus; /** A- in the [lyr] */
 
         // Temporaries
-        LayerVector<true, false, true> Q_plus;  /** Q+ in the [lyr] */
-        LayerVector<true, false, true> Q_minus; /** Q- in the [lyr] */
-        LayerVector<true, false, true> norm; /** Normalization factor [lyr] */
-        LayerVector<true, true, true, true, true> C_plus;  /** C+ [lyr]*/
-        LayerVector<true, true, true, true, true> C_minus; /** C- [lyr]*/
+        LayerVector<true, false, true, false, false, source_type> Q_plus;  /** Q+ in the [lyr] */
+        LayerVector<true, false, true, false, false, source_type> Q_minus; /** Q- in the [lyr] */
+        LayerVector<true, false, true, false, false, source_type> norm; /** Normalization factor [lyr] */
+        LayerVector<true, true, true, true, true, source_type> C_plus;  /** C+ [lyr]*/
+        LayerVector<true, true, true, true, true, source_type> C_minus; /** C- [lyr]*/
 
         /**
          *  Initializes the storage for a given number of layers
@@ -248,6 +252,7 @@ namespace sasktran2::twostream {
      * quantities
      *
      */
+    template <SourceType source_type>
     struct BVPCoeffs {
         Eigen::VectorXd e, c, d, b, a; /** Pentadiagonal matrix diagonals*/
 
@@ -385,12 +390,13 @@ namespace sasktran2::twostream {
      * orders
      *
      */
+    template<SourceType source_type>
     struct Solution {
-        std::array<HomogSolution, 2>
+        std::array<HomogSolution<source_type>, num_azimuth<source_type>()>
             homog; /** Homogeneous solutino for both azimuthal orders */
-        std::array<ParticularSolution, 2>
+        std::array<ParticularSolution<source_type>, num_azimuth<source_type>()>
             particular; /** Particular solution for both azimuthal orders*/
-        std::array<BVPCoeffs, 2>
+        std::array<BVPCoeffs<source_type>, num_azimuth<source_type>()>
             bvp_coeffs; /** BVP solution for both azimuthal orders */
 
         /**
@@ -415,36 +421,37 @@ namespace sasktran2::twostream {
      * Storage for the post-processed sources for a given line of sight
      *
      */
+    template <SourceType source_type>
     struct Sources {
-        LayerVector<true, true, true, true, true>
+        LayerVector<true, true, true, true, true, source_type>
             source; /** Integrated sources in each [lyr] */
 
-        LayerVector<false, true, false>
+        LayerVector<false, true, false, false, false, source_type>
             beamtrans; /** LOS transmission factors exp(-od /
          viewing_zenith) for each [layer] */
 
         Eigen::VectorXd final_weight_factors; /** Final weight factors for each
                                                 [layer] */
 
-        std::array<LayerVector<true, false, true>, 2> lpsum_plus,
+        std::array<LayerVector<true, false, true, false, false, source_type>, num_azimuth<source_type>()> lpsum_plus,
             lpsum_minus; /** LP triple products for upwelling and downwelling
                             [lyr] */
-        std::array<LayerVector<true, false, true>, 2> Y_plus,
+        std::array<LayerVector<true, false, true, false, false, source_type>, num_azimuth<source_type>()> Y_plus,
             Y_minus; /** "Interpolated" homogenous solutions in each [lyr] */
 
-        std::array<LayerVector<true, true, true>, 2> H_plus,
+        std::array<LayerVector<true, true, true, false, false, source_type>, num_azimuth<source_type>()> H_plus,
             H_minus; /** Homogenous solution multipliers [lyr] */
-        std::array<LayerVector<true, true, true, true, true>, 2> D_plus,
+        std::array<LayerVector<true, true, true, true, true, source_type>, num_azimuth<source_type>()> D_plus,
             D_minus; /** Particular solution multipliers [lyr] */
 
-        std::array<LayerVector<true, true, true, true, true>, 2>
+        std::array<LayerVector<true, true, true, true, true, source_type>, num_azimuth<source_type>()>
             V; /** Particular source [lyr] */
 
-        LayerVector<false, true, false, false, true>
+        LayerVector<false, true, false, false, true, source_type>
             E_minus; /** Solar multiplier [lyr] */
 
         // Backprop factors
-        std::array<Eigen::RowVectorXd, 2> d_bvp_coeff;
+        std::array<Eigen::RowVectorXd, num_azimuth<source_type>()> d_bvp_coeff;
 
         /**
          * Initializes the storage for a given number of layers
