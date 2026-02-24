@@ -23,7 +23,7 @@ namespace sasktran2::raytracing {
         }
 
         if (ray_copy.observer.position.z() - m_earth_radius >=
-            m_alt_grid.grid()(Eigen::last)) {
+            m_alt_grid.grid()(Eigen::placeholders::last)) {
             // Outside atmosphere, probably
             if (ray_copy.look_away.z() > 0) {
                 // We are looking up, so this is just an empty ray
@@ -96,7 +96,8 @@ namespace sasktran2::raytracing {
         }
 
         assert(abs(result.layers[0].exit.position.z() -
-                   m_alt_grid.grid()(Eigen::last) - m_earth_radius) < 1e-8);
+                   m_alt_grid.grid()(Eigen::placeholders::last) -
+                   m_earth_radius) < 1e-8);
         assert(
             abs(result.layers[result.layers.size() - 1].entrance.position.z() -
                 ray.observer.position.z()) < 1e-8);

@@ -225,25 +225,25 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::linearizeHomogeneous(
         // For each row add in an equation
         for (uint row = 0; row < N * NSTOKES; ++row) {
 
-            lhs(row, Eigen::seq(0, Eigen::last - 1)).noalias() =
-                eigmtx(row, Eigen::all);
+            lhs(row, Eigen::seq(0, Eigen::placeholders::last - 1)).noalias() =
+                eigmtx(row, Eigen::placeholders::all);
             lhs(row, row) -= eigvalsq(j);
 
             lhs(row, N * NSTOKES) = -2 * eigval(j) * MX_plus(row, j);
         }
         // The final equation is that d_X is orthogonal to X,
-        lhs(N * NSTOKES, Eigen::seq(0, Eigen::last - 1)).noalias() =
-            MX_plus(Eigen::all, j);
+        lhs(N * NSTOKES, Eigen::seq(0, Eigen::placeholders::last - 1))
+            .noalias() = MX_plus(Eigen::placeholders::all, j);
         // Have to make sure to set the last element to 0
         lhs(N * NSTOKES, N * NSTOKES) = 0;
 
         // for each linearization we have a different RHS
         MatrixHRHS& rhs = m_cache.h_rhs[layer.index()];
         for (uint i = 0; i < numDeriv; ++i) {
-            rhs(Eigen::seq(0, Eigen::last - 1), i).noalias() =
+            rhs(Eigen::seq(0, Eigen::placeholders::last - 1), i).noalias() =
                 -1.0 * (layer.solution(m).d_cache[i].eigmtx()) *
-                MX_plus(Eigen::all, j); // Regular system
-            rhs(N * NSTOKES, i) = 0.0;  // Orthogonality
+                MX_plus(Eigen::placeholders::all, j); // Regular system
+            rhs(N * NSTOKES, i) = 0.0;                // Orthogonality
         }
         MatrixHRHS& d_X_d_k = m_cache.h_d_X_d_k[layer.index()];
         if (NSTOKES == 1) {
@@ -259,7 +259,7 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::linearizeHomogeneous(
         // Store the derivative result for each linearization
         for (uint i = 0; i < numDeriv; ++i) {
             // Store the derivative for the eigen value
-            double d_k = d_X_d_k(Eigen::last, i);
+            double d_k = d_X_d_k(Eigen::placeholders::last, i);
             solution.value.dual_eigval().deriv(i, j) = d_k;
 
             // Begin constructing the derivatives for W_plus and W_minus
@@ -271,23 +271,23 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::linearizeHomogeneous(
                 .noalias() =
                 0.5 * ((-d_k / eigvalsq(j)) * S_plus +
                        1 / eigval(j) * (layer.solution(m).d_cache[i].s_plus()))
-                          .lazyProduct(MX_plus(Eigen::all, j));
+                          .lazyProduct(MX_plus(Eigen::placeholders::all, j));
             d_W_plus(Eigen::seq(j * N * NSTOKES, (j + 1) * N * NSTOKES - 1))
                 .noalias() +=
-                0.5 *
-                (identity + 1 / eigval(j) * S_plus)
-                    .lazyProduct(d_X_d_k(Eigen::seq(0, Eigen::last - 1), i));
+                0.5 * (identity + 1 / eigval(j) * S_plus)
+                          .lazyProduct(d_X_d_k(
+                              Eigen::seq(0, Eigen::placeholders::last - 1), i));
 
             d_W_minus(Eigen::seq(j * N * NSTOKES, (j + 1) * N * NSTOKES - 1))
                 .noalias() =
                 0.5 * ((d_k / eigvalsq(j)) * S_plus -
                        1 / eigval(j) * (layer.solution(m).d_cache[i].s_plus()))
-                          .lazyProduct(MX_plus(Eigen::all, j));
+                          .lazyProduct(MX_plus(Eigen::placeholders::all, j));
             d_W_minus(Eigen::seq(j * N * NSTOKES, (j + 1) * N * NSTOKES - 1))
                 .noalias() +=
-                0.5 *
-                (identity - 1 / eigval(j) * S_plus)
-                    .lazyProduct(d_X_d_k(Eigen::seq(0, Eigen::last - 1), i));
+                0.5 * (identity - 1 / eigval(j) * S_plus)
+                          .lazyProduct(d_X_d_k(
+                              Eigen::seq(0, Eigen::placeholders::last - 1), i));
         }
     }
 }
@@ -347,7 +347,7 @@ void sasktran_disco::RTESolver<1, 2>::linearizeHomogeneous(
     // Store the derivative result for each linearization
     for (uint i = 0; i < numDeriv; ++i) {
         // Store the derivative for the eigen value
-        double d_k = d_X_d_k(Eigen::last, i);
+        double d_k = d_X_d_k(Eigen::placeholders::last, i);
         solution.value.dual_eigval().deriv(i, 0) = d_k;
 
         // Begin constructing the derivatives for W_plus and W_minus
@@ -869,13 +869,13 @@ void sasktran_disco::RTESolver<1, 2>::solveParticularGreen(
 
     // Normally in backprop we don't copy all of these derivatives, but we would
     // have to zero memory anyways so probably no benefit?
-    Gplus_top.deriv(Eigen::all, 0).noalias() =
+    Gplus_top.deriv(Eigen::placeholders::all, 0).noalias() =
         Aminus.value(0) * homog_minus.value(0) * Cminus.deriv;
-    Gminus_top.deriv(Eigen::all, 0).noalias() =
+    Gminus_top.deriv(Eigen::placeholders::all, 0).noalias() =
         Aminus.value(0) * homog_plus.value(0) * Cminus.deriv;
-    Gplus_bottom.deriv(Eigen::all, 0).noalias() =
+    Gplus_bottom.deriv(Eigen::placeholders::all, 0).noalias() =
         Aplus.value(0) * homog_plus.value(0) * Cplus.deriv;
-    Gminus_bottom.deriv(Eigen::all, 0).noalias() =
+    Gminus_bottom.deriv(Eigen::placeholders::all, 0).noalias() =
         Aplus.value(0) * homog_minus.value(0) * Cplus.deriv;
 
     for (uint k = 0; k < numLayerDeriv; ++k) {
@@ -1262,29 +1262,30 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
 
             if (!(this->M_BACKPROP_BVP &&
                   SASKTRAN_DISCO_ENABLE_FULL_BACKPROP)) {
-                Gplus_top.deriv(Eigen::all, j).noalias() +=
+                Gplus_top.deriv(Eigen::placeholders::all, j).noalias() +=
                     Aminus.value(i) * homog_minus.value(h_start + j) *
                     Cminus.deriv;
-                Gminus_top.deriv(Eigen::all, j).noalias() +=
+                Gminus_top.deriv(Eigen::placeholders::all, j).noalias() +=
                     negation * Aminus.value(i) * homog_plus.value(h_start + j) *
                     Cminus.deriv;
-                Gplus_bottom.deriv(Eigen::all, j).noalias() +=
+                Gplus_bottom.deriv(Eigen::placeholders::all, j).noalias() +=
                     Aplus.value(i) * homog_plus.value(h_start + j) *
                     Cplus.deriv;
-                Gminus_bottom.deriv(Eigen::all, j).noalias() +=
+                Gminus_bottom.deriv(Eigen::placeholders::all, j).noalias() +=
                     negation * Aplus.value(i) * homog_minus.value(h_start + j) *
                     Cplus.deriv;
             } else {
                 // Special case for the ground layer, we keep track of
                 // Gplus_bottom derivatives
                 if (p == this->M_NLYR - 1) {
-                    Gplus_bottom.deriv(Eigen::all, j).noalias() +=
+                    Gplus_bottom.deriv(Eigen::placeholders::all, j).noalias() +=
                         Aplus.value(i) * homog_plus.value(h_start + j) *
                         Cplus.deriv;
 
-                    Gminus_bottom.deriv(Eigen::all, j).noalias() +=
-                        negation * Aplus.value(i) *
-                        homog_minus.value(h_start + j) * Cplus.deriv;
+                    Gminus_bottom.deriv(Eigen::placeholders::all, j)
+                        .noalias() += negation * Aplus.value(i) *
+                                      homog_minus.value(h_start + j) *
+                                      Cplus.deriv;
                 }
 
                 for (uint k = 0; k < numLayerDeriv; ++k) {
@@ -1904,9 +1905,9 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::backprop(
             const auto& transmission = layer.ceiling_beam_transmittanc();
 
             for (int s = 0; s < NSTOKES; ++s) {
-                component.deriv(Eigen::all, s).noalias() +=
+                component.deriv(Eigen::placeholders::all, s).noalias() +=
                     m_cache.m_trans_weights(s, p) * transmission.deriv;
-                component.deriv(Eigen::all, s).noalias() +=
+                component.deriv(Eigen::placeholders::all, s).noalias() +=
                     m_cache.m_secant_weights(s, p) * average_secant.deriv;
             }
         }
@@ -2177,8 +2178,9 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC1(
             }
         } else {
             if (numDeriv > 0) {
-                d_b(loc, Eigen::all).noalias() +=
-                    -solution.dual_Gplus_top().deriv(Eigen::all, i);
+                d_b(loc, Eigen::placeholders::all).noalias() +=
+                    -solution.dual_Gplus_top().deriv(Eigen::placeholders::all,
+                                                     i);
             }
         }
 
@@ -2262,13 +2264,17 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpCouplingCondition_BC2(
             }
         } else {
             if (numderiv > 0) {
-                d_b(loc + N * NSTOKES, Eigen::all).noalias() =
-                    lower.solution.dual_Gplus_top().deriv(Eigen::all, i) -
-                    upper.solution.dual_Gplus_bottom().deriv(Eigen::all, i);
+                d_b(loc + N * NSTOKES, Eigen::placeholders::all).noalias() =
+                    lower.solution.dual_Gplus_top().deriv(
+                        Eigen::placeholders::all, i) -
+                    upper.solution.dual_Gplus_bottom().deriv(
+                        Eigen::placeholders::all, i);
 
-                d_b(loc, Eigen::all).noalias() =
-                    lower.solution.dual_Gminus_top().deriv(Eigen::all, i) -
-                    upper.solution.dual_Gminus_bottom().deriv(Eigen::all, i);
+                d_b(loc, Eigen::placeholders::all).noalias() =
+                    lower.solution.dual_Gminus_top().deriv(
+                        Eigen::placeholders::all, i) -
+                    upper.solution.dual_Gminus_bottom().deriv(
+                        Eigen::placeholders::all, i);
             }
         }
 

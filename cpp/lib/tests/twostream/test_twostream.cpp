@@ -33,11 +33,11 @@ TEST_CASE("twostreamBenchmark", "[sktran_do][lowlevel][benchmark]") {
     surface.brdf_args().setConstant(0.5);
 
     sasktran2::atmosphere::Atmosphere<1> atmo(std::move(storage),
-                                              std::move(surface), false);
+                                              std::move(surface), true);
 
     atmo.storage().total_extinction.setConstant(0.01);
 
-    atmo.storage().ssa.setConstant(0.8);
+    atmo.storage().ssa.setConstant(1.0);
 
     atmo.storage().leg_coeff.chip(0, 0).setConstant(1);
     atmo.storage().leg_coeff.chip(2, 0).setConstant(0.5);
@@ -66,7 +66,6 @@ TEST_CASE("twostreamBenchmark", "[sktran_do][lowlevel][benchmark]") {
     sasktran2::OutputIdealDense<1> output;
     engine.calculate_radiance(atmo, output);
 }
-
 
 TEST_CASE("twostream_thermal_Benchmark", "[sktran_do][lowlevel][benchmark]") {
 #ifdef USE_OMP
@@ -98,7 +97,7 @@ TEST_CASE("twostream_thermal_Benchmark", "[sktran_do][lowlevel][benchmark]") {
     surface.brdf_args().setConstant(0.5);
 
     sasktran2::atmosphere::Atmosphere<1> atmo(std::move(storage),
-                                              std::move(surface), false);
+                                              std::move(surface), true);
 
     atmo.storage().total_extinction.setConstant(0.01);
 
@@ -117,8 +116,7 @@ TEST_CASE("twostream_thermal_Benchmark", "[sktran_do][lowlevel][benchmark]") {
 
     // Construct the config
     sasktran2::Config config;
-    config.set_emission_source(
-        sasktran2::Config::EmissionSource::twostream);
+    config.set_emission_source(sasktran2::Config::EmissionSource::twostream);
     config.set_single_scatter_source(
         sasktran2::Config::SingleScatterSource::none);
 

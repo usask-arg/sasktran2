@@ -159,9 +159,9 @@ void sasktran_disco::Radiance<3>::apply_azimuth_expansion(double angle, int m) {
     value(1) *= cos_daz;
     value(2) *= sin_daz;
 
-    deriv(Eigen::all, 0) *= cos_daz;
-    deriv(Eigen::all, 1) *= cos_daz;
-    deriv(Eigen::all, 2) *= sin_daz;
+    deriv(Eigen::placeholders::all, 0) *= cos_daz;
+    deriv(Eigen::placeholders::all, 1) *= cos_daz;
+    deriv(Eigen::placeholders::all, 2) *= sin_daz;
 }
 
 template <>
@@ -174,10 +174,10 @@ void sasktran_disco::Radiance<4>::apply_azimuth_expansion(double angle, int m) {
     value(2) *= sin_daz;
     value(3) *= sin_daz;
 
-    deriv(Eigen::all, 0) *= cos_daz;
-    deriv(Eigen::all, 1) *= cos_daz;
-    deriv(Eigen::all, 2) *= sin_daz;
-    deriv(Eigen::all, 3) *= sin_daz;
+    deriv(Eigen::placeholders::all, 0) *= cos_daz;
+    deriv(Eigen::placeholders::all, 1) *= cos_daz;
+    deriv(Eigen::placeholders::all, 2) *= sin_daz;
+    deriv(Eigen::placeholders::all, 3) *= sin_daz;
 }
 
 template struct sasktran_disco::Radiance<3>;

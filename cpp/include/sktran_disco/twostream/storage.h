@@ -12,8 +12,9 @@ namespace sasktran2::twostream {
      * and first legendre coefficient
      *
      */
-    template <bool ssa_deriv, bool od_deriv, bool b1_deriv,
-              bool trans_deriv, bool secant_deriv, bool thermal_b0_deriv, bool thermal_b1_deriv, SourceType source_type>
+    template <bool ssa_deriv, bool od_deriv, bool b1_deriv, bool trans_deriv,
+              bool secant_deriv, bool thermal_b0_deriv, bool thermal_b1_deriv,
+              SourceType source_type>
     struct LayerVector {
         Eigen::VectorXd value;
         Eigen::VectorXd d_ssa;
@@ -27,7 +28,7 @@ namespace sasktran2::twostream {
         void resize(int n) {
             value.resize(n);
             value.setZero();
-            
+
             if constexpr (ssa_deriv) {
                 d_ssa.resize(n);
                 d_ssa.setZero();
@@ -68,8 +69,7 @@ namespace sasktran2::twostream {
      * as well as some derived cached values
      *
      */
-    template <SourceType source_type>
-    struct Input {
+    template <SourceType source_type> struct Input {
         const sasktran_disco::GeometryLayerArray<1>*
             geometry_layers; /** Pointer to the geometry layer information */
         const sasktran2::atmosphere::Atmosphere<1>*
@@ -86,15 +86,17 @@ namespace sasktran2::twostream {
                              last element is transmission to the surface*/
         Eigen::VectorXd average_secant; /** Average secant in each [layer] */
         Eigen::VectorXd expsec;         /** exp(-od * secant) in each [layer] */
-        Eigen::VectorXd exp_thermal; /** exp(-b1_thermal * od) in each [layer] */
+        Eigen::VectorXd
+            exp_thermal; /** exp(-b1_thermal * od) in each [layer] */
 
-        Eigen::SparseMatrix<double> interpolating_matrix; /** Matrix to interpolate from the
-                                                   atmosphere grid to the geometry
-                                                   layers */
+        Eigen::SparseMatrix<double>
+            interpolating_matrix; /** Matrix to interpolate from the
+                           atmosphere grid to the geometry
+                           layers */
 
-        double csz;    /** Cosine of the solar zenith angle*/
-        double mu;     /** Quadrature angle */
-        double albedo; /** Surface albedo */
+        double csz;          /** Cosine of the solar zenith angle*/
+        double mu;           /** Quadrature angle */
+        double albedo;       /** Surface albedo */
         double thermal_surf; /** Surface thermal emission */
 
         int nlyr;     /** Number of layers */
@@ -112,7 +114,7 @@ namespace sasktran2::twostream {
                 b1_thermal.resize(nlyr);
                 exp_thermal.resize(nlyr);
             }
-            
+
             if constexpr (has_solar<source_type>()) {
                 transmission.resize(nlyr + 1);
                 average_secant.resize(nlyr);
@@ -123,12 +125,63 @@ namespace sasktran2::twostream {
 
             mu = 0.5;
 
-            interpolating_matrix = geometry_layers->interpolating_matrix().sparseView();
+            interpolating_matrix =
+                geometry_layers->interpolating_matrix().sparseView();
         }
 
         void calculate_base(int wavelidx) {
             this->wavelidx = wavelidx;
 
+            const auto& k =
+                atmosphere->storage().total_extinction.col(wavelidx);
+            const auto& ssa_atmo = atmosphere->storage().ssa.col(wavelidx);
+            const auto& thermal_source =
+                atmosphere->storage().emission_source.col(wavelidx);
+
+            int stride = atmosphere->storage().leg_coeff.dimension(0);
+
+            Eigen::Map<const Eigen::VectorXd, 0, Eigen::InnerStride<>> grid_b1(
+                &atmosphere->storage().leg_coeff(1, 0, wavelidx), nlyr + 1,
+                Eigen::InnerStride<>(stride));
+
+            // Layers start at TOA and go down
+            for (int i = 0; i < nlyr; ++i) {
+                const int top_atmo_idx = nlyr - i; // Top atmo idx of the layer
+                const int bottom_atmo_idx =
+                    nlyr - i - 1; // Bottom atmo idx of the layer
+
+                const double layer_thickness =
+                    geometry_layers->layer_ceiling()(i) -
+                    geometry_layers->layer_floor()(i);
+
+                const double avg_k =
+                    (k(top_atmo_idx) + k(bottom_atmo_idx)) / 2.0;
+                const double avg_k_scat =
+                    (k(top_atmo_idx) * ssa_atmo(top_atmo_idx) +
+                     k(bottom_atmo_idx) * ssa_atmo(bottom_atmo_idx)) /
+                    2.0;
+
+                const double avg_b1 =
+                    (k(top_atmo_idx) * ssa_atmo(top_atmo_idx) *
+                         grid_b1(top_atmo_idx) +
+                     k(bottom_atmo_idx) * ssa_atmo(bottom_atmo_idx) *
+                         grid_b1(bottom_atmo_idx)) /
+                    2.0;
+
+                od(i) = avg_k * layer_thickness;
+                ssa(i) = avg_k_scat / avg_k;
+                b1(i) = avg_b1 / avg_k_scat;
+
+                if constexpr (has_thermal<source_type>()) {
+                    const double thermal_top = thermal_source(top_atmo_idx);
+                    const double thermal_bottom =
+                        thermal_source(bottom_atmo_idx);
+                    b0_thermal(i) = (thermal_top + thermal_bottom) / 2.0;
+                    b1_thermal(i) = 0.0;
+                }
+            }
+
+            /*
             // Start by interpolating extinction to the layers
             od.noalias() =
                 (interpolating_matrix *
@@ -141,11 +194,7 @@ namespace sasktran2::twostream {
 
             // We also need to interpolate the first legendre coefficient
             // multiplied by the scattering extinction
-            int stride = atmosphere->storage().leg_coeff.dimension(0);
 
-            Eigen::Map<const Eigen::VectorXd, 0, Eigen::InnerStride<>> grid_b1(
-                &atmosphere->storage().leg_coeff(1, 0, wavelidx), nlyr + 1,
-                Eigen::InnerStride<>(stride));
 
             b1.noalias() = (interpolating_matrix *
                   (atmosphere->storage().ssa.col(wavelidx).cwiseProduct(
@@ -160,23 +209,22 @@ namespace sasktran2::twostream {
             ssa.array() /= od.array();
 
             // Dither the ssa if it's exactly 1
-            ssa = ssa.cwiseMin(1 - 1e-9);
 
             // And we multiply by the thickness to get the optical depth
             od.array() *= (geometry_layers->layer_ceiling().array() -
                            geometry_layers->layer_floor().array());
-
-            albedo =
-                atmosphere->surface().brdf(wavelidx, 0, 0, 0)(0, 0) * EIGEN_PI;
-            
-            thermal_surf = atmosphere->surface().emission()[wavelidx];
-
 
             if constexpr (has_thermal<source_type>()) {
                 b0_thermal.noalias() = interpolating_matrix *
                              atmosphere->storage().emission_source.col(wavelidx);
                 b1_thermal.setZero();
             }
+            */
+            ssa = ssa.cwiseMin(1 - 1e-9);
+            albedo =
+                atmosphere->surface().brdf(wavelidx, 0, 0, 0)(0, 0) * EIGEN_PI;
+
+            thermal_surf = atmosphere->surface().emission()[wavelidx];
         }
 
         void calculate_derived(int wavelidx) {
@@ -187,14 +235,15 @@ namespace sasktran2::twostream {
 
                 average_secant.array() =
                     (transmission(Eigen::seq(0, nlyr - 1)).array() -
-                    transmission(Eigen::seq(1, nlyr)).array()) /
+                     transmission(Eigen::seq(1, nlyr)).array()) /
                     od.array();
 
                 transmission.array() =
                     transmission.array().exp() *
                     atmosphere->storage().solar_irradiance(wavelidx);
 
-                expsec.array() = (-1.0 * average_secant.array() * od.array()).exp();
+                expsec.array() =
+                    (-1.0 * average_secant.array() * od.array()).exp();
             }
             if constexpr (has_thermal<source_type>()) {
                 exp_thermal.array() = (-b1_thermal.array() * od.array()).exp();
@@ -217,18 +266,21 @@ namespace sasktran2::twostream {
      *  Storage for the homogeneous solution and cached quantities
      *
      */
-    template <SourceType source_type>
-    struct HomogSolution {
-        LayerVector<true, false, true, false, false, false, false, source_type> k; /** Eigen value, [lyr] */
+    template <SourceType source_type> struct HomogSolution {
+        LayerVector<true, false, true, false, false, false, false, source_type>
+            k; /** Eigen value, [lyr] */
         LayerVector<true, false, true, false, false, false, false, source_type>
             X_plus; /** Position eigen vector [lyr] */
         LayerVector<true, false, true, false, false, false, false, source_type>
             X_minus; /** Negative eigen vector [wlyr] */
 
         // Temporaries
-        LayerVector<true, false, true, false, false, false, false, source_type> d;    /** Temporary [lyr] */
-        LayerVector<true, false, true, false, false, false, false, source_type> s;    /** Temporary [lyr] */
-        LayerVector<true, true, true, false, false, false, false, source_type> omega; /** exp(-k*od) [lyr]*/
+        LayerVector<true, false, true, false, false, false, false, source_type>
+            d; /** Temporary [lyr] */
+        LayerVector<true, false, true, false, false, false, false, source_type>
+            s; /** Temporary [lyr] */
+        LayerVector<true, true, true, false, false, false, false, source_type>
+            omega; /** exp(-k*od) [lyr]*/
 
         /**
          *  Initializes the storage for a given number of layers
@@ -251,8 +303,7 @@ namespace sasktran2::twostream {
      *  Storage for the particular solution and cached quantities
      *
      */
-    template <SourceType source_type>
-    struct ParticularSolution {
+    template <SourceType source_type> struct ParticularSolution {
         LayerVector<true, true, true, true, true, true, true, source_type>
             G_plus_top; /** G+ at top of the [lyr] */
         LayerVector<true, true, true, true, true, true, true, source_type>
@@ -261,20 +312,30 @@ namespace sasktran2::twostream {
             G_minus_top; /** G- at the top of the [lyr] */
         LayerVector<true, true, true, true, true, true, true, source_type>
             G_minus_bottom; /** G- at the bottom of the [lyr] */
-        LayerVector<true, false, true, false, false, false, false, source_type> A_plus;  /** A+ in the layer [lyr] */
-        LayerVector<true, false, true, false, false, false, false, source_type> A_minus; /** A- in the [lyr] */
+        LayerVector<true, false, true, false, false, false, false, source_type>
+            A_plus; /** A+ in the layer [lyr] */
+        LayerVector<true, false, true, false, false, false, false, source_type>
+            A_minus; /** A- in the [lyr] */
 
-        LayerVector<true, false, false, false, false, false, false, source_type> A_thermal;  /** A+ in the layer [lyr] */
+        LayerVector<true, false, false, false, false, false, false, source_type>
+            A_thermal; /** A+ in the layer [lyr] */
 
         // Temporaries
-        LayerVector<true, false, true, false, false, false, false, source_type> Q_plus;  /** Q+ in the [lyr] */
-        LayerVector<true, false, true, false, false, false, false, source_type> Q_minus; /** Q- in the [lyr] */
-        LayerVector<true, false, true, false, false, false, false, source_type> norm; /** Normalization factor [lyr] */
-        LayerVector<true, true, true, true, true, false, false, source_type> C_plus;  /** C+ [lyr]*/
-        LayerVector<true, true, true, true, true, false, false, source_type> C_minus; /** C- [lyr]*/
+        LayerVector<true, false, true, false, false, false, false, source_type>
+            Q_plus; /** Q+ in the [lyr] */
+        LayerVector<true, false, true, false, false, false, false, source_type>
+            Q_minus; /** Q- in the [lyr] */
+        LayerVector<true, false, true, false, false, false, false, source_type>
+            norm; /** Normalization factor [lyr] */
+        LayerVector<true, true, true, true, true, false, false, source_type>
+            C_plus; /** C+ [lyr]*/
+        LayerVector<true, true, true, true, true, false, false, source_type>
+            C_minus; /** C- [lyr]*/
 
-        LayerVector<true, true, true, false, false, true, true, source_type> C_plus_thermal;  /** C+ [lyr]*/
-        LayerVector<true, true, true, false, false, true, true, source_type> C_minus_thermal; /** C- [lyr]*/
+        LayerVector<true, true, true, false, false, true, true, source_type>
+            C_plus_thermal; /** C+ [lyr]*/
+        LayerVector<true, true, true, false, false, true, true, source_type>
+            C_minus_thermal; /** C- [lyr]*/
 
         /**
          *  Initializes the storage for a given number of layers
@@ -304,7 +365,7 @@ namespace sasktran2::twostream {
                 C_minus.resize(nlyr);
             }
             norm.resize(nlyr);
-;
+            ;
         }
     };
 
@@ -312,18 +373,17 @@ namespace sasktran2::twostream {
         Eigen::VectorXd _storage;
 
         void init(int nlyr) {
-            _storage.resize((nlyr+1) * 5);
+            _storage.resize((nlyr + 1) * 5);
 
             _storage.setZero();
         }
 
         double& operator()(int a, int b) {
-            int j = (a-1) / 2;
+            int j = (a - 1) / 2;
             int a_offset = (a) % 3;
             int b_offset = b - j;
 
-            int index = j * 5 + 3*a_offset + b_offset;
-
+            int index = j * 5 + 3 * a_offset + b_offset;
 
             return _storage[index];
         }
@@ -333,8 +393,7 @@ namespace sasktran2::twostream {
      * quantities
      *
      */
-    template <SourceType source_type>
-    struct BVPCoeffs {
+    template <SourceType source_type> struct BVPCoeffs {
         Eigen::VectorXd e, c, d, b, a; /** Pentadiagonal matrix diagonals*/
 
         Eigen::VectorXd gamma, mu, alpha,
@@ -453,8 +512,7 @@ namespace sasktran2::twostream {
      * orders
      *
      */
-    template<SourceType source_type>
-    struct Solution {
+    template <SourceType source_type> struct Solution {
         std::array<HomogSolution<source_type>, num_azimuth<source_type>()>
             homog; /** Homogeneous solutino for both azimuthal orders */
         std::array<ParticularSolution<source_type>, num_azimuth<source_type>()>
@@ -484,8 +542,7 @@ namespace sasktran2::twostream {
      * Storage for the post-processed sources for a given line of sight
      *
      */
-    template <SourceType source_type>
-    struct Sources {
+    template <SourceType source_type> struct Sources {
         LayerVector<true, true, true, true, true, true, true, source_type>
             source; /** Integrated sources in each [lyr] */
 
@@ -496,21 +553,35 @@ namespace sasktran2::twostream {
         Eigen::VectorXd final_weight_factors; /** Final weight factors for each
                                                 [layer] */
 
-        std::array<LayerVector<true, false, true, false, false, false, false, source_type>, num_azimuth<source_type>()> lpsum_plus,
-            lpsum_minus; /** LP triple products for upwelling and downwelling
-                            [lyr] */
-        std::array<LayerVector<true, false, true, false, false, false, false, source_type>, num_azimuth<source_type>()> Y_plus,
+        std::array<LayerVector<true, false, true, false, false, false, false,
+                               source_type>,
+                   num_azimuth<source_type>()>
+            lpsum_plus, lpsum_minus; /** LP triple products for upwelling and
+                                        downwelling [lyr] */
+        std::array<LayerVector<true, false, true, false, false, false, false,
+                               source_type>,
+                   num_azimuth<source_type>()>
+            Y_plus,
             Y_minus; /** "Interpolated" homogenous solutions in each [lyr] */
 
-        std::array<LayerVector<true, true, true, false, false, false, false, source_type>, num_azimuth<source_type>()> H_plus,
-            H_minus; /** Homogenous solution multipliers [lyr] */
-        std::array<LayerVector<true, true, true, true, true, false, false, source_type>, num_azimuth<source_type>()> D_plus,
-            D_minus; /** Particular solution multipliers [lyr] */
+        std::array<LayerVector<true, true, true, false, false, false, false,
+                               source_type>,
+                   num_azimuth<source_type>()>
+            H_plus, H_minus; /** Homogenous solution multipliers [lyr] */
+        std::array<LayerVector<true, true, true, true, true, false, false,
+                               source_type>,
+                   num_azimuth<source_type>()>
+            D_plus, D_minus; /** Particular solution multipliers [lyr] */
 
-        std::array<LayerVector<true, true, true, false, false, true, true, source_type>, num_azimuth<source_type>()> D_plus_thermal,
+        std::array<LayerVector<true, true, true, false, false, true, true,
+                               source_type>,
+                   num_azimuth<source_type>()>
+            D_plus_thermal,
             D_minus_thermal; /** Particular solution multipliers [lyr] */
 
-        std::array<LayerVector<true, true, true, true, true, false, false, source_type>, num_azimuth<source_type>()>
+        std::array<LayerVector<true, true, true, true, true, false, false,
+                               source_type>,
+                   num_azimuth<source_type>()>
             V; /** Particular source [lyr] */
 
         LayerVector<false, true, false, false, true, false, false, source_type>

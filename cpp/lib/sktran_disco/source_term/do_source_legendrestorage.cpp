@@ -49,7 +49,7 @@ namespace sasktran2 {
             int idx = linear_index(m, l);
 
             if constexpr (NSTOKES == 3) {
-                container[l].values = storage(Eigen::all, idx);
+                container[l].values = storage(Eigen::placeholders::all, idx);
             }
             if constexpr (NSTOKES == 1) {
                 container[l].value = storage(0, idx);

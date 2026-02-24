@@ -89,10 +89,13 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
             m_source_terms[m_source_terms.size() - 1].get());
     }
 
-    if (m_config.emission_source() == sasktran2::Config::EmissionSource::twostream) {
+    if (m_config.emission_source() ==
+        sasktran2::Config::EmissionSource::twostream) {
         if constexpr (NSTOKES == 1) {
             m_source_terms.emplace_back(
-                std::make_unique<TwoStreamSource<1, sasktran2::twostream::SourceType::ONLY_THERMAL>>(*m_geometry));
+                std::make_unique<TwoStreamSource<
+                    1, sasktran2::twostream::SourceType::ONLY_THERMAL>>(
+                    *m_geometry));
 
             m_los_source_terms.push_back(
                 m_source_terms[m_source_terms.size() - 1].get());
@@ -191,7 +194,9 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
                sasktran2::Config::MultipleScatterSource::twostream) {
         if constexpr (NSTOKES == 1) {
             m_source_terms.emplace_back(
-                std::make_unique<TwoStreamSource<NSTOKES, sasktran2::twostream::SourceType::ONLY_SOLAR>>(*m_geometry));
+                std::make_unique<TwoStreamSource<
+                    NSTOKES, sasktran2::twostream::SourceType::ONLY_SOLAR>>(
+                    *m_geometry));
             m_los_source_terms.push_back(
                 m_source_terms[m_source_terms.size() - 1].get());
         } else {

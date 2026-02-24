@@ -395,7 +395,7 @@ namespace sasktran2::atmosphere {
                 m_d_brdf_args[i].resize(m_brdf_object->num_args(), m_num_wavel);
 
                 m_d_brdf_args[i].setConstant(0.0);
-                m_d_brdf_args[i](i, Eigen::all).setConstant(1.0);
+                m_d_brdf_args[i](i, Eigen::placeholders::all).setConstant(1.0);
             }
         }
 

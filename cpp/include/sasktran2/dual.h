@@ -148,27 +148,28 @@ namespace sasktran2 {
 
         Eigen::Ref<const Eigen::Matrix<T, CSIZE, -1>>
         d_extinction(int n) const {
-            return deriv(Eigen::all, Eigen::seq(0, n - 1));
+            return deriv(Eigen::placeholders::all, Eigen::seq(0, n - 1));
         }
 
         Eigen::Ref<Eigen::Matrix<T, CSIZE, -1>> d_ssa(int n) {
-            return deriv(Eigen::all, Eigen::seq(n, 2 * n - 1));
+            return deriv(Eigen::placeholders::all, Eigen::seq(n, 2 * n - 1));
         }
 
         Eigen::Ref<const Eigen::Matrix<T, CSIZE, -1>> d_ssa(int n) const {
-            return deriv(Eigen::all, Eigen::seq(n, 2 * n - 1));
+            return deriv(Eigen::placeholders::all, Eigen::seq(n, 2 * n - 1));
         }
 
         Eigen::Ref<const Eigen::Matrix<T, CSIZE, -1>>
         d_scatterer(int n, int scat_index) const {
-            return deriv(Eigen::all, Eigen::seq((2 + scat_index) * n,
-                                                (3 + scat_index) * n - 1));
+            return deriv(
+                Eigen::placeholders::all,
+                Eigen::seq((2 + scat_index) * n, (3 + scat_index) * n - 1));
         }
 
         Eigen::Ref<const Eigen::Matrix<T, CSIZE, -1>>
         d_emission(int n, int num_scattering_deriv_groups) const {
             return deriv(
-                Eigen::all,
+                Eigen::placeholders::all,
                 Eigen::seq((2 + num_scattering_deriv_groups) * n,
                            (2 + num_scattering_deriv_groups) * n + n - 1));
         }
@@ -176,16 +177,17 @@ namespace sasktran2 {
         Eigen::Ref<Eigen::Matrix<T, CSIZE, -1>>
         d_emission(int n, int num_scattering_deriv_groups) {
             return deriv(
-                Eigen::all,
+                Eigen::placeholders::all,
                 Eigen::seq((2 + num_scattering_deriv_groups) * n,
                            (2 + num_scattering_deriv_groups) * n + n - 1));
         }
 
         Eigen::Ref<const Eigen::Matrix<T, CSIZE, -1>>
         d_brdf(int n, int num_source_groups, int num_brdf_args) const {
-            return deriv(Eigen::all, Eigen::seq((2 + num_source_groups) * n,
-                                                (2 + num_source_groups) * n +
-                                                    num_brdf_args - 1));
+            return deriv(
+                Eigen::placeholders::all,
+                Eigen::seq((2 + num_source_groups) * n,
+                           (2 + num_source_groups) * n + num_brdf_args - 1));
         }
     };
 

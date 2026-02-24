@@ -63,7 +63,7 @@ TEST_CASE("Verify k WF Vector", "[sasktran2][engine][wf]") {
         3.75879135e-11};
 
     for (int i = 0; i < nwavel; ++i) {
-        atmo.storage().total_extinction(Eigen::all, i) =
+        atmo.storage().total_extinction(Eigen::placeholders::all, i) =
             Eigen::Map<Eigen::MatrixXd>(&extinction[0], 101, 1);
     }
 
@@ -187,7 +187,7 @@ TEST_CASE("Verify ssa WF Vector", "[sasktran2][engine][wf]") {
         3.75879135e-11};
 
     for (int i = 0; i < nwavel; ++i) {
-        atmo.storage().total_extinction(Eigen::all, i) =
+        atmo.storage().total_extinction(Eigen::placeholders::all, i) =
             Eigen::Map<Eigen::MatrixXd>(&extinction[0], 101, 1);
     }
 
@@ -312,7 +312,7 @@ TEST_CASE("Verify leg_coeff WF Vector", "[sasktran2][engine][wf]") {
         3.75879135e-11};
 
     for (int i = 0; i < nwavel; ++i) {
-        atmo.storage().total_extinction(Eigen::all, i) =
+        atmo.storage().total_extinction(Eigen::placeholders::all, i) =
             Eigen::Map<Eigen::MatrixXd>(&extinction[0], 101, 1);
     }
 
@@ -443,7 +443,7 @@ TEST_CASE("Verify k WF Vector plane-parallel", "[sasktran2][engine][wf]") {
         3.75879135e-11};
 
     for (int i = 0; i < nwavel; ++i) {
-        atmo.storage().total_extinction(Eigen::all, i) =
+        atmo.storage().total_extinction(Eigen::placeholders::all, i) =
             Eigen::Map<Eigen::MatrixXd>(&extinction[0], 101, 1);
     }
 

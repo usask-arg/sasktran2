@@ -61,13 +61,13 @@ namespace sasktran2::solartransmission {
                 1) {
                 m_solar_trans[threadidx].noalias() =
                     m_geometry_matrix *
-                    m_atmosphere->storage().total_extinction(Eigen::all,
-                                                             wavelidx);
+                    m_atmosphere->storage().total_extinction(
+                        Eigen::placeholders::all, wavelidx);
             } else {
                 m_solar_trans[threadidx].noalias() =
                     m_geometry_sparse *
-                    m_atmosphere->storage().total_extinction(Eigen::all,
-                                                             wavelidx);
+                    m_atmosphere->storage().total_extinction(
+                        Eigen::placeholders::all, wavelidx);
             }
         }
 
@@ -75,7 +75,7 @@ namespace sasktran2::solartransmission {
             m_solar_trans[threadidx].noalias() =
                 m_geometry_sparse * (m_solar_transmission.geometry_matrix() *
                                      m_atmosphere->storage().total_extinction(
-                                         Eigen::all, wavelidx));
+                                         Eigen::placeholders::all, wavelidx));
         }
 
         m_solar_trans[threadidx] =
@@ -118,7 +118,7 @@ namespace sasktran2::solartransmission {
             double solar_trans = m_solar_trans[wavel_threadidx](exit_index);
 
             Eigen::Vector<double, NSTOKES> source_value =
-                solar_trans * brdf(Eigen::all, 0) * mu_in;
+                solar_trans * brdf(Eigen::placeholders::all, 0) * mu_in;
 
 #ifdef SASKTRAN_DEBUG_ASSERTS
             if (source_value.hasNaN()) {
@@ -141,7 +141,8 @@ namespace sasktran2::solartransmission {
                                                  Eigen::RowMajor>::InnerIterator
                                  it(m_geometry_sparse, exit_index);
                              it; ++it) {
-                            source.deriv(Eigen::all, it.index()) -=
+                            source.deriv(Eigen::placeholders::all,
+                                         it.index()) -=
                                 it.value() * source_value;
                         }
                     }
@@ -153,10 +154,11 @@ namespace sasktran2::solartransmission {
                         m_atmosphere->surface().d_brdf(wavelidx, mu_in, mu_out,
                                                        phi_diff, k);
 
-                    source.deriv(Eigen::all,
+                    source.deriv(Eigen::placeholders::all,
                                  m_atmosphere->surface_deriv_start_index() +
                                      k) +=
-                        solar_trans * mu_in * brdf_deriv(Eigen::all, 0);
+                        solar_trans * mu_in *
+                        brdf_deriv(Eigen::placeholders::all, 0);
                 }
             }
         }
@@ -350,7 +352,7 @@ namespace sasktran2::solartransmission {
             // Now for the derivatives, start with dsource_factor which is
             // sparse
             for (auto it = shell_od.deriv_iter; it; ++it) {
-                source.deriv(Eigen::all, it.index()).array() +=
+                source.deriv(Eigen::placeholders::all, it.index()).array() +=
                     it.value() *
                     (1 / shell_od.od - source_factor1 * (1 + 1 / shell_od.od)) *
                     (start_phase.value.array() * layer.od_quad_start +

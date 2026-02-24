@@ -36,22 +36,26 @@ int sasktran_disco::la::dgbsv_pentadiagonal(
     alpha(0) = a(0) / mu(0);
 
     beta(0) = b(0) / mu(0);
-    z(0, Eigen::all) = y(0, Eigen::all) / mu(0);
+    z(0, Eigen::placeholders::all) = y(0, Eigen::placeholders::all) / mu(0);
 
     gamma(1) = c(1 - c_offset);
     mu(1) = d(1) - alpha(0) * gamma(1);
     alpha(1) = (a(1) - beta(0) * gamma(1)) / mu(1);
     beta(1) = b(1) / mu(1);
-    z(1, Eigen::all) = (y(1, Eigen::all) - z(0, Eigen::all) * gamma(1)) / mu(1);
+    z(1, Eigen::placeholders::all) =
+        (y(1, Eigen::placeholders::all) -
+         z(0, Eigen::placeholders::all) * gamma(1)) /
+        mu(1);
 
     for (int i = 2; i < N - 2; ++i) {
         gamma(i) = c(i - c_offset) - alpha(i - 2) * e(i - e_offset);
         mu(i) = d(i) - beta(i - 2) * e(i - e_offset) - alpha(i - 1) * gamma(i);
         alpha(i) = (a(i) - beta(i - 1) * gamma(i)) / mu(i);
         beta(i) = b(i) / mu(i);
-        z(i, Eigen::all) =
-            (y(i, Eigen::all) - z(i - 2, Eigen::all) * e(i - e_offset) -
-             z(i - 1, Eigen::all) * gamma(i)) /
+        z(i, Eigen::placeholders::all) =
+            (y(i, Eigen::placeholders::all) -
+             z(i - 2, Eigen::placeholders::all) * e(i - e_offset) -
+             z(i - 1, Eigen::placeholders::all) * gamma(i)) /
             mu(i);
     }
 
@@ -66,22 +70,27 @@ int sasktran_disco::la::dgbsv_pentadiagonal(
                     alpha(N - 2) * gamma(N - 1);
     }
 
-    z(N - 2, Eigen::all) =
-        (y(N - 2, Eigen::all) - z(N - 4, Eigen::all) * e(N - 2 - e_offset) -
-         z(N - 3, Eigen::all) * gamma(N - 2)) /
+    z(N - 2, Eigen::placeholders::all) =
+        (y(N - 2, Eigen::placeholders::all) -
+         z(N - 4, Eigen::placeholders::all) * e(N - 2 - e_offset) -
+         z(N - 3, Eigen::placeholders::all) * gamma(N - 2)) /
         mu(N - 2);
-    z(N - 1, Eigen::all) =
-        (y(N - 1, Eigen::all) - z(N - 3, Eigen::all) * e(N - 1 - e_offset) -
-         z(N - 2, Eigen::all) * gamma(N - 1)) /
+    z(N - 1, Eigen::placeholders::all) =
+        (y(N - 1, Eigen::placeholders::all) -
+         z(N - 3, Eigen::placeholders::all) * e(N - 1 - e_offset) -
+         z(N - 2, Eigen::placeholders::all) * gamma(N - 1)) /
         mu(N - 1);
 
-    y(N - 1, Eigen::all) = z(N - 1, Eigen::all);
-    y(N - 2, Eigen::all) =
-        z(N - 2, Eigen::all) - alpha(N - 2) * y(N - 1, Eigen::all);
+    y(N - 1, Eigen::placeholders::all) = z(N - 1, Eigen::placeholders::all);
+    y(N - 2, Eigen::placeholders::all) =
+        z(N - 2, Eigen::placeholders::all) -
+        alpha(N - 2) * y(N - 1, Eigen::placeholders::all);
 
     for (int i = N - 3; i >= 0; --i) {
-        y(i, Eigen::all) = z(i, Eigen::all) - alpha(i) * y(i + 1, Eigen::all) -
-                           beta(i) * y(i + 2, Eigen::all);
+        y(i, Eigen::placeholders::all) =
+            z(i, Eigen::placeholders::all) -
+            alpha(i) * y(i + 1, Eigen::placeholders::all) -
+            beta(i) * y(i + 2, Eigen::placeholders::all);
     }
 
     // There are situations where this linear system is underdetermined, this is

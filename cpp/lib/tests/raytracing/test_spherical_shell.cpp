@@ -128,8 +128,8 @@ TEST_CASE("Spherical Shell Raytracer - Observer Inside Limb Viewing",
         grid_values(i) = x0 + i * dx;
     }
 
-    double entrance_altitude = grid_values(Eigen::last);
-    double exit_altitude = grid_values(Eigen::last - 1);
+    double entrance_altitude = grid_values(Eigen::placeholders::last);
+    double exit_altitude = grid_values(Eigen::placeholders::last - 1);
 
     sasktran2::grids::AltitudeGrid grid = sasktran2::grids::AltitudeGrid(
         std::move(grid_values), sasktran2::grids::gridspacing::constant,

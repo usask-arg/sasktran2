@@ -64,7 +64,7 @@ TEST_CASE("occultation_bench", "[sasktran2][engine]") {
         3.75879135e-11};
 
     for (int i = 0; i < nwavel; ++i) {
-        atmo.storage().total_extinction(Eigen::all, i) =
+        atmo.storage().total_extinction(Eigen::placeholders::all, i) =
             Eigen::Map<Eigen::MatrixXd>(&extinction[0], 101, 1);
     }
 

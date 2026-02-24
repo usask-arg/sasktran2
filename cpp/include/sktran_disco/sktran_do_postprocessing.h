@@ -27,11 +27,11 @@ namespace sasktran_disco::postprocessing {
                                 thickness.value * layer_relative_location);
 
         // calculate the derivatives, only have layer derivatives
-        h_plus.deriv =
-            -h_plus.value * (eigval.deriv(Eigen::all, solution_index) *
-                                 thickness.value * layer_relative_location +
-                             thickness.deriv * eigval.value(solution_index) *
-                                 layer_relative_location);
+        h_plus.deriv = -h_plus.value *
+                       (eigval.deriv(Eigen::placeholders::all, solution_index) *
+                            thickness.value * layer_relative_location +
+                        thickness.deriv * eigval.value(solution_index) *
+                            layer_relative_location);
     }
 
     /** Calculates the homogeneous solution multiplier, h_minus, sampled at a
@@ -54,11 +54,12 @@ namespace sasktran_disco::postprocessing {
                      (1 - layer_relative_location));
 
         // Calculate the derivatives, only have layer derivatives
-        h_minus.deriv = -h_minus.value *
-                        (eigval.deriv(Eigen::all, solution_index) *
-                             thickness.value * (1 - layer_relative_location) +
-                         thickness.deriv * eigval.value(solution_index) *
-                             (1 - layer_relative_location));
+        h_minus.deriv =
+            -h_minus.value *
+            (eigval.deriv(Eigen::placeholders::all, solution_index) *
+                 thickness.value * (1 - layer_relative_location) +
+             thickness.deriv * eigval.value(solution_index) *
+                 (1 - layer_relative_location));
     }
 
     /** Calculates the green's function solution multipier, d_minus, sampled at

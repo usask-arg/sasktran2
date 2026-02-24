@@ -11,8 +11,9 @@ namespace sasktran2::grids {
 
             if (grid_values.size() > 1) {
 
-                if ((m_grid_values(Eigen::seq(1, Eigen::last)) -
-                     m_grid_values(Eigen::seq(0, Eigen::last - 1)))
+                if ((m_grid_values(Eigen::seq(1, Eigen::placeholders::last)) -
+                     m_grid_values(
+                         Eigen::seq(0, Eigen::placeholders::last - 1)))
                         .isApproxToConstant(m_grid_values(1) -
                                             m_grid_values(0))) {
                     m_grid_spacing = gridspacing::constant;
@@ -151,7 +152,7 @@ namespace sasktran2::grids {
             }
         }
 
-        if (x > m_grid_values(Eigen::last)) {
+        if (x > m_grid_values(Eigen::placeholders::last)) {
             // out of bounds on the lower side
             if (m_out_of_bounds_mode == outofbounds::setzero) {
                 num_contributing = 0;

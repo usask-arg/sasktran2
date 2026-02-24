@@ -43,7 +43,7 @@ void construct_atmo_geometry(
 
     atmo->storage().total_extinction.setConstant(0.01);
     atmo->storage()
-        .total_extinction(Eigen::seq(10, 13), Eigen::all)
+        .total_extinction(Eigen::seq(10, 13), Eigen::placeholders::all)
         .setConstant(0.02);
 
     atmo->storage().ssa.setConstant(0.8);
@@ -72,12 +72,15 @@ TEST_CASE("Backprop_OpticalDepth", "[twostream][backprop]") {
     Eigen::RowVectorXd grad(3 * natmo);
     grad.setZero();
 
-    sasktran2::twostream::backprop::GradientMap<sasktran2::twostream::SourceType::ONLY_SOLAR>  grad_map(*atmo, grad.data());
+    sasktran2::twostream::backprop::GradientMap<
+        sasktran2::twostream::SourceType::ONLY_SOLAR>
+        grad_map(*atmo, grad.data());
 
     // Let our output quantity be random weights * od
     Eigen::RowVectorXd weights = Eigen::RowVectorXd::Random(natmo - 1);
 
-    sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input;
+    sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR>
+        input;
     input.atmosphere = atmo.get();
     input.geometry_layers = layer_geo.get();
 
@@ -89,7 +92,9 @@ TEST_CASE("Backprop_OpticalDepth", "[twostream][backprop]") {
 
     double eps = 1e-6;
     for (int i = 0; i < natmo - 1; i++) {
-        sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input_p;
+        sasktran2::twostream::Input<
+            sasktran2::twostream::SourceType::ONLY_SOLAR>
+            input_p;
         input_p.atmosphere = atmo.get();
         input_p.geometry_layers = layer_geo.get();
         input_p.init(natmo - 1);
@@ -119,12 +124,15 @@ TEST_CASE("Backprop_SSA", "[twostream][backprop]") {
     Eigen::RowVectorXd grad(3 * natmo);
     grad.setZero();
 
-    sasktran2::twostream::backprop::GradientMap<sasktran2::twostream::SourceType::ONLY_SOLAR>  grad_map(*atmo, grad.data());
+    sasktran2::twostream::backprop::GradientMap<
+        sasktran2::twostream::SourceType::ONLY_SOLAR>
+        grad_map(*atmo, grad.data());
 
     // Let our output quantity be random weights * ssa
     Eigen::RowVectorXd weights = Eigen::RowVectorXd::Random(natmo - 1);
 
-    sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input;
+    sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR>
+        input;
     input.atmosphere = atmo.get();
     input.geometry_layers = layer_geo.get();
 
@@ -136,7 +144,9 @@ TEST_CASE("Backprop_SSA", "[twostream][backprop]") {
 
     double eps = 1e-6;
     for (int i = 0; i < natmo - 1; i++) {
-        sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input_p;
+        sasktran2::twostream::Input<
+            sasktran2::twostream::SourceType::ONLY_SOLAR>
+            input_p;
         input_p.atmosphere = atmo.get();
         input_p.geometry_layers = layer_geo.get();
         input_p.init(natmo - 1);
@@ -166,7 +176,9 @@ TEST_CASE("Backprop_Homog", "[twostream][backprop]") {
     Eigen::RowVectorXd grad(3 * natmo);
     grad.setZero();
 
-    sasktran2::twostream::backprop::GradientMap<sasktran2::twostream::SourceType::ONLY_SOLAR>  grad_map(*atmo, grad.data());
+    sasktran2::twostream::backprop::GradientMap<
+        sasktran2::twostream::SourceType::ONLY_SOLAR>
+        grad_map(*atmo, grad.data());
 
     // Let our output quantity be random weights * homog.k and Xplus/Xminus
     std::array<Eigen::RowVectorXd, 2> weights;
@@ -185,7 +197,8 @@ TEST_CASE("Backprop_Homog", "[twostream][backprop]") {
     weights_omega[0] = Eigen::RowVectorXd::Random(natmo - 1);
     weights_omega[1] = Eigen::RowVectorXd::Random(natmo - 1);
 
-    sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input;
+    sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR>
+        input;
     input.atmosphere = atmo.get();
     input.geometry_layers = layer_geo.get();
 
@@ -193,7 +206,8 @@ TEST_CASE("Backprop_Homog", "[twostream][backprop]") {
 
     input.calculate(0);
 
-    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR> soln;
+    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR>
+        soln;
     soln.init(natmo - 1);
     sasktran2::twostream::solve_layers(input, soln);
 
@@ -201,12 +215,16 @@ TEST_CASE("Backprop_Homog", "[twostream][backprop]") {
 
     double eps = 1e-6;
     for (int i = 0; i < natmo - 1; i++) {
-        sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input_p;
+        sasktran2::twostream::Input<
+            sasktran2::twostream::SourceType::ONLY_SOLAR>
+            input_p;
         input_p.atmosphere = atmo.get();
         input_p.geometry_layers = layer_geo.get();
         input_p.init(natmo - 1);
 
-        sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR> soln_p;
+        sasktran2::twostream::Solution<
+            sasktran2::twostream::SourceType::ONLY_SOLAR>
+            soln_p;
         soln_p.init(natmo - 1);
 
         input_p.calculate(0);
@@ -267,7 +285,9 @@ TEST_CASE("Backprop_Particular", "[twostream][backprop]") {
     Eigen::RowVectorXd grad(3 * natmo);
     grad.setZero();
 
-    sasktran2::twostream::backprop::GradientMap<sasktran2::twostream::SourceType::ONLY_SOLAR>  grad_map(*atmo, grad.data());
+    sasktran2::twostream::backprop::GradientMap<
+        sasktran2::twostream::SourceType::ONLY_SOLAR>
+        grad_map(*atmo, grad.data());
 
     // Let our output quantity be random weights * homog.k and Xplus/Xminus
     std::array<Eigen::RowVectorXd, 2> weights_Gplus_top;
@@ -288,7 +308,8 @@ TEST_CASE("Backprop_Particular", "[twostream][backprop]") {
     weights_Gminus_bottom[0] = Eigen::RowVectorXd::Random(natmo - 1);
     weights_Gminus_bottom[1] = Eigen::RowVectorXd::Random(natmo - 1);
 
-    sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input;
+    sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR>
+        input;
     input.atmosphere = atmo.get();
     input.geometry_layers = layer_geo.get();
     input.csz = 0.6;
@@ -297,7 +318,8 @@ TEST_CASE("Backprop_Particular", "[twostream][backprop]") {
 
     input.calculate(0);
 
-    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR> soln;
+    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR>
+        soln;
     soln.init(natmo - 1);
     sasktran2::twostream::solve_layers(input, soln);
 
@@ -305,12 +327,16 @@ TEST_CASE("Backprop_Particular", "[twostream][backprop]") {
 
     double eps = 1e-6;
     for (int i = 0; i < natmo - 1; i++) {
-        sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input_p;
+        sasktran2::twostream::Input<
+            sasktran2::twostream::SourceType::ONLY_SOLAR>
+            input_p;
         input_p.atmosphere = atmo.get();
         input_p.geometry_layers = layer_geo.get();
         input_p.init(natmo - 1);
 
-        sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR> soln_p;
+        sasktran2::twostream::Solution<
+            sasktran2::twostream::SourceType::ONLY_SOLAR>
+            soln_p;
         soln_p.init(natmo - 1);
 
         input_p.calculate(0);
@@ -384,8 +410,9 @@ TEST_CASE("Backprop_BVP", "[twostream][backprop]") {
     Eigen::RowVectorXd grad(3 * natmo);
     grad.setZero();
 
-    std::vector<sasktran2::twostream::backprop::GradientMap<sasktran2::twostream::SourceType::ONLY_SOLAR> > grad_map;
-    grad_map.emplace_back(*atmo, grad.data());
+    sasktran2::twostream::backprop::GradientMap<
+        sasktran2::twostream::SourceType::ONLY_SOLAR>
+        grad_map(*atmo, grad.data());
 
     // Let our output quantity be random weights * homog.k and Xplus/Xminus
     std::array<Eigen::MatrixXd, 2> weights;
@@ -395,7 +422,8 @@ TEST_CASE("Backprop_BVP", "[twostream][backprop]") {
     weights[1].resize(2 * (natmo - 1), 1);
     weights[1].col(0) = Eigen::RowVectorXd::Random(2 * (natmo - 1));
 
-    sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input;
+    sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR>
+        input;
     input.atmosphere = atmo.get();
     input.geometry_layers = layer_geo.get();
     input.csz = 0.6;
@@ -404,7 +432,8 @@ TEST_CASE("Backprop_BVP", "[twostream][backprop]") {
 
     input.calculate(0);
 
-    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR> soln;
+    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR>
+        soln;
     soln.init(natmo - 1);
     sasktran2::twostream::solve(input, soln);
 
@@ -412,12 +441,16 @@ TEST_CASE("Backprop_BVP", "[twostream][backprop]") {
 
     double eps = 1e-6;
     for (int i = 0; i < natmo - 1; i++) {
-        sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input_p;
+        sasktran2::twostream::Input<
+            sasktran2::twostream::SourceType::ONLY_SOLAR>
+            input_p;
         input_p.atmosphere = atmo.get();
         input_p.geometry_layers = layer_geo.get();
         input_p.init(natmo - 1);
 
-        sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR> soln_p;
+        sasktran2::twostream::Solution<
+            sasktran2::twostream::SourceType::ONLY_SOLAR>
+            soln_p;
         soln_p.init(natmo - 1);
 
         input_p.calculate(0);
@@ -440,7 +473,7 @@ TEST_CASE("Backprop_BVP", "[twostream][backprop]") {
                                         soln.particular, weights, grad_map);
 
     for (int i = 0; i < natmo - 1; i++) {
-        REQUIRE(abs(grad_map[0].d_ssa(i) - numerical_grad(i)) < 1e-4);
+        REQUIRE(abs(grad_map.d_ssa(i) - numerical_grad(i)) < 1e-4);
     }
 }
 
@@ -462,13 +495,16 @@ TEST_CASE("Backprop_Full_SSA", "[twostream][backprop]") {
     bvp_storage[0].resize(2 * (natmo - 1), 1);
     bvp_storage[1].resize(2 * (natmo - 1), 1);
 
-    sasktran2::twostream::backprop::GradientMap<sasktran2::twostream::SourceType::ONLY_SOLAR>  grad_map(*atmo, grad.data());
+    sasktran2::twostream::backprop::GradientMap<
+        sasktran2::twostream::SourceType::ONLY_SOLAR>
+        grad_map(*atmo, grad.data());
 
     // Let our output quantity be random weights * homog.k and Xplus/Xminus
     Eigen::RowVectorXd weights;
     weights = Eigen::RowVectorXd::Random((natmo - 1));
 
-    sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input;
+    sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR>
+        input;
     input.atmosphere = atmo.get();
     input.geometry_layers = layer_geo.get();
     input.csz = 0.6;
@@ -477,8 +513,10 @@ TEST_CASE("Backprop_Full_SSA", "[twostream][backprop]") {
 
     input.calculate(0);
 
-    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR> soln;
-    sasktran2::twostream::Sources<sasktran2::twostream::SourceType::ONLY_SOLAR> sources;
+    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR>
+        soln;
+    sasktran2::twostream::Sources<sasktran2::twostream::SourceType::ONLY_SOLAR>
+        sources;
     soln.init(natmo - 1);
     sources.init(natmo - 1);
     sasktran2::twostream::solve(input, soln);
@@ -489,14 +527,20 @@ TEST_CASE("Backprop_Full_SSA", "[twostream][backprop]") {
 
     double eps = 1e-6;
     for (int i = 0; i < natmo - 1; i++) {
-        sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input_p;
+        sasktran2::twostream::Input<
+            sasktran2::twostream::SourceType::ONLY_SOLAR>
+            input_p;
         input_p.atmosphere = atmo.get();
         input_p.geometry_layers = layer_geo.get();
         input_p.init(natmo - 1);
-        sasktran2::twostream::Sources<sasktran2::twostream::SourceType::ONLY_SOLAR> sources_p;
+        sasktran2::twostream::Sources<
+            sasktran2::twostream::SourceType::ONLY_SOLAR>
+            sources_p;
         sources_p.init(natmo - 1);
 
-        sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR> soln_p;
+        sasktran2::twostream::Solution<
+            sasktran2::twostream::SourceType::ONLY_SOLAR>
+            soln_p;
         soln_p.init(natmo - 1);
 
         input_p.calculate(0);
@@ -531,12 +575,15 @@ TEST_CASE("Backprop_Transmission", "[twostream][backprop]") {
     Eigen::RowVectorXd grad(3 * natmo);
     grad.setZero();
 
-    sasktran2::twostream::backprop::GradientMap<sasktran2::twostream::SourceType::ONLY_SOLAR>  grad_map(*atmo, grad.data());
+    sasktran2::twostream::backprop::GradientMap<
+        sasktran2::twostream::SourceType::ONLY_SOLAR>
+        grad_map(*atmo, grad.data());
 
     // Let our output quantity be random weights * od
     Eigen::RowVectorXd weights = Eigen::RowVectorXd::Random(natmo);
 
-    sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input;
+    sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR>
+        input;
     input.atmosphere = atmo.get();
     input.geometry_layers = layer_geo.get();
 
@@ -548,7 +595,9 @@ TEST_CASE("Backprop_Transmission", "[twostream][backprop]") {
 
     double eps = 1e-8;
     for (int i = 0; i < natmo - 1; i++) {
-        sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input_p;
+        sasktran2::twostream::Input<
+            sasktran2::twostream::SourceType::ONLY_SOLAR>
+            input_p;
         input_p.atmosphere = atmo.get();
         input_p.geometry_layers = layer_geo.get();
         input_p.init(natmo - 1);
@@ -580,12 +629,15 @@ TEST_CASE("Backprop_Secant", "[twostream][backprop]") {
     Eigen::RowVectorXd grad(3 * natmo);
     grad.setZero();
 
-    sasktran2::twostream::backprop::GradientMap<sasktran2::twostream::SourceType::ONLY_SOLAR>  grad_map(*atmo, grad.data());
+    sasktran2::twostream::backprop::GradientMap<
+        sasktran2::twostream::SourceType::ONLY_SOLAR>
+        grad_map(*atmo, grad.data());
 
     // Let our output quantity be random weights * od
     Eigen::RowVectorXd weights = Eigen::RowVectorXd::Random(natmo - 1);
 
-    sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input;
+    sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR>
+        input;
     input.atmosphere = atmo.get();
     input.geometry_layers = layer_geo.get();
 
@@ -597,7 +649,9 @@ TEST_CASE("Backprop_Secant", "[twostream][backprop]") {
 
     double eps = 1e-8;
     for (int i = 0; i < natmo - 1; i++) {
-        sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input_p;
+        sasktran2::twostream::Input<
+            sasktran2::twostream::SourceType::ONLY_SOLAR>
+            input_p;
         input_p.atmosphere = atmo.get();
         input_p.geometry_layers = layer_geo.get();
         input_p.init(natmo - 1);
@@ -607,7 +661,9 @@ TEST_CASE("Backprop_Secant", "[twostream][backprop]") {
         input_p.calculate_derived(0);
         input_p.od(i) -= eps;
 
-        sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input_pm;
+        sasktran2::twostream::Input<
+            sasktran2::twostream::SourceType::ONLY_SOLAR>
+            input_pm;
         input_pm.atmosphere = atmo.get();
         input_pm.geometry_layers = layer_geo.get();
         input_pm.init(natmo - 1);
@@ -640,7 +696,9 @@ TEST_CASE("Backprop_Particular_ext", "[twostream][backprop]") {
     Eigen::RowVectorXd grad(3 * natmo);
     grad.setZero();
 
-    sasktran2::twostream::backprop::GradientMap<sasktran2::twostream::SourceType::ONLY_SOLAR>  grad_map(*atmo, grad.data());
+    sasktran2::twostream::backprop::GradientMap<
+        sasktran2::twostream::SourceType::ONLY_SOLAR>
+        grad_map(*atmo, grad.data());
 
     // Let our output quantity be random weights * homog.k and Xplus/Xminus
     std::array<Eigen::RowVectorXd, 2> weights_Gplus_top;
@@ -659,7 +717,8 @@ TEST_CASE("Backprop_Particular_ext", "[twostream][backprop]") {
     weights_Gminus_bottom[0] = Eigen::RowVectorXd::Random(natmo - 1);
     weights_Gminus_bottom[1] = Eigen::RowVectorXd::Random(natmo - 1);
 
-    sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input;
+    sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR>
+        input;
     input.atmosphere = atmo.get();
     input.geometry_layers = layer_geo.get();
     input.csz = 0.01;
@@ -668,7 +727,8 @@ TEST_CASE("Backprop_Particular_ext", "[twostream][backprop]") {
 
     input.calculate(0);
 
-    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR> soln;
+    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR>
+        soln;
     soln.init(natmo - 1);
     sasktran2::twostream::solve_layers(input, soln);
 
@@ -676,12 +736,16 @@ TEST_CASE("Backprop_Particular_ext", "[twostream][backprop]") {
 
     double eps = 1e-7;
     for (int i = 0; i < natmo - 1; i++) {
-        sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input_p;
+        sasktran2::twostream::Input<
+            sasktran2::twostream::SourceType::ONLY_SOLAR>
+            input_p;
         input_p.atmosphere = atmo.get();
         input_p.geometry_layers = layer_geo.get();
         input_p.init(natmo - 1);
 
-        sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR> soln_p;
+        sasktran2::twostream::Solution<
+            sasktran2::twostream::SourceType::ONLY_SOLAR>
+            soln_p;
         soln_p.init(natmo - 1);
 
         input_p.calculate_base(0);
@@ -756,9 +820,9 @@ TEST_CASE("Backprop_BVP_ext", "[twostream][backprop]") {
     Eigen::RowVectorXd grad(3 * natmo);
     grad.setZero();
 
-    std::vector<sasktran2::twostream::backprop::GradientMap<sasktran2::twostream::SourceType::ONLY_SOLAR> > grad_map;
-    grad_map.emplace_back(*atmo, grad.data());
-
+    sasktran2::twostream::backprop::GradientMap<
+        sasktran2::twostream::SourceType::ONLY_SOLAR>
+        grad_map(*atmo, grad.data());
     // Let our output quantity be random weights * homog.k and Xplus/Xminus
     std::array<Eigen::MatrixXd, 2> weights;
     weights[0].resize(2 * (natmo - 1), 1);
@@ -767,7 +831,8 @@ TEST_CASE("Backprop_BVP_ext", "[twostream][backprop]") {
     weights[1].resize(2 * (natmo - 1), 1);
     weights[1].col(0) = Eigen::RowVectorXd::Random(2 * (natmo - 1));
 
-    sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input;
+    sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR>
+        input;
     input.atmosphere = atmo.get();
     input.geometry_layers = layer_geo.get();
     input.csz = 0.6;
@@ -776,7 +841,8 @@ TEST_CASE("Backprop_BVP_ext", "[twostream][backprop]") {
 
     input.calculate(0);
 
-    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR> soln;
+    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR>
+        soln;
     soln.init(natmo - 1);
     sasktran2::twostream::solve(input, soln);
 
@@ -784,12 +850,16 @@ TEST_CASE("Backprop_BVP_ext", "[twostream][backprop]") {
 
     double eps = 1e-6;
     for (int i = 0; i < natmo - 1; i++) {
-        sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input_p;
+        sasktran2::twostream::Input<
+            sasktran2::twostream::SourceType::ONLY_SOLAR>
+            input_p;
         input_p.atmosphere = atmo.get();
         input_p.geometry_layers = layer_geo.get();
         input_p.init(natmo - 1);
 
-        sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR> soln_p;
+        sasktran2::twostream::Solution<
+            sasktran2::twostream::SourceType::ONLY_SOLAR>
+            soln_p;
         soln_p.init(natmo - 1);
 
         input_p.calculate_base(0);
@@ -813,7 +883,7 @@ TEST_CASE("Backprop_BVP_ext", "[twostream][backprop]") {
                                         soln.particular, weights, grad_map);
 
     for (int i = 0; i < natmo - 1; i++) {
-        REQUIRE(abs(grad_map[0].d_extinction(i) - numerical_grad(i)) < 1e-4);
+        REQUIRE(abs(grad_map.d_extinction(i) - numerical_grad(i)) < 1e-4);
     }
 }
 
@@ -835,13 +905,16 @@ TEST_CASE("Backprop_Full_ext", "[twostream][backprop]") {
     bvp_storage[0].resize(2 * (natmo - 1), 1);
     bvp_storage[1].resize(2 * (natmo - 1), 1);
 
-    sasktran2::twostream::backprop::GradientMap<sasktran2::twostream::SourceType::ONLY_SOLAR>  grad_map(*atmo, grad.data());
+    sasktran2::twostream::backprop::GradientMap<
+        sasktran2::twostream::SourceType::ONLY_SOLAR>
+        grad_map(*atmo, grad.data());
 
     // Let our output quantity be random weights * homog.k and Xplus/Xminus
     Eigen::RowVectorXd weights;
     weights = Eigen::RowVectorXd::Random((natmo - 1));
 
-    sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input;
+    sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR>
+        input;
     input.atmosphere = atmo.get();
     input.geometry_layers = layer_geo.get();
     input.csz = 0.01;
@@ -850,8 +923,10 @@ TEST_CASE("Backprop_Full_ext", "[twostream][backprop]") {
 
     input.calculate(0);
 
-    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR> soln;
-    sasktran2::twostream::Sources<sasktran2::twostream::SourceType::ONLY_SOLAR> sources;
+    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR>
+        soln;
+    sasktran2::twostream::Sources<sasktran2::twostream::SourceType::ONLY_SOLAR>
+        sources;
     soln.init(natmo - 1);
     sources.init(natmo - 1);
     sasktran2::twostream::solve(input, soln);
@@ -862,14 +937,20 @@ TEST_CASE("Backprop_Full_ext", "[twostream][backprop]") {
 
     double eps = 1e-6;
     for (int i = 0; i < natmo - 1; i++) {
-        sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input_p;
+        sasktran2::twostream::Input<
+            sasktran2::twostream::SourceType::ONLY_SOLAR>
+            input_p;
         input_p.atmosphere = atmo.get();
         input_p.geometry_layers = layer_geo.get();
         input_p.init(natmo - 1);
-        sasktran2::twostream::Sources<sasktran2::twostream::SourceType::ONLY_SOLAR> sources_p;
+        sasktran2::twostream::Sources<
+            sasktran2::twostream::SourceType::ONLY_SOLAR>
+            sources_p;
         sources_p.init(natmo - 1);
 
-        sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR> soln_p;
+        sasktran2::twostream::Solution<
+            sasktran2::twostream::SourceType::ONLY_SOLAR>
+            soln_p;
         soln_p.init(natmo - 1);
 
         input_p.calculate_base(0);
@@ -913,13 +994,16 @@ TEST_CASE("Backprop_Full_b1", "[twostream][backprop]") {
     bvp_storage[0].resize(2 * (natmo - 1), 1);
     bvp_storage[1].resize(2 * (natmo - 1), 1);
 
-    sasktran2::twostream::backprop::GradientMap<sasktran2::twostream::SourceType::ONLY_SOLAR>  grad_map(*atmo, grad.data());
+    sasktran2::twostream::backprop::GradientMap<
+        sasktran2::twostream::SourceType::ONLY_SOLAR>
+        grad_map(*atmo, grad.data());
 
     // Let our output quantity be random weights * homog.k and Xplus/Xminus
     Eigen::RowVectorXd weights;
     weights = Eigen::RowVectorXd::Random((natmo - 1));
 
-    sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input;
+    sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR>
+        input;
     input.atmosphere = atmo.get();
     input.geometry_layers = layer_geo.get();
     input.csz = 0.6;
@@ -928,8 +1012,10 @@ TEST_CASE("Backprop_Full_b1", "[twostream][backprop]") {
 
     input.calculate(0);
 
-    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR> soln;
-    sasktran2::twostream::Sources<sasktran2::twostream::SourceType::ONLY_SOLAR> sources;
+    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR>
+        soln;
+    sasktran2::twostream::Sources<sasktran2::twostream::SourceType::ONLY_SOLAR>
+        sources;
     soln.init(natmo - 1);
     sources.init(natmo - 1);
     sasktran2::twostream::solve(input, soln);
@@ -940,14 +1026,20 @@ TEST_CASE("Backprop_Full_b1", "[twostream][backprop]") {
 
     double eps = 1e-6;
     for (int i = 0; i < natmo - 1; i++) {
-        sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input_p;
+        sasktran2::twostream::Input<
+            sasktran2::twostream::SourceType::ONLY_SOLAR>
+            input_p;
         input_p.atmosphere = atmo.get();
         input_p.geometry_layers = layer_geo.get();
         input_p.init(natmo - 1);
-        sasktran2::twostream::Sources<sasktran2::twostream::SourceType::ONLY_SOLAR> sources_p;
+        sasktran2::twostream::Sources<
+            sasktran2::twostream::SourceType::ONLY_SOLAR>
+            sources_p;
         sources_p.init(natmo - 1);
 
-        sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR> soln_p;
+        sasktran2::twostream::Solution<
+            sasktran2::twostream::SourceType::ONLY_SOLAR>
+            soln_p;
         soln_p.init(natmo - 1);
 
         input_p.calculate(0);
@@ -982,7 +1074,9 @@ TEST_CASE("Backprop_Particular_b1", "[twostream][backprop]") {
     Eigen::RowVectorXd grad(natmo * 3);
     grad.setZero();
 
-    sasktran2::twostream::backprop::GradientMap<sasktran2::twostream::SourceType::ONLY_SOLAR>  grad_map(*atmo, grad.data());
+    sasktran2::twostream::backprop::GradientMap<
+        sasktran2::twostream::SourceType::ONLY_SOLAR>
+        grad_map(*atmo, grad.data());
 
     // Let our output quantity be random weights * homog.k and Xplus/Xminus
     std::array<Eigen::RowVectorXd, 2> weights_Gplus_top;
@@ -1003,7 +1097,8 @@ TEST_CASE("Backprop_Particular_b1", "[twostream][backprop]") {
     weights_Gminus_bottom[0] = Eigen::RowVectorXd::Random(natmo - 1);
     weights_Gminus_bottom[1] = Eigen::RowVectorXd::Random(natmo - 1);
 
-    sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input;
+    sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR>
+        input;
     input.atmosphere = atmo.get();
     input.geometry_layers = layer_geo.get();
     input.csz = 0.6;
@@ -1012,7 +1107,8 @@ TEST_CASE("Backprop_Particular_b1", "[twostream][backprop]") {
 
     input.calculate(0);
 
-    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR> soln;
+    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR>
+        soln;
     soln.init(natmo - 1);
     sasktran2::twostream::solve_layers(input, soln);
 
@@ -1020,12 +1116,16 @@ TEST_CASE("Backprop_Particular_b1", "[twostream][backprop]") {
 
     double eps = 1e-6;
     for (int i = 0; i < natmo - 1; i++) {
-        sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input_p;
+        sasktran2::twostream::Input<
+            sasktran2::twostream::SourceType::ONLY_SOLAR>
+            input_p;
         input_p.atmosphere = atmo.get();
         input_p.geometry_layers = layer_geo.get();
         input_p.init(natmo - 1);
 
-        sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR> soln_p;
+        sasktran2::twostream::Solution<
+            sasktran2::twostream::SourceType::ONLY_SOLAR>
+            soln_p;
         soln_p.init(natmo - 1);
 
         input_p.calculate(0);
@@ -1099,8 +1199,9 @@ TEST_CASE("Backprop_BVP_b1", "[twostream][backprop]") {
     Eigen::RowVectorXd grad(natmo * 3);
     grad.setZero();
 
-    std::vector<sasktran2::twostream::backprop::GradientMap<sasktran2::twostream::SourceType::ONLY_SOLAR> > grad_map;
-    grad_map.emplace_back(*atmo, grad.data());
+    sasktran2::twostream::backprop::GradientMap<
+        sasktran2::twostream::SourceType::ONLY_SOLAR>
+        grad_map(*atmo, grad.data());
 
     // Let our output quantity be random weights * homog.k and Xplus/Xminus
     std::array<Eigen::MatrixXd, 2> weights;
@@ -1110,7 +1211,8 @@ TEST_CASE("Backprop_BVP_b1", "[twostream][backprop]") {
     weights[1].resize(2 * (natmo - 1), 1);
     weights[1].col(0) = Eigen::RowVectorXd::Random(2 * (natmo - 1));
 
-    sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input;
+    sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR>
+        input;
     input.atmosphere = atmo.get();
     input.geometry_layers = layer_geo.get();
     input.csz = 0.6;
@@ -1119,7 +1221,8 @@ TEST_CASE("Backprop_BVP_b1", "[twostream][backprop]") {
 
     input.calculate(0);
 
-    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR> soln;
+    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR>
+        soln;
     soln.init(natmo - 1);
     sasktran2::twostream::solve(input, soln);
 
@@ -1127,12 +1230,16 @@ TEST_CASE("Backprop_BVP_b1", "[twostream][backprop]") {
 
     double eps = 1e-6;
     for (int i = 0; i < natmo - 1; i++) {
-        sasktran2::twostream::Input<sasktran2::twostream::SourceType::ONLY_SOLAR> input_p;
+        sasktran2::twostream::Input<
+            sasktran2::twostream::SourceType::ONLY_SOLAR>
+            input_p;
         input_p.atmosphere = atmo.get();
         input_p.geometry_layers = layer_geo.get();
         input_p.init(natmo - 1);
 
-        sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_SOLAR> soln_p;
+        sasktran2::twostream::Solution<
+            sasktran2::twostream::SourceType::ONLY_SOLAR>
+            soln_p;
         soln_p.init(natmo - 1);
 
         input_p.calculate(0);
@@ -1155,7 +1262,7 @@ TEST_CASE("Backprop_BVP_b1", "[twostream][backprop]") {
                                         soln.particular, weights, grad_map);
 
     for (int i = 0; i < natmo - 1; i++) {
-        REQUIRE(abs(grad_map[0].d_b1(i) - numerical_grad(i)) < 1e-4);
+        REQUIRE(abs(grad_map.d_b1(i) - numerical_grad(i)) < 1e-4);
     }
 }
 

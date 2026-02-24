@@ -57,11 +57,11 @@ namespace sasktran2 {
                     .d_extinction.value(); // [N x wavelength]
 
             for (int i = 0; i < NSTOKES; ++i) {
-                deriv_storage(i, Eigen::all).array() =
+                deriv_storage(i, Eigen::placeholders::all).array() =
                     d_ssa.col(wavelidx).transpose().array() *
-                        d_rad_by_d_ssa(i, Eigen::all).array() +
+                        d_rad_by_d_ssa(i, Eigen::placeholders::all).array() +
                     d_extinction.col(wavelidx).transpose().array() *
-                        d_rad_by_d_k(i, Eigen::all).array();
+                        d_rad_by_d_k(i, Eigen::placeholders::all).array();
             }
 
             if (mapping.is_scattering_derivative()) {
@@ -74,9 +74,9 @@ namespace sasktran2 {
                         .scat_factor.value(); // [N x wavelength]
 
                 for (int i = 0; i < NSTOKES; ++i) {
-                    deriv_storage(i, Eigen::all).array() +=
+                    deriv_storage(i, Eigen::placeholders::all).array() +=
                         scat_factor.col(wavelidx).transpose().array() *
-                        d_rad_by_d_scat(i, Eigen::all).array();
+                        d_rad_by_d_scat(i, Eigen::placeholders::all).array();
                 }
             }
 
@@ -91,9 +91,9 @@ namespace sasktran2 {
                     mapping.native_mapping().d_emission.value();
 
                 // Emission terms only ever affect the stokes = 0 component
-                deriv_storage(0, Eigen::all).array() +=
+                deriv_storage(0, Eigen::placeholders::all).array() +=
                     d_emission.col(wavelidx).transpose().array() *
-                    d_rad_by_d_emission(0, Eigen::all).array();
+                    d_rad_by_d_emission(0, Eigen::placeholders::all).array();
             }
 
             // If we are interpolating in geometry, then apply the interpolator
@@ -103,50 +103,51 @@ namespace sasktran2 {
                     mapping.get_interpolator_const().value(); // [N x M]
 
                 // Always have to assign the stokes = 0 component
-                deriv(linear_index, Eigen::all).array() =
-                    deriv_storage(0, Eigen::all) * interpolator;
+                deriv(linear_index, Eigen::placeholders::all).array() =
+                    deriv_storage(0, Eigen::placeholders::all) * interpolator;
 
                 if constexpr (NSTOKES >= 3) {
                     // Have to assign rotated Q/U components
-                    deriv(linear_index + 1, Eigen::all).array() =
+                    deriv(linear_index + 1, Eigen::placeholders::all).array() =
                         (this->m_stokes_C[losidx] *
-                             deriv_storage(1, Eigen::all) -
+                             deriv_storage(1, Eigen::placeholders::all) -
                          this->m_stokes_S[losidx] *
-                             deriv_storage(2, Eigen::all)) *
+                             deriv_storage(2, Eigen::placeholders::all)) *
                         interpolator;
 
-                    deriv(linear_index + 2, Eigen::all).array() =
+                    deriv(linear_index + 2, Eigen::placeholders::all).array() =
                         (this->m_stokes_S[losidx] *
-                             deriv_storage(1, Eigen::all) +
+                             deriv_storage(1, Eigen::placeholders::all) +
                          this->m_stokes_C[losidx] *
-                             deriv_storage(2, Eigen::all)) *
+                             deriv_storage(2, Eigen::placeholders::all)) *
                         interpolator;
                 }
             } else {
                 // Similarly always assign stokes = 0
-                deriv(linear_index, Eigen::all).array() =
-                    deriv_storage(0, Eigen::all).array();
+                deriv(linear_index, Eigen::placeholders::all).array() =
+                    deriv_storage(0, Eigen::placeholders::all).array();
 
                 // And do rotate Q/U if necessary
                 if constexpr (NSTOKES >= 3) {
-                    deriv(linear_index + 1, Eigen::all).array() =
+                    deriv(linear_index + 1, Eigen::placeholders::all).array() =
                         this->m_stokes_C[losidx] *
-                            deriv_storage(1, Eigen::all).array() -
+                            deriv_storage(1, Eigen::placeholders::all).array() -
                         this->m_stokes_S[losidx] *
-                            deriv_storage(2, Eigen::all).array();
-                    deriv(linear_index + 2, Eigen::all).array() =
+                            deriv_storage(2, Eigen::placeholders::all).array();
+                    deriv(linear_index + 2, Eigen::placeholders::all).array() =
                         this->m_stokes_S[losidx] *
-                            deriv_storage(1, Eigen::all).array() +
+                            deriv_storage(1, Eigen::placeholders::all).array() +
                         this->m_stokes_C[losidx] *
-                            deriv_storage(2, Eigen::all).array();
+                            deriv_storage(2, Eigen::placeholders::all).array();
                 }
             }
             if (mapping.log_radiance_space()) {
-                deriv(linear_index, Eigen::all).array() /= radiance.value(0);
+                deriv(linear_index, Eigen::placeholders::all).array() /=
+                    radiance.value(0);
                 if constexpr (NSTOKES >= 3) {
-                    deriv(linear_index + 1, Eigen::all).array() /=
+                    deriv(linear_index + 1, Eigen::placeholders::all).array() /=
                         radiance.value(0);
-                    deriv(linear_index + 2, Eigen::all).array() /=
+                    deriv(linear_index + 2, Eigen::placeholders::all).array() /=
                         radiance.value(0);
                 }
             }
@@ -168,7 +169,7 @@ namespace sasktran2 {
                 // Just assign the stokes = 0 component
                 // TODO: Revisit when we have polarized brdfs?
                 deriv(linear_index, 0) =
-                    d_rad_by_d_surface(0, Eigen::all)
+                    d_rad_by_d_surface(0, Eigen::placeholders::all)
                         .dot(
                             mapping.native_surface_mapping().d_brdf.value().row(
                                 wavelidx));
@@ -189,12 +190,12 @@ namespace sasktran2 {
             if constexpr (NSTOKES >= 3) {
                 // Temporaries for dQ, dU
                 double dQ =
-                    d_rad_by_d_surface(1, Eigen::all)
+                    d_rad_by_d_surface(1, Eigen::placeholders::all)
                         .dot(
                             mapping.native_surface_mapping().d_brdf.value().row(
                                 wavelidx));
                 double dU =
-                    d_rad_by_d_surface(2, Eigen::all)
+                    d_rad_by_d_surface(2, Eigen::placeholders::all)
                         .dot(
                             mapping.native_surface_mapping().d_brdf.value().row(
                                 wavelidx));

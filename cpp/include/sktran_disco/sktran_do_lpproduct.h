@@ -375,11 +375,12 @@ namespace sasktran_disco {
                        Eigen::InnerStride<>>
                 map_d_value(d_value + k, NSTOKES, 1,
                             Eigen::InnerStride<>(nderiv));
-            map_d_value.array() = d_result(Eigen::all, 0).array();
+            map_d_value.array() = d_result(Eigen::placeholders::all, 0).array();
         }
 
         Eigen::Map<Eigen::Matrix<double, NSTOKES, 1>> map_value(value);
-        map_value.array() = result(Eigen::all, 0).array() * ssa.value;
+        map_value.array() =
+            result(Eigen::placeholders::all, 0).array() * ssa.value;
     }
 
 } // namespace sasktran_disco

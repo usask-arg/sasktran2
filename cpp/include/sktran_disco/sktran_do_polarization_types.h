@@ -411,9 +411,9 @@ namespace sasktran_disco {
             value.setZero();
             for (int l = 0; l < m; ++l) {
                 a1deriv(l) = 0.0;
-                a2deriv(l, Eigen::all).setZero();
-                a3deriv(l, Eigen::all).setZero();
-                b1deriv(l, Eigen::all).setZero();
+                a2deriv(l, Eigen::placeholders::all).setZero();
+                a3deriv(l, Eigen::placeholders::all).setZero();
+                b1deriv(l, Eigen::placeholders::all).setZero();
             }
 
             for (int l = m; l < nstr; ++l) {

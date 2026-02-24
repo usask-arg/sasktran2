@@ -106,7 +106,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # modules
 add_library(sasktran2BuildProperties INTERFACE)
 
-find_package(Eigen3 CONFIG)
+find_package(Eigen3 5 CONFIG)
 
 if(Eigen3_FOUND)
   target_link_libraries(sasktran2BuildProperties INTERFACE Eigen3::Eigen)

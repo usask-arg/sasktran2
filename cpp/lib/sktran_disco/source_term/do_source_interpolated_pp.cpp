@@ -158,10 +158,10 @@ namespace sasktran2 {
                     for (auto it = Eigen::SparseVector<double>::InnerIterator((
                              *m_source_interpolator_view)[losidx][layeridx][s]);
                          it; ++it) {
-                        source.deriv(s, Eigen::all) +=
+                        source.deriv(s, Eigen::placeholders::all) +=
                             omega * source_factor * it.value() *
                             m_diffuse_storage->linear_source(wavel_threadidx)
-                                .deriv(it.index(), Eigen::all);
+                                .deriv(it.index(), Eigen::placeholders::all);
                     }
                 }
             }
@@ -195,10 +195,10 @@ namespace sasktran2 {
                 for (auto it = Eigen::SparseVector<double>::InnerIterator(
                          interpolator);
                      it; ++it) {
-                    source.deriv(0, Eigen::all) +=
+                    source.deriv(0, Eigen::placeholders::all) +=
                         it.value() *
                         m_diffuse_storage->linear_source(wavel_threadidx)
-                            .deriv(it.index(), Eigen::all);
+                            .deriv(it.index(), Eigen::placeholders::all);
                 }
             }
         }

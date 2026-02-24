@@ -50,7 +50,8 @@ namespace sasktran2::math {
 
         // TODO: other interpolation schemes?
         for (int i = 0; i < m_weights.size(); ++i) {
-            double sqdist = (m_xyz(Eigen::all, i) - direction).squaredNorm();
+            double sqdist =
+                (m_xyz(Eigen::placeholders::all, i) - direction).squaredNorm();
 
             // Insert sorted
             for (int j = 0; j < num_interp; ++j) {
@@ -93,9 +94,9 @@ namespace sasktran2::math {
         }
         /*
         for(int i = 0; i < 3; ++i) {
-            BOOST_LOG_TRIVIAL(warning) << "dir:" << m_xyz(Eigen::all,
-        index_weights[i].first).transpose() << " sqdist: " <<
-        index_weights[i].second;
+            BOOST_LOG_TRIVIAL(warning) << "dir:" <<
+        m_xyz(Eigen::placeholders::all, index_weights[i].first).transpose() << "
+        sqdist: " << index_weights[i].second;
 
         }
          */

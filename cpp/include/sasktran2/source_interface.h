@@ -112,4 +112,6 @@ template <int NSTOKES> class SourceTermInterface {
          sasktran2::Config::FluxType flux_type) const {
         spdlog::error("Flux calculation not implemented for this source term");
     }
+
+    virtual bool requires_integration() const { return true; }
 };

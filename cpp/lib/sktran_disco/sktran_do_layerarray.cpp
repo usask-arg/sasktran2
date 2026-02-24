@@ -83,8 +83,9 @@ void sasktran_disco::OpticalLayerArray<NSTOKES, CNSTR>::
                 solution.value.dual_Gplus_bottom().value(i);
         }
 
-        stream_contrib.deriv(Eigen::all, s1) =
-            solution.value.dual_Gplus_bottom().deriv(Eigen::all, i);
+        stream_contrib.deriv(Eigen::placeholders::all, s1) =
+            solution.value.dual_Gplus_bottom().deriv(Eigen::placeholders::all,
+                                                     i);
 
         double factor = (1.0 + kronDelta(m, 0)) * (*this->M_MU)[i / NSTOKES] *
                         (*this->M_WT)[i / NSTOKES];

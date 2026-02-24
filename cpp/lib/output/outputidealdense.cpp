@@ -18,8 +18,8 @@ namespace sasktran2 {
 
         if constexpr (NSTOKES >= 1) {
             m_radiance.value(linear_index) = radiance.value(0);
-            m_radiance.deriv(linear_index, Eigen::all) =
-                radiance.deriv(0, Eigen::all);
+            m_radiance.deriv(linear_index, Eigen::placeholders::all) =
+                radiance.deriv(0, Eigen::placeholders::all);
         }
 
         if constexpr (NSTOKES >= 3) {
@@ -27,23 +27,27 @@ namespace sasktran2 {
             m_radiance.value(linear_index + 1) =
                 this->m_stokes_C[losidx] * radiance.value(1) -
                 this->m_stokes_S[losidx] * radiance.value(2);
-            m_radiance.deriv(linear_index + 1, Eigen::all) =
-                this->m_stokes_C[losidx] * radiance.deriv(1, Eigen::all) -
-                this->m_stokes_S[losidx] * radiance.deriv(2, Eigen::all);
+            m_radiance.deriv(linear_index + 1, Eigen::placeholders::all) =
+                this->m_stokes_C[losidx] *
+                    radiance.deriv(1, Eigen::placeholders::all) -
+                this->m_stokes_S[losidx] *
+                    radiance.deriv(2, Eigen::placeholders::all);
 
             m_radiance.value(linear_index + 2) =
                 this->m_stokes_S[losidx] * radiance.value(1) +
                 this->m_stokes_C[losidx] * radiance.value(2);
-            m_radiance.deriv(linear_index + 2, Eigen::all) =
-                this->m_stokes_S[losidx] * radiance.deriv(1, Eigen::all) +
-                this->m_stokes_C[losidx] * radiance.deriv(2, Eigen::all);
+            m_radiance.deriv(linear_index + 2, Eigen::placeholders::all) =
+                this->m_stokes_S[losidx] *
+                    radiance.deriv(1, Eigen::placeholders::all) +
+                this->m_stokes_C[losidx] *
+                    radiance.deriv(2, Eigen::placeholders::all);
         }
 
         if constexpr (NSTOKES == 4) {
             // V component is a strict copy
             m_radiance.value(linear_index + 3) = radiance.value(3);
-            m_radiance.deriv(linear_index + 3, Eigen::all) =
-                radiance.deriv(3, Eigen::all);
+            m_radiance.deriv(linear_index + 3, Eigen::placeholders::all) =
+                radiance.deriv(3, Eigen::placeholders::all);
         }
     }
 

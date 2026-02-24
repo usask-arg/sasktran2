@@ -53,7 +53,7 @@ namespace sasktran_disco::testing {
                 test_case.solar.csz,
                 -test_case.solar.saz + test_case.linesofsight[i].az,
                 test_case.linesofsight[i].coszen,
-                grid_values(Eigen::last) + 1));
+                grid_values(Eigen::placeholders::last) + 1));
         }
 
         // Construct the Atmosphere

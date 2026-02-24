@@ -29,14 +29,14 @@ namespace sasktran2::raytracing {
 
         // If the tangent altitude is greater than the TOA altitude then we have
         // an empty ray
-        if (tangent_altitude >= m_alt_grid.grid()(Eigen::last)) {
+        if (tangent_altitude >= m_alt_grid.grid()(Eigen::placeholders::last)) {
             // Empty ray
             result.observer_and_look = ray;
             result.ground_is_hit = false;
         }
 
         if (ray.observer.radius() - m_earth_radius >=
-            m_alt_grid.grid()(Eigen::last)) {
+            m_alt_grid.grid()(Eigen::placeholders::last)) {
             // Outside atmosphere, probably
             if (ray.cos_viewing() > 0) {
                 // We are looking up, so this is just an empty ray
@@ -107,7 +107,7 @@ namespace sasktran2::raytracing {
                 // If the observer is inside the atmosphere
                 if (result.observer_and_look.observer.radius() -
                         m_earth_radius <
-                    m_alt_grid.grid()(Eigen::last)) {
+                    m_alt_grid.grid()(Eigen::placeholders::last)) {
                     // The observer is inside the atmosphere
                     // And so our ray tracing starts with the observer
                     layer.entrance.position =
@@ -118,10 +118,10 @@ namespace sasktran2::raytracing {
                     layer.entrance.position =
                         result.observer_and_look.observer.position +
                         result.observer_and_look.look_away *
-                            distance_to_altitude(result.observer_and_look,
-                                                 m_alt_grid.grid()(Eigen::last),
-                                                 ViewingDirection::down,
-                                                 TangentSide::nearside);
+                            distance_to_altitude(
+                                result.observer_and_look,
+                                m_alt_grid.grid()(Eigen::placeholders::last),
+                                ViewingDirection::down, TangentSide::nearside);
                 }
                 // Get the basis vectors
                 x_basis = layer.entrance.position.normalized();

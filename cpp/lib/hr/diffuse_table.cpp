@@ -53,8 +53,10 @@ namespace sasktran2::hr {
         // TODO: why though? sources are usually calculated at the levels not
         // inbetween
         Eigen::VectorXd alt_values =
-            (m_geometry.altitude_grid().grid()(Eigen::seq(0, Eigen::last - 1)) +
-             m_geometry.altitude_grid().grid()(Eigen::seq(1, Eigen::last))) /
+            (m_geometry.altitude_grid().grid()(
+                 Eigen::seq(0, Eigen::placeholders::last - 1)) +
+             m_geometry.altitude_grid().grid()(
+                 Eigen::seq(1, Eigen::placeholders::last))) /
             2.0;
 
         return sasktran2::grids::AltitudeGrid(
@@ -1009,11 +1011,11 @@ namespace sasktran2::hr {
                             sasktran2::Config::WeightingFunctionPrecision::
                                 full &&
                         m_config->initialize_hr_with_do()) {
-                        source.deriv(s, Eigen::all) +=
+                        source.deriv(s, Eigen::placeholders::all) +=
                             omega * source_factor * std::get<1>(index_weight) *
                             storage.m_outgoing_sources.deriv(
                                 std::get<0>(index_weight) * NSTOKES + s,
-                                Eigen::all);
+                                Eigen::placeholders::all);
                     }
                 }
             }
@@ -1042,11 +1044,11 @@ namespace sasktran2::hr {
                 if (this->m_config->wf_precision() ==
                         sasktran2::Config::WeightingFunctionPrecision::full &&
                     m_config->initialize_hr_with_do()) {
-                    source.deriv(s, Eigen::all) +=
+                    source.deriv(s, Eigen::placeholders::all) +=
                         std::get<1>(index_weight) *
                         storage.m_outgoing_sources.deriv(
                             std::get<0>(index_weight) * NSTOKES + s,
-                            Eigen::all);
+                            Eigen::placeholders::all);
                 }
             }
         }

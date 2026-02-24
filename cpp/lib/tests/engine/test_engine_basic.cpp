@@ -241,7 +241,7 @@ TEST_CASE("Basic Calculation", "[sasktran2][engine]") {
         3.75879135e-11};
 
     for (int i = 0; i < nwavel; ++i) {
-        atmo.storage().total_extinction(Eigen::all, i) =
+        atmo.storage().total_extinction(Eigen::placeholders::all, i) =
             Eigen::Map<Eigen::MatrixXd>(&extinction[0], 101, 1);
     }
 
@@ -362,17 +362,20 @@ TEST_CASE("Spherical Correction", "[sasktran2][engine]") {
     4.56988383e-11, 3.75879135e-11};
 
     for(int i = 0; i < nwavel; ++i) {
-        atmo.storage().total_extinction(Eigen::all, i) =
+        atmo.storage().total_extinction(Eigen::placeholders::all, i) =
     Eigen::Map<Eigen::MatrixXd>(&extinction[0], 101, 1);
 
         atmo.storage().phase[i].storage().setZero();
 
-        atmo.storage().phase[i].storage()(0, Eigen::all).setConstant(1);
-        atmo.storage().phase[i].storage()(8, Eigen::all).setConstant(0.5);
+        atmo.storage().phase[i].storage()(0,
+    Eigen::placeholders::all).setConstant(1);
+        atmo.storage().phase[i].storage()(8,
+    Eigen::placeholders::all).setConstant(0.5);
 
-        atmo.storage().phase[i].storage()(9, Eigen::all).setConstant(3);
-        atmo.storage().phase[i].storage()(11, Eigen::all).setConstant(sqrt(6) /
-    2);
+        atmo.storage().phase[i].storage()(9,
+    Eigen::placeholders::all).setConstant(3);
+        atmo.storage().phase[i].storage()(11,
+    Eigen::placeholders::all).setConstant(sqrt(6) / 2);
 
 
     }

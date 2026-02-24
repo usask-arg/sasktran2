@@ -57,6 +57,15 @@ namespace sasktran2 {
             radiance,
         std::vector<SourceTermInterface<NSTOKES>*> source_terms, int wavelidx,
         int rayidx, int wavel_threadidx, int threadidx) {
+
+        bool have_to_integrate = false;
+        for (const auto& source : source_terms) {
+            if (source->requires_integration()) {
+                have_to_integrate = true;
+                break;
+            }
+        }
+
         const auto& ray = (*m_traced_rays)[rayidx];
         // Add source at the end of the ray
         for (const auto& source : source_terms) {
@@ -64,6 +73,9 @@ namespace sasktran2 {
                                       threadidx, radiance);
         }
 
+        if (!have_to_integrate) {
+            return;
+        }
         // Iterate through each layer from the end of the ray to the observer
         for (int j = 0; j < ray.layers.size(); ++j) {
             const sasktran2::raytracing::SphericalLayer& layer = ray.layers[j];
@@ -80,7 +92,7 @@ namespace sasktran2 {
 
             if (m_calculate_derivatives) {
                 for (auto it = local_shell_od.deriv_iter; it; ++it) {
-                    radiance.deriv(Eigen::all, it.index()) -=
+                    radiance.deriv(Eigen::placeholders::all, it.index()) -=
                         it.value() * radiance.value;
                 }
             }

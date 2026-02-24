@@ -548,7 +548,8 @@ namespace sasktran2 {
                 }
 
                 if (num_total_derivatives > 0) {
-                    flux.deriv(flux_type_idx, Eigen::all).setZero();
+                    flux.deriv(flux_type_idx, Eigen::placeholders::all)
+                        .setZero();
                 }
                 for (int k = 0; k < num_total_derivatives; ++k) {
                     for (int l = 0; l < input_derivatives.layerDerivatives()[k]

@@ -544,8 +544,9 @@ namespace sasktran2 {
                         solution.value.dual_Gplus_bottom().value(i);
                 }
 
-                stream_contrib.deriv(Eigen::all, s1) =
-                    solution.value.dual_Gplus_bottom().deriv(Eigen::all, i);
+                stream_contrib.deriv(Eigen::placeholders::all, s1) =
+                    solution.value.dual_Gplus_bottom().deriv(
+                        Eigen::placeholders::all, i);
 
                 // Positive homogeneous solutions
                 for (sasktran_disco::uint j = 0; j < N * NSTOKES; ++j) {
@@ -667,7 +668,8 @@ namespace sasktran2 {
             for (int s = 0; s < NSTOKES; ++s) {
                 if (numtotalderiv > 0) {
                     storage.source_terms_linear
-                        .deriv(source_index * NSTOKES + s, Eigen::all)
+                        .deriv(source_index * NSTOKES + s,
+                               Eigen::placeholders::all)
                         .setZero();
                 }
                 for (int k = 0; k < numtotalderiv; ++k) {
@@ -952,12 +954,12 @@ namespace sasktran2 {
                         // but dual_L/dual_M are dense derivatives
 
                         // Start with the dense ones
-                        temp_deriv(Eigen::all, s) +=
-                            dual_L.deriv(Eigen::all, i) * Y_plus_matrix(s, i) *
-                            hpi.value;
-                        temp_deriv(Eigen::all, s) +=
-                            dual_M.deriv(Eigen::all, i) * Y_minus_matrix(s, i) *
-                            hmi.value;
+                        temp_deriv(Eigen::placeholders::all, s) +=
+                            dual_L.deriv(Eigen::placeholders::all, i) *
+                            Y_plus_matrix(s, i) * hpi.value;
+                        temp_deriv(Eigen::placeholders::all, s) +=
+                            dual_M.deriv(Eigen::placeholders::all, i) *
+                            Y_minus_matrix(s, i) * hmi.value;
 
                         // And add in the layer derivatives
                         for (int k = 0; k < numderiv; ++k) {
@@ -991,12 +993,12 @@ namespace sasktran2 {
                         // Dp/Dm has dense derivatives, the others are small
 
                         // Start with the dense ones
-                        temp_deriv(Eigen::all, s) += Dmi.deriv *
-                                                     dual_Aplus.value(i) *
-                                                     Y_plus_matrix(s, i);
-                        temp_deriv(Eigen::all, s) += Dpi.deriv *
-                                                     dual_Aminus.value(i) *
-                                                     Y_minus_matrix(s, i);
+                        temp_deriv(Eigen::placeholders::all, s) +=
+                            Dmi.deriv * dual_Aplus.value(i) *
+                            Y_plus_matrix(s, i);
+                        temp_deriv(Eigen::placeholders::all, s) +=
+                            Dpi.deriv * dual_Aminus.value(i) *
+                            Y_minus_matrix(s, i);
 
                         // And add in the layer derivatives
                         for (int k = 0; k < numderiv; ++k) {
@@ -1062,12 +1064,13 @@ namespace sasktran2 {
                             ssa.deriv(k) *
                             storage.source_terms_linear.value(index);
                     }
-                    temp_deriv(Eigen::all, s) /= ssa.value;
+                    temp_deriv(Eigen::placeholders::all, s) /= ssa.value;
 
                     // And we also have to translate the temporary layer DO
                     // derivatives to atmosphere derivatives
                     if (numtotalderiv > 0) {
-                        storage.source_terms_linear.deriv(index, Eigen::all)
+                        storage.source_terms_linear
+                            .deriv(index, Eigen::placeholders::all)
                             .setZero();
                     }
                     for (int k = 0; k < numtotalderiv; ++k) {

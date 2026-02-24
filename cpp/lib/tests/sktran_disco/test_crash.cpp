@@ -38,7 +38,7 @@ TEST_CASE("Homogeneous Precision Issues", "[sktran_do][vector]") {
     std::vector<double> extinction{1, 1};
 
     for (int i = 0; i < nwavel; ++i) {
-        atmo.storage().total_extinction(Eigen::all, i) =
+        atmo.storage().total_extinction(Eigen::placeholders::all, i) =
             Eigen::Map<Eigen::MatrixXd>(&extinction[0], 2, 1);
     }
 

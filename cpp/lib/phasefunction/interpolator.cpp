@@ -166,11 +166,12 @@ namespace sasktran2::atmosphere {
                                 &phase_storage.d_leg_coeff(0, 0, wavelidx, i),
                                 d[0], d[1]);
 
-                            source.deriv(Eigen::all,
+                            source.deriv(Eigen::placeholders::all,
                                          derivstart + i * d[1] + ele.first) +=
                                 (ele.second * source.value(0) *
                                  (m_scattering_weights *
-                                  d_phase_matrix(Eigen::all, ele.first)))
+                                  d_phase_matrix(Eigen::placeholders::all,
+                                                 ele.first)))
                                     .template cast<double>();
                         }
                     }
@@ -207,13 +208,14 @@ namespace sasktran2::atmosphere {
                                                    d[0], d[1]);
 
                                 source
-                                    .deriv(Eigen::all,
+                                    .deriv(Eigen::placeholders::all,
                                            derivstart + i * d[1] + ele.first)
                                     .array() +=
                                     source.value(0) *
                                     (ele.second *
                                      (m_scattering_weights *
-                                      d_phase_matrix(Eigen::all, ele.first))
+                                      d_phase_matrix(Eigen::placeholders::all,
+                                                     ele.first))
                                          .array());
                             }
                         }
@@ -227,7 +229,8 @@ namespace sasktran2::atmosphere {
             for (const auto& ele : index_weights) {
                 phase_result.array() +=
                     ele.second *
-                    (m_scattering_weights * phase_matrix(Eigen::all, ele.first))
+                    (m_scattering_weights *
+                     phase_matrix(Eigen::placeholders::all, ele.first))
                         .array();
             }
 

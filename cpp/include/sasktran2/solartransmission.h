@@ -264,16 +264,17 @@ namespace sasktran2::solartransmission {
         }
         // Solar transmission derivative factors
         for (auto it = solar_trans_iter; it; ++it) {
-            source.deriv(Eigen::all, it.index()) -= it.value() * source.value;
+            source.deriv(Eigen::placeholders::all, it.index()) -=
+                it.value() * source.value;
         }
 
         // And SSA/k derivative factors
         for (auto& ele : index_weights) {
-            source.deriv(Eigen::all,
+            source.deriv(Eigen::placeholders::all,
                          atmosphere.ssa_deriv_start_index() + ele.first) +=
                 ele.second * source.value / ssa;
 
-            source.deriv(Eigen::all, ele.first) +=
+            source.deriv(Eigen::placeholders::all, ele.first) +=
                 ele.second * source.value / k;
         }
     }

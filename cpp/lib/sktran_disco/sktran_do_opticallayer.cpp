@@ -289,38 +289,44 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::integrate_source(
             J.value += Y_plus_matrix(0, i) * hp.value * dual_L.value(i);
             J.value += Y_minus_matrix(0, i) * hm.value * dual_M.value(i);
         } else {
-            J.value +=
-                Y_plus_matrix(Eigen::all, i) * hp.value * dual_L.value(i);
-            J.value +=
-                Y_minus_matrix(Eigen::all, i) * hm.value * dual_M.value(i);
+            J.value += Y_plus_matrix(Eigen::placeholders::all, i) * hp.value *
+                       dual_L.value(i);
+            J.value += Y_minus_matrix(Eigen::placeholders::all, i) * hm.value *
+                       dual_M.value(i);
         }
 
         // Y and Hp/Hm only have layer derivatives
         for (uint k = 0; k < numderiv; ++k) {
-            J.deriv(layerStart + k, Eigen::all).noalias() +=
-                Y_plus_deriv[k](Eigen::all, i) * hp.value * dual_L.value(i);
-            J.deriv(layerStart + k, Eigen::all).noalias() +=
-                Y_minus_deriv[k](Eigen::all, i) * hm.value * dual_M.value(i);
+            J.deriv(layerStart + k, Eigen::placeholders::all).noalias() +=
+                Y_plus_deriv[k](Eigen::placeholders::all, i) * hp.value *
+                dual_L.value(i);
+            J.deriv(layerStart + k, Eigen::placeholders::all).noalias() +=
+                Y_minus_deriv[k](Eigen::placeholders::all, i) * hm.value *
+                dual_M.value(i);
 
-            J.deriv(layerStart + k, Eigen::all).noalias() +=
-                Y_plus_matrix(Eigen::all, i) * hp.deriv(k) * dual_L.value(i);
-            J.deriv(layerStart + k, Eigen::all).noalias() +=
-                Y_minus_matrix(Eigen::all, i) * hm.deriv(k) * dual_M.value(i);
+            J.deriv(layerStart + k, Eigen::placeholders::all).noalias() +=
+                Y_plus_matrix(Eigen::placeholders::all, i) * hp.deriv(k) *
+                dual_L.value(i);
+            J.deriv(layerStart + k, Eigen::placeholders::all).noalias() +=
+                Y_minus_matrix(Eigen::placeholders::all, i) * hm.deriv(k) *
+                dual_M.value(i);
         }
 
         if (this->M_BACKPROP_BVP) {
-            reverse_trace.bvp_coeff_weights()(l_offset + i, Eigen::all) +=
-                Y_plus_matrix(Eigen::all, i) * hp.value;
-            reverse_trace.bvp_coeff_weights()(m_offset + i, Eigen::all) +=
-                Y_minus_matrix(Eigen::all, i) * hm.value;
+            reverse_trace.bvp_coeff_weights()(l_offset + i,
+                                              Eigen::placeholders::all) +=
+                Y_plus_matrix(Eigen::placeholders::all, i) * hp.value;
+            reverse_trace.bvp_coeff_weights()(m_offset + i,
+                                              Eigen::placeholders::all) +=
+                Y_minus_matrix(Eigen::placeholders::all, i) * hm.value;
         } else {
             // But L/M have full derivatives
             for (uint k = 0; k < numtotalderiv; ++k) {
-                J.deriv(k, Eigen::all).noalias() +=
-                    Y_plus_matrix(Eigen::all, i) * hp.value *
+                J.deriv(k, Eigen::placeholders::all).noalias() +=
+                    Y_plus_matrix(Eigen::placeholders::all, i) * hp.value *
                     dual_L.deriv(k, i);
-                J.deriv(k, Eigen::all).noalias() +=
-                    Y_minus_matrix(Eigen::all, i) * hm.value *
+                J.deriv(k, Eigen::placeholders::all).noalias() +=
+                    Y_minus_matrix(Eigen::placeholders::all, i) * hm.value *
                     dual_M.deriv(k, i);
             }
         }
@@ -380,33 +386,36 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::integrate_source(
                        dual_Aminus.value(i) * Y_minus_matrix(0, i) * Dp.value;
         } else {
             V.value +=
-                dual_Aplus.value(i) * Y_plus_matrix(Eigen::all, i) * Dm.value +
-                dual_Aminus.value(i) * Y_minus_matrix(Eigen::all, i) * Dp.value;
+                dual_Aplus.value(i) *
+                    Y_plus_matrix(Eigen::placeholders::all, i) * Dm.value +
+                dual_Aminus.value(i) *
+                    Y_minus_matrix(Eigen::placeholders::all, i) * Dp.value;
         }
 
         // Y and A only have layer derivatives
         for (uint k = 0; k < numderiv; ++k) {
-            V.deriv(layerStart + k, Eigen::all).noalias() +=
-                dual_Aplus.value(i) * Y_plus_deriv[k](Eigen::all, i) * Dm.value;
-            V.deriv(layerStart + k, Eigen::all).noalias() +=
-                dual_Aminus.value(i) * Y_minus_deriv[k](Eigen::all, i) *
-                Dp.value;
+            V.deriv(layerStart + k, Eigen::placeholders::all).noalias() +=
+                dual_Aplus.value(i) *
+                Y_plus_deriv[k](Eigen::placeholders::all, i) * Dm.value;
+            V.deriv(layerStart + k, Eigen::placeholders::all).noalias() +=
+                dual_Aminus.value(i) *
+                Y_minus_deriv[k](Eigen::placeholders::all, i) * Dp.value;
 
-            V.deriv(layerStart + k, Eigen::all).noalias() +=
-                dual_Aplus.deriv(k, i) * Y_plus_matrix(Eigen::all, i) *
-                Dm.value;
-            V.deriv(layerStart + k, Eigen::all).noalias() +=
-                dual_Aminus.deriv(k, i) * Y_minus_matrix(Eigen::all, i) *
-                Dp.value;
+            V.deriv(layerStart + k, Eigen::placeholders::all).noalias() +=
+                dual_Aplus.deriv(k, i) *
+                Y_plus_matrix(Eigen::placeholders::all, i) * Dm.value;
+            V.deriv(layerStart + k, Eigen::placeholders::all).noalias() +=
+                dual_Aminus.deriv(k, i) *
+                Y_minus_matrix(Eigen::placeholders::all, i) * Dp.value;
         }
         // But D has full derivatives
         for (uint k = 0; k < numtotalderiv; ++k) {
-            V.deriv(k, Eigen::all).noalias() += dual_Aplus.value(i) *
-                                                Y_plus_matrix(Eigen::all, i) *
-                                                Dm.deriv(k);
-            V.deriv(k, Eigen::all).noalias() += dual_Aminus.value(i) *
-                                                Y_minus_matrix(Eigen::all, i) *
-                                                Dp.deriv(k);
+            V.deriv(k, Eigen::placeholders::all).noalias() +=
+                dual_Aplus.value(i) *
+                Y_plus_matrix(Eigen::placeholders::all, i) * Dm.deriv(k);
+            V.deriv(k, Eigen::placeholders::all).noalias() +=
+                dual_Aminus.value(i) *
+                Y_minus_matrix(Eigen::placeholders::all, i) * Dp.deriv(k);
         }
 
         if (m_include_thermal_emission && m == 0) {
@@ -462,33 +471,41 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::integrate_source(
                                Dp_thermal.value;
             } else {
                 V.value += dual_Aplus_thermal.value(i) *
-                               Y_plus_matrix(Eigen::all, i) * Dm_thermal.value +
+                               Y_plus_matrix(Eigen::placeholders::all, i) *
+                               Dm_thermal.value +
                            dual_Aminus_thermal.value(i) *
-                               Y_minus_matrix(Eigen::all, i) * Dp_thermal.value;
+                               Y_minus_matrix(Eigen::placeholders::all, i) *
+                               Dp_thermal.value;
             }
 
             // Y and A only have layer derivatives
             for (uint k = 0; k < numderiv; ++k) {
-                V.deriv(layerStart + k, Eigen::all).noalias() +=
+                V.deriv(layerStart + k, Eigen::placeholders::all).noalias() +=
                     dual_Aplus_thermal.value(i) *
-                    Y_plus_deriv[k](Eigen::all, i) * Dm_thermal.value;
-                V.deriv(layerStart + k, Eigen::all).noalias() +=
+                    Y_plus_deriv[k](Eigen::placeholders::all, i) *
+                    Dm_thermal.value;
+                V.deriv(layerStart + k, Eigen::placeholders::all).noalias() +=
                     dual_Aminus_thermal.value(i) *
-                    Y_minus_deriv[k](Eigen::all, i) * Dp_thermal.value;
+                    Y_minus_deriv[k](Eigen::placeholders::all, i) *
+                    Dp_thermal.value;
 
-                V.deriv(layerStart + k, Eigen::all).noalias() +=
+                V.deriv(layerStart + k, Eigen::placeholders::all).noalias() +=
                     dual_Aplus_thermal.deriv(k, i) *
-                    Y_plus_matrix(Eigen::all, i) * Dm_thermal.value;
-                V.deriv(layerStart + k, Eigen::all).noalias() +=
+                    Y_plus_matrix(Eigen::placeholders::all, i) *
+                    Dm_thermal.value;
+                V.deriv(layerStart + k, Eigen::placeholders::all).noalias() +=
                     dual_Aminus_thermal.deriv(k, i) *
-                    Y_minus_matrix(Eigen::all, i) * Dp_thermal.value;
+                    Y_minus_matrix(Eigen::placeholders::all, i) *
+                    Dp_thermal.value;
 
-                V.deriv(layerStart + k, Eigen::all).noalias() +=
-                    dual_Aplus_thermal.value(i) * Y_plus_matrix(Eigen::all, i) *
+                V.deriv(layerStart + k, Eigen::placeholders::all).noalias() +=
+                    dual_Aplus_thermal.value(i) *
+                    Y_plus_matrix(Eigen::placeholders::all, i) *
                     Dm_thermal.deriv(k);
-                V.deriv(layerStart + k, Eigen::all).noalias() +=
+                V.deriv(layerStart + k, Eigen::placeholders::all).noalias() +=
                     dual_Aminus_thermal.value(i) *
-                    Y_minus_matrix(Eigen::all, i) * Dp_thermal.deriv(k);
+                    Y_minus_matrix(Eigen::placeholders::all, i) *
+                    Dp_thermal.deriv(k);
             }
         }
     }
@@ -531,7 +548,8 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::integrate_source(
         if constexpr (NSTOKES == 1) {
             result.deriv(k) += Q.value * Eform.deriv(k);
         } else {
-            result.deriv(k, Eigen::all).noalias() += Q.value * Eform.deriv(k);
+            result.deriv(k, Eigen::placeholders::all).noalias() +=
+                Q.value * Eform.deriv(k);
         }
     }
 }
@@ -771,7 +789,7 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::h_plus(
 
     auto v_eigval = m_solutions[m].value.dual_eigval().value(j);
     const auto& d_eigval =
-        m_solutions[m].value.dual_eigval().deriv(Eigen::all, j);
+        m_solutions[m].value.dual_eigval().deriv(Eigen::placeholders::all, j);
 
     const LayerDual<double>& dual_thickness = this->dual_thickness();
 
@@ -830,7 +848,7 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::h_minus(
 
     auto v_eigval = m_solutions[m].value.dual_eigval().value(j);
     const auto& d_eigval =
-        m_solutions[m].value.dual_eigval().deriv(Eigen::all, j);
+        m_solutions[m].value.dual_eigval().deriv(Eigen::placeholders::all, j);
 
     const LayerDual<double>& dual_thickness = this->dual_thickness();
     double layerfraction = 1 - x / thickness;
@@ -910,7 +928,7 @@ void sasktran_disco::OpticalLayer<NSTOKES, CNSTR>::E(
     if (numDeriv > 0) {
         xform
             .deriv(Eigen::seq(layerStart, layerStart + numDeriv - 1),
-                   Eigen::all)
+                   Eigen::placeholders::all)
             .noalias() += transmission.value / den *
                           (e2 * dual_thickness.deriv *
                                (avg_secant.value + layerfraction / mu) -

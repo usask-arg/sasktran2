@@ -32,7 +32,8 @@ TEST_CASE("Grid Interpolation", "[sasktran2][grids]") {
     for (int i = 0; i < 10; ++i) {
 
         double x = grid_values(0) - 100 +
-                   (grid_values(Eigen::last) - grid_values(0)) / 7 * double(i);
+                   (grid_values(Eigen::placeholders::last) - grid_values(0)) /
+                       7 * double(i);
 
         grid.calculate_interpolation_weights(x, index, weight, num_contrib);
         double interp_to = 0;
@@ -48,9 +49,9 @@ TEST_CASE("Grid Interpolation", "[sasktran2][grids]") {
             }
         }
 
-        if (x > grid_values(Eigen::last)) {
+        if (x > grid_values(Eigen::placeholders::last)) {
             if (o == sasktran2::grids::outofbounds::extend) {
-                x = grid_values(Eigen::last);
+                x = grid_values(Eigen::placeholders::last);
             } else {
                 x = 0.0;
             }
