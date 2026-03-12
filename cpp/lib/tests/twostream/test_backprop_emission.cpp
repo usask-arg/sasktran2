@@ -582,7 +582,7 @@ TEST_CASE("Backprop_Full_SSA_emission", "[twostream][backprop]") {
 
     Eigen::VectorXd numerical_grad(natmo);
 
-    double eps = 1e-6;
+    double eps = 1e-8;
     for (int i = 0; i < natmo - 1; i++) {
         sasktran2::twostream::Input<
             sasktran2::twostream::SourceType::ONLY_THERMAL>
@@ -601,7 +601,7 @@ TEST_CASE("Backprop_Full_SSA_emission", "[twostream][backprop]") {
         soln_p.init(natmo - 1);
 
         input_p.calculate(0);
-        input_p.ssa(i) += eps;
+        input_p.b0_thermal(i) += eps;
         input_p.csz = 0.6;
         sasktran2::twostream::solve_layers(input_p, soln_p);
         sasktran2::twostream::solve_bvp(input_p, soln_p);
@@ -617,7 +617,7 @@ TEST_CASE("Backprop_Full_SSA_emission", "[twostream][backprop]") {
                                          bvp_storage, grad_map);
 
     for (int i = 0; i < natmo - 1; i++) {
-        REQUIRE(abs(grad_map.d_ssa(i) - numerical_grad(i)) < 1e-6);
+        REQUIRE(abs(grad_map.d_thermal_b0(i) - numerical_grad(i)) < 1e-6);
     }
 }
 

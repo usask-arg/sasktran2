@@ -661,13 +661,18 @@ namespace sasktran2::twostream::backprop {
                      .transpose()
                      .array();
 
-            bvp_coeffs[i].d_G_minus_bottom(input.nlyr - 1) =
-                -d_coeffs[i](Eigen::placeholders::last, 0) * (1);
+            if constexpr (has_solar<Source>()) {
+                bvp_coeffs[i].d_G_minus_bottom(input.nlyr - 1) =
+                    -d_coeffs[i](Eigen::placeholders::last, 0) * (1);
 
-            bvp_coeffs[i].d_G_plus_bottom(input.nlyr - 1) =
-                -d_coeffs[i](Eigen::placeholders::last, 0) *
-                (-2 * input.mu * input.albedo *
-                 sasktran_disco::kronDelta(i, 0));
+                bvp_coeffs[i].d_G_plus_bottom(input.nlyr - 1) =
+                    -d_coeffs[i](Eigen::placeholders::last, 0) *
+                    (-2 * input.mu * input.albedo *
+                     sasktran_disco::kronDelta(i, 0));
+            } else {
+                bvp_coeffs[i].d_G_minus_bottom(input.nlyr - 1) = 0.0;
+                bvp_coeffs[i].d_G_plus_bottom(input.nlyr - 1) = 0.0;
+            }
 
             // Backprop the SSA factors
             ssa(input,
