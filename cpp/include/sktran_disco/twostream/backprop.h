@@ -1095,12 +1095,12 @@ namespace sasktran2::twostream::backprop {
         }
 
         if constexpr (has_thermal<Source>()) {
-            thermal_b0(input,
-                   sources.source.d_thermal_b0.transpose().cwiseProduct(source_weights),
-                   grad);
-            thermal_b1(input,
-                     sources.source.d_thermal_b1.transpose().cwiseProduct(source_weights),
-                        grad);
+            solution.bvp_coeffs[0].d_temp_thermal_b0 =
+                sources.source.d_thermal_b0.transpose().cwiseProduct(
+                    source_weights);
+            solution.bvp_coeffs[0].d_temp_thermal_b1 =
+                sources.source.d_thermal_b1.transpose().cwiseProduct(
+                    source_weights);
         }
 
         // Direct ground multiple scatter contributions

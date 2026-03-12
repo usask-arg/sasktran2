@@ -1964,6 +1964,19 @@ namespace sasktran2::twostream {
                 sources.source.value.array() +=
                     input.b0_thermal.array() * sources.E_thermal.value.array() *
                     (1.0 - input.ssa.array());
+
+                // Include derivatives from the direct thermal source term.
+                sources.source.d_thermal_b0.array() +=
+                    sources.E_thermal.value.array() * (1.0 - input.ssa.array());
+                sources.source.d_thermal_b1.array() +=
+                    input.b0_thermal.array() *
+                    sources.E_thermal.d_thermal_b1.array() *
+                    (1.0 - input.ssa.array());
+                sources.source.d_ssa.array() +=
+                    -input.b0_thermal.array() * sources.E_thermal.value.array();
+                sources.source.d_od.array() +=
+                    input.b0_thermal.array() * sources.E_thermal.d_od.array() *
+                    (1.0 - input.ssa.array());
             }
         }
     }

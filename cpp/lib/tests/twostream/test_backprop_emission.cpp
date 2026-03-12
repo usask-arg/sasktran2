@@ -535,7 +535,7 @@ TEST_CASE("Backprop_BVP_emission", "[twostream][backprop]") {
     }
 }
 
-TEST_CASE("Backprop_Full_SSA_emission", "[twostream][backprop]") {
+TEST_CASE("Backprop_Full_emission", "[twostream][backprop]") {
     std::unique_ptr<sasktran2::atmosphere::Atmosphere<1>> atmo;
     std::unique_ptr<sasktran_disco::GeometryLayerArray<1>> layer_geo;
 
