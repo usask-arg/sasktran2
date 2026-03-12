@@ -6,6 +6,7 @@ from .brdf.kokhanovsky import SnowKokhanovsky
 from .brdf.lambertiansurface import LambertianSurface
 from .brdf.modis import MODIS
 from .collisioninducedabsorber import CollisionInducedAbsorber
+from .continuum import MTCKDContinuum
 from .emission import SurfaceThermalEmission, ThermalEmission
 from .gaussianheight import GaussianHeightExtinction
 from .manual import Manual
