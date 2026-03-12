@@ -13,18 +13,45 @@ namespace sasktran2::twostream::backprop {
         Eigen::Map<Eigen::RowVectorXd> d_extinction;
         Eigen::Map<Eigen::RowVectorXd> d_ssa;
         Eigen::Map<Eigen::RowVectorXd> d_b1;
+        Eigen::Map<Eigen::RowVectorXd> d_thermal_b0;
+        Eigen::Map<Eigen::RowVectorXd> d_thermal_b1;
         double& d_albedo;
+        double& d_thermal_surf;
 
         GradientMap(const sasktran2::atmosphere::Atmosphere<1>& atmo,
-                    double* deriv_start)
-            : d_extinction(deriv_start, 1,
-                           atmo.storage().total_extinction.rows() - 1),
-              d_ssa(deriv_start + atmo.storage().total_extinction.rows(), 1,
-                    atmo.storage().total_extinction.rows() - 1),
-              d_b1(deriv_start + 2 * atmo.storage().total_extinction.rows(), 1,
-                   atmo.storage().total_extinction.rows() - 1),
-              d_albedo(
-                  deriv_start[atmo.storage().total_extinction.rows() - 1]) {}
+                    double* deriv_start) :
+                    d_extinction(nullptr, 0),
+                    d_ssa(nullptr, 0),
+                    d_b1(nullptr, 0),
+                    d_thermal_b0(nullptr, 0),
+                    d_thermal_b1(nullptr, 0),
+                    d_albedo(*deriv_start),
+                    d_thermal_surf(*(deriv_start))
+                    {
+                        const int n_layer = atmo.storage().total_extinction.rows() - 1;
+                        int index = 0;
+
+                        new (&d_extinction)  Eigen::Map<Eigen::RowVectorXd>(deriv_start, n_layer);
+                        index += n_layer;
+
+                        new (&d_ssa) Eigen::Map<Eigen::RowVectorXd>(deriv_start + n_layer, n_layer);
+                        index += n_layer;
+
+                        new (&d_b1) Eigen::Map<Eigen::RowVectorXd>(deriv_start + 2 * n_layer, n_layer);
+                        index += n_layer;
+
+                        if constexpr (has_thermal<Source>()) {
+                            new (&d_thermal_b0) Eigen::Map<Eigen::RowVectorXd>(deriv_start + 3 * n_layer, n_layer);
+                            index += n_layer;
+
+                            new (&d_thermal_b1) Eigen::Map<Eigen::RowVectorXd>(deriv_start + 4 * n_layer, n_layer);
+                            index += n_layer;
+                        }
+
+                        d_albedo = deriv_start[index];
+                        index += 1;
+                        d_thermal_surf = deriv_start[index];
+                    }
     };
 
     template <SourceType Source>
@@ -212,6 +239,24 @@ namespace sasktran2::twostream::backprop {
         }
     }
 
+    template <typename Derived, SourceType Source>
+    inline void thermal_b0(const Input<Source>& input,
+                       const Eigen::MatrixBase<Derived>& d_thermal_b0,
+                       GradientMap<Source>& grad) {
+        // b0 doesn't depend on OD, so just add the gradient to the thermal_b0 gradient
+        grad.d_thermal_b0 += d_thermal_b0;
+
+    }
+
+    template <typename Derived, SourceType Source>
+    inline void thermal_b1(const Input<Source>& input,
+                       const Eigen::MatrixBase<Derived>& d_thermal_b1,
+                       GradientMap<Source>& grad) {
+        // In terms of layer quantities we don't have to map b1 either, when we move to
+        // atmosphere mapping then we have to consider the contribution from od?
+        grad.d_thermal_b1 += d_thermal_b1;
+    }
+
     template <SourceType Source>
     inline void
     homog_X(const Input<Source>& input,
@@ -229,7 +274,7 @@ namespace sasktran2::twostream::backprop {
         // The gradient wrt to k is +/- 0.5 s / k^2, but since k^2 = s*d, this
         // is +/- 0.5 / d
 
-        for (int i = 0; i < 2; ++i) {
+        for (int i = 0; i < num_azimuth<Source>(); ++i) {
             // Now do X_plus and X_minus
 
             ssa(input,
@@ -252,7 +297,7 @@ namespace sasktran2::twostream::backprop {
         // The gradient wrt to s is 0.5 / k * d
         // The gradient wrt to d is 0.5 / k * s
 
-        for (int i = 0; i < 2; ++i) {
+        for (int i = 0; i < num_azimuth<Source>(); ++i) {
             // This is now grad wrt to ssa
             ssa(input, d_k[i].cwiseProduct(solution[i].k.d_ssa.transpose()),
                 grad);
@@ -266,7 +311,7 @@ namespace sasktran2::twostream::backprop {
                     solution,
                 std::array<Eigen::RowVectorXd, num_azimuth<Source>()>& d_omega,
                 GradientMap<Source>& grad) {
-        for (int i = 0; i < 2; ++i) {
+        for (int i = 0; i < num_azimuth<Source>(); ++i) {
             // This is now grad wrt to ssa
             ssa(input,
                 d_omega[i].cwiseProduct(solution[i].omega.d_ssa.transpose()),
@@ -281,7 +326,7 @@ namespace sasktran2::twostream::backprop {
             solution,
         std::array<Eigen::RowVectorXd, num_azimuth<Source>()>& d_Q_plus,
         GradientMap<Source>& grad) {
-        for (int i = 0; i < 2; ++i) {
+        for (int i = 0; i < num_azimuth<Source>(); ++i) {
             // This is now grad wrt to ssa
             ssa(input,
                 d_Q_plus[i].cwiseProduct(solution[i].Q_plus.d_ssa.transpose()),
@@ -296,7 +341,7 @@ namespace sasktran2::twostream::backprop {
             solution,
         std::array<Eigen::RowVectorXd, num_azimuth<Source>()>& d_Q_minus,
         GradientMap<Source>& grad) {
-        for (int i = 0; i < 2; ++i) {
+        for (int i = 0; i < num_azimuth<Source>(); ++i) {
             // This is now grad wrt to ssa
             ssa(input,
                 d_Q_minus[i].cwiseProduct(
@@ -312,7 +357,7 @@ namespace sasktran2::twostream::backprop {
             solution,
         std::array<Eigen::RowVectorXd, num_azimuth<Source>()>& d_norm,
         GradientMap<Source>& grad) {
-        for (int i = 0; i < 2; ++i) {
+        for (int i = 0; i < num_azimuth<Source>(); ++i) {
             // This is now grad wrt to ssa
             ssa(input,
                 d_norm[i].cwiseProduct(solution[i].norm.d_ssa.transpose()),
@@ -327,7 +372,7 @@ namespace sasktran2::twostream::backprop {
             solution,
         std::array<Eigen::RowVectorXd, num_azimuth<Source>()>& d_Aplus,
         GradientMap<Source>& grad) {
-        for (int i = 0; i < 2; ++i) {
+        for (int i = 0; i < num_azimuth<Source>(); ++i) {
             // This is now grad wrt to ssa
             ssa(input,
                 d_Aplus[i].cwiseProduct(solution[i].A_plus.d_ssa.transpose()),
@@ -342,7 +387,7 @@ namespace sasktran2::twostream::backprop {
                                        num_azimuth<Source>()>& solution,
                       std::array<Eigen::RowVectorXd, 2>& d_Aminus,
                       GradientMap<Source>& grad) {
-        for (int i = 0; i < 2; ++i) {
+        for (int i = 0; i < num_azimuth<Source>(); ++i) {
             // This is now grad wrt to ssa
             ssa(input,
                 d_Aminus[i].cwiseProduct(solution[i].A_minus.d_ssa.transpose()),
@@ -358,7 +403,7 @@ namespace sasktran2::twostream::backprop {
         const std::array<Eigen::RowVectorXd, num_azimuth<Source>()>&
             d_G_plus_top,
         GradientMap<Source>& grad) {
-        for (int i = 0; i < 2; ++i) {
+        for (int i = 0; i < num_azimuth<Source>(); ++i) {
             ssa(input,
                 d_G_plus_top[i].cwiseProduct(
                     solution[i].G_plus_top.d_ssa.transpose()),
@@ -371,18 +416,37 @@ namespace sasktran2::twostream::backprop {
                d_G_plus_top[i].cwiseProduct(
                    solution[i].G_plus_top.d_od.transpose()),
                grad);
-            transmission(input,
-                         d_G_plus_top[i].cwiseProduct(
-                             solution[i]
-                                 .G_plus_top
-                                 .d_transmission(Eigen::seq(
-                                     0, Eigen::placeholders::last - 1))
-                                 .transpose()),
-                         grad);
-            secant(input,
-                   d_G_plus_top[i].cwiseProduct(
-                       solution[i].G_plus_top.d_secant.transpose()),
-                   grad);
+
+            if constexpr (has_solar<Source>()) {
+                transmission(input,
+                            d_G_plus_top[i].cwiseProduct(
+                                solution[i]
+                                    .G_plus_top
+                                    .d_transmission(Eigen::seq(
+                                        0, Eigen::placeholders::last - 1))
+                                    .transpose()),
+                            grad);
+                secant(input,
+                    d_G_plus_top[i].cwiseProduct(
+                        solution[i].G_plus_top.d_secant.transpose()),
+                    grad);
+            }
+
+            if constexpr (has_thermal<Source>()) {
+                thermal_b0(input,
+                    d_G_plus_top[i].cwiseProduct(
+                        solution[i]
+                            .G_plus_top
+                            .d_thermal_b0.transpose()),
+                    grad);
+                thermal_b1(input,
+                    d_G_plus_top[i].cwiseProduct(
+                        solution[i]
+                            .G_plus_top
+                            .d_thermal_b1.transpose()),
+                    grad);
+            }
+
         }
     }
 
@@ -394,7 +458,7 @@ namespace sasktran2::twostream::backprop {
         const std::array<Eigen::RowVectorXd, num_azimuth<Source>()>&
             d_G_plus_bottom,
         GradientMap<Source>& grad) {
-        for (int i = 0; i < 2; ++i) {
+        for (int i = 0; i < num_azimuth<Source>(); ++i) {
             ssa(input,
                 d_G_plus_bottom[i].cwiseProduct(
                     solution[i].G_plus_bottom.d_ssa.transpose()),
@@ -407,18 +471,39 @@ namespace sasktran2::twostream::backprop {
                d_G_plus_bottom[i].cwiseProduct(
                    solution[i].G_plus_bottom.d_od.transpose()),
                grad);
-            transmission(input,
-                         d_G_plus_bottom[i].cwiseProduct(
-                             solution[i]
-                                 .G_plus_bottom
-                                 .d_transmission(Eigen::seq(
-                                     0, Eigen::placeholders::last - 1))
-                                 .transpose()),
-                         grad);
-            secant(input,
-                   d_G_plus_bottom[i].cwiseProduct(
-                       solution[i].G_plus_bottom.d_secant.transpose()),
-                   grad);
+
+            if constexpr (has_solar<Source>())
+            {
+                transmission(input,
+                            d_G_plus_bottom[i].cwiseProduct(
+                                solution[i]
+                                    .G_plus_bottom
+                                    .d_transmission(Eigen::seq(
+                                        0, Eigen::placeholders::last - 1))
+                                    .transpose()),
+                            grad);
+                secant(input,
+                    d_G_plus_bottom[i].cwiseProduct(
+                        solution[i].G_plus_bottom.d_secant.transpose()),
+                    grad);
+            }
+
+            if constexpr (has_thermal<Source>())
+            {
+                thermal_b0(input,
+                    d_G_plus_bottom[i].cwiseProduct(
+                        solution[i]
+                            .G_plus_bottom
+                            .d_thermal_b0.transpose()),
+                    grad);
+                thermal_b1(input,
+                    d_G_plus_bottom[i].cwiseProduct(
+                        solution[i]
+                            .G_plus_bottom
+                            .d_thermal_b1.transpose()),
+                    grad);
+            }
+
         }
     }
 
@@ -430,7 +515,7 @@ namespace sasktran2::twostream::backprop {
         const std::array<Eigen::RowVectorXd, num_azimuth<Source>()>&
             d_G_minus_top,
         GradientMap<Source>& grad) {
-        for (int i = 0; i < 2; ++i) {
+        for (int i = 0; i < num_azimuth<Source>(); ++i) {
             ssa(input,
                 d_G_minus_top[i].cwiseProduct(
                     solution[i].G_minus_top.d_ssa.transpose()),
@@ -443,18 +528,37 @@ namespace sasktran2::twostream::backprop {
                d_G_minus_top[i].cwiseProduct(
                    solution[i].G_minus_top.d_od.transpose()),
                grad);
-            transmission(input,
-                         d_G_minus_top[i].cwiseProduct(
-                             solution[i]
-                                 .G_minus_top
-                                 .d_transmission(Eigen::seq(
-                                     0, Eigen::placeholders::last - 1))
-                                 .transpose()),
-                         grad);
-            secant(input,
-                   d_G_minus_top[i].cwiseProduct(
-                       solution[i].G_minus_top.d_secant.transpose()),
-                   grad);
+
+            if constexpr (has_solar<Source>()) {
+                transmission(input,
+                            d_G_minus_top[i].cwiseProduct(
+                                solution[i]
+                                    .G_minus_top
+                                    .d_transmission(Eigen::seq(
+                                        0, Eigen::placeholders::last - 1))
+                                    .transpose()),
+                            grad);
+                secant(input,
+                    d_G_minus_top[i].cwiseProduct(
+                        solution[i].G_minus_top.d_secant.transpose()),
+                    grad);
+            }
+
+            if constexpr (has_thermal<Source>()) {
+                thermal_b0(input,
+                    d_G_minus_top[i].cwiseProduct(
+                        solution[i]
+                            .G_minus_top
+                            .d_thermal_b0.transpose()),
+                    grad);
+                thermal_b1(input,
+                    d_G_minus_top[i].cwiseProduct(
+                        solution[i]
+                            .G_minus_top
+                            .d_thermal_b1.transpose()),
+                    grad);
+            }
+
         }
     }
 
@@ -494,6 +598,21 @@ namespace sasktran2::twostream::backprop {
                        d_G_minus_bottom[i].cwiseProduct(
                            solution[i].G_minus_bottom.d_secant.transpose()),
                        grad);
+            }
+
+            if constexpr (has_thermal<Source>()) {
+                thermal_b0(input,
+                    d_G_minus_bottom[i].cwiseProduct(
+                        solution[i]
+                            .G_minus_bottom
+                            .d_thermal_b0.transpose()),
+                    grad);
+                thermal_b1(input,
+                    d_G_minus_bottom[i].cwiseProduct(
+                        solution[i]
+                            .G_minus_bottom
+                            .d_thermal_b1.transpose()),
+                    grad);
             }
         }
     }
@@ -649,6 +768,42 @@ namespace sasktran2::twostream::backprop {
                     bvp_coeffs[i].d_G_minus_bottom.cwiseProduct(
                         solution[i].G_minus_bottom.d_secant.transpose());
             }
+
+            if constexpr (has_thermal<Source>()) {
+                bvp_coeffs[0].d_temp_thermal_b0 +=
+                    bvp_coeffs[i].d_G_plus_top.cwiseProduct(
+                        solution[i]
+                            .G_plus_top
+                            .d_thermal_b0
+                            .transpose()) +
+                    bvp_coeffs[i].d_G_plus_bottom.cwiseProduct(
+                        solution[i]
+                            .G_plus_bottom
+                            .d_thermal_b0
+                            .transpose()) +
+                    bvp_coeffs[i].d_G_minus_top.cwiseProduct(
+                        solution[i]
+                            .G_minus_top
+                            .d_thermal_b0
+                            .transpose()) +
+                    bvp_coeffs[i].d_G_minus_bottom.cwiseProduct(
+                        solution[i]
+                            .G_minus_bottom
+                            .d_thermal_b0
+                            .transpose());
+
+                // And finally the secant factors
+                bvp_coeffs[0].d_temp_thermal_b1 +=
+                    bvp_coeffs[i].d_G_plus_top.cwiseProduct(
+                        solution[i].G_plus_top.d_thermal_b1.transpose()) +
+                    bvp_coeffs[i].d_G_plus_bottom.cwiseProduct(
+                        solution[i].G_plus_bottom.d_thermal_b1.transpose()) +
+                    bvp_coeffs[i].d_G_minus_top.cwiseProduct(
+                        solution[i].G_minus_top.d_thermal_b1.transpose()) +
+                    bvp_coeffs[i].d_G_minus_bottom.cwiseProduct(
+                        solution[i].G_minus_bottom.d_thermal_b1.transpose());
+            }
+
             if constexpr (has_solar<Source>()) {
                 // Directly assign the albedo derivative
                 grad.d_albedo +=
@@ -886,6 +1041,11 @@ namespace sasktran2::twostream::backprop {
             transmission(input, bvp_coeffs[0].d_temp_transmission, grad);
             secant(input, bvp_coeffs[0].d_temp_secant, grad);
         }
+
+        if constexpr (has_thermal<Source>()) {
+            thermal_b0(input, bvp_coeffs[0].d_temp_thermal_b0, grad);
+            thermal_b1(input, bvp_coeffs[0].d_temp_thermal_b1, grad);
+        }
     }
 
     template <SourceType Source>
@@ -927,6 +1087,15 @@ namespace sasktran2::twostream::backprop {
             solution.bvp_coeffs[0].d_temp_secant(input.nlyr - 1) +=
                 solution.particular[0].G_plus_bottom.d_secant(input.nlyr - 1) *
                 ground_weight;
+        }
+
+        if constexpr (has_thermal<Source>()) {
+            thermal_b0(input,
+                   sources.source.d_thermal_b0.transpose().cwiseProduct(source_weights),
+                   grad);
+            thermal_b1(input,
+                     sources.source.d_thermal_b1.transpose().cwiseProduct(source_weights),
+                        grad);
         }
 
         // Direct ground multiple scatter contributions

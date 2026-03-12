@@ -426,6 +426,8 @@ namespace sasktran2::twostream {
         Eigen::RowVectorXd d_temp_od;
         Eigen::RowVectorXd d_temp_transmission;
         Eigen::RowVectorXd d_temp_secant;
+        Eigen::RowVectorXd d_temp_thermal_b0;
+        Eigen::RowVectorXd d_temp_thermal_b1;
 
         void init(int nlyr) {
             z.resize(nlyr * 2, 1);
@@ -482,10 +484,21 @@ namespace sasktran2::twostream {
             d_temp_ssa.setZero();
             d_temp_od.resize(nlyr);
             d_temp_od.setZero();
-            d_temp_transmission.resize(nlyr + 1);
-            d_temp_transmission.setZero();
-            d_temp_secant.resize(nlyr);
-            d_temp_secant.setZero();
+
+            if constexpr (has_thermal<source_type>()) {
+                d_temp_thermal_b0.resize(nlyr);
+                d_temp_thermal_b0.setZero();
+                d_temp_thermal_b1.resize(nlyr);
+                d_temp_thermal_b1.setZero();
+            }
+
+
+            if constexpr (has_solar<source_type>()) {
+                d_temp_transmission.resize(nlyr + 1);
+                d_temp_transmission.setZero();
+                d_temp_secant.resize(nlyr);
+                d_temp_secant.setZero();
+            }
 
             d_e_by_ssa.init(nlyr);
             d_c_by_ssa.init(nlyr);

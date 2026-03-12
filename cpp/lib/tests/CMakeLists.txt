@@ -20,6 +20,7 @@ add_executable(
   sktran_disco/test_crash.cpp
   twostream/test_twostream.cpp
   twostream/test_backprop.cpp
+  twostream/test_backprop_emission.cpp
   sktran_disco/benchmark/bench_lowlevel.cpp
   engine/benchmark/bench_singlescatter.cpp
   engine/benchmark/bench_do_wf.cpp
