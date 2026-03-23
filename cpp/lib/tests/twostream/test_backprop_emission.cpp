@@ -53,7 +53,6 @@ void construct_atmo_geometry_emission(
 
     atmo->storage().emission_source.setConstant(1e-6);
 
-
     sasktran2::Config config;
     sasktran_disco::PersistentConfiguration<1> pconfig;
     std::vector<sasktran2::raytracing::TracedRay> traced_rays;
@@ -158,7 +157,8 @@ TEST_CASE("Backprop_thermalb0_emission", "[twostream][backprop]") {
         input_p.b0_thermal(i) += eps;
 
         numerical_grad(i) =
-            (weights.dot(input_p.b0_thermal) - weights.dot(input.b0_thermal)) / eps;
+            (weights.dot(input_p.b0_thermal) - weights.dot(input.b0_thermal)) /
+            eps;
     }
 
     sasktran2::twostream::backprop::thermal_b0(input, weights, grad_map);
@@ -210,7 +210,8 @@ TEST_CASE("Backprop_thermalb1_emission", "[twostream][backprop]") {
         input_p.b1_thermal(i) += eps;
 
         numerical_grad(i) =
-            (weights.dot(input_p.b1_thermal) - weights.dot(input.b1_thermal)) / eps;
+            (weights.dot(input_p.b1_thermal) - weights.dot(input.b1_thermal)) /
+            eps;
     }
 
     sasktran2::twostream::backprop::thermal_b1(input, weights, grad_map);
@@ -309,7 +310,8 @@ TEST_CASE("Backprop_Homog_emission", "[twostream][backprop]") {
 
     input.calculate(0);
 
-    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_THERMAL>
+    sasktran2::twostream::Solution<
+        sasktran2::twostream::SourceType::ONLY_THERMAL>
         soln;
     soln.init(natmo - 1);
     sasktran2::twostream::solve_layers(input, soln);
@@ -402,7 +404,8 @@ TEST_CASE("Backprop_Particular_emission", "[twostream][backprop]") {
 
     input.calculate(0);
 
-    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_THERMAL>
+    sasktran2::twostream::Solution<
+        sasktran2::twostream::SourceType::ONLY_THERMAL>
         soln;
     soln.init(natmo - 1);
     sasktran2::twostream::solve_layers(input, soln);
@@ -494,7 +497,8 @@ TEST_CASE("Backprop_BVP_emission", "[twostream][backprop]") {
 
     input.calculate(0);
 
-    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_THERMAL>
+    sasktran2::twostream::Solution<
+        sasktran2::twostream::SourceType::ONLY_THERMAL>
         soln;
     soln.init(natmo - 1);
     sasktran2::twostream::solve(input, soln);
@@ -570,9 +574,11 @@ TEST_CASE("Backprop_Full_emission", "[twostream][backprop]") {
 
     input.calculate(0);
 
-    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_THERMAL>
+    sasktran2::twostream::Solution<
+        sasktran2::twostream::SourceType::ONLY_THERMAL>
         soln;
-    sasktran2::twostream::Sources<sasktran2::twostream::SourceType::ONLY_THERMAL>
+    sasktran2::twostream::Sources<
+        sasktran2::twostream::SourceType::ONLY_THERMAL>
         sources;
     soln.init(natmo - 1);
     sources.init(natmo - 1);
@@ -659,7 +665,8 @@ TEST_CASE("Backprop_Particular_ext_emission", "[twostream][backprop]") {
 
     input.calculate(0);
 
-    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_THERMAL>
+    sasktran2::twostream::Solution<
+        sasktran2::twostream::SourceType::ONLY_THERMAL>
         soln;
     soln.init(natmo - 1);
     sasktran2::twostream::solve_layers(input, soln);
@@ -752,7 +759,8 @@ TEST_CASE("Backprop_BVP_ext_emission", "[twostream][backprop]") {
 
     input.calculate(0);
 
-    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_THERMAL>
+    sasktran2::twostream::Solution<
+        sasktran2::twostream::SourceType::ONLY_THERMAL>
         soln;
     soln.init(natmo - 1);
     sasktran2::twostream::solve(input, soln);
@@ -829,9 +837,11 @@ TEST_CASE("Backprop_Full_ext_emission", "[twostream][backprop]") {
 
     input.calculate(0);
 
-    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_THERMAL>
+    sasktran2::twostream::Solution<
+        sasktran2::twostream::SourceType::ONLY_THERMAL>
         soln;
-    sasktran2::twostream::Sources<sasktran2::twostream::SourceType::ONLY_THERMAL>
+    sasktran2::twostream::Sources<
+        sasktran2::twostream::SourceType::ONLY_THERMAL>
         sources;
     soln.init(natmo - 1);
     sources.init(natmo - 1);
@@ -917,9 +927,11 @@ TEST_CASE("Backprop_Full_b1_emission", "[twostream][backprop]") {
 
     input.calculate(0);
 
-    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_THERMAL>
+    sasktran2::twostream::Solution<
+        sasktran2::twostream::SourceType::ONLY_THERMAL>
         soln;
-    sasktran2::twostream::Sources<sasktran2::twostream::SourceType::ONLY_THERMAL>
+    sasktran2::twostream::Sources<
+        sasktran2::twostream::SourceType::ONLY_THERMAL>
         sources;
     soln.init(natmo - 1);
     sources.init(natmo - 1);
@@ -1007,7 +1019,8 @@ TEST_CASE("Backprop_Particular_b1_emission", "[twostream][backprop]") {
 
     input.calculate(0);
 
-    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_THERMAL>
+    sasktran2::twostream::Solution<
+        sasktran2::twostream::SourceType::ONLY_THERMAL>
         soln;
     soln.init(natmo - 1);
     sasktran2::twostream::solve_layers(input, soln);
@@ -1099,7 +1112,8 @@ TEST_CASE("Backprop_BVP_b1_emission", "[twostream][backprop]") {
 
     input.calculate(0);
 
-    sasktran2::twostream::Solution<sasktran2::twostream::SourceType::ONLY_THERMAL>
+    sasktran2::twostream::Solution<
+        sasktran2::twostream::SourceType::ONLY_THERMAL>
         soln;
     soln.init(natmo - 1);
     sasktran2::twostream::solve(input, soln);

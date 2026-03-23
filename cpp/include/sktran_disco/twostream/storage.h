@@ -178,10 +178,13 @@ namespace sasktran2::twostream {
                         thermal_source(bottom_atmo_idx);
 
                     // from top of layer to bottom, thermal = b0 exp(-b1 x)
-                    // at x = 0, thermal = b0, at x = layer thickness, thermal = b0 exp(-b1 * layer thickness)
-                    // => b1 = -log(thermal_bottom / thermal_top) / layer_thickness
+                    // at x = 0, thermal = b0, at x = layer thickness, thermal =
+                    // b0 exp(-b1 * layer thickness)
+                    // => b1 = -log(thermal_bottom / thermal_top) /
+                    // layer_thickness
                     b0_thermal(i) = thermal_top;
-                    b1_thermal(i) = -std::log(thermal_bottom / thermal_top) / layer_thickness;
+                    b1_thermal(i) = -std::log(thermal_bottom / thermal_top) /
+                                    layer_thickness;
                 }
             }
 
@@ -495,7 +498,6 @@ namespace sasktran2::twostream {
                 d_temp_thermal_b1.resize(nlyr);
                 d_temp_thermal_b1.setZero();
             }
-
 
             if constexpr (has_solar<source_type>()) {
                 d_temp_transmission.resize(nlyr + 1);

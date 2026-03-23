@@ -259,9 +259,9 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
                 sources.beamtrans.value(Eigen::placeholders::last);
 
             if constexpr (sasktran2::twostream::has_thermal<SOURCE_TYPE>()) {
-                grad.d_thermal_surf = 
-                                  sources.final_weight_factors(Eigen::placeholders::last) *
-                                  sources.beamtrans.value(Eigen::placeholders::last);
+                grad.d_thermal_surf =
+                    sources.final_weight_factors(Eigen::placeholders::last) *
+                    sources.beamtrans.value(Eigen::placeholders::last);
             }
 
             sasktran2::twostream::backprop::full(

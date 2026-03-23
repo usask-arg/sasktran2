@@ -311,7 +311,6 @@ def _ground_test_scenarios_backprop():
         }
     )
 
-
     config = sk.Config()
     config.emission_source = sk.EmissionSource.TwoStream
     config.single_scatter_source = sk.SingleScatterSource.NoSource
@@ -373,7 +372,6 @@ def _ground_test_scenarios_backprop():
 
     scen = scen[-1:]
 
-
     return scen
 
 
@@ -407,9 +405,7 @@ def test_wf_temperature_with_emission():
     Checks that the WFs are correct for a VMR constituent When emissions are present
     """
 
-    scens = (
-        _ground_test_scenarios_backprop()
-    )
+    scens = _ground_test_scenarios_backprop()
 
     for scen in scens:
         atmosphere = scen["atmosphere"]

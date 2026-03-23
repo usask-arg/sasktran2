@@ -1974,9 +1974,9 @@ namespace sasktran2::twostream {
                     (1.0 - input.ssa.array());
                 sources.source.d_ssa.array() +=
                     -input.b0_thermal.array() * sources.E_thermal.value.array();
-                sources.source.d_od.array() +=
-                    input.b0_thermal.array() * sources.E_thermal.d_od.array() *
-                    (1.0 - input.ssa.array());
+                sources.source.d_od.array() += input.b0_thermal.array() *
+                                               sources.E_thermal.d_od.array() *
+                                               (1.0 - input.ssa.array());
             }
         }
     }

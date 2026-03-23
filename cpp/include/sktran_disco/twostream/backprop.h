@@ -27,32 +27,35 @@ namespace sasktran2::twostream::backprop {
         double& d_thermal_surf;
 
         GradientMap(const sasktran2::atmosphere::Atmosphere<1>& atmo,
-                    double* deriv_start) :
-                    d_extinction(nullptr, 0),
-                    d_ssa(nullptr, 0),
-                    d_b1(nullptr, 0),
-                    d_thermal_b0(nullptr, 0),
-                    d_thermal_b1(nullptr, 0),
-                    d_albedo(*(deriv_start + scalar_offset(
-                        atmo.storage().total_extinction.rows() - 1))),
-                    d_thermal_surf(*(deriv_start + scalar_offset(
-                        atmo.storage().total_extinction.rows() - 1) +
-                                      (has_thermal<Source>() ? 1 : 0)))
-                    {
-                        const int n_layer = atmo.storage().total_extinction.rows() - 1;
+                    double* deriv_start)
+            : d_extinction(nullptr, 0), d_ssa(nullptr, 0), d_b1(nullptr, 0),
+              d_thermal_b0(nullptr, 0), d_thermal_b1(nullptr, 0),
+              d_albedo(
+                  *(deriv_start +
+                    scalar_offset(atmo.storage().total_extinction.rows() - 1))),
+              d_thermal_surf(
+                  *(deriv_start +
+                    scalar_offset(atmo.storage().total_extinction.rows() - 1) +
+                    (has_thermal<Source>() ? 1 : 0))) {
+            const int n_layer = atmo.storage().total_extinction.rows() - 1;
 
-                        new (&d_extinction)  Eigen::Map<Eigen::RowVectorXd>(deriv_start, n_layer);
+            new (&d_extinction)
+                Eigen::Map<Eigen::RowVectorXd>(deriv_start, n_layer);
 
-                        new (&d_ssa) Eigen::Map<Eigen::RowVectorXd>(deriv_start + n_layer, n_layer);
+            new (&d_ssa)
+                Eigen::Map<Eigen::RowVectorXd>(deriv_start + n_layer, n_layer);
 
-                        new (&d_b1) Eigen::Map<Eigen::RowVectorXd>(deriv_start + 2 * n_layer, n_layer);
+            new (&d_b1) Eigen::Map<Eigen::RowVectorXd>(
+                deriv_start + 2 * n_layer, n_layer);
 
-                        if constexpr (has_thermal<Source>()) {
-                            new (&d_thermal_b0) Eigen::Map<Eigen::RowVectorXd>(deriv_start + 3 * n_layer, n_layer);
+            if constexpr (has_thermal<Source>()) {
+                new (&d_thermal_b0) Eigen::Map<Eigen::RowVectorXd>(
+                    deriv_start + 3 * n_layer, n_layer);
 
-                            new (&d_thermal_b1) Eigen::Map<Eigen::RowVectorXd>(deriv_start + 4 * n_layer, n_layer);
-                        }
-                    }
+                new (&d_thermal_b1) Eigen::Map<Eigen::RowVectorXd>(
+                    deriv_start + 4 * n_layer, n_layer);
+            }
+        }
     };
 
     template <SourceType Source>
@@ -141,7 +144,6 @@ namespace sasktran2::twostream::backprop {
         }
     }
 
-
     template <SourceType Source>
     inline void map_to_atmosphere_new(
         const Input<Source>& input, const GradientMap<Source>& internal_grad,
@@ -160,12 +162,13 @@ namespace sasktran2::twostream::backprop {
                 input.geometry_layers->layer_ceiling()(i) -
                 input.geometry_layers->layer_floor()(i);
 
-            for(const auto idx : {top_atmo_idx, bottom_atmo_idx}) {
-                // For extinction contribution is weight (0.5) * layer_thickness equally to top and bottom
+            for (const auto idx : {top_atmo_idx, bottom_atmo_idx}) {
+                // For extinction contribution is weight (0.5) * layer_thickness
+                // equally to top and bottom
                 source.deriv(idx) +=
                     0.5 * internal_grad.d_extinction(i) * layer_thickness;
 
-                // For SSA, 
+                // For SSA,
                 source.deriv(idx + n) +=
                     0.5 * internal_grad.d_ssa(i) *
                     input.atmosphere->storage().total_extinction(
@@ -183,8 +186,8 @@ namespace sasktran2::twostream::backprop {
                 double b1_deriv =
                     0.5 * internal_grad.d_b1(i) *
                     (input.atmosphere->storage().ssa(idx, input.wavelidx) *
-                        input.atmosphere->storage().total_extinction(
-                            idx, input.wavelidx)) /
+                     input.atmosphere->storage().total_extinction(
+                         idx, input.wavelidx)) /
                     denom;
 
                 // to extinction
@@ -192,23 +195,24 @@ namespace sasktran2::twostream::backprop {
                     0.5 * internal_grad.d_b1(i) *
                     input.atmosphere->storage().ssa(idx, input.wavelidx) *
                     (input.atmosphere->storage().leg_coeff(1, idx,
-                                                            input.wavelidx) -
-                        input.b1(i)) /
+                                                           input.wavelidx) -
+                     input.b1(i)) /
                     denom;
 
                 // to ssa
-                source.deriv(idx) += 0.5 * internal_grad.d_b1(i) *
-                                    input.atmosphere->storage().total_extinction(
-                                        idx, input.wavelidx) *
-                                    (input.atmosphere->storage().leg_coeff(
-                                        1, idx, input.wavelidx) -
-                                    input.b1(i)) /
-                                    denom;
+                source.deriv(idx) +=
+                    0.5 * internal_grad.d_b1(i) *
+                    input.atmosphere->storage().total_extinction(
+                        idx, input.wavelidx) *
+                    (input.atmosphere->storage().leg_coeff(1, idx,
+                                                           input.wavelidx) -
+                     input.b1(i)) /
+                    denom;
                 // To scattering derivatives
                 for (int k = 0;
-                        k < input.atmosphere->num_scattering_deriv_groups(); ++k) {
+                     k < input.atmosphere->num_scattering_deriv_groups(); ++k) {
                     source.deriv(input.atmosphere->scat_deriv_start_index() +
-                                    k * n + idx) +=
+                                 k * n + idx) +=
                         input.atmosphere->storage().d_leg_coeff(
                             1, idx, input.wavelidx, k) *
                         b1_deriv;
@@ -216,34 +220,40 @@ namespace sasktran2::twostream::backprop {
             }
 
             if constexpr (has_thermal<Source>()) {
-                const double thermal_top = input.atmosphere->storage().emission_source(top_atmo_idx);
+                const double thermal_top =
+                    input.atmosphere->storage().emission_source(top_atmo_idx);
                 const double thermal_bottom =
-                    input.atmosphere->storage().emission_source(bottom_atmo_idx);
+                    input.atmosphere->storage().emission_source(
+                        bottom_atmo_idx);
 
                 // This is where it gets a little trickier
-                // b0 = thermal_top, b1 = -log(thermal_bottom / thermal_top) / layer_thickness
+                // b0 = thermal_top, b1 = -log(thermal_bottom / thermal_top) /
+                // layer_thickness
 
-                source.deriv(input.atmosphere->emission_deriv_start_index() + top_atmo_idx) +=
-                    internal_grad.d_thermal_b0(i);
+                source.deriv(input.atmosphere->emission_deriv_start_index() +
+                             top_atmo_idx) += internal_grad.d_thermal_b0(i);
 
-                // But the b1 derivatives have contributions to top, bottom, and layer thickness (which maps to extinction)
+                // But the b1 derivatives have contributions to top, bottom, and
+                // layer thickness (which maps to extinction)
                 double b1_deriv = internal_grad.d_thermal_b1(i);
 
                 // derivatives are
                 // db1 / d thermal_top = 1 / (layer_thickness * thermal_top)
-                // db1 / d thermal_bottom = -1 / (layer_thickness * thermal_bottom)
-                // db1 / d layer_thickness = -b1 / layer_thickness
+                // db1 / d thermal_bottom = -1 / (layer_thickness *
+                // thermal_bottom) db1 / d layer_thickness = -b1 /
+                // layer_thickness
 
-                source.deriv(input.atmosphere->emission_deriv_start_index() + top_atmo_idx) +=
+                source.deriv(input.atmosphere->emission_deriv_start_index() +
+                             top_atmo_idx) +=
                     b1_deriv / (layer_thickness * thermal_top);
-                source.deriv(input.atmosphere->emission_deriv_start_index() + bottom_atmo_idx) +=
+                source.deriv(input.atmosphere->emission_deriv_start_index() +
+                             bottom_atmo_idx) +=
                     -b1_deriv / (layer_thickness * thermal_bottom);
-                
+
                 // extinction contributes equally to top and bottom
-                for(const auto& idx : {top_atmo_idx, bottom_atmo_idx}) {
+                for (const auto& idx : {top_atmo_idx, bottom_atmo_idx}) {
                     source.deriv(idx) +=
-                        b1_deriv * input.b1_thermal(i) * 0.5 /
-                        layer_thickness;
+                        b1_deriv * input.b1_thermal(i) * 0.5 / layer_thickness;
                 }
             }
         }
@@ -256,11 +266,11 @@ namespace sasktran2::twostream::backprop {
 
         if constexpr (has_thermal<Source>()) {
             // Thermal surface derivatives
-            source.deriv(input.atmosphere->surface_emission_deriv_start_index()) +=
+            source.deriv(
+                input.atmosphere->surface_emission_deriv_start_index()) +=
                 internal_grad.d_thermal_surf;
         }
     }
-
 
     /**
      * Takes a gradient vector with respect to the input optical depth and maps
@@ -363,19 +373,20 @@ namespace sasktran2::twostream::backprop {
 
     template <typename Derived, SourceType Source>
     inline void thermal_b0(const Input<Source>& input,
-                       const Eigen::MatrixBase<Derived>& d_thermal_b0,
-                       GradientMap<Source>& grad) {
-        // b0 doesn't depend on OD, so just add the gradient to the thermal_b0 gradient
+                           const Eigen::MatrixBase<Derived>& d_thermal_b0,
+                           GradientMap<Source>& grad) {
+        // b0 doesn't depend on OD, so just add the gradient to the thermal_b0
+        // gradient
         grad.d_thermal_b0 += d_thermal_b0;
-
     }
 
     template <typename Derived, SourceType Source>
     inline void thermal_b1(const Input<Source>& input,
-                       const Eigen::MatrixBase<Derived>& d_thermal_b1,
-                       GradientMap<Source>& grad) {
-        // In terms of layer quantities we don't have to map b1 either, when we move to
-        // atmosphere mapping then we have to consider the contribution from od?
+                           const Eigen::MatrixBase<Derived>& d_thermal_b1,
+                           GradientMap<Source>& grad) {
+        // In terms of layer quantities we don't have to map b1 either, when we
+        // move to atmosphere mapping then we have to consider the contribution
+        // from od?
         grad.d_thermal_b1 += d_thermal_b1;
     }
 
@@ -541,34 +552,29 @@ namespace sasktran2::twostream::backprop {
 
             if constexpr (has_solar<Source>()) {
                 transmission(input,
-                            d_G_plus_top[i].cwiseProduct(
-                                solution[i]
-                                    .G_plus_top
-                                    .d_transmission(Eigen::seq(
-                                        0, Eigen::placeholders::last - 1))
-                                    .transpose()),
-                            grad);
+                             d_G_plus_top[i].cwiseProduct(
+                                 solution[i]
+                                     .G_plus_top
+                                     .d_transmission(Eigen::seq(
+                                         0, Eigen::placeholders::last - 1))
+                                     .transpose()),
+                             grad);
                 secant(input,
-                    d_G_plus_top[i].cwiseProduct(
-                        solution[i].G_plus_top.d_secant.transpose()),
-                    grad);
+                       d_G_plus_top[i].cwiseProduct(
+                           solution[i].G_plus_top.d_secant.transpose()),
+                       grad);
             }
 
             if constexpr (has_thermal<Source>()) {
                 thermal_b0(input,
-                    d_G_plus_top[i].cwiseProduct(
-                        solution[i]
-                            .G_plus_top
-                            .d_thermal_b0.transpose()),
-                    grad);
+                           d_G_plus_top[i].cwiseProduct(
+                               solution[i].G_plus_top.d_thermal_b0.transpose()),
+                           grad);
                 thermal_b1(input,
-                    d_G_plus_top[i].cwiseProduct(
-                        solution[i]
-                            .G_plus_top
-                            .d_thermal_b1.transpose()),
-                    grad);
+                           d_G_plus_top[i].cwiseProduct(
+                               solution[i].G_plus_top.d_thermal_b1.transpose()),
+                           grad);
             }
-
         }
     }
 
@@ -594,38 +600,33 @@ namespace sasktran2::twostream::backprop {
                    solution[i].G_plus_bottom.d_od.transpose()),
                grad);
 
-            if constexpr (has_solar<Source>())
-            {
+            if constexpr (has_solar<Source>()) {
                 transmission(input,
-                            d_G_plus_bottom[i].cwiseProduct(
-                                solution[i]
-                                    .G_plus_bottom
-                                    .d_transmission(Eigen::seq(
-                                        0, Eigen::placeholders::last - 1))
-                                    .transpose()),
-                            grad);
+                             d_G_plus_bottom[i].cwiseProduct(
+                                 solution[i]
+                                     .G_plus_bottom
+                                     .d_transmission(Eigen::seq(
+                                         0, Eigen::placeholders::last - 1))
+                                     .transpose()),
+                             grad);
                 secant(input,
-                    d_G_plus_bottom[i].cwiseProduct(
-                        solution[i].G_plus_bottom.d_secant.transpose()),
-                    grad);
+                       d_G_plus_bottom[i].cwiseProduct(
+                           solution[i].G_plus_bottom.d_secant.transpose()),
+                       grad);
             }
 
-            if constexpr (has_thermal<Source>())
-            {
-                thermal_b0(input,
+            if constexpr (has_thermal<Source>()) {
+                thermal_b0(
+                    input,
                     d_G_plus_bottom[i].cwiseProduct(
-                        solution[i]
-                            .G_plus_bottom
-                            .d_thermal_b0.transpose()),
+                        solution[i].G_plus_bottom.d_thermal_b0.transpose()),
                     grad);
-                thermal_b1(input,
+                thermal_b1(
+                    input,
                     d_G_plus_bottom[i].cwiseProduct(
-                        solution[i]
-                            .G_plus_bottom
-                            .d_thermal_b1.transpose()),
+                        solution[i].G_plus_bottom.d_thermal_b1.transpose()),
                     grad);
             }
-
         }
     }
 
@@ -653,34 +654,31 @@ namespace sasktran2::twostream::backprop {
 
             if constexpr (has_solar<Source>()) {
                 transmission(input,
-                            d_G_minus_top[i].cwiseProduct(
-                                solution[i]
-                                    .G_minus_top
-                                    .d_transmission(Eigen::seq(
-                                        0, Eigen::placeholders::last - 1))
-                                    .transpose()),
-                            grad);
+                             d_G_minus_top[i].cwiseProduct(
+                                 solution[i]
+                                     .G_minus_top
+                                     .d_transmission(Eigen::seq(
+                                         0, Eigen::placeholders::last - 1))
+                                     .transpose()),
+                             grad);
                 secant(input,
-                    d_G_minus_top[i].cwiseProduct(
-                        solution[i].G_minus_top.d_secant.transpose()),
-                    grad);
+                       d_G_minus_top[i].cwiseProduct(
+                           solution[i].G_minus_top.d_secant.transpose()),
+                       grad);
             }
 
             if constexpr (has_thermal<Source>()) {
-                thermal_b0(input,
+                thermal_b0(
+                    input,
                     d_G_minus_top[i].cwiseProduct(
-                        solution[i]
-                            .G_minus_top
-                            .d_thermal_b0.transpose()),
+                        solution[i].G_minus_top.d_thermal_b0.transpose()),
                     grad);
-                thermal_b1(input,
+                thermal_b1(
+                    input,
                     d_G_minus_top[i].cwiseProduct(
-                        solution[i]
-                            .G_minus_top
-                            .d_thermal_b1.transpose()),
+                        solution[i].G_minus_top.d_thermal_b1.transpose()),
                     grad);
             }
-
         }
     }
 
@@ -723,17 +721,15 @@ namespace sasktran2::twostream::backprop {
             }
 
             if constexpr (has_thermal<Source>()) {
-                thermal_b0(input,
+                thermal_b0(
+                    input,
                     d_G_minus_bottom[i].cwiseProduct(
-                        solution[i]
-                            .G_minus_bottom
-                            .d_thermal_b0.transpose()),
+                        solution[i].G_minus_bottom.d_thermal_b0.transpose()),
                     grad);
-                thermal_b1(input,
+                thermal_b1(
+                    input,
                     d_G_minus_bottom[i].cwiseProduct(
-                        solution[i]
-                            .G_minus_bottom
-                            .d_thermal_b1.transpose()),
+                        solution[i].G_minus_bottom.d_thermal_b1.transpose()),
                     grad);
             }
         }
@@ -899,25 +895,13 @@ namespace sasktran2::twostream::backprop {
             if constexpr (has_thermal<Source>()) {
                 bvp_coeffs[0].d_temp_thermal_b0 +=
                     bvp_coeffs[i].d_G_plus_top.cwiseProduct(
-                        solution[i]
-                            .G_plus_top
-                            .d_thermal_b0
-                            .transpose()) +
+                        solution[i].G_plus_top.d_thermal_b0.transpose()) +
                     bvp_coeffs[i].d_G_plus_bottom.cwiseProduct(
-                        solution[i]
-                            .G_plus_bottom
-                            .d_thermal_b0
-                            .transpose()) +
+                        solution[i].G_plus_bottom.d_thermal_b0.transpose()) +
                     bvp_coeffs[i].d_G_minus_top.cwiseProduct(
-                        solution[i]
-                            .G_minus_top
-                            .d_thermal_b0
-                            .transpose()) +
+                        solution[i].G_minus_top.d_thermal_b0.transpose()) +
                     bvp_coeffs[i].d_G_minus_bottom.cwiseProduct(
-                        solution[i]
-                            .G_minus_bottom
-                            .d_thermal_b0
-                            .transpose());
+                        solution[i].G_minus_bottom.d_thermal_b0.transpose());
 
                 // And finally the secant factors
                 bvp_coeffs[0].d_temp_thermal_b1 +=
