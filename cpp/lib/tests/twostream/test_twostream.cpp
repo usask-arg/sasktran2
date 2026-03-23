@@ -97,7 +97,7 @@ TEST_CASE("twostream_thermal_Benchmark", "[sktran_do][lowlevel][benchmark]") {
     surface.brdf_args().setConstant(0.5);
 
     sasktran2::atmosphere::Atmosphere<1> atmo(std::move(storage),
-                                              std::move(surface), true);
+                                              std::move(surface), true, true);
 
     atmo.storage().total_extinction.setConstant(0.01);
 

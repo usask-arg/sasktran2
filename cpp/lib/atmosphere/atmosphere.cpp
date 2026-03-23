@@ -7,14 +7,14 @@ namespace sasktran2::atmosphere {
     template <int NSTOKES>
     Atmosphere<NSTOKES>::Atmosphere(
         AtmosphereGridStorageFull<NSTOKES>&& storage,
-        Surface<NSTOKES>&& surface, bool calculate_derivatives)
+        Surface<NSTOKES>&& surface, bool calculate_derivatives, bool include_emission_derivatives)
         : m_storage_holder(std::make_shared<AtmosphereGridStorageFull<NSTOKES>>(
               std::move(storage))),
           m_surface_holder(
               std::make_shared<Surface<NSTOKES>>(std::move(surface))),
           m_storage(*m_storage_holder), m_surface(*m_surface_holder),
           m_calculate_derivatives(calculate_derivatives),
-          m_include_emission_derivatives(false) {}
+          m_include_emission_derivatives(include_emission_derivatives) {}
 
     template <int NSTOKES>
     Atmosphere<NSTOKES>::Atmosphere(AtmosphereGridStorageFull<NSTOKES>& stor,

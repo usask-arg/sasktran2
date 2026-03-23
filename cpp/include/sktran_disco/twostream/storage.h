@@ -176,8 +176,12 @@ namespace sasktran2::twostream {
                     const double thermal_top = thermal_source(top_atmo_idx);
                     const double thermal_bottom =
                         thermal_source(bottom_atmo_idx);
-                    b0_thermal(i) = (thermal_top + thermal_bottom) / 2.0;
-                    b1_thermal(i) = 0.0;
+
+                    // from top of layer to bottom, thermal = b0 exp(-b1 x)
+                    // at x = 0, thermal = b0, at x = layer thickness, thermal = b0 exp(-b1 * layer thickness)
+                    // => b1 = -log(thermal_bottom / thermal_top) / layer_thickness
+                    b0_thermal(i) = thermal_top;
+                    b1_thermal(i) = -std::log(thermal_bottom / thermal_top) / layer_thickness;
                 }
             }
 

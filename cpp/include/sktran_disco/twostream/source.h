@@ -113,7 +113,14 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
         }
 
         for (auto& internal_gradient : m_internal_gradients) {
-            internal_gradient.resize(3 * m_geometry.size());
+            int nlyr = m_geometry.size() - 1;
+            if constexpr (sasktran2::twostream::has_thermal<SOURCE_TYPE>()) {
+                // +2 for albedo, thermal surface
+                internal_gradient.resize(5 * nlyr + 2);
+            } else {
+                // +1 for albedo
+                internal_gradient.resize(3 * nlyr + 1);
+            }
         }
     };
 
@@ -250,6 +257,12 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
                 2 * input.mu *
                 sources.final_weight_factors(Eigen::placeholders::last) *
                 sources.beamtrans.value(Eigen::placeholders::last);
+
+            if constexpr (sasktran2::twostream::has_thermal<SOURCE_TYPE>()) {
+                grad.d_thermal_surf = 
+                                  sources.final_weight_factors(Eigen::placeholders::last) *
+                                  sources.beamtrans.value(Eigen::placeholders::last);
+            }
 
             sasktran2::twostream::backprop::full(
                 input, solution, sources, sources.final_weight_factors,

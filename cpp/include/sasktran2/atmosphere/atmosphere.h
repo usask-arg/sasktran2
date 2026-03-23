@@ -47,7 +47,8 @@ namespace sasktran2::atmosphere {
          */
         Atmosphere(AtmosphereGridStorageFull<NSTOKES>&& storage,
                    Surface<NSTOKES>&& surface,
-                   bool calculate_derivatives = false);
+                   bool calculate_derivatives = false,
+                   bool include_emission_derivatives = false);
 
         /** Directly constructs the atmosphere from it's base objects, sharing
          * ownership

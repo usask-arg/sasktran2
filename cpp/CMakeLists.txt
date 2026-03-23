@@ -243,7 +243,7 @@ elseif(SKTRAN_BLAS_VENDOR MATCHES "Apple")
     sasktran2BuildProperties
     INTERFACE
       /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers
-      /Library/Developer/CommandLineTools/SDKs/MacOSX15.5.sdk/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers
+      /Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk/System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Headers
   )
   target_compile_definitions(sasktran2BuildProperties
                              INTERFACE SKTRAN_USE_ACCELERATE)

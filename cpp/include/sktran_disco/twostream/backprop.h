@@ -140,6 +140,127 @@ namespace sasktran2::twostream::backprop {
         }
     }
 
+
+    template <SourceType Source>
+    inline void map_to_atmosphere_new(
+        const Input<Source>& input, const GradientMap<Source>& internal_grad,
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& source) {
+        ZoneScopedN("Twostream Backprop Map To Atmosphere");
+        int n = input.nlyr + 1;
+        int nlyr = input.nlyr;
+
+        // Go through each atmosphere grid element
+        for (int i = 0; i < nlyr; ++i) {
+            const int top_atmo_idx = nlyr - i; // Top atmo idx of the layer
+            const int bottom_atmo_idx =
+                nlyr - i - 1; // Bottom atmo idx of the layer
+
+            const double layer_thickness =
+                input.geometry_layers->layer_ceiling()(i) -
+                input.geometry_layers->layer_floor()(i);
+
+            for(const auto idx : {top_atmo_idx, bottom_atmo_idx}) {
+                // For extinction contribution is weight (0.5) * layer_thickness equally to top and bottom
+                source.deriv(idx) +=
+                    0.5 * internal_grad.d_extinction(i) * layer_thickness;
+
+                // For SSA, 
+                source.deriv(idx + n) +=
+                    0.5 * internal_grad.d_ssa(i) *
+                    input.atmosphere->storage().total_extinction(
+                        idx, input.wavelidx) /
+                    (input.od(i) / layer_thickness);
+
+                source.deriv(idx + n) +=
+                    0.5 * internal_grad.d_ssa(i) *
+                    input.atmosphere->storage().total_extinction(
+                        idx, input.wavelidx) /
+                    (input.od(i) / layer_thickness);
+
+                // for b1, find the contribution to atmo b1
+                double denom = (input.ssa(i) * input.od(i) / layer_thickness);
+                double b1_deriv =
+                    0.5 * internal_grad.d_b1(i) *
+                    (input.atmosphere->storage().ssa(idx, input.wavelidx) *
+                        input.atmosphere->storage().total_extinction(
+                            idx, input.wavelidx)) /
+                    denom;
+
+                // to extinction
+                source.deriv(idx) +=
+                    0.5 * internal_grad.d_b1(i) *
+                    input.atmosphere->storage().ssa(idx, input.wavelidx) *
+                    (input.atmosphere->storage().leg_coeff(1, idx,
+                                                            input.wavelidx) -
+                        input.b1(i)) /
+                    denom;
+
+                // to ssa
+                source.deriv(idx) += 0.5 * internal_grad.d_b1(i) *
+                                    input.atmosphere->storage().total_extinction(
+                                        idx, input.wavelidx) *
+                                    (input.atmosphere->storage().leg_coeff(
+                                        1, idx, input.wavelidx) -
+                                    input.b1(i)) /
+                                    denom;
+                // To scattering derivatives
+                for (int k = 0;
+                        k < input.atmosphere->num_scattering_deriv_groups(); ++k) {
+                    source.deriv(input.atmosphere->scat_deriv_start_index() +
+                                    k * n + idx) +=
+                        input.atmosphere->storage().d_leg_coeff(
+                            1, idx, input.wavelidx, k) *
+                        b1_deriv;
+                }
+            }
+
+            if constexpr (has_thermal<Source>()) {
+                const double thermal_top = input.atmosphere->storage().emission_source(top_atmo_idx);
+                const double thermal_bottom =
+                    input.atmosphere->storage().emission_source(bottom_atmo_idx);
+
+                // This is where it gets a little trickier
+                // b0 = thermal_top, b1 = -log(thermal_bottom / thermal_top) / layer_thickness
+
+                source.deriv(input.atmosphere->emission_deriv_start_index() + top_atmo_idx) +=
+                    internal_grad.d_thermal_b0(i);
+
+                // But the b1 derivatives have contributions to top, bottom, and layer thickness (which maps to extinction)
+                double b1_deriv = internal_grad.d_thermal_b1(i);
+
+                // derivatives are
+                // db1 / d thermal_top = 1 / (layer_thickness * thermal_top)
+                // db1 / d thermal_bottom = -1 / (layer_thickness * thermal_bottom)
+                // db1 / d layer_thickness = -b1 / layer_thickness
+
+                source.deriv(input.atmosphere->emission_deriv_start_index() + top_atmo_idx) +=
+                    b1_deriv / (layer_thickness * thermal_top);
+                source.deriv(input.atmosphere->emission_deriv_start_index() + bottom_atmo_idx) +=
+                    -b1_deriv / (layer_thickness * thermal_bottom);
+                
+                // extinction contributes equally to top and bottom
+                for(const auto& idx : {top_atmo_idx, bottom_atmo_idx}) {
+                    source.deriv(idx) +=
+                        b1_deriv * input.b1_thermal(i) * 0.5 /
+                        layer_thickness;
+                }
+            }
+        }
+
+        // Albedo derivatives
+        for (int i = 0; i < input.atmosphere->surface().num_deriv(); ++i) {
+            source.deriv(input.atmosphere->surface_deriv_start_index() + i) +=
+                internal_grad.d_albedo;
+        }
+
+        if constexpr (has_thermal<Source>()) {
+            // Thermal surface derivatives
+            source.deriv(input.atmosphere->surface_emission_deriv_start_index()) +=
+                internal_grad.d_thermal_surf;
+        }
+    }
+
+
     /**
      * Takes a gradient vector with respect to the input optical depth and maps
      * it back to the gradient vector with respect to the input atmosphere
