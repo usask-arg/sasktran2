@@ -10,6 +10,14 @@ namespace sasktran2::twostream::backprop {
 
     template <SourceType Source> struct GradientMap {
 
+        static constexpr int scalar_offset(int n_layer) {
+            if constexpr (has_thermal<Source>()) {
+                return 5 * n_layer;
+            }
+
+            return 3 * n_layer;
+        }
+
         Eigen::Map<Eigen::RowVectorXd> d_extinction;
         Eigen::Map<Eigen::RowVectorXd> d_ssa;
         Eigen::Map<Eigen::RowVectorXd> d_b1;
@@ -25,32 +33,25 @@ namespace sasktran2::twostream::backprop {
                     d_b1(nullptr, 0),
                     d_thermal_b0(nullptr, 0),
                     d_thermal_b1(nullptr, 0),
-                    d_albedo(*deriv_start),
-                    d_thermal_surf(*(deriv_start))
+                    d_albedo(*(deriv_start + scalar_offset(
+                        atmo.storage().total_extinction.rows() - 1))),
+                    d_thermal_surf(*(deriv_start + scalar_offset(
+                        atmo.storage().total_extinction.rows() - 1) +
+                                      (has_thermal<Source>() ? 1 : 0)))
                     {
                         const int n_layer = atmo.storage().total_extinction.rows() - 1;
-                        int index = 0;
 
                         new (&d_extinction)  Eigen::Map<Eigen::RowVectorXd>(deriv_start, n_layer);
-                        index += n_layer;
 
                         new (&d_ssa) Eigen::Map<Eigen::RowVectorXd>(deriv_start + n_layer, n_layer);
-                        index += n_layer;
 
                         new (&d_b1) Eigen::Map<Eigen::RowVectorXd>(deriv_start + 2 * n_layer, n_layer);
-                        index += n_layer;
 
                         if constexpr (has_thermal<Source>()) {
                             new (&d_thermal_b0) Eigen::Map<Eigen::RowVectorXd>(deriv_start + 3 * n_layer, n_layer);
-                            index += n_layer;
 
                             new (&d_thermal_b1) Eigen::Map<Eigen::RowVectorXd>(deriv_start + 4 * n_layer, n_layer);
-                            index += n_layer;
                         }
-
-                        d_albedo = deriv_start[index];
-                        index += 1;
-                        d_thermal_surf = deriv_start[index];
                     }
     };
 
