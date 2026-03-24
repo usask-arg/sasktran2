@@ -82,17 +82,18 @@ namespace sasktran2::twostream::backprop {
                 source.deriv(idx) +=
                     0.5 * internal_grad.d_extinction(i) * layer_thickness;
 
-                // For SSA,
+                // For SSA, mapping to ssa
                 source.deriv(idx + n) +=
                     0.5 * internal_grad.d_ssa(i) *
                     input.atmosphere->storage().total_extinction(
                         idx, input.wavelidx) /
                     (input.od(i) / layer_thickness);
-
-                source.deriv(idx + n) +=
+                
+                // and extinction contribution
+                source.deriv(idx) +=
                     0.5 * internal_grad.d_ssa(i) *
-                    input.atmosphere->storage().total_extinction(
-                        idx, input.wavelidx) /
+                    (input.atmosphere->storage().ssa(
+                        idx, input.wavelidx) - input.ssa(i)) /
                     (input.od(i) / layer_thickness);
 
                 // for b1, find the contribution to atmo b1
@@ -114,7 +115,7 @@ namespace sasktran2::twostream::backprop {
                     denom;
 
                 // to ssa
-                source.deriv(idx) +=
+                source.deriv(idx + n) +=
                     0.5 * internal_grad.d_b1(i) *
                     input.atmosphere->storage().total_extinction(
                         idx, input.wavelidx) *
@@ -135,10 +136,10 @@ namespace sasktran2::twostream::backprop {
 
             if constexpr (has_thermal<Source>()) {
                 const double thermal_top =
-                    input.atmosphere->storage().emission_source(top_atmo_idx);
+                    input.atmosphere->storage().emission_source(top_atmo_idx, input.wavelidx);
                 const double thermal_bottom =
                     input.atmosphere->storage().emission_source(
-                        bottom_atmo_idx);
+                        bottom_atmo_idx, input.wavelidx);
 
                 // This is where it gets a little trickier
                 // b0 = thermal_top, b1 = -log(thermal_bottom / thermal_top) /
