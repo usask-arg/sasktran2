@@ -370,8 +370,6 @@ def _ground_test_scenarios_backprop():
         }
     )
 
-    scen = scen[-1:]
-
     return scen
 
 
@@ -380,8 +378,7 @@ def test_wf_extinction_ssa_with_emission():
     Checks that the WFs are correct for a VMR constituent When emissions are present
     """
 
-    scens = _test_scenarios()
-    scens = _ground_test_scenarios_backprop()
+    scens = _test_scenarios() + _ground_test_scenarios_backprop()
 
     for scen in scens:
         atmosphere = scen["atmosphere"]
@@ -405,7 +402,9 @@ def test_wf_temperature_with_emission():
     Checks that the WFs are correct for a VMR constituent When emissions are present
     """
 
-    scens = _ground_test_scenarios_backprop()
+    scens = (
+        _test_scenarios() + _ground_test_scenarios() + _ground_test_scenarios_backprop()
+    )
 
     for scen in scens:
         atmosphere = scen["atmosphere"]
@@ -429,7 +428,7 @@ def test_wf_surface_temperature_with_emission():
     Checks that the WFs are correct for surface temperature
     """
 
-    scens = _ground_test_scenarios()
+    scens = _ground_test_scenarios() + _ground_test_scenarios_backprop()
 
     for scen in scens:
         atmosphere = scen["atmosphere"]
@@ -462,7 +461,7 @@ def test_wf_emissivity_with_emission():
     Checks that the WFs are correct for surface emissivity
     """
 
-    scens = _ground_test_scenarios()
+    scens = _ground_test_scenarios() + _ground_test_scenarios_backprop()
 
     for scen in scens:
         atmosphere = scen["atmosphere"]
