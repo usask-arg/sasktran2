@@ -136,11 +136,6 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
         auto& input = m_inputs[threadidx];
         auto& solution = m_solutions[threadidx];
 
-        // Reset cached per-thread buffers so repeated engine calls on the same
-        // object do not retain stale values in entries that are not
-        // overwritten on every solve path.
-        solution.init(m_geometry.size() - 1);
-
         {
             ZoneScopedN("Twostream Input Calcultaion");
             input.calculate(wavelidx);
@@ -193,10 +188,6 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
         auto& solution = m_solutions[threadidx];
         const auto& input = m_inputs[threadidx];
         auto& internal_gradient = m_internal_gradients[threadidx];
-
-        // Same rationale as in calculate(): ensure no stale source-side
-        // temporaries leak between repeated calls.
-        sources.init(m_geometry.size() - 1);
 
         internal_gradient.setZero();
 

@@ -1283,6 +1283,16 @@ namespace sasktran2::twostream {
                              const Solution<source_type>& solution,
                              Sources<source_type>& sources) {
         ZoneScopedN("twostream post process");
+
+        // Must be computed before any source terms that depend on LOS
+        // attenuation (e.g., E_minus/E_thermal) to avoid using stale values
+        // across repeated engine calls.
+        sources.beamtrans.value.array() =
+            (-input.od.array() / viewing_zenith).exp();
+
+        sources.beamtrans.d_od.array() =
+            -sources.beamtrans.value.array() / viewing_zenith;
+
         if constexpr (has_solar<source_type>()) {
             // Lpsums
             sources.lpsum_plus[0].value.array() =
@@ -1353,12 +1363,6 @@ namespace sasktran2::twostream {
             sources.source.d_transmission.array().setZero();
             sources.source.d_secant.array().setZero();
         }
-
-        sources.beamtrans.value.array() =
-            (-input.od.array() / viewing_zenith).exp();
-
-        sources.beamtrans.d_od.array() =
-            -sources.beamtrans.value.array() / viewing_zenith;
 
         sources.source.value.array().setZero();
         sources.source.d_ssa.array().setZero();
