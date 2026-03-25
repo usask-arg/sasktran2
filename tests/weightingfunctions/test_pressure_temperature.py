@@ -65,12 +65,72 @@ def _test_scenarios():
     return scen
 
 
+def _ground_test_scenarios():
+    config = sk.Config()
+    config.multiple_scatter_source = sk.MultipleScatterSource.TwoStream
+    config.num_streams = 2
+
+    altitude_grid = np.arange(0, 65001, 1000.0)
+
+    geometry = sk.Geometry1D(
+        0.6,
+        0,
+        6327000,
+        altitude_grid,
+        sk.InterpolationMethod.LinearInterpolation,
+        sk.GeometryType.PseudoSpherical,
+    )
+
+    viewing_geo = sk.ViewingGeometry()
+
+    viewing_geo.add_ray(sk.GroundViewingSolar(0.6, 0.0, 0.6, 200000.0))
+
+    wavel = np.array([310, 330, 350, 600])
+
+    atmos = []
+
+    atmosphere = sk.Atmosphere(geometry, config, wavelengths_nm=wavel)
+
+    sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
+
+    atmosphere["rayleigh"] = sk.constituent.Rayleigh()
+
+    atmos.append(atmosphere)
+
+    atmosphere = sk.Atmosphere(geometry, config, wavelengths_nm=wavel)
+
+    sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
+
+    atmosphere["rayleigh"] = sk.constituent.Rayleigh()
+
+    vmr_altitude_grid = np.array([10000.0, 30000.0, 60000.0])
+    atmosphere["ozone"] = sk.constituent.VMRAltitudeAbsorber(
+        sk.optical.O3DBM(), vmr_altitude_grid, np.ones_like(vmr_altitude_grid) * 1e-6
+    )
+
+    atmos.append(atmosphere)
+
+    scen = []
+
+    for atmo in atmos:
+        scen.append(
+            {
+                "config": config,
+                "geometry": geometry,
+                "viewing_geo": viewing_geo,
+                "atmosphere": atmo,
+            }
+        )
+
+    return scen
+
+
 def test_pressure_wf():
     """
     Checks that the pressure weighting function is working correctly
     """
 
-    scens = _test_scenarios()
+    scens = _test_scenarios() + _ground_test_scenarios()
 
     for scen in scens:
         atmosphere = scen["atmosphere"]

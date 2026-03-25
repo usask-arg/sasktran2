@@ -1375,16 +1375,16 @@ namespace sasktran2::twostream {
                 (1 + input.b1_thermal.array() * viewing_zenith);
 
             sources.E_thermal.d_od.array() =
-                (input.b1.array() * input.exp_thermal.array() *
+                (input.b1_thermal.array() * input.exp_thermal.array() *
                      sources.beamtrans.value.array() -
                  input.exp_thermal.array() * sources.beamtrans.d_od.array()) /
-                (1 + input.b1.array() * viewing_zenith);
+                (1 + input.b1_thermal.array() * viewing_zenith);
 
             sources.E_thermal.d_thermal_b1.array() =
                 (input.od.array() * input.exp_thermal.array() *
                      sources.beamtrans.value.array() -
                  viewing_zenith * sources.E_thermal.value.array()) /
-                (1 + input.b1.array() * viewing_zenith);
+                (1 + input.b1_thermal.array() * viewing_zenith);
         }
 
         for (int i = 0; i < num_azimuth<source_type>(); ++i) {
@@ -1640,7 +1640,8 @@ namespace sasktran2::twostream {
                     (input.b0_thermal.array() *
                          (-sources.H_minus[i].d_b1.array() *
                           input.exp_thermal.array()) -
-                     homog.k.d_b1.array() * sources.D_plus[i].value.array()) /
+                     homog.k.d_b1.array() *
+                         sources.D_plus_thermal[i].value.array()) /
                     (input.b1_thermal.array() + homog.k.value.array());
 
                 sources.D_minus_thermal[i].d_b1.array() =

@@ -88,12 +88,12 @@ namespace sasktran2::twostream::backprop {
                     input.atmosphere->storage().total_extinction(
                         idx, input.wavelidx) /
                     (input.od(i) / layer_thickness);
-                
+
                 // and extinction contribution
                 source.deriv(idx) +=
                     0.5 * internal_grad.d_ssa(i) *
-                    (input.atmosphere->storage().ssa(
-                        idx, input.wavelidx) - input.ssa(i)) /
+                    (input.atmosphere->storage().ssa(idx, input.wavelidx) -
+                     input.ssa(i)) /
                     (input.od(i) / layer_thickness);
 
                 // for b1, find the contribution to atmo b1
@@ -123,6 +123,7 @@ namespace sasktran2::twostream::backprop {
                                                            input.wavelidx) -
                      input.b1(i)) /
                     denom;
+
                 // To scattering derivatives
                 for (int k = 0;
                      k < input.atmosphere->num_scattering_deriv_groups(); ++k) {
@@ -136,10 +137,11 @@ namespace sasktran2::twostream::backprop {
 
             if constexpr (has_thermal<Source>()) {
                 const double thermal_top =
-                    input.atmosphere->storage().emission_source(top_atmo_idx, input.wavelidx);
+                    input.atmosphere->storage().emission_source(top_atmo_idx,
+                                                                input.wavelidx);
                 const double thermal_bottom =
-                    input.atmosphere->storage().emission_source(
-                        bottom_atmo_idx, input.wavelidx);
+                    input.atmosphere->storage().emission_source(bottom_atmo_idx,
+                                                                input.wavelidx);
 
                 // This is where it gets a little trickier
                 // b0 = thermal_top, b1 = -log(thermal_bottom / thermal_top) /

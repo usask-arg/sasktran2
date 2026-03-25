@@ -147,8 +147,7 @@ namespace sasktran2::twostream {
             // Layers start at TOA and go down
             for (int i = 0; i < nlyr; ++i) {
                 const int top_atmo_idx = nlyr - i; // Top atmo idx of the layer
-                const int bottom_atmo_idx =
-                    nlyr - i - 1; // Bottom atmo idx of the layer
+                const int bottom_atmo_idx = nlyr - i - 1; // Bottom atmo idx
 
                 const double layer_thickness =
                     geometry_layers->layer_ceiling()(i) -
@@ -178,8 +177,8 @@ namespace sasktran2::twostream {
                         thermal_source(bottom_atmo_idx);
 
                     // from top of layer to bottom, thermal = b0 exp(-b1 x)
-                    // at x = 0, thermal = b0, at x = layer thickness, thermal =
-                    // b0 exp(-b1 * layer thickness)
+                    // at x = 0, thermal = b0, at x = layer thickness,
+                    // thermal = b0 exp(-b1 * layer thickness)
                     // => b1 = -log(thermal_bottom / thermal_top) /
                     // layer_thickness
                     b0_thermal(i) = thermal_top;
@@ -188,45 +187,6 @@ namespace sasktran2::twostream {
                 }
             }
 
-            /*
-            // Start by interpolating extinction to the layers
-            od.noalias() =
-                (interpolating_matrix *
-                 (atmosphere->storage().total_extinction.col(wavelidx)));
-
-            // And interpolate the scattering extinction
-            ssa.noalias() = (interpolating_matrix *
-                   (atmosphere->storage().ssa.col(wavelidx).cwiseProduct(
-                       atmosphere->storage().total_extinction.col(wavelidx))));
-
-            // We also need to interpolate the first legendre coefficient
-            // multiplied by the scattering extinction
-
-
-            b1.noalias() = (interpolating_matrix *
-                  (atmosphere->storage().ssa.col(wavelidx).cwiseProduct(
-                       atmosphere->storage().total_extinction.col(wavelidx)))
-                      .cwiseProduct(grid_b1));
-
-            // Then we can divide by the total scattering extinction to get b1
-            b1.array() /= ssa.array();
-
-            // Then ssa will be the scattering extinction divided by the total
-            // extinction
-            ssa.array() /= od.array();
-
-            // Dither the ssa if it's exactly 1
-
-            // And we multiply by the thickness to get the optical depth
-            od.array() *= (geometry_layers->layer_ceiling().array() -
-                           geometry_layers->layer_floor().array());
-
-            if constexpr (has_thermal<source_type>()) {
-                b0_thermal.noalias() = interpolating_matrix *
-                             atmosphere->storage().emission_source.col(wavelidx);
-                b1_thermal.setZero();
-            }
-            */
             ssa = ssa.cwiseMin(1 - 1e-9);
             albedo =
                 atmosphere->surface().brdf(wavelidx, 0, 0, 0)(0, 0) * EIGEN_PI;
