@@ -21,7 +21,7 @@ jobs:
         # here to be able to comment on the PR
 
       - name: Download benchmarks
-        uses: dawidd6/action-download-artifact@v12
+        uses: dawidd6/action-download-artifact@v20
         with:
           workflow: benchmark.yml
           workflow_conclusion: success
@@ -30,7 +30,7 @@ jobs:
 
       - name: Read the PR number
         id: pr_number_reader
-        uses: juliangruber/read-file-action@v1.1.7
+        uses: juliangruber/read-file-action@v1.1.8
         with:
           path: pr_number.txt
 
@@ -42,7 +42,7 @@ jobs:
 
       - name: Download benchmarks
         if: ${{ steps.pr_number_reader.outputs.content != '' }}
-        uses: dawidd6/action-download-artifact@v12
+        uses: dawidd6/action-download-artifact@v20
         with:
           workflow: benchmark.yml
           workflow_conclusion: success
@@ -52,7 +52,7 @@ jobs:
       - name: Read benchmark output 1
         if: ${{ steps.pr_number_reader.outputs.content != '' }}
         id: pr_vs_master_changed
-        uses: juliangruber/read-file-action@v1.1.7
+        uses: juliangruber/read-file-action@v1.1.8
         with:
           path: benchmarks.log
 

@@ -19,7 +19,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up conda environment
-        uses: mamba-org/setup-micromamba@v2
+        uses: mamba-org/setup-micromamba@v3
         with:
           environment-file: ${{env.CONDA_ENV_FILE}}
 
@@ -35,7 +35,7 @@ jobs:
           cd docs/performance_book
           make html
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: performance_book
           path: docs/performance_book/build/html
@@ -54,7 +54,7 @@ jobs:
           ref: main
 
       - name: Set up conda environment
-        uses: mamba-org/setup-micromamba@v2
+        uses: mamba-org/setup-micromamba@v3
         with:
           environment-file: ${{env.CONDA_ENV_FILE}}
 
@@ -75,7 +75,7 @@ jobs:
           cd docs/performance_book
           make html
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: performance_book_main
           path: docs/performance_book/build/html
