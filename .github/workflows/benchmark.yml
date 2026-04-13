@@ -20,7 +20,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up conda environment
-        uses: mamba-org/setup-micromamba@v2
+        uses: mamba-org/setup-micromamba@v3
         with:
           conda-version: "24.1.2"
           environment-file: ${{env.CONDA_ENV_FILE}}
@@ -52,7 +52,7 @@ jobs:
               | tee benchmarks.log
         working-directory: ${{ env.ASV_DIR }}
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: asv-benchmark-results-${{ runner.os }}
@@ -74,7 +74,7 @@ jobs:
         run: echo -n > pr_number.txt
 
       - name: Upload results as artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: pr_number
           path: pr_number.txt
