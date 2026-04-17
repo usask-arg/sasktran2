@@ -55,6 +55,7 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<config::SpectralGridMode>()?;
     m.add_class::<config::LogLevel>()?;
     m.add_class::<config::PyConfig>()?;
+    m.add_class::<config::FluxType>()?;
 
     // Geometry objects
     m.add_class::<geometry::PyGeometry1D>()?;

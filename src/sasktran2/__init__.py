@@ -35,6 +35,7 @@ from ._core_rust import (
     StokesBasis,
     ThreadingLib,
     ThreadingModel,
+    FluxType
 )
 from .atmosphere import Atmosphere
 from .config import Config

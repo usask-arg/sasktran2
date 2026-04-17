@@ -511,4 +511,29 @@ int sk_config_get_num_flux_types(Config* config, int* num_flux_types) {
     *num_flux_types = static_cast<int>(config->impl.get_flux_types().size());
     return 0; // Success
 }
+
+int sk_config_set_flux_types(Config* config, const int* flux_types, int num_flux_types) {
+    if (config == nullptr || flux_types == nullptr) {
+        return -1; // Error: null pointer
+    }
+    std::vector<sasktran2::Config::FluxType> flux_type_vec;
+    for (int i = 0; i < num_flux_types; ++i) {
+        int ft = flux_types[i];
+        flux_type_vec.push_back(static_cast<sasktran2::Config::FluxType>(ft));
+    }
+    config->impl.set_flux_types(flux_type_vec);
+    return 0; // Success
+}
+
+int sk_config_get_flux_types(Config* config, int* flux_types) {
+    if (config == nullptr || flux_types == nullptr) {
+        return -1; // Error: null pointer
+    }
+    const auto& flux_type_vec = config->impl.get_flux_types();
+    for (size_t i = 0; i < flux_type_vec.size(); ++i) {
+        flux_types[i] = static_cast<int>(flux_type_vec[i]);
+    }
+    return 0; // Success
+}
+
 }

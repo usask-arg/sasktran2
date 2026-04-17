@@ -12,6 +12,7 @@ from sasktran2._core_rust import (
     StokesBasis,
     ThreadingLib,
     ThreadingModel,
+    FluxType
 )
 
 
@@ -633,3 +634,26 @@ class Config:
             Each wavelength grid point represents an integrated line shape over the radiative transfer engine.
         """
         self._config.spectral_grid_mode = mode
+
+    @property
+    def flux_types(self):
+        return self._config.flux_types
+
+    @flux_types.setter
+    def flux_types(self, flux_types: list[FluxType]):
+        """
+        Sets the flux types to calculate.  By default, Upwelling and Downwelling fluxes are calculated.
+
+        `sasktran2.FluxType.Upwelling`
+            Calculate the upwelling flux at each grid point
+
+        `sasktran2.FluxType.Downwelling`
+            Calculate the downwelling flux at each grid point
+
+        `sasktran2.FluxType.Actinic`
+            Calculate the actinic flux at each grid point
+
+        `sasktran2.FluxType.Divergence`
+            Calculate the flux divergence at each grid point
+        """
+        self._config.flux_types = flux_types

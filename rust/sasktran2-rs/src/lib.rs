@@ -12,3 +12,4 @@ pub mod mie;
 pub mod optical;
 pub mod prelude;
 pub mod util;
+pub mod photchem;

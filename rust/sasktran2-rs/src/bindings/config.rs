@@ -85,6 +85,15 @@ pub enum SpectralGridMode {
     EngineIntegratedLineShape, // Lineshape is specified for each grid point, radiative transfer engine integrates over the lineshape
 }
 
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FluxType {
+    Upwelling = 0,
+    Downwelling = 1,
+    Actinic = 2,
+    Divergence = 3
+}
+
 /// A wrapper around the c++ Config object, implemented on the c++ side, see
 /// cpp/include/sasktran2/config.h
 pub struct Config {
@@ -912,6 +921,50 @@ impl Config {
             Ok(num_flux_types as usize)
         }
     }
+
+    pub fn with_flux_types(&mut self, flux_types: &[FluxType]) -> Result<&mut Self> {
+        let flux_types_i32: Vec<i32> = flux_types.iter().map(|ft| *ft as i32).collect();
+        let error_code = unsafe {
+            ffi::sk_config_set_flux_types(
+                self.config,
+                flux_types_i32.as_ptr(),
+                flux_types_i32.len() as i32,
+            )
+        };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting flux types: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn get_flux_types(&self) -> Result<Vec<FluxType>> {
+        let num_flux_types = self.num_flux_types()?;
+        let mut flux_types_i32: Vec<i32> = vec![0; num_flux_types];
+        let error_code = unsafe {
+            ffi::sk_config_get_flux_types(
+                self.config,
+                flux_types_i32.as_mut_ptr()
+            )
+        };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting flux types: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(flux_types_i32
+                .iter()
+                .map(|&ft| unsafe { std::mem::transmute::<i32, FluxType>(ft) })
+                .collect())
+        }
+    } 
+
 }
 
 impl Drop for Config {

@@ -653,6 +653,15 @@ namespace sasktran2 {
         }
 
         /**
+         * @brief Set the flux types to calculate
+         *
+         * @param flux_types
+         */
+        void set_flux_types(const std::vector<FluxType>& flux_types) {
+            m_flux_types = flux_types;
+        }
+
+        /**
          * @brief Validates that the config is valid
          *
          */
