@@ -60,6 +60,7 @@
 
 #define __EMSCRIPTEN__
 #define dgbsv_ scipy_dgbsv_64_
+#define dgesv_ scipy_dgesv_64_
 #define dgbtrs_ scipy_dgbtrs_64_
 #define dgeev_ scipy_dgeev_64_
 #include <lapack.h>

@@ -1,6 +1,7 @@
 use std::any;
 
 use crate::prelude::*;
+use crate::bindings::lapack::dgesv;
 
 use super::types::{ChemicalReaction, Molecule, PhotoReaction, MoleculeBase, MoleculeMap};
 
@@ -87,6 +88,8 @@ pub trait PhotochemicalModel {
                 }
             }
         }
+
+        let solution = dgesv(&a_matrix, &sources.insert_axis(Axis(1)))?;
 
         Ok(())
     }

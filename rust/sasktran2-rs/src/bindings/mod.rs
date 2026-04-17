@@ -7,6 +7,7 @@ pub mod deriv_mapping;
 pub mod engine;
 pub mod geodetic;
 pub mod geometry;
+pub mod lapack;
 pub mod output;
 pub mod prelude;
 pub mod surface;
