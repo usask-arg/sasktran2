@@ -14,6 +14,7 @@ mod optical;
 mod output;
 mod pyrebasis;
 mod viewing_geometry;
+mod photchem;
 
 use pyo3::prelude::*;
 
@@ -100,6 +101,9 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // rebasis
     m.add_class::<pyrebasis::basis::PyBasis>()?;
     m.add_class::<pyrebasis::grid::PyGrid>()?;
+
+    // Photochemistry
+    m.add_class::<photchem::yankovsky::PyYankovsky>()?;
 
     Ok(())
 }

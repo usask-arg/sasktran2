@@ -10,25 +10,14 @@ from sasktran2.viewinggeo.wrappers import ViewingGeometry
 def actinic_flux():
     altitudes_m = np.arange(0.0, 100.0e3, 1000.0)
     cos_sza = 0.5
-    bands = [
-        {"name": "o3",
-         "species": "o3",
-         "wavelegth_range_nm": (280, 800),},
-        {"name": "o2_762",
-         "species": "o2",
-         "wavelegth_range_nm": (755, 775),},
-        {"name": "o2_689",
-         "species": "o2",
-         "wavelegth_range_nm": (685, 700),},
-    ]
 
-    species_list = ["o3", "o2"]
+    species_list = ["o3", "o2", "n2"]
 
     config = sk.Config()
 
     config.single_scatter_source = sk.SingleScatterSource.DiscreteOrdinates
     config.multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
-    config.flux_types = [sk.FluxType.Actinic, sk.FluxType.Upwelling, sk.FluxType.Downwelling]
+    config.flux_types = [sk.FluxType.Actinic]
     config.num_streams = 4
     config.num_forced_azimuth = 1
 
@@ -59,13 +48,15 @@ def actinic_flux():
     optical = {
         "o3": sk.optical.O3DBM(),
         "h2o": sk.optical.AERLineAbsorber("H2O"),
-        "o2": sk.optical.AERLineAbsorber("O2")
+        "o2": sk.optical.AERLineAbsorber("O2"),
+        "n2": sk.optical.AERLineAbsorber("N2")
     }
 
     atmosphere["o3"] = sk.climatology.mipas.constituent("o3", optical["o3"])
     atmosphere["rayleigh"] = sk.constituent.Rayleigh()
     atmosphere["h2o"] = sk.climatology.mipas.constituent("h2o", optical["h2o"])
     atmosphere["o2"] = sk.climatology.mipas.constituent("o2", optical["o2"])
+    atmosphere["n2"] = sk.climatology.mipas.constituent("n2", optical["n2"])
     atmosphere["solar"] = sk.constituent.SolarIrradiance(photon_units=True, mode="average")
 
     engine = sk.Engine(config, geometry, viewing)
@@ -78,12 +69,23 @@ def actinic_flux():
     output["actinic_flux"] = (("wavelength", "altitude"), actinic_flux)
 
 
+    output["temperature"] = (["altitude"], atmosphere.temperature_k)
+
     for species in species_list:
         optical_property = optical[species]
 
         oq = optical_property.atmosphere_quantities(atmosphere)
 
         output[species + "_xs"] = (("wavelength", "altitude"), oq.extinction.T)
+
+        numden = np.interp(altitudes_m, 
+            atmosphere[species].altitudes_m, 
+                atmosphere[species].vmr) * atmosphere.state_equation.dry_air_numberdensity['N']
+        
+        output[species + "_density"] = (["altitude"], numden)
+
+    output["o_density"] = output["o2_density"] * 0.01
+    output["co2_density"] = 400e-6 * atmosphere.state_equation.dry_air_numberdensity['N']
 
     return output
 

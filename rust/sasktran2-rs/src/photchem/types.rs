@@ -33,20 +33,53 @@ pub struct Molecule {
 
 pub struct MoleculeMap {
     molecule_to_index: HashMap<Molecule, usize>,
+    background_molecules: std::collections::HashSet<Molecule>,
 }
 
 impl MoleculeMap {
-    pub fn new(molecules: &[Molecule]) -> Self {
+    pub fn new(molecules: &[Molecule], densities: &HashMap<String, f64>) -> Self {
         let mut molecule_to_index = HashMap::new();
 
-        // todo: sort this and implement state/non-state distinction
+        let is_background = |m: &Molecule| {
+            String::try_from(m.clone())
+                .ok()
+                .map(|name| densities.contains_key(&name))
+                .unwrap_or(false)
+        };
 
-        for (idx, molecule) in molecules.iter().cloned().enumerate() {
-            molecule_to_index.entry(molecule).or_insert(idx);
+        // Split molecules into state (not in densities) and background (in densities).
+        // State molecules are indexed first (0..n_state), background molecules after.
+        let (state_molecules, background_molecules): (Vec<_>, Vec<_>) = molecules
+            .iter()
+            .cloned()
+            .partition(|m| !is_background(m));
+
+        let mut idx = 0;
+        for molecule in state_molecules {
+            molecule_to_index.entry(molecule).or_insert_with(|| {
+                let i = idx;
+                idx += 1;
+                i
+            });
+        }
+        for molecule in background_molecules {
+            molecule_to_index.entry(molecule).or_insert_with(|| {
+                let i = idx;
+                idx += 1;
+                i
+            });
         }
 
+        let background_molecules = molecules
+            .iter()
+            .filter(|m| is_background(m))
+            .cloned()
+            .collect();
 
-        Self { molecule_to_index }
+        Self {
+            molecule_to_index,
+            background_molecules,
+        }
     }
 
     pub fn index(&self, molecule: &Molecule) -> Option<usize> {
@@ -58,15 +91,30 @@ impl MoleculeMap {
     }
 
     pub fn state_size(&self) -> usize {
-        // number of molecules where is_in_state is true
-        self.molecule_to_index
-            .keys()
-            .filter(|m| self.is_in_state(m))
-            .count()
+        self.molecule_to_index.len() - self.background_molecules.len()
     }
 
     pub fn is_in_state(&self, molecule: &Molecule) -> bool {
-        false
+        !self.background_molecules.contains(molecule)
+    }
+
+    pub fn state_index_to_molecule_names(&self) -> Vec<String> {
+        let mut entries: Vec<(usize, String)> = self
+            .molecule_to_index
+            .iter()
+            .filter_map(|(molecule, index)| {
+                if self.is_in_state(molecule) {
+                    let name = String::try_from(molecule.clone())
+                        .unwrap_or_else(|_| format!("{:?}", molecule));
+                    Some((*index, name))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        entries.sort_by_key(|(index, _)| *index);
+        entries.into_iter().map(|(_, name)| name).collect()
     }
 }
 
@@ -528,7 +576,7 @@ mod tests {
             Molecule::from_str("O3").expect("O3 should parse"),
         ];
 
-        let molecule_map = MoleculeMap::new(&molecules);
+        let molecule_map = MoleculeMap::new(&molecules, &HashMap::new());
 
         assert_eq!(molecule_map.index(&molecules[0]), Some(0));
         assert_eq!(molecule_map.index(&molecules[1]), Some(1));
@@ -542,7 +590,7 @@ mod tests {
             Molecule::from_str("O2(a, v=1)").expect("O2(a, v=1) should parse"),
         ];
 
-        let molecule_map = MoleculeMap::new(&molecules);
+        let molecule_map = MoleculeMap::new(&molecules, &HashMap::new());
         let missing = Molecule::from_str("CO2").expect("CO2 should parse");
 
         assert_eq!(molecule_map.index(&molecules[0]), Some(0));
