@@ -17,9 +17,10 @@ def actinic_flux():
 
     config.single_scatter_source = sk.SingleScatterSource.DiscreteOrdinates
     config.multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
-    config.flux_types = [sk.FluxType.Actinic]
+    config.flux_types = [sk.FluxType.Actinic, sk.FluxType.Downwelling, sk.FluxType.Upwelling]
     config.num_streams = 4
     config.num_forced_azimuth = 1
+    config.num_threads = 8
 
     geometry = sk.Geometry1D(
         cos_sza,
@@ -30,7 +31,7 @@ def actinic_flux():
         sk.GeometryType.PlaneParallel
     )
 
-    wavel_nm = np.arange(280, 800, 0.01)
+    wavel_nm = np.arange(150, 800, 0.001)
 
     viewing = sk.ViewingGeometry()
 
@@ -48,7 +49,7 @@ def actinic_flux():
     optical = {
         "o3": sk.optical.O3DBM(),
         "h2o": sk.optical.AERLineAbsorber("H2O"),
-        "o2": sk.optical.AERLineAbsorber("O2"),
+        "o2": sk.optical.AERLineAbsorber("O2") + sk.optical.XsecAbsorber("/Users/djz828/dev/sasktran2/cross-sections/xs/O2SCHRUNG"),
         "n2": sk.optical.AERLineAbsorber("N2")
     }
 
@@ -84,7 +85,7 @@ def actinic_flux():
         
         output[species + "_density"] = (["altitude"], numden)
 
-    output["o_density"] = output["o2_density"] * 0.01
+    output["o_density"] = output["o2_density"] * 0.005
     output["co2_density"] = 400e-6 * atmosphere.state_equation.dry_air_numberdensity['N']
 
     return output

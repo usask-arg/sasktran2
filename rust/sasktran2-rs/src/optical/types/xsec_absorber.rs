@@ -76,13 +76,15 @@ fn read_hitran_header(line: &str) -> Header {
     // The general pattern is: wvnum_start wvnum_end num_points temperature pressure [...]
     // We need at least 5 numbers
     if numbers.len() >= 5 {
-        // Find num_points - it should be a large integer value (> 1000 typically)
-        let mut num_points_idx = 2; // Default: 3rd number
-
-        for (idx, num) in numbers.iter().enumerate() {
-            if *num > 1000.0 && num.fract().abs() < 0.0001 {
-                num_points_idx = idx;
-                break;
+        // Most xsc headers put num_points in the 3rd numeric field.
+        // Keep fallback logic for variants where this assumption does not hold.
+        let mut num_points_idx = 2;
+        if !(numbers[2] > 0.0 && numbers[2].fract().abs() < 0.0001) {
+            for (idx, num) in numbers.iter().enumerate() {
+                if *num > 0.0 && num.fract().abs() < 0.0001 {
+                    num_points_idx = idx;
+                    break;
+                }
             }
         }
 
@@ -417,6 +419,93 @@ impl OpticalProperty for XsecDatabase {
 
     fn is_scatterer(&self) -> bool {
         false
+    }
+}
+
+#[cfg(test)]
+mod generated_format_tests {
+    use super::read_fwf_xsec;
+    use std::{
+        fs,
+        path::PathBuf,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    fn write_temp_xsc(contents: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after UNIX_EPOCH")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("xsec_absorber_test_{nonce}.xsc"));
+        fs::write(&path, contents).expect("failed to write temporary xsc test file");
+        path
+    }
+
+    fn build_block(temperature_k: f64, start_value_cm2: f64) -> String {
+        let num_points = 1001usize;
+        let wv_start = 49382.7160;
+        let wv_end = 50382.7160;
+        let pressure = 101325.25;
+
+        let mut out = format!(
+            "   O2-SR {wv_start:10.4} {wv_end:10.4} {num_points:8} {temperature_k:8.1} {pressure:8.2}  0.000E+00  0  GENERATED\n"
+        );
+
+        let mut i = 0usize;
+        while i < num_points {
+            let mut line = String::new();
+            for j in 0..10 {
+                let k = i + j;
+                if k >= num_points {
+                    break;
+                }
+                let value = start_value_cm2 + (k as f64) * 1.0e-24;
+                line.push_str(&format!("{value:10.3E}"));
+            }
+            out.push_str(&line);
+            out.push('\n');
+            i += 10;
+        }
+
+        out
+    }
+
+    #[test]
+    fn reads_generated_style_fixed_width_blocks() {
+        // Header shape mirrors the generated Schumann-Runge file format.
+        let data = format!("{}{}", build_block(90.0, 1.0e-20), build_block(300.0, 2.0e-20));
+
+        let path = write_temp_xsc(&data);
+        let db = read_fwf_xsec(path.clone()).expect("parser should load valid generated-style xsc");
+        let _ = fs::remove_file(path);
+
+        assert_eq!(db.0.len(), 2);
+        assert!((db.0[0].temperature_k - 90.0).abs() < 1e-12);
+        assert!((db.0[1].temperature_k - 300.0).abs() < 1e-12);
+        assert_eq!(db.0[0].xsec.len(), 1001);
+
+        // Reader converts cm^2 to m^2 by dividing by 1e4.
+        assert!((db.0[0].xsec[0] - 1.0e-24).abs() < 1e-30);
+        assert!((db.0[1].xsec[0] - 2.0e-24).abs() < 1e-30);
+
+        // Wavenumber grid is reconstructed from start/end/num_points in header.
+        assert!((db.0[0].wvnum.x[0] - 49382.7160).abs() < 1e-9);
+        assert!((db.0[0].wvnum.x[1000] - 50382.7160).abs() < 1e-9);
+    }
+
+    #[test]
+    #[ignore = "Local verification test: requires generated cross-sections/xs/O2SCHRUNG file"]
+    fn reads_generated_o2_schumann_runge_file() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../cross-sections/xs/O2SCHRUNG");
+
+        let db = read_fwf_xsec(path).expect("generated O2SCHRUNG should be parseable");
+
+        assert_eq!(db.0.len(), 2);
+        assert!((db.0[0].temperature_k - 90.0).abs() < 1e-6);
+        assert!((db.0[1].temperature_k - 300.0).abs() < 1e-6);
+        assert_eq!(db.0[0].xsec.len(), db.0[1].xsec.len());
+        assert!(db.0[0].xsec.len() > 100);
     }
 }
 #[cfg(test)]

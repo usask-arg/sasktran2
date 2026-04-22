@@ -249,7 +249,8 @@ pub struct PhotoReaction {
     pub products: Vec<Molecule>,
     pub quantum_yield: Option<f64>, // Optional quantum yield for photochemical reactions
     pub excitation_band: Option<String>,
-    pub quantum_yield_wavelength_nm: f64
+    pub quantum_yield_wavelength_nm: f64,
+    pub wavelength_range_nm: Option<(f64, f64)>,
 }
 
 impl PhotoReaction {
@@ -313,6 +314,7 @@ impl PhotoReaction {
             quantum_yield: None,
             excitation_band,
             quantum_yield_wavelength_nm: 0.0,
+            wavelength_range_nm: None,
         })
     }
 
@@ -323,6 +325,16 @@ impl PhotoReaction {
 
     pub fn with_toa_rate_constant(mut self, k: f64) -> Self {
         self.toa_rate_constant = k;
+        self
+    }
+
+    pub fn with_wavelength_range_nm(mut self, min_nm: f64, max_nm: f64) -> Self {
+        self.wavelength_range_nm = Some((min_nm, max_nm));
+        self
+    }
+
+    pub fn with_band_center_nm(mut self, center_nm: f64, half_width_nm: f64) -> Self {
+        self.wavelength_range_nm = Some((center_nm - half_width_nm, center_nm + half_width_nm));
         self
     }
 
