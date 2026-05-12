@@ -176,3 +176,23 @@ class XsecAbsorber(OpticalProperty):
     def _into_rust_object(self):
         """Return the internal Rust object."""
         return self._internal
+
+
+class O2SchumannRunge(XsecAbsorber):
+    def __init__(self) -> None:
+        """
+        Schumann runge absorption taken from https://lweb.cfa.harvard.edu/amp/ampdata/cfamols.html.  Includes both the
+        Continuum from 130 to 175 nm and the Schumann-Runge bands from 175 to 203 nm.  The data is reduced down to 0.1 nm resolution and is provided in vacuum wavelengths.
+
+        Raises
+        ------
+        OSError
+            If the specified file cannot be found
+        """
+        data_file = StandardDatabase().path("cross_sections/o2/O2SCHRUNG")
+
+        if data_file.exists():
+            super().__init__(data_file)
+        else:
+            msg = f"Could not find O2 Schumann-Runge database at {data_file}"
+            raise OSError(msg)

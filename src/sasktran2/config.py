@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from sasktran2._core_rust import (
     EmissionSource,
+    FluxType,
     InputValidationMode,
     LogLevel,
     MultipleScatterSource,
@@ -12,7 +13,6 @@ from sasktran2._core_rust import (
     StokesBasis,
     ThreadingLib,
     ThreadingModel,
-    FluxType
 )
 
 

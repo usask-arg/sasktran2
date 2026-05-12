@@ -963,7 +963,7 @@ impl Config {
                 .map(|&ft| unsafe { std::mem::transmute::<i32, FluxType>(ft) })
                 .collect())
         }
-    } 
+    }
 
 }
 

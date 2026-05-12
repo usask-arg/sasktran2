@@ -512,7 +512,8 @@ int sk_config_get_num_flux_types(Config* config, int* num_flux_types) {
     return 0; // Success
 }
 
-int sk_config_set_flux_types(Config* config, const int* flux_types, int num_flux_types) {
+int sk_config_set_flux_types(Config* config, const int* flux_types,
+                             int num_flux_types) {
     if (config == nullptr || flux_types == nullptr) {
         return -1; // Error: null pointer
     }
@@ -535,5 +536,4 @@ int sk_config_get_flux_types(Config* config, int* flux_types) {
     }
     return 0; // Success
 }
-
 }

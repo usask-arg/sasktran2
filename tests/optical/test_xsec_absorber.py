@@ -305,3 +305,9 @@ def test_xsec_from_lbl_database_common_species():
     for species in common_species:
         absorber = sk.optical.XsecAbsorber.from_lbl_database(species)
         assert absorber is not None, f"Failed to load {species}"
+
+
+def test_xsec_o2schumann_runge():
+    o2_schumann = sk.optical.O2SchumannRunge()
+
+    assert o2_schumann is not None

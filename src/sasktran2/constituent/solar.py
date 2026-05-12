@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from scipy import constants
+
 from sasktran2.atmosphere import Atmosphere
 from sasktran2.solar import SolarModel
-from scipy import constants
 
 from .base import Constituent
 

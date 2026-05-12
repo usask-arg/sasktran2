@@ -108,7 +108,8 @@ int sk_config_set_log_level(Config* config, int log_level);
 // Flux configuraton
 int sk_config_get_num_flux_types(Config* config, int* num_flux_types);
 int sk_config_get_flux_types(Config* config, int* flux_types);
-int sk_config_set_flux_types(Config* config, const int* flux_types, int num_flux_types);
+int sk_config_set_flux_types(Config* config, const int* flux_types,
+                             int num_flux_types);
 
 #ifdef __cplusplus
 }

@@ -24,7 +24,7 @@ pub trait PhotochemicalModel {
                     let einstein_coefficient = reaction.einstein_coefficient.as_ref()
                         .ok_or_else(|| anyhow!("Einstein coefficient missing for unimolecular reaction"))?;
 
-                    let branch = reaction.quantum_yield.unwrap_or(1.0);
+                    let branch = 1.0; // branching ratio is included in the rate constant
 
                     let rate = einstein_coefficient(temperature) * branch;
 
@@ -54,7 +54,7 @@ pub trait PhotochemicalModel {
                         let reactant_density = densities
                             .get(&reactant_str)
                             .or_else(|| densities.get(&reactant.base_type.to_string()))
-                            .ok_or_else(|| anyhow!("Density not provided for background reactant '{}'", reactant_str))?;
+                            .ok_or_else(|| anyhow!("Density not provided for background reactant '{}'", reactant_str))? / 1.0e6; // convert from cm^-3 to m^-3
 
                         for product in &reaction.products {
                             if mol_map.is_in_state(product) {
@@ -89,7 +89,7 @@ pub trait PhotochemicalModel {
                     let collider_density = densities
                         .get(&collider_str)
                         .or_else(|| densities.get(&collider.base_type.to_string()))
-                        .ok_or_else(|| anyhow!("Density not provided for collider '{}' (reactant: '{}')", collider_str, source_str))?;
+                        .ok_or_else(|| anyhow!("Density not provided for collider '{}' (reactant: '{}')", collider_str, source_str))? / 1.0e6; // convert from cm^-3 to m^-3
                     let rate = k * collider_density * branch;
 
                     if mol_map.is_in_state(source) {
@@ -112,7 +112,7 @@ pub trait PhotochemicalModel {
                         let source_density = densities
                             .get(&source_str)
                             .or_else(|| densities.get(&source.base_type.to_string()))
-                            .ok_or_else(|| anyhow!("Density not provided for background reactant '{}' (collider: '{}')", source_str, collider_str))?;
+                            .ok_or_else(|| anyhow!("Density not provided for background reactant '{}' (collider: '{}')", source_str, collider_str))? / 1.0e6; // convert from cm^-3 to m^-3
 
                         for product in &reaction.products {
                             if mol_map.is_in_state(product) {

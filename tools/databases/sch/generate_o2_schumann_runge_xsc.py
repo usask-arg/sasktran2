@@ -73,8 +73,12 @@ def average_to_0p1nm(
     cont_xs_cm2: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Average total (band + continuum) cross section to 0.1 nm bins."""
-    band_wavelength_nm, band_xs_cm2 = dedupe_sorted_grid(band_wavelength_nm, band_xs_cm2)
-    cont_wavelength_nm, cont_xs_cm2 = dedupe_sorted_grid(cont_wavelength_nm, cont_xs_cm2)
+    band_wavelength_nm, band_xs_cm2 = dedupe_sorted_grid(
+        band_wavelength_nm, band_xs_cm2
+    )
+    cont_wavelength_nm, cont_xs_cm2 = dedupe_sorted_grid(
+        cont_wavelength_nm, cont_xs_cm2
+    )
 
     min_w = min(np.min(band_wavelength_nm), np.min(cont_wavelength_nm))
     max_w = max(np.max(band_wavelength_nm), np.max(cont_wavelength_nm))

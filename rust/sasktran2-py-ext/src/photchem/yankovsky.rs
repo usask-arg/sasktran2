@@ -171,7 +171,7 @@ impl PyYankovsky {
         let mut state_profiles: HashMap<String, Vec<f64>> = HashMap::new();
 
         for i in 0..num_alt {
-            // Integrate the spectral photolysis rate over the 
+            // Integrate the spectral photolysis rate over the
             // quantum yield
 
             let o2_density = *o2_density.get(i).ok_or(anyhow!("Invalid O2 density size")).into_pyresult()?;
