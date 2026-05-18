@@ -196,3 +196,23 @@ class O2SchumannRunge(XsecAbsorber):
         else:
             msg = f"Could not find O2 Schumann-Runge database at {data_file}"
             raise OSError(msg)
+
+
+class OClOGeisa(XsecAbsorber):
+    def __init__(self) -> None:
+        """
+        OClO absorption cross sections from the GEISA database, reduced to 0.1 nm
+        resolution from the 20 cm-1 source files.
+
+        Raises
+        ------
+        OSError
+            If the specified file cannot be found
+        """
+        data_file = StandardDatabase().path("cross_sections/oclo/OCLO20")
+
+        if data_file.exists():
+            super().__init__(data_file)
+        else:
+            msg = f"Could not find OClO GEISA database at {data_file}"
+            raise OSError(msg)

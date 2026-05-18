@@ -1,14 +1,18 @@
-use std::any;
-
-use crate::prelude::*;
 use crate::bindings::lapack::dgesv;
+use crate::prelude::*;
 
-use super::types::{ChemicalReaction, Molecule, PhotoReaction, MoleculeBase, MoleculeMap};
-
+use super::types::{ChemicalReaction, Molecule, MoleculeMap, PhotoReaction};
 
 pub trait PhotochemicalModel {
     fn molecules(&self) -> Vec<Molecule>;
-    fn solve(&self, temperature: f64, reactions: &[ChemicalReaction], photo_reactions: &[PhotoReaction], photolysis_rate: &[f64], densities: &HashMap<String, f64>) -> Result<HashMap<String, f64>> {
+    fn solve(
+        &self,
+        temperature: f64,
+        reactions: &[ChemicalReaction],
+        photo_reactions: &[PhotoReaction],
+        photolysis_rate: &[f64],
+        densities: &HashMap<String, f64>,
+    ) -> Result<HashMap<String, f64>> {
         let mol_map = MoleculeMap::new(self.molecules().as_slice(), densities);
 
         let n = mol_map.state_size();
@@ -21,8 +25,10 @@ pub trait PhotochemicalModel {
         for reaction in reactions {
             match reaction.reactants.len() {
                 1 => {
-                    let einstein_coefficient = reaction.einstein_coefficient.as_ref()
-                        .ok_or_else(|| anyhow!("Einstein coefficient missing for unimolecular reaction"))?;
+                    let einstein_coefficient =
+                        reaction.einstein_coefficient.as_ref().ok_or_else(|| {
+                            anyhow!("Einstein coefficient missing for unimolecular reaction")
+                        })?;
 
                     let branch = 1.0; // branching ratio is included in the rate constant
 
@@ -30,11 +36,16 @@ pub trait PhotochemicalModel {
 
                     let reactant = &reaction.reactants[0];
 
-                    let reactant_str = String::try_from(reactant.clone()).unwrap_or_else(|_| format!("{:?}", reactant));
+                    let reactant_str = String::try_from(reactant.clone())
+                        .unwrap_or_else(|_| format!("{:?}", reactant));
 
                     if mol_map.is_in_state(reactant) {
-                        let reactant_index = mol_map.index(reactant)
-                            .ok_or_else(|| anyhow!("Reactant '{}' not found in molecule map (unimolecular reaction)", reactant_str))?;
+                        let reactant_index = mol_map.index(reactant).ok_or_else(|| {
+                            anyhow!(
+                                "Reactant '{}' not found in molecule map (unimolecular reaction)",
+                                reactant_str
+                            )
+                        })?;
 
                         // One loss per reaction event
                         a_matrix[[reactant_index, reactant_index]] -= rate;
@@ -42,9 +53,15 @@ pub trait PhotochemicalModel {
                         // Gains to tracked products only
                         for product in &reaction.products {
                             if mol_map.is_in_state(product) {
-                                let product_str = String::try_from(product.clone()).unwrap_or_else(|_| format!("{:?}", product));
-                                let product_index = mol_map.index(product)
-                                    .ok_or_else(|| anyhow!("Product '{}' not found in molecule map (reactant: '{}')", product_str, reactant_str))?;
+                                let product_str = String::try_from(product.clone())
+                                    .unwrap_or_else(|_| format!("{:?}", product));
+                                let product_index = mol_map.index(product).ok_or_else(|| {
+                                    anyhow!(
+                                        "Product '{}' not found in molecule map (reactant: '{}')",
+                                        product_str,
+                                        reactant_str
+                                    )
+                                })?;
                                 a_matrix[[product_index, reactant_index]] += rate;
                             }
                         }
@@ -54,11 +71,18 @@ pub trait PhotochemicalModel {
                         let reactant_density = densities
                             .get(&reactant_str)
                             .or_else(|| densities.get(&reactant.base_type.to_string()))
-                            .ok_or_else(|| anyhow!("Density not provided for background reactant '{}'", reactant_str))? / 1.0e6; // convert from cm^-3 to m^-3
+                            .ok_or_else(|| {
+                                anyhow!(
+                                    "Density not provided for background reactant '{}'",
+                                    reactant_str
+                                )
+                            })?
+                            / 1.0e6; // convert from cm^-3 to m^-3
 
                         for product in &reaction.products {
                             if mol_map.is_in_state(product) {
-                                let product_str = String::try_from(product.clone()).unwrap_or_else(|_| format!("{:?}", product));
+                                let product_str = String::try_from(product.clone())
+                                    .unwrap_or_else(|_| format!("{:?}", product));
                                 let product_index = mol_map.index(product)
                                     .ok_or_else(|| anyhow!("Product '{}' not found in molecule map (background reactant: '{}')", product_str, reactant_str))?;
                                 sources[product_index] -= rate * reactant_density;
@@ -67,16 +91,20 @@ pub trait PhotochemicalModel {
                     }
                 }
                 2 => {
-                    let k = reaction.rate_constant.as_ref()
-                        .ok_or_else(|| anyhow!("Rate constant missing for bimolecular reaction"))?(temperature);
+                    let k =
+                        reaction.rate_constant.as_ref().ok_or_else(|| {
+                            anyhow!("Rate constant missing for bimolecular reaction")
+                        })?(temperature);
 
                     let branch = reaction.quantum_yield.unwrap_or(1.0);
 
                     let source = &reaction.reactants[0];
                     let collider = &reaction.reactants[1];
 
-                    let source_str = String::try_from(source.clone()).unwrap_or_else(|_| format!("{:?}", source));
-                    let collider_str = String::try_from(collider.clone()).unwrap_or_else(|_| format!("{:?}", collider));
+                    let source_str = String::try_from(source.clone())
+                        .unwrap_or_else(|_| format!("{:?}", source));
+                    let collider_str = String::try_from(collider.clone())
+                        .unwrap_or_else(|_| format!("{:?}", collider));
 
                     if mol_map.is_in_state(collider) {
                         return Err(anyhow!(
@@ -89,7 +117,14 @@ pub trait PhotochemicalModel {
                     let collider_density = densities
                         .get(&collider_str)
                         .or_else(|| densities.get(&collider.base_type.to_string()))
-                        .ok_or_else(|| anyhow!("Density not provided for collider '{}' (reactant: '{}')", collider_str, source_str))? / 1.0e6; // convert from cm^-3 to m^-3
+                        .ok_or_else(|| {
+                            anyhow!(
+                                "Density not provided for collider '{}' (reactant: '{}')",
+                                collider_str,
+                                source_str
+                            )
+                        })?
+                        / 1.0e6; // convert from cm^-3 to m^-3
                     let rate = k * collider_density * branch;
 
                     if mol_map.is_in_state(source) {
@@ -102,7 +137,8 @@ pub trait PhotochemicalModel {
                         // Gains to tracked products only
                         for product in &reaction.products {
                             if mol_map.is_in_state(product) {
-                                let product_str = String::try_from(product.clone()).unwrap_or_else(|_| format!("{:?}", product));
+                                let product_str = String::try_from(product.clone())
+                                    .unwrap_or_else(|_| format!("{:?}", product));
                                 let product_index = mol_map.index(product)
                                     .ok_or_else(|| anyhow!("Product '{}' not found in molecule map (reactants: '{}' + '{}')", product_str, source_str, collider_str))?;
                                 a_matrix[[product_index, source_index]] += rate;
@@ -116,7 +152,8 @@ pub trait PhotochemicalModel {
 
                         for product in &reaction.products {
                             if mol_map.is_in_state(product) {
-                                let product_str = String::try_from(product.clone()).unwrap_or_else(|_| format!("{:?}", product));
+                                let product_str = String::try_from(product.clone())
+                                    .unwrap_or_else(|_| format!("{:?}", product));
                                 let product_index = mol_map.index(product)
                                     .ok_or_else(|| anyhow!("Product '{}' not found in molecule map (background reactant: '{}' + '{}')", product_str, source_str, collider_str))?;
                                 sources[product_index] -= rate * source_density;
@@ -125,25 +162,39 @@ pub trait PhotochemicalModel {
                     }
                 }
                 _ => {
-                    return Err(anyhow!("Unsupported reaction with {} reactants", reaction.reactants.len()));
+                    return Err(anyhow!(
+                        "Unsupported reaction with {} reactants",
+                        reaction.reactants.len()
+                    ));
                 }
             }
-
         }
 
         for (reaction, j) in photo_reactions.iter().zip(photolysis_rate.iter()) {
-            let photo_reactant_str = String::try_from(reaction.in_molecule.clone()).unwrap_or_else(|_| format!("{:?}", reaction.in_molecule));
+            let photo_reactant_str = String::try_from(reaction.in_molecule.clone())
+                .unwrap_or_else(|_| format!("{:?}", reaction.in_molecule));
             let reactant_density = densities
                 .get(&photo_reactant_str)
                 .or_else(|| densities.get(&reaction.in_molecule.base_type.to_string()))
-                .ok_or_else(|| anyhow!("Density not provided for photo-reactant '{}'", photo_reactant_str))?;
+                .ok_or_else(|| {
+                    anyhow!(
+                        "Density not provided for photo-reactant '{}'",
+                        photo_reactant_str
+                    )
+                })?;
             let production = j * reactant_density;
 
             for product in &reaction.products {
                 if mol_map.is_in_state(product) {
-                    let product_str = String::try_from(product.clone()).unwrap_or_else(|_| format!("{:?}", product));
-                    let product_index = mol_map.index(product)
-                        .ok_or_else(|| anyhow!("Product '{}' not found in molecule map (photo-reaction on '{}')", product_str, photo_reactant_str))?;
+                    let product_str = String::try_from(product.clone())
+                        .unwrap_or_else(|_| format!("{:?}", product));
+                    let product_index = mol_map.index(product).ok_or_else(|| {
+                        anyhow!(
+                            "Product '{}' not found in molecule map (photo-reaction on '{}')",
+                            product_str,
+                            photo_reactant_str
+                        )
+                    })?;
                     sources[product_index] -= production;
                 }
             }
@@ -187,7 +238,11 @@ pub trait PhotochemicalModel {
 
         let format_state_mapping_preview = |names: &[String]| -> String {
             let show = names.len().min(25);
-            let mut lines = vec![format!("State index map (showing {} of {}):", show, names.len())];
+            let mut lines = vec![format!(
+                "State index map (showing {} of {}):",
+                show,
+                names.len()
+            )];
             for (idx, name) in names.iter().take(show).enumerate() {
                 lines.push(format!("  [{}] {}", idx, name));
             }
@@ -268,15 +323,22 @@ pub trait PhotochemicalModel {
         let mut required_rates = Vec::new();
         for reaction in photo_reactions {
             for product in &reaction.products {
-                if self.molecules().iter().any(|m| m.base_type == product.base_type) {
-                    required_rates.push(format!("J_{:?}_{}", reaction.in_molecule.base_type, reaction.excitation_band.as_deref().unwrap_or("")));
+                if self
+                    .molecules()
+                    .iter()
+                    .any(|m| m.base_type == product.base_type)
+                {
+                    required_rates.push(format!(
+                        "J_{:?}_{}",
+                        reaction.in_molecule.base_type,
+                        reaction.excitation_band.as_deref().unwrap_or("")
+                    ));
                     break;
                 }
             }
         }
         required_rates
     }
-
 }
 
 // Implementation of the O2 and O3 photochemistry models from
@@ -286,26 +348,75 @@ pub struct Yankovsky {
 }
 
 impl Default for Yankovsky {
-fn default() -> Self {
-Self::new()
-}
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Yankovsky {
     pub fn new() -> Self {
         let mut photo_reactions = vec![
-            "O2 + hv(SRC) -> O(3P) + O(1D)".parse::<PhotoReaction>().unwrap().with_quantum_yield(1.0).with_toa_rate_constant(2.60e-6).with_wavelength_range_nm(130.0, 202.0),
-            "O2 + hv(lyman-alpha) -> O(3P) + O(1D)".parse::<PhotoReaction>().unwrap().with_quantum_yield(0.0).with_toa_rate_constant(3.40e-9),
-            "O3 + hv -> O2(a, v=5) + O(1D)".parse::<PhotoReaction>().unwrap().with_quantum_yield(0.045).with_toa_rate_constant(8.0e-3),
-            "O3 + hv -> O2(a, v=4) + O(1D)".parse::<PhotoReaction>().unwrap().with_quantum_yield(0.072).with_toa_rate_constant(8.0e-3),
-            "O3 + hv -> O2(a, v=3) + O(1D)".parse::<PhotoReaction>().unwrap().with_quantum_yield(0.072).with_toa_rate_constant(8.0e-3),
-            "O3 + hv -> O2(a, v=2) + O(1D)".parse::<PhotoReaction>().unwrap().with_quantum_yield(0.135).with_toa_rate_constant(8.0e-3),
-            "O3 + hv -> O2(a, v=1) + O(1D)".parse::<PhotoReaction>().unwrap().with_quantum_yield(0.135).with_toa_rate_constant(8.0e-3),
-            "O3 + hv -> O2(a, v=0) + O(1D)".parse::<PhotoReaction>().unwrap().with_quantum_yield(0.441).with_toa_rate_constant(8.0e-3),
-            "O2 + hv(762_nm_band) -> O2(b, v=0)".parse::<PhotoReaction>().unwrap().with_toa_rate_constant(5.35e-9).with_band_center_nm(762.0, 10.0),
-            "O2 + hv(689_nm_band) -> O2(b, v=1)".parse::<PhotoReaction>().unwrap().with_toa_rate_constant(2.94e-10).with_band_center_nm(689.0, 10.0),
-            "O2 + hv(629_nm_band) -> O2(b, v=2)".parse::<PhotoReaction>().unwrap().with_toa_rate_constant(7.94e-12).with_band_center_nm(629.0, 10.0),
-            "O2 + hv(1.27_um_band) -> O2(a, v=0)".parse::<PhotoReaction>().unwrap().with_toa_rate_constant(1.54e-10).with_band_center_nm(1270.0, 10.0),
+            "O2 + hv(SRC) -> O(3P) + O(1D)"
+                .parse::<PhotoReaction>()
+                .unwrap()
+                .with_quantum_yield(1.0)
+                .with_toa_rate_constant(2.60e-6)
+                .with_wavelength_range_nm(130.0, 202.0),
+            "O2 + hv(lyman-alpha) -> O(3P) + O(1D)"
+                .parse::<PhotoReaction>()
+                .unwrap()
+                .with_quantum_yield(0.0)
+                .with_toa_rate_constant(3.40e-9),
+            "O3 + hv -> O2(a, v=5) + O(1D)"
+                .parse::<PhotoReaction>()
+                .unwrap()
+                .with_quantum_yield(0.045)
+                .with_toa_rate_constant(8.0e-3),
+            "O3 + hv -> O2(a, v=4) + O(1D)"
+                .parse::<PhotoReaction>()
+                .unwrap()
+                .with_quantum_yield(0.072)
+                .with_toa_rate_constant(8.0e-3),
+            "O3 + hv -> O2(a, v=3) + O(1D)"
+                .parse::<PhotoReaction>()
+                .unwrap()
+                .with_quantum_yield(0.072)
+                .with_toa_rate_constant(8.0e-3),
+            "O3 + hv -> O2(a, v=2) + O(1D)"
+                .parse::<PhotoReaction>()
+                .unwrap()
+                .with_quantum_yield(0.135)
+                .with_toa_rate_constant(8.0e-3),
+            "O3 + hv -> O2(a, v=1) + O(1D)"
+                .parse::<PhotoReaction>()
+                .unwrap()
+                .with_quantum_yield(0.135)
+                .with_toa_rate_constant(8.0e-3),
+            "O3 + hv -> O2(a, v=0) + O(1D)"
+                .parse::<PhotoReaction>()
+                .unwrap()
+                .with_quantum_yield(0.441)
+                .with_toa_rate_constant(8.0e-3),
+            "O2 + hv(762_nm_band) -> O2(b, v=0)"
+                .parse::<PhotoReaction>()
+                .unwrap()
+                .with_toa_rate_constant(5.35e-9)
+                .with_band_center_nm(762.0, 10.0),
+            "O2 + hv(689_nm_band) -> O2(b, v=1)"
+                .parse::<PhotoReaction>()
+                .unwrap()
+                .with_toa_rate_constant(2.94e-10)
+                .with_band_center_nm(689.0, 10.0),
+            "O2 + hv(629_nm_band) -> O2(b, v=2)"
+                .parse::<PhotoReaction>()
+                .unwrap()
+                .with_toa_rate_constant(7.94e-12)
+                .with_band_center_nm(629.0, 10.0),
+            "O2 + hv(1.27_um_band) -> O2(a, v=0)"
+                .parse::<PhotoReaction>()
+                .unwrap()
+                .with_toa_rate_constant(1.54e-10)
+                .with_band_center_nm(1270.0, 10.0),
         ];
 
         // Table 1 branch: O3 + hv -> O2(X, v=1..35) + O(3P).
@@ -323,55 +434,195 @@ impl Yankovsky {
 
         let mut chemical_reactions = vec![
             // O(1D) deactivation reactions
-            "O(1D) -> O(3P)".parse::<ChemicalReaction>().unwrap().with_einstein_coefficient(|_| 9.0e-3),
-            "O(1D) + O(3P) -> O(3P) + O(3P)".parse::<ChemicalReaction>().unwrap().with_rate_constant(|_| 4.0e-12),
-            "O(1D) + O2 -> O2(b, v=1) + O(3P)".parse::<ChemicalReaction>().unwrap().with_rate_constant(|temperature: f64| -> f64 {3.2e-11 * (67.0 / temperature).exp()}).with_quantum_yield(0.40),
-            "O(1D) + O2 -> O2(b, v=0) + O(3P)".parse::<ChemicalReaction>().unwrap().with_rate_constant(|temperature: f64| -> f64 {3.2e-11 * (67.0 / temperature).exp()}).with_quantum_yield(0.55),
-            "O(1D) + O2 -> O2 + O(3P)".parse::<ChemicalReaction>().unwrap().with_rate_constant(|temperature: f64| -> f64 {3.2e-11 * (67.0 / temperature).exp()}).with_quantum_yield(0.05),
-            "O(1D) + O2 -> O2(a, v=0) + O(3P)".parse::<ChemicalReaction>().unwrap().with_rate_constant(|temperature: f64| -> f64 {3.2e-11 * (67.0 / temperature).exp()}).with_quantum_yield(0.05),
-            "O(1D) + O3 -> O2 + O2".parse::<ChemicalReaction>().unwrap().with_rate_constant(|_| 2.4e-10),
-            "O(1D) + N2 -> N2 + O(3P)".parse::<ChemicalReaction>().unwrap().with_rate_constant(|temperature: f64| -> f64 {2.0e-11 * (107.0 / temperature).exp()}).with_quantum_yield(1.00),
-
-
+            "O(1D) -> O(3P)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_einstein_coefficient(|_| 9.0e-3),
+            "O(1D) + O(3P) -> O(3P) + O(3P)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|_| 4.0e-12),
+            "O(1D) + O2 -> O2(b, v=1) + O(3P)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|temperature: f64| -> f64 {
+                    3.2e-11 * (67.0 / temperature).exp()
+                })
+                .with_quantum_yield(0.40),
+            "O(1D) + O2 -> O2(b, v=0) + O(3P)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|temperature: f64| -> f64 {
+                    3.2e-11 * (67.0 / temperature).exp()
+                })
+                .with_quantum_yield(0.55),
+            "O(1D) + O2 -> O2 + O(3P)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|temperature: f64| -> f64 {
+                    3.2e-11 * (67.0 / temperature).exp()
+                })
+                .with_quantum_yield(0.05),
+            "O(1D) + O2 -> O2(a, v=0) + O(3P)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|temperature: f64| -> f64 {
+                    3.2e-11 * (67.0 / temperature).exp()
+                })
+                .with_quantum_yield(0.05),
+            "O(1D) + O3 -> O2 + O2"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|_| 2.4e-10),
+            "O(1D) + N2 -> N2 + O(3P)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|temperature: f64| -> f64 {
+                    2.0e-11 * (107.0 / temperature).exp()
+                })
+                .with_quantum_yield(1.00),
             // O2(b, v) deactivation reactions
-            "O2(b, v=2) -> O2(X, v=2)".parse::<ChemicalReaction>().unwrap().with_einstein_coefficient(|_| 5.4e-2),
-            "O2(b, v=2) + O(3P) -> O2(b, v=1) + O(3P)".parse::<ChemicalReaction>().unwrap().with_rate_constant(|_| 1.1e-11),
-            "O2(b, v=2) + O2 -> O2(X, v=2) + O2(b, v=0)".parse::<ChemicalReaction>().unwrap().with_rate_constant(|temperature: f64| 1.20e-11 * (-596.0 / temperature).exp()),
-            "O2(b, v=2) + N2 -> O2(b, v=1) + N2".parse::<ChemicalReaction>().unwrap().with_rate_constant(|_| 2e-14),
-            "O2(b, v=2) + O3 -> O2 + O2 + O(3P)".parse::<ChemicalReaction>().unwrap().with_rate_constant(|_| 2.9e-10),
-            "O2(b, v=1) -> O2(X, v=1)".parse::<ChemicalReaction>().unwrap().with_einstein_coefficient(|_| 7.0e-2),
-            "O2(b, v=1) + O(3P) -> O2(b, v=0) + O(3P)".parse::<ChemicalReaction>().unwrap().with_rate_constant(|_| 4.5e-12),
-            "O2(b, v=1) + O2 -> O2(X, v=1) + O2(b, v=0)".parse::<ChemicalReaction>().unwrap().with_rate_constant(|temperature| 4.20e-11 * (-312.0/temperature).exp()),
-            "O2(b, v=1) + N2 -> O2(b, v=0) + N2".parse::<ChemicalReaction>().unwrap().with_rate_constant(|_| 5.0e-13),
-            "O2(b, v=1) + O3 -> O2 + O2 + O(3P)".parse::<ChemicalReaction>().unwrap().with_rate_constant(|_| 3.0e-10),
-            "O2(b, v=0) -> O2".parse::<ChemicalReaction>().unwrap().with_einstein_coefficient(|_| 7.58e-2),
-            "O2(b, v=0) + O(3P) -> O2(a, v=0) + O(3P)".parse::<ChemicalReaction>().unwrap().with_rate_constant(|_| 8.0e-14).with_quantum_yield(0.75),
-            "O2(b, v=0) + O(3P) -> O2 + O(3P)".parse::<ChemicalReaction>().unwrap().with_rate_constant(|_| 8.0e-14).with_quantum_yield(0.25),
-            "O2(b, v=0) + O2 -> O2(a, v=0) + O2(X, v=3)".parse::<ChemicalReaction>().unwrap().with_rate_constant(|_| 3.9e-17).with_quantum_yield(0.230),
-            "O2(b, v=0) + O2 -> O2(a, v=1) + O2(X, v=2)".parse::<ChemicalReaction>().unwrap().with_rate_constant(|_| 3.9e-17).with_quantum_yield(0.525),
-            "O2(b, v=0) + O2 -> O2(a, v=2) + O2(X, v=1)".parse::<ChemicalReaction>().unwrap().with_rate_constant(|_| 3.9e-17).with_quantum_yield(0.226),
-            "O2(b, v=0) + O2 -> O2(a, v=3) + O2".parse::<ChemicalReaction>().unwrap().with_rate_constant(|_| 3.9e-17).with_quantum_yield(0.019),
+            "O2(b, v=2) -> O2(X, v=2)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_einstein_coefficient(|_| 5.4e-2),
+            "O2(b, v=2) + O(3P) -> O2(b, v=1) + O(3P)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|_| 1.1e-11),
+            "O2(b, v=2) + O2 -> O2(X, v=2) + O2(b, v=0)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|temperature: f64| 1.20e-11 * (-596.0 / temperature).exp()),
+            "O2(b, v=2) + N2 -> O2(b, v=1) + N2"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|_| 2e-14),
+            "O2(b, v=2) + O3 -> O2 + O2 + O(3P)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|_| 2.9e-10),
+            "O2(b, v=1) -> O2(X, v=1)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_einstein_coefficient(|_| 7.0e-2),
+            "O2(b, v=1) + O(3P) -> O2(b, v=0) + O(3P)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|_| 4.5e-12),
+            "O2(b, v=1) + O2 -> O2(X, v=1) + O2(b, v=0)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|temperature| 4.20e-11 * (-312.0 / temperature).exp()),
+            "O2(b, v=1) + N2 -> O2(b, v=0) + N2"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|_| 5.0e-13),
+            "O2(b, v=1) + O3 -> O2 + O2 + O(3P)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|_| 3.0e-10),
+            "O2(b, v=0) -> O2"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_einstein_coefficient(|_| 7.58e-2),
+            "O2(b, v=0) + O(3P) -> O2(a, v=0) + O(3P)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|_| 8.0e-14)
+                .with_quantum_yield(0.75),
+            "O2(b, v=0) + O(3P) -> O2 + O(3P)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|_| 8.0e-14)
+                .with_quantum_yield(0.25),
+            "O2(b, v=0) + O2 -> O2(a, v=0) + O2(X, v=3)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|_| 3.9e-17)
+                .with_quantum_yield(0.230),
+            "O2(b, v=0) + O2 -> O2(a, v=1) + O2(X, v=2)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|_| 3.9e-17)
+                .with_quantum_yield(0.525),
+            "O2(b, v=0) + O2 -> O2(a, v=2) + O2(X, v=1)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|_| 3.9e-17)
+                .with_quantum_yield(0.226),
+            "O2(b, v=0) + O2 -> O2(a, v=3) + O2"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|_| 3.9e-17)
+                .with_quantum_yield(0.019),
             // O2(b, 0) + N2 -> products ???
-            "O2(b, v=0) + CO2 -> O2(a, v=0) + CO2".parse::<ChemicalReaction>().unwrap().with_rate_constant(|_| 4.2e-13),
-            "O2(b, v=0) + O3 -> O2(a, v=0) + O3".parse::<ChemicalReaction>().unwrap().with_rate_constant(|_| 2.2e-11).with_quantum_yield(0.3),
-
+            "O2(b, v=0) + CO2 -> O2(a, v=0) + CO2"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|_| 4.2e-13),
+            "O2(b, v=0) + O3 -> O2(a, v=0) + O3"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|_| 2.2e-11)
+                .with_quantum_yield(0.3),
             // O2(a, v) deactivation reactions
-            "O2(a, v=0) -> O2".parse::<ChemicalReaction>().unwrap().with_einstein_coefficient(|_| 2.58e-4),
-            "O2(a, v=2) + O2 -> O2(X, v=2) + O2(a, v=0)".parse::<ChemicalReaction>().unwrap().with_rate_constant(|_| 3.6e-11),
-            "O2(a, v=1) + O2 -> O2(X, v=1) + O2(a, v=0)".parse::<ChemicalReaction>().unwrap().with_rate_constant(|_| 5.6e-11),
-            "O2(a, v=1) + O3 -> O2 + O2 + O(3P)".parse::<ChemicalReaction>().unwrap().with_rate_constant(|_| 4.7e-12),
-            "O2(a, v=0) + O(3P) -> O2 + O(3P)".parse::<ChemicalReaction>().unwrap().with_rate_constant(|_| 6.5e-17),
-            "O2(a, v=0) + O2 -> O2(X, v=5) + O2".parse::<ChemicalReaction>().unwrap().with_rate_constant(|temperature: f64| 3.6e-17 * (-220.0/temperature).exp()).with_quantum_yield(0.014),
-            "O2(a, v=0) + O2 -> O2(X, v=4) + O2(X, v=1)".parse::<ChemicalReaction>().unwrap().with_rate_constant(|temperature: f64| 3.6e-17 * (-220.0/temperature).exp()).with_quantum_yield(0.214),
-            "O2(a, v=0) + O2 -> O2(X, v=3) + O2(X, v=2)".parse::<ChemicalReaction>().unwrap().with_rate_constant(|temperature: f64| 3.6e-17 * (-220.0/temperature).exp()).with_quantum_yield(0.772),
-            "O2(a, v=0) + O3 -> O2 + O3".parse::<ChemicalReaction>().unwrap().with_rate_constant(|temperature: f64| 5.20e-11 * (-2840.0/temperature).exp()),
-            "O2(a, v=0) + N2 -> O2 + N2".parse::<ChemicalReaction>().unwrap().with_rate_constant(|_| 1.0e-20),
-
+            "O2(a, v=0) -> O2"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_einstein_coefficient(|_| 2.58e-4),
+            "O2(a, v=2) + O2 -> O2(X, v=2) + O2(a, v=0)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|_| 3.6e-11),
+            "O2(a, v=1) + O2 -> O2(X, v=1) + O2(a, v=0)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|_| 5.6e-11),
+            "O2(a, v=1) + O3 -> O2 + O2 + O(3P)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|_| 4.7e-12),
+            "O2(a, v=0) + O(3P) -> O2 + O(3P)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|_| 6.5e-17),
+            "O2(a, v=0) + O2 -> O2(X, v=5) + O2"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|temperature: f64| 3.6e-17 * (-220.0 / temperature).exp())
+                .with_quantum_yield(0.014),
+            "O2(a, v=0) + O2 -> O2(X, v=4) + O2(X, v=1)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|temperature: f64| 3.6e-17 * (-220.0 / temperature).exp())
+                .with_quantum_yield(0.214),
+            "O2(a, v=0) + O2 -> O2(X, v=3) + O2(X, v=2)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|temperature: f64| 3.6e-17 * (-220.0 / temperature).exp())
+                .with_quantum_yield(0.772),
+            "O2(a, v=0) + O3 -> O2 + O3"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|temperature: f64| 5.20e-11 * (-2840.0 / temperature).exp()),
+            "O2(a, v=0) + N2 -> O2 + N2"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|_| 1.0e-20),
             // Energy transfer and deactivation of O2(X, v), most are v dependent
-            "O2(X, v=1) + O(3P) -> O2 + O(3P)".parse::<ChemicalReaction>().unwrap().with_rate_constant(|_| 3.0e-12),
-            "O2(X, v=1) + O2 -> O2 + O2".parse::<ChemicalReaction>().unwrap().with_rate_constant(|temperature: f64| 4.2e-19 * (temperature / 300.0).sqrt()),
-
-            "O2(X, v=1) + N2 -> O2 + N2".parse::<ChemicalReaction>().unwrap().with_rate_constant(|temperature: f64| 4.20e-19 * (temperature / 300.0).sqrt()),
+            "O2(X, v=1) + O(3P) -> O2 + O(3P)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|_| 3.0e-12),
+            "O2(X, v=1) + O2 -> O2 + O2"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|temperature: f64| 4.2e-19 * (temperature / 300.0).sqrt()),
+            "O2(X, v=1) + N2 -> O2 + N2"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|temperature: f64| 4.20e-19 * (temperature / 300.0).sqrt()),
         ];
 
         // v dependent O2(a, v) deactivation reactions
@@ -404,19 +655,32 @@ impl Yankovsky {
         for v in 1..=30 {
             // todo: quantum yield
             chemical_reactions.push(
-                format!("O3 + O(3P) -> O2(X, v={v}) + O2").parse::<ChemicalReaction>().unwrap().with_rate_constant(|temperature: f64| 5.60e-11 * (-1959.0/temperature).exp()),
+                format!("O3 + O(3P) -> O2(X, v={v}) + O2")
+                    .parse::<ChemicalReaction>()
+                    .unwrap()
+                    .with_rate_constant(|temperature: f64| {
+                        5.60e-11 * (-1959.0 / temperature).exp()
+                    }),
             )
         }
 
         for v in 5..=35 {
             chemical_reactions.push(
-                format!("O2(X, v={v}) + O(3P) -> O2 + O(3P)").parse::<ChemicalReaction>().unwrap().with_rate_constant(|temperature: f64| 5.0e-11 * (temperature / 300.0).sqrt()),
+                format!("O2(X, v={v}) + O(3P) -> O2 + O(3P)")
+                    .parse::<ChemicalReaction>()
+                    .unwrap()
+                    .with_rate_constant(|temperature: f64| 5.0e-11 * (temperature / 300.0).sqrt()),
             )
         }
 
         for v in 2..=4 {
             chemical_reactions.push(
-                format!("O2(X, v={v}) + O(3P) -> O2 + O(3P)").parse::<ChemicalReaction>().unwrap().with_rate_constant(move |temperature: f64| 1.1e-12 * (temperature / 300.0) * (1.0 * v as f64).exp()),
+                format!("O2(X, v={v}) + O(3P) -> O2 + O(3P)")
+                    .parse::<ChemicalReaction>()
+                    .unwrap()
+                    .with_rate_constant(move |temperature: f64| {
+                        1.1e-12 * (temperature / 300.0) * (1.0 * v as f64).exp()
+                    }),
             )
         }
 
@@ -425,11 +689,14 @@ impl Yankovsky {
 
             let rate_constant = match v {
                 2 => |_| 2.0e-13,
-                _ => |_| 2.6e-13
+                _ => |_| 2.6e-13,
             };
 
             chemical_reactions.push(
-                format!("O2(X, v={v}) + O2 -> O2(X, v={vm1}) + O2(X, v=1)").parse::<ChemicalReaction>().unwrap().with_rate_constant(rate_constant),
+                format!("O2(X, v={v}) + O2 -> O2(X, v={vm1}) + O2(X, v=1)")
+                    .parse::<ChemicalReaction>()
+                    .unwrap()
+                    .with_rate_constant(rate_constant),
             );
         }
 
@@ -439,17 +706,24 @@ impl Yankovsky {
             let rate_constant = move |_| 1.3e-12 * (-0.31 * v as f64).exp();
 
             chemical_reactions.push(
-                format!("O2(X, v={v}) + O2 -> O2(X, v={vm1}) + O2(X, v=1)").parse::<ChemicalReaction>().unwrap().with_rate_constant(rate_constant),
+                format!("O2(X, v={v}) + O2 -> O2(X, v={vm1}) + O2(X, v=1)")
+                    .parse::<ChemicalReaction>()
+                    .unwrap()
+                    .with_rate_constant(rate_constant),
             );
         }
 
         for v in 21..=35 {
             let vm1 = v - 1;
 
-            let rate_constant = move |temperature: f64| 6.0e-17 * (temperature / 300.0) * (0.2 * v as f64).exp();
+            let rate_constant =
+                move |temperature: f64| 6.0e-17 * (temperature / 300.0) * (0.2 * v as f64).exp();
 
             chemical_reactions.push(
-                format!("O2(X, v={v}) + O2 -> O2(X, v={vm1}) + O2").parse::<ChemicalReaction>().unwrap().with_rate_constant(rate_constant),
+                format!("O2(X, v={v}) + O2 -> O2(X, v={vm1}) + O2")
+                    .parse::<ChemicalReaction>()
+                    .unwrap()
+                    .with_rate_constant(rate_constant),
             );
         }
 
@@ -460,7 +734,10 @@ impl Yankovsky {
             let rate_constant = move |_| 3.6e-19 * (0.66 * v as f64).exp();
 
             chemical_reactions.push(
-                format!("O2(X, v={v}) + N2 -> O2(X, v={vm2}) + N2").parse::<ChemicalReaction>().unwrap().with_rate_constant(rate_constant),
+                format!("O2(X, v={v}) + N2 -> O2(X, v={vm2}) + N2")
+                    .parse::<ChemicalReaction>()
+                    .unwrap()
+                    .with_rate_constant(rate_constant),
             );
         }
 
@@ -470,7 +747,10 @@ impl Yankovsky {
             let rate_constant = move |_| 4.5e-13 * (-0.173 * v as f64).exp();
 
             chemical_reactions.push(
-                format!("O2(X, v={v}) + N2 -> O2(X, v={vm2}) + N2").parse::<ChemicalReaction>().unwrap().with_rate_constant(rate_constant),
+                format!("O2(X, v={v}) + N2 -> O2(X, v={vm2}) + N2")
+                    .parse::<ChemicalReaction>()
+                    .unwrap()
+                    .with_rate_constant(rate_constant),
             );
         }
 
@@ -504,15 +784,17 @@ impl PhotochemicalModel for Yankovsky {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{PhotochemicalModel, Yankovsky};
+    use crate::photchem::types::MoleculeBase;
 
     #[test]
     fn test_yankovsky() {
         let model = Yankovsky::new();
 
         let required_rates = model.required_photolysis_rates(&model.photo_reactions);
-        let x = 5;
+        assert!(!required_rates.is_empty());
     }
 
     #[test]

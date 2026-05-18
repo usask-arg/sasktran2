@@ -153,3 +153,43 @@ def test_upwelling_flux_thermal():
 
         assert "upwelling_flux" in rad
         assert "downwelling_flux" in rad
+
+
+def test_actinic_flux_output():
+    config = sk.Config()
+    config.single_scatter_source = sk.SingleScatterSource.DiscreteOrdinates
+    config.multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
+    config.flux_types = [sk.FluxType.Actinic]
+    config.num_streams = 4
+    config.num_forced_azimuth = 1
+
+    model_geometry = sk.Geometry1D(
+        cos_sza=0.6,
+        solar_azimuth=0,
+        earth_radius_m=6372000,
+        altitude_grid_m=np.arange(0, 30001, 10000.0),
+        interpolation_method=sk.InterpolationMethod.LinearInterpolation,
+        geometry_type=sk.GeometryType.PlaneParallel,
+    )
+
+    viewing_geo = sk.ViewingGeometry()
+    viewing_geo.add_flux_observer(sk.FluxObserverSolar(0.6, 20000.0))
+
+    atmosphere = sk.Atmosphere(
+        model_geometry,
+        config,
+        wavelengths_nm=np.array([310.0, 330.0, 350.0]),
+    )
+    sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
+    atmosphere["rayleigh"] = sk.constituent.Rayleigh()
+    atmosphere["solar"] = sk.constituent.SolarIrradiance()
+
+    engine = sk.Engine(config, model_geometry, viewing_geo)
+    rad = engine.calculate_radiance(atmosphere)
+
+    assert "actinic_flux" in rad
+    assert "upwelling_flux" not in rad
+    assert "downwelling_flux" not in rad
+    assert rad["actinic_flux"].shape == (3, 1)
+    assert np.all(np.isfinite(rad["actinic_flux"].values))
+    assert np.any(rad["actinic_flux"].values > 0.0)

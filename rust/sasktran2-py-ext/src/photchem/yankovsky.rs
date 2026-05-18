@@ -1,10 +1,10 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
-use ndarray::{Array2, s};
-use pyo3::prelude::*;
-use numpy::{PyArray1, PyArray2, PyArrayMethods};
-use sasktran2_rs::photchem::models::*;
 use anyhow::anyhow;
+use ndarray::{Array2, s};
+use numpy::{PyArray1, PyArray2, PyArrayMethods};
+use pyo3::prelude::*;
+use sasktran2_rs::photchem::models::*;
 
 use crate::prelude::IntoPyResult;
 
@@ -12,7 +12,6 @@ use crate::prelude::IntoPyResult;
 pub struct PyYankovsky {
     pub model: Yankovsky,
 }
-
 
 #[pymethods]
 impl PyYankovsky {
@@ -23,10 +22,7 @@ impl PyYankovsky {
         }
     }
 
-    pub fn solve(&self,
-        ds: &Bound<PyAny>
-    ) -> PyResult<PyObject> {
-
+    pub fn solve(&self, ds: &Bound<PyAny>) -> PyResult<Py<PyAny>> {
         let temperature = ds.get_item("temperature")?;
         let temperature = temperature.call_method0("to_numpy")?;
         let temperature = temperature.cast_into::<PyArray1<f64>>()?;
@@ -115,10 +111,6 @@ impl PyYankovsky {
 
         // Compute the photolysis rates
         let mut photolysis_rate = Array2::<f64>::zeros((self.model.photo_reactions.len(), num_alt));
-        let mut reported_toa_keys = HashSet::<String>::new();
-
-
-
         for (i, reaction) in self.model.photo_reactions.iter().enumerate() {
             let species = reaction.in_molecule.base_type.to_string();
 
@@ -132,10 +124,10 @@ impl PyYankovsky {
             let band_limits = reaction.wavelength_range_nm;
 
             for (j, wl) in wavelength.iter().enumerate() {
-                if let Some((min_nm, max_nm)) = band_limits {
-                    if *wl < min_nm || *wl > max_nm {
-                        continue;
-                    }
+                if let Some((min_nm, max_nm)) = band_limits
+                    && (*wl < min_nm || *wl > max_nm)
+                {
+                    continue;
                 }
 
                 for k in 0..num_alt {
@@ -144,29 +136,7 @@ impl PyYankovsky {
                     photolysis_rate[[i, k]] += q * flux * cross_section * delta_wavelength[j];
                 }
             }
-
-            if reaction.toa_rate_constant > 0.0 {
-                let computed_toa = photolysis_rate[[i, num_alt - 1]];
-                let rel_diff = ((computed_toa - reaction.toa_rate_constant) / reaction.toa_rate_constant).abs();
-                if rel_diff > 0.2 {
-                    let reactant = String::try_from(reaction.in_molecule.clone())
-                        .unwrap_or_else(|_| format!("{:?}", reaction.in_molecule));
-                    let band = reaction.excitation_band.as_deref().unwrap_or("<all>");
-                    let key = format!("{}|{}", reactant, band);
-                    if reported_toa_keys.insert(key) {
-                        eprintln!(
-                            "Photochem TOA check [{} {}]: computed={:.3e}, configured={:.3e}, rel_diff={:.2}",
-                            reactant,
-                            band,
-                            computed_toa,
-                            reaction.toa_rate_constant,
-                            rel_diff
-                        );
-                    }
-                }
-            }
         }
-
 
         let mut state_profiles: HashMap<String, Vec<f64>> = HashMap::new();
 
@@ -174,9 +144,18 @@ impl PyYankovsky {
             // Integrate the spectral photolysis rate over the
             // quantum yield
 
-            let o2_density = *o2_density.get(i).ok_or(anyhow!("Invalid O2 density size")).into_pyresult()?;
-            let o3_density = *o3_density.get(i).ok_or(anyhow!("Invalid O3 density size")).into_pyresult()?;
-            let n2_density = *n2_density.get(i).ok_or(anyhow!("Invalid N2 density size")).into_pyresult()?;
+            let o2_density = *o2_density
+                .get(i)
+                .ok_or(anyhow!("Invalid O2 density size"))
+                .into_pyresult()?;
+            let o3_density = *o3_density
+                .get(i)
+                .ok_or(anyhow!("Invalid O3 density size"))
+                .into_pyresult()?;
+            let n2_density = *n2_density
+                .get(i)
+                .ok_or(anyhow!("Invalid N2 density size"))
+                .into_pyresult()?;
             let co2_density = co2_density
                 .as_ref()
                 .and_then(|v| v.get(i).copied())
@@ -185,7 +164,10 @@ impl PyYankovsky {
                 .as_ref()
                 .and_then(|v| v.get(i).copied())
                 .unwrap_or(0.0);
-            let temperature = *temperature.get(i).ok_or(anyhow!("Invalid temperature size")).into_pyresult()?;
+            let temperature = *temperature
+                .get(i)
+                .ok_or(anyhow!("Invalid temperature size"))
+                .into_pyresult()?;
 
             let densities = HashMap::from([
                 ("O2".to_string(), o2_density),
@@ -197,13 +179,19 @@ impl PyYankovsky {
 
             let photo_slice = photolysis_rate.slice(s![.., i]).to_owned();
 
-            let state = self.model.solve(
-                temperature,
-                &self.model.chemical_reactions,
-                &self.model.photo_reactions,
-                photo_slice.as_slice().ok_or(anyhow!("Invalid photolysis rate slice")).into_pyresult()?,
-                &densities,
-            ).into_pyresult()?;
+            let state = self
+                .model
+                .solve(
+                    temperature,
+                    &self.model.chemical_reactions,
+                    &self.model.photo_reactions,
+                    photo_slice
+                        .as_slice()
+                        .ok_or(anyhow!("Invalid photolysis rate slice"))
+                        .into_pyresult()?,
+                    &densities,
+                )
+                .into_pyresult()?;
 
             for (name, value) in state {
                 state_profiles

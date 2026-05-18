@@ -1,5 +1,5 @@
 use anyhow::{Result, anyhow};
-use ndarray::{Array1, Array2};
+use ndarray::Array2;
 use sasktran2_sys::ffi;
 
 fn to_col_major_vec(a: &Array2<f64>) -> Vec<f64> {
@@ -27,15 +27,14 @@ fn from_col_major_vec(buf: &[f64], nrows: usize, ncols: usize) -> Array2<f64> {
     out
 }
 
-/// Solves a banded linear system using LAPACK dgbsv through the C API.
+/// Solves a dense linear system using LAPACK dgesv through the C API.
 ///
 /// The input matrix `a` must have shape `(n, n)`.
 ///
 /// The RHS matrix `b` must have shape `(n, nrhs)`.
 ///
-/// Returns `(solution, ipiv)` on success where `solution` has the same shape
-/// as the input `b` and `ipiv` has length `n`.
-pub fn dgesv(a: &Array2<f64>, b: &Array2<f64>) -> Result<(Array2<f64>)> {
+/// Returns the solution with the same shape as the input `b`.
+pub fn dgesv(a: &Array2<f64>, b: &Array2<f64>) -> Result<Array2<f64>> {
     let (nrows_a, ncols_a) = a.dim();
     let n = nrows_a;
     let (n_b, nrhs) = b.dim();

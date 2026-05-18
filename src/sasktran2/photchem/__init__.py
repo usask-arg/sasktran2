@@ -48,8 +48,7 @@ def actinic_flux():
     optical = {
         "o3": sk.optical.O3DBM(),
         "h2o": sk.optical.AERLineAbsorber("H2O"),
-        "o2": sk.optical.AERLineAbsorber("O2")
-        + sk.optical.O2SchumannRunge(),
+        "o2": sk.optical.AERLineAbsorber("O2") + sk.optical.O2SchumannRunge(),
         "n2": sk.optical.AERLineAbsorber("N2"),
     }
 
