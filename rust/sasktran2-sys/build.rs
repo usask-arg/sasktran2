@@ -155,6 +155,7 @@ fn main() {
         let bindings = bindgen::Builder::default()
             .header("../../cpp/include/c_api/sasktran2.h")
             .generate_inline_functions(true)
+            .allowlist_file(".*cpp/include/c_api/.*")
             .generate()
             .expect("Unable to generate bindings");
 
