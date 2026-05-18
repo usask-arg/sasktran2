@@ -4,6 +4,10 @@ use crate::prelude::*;
 use super::types::{ChemicalReaction, Molecule, MoleculeMap, PhotoReaction};
 
 pub const LYMAN_ALPHA_WAVELENGTH_NM: f64 = 121.567;
+pub const LYMAN_ALPHA_TOA_RATE_S: f64 = 3.40e-9;
+pub const LYMAN_ALPHA_TOA_FLUX_PHOTONS_M2_S: f64 = 3.2e15;
+pub const O2_LYMAN_ALPHA_EFFECTIVE_CROSS_SECTION_M2: f64 =
+    LYMAN_ALPHA_TOA_RATE_S / LYMAN_ALPHA_TOA_FLUX_PHOTONS_M2_S;
 
 pub trait PhotochemicalModel {
     fn molecules(&self) -> Vec<Molecule>;
@@ -400,12 +404,16 @@ pub fn calculate_photolysis_rate(
             line_center_nm,
             "actinic flux",
         )?;
-        let xs_at_line = interpolate_spectral_profiles(
-            wavelength_nm,
-            cross_section,
-            line_center_nm,
-            "cross section",
-        )?;
+        let xs_at_line = if let Some(cross_section_m2) = reaction.line_effective_cross_section_m2 {
+            Array1::from_elem(actinic_flux.ncols(), cross_section_m2)
+        } else {
+            interpolate_spectral_profiles(
+                wavelength_nm,
+                cross_section,
+                line_center_nm,
+                "cross section",
+            )?
+        };
 
         return Ok(flux_at_line
             .iter()
@@ -536,8 +544,9 @@ impl Yankovsky {
                 .parse::<PhotoReaction>()
                 .unwrap()
                 .with_quantum_yield(1.0)
-                .with_toa_rate_constant(3.40e-9)
-                .with_line_center_nm(LYMAN_ALPHA_WAVELENGTH_NM),
+                .with_toa_rate_constant(LYMAN_ALPHA_TOA_RATE_S)
+                .with_line_center_nm(LYMAN_ALPHA_WAVELENGTH_NM)
+                .with_line_effective_cross_section_m2(O2_LYMAN_ALPHA_EFFECTIVE_CROSS_SECTION_M2),
             "O3 + hv -> O2(a, v=5) + O(1D)"
                 .parse::<PhotoReaction>()
                 .unwrap()
@@ -958,8 +967,9 @@ impl PhotochemicalModel for Yankovsky {
 #[cfg(test)]
 mod tests {
     use super::{
-        LYMAN_ALPHA_WAVELENGTH_NM, PhotochemicalModel, Yankovsky, calculate_photolysis_rate,
-        wavelength_bin_widths,
+        LYMAN_ALPHA_TOA_FLUX_PHOTONS_M2_S, LYMAN_ALPHA_TOA_RATE_S, LYMAN_ALPHA_WAVELENGTH_NM,
+        O2_LYMAN_ALPHA_EFFECTIVE_CROSS_SECTION_M2, PhotochemicalModel, Yankovsky,
+        calculate_photolysis_rate, wavelength_bin_widths,
     };
     use crate::photchem::types::{MoleculeBase, PhotoReaction};
     use ndarray::array;
@@ -991,8 +1001,21 @@ mod tests {
             .expect("Yankovsky model should include a Lyman-alpha reaction");
 
         assert_eq!(reaction.line_center_nm, Some(LYMAN_ALPHA_WAVELENGTH_NM));
+        assert_eq!(
+            reaction.line_effective_cross_section_m2,
+            Some(O2_LYMAN_ALPHA_EFFECTIVE_CROSS_SECTION_M2)
+        );
         assert_eq!(reaction.wavelength_range_nm, None);
         assert_eq!(reaction.quantum_yield, Some(1.0));
+    }
+
+    #[test]
+    fn lyman_alpha_effective_cross_section_matches_toa_rate_scale() {
+        let rate = O2_LYMAN_ALPHA_EFFECTIVE_CROSS_SECTION_M2 * LYMAN_ALPHA_TOA_FLUX_PHOTONS_M2_S;
+        assert!((rate - LYMAN_ALPHA_TOA_RATE_S).abs() < 1.0e-18);
+
+        let cross_section_cm2 = O2_LYMAN_ALPHA_EFFECTIVE_CROSS_SECTION_M2 * 1.0e4;
+        assert!((1.0e-20..=1.2e-20).contains(&cross_section_cm2));
     }
 
     #[test]
@@ -1071,6 +1094,32 @@ mod tests {
         assert_eq!(rate.len(), 2);
         assert_eq!(rate[0], 0.25 * 4.0 * 20.0);
         assert_eq!(rate[1], 0.25 * 8.0 * 40.0);
+    }
+
+    #[test]
+    fn line_photolysis_rate_can_use_effective_cross_section() {
+        let reaction = "O2 + hv(lyman-alpha) -> O + O"
+            .parse::<PhotoReaction>()
+            .unwrap()
+            .with_quantum_yield(0.5)
+            .with_line_center_nm(121.5)
+            .with_line_effective_cross_section_m2(2.0e-24);
+
+        let wavelength = [121.0, 122.0];
+        let actinic_flux = array![[2.0e15, 4.0e15], [6.0e15, 12.0e15]];
+        let cross_section = array![[10.0, 20.0], [30.0, 60.0]];
+
+        let rate = calculate_photolysis_rate(
+            &reaction,
+            &wavelength,
+            actinic_flux.view(),
+            cross_section.view(),
+        )
+        .unwrap();
+
+        assert_eq!(rate.len(), 2);
+        assert_eq!(rate[0], 0.5 * 4.0e15 * 2.0e-24);
+        assert_eq!(rate[1], 0.5 * 8.0e15 * 2.0e-24);
     }
 
     #[test]

@@ -245,6 +245,7 @@ pub struct PhotoReaction {
     pub quantum_yield_wavelength_nm: f64,
     pub wavelength_range_nm: Option<(f64, f64)>,
     pub line_center_nm: Option<f64>,
+    pub line_effective_cross_section_m2: Option<f64>,
 }
 
 impl PhotoReaction {
@@ -309,6 +310,7 @@ impl PhotoReaction {
             quantum_yield_wavelength_nm: 0.0,
             wavelength_range_nm: None,
             line_center_nm: None,
+            line_effective_cross_section_m2: None,
         })
     }
 
@@ -334,6 +336,11 @@ impl PhotoReaction {
 
     pub fn with_line_center_nm(mut self, center_nm: f64) -> Self {
         self.line_center_nm = Some(center_nm);
+        self
+    }
+
+    pub fn with_line_effective_cross_section_m2(mut self, cross_section_m2: f64) -> Self {
+        self.line_effective_cross_section_m2 = Some(cross_section_m2);
         self
     }
 }
@@ -526,9 +533,11 @@ mod tests {
         let r = "O2 + hv(lyman-alpha) -> O + O"
             .parse::<PhotoReaction>()
             .expect("FromStr impl should parse photo reaction")
-            .with_line_center_nm(121.567);
+            .with_line_center_nm(121.567)
+            .with_line_effective_cross_section_m2(1.0e-24);
 
         assert_eq!(r.line_center_nm, Some(121.567));
+        assert_eq!(r.line_effective_cross_section_m2, Some(1.0e-24));
         assert_eq!(r.wavelength_range_nm, None);
     }
 

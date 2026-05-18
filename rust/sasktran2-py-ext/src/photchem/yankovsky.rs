@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use anyhow::anyhow;
-use ndarray::{Array2, s};
+use ndarray::{Array2, Axis, s};
 use numpy::{PyArray1, PyArray2, PyArrayMethods};
 use pyo3::prelude::*;
 use sasktran2_rs::photchem::models::*;
@@ -104,9 +104,43 @@ impl PyYankovsky {
             let xs = xs.readonly();
             let xs = xs.as_array();
 
-            let rate =
+            let line_actinic_flux_name = reaction
+                .excitation_band
+                .as_deref()
+                .map(|band| format!("{}_actinic_flux", band.replace('-', "_")));
+
+            let rate = if reaction.line_center_nm.is_some() {
+                if let Some(name) = line_actinic_flux_name
+                    && let Ok(line_actinic_flux) = ds.get_item(&name)
+                {
+                    let line_actinic_flux = line_actinic_flux.call_method0("to_numpy")?;
+                    let line_actinic_flux = line_actinic_flux.cast_into::<PyArray1<f64>>()?;
+                    let line_actinic_flux = line_actinic_flux.readonly();
+                    let line_actinic_flux = line_actinic_flux.as_array();
+
+                    let line_center_nm = reaction
+                        .line_center_nm
+                        .ok_or(anyhow!("Missing line center for line photolysis"))
+                        .into_pyresult()?;
+                    let line_wavelength = [line_center_nm];
+                    let line_flux = line_actinic_flux.insert_axis(Axis(0));
+                    let dummy_xs = Array2::<f64>::zeros((1, num_alt));
+
+                    calculate_photolysis_rate(
+                        reaction,
+                        &line_wavelength,
+                        line_flux,
+                        dummy_xs.view(),
+                    )
+                    .into_pyresult()?
+                } else {
+                    calculate_photolysis_rate(reaction, wavelength, actinic_flux.view(), xs.view())
+                        .into_pyresult()?
+                }
+            } else {
                 calculate_photolysis_rate(reaction, wavelength, actinic_flux.view(), xs.view())
-                    .into_pyresult()?;
+                    .into_pyresult()?
+            };
 
             for (k, value) in rate.iter().enumerate() {
                 photolysis_rate[[i, k]] = *value;
