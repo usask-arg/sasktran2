@@ -9,7 +9,7 @@ SASKTRAN2 is a radiative transfer framework developed at the University of Saska
 ## Build System and Development Commands
 
 This is a hybrid Python/C++/Rust project that uses:
-- **Pixi** for environment and dependency management  
+- **Pixi** for environment and dependency management
 - **Maturin** for building the Rust-Python extension
 - **CMake** for the C++ components
 - **Ruff** for Python linting
