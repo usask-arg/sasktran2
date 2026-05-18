@@ -2,8 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
+import xarray as xr
+
 from sasktran2._core_rust import PyXsecAbsorber
 from sasktran2.database.web import StandardDatabase
+from sasktran2.optical import database
 from sasktran2.optical.base import OpticalProperty
 
 
@@ -196,6 +200,52 @@ class O2SchumannRunge(XsecAbsorber):
         else:
             msg = f"Could not find O2 Schumann-Runge database at {data_file}"
             raise OSError(msg)
+
+
+class O2LymanAlpha(database.OpticalDatabaseGenericAbsorber):
+    """
+    O2 Lyman-alpha effective absorption cross section for attenuation at 121.567 nm.
+
+    This is represented as a narrow pseudo-line optical database so it can be used by
+    the existing cross-section interpolation machinery. The default cross section is
+    derived from the Yankovsky O2 Lyman-alpha TOA photolysis rate,
+    ``3.40e-9 s^-1``, and a nominal line-integrated solar Lyman-alpha flux,
+    ``3.2e15 photons m^-2 s^-1``.
+    """
+
+    WAVELENGTH_NM = 121.567
+    TOA_RATE_S = 3.40e-9
+    TOA_FLUX_PHOTONS_M2_S = 3.2e15
+    EFFECTIVE_CROSS_SECTION_M2 = TOA_RATE_S / TOA_FLUX_PHOTONS_M2_S
+
+    def __init__(
+        self,
+        cross_section_m2: float = EFFECTIVE_CROSS_SECTION_M2,
+        center_wavelength_nm: float = WAVELENGTH_NM,
+        half_width_nm: float = 5.0e-4,
+    ) -> None:
+        if cross_section_m2 < 0:
+            msg = "cross_section_m2 must be non-negative"
+            raise ValueError(msg)
+        if half_width_nm <= 0:
+            msg = "half_width_nm must be positive"
+            raise ValueError(msg)
+
+        wavelength_nm = np.array(
+            [
+                center_wavelength_nm - half_width_nm,
+                center_wavelength_nm,
+                center_wavelength_nm + half_width_nm,
+            ],
+            dtype=np.float64,
+        )
+        xs = np.array([0.0, cross_section_m2, 0.0], dtype=np.float64)
+        ds = xr.Dataset(
+            data_vars={"xs": (["wavelength_nm"], xs)},
+            coords={"wavelength_nm": wavelength_nm},
+        )
+
+        database.OpticalDatabase.__init__(self, db=ds)
 
 
 class OClOGeisa(XsecAbsorber):

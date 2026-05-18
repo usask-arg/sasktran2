@@ -4,6 +4,7 @@
 
 - `PhotoReaction` supports explicit monochromatic line metadata through `with_line_center_nm`.
 - The Yankovsky O2 Lyman-alpha reaction is enabled at `121.567 nm` with an effective cross section.
+- `sk.optical.O2LymanAlpha()` provides the same effective cross section to the radiative-transfer optical stack through the existing optical database machinery.
 - Continuum photolysis still uses the existing wavelength-bin integration rule.
 - Line photolysis uses line-integrated actinic flux and computes `J = q * Phi_line * sigma_eff`.
 - `src/sasktran2/photchem/__init__.py` includes `121.567 nm` exactly in the generated actinic-flux wavelength grid.
@@ -28,6 +29,7 @@
 - Exact-grid-point line photolysis.
 - Effective-cross-section line photolysis.
 - Lyman-alpha TOA rate and effective-cross-section consistency.
+- O2 Lyman-alpha optical database shape, value, TOA-rate consistency, and input validation.
 - Error handling for missing line wavelength coverage.
 - Error handling for mismatched spectral array shapes.
 

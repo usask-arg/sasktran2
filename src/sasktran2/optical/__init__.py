@@ -13,7 +13,12 @@ from .hitran import (
     HITRANAbsorber,  # noqa: F401
 )
 from .mie import Mie  # noqa: F401
-from .xsec_absorber import O2SchumannRunge, OClOGeisa, XsecAbsorber  # noqa: F401
+from .xsec_absorber import (  # noqa: F401
+    O2LymanAlpha,
+    O2SchumannRunge,
+    OClOGeisa,
+    XsecAbsorber,
+)
 
 
 class O3DBM(database.OpticalDatabaseGenericAbsorber):
