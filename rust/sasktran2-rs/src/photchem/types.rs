@@ -122,6 +122,7 @@ pub struct ParseChemicalReactionError;
 pub struct ParsePhotoReactionError;
 
 impl Molecule {
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         // Example input: "O2(X, v=0)" or "O3" or "O(1D)" or similar
         let s = s.trim();
@@ -243,9 +244,11 @@ pub struct PhotoReaction {
     pub excitation_band: Option<String>,
     pub quantum_yield_wavelength_nm: f64,
     pub wavelength_range_nm: Option<(f64, f64)>,
+    pub line_center_nm: Option<f64>,
 }
 
 impl PhotoReaction {
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(r: &str) -> Option<Self> {
         // example O2 + hv(SRC) -> O(3P) + O(1D)
         // example O2 + hv(lyman-alpha) -> O2(3P) + O(1D)
@@ -305,6 +308,7 @@ impl PhotoReaction {
             excitation_band,
             quantum_yield_wavelength_nm: 0.0,
             wavelength_range_nm: None,
+            line_center_nm: None,
         })
     }
 
@@ -325,6 +329,11 @@ impl PhotoReaction {
 
     pub fn with_band_center_nm(mut self, center_nm: f64, half_width_nm: f64) -> Self {
         self.wavelength_range_nm = Some((center_nm - half_width_nm, center_nm + half_width_nm));
+        self
+    }
+
+    pub fn with_line_center_nm(mut self, center_nm: f64) -> Self {
+        self.line_center_nm = Some(center_nm);
         self
     }
 }
@@ -354,6 +363,7 @@ pub struct ChemicalReaction {
 }
 
 impl ChemicalReaction {
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(r: &str) -> Option<Self> {
         // Example "O(1D) + O -> O + O"
         // "O(1D) + O2 -> O2(b, v=1) + O"
@@ -504,10 +514,22 @@ mod tests {
         assert_eq!(r.in_molecule.base_type, MoleculeBase::O2);
         assert_eq!(r.products.len(), 2);
         assert_eq!(r.excitation_band, Some("lyman-alpha".to_string()));
+        assert_eq!(r.line_center_nm, None);
 
         let r2 = PhotoReaction::try_from("O2 + hv(SRC) -> O + O")
             .expect("TryFrom<&str> should parse photo reaction");
         assert_eq!(r2.excitation_band, Some("SRC".to_string()));
+    }
+
+    #[test]
+    fn photo_reaction_can_store_line_center() {
+        let r = "O2 + hv(lyman-alpha) -> O + O"
+            .parse::<PhotoReaction>()
+            .expect("FromStr impl should parse photo reaction")
+            .with_line_center_nm(121.567);
+
+        assert_eq!(r.line_center_nm, Some(121.567));
+        assert_eq!(r.wavelength_range_nm, None);
     }
 
     #[test]

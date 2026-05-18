@@ -82,26 +82,10 @@ impl PyYankovsky {
         let wavelength = wavelength.cast_into::<PyArray1<f64>>()?;
         let wavelength = wavelength.readonly();
         let wavelength = wavelength.as_array();
-        let num_wavelength = wavelength.len();
-
-        if num_wavelength < 2 {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "Need at least two wavelength points to integrate photolysis rates",
-            ));
-        }
-
-        // Central-difference spectral bin widths for J = integral(q * F * sigma d_lambda)
-        let mut delta_wavelength = vec![0.0_f64; num_wavelength];
-        for j in 0..num_wavelength {
-            let d = if j == 0 {
-                (wavelength[1] - wavelength[0]).abs()
-            } else if j + 1 == num_wavelength {
-                (wavelength[num_wavelength - 1] - wavelength[num_wavelength - 2]).abs()
-            } else {
-                0.5 * (wavelength[j + 1] - wavelength[j - 1]).abs()
-            };
-            delta_wavelength[j] = d;
-        }
+        let wavelength = wavelength
+            .as_slice()
+            .ok_or(anyhow!("Wavelength array must be contiguous"))
+            .into_pyresult()?;
 
         let actinic_flux = ds.get_item("actinic_flux")?;
         let actinic_flux = actinic_flux.call_method0("to_numpy")?;
@@ -120,21 +104,12 @@ impl PyYankovsky {
             let xs = xs.readonly();
             let xs = xs.as_array();
 
-            let q = reaction.quantum_yield.unwrap_or(1.0);
-            let band_limits = reaction.wavelength_range_nm;
+            let rate =
+                calculate_photolysis_rate(reaction, wavelength, actinic_flux.view(), xs.view())
+                    .into_pyresult()?;
 
-            for (j, wl) in wavelength.iter().enumerate() {
-                if let Some((min_nm, max_nm)) = band_limits
-                    && (*wl < min_nm || *wl > max_nm)
-                {
-                    continue;
-                }
-
-                for k in 0..num_alt {
-                    let flux = actinic_flux[[j, k]].max(0.0);
-                    let cross_section = xs[[j, k]].max(0.0);
-                    photolysis_rate[[i, k]] += q * flux * cross_section * delta_wavelength[j];
-                }
+            for (k, value) in rate.iter().enumerate() {
+                photolysis_rate[[i, k]] = *value;
             }
         }
 

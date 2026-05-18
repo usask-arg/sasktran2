@@ -34,7 +34,7 @@ def actinic_flux():
         sk.GeometryType.PlaneParallel,
     )
 
-    wavel_nm = np.arange(120, 800, 0.001)
+    wavel_nm = np.unique(np.concatenate((np.arange(120, 800, 0.001), [121.567])))
 
     viewing = sk.ViewingGeometry()
 
