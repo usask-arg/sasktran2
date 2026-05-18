@@ -305,3 +305,17 @@ def test_xsec_from_lbl_database_common_species():
     for species in common_species:
         absorber = sk.optical.XsecAbsorber.from_lbl_database(species)
         assert absorber is not None, f"Failed to load {species}"
+
+
+@pytest.mark.parametrize(
+    ("absorber_cls", "database_key"),
+    [
+        (sk.optical.O2SchumannRunge, "cross_sections/o2/O2SCHRUNG"),
+        (sk.optical.OClOGeisa, "cross_sections/oclo/OCLO20"),
+    ],
+)
+def test_standard_database_xsec_absorbers_are_available(absorber_cls, database_key):
+    data_file = sk.database.StandardDatabase().path(database_key)
+
+    assert data_file.exists()
+    assert absorber_cls() is not None

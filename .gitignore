@@ -60,3 +60,5 @@ target
 docs/mkdocs/site/
 CLAUDE.md
 disort4.0.99/*
+cross-sections/
+tools/databases/oclo/

@@ -812,6 +812,19 @@ unsafe extern "C" {
         num_flux_types: *mut ::std::os::raw::c_int,
     ) -> ::std::os::raw::c_int;
 }
+unsafe extern "C" {
+    pub fn sk_config_get_flux_types(
+        config: *mut Config,
+        flux_types: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_set_flux_types(
+        config: *mut Config,
+        flux_types: *const ::std::os::raw::c_int,
+        num_flux_types: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct OutputC {
@@ -1041,6 +1054,18 @@ unsafe extern "C" {
         offset_y: *mut f64,
         offset_z: *mut f64,
     ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    #[doc = " C API wrapper around the configured LAPACK dgesv routine.\n\n All integer parameters are int64_t for FFI stability. Internally these are\n converted to the build's LAPACK integer type before calling dgesv_.\n\n Returns LAPACK's INFO value. Negative values indicate an illegal argument in\n this wrapper conversion/validation step."]
+    pub fn sk_lapack_dgesv(
+        n: i64,
+        nrhs: i64,
+        a: *mut f64,
+        lda: i64,
+        ipiv: *mut i64,
+        b: *mut f64,
+        ldb: i64,
+    ) -> i64;
 }
 unsafe extern "C" {
     pub fn run_lto_tests();

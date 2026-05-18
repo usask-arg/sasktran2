@@ -25,6 +25,7 @@ pub use super::config::{Config, MultipleScatterSource, SingleScatterSource};
 pub use super::engine::Engine;
 pub use super::geometry::Geometry1D;
 pub use super::geometry::{GeometryType, InterpolationMethod};
+pub use super::lapack::dgesv;
 pub use super::output::Output;
 pub use super::viewing_geometry::ViewingGeometry;
 pub use anyhow::{Result, anyhow};

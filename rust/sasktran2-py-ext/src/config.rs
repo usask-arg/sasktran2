@@ -77,6 +77,15 @@ pub enum SpectralGridMode {
 
 #[pyclass(eq, eq_int)]
 #[derive(PartialEq, Clone)]
+pub enum FluxType {
+    Upwelling = 0,
+    Downwelling = 1,
+    Actinic = 2,
+    Divergence = 3
+}
+
+#[pyclass(eq, eq_int)]
+#[derive(PartialEq, Clone)]
 pub enum LogLevel {
     Trace,
     Debug,
@@ -600,6 +609,38 @@ impl PyConfig {
             LogLevel::Off => config::LogLevel::Off,
         };
         self.config.with_log_level(level).into_pyresult()?;
+
+        Ok(())
+    }
+
+    #[getter]
+    fn get_flux_types(&self) -> PyResult<Vec<FluxType>> {
+        let flux_types = self.config.get_flux_types().into_pyresult()?;
+        let flux_types = flux_types
+            .iter()
+            .map(|flux_type| match flux_type {
+                config::FluxType::Upwelling => FluxType::Upwelling,
+                config::FluxType::Downwelling => FluxType::Downwelling,
+                config::FluxType::Actinic => FluxType::Actinic,
+                config::FluxType::Divergence => FluxType::Divergence,
+            })
+            .collect::<Vec<_>>();
+
+        Ok(flux_types)
+    }
+
+    #[setter]
+    fn set_flux_types(&mut self, flux_types: Vec<FluxType>) -> PyResult<()> {
+        let flux_types = flux_types            .iter()
+            .map(|flux_type| match flux_type {
+                FluxType::Upwelling => config::FluxType::Upwelling,
+                FluxType::Downwelling => config::FluxType::Downwelling,
+                FluxType::Actinic => config::FluxType::Actinic,
+                FluxType::Divergence => config::FluxType::Divergence,
+            })
+            .collect::<Vec<_>>();
+
+        self.config.with_flux_types(flux_types.as_slice()).into_pyresult()?;
 
         Ok(())
     }

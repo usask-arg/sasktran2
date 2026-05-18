@@ -83,7 +83,14 @@ class Engine:
             dims=["wavelength", "los", "stokes"],
         )
 
-        flux_types = ["upwelling", "downwelling"]
+        flux_map = {
+            0: "upwelling",
+            1: "downwelling",
+            2: "actinic",
+            3: "divergence",
+        }
+        flux_types = [flux_map[int(ft)] for ft in self._config.flux_types]
+
         if len(self._viewing_geometry.flux_observers) > 0:
             # TODO: Grab this from the config
 

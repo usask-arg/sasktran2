@@ -24,6 +24,7 @@ from . import (
 )
 from ._core_rust import (
     EmissionSource,
+    FluxType,
     GeometryType,
     InputValidationMode,
     InterpolationMethod,

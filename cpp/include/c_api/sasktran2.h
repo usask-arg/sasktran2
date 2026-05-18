@@ -8,4 +8,5 @@
 #include "deriv_mapping.h"
 #include "brdf.h"
 #include "geodetic.h"
+#include "sk_lapack.h"
 #include "testing.h"

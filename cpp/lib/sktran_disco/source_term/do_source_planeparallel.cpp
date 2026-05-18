@@ -346,15 +346,24 @@ namespace sasktran2 {
 
                     // l = QUADRATURE ANGLE INDEX
                     for (int l = 0; l < nstr / 2; ++l) {
+                        double cos_angle_factor;
+                        // If the flux type is actinic, the cos angle factor is
+                        // 1
+                        if (flux_type == sasktran2::Config::FluxType::actinic) {
+                            cos_angle_factor = 1.0;
+                        } else {
+                            cos_angle_factor =
+                                (*m_thread_storage[threadidx]
+                                      .sza_calculators[0]
+                                      .persistent_config
+                                      ->quadrature_cos_angle())[l];
+                        }
+
                         double quadrature_weight =
                             (*m_thread_storage[threadidx]
                                   .sza_calculators[0]
                                   .persistent_config->quadrature_weights())[l] *
-                            (*m_thread_storage[threadidx]
-                                  .sza_calculators[0]
-                                  .persistent_config
-                                  ->quadrature_cos_angle())[l] *
-                            EIGEN_PI * 2.0;
+                            cos_angle_factor * EIGEN_PI * 2.0;
 
                         double L = dual_L.value(j);
                         double M = dual_M.value(j);
@@ -362,7 +371,8 @@ namespace sasktran2 {
                         int h_lidx = l * NSTOKES;
 
                         if (flux_type ==
-                            sasktran2::Config::FluxType::downwelling) {
+                                sasktran2::Config::FluxType::downwelling ||
+                            flux_type == sasktran2::Config::FluxType::actinic) {
                             double homog_plus_factor =
                                 quadrature_weight *
                                 (L * Hp.value + dual_Aplus.value(j) * Dm.value);
@@ -445,7 +455,8 @@ namespace sasktran2 {
                         }
 
                         if (flux_type ==
-                            sasktran2::Config::FluxType::upwelling) {
+                                sasktran2::Config::FluxType::upwelling ||
+                            flux_type == sasktran2::Config::FluxType::actinic) {
                             double homog_minus_factor =
                                 quadrature_weight *
                                 (L * Hp.value + dual_Aplus.value(j) * Dm.value);
@@ -543,6 +554,17 @@ namespace sasktran2 {
                         // Derivatives
                         for (int d = 0; d < num_total_derivatives; ++d) {
                             temp_deriv(d) += transmission.deriv(d) * csz;
+                        }
+                    }
+
+                    if (flux_type == sasktran2::Config::FluxType::actinic) {
+                        // The solar flux is just the transmission
+                        m_flux[threadidx][flux_obs_idx].value(flux_type_idx) +=
+                            transmission.value;
+
+                        // Derivatives
+                        for (int d = 0; d < num_total_derivatives; ++d) {
+                            temp_deriv(d) += transmission.deriv(d);
                         }
                     }
                 }
@@ -702,11 +724,16 @@ namespace sasktran2 {
         int wavelidx, int fluxidx, int wavel_threadidx, int threadidx,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& flux,
         sasktran2::Config::FluxType flux_type) const {
-        flux.value.setConstant(
-            m_flux[threadidx][fluxidx].value(static_cast<int>(flux_type)));
+        // Find the index of flux_type within the configured flux types list.
+        // m_flux storage is indexed by position in the list, not by enum value.
+        const auto& flux_types = m_config->get_flux_types();
+        int flux_type_idx = static_cast<int>(
+            std::find(flux_types.begin(), flux_types.end(), flux_type) -
+            flux_types.begin());
 
-        flux.deriv =
-            m_flux[threadidx][fluxidx].deriv.row(static_cast<int>(flux_type));
+        flux.value.setConstant(m_flux[threadidx][fluxidx].value(flux_type_idx));
+
+        flux.deriv = m_flux[threadidx][fluxidx].deriv.row(flux_type_idx);
     }
 
     SASKTRAN_DISCO_INSTANTIATE_TEMPLATE(DOSourcePlaneParallelPostProcessing);

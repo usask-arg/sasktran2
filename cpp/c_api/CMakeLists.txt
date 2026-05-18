@@ -15,6 +15,7 @@ add_library(
   output.cpp
   geodetic.cpp
   brdf.cpp
+  sk_lapack.cpp
   testing.cpp
   deriv_mapping.cpp)
 
