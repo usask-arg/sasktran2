@@ -5,6 +5,10 @@ import xarray as xr
 
 import sasktran2 as sk
 
+LYMAN_ALPHA_WAVELENGTH_NM = 121.567
+LYMAN_ALPHA_TOA_RATE_S = 3.40e-9
+LYMAN_ALPHA_TOA_FLUX_PHOTONS_M2_S = 3.2e15
+
 
 def actinic_flux():
     altitudes_m = np.arange(0.0, 130.0e3, 1000.0)
@@ -34,7 +38,10 @@ def actinic_flux():
         sk.GeometryType.PlaneParallel,
     )
 
-    wavel_nm = np.arange(120, 800, 0.001)
+    wavel_nm = np.unique(
+        np.concatenate((np.arange(120, 800, 0.001), [LYMAN_ALPHA_WAVELENGTH_NM]))
+    )
+    lyman_alpha_index = np.where(wavel_nm == LYMAN_ALPHA_WAVELENGTH_NM)[0][0]
 
     viewing = sk.ViewingGeometry()
 
@@ -48,7 +55,9 @@ def actinic_flux():
     optical = {
         "o3": sk.optical.O3DBM(),
         "h2o": sk.optical.AERLineAbsorber("H2O"),
-        "o2": sk.optical.AERLineAbsorber("O2") + sk.optical.O2SchumannRunge(),
+        "o2": sk.optical.AERLineAbsorber("O2")
+        + sk.optical.O2SchumannRunge()
+        + sk.optical.O2LymanAlpha(),
         "n2": sk.optical.AERLineAbsorber("N2"),
     }
 
@@ -69,6 +78,14 @@ def actinic_flux():
 
     output = xr.Dataset(coords={"altitude": altitudes_m, "wavelength": wavel_nm})
     output["actinic_flux"] = (("wavelength", "altitude"), actinic_flux)
+
+    toa_spectral_flux = atmosphere.storage.solar_irradiance[lyman_alpha_index]
+    output["lyman_alpha_actinic_flux"] = (
+        ["altitude"],
+        actinic_flux[lyman_alpha_index, :]
+        / toa_spectral_flux
+        * LYMAN_ALPHA_TOA_FLUX_PHOTONS_M2_S,
+    )
 
     output["temperature"] = (["altitude"], atmosphere.temperature_k)
 

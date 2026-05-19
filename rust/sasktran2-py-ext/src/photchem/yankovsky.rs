@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use anyhow::anyhow;
-use ndarray::{Array2, s};
+use ndarray::{Array2, Axis, s};
 use numpy::{PyArray1, PyArray2, PyArrayMethods};
 use pyo3::prelude::*;
 use sasktran2_rs::photchem::models::*;
@@ -82,26 +82,10 @@ impl PyYankovsky {
         let wavelength = wavelength.cast_into::<PyArray1<f64>>()?;
         let wavelength = wavelength.readonly();
         let wavelength = wavelength.as_array();
-        let num_wavelength = wavelength.len();
-
-        if num_wavelength < 2 {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "Need at least two wavelength points to integrate photolysis rates",
-            ));
-        }
-
-        // Central-difference spectral bin widths for J = integral(q * F * sigma d_lambda)
-        let mut delta_wavelength = vec![0.0_f64; num_wavelength];
-        for j in 0..num_wavelength {
-            let d = if j == 0 {
-                (wavelength[1] - wavelength[0]).abs()
-            } else if j + 1 == num_wavelength {
-                (wavelength[num_wavelength - 1] - wavelength[num_wavelength - 2]).abs()
-            } else {
-                0.5 * (wavelength[j + 1] - wavelength[j - 1]).abs()
-            };
-            delta_wavelength[j] = d;
-        }
+        let wavelength = wavelength
+            .as_slice()
+            .ok_or(anyhow!("Wavelength array must be contiguous"))
+            .into_pyresult()?;
 
         let actinic_flux = ds.get_item("actinic_flux")?;
         let actinic_flux = actinic_flux.call_method0("to_numpy")?;
@@ -120,21 +104,46 @@ impl PyYankovsky {
             let xs = xs.readonly();
             let xs = xs.as_array();
 
-            let q = reaction.quantum_yield.unwrap_or(1.0);
-            let band_limits = reaction.wavelength_range_nm;
+            let line_actinic_flux_name = reaction
+                .excitation_band
+                .as_deref()
+                .map(|band| format!("{}_actinic_flux", band.replace('-', "_")));
 
-            for (j, wl) in wavelength.iter().enumerate() {
-                if let Some((min_nm, max_nm)) = band_limits
-                    && (*wl < min_nm || *wl > max_nm)
+            let rate = if reaction.line_center_nm.is_some() {
+                if let Some(name) = line_actinic_flux_name
+                    && let Ok(line_actinic_flux) = ds.get_item(&name)
                 {
-                    continue;
-                }
+                    let line_actinic_flux = line_actinic_flux.call_method0("to_numpy")?;
+                    let line_actinic_flux = line_actinic_flux.cast_into::<PyArray1<f64>>()?;
+                    let line_actinic_flux = line_actinic_flux.readonly();
+                    let line_actinic_flux = line_actinic_flux.as_array();
 
-                for k in 0..num_alt {
-                    let flux = actinic_flux[[j, k]].max(0.0);
-                    let cross_section = xs[[j, k]].max(0.0);
-                    photolysis_rate[[i, k]] += q * flux * cross_section * delta_wavelength[j];
+                    let line_center_nm = reaction
+                        .line_center_nm
+                        .ok_or(anyhow!("Missing line center for line photolysis"))
+                        .into_pyresult()?;
+                    let line_wavelength = [line_center_nm];
+                    let line_flux = line_actinic_flux.insert_axis(Axis(0));
+                    let dummy_xs = Array2::<f64>::zeros((1, num_alt));
+
+                    calculate_photolysis_rate(
+                        reaction,
+                        &line_wavelength,
+                        line_flux,
+                        dummy_xs.view(),
+                    )
+                    .into_pyresult()?
+                } else {
+                    calculate_photolysis_rate(reaction, wavelength, actinic_flux.view(), xs.view())
+                        .into_pyresult()?
                 }
+            } else {
+                calculate_photolysis_rate(reaction, wavelength, actinic_flux.view(), xs.view())
+                    .into_pyresult()?
+            };
+
+            for (k, value) in rate.iter().enumerate() {
+                photolysis_rate[[i, k]] = *value;
             }
         }
 
