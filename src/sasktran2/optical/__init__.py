@@ -14,6 +14,7 @@ from .hitran import (
 )
 from .mie import Mie  # noqa: F401
 from .xsec_absorber import (  # noqa: F401
+    IOGeisa,
     O2LymanAlpha,
     O2SchumannRunge,
     OClOGeisa,
