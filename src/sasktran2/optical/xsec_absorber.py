@@ -266,3 +266,23 @@ class OClOGeisa(XsecAbsorber):
         else:
             msg = f"Could not find OClO GEISA database at {data_file}"
             raise OSError(msg)
+
+
+class IOGeisa(XsecAbsorber):
+    """
+    IO (Iodine Oxide) cross sections from the GEISA database.
+
+    These are fixed-width format cross sections (0.1 nm averaged)
+    at 298 K temperature.
+
+    Raises
+    ------
+    OSError
+        If the IO file is not found in the database
+    """
+
+    def __init__(self):
+        """Load IO cross sections from the standard database."""
+        db = StandardDatabase()
+        file_path = db.path("cross_sections/io/IO")
+        super().__init__(file_path)
