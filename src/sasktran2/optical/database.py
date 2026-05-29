@@ -13,6 +13,7 @@ from sasktran2._core_rust import (
     PyScatteringDatabaseDim1,
     PyScatteringDatabaseDim2,
     PyScatteringDatabaseDim3,
+    PyScatteringDatabaseDim4,
 )
 from sasktran2.atmosphere import Atmosphere, NativeGridDerivative
 from sasktran2.optical.base import OpticalProperty, OpticalQuantities
@@ -218,6 +219,21 @@ class OpticalDatabaseGenericScattererRust(OpticalDatabase):
                 wvnum[sidx],
                 np.atleast_1d(param0).astype(np.float64),
                 np.atleast_1d(param1).astype(np.float64),
+                param_names,
+            )
+        elif len(xs.shape) == 4:
+            param_names = list(db["xs_total"].dims)[:-1]
+            param0 = db[param_names[0]].to_numpy()
+            param1 = db[param_names[1]].to_numpy()
+            param2 = db[param_names[2]].to_numpy()
+            self._db = PyScatteringDatabaseDim4(
+                xs[:, :, :, sidx],
+                ssa[:, :, :, sidx],
+                legendre[:, :, :, sidx, :],
+                wvnum[sidx],
+                np.atleast_1d(param0).astype(np.float64),
+                np.atleast_1d(param1).astype(np.float64),
+                np.atleast_1d(param2).astype(np.float64),
                 param_names,
             )
 

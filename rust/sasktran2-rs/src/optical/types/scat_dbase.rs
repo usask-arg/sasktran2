@@ -831,3 +831,417 @@ impl OpticalProperty for ScatteringDatabase<Ix3> {
         true
     }
 }
+
+impl ScatteringDatabaseInterp for ScatteringDatabase<Ix4> {
+    fn scat_prop_emplace<S1, S2, S3, S4, S5>(
+        &self,
+        wvnum: &ArrayBase<S1, Ix1>,
+        params: &ArrayBase<S2, Ix1>,
+        xs: &mut ArrayBase<S3, Ix1>,
+        ssa: &mut ArrayBase<S4, Ix1>,
+        legendre: &mut ArrayBase<S5, Ix2>,
+        num_stokes: usize,
+    ) -> Result<()>
+    where
+        S1: Data<Elem = f64>,
+        S2: Data<Elem = f64>,
+        S3: DataMut<Elem = f64>,
+        S4: DataMut<Elem = f64>,
+        S5: DataMut<Elem = f64>,
+    {
+        let num_legendre = match num_stokes {
+            1 => 1,
+            3 => 4,
+            4 => 6,
+            _ => panic!("Invalid number of Stokes parameters"),
+        };
+        let leg_order = (self.legendre.dim().4 / 6).min(legendre.dim().1 / num_legendre);
+
+        let weights_0 = &self.params[0].interp1_weights(params[0], OutOfBoundsMode::Extend);
+        let weights_1 = &self.params[1].interp1_weights(params[1], OutOfBoundsMode::Extend);
+        let weights_2 = &self.params[2].interp1_weights(params[2], OutOfBoundsMode::Extend);
+
+        for (i0, weight0, _) in weights_0.iter() {
+            let i0 = *i0;
+
+            for (i1, weight1, _) in weights_1.iter() {
+                let i1 = *i1;
+
+                for (i2, weight2, _) in weights_2.iter() {
+                    let i2 = *i2;
+
+                    Zip::indexed(wvnum).for_each(|j, wv| {
+                        let wvnum_weights = &self.wvnum.interp1_weights(*wv, OutOfBoundsMode::Zero);
+
+                        let local_xs = self.xsec[[i0, i1, i2, wvnum_weights[0].0]] * wvnum_weights[0].1
+                            + self.xsec[[i0, i1, i2, wvnum_weights[1].0]] * wvnum_weights[1].1;
+
+                        let local_ssa = self.ssa[[i0, i1, i2, wvnum_weights[0].0]] * wvnum_weights[0].1
+                            + self.ssa[[i0, i1, i2, wvnum_weights[1].0]] * wvnum_weights[1].1;
+
+                        xs[j] += local_xs * (*weight0 * *weight1 * *weight2);
+                        ssa[j] += local_ssa * (*weight0 * *weight1 * *weight2);
+
+                        let legendre_result = legendre.index_axis_mut(Axis(0), j);
+
+                        let leg_db = self.legendre.index_axis(Axis(0), i0);
+                        let leg_db = leg_db.index_axis(Axis(0), i1);
+                        let leg_db = leg_db.index_axis(Axis(0), i2);
+
+                        assign_legendre(
+                            wvnum_weights,
+                            leg_order,
+                            num_legendre,
+                            legendre_result,
+                            leg_db,
+                            num_stokes,
+                            *weight0 * *weight1 * *weight2,
+                        );
+                    });
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn d_scat_prop_emplace<S1, S2, S3, S4, S5>(
+        &self,
+        wvnum: &ArrayBase<S1, Ix1>,
+        params: &ArrayBase<S2, Ix1>,
+        d_xs: &mut Vec<ArrayBase<S3, Ix1>>,
+        d_ssa: &mut Vec<ArrayBase<S4, Ix1>>,
+        d_leg: &mut Vec<ArrayBase<S5, Ix2>>,
+        num_stokes: usize,
+    ) -> Result<()>
+    where
+        S1: Data<Elem = f64>,
+        S2: Data<Elem = f64>,
+        S3: DataMut<Elem = f64>,
+        S4: DataMut<Elem = f64>,
+        S5: DataMut<Elem = f64>,
+    {
+        let num_legendre = match num_stokes {
+            1 => 1,
+            3 => 4,
+            4 => 6,
+            _ => panic!("Invalid number of Stokes parameters"),
+        };
+
+        let weights_0 = &self.params[0].interp1_weights(params[0], OutOfBoundsMode::Extend);
+        let weights_1 = &self.params[1].interp1_weights(params[1], OutOfBoundsMode::Extend);
+        let weights_2 = &self.params[2].interp1_weights(params[2], OutOfBoundsMode::Extend);
+
+        // First parameter derivative
+        let xs = &mut d_xs[0];
+        let ssa = &mut d_ssa[0];
+        let legendre = &mut d_leg[0];
+        let leg_order = (self.legendre.dim().4 / 6).min(legendre.dim().1 / num_legendre);
+
+        for (i0, d_weight0, _) in weights_0.iter() {
+            let i0 = *i0;
+
+            for (i1, weight1, _) in weights_1.iter() {
+                let i1 = *i1;
+
+                for (i2, weight2, _) in weights_2.iter() {
+                    let i2 = *i2;
+
+                    Zip::indexed(wvnum).for_each(|j, wv| {
+                        let wvnum_weights = &self.wvnum.interp1_weights(*wv, OutOfBoundsMode::Zero);
+
+                        let local_xs = self.xsec[[i0, i1, i2, wvnum_weights[0].0]] * wvnum_weights[0].1
+                            + self.xsec[[i0, i1, i2, wvnum_weights[1].0]] * wvnum_weights[1].1;
+
+                        let local_ssa = self.ssa[[i0, i1, i2, wvnum_weights[0].0]] * wvnum_weights[0].1
+                            + self.ssa[[i0, i1, i2, wvnum_weights[1].0]] * wvnum_weights[1].1;
+
+                        xs[j] += local_xs * (*d_weight0 * *weight1 * *weight2);
+                        ssa[j] += local_ssa * (*d_weight0 * *weight1 * *weight2);
+
+                        let legendre_result = legendre.index_axis_mut(Axis(0), j);
+
+                        let leg_db = self.legendre.index_axis(Axis(0), i0);
+                        let leg_db = leg_db.index_axis(Axis(0), i1);
+                        let leg_db = leg_db.index_axis(Axis(0), i2);
+
+                        assign_legendre(
+                            wvnum_weights,
+                            leg_order,
+                            num_legendre,
+                            legendre_result,
+                            leg_db,
+                            num_stokes,
+                            *d_weight0 * *weight1 * *weight2,
+                        );
+                    });
+                }
+            }
+        }
+
+        // Second parameter derivative
+        let xs = &mut d_xs[1];
+        let ssa = &mut d_ssa[1];
+        let legendre = &mut d_leg[1];
+
+        for (i0, weight0, _) in weights_0.iter() {
+            let i0 = *i0;
+
+            for (i1, d_weight1, _) in weights_1.iter() {
+                let i1 = *i1;
+
+                for (i2, weight2, _) in weights_2.iter() {
+                    let i2 = *i2;
+
+                    Zip::indexed(wvnum).for_each(|j, wv| {
+                        let wvnum_weights = &self.wvnum.interp1_weights(*wv, OutOfBoundsMode::Zero);
+
+                        let local_xs = self.xsec[[i0, i1, i2, wvnum_weights[0].0]] * wvnum_weights[0].1
+                            + self.xsec[[i0, i1, i2, wvnum_weights[1].0]] * wvnum_weights[1].1;
+
+                        let local_ssa = self.ssa[[i0, i1, i2, wvnum_weights[0].0]] * wvnum_weights[0].1
+                            + self.ssa[[i0, i1, i2, wvnum_weights[1].0]] * wvnum_weights[1].1;
+
+                        xs[j] += local_xs * (*weight0 * *d_weight1 * *weight2);
+                        ssa[j] += local_ssa * (*weight0 * *d_weight1 * *weight2);
+
+                        let legendre_result = legendre.index_axis_mut(Axis(0), j);
+
+                        let leg_db = self.legendre.index_axis(Axis(0), i0);
+                        let leg_db = leg_db.index_axis(Axis(0), i1);
+                        let leg_db = leg_db.index_axis(Axis(0), i2);
+
+                        assign_legendre(
+                            wvnum_weights,
+                            leg_order,
+                            num_legendre,
+                            legendre_result,
+                            leg_db,
+                            num_stokes,
+                            *weight0 * *d_weight1 * *weight2,
+                        );
+                    });
+                }
+            }
+        }
+
+        // Third parameter derivative
+        let xs = &mut d_xs[2];
+        let ssa = &mut d_ssa[2];
+        let legendre = &mut d_leg[2];
+
+        for (i0, weight0, _) in weights_0.iter() {
+            let i0 = *i0;
+
+            for (i1, weight1, _) in weights_1.iter() {
+                let i1 = *i1;
+
+                for (i2, d_weight2, _) in weights_2.iter() {
+                    let i2 = *i2;
+
+                    Zip::indexed(wvnum).for_each(|j, wv| {
+                        let wvnum_weights = &self.wvnum.interp1_weights(*wv, OutOfBoundsMode::Zero);
+
+                        let local_xs = self.xsec[[i0, i1, i2, wvnum_weights[0].0]] * wvnum_weights[0].1
+                            + self.xsec[[i0, i1, i2, wvnum_weights[1].0]] * wvnum_weights[1].1;
+
+                        let local_ssa = self.ssa[[i0, i1, i2, wvnum_weights[0].0]] * wvnum_weights[0].1
+                            + self.ssa[[i0, i1, i2, wvnum_weights[1].0]] * wvnum_weights[1].1;
+
+                        xs[j] += local_xs * (*weight0 * *weight1 * *d_weight2);
+                        ssa[j] += local_ssa * (*weight0 * *weight1 * *d_weight2);
+
+                        let legendre_result = legendre.index_axis_mut(Axis(0), j);
+
+                        let leg_db = self.legendre.index_axis(Axis(0), i0);
+                        let leg_db = leg_db.index_axis(Axis(0), i1);
+                        let leg_db = leg_db.index_axis(Axis(0), i2);
+
+                        assign_legendre(
+                            wvnum_weights,
+                            leg_order,
+                            num_legendre,
+                            legendre_result,
+                            leg_db,
+                            num_stokes,
+                            *weight0 * *weight1 * *d_weight2,
+                        );
+                    });
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl OpticalProperty for ScatteringDatabase<Ix4> {
+    fn optical_quantities_emplace(
+        &self,
+        inputs: &dyn StorageInputs,
+        aux_inputs: &dyn AuxOpticalInputs,
+        optical_quantities: &mut OpticalQuantities,
+    ) -> Result<()> {
+        let wavenumber_cminv = param_from_storage_or_aux(inputs, aux_inputs, "wavenumbers_cminv")?;
+        let param_0 = param_from_storage_or_aux(inputs, aux_inputs, &self.param_names[0])?;
+        let param_1 = param_from_storage_or_aux(inputs, aux_inputs, &self.param_names[1])?;
+        let param_2 = param_from_storage_or_aux(inputs, aux_inputs, &self.param_names[2])?;
+
+        let _ = optical_quantities.resize(param_0.len(), wavenumber_cminv.len());
+        let num_stokes = inputs.num_stokes();
+        let _ = optical_quantities.with_scatterer(inputs.num_singlescatter_moments(), num_stokes);
+
+        let xs = &mut optical_quantities.cross_section;
+        let ssa = &mut optical_quantities.ssa;
+        let legendre = optical_quantities
+            .legendre
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("Legendre coefficients not initialized"))?;
+
+        Zip::from(xs.rows_mut())
+            .and(ssa.rows_mut())
+            .and(legendre.axis_iter_mut(Axis(0)))
+            .and(param_0.view())
+            .and(param_1.view())
+            .and(param_2.view())
+            .par_for_each(|mut xs, mut ssa, mut legendre, param_0, param_1, param_2| {
+                let params = Array1::from(vec![*param_0, *param_1, *param_2]);
+
+                let _ = self.scat_prop_emplace(
+                    &wavenumber_cminv,
+                    &params,
+                    &mut xs,
+                    &mut ssa,
+                    &mut legendre,
+                    num_stokes,
+                );
+            });
+
+        Ok(())
+    }
+
+    fn optical_derivatives_emplace(
+        &self,
+        inputs: &dyn StorageInputs,
+        aux_inputs: &dyn AuxOpticalInputs,
+        d_optical_quantities: &mut HashMap<String, OpticalQuantities>,
+    ) -> Result<()> {
+        let wavenumber_cminv = param_from_storage_or_aux(inputs, aux_inputs, "wavenumbers_cminv")?;
+        let param_0 = param_from_storage_or_aux(inputs, aux_inputs, &self.param_names[0])?;
+        let param_1 = param_from_storage_or_aux(inputs, aux_inputs, &self.param_names[1])?;
+        let param_2 = param_from_storage_or_aux(inputs, aux_inputs, &self.param_names[2])?;
+
+        if d_optical_quantities.contains_key(&self.param_names[0]) {
+            d_optical_quantities
+                .get_mut(&self.param_names[0])
+                .unwrap()
+                .resize(param_0.len(), wavenumber_cminv.len());
+        } else {
+            d_optical_quantities.insert(
+                self.param_names[0].clone(),
+                OpticalQuantities::new(param_0.len(), wavenumber_cminv.len(), false),
+            );
+        }
+
+        if d_optical_quantities.contains_key(&self.param_names[1]) {
+            d_optical_quantities
+                .get_mut(&self.param_names[1])
+                .unwrap()
+                .resize(param_0.len(), wavenumber_cminv.len());
+        } else {
+            d_optical_quantities.insert(
+                self.param_names[1].clone(),
+                OpticalQuantities::new(param_0.len(), wavenumber_cminv.len(), false),
+            );
+        }
+
+        if d_optical_quantities.contains_key(&self.param_names[2]) {
+            d_optical_quantities
+                .get_mut(&self.param_names[2])
+                .unwrap()
+                .resize(param_0.len(), wavenumber_cminv.len());
+        } else {
+            d_optical_quantities.insert(
+                self.param_names[2].clone(),
+                OpticalQuantities::new(param_0.len(), wavenumber_cminv.len(), false),
+            );
+        }
+
+        let optical_quantities = d_optical_quantities.get_disjoint_mut([
+            self.param_names[0].as_str(),
+            self.param_names[1].as_str(),
+            self.param_names[2].as_str(),
+        ]);
+
+        let [optical_quantities0, optical_quantities1, optical_quantities2] = optical_quantities;
+
+        let optical_quantities0 = optical_quantities0.unwrap();
+        let optical_quantities1 = optical_quantities1.unwrap();
+        let optical_quantities2 = optical_quantities2.unwrap();
+
+        let _ = optical_quantities0.resize(param_0.len(), wavenumber_cminv.len());
+        let num_stokes = inputs.num_stokes();
+        let _ = optical_quantities0.with_scatterer(inputs.num_singlescatter_moments(), num_stokes);
+
+        let xs0 = &mut optical_quantities0.cross_section;
+        let ssa0 = &mut optical_quantities0.ssa;
+        let legendre0 = optical_quantities0
+            .legendre
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("Legendre coefficients not initialized"))?;
+
+        let _ = optical_quantities1.resize(param_0.len(), wavenumber_cminv.len());
+        let _ = optical_quantities1.with_scatterer(inputs.num_singlescatter_moments(), num_stokes);
+
+        let xs1 = &mut optical_quantities1.cross_section;
+        let ssa1 = &mut optical_quantities1.ssa;
+        let legendre1 = optical_quantities1
+            .legendre
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("Legendre coefficients not initialized"))?;
+
+        let _ = optical_quantities2.resize(param_0.len(), wavenumber_cminv.len());
+        let _ = optical_quantities2.with_scatterer(inputs.num_singlescatter_moments(), num_stokes);
+
+        let xs2 = &mut optical_quantities2.cross_section;
+        let ssa2 = &mut optical_quantities2.ssa;
+        let legendre2 = optical_quantities2
+            .legendre
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("Legendre coefficients not initialized"))?;
+
+        Zip::indexed(param_0.view())
+            .and(param_1.view())
+            .and(param_2.view())
+            .for_each(|i, param_0, param_1, param_2| {
+                let xs0 = xs0.index_axis_mut(Axis(0), i);
+                let ssa0 = ssa0.index_axis_mut(Axis(0), i);
+                let legendre0 = legendre0.index_axis_mut(Axis(0), i);
+
+                let xs1 = xs1.index_axis_mut(Axis(0), i);
+                let ssa1 = ssa1.index_axis_mut(Axis(0), i);
+                let legendre1 = legendre1.index_axis_mut(Axis(0), i);
+
+                let xs2 = xs2.index_axis_mut(Axis(0), i);
+                let ssa2 = ssa2.index_axis_mut(Axis(0), i);
+                let legendre2 = legendre2.index_axis_mut(Axis(0), i);
+
+                let params = Array1::from(vec![*param_0, *param_1, *param_2]);
+
+                let _ = self.d_scat_prop_emplace(
+                    &wavenumber_cminv,
+                    &params,
+                    &mut vec![xs0, xs1, xs2],
+                    &mut vec![ssa0, ssa1, ssa2],
+                    &mut vec![legendre0, legendre1, legendre2],
+                    num_stokes,
+                );
+            });
+
+        Ok(())
+    }
+
+    fn is_scatterer(&self) -> bool {
+        true
+    }
+}
