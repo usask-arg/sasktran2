@@ -5,6 +5,7 @@ use crate::optical::traits::*;
 use crate::prelude::*;
 
 use anyhow::{Result, anyhow};
+use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 
 pub struct NumberDensityScatterer<T>
 where
@@ -105,18 +106,52 @@ where
 
         let mut outputs = outputs.mut_view();
 
-        Zip::indexed(&optical_quants.cross_section)
-            .and(&optical_quants.ssa)
-            .for_each(|(geo_idx, wavelength_idx), species_ext, species_scat| {
-                let nd = interp_numden[geo_idx];
-                outputs.total_extinction[[geo_idx, wavelength_idx]] += species_ext * nd;
-                outputs.ssa[[geo_idx, wavelength_idx]] += species_scat * nd;
+        let thread_pool = crate::threading::thread_pool()?;
 
-                for leg_idx in 0..legendre.dim().2 {
-                    outputs.legendre[[leg_idx, geo_idx, wavelength_idx]] +=
-                        species_scat * nd * legendre[[geo_idx, wavelength_idx, leg_idx]];
-                }
-            });
+        thread_pool.install(|| {
+            Zip::from(outputs.total_extinction.axis_iter_mut(Axis(1)))
+                .and(outputs.ssa.axis_iter_mut(Axis(1)))
+                .and(outputs.legendre.axis_iter_mut(Axis(2)))
+                .and(optical_quants.cross_section.axis_iter(Axis(1)))
+                .and(optical_quants.ssa.axis_iter(Axis(1)))
+                .and(legendre.axis_iter(Axis(1)))
+                .par_for_each(
+                    |mut output_extinction_col,
+                     mut output_ssa_col,
+                     mut output_legendre_wavelength,
+                     species_ext_col,
+                     species_scat_col,
+                     optical_legendre_wavelength| {
+                        Zip::from(&mut output_extinction_col)
+                            .and(&mut output_ssa_col)
+                            .and(&species_ext_col)
+                            .and(&species_scat_col)
+                            .and(&interp_numden)
+                            .for_each(
+                                |output_extinction, output_ssa, species_ext, species_scat, nd| {
+                                    *output_extinction += species_ext * nd;
+                                    *output_ssa += species_scat * nd;
+                                },
+                            );
+
+                        for (geo_idx, mut output_legendre_col) in output_legendre_wavelength
+                            .columns_mut()
+                            .into_iter()
+                            .enumerate()
+                        {
+                            let optical_legendre_row = optical_legendre_wavelength.row(geo_idx);
+                            let species_scat = species_scat_col[geo_idx];
+                            let nd = interp_numden[geo_idx];
+
+                            Zip::from(&mut output_legendre_col)
+                                .and(&optical_legendre_row)
+                                .for_each(|output_legendre, optical_legendre| {
+                                    *output_legendre += species_scat * nd * optical_legendre;
+                                });
+                        }
+                    },
+                );
+        });
 
         Ok(())
     }
@@ -142,6 +177,7 @@ where
         let optical_legendre = optical_quants.legendre.as_ref().ok_or_else(|| {
             anyhow!("Scattering optical property did not provide legendre coefficients")
         })?;
+        let thread_pool = crate::threading::thread_pool()?;
 
         let mut species_ssa = optical_quants.ssa.clone();
         Zip::from(&mut species_ssa)
@@ -168,25 +204,90 @@ where
                 .as_mut()
                 .ok_or_else(|| anyhow!("Scatterer derivative mapping missing scat_factor"))?;
 
-            Zip::indexed(&optical_quants.cross_section).for_each(
-                |(geo_idx, wavelength_idx), species_ext| {
-                    let species_ssa_val = species_ssa[[geo_idx, wavelength_idx]];
-                    let total_ext = outputs.total_extinction[[geo_idx, wavelength_idx]];
-                    let total_ssa = outputs.ssa[[geo_idx, wavelength_idx]];
+            thread_pool.install(|| {
+                Zip::from(mapping.d_extinction.axis_iter_mut(Axis(1)))
+                    .and(scat_factor.axis_iter_mut(Axis(1)))
+                    .and(optical_quants.cross_section.axis_iter(Axis(1)))
+                    .and(species_ssa.axis_iter(Axis(1)))
+                    .and(outputs.ssa.axis_iter(Axis(1)))
+                    .and(outputs.total_extinction.axis_iter(Axis(1)))
+                    .par_for_each(
+                        |mut d_extinction_col,
+                         mut scat_factor_col,
+                         species_ext_col,
+                         species_ssa_col,
+                         total_ssa_col,
+                         total_ext_col| {
+                            Zip::from(&mut d_extinction_col)
+                                .and(&mut scat_factor_col)
+                                .and(&species_ext_col)
+                                .and(&species_ssa_col)
+                                .and(&total_ssa_col)
+                                .and(&total_ext_col)
+                                .for_each(
+                                    |d_extinction,
+                                     scat_factor,
+                                     species_ext,
+                                     species_ssa_val,
+                                     total_ssa,
+                                     total_ext| {
+                                        *d_extinction += *species_ext;
+                                        *scat_factor +=
+                                            species_ssa_val * species_ext / (total_ssa * total_ext);
+                                    },
+                                );
+                        },
+                    );
 
-                    mapping.d_extinction[[geo_idx, wavelength_idx]] += *species_ext;
-                    mapping.d_ssa[[geo_idx, wavelength_idx]] +=
-                        species_ext * (species_ssa_val - total_ssa) / total_ext;
-                    scat_factor[[geo_idx, wavelength_idx]] +=
-                        species_ssa_val * species_ext / (total_ssa * total_ext);
+                Zip::from(mapping.d_ssa.axis_iter_mut(Axis(1)))
+                    .and(optical_quants.cross_section.axis_iter(Axis(1)))
+                    .and(species_ssa.axis_iter(Axis(1)))
+                    .and(outputs.ssa.axis_iter(Axis(1)))
+                    .and(outputs.total_extinction.axis_iter(Axis(1)))
+                    .par_for_each(
+                        |mut d_ssa_col,
+                         species_ext_col,
+                         species_ssa_col,
+                         total_ssa_col,
+                         total_ext_col| {
+                            Zip::from(&mut d_ssa_col)
+                                .and(&species_ext_col)
+                                .and(&species_ssa_col)
+                                .and(&total_ssa_col)
+                                .and(&total_ext_col)
+                                .for_each(
+                                    |d_ssa, species_ext, species_ssa_val, total_ssa, total_ext| {
+                                        *d_ssa +=
+                                            species_ext * (species_ssa_val - total_ssa) / total_ext;
+                                    },
+                                );
+                        },
+                    );
 
-                    for leg_idx in 0..optical_legendre.dim().2 {
-                        d_legendre[[leg_idx, geo_idx, wavelength_idx]] += optical_legendre
-                            [[geo_idx, wavelength_idx, leg_idx]]
-                            - outputs.legendre[[leg_idx, geo_idx, wavelength_idx]];
-                    }
-                },
-            );
+                Zip::from(d_legendre.axis_iter_mut(Axis(2)))
+                    .and(optical_legendre.axis_iter(Axis(1)))
+                    .and(outputs.legendre.axis_iter(Axis(2)))
+                    .par_for_each(
+                        |mut d_legendre_wavelength,
+                         optical_legendre_wavelength,
+                         output_legendre_wavelength| {
+                            for (geo_idx, mut d_legendre_col) in
+                                d_legendre_wavelength.columns_mut().into_iter().enumerate()
+                            {
+                                let optical_legendre_row = optical_legendre_wavelength.row(geo_idx);
+                                let output_legendre_col =
+                                    output_legendre_wavelength.column(geo_idx);
+
+                                Zip::from(&mut d_legendre_col)
+                                    .and(&optical_legendre_row)
+                                    .and(&output_legendre_col)
+                                    .for_each(|d_legendre, optical_legendre, output_legendre| {
+                                        *d_legendre += optical_legendre - output_legendre;
+                                    });
+                            }
+                        },
+                    );
+            });
         }
 
         let mut density_interpolator = interp_matrix.clone();
@@ -219,88 +320,176 @@ where
                     anyhow!("Scattering derivative did not provide legendre coefficients")
                 })?;
 
-                mapping.d_extinction += &val.cross_section;
-                Zip::from(&mut mapping.d_ssa)
-                    .and(&val.ssa)
-                    .and(&val.cross_section)
-                    .and(&species_ssa)
-                    .and(&optical_quants.cross_section)
-                    .for_each(|d_ssa, d_scat, d_ext, species_ssa_val, species_ext| {
-                        *d_ssa += (d_scat - d_ext * species_ssa_val) / species_ext;
-                    });
+                thread_pool.install(|| {
+                    Zip::from(mapping.d_extinction.axis_iter_mut(Axis(1)))
+                        .and(val.cross_section.axis_iter(Axis(1)))
+                        .par_for_each(|mut d_extinction_col, val_cross_section_col| {
+                            d_extinction_col += &val_cross_section_col;
+                        });
 
-                for geo_idx in 0..val_legendre.dim().0 {
-                    for wavelength_idx in 0..val_legendre.dim().1 {
-                        for leg_idx in 0..val_legendre.dim().2 {
-                            d_legendre[[leg_idx, geo_idx, wavelength_idx]] +=
-                                val_legendre[[geo_idx, wavelength_idx, leg_idx]];
-                        }
-                    }
-                }
+                    Zip::from(mapping.d_ssa.axis_iter_mut(Axis(1)))
+                        .and(val.ssa.axis_iter(Axis(1)))
+                        .and(val.cross_section.axis_iter(Axis(1)))
+                        .and(species_ssa.axis_iter(Axis(1)))
+                        .and(optical_quants.cross_section.axis_iter(Axis(1)))
+                        .par_for_each(
+                            |mut d_ssa_col,
+                             val_ssa_col,
+                             val_cross_section_col,
+                             species_ssa_col,
+                             species_ext_col| {
+                                Zip::from(&mut d_ssa_col)
+                                    .and(&val_ssa_col)
+                                    .and(&val_cross_section_col)
+                                    .and(&species_ssa_col)
+                                    .and(&species_ext_col)
+                                    .for_each(
+                                        |d_ssa, d_scat, d_ext, species_ssa_val, species_ext| {
+                                            *d_ssa +=
+                                                (d_scat - d_ext * species_ssa_val) / species_ext;
+                                        },
+                                    );
+                            },
+                        );
+
+                    Zip::from(d_legendre.axis_iter_mut(Axis(2)))
+                        .and(val_legendre.axis_iter(Axis(1)))
+                        .par_for_each(|mut d_legendre_wavelength, val_legendre_wavelength| {
+                            for (geo_idx, mut d_legendre_col) in
+                                d_legendre_wavelength.columns_mut().into_iter().enumerate()
+                            {
+                                let val_legendre_row = val_legendre_wavelength.row(geo_idx);
+
+                                Zip::from(&mut d_legendre_col)
+                                    .and(&val_legendre_row)
+                                    .for_each(|d_legendre, val_legendre| {
+                                        *d_legendre += val_legendre;
+                                    });
+                            }
+                        });
+                });
 
                 if let Some(d_vert) = self.d_vertical_deriv_factor.get(key) {
                     let interp_vertical = interp_matrix.dot(&self.vertical_deriv_factor);
                     let interp_d_vertical = interp_matrix.dot(d_vert);
 
-                    Zip::from(&mut mapping.d_extinction)
-                        .and(&optical_quants.cross_section)
-                        .and_broadcast(&interp_vertical.insert_axis(Axis(1)))
-                        .and_broadcast(&interp_d_vertical.insert_axis(Axis(1)))
-                        .for_each(|d_ext, species_ext, vert, d_vert| {
-                            *d_ext += species_ext / vert * d_vert;
+                    thread_pool.install(|| {
+                        Zip::from(mapping.d_extinction.axis_iter_mut(Axis(1)))
+                            .and(optical_quants.cross_section.axis_iter(Axis(1)))
+                            .par_for_each(|mut d_ext_col, species_ext_col| {
+                                Zip::from(&mut d_ext_col)
+                                    .and(&species_ext_col)
+                                    .and(&interp_vertical)
+                                    .and(&interp_d_vertical)
+                                    .for_each(|d_ext, species_ext, vert, d_vert| {
+                                        *d_ext += species_ext / vert * d_vert;
+                                    });
+                            });
+                    });
+                }
+
+                thread_pool.install(|| {
+                    d_legendre
+                        .axis_iter_mut(Axis(2))
+                        .into_par_iter()
+                        .enumerate()
+                        .for_each(|(wavelength_idx, mut d_legendre_wavelength)| {
+                            let optical_legendre_wavelength =
+                                optical_legendre.index_axis(Axis(1), wavelength_idx);
+                            let output_legendre_wavelength =
+                                outputs.legendre.index_axis(Axis(2), wavelength_idx);
+
+                            for (geo_idx, mut d_legendre_col) in
+                                d_legendre_wavelength.columns_mut().into_iter().enumerate()
+                            {
+                                let optical_legendre_row = optical_legendre_wavelength.row(geo_idx);
+                                let output_legendre_col =
+                                    output_legendre_wavelength.column(geo_idx);
+                                let species_ssa_val = species_ssa[[geo_idx, wavelength_idx]];
+                                let species_ext =
+                                    optical_quants.cross_section[[geo_idx, wavelength_idx]];
+                                let factor = mapping.d_ssa[[geo_idx, wavelength_idx]]
+                                    / species_ssa_val
+                                    + mapping.d_extinction[[geo_idx, wavelength_idx]] / species_ext;
+
+                                Zip::from(&mut d_legendre_col)
+                                    .and(&optical_legendre_row)
+                                    .and(&output_legendre_col)
+                                    .for_each(|d_legendre, optical_legendre, output_legendre| {
+                                        *d_legendre +=
+                                            (optical_legendre - output_legendre) * factor;
+                                    });
+                            }
                         });
-                }
 
-                Zip::indexed(&mut *d_legendre).for_each(
-                    |(leg_idx, geo_idx, wavelength_idx), d_leg| {
-                        let ssa_deriv = mapping.d_ssa[[geo_idx, wavelength_idx]];
-                        let ext_deriv = mapping.d_extinction[[geo_idx, wavelength_idx]];
-                        let species_ssa_val = species_ssa[[geo_idx, wavelength_idx]];
-                        let species_ext = optical_quants.cross_section[[geo_idx, wavelength_idx]];
+                    Zip::from(mapping.d_ssa.axis_iter_mut(Axis(1)))
+                        .and(mapping.d_extinction.axis_iter(Axis(1)))
+                        .and(species_ssa.axis_iter(Axis(1)))
+                        .and(optical_quants.cross_section.axis_iter(Axis(1)))
+                        .and(outputs.ssa.axis_iter(Axis(1)))
+                        .and(outputs.total_extinction.axis_iter(Axis(1)))
+                        .par_for_each(
+                            |mut d_ssa_col,
+                             d_ext_col,
+                             species_ssa_col,
+                             species_ext_col,
+                             total_ssa_col,
+                             total_ext_col| {
+                                Zip::from(&mut d_ssa_col)
+                                    .and(&d_ext_col)
+                                    .and(&species_ssa_col)
+                                    .and(&species_ext_col)
+                                    .and(&total_ssa_col)
+                                    .and(&total_ext_col)
+                                    .for_each(
+                                        |d_ssa,
+                                         d_ext,
+                                         species_ssa_val,
+                                         species_ext,
+                                         total_ssa,
+                                         total_ext| {
+                                            *d_ssa *= species_ext;
+                                            *d_ssa += d_ext * (species_ssa_val - total_ssa);
+                                            *d_ssa /= total_ext;
+                                        },
+                                    );
+                            },
+                        );
 
-                        *d_leg += (optical_legendre[[geo_idx, wavelength_idx, leg_idx]]
-                            - outputs.legendre[[leg_idx, geo_idx, wavelength_idx]])
-                            * (ssa_deriv / species_ssa_val + ext_deriv / species_ext);
-                    },
-                );
+                    Zip::from(d_legendre.axis_iter_mut(Axis(2)))
+                        .and(scat_factor.axis_iter_mut(Axis(1)))
+                        .and(species_ssa.axis_iter(Axis(1)))
+                        .and(optical_quants.cross_section.axis_iter(Axis(1)))
+                        .and(outputs.ssa.axis_iter(Axis(1)))
+                        .and(outputs.total_extinction.axis_iter(Axis(1)))
+                        .par_for_each(
+                            |mut d_legendre_wavelength,
+                             mut scat_factor_col,
+                             species_ssa_col,
+                             species_ext_col,
+                             total_ssa_col,
+                             total_ext_col| {
+                                for (geo_idx, mut d_legendre_col) in
+                                    d_legendre_wavelength.columns_mut().into_iter().enumerate()
+                                {
+                                    let mut norm_factor = f64::NEG_INFINITY;
+                                    for val in d_legendre_col.iter() {
+                                        norm_factor = norm_factor.max(*val);
+                                    }
+                                    if norm_factor == 0.0 {
+                                        norm_factor = 1.0;
+                                    }
 
-                Zip::from(&mut mapping.d_ssa)
-                    .and(&mapping.d_extinction)
-                    .and(&species_ssa)
-                    .and(&optical_quants.cross_section)
-                    .and(&outputs.ssa)
-                    .and(&outputs.total_extinction)
-                    .for_each(
-                        |d_ssa, d_ext, species_ssa_val, species_ext, total_ssa, total_ext| {
-                            *d_ssa *= species_ext;
-                            *d_ssa += d_ext * (species_ssa_val - total_ssa);
-                            *d_ssa /= total_ext;
-                        },
-                    );
+                                    scat_factor_col[geo_idx] = species_ssa_col[geo_idx]
+                                        * species_ext_col[geo_idx]
+                                        / (total_ssa_col[geo_idx] * total_ext_col[geo_idx])
+                                        * norm_factor;
 
-                for geo_idx in 0..d_legendre.dim().1 {
-                    for wavelength_idx in 0..d_legendre.dim().2 {
-                        let mut norm_factor = f64::NEG_INFINITY;
-                        for leg_idx in 0..d_legendre.dim().0 {
-                            norm_factor =
-                                norm_factor.max(d_legendre[[leg_idx, geo_idx, wavelength_idx]]);
-                        }
-                        if norm_factor == 0.0 {
-                            norm_factor = 1.0;
-                        }
-
-                        scat_factor[[geo_idx, wavelength_idx]] = species_ssa
-                            [[geo_idx, wavelength_idx]]
-                            * optical_quants.cross_section[[geo_idx, wavelength_idx]]
-                            / (outputs.ssa[[geo_idx, wavelength_idx]]
-                                * outputs.total_extinction[[geo_idx, wavelength_idx]]);
-
-                        for leg_idx in 0..d_legendre.dim().0 {
-                            d_legendre[[leg_idx, geo_idx, wavelength_idx]] /= norm_factor;
-                        }
-                        scat_factor[[geo_idx, wavelength_idx]] *= norm_factor;
-                    }
-                }
+                                    d_legendre_col.mapv_inplace(|val| val / norm_factor);
+                                }
+                            },
+                        );
+                });
             }
 
             let mut optical_interpolator = interp_matrix.clone();
