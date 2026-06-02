@@ -34,7 +34,7 @@ pub enum EmissionSource {
     Standard,
     DiscreteOrdinates,
     VolumeEmissionRate,
-    TwoStream
+    TwoStream,
 }
 
 #[pyclass(eq, eq_int)]
@@ -81,7 +81,7 @@ pub enum FluxType {
     Upwelling = 0,
     Downwelling = 1,
     Actinic = 2,
-    Divergence = 3
+    Divergence = 3,
 }
 
 #[pyclass(eq, eq_int)]
@@ -631,7 +631,8 @@ impl PyConfig {
 
     #[setter]
     fn set_flux_types(&mut self, flux_types: Vec<FluxType>) -> PyResult<()> {
-        let flux_types = flux_types            .iter()
+        let flux_types = flux_types
+            .iter()
             .map(|flux_type| match flux_type {
                 FluxType::Upwelling => config::FluxType::Upwelling,
                 FluxType::Downwelling => config::FluxType::Downwelling,
@@ -640,7 +641,9 @@ impl PyConfig {
             })
             .collect::<Vec<_>>();
 
-        self.config.with_flux_types(flux_types.as_slice()).into_pyresult()?;
+        self.config
+            .with_flux_types(flux_types.as_slice())
+            .into_pyresult()?;
 
         Ok(())
     }

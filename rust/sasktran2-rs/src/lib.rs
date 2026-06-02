@@ -10,6 +10,6 @@ pub mod constituent;
 pub mod interpolation;
 pub mod mie;
 pub mod optical;
+pub mod photchem;
 pub mod prelude;
 pub mod util;
-pub mod photchem;

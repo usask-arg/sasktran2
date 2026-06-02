@@ -873,10 +873,12 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix4> {
                     Zip::indexed(wvnum).for_each(|j, wv| {
                         let wvnum_weights = &self.wvnum.interp1_weights(*wv, OutOfBoundsMode::Zero);
 
-                        let local_xs = self.xsec[[i0, i1, i2, wvnum_weights[0].0]] * wvnum_weights[0].1
+                        let local_xs = self.xsec[[i0, i1, i2, wvnum_weights[0].0]]
+                            * wvnum_weights[0].1
                             + self.xsec[[i0, i1, i2, wvnum_weights[1].0]] * wvnum_weights[1].1;
 
-                        let local_ssa = self.ssa[[i0, i1, i2, wvnum_weights[0].0]] * wvnum_weights[0].1
+                        let local_ssa = self.ssa[[i0, i1, i2, wvnum_weights[0].0]]
+                            * wvnum_weights[0].1
                             + self.ssa[[i0, i1, i2, wvnum_weights[1].0]] * wvnum_weights[1].1;
 
                         xs[j] += local_xs * (*weight0 * *weight1 * *weight2);
@@ -950,10 +952,12 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix4> {
                     Zip::indexed(wvnum).for_each(|j, wv| {
                         let wvnum_weights = &self.wvnum.interp1_weights(*wv, OutOfBoundsMode::Zero);
 
-                        let local_xs = self.xsec[[i0, i1, i2, wvnum_weights[0].0]] * wvnum_weights[0].1
+                        let local_xs = self.xsec[[i0, i1, i2, wvnum_weights[0].0]]
+                            * wvnum_weights[0].1
                             + self.xsec[[i0, i1, i2, wvnum_weights[1].0]] * wvnum_weights[1].1;
 
-                        let local_ssa = self.ssa[[i0, i1, i2, wvnum_weights[0].0]] * wvnum_weights[0].1
+                        let local_ssa = self.ssa[[i0, i1, i2, wvnum_weights[0].0]]
+                            * wvnum_weights[0].1
                             + self.ssa[[i0, i1, i2, wvnum_weights[1].0]] * wvnum_weights[1].1;
 
                         xs[j] += local_xs * (*d_weight0 * *weight1 * *weight2);
@@ -996,10 +1000,12 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix4> {
                     Zip::indexed(wvnum).for_each(|j, wv| {
                         let wvnum_weights = &self.wvnum.interp1_weights(*wv, OutOfBoundsMode::Zero);
 
-                        let local_xs = self.xsec[[i0, i1, i2, wvnum_weights[0].0]] * wvnum_weights[0].1
+                        let local_xs = self.xsec[[i0, i1, i2, wvnum_weights[0].0]]
+                            * wvnum_weights[0].1
                             + self.xsec[[i0, i1, i2, wvnum_weights[1].0]] * wvnum_weights[1].1;
 
-                        let local_ssa = self.ssa[[i0, i1, i2, wvnum_weights[0].0]] * wvnum_weights[0].1
+                        let local_ssa = self.ssa[[i0, i1, i2, wvnum_weights[0].0]]
+                            * wvnum_weights[0].1
                             + self.ssa[[i0, i1, i2, wvnum_weights[1].0]] * wvnum_weights[1].1;
 
                         xs[j] += local_xs * (*weight0 * *d_weight1 * *weight2);
@@ -1042,10 +1048,12 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix4> {
                     Zip::indexed(wvnum).for_each(|j, wv| {
                         let wvnum_weights = &self.wvnum.interp1_weights(*wv, OutOfBoundsMode::Zero);
 
-                        let local_xs = self.xsec[[i0, i1, i2, wvnum_weights[0].0]] * wvnum_weights[0].1
+                        let local_xs = self.xsec[[i0, i1, i2, wvnum_weights[0].0]]
+                            * wvnum_weights[0].1
                             + self.xsec[[i0, i1, i2, wvnum_weights[1].0]] * wvnum_weights[1].1;
 
-                        let local_ssa = self.ssa[[i0, i1, i2, wvnum_weights[0].0]] * wvnum_weights[0].1
+                        let local_ssa = self.ssa[[i0, i1, i2, wvnum_weights[0].0]]
+                            * wvnum_weights[0].1
                             + self.ssa[[i0, i1, i2, wvnum_weights[1].0]] * wvnum_weights[1].1;
 
                         xs[j] += local_xs * (*weight0 * *weight1 * *d_weight2);
@@ -1173,7 +1181,11 @@ impl OpticalProperty for ScatteringDatabase<Ix4> {
             self.param_names[2].as_str(),
         ]);
 
-        let [optical_quantities0, optical_quantities1, optical_quantities2] = optical_quantities;
+        let [
+            optical_quantities0,
+            optical_quantities1,
+            optical_quantities2,
+        ] = optical_quantities;
 
         let optical_quantities0 = optical_quantities0.unwrap();
         let optical_quantities1 = optical_quantities1.unwrap();

@@ -473,7 +473,11 @@ mod generated_format_tests {
     #[test]
     fn reads_generated_style_fixed_width_blocks() {
         // Header shape mirrors the generated Schumann-Runge file format.
-        let data = format!("{}{}", build_block(90.0, 1.0e-20), build_block(300.0, 2.0e-20));
+        let data = format!(
+            "{}{}",
+            build_block(90.0, 1.0e-20),
+            build_block(300.0, 2.0e-20)
+        );
 
         let path = write_temp_xsc(&data);
         let db = read_fwf_xsec(path.clone()).expect("parser should load valid generated-style xsc");
@@ -496,8 +500,8 @@ mod generated_format_tests {
     #[test]
     #[ignore = "Local verification test: requires generated cross-sections/xs/O2SCHRUNG file"]
     fn reads_generated_o2_schumann_runge_file() {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../cross-sections/xs/O2SCHRUNG");
+        let path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../cross-sections/xs/O2SCHRUNG");
 
         let db = read_fwf_xsec(path).expect("generated O2SCHRUNG should be parseable");
 

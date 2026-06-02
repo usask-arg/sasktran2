@@ -12,9 +12,9 @@ mod geodetic;
 mod geometry;
 mod optical;
 mod output;
+mod photchem;
 mod pyrebasis;
 mod viewing_geometry;
-mod photchem;
 
 use pyo3::prelude::*;
 

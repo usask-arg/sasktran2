@@ -508,6 +508,12 @@ pub struct PyScatteringDatabaseDim4 {
     pub db: ScatteringDatabase<Ix4>,
 }
 
+impl HasDb for PyScatteringDatabaseDim4 {
+    fn db(&self) -> &dyn OpticalProperty {
+        &self.db
+    }
+}
+
 #[pymethods]
 impl PyScatteringDatabaseDim4 {
     #[new]

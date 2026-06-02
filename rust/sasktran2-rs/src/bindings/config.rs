@@ -34,7 +34,7 @@ pub enum EmissionSource {
     Standard = 0,
     DiscreteOrdinates = 2,
     VolumeEmissionRate = 3,
-    TwoStream = 4
+    TwoStream = 4,
 }
 
 #[repr(i32)]
@@ -91,7 +91,7 @@ pub enum FluxType {
     Upwelling = 0,
     Downwelling = 1,
     Actinic = 2,
-    Divergence = 3
+    Divergence = 3,
 }
 
 /// A wrapper around the c++ Config object, implemented on the c++ side, see
@@ -945,12 +945,8 @@ impl Config {
     pub fn get_flux_types(&self) -> Result<Vec<FluxType>> {
         let num_flux_types = self.num_flux_types()?;
         let mut flux_types_i32: Vec<i32> = vec![0; num_flux_types];
-        let error_code = unsafe {
-            ffi::sk_config_get_flux_types(
-                self.config,
-                flux_types_i32.as_mut_ptr()
-            )
-        };
+        let error_code =
+            unsafe { ffi::sk_config_get_flux_types(self.config, flux_types_i32.as_mut_ptr()) };
 
         if error_code != 0 {
             Err(anyhow!(
@@ -964,7 +960,6 @@ impl Config {
                 .collect())
         }
     }
-
 }
 
 impl Drop for Config {

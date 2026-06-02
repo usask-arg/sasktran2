@@ -12,6 +12,7 @@ use sasktran2_rs::optical::traits::*;
 use crate::optical::line_absorber::PyLineAbsorber;
 use crate::optical::scat_dbase::{
     PyScatteringDatabaseDim1, PyScatteringDatabaseDim2, PyScatteringDatabaseDim3,
+    PyScatteringDatabaseDim4,
 };
 use crate::optical::xsec_absorber::PyXsecAbsorber;
 use crate::optical::xsec_dbase::*;
@@ -41,6 +42,7 @@ fn with_optical_downcast(
         PyScatteringDatabaseDim1,
         PyScatteringDatabaseDim2,
         PyScatteringDatabaseDim3,
+        PyScatteringDatabaseDim4,
         PyLineAbsorber,
         PyXsecAbsorber
     );
