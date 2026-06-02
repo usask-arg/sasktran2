@@ -4,7 +4,11 @@ from copy import copy
 
 import numpy as np
 import sasktran2 as sk
-from sasktran2.optical.database import OpticalDatabaseGenericScatterer
+import xarray as xr
+from sasktran2.optical.database import (
+    OpticalDatabaseGenericScatterer,
+    OpticalDatabaseGenericScattererRust,
+)
 
 
 def _storage_delta(atmosphere: sk.Atmosphere, constituent):
@@ -296,3 +300,74 @@ def test_scattering_db_rust_impl():
                 atol=1e-5,
                 err_msg="Legendre coefficients do not match between Rust and Python",
             )
+
+
+def test_scattering_db_dim4_construction(tmp_path):
+    wavelengths_nm = np.array([350.0, 500.0])
+    legendre_order = np.array([0, 1])
+    param0 = np.array([0.1, 0.2])
+    param1 = np.array([1.0, 2.0])
+    param2 = np.array([10.0, 20.0])
+
+    shape = (
+        len(param0),
+        len(param1),
+        len(param2),
+        len(wavelengths_nm),
+        len(legendre_order),
+    )
+    xs_total = np.full(shape[:-1], 1e-4)
+    xs_scattering = np.full(shape[:-1], 0.9e-4)
+    lm_a1 = np.ones(shape)
+    lm_a2 = np.zeros(shape)
+    lm_a3 = np.zeros(shape)
+    lm_a4 = np.zeros(shape)
+    lm_b1 = np.zeros(shape)
+    lm_b2 = np.zeros(shape)
+
+    ds = xr.Dataset(
+        {
+            "xs_total": (("p0", "p1", "p2", "wavelength_nm"), xs_total),
+            "xs_scattering": (("p0", "p1", "p2", "wavelength_nm"), xs_scattering),
+            "lm_a1": (("p0", "p1", "p2", "wavelength_nm", "legendre"), lm_a1),
+            "lm_a2": (("p0", "p1", "p2", "wavelength_nm", "legendre"), lm_a2),
+            "lm_a3": (("p0", "p1", "p2", "wavelength_nm", "legendre"), lm_a3),
+            "lm_a4": (("p0", "p1", "p2", "wavelength_nm", "legendre"), lm_a4),
+            "lm_b1": (("p0", "p1", "p2", "wavelength_nm", "legendre"), lm_b1),
+            "lm_b2": (("p0", "p1", "p2", "wavelength_nm", "legendre"), lm_b2),
+        },
+        coords={
+            "p0": param0,
+            "p1": param1,
+            "p2": param2,
+            "wavelength_nm": wavelengths_nm,
+            "legendre": legendre_order,
+        },
+    )
+
+    db_file = tmp_path / "dim4_scattering.nc"
+    ds.to_netcdf(db_file)
+
+    scatterer = OpticalDatabaseGenericScattererRust(db_file)
+
+    altitudes = np.array([0.0, 1000.0, 2000.0])
+    quants = scatterer.cross_sections(
+        wavelengths_nm=wavelengths_nm,
+        altitudes_m=altitudes,
+        p0=np.full_like(altitudes, 0.15),
+        p1=np.full_like(altitudes, 1.5),
+        p2=np.full_like(altitudes, 15.0),
+    )
+
+    np.testing.assert_allclose(quants.extinction, 1e-4, rtol=1e-6)
+    np.testing.assert_allclose(quants.ssa, 0.9e-4, rtol=1e-6)
+
+    derivs = scatterer.cross_section_derivatives(
+        wavelengths_nm=wavelengths_nm,
+        altitudes_m=altitudes,
+        p0=np.full_like(altitudes, 0.15),
+        p1=np.full_like(altitudes, 1.5),
+        p2=np.full_like(altitudes, 15.0),
+    )
+
+    assert set(derivs.keys()) == {"p0", "p1", "p2"}
