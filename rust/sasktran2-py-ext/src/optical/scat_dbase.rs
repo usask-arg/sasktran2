@@ -11,11 +11,17 @@ use sasktran2_rs::optical::types::scat_dbase::ScatteringDatabase;
 use crate::constituent::atmo_storage::AtmosphereStorage;
 
 use super::optical_quantities::PyOpticalQuantities;
-use crate::optical::xsec_dbase::PyDictWrapper;
+use crate::optical::xsec_dbase::{HasDb, PyDictWrapper};
 
 #[pyclass]
 pub struct PyScatteringDatabaseDim1 {
     pub db: ScatteringDatabase<Ix1>,
+}
+
+impl HasDb for PyScatteringDatabaseDim1 {
+    fn db(&self) -> &dyn OpticalProperty {
+        &self.db
+    }
 }
 
 #[pymethods]
@@ -148,6 +154,12 @@ impl PyScatteringDatabaseDim1 {
 #[pyclass]
 pub struct PyScatteringDatabaseDim2 {
     pub db: ScatteringDatabase<Ix2>,
+}
+
+impl HasDb for PyScatteringDatabaseDim2 {
+    fn db(&self) -> &dyn OpticalProperty {
+        &self.db
+    }
 }
 
 #[pymethods]
@@ -316,6 +328,12 @@ impl PyScatteringDatabaseDim2 {
 #[pyclass]
 pub struct PyScatteringDatabaseDim3 {
     pub db: ScatteringDatabase<Ix3>,
+}
+
+impl HasDb for PyScatteringDatabaseDim3 {
+    fn db(&self) -> &dyn OpticalProperty {
+        &self.db
+    }
 }
 
 #[pymethods]
