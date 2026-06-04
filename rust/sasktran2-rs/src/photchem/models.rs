@@ -1,6 +1,7 @@
 use crate::bindings::lapack::dgesv;
 use crate::prelude::*;
 
+use super::emission::OXYGEN_GREEN_LINE_EINSTEIN_A_S;
 use super::types::{ChemicalReaction, Molecule, MoleculeMap, PhotoReaction};
 
 pub const LYMAN_ALPHA_WAVELENGTH_NM: f64 = 121.567;
@@ -613,6 +614,12 @@ impl Yankovsky {
         }
 
         let mut chemical_reactions = vec![
+            // O(1S) scaffold for oxygen green-line emissions. Production pathways
+            // are intentionally left for later photochemistry/NLTE work.
+            "O(1S) -> O(1D)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_einstein_coefficient(|_| OXYGEN_GREEN_LINE_EINSTEIN_A_S),
             // O(1D) deactivation reactions
             "O(1D) -> O(3P)"
                 .parse::<ChemicalReaction>()

@@ -116,3 +116,8 @@ def actinic_flux():
 
 if __name__ == "__main__":
     actinic_flux()
+
+
+from .models import Yankovsky  # noqa: E402
+
+__all__ = ["Yankovsky", "actinic_flux"]

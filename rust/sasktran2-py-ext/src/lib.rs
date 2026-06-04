@@ -27,6 +27,7 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<constituent::number_density_scatterer::PyNumberDensityScatterer>()?;
     m.add_class::<constituent::manual::PyManual>()?;
     m.add_class::<constituent::volume_emission_rate::PyMonochromaticVolumeEmissionRate>()?;
+    m.add_class::<constituent::line_list_volume_emission_rate::PyLineListVolumeEmissionRate>()?;
 
     // Optical databases
     m.add_class::<optical::xsec_dbase::AbsorberDatabaseDim1>()?;

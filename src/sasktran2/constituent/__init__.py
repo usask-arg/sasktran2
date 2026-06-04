@@ -8,6 +8,7 @@ from .brdf.modis import MODIS
 from .collisioninducedabsorber import CollisionInducedAbsorber
 from .emission import SurfaceThermalEmission, ThermalEmission
 from .gaussianheight import GaussianHeightExtinction
+from .linelistvolumeemissionrate import LineListVolumeEmissionRate
 from .manual import Manual
 from .numdenscatterer import ExtinctionScatterer, NumberDensityScatterer
 from .rayleigh import Rayleigh

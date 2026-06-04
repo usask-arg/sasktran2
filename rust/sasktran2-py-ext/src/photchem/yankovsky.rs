@@ -4,6 +4,15 @@ use anyhow::anyhow;
 use ndarray::{Array2, Axis, s};
 use numpy::{PyArray1, PyArray2, PyArrayMethods};
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
+use sasktran2_rs::optical::line::hitran_loader::{hitran_molecule_file, read_hitran_line_file};
+use sasktran2_rs::photchem::emission::{
+    EmissionBand, MCDADE_OXYGEN_GREEN_LINE_C0, MCDADE_OXYGEN_GREEN_LINE_C1,
+    MCDADE_OXYGEN_GREEN_LINE_C2, MCDADE_OXYGEN_GREEN_LINE_EINSTEIN_A_1S_S,
+    MCDADE_OXYGEN_GREEN_LINE_EINSTEIN_A_558_S, O2_A_BAND_CENTER_WAVELENGTH_NM,
+    O2_A_BAND_TOTAL_EINSTEIN_A_S, OXYGEN_GREEN_LINE_EINSTEIN_A_S, OXYGEN_GREEN_LINE_WAVELENGTH_NM,
+    mcdade_oxygen_green_line_photon_ver,
+};
 use sasktran2_rs::photchem::models::*;
 
 use crate::prelude::IntoPyResult;
@@ -232,6 +241,397 @@ impl PyYankovsky {
         let kwargs = pyo3::types::PyDict::new(py);
         kwargs.set_item("data_vars", data_vars)?;
         kwargs.set_item("coords", coords)?;
+
+        let out = xr.getattr("Dataset")?.call((), Some(&kwargs))?;
+
+        Ok(out.into())
+    }
+
+    pub fn emission_rates(&self, state: &Bound<PyAny>) -> PyResult<Py<PyAny>> {
+        let py = state.py();
+        let xr = py.import("xarray")?;
+        let np = py.import("numpy")?;
+
+        let altitude = state.get_item("altitude")?;
+
+        let o1s = state.get_item("O(1S)")?;
+        let o1s = o1s.call_method0("to_numpy")?;
+        let o1s = o1s.cast_into::<PyArray1<f64>>()?;
+        let o1s = o1s.readonly();
+        let o1s = o1s.as_array();
+
+        let o2_b0 = state.get_item("O2(b)")?;
+        let o2_b0 = o2_b0.call_method0("to_numpy")?;
+        let o2_b0 = o2_b0.cast_into::<PyArray1<f64>>()?;
+        let o2_b0 = o2_b0.readonly();
+        let o2_b0 = o2_b0.as_array();
+
+        let o2_b1 = match state.get_item("O2(b, v=1)") {
+            Ok(o2_b1) => {
+                let o2_b1 = o2_b1.call_method0("to_numpy")?;
+                let o2_b1 = o2_b1.cast_into::<PyArray1<f64>>()?;
+                let o2_b1 = o2_b1.readonly();
+                o2_b1.as_array().to_owned()
+            }
+            Err(_) => ndarray::Array1::zeros(o2_b0.len()),
+        };
+
+        let oxygen_green: Vec<f64> = o1s
+            .iter()
+            .map(|population| population * OXYGEN_GREEN_LINE_EINSTEIN_A_S)
+            .collect();
+        let oxygen_a_band_b0: Vec<f64> = o2_b0
+            .iter()
+            .map(|population| population * O2_A_BAND_TOTAL_EINSTEIN_A_S)
+            .collect();
+        let oxygen_a_band_b1: Vec<f64> = o2_b1
+            .iter()
+            .map(|population| population * O2_A_BAND_TOTAL_EINSTEIN_A_S)
+            .collect();
+        let oxygen_a_band: Vec<f64> = oxygen_a_band_b0
+            .iter()
+            .zip(oxygen_a_band_b1.iter())
+            .map(|(b0, b1)| b0 + b1)
+            .collect();
+
+        let data_vars = PyDict::new(py);
+        data_vars.set_item(
+            "oxygen_green_5577_photon_ver",
+            (
+                vec!["altitude"],
+                np.getattr("array")?.call1((oxygen_green,))?,
+            ),
+        )?;
+        data_vars.set_item(
+            "oxygen_a_band_photon_ver",
+            (
+                vec!["altitude"],
+                np.getattr("array")?.call1((oxygen_a_band,))?,
+            ),
+        )?;
+        data_vars.set_item(
+            "oxygen_a_band_b0_photon_ver",
+            (
+                vec!["altitude"],
+                np.getattr("array")?.call1((oxygen_a_band_b0,))?,
+            ),
+        )?;
+        data_vars.set_item(
+            "oxygen_a_band_b1_photon_ver",
+            (
+                vec!["altitude"],
+                np.getattr("array")?.call1((oxygen_a_band_b1,))?,
+            ),
+        )?;
+
+        let coords = PyDict::new(py);
+        coords.set_item("altitude", altitude)?;
+
+        let attrs = PyDict::new(py);
+        attrs.set_item("emission_units", "photons m^-3 s^-1")?;
+        attrs.set_item(
+            "oxygen_green_wavelength_nm",
+            OXYGEN_GREEN_LINE_WAVELENGTH_NM,
+        )?;
+        attrs.set_item(
+            "oxygen_a_band_center_wavelength_nm",
+            O2_A_BAND_CENTER_WAVELENGTH_NM,
+        )?;
+
+        let kwargs = PyDict::new(py);
+        kwargs.set_item("data_vars", data_vars)?;
+        kwargs.set_item("coords", coords)?;
+        kwargs.set_item("attrs", attrs)?;
+
+        let out = xr.getattr("Dataset")?.call((), Some(&kwargs))?;
+
+        Ok(out.into())
+    }
+
+    pub fn oxygen_green_line_mcdade(&self, state: &Bound<PyAny>) -> PyResult<Py<PyAny>> {
+        let py = state.py();
+        let xr = py.import("xarray")?;
+        let np = py.import("numpy")?;
+
+        let altitude = state.get_item("altitude")?;
+
+        let temperature = match state.get_item("temperature") {
+            Ok(temperature) => temperature,
+            Err(_) => state.get_item("temperature_k")?,
+        };
+        let temperature = temperature.call_method0("to_numpy")?;
+        let temperature = temperature.cast_into::<PyArray1<f64>>()?;
+        let temperature = temperature.readonly();
+        let temperature = temperature.as_array();
+
+        let atomic_o = match state.get_item("o_density") {
+            Ok(o_density) => o_density,
+            Err(_) => state.get_item("o3p_density")?,
+        };
+        let atomic_o = atomic_o.call_method0("to_numpy")?;
+        let atomic_o = atomic_o.cast_into::<PyArray1<f64>>()?;
+        let atomic_o = atomic_o.readonly();
+        let atomic_o = atomic_o.as_array();
+
+        let o2 = state.get_item("o2_density")?;
+        let o2 = o2.call_method0("to_numpy")?;
+        let o2 = o2.cast_into::<PyArray1<f64>>()?;
+        let o2 = o2.readonly();
+        let o2 = o2.as_array();
+
+        let n2 = state.get_item("n2_density")?;
+        let n2 = n2.call_method0("to_numpy")?;
+        let n2 = n2.cast_into::<PyArray1<f64>>()?;
+        let n2 = n2.readonly();
+        let n2 = n2.as_array();
+
+        let photon_ver =
+            mcdade_oxygen_green_line_photon_ver(temperature, atomic_o, o2, n2).into_pyresult()?;
+        let o1s_population = photon_ver.mapv(|ver| ver / MCDADE_OXYGEN_GREEN_LINE_EINSTEIN_A_558_S);
+
+        let data_vars = PyDict::new(py);
+        data_vars.set_item(
+            "oxygen_green_5577_photon_ver",
+            (
+                vec!["altitude"],
+                np.getattr("array")?.call1((photon_ver.to_vec(),))?,
+            ),
+        )?;
+        data_vars.set_item(
+            "O(1S)",
+            (
+                vec!["altitude"],
+                np.getattr("array")?.call1((o1s_population.to_vec(),))?,
+            ),
+        )?;
+
+        let coords = PyDict::new(py);
+        coords.set_item("altitude", altitude)?;
+
+        let attrs = PyDict::new(py);
+        attrs.set_item("emission_units", "photons m^-3 s^-1")?;
+        attrs.set_item(
+            "model",
+            "McDade/Murtagh short-form Barth oxygen green-line parameterization",
+        )?;
+        attrs.set_item(
+            "oxygen_green_wavelength_nm",
+            OXYGEN_GREEN_LINE_WAVELENGTH_NM,
+        )?;
+        attrs.set_item("mcdade_a558_s", MCDADE_OXYGEN_GREEN_LINE_EINSTEIN_A_558_S)?;
+        attrs.set_item(
+            "mcdade_a1s_total_s",
+            MCDADE_OXYGEN_GREEN_LINE_EINSTEIN_A_1S_S,
+        )?;
+        attrs.set_item("mcdade_c0", MCDADE_OXYGEN_GREEN_LINE_C0)?;
+        attrs.set_item("mcdade_c1", MCDADE_OXYGEN_GREEN_LINE_C1)?;
+        attrs.set_item("mcdade_c2", MCDADE_OXYGEN_GREEN_LINE_C2)?;
+        attrs.set_item(
+            "density_units",
+            "input number densities are m^-3; McDade rate expression is evaluated in cm^-3 internally",
+        )?;
+
+        let kwargs = PyDict::new(py);
+        kwargs.set_item("data_vars", data_vars)?;
+        kwargs.set_item("coords", coords)?;
+        kwargs.set_item("attrs", attrs)?;
+
+        let out = xr.getattr("Dataset")?.call((), Some(&kwargs))?;
+
+        Ok(out.into())
+    }
+
+    pub fn oxygen_a_band_line_data(
+        &self,
+        py: Python<'_>,
+        hitran_directory: &str,
+    ) -> PyResult<Py<PyAny>> {
+        let directory = std::path::PathBuf::from(hitran_directory);
+        let db = read_hitran_line_file(hitran_molecule_file("O2", &directory).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!(
+                "Failed to find O2 HITRAN line file: {e}"
+            ))
+        })?)
+        .map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!(
+                "Failed to read O2 HITRAN line file: {e}"
+            ))
+        })?;
+
+        let band = EmissionBand::oxygen_a_band_from_hitran(&db)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+
+        let xr = py.import("xarray")?;
+        let np = py.import("numpy")?;
+
+        let wavelength = band.wavelengths_nm().to_vec();
+        let wavenumber: Vec<f64> = band
+            .lines
+            .iter()
+            .map(|line| line.wavenumber_cminv)
+            .collect();
+        let weights = band.weights().to_vec();
+        let line_intensity_296: Vec<f64> = band
+            .lines
+            .iter()
+            .map(|line| line.line_intensity_296)
+            .collect();
+        let einstein_a: Vec<f64> = band.lines.iter().map(|line| line.einstein_a_s).collect();
+        let isotope_id: Vec<i32> = band.lines.iter().map(|line| line.isotope_id).collect();
+        let isotope_abundance: Vec<f64> = band
+            .lines
+            .iter()
+            .map(|line| line.isotope_abundance)
+            .collect();
+        let lower_energy: Vec<f64> = band
+            .lines
+            .iter()
+            .map(|line| line.lower_energy_cminv)
+            .collect();
+        let upper_energy: Vec<f64> = band
+            .lines
+            .iter()
+            .map(|line| line.upper_energy_cminv)
+            .collect();
+        let upper_state_id: Vec<String> = band
+            .lines
+            .iter()
+            .map(|line| line.upper_state_id.clone())
+            .collect();
+        let lower_state_id: Vec<String> = band
+            .lines
+            .iter()
+            .map(|line| line.lower_state_id.clone())
+            .collect();
+        let upper_vibrational_state: Vec<String> = band
+            .lines
+            .iter()
+            .map(|line| line.upper_vibrational_state.clone())
+            .collect();
+        let lower_vibrational_state: Vec<String> = band
+            .lines
+            .iter()
+            .map(|line| line.lower_vibrational_state.clone())
+            .collect();
+        let upper_statistical_weight: Vec<f64> = band
+            .lines
+            .iter()
+            .map(|line| line.upper_statistical_weight.unwrap_or(f64::NAN))
+            .collect();
+        let lower_statistical_weight: Vec<f64> = band
+            .lines
+            .iter()
+            .map(|line| line.lower_statistical_weight.unwrap_or(f64::NAN))
+            .collect();
+        let upper_branching_ratio: Vec<f64> = band
+            .lines
+            .iter()
+            .map(|line| line.upper_branching_ratio)
+            .collect();
+
+        let data_vars = PyDict::new(py);
+        data_vars.set_item(
+            "weight",
+            (vec!["line"], np.getattr("array")?.call1((weights,))?),
+        )?;
+        data_vars.set_item(
+            "line_intensity_296",
+            (
+                vec!["line"],
+                np.getattr("array")?.call1((line_intensity_296,))?,
+            ),
+        )?;
+        data_vars.set_item(
+            "einstein_a_s",
+            (vec!["line"], np.getattr("array")?.call1((einstein_a,))?),
+        )?;
+        data_vars.set_item(
+            "isotope_id",
+            (vec!["line"], np.getattr("array")?.call1((isotope_id,))?),
+        )?;
+        data_vars.set_item(
+            "isotope_abundance",
+            (
+                vec!["line"],
+                np.getattr("array")?.call1((isotope_abundance,))?,
+            ),
+        )?;
+        data_vars.set_item(
+            "wavenumber_cminv",
+            (vec!["line"], np.getattr("array")?.call1((wavenumber,))?),
+        )?;
+        data_vars.set_item(
+            "lower_energy_cminv",
+            (vec!["line"], np.getattr("array")?.call1((lower_energy,))?),
+        )?;
+        data_vars.set_item(
+            "upper_energy_cminv",
+            (vec!["line"], np.getattr("array")?.call1((upper_energy,))?),
+        )?;
+        data_vars.set_item(
+            "upper_state_id",
+            (vec!["line"], np.getattr("array")?.call1((upper_state_id,))?),
+        )?;
+        data_vars.set_item(
+            "lower_state_id",
+            (vec!["line"], np.getattr("array")?.call1((lower_state_id,))?),
+        )?;
+        data_vars.set_item(
+            "upper_vibrational_state",
+            (
+                vec!["line"],
+                np.getattr("array")?.call1((upper_vibrational_state,))?,
+            ),
+        )?;
+        data_vars.set_item(
+            "lower_vibrational_state",
+            (
+                vec!["line"],
+                np.getattr("array")?.call1((lower_vibrational_state,))?,
+            ),
+        )?;
+        data_vars.set_item(
+            "upper_statistical_weight",
+            (
+                vec!["line"],
+                np.getattr("array")?.call1((upper_statistical_weight,))?,
+            ),
+        )?;
+        data_vars.set_item(
+            "lower_statistical_weight",
+            (
+                vec!["line"],
+                np.getattr("array")?.call1((lower_statistical_weight,))?,
+            ),
+        )?;
+        data_vars.set_item(
+            "upper_branching_ratio",
+            (
+                vec!["line"],
+                np.getattr("array")?.call1((upper_branching_ratio,))?,
+            ),
+        )?;
+
+        let coords = PyDict::new(py);
+        coords.set_item(
+            "wavelength_nm",
+            (vec!["line"], np.getattr("array")?.call1((wavelength,))?),
+        )?;
+
+        let attrs = PyDict::new(py);
+        attrs.set_item("band_name", band.name)?;
+        attrs.set_item("upper_state", band.upper_state)?;
+        attrs.set_item("lower_state", band.lower_state)?;
+        attrs.set_item("total_einstein_a_s", band.total_einstein_a_s)?;
+        attrs.set_item(
+            "weight_model",
+            "normalized_isotope_abundance_weighted_einstein_a_by_vibrational_band_placeholder",
+        )?;
+
+        let kwargs = PyDict::new(py);
+        kwargs.set_item("data_vars", data_vars)?;
+        kwargs.set_item("coords", coords)?;
+        kwargs.set_item("attrs", attrs)?;
 
         let out = xr.getattr("Dataset")?.call((), Some(&kwargs))?;
 
