@@ -10,8 +10,8 @@ use sasktran2_rs::photchem::emission::{
     EmissionBand, MCDADE_OXYGEN_GREEN_LINE_C0, MCDADE_OXYGEN_GREEN_LINE_C1,
     MCDADE_OXYGEN_GREEN_LINE_C2, MCDADE_OXYGEN_GREEN_LINE_EINSTEIN_A_1S_S,
     MCDADE_OXYGEN_GREEN_LINE_EINSTEIN_A_558_S, O2_A_BAND_CENTER_WAVELENGTH_NM,
-    O2_A_BAND_TOTAL_EINSTEIN_A_S, OXYGEN_GREEN_LINE_EINSTEIN_A_S, OXYGEN_GREEN_LINE_WAVELENGTH_NM,
-    mcdade_oxygen_green_line_photon_ver,
+    O2_B0_X0_EINSTEIN_A_S, O2_B1_X1_EINSTEIN_A_S, OXYGEN_GREEN_LINE_EINSTEIN_A_S,
+    OXYGEN_GREEN_LINE_WAVELENGTH_NM, mcdade_oxygen_green_line_photon_ver,
 };
 use sasktran2_rs::photchem::models::*;
 
@@ -282,11 +282,11 @@ impl PyYankovsky {
             .collect();
         let oxygen_a_band_b0: Vec<f64> = o2_b0
             .iter()
-            .map(|population| population * O2_A_BAND_TOTAL_EINSTEIN_A_S)
+            .map(|population| population * O2_B0_X0_EINSTEIN_A_S)
             .collect();
         let oxygen_a_band_b1: Vec<f64> = o2_b1
             .iter()
-            .map(|population| population * O2_A_BAND_TOTAL_EINSTEIN_A_S)
+            .map(|population| population * O2_B1_X1_EINSTEIN_A_S)
             .collect();
         let oxygen_a_band: Vec<f64> = oxygen_a_band_b0
             .iter()

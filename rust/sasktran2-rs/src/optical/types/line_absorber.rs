@@ -554,6 +554,8 @@ impl LineAbsorber {
             );
         }
 
+        xs.mapv_inplace(|value| value.max(0.0));
+
         if is_sorted {
             Ok(xs)
         } else {

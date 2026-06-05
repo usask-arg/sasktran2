@@ -139,11 +139,14 @@ impl AtmosphereStorage {
                     Zip::from(ssa)
                         .and(total_extinction)
                         .for_each(|ssa, total_extinction| {
-                            let v = *total_extinction;
-                            *ssa /= v;
+                            if *total_extinction > 0.0 {
+                                *ssa /= *total_extinction;
 
-                            if *ssa > 1.0 {
-                                *ssa = 1.0;
+                                if *ssa > 1.0 {
+                                    *ssa = 1.0;
+                                }
+                            } else {
+                                *ssa = 0.0;
                             }
                         });
                 });
@@ -220,6 +223,22 @@ mod tests {
         assert_eq!(storage.total_extinction.sum(), 0.0);
         assert_eq!(storage.emission_source.sum(), 0.0);
         assert_eq!(storage.leg_coeff.sum(), 0.0);
+    }
+
+    #[test]
+    fn normalize_by_extinctions_leaves_transparent_cells_non_scattering() {
+        let mut storage = AtmosphereStorage::new(2, 2, 1, Stokes::Stokes1);
+
+        storage.ssa[[0, 0]] = 0.0;
+        storage.total_extinction[[0, 0]] = 0.0;
+        storage.ssa[[1, 1]] = 0.25;
+        storage.total_extinction[[1, 1]] = 0.5;
+
+        storage.normalize_by_extinctions();
+
+        assert_eq!(storage.ssa[[0, 0]], 0.0);
+        assert!(storage.ssa[[0, 0]].is_finite());
+        assert_eq!(storage.ssa[[1, 1]], 0.5);
     }
 
     #[test]

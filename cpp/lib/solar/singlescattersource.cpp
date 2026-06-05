@@ -7,6 +7,7 @@
 #include <sasktran2/config.h>
 #include <sasktran2/atmosphere/atmosphere.h>
 #include <sasktran2/math/trig.h>
+#include <cmath>
 
 namespace sasktran2::solartransmission {
     template <typename S, int NSTOKES>
@@ -314,7 +315,16 @@ namespace sasktran2::solartransmission {
                 calculate_derivatives, end_phase, ssa_end, k_end);
         }
 
-        double source_factor1 = (1 - shell_od.exp_minus_od) / shell_od.od;
+        double source_factor1;
+        double d_source_factor1;
+        if (std::abs(shell_od.od) < 1e-12) {
+            source_factor1 = 1.0;
+            d_source_factor1 = -0.5;
+        } else {
+            source_factor1 = -std::expm1(-shell_od.od) / shell_od.od;
+            d_source_factor1 =
+                1 / shell_od.od - source_factor1 * (1 + 1 / shell_od.od);
+        }
         // Note dsource_factor = d_od * (1/od - source_factor * (1 + 1/od))
 
         // Get the phase matrix and add on the sources
@@ -353,8 +363,7 @@ namespace sasktran2::solartransmission {
             // sparse
             for (auto it = shell_od.deriv_iter; it; ++it) {
                 source.deriv(Eigen::placeholders::all, it.index()).array() +=
-                    it.value() *
-                    (1 / shell_od.od - source_factor1 * (1 + 1 / shell_od.od)) *
+                    it.value() * d_source_factor1 *
                     (start_phase.value.array() * layer.od_quad_start +
                      end_phase.value.array() * layer.od_quad_end);
             }

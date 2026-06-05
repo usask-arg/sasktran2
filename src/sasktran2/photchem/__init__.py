@@ -105,8 +105,9 @@ def actinic_flux():
 
         output[species + "_density"] = (["altitude"], numden)
 
-    # TODO: Update this to use the actual O density from the model instead of assuming a constant O2:O ratio of 200:1
-    output["o_density"] = output["o2_density"] * 0.005
+    output["o_density"] = sk.climatology.atomic_oxygen.number_density(
+        output["altitude"].to_numpy(), np.datetime64("2010-01-01"), -50.0
+    )
     output["co2_density"] = (
         400e-6 * atmosphere.state_equation.dry_air_numberdensity["N"]
     )

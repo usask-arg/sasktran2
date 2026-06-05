@@ -10,6 +10,32 @@ pub const MCDADE_OXYGEN_GREEN_LINE_C1: f64 = 211.0;
 pub const MCDADE_OXYGEN_GREEN_LINE_C2: f64 = 15.0;
 pub const O2_A_BAND_CENTER_WAVELENGTH_NM: f64 = 762.0;
 pub const O2_A_BAND_TOTAL_EINSTEIN_A_S: f64 = 7.58e-2;
+pub const O2_B0_X0_EINSTEIN_A_S: f64 = 7.58e-2;
+pub const O2_B1_X0_EINSTEIN_A_S: f64 = 7.0e-2;
+pub const O2_B1_X1_EINSTEIN_A_S: f64 = 7.0e-2;
+pub const O2_B2_X2_EINSTEIN_A_S: f64 = 5.4e-2;
+const C2_K_CM: f64 = 1.4387769;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AEmissionLineWeightModel {
+    EinsteinABranching,
+    HitranLineStrength,
+}
+
+impl std::str::FromStr for AEmissionLineWeightModel {
+    type Err = anyhow::Error;
+
+    fn from_str(value: &str) -> Result<Self> {
+        match value {
+            "einstein_a_branching" => Ok(Self::EinsteinABranching),
+            "hitran_line_strength" => Ok(Self::HitranLineStrength),
+            other => Err(anyhow!(
+                "Unknown A-band line weight model '{}'. Expected 'einstein_a_branching' or 'hitran_line_strength'",
+                other
+            )),
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct EmissionTransition {
@@ -263,6 +289,34 @@ impl EmissionBand {
         )
     }
 
+    pub fn oxygen_b_band_from_hitran(db: &OpticalLineDB) -> Result<Option<Self>> {
+        let mut lines: Vec<EmissionBandLine> = db
+            .lines
+            .iter()
+            .filter(|line| {
+                line_matches_o2_b_band_vibrational_sequence(line)
+                    && line.wavelength_nm() >= 680.0
+                    && line.wavelength_nm() <= 700.0
+            })
+            .filter_map(|line| emission_band_line_from_optical_line(line).transpose())
+            .collect::<Result<Vec<_>>>()?;
+
+        if lines.is_empty() {
+            return Ok(None);
+        }
+
+        lines.sort_by(|lhs, rhs| lhs.wavelength_nm.partial_cmp(&rhs.wavelength_nm).unwrap());
+
+        Self::new(
+            "oxygen_b_band",
+            "O2(b, v=1)",
+            "O2(X)",
+            O2_B1_X0_EINSTEIN_A_S,
+            lines,
+        )
+        .map(Some)
+    }
+
     pub fn photon_ver(&self, upper_population: ArrayView1<'_, f64>) -> Array1<f64> {
         upper_population.mapv(|population| population * self.total_einstein_a_s)
     }
@@ -423,6 +477,16 @@ fn line_matches_o2_a_band_vibrational_sequence(line: &OpticalLine) -> bool {
     )
 }
 
+fn line_matches_o2_b_band_vibrational_sequence(line: &OpticalLine) -> bool {
+    let upper_tokens: Vec<&str> = line.upper_quanta.split_whitespace().collect();
+    let lower_tokens: Vec<&str> = line.lower_quanta.split_whitespace().collect();
+
+    matches!(
+        (upper_tokens.as_slice(), lower_tokens.as_slice()),
+        (["b", "1"], ["X", "0"])
+    )
+}
+
 fn o2_vibrational_state_name(quanta: &str) -> String {
     let tokens: Vec<&str> = quanta.split_whitespace().collect();
     match tokens.as_slice() {
@@ -433,6 +497,288 @@ fn o2_vibrational_state_name(quanta: &str) -> String {
         }
         _ => quanta.trim().to_string(),
     }
+}
+
+pub fn oxygen_a_band_lte_line_weights(
+    band: &EmissionBand,
+    temperature_k: ArrayView1<'_, f64>,
+    line_weight_model: AEmissionLineWeightModel,
+) -> Result<Array2<f64>> {
+    match line_weight_model {
+        AEmissionLineWeightModel::EinsteinABranching => {
+            oxygen_a_band_einstein_branching_line_weights(band, temperature_k)
+        }
+        AEmissionLineWeightModel::HitranLineStrength => {
+            oxygen_a_band_hitran_line_strength_weights(band, temperature_k)
+        }
+    }
+}
+
+pub fn oxygen_a_band_line_list_weights_from_populations<'a>(
+    band: &EmissionBand,
+    temperature_k: ArrayView1<'_, f64>,
+    o2_b0_population: ArrayView1<'a, f64>,
+    o2_b1_population: Option<ArrayView1<'a, f64>>,
+    o2_b2_population: Option<ArrayView1<'a, f64>>,
+    line_weight_model: AEmissionLineWeightModel,
+) -> Result<(Array1<f64>, Array2<f64>)> {
+    validate_same_len(
+        "temperature",
+        temperature_k.len(),
+        "O2(b)",
+        o2_b0_population.len(),
+    )?;
+    if let Some(o2_b1_population) = o2_b1_population {
+        validate_same_len(
+            "temperature",
+            temperature_k.len(),
+            "O2(b, v=1)",
+            o2_b1_population.len(),
+        )?;
+    }
+    if let Some(o2_b2_population) = o2_b2_population {
+        validate_same_len(
+            "temperature",
+            temperature_k.len(),
+            "O2(b, v=2)",
+            o2_b2_population.len(),
+        )?;
+    }
+
+    let branches = [
+        EmissionPopulationBranch {
+            upper_vibrational_state: "O2(b)",
+            population: Some(o2_b0_population),
+            einstein_a_s: O2_B0_X0_EINSTEIN_A_S,
+        },
+        EmissionPopulationBranch {
+            upper_vibrational_state: "O2(b, v=1)",
+            population: o2_b1_population,
+            einstein_a_s: O2_B1_X1_EINSTEIN_A_S,
+        },
+        EmissionPopulationBranch {
+            upper_vibrational_state: "O2(b, v=2)",
+            population: o2_b2_population,
+            einstein_a_s: O2_B2_X2_EINSTEIN_A_S,
+        },
+    ];
+
+    line_list_weights_from_population_branches(band, temperature_k, &branches, line_weight_model)
+}
+
+pub fn oxygen_b_band_line_list_weights_from_populations<'a>(
+    band: &EmissionBand,
+    temperature_k: ArrayView1<'_, f64>,
+    o2_b1_population: Option<ArrayView1<'a, f64>>,
+    line_weight_model: AEmissionLineWeightModel,
+) -> Result<(Array1<f64>, Array2<f64>)> {
+    if let Some(o2_b1_population) = o2_b1_population {
+        validate_same_len(
+            "temperature",
+            temperature_k.len(),
+            "O2(b, v=1)",
+            o2_b1_population.len(),
+        )?;
+    }
+
+    let branches = [EmissionPopulationBranch {
+        upper_vibrational_state: "O2(b, v=1)",
+        population: o2_b1_population,
+        einstein_a_s: O2_B1_X0_EINSTEIN_A_S,
+    }];
+
+    line_list_weights_from_population_branches(band, temperature_k, &branches, line_weight_model)
+}
+
+struct EmissionPopulationBranch<'a> {
+    upper_vibrational_state: &'a str,
+    population: Option<ArrayView1<'a, f64>>,
+    einstein_a_s: f64,
+}
+
+fn line_list_weights_from_population_branches(
+    band: &EmissionBand,
+    temperature_k: ArrayView1<'_, f64>,
+    branches: &[EmissionPopulationBranch<'_>],
+    line_weight_model: AEmissionLineWeightModel,
+) -> Result<(Array1<f64>, Array2<f64>)> {
+    let weights = oxygen_a_band_lte_line_weights(band, temperature_k, line_weight_model)?;
+    let mut line_photon_ver = Array2::<f64>::zeros((temperature_k.len(), band.lines.len()));
+
+    for (line_idx, line) in band.lines.iter().enumerate() {
+        let state_ver = branches
+            .iter()
+            .find(|branch| branch.upper_vibrational_state == line.upper_vibrational_state)
+            .and_then(|branch| {
+                branch.population.map(|population| {
+                    population
+                        .iter()
+                        .map(|population| population * branch.einstein_a_s)
+                        .collect::<Array1<_>>()
+                })
+            })
+            .unwrap_or_else(|| Array1::zeros(temperature_k.len()));
+
+        Zip::from(line_photon_ver.column_mut(line_idx))
+            .and(&state_ver)
+            .and(weights.column(line_idx))
+            .for_each(|line_ver, &state_ver, &weight| {
+                *line_ver = state_ver * weight;
+            });
+    }
+
+    let total_photon_ver = line_photon_ver.sum_axis(Axis(1));
+    let fallback_weights = normalized_fallback_weights(band)?;
+    let mut combined_weights = Array2::<f64>::zeros(line_photon_ver.raw_dim());
+
+    Zip::from(combined_weights.rows_mut())
+        .and(line_photon_ver.rows())
+        .and(&total_photon_ver)
+        .for_each(|mut row, line_ver, &total_ver| {
+            if total_ver > 0.0 {
+                row.assign(&(&line_ver / total_ver));
+            } else {
+                row.assign(&fallback_weights);
+            }
+        });
+
+    Ok((total_photon_ver, combined_weights))
+}
+
+fn oxygen_a_band_einstein_branching_line_weights(
+    band: &EmissionBand,
+    temperature_k: ArrayView1<'_, f64>,
+) -> Result<Array2<f64>> {
+    let mut weights = Array2::<f64>::zeros((temperature_k.len(), band.lines.len()));
+
+    for vibrational_state in unique_upper_vibrational_states(band) {
+        let line_indices = line_indices_for_upper_vibrational_state(band, &vibrational_state);
+
+        for (alt_idx, &temperature) in temperature_k.iter().enumerate() {
+            let mut row_sum = 0.0;
+            for &line_idx in &line_indices {
+                let line = &band.lines[line_idx];
+                let upper_g = line.upper_statistical_weight.unwrap_or(0.0);
+                let upper_population_weight = line.isotope_abundance
+                    * upper_g
+                    * (-C2_K_CM * line.upper_energy_cminv / temperature).exp();
+                let weight = upper_population_weight * line.upper_branching_ratio;
+                weights[[alt_idx, line_idx]] = weight;
+                row_sum += weight;
+            }
+
+            normalize_weight_row(&mut weights.row_mut(alt_idx), &line_indices, row_sum)?;
+        }
+    }
+
+    Ok(weights)
+}
+
+fn oxygen_a_band_hitran_line_strength_weights(
+    band: &EmissionBand,
+    temperature_k: ArrayView1<'_, f64>,
+) -> Result<Array2<f64>> {
+    let mut weights = Array2::<f64>::zeros((temperature_k.len(), band.lines.len()));
+
+    for vibrational_state in unique_upper_vibrational_states(band) {
+        let line_indices = line_indices_for_upper_vibrational_state(band, &vibrational_state);
+
+        for (alt_idx, &temperature) in temperature_k.iter().enumerate() {
+            let mut max_log_weight = f64::NEG_INFINITY;
+            for &line_idx in &line_indices {
+                let line = &band.lines[line_idx];
+                let log_weight = hitran_line_strength_emission_log_weight(line, temperature);
+                weights[[alt_idx, line_idx]] = log_weight;
+                max_log_weight = max_log_weight.max(log_weight);
+            }
+
+            let mut row_sum = 0.0;
+            for &line_idx in &line_indices {
+                let weight = (weights[[alt_idx, line_idx]] - max_log_weight).exp();
+                weights[[alt_idx, line_idx]] = weight;
+                row_sum += weight;
+            }
+
+            normalize_weight_row(&mut weights.row_mut(alt_idx), &line_indices, row_sum)?;
+        }
+    }
+
+    Ok(weights)
+}
+
+fn hitran_line_strength_emission_log_weight(line: &EmissionBandLine, temperature: f64) -> f64 {
+    line.line_intensity_296.ln()
+        + (296.0 / temperature).ln()
+        + C2_K_CM * line.lower_energy_cminv * (temperature - 296.0) / (temperature * 296.0)
+        + 2.0 * line.wavenumber_cminv.ln()
+        - C2_K_CM * line.wavenumber_cminv / temperature
+}
+
+fn unique_upper_vibrational_states(band: &EmissionBand) -> Vec<String> {
+    let mut states = Vec::new();
+    for line in &band.lines {
+        if !states.contains(&line.upper_vibrational_state) {
+            states.push(line.upper_vibrational_state.clone());
+        }
+    }
+    states
+}
+
+fn line_indices_for_upper_vibrational_state(
+    band: &EmissionBand,
+    vibrational_state: &str,
+) -> Vec<usize> {
+    band.lines
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, line)| {
+            (line.upper_vibrational_state == vibrational_state).then_some(idx)
+        })
+        .collect()
+}
+
+fn normalize_weight_row(
+    row: &mut ndarray::ArrayViewMut1<'_, f64>,
+    line_indices: &[usize],
+    row_sum: f64,
+) -> Result<()> {
+    if !row_sum.is_finite() || row_sum <= 0.0 {
+        return Err(anyhow!(
+            "A-band line weights must contain at least one positive finite value"
+        ));
+    }
+
+    for &line_idx in line_indices {
+        row[line_idx] /= row_sum;
+    }
+
+    Ok(())
+}
+
+fn normalized_fallback_weights(band: &EmissionBand) -> Result<Array1<f64>> {
+    let mut weights = band.weights();
+    let sum = weights.sum();
+    if !sum.is_finite() || sum <= 0.0 {
+        return Err(anyhow!(
+            "A-band fallback line weights must have a positive sum"
+        ));
+    }
+    weights /= sum;
+    Ok(weights)
+}
+
+fn validate_same_len(lhs_name: &str, lhs_len: usize, rhs_name: &str, rhs_len: usize) -> Result<()> {
+    if lhs_len != rhs_len {
+        return Err(anyhow!(
+            "{} length ({}) must match {} length ({})",
+            lhs_name,
+            lhs_len,
+            rhs_name,
+            rhs_len
+        ));
+    }
+
+    Ok(())
 }
 
 fn normalize_band_line_weights(lines: &mut [EmissionBandLine]) -> Result<()> {
@@ -654,6 +1000,48 @@ mod tests {
 
         assert!((b0_weight_sum - 1.0).abs() < 1.0e-12);
         assert!((b1_weight_sum - 1.0).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn oxygen_b_band_includes_b1_x0_lines_only() {
+        let db = OpticalLineDB {
+            lines: vec![
+                test_line(688.0, "b 1", "X 0", 2.0),
+                test_line(689.0, "b 1", "X 1", 8.0),
+                test_line(690.0, "b 2", "X 1", 6.0),
+                test_line(760.0, "b 0", "X 0", 4.0),
+            ],
+        };
+
+        let band = EmissionBand::oxygen_b_band_from_hitran(&db)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(band.lines.len(), 1);
+        assert_eq!(band.lines[0].upper_vibrational_state, "O2(b, v=1)");
+        assert_eq!(band.lines[0].lower_vibrational_state, "O2(X)");
+        assert!((band.lines[0].relative_weight - 1.0).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn oxygen_b_band_missing_b1_population_contributes_zero() {
+        let db = OpticalLineDB {
+            lines: vec![test_line(688.0, "b 1", "X 0", 2.0)],
+        };
+        let band = EmissionBand::oxygen_b_band_from_hitran(&db)
+            .unwrap()
+            .unwrap();
+
+        let (photon_ver, weights) = oxygen_b_band_line_list_weights_from_populations(
+            &band,
+            array![200.0, 210.0].view(),
+            None,
+            AEmissionLineWeightModel::EinsteinABranching,
+        )
+        .unwrap();
+
+        assert_eq!(photon_ver, array![0.0, 0.0]);
+        assert_eq!(weights, array![[1.0], [1.0]]);
     }
 
     #[test]

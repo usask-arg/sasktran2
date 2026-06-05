@@ -32,7 +32,7 @@ def test_yankovsky_emission_rates_from_state_profiles():
     )
     np.testing.assert_allclose(
         emissions["oxygen_a_band_photon_ver"].to_numpy(),
-        np.array([0.8338, 1.6676]),
+        np.array([0.828, 1.656]),
     )
     np.testing.assert_allclose(
         emissions["oxygen_a_band_b0_photon_ver"].to_numpy(),
@@ -40,7 +40,7 @@ def test_yankovsky_emission_rates_from_state_profiles():
     )
     np.testing.assert_allclose(
         emissions["oxygen_a_band_b1_photon_ver"].to_numpy(),
-        np.array([0.0758, 0.1516]),
+        np.array([0.07, 0.14]),
     )
     np.testing.assert_allclose(emissions["altitude"].to_numpy(), altitude)
     assert emissions.attrs["emission_units"] == "photons m^-3 s^-1"
@@ -79,7 +79,9 @@ def test_oxygen_green_line_mcdade_parameterization():
         green_line["oxygen_green_5577_photon_ver"].to_numpy(),
         [expected_cm3 * 1.0e6],
     )
-    np.testing.assert_allclose(green_line["O(1S)"].to_numpy(), [expected_cm3 * 1.0e6 / 1.18])
+    np.testing.assert_allclose(
+        green_line["O(1S)"].to_numpy(), [expected_cm3 * 1.0e6 / 1.18]
+    )
     assert green_line.attrs["model"].startswith("McDade/Murtagh")
 
 
@@ -106,76 +108,15 @@ def test_oxygen_green_line_mcdade_constituent_uses_parameterized_ver():
     np.testing.assert_allclose(constituent.altitudes_m, altitude)
 
 
-def test_oxygen_a_band_line_data_contains_nlte_scaffolding():
-    line_data = Yankovsky().oxygen_a_band_line_data()
-
-    assert line_data.sizes["line"] > 0
-    assert set(line_data["upper_vibrational_state"].to_numpy()) == {
-        "O2(b)",
-        "O2(b, v=1)",
-    }
-    for _, group in line_data.groupby("upper_vibrational_state"):
-        np.testing.assert_allclose(group["weight"].sum(), 1.0)
-    assert "upper_branching_ratio" in line_data
-    assert "upper_statistical_weight" in line_data
-    assert "line_intensity_296" in line_data
-    assert "isotope_id" in line_data
-    assert "isotope_abundance" in line_data
-    assert set(line_data["isotope_id"].to_numpy()) == {1, 2, 3}
-    assert (
-        line_data.attrs["weight_model"]
-        == "normalized_isotope_abundance_weighted_einstein_a_by_vibrational_band_placeholder"
-    )
-
-    for _, group in line_data.groupby("upper_state_id"):
-        np.testing.assert_allclose(group["upper_branching_ratio"].sum(), 1.0)
-
-
-def test_oxygen_a_band_lte_line_weights_are_altitude_dependent():
-    model = Yankovsky()
-    line_data = model.oxygen_a_band_line_data()
-
-    weights = model.oxygen_a_band_lte_line_weights(line_data, np.array([180.0, 260.0]))
-
-    assert weights.shape == (2, line_data.sizes["line"])
-    for state_name in np.unique(line_data["upper_vibrational_state"].to_numpy()):
-        mask = line_data["upper_vibrational_state"].to_numpy() == state_name
-        np.testing.assert_allclose(weights[:, mask].sum(axis=1), 1.0)
-    assert not np.allclose(weights[0], weights[1])
-
-    einstein_a = line_data["einstein_a_s"].to_numpy()
-    b0 = line_data["upper_vibrational_state"].to_numpy() == "O2(b)"
-    weak_b0 = b0 & (einstein_a < 1.0e-6)
-    strong_b0 = b0 & (einstein_a > 1.0e-3)
-    assert weights[:, weak_b0].max() < weights[:, strong_b0].max()
-
-    isotope_id = line_data["isotope_id"].to_numpy()
-    main_b0 = b0 & (isotope_id == 1)
-    rare_b0 = b0 & (isotope_id != 1)
-    assert weights[:, rare_b0].max() < weights[:, main_b0].max()
-
-
-def test_oxygen_a_band_lte_line_strength_weights_are_available():
-    model = Yankovsky()
-    line_data = model.oxygen_a_band_line_data()
-
-    weights = model.oxygen_a_band_lte_line_strength_weights(
-        line_data,
-        np.array([180.0, 260.0]),
-    )
-
-    assert weights.shape == (2, line_data.sizes["line"])
-    for state_name in np.unique(line_data["upper_vibrational_state"].to_numpy()):
-        mask = line_data["upper_vibrational_state"].to_numpy() == state_name
-        np.testing.assert_allclose(weights[:, mask].sum(axis=1), 1.0)
-    assert not np.allclose(weights[0], weights[1])
-    assert np.all(weights >= 0.0)
-
-
+@pytest.mark.skipif(
+    not _has_local_o2_hitran_cache(),
+    reason="O2 HITRAN line cache is required for the O2 band constituent",
+)
 def test_yankovsky_emission_constituents_include_green_and_a_band():
     altitude = np.array([90_000.0, 95_000.0])
     state = xr.Dataset(
         {
+            "temperature": (["altitude"], np.array([220.0, 230.0])),
             "O(1S)": (["altitude"], np.array([1.0, 2.0])),
             "O2(b)": (["altitude"], np.array([10.0, 20.0])),
             "O2(b, v=1)": (["altitude"], np.array([5.0, 5.0])),
@@ -184,26 +125,19 @@ def test_yankovsky_emission_constituents_include_green_and_a_band():
     )
 
     model = Yankovsky()
-    line_data = model.oxygen_a_band_line_data()
-    constituents = model.emission_constituents(
-        state=state,
-        line_data=line_data,
-        temperature_k=220.0,
-    )
+    constituents = model.emission_constituents(state=state)
 
     assert set(constituents) == {"oxygen_green", "oxygen_a_band"}
     np.testing.assert_allclose(constituents["oxygen_green"].ver, [1.26, 2.52])
-    assert constituents["oxygen_a_band"].weights.shape == (2, line_data.sizes["line"])
+    assert constituents["oxygen_a_band"].num_line_list_emissions == 2
     np.testing.assert_allclose(constituents["oxygen_a_band"].weights.sum(axis=1), 1.0)
     np.testing.assert_allclose(
         constituents["oxygen_a_band"].photon_ver,
-        np.array([15.0, 25.0]) * 7.58e-2,
+        np.array([10.0, 20.0]) * 7.58e-2 + np.array([5.0, 5.0]) * 7.0e-2,
     )
 
     line_strength_constituent = model.oxygen_a_band_constituent(
         state=state,
-        line_data=line_data,
-        temperature_k=220.0,
         line_weight_model="hitran_line_strength",
     )
     np.testing.assert_allclose(
@@ -214,13 +148,67 @@ def test_yankovsky_emission_constituents_include_green_and_a_band():
 
 @pytest.mark.skipif(
     not _has_local_o2_hitran_cache(),
+    reason="O2 HITRAN line cache is required for the population emission constituent",
+)
+def test_population_emission_rate_exposes_a_and_b_components():
+    altitude = np.array([90_000.0, 95_000.0])
+    state = xr.Dataset(
+        {
+            "temperature": (["altitude"], np.array([220.0, 230.0])),
+            "O(1S)": (["altitude"], np.array([0.0, 0.0])),
+            "O2(b)": (["altitude"], np.array([10.0, 20.0])),
+            "O2(b, v=1)": (["altitude"], np.array([5.0, 5.0])),
+        },
+        coords={"altitude": altitude},
+    )
+
+    constituent = sk.constituent.PopulationEmissionRate(state)
+
+    assert constituent.num_line_list_emissions == 2
+    assert np.all(constituent.wavelengths_nm >= 759.0)
+    assert np.all(constituent.wavelengths_nm <= 772.0)
+    np.testing.assert_allclose(
+        constituent.photon_ver,
+        np.array([10.0, 20.0]) * 7.58e-2 + np.array([5.0, 5.0]) * 7.0e-2,
+    )
+    np.testing.assert_allclose(constituent.weights.sum(axis=1), 1.0)
+    assert np.all(constituent.line_list_wavelengths_nm(1) >= 680.0)
+    assert np.all(constituent.line_list_wavelengths_nm(1) <= 700.0)
+    np.testing.assert_allclose(constituent.line_list_photon_ver(1), 5.0 * 7.0e-2)
+
+
+@pytest.mark.skipif(
+    not _has_local_o2_hitran_cache(),
+    reason="O2 HITRAN line cache is required for the population emission constituent",
+)
+def test_population_emission_rate_line_strength_fallback():
+    altitude = np.array([90_000.0, 95_000.0])
+    state = xr.Dataset(
+        {
+            "temperature": (["altitude"], np.array([220.0, 230.0])),
+            "O2(b)": (["altitude"], np.array([10.0, 20.0])),
+            "O2(b, v=1)": (["altitude"], np.array([5.0, 5.0])),
+        },
+        coords={"altitude": altitude},
+    )
+
+    constituent = sk.constituent.PopulationEmissionRate(
+        state,
+        line_weight_model="hitran_line_strength",
+    )
+
+    np.testing.assert_allclose(constituent.weights.sum(axis=1), 1.0)
+    assert np.all(constituent.weights >= 0.0)
+    assert constituent.num_line_list_emissions == 2
+    np.testing.assert_allclose(constituent.line_list_weights(1).sum(axis=1), 1.0)
+
+
+@pytest.mark.skipif(
+    not _has_local_o2_hitran_cache(),
     reason="O2 HITRAN line cache is required for the A-band end-to-end smoke test",
 )
 def test_oxygen_a_band_emission_absorption_engine_smoke():
     pytest.importorskip("hapi")
-
-    model = Yankovsky()
-    line_data = model.oxygen_a_band_line_data()
 
     config = sk.Config()
     config.emission_source = sk.EmissionSource.VolumeEmissionRate
@@ -259,27 +247,19 @@ def test_oxygen_a_band_emission_absorption_engine_smoke():
     )
     state = xr.Dataset(
         {
-            "O(1S)": ("altitude", np.zeros_like(altitude_grid_m)),
+            "temperature": ("altitude", atmosphere.temperature_k),
             "O2(b)": ("altitude", o2_b_population),
         },
         coords={"altitude": altitude_grid_m},
     )
 
-    emissions = model.emissions(state=state)
     atmosphere["o2"] = sk.constituent.VMRAltitudeAbsorber(
         sk.optical.HITRANAbsorber("O2"),
         altitude_grid_m,
         np.full_like(altitude_grid_m, 0.21),
         out_of_bounds_mode="extend",
     )
-    constituents = model.add_emissions_to_atmosphere(
-        atmosphere,
-        emissions=emissions,
-        line_data=line_data,
-        include_oxygen_green_line=False,
-    )
-
-    assert set(constituents) == {"oxygen_a_band"}
+    atmosphere["photochemical_emission"] = sk.constituent.PopulationEmissionRate(state)
 
     engine = sk.Engine(config, geometry, viewing_geo)
     radiance = engine.calculate_radiance(atmosphere)

@@ -11,6 +11,7 @@ from .gaussianheight import GaussianHeightExtinction
 from .linelistvolumeemissionrate import LineListVolumeEmissionRate
 from .manual import Manual
 from .numdenscatterer import ExtinctionScatterer, NumberDensityScatterer
+from .populationemissionrate import PopulationEmissionRate
 from .rayleigh import Rayleigh
 from .solar import SolarIrradiance
 from .vmraltitudeabsorber import VMRAltitudeAbsorber
