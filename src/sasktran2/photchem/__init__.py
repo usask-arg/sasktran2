@@ -9,6 +9,37 @@ LYMAN_ALPHA_WAVELENGTH_NM = 121.567
 LYMAN_ALPHA_TOA_RATE_S = 3.40e-9
 LYMAN_ALPHA_TOA_FLUX_PHOTONS_M2_S = 3.2e15
 
+ACTINIC_FLUX_BASE_WAVELENGTH_RANGE_NM = (120.0, 1280.0)
+ACTINIC_FLUX_BASE_RESOLUTION_NM = 0.1
+ACTINIC_FLUX_O2_LINE_RESOLUTION_NM = 0.001
+ACTINIC_FLUX_O2_LINE_BANDS_NM = (
+    (679.0, 699.0),  # O2 B-band, centered near 689 nm.
+    (752.0, 776.0),  # O2 A-band, centered near 762 nm.
+    (1260.0, 1280.0),  # O2 singlet-delta band, centered near 1.27 um.
+)
+
+
+def _closed_arange(start: float, stop: float, step: float) -> np.ndarray:
+    return np.arange(start, stop + step / 2.0, step)
+
+
+def _actinic_flux_wavelength_grid() -> np.ndarray:
+    grid_parts = [
+        _closed_arange(
+            ACTINIC_FLUX_BASE_WAVELENGTH_RANGE_NM[0],
+            ACTINIC_FLUX_BASE_WAVELENGTH_RANGE_NM[1],
+            ACTINIC_FLUX_BASE_RESOLUTION_NM,
+        ),
+        np.array([LYMAN_ALPHA_WAVELENGTH_NM]),
+    ]
+
+    grid_parts.extend(
+        _closed_arange(start, stop, ACTINIC_FLUX_O2_LINE_RESOLUTION_NM)
+        for start, stop in ACTINIC_FLUX_O2_LINE_BANDS_NM
+    )
+
+    return np.unique(np.round(np.concatenate(grid_parts), decimals=6))
+
 
 def actinic_flux():
     altitudes_m = np.arange(0.0, 130.0e3, 1000.0)
@@ -35,12 +66,10 @@ def actinic_flux():
         6371000.0,
         altitudes_m,
         sk.InterpolationMethod.LinearInterpolation,
-        sk.GeometryType.PlaneParallel,
+        sk.GeometryType.PseudoSpherical,
     )
 
-    wavel_nm = np.unique(
-        np.concatenate((np.arange(120, 800, 0.001), [LYMAN_ALPHA_WAVELENGTH_NM]))
-    )
+    wavel_nm = _actinic_flux_wavelength_grid()
     lyman_alpha_index = np.where(wavel_nm == LYMAN_ALPHA_WAVELENGTH_NM)[0][0]
 
     viewing = sk.ViewingGeometry()
@@ -54,7 +83,6 @@ def actinic_flux():
 
     optical = {
         "o3": sk.optical.O3DBM(),
-        "h2o": sk.optical.AERLineAbsorber("H2O"),
         "o2": sk.optical.AERLineAbsorber("O2")
         + sk.optical.O2SchumannRunge()
         + sk.optical.O2LymanAlpha(),
@@ -63,7 +91,6 @@ def actinic_flux():
 
     atmosphere["o3"] = sk.climatology.mipas.constituent("o3", optical["o3"])
     atmosphere["rayleigh"] = sk.constituent.Rayleigh()
-    atmosphere["h2o"] = sk.climatology.mipas.constituent("h2o", optical["h2o"])
     atmosphere["o2"] = sk.climatology.mipas.constituent("o2", optical["o2"])
     atmosphere["n2"] = sk.climatology.mipas.constituent("n2", optical["n2"])
     atmosphere["solar"] = sk.constituent.SolarIrradiance(

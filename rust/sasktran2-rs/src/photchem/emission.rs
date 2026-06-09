@@ -14,6 +14,8 @@ pub const O2_B0_X0_EINSTEIN_A_S: f64 = 7.58e-2;
 pub const O2_B1_X0_EINSTEIN_A_S: f64 = 7.0e-2;
 pub const O2_B1_X1_EINSTEIN_A_S: f64 = 7.0e-2;
 pub const O2_B2_X2_EINSTEIN_A_S: f64 = 5.4e-2;
+pub const O2_A_BAND_MIN_WAVELENGTH_NM: f64 = 759.0;
+pub const O2_A_BAND_MAX_WAVELENGTH_NM: f64 = 776.0;
 const C2_K_CM: f64 = 1.4387769;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -272,8 +274,8 @@ impl EmissionBand {
             .iter()
             .filter(|line| {
                 line_matches_o2_a_band_vibrational_sequence(line)
-                    && line.wavelength_nm() >= 759.0
-                    && line.wavelength_nm() <= 772.0
+                    && line.wavelength_nm() >= O2_A_BAND_MIN_WAVELENGTH_NM
+                    && line.wavelength_nm() <= O2_A_BAND_MAX_WAVELENGTH_NM
             })
             .filter_map(|line| emission_band_line_from_optical_line(line).transpose())
             .collect::<Result<Vec<_>>>()?;
@@ -976,14 +978,18 @@ mod tests {
                 test_line(760.0, "b 0", "X 0", 2.0),
                 test_line(761.0, "b 1", "X 1", 8.0),
                 test_line(762.0, "b 0", "X 0", 6.0),
+                test_line(775.0, "b 0", "X 0", 4.0),
+                test_line(777.0, "b 0", "X 0", 4.0),
             ],
         };
 
         let band = EmissionBand::oxygen_a_band_from_hitran(&db).unwrap();
 
-        assert_eq!(band.lines.len(), 3);
+        assert_eq!(band.lines.len(), 4);
         assert_eq!(band.lines[1].upper_vibrational_state, "O2(b, v=1)");
         assert_eq!(band.lines[1].lower_vibrational_state, "O2(X, v=1)");
+        assert!(band.lines.iter().any(|line| line.wavelength_nm == 775.0));
+        assert!(!band.lines.iter().any(|line| line.wavelength_nm == 777.0));
 
         let b0_weight_sum: f64 = band
             .lines
