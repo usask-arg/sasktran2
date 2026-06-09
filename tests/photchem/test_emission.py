@@ -5,12 +5,41 @@ import pytest
 import sasktran2 as sk
 import xarray as xr
 from sasktran2.database.hitran_line import HITRANLineDatabase
-from sasktran2.photchem import Yankovsky
+from sasktran2.photchem import (
+    ACTINIC_FLUX_O2_LINE_BANDS_NM,
+    ACTINIC_FLUX_O2_LINE_RESOLUTION_NM,
+    LYMAN_ALPHA_WAVELENGTH_NM,
+    Yankovsky,
+    _actinic_flux_wavelength_grid,
+)
 
 
 def _has_local_o2_hitran_cache():
     db = HITRANLineDatabase()
     return (db._db_root / "O2.data").exists() and (db._db_root / "O2.header").exists()
+
+
+def test_actinic_flux_wavelength_grid_resolves_o2_bands_and_singlet_delta():
+    wavelength_nm = _actinic_flux_wavelength_grid()
+
+    assert wavelength_nm[0] == 120.0
+    assert wavelength_nm[-1] == 1280.0
+    assert LYMAN_ALPHA_WAVELENGTH_NM in wavelength_nm
+    assert 1270.0 in wavelength_nm
+
+    coarse = wavelength_nm[(wavelength_nm >= 300.0) & (wavelength_nm <= 301.0)]
+    np.testing.assert_allclose(np.diff(coarse), 0.1)
+
+    for band_start, band_end in ACTINIC_FLUX_O2_LINE_BANDS_NM:
+        band_grid = wavelength_nm[
+            (wavelength_nm >= band_start) & (wavelength_nm <= band_end)
+        ]
+
+        assert band_grid[0] == band_start
+        assert band_grid[-1] == band_end
+        np.testing.assert_allclose(
+            np.diff(band_grid), ACTINIC_FLUX_O2_LINE_RESOLUTION_NM
+        )
 
 
 def test_yankovsky_emission_rates_from_state_profiles():
@@ -166,7 +195,7 @@ def test_population_emission_rate_exposes_a_and_b_components():
 
     assert constituent.num_line_list_emissions == 2
     assert np.all(constituent.wavelengths_nm >= 759.0)
-    assert np.all(constituent.wavelengths_nm <= 772.0)
+    assert np.all(constituent.wavelengths_nm <= 776.0)
     np.testing.assert_allclose(
         constituent.photon_ver,
         np.array([10.0, 20.0]) * 7.58e-2 + np.array([5.0, 5.0]) * 7.0e-2,
@@ -233,7 +262,7 @@ def test_oxygen_a_band_emission_absorption_engine_smoke():
         )
     )
 
-    wavelengths_nm = np.arange(759.0, 772.1, 0.1)
+    wavelengths_nm = np.arange(759.0, 776.1, 0.1)
     atmosphere = sk.Atmosphere(
         geometry,
         config,
