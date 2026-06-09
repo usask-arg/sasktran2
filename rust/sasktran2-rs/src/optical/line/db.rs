@@ -11,6 +11,7 @@ const SQRT_PI: f64 = 1.772_453_850_905_516;
 pub struct OpticalLine {
     pub line_center: f64,
     pub line_intensity: f64,
+    pub einstein_a: Option<f64>,
     pub lower_energy: f64,
     pub gamma_air: f64,
     pub gamma_self: f64,
@@ -18,6 +19,12 @@ pub struct OpticalLine {
     pub n_air: f64,
     pub mol_id: i32,
     pub iso_id: i32,
+    pub upper_quanta: String,
+    pub lower_quanta: String,
+    pub upper_local_quanta: String,
+    pub lower_local_quanta: String,
+    pub upper_statistical_weight: Option<f64>,
+    pub lower_statistical_weight: Option<f64>,
     pub y_coupling: Vec<f64>,
     pub g_coupling: Vec<f64>,
     pub coupling_temperature: Vec<f64>,
@@ -36,6 +43,28 @@ pub struct OpticalLineDB {
 }
 
 impl OpticalLine {
+    pub fn wavelength_nm(&self) -> f64 {
+        1.0e7 / self.line_center
+    }
+
+    pub fn has_emission_metadata(&self) -> bool {
+        self.einstein_a.is_some()
+            && !self.upper_quanta.is_empty()
+            && !self.lower_quanta.is_empty()
+            && self.upper_statistical_weight.is_some()
+            && self.lower_statistical_weight.is_some()
+    }
+
+    #[inline(always)]
+    pub fn doppler_width_cminv(
+        line_center_cminv: f64,
+        temperature: f64,
+        mol_mass_g_per_mol: f64,
+    ) -> f64 {
+        line_center_cminv / SPEED_OF_LIGHT * (NA * K_B * temperature / mol_mass_g_per_mol).sqrt()
+            / FRAC_1_SQRT_2
+    }
+
     #[inline(always)]
     pub fn adjusted_parameters(
         &self,
@@ -52,8 +81,7 @@ impl OpticalLine {
         let le = self.lower_energy;
         let lc = self.line_center;
 
-        let doppler_width =
-            lc / SPEED_OF_LIGHT * (NA * K_B * temperature / mol_mass).sqrt() / FRAC_1_SQRT_2;
+        let doppler_width = Self::doppler_width_cminv(lc, temperature, mol_mass);
 
         let numerator = (-C2 * le / temperature).exp() * (1.0 - (-C2 * lc / temperature).exp());
 

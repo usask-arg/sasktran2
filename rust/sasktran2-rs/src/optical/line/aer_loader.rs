@@ -97,10 +97,10 @@ pub fn read_aer_line_file(data_path: PathBuf) -> Result<OpticalLineDB> {
         let pressure_shift: f64 = line[59..67].trim().parse()?;
 
         // Unused parameters
-        let _upper_vibrational_quanta: &str = line[67..70].trim();
-        let _lower_vibrational_quanta: &str = line[70..73].trim();
-        let _upper_local_quanta: &str = line[73..82].trim();
-        let _lower_local_quanta: &str = line[82..91].trim();
+        let upper_vibrational_quanta: &str = line[67..70].trim();
+        let lower_vibrational_quanta: &str = line[70..73].trim();
+        let upper_local_quanta: &str = line[73..82].trim();
+        let lower_local_quanta: &str = line[82..91].trim();
         let _error_codes: &str = line[91..94].trim();
         let reference_codes: &str = line[94..100].trim();
 
@@ -142,6 +142,7 @@ pub fn read_aer_line_file(data_path: PathBuf) -> Result<OpticalLineDB> {
         let line = OpticalLine {
             line_center: transition_wavenumber,
             line_intensity,
+            einstein_a: None,
             lower_energy: lower_state_energy,
             gamma_air: air_broadened_width,
             gamma_self: self_broadened_width,
@@ -149,6 +150,12 @@ pub fn read_aer_line_file(data_path: PathBuf) -> Result<OpticalLineDB> {
             n_air: temperature_dependence,
             mol_id,
             iso_id,
+            upper_quanta: upper_vibrational_quanta.to_string(),
+            lower_quanta: lower_vibrational_quanta.to_string(),
+            upper_local_quanta: upper_local_quanta.to_string(),
+            lower_local_quanta: lower_local_quanta.to_string(),
+            upper_statistical_weight: None,
+            lower_statistical_weight: None,
             y_coupling,
             g_coupling,
             coupling_temperature,
