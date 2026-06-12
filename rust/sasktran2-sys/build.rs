@@ -1,6 +1,7 @@
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 fn cpp_src_path() -> (PathBuf, bool) {
     // if the vendor folder exists, we are in a sdist mode, use that
@@ -11,6 +12,31 @@ fn cpp_src_path() -> (PathBuf, bool) {
     }
 
     (PathBuf::from("../../cpp"), false)
+}
+
+fn configured_cmake_generator(target: &str) -> Option<std::ffi::OsString> {
+    let host = env::var("HOST").unwrap_or_default();
+    let kind = if host == target { "HOST" } else { "TARGET" };
+    let target_u = target.replace('-', "_");
+
+    [
+        format!("CMAKE_GENERATOR_{target}"),
+        format!("CMAKE_GENERATOR_{target_u}"),
+        format!("{kind}_CMAKE_GENERATOR"),
+        "CMAKE_GENERATOR".to_string(),
+    ]
+    .iter()
+    .find_map(env::var_os)
+}
+
+fn should_prefer_ninja(target: &str) -> bool {
+    configured_cmake_generator(target)
+        .map(|generator| generator.to_string_lossy().starts_with("Visual Studio"))
+        .unwrap_or(true)
+}
+
+fn executable_exists(name: &str) -> bool {
+    Command::new(name).arg("--version").output().is_ok()
 }
 
 fn main() {
@@ -64,7 +90,7 @@ fn main() {
         .define("CMAKE_INSTALL_PREFIX", &install_prefix)
         .define("DO_STREAM_TEMPLATES", do_stream_templates)
         .define("USE_OMP", use_omp)
-        .define("Rust_CARGO_TARGET", target)
+        .define("Rust_CARGO_TARGET", &target)
         .define("VENDORED", vendored)
         .define("SKTRAN_BLAS_VENDOR", sktran_blas_vendor)
         .define("SASKTRAN2_RUST_LIB_DIR", rust_lib_dir)
@@ -82,6 +108,15 @@ fn main() {
             .profile("Release");
         // Use release-mode MSVC runtime
         binding.define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreadedDLL");
+
+        // The cmake crate guesses a versioned Visual Studio generator on MSVC
+        // targets. That detection can lag behind new Visual Studio releases,
+        // and some environments pin an older Visual Studio generator. Prefer
+        // Ninja when it is available unless the caller requested a non-VS
+        // generator explicitly.
+        if should_prefer_ninja(&target) && executable_exists("ninja") {
+            binding.generator("Ninja");
+        }
     }
 
     let dst = binding.build();
