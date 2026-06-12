@@ -16,6 +16,8 @@ pub const O2_B1_X1_EINSTEIN_A_S: f64 = 7.0e-2;
 pub const O2_B2_X2_EINSTEIN_A_S: f64 = 5.4e-2;
 pub const O2_A_BAND_MIN_WAVELENGTH_NM: f64 = 759.0;
 pub const O2_A_BAND_MAX_WAVELENGTH_NM: f64 = 776.0;
+pub const O2_B_BAND_MIN_WAVELENGTH_NM: f64 = 675.0;
+pub const O2_B_BAND_MAX_WAVELENGTH_NM: f64 = 705.0;
 const C2_K_CM: f64 = 1.4387769;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -297,8 +299,8 @@ impl EmissionBand {
             .iter()
             .filter(|line| {
                 line_matches_o2_b_band_vibrational_sequence(line)
-                    && line.wavelength_nm() >= 680.0
-                    && line.wavelength_nm() <= 700.0
+                    && line.wavelength_nm() >= O2_B_BAND_MIN_WAVELENGTH_NM
+                    && line.wavelength_nm() <= O2_B_BAND_MAX_WAVELENGTH_NM
             })
             .filter_map(|line| emission_band_line_from_optical_line(line).transpose())
             .collect::<Result<Vec<_>>>()?;
@@ -1012,9 +1014,13 @@ mod tests {
     fn oxygen_b_band_includes_b1_x0_lines_only() {
         let db = OpticalLineDB {
             lines: vec![
+                test_line(674.0, "b 1", "X 0", 2.0),
+                test_line(675.0, "b 1", "X 0", 2.0),
                 test_line(688.0, "b 1", "X 0", 2.0),
                 test_line(689.0, "b 1", "X 1", 8.0),
                 test_line(690.0, "b 2", "X 1", 6.0),
+                test_line(705.0, "b 1", "X 0", 2.0),
+                test_line(706.0, "b 1", "X 0", 2.0),
                 test_line(760.0, "b 0", "X 0", 4.0),
             ],
         };
@@ -1023,10 +1029,24 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(band.lines.len(), 1);
-        assert_eq!(band.lines[0].upper_vibrational_state, "O2(b, v=1)");
-        assert_eq!(band.lines[0].lower_vibrational_state, "O2(X)");
-        assert!((band.lines[0].relative_weight - 1.0).abs() < 1.0e-12);
+        assert_eq!(band.lines.len(), 3);
+        assert!(band.lines.iter().all(|line| {
+            line.upper_vibrational_state == "O2(b, v=1)" && line.lower_vibrational_state == "O2(X)"
+        }));
+        assert!(band.lines.iter().any(|line| line.wavelength_nm == 675.0));
+        assert!(band.lines.iter().any(|line| line.wavelength_nm == 705.0));
+        assert!(!band.lines.iter().any(|line| line.wavelength_nm == 674.0));
+        assert!(!band.lines.iter().any(|line| line.wavelength_nm == 706.0));
+        assert!(
+            (band
+                .lines
+                .iter()
+                .map(|line| line.relative_weight)
+                .sum::<f64>()
+                - 1.0)
+                .abs()
+                < 1.0e-12
+        );
     }
 
     #[test]

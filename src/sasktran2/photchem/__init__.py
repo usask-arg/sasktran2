@@ -13,7 +13,7 @@ ACTINIC_FLUX_BASE_WAVELENGTH_RANGE_NM = (120.0, 1280.0)
 ACTINIC_FLUX_BASE_RESOLUTION_NM = 0.1
 ACTINIC_FLUX_O2_LINE_RESOLUTION_NM = 0.001
 ACTINIC_FLUX_O2_LINE_BANDS_NM = (
-    (679.0, 699.0),  # O2 B-band, centered near 689 nm.
+    (675.0, 705.0),  # O2 B-band, centered near 689 nm.
     (752.0, 776.0),  # O2 A-band, centered near 762 nm.
     (1260.0, 1280.0),  # O2 singlet-delta band, centered near 1.27 um.
 )

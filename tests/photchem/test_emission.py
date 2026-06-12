@@ -201,8 +201,8 @@ def test_population_emission_rate_exposes_a_and_b_components():
         np.array([10.0, 20.0]) * 7.58e-2 + np.array([5.0, 5.0]) * 7.0e-2,
     )
     np.testing.assert_allclose(constituent.weights.sum(axis=1), 1.0)
-    assert np.all(constituent.line_list_wavelengths_nm(1) >= 680.0)
-    assert np.all(constituent.line_list_wavelengths_nm(1) <= 700.0)
+    assert np.all(constituent.line_list_wavelengths_nm(1) >= 675.0)
+    assert np.all(constituent.line_list_wavelengths_nm(1) <= 705.0)
     np.testing.assert_allclose(constituent.line_list_photon_ver(1), 5.0 * 7.0e-2)
 
 

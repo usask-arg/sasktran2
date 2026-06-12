@@ -8,7 +8,7 @@
 - `Yankovsky.oxygen_green_line_mcdade()` computes a direct green-line VER using the McDade/Murtagh short-form Barth parameterization from `T`, `[O]`, `[O2]`, and `[N2]`.
 - `Yankovsky.oxygen_green_line_mcdade_constituent()` converts that parameterized VER into a monochromatic volume-emission constituent.
 - The oxygen A-band uses HITRAN O2 line metadata for resolved `b 0 -> X 0` and `b 1 -> X 1` transitions between `759 nm` and `776 nm`.
-- The oxygen B-band uses HITRAN O2 line metadata for resolved `b 1 -> X 0` transitions between `680 nm` and `700 nm`.
+- The oxygen B-band uses HITRAN O2 line metadata for resolved `b 1 -> X 0` transitions between `675 nm` and `705 nm`.
 - The Rust line-list volume emission constituent maps population-specific photon VER profiles onto Doppler-broadened emission lines and into the SASKTRAN2 spectral grid.
 - O2 line weights can be evaluated with normalized Einstein-A branching or a HITRAN line-strength LTE fallback.
 - `Yankovsky.emission_constituents()` and `Yankovsky.add_emissions_to_atmosphere()` remain thin compatibility wrappers; O2 band emission itself is no longer calculated in Python.

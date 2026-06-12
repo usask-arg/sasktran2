@@ -165,17 +165,9 @@ impl Constituent for PopulationEmissionRate {
 
     fn register_derivatives(
         &self,
-        storage: &mut impl AtmosphereStorageAccess,
-        constituent_name: &str,
+        _storage: &mut impl AtmosphereStorageAccess,
+        _constituent_name: &str,
     ) -> Result<()> {
-        for emission in &self.line_list_emissions {
-            emission.register_derivatives(storage, constituent_name)?;
-        }
-
-        for emission in &self.monochromatic_emissions {
-            emission.register_derivatives(storage, constituent_name)?;
-        }
-
         Ok(())
     }
 }
