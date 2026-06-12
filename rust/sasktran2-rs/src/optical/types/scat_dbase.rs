@@ -670,8 +670,8 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix3> {
                     let local_ssa = self.ssa[[i0, i1, wvnum_weights[0].0]] * wvnum_weights[0].1
                         + self.ssa[[i0, i1, wvnum_weights[1].0]] * wvnum_weights[1].1;
 
-                    xs[j] += local_xs;
-                    ssa[j] += local_ssa;
+                    xs[j] += local_xs * (*weight0 * *weight1);
+                    ssa[j] += local_ssa * (*weight0 * *weight1);
 
                     let legendre_result = legendre.index_axis_mut(Axis(0), j);
 
@@ -940,7 +940,7 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix4> {
         let legendre = &mut d_leg[0];
         let leg_order = (self.legendre.dim().4 / 6).min(legendre.dim().1 / num_legendre);
 
-        for (i0, d_weight0, _) in weights_0.iter() {
+        for (i0, _, d_weight0) in weights_0.iter() {
             let i0 = *i0;
 
             for (i1, weight1, _) in weights_1.iter() {
@@ -991,7 +991,7 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix4> {
         for (i0, weight0, _) in weights_0.iter() {
             let i0 = *i0;
 
-            for (i1, d_weight1, _) in weights_1.iter() {
+            for (i1, _, d_weight1) in weights_1.iter() {
                 let i1 = *i1;
 
                 for (i2, weight2, _) in weights_2.iter() {
@@ -1042,7 +1042,7 @@ impl ScatteringDatabaseInterp for ScatteringDatabase<Ix4> {
             for (i1, weight1, _) in weights_1.iter() {
                 let i1 = *i1;
 
-                for (i2, d_weight2, _) in weights_2.iter() {
+                for (i2, _, d_weight2) in weights_2.iter() {
                     let i2 = *i2;
 
                     Zip::indexed(wvnum).for_each(|j, wv| {
