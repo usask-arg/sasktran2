@@ -308,6 +308,12 @@ def test_scattering_db_dim4_construction(tmp_path):
     param0 = np.array([0.1, 0.2])
     param1 = np.array([1.0, 2.0])
     param2 = np.array([10.0, 20.0])
+    coeffs = {
+        "p0": 1e-6,
+        "p1": 2e-7,
+        "p2": 3e-8,
+        "wavelength_nm": 1e-10,
+    }
 
     shape = (
         len(param0),
@@ -316,8 +322,17 @@ def test_scattering_db_dim4_construction(tmp_path):
         len(wavelengths_nm),
         len(legendre_order),
     )
-    xs_total = np.full(shape[:-1], 1e-4)
-    xs_scattering = np.full(shape[:-1], 0.9e-4)
+    p0_grid, p1_grid, p2_grid, wavelength_grid = np.meshgrid(
+        param0, param1, param2, wavelengths_nm, indexing="ij"
+    )
+    xs_total = (
+        1e-4
+        + coeffs["p0"] * p0_grid
+        + coeffs["p1"] * p1_grid
+        + coeffs["p2"] * p2_grid
+        + coeffs["wavelength_nm"] * wavelength_grid
+    )
+    xs_scattering = 0.8 * xs_total
     lm_a1 = np.ones(shape)
     lm_a2 = np.zeros(shape)
     lm_a3 = np.zeros(shape)
@@ -351,23 +366,108 @@ def test_scattering_db_dim4_construction(tmp_path):
     scatterer = OpticalDatabaseGenericScattererRust(db_file)
 
     altitudes = np.array([0.0, 1000.0, 2000.0])
+    p0_profile = np.array([0.12, 0.15, 0.18])
+    p1_profile = np.array([1.2, 1.5, 1.8])
+    p2_profile = np.array([12.0, 15.0, 18.0])
     quants = scatterer.cross_sections(
         wavelengths_nm=wavelengths_nm,
         altitudes_m=altitudes,
-        p0=np.full_like(altitudes, 0.15),
-        p1=np.full_like(altitudes, 1.5),
-        p2=np.full_like(altitudes, 15.0),
+        p0=p0_profile,
+        p1=p1_profile,
+        p2=p2_profile,
     )
 
-    np.testing.assert_allclose(quants.extinction, 1e-4, rtol=1e-6)
-    np.testing.assert_allclose(quants.ssa, 0.9e-4, rtol=1e-6)
+    expected_extinction = (
+        1e-4
+        + coeffs["p0"] * p0_profile[:, np.newaxis]
+        + coeffs["p1"] * p1_profile[:, np.newaxis]
+        + coeffs["p2"] * p2_profile[:, np.newaxis]
+        + coeffs["wavelength_nm"] * wavelengths_nm[np.newaxis, :]
+    )
+    np.testing.assert_allclose(quants.extinction, expected_extinction, rtol=1e-12)
+    np.testing.assert_allclose(quants.ssa, 0.8 * expected_extinction, rtol=1e-12)
 
     derivs = scatterer.cross_section_derivatives(
         wavelengths_nm=wavelengths_nm,
         altitudes_m=altitudes,
-        p0=np.full_like(altitudes, 0.15),
-        p1=np.full_like(altitudes, 1.5),
-        p2=np.full_like(altitudes, 15.0),
+        p0=p0_profile,
+        p1=p1_profile,
+        p2=p2_profile,
     )
 
     assert set(derivs.keys()) == {"p0", "p1", "p2"}
+
+    for key in ["p0", "p1", "p2"]:
+        np.testing.assert_allclose(
+            derivs[key].reshape(len(altitudes), len(wavelengths_nm)),
+            coeffs[key],
+            rtol=1e-12,
+            atol=1e-18,
+        )
+
+
+def test_scattering_db_dim3_second_parameter_derivative(tmp_path):
+    wavelengths_nm = np.array([350.0, 500.0])
+    legendre_order = np.array([0, 1])
+    param0 = np.array([0.1, 0.2])
+    param1 = np.array([1.0, 2.0])
+    coeffs = {"p0": 1e-6, "p1": 2e-7, "wavelength_nm": 1e-10}
+
+    p0_grid, p1_grid, wavelength_grid = np.meshgrid(
+        param0, param1, wavelengths_nm, indexing="ij"
+    )
+    xs_total = (
+        1e-4
+        + coeffs["p0"] * p0_grid
+        + coeffs["p1"] * p1_grid
+        + coeffs["wavelength_nm"] * wavelength_grid
+    )
+    xs_scattering = 0.8 * xs_total
+    shape = (*xs_total.shape, len(legendre_order))
+    lm_a1 = np.ones(shape)
+    lm_a2 = np.zeros(shape)
+    lm_a3 = np.zeros(shape)
+    lm_a4 = np.zeros(shape)
+    lm_b1 = np.zeros(shape)
+    lm_b2 = np.zeros(shape)
+
+    ds = xr.Dataset(
+        {
+            "xs_total": (("p0", "p1", "wavelength_nm"), xs_total),
+            "xs_scattering": (("p0", "p1", "wavelength_nm"), xs_scattering),
+            "lm_a1": (("p0", "p1", "wavelength_nm", "legendre"), lm_a1),
+            "lm_a2": (("p0", "p1", "wavelength_nm", "legendre"), lm_a2),
+            "lm_a3": (("p0", "p1", "wavelength_nm", "legendre"), lm_a3),
+            "lm_a4": (("p0", "p1", "wavelength_nm", "legendre"), lm_a4),
+            "lm_b1": (("p0", "p1", "wavelength_nm", "legendre"), lm_b1),
+            "lm_b2": (("p0", "p1", "wavelength_nm", "legendre"), lm_b2),
+        },
+        coords={
+            "p0": param0,
+            "p1": param1,
+            "wavelength_nm": wavelengths_nm,
+            "legendre": legendre_order,
+        },
+    )
+
+    db_file = tmp_path / "dim3_scattering.nc"
+    ds.to_netcdf(db_file)
+    scatterer = OpticalDatabaseGenericScattererRust(db_file)
+
+    altitudes = np.array([0.0, 1000.0, 2000.0])
+    derivs = scatterer.cross_section_derivatives(
+        wavelengths_nm=wavelengths_nm,
+        altitudes_m=altitudes,
+        p0=np.array([0.12, 0.15, 0.18]),
+        p1=np.array([1.2, 1.5, 1.8]),
+    )
+
+    assert set(derivs.keys()) == {"p0", "p1"}
+
+    for key in ["p0", "p1"]:
+        np.testing.assert_allclose(
+            derivs[key].reshape(len(altitudes), len(wavelengths_nm)),
+            coeffs[key],
+            rtol=1e-12,
+            atol=1e-18,
+        )

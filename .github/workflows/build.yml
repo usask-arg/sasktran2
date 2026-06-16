@@ -85,7 +85,7 @@ jobs:
           cargo test
 
   test-rust-windows:
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     steps:
       - name: Checkout repository
@@ -129,7 +129,7 @@ jobs:
           cargo test -p sasktran2-rs
 
   test-cpp-windows:
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     steps:
       - name: Checkout repository
@@ -169,7 +169,7 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-          - os: windows-latest
+          - os: windows-2022
           - os: macos-15-intel
           - os: macos-26
 
@@ -381,7 +381,7 @@ jobs:
     strategy:
       matrix:
         platform:
-          - runner: windows-latest
+          - runner: windows-2022
             target: x64
     steps:
       - uses: actions/checkout@v6
@@ -437,7 +437,7 @@ jobs:
           path: dist
 
   windows-test-wheels:
-    runs-on: windows-latest
+    runs-on: windows-2022
     needs: windows
     strategy:
       fail-fast: false
