@@ -1,4 +1,5 @@
 pub mod math;
+pub mod raytracer;
 
 #[cxx::bridge(namespace = "sasktran2::rust::testing")]
 pub mod ffi {
