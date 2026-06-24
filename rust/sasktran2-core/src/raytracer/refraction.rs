@@ -1,8 +1,6 @@
 use std::error::Error;
 use std::fmt;
 
-use gauss_quad::legendre::GaussLegendre;
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum RefractiveProfileError {
     MismatchedLength {
@@ -148,7 +146,22 @@ impl RefractiveProfile {
     }
 
     pub fn integrate_path(&self, tangent_radius: f64, r1: f64, r2: f64) -> PathIntegral {
-        integrate_path(self, tangent_radius, r1, r2)
+        self.integrate_path_with_tangent_index(
+            tangent_radius,
+            self.refractive_index_at_radius(tangent_radius),
+            r1,
+            r2,
+        )
+    }
+
+    pub(crate) fn integrate_path_with_tangent_index(
+        &self,
+        tangent_radius: f64,
+        tangent_refractive_index: f64,
+        r1: f64,
+        r2: f64,
+    ) -> PathIntegral {
+        integrate_path(self, tangent_radius, tangent_refractive_index, r1, r2)
     }
 }
 
@@ -158,14 +171,86 @@ pub struct PathIntegral {
     pub deflection_angle: f64,
 }
 
+#[allow(clippy::excessive_precision)]
+const GQ64_NODES: [f64; 32] = [
+    0.99930504173577213946,
+    0.99634011677195527935,
+    0.99101337147674432074,
+    0.98333625388462595693,
+    0.97332682778991096374,
+    0.96100879965205371892,
+    0.94641137485840281606,
+    0.92956917213193957582,
+    0.91052213707850280576,
+    0.88931544599511410585,
+    0.86599939815409281976,
+    0.84062929625258036275,
+    0.81326531512279755974,
+    0.78397235894334140761,
+    0.75281990726053189661,
+    0.71988185017161082685,
+    0.68523631305423324256,
+    0.64896547125465733986,
+    0.61115535517239325025,
+    0.57189564620263403428,
+    0.53127946401989454566,
+    0.48940314570705295748,
+    0.44636601725346408798,
+    0.40227015796399160370,
+    0.35722015833766811595,
+    0.31132287199021095616,
+    0.26468716220876741637,
+    0.21742364374000708415,
+    0.16964442042399281804,
+    0.12146281929612055447,
+    0.07299312178779903945,
+    0.024350292663424432509,
+];
+
+#[allow(clippy::excessive_precision)]
+const GQ64_WEIGHTS: [f64; 32] = [
+    0.0017832807216964329473,
+    0.0041470332605624676353,
+    0.0065044579689783628561,
+    0.0088467598263639477231,
+    0.011168139460131128819,
+    0.013463047896718642598,
+    0.015726030476024719322,
+    0.017951715775697343085,
+    0.020134823153530209372,
+    0.022270173808383254159,
+    0.024352702568710873338,
+    0.026377469715054658672,
+    0.028339672614259483228,
+    0.030234657072402478868,
+    0.032057928354851553585,
+    0.033805161837141609392,
+    0.035472213256882383811,
+    0.03705512854024004604,
+    0.038550153178615629129,
+    0.039953741132720341387,
+    0.04126256324262352861,
+    0.042473515123653589007,
+    0.043583724529323453377,
+    0.04459055816375656306,
+    0.04549162792741814448,
+    0.046284796581314417296,
+    0.046968182816210017325,
+    0.047540165714830308662,
+    0.047999388596458307728,
+    0.04834476223480295717,
+    0.048575467441503426935,
+    0.048690957009139720383,
+];
+
 pub fn integrate_path(
     profile: &RefractiveProfile,
     tangent_radius: f64,
+    nt: f64,
     mut r1: f64,
     mut r2: f64,
 ) -> PathIntegral {
     const MIN_CELL_LENGTH: f64 = 0.1;
-    const NUM_INTEGRATION_POINTS: usize = 64;
     const RADIUS_DITHER: f64 = 1e-6;
 
     if r2 < r1 {
@@ -187,8 +272,6 @@ pub fn integrate_path(
             deflection_angle: (tangent_radius / r2).acos() - (tangent_radius / r1).acos(),
         };
     }
-
-    let nt = profile.refractive_index_at_radius(tangent_radius);
 
     let path_integrand = |x: f64, n: f64| {
         let sqf = (1.0 + (n - nt) / n * tangent_radius / (x * x)).sqrt()
@@ -213,17 +296,35 @@ pub fn integrate_path(
     let x_high = (r2 - tangent_radius).sqrt();
     let half_width = (x_high - x_low) / 2.0;
     let center = (x_high + x_low) / 2.0;
-    let quad = GaussLegendre::new(NUM_INTEGRATION_POINTS)
-        .expect("64-point Gauss-Legendre quadrature should be constructible");
 
     let mut extra_path = 0.0;
     let mut deflection_angle = 0.0;
-    for (node, weight) in quad.iter() {
-        let x = half_width * *node + center;
-        let n = profile.refractive_index_at_radius(x * x + tangent_radius);
+    for (&mu, &weight) in GQ64_NODES.iter().zip(GQ64_WEIGHTS.iter()) {
+        let a1 = 0.5 * mu + 0.5;
+        let a2 = -0.5 * mu + 0.5;
+        let a3 = 0.5 * mu - 0.5;
+        let a4 = -0.5 * mu - 0.5;
+        let w = 0.5 * weight;
 
-        extra_path += *weight * path_integrand(x, n);
-        deflection_angle += *weight * angle_integrand(x, n);
+        let x1 = half_width * a1 + center;
+        let x2 = half_width * a2 + center;
+        let x3 = half_width * a3 + center;
+        let x4 = half_width * a4 + center;
+
+        let n1 = profile.refractive_index_at_radius(x1 * x1 + tangent_radius);
+        let n2 = profile.refractive_index_at_radius(x2 * x2 + tangent_radius);
+        let n3 = profile.refractive_index_at_radius(x3 * x3 + tangent_radius);
+        let n4 = profile.refractive_index_at_radius(x4 * x4 + tangent_radius);
+
+        extra_path += w * path_integrand(x1, n1);
+        extra_path += w * path_integrand(x2, n2);
+        extra_path += w * path_integrand(x3, n3);
+        extra_path += w * path_integrand(x4, n4);
+
+        deflection_angle += w * angle_integrand(x1, n1);
+        deflection_angle += w * angle_integrand(x2, n2);
+        deflection_angle += w * angle_integrand(x3, n3);
+        deflection_angle += w * angle_integrand(x4, n4);
     }
 
     extra_path *= half_width;
@@ -282,5 +383,28 @@ mod tests {
             (20.0_f64 * 20.0 - 10.0 * 10.0).sqrt() - (15.0_f64 * 15.0 - 10.0 * 10.0).sqrt();
 
         assert!((result.path_length - expected).abs() < 1e-8);
+    }
+
+    #[test]
+    fn nontrivial_profile_path_integral_is_finite() {
+        let profile =
+            RefractiveProfile::new(10.0, vec![0.0, 10.0, 20.0], vec![1.1, 1.05, 1.0]).unwrap();
+        let result = profile.integrate_path(12.0, 15.0, 25.0);
+
+        assert!(result.path_length.is_finite());
+        assert!(result.deflection_angle.is_finite());
+        assert!(result.path_length > 0.0);
+        assert!(result.deflection_angle > 0.0);
+    }
+
+    #[test]
+    fn near_tangent_integral_applies_radius_dither() {
+        let profile =
+            RefractiveProfile::new(10.0, vec![0.0, 10.0, 20.0], vec![1.1, 1.05, 1.0]).unwrap();
+        let result = profile.integrate_path(15.0, 15.0, 15.05);
+
+        assert!(result.path_length.is_finite());
+        assert!(result.deflection_angle.is_finite());
+        assert!(result.path_length >= 0.0);
     }
 }

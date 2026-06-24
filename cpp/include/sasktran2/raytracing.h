@@ -682,4 +682,24 @@ namespace sasktran2::raytracing {
         distance_to_altitude(const sasktran2::viewinggeometry::ViewingRay& ray,
                              double altitude, ViewingDirection direction) const;
     };
+
+#ifdef SKTRAN_RUST_SUPPORT
+    class RustRayTracerImpl;
+
+    /** A ray tracer backed by the Rust vertical-grid ray tracing core.
+     */
+    class RustRayTracer : public RayTracerBase {
+      public:
+        RustRayTracer(const sasktran2::Geometry1D& geometry);
+        ~RustRayTracer() override;
+
+        void trace_ray(const sasktran2::viewinggeometry::ViewingRay& ray,
+                       TracedRay& tracedray,
+                       bool include_refraction = false) const override;
+
+      private:
+        const sasktran2::Geometry1D& m_geometry;
+        std::unique_ptr<RustRayTracerImpl> m_impl;
+    };
+#endif
 } // namespace sasktran2::raytracing

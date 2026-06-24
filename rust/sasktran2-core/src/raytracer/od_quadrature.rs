@@ -10,6 +10,7 @@ pub fn add_od_quadrature(
     let r1 = layer.exit.position.norm();
     let dr = r1 - r0;
     let distance = layer.effective_distance();
+    layer.average_look_away = (layer.exit.position - layer.entrance.position).normalized();
 
     if interpolation == InterpolationMethod::Lower {
         if r0 < r1 {
@@ -35,16 +36,9 @@ pub fn add_od_quadrature(
         return;
     }
 
-    let costheta0 = layer
-        .entrance
-        .position
-        .normalized()
-        .dot(layer.average_look_away);
-    let costheta1 = layer
-        .exit
-        .position
-        .normalized()
-        .dot(layer.average_look_away);
+    let average_norm = layer.average_look_away.norm();
+    let costheta0 = layer.entrance.position.dot(layer.average_look_away) / (r0 * average_norm);
+    let costheta1 = layer.exit.position.dot(layer.average_look_away) / (r1 * average_norm);
 
     let t0 = r0 * costheta0;
     let t1 = r1 * costheta1;

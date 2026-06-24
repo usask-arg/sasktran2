@@ -9,6 +9,7 @@ add_executable(
   grids/test_grid.cpp
   raytracing/test_spherical_shell.cpp
   raytracing/test_plane_parallel.cpp
+  raytracing/test_rust_raytracer_parity.cpp
   engine/test_engine_basic.cpp
   engine/wf/test_wf_singlescatter_scalar.cpp
   engine/wf/test_wf_vector.cpp

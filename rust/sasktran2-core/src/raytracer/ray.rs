@@ -33,7 +33,8 @@ impl Ray {
 
     #[inline(always)]
     pub fn spherical_tangent_radius(self) -> f64 {
-        self.origin.cross(self.direction).norm()
+        let cos_zenith = self.cos_zenith_at_origin();
+        self.origin.norm() * (1.0 - cos_zenith * cos_zenith).max(0.0).sqrt()
     }
 }
 

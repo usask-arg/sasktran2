@@ -1,7 +1,9 @@
 use super::{
     BoundaryTag, CellId, GeometryKind, InterpolationMethod, InterpolationWeight, LayerType, Ray,
-    SolarContext, TraceOptions, TracePoint, TracedRay, Vec3, VerticalGrid1D, VerticalRayTracer,
+    RefractiveProfile, SolarContext, TraceOptions, TracePoint, TracedRay, Vec3, VerticalGrid1D,
+    VerticalRayTracer,
 };
+use crate::raytracer::trace::NADIR_VIEWING_CUTOFF;
 
 const EARTH_RADIUS: f64 = 10.0;
 const ALTITUDES: [f64; 4] = [0.0, 10.0, 20.0, 30.0];
@@ -39,6 +41,29 @@ fn spherical_limb_ray(observer_altitude: f64, tangent_altitude: f64) -> Ray {
         Vec3::new(0.0, 0.0, observer_radius),
         Vec3::new(ratio, 0.0, dz),
     )
+}
+
+fn spherical_downward_ray(observer_altitude: f64, cos_viewing_zenith: f64) -> Ray {
+    let radius = EARTH_RADIUS + observer_altitude;
+    let sin_viewing_zenith = (1.0 - cos_viewing_zenith * cos_viewing_zenith).sqrt();
+    Ray::new(
+        Vec3::new(0.0, 0.0, radius),
+        Vec3::new(sin_viewing_zenith, 0.0, -cos_viewing_zenith),
+    )
+}
+
+fn unity_profile() -> RefractiveProfile {
+    RefractiveProfile::new(EARTH_RADIUS, ALTITUDES.to_vec(), vec![1.0; ALTITUDES.len()])
+        .expect("unity profile should be valid")
+}
+
+fn atmosphere_like_profile() -> RefractiveProfile {
+    RefractiveProfile::new(
+        EARTH_RADIUS,
+        ALTITUDES.to_vec(),
+        vec![1.00030, 1.00018, 1.00008, 1.00001],
+    )
+    .expect("atmosphere-like profile should be valid")
 }
 
 fn assert_close(actual: f64, expected: f64) {
@@ -364,6 +389,7 @@ fn solar_options_populate_layer_solar_parameters() {
         radial_ray(40.0, false, GeometryKind::PlaneParallel),
         TraceOptions {
             solar: Some(SolarContext::new(Vec3::UNIT_Z, GeometryKind::PlaneParallel)),
+            ..TraceOptions::default()
         },
     );
 
@@ -372,5 +398,144 @@ fn solar_options_populate_layer_solar_parameters() {
         assert_close(layer.cos_sza_exit, 1.0);
         assert!(layer.saz_entrance.is_finite());
         assert!(layer.saz_exit.is_finite());
+    }
+}
+
+#[test]
+fn refracted_spherical_outside_limb_uses_lower_tangent_radius() {
+    let tracer = spherical_tracer();
+    let profile = atmosphere_like_profile();
+    let ray = spherical_limb_ray(40.0, 15.0);
+
+    let traced = tracer.trace(
+        ray,
+        TraceOptions {
+            refraction: Some(&profile),
+            ..TraceOptions::default()
+        },
+    );
+
+    assert!(!traced.is_straight);
+    assert!(traced.tangent_radius < ray.spherical_tangent_radius());
+    assert!(!traced.ground_is_hit);
+    assert!(
+        traced
+            .layers
+            .iter()
+            .any(|layer| layer.curvature_factor != 1.0)
+    );
+}
+
+#[test]
+fn refracted_spherical_inside_limb_has_finite_curvature() {
+    let tracer = spherical_tracer();
+    let profile = atmosphere_like_profile();
+    let traced = tracer.trace(
+        spherical_limb_ray(25.0, 5.0),
+        TraceOptions {
+            refraction: Some(&profile),
+            ..TraceOptions::default()
+        },
+    );
+
+    assert!(!traced.is_straight);
+    assert!(!traced.ground_is_hit);
+    assert!(!traced.layers.is_empty());
+    for layer in &traced.layers {
+        assert!(layer.geometric_distance.is_finite());
+        assert!(layer.curvature_factor.is_finite());
+        assert!(layer.curvature_factor > 0.0);
+    }
+}
+
+#[test]
+fn refracted_spherical_ground_viewing_remains_ground_hit() {
+    let tracer = spherical_tracer();
+    let profile = atmosphere_like_profile();
+    let ray = spherical_downward_ray(40.0, 0.999);
+    let traced = tracer.trace(
+        ray,
+        TraceOptions {
+            refraction: Some(&profile),
+            ..TraceOptions::default()
+        },
+    );
+
+    assert!(!traced.is_straight);
+    assert!(traced.ground_is_hit);
+    assert_close(
+        traced
+            .layers
+            .first()
+            .expect("ground layer exists")
+            .exit
+            .altitude,
+        0.0,
+    );
+}
+
+#[test]
+fn refraction_is_ignored_above_nadir_cutoff() {
+    let tracer = spherical_tracer();
+    let profile = atmosphere_like_profile();
+    let cos_viewing_zenith = (NADIR_VIEWING_CUTOFF + 1.0) / 2.0;
+    let ray = spherical_downward_ray(40.0, cos_viewing_zenith);
+    let traced = tracer.trace(
+        ray,
+        TraceOptions {
+            refraction: Some(&profile),
+            ..TraceOptions::default()
+        },
+    );
+
+    assert!(traced.is_straight);
+    assert_close(traced.tangent_radius, ray.spherical_tangent_radius());
+}
+
+#[test]
+fn refraction_is_enabled_below_nadir_cutoff() {
+    let tracer = spherical_tracer();
+    let profile = atmosphere_like_profile();
+    let cos_viewing_zenith = NADIR_VIEWING_CUTOFF - 1e-4;
+    let ray = spherical_downward_ray(40.0, cos_viewing_zenith);
+    let traced = tracer.trace(
+        ray,
+        TraceOptions {
+            refraction: Some(&profile),
+            ..TraceOptions::default()
+        },
+    );
+
+    assert!(!traced.is_straight);
+    assert!(traced.tangent_radius < ray.spherical_tangent_radius());
+}
+
+#[test]
+fn unity_refractive_index_matches_straight_spherical_geometry() {
+    let tracer = spherical_tracer();
+    let profile = unity_profile();
+    let ray = spherical_limb_ray(40.0, 15.0);
+    let straight = tracer.trace(ray, TraceOptions::default());
+    let unity = tracer.trace(
+        ray,
+        TraceOptions {
+            refraction: Some(&profile),
+            ..TraceOptions::default()
+        },
+    );
+
+    assert!(!unity.is_straight);
+    assert_eq!(straight.layers.len(), unity.layers.len());
+    for (straight_layer, unity_layer) in straight.layers.iter().zip(&unity.layers) {
+        assert_close(
+            straight_layer.entrance.altitude,
+            unity_layer.entrance.altitude,
+        );
+        assert_close(straight_layer.exit.altitude, unity_layer.exit.altitude);
+        assert!(
+            (straight_layer.effective_distance() - unity_layer.effective_distance()).abs() < 1e-2
+        );
+        assert!(unity_layer.curvature_factor.is_finite());
+        assert!(unity_layer.curvature_factor > 0.0);
     }
 }

@@ -102,18 +102,6 @@ impl Layer {
             delta / geometric_distance
         };
 
-        let layer_type = if entrance.event.is_tangent() || exit.event.is_tangent() {
-            LayerType::Tangent
-        } else if entrance.event.is_boundary()
-            && exit.event.is_boundary()
-            && entrance.event.boundaries.contains_vertical()
-            && exit.event.boundaries.contains_vertical()
-        {
-            LayerType::Complete
-        } else {
-            LayerType::Partial
-        };
-
         Self {
             entrance,
             exit,
@@ -128,7 +116,27 @@ impl Layer {
             saz_exit: 0.0,
             cos_sza_entrance: 0.0,
             cos_sza_exit: 0.0,
-            layer_type,
+            layer_type: classify_layer_type(entrance, exit),
+            cell,
+        }
+    }
+
+    pub fn unfinalized(entrance: TracePoint, exit: TracePoint, cell: Option<CellId>) -> Self {
+        Self {
+            entrance,
+            exit,
+            average_look_away: Vec3::ZERO,
+            geometric_distance: 0.0,
+            curvature_factor: 1.0,
+            od_quad_start: 0.0,
+            od_quad_end: 0.0,
+            od_quad_start_fraction: 0.0,
+            od_quad_end_fraction: 0.0,
+            saz_entrance: 0.0,
+            saz_exit: 0.0,
+            cos_sza_entrance: 0.0,
+            cos_sza_exit: 0.0,
+            layer_type: classify_layer_type(entrance, exit),
             cell,
         }
     }
@@ -136,6 +144,21 @@ impl Layer {
     #[inline(always)]
     pub fn effective_distance(&self) -> f64 {
         self.geometric_distance * self.curvature_factor
+    }
+}
+
+#[inline(always)]
+fn classify_layer_type(entrance: TracePoint, exit: TracePoint) -> LayerType {
+    if entrance.event.is_tangent() || exit.event.is_tangent() {
+        LayerType::Tangent
+    } else if entrance.event.is_boundary()
+        && exit.event.is_boundary()
+        && entrance.event.boundaries.contains_vertical()
+        && exit.event.boundaries.contains_vertical()
+    {
+        LayerType::Complete
+    } else {
+        LayerType::Partial
     }
 }
 

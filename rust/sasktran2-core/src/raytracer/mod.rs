@@ -14,6 +14,8 @@ pub mod solar;
 pub mod trace;
 pub mod vec3;
 
+pub mod cxx;
+
 #[cfg(test)]
 mod parity_tests;
 

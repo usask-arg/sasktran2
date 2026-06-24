@@ -1,18 +1,27 @@
-use super::grid::{BoundarySet, BoundaryTag, GeometryKind, MediumGrid, VerticalGrid1D};
+use super::grid::{
+    BoundarySet, BoundaryTag, CellId, GeometryKind, InterpolationStencil, MediumGrid,
+    VerticalGrid1D,
+};
 use super::layer::{Layer, TraceEvent, TraceEventKind, TracePoint, TracedRay};
 use super::od_quadrature::add_od_quadrature;
 use super::primitive::{Intersection, Primitive};
 use super::ray::Ray;
+use super::refraction::RefractiveProfile;
 use super::solar::{SolarContext, add_solar_parameters};
+use super::vec3::Vec3;
+
+pub const NADIR_VIEWING_CUTOFF: f64 = 0.999999;
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct TraceOptions {
+pub struct TraceOptions<'a> {
     pub solar: Option<SolarContext>,
+    pub refraction: Option<&'a RefractiveProfile>,
 }
 
 #[derive(Debug, Clone, Copy)]
 struct EventSeed {
     distance: f64,
+    altitude: f64,
     kind: TraceEventKind,
     boundaries: BoundarySet,
 }
@@ -70,7 +79,7 @@ impl VerticalRayTracer {
         &self.primitives
     }
 
-    pub fn trace(&self, ray: Ray, options: TraceOptions) -> TracedRay {
+    pub fn trace(&self, ray: Ray, options: TraceOptions<'_>) -> TracedRay {
         let mut result =
             TracedRay::new(ray, self.grid.geometry(), self.grid.interpolation_method());
         let mut scratch = TraceScratch::with_capacity(self.primitives.len());
@@ -83,15 +92,204 @@ impl VerticalRayTracer {
         ray: Ray,
         result: &mut TracedRay,
         scratch: &mut TraceScratch,
-        options: TraceOptions,
+        options: TraceOptions<'_>,
     ) {
         scratch.clear();
         result.reset(ray, self.grid.geometry(), self.grid.interpolation_method());
-        result.tangent_radius = match self.grid.geometry() {
+
+        let straight_tangent_radius = match self.grid.geometry() {
             GeometryKind::Spherical => ray.spherical_tangent_radius(),
             GeometryKind::PlaneParallel => f64::NAN,
         };
+        let refraction_profile = self.active_refraction(ray, options.refraction);
+        result.is_straight = refraction_profile.is_none();
+        result.tangent_radius = match self.grid.geometry() {
+            GeometryKind::Spherical => refraction_profile
+                .map(|profile| profile.tangent_radius(straight_tangent_radius))
+                .unwrap_or(straight_tangent_radius),
+            GeometryKind::PlaneParallel => f64::NAN,
+        };
 
+        match self.grid.geometry() {
+            GeometryKind::Spherical => {
+                if !self.build_spherical_events(
+                    ray,
+                    result.tangent_radius,
+                    straight_tangent_radius,
+                    scratch,
+                    result,
+                ) {
+                    return;
+                }
+                self.build_spherical_layers_from_events(scratch, result);
+                self.finalize_spherical_layers(ray, result, refraction_profile);
+            }
+            GeometryKind::PlaneParallel => {
+                if !self.build_plane_parallel_events(ray, scratch, result) {
+                    return;
+                }
+                self.build_plane_parallel_layers_from_events(ray, scratch, result);
+            }
+        }
+
+        for layer in &mut result.layers {
+            add_od_quadrature(
+                layer,
+                self.grid.geometry(),
+                self.grid.interpolation_method(),
+            );
+            if let Some(solar) = options.solar {
+                add_solar_parameters(layer, solar);
+            }
+        }
+    }
+
+    fn active_refraction<'a>(
+        &self,
+        ray: Ray,
+        profile: Option<&'a RefractiveProfile>,
+    ) -> Option<&'a RefractiveProfile> {
+        if self.grid.geometry() != GeometryKind::Spherical {
+            return None;
+        }
+        if ray.cos_zenith_at_origin().abs() > NADIR_VIEWING_CUTOFF {
+            return None;
+        }
+        profile
+    }
+
+    fn build_spherical_events(
+        &self,
+        ray: Ray,
+        tangent_radius: f64,
+        straight_tangent_radius: f64,
+        scratch: &mut TraceScratch,
+        result: &mut TracedRay,
+    ) -> bool {
+        let observer_altitude = self.grid.altitude_at(ray.origin);
+        let observer_outside = observer_altitude >= self.grid.top_altitude();
+        let cos_viewing = ray.cos_zenith_at_origin();
+        let tangent_altitude =
+            self.snap_to_vertical_boundary(tangent_radius - self.grid.earth_radius());
+        let straight_tangent_altitude =
+            self.snap_to_vertical_boundary(straight_tangent_radius - self.grid.earth_radius());
+
+        if tangent_altitude >= self.grid.top_altitude() || (observer_outside && cos_viewing > 0.0) {
+            result.ground_is_hit = false;
+            return false;
+        }
+
+        let mut sequence = 0.0;
+        let altitudes = self.grid.altitudes();
+
+        if observer_outside {
+            if tangent_altitude > self.grid.ground_altitude() {
+                result.ground_is_hit = false;
+                let above_tangent_idx = upper_bound(altitudes, tangent_altitude);
+                if above_tangent_idx >= altitudes.len() {
+                    return false;
+                }
+                for index in (above_tangent_idx..altitudes.len()).rev() {
+                    self.push_boundary_event(scratch, &mut sequence, index);
+                }
+                self.push_tangent_event(scratch, &mut sequence, tangent_altitude);
+                for index in above_tangent_idx..altitudes.len() {
+                    self.push_boundary_event(scratch, &mut sequence, index);
+                }
+            } else {
+                result.ground_is_hit = true;
+                for index in (0..altitudes.len()).rev() {
+                    self.push_boundary_event(scratch, &mut sequence, index);
+                }
+            }
+            return scratch.events.len() >= 2;
+        }
+
+        self.push_observer_event(scratch, &mut sequence, observer_altitude);
+
+        if cos_viewing > 0.0 {
+            result.ground_is_hit = false;
+            let start_index = upper_bound(altitudes, observer_altitude);
+            for index in start_index..altitudes.len() {
+                self.push_boundary_event(scratch, &mut sequence, index);
+            }
+        } else if tangent_altitude > self.grid.ground_altitude() {
+            result.ground_is_hit = false;
+            let observer_index = upper_bound(altitudes, observer_altitude);
+            // C++ chooses the limb branch from the refracted tangent radius,
+            // then sequences inside-limb layer boundaries from the straight
+            // tangent altitude.
+            let above_tangent_idx = upper_bound(altitudes, straight_tangent_altitude);
+            for index in (above_tangent_idx..observer_index).rev() {
+                self.push_boundary_event(scratch, &mut sequence, index);
+            }
+            self.push_tangent_event(scratch, &mut sequence, straight_tangent_altitude);
+            for index in above_tangent_idx..altitudes.len() {
+                self.push_boundary_event(scratch, &mut sequence, index);
+            }
+        } else {
+            result.ground_is_hit = true;
+            let start_index = upper_bound(altitudes, observer_altitude);
+            if start_index == 0 {
+                return false;
+            }
+            for index in (0..start_index).rev() {
+                self.push_boundary_event(scratch, &mut sequence, index);
+            }
+        }
+
+        scratch.events.len() >= 2
+    }
+
+    fn build_spherical_layers_from_events(&self, scratch: &TraceScratch, result: &mut TracedRay) {
+        if scratch.events.len() < 2 {
+            return;
+        }
+
+        result.layers.reserve(scratch.events.len() - 1);
+        for window in scratch.events.windows(2).rev() {
+            let entrance = self.trace_spherical_event_point(window[0]);
+            let exit = self.trace_spherical_event_point(window[1]);
+            if (exit.distance - entrance.distance).abs() <= self.epsilon {
+                continue;
+            }
+            result.layers.push(Layer::unfinalized(entrance, exit, None));
+        }
+    }
+
+    fn build_plane_parallel_layers_from_events(
+        &self,
+        ray: Ray,
+        scratch: &mut TraceScratch,
+        result: &mut TracedRay,
+    ) {
+        scratch
+            .events
+            .sort_unstable_by(|lhs, rhs| lhs.distance.total_cmp(&rhs.distance));
+
+        if scratch.events.len() < 2 {
+            return;
+        }
+
+        result.layers.reserve(scratch.events.len() - 1);
+        for window in scratch.events.windows(2).rev() {
+            let entrance = self.trace_point(ray, window[0]);
+            let exit = self.trace_point(ray, window[1]);
+            if (exit.distance - entrance.distance).abs() <= self.epsilon {
+                continue;
+            }
+            let midpoint = ray.point_at((entrance.distance + exit.distance) / 2.0);
+            let cell = self.grid.locate_cell(midpoint);
+            result.layers.push(Layer::new(entrance, exit, cell));
+        }
+    }
+
+    fn build_plane_parallel_events(
+        &self,
+        ray: Ray,
+        scratch: &mut TraceScratch,
+        result: &mut TracedRay,
+    ) -> bool {
         for primitive in &self.primitives {
             primitive.intersections(ray, self.epsilon, &mut scratch.intersections);
         }
@@ -112,7 +310,7 @@ impl VerticalRayTracer {
         let Some((start_distance, end_distance, ground_is_hit)) =
             self.atmospheric_interval(observer_inside, surface_distance, &top_distances)
         else {
-            return;
+            return false;
         };
         result.ground_is_hit = ground_is_hit;
 
@@ -120,6 +318,7 @@ impl VerticalRayTracer {
             add_event_seed(
                 &mut scratch.events,
                 0.0,
+                observer_altitude,
                 TraceEventKind::Observer,
                 None,
                 self.epsilon,
@@ -135,52 +334,14 @@ impl VerticalRayTracer {
             add_event_seed(
                 &mut scratch.events,
                 intersection.distance,
+                self.grid.altitude_at(intersection.point),
                 TraceEventKind::Boundary,
                 Some(self.grid.classify_intersection(intersection)),
                 self.epsilon,
             );
         }
 
-        self.add_tangent_event_if_needed(ray, start_distance, end_distance, ground_is_hit, scratch);
-
-        scratch
-            .events
-            .sort_unstable_by(|lhs, rhs| lhs.distance.total_cmp(&rhs.distance));
-
-        let mut points = Vec::with_capacity(scratch.events.len());
-        for event in &scratch.events {
-            if event.distance < start_distance - self.epsilon
-                || event.distance > end_distance + self.epsilon
-            {
-                continue;
-            }
-            points.push(self.trace_point(ray, *event));
-        }
-
-        if points.len() < 2 {
-            return;
-        }
-
-        result.layers.reserve(points.len() - 1);
-        for window in points.windows(2).rev() {
-            let entrance = window[0];
-            let exit = window[1];
-            if (exit.distance - entrance.distance).abs() <= self.epsilon {
-                continue;
-            }
-            let midpoint = ray.point_at((entrance.distance + exit.distance) / 2.0);
-            let cell = self.grid.locate_cell(midpoint);
-            let mut layer = Layer::new(entrance, exit, cell);
-            add_od_quadrature(
-                &mut layer,
-                self.grid.geometry(),
-                self.grid.interpolation_method(),
-            );
-            if let Some(solar) = options.solar {
-                add_solar_parameters(&mut layer, solar);
-            }
-            result.layers.push(layer);
-        }
+        scratch.events.len() >= 2
     }
 
     fn atmospheric_interval(
@@ -214,45 +375,219 @@ impl VerticalRayTracer {
         }
     }
 
-    fn add_tangent_event_if_needed(
+    fn push_boundary_event(&self, scratch: &mut TraceScratch, sequence: &mut f64, index: usize) {
+        scratch.events.push(EventSeed {
+            distance: *sequence,
+            altitude: self.grid.altitudes()[index],
+            kind: TraceEventKind::Boundary,
+            boundaries: boundary_set(self.grid.boundary_tag(index)),
+        });
+        *sequence += 1.0;
+    }
+
+    fn push_observer_event(
+        &self,
+        scratch: &mut TraceScratch,
+        sequence: &mut f64,
+        observer_altitude: f64,
+    ) {
+        scratch.events.push(EventSeed {
+            distance: *sequence,
+            altitude: observer_altitude,
+            kind: TraceEventKind::Observer,
+            boundaries: BoundarySet::new(),
+        });
+        *sequence += 1.0;
+    }
+
+    fn push_tangent_event(
+        &self,
+        scratch: &mut TraceScratch,
+        sequence: &mut f64,
+        tangent_altitude: f64,
+    ) {
+        let boundaries = self
+            .grid
+            .on_exact_vertical_boundary(tangent_altitude, self.epsilon)
+            .map(|index| boundary_set(self.grid.boundary_tag(index)))
+            .unwrap_or_default();
+        scratch.events.push(EventSeed {
+            distance: *sequence,
+            altitude: tangent_altitude,
+            kind: TraceEventKind::Tangent,
+            boundaries,
+        });
+        *sequence += 1.0;
+    }
+
+    fn finalize_spherical_layers(
         &self,
         ray: Ray,
-        start_distance: f64,
-        end_distance: f64,
-        ground_is_hit: bool,
-        scratch: &mut TraceScratch,
+        result: &mut TracedRay,
+        refraction_profile: Option<&RefractiveProfile>,
     ) {
-        if self.grid.geometry() != GeometryKind::Spherical || ground_is_hit {
-            return;
+        let mut total_deflection = 0.0;
+        let tangent_radius = result.tangent_radius;
+        let refraction = refraction_profile
+            .map(|profile| (profile, profile.refractive_index_at_radius(tangent_radius)));
+        let mut x_basis = Vec3::ZERO;
+        let mut y_basis = Vec3::ZERO;
+        let mut previous_exit = None;
+        let observer_inside = self.grid.altitude_at(ray.origin) < self.grid.top_altitude();
+
+        for layer_index in (0..result.layers.len()).rev() {
+            let layer = &mut result.layers[layer_index];
+
+            if let Some(exit) = previous_exit {
+                layer.entrance = exit;
+            } else {
+                let entrance_position = if observer_inside {
+                    ray.origin
+                } else {
+                    ray.point_at(self.distance_to_spherical_altitude(
+                        ray,
+                        self.grid.top_altitude(),
+                        1.0,
+                        1.0,
+                    ))
+                };
+                self.update_point_position(&mut layer.entrance, entrance_position);
+                x_basis = layer.entrance.position.normalized();
+                y_basis = x_basis
+                    .cross(ray.direction)
+                    .normalized()
+                    .cross(x_basis)
+                    .normalized();
+            }
+
+            let r_entrance = self.grid.radius_for_altitude(layer.entrance.altitude);
+            let r_exit = self.grid.radius_for_altitude(layer.exit.altitude);
+
+            if let Some((profile, tangent_refractive_index)) = refraction {
+                let refracted_path = profile.integrate_path_with_tangent_index(
+                    tangent_radius,
+                    tangent_refractive_index,
+                    r_entrance,
+                    r_exit,
+                );
+                total_deflection += refracted_path.deflection_angle;
+                let exit_position =
+                    r_exit * (x_basis * total_deflection.cos() + y_basis * total_deflection.sin());
+                self.update_point_position(&mut layer.exit, exit_position);
+                let delta = layer.exit.position - layer.entrance.position;
+                layer.geometric_distance = delta.norm();
+                layer.average_look_away = if layer.geometric_distance == 0.0 {
+                    Vec3::ZERO
+                } else {
+                    delta / layer.geometric_distance
+                };
+                layer.curvature_factor = if layer.geometric_distance == 0.0 {
+                    1.0
+                } else {
+                    refracted_path.path_length / layer.geometric_distance
+                };
+            } else {
+                layer.curvature_factor = 1.0;
+                layer.geometric_distance =
+                    spherical_shell_distance(tangent_radius, r_entrance, r_exit);
+                layer.average_look_away = ray.direction;
+                let exit_position =
+                    layer.entrance.position + layer.average_look_away * layer.geometric_distance;
+                self.update_point_position(&mut layer.exit, exit_position);
+            }
+
+            layer.cell = self
+                .grid
+                .locate_altitude_layer((layer.entrance.altitude + layer.exit.altitude) / 2.0, 1e-8)
+                .map(super::grid::CellId::AltitudeLayer);
+
+            previous_exit = Some(layer.exit);
+        }
+    }
+
+    fn update_point_position(&self, point: &mut TracePoint, position: super::vec3::Vec3) {
+        point.position = position;
+        if point.event.is_observer() || !point.event.boundaries.contains_vertical() {
+            point.altitude = self.grid.altitude_at(position);
         }
 
-        let tangent_distance = ray.spherical_tangent_distance();
-        if tangent_distance <= start_distance + self.epsilon
-            || tangent_distance >= end_distance - self.epsilon
-        {
-            return;
+        if let Some(index) = vertical_boundary_index(point.event.boundaries) {
+            point.interpolation = exact_boundary_stencil(index);
+            point.cell = Some(CellId::AltitudeLayer(
+                index.min(self.grid.altitudes().len() - 2),
+            ));
+            point.on_exact_vertical_boundary = true;
+        } else {
+            point.interpolation = self.grid.interpolation_weights_at_altitude(point.altitude);
+            point.cell = self
+                .grid
+                .locate_altitude_layer(point.altitude, 1e-8)
+                .map(CellId::AltitudeLayer);
+            point.on_exact_vertical_boundary = self
+                .grid
+                .on_exact_vertical_boundary(point.altitude, 1e-8)
+                .is_some();
         }
+    }
 
-        let tangent_altitude = ray.spherical_tangent_radius() - self.grid.earth_radius();
-        if tangent_altitude <= self.grid.ground_altitude() + self.epsilon
-            || tangent_altitude >= self.grid.top_altitude() - self.epsilon
-        {
-            return;
+    fn distance_to_spherical_altitude(
+        &self,
+        ray: Ray,
+        altitude: f64,
+        direction: f64,
+        side: f64,
+    ) -> f64 {
+        let cos_zenith = ray.cos_zenith_at_origin().abs();
+        let ro = ray.origin.norm();
+        let re = self.grid.earth_radius() + altitude;
+        let rtsq = ro * ro * (1.0 - cos_zenith * cos_zenith);
+        let tangent_distance = side * direction * ro * cos_zenith;
+        let dist_from_tangent = if rtsq > re * re && (rtsq - re * re).abs() < 100.0 {
+            0.0
+        } else {
+            side * direction * (re * re - rtsq).abs().sqrt()
+        };
+
+        if side > 0.0 {
+            tangent_distance - dist_from_tangent
+        } else {
+            tangent_distance + dist_from_tangent
         }
+    }
 
-        add_event_seed(
-            &mut scratch.events,
-            tangent_distance,
-            TraceEventKind::Tangent,
-            None,
-            self.epsilon,
-        );
+    fn snap_to_vertical_boundary(&self, altitude: f64) -> f64 {
+        self.grid
+            .on_exact_vertical_boundary(altitude, self.epsilon.max(1e-6))
+            .map(|index| self.grid.altitudes()[index])
+            .unwrap_or(altitude)
+    }
+
+    fn trace_spherical_event_point(&self, event: EventSeed) -> TracePoint {
+        let event_kind = match event.kind {
+            TraceEventKind::Observer => TraceEvent::observer(),
+            TraceEventKind::Boundary => TraceEvent::boundary(event.boundaries),
+            TraceEventKind::Tangent => TraceEvent::tangent(event.boundaries),
+        };
+
+        TracePoint {
+            distance: event.distance,
+            position: Vec3::ZERO,
+            altitude: event.altitude,
+            event: event_kind,
+            interpolation: Default::default(),
+            cell: None,
+            on_exact_vertical_boundary: event.boundaries.contains_vertical()
+                || self
+                    .grid
+                    .on_exact_vertical_boundary(event.altitude, 1e-8)
+                    .is_some(),
+        }
     }
 
     fn trace_point(&self, ray: Ray, event: EventSeed) -> TracePoint {
         let distance = event.distance;
         let position = ray.point_at(distance);
-        let altitude = self.grid.altitude_at(position);
+        let altitude = event.altitude;
         let event = match event.kind {
             TraceEventKind::Observer => TraceEvent::observer(),
             TraceEventKind::Boundary => TraceEvent::boundary(event.boundaries),
@@ -264,8 +599,11 @@ impl VerticalRayTracer {
             position,
             altitude,
             event,
-            interpolation: self.grid.interpolation_weights(position),
-            cell: self.grid.locate_cell(position),
+            interpolation: self.grid.interpolation_weights_at_altitude(altitude),
+            cell: self
+                .grid
+                .locate_altitude_layer(altitude, 1e-8)
+                .map(super::grid::CellId::AltitudeLayer),
             on_exact_vertical_boundary: self
                 .grid
                 .on_exact_vertical_boundary(altitude, 1e-8)
@@ -298,6 +636,7 @@ fn distances_with_tag(
 fn add_event_seed(
     events: &mut Vec<EventSeed>,
     distance: f64,
+    altitude: f64,
     kind: TraceEventKind,
     boundary: Option<BoundaryTag>,
     epsilon: f64,
@@ -306,6 +645,7 @@ fn add_event_seed(
         .iter_mut()
         .find(|event| (event.distance - distance).abs() <= epsilon)
     {
+        existing.altitude = altitude;
         if kind == TraceEventKind::Tangent {
             existing.kind = TraceEventKind::Tangent;
         } else if existing.kind != TraceEventKind::Tangent {
@@ -323,9 +663,40 @@ fn add_event_seed(
     }
     events.push(EventSeed {
         distance,
+        altitude,
         kind,
         boundaries,
     });
+}
+
+fn boundary_set(boundary: BoundaryTag) -> BoundarySet {
+    let mut boundaries = BoundarySet::new();
+    boundaries.push(boundary);
+    boundaries
+}
+
+fn vertical_boundary_index(boundaries: BoundarySet) -> Option<usize> {
+    boundaries.iter().find_map(BoundaryTag::altitude_index)
+}
+
+fn exact_boundary_stencil(index: usize) -> InterpolationStencil {
+    let mut stencil = InterpolationStencil::new();
+    stencil.push(index, 1.0);
+    stencil
+}
+
+fn upper_bound(values: &[f64], value: f64) -> usize {
+    values.partition_point(|candidate| *candidate <= value)
+}
+
+fn spherical_shell_distance(tangent_radius: f64, r_entrance: f64, r_exit: f64) -> f64 {
+    ((r_entrance * r_entrance - tangent_radius * tangent_radius)
+        .max(0.0)
+        .sqrt()
+        - (r_exit * r_exit - tangent_radius * tangent_radius)
+            .max(0.0)
+            .sqrt())
+    .abs()
 }
 
 #[cfg(test)]

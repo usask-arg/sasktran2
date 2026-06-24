@@ -5,6 +5,8 @@ include(ExternalProject)
 include(FetchContent)
 
 option(ENABLE_LTO "Enables LTO Between the C++ and Rust core" OFF)
+option(SKTRAN_USE_RUST_RAYTRACER
+       "Use the Rust-backed ray tracer in the C++ engine" OFF)
 
 if(ENABLE_LTO)
   message(STATUS "Enabling LTO between C++ and Rust components")
@@ -105,6 +107,11 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # Add an interface target for storing build properties common to all sasktran
 # modules
 add_library(sasktran2BuildProperties INTERFACE)
+
+if(SKTRAN_USE_RUST_RAYTRACER)
+  target_compile_definitions(sasktran2BuildProperties
+                             INTERFACE SKTRAN_USE_RUST_RAYTRACER)
+endif()
 
 find_package(Eigen3 5 CONFIG)
 
@@ -468,6 +475,10 @@ message(STATUS "Lapack Configuration Complete")
 
 # -------- RUST LIBRARY INTEGRATION -------
 option(ENABLE_RUST_COMPONENTS "Enable Rust components" ON)
+
+if(SKTRAN_USE_RUST_RAYTRACER AND NOT ENABLE_RUST_COMPONENTS)
+  message(FATAL_ERROR "SKTRAN_USE_RUST_RAYTRACER requires ENABLE_RUST_COMPONENTS")
+endif()
 
 if(ENABLE_RUST_COMPONENTS)
   target_compile_definitions(sasktran2BuildProperties
