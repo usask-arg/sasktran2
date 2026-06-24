@@ -540,7 +540,7 @@ impl LineAbsorber {
         if is_sorted {
             Ok(xs)
         } else {
-            println!("Unsored wavenumber grid, have to sort output");
+            // println!("Unsored wavenumber grid, have to sort output");
             // Have to sort the output
             let sort_idx = argsort_f64(wvnum_slice);
 
