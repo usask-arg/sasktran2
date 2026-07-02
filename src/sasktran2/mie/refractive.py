@@ -12,7 +12,10 @@ from sasktran2.database.web import StandardDatabase
 
 class RefractiveIndex:
     def __init__(
-        self, refractive_index_fn: Callable[[float], complex], identifier: str
+        self,
+        refractive_index_fn: Callable[[float], complex],
+        identifier: str,
+        args: list[str] | None = None,
     ) -> None:
         """
         A generic implementation of a refractive index function. This class is a light wrapper
@@ -22,14 +25,17 @@ class RefractiveIndex:
         Parameters
         ----------
         refractive_index_fn : Callable[[float], complex]
-            Function that takes in a wavelength in nm and returns the complex refractive index
+            Function that takes in a wavelength in nm (and any keyword arguments) and returns the complex refractive index
         identifier : str
             A unique identifier for the refractive index
+        args : list[str]
+            Names of keyword arguments required by refractive_index_fn (default no arguments)
         """
         self._fn = refractive_index_fn
         self._identifier = identifier
+        self._args = [] if args is None else args
 
-    def refractive_index(self, wavelength_nm: np.ndarray) -> np.ndarray:
+    def refractive_index(self, wavelength_nm: np.ndarray, **kwargs) -> np.ndarray:
         """
         Returns the complex refractive index for a given wavelength
 
@@ -41,7 +47,7 @@ class RefractiveIndex:
         -------
         np.ndarray
         """
-        return self._fn(wavelength_nm)
+        return self._fn(wavelength_nm, **kwargs)
 
     @property
     def refractive_index_fn(self):
@@ -56,6 +62,13 @@ class RefractiveIndex:
         Get the unique identifier for this refractive index
         """
         return self._identifier
+
+    @property
+    def args(self):
+        """
+        Get the list of any keyword arguments required by refractive_index_fn
+        """
+        return self._args
 
 
 def _from_osiris_file(path: Path):
