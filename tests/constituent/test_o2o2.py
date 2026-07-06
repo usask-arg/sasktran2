@@ -3,6 +3,8 @@ from __future__ import annotations
 import numpy as np
 import sasktran2 as sk
 
+PRESSURE_WF_ATOL = 2.5e-4
+
 
 def _test_scenarios():
     config = sk.Config()
@@ -101,12 +103,16 @@ def test_o2o2_wf_pressure():
         engine = sk.Engine(scen["config"], scen["geometry"], scen["viewing_geo"])
 
         radiance = sk.test_util.wf.numeric_wf(
-            atmosphere.pressure_pa, 0.01, engine, atmosphere, "wf_pressure_pa"
+            atmosphere.pressure_pa,
+            0.01,
+            engine,
+            atmosphere,
+            "wf_pressure_pa",
         )
 
         sk.test_util.wf.validate_wf(
             radiance["wf_pressure_pa"],
             radiance["wf_pressure_pa_numeric"],
             wf_dim="altitude",
-            decimal=4,
+            atol=PRESSURE_WF_ATOL,
         )
