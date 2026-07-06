@@ -74,7 +74,7 @@ pub fn read_hitran_line_file(data_path: PathBuf) -> Result<OpticalLineDB> {
         };
 
         let transition_wavenumber: f64 = line[3..15].trim().parse()?;
-        let _einstein_a: f64 = line[25..35].trim().parse()?;
+        let einstein_a: f64 = line[25..35].trim().parse()?;
         let air_broadened_width: f64 = line[35..40].trim().parse()?;
         let self_broadened_width: f64 = line[40..45].trim().parse()?;
         let lower_state_energy: f64 = line[45..55].trim().parse()?;
@@ -82,15 +82,15 @@ pub fn read_hitran_line_file(data_path: PathBuf) -> Result<OpticalLineDB> {
         let pressure_shift: f64 = line[59..67].trim().parse()?;
 
         // Unused parameters
-        let _upper_vibrational_quanta: &str = line[67..82].trim();
-        let _lower_vibrational_quanta: &str = line[82..97].trim();
-        let _upper_local_quanta: &str = line[97..112].trim();
-        let _lower_local_quanta: &str = line[112..127].trim();
+        let upper_vibrational_quanta: &str = line[67..82].trim();
+        let lower_vibrational_quanta: &str = line[82..97].trim();
+        let upper_local_quanta: &str = line[97..112].trim();
+        let lower_local_quanta: &str = line[112..127].trim();
         let _error_codes: &str = line[127..133].trim();
         let _reference_codes: &str = line[133..145].trim();
         let _line_mixing_flag: &str = line[145..146].trim();
-        let _upper_g: f64 = line[146..153].trim().parse()?;
-        let _lower_g: f64 = line[153..160].trim().parse()?;
+        let upper_g: f64 = line[146..153].trim().parse()?;
+        let lower_g: f64 = line[153..160].trim().parse()?;
 
         let y_coupling: Vec<f64> = Vec::new();
         let g_coupling: Vec<f64> = Vec::new();
@@ -102,6 +102,7 @@ pub fn read_hitran_line_file(data_path: PathBuf) -> Result<OpticalLineDB> {
         let line = OpticalLine {
             line_center: transition_wavenumber,
             line_intensity,
+            einstein_a: Some(einstein_a),
             lower_energy: lower_state_energy,
             gamma_air: air_broadened_width,
             gamma_self: self_broadened_width,
@@ -109,6 +110,12 @@ pub fn read_hitran_line_file(data_path: PathBuf) -> Result<OpticalLineDB> {
             n_air: temperature_dependence,
             mol_id,
             iso_id,
+            upper_quanta: upper_vibrational_quanta.to_string(),
+            lower_quanta: lower_vibrational_quanta.to_string(),
+            upper_local_quanta: upper_local_quanta.to_string(),
+            lower_local_quanta: lower_local_quanta.to_string(),
+            upper_statistical_weight: Some(upper_g),
+            lower_statistical_weight: Some(lower_g),
             y_coupling,
             g_coupling,
             coupling_temperature,
@@ -134,5 +141,23 @@ mod tests {
         assert!(result.is_ok());
         let db: OpticalLineDB = result.unwrap();
         assert!(!db.lines.is_empty());
+    }
+
+    #[test]
+    fn hitran_loader_preserves_emission_metadata() {
+        let co2_file = PathBuf::from("../../tests/data/CO2.data");
+
+        let db = read_hitran_line_file(co2_file).unwrap();
+        let line = db
+            .lines
+            .iter()
+            .find(|line| line.has_emission_metadata())
+            .expect("test HITRAN file should contain emission metadata");
+
+        assert!(line.einstein_a.unwrap() > 0.0);
+        assert!(!line.upper_quanta.is_empty());
+        assert!(!line.lower_quanta.is_empty());
+        assert!(line.upper_statistical_weight.unwrap() > 0.0);
+        assert!(line.lower_statistical_weight.unwrap() > 0.0);
     }
 }

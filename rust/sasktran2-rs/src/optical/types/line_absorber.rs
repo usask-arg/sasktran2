@@ -117,6 +117,23 @@ fn gaussian_assign(
     }
 }
 
+pub fn assign_normalized_doppler_line_shape(
+    wavenumber_cminv: &[f64],
+    line_center_cminv: f64,
+    doppler_width_cminv: f64,
+    area: f64,
+    output: &mut [f64],
+) {
+    gaussian_assign(
+        wavenumber_cminv,
+        line_center_cminv,
+        doppler_width_cminv,
+        0.0,
+        area / (SQRT_PI * doppler_width_cminv),
+        output,
+    );
+}
+
 fn split_and_assign(
     adjusted_line: &AdjustedLineParameters,
     wavenumber_cminv: &Grid1DView,
@@ -536,6 +553,8 @@ impl LineAbsorber {
                 &batch_mol_params,
             );
         }
+
+        xs.mapv_inplace(|value| value.max(0.0));
 
         if is_sorted {
             Ok(xs)

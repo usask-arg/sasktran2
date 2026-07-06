@@ -1,10 +1,13 @@
 use crate::bindings::lapack::dgesv;
 use crate::prelude::*;
+use std::collections::HashSet;
 
+use super::emission::OXYGEN_GREEN_LINE_EINSTEIN_A_S;
 use super::types::{ChemicalReaction, Molecule, MoleculeMap, PhotoReaction};
 
 pub const LYMAN_ALPHA_WAVELENGTH_NM: f64 = 121.567;
 pub const LYMAN_ALPHA_TOA_RATE_S: f64 = 3.40e-9;
+pub const LYMAN_ALPHA_O1D_QUANTUM_YIELD: f64 = 0.53;
 pub const LYMAN_ALPHA_TOA_FLUX_PHOTONS_M2_S: f64 = 3.2e15;
 pub const O2_LYMAN_ALPHA_EFFECTIVE_CROSS_SECTION_M2: f64 =
     LYMAN_ALPHA_TOA_RATE_S / LYMAN_ALPHA_TOA_FLUX_PHOTONS_M2_S;
@@ -27,6 +30,7 @@ pub trait PhotochemicalModel {
 
         // Negative of sources
         let mut sources = Array1::<f64>::zeros(n);
+        let mut bimolecular_loss_processes: HashSet<(Molecule, Molecule, u64)> = HashSet::new();
 
         for reaction in reactions {
             match reaction.reactants.len() {
@@ -82,8 +86,7 @@ pub trait PhotochemicalModel {
                                     "Density not provided for background reactant '{}'",
                                     reactant_str
                                 )
-                            })?
-                            / 1.0e6; // convert from cm^-3 to m^-3
+                            })?;
 
                         for product in &reaction.products {
                             if mol_map.is_in_state(product) {
@@ -130,15 +133,19 @@ pub trait PhotochemicalModel {
                                 source_str
                             )
                         })?
-                        / 1.0e6; // convert from cm^-3 to m^-3
-                    let rate = k * collider_density * branch;
+                        / 1.0e6; // convert from m^-3 to cm^-3
+                    let rate = k * collider_density;
+                    let product_rate = rate * branch;
 
                     if mol_map.is_in_state(source) {
                         let source_index = mol_map.index(source)
                             .ok_or_else(|| anyhow!("Reactant '{}' not found in molecule map (bimolecular reaction with collider '{}')", source_str, collider_str))?;
 
                         // One loss per reaction event
-                        a_matrix[[source_index, source_index]] -= rate;
+                        let loss_key = (source.clone(), collider.clone(), rate.to_bits());
+                        if bimolecular_loss_processes.insert(loss_key) {
+                            a_matrix[[source_index, source_index]] -= rate;
+                        }
 
                         // Gains to tracked products only
                         for product in &reaction.products {
@@ -147,14 +154,14 @@ pub trait PhotochemicalModel {
                                     .unwrap_or_else(|_| format!("{:?}", product));
                                 let product_index = mol_map.index(product)
                                     .ok_or_else(|| anyhow!("Product '{}' not found in molecule map (reactants: '{}' + '{}')", product_str, source_str, collider_str))?;
-                                a_matrix[[product_index, source_index]] += rate;
+                                a_matrix[[product_index, source_index]] += product_rate;
                             }
                         }
                     } else {
                         let source_density = densities
                             .get(&source_str)
                             .or_else(|| densities.get(&source.base_type.to_string()))
-                            .ok_or_else(|| anyhow!("Density not provided for background reactant '{}' (collider: '{}')", source_str, collider_str))? / 1.0e6; // convert from cm^-3 to m^-3
+                            .ok_or_else(|| anyhow!("Density not provided for background reactant '{}' (collider: '{}')", source_str, collider_str))?;
 
                         for product in &reaction.products {
                             if mol_map.is_in_state(product) {
@@ -162,7 +169,7 @@ pub trait PhotochemicalModel {
                                     .unwrap_or_else(|_| format!("{:?}", product));
                                 let product_index = mol_map.index(product)
                                     .ok_or_else(|| anyhow!("Product '{}' not found in molecule map (background reactant: '{}' + '{}')", product_str, source_str, collider_str))?;
-                                sources[product_index] -= rate * source_density;
+                                sources[product_index] -= product_rate * source_density;
                             }
                         }
                     }
@@ -415,11 +422,13 @@ pub fn calculate_photolysis_rate(
             )?
         };
 
-        return Ok(flux_at_line
+        let photolysis_rate = flux_at_line
             .iter()
             .zip(xs_at_line.iter())
-            .map(|(flux, xs)| q * flux.max(0.0) * xs.max(0.0))
-            .collect());
+            .map(|(flux, xs)| flux.max(0.0) * xs.max(0.0))
+            .collect();
+
+        return Ok(apply_photolysis_rate_scale(reaction, photolysis_rate, q));
     }
 
     let delta_wavelength = wavelength_bin_widths(wavelength_nm)?;
@@ -436,11 +445,30 @@ pub fn calculate_photolysis_rate(
         for k in 0..actinic_flux.ncols() {
             let flux = actinic_flux[[j, k]].max(0.0);
             let xs = cross_section[[j, k]].max(0.0);
-            photolysis_rate[k] += q * flux * xs * delta_wavelength[j];
+            photolysis_rate[k] += flux * xs * delta_wavelength[j];
         }
     }
 
-    Ok(photolysis_rate)
+    Ok(apply_photolysis_rate_scale(reaction, photolysis_rate, q))
+}
+
+fn apply_photolysis_rate_scale(
+    reaction: &PhotoReaction,
+    mut photolysis_rate: Array1<f64>,
+    quantum_yield: f64,
+) -> Array1<f64> {
+    if reaction.toa_rate_constant > 0.0
+        && let Some(reference_rate) = photolysis_rate.last().copied()
+        && reference_rate.is_finite()
+        && reference_rate > 0.0
+    {
+        let scale = reaction.toa_rate_constant / reference_rate;
+        photolysis_rate.mapv_inplace(|rate| quantum_yield * rate * scale);
+    } else {
+        photolysis_rate.mapv_inplace(|rate| quantum_yield * rate);
+    }
+
+    photolysis_rate
 }
 
 fn interpolate_spectral_profiles(
@@ -543,7 +571,7 @@ impl Yankovsky {
             "O2 + hv(lyman-alpha) -> O(3P) + O(1D)"
                 .parse::<PhotoReaction>()
                 .unwrap()
-                .with_quantum_yield(1.0)
+                .with_quantum_yield(LYMAN_ALPHA_O1D_QUANTUM_YIELD)
                 .with_toa_rate_constant(LYMAN_ALPHA_TOA_RATE_S)
                 .with_line_center_nm(LYMAN_ALPHA_WAVELENGTH_NM)
                 .with_line_effective_cross_section_m2(O2_LYMAN_ALPHA_EFFECTIVE_CROSS_SECTION_M2),
@@ -613,6 +641,12 @@ impl Yankovsky {
         }
 
         let mut chemical_reactions = vec![
+            // O(1S) scaffold for oxygen green-line emissions. Production pathways
+            // are intentionally left for later photochemistry/NLTE work.
+            "O(1S) -> O(1D)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_einstein_coefficient(|_| OXYGEN_GREEN_LINE_EINSTEIN_A_S),
             // O(1D) deactivation reactions
             "O(1D) -> O(3P)"
                 .parse::<ChemicalReaction>()
@@ -636,13 +670,6 @@ impl Yankovsky {
                     3.2e-11 * (67.0 / temperature).exp()
                 })
                 .with_quantum_yield(0.55),
-            "O(1D) + O2 -> O2 + O(3P)"
-                .parse::<ChemicalReaction>()
-                .unwrap()
-                .with_rate_constant(|temperature: f64| -> f64 {
-                    3.2e-11 * (67.0 / temperature).exp()
-                })
-                .with_quantum_yield(0.05),
             "O(1D) + O2 -> O2(a, v=0) + O(3P)"
                 .parse::<ChemicalReaction>()
                 .unwrap()
@@ -770,17 +797,17 @@ impl Yankovsky {
             "O2(a, v=0) + O2 -> O2(X, v=5) + O2"
                 .parse::<ChemicalReaction>()
                 .unwrap()
-                .with_rate_constant(|temperature: f64| 3.6e-17 * (-220.0 / temperature).exp())
+                .with_rate_constant(|temperature: f64| 3.6e-18 * (-220.0 / temperature).exp())
                 .with_quantum_yield(0.014),
             "O2(a, v=0) + O2 -> O2(X, v=4) + O2(X, v=1)"
                 .parse::<ChemicalReaction>()
                 .unwrap()
-                .with_rate_constant(|temperature: f64| 3.6e-17 * (-220.0 / temperature).exp())
+                .with_rate_constant(|temperature: f64| 3.6e-18 * (-220.0 / temperature).exp())
                 .with_quantum_yield(0.214),
             "O2(a, v=0) + O2 -> O2(X, v=3) + O2(X, v=2)"
                 .parse::<ChemicalReaction>()
                 .unwrap()
-                .with_rate_constant(|temperature: f64| 3.6e-17 * (-220.0 / temperature).exp())
+                .with_rate_constant(|temperature: f64| 3.6e-18 * (-220.0 / temperature).exp())
                 .with_quantum_yield(0.772),
             "O2(a, v=0) + O3 -> O2 + O3"
                 .parse::<ChemicalReaction>()
@@ -967,12 +994,49 @@ impl PhotochemicalModel for Yankovsky {
 #[cfg(test)]
 mod tests {
     use super::{
-        LYMAN_ALPHA_TOA_FLUX_PHOTONS_M2_S, LYMAN_ALPHA_TOA_RATE_S, LYMAN_ALPHA_WAVELENGTH_NM,
-        O2_LYMAN_ALPHA_EFFECTIVE_CROSS_SECTION_M2, PhotochemicalModel, Yankovsky,
-        calculate_photolysis_rate, wavelength_bin_widths,
+        LYMAN_ALPHA_O1D_QUANTUM_YIELD, LYMAN_ALPHA_TOA_FLUX_PHOTONS_M2_S, LYMAN_ALPHA_TOA_RATE_S,
+        LYMAN_ALPHA_WAVELENGTH_NM, O2_LYMAN_ALPHA_EFFECTIVE_CROSS_SECTION_M2, PhotochemicalModel,
+        Yankovsky, calculate_photolysis_rate, wavelength_bin_widths,
     };
-    use crate::photchem::types::{MoleculeBase, PhotoReaction};
+    use crate::photchem::types::{ChemicalReaction, Molecule, MoleculeBase, PhotoReaction};
     use ndarray::array;
+    use std::collections::HashMap;
+
+    struct TestPhotochemicalModel {
+        molecules: Vec<Molecule>,
+    }
+
+    impl TestPhotochemicalModel {
+        fn new(reactions: &[ChemicalReaction], photo_reactions: &[PhotoReaction]) -> Self {
+            let mut molecules = Vec::new();
+
+            for reaction in reactions {
+                molecules.extend(reaction.reactants.clone());
+                molecules.extend(reaction.products.clone());
+            }
+            for reaction in photo_reactions {
+                molecules.push(reaction.in_molecule.clone());
+                molecules.extend(reaction.products.clone());
+            }
+
+            let mut unique_molecules = Vec::new();
+            for molecule in molecules {
+                if !unique_molecules.contains(&molecule) {
+                    unique_molecules.push(molecule);
+                }
+            }
+
+            Self {
+                molecules: unique_molecules,
+            }
+        }
+    }
+
+    impl PhotochemicalModel for TestPhotochemicalModel {
+        fn molecules(&self) -> Vec<Molecule> {
+            self.molecules.clone()
+        }
+    }
 
     #[test]
     fn test_yankovsky() {
@@ -1006,7 +1070,59 @@ mod tests {
             Some(O2_LYMAN_ALPHA_EFFECTIVE_CROSS_SECTION_M2)
         );
         assert_eq!(reaction.wavelength_range_nm, None);
-        assert_eq!(reaction.quantum_yield, Some(1.0));
+        assert_eq!(reaction.quantum_yield, Some(LYMAN_ALPHA_O1D_QUANTUM_YIELD));
+    }
+
+    #[test]
+    fn bimolecular_quantum_yield_scales_product_not_loss() {
+        let photo_reactions = vec!["O2 + hv -> O(1D) + O(3P)".parse::<PhotoReaction>().unwrap()];
+        let reactions = vec![
+            "O(1D) + O2 -> O2(b, v=0) + O(3P)"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|_| 1.0e-6)
+                .with_quantum_yield(0.25),
+            "O2(b, v=0) -> O2"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_einstein_coefficient(|_| 1.0),
+        ];
+        let model = TestPhotochemicalModel::new(&reactions, &photo_reactions);
+        let densities = HashMap::from([("O2".to_string(), 1.0e12), ("O(3P)".to_string(), 0.0)]);
+
+        let state = model
+            .solve(200.0, &reactions, &photo_reactions, &[1.0], &densities)
+            .unwrap();
+
+        assert!((state["O(1D)"] - 1.0e12).abs() / 1.0e12 < 1.0e-12);
+        assert!((state["O2(b)"] - 2.5e11).abs() / 2.5e11 < 1.0e-12);
+    }
+
+    #[test]
+    fn background_bimolecular_source_is_returned_in_m3_units() {
+        let photo_reactions = Vec::new();
+        let reactions = vec![
+            "O3 + O(3P) -> O2(X, v=1) + O2"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_rate_constant(|_| 1.0e-12),
+            "O2(X, v=1) -> O2"
+                .parse::<ChemicalReaction>()
+                .unwrap()
+                .with_einstein_coefficient(|_| 1.0),
+        ];
+        let model = TestPhotochemicalModel::new(&reactions, &photo_reactions);
+        let densities = HashMap::from([
+            ("O3".to_string(), 2.0e12),
+            ("O(3P)".to_string(), 3.0e12),
+            ("O2".to_string(), 0.0),
+        ]);
+
+        let state = model
+            .solve(200.0, &reactions, &photo_reactions, &[], &densities)
+            .unwrap();
+
+        assert!((state["O2(X, v=1)"] - 6.0e6).abs() / 6.0e6 < 1.0e-12);
     }
 
     #[test]
@@ -1047,6 +1163,32 @@ mod tests {
         assert_eq!(rate.len(), 2);
         assert_eq!(rate[0], 0.5 * (2.0 * 20.0 * 3.0 + 3.0 * 30.0 * 7.0));
         assert_eq!(rate[1], 0.5 * (20.0 * 2.0 * 3.0 + 30.0 * 3.0 * 7.0));
+    }
+
+    #[test]
+    fn continuum_photolysis_rate_scales_to_toa_rate_after_quantum_yield() {
+        let reaction = "O2 + hv(689_nm_band) -> O2(b, v=1)"
+            .parse::<PhotoReaction>()
+            .unwrap()
+            .with_quantum_yield(0.25)
+            .with_toa_rate_constant(2.0e-9)
+            .with_wavelength_range_nm(100.0, 102.0);
+
+        let wavelength = [100.0, 101.0, 102.0];
+        let actinic_flux = array![[1.0, 10.0], [2.0, 20.0], [3.0, 30.0]];
+        let cross_section = array![[5.0, 5.0], [5.0, 5.0], [5.0, 5.0]];
+
+        let rate = calculate_photolysis_rate(
+            &reaction,
+            &wavelength,
+            actinic_flux.view(),
+            cross_section.view(),
+        )
+        .unwrap();
+
+        assert_eq!(rate.len(), 2);
+        assert!((rate[1] - 0.25 * 2.0e-9).abs() < 1.0e-24);
+        assert!((rate[0] - rate[1] * 0.1).abs() < 1.0e-24);
     }
 
     #[test]
