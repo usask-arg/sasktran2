@@ -210,6 +210,57 @@ def test_population_emission_rate_exposes_a_and_b_components():
     not _has_local_o2_hitran_cache(),
     reason="O2 HITRAN line cache is required for the population emission constituent",
 )
+def test_population_emission_rate_source_integral_matches_photon_ver():
+    altitude = np.array([90_000.0, 95_000.0])
+    temperature = np.array([220.0, 230.0])
+    state = xr.Dataset(
+        {
+            "temperature": (["altitude"], temperature),
+            "O2(b)": (["altitude"], np.array([1.0e10, 2.0e10])),
+            "O2(b, v=1)": (["altitude"], np.array([5.0e9, 5.0e9])),
+        },
+        coords={"altitude": altitude},
+    )
+
+    constituent = sk.constituent.PopulationEmissionRate(state)
+
+    config = sk.Config()
+    config.emission_source = sk.EmissionSource.VolumeEmissionRate
+    geometry = sk.Geometry1D(
+        cos_sza=-0.6,
+        solar_azimuth=0.0,
+        earth_radius_m=6_372_000.0,
+        altitude_grid_m=altitude,
+        interpolation_method=sk.InterpolationMethod.LinearInterpolation,
+        geometry_type=sk.GeometryType.Spherical,
+    )
+    wavelengths_nm = np.arange(758.5, 776.5001, 0.001)
+    atmosphere = sk.Atmosphere(
+        geometry,
+        config,
+        wavelengths_nm=wavelengths_nm,
+        calculate_derivatives=False,
+    )
+    atmosphere.temperature_k = temperature
+
+    constituent.add_to_atmosphere(atmosphere)
+
+    source_integral = np.trapezoid(
+        atmosphere.storage.emission_source,
+        wavelengths_nm,
+        axis=1,
+    )
+    np.testing.assert_allclose(
+        source_integral,
+        constituent.photon_ver / (4.0 * np.pi),
+        rtol=1.0e-3,
+    )
+
+
+@pytest.mark.skipif(
+    not _has_local_o2_hitran_cache(),
+    reason="O2 HITRAN line cache is required for the population emission constituent",
+)
 def test_population_emission_rate_line_strength_fallback():
     altitude = np.array([90_000.0, 95_000.0])
     state = xr.Dataset(

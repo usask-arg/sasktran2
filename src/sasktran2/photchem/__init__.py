@@ -43,7 +43,7 @@ def _actinic_flux_wavelength_grid() -> np.ndarray:
 
 def actinic_flux():
     altitudes_m = np.arange(0.0, 130.0e3, 1000.0)
-    cos_sza = 0.5
+    cos_sza = 0.3
 
     species_list = ["o3", "o2", "n2"]
 

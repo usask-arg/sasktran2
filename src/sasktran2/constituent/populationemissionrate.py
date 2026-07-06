@@ -20,10 +20,17 @@ class PopulationEmissionRate(Constituent):
         """
         Photochemical population-to-emission constituent.
 
-        The current implementation supports O2 A-band and B-band emission from population
-        profiles such as the output of :class:`sasktran2.photchem.Yankovsky`.
-        The population dataset must contain ``altitude``, ``temperature``, and
-        ``O2(b)``. ``O2(b, v=1)`` and ``O2(b, v=2)`` are optional.
+        The current implementation supports O2 A-band and B-band emission from
+        population profiles such as the output of
+        :class:`sasktran2.photchem.Yankovsky`. The population dataset must
+        contain ``altitude`` in meters, ``temperature`` in kelvin, and ``O2(b)``
+        number density in m^-3. ``O2(b, v=1)`` and ``O2(b, v=2)`` are optional
+        m^-3 number-density profiles.
+
+        Internally, populations are multiplied by Einstein-A coefficients to
+        obtain photon volume emission rates in photons m^-3 s^-1. The emitted
+        source is assumed isotropic; the constituent applies the 1 / 4pi factor
+        when adding the spectral source to the atmosphere.
 
         Parameters
         ----------
