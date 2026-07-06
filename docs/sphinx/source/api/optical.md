@@ -9,6 +9,8 @@
     :toctree: generated/
 
     sasktran2.optical.O3DBM
+    sasktran2.optical.O3BirkWagner
+    sasktran2.optical.O3Serdyuchenko
     sasktran2.optical.NO2Vandaele
     sasktran2.optical.HITRANUV
     sasktran2.optical.HITRANAbsorber
