@@ -6,7 +6,7 @@ import xarray as xr
 import sasktran2 as sk
 
 
-def validate_wf(analytic, numerical, wf_dim="altitude", decimal=6):
+def validate_wf(analytic, numerical, wf_dim="altitude", decimal=6, atol=None):
     max_by_alt = np.abs(analytic).max(dim=wf_dim)
 
     max_by_alt.to_numpy()[max_by_alt.to_numpy() == 0] = 1e99
@@ -16,9 +16,11 @@ def validate_wf(analytic, numerical, wf_dim="altitude", decimal=6):
     nonzero_analytic = np.abs(analytic.to_numpy()) > 1e-99
     nonzero_numerical = np.abs(numerical.to_numpy()) > 1e-99
 
-    np.testing.assert_array_almost_equal(
-        rel_diff.to_numpy()[nonzero_analytic & nonzero_numerical], 0, decimal=decimal
-    )
+    values = rel_diff.to_numpy()[nonzero_analytic & nonzero_numerical]
+    if atol is None:
+        np.testing.assert_array_almost_equal(values, 0, decimal=decimal)
+    else:
+        np.testing.assert_allclose(values, 0, rtol=0, atol=atol)
 
 
 def numeric_wf(
