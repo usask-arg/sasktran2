@@ -28,8 +28,9 @@ classifiers = [
 test = ["pytest"]
 solar = ["astropy>=7"]
 hapi = ["hitran-api"]
+zenodo = ["zenodo-get"]
 dev = ["ruff", "sphinx", "sphinx_book_theme", "myst-nb", "sphinx_design", "sphinx-github-changelog", "sphinxcontrib-bibtex"]
-complete = ["sasktran2[solar,hapi]"]
+complete = ["sasktran2[solar,hapi,zenodo]"]
 
 [tool.pixi.project]
 channels = ["conda-forge"]
