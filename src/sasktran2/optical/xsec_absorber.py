@@ -6,9 +6,27 @@ import numpy as np
 import xarray as xr
 
 from sasktran2._core_rust import PyXsecAbsorber
-from sasktran2.database.web import StandardDatabase
+from sasktran2.database.web import StandardDatabase, WebDatabase
 from sasktran2.optical import database
 from sasktran2.optical.base import OpticalProperty
+
+_CM2_TO_M2 = 1e-4
+_IO_BREMEN_CACHE_DIR = Path("cross_sections/io/bremen")
+_IO_BREMEN_HIGH_RESOLUTION_URL = (
+    "https://www.iup.uni-bremen.de/gruppen/molspec/IO/"
+    "RefSpec_0.07nmFWHM_IO_IUPBremen.txt"
+)
+_IO_BREMEN_TEMPERATURE_URL = (
+    "https://www.iup.uni-bremen.de/gruppen/molspec/downloads/"
+    "sigmaio1.3nmfwhm233k298k.txt"
+)
+_IO_BREMEN_TEMPERATURES_K = np.array(
+    [233.0, 243.0, 263.0, 273.0, 283.0, 298.0],
+    dtype=np.float64,
+)
+_IO_BREMEN_TEMPERATURE_SIGMA_COLUMNS = np.array([3, 5, 7, 9, 11, 13])
+_IO_BREMEN_REFERENCE_TEMPERATURE_K = 298.0
+_IO_BREMEN_REFERENCE_MIN_FRACTION = 0.01
 
 
 class XsecAbsorber(OpticalProperty):
@@ -286,3 +304,155 @@ class IOGeisa(XsecAbsorber):
         db = StandardDatabase()
         file_path = db.path("cross_sections/io/IO")
         super().__init__(file_path)
+
+
+def _download_bremen_io_file(url: str) -> Path:
+    db = WebDatabase(url, rel_path=_IO_BREMEN_CACHE_DIR)
+    db.load()
+
+    output_file = db.output_file()
+    if not output_file.exists():
+        msg = f"Could not download Bremen IO cross section data from {url}"
+        raise OSError(msg)
+
+    return output_file
+
+
+def _read_bremen_io_table(path: Path, min_columns: int) -> np.ndarray:
+    rows = []
+
+    with path.open(encoding="latin-1") as f:
+        for line in f:
+            try:
+                values = [float(value) for value in line.split()]
+            except ValueError:
+                continue
+
+            if len(values) >= min_columns:
+                rows.append(values[:min_columns])
+
+    if not rows:
+        msg = f"No numeric Bremen IO data rows found in {path}"
+        raise ValueError(msg)
+
+    return np.array(rows, dtype=np.float64)
+
+
+def _bremen_io_high_resolution_cross_section(
+    path: Path,
+) -> tuple[np.ndarray, np.ndarray]:
+    data = _read_bremen_io_table(path, min_columns=4)
+
+    wavelength_nm = data[:, 1]
+    xs_m2 = data[:, 3] * _CM2_TO_M2
+
+    return wavelength_nm, xs_m2
+
+
+def _bremen_io_temperature_scale_factors(
+    high_resolution_wavelength_nm: np.ndarray,
+    temperature_path: Path,
+) -> np.ndarray:
+    data = _read_bremen_io_table(temperature_path, min_columns=15)
+
+    low_resolution_wavelength_nm = data[:, 1]
+    low_resolution_sigma = data[:, _IO_BREMEN_TEMPERATURE_SIGMA_COLUMNS]
+    reference_index = int(
+        np.where(_IO_BREMEN_TEMPERATURES_K == _IO_BREMEN_REFERENCE_TEMPERATURE_K)[0][0]
+    )
+    reference_sigma = low_resolution_sigma[:, reference_index]
+
+    scaling = np.ones(
+        (_IO_BREMEN_TEMPERATURES_K.size, high_resolution_wavelength_nm.size),
+        dtype=np.float64,
+    )
+    max_reference_sigma = np.nanmax(reference_sigma)
+    if not np.isfinite(max_reference_sigma) or max_reference_sigma <= 0:
+        return scaling
+
+    reference_threshold = max_reference_sigma * _IO_BREMEN_REFERENCE_MIN_FRACTION
+
+    for index, sigma in enumerate(low_resolution_sigma.T):
+        if index == reference_index:
+            continue
+
+        valid = (
+            np.isfinite(sigma)
+            & np.isfinite(reference_sigma)
+            & (sigma > 0)
+            & (reference_sigma > reference_threshold)
+        )
+
+        if np.count_nonzero(valid) < 2:
+            continue
+
+        ratio = sigma[valid] / reference_sigma[valid]
+        scaling[index] = np.interp(
+            high_resolution_wavelength_nm,
+            low_resolution_wavelength_nm[valid],
+            ratio,
+            left=ratio[0],
+            right=ratio[-1],
+        )
+
+    return scaling
+
+
+def _bremen_io_dataset(
+    high_resolution_path: Path,
+    temperature_path: Path | None = None,
+) -> xr.Dataset:
+    wavelength_nm, high_resolution_xs_m2 = _bremen_io_high_resolution_cross_section(
+        high_resolution_path
+    )
+
+    if temperature_path is None:
+        xs = high_resolution_xs_m2
+        coords = {"wavelength_nm": wavelength_nm}
+        dims = ["wavelength_nm"]
+    else:
+        scaling = _bremen_io_temperature_scale_factors(wavelength_nm, temperature_path)
+        xs = scaling * high_resolution_xs_m2[np.newaxis, :]
+        coords = {
+            "temperature_k": _IO_BREMEN_TEMPERATURES_K,
+            "wavelength_nm": wavelength_nm,
+        }
+        dims = ["temperature_k", "wavelength_nm"]
+
+    return xr.Dataset(
+        data_vars={"xs": (dims, xs)},
+        coords=coords,
+        attrs={
+            "source": "IUP Bremen IO reference spectra",
+            "reference_temperature_k": _IO_BREMEN_REFERENCE_TEMPERATURE_K,
+            "high_resolution_fwhm_nm": 0.07,
+        },
+    )
+
+
+class IOBremen(database.OpticalDatabaseGenericAbsorber):
+    """
+    IO (Iodine Oxide) absorption cross sections from the IUP Bremen database.
+
+    By default this uses the 298 K IO spectrum measured at 0.07 nm FWHM. If
+    ``include_temperature_dependence`` is true, the high-resolution spectrum is
+    scaled at each temperature using ratios from the 1.3 nm FWHM measurements at
+    233 K, 243 K, 263 K, 273 K, 283 K, and 298 K.
+
+    Parameters
+    ----------
+    include_temperature_dependence : bool, optional
+        Include the Bremen 1.3 nm temperature dependence as wavelength-dependent
+        scaling factors applied to the 0.07 nm 298 K spectrum, by default False.
+    """
+
+    def __init__(self, include_temperature_dependence: bool = False) -> None:
+        high_resolution_path = _download_bremen_io_file(_IO_BREMEN_HIGH_RESOLUTION_URL)
+
+        if include_temperature_dependence:
+            temperature_path = _download_bremen_io_file(_IO_BREMEN_TEMPERATURE_URL)
+        else:
+            temperature_path = None
+
+        db = _bremen_io_dataset(high_resolution_path, temperature_path)
+        database.OpticalDatabase.__init__(self, db=db)
