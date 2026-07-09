@@ -1,7 +1,14 @@
 from __future__ import annotations
 
 from sasktran2._core_rust import PyYankovsky
+from sasktran2.constituent import (
+    MonochromaticVolumeEmissionRate,
+    PopulationEmissionRate,
+)
 from sasktran2.photchem import actinic_flux
+
+OXYGEN_A_BAND_WEIGHT_MODEL_EINSTEIN_BRANCHING = "einstein_a_branching"
+OXYGEN_A_BAND_WEIGHT_MODEL_HITRAN_LINE_STRENGTH = "hitran_line_strength"
 
 
 class Yankovsky:
@@ -11,73 +18,126 @@ class Yankovsky:
         self._model = PyYankovsky()
 
     def run(self):
-        flux = actinic_flux()
+        return self.solve(actinic_flux())
 
+    def solve(self, flux):
         return self._model.solve(flux)
 
+    def emissions(self, state=None, flux=None):
+        if state is None:
+            state = self.solve(flux if flux is not None else actinic_flux())
 
-if __name__ == "__main__":
-    test = Yankovsky()
+        return self._model.emission_rates(state)
 
-    state = test.run()
+    def oxygen_green_line_mcdade(self, atmosphere_state=None, flux=None):
+        if atmosphere_state is None:
+            atmosphere_state = flux if flux is not None else actinic_flux()
 
-    import matplotlib.pyplot as plt
+        return self._model.oxygen_green_line_mcdade(atmosphere_state)
 
-    plt.subplot(1, 4, 1)
-    (state["O2(a)"] / 1e6).plot(y="altitude", label="O2(a)")
-    (state["O2(a, v=1)"] / 1e6).plot(y="altitude", label="O2(a, v=1)")
-    (state["O2(a, v=2)"] / 1e6).plot(y="altitude", label="O2(a, v=2)")
-    (state["O2(a, v=3)"] / 1e6).plot(y="altitude", label="O2(a, v=3)")
-    (state["O2(a, v=4)"] / 1e6).plot(y="altitude", label="O2(a, v=4)")
+    def oxygen_green_line_mcdade_constituent(
+        self, green_line=None, atmosphere_state=None, flux=None
+    ):
+        if green_line is None:
+            green_line = self.oxygen_green_line_mcdade(
+                atmosphere_state=atmosphere_state,
+                flux=flux,
+            )
 
-    plt.xscale("log")
-    plt.xlim(1e-3, 1e11)
+        return self.oxygen_green_line_constituent(emissions=green_line)
 
-    plt.ylim(60000, 120000)
+    def oxygen_green_line_constituent(self, emissions=None, state=None, flux=None):
+        if emissions is None:
+            emissions = self.emissions(state=state, flux=flux)
 
-    plt.legend()
-    plt.subplot(1, 4, 2)
+        return MonochromaticVolumeEmissionRate(
+            emissions["altitude"].to_numpy(),
+            emissions["oxygen_green_5577_photon_ver"].to_numpy(),
+            emissions.attrs["oxygen_green_wavelength_nm"],
+        )
 
-    (state["O2(b)"] / 1e6).plot(y="altitude", label="O2(b)")
-    (state["O2(b, v=1)"] / 1e6).plot(y="altitude", label="O2(b, v=1)")
-    (state["O2(b, v=2)"] / 1e6).plot(y="altitude", label="O2(b, v=2)")
+    def oxygen_a_band_constituent(
+        self,
+        emissions=None,
+        state=None,
+        flux=None,
+        line_data=None,
+        temperature_k=None,
+        line_weight_model=OXYGEN_A_BAND_WEIGHT_MODEL_EINSTEIN_BRANCHING,
+    ):
+        _ = (line_data, temperature_k)
 
-    plt.xscale("log")
-    plt.xlim(1e-3, 1e11)
+        if state is None:
+            if emissions is not None:
+                msg = (
+                    "oxygen_a_band_constituent now requires population state. "
+                    "Use PopulationEmissionRate directly for O2 band emission."
+                )
+                raise ValueError(msg)
+            state = self.solve(flux if flux is not None else actinic_flux())
 
-    plt.ylim(60000, 120000)
+        return PopulationEmissionRate(
+            state,
+            species=["O2"],
+            line_weight_model=line_weight_model,
+        )
 
-    plt.legend()
+    def emission_constituents(
+        self,
+        emissions=None,
+        state=None,
+        flux=None,
+        line_data=None,
+        temperature_k=None,
+        line_weight_model=OXYGEN_A_BAND_WEIGHT_MODEL_EINSTEIN_BRANCHING,
+        include_oxygen_green_line=True,
+        include_oxygen_a_band=True,
+    ):
+        _ = (line_data, temperature_k)
 
-    plt.xlabel("Density (cm$^{-3}$)")
-    plt.subplot(1, 4, 3)
+        if state is None and include_oxygen_a_band:
+            state = self.solve(flux if flux is not None else actinic_flux())
+        if emissions is None and include_oxygen_green_line:
+            emissions = self.emissions(state=state, flux=flux)
 
-    (state["O2(X, v=1)"] / 1e6).plot(y="altitude", label="O2(X, v=1)")
-    (state["O2(X, v=2)"] / 1e6).plot(y="altitude", label="O2(X, v=2)")
-    (state["O2(X, v=3)"] / 1e6).plot(y="altitude", label="O2(X, v=3)")
-    (state["O2(X, v=4)"] / 1e6).plot(y="altitude", label="O2(X, v=4)")
-    (state["O2(X, v=5)"] / 1e6).plot(y="altitude", label="O2(X, v=5)")
+        constituents = {}
+        if include_oxygen_green_line:
+            constituents["oxygen_green"] = self.oxygen_green_line_constituent(
+                emissions=emissions
+            )
 
-    plt.xscale("log")
-    plt.xlim(1e-3, 1e11)
+        if include_oxygen_a_band:
+            constituents["oxygen_a_band"] = self.oxygen_a_band_constituent(
+                state=state,
+                line_weight_model=line_weight_model,
+            )
 
-    plt.ylim(60000, 120000)
+        return constituents
 
-    plt.legend()
+    def add_emissions_to_atmosphere(
+        self,
+        atmosphere,
+        emissions=None,
+        state=None,
+        flux=None,
+        line_data=None,
+        temperature_k=None,
+        line_weight_model=OXYGEN_A_BAND_WEIGHT_MODEL_EINSTEIN_BRANCHING,
+        include_oxygen_green_line=True,
+        include_oxygen_a_band=True,
+    ):
+        _ = (line_data, temperature_k)
 
-    plt.xlabel("Density (cm$^{-3}$)")
+        constituents = self.emission_constituents(
+            emissions=emissions,
+            state=state,
+            flux=flux,
+            line_weight_model=line_weight_model,
+            include_oxygen_green_line=include_oxygen_green_line,
+            include_oxygen_a_band=include_oxygen_a_band,
+        )
 
-    plt.subplot(1, 4, 4)
+        for name, constituent in constituents.items():
+            atmosphere[name] = constituent
 
-    (state["O(1D)"] / 1e6).plot(y="altitude", label="O(1D)")
-
-    plt.xscale("log")
-    plt.xlim(1e-3, 1e5)
-
-    plt.ylim(60000, 120000)
-
-    plt.legend()
-
-    plt.xlabel("Density (cm$^{-3}$)")
-
-    plt.show()
+        return constituents

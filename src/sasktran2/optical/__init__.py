@@ -4,6 +4,7 @@ import numpy as np
 
 import sasktran2 as sk
 from sasktran2.constants import K_BOLTZMANN
+from sasktran2.database.o3 import O3BirkWagnerDatabase, O3SerdyuchenkoDatabase
 from sasktran2.database.web import StandardDatabase
 
 from . import database, refraction  # noqa: F401
@@ -14,6 +15,7 @@ from .hitran import (
 )
 from .mie import Mie  # noqa: F401
 from .xsec_absorber import (  # noqa: F401
+    IOBremen,
     IOGeisa,
     O2LymanAlpha,
     O2SchumannRunge,
@@ -95,6 +97,118 @@ class O3DBM(database.OpticalDatabaseGenericAbsorber):
         else:
             msg = "Could not find DBM file"
             raise OSError(msg)
+
+
+class O3BirkWagner(database.OpticalDatabaseGenericAbsorber):
+    def __init__(self) -> None:
+        """
+        Tabulated high resolution UV cross-sections of O3 measured by Birk and Wagner.
+
+        This database is useful for UV ozone absorption calculations in the
+        Hartley/Huggins region. The raw Zenodo archive contains measured
+        absorption cross sections and uncertainties for six temperatures:
+
+            | 193 K
+            | 213 K
+            | 233 K
+            | 253 K
+            | 273 K
+            | 293 K
+
+        The wavelength grid is common to all six tables and spans approximately
+        243.9 nm to 346.0 nm. The wavelength grid is used directly as a vacuum
+        wavelength grid; an overlap comparison with the independently
+        vacuum-labelled Serdyuchenko dataset shows the Huggins-band structure is
+        aligned as-is and shifted if an air-to-vacuum conversion is applied.
+        Cross sections are provided by the source files in cm^2/molecule and
+        converted internally to m^2/molecule.
+
+        Data Source
+            The data are from the ESA SEOM-IAS ozone UV absorption cross-section
+            database created by M. Birk and G. Wagner at DLR for improved
+            atmospheric spectroscopy in support of Sentinel-5P/TROPOMI. The
+            source archive also contains uncertainty columns and polynomial
+            coefficients; this class uses the measured tabulated cross sections.
+
+        The source files are downloaded from Zenodo record 1485588 when the local
+        NetCDF cache is missing. Downloading requires the optional ``zenodo-get``
+        package, available through the ``sasktran2[zenodo]`` extra.
+
+        References
+        ----------
+        Birk, M. and Wagner, G. "ESA SEOM-IAS - Measurement and ACS database
+        O3 UV region." Zenodo, 2018. doi:10.5281/zenodo.1485588.
+
+        Raises
+        ------
+        ImportError
+            If the data must be downloaded and zenodo-get is not installed
+        OSError
+            If the data could not be downloaded or converted
+        """
+        super().__init__(O3BirkWagnerDatabase().path())
+
+
+class O3Serdyuchenko(database.OpticalDatabaseGenericAbsorber):
+    def __init__(self) -> None:
+        """
+        Tabulated UV/VIS/NIR cross-sections of O3 measured by Serdyuchenko et al.
+
+        This database covers a broader spectral range than O3DBM or
+        O3BirkWagner, extending from 213.33 nm to 1100.00 nm on a 0.01 nm
+        wavelength grid. Cross sections are available at 11 temperatures:
+
+            | 193 K
+            | 203 K
+            | 213 K
+            | 223 K
+            | 233 K
+            | 243 K
+            | 253 K
+            | 263 K
+            | 273 K
+            | 283 K
+            | 293 K
+
+        The measurements combine a Bruker HR 120 Fourier transform spectrometer
+        and an ESA 400 Echelle spectrometer. Cross sections are provided by the
+        source file in cm^2/molecule and converted internally to m^2/molecule.
+
+        Data Source
+            The source file is the Serdyuchenko-Gorshelev UV/VIS/NIR ozone
+            absorption cross-section dataset. The original file stores
+            temperatures in descending order from 293 K to 193 K; SASKTRAN2
+            sorts them into ascending order before interpolation.
+
+        The source file is downloaded from Zenodo record 5793207 when the local
+        NetCDF cache is missing. Downloading requires the optional ``zenodo-get``
+        package, available through the ``sasktran2[zenodo]`` extra.
+
+        References
+        ----------
+        Gorshelev, V., Serdyuchenko, A., Weber, M., Chehade, W., and Burrows,
+        J. P. "High spectral resolution ozone absorption cross-sections -
+        Part 1: Measurements, data analysis and comparison with previous
+        measurements around 293 K." Atmospheric Measurement Techniques 7,
+        609-624, 2014. doi:10.5194/amt-7-609-2014.
+
+        Serdyuchenko, A., Gorshelev, V., Weber, M., Chehade, W., and Burrows,
+        J. P. "High spectral resolution ozone absorption cross-sections -
+        Part 2: Temperature dependence." Atmospheric Measurement Techniques 7,
+        625-636, 2014. doi:10.5194/amt-7-625-2014.
+
+        Serdyuchenko, A., Gorshelev, V., Weber, M., and Burrows, J. P.
+        "Serdyuchenko-Gorshelev UV/VIS/NIR ozone absorption cross-section."
+        Zenodo, 2021. doi:10.5281/zenodo.5793207.
+
+        Raises
+        ------
+        ImportError
+            If the data must be downloaded and zenodo-get is not installed
+        OSError
+            If the data could not be downloaded or converted
+        """
+        super().__init__(O3SerdyuchenkoDatabase().path())
 
 
 class NO2Vandaele(database.OpticalDatabaseGenericAbsorber):

@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import sasktran2 as sk
+from sasktran2.optical import xsec_absorber
 
 
 @pytest.fixture()
@@ -319,3 +320,75 @@ def test_standard_database_xsec_absorbers_are_available(absorber_cls, database_k
 
     assert data_file.exists()
     assert absorber_cls() is not None
+
+
+def test_iobremen_default_dataset_uses_high_resolution_298k(tmp_path):
+    high_resolution_file = tmp_path / "RefSpec_0.07nmFWHM_IO_IUPBremen.txt"
+    high_resolution_file.write_text(
+        "\n".join(
+            [
+                "Data:",
+                "lambda_airlambda_vac wavenumber abs_sigma",
+                "408.39058 408.50588 24479.45202 4.7469E-18",
+                "408.42610 408.54141 24477.32314 4.8108E-18",
+            ]
+        )
+    )
+
+    ds = xsec_absorber._bremen_io_dataset(high_resolution_file)
+
+    assert ds["xs"].dims == ("wavelength_nm",)
+    np.testing.assert_allclose(
+        ds["wavelength_nm"].to_numpy(),
+        np.array([408.50588, 408.54141]),
+    )
+    np.testing.assert_allclose(
+        ds["xs"].to_numpy(),
+        np.array([4.7469e-22, 4.8108e-22]),
+    )
+
+
+def test_iobremen_temperature_dataset_scales_high_resolution_cross_section(tmp_path):
+    high_resolution_file = tmp_path / "RefSpec_0.07nmFWHM_IO_IUPBremen.txt"
+    high_resolution_file.write_text(
+        "\n".join(
+            [
+                "Data:",
+                "lambda_airlambda_vac wavenumber abs_sigma",
+                "409.0 410.0 24390.24390 1.0E-18",
+                "419.0 420.0 23809.52381 2.0E-18",
+                "429.0 430.0 23255.81395 4.0E-18",
+            ]
+        )
+    )
+    temperature_file = tmp_path / "sigmaio1.3nmfwhm233k298k.txt"
+    temperature_file.write_text(
+        "\n".join(
+            [
+                "wavelength(air)\twavelength(vacuum)\twavenumber\tsigma_233K\terror\tsigma_243K\terror\tsigma_263K\terror\tsigma_273K\terror\tsigma_283K\terror\tsigma_298K\terror",
+                "nm\tnm\tcm-1\tcm2\tcm2\tcm2\tcm2\tcm2\tcm2\tcm2\tcm2\tcm2\tcm2\tcm2\tcm2",
+                "409.0\t410.0\t24390.24390\t0.0E-18\t0\t2.0E-18\t0\t2.0E-18\t0\t2.0E-18\t0\t2.0E-18\t0\t0.0E-18\t0",
+                "419.0\t420.0\t23809.52381\t1.0E-18\t0\t2.0E-18\t0\t2.0E-18\t0\t2.0E-18\t0\t2.0E-18\t0\t2.0E-18\t0",
+                "429.0\t430.0\t23255.81395\t2.0E-18\t0\t4.0E-18\t0\t4.0E-18\t0\t4.0E-18\t0\t4.0E-18\t0\t4.0E-18\t0",
+            ]
+        )
+    )
+
+    ds = xsec_absorber._bremen_io_dataset(
+        high_resolution_file,
+        temperature_file,
+    )
+
+    assert ds["xs"].dims == ("temperature_k", "wavelength_nm")
+    np.testing.assert_allclose(
+        ds["temperature_k"].to_numpy(),
+        np.array([233.0, 243.0, 263.0, 273.0, 283.0, 298.0]),
+    )
+    np.testing.assert_allclose(
+        ds["xs"].sel(temperature_k=233.0).to_numpy(),
+        np.array([0.5e-22, 1.0e-22, 2.0e-22]),
+    )
+    np.testing.assert_allclose(
+        ds["xs"].sel(temperature_k=298.0).to_numpy(),
+        np.array([1.0e-22, 2.0e-22, 4.0e-22]),
+    )

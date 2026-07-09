@@ -21,3 +21,12 @@ US76 Standard Atmosphere
     :toctree: generated/
 
     sasktran2.climatology.us76
+
+
+Atomic Oxygen
+-------------
+
+.. autosummary::
+    :toctree: generated/
+
+    sasktran2.climatology.atomic_oxygen

@@ -8,7 +8,9 @@ use pyo3::prelude::*;
 use pyo3::types::PyAny;
 
 use sasktran2_rs::constituent::traits::Constituent;
-use sasktran2_rs::constituent::types::volume_emission_rate::MonochromaticVolumeEmissionRate;
+use sasktran2_rs::constituent::types::volume_emission_rate::{
+    MonochromaticLineShape, MonochromaticVolumeEmissionRate,
+};
 
 use crate::constituent::atmo_storage::AtmosphereStorage;
 
@@ -21,13 +23,22 @@ pub struct PyMonochromaticVolumeEmissionRate {
 impl PyMonochromaticVolumeEmissionRate {
     #[new]
     #[pyo3(
-        signature = (altitudes_m, ver, wavelength_nm, out_of_bounds_mode = "zero"),
+        signature = (
+            altitudes_m,
+            ver,
+            wavelength_nm,
+            out_of_bounds_mode = "zero",
+            line_shape = "delta",
+            emitter_molecular_weight_g_per_mol = None,
+        ),
     )]
     fn new<'py>(
         altitudes_m: PyReadonlyArray1<'py, f64>,
         ver: PyReadonlyArray1<'py, f64>,
         wavelength_nm: f64,
         out_of_bounds_mode: Option<&str>,
+        line_shape: Option<&str>,
+        emitter_molecular_weight_g_per_mol: Option<f64>,
     ) -> PyResult<Self> {
         let mut inner = MonochromaticVolumeEmissionRate::new(
             altitudes_m.as_array().to_owned(),
@@ -50,6 +61,33 @@ impl PyMonochromaticVolumeEmissionRate {
                 }
             }
         }
+
+        inner = match line_shape.unwrap_or("delta") {
+            "delta" => inner.with_line_shape(MonochromaticLineShape::Delta),
+            "doppler" => {
+                let Some(emitter_molecular_weight_g_per_mol) = emitter_molecular_weight_g_per_mol
+                else {
+                    return Err(PyValueError::new_err(
+                        "emitter_molecular_weight_g_per_mol is required for doppler line_shape",
+                    ));
+                };
+
+                if !emitter_molecular_weight_g_per_mol.is_finite()
+                    || emitter_molecular_weight_g_per_mol <= 0.0
+                {
+                    return Err(PyValueError::new_err(
+                        "emitter_molecular_weight_g_per_mol must be positive and finite",
+                    ));
+                }
+
+                inner.with_line_shape(MonochromaticLineShape::Doppler {
+                    emitter_molecular_weight_g_per_mol,
+                })
+            }
+            mode => {
+                return Err(PyValueError::new_err(format!("Invalid line_shape: {mode}")));
+            }
+        };
 
         Ok(Self { inner })
     }
@@ -89,7 +127,9 @@ impl PyMonochromaticVolumeEmissionRate {
     pub fn add_to_atmosphere<'py>(&mut self, atmo: Bound<'py, PyAny>) -> PyResult<()> {
         let mut rust_atmo = AtmosphereStorage::new(&atmo)?;
 
-        let _ = self.inner.add_to_atmosphere(&mut rust_atmo);
+        self.inner
+            .add_to_atmosphere(&mut rust_atmo)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
         Ok(())
     }

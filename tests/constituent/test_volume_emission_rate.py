@@ -4,6 +4,40 @@ import numpy as np
 import sasktran2 as sk
 
 
+def _simple_atmosphere(wavelengths_nm):
+    config = sk.Config()
+    config.emission_source = sk.EmissionSource.VolumeEmissionRate
+
+    geometry = sk.Geometry1D(
+        cos_sza=-0.6,
+        solar_azimuth=0,
+        earth_radius_m=6372000,
+        altitude_grid_m=np.array([0.0, 1000.0]),
+        interpolation_method=sk.InterpolationMethod.LinearInterpolation,
+        geometry_type=sk.GeometryType.Spherical,
+    )
+    atmosphere = sk.Atmosphere(
+        geometry,
+        config,
+        wavelengths_nm=np.asarray(wavelengths_nm, dtype=np.float64),
+    )
+    atmosphere.temperature_k = np.array([200.0, 200.0])
+
+    return atmosphere
+
+
+def _integrated_emission_source(atmosphere):
+    return (
+        np.trapezoid(
+            atmosphere.storage.emission_source,
+            atmosphere.wavelengths_nm,
+            axis=1,
+        )
+        * 4.0
+        * np.pi
+    )
+
+
 def _test_scenarios():
     config = sk.Config()
     config.emission_source = sk.EmissionSource.VolumeEmissionRate
@@ -73,6 +107,29 @@ def _test_scenarios():
     )
 
     return scen
+
+
+def test_doppler_monochromatic_volume_emission_rate_conserves_ver():
+    wavelengths_nm = np.arange(670.7, 671.10001, 0.0001)
+    atmosphere = _simple_atmosphere(wavelengths_nm)
+
+    photon_ver = np.array([4.0 * np.pi, 8.0 * np.pi])
+    constituent = sk.constituent.MonochromaticVolumeEmissionRate(
+        np.array([0.0, 1000.0]),
+        photon_ver,
+        670.9,
+        line_shape="doppler",
+        emitter_molecular_weight_g_per_mol=6.94,
+    )
+
+    constituent.add_to_atmosphere(atmosphere)
+
+    np.testing.assert_allclose(
+        _integrated_emission_source(atmosphere),
+        photon_ver,
+        rtol=1.0e-4,
+    )
+    assert np.all(atmosphere.storage.emission_source.max(axis=1) > 0.0)
 
 
 def test_ver_wf_native_grid():
