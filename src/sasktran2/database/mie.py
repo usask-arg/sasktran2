@@ -334,14 +334,6 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScattererRust):
         multi_index_names = ridx_keys + shared_keys + psize_keys
         multi_index_tuples = []
 
-        # get all psize distributions (used to keep cos_angle grid consistent between calls to integrate_mie_cpp)
-        all_prob_dists = []
-        for psize_vals in product(
-            *[self._kwargs[key] for key in shared_keys + psize_keys]
-        ):
-            psize_args = dict(zip(shared_keys + psize_keys, psize_vals, strict=True))
-            all_prob_dists.append(self._psize_dist.distribution(**psize_args))
-
         # iterate through refractive index args
         concat = []
         for ridx_vals in product(
@@ -372,12 +364,16 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScattererRust):
                 maxintquantile=0.99999,
                 num_coeffs=self._max_legendre_moments,
                 num_threads=self._num_threads,
-                all_prob_dists=all_prob_dists,
             )
 
             concat.append(ds)
 
-        ds = xr.concat(concat, dim="distribution", join="exact")
+        try:
+            ds = xr.concat(concat, dim="distribution", join="exact")
+        except xr.AlignmentError:
+            for ds in concat:
+                ds.coords["cos_angle"] = ds.cos_angle.expand_dims(dim="distribution")
+            ds = xr.concat(concat, dim="distribution", join="exact")
 
         if len(self._kwargs) > 1:
             multi = pd.MultiIndex.from_tuples(

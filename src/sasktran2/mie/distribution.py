@@ -410,19 +410,16 @@ def integrate_mie_cpp(
     maxintquantile=0.99999,
     num_coeffs=64,
     num_threads=1,
-    all_prob_dists=None,
 ) -> xr.Dataset:
     from scipy.special import roots_legendre
 
     nodes, weights = roots_legendre(num_coeffs)
 
-    # using a separate list here lets us keep the cos_angle grid consistent between multiple calls
-    all_prob_dists = prob_dists if all_prob_dists is None else all_prob_dists
     max_r = 0.0
     min_r = 1e25
     mean_r = 0.0
     repr_dist = None
-    for prob_dist in all_prob_dists:
+    for prob_dist in prob_dists:
         min_r = min(min_r, prob_dist.ppf(1 - maxintquantile))
         max_r = max(max_r, prob_dist.ppf(maxintquantile))
 
@@ -558,7 +555,6 @@ def integrate_mie_cpp(
     )
     for i, wavel in enumerate(wavelengths):
         refrac_index = np.cdouble(refrac_index_fn(wavel))
-
         size_param = 2 * np.pi * x / wavel
 
         integrator.integrate(
