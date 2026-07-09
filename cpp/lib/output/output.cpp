@@ -25,6 +25,12 @@ namespace sasktran2 {
 
         this->resize();
 
+        m_los_refraction_deflection_angle.resize(m_nlos);
+        for (int i = 0; i < m_nlos; ++i) {
+            m_los_refraction_deflection_angle[i] =
+                internal_viewing.traced_rays[i].los_refraction_deflection_angle;
+        }
+
         if constexpr (NSTOKES > 1) {
             m_stokes_C.resize(m_nlos);
             m_stokes_S.resize(m_nlos);

@@ -195,4 +195,25 @@ int sk_output_get_los_optical_depth(OutputC* output, double** od) {
         return -1;
     }
 }
+
+int sk_output_get_los_refraction_deflection_angle(OutputC* output,
+                                                  double** angle) {
+    if (output->impl == nullptr) {
+        return -1; // Error: Output not initialized
+    }
+
+    auto* impl1 = dynamic_cast<sasktran2::OutputC<1>*>(output->impl.get());
+    auto* impl3 = dynamic_cast<sasktran2::OutputC<3>*>(output->impl.get());
+
+    if (impl1) {
+        *angle = impl1->los_refraction_deflection_angle().data();
+        return 0;
+    } else if (impl3) {
+        *angle = impl3->los_refraction_deflection_angle().data();
+        return 0;
+    } else {
+        // Handle error case
+        return -1;
+    }
+}
 }

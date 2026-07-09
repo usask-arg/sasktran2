@@ -30,6 +30,9 @@ int sk_output_assign_surface_flux_derivative_memory(OutputC* output,
 
 int sk_output_get_los_optical_depth(OutputC* output, double** od);
 
+int sk_output_get_los_refraction_deflection_angle(OutputC* output,
+                                                  double** angle);
+
 #ifdef __cplusplus
 }
 #endif

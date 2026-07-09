@@ -298,6 +298,14 @@ def test_refraction_enabling():
 
     radiance = engine.calculate_radiance(atmosphere)
 
+    assert "los_refraction_deflection_angle" in radiance_refracted
+    deflection = radiance_refracted["los_refraction_deflection_angle"]
+    assert deflection.dims == ("los",)
+    assert deflection.attrs["units"] == "rad"
+    assert np.all(np.isfinite(deflection.to_numpy()))
+    assert np.any(deflection.to_numpy() > 0)
+    assert "los_refraction_deflection_angle" not in radiance
+
     # Verify that this should fail
     try:
         np.testing.assert_allclose(

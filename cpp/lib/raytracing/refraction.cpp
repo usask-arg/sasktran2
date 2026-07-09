@@ -31,6 +31,13 @@ namespace sasktran2::raytracing::refraction {
         result.first = 0;
         result.second = 0;
 
+        if (refractive_index_is_unity(geometry)) {
+            result.first = sqrt(r2 * r2 - rt * rt) - sqrt(r1 * r1 - rt * rt);
+            result.second = acos(rt / r2) - acos(rt / r1);
+
+            return result;
+        }
+
         if (std::abs(r1 - r2) < min_cell_length) {
             result.first = sqrt(r2 * r2 - rt * rt) - sqrt(r1 * r1 - rt * rt);
             // Closed form expression for the deflection angle assuming n=nt=1

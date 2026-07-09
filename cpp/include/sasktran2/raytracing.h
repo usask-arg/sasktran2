@@ -90,6 +90,10 @@ namespace sasktran2::raytracing {
                                   refractive effects. Could be negative if the
                                   ray hits the ground. */
 
+        double los_refraction_deflection_angle; /**< Final LOS refraction
+                                                   bending angle in [radians].
+                                                 */
+
         std::vector<std::pair<int, double>> interpolation_index_weights; /**<
             Workspace memory to be used by the raytracer.
          */
@@ -100,6 +104,7 @@ namespace sasktran2::raytracing {
             ground_is_hit = false;
             layers.resize(0);
             tangent_radius = std::numeric_limits<double>::quiet_NaN();
+            los_refraction_deflection_angle = 0.0;
         }
     };
 

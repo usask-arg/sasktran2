@@ -1,6 +1,7 @@
 #include "sasktran2/internal_common.h"
 #include <sasktran2/raytracing.h>
 #include <sasktran2/refraction.h>
+#include <algorithm>
 
 namespace sasktran2::raytracing {
     void SphericalShellRayTracer::trace_ray(
@@ -87,8 +88,6 @@ namespace sasktran2::raytracing {
         // Iterate through all of the rays, starting from the observer
         double total_deflection = 0.0;
         std::vector<std::pair<int, double>> index_weights;
-
-        double costh = result.observer_and_look.cos_viewing();
 
         double rt_refracted = result.tangent_radius;
 
@@ -198,6 +197,48 @@ namespace sasktran2::raytracing {
                 m_geometry.altitude_grid().interpolation_method());
             add_interpolation_weights(layer, m_geometry);
             add_solar_parameters(m_geometry.coordinates().sun_unit(), layer);
+        }
+
+        if (!result.is_straight && !result.layers.empty() &&
+            !refraction::refractive_index_is_unity(m_geometry)) {
+            const auto& final_layer = result.layers.front();
+            const double final_radius = final_layer.exit.radius();
+            const Eigen::Vector3d final_radial =
+                final_layer.exit.position.normalized();
+            const Eigen::Vector3d final_tangent =
+                (-x_basis * sin(total_deflection) +
+                 y_basis * cos(total_deflection))
+                    .normalized();
+
+            const double final_refractive_index =
+                refraction::refractive_index_at_altitude(
+                    m_geometry,
+                    final_radius - m_geometry.coordinates().earth_radius(),
+                    index_weights);
+            const double sin_final_angle = std::clamp(
+                nt * rt_refracted / (final_refractive_index * final_radius),
+                0.0, 1.0);
+            const double cos_final_angle =
+                sqrt(std::max(0.0, 1.0 - sin_final_angle * sin_final_angle));
+
+            const double radial_delta =
+                final_layer.r_exit - final_layer.r_entrance;
+            const double radial_sign =
+                std::abs(radial_delta) > 0
+                    ? (radial_delta > 0 ? 1.0 : -1.0)
+                    : (final_layer.average_look_away.dot(final_radial) >= 0.0
+                           ? 1.0
+                           : -1.0);
+
+            const Eigen::Vector3d final_refracted_look =
+                radial_sign * cos_final_angle * final_radial +
+                sin_final_angle * final_tangent;
+
+            const double look_dot =
+                std::clamp(result.observer_and_look.look_away.dot(
+                               final_refracted_look.normalized()),
+                           -1.0, 1.0);
+            result.los_refraction_deflection_angle = acos(look_dot);
         }
     }
 

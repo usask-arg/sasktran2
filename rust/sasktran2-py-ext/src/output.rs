@@ -1,4 +1,4 @@
-use numpy::{PyArray2, PyArray3, PyArray4};
+use numpy::{PyArray1, PyArray2, PyArray3, PyArray4};
 use pyo3::{prelude::*, types::PyDict};
 use sasktran2_rs::bindings::output;
 
@@ -102,5 +102,13 @@ impl PyOutput {
     fn get_los_optical_depth<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyArray2<f64>>> {
         let array = &this.borrow().output.los_optical_depth();
         Ok(PyArray2::from_array(this.py(), array))
+    }
+
+    #[getter]
+    fn get_los_refraction_deflection_angle<'py>(
+        this: Bound<'py, Self>,
+    ) -> PyResult<Bound<'py, PyArray1<f64>>> {
+        let array = &this.borrow().output.los_refraction_deflection_angle();
+        Ok(PyArray1::from_array(this.py(), array))
     }
 }

@@ -2,6 +2,7 @@
 #include <sasktran2/test_helper.h>
 
 #include <sasktran2.h>
+#include <cmath>
 
 TEST_CASE("Spherical Shell Raytracer - Observer Outside limb Viewing",
           "[sasktran2][raytracing]") {
@@ -110,6 +111,54 @@ TEST_CASE(
     }
 
     REQUIRE(min_alt < tangent_altitude);
+}
+
+TEST_CASE("Spherical Shell Raytracer - LOS Refraction Deflection Diagnostic",
+          "[sasktran2][raytracing]") {
+    double dx = 1000;
+    int nx = 66;
+    double x0 = 0;
+    double tangent_altitude = 10000.0;
+
+    Eigen::VectorXd grid_values(nx);
+    for (int i = 0; i < nx; ++i) {
+        grid_values(i) = x0 + i * dx;
+    }
+
+    sasktran2::grids::AltitudeGrid grid = sasktran2::grids::AltitudeGrid(
+        std::move(grid_values), sasktran2::grids::gridspacing::constant,
+        sasktran2::grids::outofbounds::extend,
+        sasktran2::grids::interpolation::linear);
+
+    sasktran2::Coordinates coord(1, 0, 6372000);
+
+    sasktran2::Geometry1D geo(std::move(coord), std::move(grid));
+
+    sasktran2::raytracing::SphericalShellRayTracer raytracer(geo);
+
+    sasktran2::viewinggeometry::TangentAltitude ray_policy(tangent_altitude, 0,
+                                                           600000);
+
+    auto viewing_ray = ray_policy.construct_ray(geo.coordinates());
+
+    sasktran2::raytracing::TracedRay traced_ray;
+    raytracer.trace_ray(viewing_ray, traced_ray, false);
+
+    REQUIRE(std::abs(traced_ray.los_refraction_deflection_angle) < 1e-12);
+
+    raytracer.trace_ray(viewing_ray, traced_ray, true);
+
+    REQUIRE(std::abs(traced_ray.los_refraction_deflection_angle) < 1e-8);
+
+    for (int i = 0; i < geo.refractive_index().size(); ++i) {
+        double altitude = geo.altitude_grid().grid()(i);
+        geo.refractive_index()(i) = 1.0 + 2.8e-4 * std::exp(-altitude / 7000.0);
+    }
+
+    raytracer.trace_ray(viewing_ray, traced_ray, true);
+
+    REQUIRE(std::isfinite(traced_ray.los_refraction_deflection_angle));
+    REQUIRE(traced_ray.los_refraction_deflection_angle > 0.0);
 }
 
 TEST_CASE("Spherical Shell Raytracer - Observer Inside Limb Viewing",
