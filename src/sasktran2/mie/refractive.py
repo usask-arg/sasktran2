@@ -84,27 +84,27 @@ def _from_osiris_file(path: Path):
     )
 
 
-def _from_aria_file(key: str):
+def _from_aria_file(key: str, download=False, extract=False):
     """
     Reads in data from ARIA .ri file and returns a callable function
     Original function accessed from https://eodg.atm.ox.ac.uk/ARIA/media/files/read_ri.py on 2025-12-12
     """
 
-    data_dir = database_root() / "refractive_index" / "aria"
+    aria_dir = database_root() / "refractive_index" / "aria"
 
-    zip_file = data_dir / "ARIA.zip"
+    zip_file = aria_dir / "ARIA.zip"
     url = "https://eodg.atm.ox.ac.uk/ARIA/data_files/ARIA.zip"
-    if not zip_file.is_file():
+    if download or not zip_file.is_file():
         from urllib.request import urlretrieve
 
-        data_dir.mkdir(parents=True, exist_ok=True)
+        aria_dir.mkdir(parents=True, exist_ok=True)
         urlretrieve(url, zip_file)
 
-    if not (data_dir / "data_files").is_dir():
-        import tarfile
+    data_dir = aria_dir / "data_files"
+    if extract or not data_dir.is_dir():
+        import shutil
 
-        with tarfile.open(zip_file, "r:gz") as tar:
-            tar.extractall(data_dir)
+        shutil.unpack_archive(zip_file, aria_dir)
 
     matches = sorted(data_dir.glob(f"**/{key}.ri"))
     if len(matches) == 0:
