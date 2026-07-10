@@ -41,23 +41,35 @@ pub fn calculate_csz_saz(
 }
 
 pub fn add_solar_parameters(layer: &mut Layer, context: SolarContext) {
+    add_solar_parameters_reusing_exit(layer, context, None);
+}
+
+pub(crate) fn add_solar_parameters_reusing_exit(
+    layer: &mut Layer,
+    context: SolarContext,
+    exit_parameters: Option<(f64, f64)>,
+) -> (f64, f64) {
     let (cos_sza_entrance, saz_entrance) = calculate_csz_saz(
         context.sun_unit,
         layer.entrance.position,
         layer.average_look_away,
         context.geometry,
     );
-    let (cos_sza_exit, saz_exit) = calculate_csz_saz(
-        context.sun_unit,
-        layer.exit.position,
-        layer.average_look_away,
-        context.geometry,
-    );
+    let (cos_sza_exit, saz_exit) = exit_parameters.unwrap_or_else(|| {
+        calculate_csz_saz(
+            context.sun_unit,
+            layer.exit.position,
+            layer.average_look_away,
+            context.geometry,
+        )
+    });
 
     layer.cos_sza_entrance = cos_sza_entrance;
     layer.saz_entrance = saz_entrance;
     layer.cos_sza_exit = cos_sza_exit;
     layer.saz_exit = saz_exit;
+
+    (cos_sza_entrance, saz_entrance)
 }
 
 #[cfg(test)]

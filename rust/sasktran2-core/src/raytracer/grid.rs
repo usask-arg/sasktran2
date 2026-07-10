@@ -389,7 +389,11 @@ impl VerticalGrid1D {
                 stencil.push(lower, 1.0 - upper_weight);
                 stencil.push(upper, upper_weight);
             }
-            InterpolationMethod::Shell | InterpolationMethod::Lower => {
+            InterpolationMethod::Shell => {
+                stencil.push(lower, 0.5);
+                stencil.push(upper, 0.5);
+            }
+            InterpolationMethod::Lower => {
                 stencil.push(lower, 1.0);
             }
         }
@@ -445,6 +449,44 @@ mod tests {
         assert_eq!(weights[1].index, 2);
         assert!((weights[0].weight - 0.5).abs() < 1e-12);
         assert!((weights[1].weight - 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn interpolation_weights_are_shell_averaged() {
+        let grid = VerticalGrid1D::new(
+            10.0,
+            vec![0.0, 10.0, 20.0, 30.0],
+            InterpolationMethod::Shell,
+            GeometryKind::Spherical,
+        )
+        .unwrap();
+        let stencil = grid.interpolation_weights_at_altitude(12.5);
+        let weights: Vec<_> = stencil.iter().collect();
+
+        assert_eq!(weights.len(), 2);
+        assert_eq!(weights[0].index, 1);
+        assert_eq!(weights[1].index, 2);
+        assert!((weights[0].weight - 0.5).abs() < 1e-12);
+        assert!((weights[1].weight - 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn interpolation_weights_use_lower_boundary() {
+        let grid = VerticalGrid1D::new(
+            10.0,
+            vec![0.0, 10.0, 20.0, 30.0],
+            InterpolationMethod::Lower,
+            GeometryKind::Spherical,
+        )
+        .unwrap();
+        let weights: Vec<_> = grid
+            .interpolation_weights_at_altitude(12.5)
+            .iter()
+            .collect();
+
+        assert_eq!(weights.len(), 1);
+        assert_eq!(weights[0].index, 1);
+        assert!((weights[0].weight - 1.0).abs() < 1e-12);
     }
 
     #[test]

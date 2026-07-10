@@ -1,6 +1,8 @@
 use std::error::Error;
 use std::fmt;
 
+use super::grid::InterpolationMethod;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum RefractiveProfileError {
     MismatchedLength {
@@ -47,6 +49,8 @@ pub struct RefractiveProfile {
     earth_radius: f64,
     altitudes: Vec<f64>,
     refractive_index: Vec<f64>,
+    log_refractive_index: Vec<f64>,
+    interpolation: InterpolationMethod,
 }
 
 impl RefractiveProfile {
@@ -54,6 +58,20 @@ impl RefractiveProfile {
         earth_radius: f64,
         altitudes: Vec<f64>,
         refractive_index: Vec<f64>,
+    ) -> Result<Self, RefractiveProfileError> {
+        Self::new_with_interpolation(
+            earth_radius,
+            altitudes,
+            refractive_index,
+            InterpolationMethod::Linear,
+        )
+    }
+
+    pub fn new_with_interpolation(
+        earth_radius: f64,
+        altitudes: Vec<f64>,
+        refractive_index: Vec<f64>,
+        interpolation: InterpolationMethod,
     ) -> Result<Self, RefractiveProfileError> {
         if altitudes.len() != refractive_index.len() {
             return Err(RefractiveProfileError::MismatchedLength {
@@ -74,10 +92,13 @@ impl RefractiveProfile {
                 return Err(RefractiveProfileError::NonPositiveRefractiveIndex { index });
             }
         }
+        let log_refractive_index = refractive_index.iter().map(|value| value.ln()).collect();
         Ok(Self {
             earth_radius,
             altitudes,
             refractive_index,
+            log_refractive_index,
+            interpolation,
         })
     }
 
@@ -116,8 +137,16 @@ impl RefractiveProfile {
         let lower = upper - 1;
         let width = self.altitudes[upper] - self.altitudes[lower];
         let upper_weight = (altitude - self.altitudes[lower]) / width;
-        let log_n = (1.0 - upper_weight) * self.refractive_index[lower].ln()
-            + upper_weight * self.refractive_index[upper].ln();
+        let log_n = match self.interpolation {
+            InterpolationMethod::Linear => {
+                (1.0 - upper_weight) * self.log_refractive_index[lower]
+                    + upper_weight * self.log_refractive_index[upper]
+            }
+            InterpolationMethod::Shell => {
+                0.5 * (self.log_refractive_index[lower] + self.log_refractive_index[upper])
+            }
+            InterpolationMethod::Lower => self.log_refractive_index[lower],
+        };
         log_n.exp()
     }
 
@@ -359,6 +388,38 @@ mod tests {
         let profile = RefractiveProfile::new(0.0, vec![0.0, 10.0], vec![1.0, 4.0]).unwrap();
 
         assert!((profile.refractive_index_at_altitude(5.0) - 2.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn refractive_index_honors_grid_interpolation_modes() {
+        let altitudes = vec![0.0, 10.0];
+        let indices = vec![1.0, 16.0];
+
+        let linear = RefractiveProfile::new_with_interpolation(
+            0.0,
+            altitudes.clone(),
+            indices.clone(),
+            InterpolationMethod::Linear,
+        )
+        .unwrap();
+        let shell = RefractiveProfile::new_with_interpolation(
+            0.0,
+            altitudes.clone(),
+            indices.clone(),
+            InterpolationMethod::Shell,
+        )
+        .unwrap();
+        let lower = RefractiveProfile::new_with_interpolation(
+            0.0,
+            altitudes,
+            indices,
+            InterpolationMethod::Lower,
+        )
+        .unwrap();
+
+        assert!((linear.refractive_index_at_altitude(2.5) - 2.0).abs() < 1e-12);
+        assert!((shell.refractive_index_at_altitude(2.5) - 4.0).abs() < 1e-12);
+        assert!((lower.refractive_index_at_altitude(2.5) - 1.0).abs() < 1e-12);
     }
 
     #[test]

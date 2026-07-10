@@ -182,10 +182,11 @@ fn new_vertical_tracer(
     let grid = VerticalGrid1D::new(earth_radius, altitudes.clone(), interpolation, geometry)?;
     let tracer = VerticalRayTracer::new(grid);
     let profile = if geometry == GeometryKind::Spherical {
-        Some(RefractiveProfile::new(
+        Some(RefractiveProfile::new_with_interpolation(
             earth_radius,
             altitudes,
             refractive_index,
+            interpolation,
         )?)
     } else {
         None
@@ -330,10 +331,11 @@ fn trace_vertical_ray(
     let grid = VerticalGrid1D::new(earth_radius, altitudes.clone(), interpolation, geometry)?;
     let tracer = VerticalRayTracer::new(grid);
     let profile = if include_refraction && geometry == GeometryKind::Spherical {
-        Some(RefractiveProfile::new(
+        Some(RefractiveProfile::new_with_interpolation(
             earth_radius,
             altitudes,
             refractive_index,
+            interpolation,
         )?)
     } else {
         None
@@ -388,10 +390,11 @@ fn trace_vertical_ray_batch_checksum(
     let grid = VerticalGrid1D::new(earth_radius, altitudes.clone(), interpolation, geometry)?;
     let tracer = VerticalRayTracer::new(grid);
     let profile = if include_refraction && geometry == GeometryKind::Spherical {
-        Some(RefractiveProfile::new(
+        Some(RefractiveProfile::new_with_interpolation(
             earth_radius,
             altitudes,
             refractive_index,
+            interpolation,
         )?)
     } else {
         None

@@ -108,7 +108,7 @@ fn assert_exact_boundary(point: TracePoint, expected_altitude_index: usize) {
     assert_close(weights[0].weight, 1.0);
 }
 
-fn assert_linear_stencil(point: TracePoint, expected: &[(usize, f64)]) {
+fn assert_stencil(point: TracePoint, expected: &[(usize, f64)]) {
     let weights = stencil_weights(point);
     assert_eq!(weights.len(), expected.len());
     for (weight, (index, expected_weight)) in weights.iter().zip(expected) {
@@ -318,7 +318,22 @@ fn partial_layer_interpolation_metadata_matches_cpp_linear_locations() {
         .expect("inside-up ray has partial layer");
     assert_eq!(partial.cell, Some(CellId::AltitudeLayer(1)));
     assert!(!partial.entrance.on_exact_vertical_boundary);
-    assert_linear_stencil(partial.entrance, &[(1, 0.5), (2, 0.5)]);
+    assert_stencil(partial.entrance, &[(1, 0.5), (2, 0.5)]);
+    assert_exact_boundary(partial.exit, 2);
+}
+
+#[test]
+fn partial_layer_interpolation_metadata_matches_cpp_shell_locations() {
+    let traced = tracer(GeometryKind::Spherical, InterpolationMethod::Shell).trace(
+        radial_ray(15.0, true, GeometryKind::Spherical),
+        TraceOptions::default(),
+    );
+
+    let partial = traced
+        .layers
+        .last()
+        .expect("inside-up ray has partial layer");
+    assert_stencil(partial.entrance, &[(1, 0.5), (2, 0.5)]);
     assert_exact_boundary(partial.exit, 2);
 }
 
@@ -334,6 +349,29 @@ fn complete_layer_endpoint_metadata_matches_cpp_exact_locations() {
     assert_exact_boundary(ground_layer.entrance, 1);
     assert_exact_boundary(ground_layer.exit, 0);
     assert!(ground_layer.exit.event.boundaries.contains_surface());
+}
+
+#[test]
+fn spherical_layer_cells_match_midpoint_lookup() {
+    let tracer = spherical_tracer();
+    let rays = [
+        radial_ray(40.0, false, GeometryKind::Spherical),
+        spherical_limb_ray(40.0, 15.0),
+        radial_ray(15.0, true, GeometryKind::Spherical),
+        spherical_limb_ray(25.0, 5.0),
+    ];
+
+    for ray in rays {
+        let traced = tracer.trace(ray, TraceOptions::default());
+        for layer in traced.layers {
+            let midpoint_altitude = (layer.entrance.altitude + layer.exit.altitude) / 2.0;
+            let expected = tracer
+                .grid()
+                .locate_altitude_layer(midpoint_altitude, EPSILON)
+                .map(CellId::AltitudeLayer);
+            assert_eq!(layer.cell, expected);
+        }
+    }
 }
 
 #[test]
@@ -398,6 +436,10 @@ fn solar_options_populate_layer_solar_parameters() {
         assert_close(layer.cos_sza_exit, 1.0);
         assert!(layer.saz_entrance.is_finite());
         assert!(layer.saz_exit.is_finite());
+    }
+    for adjacent in traced.layers.windows(2) {
+        assert_eq!(adjacent[0].cos_sza_entrance, adjacent[1].cos_sza_exit);
+        assert_eq!(adjacent[0].saz_entrance, adjacent[1].saz_exit);
     }
 }
 

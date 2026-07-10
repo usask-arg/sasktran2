@@ -19,12 +19,53 @@ namespace {
     }
 
     void set_location(sasktran2::Location& location,
-                      const Eigen::Vector3d& position,
-                      bool on_exact_altitude, int lower_alt_index) {
+                      const Eigen::Vector3d& position, bool on_exact_altitude,
+                      int lower_alt_index) {
         location.position = position;
         location.on_exact_altitude = on_exact_altitude;
         location.lower_alt_index = lower_alt_index;
-        location.interpolation_weights.clear();
+    }
+
+    void set_interpolation_weights(sasktran2::Location& location,
+                                   double altitude,
+                                   const sasktran2::Geometry1D& geometry) {
+        auto& weights = location.interpolation_weights;
+        const int lower = location.lower_alt_index;
+
+        if (location.on_exact_altitude && lower >= 0) {
+            weights.resize(1);
+            weights[0] = {lower, 1.0};
+            return;
+        }
+
+        const auto& altitude_grid = geometry.altitude_grid();
+        if (lower < 0 || lower + 1 >= altitude_grid.grid().size()) {
+            geometry.assign_interpolation_weights(location, weights);
+            return;
+        }
+
+        if (altitude_grid.interpolation_method() ==
+            sasktran2::grids::interpolation::lower) {
+            weights.resize(1);
+            weights[0] = {lower, 1.0};
+            return;
+        }
+
+        weights.resize(2);
+        weights[0].first = lower;
+        weights[1].first = lower + 1;
+        if (altitude_grid.interpolation_method() ==
+            sasktran2::grids::interpolation::shell) {
+            weights[0].second = 0.5;
+            weights[1].second = 0.5;
+            return;
+        }
+
+        const double lower_altitude = altitude_grid.grid()(lower);
+        const double upper_altitude = altitude_grid.grid()(lower + 1);
+        weights[1].second =
+            (altitude - lower_altitude) / (upper_altitude - lower_altitude);
+        weights[0].second = 1.0 - weights[1].second;
     }
 } // namespace
 
@@ -38,7 +79,8 @@ namespace sasktran2::rust::raytracer {
             : m_result(result), m_geometry(geometry), m_ray(ray) {}
 
         void prepare(const RustTraceSummary& summary) {
-            m_result.reset();
+            // Resize in place so repeated traces retain each Location's small
+            // interpolation-weight allocation.
             m_result.observer_and_look = m_ray;
             m_result.ground_is_hit = summary.ground_is_hit;
             m_result.is_straight = summary.is_straight;
@@ -63,16 +105,19 @@ namespace sasktran2::rust::raytracer {
                          rust_layer.exit_on_exact_altitude,
                          rust_layer.exit_lower_alt_index);
 
-            layer.r_entrance = layer.entrance.radius();
-            layer.r_exit = layer.exit.radius();
-
-            const Eigen::Vector3d delta =
-                layer.exit.position - layer.entrance.position;
-            const double delta_norm = delta.norm();
-            layer.average_look_away =
-                delta_norm == 0.0 ? m_ray.look_away : delta / delta_norm;
+            layer.r_entrance = m_geometry.coordinates().earth_radius() +
+                               rust_layer.entrance_altitude;
+            layer.r_exit = m_geometry.coordinates().earth_radius() +
+                           rust_layer.exit_altitude;
 
             layer.layer_distance = rust_layer.layer_distance;
+            if (m_result.is_straight || layer.layer_distance == 0.0) {
+                layer.average_look_away = m_ray.look_away;
+            } else {
+                layer.average_look_away =
+                    (layer.exit.position - layer.entrance.position) /
+                    layer.layer_distance;
+            }
             layer.curvature_factor = rust_layer.curvature_factor;
             layer.od_quad_start = rust_layer.od_quad_start;
             layer.od_quad_end = rust_layer.od_quad_end;
@@ -83,10 +128,10 @@ namespace sasktran2::rust::raytracer {
             layer.saz_entrance = rust_layer.saz_entrance;
             layer.saz_exit = rust_layer.saz_exit;
 
-            m_geometry.assign_interpolation_weights(
-                layer.entrance, layer.entrance.interpolation_weights);
-            m_geometry.assign_interpolation_weights(
-                layer.exit, layer.exit.interpolation_weights);
+            set_interpolation_weights(layer.entrance,
+                                      rust_layer.entrance_altitude, m_geometry);
+            set_interpolation_weights(layer.exit, rust_layer.exit_altitude,
+                                      m_geometry);
         }
 
         void set_layers(::rust::Slice<const RustTraceLayer> layers) {
@@ -133,7 +178,8 @@ namespace sasktran2::raytracing {
     RustRayTracer::RustRayTracer(const sasktran2::Geometry1D& geometry)
         : m_geometry(geometry) {
         auto altitudes = eigen_vector_to_std(geometry.altitude_grid().grid());
-        auto refractive_index = eigen_vector_to_std(geometry.refractive_index());
+        auto refractive_index =
+            eigen_vector_to_std(geometry.refractive_index());
         const auto& sun = geometry.coordinates().sun_unit();
         auto rust_tracer = sasktran2::rust::raytracer::new_vertical_tracer(
             geometry.coordinates().earth_radius(), altitudes, refractive_index,
@@ -146,11 +192,11 @@ namespace sasktran2::raytracing {
 
     RustRayTracer::~RustRayTracer() = default;
 
-    void RustRayTracer::trace_ray(
-        const sasktran2::viewinggeometry::ViewingRay& ray, TracedRay& result,
-        bool include_refraction) const {
+    void
+    RustRayTracer::trace_ray(const sasktran2::viewinggeometry::ViewingRay& ray,
+                             TracedRay& result, bool include_refraction) const {
         sasktran2::rust::raytracer::CppTraceResult cpp_result(result,
-                                                             m_geometry, ray);
+                                                              m_geometry, ray);
         sasktran2::rust::raytracer::trace_vertical_ray_into_cpp_result(
             *m_impl->rust_tracer, ray.observer.position.x(),
             ray.observer.position.y(), ray.observer.position.z(),

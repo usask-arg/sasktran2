@@ -7,7 +7,7 @@ use super::od_quadrature::add_od_quadrature;
 use super::primitive::{Intersection, Primitive};
 use super::ray::Ray;
 use super::refraction::RefractiveProfile;
-use super::solar::{SolarContext, add_solar_parameters};
+use super::solar::{SolarContext, add_solar_parameters_reusing_exit};
 use super::vec3::Vec3;
 
 pub const NADIR_VIEWING_CUTOFF: f64 = 0.999999;
@@ -132,6 +132,8 @@ impl VerticalRayTracer {
             }
         }
 
+        let reuse_shared_boundary_solar = result.is_straight;
+        let mut shared_boundary_solar = None;
         for layer in &mut result.layers {
             add_od_quadrature(
                 layer,
@@ -139,7 +141,15 @@ impl VerticalRayTracer {
                 self.grid.interpolation_method(),
             );
             if let Some(solar) = options.solar {
-                add_solar_parameters(layer, solar);
+                let exit_solar = if reuse_shared_boundary_solar {
+                    shared_boundary_solar
+                } else {
+                    None
+                };
+                let entrance_solar = add_solar_parameters_reusing_exit(layer, solar, exit_solar);
+                if reuse_shared_boundary_solar {
+                    shared_boundary_solar = Some(entrance_solar);
+                }
             }
         }
     }
@@ -496,10 +506,20 @@ impl VerticalRayTracer {
                 self.update_point_position(&mut layer.exit, exit_position);
             }
 
-            layer.cell = self
-                .grid
-                .locate_altitude_layer((layer.entrance.altitude + layer.exit.altitude) / 2.0, 1e-8)
-                .map(super::grid::CellId::AltitudeLayer);
+            // Adjacent endpoint cells already identify the containing vertical
+            // cell; avoid another altitude-grid search for every layer.
+            layer.cell = match (layer.entrance.cell, layer.exit.cell) {
+                (Some(CellId::AltitudeLayer(entrance)), Some(CellId::AltitudeLayer(exit))) => {
+                    Some(CellId::AltitudeLayer(entrance.min(exit)))
+                }
+                _ => self
+                    .grid
+                    .locate_altitude_layer(
+                        (layer.entrance.altitude + layer.exit.altitude) / 2.0,
+                        1e-8,
+                    )
+                    .map(CellId::AltitudeLayer),
+            };
 
             previous_exit = Some(layer.exit);
         }
