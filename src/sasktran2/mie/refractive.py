@@ -95,13 +95,10 @@ def _from_aria_file(key: str):
     zip_file = data_dir / "ARIA.zip"
     url = "https://eodg.atm.ox.ac.uk/ARIA/data_files/ARIA.zip"
     if not zip_file.is_file():
-        import requests
+        from urllib.request import urlretrieve
 
         data_dir.mkdir(parents=True, exist_ok=True)
-        with requests.get(url) as response:
-            response.raise_for_status()
-            with zip_file.open("wb") as f:
-                f.write(response.content)
+        urlretrieve(url, zip_file)
 
     if not (data_dir / "data_files").is_dir():
         import tarfile

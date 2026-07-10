@@ -342,7 +342,7 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScattererRust):
             ridx_args = dict(zip(ridx_keys + shared_keys, ridx_vals, strict=True))
 
             def refractive(wl, ridx_args=ridx_args):
-                return self._refractive_index.refractive_index_fn(wl, **ridx_args)
+                return self._refractive_index.refractive_index(wl, **ridx_args)
 
             # collect psize distributions
             shared_args = {
