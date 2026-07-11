@@ -186,6 +186,15 @@ namespace sasktran2 {
          */
         const Eigen::Vector3d& sun_unit() const { return m_sun_unit; }
 
+        /** Returns the reference-plane unit vector. */
+        const Eigen::Vector3d& reference_x() const { return m_x_unit; }
+
+        /** Returns the unit vector normal to the reference plane. */
+        const Eigen::Vector3d& reference_y() const { return m_y_unit; }
+
+        /** Returns the reference-point unit vector. */
+        const Eigen::Vector3d& reference_z() const { return m_z_unit; }
+
         /** Returns a vector pointing to a location parameterized by solar
          * angles
          *
@@ -277,7 +286,10 @@ namespace sasktran2 {
         const Coordinates m_coordinates;
 
       public:
-        Geometry(Coordinates&& coordinates) : m_coordinates(coordinates){};
+        explicit Geometry(Coordinates coordinates)
+            : m_coordinates(std::move(coordinates)) {}
+
+        virtual ~Geometry() = default;
 
         /**
          *
@@ -324,8 +336,8 @@ namespace sasktran2 {
                    geometrytype geotype = geometrytype::spherical);
 
         Geometry1D(Coordinates&& coordinates, grids::AltitudeGrid&& alt_grid)
-            : Geometry(std::forward<Coordinates&&>(coordinates)),
-              m_alt_grid(alt_grid) {
+            : Geometry(std::move(coordinates)),
+              m_alt_grid(std::move(alt_grid)) {
 
             m_refractive_index.resize(m_alt_grid.grid().size());
             m_refractive_index.setConstant(1.0);
@@ -334,8 +346,10 @@ namespace sasktran2 {
 
         const grids::AltitudeGrid& altitude_grid() const { return m_alt_grid; }
 
-        int num_atmosphere_dimensions() const { return 1; }
-        int size() const { return (int)m_alt_grid.grid().size(); }
+        int num_atmosphere_dimensions() const override { return 1; }
+        int size() const override {
+            return static_cast<int>(m_alt_grid.grid().size());
+        }
 
         void validate() const;
 
@@ -345,25 +359,77 @@ namespace sasktran2 {
 
         Eigen::VectorXd& refractive_index() { return m_refractive_index; }
 
-        virtual void assign_interpolation_weights(
+        void assign_interpolation_weights(
             const Location& loc,
             std::vector<std::pair<int, double>>& index_weights) const override;
     };
 
-    /** Not currently implemented.  Planned to be Altitude/Angle along reference
-     * plane.
+    /** A structured spherical geometry varying in altitude and one horizontal
+     * angle. Horizontal angles are measured from the coordinate reference-z
+     * direction toward reference-x. Field storage is altitude-fastest.
      *
+     * The altitude cell domain is finite. Horizontal edge cells and
+     * interpolation values extend beyond the first and last sampled angles.
      */
-    class Geometry2D : public Geometry1D {
-        int num_atmosphere_dimensions() const { return 2; }
-    };
+    class Geometry2D : public Geometry {
+      private:
+        const grids::AltitudeGrid m_alt_grid;
+        const Eigen::VectorXd m_horizontal_angles;
 
-    /** Not currently implemented.  Planned to be Altitude/Angle along reference
-     * plane/Angle across reference plane.
-     *
-     */
-    class Geometry3D : public Geometry2D {
-        int num_atmosphere_dimensions() const { return 3; }
+      public:
+        Geometry2D(double cos_sza, double saa, double earth_radius,
+                   Eigen::VectorXd&& altitude_grid,
+                   Eigen::VectorXd&& horizontal_angle_grid,
+                   grids::interpolation altitude_interpolation =
+                       grids::interpolation::linear);
+
+        Geometry2D(Coordinates&& coordinates, Eigen::VectorXd&& altitude_grid,
+                   Eigen::VectorXd&& horizontal_angle_grid,
+                   grids::interpolation altitude_interpolation =
+                       grids::interpolation::linear);
+
+        const grids::AltitudeGrid& altitude_grid() const { return m_alt_grid; }
+
+        const Eigen::VectorXd& horizontal_angle_grid() const {
+            return m_horizontal_angles;
+        }
+
+        int num_atmosphere_dimensions() const override { return 2; }
+        int size() const override;
+        int num_altitudes() const;
+        int num_horizontal_locations() const;
+        int num_cells() const;
+
+        /** Returns (num_horizontal, num_altitudes). */
+        std::pair<int, int> location_shape() const;
+
+        /** Returns (num_horizontal_cells, num_altitude_cells). */
+        std::pair<int, int> cell_shape() const;
+
+        int location_index(int altitude_index, int horizontal_index) const;
+        std::pair<int, int> location_indices(int location_index) const;
+
+        int cell_index(int altitude_cell, int horizontal_cell) const;
+        std::pair<int, int> cell_indices(int cell_index) const;
+
+        Eigen::Vector3d grid_location(int altitude_index,
+                                      int horizontal_index) const;
+
+        double altitude_at(const Location& location) const;
+        double horizontal_angle_at(const Location& location) const;
+
+        /** Returns (altitude_cell, horizontal_cell), or no cell when outside
+         * the finite altitude domain. Horizontal edge cells extend without
+         * bound.
+         */
+        std::optional<std::pair<int, int>>
+        cell_indices(const Location& location) const;
+
+        void assign_interpolation_weights(
+            const Location& location,
+            std::vector<std::pair<int, double>>& index_weights) const override;
+
+        void validate() const;
     };
 
 } // namespace sasktran2

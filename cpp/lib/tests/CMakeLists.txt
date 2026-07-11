@@ -6,6 +6,8 @@ add_executable(
   viewinggeometry/test_groundviewing.cpp
   unitsphere/test_lebedev.cpp
   geometry/test_geometry.cpp
+  geometry/test_geometry1d.cpp
+  geometry/test_geometry2d.cpp
   grids/test_grid.cpp
   raytracing/test_spherical_shell.cpp
   raytracing/test_plane_parallel.cpp

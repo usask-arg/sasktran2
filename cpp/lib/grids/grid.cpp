@@ -5,11 +5,11 @@ namespace sasktran2::grids {
     Grid::Grid(Eigen::VectorXd&& grid_values, gridspacing spacing,
                outofbounds out_of_bounds_mode, interpolation interp)
         : m_grid_spacing(spacing), m_out_of_bounds_mode(out_of_bounds_mode),
-          m_interp_method(interp), m_grid_values(grid_values) {
+          m_interp_method(interp), m_grid_values(std::move(grid_values)) {
         if (m_grid_spacing == gridspacing::automatic) {
             // Detect if we should use variable or constants
 
-            if (grid_values.size() > 1) {
+            if (m_grid_values.size() > 1) {
 
                 if ((m_grid_values(Eigen::seq(1, Eigen::placeholders::last)) -
                      m_grid_values(
@@ -27,7 +27,7 @@ namespace sasktran2::grids {
         }
 
         if (m_grid_spacing == gridspacing::constant) {
-            if (grid_values.size() > 1) {
+            if (m_grid_values.size() > 1) {
                 m_x0 = m_grid_values(0);
                 m_dx = (m_grid_values(1) - m_grid_values(0));
             } else {

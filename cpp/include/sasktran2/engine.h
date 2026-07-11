@@ -109,6 +109,7 @@ template <int NSTOKES> class Sasktran2 : public Sasktran2Interface {
           m_geometry(geometry) {
         // Validate config
         m_config.validate_config();
+        m_geometry->validate();
         m_config.validate_config_geometry(
             m_geometry->coordinates().geometry_type());
 
