@@ -151,11 +151,7 @@ impl Layer {
 fn classify_layer_type(entrance: TracePoint, exit: TracePoint) -> LayerType {
     if entrance.event.is_tangent() || exit.event.is_tangent() {
         LayerType::Tangent
-    } else if entrance.event.is_boundary()
-        && exit.event.is_boundary()
-        && entrance.event.boundaries.contains_vertical()
-        && exit.event.boundaries.contains_vertical()
-    {
+    } else if entrance.event.is_boundary() && exit.event.is_boundary() {
         LayerType::Complete
     } else {
         LayerType::Partial
@@ -203,5 +199,55 @@ impl TracedRay {
         self.tangent_radius = f64::NAN;
         self.geometry = geometry;
         self.interpolation_method = interpolation_method;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::raytracer::grid::{BoundaryTag, InterpolationStencil};
+
+    fn point(event: TraceEvent) -> TracePoint {
+        TracePoint {
+            distance: 0.0,
+            position: Vec3::UNIT_Z,
+            altitude: 0.0,
+            event,
+            interpolation: InterpolationStencil::new(),
+            cell: None,
+            on_exact_vertical_boundary: false,
+        }
+    }
+
+    fn boundary(tag: BoundaryTag) -> TraceEvent {
+        let mut boundaries = BoundarySet::new();
+        boundaries.push(tag);
+        TraceEvent::boundary(boundaries)
+    }
+
+    #[test]
+    fn horizontal_boundary_pair_is_complete() {
+        let entrance = point(boundary(BoundaryTag::Horizontal { index: 0 }));
+        let exit = point(boundary(BoundaryTag::Horizontal { index: 1 }));
+
+        assert_eq!(classify_layer_type(entrance, exit), LayerType::Complete);
+    }
+
+    #[test]
+    fn observer_endpoint_is_partial() {
+        let entrance = point(TraceEvent::observer());
+        let exit = point(boundary(BoundaryTag::Altitude { index: 1 }));
+
+        assert_eq!(classify_layer_type(entrance, exit), LayerType::Partial);
+    }
+
+    #[test]
+    fn tangent_takes_precedence_over_boundary_kind() {
+        let mut boundaries = BoundarySet::new();
+        boundaries.push(BoundaryTag::Horizontal { index: 1 });
+        let entrance = point(TraceEvent::tangent(boundaries));
+        let exit = point(boundary(BoundaryTag::Altitude { index: 1 }));
+
+        assert_eq!(classify_layer_type(entrance, exit), LayerType::Tangent);
     }
 }

@@ -25,7 +25,7 @@ pub enum BoundaryTag {
     Surface { altitude_index: usize },
     TopOfAtmosphere { altitude_index: usize },
     Altitude { index: usize },
-    Cross { index: usize },
+    Horizontal { index: usize },
     Custom { id: u32 },
 }
 
@@ -37,7 +37,7 @@ impl BoundaryTag {
                 Some(altitude_index)
             }
             Self::Altitude { index } => Some(index),
-            Self::Cross { .. } | Self::Custom { .. } => None,
+            Self::Horizontal { .. } | Self::Custom { .. } => None,
         }
     }
 
@@ -54,6 +54,19 @@ impl BoundaryTag {
     #[inline(always)]
     pub fn is_vertical(self) -> bool {
         self.altitude_index().is_some()
+    }
+
+    #[inline(always)]
+    pub fn horizontal_index(self) -> Option<usize> {
+        match self {
+            Self::Horizontal { index } => Some(index),
+            _ => None,
+        }
+    }
+
+    #[inline(always)]
+    pub fn is_horizontal(self) -> bool {
+        self.horizontal_index().is_some()
     }
 }
 
@@ -121,6 +134,11 @@ impl BoundarySet {
     }
 
     #[inline]
+    pub fn contains_horizontal(&self) -> bool {
+        self.iter().any(BoundaryTag::is_horizontal)
+    }
+
+    #[inline]
     pub fn iter(&self) -> impl Iterator<Item = BoundaryTag> + '_ {
         self.tags[..self.len()].iter().filter_map(|tag| *tag)
     }
@@ -131,7 +149,7 @@ pub enum CellId {
     AltitudeLayer(usize),
     Structured2D {
         altitude_index: usize,
-        cross_index: usize,
+        horizontal_index: usize,
     },
     Unstructured(u64),
 }
@@ -199,20 +217,60 @@ pub trait MediumGrid {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum GridError {
+    InvalidEarthRadius,
     TooFewAltitudes,
+    TooFewHorizontalAngles,
+    NonFiniteAltitude { index: usize },
+    InvalidRadius { index: usize },
+    NonFiniteHorizontalAngle { index: usize },
     NonIncreasingAltitude { index: usize },
+    NonIncreasingHorizontalAngle { index: usize },
+    HorizontalSpanTooWide,
+    InvalidAngularBasis,
 }
 
 impl fmt::Display for GridError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::InvalidEarthRadius => {
+                write!(f, "earth radius must be finite and non-negative")
+            }
             Self::TooFewAltitudes => write!(f, "a vertical grid needs at least two altitudes"),
+            Self::TooFewHorizontalAngles => {
+                write!(f, "a 2D grid needs at least two horizontal angles")
+            }
             Self::NonIncreasingAltitude { index } => {
                 write!(
                     f,
                     "altitudes must be strictly increasing near index {index}"
                 )
             }
+            Self::NonFiniteAltitude { index } => {
+                write!(f, "altitude at index {index} must be finite")
+            }
+            Self::InvalidRadius { index } => write!(
+                f,
+                "earth radius plus altitude at index {index} must be finite and positive"
+            ),
+            Self::NonFiniteHorizontalAngle { index } => {
+                write!(f, "horizontal angle at index {index} must be finite")
+            }
+            Self::NonIncreasingHorizontalAngle { index } => {
+                write!(
+                    f,
+                    "horizontal angles must be strictly increasing near index {index}"
+                )
+            }
+            Self::HorizontalSpanTooWide => {
+                write!(
+                    f,
+                    "the horizontal angular span must be less than pi radians"
+                )
+            }
+            Self::InvalidAngularBasis => write!(
+                f,
+                "the reference and along-plane vectors must define a valid angular basis"
+            ),
         }
     }
 }
@@ -487,20 +545,5 @@ mod tests {
         assert_eq!(weights.len(), 1);
         assert_eq!(weights[0].index, 1);
         assert!((weights[0].weight - 1.0).abs() < 1e-12);
-    }
-
-    #[test]
-    fn future_cell_ids_are_not_limited_to_altitude_layers() {
-        let cell = CellId::Structured2D {
-            altitude_index: 2,
-            cross_index: 4,
-        };
-        assert_eq!(
-            cell,
-            CellId::Structured2D {
-                altitude_index: 2,
-                cross_index: 4
-            }
-        );
     }
 }

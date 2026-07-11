@@ -16,6 +16,7 @@ pub enum Crossing {
 pub enum PrimitiveKind {
     Sphere,
     Plane,
+    AngularPlane,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -42,6 +43,12 @@ pub enum Primitive {
         id: PrimitiveId,
         point: Vec3,
         normal: Vec3,
+        boundary: BoundaryTag,
+    },
+    AngularPlane {
+        id: PrimitiveId,
+        normal: Vec3,
+        radial_direction: Vec3,
         boundary: BoundaryTag,
     },
 }
@@ -76,16 +83,33 @@ impl Primitive {
     }
 
     #[inline(always)]
+    pub fn angular_plane(
+        id: PrimitiveId,
+        normal: Vec3,
+        radial_direction: Vec3,
+        boundary: BoundaryTag,
+    ) -> Self {
+        Self::AngularPlane {
+            id,
+            normal: normal.normalized(),
+            radial_direction: radial_direction.normalized(),
+            boundary,
+        }
+    }
+
+    #[inline(always)]
     pub fn id(&self) -> PrimitiveId {
         match self {
-            Self::Sphere { id, .. } | Self::Plane { id, .. } => *id,
+            Self::Sphere { id, .. } | Self::Plane { id, .. } | Self::AngularPlane { id, .. } => *id,
         }
     }
 
     #[inline(always)]
     pub fn boundary(&self) -> BoundaryTag {
         match self {
-            Self::Sphere { boundary, .. } | Self::Plane { boundary, .. } => *boundary,
+            Self::Sphere { boundary, .. }
+            | Self::Plane { boundary, .. }
+            | Self::AngularPlane { boundary, .. } => *boundary,
         }
     }
 
@@ -94,6 +118,7 @@ impl Primitive {
         match self {
             Self::Sphere { .. } => PrimitiveKind::Sphere,
             Self::Plane { .. } => PrimitiveKind::Plane,
+            Self::AngularPlane { .. } => PrimitiveKind::AngularPlane,
         }
     }
 
@@ -130,6 +155,23 @@ impl Primitive {
                 PrimitiveMeta {
                     id,
                     kind: PrimitiveKind::Plane,
+                    boundary,
+                },
+                epsilon,
+                output,
+            ),
+            Self::AngularPlane {
+                id,
+                normal,
+                radial_direction,
+                boundary,
+            } => intersect_angular_plane(
+                ray,
+                normal,
+                radial_direction,
+                PrimitiveMeta {
+                    id,
+                    kind: PrimitiveKind::AngularPlane,
                     boundary,
                 },
                 epsilon,
@@ -248,6 +290,36 @@ fn intersect_plane(
     push_intersection(distance, ray, normal, meta, crossing, epsilon, output);
 }
 
+fn intersect_angular_plane(
+    ray: Ray,
+    normal: Vec3,
+    radial_direction: Vec3,
+    meta: PrimitiveMeta,
+    epsilon: f64,
+    output: &mut Vec<Intersection>,
+) {
+    let denom = normal.dot(ray.direction);
+    if denom.abs() <= epsilon {
+        return;
+    }
+
+    let distance = -ray.origin.dot(normal) / denom;
+    if distance < -epsilon {
+        return;
+    }
+    let point = ray.point_at(distance.max(0.0));
+    if point.dot(radial_direction) < -epsilon {
+        return;
+    }
+
+    let crossing = if denom < 0.0 {
+        Crossing::Entering
+    } else {
+        Crossing::Exiting
+    };
+    push_intersection(distance, ray, normal, meta, crossing, epsilon, output);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -294,5 +366,56 @@ mod tests {
 
         assert_eq!(hits.len(), 1);
         assert!((hits[0].distance - 3.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn angular_plane_accepts_the_selected_radial_half() {
+        let primitive = Primitive::angular_plane(
+            PrimitiveId(0),
+            Vec3::UNIT_X,
+            Vec3::UNIT_Z,
+            BoundaryTag::Horizontal { index: 0 },
+        );
+        let ray = Ray::new(Vec3::new(-1.0, 0.0, 2.0), Vec3::UNIT_X);
+        let mut hits = Vec::new();
+
+        primitive.intersections(ray, 1e-12, &mut hits);
+
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].primitive_kind, PrimitiveKind::AngularPlane);
+        assert!((hits[0].distance - 1.0).abs() < 1e-12);
+        assert_eq!(hits[0].boundary, BoundaryTag::Horizontal { index: 0 });
+    }
+
+    #[test]
+    fn angular_plane_rejects_the_antipodal_half() {
+        let primitive = Primitive::angular_plane(
+            PrimitiveId(0),
+            Vec3::UNIT_X,
+            Vec3::UNIT_Z,
+            BoundaryTag::Horizontal { index: 0 },
+        );
+        let ray = Ray::new(Vec3::new(-1.0, 0.0, -2.0), Vec3::UNIT_X);
+        let mut hits = Vec::new();
+
+        primitive.intersections(ray, 1e-12, &mut hits);
+
+        assert!(hits.is_empty());
+    }
+
+    #[test]
+    fn angular_plane_ignores_parallel_ray() {
+        let primitive = Primitive::angular_plane(
+            PrimitiveId(0),
+            Vec3::UNIT_X,
+            Vec3::UNIT_Z,
+            BoundaryTag::Horizontal { index: 0 },
+        );
+        let ray = Ray::new(Vec3::new(0.0, 0.0, 2.0), Vec3::UNIT_Z);
+        let mut hits = Vec::new();
+
+        primitive.intersections(ray, 1e-12, &mut hits);
+
+        assert!(hits.is_empty());
     }
 }
