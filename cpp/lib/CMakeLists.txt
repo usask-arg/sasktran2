@@ -33,6 +33,7 @@ add_library(
   raytracing/spherical_shell.cpp
   raytracing/plane_parallel.cpp
   raytracing/refraction.cpp
+  raytracing/rust_raytracer.cpp
   solar/solartransmissionexact.cpp
   solar/solartransmissiontable.cpp
   solar/singlescattersource.cpp

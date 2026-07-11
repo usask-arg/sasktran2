@@ -57,6 +57,7 @@ fn main() {
     let mut binding = cmake::Config::new(&cpp_src);
 
     let target = std::env::var("TARGET").unwrap();
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
 
     binding
         .define("BUILD_SHARED_LIBS", "OFF")
@@ -140,7 +141,17 @@ fn main() {
     );
 
     println!("cargo:rustc-link-lib=static=csasktran2");
-    println!("cargo:rustc-link-lib=static=sasktran2");
+    if target_os == "linux" {
+        // The Rust CXX bridge implementations are members of libsasktran2.a.
+        // When the Rust ray tracer is not selected by CMake, no C++ engine
+        // object references those members. GNU ld can therefore skip them
+        // before it sees the corresponding references from Rust, leaving
+        // unresolved CXX helper symbols in the Python extension. Keep the
+        // complete C++ archive on Linux so both compile-flag paths are valid.
+        println!("cargo:rustc-link-lib=static:+whole-archive=sasktran2");
+    } else {
+        println!("cargo:rustc-link-lib=static=sasktran2");
+    }
     //println!("cargo:rustc-link-lib=static=TracyClient");
 
     println!("cargo:rerun-if-changed={}/include", cpp_src.display());

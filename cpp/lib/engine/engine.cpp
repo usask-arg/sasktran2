@@ -14,9 +14,14 @@
 template <int NSTOKES> void Sasktran2<NSTOKES>::construct_raytracer() {
     if (m_geometry->coordinates().geometry_type() ==
         sasktran2::geometrytype::spherical) {
+#if defined(SKTRAN_USE_RUST_RAYTRACER) && defined(SKTRAN_RUST_SUPPORT)
+        m_raytracer =
+            std::make_unique<sasktran2::raytracing::RustRayTracer>(*m_geometry);
+#else
         m_raytracer =
             std::make_unique<sasktran2::raytracing::SphericalShellRayTracer>(
                 *m_geometry);
+#endif
     } else if (m_geometry->coordinates().geometry_type() ==
                    sasktran2::geometrytype::planeparallel ||
                m_geometry->coordinates().geometry_type() ==
