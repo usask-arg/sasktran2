@@ -16,6 +16,148 @@ from sasktran2.units import (
 from sasktran2.util.state import EquationOfState
 
 
+@dataclass(frozen=True)
+class _AtmosphereSpatialLayout:
+    """Internal description of the volume-atmosphere storage layout."""
+
+    num_horizontal: int
+    num_altitudes: int
+    geometry_is_2d: bool
+
+    @classmethod
+    def from_geometry(
+        cls, geometry: sk.Geometry1D | sk.Geometry2D
+    ) -> _AtmosphereSpatialLayout:
+        if isinstance(geometry, sk.Geometry2D):
+            num_horizontal, num_altitudes = geometry.shape
+            return cls(num_horizontal, num_altitudes, True)
+
+        return cls(1, len(geometry.altitudes()), False)
+
+    @property
+    def is_2d(self) -> bool:
+        return self.geometry_is_2d
+
+    @property
+    def shape(self) -> tuple[int, ...]:
+        if self.is_2d:
+            return (self.num_horizontal, self.num_altitudes)
+        return (self.num_altitudes,)
+
+    @property
+    def num_locations(self) -> int:
+        return self.num_horizontal * self.num_altitudes
+
+    def native_altitudes(self, geometry: sk.Geometry1D | sk.Geometry2D) -> np.ndarray:
+        altitudes = np.asarray(geometry.altitudes(), dtype=np.float64)
+        if self.is_2d:
+            return np.tile(altitudes, self.num_horizontal)
+        return altitudes
+
+    def validate_state(self, value: np.ndarray, name: str) -> np.ndarray:
+        array = np.asarray(value)
+        valid_shapes = {(self.num_altitudes,)}
+        if self.is_2d:
+            valid_shapes.add((self.num_horizontal, self.num_altitudes))
+
+        if array.shape not in valid_shapes:
+            expected = " or ".join(str(shape) for shape in sorted(valid_shapes))
+            msg = f"{name} must have shape {expected}; got {array.shape}"
+            raise ValueError(msg)
+        return array
+
+    def native_state(self, value: np.ndarray | None, name: str) -> np.ndarray | None:
+        if value is None:
+            return None
+
+        array = self.validate_state(value, name)
+        if self.is_2d and array.ndim == 1:
+            array = np.broadcast_to(array, (self.num_horizontal, self.num_altitudes))
+        return np.ascontiguousarray(array.reshape(-1), dtype=np.float64)
+
+    def reshape_native(self, values: np.ndarray) -> np.ndarray:
+        values = np.asarray(values)
+        if values.shape[0] != self.num_locations:
+            msg = (
+                "The first dimension must be the flattened atmosphere location "
+                f"dimension ({self.num_locations}); got {values.shape[0]}"
+            )
+            raise ValueError(msg)
+        return values.reshape((*self.shape, *values.shape[1:]))
+
+
+@dataclass(frozen=True)
+class _NativeAtmosphereInputs:
+    altitudes_m: np.ndarray
+    state_equation: EquationOfState
+
+    def state(self, name: str) -> np.ndarray | None:
+        return getattr(self.state_equation, name)
+
+
+class _ExpandedProfileGeometry:
+    """Geometry facade used by altitude-only constituents in a 2D atmosphere."""
+
+    def __init__(
+        self,
+        geometry: sk.Geometry2D,
+        native_altitudes_m: np.ndarray,
+    ) -> None:
+        self._geometry = geometry
+        self._native_altitudes = native_altitudes_m
+
+    def altitudes(self) -> np.ndarray:
+        return self._native_altitudes
+
+    def __getattr__(self, name):
+        return getattr(self._geometry, name)
+
+
+class _ExpandedProfileAtmosphere:
+    """Atmosphere facade that broadcasts altitude-only inputs onto 2D locations."""
+
+    def __init__(
+        self, atmosphere: Atmosphere, native_inputs: _NativeAtmosphereInputs
+    ) -> None:
+        self._atmosphere = atmosphere
+        self._model_geometry = _ExpandedProfileGeometry(
+            atmosphere.model_geometry, native_inputs.altitudes_m
+        )
+        self._native_inputs = native_inputs
+
+    @property
+    def model_geometry(self):
+        return self._model_geometry
+
+    @property
+    def state_equation(self) -> EquationOfState:
+        return self._native_inputs.state_equation
+
+    @property
+    def pressure_pa(self) -> np.ndarray | None:
+        return self._native_inputs.state("pressure_pa")
+
+    @property
+    def temperature_k(self) -> np.ndarray | None:
+        return self._native_inputs.state("temperature_k")
+
+    @property
+    def specific_humidity(self) -> np.ndarray | None:
+        return self._native_inputs.state("specific_humidity")
+
+    def _native_state(self, name: str) -> np.ndarray | None:
+        return self._native_inputs.state(name)
+
+    def _native_altitudes(self) -> np.ndarray:
+        return self._native_inputs.altitudes_m
+
+    def _native_state_equation(self) -> EquationOfState:
+        return self._native_inputs.state_equation
+
+    def __getattr__(self, name):
+        return getattr(self._atmosphere, name)
+
+
 @dataclass
 class NativeGridDerivative:
     """
@@ -34,7 +176,7 @@ class NativeGridDerivative:
 class Atmosphere:
     def __init__(
         self,
-        model_geometry: sk.Geometry1D,
+        model_geometry: sk.Geometry1D | sk.Geometry2D,
         config: sk.Config,
         wavelengths_nm: np.array = None,
         wavenumber_cminv: np.array = None,
@@ -55,7 +197,7 @@ class Atmosphere:
 
         Parameters
         ----------
-        model_geometry : sk.Geometry1D
+        model_geometry : sk.Geometry1D | sk.Geometry2D
             The geometry defining where the atmospheric quantities are specified on.
         config : sk.Config
             Main configuration object.
@@ -110,9 +252,11 @@ class Atmosphere:
         self._legendre_derivative = legendre_derivative
         self._specific_humidity_derivative = specific_humidity_derivative
 
+        self._spatial_layout = _AtmosphereSpatialLayout.from_geometry(model_geometry)
+
         self._atmosphere = PyAtmosphere(
             nwavel,
-            len(model_geometry.altitudes()),
+            self._spatial_layout.num_locations,
             config.num_singlescatter_moments,
             calculate_derivatives,
             config.emission_source != EmissionSource.NoSource,
@@ -139,6 +283,9 @@ class Atmosphere:
         self._unscaled_extinction = None
         self._applied_delta_m_order = None
         self._nwavel = nwavel
+        self._derivative_output_shapes = {}
+        self._spatial_state_derivatives = set()
+        self._native_input_cache = None
 
     @property
     def num_wavel(self) -> int:
@@ -152,15 +299,33 @@ class Atmosphere:
         return self._nwavel
 
     @property
-    def model_geometry(self) -> sk.Geometry1D:
+    def model_geometry(self) -> sk.Geometry1D | sk.Geometry2D:
         """
         The model geometry object
 
         Returns
         -------
-        sk.Geometry1D
+        sk.Geometry1D | sk.Geometry2D
         """
         return self._model_geometry
+
+    @property
+    def volume_shape(self) -> tuple[int, ...]:
+        """Shape of the volume atmosphere, excluding wavelength."""
+        return self._spatial_layout.shape
+
+    @property
+    def num_locations(self) -> int:
+        """Number of flattened volume-atmosphere locations."""
+        return self._spatial_layout.num_locations
+
+    def reshape_native(self, values: np.ndarray) -> np.ndarray:
+        """Restore flattened native-location data to the geometry shape."""
+        return self._spatial_layout.reshape_native(values)
+
+    def derivative_output_shape(self, mapping_name: str) -> tuple[int, ...] | None:
+        """Structured parameter shape for a native-location derivative mapping."""
+        return self._derivative_output_shapes.get(mapping_name)
 
     @property
     def applied_delta_m_order(self) -> int | None:
@@ -250,7 +415,9 @@ class Atmosphere:
 
     @temperature_k.setter
     def temperature_k(self, temp: np.array):
-        self._equation_of_state.temperature_k = temp
+        self._equation_of_state.temperature_k = self._validate_state(
+            temp, "temperature_k"
+        )
 
     @property
     def pressure_pa(self) -> np.array:
@@ -287,11 +454,143 @@ class Atmosphere:
 
     @specific_humidity.setter
     def specific_humidity(self, sh: np.array):
-        self._equation_of_state.specific_humidity = sh
+        self._equation_of_state.specific_humidity = self._validate_state(
+            sh, "specific_humidity"
+        )
 
     @pressure_pa.setter
     def pressure_pa(self, pres: np.array):
-        self._equation_of_state.pressure_pa = pres
+        self._equation_of_state.pressure_pa = self._validate_state(pres, "pressure_pa")
+
+    def _validate_state(self, value: np.ndarray | None, name: str) -> np.ndarray | None:
+        if value is None:
+            return None
+        if isinstance(self._model_geometry, sk.Geometry2D):
+            return self._spatial_layout.validate_state(value, name)
+        return value
+
+    def _native_state(self, name: str) -> np.ndarray | None:
+        if self._native_input_cache is not None:
+            return self._native_input_cache.state(name)
+        if not self._spatial_layout.is_2d:
+            return getattr(self._equation_of_state, name)
+        return self._spatial_layout.native_state(
+            getattr(self._equation_of_state, name), name
+        )
+
+    def _native_altitudes(self) -> np.ndarray:
+        if self._native_input_cache is not None:
+            return self._native_input_cache.altitudes_m
+        if not self._spatial_layout.is_2d:
+            return self._model_geometry.altitudes()
+        return self._spatial_layout.native_altitudes(self._model_geometry)
+
+    def _native_state_equation(self) -> EquationOfState:
+        if self._native_input_cache is not None:
+            return self._native_input_cache.state_equation
+        if not self._spatial_layout.is_2d:
+            return self._equation_of_state
+        state = EquationOfState(self._equation_of_state.molar_mass_dry_air)
+        state.pressure_pa = self._native_state("pressure_pa")
+        state.temperature_k = self._native_state("temperature_k")
+        state.specific_humidity = self._native_state("specific_humidity")
+        return state
+
+    def _make_native_input_cache(self) -> _NativeAtmosphereInputs:
+        state = EquationOfState(self._equation_of_state.molar_mass_dry_air)
+        for name in ("pressure_pa", "temperature_k", "specific_humidity"):
+            value = self._spatial_layout.native_state(
+                getattr(self._equation_of_state, name), name
+            )
+            setattr(state, name, value)
+        return _NativeAtmosphereInputs(
+            self._spatial_layout.native_altitudes(self._model_geometry), state
+        )
+
+    def _constituent_atmosphere(self, constituent, profile_atmosphere):
+        spatial_mode = getattr(constituent, "volume_spatial_mode", "altitude_profile")
+        if spatial_mode not in ("altitude_profile", "native_2d"):
+            msg = (
+                f"Unsupported volume_spatial_mode {spatial_mode!r}; expected "
+                "'altitude_profile' or 'native_2d'"
+            )
+            raise ValueError(msg)
+
+        if not isinstance(self._model_geometry, sk.Geometry2D):
+            return self
+        if spatial_mode == "native_2d":
+            return self
+        return profile_atmosphere
+
+    def _finalize_spatial_derivatives(self) -> None:
+        self._derivative_output_shapes = {}
+        if not self._spatial_layout.is_2d:
+            return
+
+        state_assign_names = {
+            "pressure_pa": "wf_pressure_pa",
+            "temperature_k": "wf_temperature_k",
+            "specific_humidity": "wf_specific_humidity",
+        }
+        for mapping_name in self.storage.derivative_mapping_names():
+            mapping = self.storage.get_derivative_mapping(mapping_name)
+            state_name = next(
+                (
+                    name
+                    for name, assign_name in state_assign_names.items()
+                    if mapping.assign_name == assign_name
+                ),
+                None,
+            )
+            if state_name is None:
+                continue
+
+            self._spatial_state_derivatives.add(mapping_name)
+
+            state_value = getattr(self._equation_of_state, state_name)
+            if state_value is None and state_name != "specific_humidity":
+                continue
+
+            interpolator = np.asarray(mapping.interpolator)
+            if interpolator.size != 0 and (
+                interpolator.ndim != 2
+                or interpolator.shape[1] != self._spatial_layout.num_locations
+            ):
+                continue
+
+            if state_value is None or np.asarray(state_value).ndim == 1:
+                if interpolator.size == 0:
+                    broadcast = np.zeros(
+                        (
+                            self._spatial_layout.num_locations,
+                            self._spatial_layout.num_altitudes,
+                        )
+                    )
+                    location = np.arange(self._spatial_layout.num_locations)
+                    broadcast[
+                        location, location % self._spatial_layout.num_altitudes
+                    ] = 1
+                    mapping.interpolator = broadcast
+                else:
+                    mapping.interpolator = interpolator.reshape(
+                        interpolator.shape[0],
+                        self._spatial_layout.num_horizontal,
+                        self._spatial_layout.num_altitudes,
+                    ).sum(axis=1)
+                mapping.interp_dim = "altitude"
+            else:
+                if interpolator.size != 0:
+                    mapping.interpolator = interpolator
+                mapping.interp_dim = "location"
+                self._derivative_output_shapes[mapping_name] = self.volume_shape
+
+    def _prepare_spatial_derivatives(self) -> None:
+        if not self._spatial_layout.is_2d:
+            return
+        for mapping_name in self._spatial_state_derivatives:
+            mapping = self.storage.get_derivative_mapping(mapping_name)
+            mapping.clear_interpolator()
+            mapping.interp_dim = "location"
 
     @property
     def wavelengths_nm(self) -> np.ndarray | None:
@@ -405,29 +704,67 @@ class Atmosphere:
             # Using the constituent interface
             if self._storage_needs_reset:
                 self._zero_storage()
-            for _, constituent in self._constituents.items():
-                constituent.add_to_atmosphere(self)
 
-            self.storage.normalize_by_extinctions()
+            # Mark the storage dirty before constituent work begins. If a
+            # constituent fails, the next call must rebuild from zero rather
+            # than accumulating on a partially populated atmosphere.
+            self._storage_needs_reset = True
 
-            self._derivs = {}
-            if self._calculate_derivatives:
-                for name, constituent in self._constituents.items():
-                    constituent.register_derivative(self, name)
+            profile_atmosphere = self
+            try:
+                if isinstance(self._model_geometry, sk.Geometry2D):
+                    native_inputs = self._make_native_input_cache()
+                    self._native_input_cache = native_inputs
+                    profile_atmosphere = _ExpandedProfileAtmosphere(self, native_inputs)
+
+                for _, constituent in self._constituents.items():
+                    constituent.add_to_atmosphere(
+                        self._constituent_atmosphere(constituent, profile_atmosphere)
+                    )
+
+                self.storage.normalize_by_extinctions()
+
+                self._derivs = {}
+                if self._calculate_derivatives:
+                    self._prepare_spatial_derivatives()
+                    for name, constituent in self._constituents.items():
+                        constituent.register_derivative(
+                            self._constituent_atmosphere(
+                                constituent, profile_atmosphere
+                            ),
+                            name,
+                        )
+                    self._finalize_spatial_derivatives()
+            except Exception:
+                self._zero_storage()
+                self._derivs = {}
+                self._derivative_output_shapes = {}
+                raise
+            finally:
+                self._native_input_cache = None
 
             logging.debug("Finished setting atmosphere from constituents")
         else:
             # using the raw interface
             if self._calculate_derivatives and len(self._derivs) == 0:
+                self._derivative_output_shapes = {}
                 deriv_mapping = self.storage.get_derivative_mapping("wf_extinction")
                 deriv_mapping.d_extinction[:] = 1
                 deriv_mapping.d_ssa[:] = 0.0
-                deriv_mapping.interp_dim = "altitude"
+                deriv_mapping.interp_dim = (
+                    "location" if self._spatial_layout.is_2d else "altitude"
+                )
+                if self._spatial_layout.is_2d:
+                    self._derivative_output_shapes["wf_extinction"] = self.volume_shape
 
                 deriv_mapping = self.storage.get_derivative_mapping("wf_ssa")
                 deriv_mapping.d_extinction[:] = 0.0
                 deriv_mapping.d_ssa[:] = 1.0
-                deriv_mapping.interp_dim = "altitude"
+                deriv_mapping.interp_dim = (
+                    "location" if self._spatial_layout.is_2d else "altitude"
+                )
+                if self._spatial_layout.is_2d:
+                    self._derivative_output_shapes["wf_ssa"] = self.volume_shape
 
                 deriv_mapping = self.surface.get_derivative_mapping("wf_albedo")
                 deriv_mapping.d_brdf[:] = 1.0
@@ -445,7 +782,13 @@ class Atmosphere:
                         deriv_mapping.d_extinction[:] = 0
                         deriv_mapping.d_ssa[:] = 0
                         deriv_mapping.scat_factor[:] = 1
-                        deriv_mapping.interp_dim = "altitude"
+                        deriv_mapping.interp_dim = (
+                            "location" if self._spatial_layout.is_2d else "altitude"
+                        )
+                        if self._spatial_layout.is_2d:
+                            self._derivative_output_shapes[f"wf_leg_coeff_{i}"] = (
+                                self.volume_shape
+                            )
 
         # Now we need to resize the phase derivative storage if necessary, and set the scattering derivatives
         self.storage.finalize_scattering_derivatives(0)

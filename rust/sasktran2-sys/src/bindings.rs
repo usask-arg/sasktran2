@@ -237,6 +237,11 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn sk_deriv_mapping_clear_interpolator(
+        mapping: *mut DerivativeMapping,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn sk_deriv_mapping_get_interpolator(
         mapping: *mut DerivativeMapping,
         interpolator: *mut *mut f64,
@@ -940,6 +945,13 @@ unsafe extern "C" {
     pub fn sk_engine_create(
         engine: *mut Config,
         geometry: *mut Geometry1D,
+        viewing_geometry: *mut ViewingGeometry,
+    ) -> *mut Engine;
+}
+unsafe extern "C" {
+    pub fn sk_engine_create_2d(
+        engine: *mut Config,
+        geometry: *mut Geometry2D,
         viewing_geometry: *mut ViewingGeometry,
     ) -> *mut Engine;
 }

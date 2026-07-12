@@ -11,16 +11,67 @@
 #include <omp.h>
 #endif
 
+template <int NSTOKES> void Sasktran2<NSTOKES>::initialize() {
+    m_config.validate_config();
+
+    if (m_geometry_1d != nullptr) {
+        m_geometry_1d->validate();
+    } else {
+        m_geometry_2d->validate();
+
+        if (m_config.single_scatter_source() !=
+                sasktran2::Config::SingleScatterSource::none ||
+            m_config.multiple_scatter_source() !=
+                sasktran2::Config::MultipleScatterSource::none ||
+            m_config.emission_source() !=
+                sasktran2::Config::EmissionSource::none ||
+            m_config.occultation_source() !=
+                sasktran2::Config::OccultationSource::standard) {
+            throw std::invalid_argument(
+                "Geometry2D currently supports only the standard occultation "
+                "source with all scattering and emission sources disabled");
+        }
+        if (!m_viewing_geometry.flux_observers().empty()) {
+            throw std::invalid_argument(
+                "Geometry2D does not yet support flux observers");
+        }
+        if (m_config.los_refraction()) {
+            throw std::invalid_argument(
+                "Geometry2D engine integration does not yet accept per-ray "
+                "refractive-index profiles");
+        }
+    }
+
+    m_config.validate_config_geometry(
+        m_geometry->coordinates().geometry_type());
+    construct_raytracer();
+    construct_integrator();
+    construct_source_terms();
+    calculate_geometry();
+}
+
 template <int NSTOKES> void Sasktran2<NSTOKES>::construct_raytracer() {
+    if (m_geometry_2d != nullptr) {
+#ifdef SKTRAN_RUST_SUPPORT
+        m_raytracer_2d =
+            std::make_unique<sasktran2::raytracing::RustRayTracer2D>(
+                *m_geometry_2d);
+        return;
+#else
+        throw std::invalid_argument(
+            "Geometry2D engine integration requires Rust support");
+#endif
+    }
+
     if (m_geometry->coordinates().geometry_type() ==
         sasktran2::geometrytype::spherical) {
 #if defined(SKTRAN_USE_RUST_RAYTRACER) && defined(SKTRAN_RUST_SUPPORT)
-        m_raytracer =
-            std::make_unique<sasktran2::raytracing::RustRayTracer>(*m_geometry);
+        m_raytracer = std::make_unique<sasktran2::raytracing::RustRayTracer>(
+            *m_geometry_1d);
 #else
         m_raytracer =
             std::make_unique<sasktran2::raytracing::SphericalShellRayTracer>(
-                *m_geometry);
+                *m_geometry_1d);
 #endif
     } else if (m_geometry->coordinates().geometry_type() ==
                    sasktran2::geometrytype::planeparallel ||
@@ -28,7 +79,7 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_raytracer() {
                    sasktran2::geometrytype::pseudospherical) {
         m_raytracer =
             std::make_unique<sasktran2::raytracing::PlaneParallelRayTracer>(
-                *m_geometry);
+                *m_geometry_1d);
     } else {
         spdlog::error("Requested geometry type is not yet supported.");
     }
@@ -41,12 +92,21 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_integrator() {
 
 template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
 
+    if (m_geometry_2d != nullptr) {
+        m_source_terms.emplace_back(
+            std::make_unique<
+                sasktran2::solartransmission::OccultationSource<NSTOKES>>());
+        m_los_source_terms.push_back(m_source_terms.back().get());
+        m_source_terms.back()->initialize_config(m_config);
+        return;
+    }
+
     if (m_config.single_scatter_source() ==
         sasktran2::Config::SingleScatterSource::exact) {
         m_source_terms.emplace_back(
             std::make_unique<sasktran2::solartransmission::SingleScatterSource<
                 sasktran2::solartransmission::SolarTransmissionExact, NSTOKES>>(
-                *m_geometry, *m_raytracer));
+                *m_geometry_1d, *m_raytracer));
 
         m_los_source_terms.push_back(
             m_source_terms[m_source_terms.size() - 1].get());
@@ -57,7 +117,7 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
         m_source_terms.emplace_back(
             std::make_unique<sasktran2::solartransmission::SingleScatterSource<
                 sasktran2::solartransmission::SolarTransmissionTable, NSTOKES>>(
-                *m_geometry, *m_raytracer));
+                *m_geometry_1d, *m_raytracer));
 
         m_los_source_terms.push_back(
             m_source_terms[m_source_terms.size() - 1].get());
@@ -100,7 +160,7 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
             m_source_terms.emplace_back(
                 std::make_unique<TwoStreamSource<
                     1, sasktran2::twostream::SourceType::ONLY_THERMAL>>(
-                    *m_geometry));
+                    *m_geometry_1d));
 
             m_los_source_terms.push_back(
                 m_source_terms[m_source_terms.size() - 1].get());
@@ -121,12 +181,12 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
                     m_source_terms.emplace_back(
                         std::make_unique<
                             sasktran2::DOSourceInterpolatedPostProcessing<
-                                NSTOKES, 2>>(*m_geometry, *m_raytracer));
+                                NSTOKES, 2>>(*m_geometry_1d, *m_raytracer));
                 } else {
                     m_source_terms.emplace_back(
                         std::make_unique<
                             sasktran2::DOSourcePlaneParallelPostProcessing<
-                                NSTOKES, 2>>(*m_geometry));
+                                NSTOKES, 2>>(*m_geometry_1d));
                 }
             } else if (m_config.num_do_streams() == 4) {
                 if (m_geometry->coordinates().geometry_type() ==
@@ -134,12 +194,12 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
                     m_source_terms.emplace_back(
                         std::make_unique<
                             sasktran2::DOSourceInterpolatedPostProcessing<
-                                NSTOKES, 4>>(*m_geometry, *m_raytracer));
+                                NSTOKES, 4>>(*m_geometry_1d, *m_raytracer));
                 } else {
                     m_source_terms.emplace_back(
                         std::make_unique<
                             sasktran2::DOSourcePlaneParallelPostProcessing<
-                                NSTOKES, 4>>(*m_geometry));
+                                NSTOKES, 4>>(*m_geometry_1d));
                 }
             } else {
                 if (m_geometry->coordinates().geometry_type() ==
@@ -147,12 +207,12 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
                     m_source_terms.emplace_back(
                         std::make_unique<
                             sasktran2::DOSourceInterpolatedPostProcessing<
-                                NSTOKES, -1>>(*m_geometry, *m_raytracer));
+                                NSTOKES, -1>>(*m_geometry_1d, *m_raytracer));
                 } else {
                     m_source_terms.emplace_back(
                         std::make_unique<
                             sasktran2::DOSourcePlaneParallelPostProcessing<
-                                NSTOKES, -1>>(*m_geometry));
+                                NSTOKES, -1>>(*m_geometry_1d));
                 }
             }
         } else {
@@ -162,13 +222,13 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
                     std::make_unique<
                         sasktran2::DOSourceInterpolatedPostProcessing<NSTOKES,
                                                                       -1>>(
-                        *m_geometry, *m_raytracer));
+                        *m_geometry_1d, *m_raytracer));
             } else {
                 m_source_terms.emplace_back(
                     std::make_unique<
                         sasktran2::DOSourcePlaneParallelPostProcessing<NSTOKES,
                                                                        -1>>(
-                        *m_geometry));
+                        *m_geometry_1d));
             }
         }
 #else
@@ -177,11 +237,11 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
             m_source_terms.emplace_back(
                 std::make_unique<
                     sasktran2::DOSourceInterpolatedPostProcessing<NSTOKES, -1>>(
-                    *m_geometry, *m_raytracer));
+                    *m_geometry_1d, *m_raytracer));
         } else {
             m_source_terms.emplace_back(
                 std::make_unique<sasktran2::DOSourcePlaneParallelPostProcessing<
-                    NSTOKES, -1>>(*m_geometry));
+                    NSTOKES, -1>>(*m_geometry_1d));
         }
 
 #endif
@@ -192,7 +252,7 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
                sasktran2::Config::MultipleScatterSource::hr) {
         m_source_terms.emplace_back(
             std::make_unique<sasktran2::hr::DiffuseTable<NSTOKES>>(
-                *m_raytracer, *m_geometry));
+                *m_raytracer, *m_geometry_1d));
         m_los_source_terms.push_back(
             m_source_terms[m_source_terms.size() - 1].get());
     } else if (m_config.multiple_scatter_source() ==
@@ -201,7 +261,7 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
             m_source_terms.emplace_back(
                 std::make_unique<TwoStreamSource<
                     NSTOKES, sasktran2::twostream::SourceType::ONLY_SOLAR>>(
-                    *m_geometry));
+                    *m_geometry_1d));
             m_los_source_terms.push_back(
                 m_source_terms[m_source_terms.size() - 1].get());
         } else {
@@ -218,8 +278,36 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
 template <int NSTOKES> void Sasktran2<NSTOKES>::calculate_geometry() {
     FrameMarkStart("Geometry");
     ZoneScopedN("calculate_geometry");
-    // Trace every ray that we are given
+
     m_internal_viewing_geometry.traced_rays.clear();
+    m_internal_viewing_geometry.traced_rays_2d.clear();
+    m_internal_viewing_geometry.flux_observers.clear();
+
+    if (m_geometry_2d != nullptr) {
+        m_internal_viewing_geometry.traced_rays_2d.resize(
+            m_viewing_geometry.observer_rays().size());
+
+        for (int i = 0; i < m_viewing_geometry.observer_rays().size(); ++i) {
+            const auto& viewing_ray = m_viewing_geometry.observer_rays()[i];
+            auto ray = viewing_ray->construct_ray(m_geometry->coordinates());
+#ifdef SKTRAN_RUST_SUPPORT
+            m_raytracer_2d->trace_ray(
+                ray, m_internal_viewing_geometry.traced_rays_2d[i]);
+#endif
+        }
+
+        m_source_integrator->initialize_geometry(
+            m_internal_viewing_geometry.traced_rays_2d, *m_geometry_2d);
+        for (auto& source : m_source_terms) {
+            source->initialize_geometry(
+                m_internal_viewing_geometry.traced_rays_2d);
+        }
+
+        FrameMarkEnd("Geometry");
+        return;
+    }
+
+    // Trace every ray that we are given
     m_internal_viewing_geometry.traced_rays.resize(
         m_viewing_geometry.observer_rays().size());
 
@@ -255,7 +343,7 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::calculate_geometry() {
 
     // Initialize the integrator
     m_source_integrator->initialize_geometry(
-        m_internal_viewing_geometry.traced_rays, *m_geometry);
+        m_internal_viewing_geometry.traced_rays, *m_geometry_1d);
 
     for (auto& source : m_source_terms) {
         ZoneScopedN("Source Term Geometry Init");
@@ -368,6 +456,14 @@ void Sasktran2<NSTOKES>::calculate_radiance(
     output.initialize(m_config, *m_geometry, m_internal_viewing_geometry,
                       atmosphere);
 
+    // Optical depth depends only on the initialized atmosphere and geometry.
+    // Calculate it before the early return used by the Rust wavelength
+    // threading path so threaded and non-threaded outputs are identical.
+    if (m_config.output_los_optical_depth()) {
+        m_source_integrator->integrate_optical_depth(
+            output.los_optical_depth());
+    }
+
     if (only_initialize) {
         return;
     }
@@ -389,8 +485,7 @@ void Sasktran2<NSTOKES>::calculate_radiance(
 
 #pragma omp parallel for num_threads(m_config.num_source_threads())            \
     schedule(dynamic)
-        for (int i = 0; i < m_internal_viewing_geometry.traced_rays.size();
-             ++i) {
+        for (int i = 0; i < m_internal_viewing_geometry.num_rays(); ++i) {
 #ifdef SKTRAN_OPENMP_SUPPORT
             int ray_threadidx = omp_get_thread_num() + thread_idx;
 #else
@@ -449,11 +544,6 @@ void Sasktran2<NSTOKES>::calculate_radiance(
         }
         FrameMarkEnd("Frame");
     }
-
-    if (m_config.output_los_optical_depth()) {
-        m_source_integrator->integrate_optical_depth(
-            output.los_optical_depth());
-    }
 }
 
 template <int NSTOKES>
@@ -481,7 +571,7 @@ void Sasktran2<NSTOKES>::calculate_radiance_thread(
 
 #pragma omp parallel for num_threads(m_config.num_source_threads())            \
     schedule(dynamic)
-    for (int i = 0; i < m_internal_viewing_geometry.traced_rays.size(); ++i) {
+    for (int i = 0; i < m_internal_viewing_geometry.num_rays(); ++i) {
 #ifdef SKTRAN_OPENMP_SUPPORT
         int ray_threadidx = omp_get_thread_num() + thread_idx;
 #else

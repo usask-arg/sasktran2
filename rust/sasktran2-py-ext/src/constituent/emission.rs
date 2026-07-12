@@ -7,6 +7,7 @@ use sasktran2_rs::constituent::traits::Constituent;
 use sasktran2_rs::constituent::types::emission::ThermalEmission as RustThermalEmissionCore;
 
 use crate::constituent::atmo_storage::AtmosphereStorage;
+use crate::prelude::IntoPyResult;
 
 #[pyclass]
 /// An implementation of thermal emissions calculated from the Planck function. The emission is
@@ -33,7 +34,9 @@ impl PyThermalEmission {
     pub fn add_to_atmosphere<'py>(&self, atmo: &Bound<'py, PyAny>) -> PyResult<()> {
         let mut rust_atmo = AtmosphereStorage::new(atmo)?;
 
-        let _ = self.inner.add_to_atmosphere(&mut rust_atmo);
+        self.inner
+            .add_to_atmosphere(&mut rust_atmo)
+            .into_pyresult()?;
 
         Ok(())
     }
@@ -41,7 +44,9 @@ impl PyThermalEmission {
     pub fn register_derivative(&self, atmo: &'_ Bound<'_, PyAny>, name: &str) -> PyResult<()> {
         let mut rust_atmo = AtmosphereStorage::new(atmo)?;
 
-        let _ = self.inner.register_derivatives(&mut rust_atmo, name);
+        self.inner
+            .register_derivatives(&mut rust_atmo, name)
+            .into_pyresult()?;
 
         Ok(())
     }

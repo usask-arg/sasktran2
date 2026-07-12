@@ -21,6 +21,13 @@ class AirMassFactor(Constituent):
         pass
 
     def register_derivative(self, atmo: Atmosphere, name: str):  # noqa: ARG002
+        if len(atmo.volume_shape) > 1:
+            msg = (
+                "AirMassFactor does not yet define whether 2D weighting functions "
+                "are independent per node or coupled altitude profiles"
+            )
+            raise NotImplementedError(msg)
+
         altitudes = atmo.model_geometry.altitudes()
 
         alt_factors = -1 / np.gradient(altitudes)

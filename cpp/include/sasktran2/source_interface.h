@@ -38,6 +38,10 @@ template <int NSTOKES> class SourceTermInterface {
         const sasktran2::viewinggeometry::InternalViewingGeometry&
             internal_viewing){};
 
+    /** Initializes geometry for structured 2D traced rays. */
+    virtual void initialize_geometry(
+        const std::vector<sasktran2::raytracing::TracedRay2D>& traced_rays){};
+
     /**
      *
      */

@@ -62,7 +62,7 @@ namespace sasktran2 {
          */
         virtual void initialize(
             const sasktran2::Config& config,
-            const sasktran2::Geometry1D& geometry,
+            const sasktran2::Geometry& geometry,
             const sasktran2::viewinggeometry::InternalViewingGeometry&
                 internal_viewing,
             const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere);

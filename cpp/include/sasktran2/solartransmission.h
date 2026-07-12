@@ -453,7 +453,8 @@ namespace sasktran2::solartransmission {
         /** Initializes termination information for standalone structured 2D
          * rays. */
         void initialize_geometry(
-            const std::vector<sasktran2::raytracing::TracedRay2D>& traced_rays);
+            const std::vector<sasktran2::raytracing::TracedRay2D>& traced_rays)
+            override;
 
         /**
          *
