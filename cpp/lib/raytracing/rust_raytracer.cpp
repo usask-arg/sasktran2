@@ -197,21 +197,26 @@ namespace sasktran2::rust::raytracer {
             layer.saz_exit = rust_layer.saz_exit;
             layer.altitude_cell = rust_layer.cell_altitude_index;
             layer.horizontal_cell = rust_layer.cell_horizontal_index;
-
-            m_geometry.assign_interpolation_weights(
-                layer.entrance, layer.entrance_interpolation_weights_2d);
-            m_geometry.assign_interpolation_weights(
-                layer.exit, layer.exit_interpolation_weights_2d);
-            if (!layer.entrance_interpolation_weights_2d.empty()) {
-                layer.entrance.lower_alt_index =
-                    layer.entrance_interpolation_weights_2d.front().first %
-                    m_geometry.num_altitudes();
-            }
-            if (!layer.exit_interpolation_weights_2d.empty()) {
-                layer.exit.lower_alt_index =
-                    layer.exit_interpolation_weights_2d.front().first %
-                    m_geometry.num_altitudes();
-            }
+            const auto entrance_coordinates =
+                m_geometry.cell_interpolation_coordinates(
+                    layer.entrance, layer.altitude_cell, layer.horizontal_cell);
+            const auto exit_coordinates =
+                m_geometry.cell_interpolation_coordinates(
+                    layer.exit, layer.altitude_cell, layer.horizontal_cell);
+            layer.entrance_interpolation.altitude_upper_weight =
+                entrance_coordinates.first;
+            layer.entrance_interpolation.horizontal_upper_weight =
+                entrance_coordinates.second;
+            layer.exit_interpolation.altitude_upper_weight =
+                exit_coordinates.first;
+            layer.exit_interpolation.horizontal_upper_weight =
+                exit_coordinates.second;
+            layer.integrated_od.weights = {rust_layer.integrated_od_weight_0,
+                                           rust_layer.integrated_od_weight_1,
+                                           rust_layer.integrated_od_weight_2,
+                                           rust_layer.integrated_od_weight_3};
+            layer.entrance.lower_alt_index = layer.altitude_cell;
+            layer.exit.lower_alt_index = layer.altitude_cell;
         }
 
       private:

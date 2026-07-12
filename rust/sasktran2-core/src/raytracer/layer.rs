@@ -84,6 +84,9 @@ pub struct Layer {
     pub od_quad_end: f64,
     pub od_quad_start_fraction: f64,
     pub od_quad_end_fraction: f64,
+    /// Integrated local cell-basis weights, altitude-fastest. Structured 2D
+    /// layers use all four entries; other geometries leave them zero.
+    pub integrated_cell_weights: [f64; 4],
     pub saz_entrance: f64,
     pub saz_exit: f64,
     pub cos_sza_entrance: f64,
@@ -112,6 +115,7 @@ impl Layer {
             od_quad_end: 0.0,
             od_quad_start_fraction: 0.0,
             od_quad_end_fraction: 0.0,
+            integrated_cell_weights: [0.0; 4],
             saz_entrance: 0.0,
             saz_exit: 0.0,
             cos_sza_entrance: 0.0,
@@ -132,6 +136,7 @@ impl Layer {
             od_quad_end: 0.0,
             od_quad_start_fraction: 0.0,
             od_quad_end_fraction: 0.0,
+            integrated_cell_weights: [0.0; 4],
             saz_entrance: 0.0,
             saz_exit: 0.0,
             cos_sza_entrance: 0.0,

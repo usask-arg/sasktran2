@@ -253,6 +253,40 @@ impl StructuredGrid2D {
         result
     }
 
+    /// Bilinear basis weights for a point interpreted from one specified
+    /// structured cell. This makes boundary interpolation one-sided and keeps
+    /// every traced layer on exactly four cell-local nodes.
+    pub fn cell_basis_weights(
+        &self,
+        point: Vec3,
+        altitude_index: usize,
+        horizontal_index: usize,
+    ) -> [f64; 4] {
+        let altitude_upper = match self.altitude_interpolation {
+            InterpolationMethod::Lower => 0.0,
+            InterpolationMethod::Shell => 0.5,
+            InterpolationMethod::Linear => {
+                let lower = self.altitudes[altitude_index];
+                let upper = self.altitudes[altitude_index + 1];
+                ((self.altitude_at(point) - lower) / (upper - lower)).clamp(0.0, 1.0)
+            }
+        };
+        let horizontal_lower = self.horizontal_angles[horizontal_index];
+        let horizontal_upper = self.horizontal_angles[horizontal_index + 1];
+        let horizontal_fraction = ((self.horizontal_angle_at(point) - horizontal_lower)
+            / (horizontal_upper - horizontal_lower))
+            .clamp(0.0, 1.0);
+
+        let altitude_lower = 1.0 - altitude_upper;
+        let horizontal_lower = 1.0 - horizontal_fraction;
+        [
+            horizontal_lower * altitude_lower,
+            horizontal_lower * altitude_upper,
+            horizontal_fraction * altitude_lower,
+            horizontal_fraction * altitude_upper,
+        ]
+    }
+
     pub(crate) fn horizontal_topology_boundaries(
         &self,
     ) -> impl Iterator<Item = (Option<usize>, f64)> + '_ {
@@ -748,6 +782,47 @@ mod tests {
 
         assert!((grid.horizontal_angle_at(point) - 0.25).abs() < 1e-12);
         assert_eq!(grid.locate_indices(point, 1e-12), Some((0, 1)));
+    }
+
+    #[test]
+    fn cell_basis_weights_are_one_sided_on_shared_boundaries() {
+        let grid = grid();
+        let corner = point(20.0, 0.0);
+
+        assert_eq!(grid.cell_basis_weights(corner, 0, 0), [0.0, 0.0, 0.0, 1.0]);
+        assert_eq!(grid.cell_basis_weights(corner, 1, 1), [1.0, 0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn cell_basis_weights_honor_shell_lower_and_extended_edges() {
+        let shell = StructuredGrid2D::new(
+            10.0,
+            vec![0.0, 10.0, 20.0],
+            vec![-0.5, 0.0, 0.5],
+            InterpolationMethod::Shell,
+        )
+        .unwrap();
+        assert_eq!(
+            shell.cell_basis_weights(point(20.0, 0.25), 1, 1),
+            [0.25, 0.25, 0.25, 0.25]
+        );
+        assert_eq!(
+            shell.cell_basis_weights(point(15.0, -0.75), 0, 0),
+            [0.5, 0.5, 0.0, 0.0]
+        );
+
+        let lower = StructuredGrid2D::new(
+            10.0,
+            vec![0.0, 10.0, 20.0],
+            vec![-0.5, 0.0, 0.5],
+            InterpolationMethod::Lower,
+        )
+        .unwrap();
+        let weights = lower.cell_basis_weights(point(15.0, 0.25), 0, 1);
+        assert!((weights[0] - 0.5).abs() < 1e-12);
+        assert_eq!(weights[1], 0.0);
+        assert!((weights[2] - 0.5).abs() < 1e-12);
+        assert_eq!(weights[3], 0.0);
     }
 
     #[test]

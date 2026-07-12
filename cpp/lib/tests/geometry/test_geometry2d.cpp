@@ -303,6 +303,33 @@ TEST_CASE("Geometry2D collapses interpolation on exact axes",
     }
 }
 
+TEST_CASE("Geometry2D cell interpolation coordinates are one-sided",
+          "[sasktran2][geometry2d]") {
+    auto geometry = geometry2d();
+    const auto corner = location(geometry, 10.0, 0.0);
+
+    const auto lower_left =
+        geometry.cell_interpolation_coordinates(corner, 0, 0);
+    REQUIRE(lower_left.first == Catch::Approx(1.0));
+    REQUIRE(lower_left.second == Catch::Approx(1.0));
+
+    const auto upper_right =
+        geometry.cell_interpolation_coordinates(corner, 1, 1);
+    REQUIRE(upper_right.first == Catch::Approx(0.0));
+    REQUIRE(upper_right.second == Catch::Approx(0.0));
+
+    const auto left_extension = geometry.cell_interpolation_coordinates(
+        location(geometry, 5.0, -2.0), 0, 0);
+    REQUIRE(left_extension.second == Catch::Approx(0.0));
+    const auto right_extension = geometry.cell_interpolation_coordinates(
+        location(geometry, 5.0, 2.0), 0, 1);
+    REQUIRE(right_extension.second == Catch::Approx(1.0));
+    REQUIRE_THROWS_AS(geometry.cell_interpolation_coordinates(corner, -1, 0),
+                      std::out_of_range);
+    REQUIRE_THROWS_AS(geometry.cell_interpolation_coordinates(corner, 0, 2),
+                      std::out_of_range);
+}
+
 TEST_CASE("Geometry2D combines each altitude interpolation mode with linear "
           "horizontal interpolation",
           "[sasktran2][geometry][geometry2d][interpolation]") {

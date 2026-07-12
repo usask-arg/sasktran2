@@ -44,17 +44,18 @@ namespace {
         REQUIRE(std::abs(actual - expected) <= absolute_tolerance);
     }
 
-    void require_weights_match_geometry(
+    void require_weights_match_cell(
         const sasktran2::Geometry2D& geometry,
-        const sasktran2::Location& location,
-        const std::vector<std::pair<int, double>>& actual) {
-        std::vector<std::pair<int, double>> expected;
-        geometry.assign_interpolation_weights(location, expected);
-        REQUIRE(actual.size() == expected.size());
-        for (std::size_t index = 0; index < expected.size(); ++index) {
-            REQUIRE(actual[index].first == expected[index].first);
-            require_close(actual[index].second, expected[index].second);
-        }
+        const sasktran2::Location& location, int altitude_cell,
+        int horizontal_cell,
+        const sasktran2::raytracing::InterpolationCoordinates2D& actual) {
+        const auto expected = geometry.cell_interpolation_coordinates(
+            location, altitude_cell, horizontal_cell);
+        require_close(actual.altitude_upper_weight, expected.first);
+        require_close(actual.horizontal_upper_weight, expected.second);
+        const auto weights = actual.weights();
+        require_close(std::accumulate(weights.begin(), weights.end(), 0.0),
+                      1.0);
     }
 } // namespace
 
@@ -78,12 +79,15 @@ TEST_CASE("RustRayTracer2D traces radial layers and exposes 2D cells",
     require_close(traced.layers[1].layer_distance, 10.0);
 
     for (const auto& layer : traced.layers) {
-        require_weights_match_geometry(geo, layer.entrance,
-                                       layer.entrance_interpolation_weights_2d);
-        require_weights_match_geometry(geo, layer.exit,
-                                       layer.exit_interpolation_weights_2d);
-        REQUIRE(layer.entrance_interpolation_weights_2d.size() <= 4);
-        REQUIRE(layer.exit_interpolation_weights_2d.size() <= 4);
+        require_weights_match_cell(geo, layer.entrance, layer.altitude_cell,
+                                   layer.horizontal_cell,
+                                   layer.entrance_interpolation);
+        require_weights_match_cell(geo, layer.exit, layer.altitude_cell,
+                                   layer.horizontal_cell,
+                                   layer.exit_interpolation);
+        require_close(std::accumulate(layer.integrated_od.weights.begin(),
+                                      layer.integrated_od.weights.end(), 0.0),
+                      layer.layer_distance * layer.curvature_factor);
         REQUIRE(std::isfinite(layer.cos_sza_entrance));
         REQUIRE(std::isfinite(layer.saz_entrance));
         REQUIRE(layer.entrance.lower_alt_index >= 0);
@@ -104,18 +108,103 @@ TEST_CASE(
         ray(25.0 * radial_direction(-0.25), radial_direction(-0.25)), traced);
 
     REQUIRE(traced.layers.size() == 1);
-    const auto& weights = traced.layers[0].entrance_interpolation_weights_2d;
-    REQUIRE(weights.size() ==
-            (interpolation == sasktran2::grids::interpolation::lower ? 2 : 4));
-    double sum = 0.0;
-    for (const auto& [index, weight] : weights) {
-        CAPTURE(index, weight);
-        sum += weight;
+    const auto& layer = traced.layers[0];
+    const auto weights = layer.entrance_interpolation.weights();
+    require_close(std::accumulate(weights.begin(), weights.end(), 0.0), 1.0);
+    if (interpolation == sasktran2::grids::interpolation::lower) {
+        require_close(weights[1], 0.0);
+        require_close(weights[3], 0.0);
+    } else if (interpolation == sasktran2::grids::interpolation::shell) {
+        require_close(weights[1] + weights[3], 0.5);
     }
-    require_close(sum, 1.0);
-    require_weights_match_geometry(
-        geo, traced.layers[0].entrance,
-        traced.layers[0].entrance_interpolation_weights_2d);
+    require_weights_match_cell(geo, layer.entrance, layer.altitude_cell,
+                               layer.horizontal_cell,
+                               layer.entrance_interpolation);
+}
+
+TEST_CASE("RustRayTracer2D exposes conservative four-node OD weights",
+          "[raytracing][rust][geometry2d]") {
+    STATIC_REQUIRE(sizeof(sasktran2::raytracing::InterpolationCoordinates2D) ==
+                   16);
+    STATIC_REQUIRE(sizeof(sasktran2::raytracing::IntegratedCellPath2D) == 32);
+
+    const auto interpolation = GENERATE(sasktran2::grids::interpolation::linear,
+                                        sasktran2::grids::interpolation::shell,
+                                        sasktran2::grids::interpolation::lower);
+    const bool refracted = GENERATE(false, true);
+    CAPTURE(interpolation, refracted);
+
+    auto geo = geometry(interpolation);
+    sasktran2::raytracing::RustRayTracer2D tracer(geo);
+    sasktran2::raytracing::TracedRay2D traced;
+    const auto oblique_ray =
+        ray(15.0 * radial_direction(-0.25), Eigen::Vector3d::UnitX());
+    if (refracted) {
+        tracer.trace_ray(oblique_ray, values({1.02, 1.01, 1.0}), traced);
+    } else {
+        tracer.trace_ray(oblique_ray, traced);
+    }
+
+    const std::array<double, 4> field = {0.3, 1.1, 2.7, 4.2};
+    for (const auto& layer : traced.layers) {
+        const double weight_sum =
+            std::accumulate(layer.integrated_od.weights.begin(),
+                            layer.integrated_od.weights.end(), 0.0);
+        require_close(weight_sum, layer.layer_distance * layer.curvature_factor,
+                      2e-8);
+        REQUIRE(std::all_of(layer.integrated_od.weights.begin(),
+                            layer.integrated_od.weights.end(),
+                            [](double weight) {
+                                return std::isfinite(weight) && weight >= 0.0;
+                            }));
+
+        const double optical_depth = std::inner_product(
+            layer.integrated_od.weights.begin(),
+            layer.integrated_od.weights.end(), field.begin(), 0.0);
+        REQUIRE(std::isfinite(optical_depth));
+        for (std::size_t index = 0; index < field.size(); ++index) {
+            auto perturbed = field;
+            constexpr double delta = 1e-6;
+            perturbed[index] += delta;
+            const double perturbed_od = std::inner_product(
+                layer.integrated_od.weights.begin(),
+                layer.integrated_od.weights.end(), perturbed.begin(), 0.0);
+            require_close((perturbed_od - optical_depth) / delta,
+                          layer.integrated_od.weights[index], 2e-8);
+        }
+    }
+
+    Eigen::SparseMatrix<double, Eigen::RowMajor> matrix;
+    sasktran2::raytracing::construct_od_matrix(traced, geo, matrix);
+    REQUIRE(matrix.rows() == traced.layers.size());
+    REQUIRE(matrix.cols() == geo.size());
+    for (int layer_index = 0; layer_index < traced.layers.size();
+         ++layer_index) {
+        const auto& layer = traced.layers[layer_index];
+        const std::array<int, 4> indices = {
+            geo.location_index(layer.altitude_cell, layer.horizontal_cell),
+            geo.location_index(layer.altitude_cell + 1, layer.horizontal_cell),
+            geo.location_index(layer.altitude_cell, layer.horizontal_cell + 1),
+            geo.location_index(layer.altitude_cell + 1,
+                               layer.horizontal_cell + 1)};
+        for (int local_index = 0; local_index < 4; ++local_index) {
+            require_close(matrix.coeff(layer_index, indices[local_index]),
+                          layer.integrated_od.weights[local_index], 1e-12);
+        }
+    }
+
+    Eigen::MatrixXd spectra(geo.size(), 4);
+    for (int location_index = 0; location_index < spectra.rows();
+         ++location_index) {
+        for (int wavelength = 0; wavelength < spectra.cols(); ++wavelength) {
+            spectra(location_index, wavelength) =
+                1e-6 * (1.0 + 0.13 * location_index + 0.21 * wavelength);
+        }
+    }
+    const Eigen::MatrixXd optical_depth = matrix * spectra;
+    REQUIRE(optical_depth.rows() == traced.layers.size());
+    REQUIRE(optical_depth.cols() == spectra.cols());
+    REQUIRE(optical_depth.allFinite());
 }
 
 TEST_CASE("RustRayTracer2D splits rays at internal horizontal nodes",
@@ -153,11 +242,8 @@ TEST_CASE("RustRayTracer2D horizontally extends edge cells and clamps weights",
         REQUIRE(traced.layers.size() == 2);
         for (const auto& layer : traced.layers) {
             REQUIRE(layer.horizontal_cell == 0);
-            for (const auto& [index, weight] :
-                 layer.entrance_interpolation_weights_2d) {
-                REQUIRE(index < geo.num_altitudes());
-                REQUIRE(weight >= 0.0);
-            }
+            require_close(layer.entrance_interpolation.horizontal_upper_weight,
+                          0.0);
         }
     }
 
@@ -169,11 +255,8 @@ TEST_CASE("RustRayTracer2D horizontally extends edge cells and clamps weights",
         REQUIRE(traced.layers.size() == 2);
         for (const auto& layer : traced.layers) {
             REQUIRE(layer.horizontal_cell == 1);
-            for (const auto& [index, weight] :
-                 layer.entrance_interpolation_weights_2d) {
-                REQUIRE(index >= 2 * geo.num_altitudes());
-                REQUIRE(weight >= 0.0);
-            }
+            require_close(layer.entrance_interpolation.horizontal_upper_weight,
+                          1.0);
         }
     }
 }

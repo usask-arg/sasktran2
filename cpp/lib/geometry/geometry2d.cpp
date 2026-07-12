@@ -264,6 +264,45 @@ namespace sasktran2 {
         return unwrap_angle_near(raw_angle, center);
     }
 
+    std::pair<double, double>
+    Geometry2D::cell_interpolation_coordinates(const Location& location,
+                                               int altitude_cell,
+                                               int horizontal_cell) const {
+        if (altitude_cell < 0 ||
+            altitude_cell >= m_alt_grid.grid().size() - 1 ||
+            horizontal_cell < 0 ||
+            horizontal_cell >= m_horizontal_angles.size() - 1) {
+            throw std::out_of_range("Invalid Geometry2D cell index");
+        }
+        double altitude_upper;
+        switch (m_alt_grid.interpolation_method()) {
+        case grids::interpolation::lower:
+            altitude_upper = 0.0;
+            break;
+        case grids::interpolation::shell:
+            altitude_upper = 0.5;
+            break;
+        case grids::interpolation::linear: {
+            const double lower = m_alt_grid.grid()[altitude_cell];
+            const double upper = m_alt_grid.grid()[altitude_cell + 1];
+            altitude_upper = std::clamp(
+                (altitude_at(location) - lower) / (upper - lower), 0.0, 1.0);
+            break;
+        }
+        default:
+            altitude_upper = std::numeric_limits<double>::quiet_NaN();
+        }
+
+        const double horizontal_lower = m_horizontal_angles[horizontal_cell];
+        const double horizontal_upper =
+            m_horizontal_angles[horizontal_cell + 1];
+        const double horizontal_fraction =
+            std::clamp((horizontal_angle_at(location) - horizontal_lower) /
+                           (horizontal_upper - horizontal_lower),
+                       0.0, 1.0);
+        return {altitude_upper, horizontal_fraction};
+    }
+
     std::optional<std::pair<int, int>>
     Geometry2D::cell_indices(const Location& location) const {
         const double altitude = altitude_at(location);

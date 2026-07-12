@@ -414,6 +414,13 @@ namespace sasktran2 {
         double altitude_at(const Location& location) const;
         double horizontal_angle_at(const Location& location) const;
 
+        /** Returns the upper-node fractions in altitude and horizontal angle
+         * for a location interpreted within one specified cell. */
+        std::pair<double, double>
+        cell_interpolation_coordinates(const Location& location,
+                                       int altitude_cell,
+                                       int horizontal_cell) const;
+
         /** Returns (altitude_cell, horizontal_cell), or no cell when outside
          * the finite altitude domain. Horizontal edge cells extend without
          * bound.

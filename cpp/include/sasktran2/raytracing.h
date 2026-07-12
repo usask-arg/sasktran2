@@ -111,6 +111,25 @@ namespace sasktran2::raytracing {
         }
     };
 
+    /** Cell-local interpolation coordinates for a structured 2D endpoint. */
+    struct InterpolationCoordinates2D {
+        double altitude_upper_weight = 0.0;
+        double horizontal_upper_weight = 0.0;
+
+        std::array<double, 4> weights() const {
+            const double altitude_lower = 1.0 - altitude_upper_weight;
+            const double horizontal_lower = 1.0 - horizontal_upper_weight;
+            return {horizontal_lower * altitude_lower,
+                    horizontal_lower * altitude_upper_weight,
+                    horizontal_upper_weight * altitude_lower,
+                    horizontal_upper_weight * altitude_upper_weight};
+        }
+    };
+
+    struct IntegratedCellPath2D {
+        std::array<double, 4> weights = {0.0, 0.0, 0.0, 0.0};
+    };
+
     // Values needed to integrate a layer.  Rather than interpolating anything
     // we directly store weights/indices to the optical table to speed up
     // calculations over multiple wavelengths and allow for easier calculation
@@ -205,8 +224,9 @@ namespace sasktran2::raytracing {
         int altitude_cell = -1; /**< Altitude-cell index for this segment. */
         int horizontal_cell =
             -1; /**< Horizontal-cell index for this segment. */
-        std::vector<std::pair<int, double>> entrance_interpolation_weights_2d;
-        std::vector<std::pair<int, double>> exit_interpolation_weights_2d;
+        InterpolationCoordinates2D entrance_interpolation;
+        InterpolationCoordinates2D exit_interpolation;
+        IntegratedCellPath2D integrated_od;
     };
 
     /** Standalone traced-ray output for Geometry2D.
@@ -550,6 +570,40 @@ namespace sasktran2::raytracing {
             }
         }
         result.setFromTriplets(tripletList.begin(), tripletList.end());
+    }
+
+    /** Constructs the four-node-per-layer optical-depth matrix for a
+     * standalone structured 2D traced ray. */
+    inline void
+    construct_od_matrix(const TracedRay2D& traced_ray,
+                        const Geometry2D& geometry,
+                        Eigen::SparseMatrix<double, Eigen::RowMajor>& result) {
+        result.resize(static_cast<long>(traced_ray.layers.size()),
+                      geometry.size());
+        std::vector<Eigen::Triplet<double>> triplets;
+        triplets.reserve(traced_ray.layers.size() * 4);
+
+        for (int layer_index = 0; layer_index < traced_ray.layers.size();
+             ++layer_index) {
+            const auto& layer = traced_ray.layers[layer_index];
+            const std::array<int, 4> location_indices = {
+                geometry.location_index(layer.altitude_cell,
+                                        layer.horizontal_cell),
+                geometry.location_index(layer.altitude_cell + 1,
+                                        layer.horizontal_cell),
+                geometry.location_index(layer.altitude_cell,
+                                        layer.horizontal_cell + 1),
+                geometry.location_index(layer.altitude_cell + 1,
+                                        layer.horizontal_cell + 1)};
+            for (int local_index = 0; local_index < 4; ++local_index) {
+                if (layer.integrated_od.weights[local_index] != 0.0) {
+                    triplets.emplace_back(
+                        layer_index, location_indices[local_index],
+                        layer.integrated_od.weights[local_index]);
+                }
+            }
+        }
+        result.setFromTriplets(triplets.begin(), triplets.end());
     }
 
     /** Abstract base interface class for a ray tracer
