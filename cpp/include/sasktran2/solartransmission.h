@@ -29,6 +29,14 @@ namespace sasktran2::solartransmission {
         for (int i = 0; i < traced_ray.layers.size(); ++i) {
             const auto& layer = traced_ray.layers[i];
 
+            if (layer.integrated_od.valid()) {
+                for (int j = 0; j < 2; ++j) {
+                    result(row, layer.integrated_od.cell_index + j) +=
+                        layer.integrated_od.weights[j];
+                }
+                continue;
+            }
+
             geometry.assign_interpolation_weights(layer.entrance,
                                                   index_weights);
 

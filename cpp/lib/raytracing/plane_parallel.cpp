@@ -58,7 +58,7 @@ namespace sasktran2::raytracing {
         result.observer_and_look = ray;
         result.ground_is_hit = true;
 
-        result.layers.resize(m_alt_grid.grid().size());
+        result.layers.resize(m_alt_grid.grid().size() - 1);
 
         for (int i = 0; i < m_alt_grid.grid().size() - 1; ++i) {
             complete_layer(result.layers[i], ray, i, ViewingDirection::down);
@@ -166,6 +166,7 @@ namespace sasktran2::raytracing {
         add_od_quadrature(layer, sasktran2::geometrytype::planeparallel,
                           m_alt_grid.interpolation_method());
         add_interpolation_weights(layer, m_geometry);
+        add_integrated_od_weights(layer, m_geometry);
     }
 
     void PlaneParallelRayTracer::partial_layer(
@@ -201,6 +202,7 @@ namespace sasktran2::raytracing {
         add_od_quadrature(layer, sasktran2::geometrytype::planeparallel,
                           m_alt_grid.interpolation_method());
         add_interpolation_weights(layer, m_geometry);
+        add_integrated_od_weights(layer, m_geometry);
     }
 
     double PlaneParallelRayTracer::distance_to_altitude(

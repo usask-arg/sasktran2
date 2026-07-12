@@ -17,12 +17,12 @@ namespace {
         return result;
     }
 
-    sasktran2::Geometry2D geometry2d(
-        sasktran2::grids::interpolation interpolation =
-            sasktran2::grids::interpolation::linear) {
-        return sasktran2::Geometry2D(
-            0.5, 0.25, earth_radius_m, grid({0.0, 10.0, 20.0}),
-            grid({-0.5, 0.0, 0.5}), interpolation);
+    sasktran2::Geometry2D
+    geometry2d(sasktran2::grids::interpolation interpolation =
+                   sasktran2::grids::interpolation::linear) {
+        return sasktran2::Geometry2D(0.5, 0.25, earth_radius_m,
+                                     grid({0.0, 10.0, 20.0}),
+                                     grid({-0.5, 0.0, 0.5}), interpolation);
     }
 
     sasktran2::Location location(const sasktran2::Geometry2D& geometry,
@@ -37,8 +37,7 @@ namespace {
             std::sin(omitted_angle) * coordinates.reference_y();
 
         sasktran2::Location result;
-        result.position =
-            (coordinates.earth_radius() + altitude) * direction;
+        result.position = (coordinates.earth_radius() + altitude) * direction;
         return result;
     }
 
@@ -49,11 +48,10 @@ namespace {
     }
 
     double weight_sum(const std::vector<std::pair<int, double>>& weights) {
-        return std::accumulate(
-            weights.begin(), weights.end(), 0.0,
-            [](double total, const auto& weight) {
-                return total + weight.second;
-            });
+        return std::accumulate(weights.begin(), weights.end(), 0.0,
+                               [](double total, const auto& weight) {
+                                   return total + weight.second;
+                               });
     }
 } // namespace
 
@@ -68,24 +66,21 @@ TEST_CASE("Geometry2D construction and metadata",
     REQUIRE(geometry.num_cells() == 4);
     REQUIRE(geometry.location_shape() == std::make_pair(3, 3));
     REQUIRE(geometry.cell_shape() == std::make_pair(2, 2));
-    REQUIRE(geometry.altitude_grid().grid().isApprox(
-        grid({0.0, 10.0, 20.0})));
-    REQUIRE(geometry.horizontal_angle_grid().isApprox(
-        grid({-0.5, 0.0, 0.5})));
+    REQUIRE(geometry.altitude_grid().grid().isApprox(grid({0.0, 10.0, 20.0})));
+    REQUIRE(geometry.horizontal_angle_grid().isApprox(grid({-0.5, 0.0, 0.5})));
     REQUIRE(geometry.altitude_grid().interpolation_method() ==
             sasktran2::grids::interpolation::linear);
 }
 
 TEST_CASE("Geometry2D accepts an explicit rotated coordinate basis",
           "[sasktran2][geometry][geometry2d]") {
-    sasktran2::Coordinates coordinates(
-        Eigen::Vector3d::UnitX(), -Eigen::Vector3d::UnitZ(),
-        Eigen::Vector3d::UnitX(), earth_radius_m,
-        sasktran2::geometrytype::spherical);
-    sasktran2::Geometry2D geometry(
-        std::move(coordinates), grid({0.0, 10.0}),
-        grid({-0.5, 0.0, 0.5}),
-        sasktran2::grids::interpolation::shell);
+    sasktran2::Coordinates coordinates(Eigen::Vector3d::UnitX(),
+                                       -Eigen::Vector3d::UnitZ(),
+                                       Eigen::Vector3d::UnitX(), earth_radius_m,
+                                       sasktran2::geometrytype::spherical);
+    sasktran2::Geometry2D geometry(std::move(coordinates), grid({0.0, 10.0}),
+                                   grid({-0.5, 0.0, 0.5}),
+                                   sasktran2::grids::interpolation::shell);
 
     REQUIRE(geometry.coordinates().reference_z().isApprox(
         Eigen::Vector3d::UnitX()));
@@ -96,15 +91,14 @@ TEST_CASE("Geometry2D accepts an explicit rotated coordinate basis",
 
     const Eigen::Vector3d point = geometry.grid_location(1, 2);
     REQUIRE(point.norm() == Catch::Approx(earth_radius_m + 10.0));
-    REQUIRE(point.normalized().isApprox(
-        std::sin(0.5) * -Eigen::Vector3d::UnitZ() +
-        std::cos(0.5) * Eigen::Vector3d::UnitX()));
+    REQUIRE(
+        point.normalized().isApprox(std::sin(0.5) * -Eigen::Vector3d::UnitZ() +
+                                    std::cos(0.5) * Eigen::Vector3d::UnitX()));
 }
 
 TEST_CASE("Geometry2D validates its grids and coordinate type",
           "[sasktran2][geometry][geometry2d][validation]") {
-    const auto construct = [](Eigen::VectorXd altitudes,
-                              Eigen::VectorXd angles,
+    const auto construct = [](Eigen::VectorXd altitudes, Eigen::VectorXd angles,
                               sasktran2::grids::interpolation interpolation =
                                   sasktran2::grids::interpolation::linear) {
         return sasktran2::Geometry2D(0.5, 0.0, earth_radius_m,
@@ -115,33 +109,29 @@ TEST_CASE("Geometry2D validates its grids and coordinate type",
     SECTION("altitude grid") {
         REQUIRE_THROWS_AS(construct(grid({0.0}), grid({-0.5, 0.5})),
                           std::runtime_error);
-        REQUIRE_THROWS_AS(
-            construct(grid({0.0, 0.0}), grid({-0.5, 0.5})),
-            std::runtime_error);
+        REQUIRE_THROWS_AS(construct(grid({0.0, 0.0}), grid({-0.5, 0.5})),
+                          std::runtime_error);
         REQUIRE_THROWS_AS(
             construct(grid({0.0, std::numeric_limits<double>::quiet_NaN()}),
                       grid({-0.5, 0.5})),
             std::runtime_error);
-        REQUIRE_THROWS_AS(
-            sasktran2::Geometry2D(
-                0.5, 0.0, earth_radius_m,
-                grid({-earth_radius_m, 0.0}), grid({-0.5, 0.5})),
-            std::runtime_error);
+        REQUIRE_THROWS_AS(sasktran2::Geometry2D(0.5, 0.0, earth_radius_m,
+                                                grid({-earth_radius_m, 0.0}),
+                                                grid({-0.5, 0.5})),
+                          std::runtime_error);
     }
 
     SECTION("horizontal grid") {
         REQUIRE_THROWS_AS(construct(grid({0.0, 10.0}), grid({0.0})),
                           std::runtime_error);
-        REQUIRE_THROWS_AS(
-            construct(grid({0.0, 10.0}), grid({0.0, 0.0})),
-            std::runtime_error);
+        REQUIRE_THROWS_AS(construct(grid({0.0, 10.0}), grid({0.0, 0.0})),
+                          std::runtime_error);
         REQUIRE_THROWS_AS(
             construct(grid({0.0, 10.0}),
                       grid({0.0, std::numeric_limits<double>::infinity()})),
             std::runtime_error);
-        REQUIRE_THROWS_AS(
-            construct(grid({0.0, 10.0}), grid({0.0, EIGEN_PI})),
-            std::runtime_error);
+        REQUIRE_THROWS_AS(construct(grid({0.0, 10.0}), grid({0.0, EIGEN_PI})),
+                          std::runtime_error);
     }
 
     SECTION("interpolation mode") {
@@ -153,12 +143,11 @@ TEST_CASE("Geometry2D validates its grids and coordinate type",
 
     SECTION("only spherical coordinates") {
         sasktran2::Coordinates coordinates(
-            0.5, 0.0, earth_radius_m,
-            sasktran2::geometrytype::pseudospherical);
-        REQUIRE_THROWS_AS(
-            sasktran2::Geometry2D(std::move(coordinates),
-                                  grid({0.0, 10.0}), grid({-0.5, 0.5})),
-            std::runtime_error);
+            0.5, 0.0, earth_radius_m, sasktran2::geometrytype::pseudospherical);
+        REQUIRE_THROWS_AS(sasktran2::Geometry2D(std::move(coordinates),
+                                                grid({0.0, 10.0}),
+                                                grid({-0.5, 0.5})),
+                          std::runtime_error);
     }
 }
 
@@ -222,17 +211,17 @@ TEST_CASE("Geometry2D extracts spherical altitude and horizontal angle",
 
 TEST_CASE("Geometry2D unwraps angles around the grid center",
           "[sasktran2][geometry][geometry2d][coordinates]") {
-    sasktran2::Geometry2D geometry(
-        0.5, 0.0, earth_radius_m, grid({0.0, 10.0}),
-        grid({3.0, 3.1, 3.2}));
+    sasktran2::Geometry2D geometry(0.5, 0.0, earth_radius_m, grid({0.0, 10.0}),
+                                   grid({3.0, 3.1, 3.2}));
     const double raw_angle = -3.1;
 
     REQUIRE(geometry.horizontal_angle_at(location(geometry, 5.0, raw_angle)) ==
             Catch::Approx(raw_angle + 2.0 * EIGEN_PI));
 }
 
-TEST_CASE("Geometry2D cell lookup has finite altitude and extended horizontal cells",
-          "[sasktran2][geometry][geometry2d][cells]") {
+TEST_CASE(
+    "Geometry2D cell lookup has finite altitude and extended horizontal cells",
+    "[sasktran2][geometry][geometry2d][cells]") {
     auto geometry = geometry2d();
 
     REQUIRE(geometry.cell_indices(location(geometry, 5.0, -0.25)) ==
@@ -260,9 +249,8 @@ TEST_CASE("Geometry2D cell lookup has finite altitude and extended horizontal ce
 
 TEST_CASE("Geometry2D two-node horizontal grid has one global cell",
           "[sasktran2][geometry][geometry2d][cells]") {
-    sasktran2::Geometry2D geometry(
-        0.5, 0.0, earth_radius_m, grid({0.0, 10.0}),
-        grid({-0.25, 0.25}));
+    sasktran2::Geometry2D geometry(0.5, 0.0, earth_radius_m, grid({0.0, 10.0}),
+                                   grid({-0.25, 0.25}));
 
     for (const double angle : {-3.0, -0.25, 0.0, 0.25, 3.0}) {
         REQUIRE(geometry.cell_indices(location(geometry, 5.0, angle)) ==
@@ -276,7 +264,7 @@ TEST_CASE("Geometry2D builds bilinear interpolation weights",
     std::vector<std::pair<int, double>> weights;
 
     geometry.assign_interpolation_weights(location(geometry, 5.0, -0.25),
-                                           weights);
+                                          weights);
 
     REQUIRE(weights.size() == 4);
     require_weight(weights[0], 0, 0.25);
@@ -293,14 +281,14 @@ TEST_CASE("Geometry2D collapses interpolation on exact axes",
 
     SECTION("exact node") {
         geometry.assign_interpolation_weights(location(geometry, 10.0, 0.0),
-                                               weights);
+                                              weights);
         REQUIRE(weights.size() == 1);
         require_weight(weights[0], 4, 1.0);
     }
 
     SECTION("exact altitude") {
-        geometry.assign_interpolation_weights(
-            location(geometry, 10.0, -0.25), weights);
+        geometry.assign_interpolation_weights(location(geometry, 10.0, -0.25),
+                                              weights);
         REQUIRE(weights.size() == 2);
         require_weight(weights[0], 1, 0.5);
         require_weight(weights[1], 4, 0.5);
@@ -308,24 +296,24 @@ TEST_CASE("Geometry2D collapses interpolation on exact axes",
 
     SECTION("exact horizontal angle") {
         geometry.assign_interpolation_weights(location(geometry, 5.0, 0.0),
-                                               weights);
+                                              weights);
         REQUIRE(weights.size() == 2);
         require_weight(weights[0], 3, 0.5);
         require_weight(weights[1], 4, 0.5);
     }
 }
 
-TEST_CASE("Geometry2D combines each altitude interpolation mode with linear horizontal interpolation",
+TEST_CASE("Geometry2D combines each altitude interpolation mode with linear "
+          "horizontal interpolation",
           "[sasktran2][geometry][geometry2d][interpolation]") {
-    const auto interpolation = GENERATE(
-        sasktran2::grids::interpolation::linear,
-        sasktran2::grids::interpolation::shell,
-        sasktran2::grids::interpolation::lower);
+    const auto interpolation = GENERATE(sasktran2::grids::interpolation::linear,
+                                        sasktran2::grids::interpolation::shell,
+                                        sasktran2::grids::interpolation::lower);
     auto geometry = geometry2d(interpolation);
     std::vector<std::pair<int, double>> weights;
 
     geometry.assign_interpolation_weights(location(geometry, 2.5, -0.25),
-                                           weights);
+                                          weights);
 
     if (interpolation == sasktran2::grids::interpolation::lower) {
         REQUIRE(weights.size() == 2);
@@ -353,35 +341,35 @@ TEST_CASE("Geometry2D interpolation clamps both axes",
 
     SECTION("below altitude") {
         geometry.assign_interpolation_weights(location(geometry, -100.0, -0.25),
-                                               weights);
+                                              weights);
         REQUIRE(weights.size() == 2);
         require_weight(weights[0], 0, 0.5);
         require_weight(weights[1], 3, 0.5);
     }
     SECTION("above altitude") {
         geometry.assign_interpolation_weights(location(geometry, 100.0, -0.25),
-                                               weights);
+                                              weights);
         REQUIRE(weights.size() == 2);
         require_weight(weights[0], 2, 0.5);
         require_weight(weights[1], 5, 0.5);
     }
     SECTION("below horizontal") {
         geometry.assign_interpolation_weights(location(geometry, 5.0, -2.0),
-                                               weights);
+                                              weights);
         REQUIRE(weights.size() == 2);
         require_weight(weights[0], 0, 0.5);
         require_weight(weights[1], 1, 0.5);
     }
     SECTION("above horizontal") {
         geometry.assign_interpolation_weights(location(geometry, 5.0, 2.0),
-                                               weights);
+                                              weights);
         REQUIRE(weights.size() == 2);
         require_weight(weights[0], 6, 0.5);
         require_weight(weights[1], 7, 0.5);
     }
     SECTION("outside both axes") {
         geometry.assign_interpolation_weights(location(geometry, -100.0, 2.0),
-                                               weights);
+                                              weights);
         REQUIRE(weights.size() == 1);
         require_weight(weights[0], 6, 1.0);
     }
@@ -392,16 +380,16 @@ TEST_CASE("Geometry2D exactly reproduces a bilinear nodal field",
     auto geometry = geometry2d();
     Eigen::VectorXd field(geometry.size());
     const auto value = [](double altitude, double angle) {
-        return 1.0 + 2.0 * altitude + 3.0 * angle +
-               4.0 * altitude * angle;
+        return 1.0 + 2.0 * altitude + 3.0 * angle + 4.0 * altitude * angle;
     };
 
-    for (int horizontal = 0;
-         horizontal < geometry.num_horizontal_locations(); ++horizontal) {
-        for (int altitude = 0; altitude < geometry.num_altitudes(); ++altitude) {
-            field[geometry.location_index(altitude, horizontal)] = value(
-                geometry.altitude_grid().grid()[altitude],
-                geometry.horizontal_angle_grid()[horizontal]);
+    for (int horizontal = 0; horizontal < geometry.num_horizontal_locations();
+         ++horizontal) {
+        for (int altitude = 0; altitude < geometry.num_altitudes();
+             ++altitude) {
+            field[geometry.location_index(altitude, horizontal)] =
+                value(geometry.altitude_grid().grid()[altitude],
+                      geometry.horizontal_angle_grid()[horizontal]);
         }
     }
 
@@ -427,8 +415,7 @@ TEST_CASE("Geometry2D interpolation is polymorphic through Geometry",
     const sasktran2::Geometry& base = geometry;
     std::vector<std::pair<int, double>> weights;
 
-    base.assign_interpolation_weights(location(geometry, 5.0, -0.25),
-                                      weights);
+    base.assign_interpolation_weights(location(geometry, 5.0, -0.25), weights);
 
     REQUIRE(base.num_atmosphere_dimensions() == 2);
     REQUIRE(base.size() == 9);
@@ -439,10 +426,8 @@ TEST_CASE("Geometry2D interpolation is polymorphic through Geometry",
 TEST_CASE("Geometry2D has a deterministic antipodal seam",
           "[sasktran2][geometry][geometry2d][coordinates][cells]") {
     auto geometry = geometry2d();
-    const auto positive_side =
-        location(geometry, 5.0, EIGEN_PI - 1e-6);
-    const auto negative_side =
-        location(geometry, 5.0, -EIGEN_PI + 1e-6);
+    const auto positive_side = location(geometry, 5.0, EIGEN_PI - 1e-6);
+    const auto negative_side = location(geometry, 5.0, -EIGEN_PI + 1e-6);
     std::vector<std::pair<int, double>> weights;
 
     REQUIRE(geometry.cell_indices(positive_side) ==
@@ -479,8 +464,8 @@ TEST_CASE("Geometry2D rejects non-finite locations",
           "[sasktran2][geometry][geometry2d][validation]") {
     auto geometry = geometry2d();
     sasktran2::Location invalid;
-    invalid.position = Eigen::Vector3d(
-        std::numeric_limits<double>::quiet_NaN(), 0.0, earth_radius_m);
+    invalid.position = Eigen::Vector3d(std::numeric_limits<double>::quiet_NaN(),
+                                       0.0, earth_radius_m);
     std::vector<std::pair<int, double>> weights;
 
     REQUIRE_THROWS_AS(geometry.altitude_at(invalid), std::runtime_error);

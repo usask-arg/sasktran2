@@ -22,6 +22,25 @@ namespace sasktran2::raytracing {
      */
     enum LayerType { complete, partial, tangent };
 
+    /** Integrated optical-depth weights for one structured 1D cell.
+     *
+     * A traced 1D layer is confined to one altitude cell, so its optical depth
+     * can be written directly as weights on the cell's lower and upper grid
+     * points.  Keeping these combined weights avoids repeating endpoint
+     * interpolation when constructing geometry matrices.
+     */
+    struct IntegratedCellPath1D {
+        int cell_index = -1;
+        std::array<double, 2> weights = {0.0, 0.0};
+
+        bool valid() const { return cell_index >= 0; }
+
+        void reset() {
+            cell_index = -1;
+            weights = {0.0, 0.0};
+        }
+    };
+
     // Values needed to integrate a layer.  Rather than interpolating anything
     // we directly store weights/indices to the optical table to speed up
     // calculations over multiple wavelengths and allow for easier calculation
@@ -61,6 +80,9 @@ namespace sasktran2::raytracing {
         double od_quad_start_fraction; /**< The fraction the start matters */
         double od_quad_end_fraction;   /**< The fraction the end matters */
 
+        IntegratedCellPath1D integrated_od; /**< Combined grid-point weights
+                                               for optical depth in 1D. */
+
         double saz_entrance; /**< Relative solar azimuth angle at entrance in
                                 radians, unrefracted */
         double saz_exit; /**< Relative solar azimuth angle at exit in radians,
@@ -96,6 +118,32 @@ namespace sasktran2::raytracing {
 
         /** Resets the storage for the TracedRay so it can be traced again
          */
+        void reset() {
+            ground_is_hit = false;
+            layers.resize(0);
+            tangent_radius = std::numeric_limits<double>::quiet_NaN();
+        }
+    };
+
+    /** A layer traced through one structured 2D cell. */
+    struct StructuredLayer2D : public SphericalLayer {
+        int altitude_cell = -1; /**< Altitude-cell index for this segment. */
+        int horizontal_cell =
+            -1; /**< Horizontal-cell index for this segment. */
+    };
+
+    /** Standalone traced-ray output for Geometry2D.
+     *
+     * This is intentionally separate from TracedRay so the 2D topology is not
+     * coupled into the existing 1D engine path.
+     */
+    struct TracedRay2D {
+        sasktran2::viewinggeometry::ViewingRay observer_and_look;
+        bool is_straight = true;
+        bool ground_is_hit = false;
+        std::vector<StructuredLayer2D> layers;
+        double tangent_radius = std::numeric_limits<double>::quiet_NaN();
+
         void reset() {
             ground_is_hit = false;
             layers.resize(0);
@@ -168,6 +216,64 @@ namespace sasktran2::raytracing {
                                               layer.exit.interpolation_weights);
         geometry.assign_interpolation_weights(
             layer.entrance, layer.entrance.interpolation_weights);
+    }
+
+    /** Combines endpoint interpolation and quadrature into one 1D cell
+     * stencil.  If a layer does not satisfy the structured-cell invariant, the
+     * stencil remains invalid and matrix construction falls back to the legacy
+     * endpoint calculation.
+     */
+    inline void
+    add_integrated_od_weights(SphericalLayer& layer,
+                              const sasktran2::Geometry1D& geometry) {
+        layer.integrated_od.reset();
+
+        int first_index = geometry.size();
+        int last_index = -1;
+        const auto add_support =
+            [&first_index, &last_index](const auto& interpolation_weights,
+                                        double quadrature_weight) {
+                for (const auto& iw : interpolation_weights) {
+                    if (iw.second * quadrature_weight != 0.0) {
+                        first_index = std::min(first_index, iw.first);
+                        last_index = std::max(last_index, iw.first);
+                    }
+                }
+            };
+        add_support(layer.entrance.interpolation_weights, layer.od_quad_start);
+        add_support(layer.exit.interpolation_weights, layer.od_quad_end);
+
+        if (last_index < 0) {
+            first_index = std::min(layer.entrance.lower_alt_index,
+                                   layer.exit.lower_alt_index);
+            if (first_index < 0) {
+                return;
+            }
+            first_index = std::min(first_index, geometry.size() - 2);
+            last_index = first_index;
+        }
+        if (first_index < 0 || first_index >= geometry.size()) {
+            return;
+        }
+
+        const int cell_index = std::min(first_index, geometry.size() - 2);
+        if (last_index > cell_index + 1) {
+            return;
+        }
+
+        layer.integrated_od.cell_index = cell_index;
+        for (const auto& iw : layer.entrance.interpolation_weights) {
+            const double weight = iw.second * layer.od_quad_start;
+            if (weight != 0.0) {
+                layer.integrated_od.weights[iw.first - cell_index] += weight;
+            }
+        }
+        for (const auto& iw : layer.exit.interpolation_weights) {
+            const double weight = iw.second * layer.od_quad_end;
+            if (weight != 0.0) {
+                layer.integrated_od.weights[iw.first - cell_index] += weight;
+            }
+        }
     }
 
     /** Populates a layer with the optical depth quadrature parameters
@@ -332,6 +438,17 @@ namespace sasktran2::raytracing {
 
         for (int i = (int)traced_ray.layers.size() - 1; i >= 0; --i) {
             const auto& layer = traced_ray.layers[i];
+
+            if (layer.integrated_od.valid()) {
+                for (int j = 0; j < 2; ++j) {
+                    if (layer.integrated_od.weights[j] != 0.0) {
+                        tripletList.emplace_back(
+                            i, layer.integrated_od.cell_index + j,
+                            layer.integrated_od.weights[j]);
+                    }
+                }
+                continue;
+            }
 
             geometry.assign_interpolation_weights(layer.entrance,
                                                   index_weights);
@@ -685,6 +802,7 @@ namespace sasktran2::raytracing {
 
 #ifdef SKTRAN_RUST_SUPPORT
     class RustRayTracerImpl;
+    class RustRayTracer2DImpl;
 
     /** A ray tracer backed by the Rust vertical-grid ray tracing core.
      */
@@ -700,6 +818,32 @@ namespace sasktran2::raytracing {
       private:
         const sasktran2::Geometry1D& m_geometry;
         std::unique_ptr<RustRayTracerImpl> m_impl;
+    };
+
+    /** Standalone Rust structured-2D ray tracer.
+     *
+     * The refractive-index overload accepts one altitude-only profile for this
+     * ray. Profiles are not stored on Geometry2D and may differ between calls.
+     */
+    class RustRayTracer2D {
+      public:
+        explicit RustRayTracer2D(const sasktran2::Geometry2D& geometry);
+        ~RustRayTracer2D();
+
+        void trace_ray(const sasktran2::viewinggeometry::ViewingRay& ray,
+                       TracedRay2D& tracedray) const;
+
+        void trace_ray(const sasktran2::viewinggeometry::ViewingRay& ray,
+                       const Eigen::VectorXd& refractive_index,
+                       TracedRay2D& tracedray) const;
+
+      private:
+        void trace_ray_impl(const sasktran2::viewinggeometry::ViewingRay& ray,
+                            const Eigen::VectorXd* refractive_index,
+                            TracedRay2D& tracedray) const;
+
+        const sasktran2::Geometry2D& m_geometry;
+        std::unique_ptr<RustRayTracer2DImpl> m_impl;
     };
 #endif
 } // namespace sasktran2::raytracing

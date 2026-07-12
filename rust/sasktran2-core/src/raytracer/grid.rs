@@ -26,6 +26,7 @@ pub enum BoundaryTag {
     TopOfAtmosphere { altitude_index: usize },
     Altitude { index: usize },
     Horizontal { index: usize },
+    HorizontalSeam,
     Custom { id: u32 },
 }
 
@@ -37,7 +38,7 @@ impl BoundaryTag {
                 Some(altitude_index)
             }
             Self::Altitude { index } => Some(index),
-            Self::Horizontal { .. } | Self::Custom { .. } => None,
+            Self::Horizontal { .. } | Self::HorizontalSeam | Self::Custom { .. } => None,
         }
     }
 
@@ -66,7 +67,7 @@ impl BoundaryTag {
 
     #[inline(always)]
     pub fn is_horizontal(self) -> bool {
-        self.horizontal_index().is_some()
+        matches!(self, Self::Horizontal { .. } | Self::HorizontalSeam)
     }
 }
 

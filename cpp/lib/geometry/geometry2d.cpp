@@ -16,7 +16,8 @@ namespace {
 
     int exact_axis_index(const Eigen::VectorXd& values, double value,
                          double tolerance) {
-        const auto lower = std::lower_bound(values.begin(), values.end(), value);
+        const auto lower =
+            std::lower_bound(values.begin(), values.end(), value);
         if (lower != values.end() && std::abs(*lower - value) <= tolerance) {
             return static_cast<int>(lower - values.begin());
         }
@@ -29,9 +30,10 @@ namespace {
         return -1;
     }
 
-    AxisStencil axis_interpolation_weights(
-        const Eigen::VectorXd& values, double value,
-        sasktran2::grids::interpolation interpolation, double tolerance) {
+    AxisStencil
+    axis_interpolation_weights(const Eigen::VectorXd& values, double value,
+                               sasktran2::grids::interpolation interpolation,
+                               double tolerance) {
         AxisStencil result;
 
         const int exact = exact_axis_index(values, value, tolerance);
@@ -59,8 +61,7 @@ namespace {
 
         const auto upper_iterator =
             std::upper_bound(values.begin(), values.end(), value);
-        const int upper =
-            static_cast<int>(upper_iterator - values.begin());
+        const int upper = static_cast<int>(upper_iterator - values.begin());
         const int lower = upper - 1;
 
         if (interpolation == sasktran2::grids::interpolation::lower) {
@@ -77,8 +78,7 @@ namespace {
                 result.weights[1] = 0.5;
             } else {
                 result.weights[1] =
-                    (value - values[lower]) /
-                    (values[upper] - values[lower]);
+                    (value - values[lower]) / (values[upper] - values[lower]);
                 result.weights[0] = 1.0 - result.weights[1];
             }
         }
@@ -98,7 +98,8 @@ namespace {
             return std::min(exact, static_cast<int>(values.size()) - 2);
         }
 
-        const auto upper = std::upper_bound(values.begin(), values.end(), value);
+        const auto upper =
+            std::upper_bound(values.begin(), values.end(), value);
         if (upper == values.begin() || upper == values.end()) {
             return std::nullopt;
         }
@@ -138,20 +139,19 @@ namespace {
 } // namespace
 
 namespace sasktran2 {
-    Geometry2D::Geometry2D(
-        double cos_sza, double saa, double earth_radius,
-        Eigen::VectorXd&& altitude_grid,
-        Eigen::VectorXd&& horizontal_angle_grid,
-        grids::interpolation altitude_interpolation)
+    Geometry2D::Geometry2D(double cos_sza, double saa, double earth_radius,
+                           Eigen::VectorXd&& altitude_grid,
+                           Eigen::VectorXd&& horizontal_angle_grid,
+                           grids::interpolation altitude_interpolation)
         : Geometry2D(Coordinates(cos_sza, saa, earth_radius,
                                  geometrytype::spherical, false),
                      std::move(altitude_grid), std::move(horizontal_angle_grid),
                      altitude_interpolation) {}
 
-    Geometry2D::Geometry2D(
-        Coordinates&& coordinates, Eigen::VectorXd&& altitude_grid,
-        Eigen::VectorXd&& horizontal_angle_grid,
-        grids::interpolation altitude_interpolation)
+    Geometry2D::Geometry2D(Coordinates&& coordinates,
+                           Eigen::VectorXd&& altitude_grid,
+                           Eigen::VectorXd&& horizontal_angle_grid,
+                           grids::interpolation altitude_interpolation)
         : Geometry(std::move(coordinates)),
           m_alt_grid(std::move(altitude_grid), grids::gridspacing::automatic,
                      grids::outofbounds::extend, altitude_interpolation),
@@ -207,8 +207,7 @@ namespace sasktran2 {
         const int num_altitude_cells = num_altitudes() - 1;
         const int num_horizontal_cells = num_horizontal_locations() - 1;
         if (altitude_cell < 0 || altitude_cell >= num_altitude_cells ||
-            horizontal_cell < 0 ||
-            horizontal_cell >= num_horizontal_cells) {
+            horizontal_cell < 0 || horizontal_cell >= num_horizontal_cells) {
             throw std::out_of_range("Geometry2D cell index out of range");
         }
         return horizontal_cell * num_altitude_cells + altitude_cell;
@@ -228,8 +227,8 @@ namespace sasktran2 {
                                               int horizontal_index) const {
         // Validate both indices before accessing either grid.
         location_index(altitude_index, horizontal_index);
-        const double radius = coordinates().earth_radius() +
-                              m_alt_grid.grid()[altitude_index];
+        const double radius =
+            coordinates().earth_radius() + m_alt_grid.grid()[altitude_index];
         return radius * coordinates().unit_vector_from_angles(
                             m_horizontal_angles[horizontal_index], 0.0);
     }
@@ -268,8 +267,8 @@ namespace sasktran2 {
     std::optional<std::pair<int, int>>
     Geometry2D::cell_indices(const Location& location) const {
         const double altitude = altitude_at(location);
-        const auto altitude_cell = finite_axis_cell(
-            m_alt_grid.grid(), altitude, altitude_tolerance_m);
+        const auto altitude_cell =
+            finite_axis_cell(m_alt_grid.grid(), altitude, altitude_tolerance_m);
         if (!altitude_cell.has_value()) {
             return std::nullopt;
         }
@@ -359,8 +358,7 @@ namespace sasktran2 {
         }
         for (Eigen::Index index = 1; index < m_horizontal_angles.size();
              ++index) {
-            if (m_horizontal_angles[index] <=
-                m_horizontal_angles[index - 1]) {
+            if (m_horizontal_angles[index] <= m_horizontal_angles[index - 1]) {
                 spdlog::critical(
                     "Invalid horizontal angle grid: must be strictly "
                     "increasing");

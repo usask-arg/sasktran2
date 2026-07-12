@@ -92,13 +92,16 @@ impl AngularBasis {
     }
 }
 
-/// Finite, non-periodic spherical grid in altitude and one horizontal angle.
+/// Spherical grid that is finite in altitude and non-periodic in one
+/// horizontal angle.
 ///
-/// The angular span is restricted to less than pi radians so the domain is a
-/// single unambiguous wedge. Flattened location storage is altitude-fastest:
+/// The sampled angular span is restricted to less than pi radians so values
+/// have a single unambiguous unwrapping interval. Flattened location storage is altitude-fastest:
 /// `location_index = horizontal_index * num_altitudes + altitude_index`.
-/// The horizontal coordinate is singular on the `reference_y` axis; a field
-/// used on that axis must therefore be independent of horizontal angle.
+/// The first and last horizontal cells extend beyond the sampled angular
+/// range, matching clamped interpolation at the edge nodes. The horizontal
+/// coordinate is singular on the `reference_y` axis; a field used on that axis
+/// must therefore be independent of horizontal angle.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructuredGrid2D {
     earth_radius: f64,
@@ -212,11 +215,11 @@ impl StructuredGrid2D {
 
     pub fn locate_indices(&self, point: Vec3, epsilon: f64) -> Option<(usize, usize)> {
         let altitude_index = locate_axis_cell(&self.altitudes, self.altitude_at(point), epsilon)?;
-        let horizontal_index = locate_axis_cell(
+        let horizontal_index = locate_extended_axis_cell(
             &self.horizontal_angles,
             self.horizontal_angle_at(point),
             epsilon,
-        )?;
+        );
         Some((altitude_index, horizontal_index))
     }
 
@@ -225,13 +228,6 @@ impl StructuredGrid2D {
 
         let altitude = self.altitude_at(point);
         let horizontal_angle = self.horizontal_angle_at(point);
-        if locate_axis_cell(&self.altitudes, altitude, LOCATION_EPSILON).is_none()
-            || locate_axis_cell(&self.horizontal_angles, horizontal_angle, LOCATION_EPSILON)
-                .is_none()
-        {
-            return InterpolationStencil::new();
-        }
-
         let altitude_weights = axis_interpolation_weights(
             &self.altitudes,
             altitude,
@@ -257,6 +253,24 @@ impl StructuredGrid2D {
         result
     }
 
+    pub(crate) fn horizontal_topology_boundaries(
+        &self,
+    ) -> impl Iterator<Item = (Option<usize>, f64)> + '_ {
+        let interior = self
+            .horizontal_angles
+            .iter()
+            .enumerate()
+            .skip(1)
+            .take(self.horizontal_angles.len() - 2)
+            .map(|(index, angle)| (Some(index), *angle));
+        let center = (self.horizontal_angles[0]
+            + self.horizontal_angles[self.horizontal_angles.len() - 1])
+            / 2.0;
+        let seam =
+            (self.horizontal_angles.len() > 2).then_some((None, center + std::f64::consts::PI));
+        interior.chain(seam)
+    }
+
     pub fn primitives(&self) -> Vec<Primitive> {
         let mut primitives =
             Vec::with_capacity(self.altitudes.len() + self.horizontal_angles.len());
@@ -279,12 +293,16 @@ impl StructuredGrid2D {
                 boundary,
             ));
         }
-        for (index, angle) in self.horizontal_angles.iter().enumerate() {
+        // Only interior angular nodes separate cells. The first and last cells
+        // extend indefinitely and therefore have no outer angular boundary.
+        for (primitive_index, (index, angle)) in self.horizontal_topology_boundaries().enumerate() {
             primitives.push(Primitive::angular_plane(
-                PrimitiveId(self.altitudes.len() + index),
-                self.basis.angular_normal(*angle),
-                self.basis.radial_direction(*angle),
-                BoundaryTag::Horizontal { index },
+                PrimitiveId(self.altitudes.len() + primitive_index),
+                self.basis.angular_normal(angle),
+                self.basis.radial_direction(angle),
+                index.map_or(BoundaryTag::HorizontalSeam, |index| {
+                    BoundaryTag::Horizontal { index }
+                }),
             ));
         }
         primitives
@@ -363,6 +381,23 @@ fn locate_axis_cell(values: &[f64], value: f64, epsilon: f64) -> Option<usize> {
     } else {
         Some(upper - 1)
     }
+}
+
+fn locate_extended_axis_cell(values: &[f64], value: f64, epsilon: f64) -> usize {
+    if let Some(index) = values
+        .iter()
+        .position(|boundary| (value - boundary).abs() <= epsilon)
+    {
+        return index.min(values.len() - 2);
+    }
+    if value <= values[0] {
+        return 0;
+    }
+    let last = values.len() - 1;
+    if value >= values[last] {
+        return last - 1;
+    }
+    values.partition_point(|boundary| *boundary <= value) - 1
 }
 
 fn axis_interpolation_weights(
@@ -578,14 +613,24 @@ mod tests {
     }
 
     #[test]
-    fn rejects_points_outside_either_axis() {
+    fn altitude_domain_is_finite_and_horizontal_cells_extend() {
         let grid = grid();
 
         assert!(grid.locate_cell(point(9.0, 0.0)).is_none());
         assert!(grid.locate_cell(point(31.0, 0.0)).is_none());
-        assert!(grid.locate_cell(point(15.0, -0.6)).is_none());
-        assert!(grid.locate_cell(point(15.0, 0.6)).is_none());
-        assert!(grid.interpolation_weights_at(point(15.0, 0.6)).is_empty());
+        assert_eq!(grid.locate_indices(point(15.0, -0.6), 1e-12), Some((0, 0)));
+        assert_eq!(grid.locate_indices(point(15.0, 0.6), 1e-12), Some((0, 1)));
+
+        let below_and_left: Vec<_> = grid
+            .interpolation_weights_at(point(5.0, -0.6))
+            .iter()
+            .collect();
+        assert_weights(&below_and_left, &[(0, 1.0)]);
+        let above_and_right: Vec<_> = grid
+            .interpolation_weights_at(point(35.0, 0.6))
+            .iter()
+            .collect();
+        assert_weights(&above_and_right, &[(8, 1.0)]);
     }
 
     #[test]
@@ -709,18 +754,15 @@ mod tests {
     fn builds_spherical_and_angular_primitives() {
         let primitives = grid().primitives();
 
-        assert_eq!(primitives.len(), 6);
+        assert_eq!(primitives.len(), 5);
         assert_eq!(primitives[0].kind(), PrimitiveKind::Sphere);
         assert!(primitives[0].boundary().is_surface());
         assert!(primitives[2].boundary().is_top_of_atmosphere());
         assert_eq!(primitives[3].kind(), PrimitiveKind::AngularPlane);
         assert_eq!(
             primitives[3].boundary(),
-            BoundaryTag::Horizontal { index: 0 }
+            BoundaryTag::Horizontal { index: 1 }
         );
-        assert_eq!(
-            primitives[5].boundary(),
-            BoundaryTag::Horizontal { index: 2 }
-        );
+        assert_eq!(primitives[4].boundary(), BoundaryTag::HorizontalSeam);
     }
 }
