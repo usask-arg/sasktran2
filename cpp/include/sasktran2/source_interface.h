@@ -114,4 +114,8 @@ template <int NSTOKES> class SourceTermInterface {
     }
 
     virtual bool requires_integration() const { return true; }
+
+    /** Returns true when the source contributes within atmospheric layers and
+     * therefore requires a geometry-specific layer representation. */
+    virtual bool has_interior_source() const { return true; }
 };

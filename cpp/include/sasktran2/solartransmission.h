@@ -434,6 +434,8 @@ namespace sasktran2::solartransmission {
     template <int NSTOKES>
     class OccultationSource : public SourceTermInterface<NSTOKES> {
       private:
+        std::vector<bool> m_ground_is_hit;
+
       public:
         void initialize_config(const sasktran2::Config& config) override;
 
@@ -447,6 +449,11 @@ namespace sasktran2::solartransmission {
         void initialize_geometry(
             const sasktran2::viewinggeometry::InternalViewingGeometry&
                 internal_viewing) override;
+
+        /** Initializes termination information for standalone structured 2D
+         * rays. */
+        void initialize_geometry(
+            const std::vector<sasktran2::raytracing::TracedRay2D>& traced_rays);
 
         /**
          *
@@ -509,6 +516,8 @@ namespace sasktran2::solartransmission {
             int wavelidx, int losidx, int wavel_threadidx, int threadidx,
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
                 source) const override{};
+
+        bool has_interior_source() const override { return false; }
     };
 
 } // namespace sasktran2::solartransmission

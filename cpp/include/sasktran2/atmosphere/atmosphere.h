@@ -69,7 +69,7 @@ namespace sasktran2::atmosphere {
          * @param config
          * @param calculate_derivatives
          */
-        Atmosphere(int nwavel, const sasktran2::Geometry1D& geometry,
+        Atmosphere(int nwavel, const sasktran2::Geometry& geometry,
                    const sasktran2::Config& config,
                    bool calculate_derivatives = false);
 

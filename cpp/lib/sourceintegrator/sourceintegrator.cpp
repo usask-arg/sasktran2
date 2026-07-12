@@ -26,11 +26,33 @@ namespace sasktran2 {
         m_exp_minus_shell_od.resize(traced_rays.size());
 
         m_traced_rays = &traced_rays;
+        m_num_geometry_locations = geometry.size();
+    }
+
+    template <int NSTOKES>
+    void SourceIntegrator<NSTOKES>::initialize_geometry(
+        const std::vector<sasktran2::raytracing::TracedRay2D>& traced_rays,
+        const Geometry2D& geometry) {
+        m_traced_ray_od_matrix.resize(traced_rays.size());
+        for (int i = 0; i < traced_rays.size(); ++i) {
+            sasktran2::raytracing::construct_od_matrix(
+                traced_rays[i], geometry, m_traced_ray_od_matrix[i]);
+        }
+
+        m_shell_od.resize(traced_rays.size());
+        m_exp_minus_shell_od.resize(traced_rays.size());
+        m_traced_rays = nullptr;
+        m_num_geometry_locations = geometry.size();
     }
 
     template <int NSTOKES>
     void SourceIntegrator<NSTOKES>::initialize_atmosphere(
         const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmo) {
+        if (atmo.storage().total_extinction.rows() !=
+            m_num_geometry_locations) {
+            throw std::invalid_argument(
+                "Atmosphere extinction size does not match ray geometry");
+        }
 // Multithread over LOS? or wavelength? Or just let Eigen do it?
 #pragma omp parallel for
         for (int i = 0; i < m_traced_ray_od_matrix.size(); ++i) {
@@ -62,11 +84,14 @@ namespace sasktran2 {
         for (const auto& source : source_terms) {
             if (source->requires_integration()) {
                 have_to_integrate = true;
-                break;
+                if (m_traced_rays == nullptr && source->has_interior_source()) {
+                    throw std::invalid_argument(
+                        "Interior source integration is not supported for "
+                        "structured 2D rays");
+                }
             }
         }
 
-        const auto& ray = (*m_traced_rays)[rayidx];
         // Add source at the end of the ray
         for (const auto& source : source_terms) {
             source->end_of_ray_source(wavelidx, rayidx, wavel_threadidx,
@@ -76,39 +101,29 @@ namespace sasktran2 {
         if (!have_to_integrate) {
             return;
         }
-        // Iterate through each layer from the end of the ray to the observer
-        for (int j = 0; j < ray.layers.size(); ++j) {
-            const sasktran2::raytracing::SphericalLayer& layer = ray.layers[j];
-
+        // Iterate through each OD row from the end of the ray to the observer.
+        // Attenuation is geometry-independent; only interior sources require a
+        // concrete layer type.
+        for (int j = 0; j < m_traced_ray_od_matrix.at(rayidx).rows(); ++j) {
             sasktran2::SparseODDualView local_shell_od(
-                m_shell_od[rayidx](j, wavelidx),
-                std::exp(-m_shell_od[rayidx](j, wavelidx)),
-                m_traced_ray_od_matrix[rayidx], j);
+                m_shell_od.at(rayidx)(j, wavelidx),
+                std::exp(-m_shell_od.at(rayidx)(j, wavelidx)),
+                m_traced_ray_od_matrix.at(rayidx), j);
 
-            // Attenuate the radiance by the layer OD
-            // rad = rad * atten, drad = drad * atten + rad * datten
-            // Atten effects all derivative, datten only affects the extinction
-            // derivatives
+            attenuate_layer(radiance, local_shell_od);
 
-            if (m_calculate_derivatives) {
-                for (auto it = local_shell_od.deriv_iter; it; ++it) {
-                    radiance.deriv(Eigen::placeholders::all, it.index()) -=
-                        it.value() * radiance.value;
+            if (m_traced_rays != nullptr) {
+                // Calculate all of the 1D layer sources. The capability check
+                // above guarantees that 2D integration has no interior
+                // sources, so it avoids geometry-specific dispatch entirely.
+                const auto& layer = m_traced_rays->at(rayidx).layers.at(j);
+                for (const auto& source : source_terms) {
+                    source->integrated_source(
+                        wavelidx, rayidx, j, wavel_threadidx, threadidx, layer,
+                        local_shell_od, radiance,
+                        SourceTermInterface<
+                            NSTOKES>::IntegrationDirection::backward);
                 }
-            }
-
-            radiance.value *= local_shell_od.exp_minus_od;
-            if (m_calculate_derivatives) {
-                radiance.deriv *= local_shell_od.exp_minus_od;
-            }
-
-            // Calculate all of the layer sources
-            for (const auto& source : source_terms) {
-                source->integrated_source(
-                    wavelidx, rayidx, j, wavel_threadidx, threadidx, layer,
-                    local_shell_od, radiance,
-                    SourceTermInterface<
-                        NSTOKES>::IntegrationDirection::backward);
             }
 
 #ifdef SASKTRAN_DEBUG_ASSERTS
@@ -127,9 +142,29 @@ namespace sasktran2 {
     }
 
     template <int NSTOKES>
+    void SourceIntegrator<NSTOKES>::attenuate_layer(
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+            radiance,
+        const sasktran2::SparseODDualView& local_shell_od) const {
+        // rad = rad * atten, drad = drad * atten + rad * datten. Attenuation
+        // affects every derivative, while datten only affects extinction.
+        if (m_calculate_derivatives) {
+            for (auto it = local_shell_od.deriv_iter; it; ++it) {
+                radiance.deriv(Eigen::placeholders::all, it.index()) -=
+                    it.value() * radiance.value;
+            }
+        }
+
+        radiance.value *= local_shell_od.exp_minus_od;
+        if (m_calculate_derivatives) {
+            radiance.deriv *= local_shell_od.exp_minus_od;
+        }
+    }
+
+    template <int NSTOKES>
     void SourceIntegrator<NSTOKES>::integrate_optical_depth(
         Eigen::MatrixXd& optical_depth) {
-        for (int i = 0; i < m_traced_rays->size(); ++i) {
+        for (int i = 0; i < m_shell_od.size(); ++i) {
             optical_depth.col(i) = m_shell_od[i].colwise().sum();
         }
     }

@@ -54,6 +54,12 @@ namespace sasktran2 {
             m_traced_rays; /**< Reference to the rays we are integrating */
 
         const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere;
+        int m_num_geometry_locations = 0;
+
+        void attenuate_layer(
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+                radiance,
+            const sasktran2::SparseODDualView& local_shell_od) const;
 
       public:
         /**
@@ -80,6 +86,11 @@ namespace sasktran2 {
         void initialize_geometry(
             const std::vector<sasktran2::raytracing::TracedRay>& traced_rays,
             const Geometry& geometry);
+
+        /** Initializes the optical-depth geometry for structured 2D rays. */
+        void initialize_geometry(
+            const std::vector<sasktran2::raytracing::TracedRay2D>& traced_rays,
+            const Geometry2D& geometry);
 
         /** Initializes the atmosphere
          *

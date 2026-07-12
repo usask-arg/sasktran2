@@ -14,6 +14,7 @@ add_executable(
   raytracing/test_od_weights.cpp
   raytracing/test_rust_raytracer_parity.cpp
   raytracing/test_rust_raytracer2d.cpp
+  sourceintegrator/test_occultation2d.cpp
   engine/test_engine_basic.cpp
   engine/wf/test_wf_singlescatter_scalar.cpp
   engine/wf/test_wf_vector.cpp
