@@ -22,6 +22,76 @@ namespace sasktran2::raytracing {
      */
     enum LayerType { complete, partial, tangent };
 
+    /** Heap-free interpolation weights on one structured 1D cell. */
+    struct InterpolationStencil1D {
+        int cell_index = -1;
+        double upper_weight = 0.0;
+
+        bool valid() const { return cell_index >= 0; }
+        bool empty() const { return !valid(); }
+
+        std::size_t size() const {
+            if (!valid()) {
+                return 0;
+            }
+            return upper_weight == 0.0 || upper_weight == 1.0 ? 1 : 2;
+        }
+
+        std::pair<int, double> operator[](std::size_t index) const {
+            assert(index < size());
+            if (size() == 1) {
+                return upper_weight == 0.0
+                           ? std::make_pair(cell_index, 1.0)
+                           : std::make_pair(cell_index + 1, 1.0);
+            }
+            return index == 0 ? std::make_pair(cell_index, 1.0 - upper_weight)
+                              : std::make_pair(cell_index + 1, upper_weight);
+        }
+
+        void reset() {
+            cell_index = -1;
+            upper_weight = 0.0;
+        }
+
+        void assign(const std::vector<std::pair<int, double>>& weights,
+                    int grid_size) {
+            reset();
+            if (grid_size < 2) {
+                return;
+            }
+            int first_index = grid_size;
+            int last_index = -1;
+            for (const auto& weight : weights) {
+                if (weight.second != 0.0) {
+                    first_index = std::min(first_index, weight.first);
+                    last_index = std::max(last_index, weight.first);
+                }
+            }
+            if (last_index < 0 || first_index < 0 || first_index >= grid_size) {
+                return;
+            }
+
+            cell_index = std::min(first_index, grid_size - 2);
+            if (last_index > cell_index + 1) {
+                reset();
+                return;
+            }
+
+            double lower_weight = 0.0;
+            upper_weight = 0.0;
+            for (const auto& weight : weights) {
+                if (weight.first == cell_index) {
+                    lower_weight += weight.second;
+                } else if (weight.first == cell_index + 1) {
+                    upper_weight += weight.second;
+                }
+            }
+            if (lower_weight + upper_weight != 1.0) {
+                reset();
+            }
+        }
+    };
+
     /** Integrated optical-depth weights for one structured 1D cell.
      *
      * A traced 1D layer is confined to one altitude cell, so its optical depth
@@ -53,7 +123,7 @@ namespace sasktran2::raytracing {
      * to calculate derivatives easier.  Everything in this structure is
      * considered to be wavelength independent and only a function of geometry.
      */
-    struct SphericalLayer {
+    struct LayerGeometry {
         Location entrance; /**< The boundary location of the layer closer to the
                               observer */
         Location exit; /**< The boundary location of the layer farther from the
@@ -80,9 +150,6 @@ namespace sasktran2::raytracing {
         double od_quad_start_fraction; /**< The fraction the start matters */
         double od_quad_end_fraction;   /**< The fraction the end matters */
 
-        IntegratedCellPath1D integrated_od; /**< Combined grid-point weights
-                                               for optical depth in 1D. */
-
         double saz_entrance; /**< Relative solar azimuth angle at entrance in
                                 radians, unrefracted */
         double saz_exit; /**< Relative solar azimuth angle at exit in radians,
@@ -92,6 +159,14 @@ namespace sasktran2::raytracing {
         double cos_sza_exit; /**< Cosine solar zenith at exit, unrefracted */
 
         LayerType type; /**< The type of layer, complete, partial, or tangent */
+    };
+
+    struct SphericalLayer : public LayerGeometry {
+        InterpolationStencil1D entrance_interpolation_weights;
+        InterpolationStencil1D exit_interpolation_weights;
+
+        IntegratedCellPath1D integrated_od; /**< Combined grid-point weights
+                                               for optical depth in 1D. */
     };
 
     /** The geometry information of a fully traced ray.
@@ -126,10 +201,12 @@ namespace sasktran2::raytracing {
     };
 
     /** A layer traced through one structured 2D cell. */
-    struct StructuredLayer2D : public SphericalLayer {
+    struct StructuredLayer2D : public LayerGeometry {
         int altitude_cell = -1; /**< Altitude-cell index for this segment. */
         int horizontal_cell =
             -1; /**< Horizontal-cell index for this segment. */
+        std::vector<std::pair<int, double>> entrance_interpolation_weights_2d;
+        std::vector<std::pair<int, double>> exit_interpolation_weights_2d;
     };
 
     /** Standalone traced-ray output for Geometry2D.
@@ -211,11 +288,12 @@ namespace sasktran2::raytracing {
 
     inline void
     add_interpolation_weights(SphericalLayer& layer,
-                              const sasktran2::Geometry1D& geometry) {
-        geometry.assign_interpolation_weights(layer.exit,
-                                              layer.exit.interpolation_weights);
-        geometry.assign_interpolation_weights(
-            layer.entrance, layer.entrance.interpolation_weights);
+                              const sasktran2::Geometry1D& geometry,
+                              std::vector<std::pair<int, double>>& workspace) {
+        geometry.assign_interpolation_weights(layer.exit, workspace);
+        layer.exit_interpolation_weights.assign(workspace, geometry.size());
+        geometry.assign_interpolation_weights(layer.entrance, workspace);
+        layer.entrance_interpolation_weights.assign(workspace, geometry.size());
     }
 
     /** Combines endpoint interpolation and quadrature into one 1D cell
@@ -233,15 +311,17 @@ namespace sasktran2::raytracing {
         const auto add_support =
             [&first_index, &last_index](const auto& interpolation_weights,
                                         double quadrature_weight) {
-                for (const auto& iw : interpolation_weights) {
+                for (std::size_t index = 0;
+                     index < interpolation_weights.size(); ++index) {
+                    const auto iw = interpolation_weights[index];
                     if (iw.second * quadrature_weight != 0.0) {
                         first_index = std::min(first_index, iw.first);
                         last_index = std::max(last_index, iw.first);
                     }
                 }
             };
-        add_support(layer.entrance.interpolation_weights, layer.od_quad_start);
-        add_support(layer.exit.interpolation_weights, layer.od_quad_end);
+        add_support(layer.entrance_interpolation_weights, layer.od_quad_start);
+        add_support(layer.exit_interpolation_weights, layer.od_quad_end);
 
         if (last_index < 0) {
             first_index = std::min(layer.entrance.lower_alt_index,
@@ -262,13 +342,17 @@ namespace sasktran2::raytracing {
         }
 
         layer.integrated_od.cell_index = cell_index;
-        for (const auto& iw : layer.entrance.interpolation_weights) {
+        for (std::size_t index = 0;
+             index < layer.entrance_interpolation_weights.size(); ++index) {
+            const auto iw = layer.entrance_interpolation_weights[index];
             const double weight = iw.second * layer.od_quad_start;
             if (weight != 0.0) {
                 layer.integrated_od.weights[iw.first - cell_index] += weight;
             }
         }
-        for (const auto& iw : layer.exit.interpolation_weights) {
+        for (std::size_t index = 0;
+             index < layer.exit_interpolation_weights.size(); ++index) {
+            const auto iw = layer.exit_interpolation_weights[index];
             const double weight = iw.second * layer.od_quad_end;
             if (weight != 0.0) {
                 layer.integrated_od.weights[iw.first - cell_index] += weight;

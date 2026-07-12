@@ -229,7 +229,7 @@ namespace sasktran2::solartransmission {
          * @param source The source term
          */
         void scatter(int wavelidx, int losidx, int layeridx,
-                     const std::vector<std::pair<int, double>>& index_weights,
+                     const raytracing::InterpolationStencil1D& index_weights,
                      bool is_entrance,
                      sasktran2::Dual<double, sasktran2::dualstorage::dense,
                                      NSTOKES>& source) const;
@@ -239,7 +239,7 @@ namespace sasktran2::solartransmission {
     inline void scattering_source(
         const PhaseHandler<NSTOKES>& phase_handler, int threadidx, int losidx,
         int layeridx, int wavelidx,
-        const std::vector<std::pair<int, double>>& index_weights,
+        const raytracing::InterpolationStencil1D& index_weights,
         bool is_entrance, double solar_trans,
         const atmosphere::Atmosphere<NSTOKES>& atmosphere,
         Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
@@ -256,7 +256,8 @@ namespace sasktran2::solartransmission {
 
         ssa = 0;
         k = 0;
-        for (auto& ele : index_weights) {
+        for (std::size_t index = 0; index < index_weights.size(); ++index) {
+            const auto ele = index_weights[index];
             ssa += storage.ssa(ele.first, wavelidx) * ele.second;
 
             k += storage.total_extinction(ele.first, wavelidx) * ele.second;
@@ -277,7 +278,8 @@ namespace sasktran2::solartransmission {
         }
 
         // And SSA/k derivative factors
-        for (auto& ele : index_weights) {
+        for (std::size_t index = 0; index < index_weights.size(); ++index) {
+            const auto ele = index_weights[index];
             source.deriv(Eigen::placeholders::all,
                          atmosphere.ssa_deriv_start_index() + ele.first) +=
                 ele.second * source.value / ssa;

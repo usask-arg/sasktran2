@@ -196,7 +196,7 @@ namespace sasktran2::raytracing {
             add_od_quadrature(
                 layer, sasktran2::geometrytype::spherical,
                 m_geometry.altitude_grid().interpolation_method());
-            add_interpolation_weights(layer, m_geometry);
+            add_interpolation_weights(layer, m_geometry, index_weights);
             add_integrated_od_weights(layer, m_geometry);
             add_solar_parameters(m_geometry.coordinates().sun_unit(), layer);
         }

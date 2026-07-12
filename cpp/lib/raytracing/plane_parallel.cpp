@@ -45,6 +45,9 @@ namespace sasktran2::raytracing {
 
         // For each layer, we go through and add in the computed solar angles
         for (auto& layer : result.layers) {
+            add_interpolation_weights(layer, m_geometry,
+                                      result.interpolation_index_weights);
+            add_integrated_od_weights(layer, m_geometry);
             add_solar_parameters(m_geometry.coordinates().sun_unit(), layer,
                                  sasktran2::geometrytype::planeparallel);
         }
@@ -165,8 +168,6 @@ namespace sasktran2::raytracing {
 
         add_od_quadrature(layer, sasktran2::geometrytype::planeparallel,
                           m_alt_grid.interpolation_method());
-        add_interpolation_weights(layer, m_geometry);
-        add_integrated_od_weights(layer, m_geometry);
     }
 
     void PlaneParallelRayTracer::partial_layer(
@@ -201,8 +202,6 @@ namespace sasktran2::raytracing {
 
         add_od_quadrature(layer, sasktran2::geometrytype::planeparallel,
                           m_alt_grid.interpolation_method());
-        add_interpolation_weights(layer, m_geometry);
-        add_integrated_od_weights(layer, m_geometry);
     }
 
     double PlaneParallelRayTracer::distance_to_altitude(

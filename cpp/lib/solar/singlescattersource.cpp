@@ -267,7 +267,7 @@ namespace sasktran2::solartransmission {
             if (layer.r_exit > layer.r_entrance) {
                 scattering_source(
                     m_phase_handler, wavel_threadidx, losidx, layeridx,
-                    wavelidx, layer.entrance.interpolation_weights, true,
+                    wavelidx, layer.entrance_interpolation_weights, true,
                     solar_trans_entrance, *m_atmosphere,
                     Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
                         m_geometry_sparse, entrance_index),
@@ -275,7 +275,7 @@ namespace sasktran2::solartransmission {
 
                 scattering_source(
                     m_phase_handler, wavel_threadidx, losidx, layeridx,
-                    wavelidx, layer.entrance.interpolation_weights, true,
+                    wavelidx, layer.entrance_interpolation_weights, true,
                     solar_trans_exit, *m_atmosphere,
                     Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
                         m_geometry_sparse, exit_index),
@@ -283,7 +283,7 @@ namespace sasktran2::solartransmission {
             } else {
                 scattering_source(
                     m_phase_handler, wavel_threadidx, losidx, layeridx,
-                    wavelidx, layer.exit.interpolation_weights, false,
+                    wavelidx, layer.exit_interpolation_weights, false,
                     solar_trans_entrance, *m_atmosphere,
                     Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
                         m_geometry_sparse, entrance_index),
@@ -291,7 +291,7 @@ namespace sasktran2::solartransmission {
 
                 scattering_source(
                     m_phase_handler, wavel_threadidx, losidx, layeridx,
-                    wavelidx, layer.exit.interpolation_weights, false,
+                    wavelidx, layer.exit_interpolation_weights, false,
                     solar_trans_exit, *m_atmosphere,
                     Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
                         m_geometry_sparse, exit_index),
@@ -300,7 +300,7 @@ namespace sasktran2::solartransmission {
         } else {
             scattering_source(
                 m_phase_handler, wavel_threadidx, losidx, layeridx, wavelidx,
-                layer.entrance.interpolation_weights, true,
+                layer.entrance_interpolation_weights, true,
                 solar_trans_entrance, *m_atmosphere,
                 Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
                     m_geometry_sparse, entrance_index),
@@ -308,7 +308,7 @@ namespace sasktran2::solartransmission {
 
             scattering_source(
                 m_phase_handler, wavel_threadidx, losidx, layeridx, wavelidx,
-                layer.exit.interpolation_weights, false, solar_trans_exit,
+                layer.exit_interpolation_weights, false, solar_trans_exit,
                 *m_atmosphere,
                 Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
                     m_geometry_sparse, exit_index),

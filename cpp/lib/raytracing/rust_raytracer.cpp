@@ -26,46 +26,43 @@ namespace {
         location.lower_alt_index = lower_alt_index;
     }
 
-    void set_interpolation_weights(sasktran2::Location& location,
-                                   double altitude,
-                                   const sasktran2::Geometry1D& geometry) {
-        auto& weights = location.interpolation_weights;
+    void set_interpolation_weights(
+        sasktran2::Location& location, double altitude,
+        const sasktran2::Geometry1D& geometry,
+        sasktran2::raytracing::InterpolationStencil1D& weights) {
         const int lower = location.lower_alt_index;
 
         if (location.on_exact_altitude && lower >= 0) {
-            weights.resize(1);
-            weights[0] = {lower, 1.0};
+            weights.cell_index = std::min(lower, geometry.size() - 2);
+            weights.upper_weight = lower == weights.cell_index ? 0.0 : 1.0;
             return;
         }
 
         const auto& altitude_grid = geometry.altitude_grid();
         if (lower < 0 || lower + 1 >= altitude_grid.grid().size()) {
-            geometry.assign_interpolation_weights(location, weights);
+            std::vector<std::pair<int, double>> workspace;
+            geometry.assign_interpolation_weights(location, workspace);
+            weights.assign(workspace, geometry.size());
             return;
         }
 
+        weights.cell_index = lower;
         if (altitude_grid.interpolation_method() ==
             sasktran2::grids::interpolation::lower) {
-            weights.resize(1);
-            weights[0] = {lower, 1.0};
+            weights.upper_weight = 0.0;
             return;
         }
 
-        weights.resize(2);
-        weights[0].first = lower;
-        weights[1].first = lower + 1;
         if (altitude_grid.interpolation_method() ==
             sasktran2::grids::interpolation::shell) {
-            weights[0].second = 0.5;
-            weights[1].second = 0.5;
+            weights.upper_weight = 0.5;
             return;
         }
 
         const double lower_altitude = altitude_grid.grid()(lower);
         const double upper_altitude = altitude_grid.grid()(lower + 1);
-        weights[1].second =
+        weights.upper_weight =
             (altitude - lower_altitude) / (upper_altitude - lower_altitude);
-        weights[0].second = 1.0 - weights[1].second;
     }
 } // namespace
 
@@ -79,8 +76,6 @@ namespace sasktran2::rust::raytracer {
             : m_result(result), m_geometry(geometry), m_ray(ray) {}
 
         void prepare(const RustTraceSummary& summary) {
-            // Resize in place so repeated traces retain each Location's small
-            // interpolation-weight allocation.
             m_result.observer_and_look = m_ray;
             m_result.ground_is_hit = summary.ground_is_hit;
             m_result.is_straight = summary.is_straight;
@@ -129,9 +124,11 @@ namespace sasktran2::rust::raytracer {
             layer.saz_exit = rust_layer.saz_exit;
 
             set_interpolation_weights(layer.entrance,
-                                      rust_layer.entrance_altitude, m_geometry);
+                                      rust_layer.entrance_altitude, m_geometry,
+                                      layer.entrance_interpolation_weights);
             set_interpolation_weights(layer.exit, rust_layer.exit_altitude,
-                                      m_geometry);
+                                      m_geometry,
+                                      layer.exit_interpolation_weights);
             sasktran2::raytracing::add_integrated_od_weights(layer, m_geometry);
         }
 
@@ -202,17 +199,17 @@ namespace sasktran2::rust::raytracer {
             layer.horizontal_cell = rust_layer.cell_horizontal_index;
 
             m_geometry.assign_interpolation_weights(
-                layer.entrance, layer.entrance.interpolation_weights);
+                layer.entrance, layer.entrance_interpolation_weights_2d);
             m_geometry.assign_interpolation_weights(
-                layer.exit, layer.exit.interpolation_weights);
-            if (!layer.entrance.interpolation_weights.empty()) {
+                layer.exit, layer.exit_interpolation_weights_2d);
+            if (!layer.entrance_interpolation_weights_2d.empty()) {
                 layer.entrance.lower_alt_index =
-                    layer.entrance.interpolation_weights.front().first %
+                    layer.entrance_interpolation_weights_2d.front().first %
                     m_geometry.num_altitudes();
             }
-            if (!layer.exit.interpolation_weights.empty()) {
+            if (!layer.exit_interpolation_weights_2d.empty()) {
                 layer.exit.lower_alt_index =
-                    layer.exit.interpolation_weights.front().first %
+                    layer.exit_interpolation_weights_2d.front().first %
                     m_geometry.num_altitudes();
             }
         }

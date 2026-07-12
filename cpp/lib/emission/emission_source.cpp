@@ -41,14 +41,18 @@ namespace sasktran2::emission {
         double emission_end = 0;
 
         // Calculate SSA and emission at the layer boundaries
-        for (auto& ele : layer.entrance.interpolation_weights) {
+        for (std::size_t index = 0;
+             index < layer.entrance_interpolation_weights.size(); ++index) {
+            const auto ele = layer.entrance_interpolation_weights[index];
             ssa_start +=
                 m_atmosphere->storage().ssa(ele.first, wavelidx) * ele.second;
             emission_start +=
                 m_atmosphere->storage().emission_source(ele.first, wavelidx) *
                 ele.second;
         }
-        for (auto& ele : layer.exit.interpolation_weights) {
+        for (std::size_t index = 0;
+             index < layer.exit_interpolation_weights.size(); ++index) {
+            const auto ele = layer.exit_interpolation_weights[index];
             ssa_end +=
                 m_atmosphere->storage().ssa(ele.first, wavelidx) * ele.second;
             emission_end +=
@@ -110,7 +114,11 @@ namespace sasktran2::emission {
                 }
 
                 // And the SSA/emission derivatives
-                for (auto& ele : layer.entrance.interpolation_weights) {
+                for (std::size_t index = 0;
+                     index < layer.entrance_interpolation_weights.size();
+                     ++index) {
+                    const auto ele =
+                        layer.entrance_interpolation_weights[index];
                     d_ssa(0, ele.first) -= ele.second * emission_start *
                                            source_factor1 *
                                            layer.od_quad_start_fraction;
@@ -118,7 +126,9 @@ namespace sasktran2::emission {
                                                 source_factor1 *
                                                 layer.od_quad_start_fraction;
                 }
-                for (auto& ele : layer.exit.interpolation_weights) {
+                for (std::size_t index = 0;
+                     index < layer.exit_interpolation_weights.size(); ++index) {
+                    const auto ele = layer.exit_interpolation_weights[index];
                     d_ssa(0, ele.first) -= ele.second * emission_end *
                                            source_factor1 *
                                            layer.od_quad_end_fraction;
@@ -133,11 +143,17 @@ namespace sasktran2::emission {
                         m_atmosphere->storage().ssa.rows(),
                         m_atmosphere->num_scattering_deriv_groups());
                 // And the emission derivatives
-                for (auto& ele : layer.entrance.interpolation_weights) {
+                for (std::size_t index = 0;
+                     index < layer.entrance_interpolation_weights.size();
+                     ++index) {
+                    const auto ele =
+                        layer.entrance_interpolation_weights[index];
                     d_emission(0, ele.first) += ele.second * source_factor1 *
                                                 layer.od_quad_start_fraction;
                 }
-                for (auto& ele : layer.exit.interpolation_weights) {
+                for (std::size_t index = 0;
+                     index < layer.exit_interpolation_weights.size(); ++index) {
+                    const auto ele = layer.exit_interpolation_weights[index];
                     d_emission(0, ele.first) += ele.second * source_factor1 *
                                                 layer.od_quad_end_fraction;
                 }

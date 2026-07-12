@@ -30,10 +30,6 @@ namespace sasktran2 {
                                    point in the global altitude grid.  Set to -1 if
                                    not used. */
 
-        std::vector<std::pair<int, double>>
-            interpolation_weights; /**< OPTIONAL.  Interpolation weights and
-                                      indicies to the global geometry table */
-
         Location() : on_exact_altitude(false), lower_alt_index(-1){};
 
         /**

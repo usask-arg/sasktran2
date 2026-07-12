@@ -355,9 +355,21 @@ namespace {
 
             geometry.assign_interpolation_weights(layer.entrance,
                                                   expected_weights);
-            REQUIRE(layer.entrance.interpolation_weights == expected_weights);
+            REQUIRE(layer.entrance_interpolation_weights.size() ==
+                    expected_weights.size());
+            for (std::size_t weight_index = 0;
+                 weight_index < expected_weights.size(); ++weight_index) {
+                REQUIRE(layer.entrance_interpolation_weights[weight_index] ==
+                        expected_weights[weight_index]);
+            }
             geometry.assign_interpolation_weights(layer.exit, expected_weights);
-            REQUIRE(layer.exit.interpolation_weights == expected_weights);
+            REQUIRE(layer.exit_interpolation_weights.size() ==
+                    expected_weights.size());
+            for (std::size_t weight_index = 0;
+                 weight_index < expected_weights.size(); ++weight_index) {
+                REQUIRE(layer.exit_interpolation_weights[weight_index] ==
+                        expected_weights[weight_index]);
+            }
         }
     }
 
