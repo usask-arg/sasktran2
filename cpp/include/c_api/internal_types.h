@@ -46,6 +46,15 @@ struct Geometry1D {
                int geotype);
 };
 
+struct Geometry2D {
+    std::unique_ptr<sasktran2::Geometry2D> impl;
+
+    Geometry2D(double cos_sza, double saa, double earth_radius,
+               const double* altitude_grid_values, int num_altitudes,
+               const double* horizontal_angle_grid_values,
+               int num_horizontal_locations, int altitude_interp_method);
+};
+
 struct AtmosphereStorage {
     std::unique_ptr<sasktran2::atmosphere::AtmosphereGridStorage> impl;
 

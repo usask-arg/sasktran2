@@ -5,6 +5,11 @@
 pub struct Geometry1D {
     _unused: [u8; 0],
 }
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct Geometry2D {
+    _unused: [u8; 0],
+}
 unsafe extern "C" {
     pub fn sk_geometry1d_create(
         cos_sza: f64,
@@ -32,6 +37,48 @@ unsafe extern "C" {
     pub fn sk_geometry1d_get_refractive_index_ptr(
         geometry: *const Geometry1D,
         refractive_index: *mut *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_geometry2d_create(
+        cos_sza: f64,
+        saa: f64,
+        earth_radius: f64,
+        altitude_grid_values: *const f64,
+        num_altitudes: ::std::os::raw::c_int,
+        horizontal_angle_grid_values: *const f64,
+        num_horizontal_locations: ::std::os::raw::c_int,
+        altitude_interp_method: ::std::os::raw::c_int,
+    ) -> *mut Geometry2D;
+}
+unsafe extern "C" {
+    pub fn sk_geometry2d_destroy(geometry: *mut Geometry2D);
+}
+unsafe extern "C" {
+    pub fn sk_geometry2d_get_location_shape(
+        geometry: *const Geometry2D,
+        num_horizontal_locations: *mut ::std::os::raw::c_int,
+        num_altitudes: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_geometry2d_get_altitudes(
+        geometry: *const Geometry2D,
+        altitudes: *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_geometry2d_get_horizontal_angles(
+        geometry: *const Geometry2D,
+        horizontal_angles: *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_geometry2d_get_location_index(
+        geometry: *const Geometry2D,
+        altitude_index: ::std::os::raw::c_int,
+        horizontal_index: ::std::os::raw::c_int,
+        location_index: *mut ::std::os::raw::c_int,
     ) -> ::std::os::raw::c_int;
 }
 #[repr(C)]

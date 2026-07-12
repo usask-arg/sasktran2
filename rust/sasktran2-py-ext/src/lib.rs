@@ -64,6 +64,7 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Geometry objects
     m.add_class::<geometry::PyGeometry1D>()?;
+    m.add_class::<geometry::PyGeometry2D>()?;
     m.add_class::<geometry::GeometryType>()?;
     m.add_class::<geometry::InterpolationMethod>()?;
 
