@@ -19,8 +19,10 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::initialize() {
     } else {
         m_geometry_2d->validate();
 
-        if (m_config.single_scatter_source() !=
-                sasktran2::Config::SingleScatterSource::none ||
+        if ((m_config.single_scatter_source() !=
+                 sasktran2::Config::SingleScatterSource::none &&
+             m_config.single_scatter_source() !=
+                 sasktran2::Config::SingleScatterSource::exact) ||
             m_config.multiple_scatter_source() !=
                 sasktran2::Config::MultipleScatterSource::none ||
             (m_config.emission_source() !=
@@ -30,8 +32,9 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::initialize() {
              m_config.emission_source() !=
                  sasktran2::Config::EmissionSource::volume_emission_rate)) {
             throw std::invalid_argument(
-                "Geometry2D currently supports occultation, standard emission, "
-                "and volume emission rate sources, with scattering disabled");
+                "Geometry2D currently supports exact single scattering, "
+                "occultation, standard emission, and volume emission rate "
+                "sources, with multiple scattering disabled");
         }
         if (!m_viewing_geometry.flux_observers().empty()) {
             throw std::invalid_argument(
@@ -95,6 +98,20 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_integrator() {
 template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
 
     if (m_geometry_2d != nullptr) {
+        if (m_config.single_scatter_source() ==
+            sasktran2::Config::SingleScatterSource::exact) {
+#ifdef SKTRAN_RUST_SUPPORT
+            m_source_terms.emplace_back(
+                std::make_unique<
+                    sasktran2::solartransmission::SingleScatterSource<
+                        sasktran2::solartransmission::SolarTransmissionExact,
+                        NSTOKES>>(*m_geometry_2d, *m_raytracer_2d));
+            m_los_source_terms.push_back(m_source_terms.back().get());
+#else
+            throw std::invalid_argument(
+                "Geometry2D exact single scattering requires Rust support");
+#endif
+        }
         if (m_config.occultation_source() ==
             sasktran2::Config::OccultationSource::standard) {
             m_source_terms.emplace_back(

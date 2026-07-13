@@ -4,7 +4,6 @@ import numpy as np
 import pytest
 import sasktran2 as sk
 
-
 EARTH_RADIUS_M = 6_372_000.0
 ALTITUDES_M = np.array([0.0, 10_000.0, 30_000.0])
 HORIZONTAL_ANGLES = np.array([-0.5, 0.0, 0.5])
@@ -77,9 +76,9 @@ def test_constant_volume_emission_matches_analytic_path_integral():
     atmosphere.storage.ssa[:] = 0.0
     atmosphere.storage.emission_source[:] = emission
 
-    result = sk.Engine(
-        config, geometry, tangent_viewing_geometry()
-    ).calculate_radiance(atmosphere)
+    result = sk.Engine(config, geometry, tangent_viewing_geometry()).calculate_radiance(
+        atmosphere
+    )
 
     np.testing.assert_allclose(
         result.radiance[:, 0, 0],
@@ -120,9 +119,9 @@ def test_standard_emission_and_native_derivatives_match_analytic_and_numeric():
     location_index = geometry.location_index(altitude_index, horizontal_index)
 
     extinction_delta = 1.0e-10
-    atmosphere.storage.total_extinction[location_index, wavelength_index] += (
-        extinction_delta
-    )
+    atmosphere.storage.total_extinction[
+        location_index, wavelength_index
+    ] += extinction_delta
     perturbed_extinction = engine.calculate_radiance(atmosphere)
     numeric_extinction = (
         perturbed_extinction.radiance[wavelength_index, 0, 0]
@@ -131,17 +130,15 @@ def test_standard_emission_and_native_derivatives_match_analytic_and_numeric():
     analytic_extinction = base.wf_extinction[
         horizontal_index, altitude_index, wavelength_index, 0, 0
     ]
-    np.testing.assert_allclose(
-        numeric_extinction, analytic_extinction, rtol=5.0e-5
-    )
+    np.testing.assert_allclose(numeric_extinction, analytic_extinction, rtol=5.0e-5)
 
-    atmosphere.storage.total_extinction[location_index, wavelength_index] -= (
-        extinction_delta
-    )
+    atmosphere.storage.total_extinction[
+        location_index, wavelength_index
+    ] -= extinction_delta
     emission_delta = 1.0e-6
-    atmosphere.storage.emission_source[location_index, wavelength_index] += (
-        emission_delta
-    )
+    atmosphere.storage.emission_source[
+        location_index, wavelength_index
+    ] += emission_delta
     perturbed_emission = engine.calculate_radiance(atmosphere)
     numeric_emission = (
         perturbed_emission.radiance[wavelength_index, 0, 0]
@@ -169,9 +166,9 @@ def test_occultation_and_standard_emission_sources_add_consistently():
     atmosphere.storage.ssa[:] = 0.0
     atmosphere.storage.emission_source[:] = emission
 
-    result = sk.Engine(
-        config, geometry, tangent_viewing_geometry()
-    ).calculate_radiance(atmosphere)
+    result = sk.Engine(config, geometry, tangent_viewing_geometry()).calculate_radiance(
+        atmosphere
+    )
 
     transmission = np.exp(-extinction * tangent_path_length_m())
     expected = transmission + emission * (1.0 - transmission)
@@ -189,9 +186,7 @@ def test_horizontally_uniform_2d_emission_matches_1d(source):
     viewing = sk.ViewingGeometry()
     viewing.add_ray(tangent_ray(12_000.0))
     viewing.add_ray(tangent_ray(22_000.0))
-    extinction = np.array(
-        [[1.0e-6, 2.0e-6], [2.0e-6, 1.0e-6], [0.5e-6, 0.7e-6]]
-    )
+    extinction = np.array([[1.0e-6, 2.0e-6], [2.0e-6, 1.0e-6], [0.5e-6, 0.7e-6]])
     emission = np.array([[1.0, 4.0], [2.0, 3.0], [5.0, 2.0]])
     ssa = (
         np.array([[0.1, 0.2], [0.3, 0.1], [0.2, 0.4]])
@@ -273,12 +268,8 @@ def test_altitude_profile_volume_emission_constituent_matches_1d_and_numeric_wf(
     viewing = tangent_viewing_geometry()
     wavelength = np.array([557.7])
     ver = np.array([1.0, 3.0, 2.0])
-    atmosphere_1d = sk.Atmosphere(
-        geometry_1d, config, wavelengths_nm=wavelength
-    )
-    atmosphere_2d = sk.Atmosphere(
-        geometry_2d, config, wavelengths_nm=wavelength
-    )
+    atmosphere_1d = sk.Atmosphere(geometry_1d, config, wavelengths_nm=wavelength)
+    atmosphere_2d = sk.Atmosphere(geometry_2d, config, wavelengths_nm=wavelength)
     extinction = np.full((ALTITUDES_M.size, 1), 1.0e-6)
     atmosphere_1d["absorption"] = sk.constituent.Manual(
         extinction, np.zeros_like(extinction)
@@ -359,5 +350,5 @@ def test_ground_surface_emission_is_attenuated_and_matches_1d():
 
 def test_geometry2d_engine_rejects_unimplemented_emission_sources():
     config = emission_config(sk.EmissionSource.TwoStream)
-    with pytest.raises(NotImplementedError, match="supports occultation"):
+    with pytest.raises(NotImplementedError, match="supports exact single scattering"):
         sk.Engine(config, geometry2d(), tangent_viewing_geometry())

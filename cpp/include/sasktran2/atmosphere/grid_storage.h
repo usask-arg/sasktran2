@@ -244,7 +244,10 @@ namespace sasktran2::atmosphere {
                         }
                     } else {
                         for (int k = 0; k < max_stored_legendre(); ++k) {
-                            if (leg_coeff(4 * k, i, j) != 0) {
+                            if (leg_coeff(4 * k, i, j) != 0 ||
+                                leg_coeff(4 * k + 1, i, j) != 0 ||
+                                leg_coeff(4 * k + 2, i, j) != 0 ||
+                                leg_coeff(4 * k + 3, i, j) != 0) {
                                 max_order(i, j) = k + 1;
                             }
                         }
@@ -266,7 +269,10 @@ namespace sasktran2::atmosphere {
                             }
                         } else {
                             for (int k = 0; k < max_stored_legendre(); ++k) {
-                                if (d_leg_coeff(4 * k, i, j, d) != 0) {
+                                if (d_leg_coeff(4 * k, i, j, d) != 0 ||
+                                    d_leg_coeff(4 * k + 1, i, j, d) != 0 ||
+                                    d_leg_coeff(4 * k + 2, i, j, d) != 0 ||
+                                    d_leg_coeff(4 * k + 3, i, j, d) != 0) {
                                     max_order_deriv(i, j) = k + 1;
                                 }
                             }

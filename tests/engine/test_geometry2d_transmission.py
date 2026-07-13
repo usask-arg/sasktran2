@@ -223,7 +223,8 @@ def test_geometry2d_engine_rejects_unsupported_sources_and_mismatched_geometry()
     viewing = sk.ViewingGeometry()
     viewing.add_ray(tangent_ray())
     unsupported = sk.Config()
-    with pytest.raises(NotImplementedError, match="supports occultation"):
+    unsupported.single_scatter_source = sk.SingleScatterSource.Table
+    with pytest.raises(NotImplementedError, match="supports exact single scattering"):
         sk.Engine(unsupported, geometry, viewing)
 
     config = transmission_config()

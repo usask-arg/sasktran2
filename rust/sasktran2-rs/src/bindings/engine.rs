@@ -297,6 +297,13 @@ mod tests {
         let mut viewing_geometry = ViewingGeometry::new();
         viewing_geometry.add_tangent_altitude_solar(15_000.0, 0.0, 100_000.0, 0.5);
 
+        let engine = Engine::new_2d(&config, &geometry, &viewing_geometry).unwrap();
+        assert!(!engine.engine.is_null());
+        drop(engine);
+
+        config
+            .with_single_scatter_source(SingleScatterSource::SolarTable)
+            .unwrap();
         assert!(Engine::new_2d(&config, &geometry, &viewing_geometry).is_err());
 
         config

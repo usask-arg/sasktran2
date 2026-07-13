@@ -78,7 +78,11 @@ class Engine:
         """
         if isinstance(geometry, sk.Geometry2D):
             if (
-                config.single_scatter_source != sk.SingleScatterSource.NoSource
+                config.single_scatter_source
+                not in (
+                    sk.SingleScatterSource.NoSource,
+                    sk.SingleScatterSource.Exact,
+                )
                 or config.multiple_scatter_source != sk.MultipleScatterSource.NoSource
                 or config.emission_source
                 not in (
@@ -88,9 +92,9 @@ class Engine:
                 )
             ):
                 msg = (
-                    "Geometry2D Engine currently supports occultation, standard "
-                    "emission, and volume emission rate sources with scattering "
-                    "disabled"
+                    "Geometry2D Engine currently supports exact single scattering, "
+                    "occultation, standard emission, and volume emission rate "
+                    "sources with multiple scattering disabled"
                 )
                 raise NotImplementedError(msg)
             if viewing_geometry.flux_observers:
