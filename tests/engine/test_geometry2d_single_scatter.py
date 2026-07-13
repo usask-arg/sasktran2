@@ -63,6 +63,17 @@ def vertical_geometry2d() -> sk.Geometry2D:
     )
 
 
+def vertical_geometry1d() -> sk.Geometry1D:
+    return sk.Geometry1D(
+        cos_sza=1.0,
+        solar_azimuth=0.0,
+        earth_radius_m=EARTH_RADIUS_M,
+        altitude_grid_m=ALTITUDES_M,
+        interpolation_method=sk.InterpolationMethod.LinearInterpolation,
+        geometry_type=sk.GeometryType.Spherical,
+    )
+
+
 def vertical_ground_viewing() -> sk.ViewingGeometry:
     viewing = sk.ViewingGeometry()
     viewing.add_ray(
@@ -479,12 +490,18 @@ def test_native_2d_polarized_phase_derivative_matches_finite_difference():
     assert np.any(np.abs(analytic[..., 1:]) > 0.0)
 
 
+@pytest.mark.parametrize(
+    "geometry_factory",
+    [vertical_geometry1d, vertical_geometry2d],
+    ids=["geometry1d", "geometry2d"],
+)
 @pytest.mark.parametrize("zero_quantity", ["extinction", "ssa"])
 def test_zero_scattering_factors_have_finite_nonzero_boundary_derivatives(
+    geometry_factory,
     zero_quantity: str,
 ):
     config = single_scatter_config()
-    geometry = vertical_geometry2d()
+    geometry = geometry_factory()
     atmosphere = sk.Atmosphere(
         geometry,
         config,
@@ -509,6 +526,35 @@ def test_zero_scattering_factors_have_finite_nonzero_boundary_derivatives(
     derivative = result[derivative_name].values
     assert np.all(np.isfinite(derivative))
     assert np.any(np.abs(derivative) > 0.0)
+
+
+@pytest.mark.parametrize(
+    "geometry_factory",
+    [vertical_geometry1d, vertical_geometry2d],
+    ids=["geometry1d", "geometry2d"],
+)
+def test_zero_extinction_and_ssa_have_finite_zero_derivatives(geometry_factory):
+    config = single_scatter_config()
+    geometry = geometry_factory()
+    atmosphere = sk.Atmosphere(
+        geometry,
+        config,
+        wavelengths_nm=np.array([500.0]),
+        legendre_derivative=False,
+    )
+    atmosphere.storage.total_extinction[:] = 0.0
+    atmosphere.storage.ssa[:] = 0.0
+    atmosphere.leg_coeff.a1[0] = 1.0
+
+    result = sk.Engine(config, geometry, vertical_ground_viewing()).calculate_radiance(
+        atmosphere
+    )
+
+    assert result.radiance.item() == pytest.approx(0.0, abs=1.0e-15)
+    for derivative_name in ("wf_extinction", "wf_ssa"):
+        derivative = result[derivative_name].values
+        assert np.all(np.isfinite(derivative))
+        assert np.all(derivative == 0.0)
 
 
 def test_ground_shadow_blocks_atmosphere_and_surface_single_scatter():

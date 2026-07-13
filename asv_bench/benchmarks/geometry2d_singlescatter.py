@@ -72,7 +72,5 @@ class GeometrySingleScatterComparison:
         self._atmosphere = atmosphere
         self._engine = sk.Engine(config, geometry, viewing)
 
-    def time_calculate_radiance(
-        self, geometry_kind, calculate_derivatives
-    ):  # noqa: ARG002
+    def time_calculate_radiance(self, _geometry_kind, _calculate_derivatives):
         self._engine.calculate_radiance(self._atmosphere)

@@ -106,36 +106,67 @@ namespace sasktran2 {
         if (!have_to_integrate) {
             return;
         }
-        // Iterate through each OD row from the end of the ray to the observer.
-        // Attenuation is geometry-independent; only interior sources require a
-        // concrete layer type.
-        for (int j = 0; j < m_traced_ray_od_matrix.at(rayidx).rows(); ++j) {
+
+        const auto& od_matrix = m_traced_ray_od_matrix[rayidx];
+        const auto& shell_od = m_shell_od[rayidx];
+        if (m_traced_rays != nullptr) {
+            integrate_ray(radiance, source_terms, (*m_traced_rays)[rayidx],
+                          od_matrix, shell_od, wavelidx, rayidx,
+                          wavel_threadidx, threadidx);
+        } else {
+            integrate_ray(radiance, source_terms, (*m_traced_rays_2d)[rayidx],
+                          od_matrix, shell_od, wavelidx, rayidx,
+                          wavel_threadidx, threadidx);
+        }
+    }
+
+    template <int NSTOKES>
+    template <typename RayType>
+    void SourceIntegrator<NSTOKES>::integrate_ray(
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+            radiance,
+        const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+        const RayType& ray,
+        const Eigen::SparseMatrix<double, Eigen::RowMajor>& od_matrix,
+        const Eigen::MatrixXd& shell_od, int wavelidx, int rayidx,
+        int wavel_threadidx, int threadidx) const {
+        static_assert(
+            std::is_same_v<RayType, sasktran2::raytracing::TracedRay> ||
+                std::is_same_v<RayType, sasktran2::raytracing::TracedRay2D>,
+            "Unsupported traced ray type");
+
+        for (int layeridx = 0; layeridx < ray.layers.size(); ++layeridx) {
             sasktran2::SparseODDualView local_shell_od(
-                m_shell_od.at(rayidx)(j, wavelidx),
-                std::exp(-m_shell_od.at(rayidx)(j, wavelidx)),
-                m_traced_ray_od_matrix.at(rayidx), j);
+                shell_od(layeridx, wavelidx),
+                std::exp(-shell_od(layeridx, wavelidx)), od_matrix, layeridx);
 
-            attenuate_layer(radiance, local_shell_od);
+            // rad = rad * atten, drad = drad * atten + rad * datten.
+            if (m_calculate_derivatives) {
+                for (auto it = local_shell_od.deriv_iter; it; ++it) {
+                    radiance.deriv(Eigen::placeholders::all, it.index()) -=
+                        it.value() * radiance.value;
+                }
+            }
+            radiance.value *= local_shell_od.exp_minus_od;
+            if (m_calculate_derivatives) {
+                radiance.deriv *= local_shell_od.exp_minus_od;
+            }
 
-            if (m_traced_rays != nullptr) {
-                // Calculate all of the 1D layer sources. The capability check
-                // above guarantees that 2D integration has no interior
-                // sources, so it avoids geometry-specific dispatch entirely.
-                const auto& layer = m_traced_rays->at(rayidx).layers.at(j);
-                for (const auto& source : source_terms) {
+            const auto& layer = ray.layers[layeridx];
+            for (const auto& source : source_terms) {
+                if constexpr (std::is_same_v<
+                                  RayType, sasktran2::raytracing::TracedRay>) {
                     source->integrated_source(
-                        wavelidx, rayidx, j, wavel_threadidx, threadidx, layer,
-                        local_shell_od, radiance,
+                        wavelidx, rayidx, layeridx, wavel_threadidx, threadidx,
+                        layer, local_shell_od, radiance,
                         SourceTermInterface<
                             NSTOKES>::IntegrationDirection::backward);
-                }
-            } else {
-                const auto& layer = m_traced_rays_2d->at(rayidx).layers.at(j);
-                for (const auto& source : source_terms) {
+                } else {
                     if (source->has_interior_source()) {
                         source->integrated_source(
-                            wavelidx, rayidx, j, wavel_threadidx, threadidx,
-                            layer, *m_geometry_2d, local_shell_od, radiance,
+                            wavelidx, rayidx, layeridx, wavel_threadidx,
+                            threadidx, layer, *m_geometry_2d, local_shell_od,
+                            radiance,
                             SourceTermInterface<
                                 NSTOKES>::IntegrationDirection::backward);
                     }
@@ -148,32 +179,12 @@ namespace sasktran2 {
                 if (!message) {
                     spdlog::error("One of the sources was  NaN Ray: {} layer: "
                                   "{} Layer od: {} Layer Atten Factor: {}",
-                                  rayidx, j, local_shell_od.od,
+                                  rayidx, layeridx, local_shell_od.od,
                                   local_shell_od.exp_minus_od);
                     message = true;
                 }
             }
 #endif
-        }
-    }
-
-    template <int NSTOKES>
-    void SourceIntegrator<NSTOKES>::attenuate_layer(
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-            radiance,
-        const sasktran2::SparseODDualView& local_shell_od) const {
-        // rad = rad * atten, drad = drad * atten + rad * datten. Attenuation
-        // affects every derivative, while datten only affects extinction.
-        if (m_calculate_derivatives) {
-            for (auto it = local_shell_od.deriv_iter; it; ++it) {
-                radiance.deriv(Eigen::placeholders::all, it.index()) -=
-                    it.value() * radiance.value;
-            }
-        }
-
-        radiance.value *= local_shell_od.exp_minus_od;
-        if (m_calculate_derivatives) {
-            radiance.deriv *= local_shell_od.exp_minus_od;
         }
     }
 

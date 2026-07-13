@@ -291,16 +291,18 @@ namespace sasktran2::solartransmission {
         const atmosphere::Atmosphere<NSTOKES>& atmosphere,
         Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
             solar_trans_iter,
-        bool calculate_derivatives, bool use_active_derivatives,
-        std::vector<int>& active_derivative_indices,
+        bool calculate_derivatives, std::vector<int>& active_derivative_indices,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
             source) {
+        constexpr bool use_active_derivatives =
+            !std::is_same_v<std::decay_t<IndexWeights>,
+                            raytracing::InterpolationStencil1D>;
         const auto& storage = atmosphere.storage();
         source.value.setZero();
-        active_derivative_indices.clear();
 
         if (calculate_derivatives) {
-            if (use_active_derivatives) {
+            if constexpr (use_active_derivatives) {
+                active_derivative_indices.clear();
                 for (auto it = solar_trans_iter; it; ++it) {
                     active_derivative_indices.push_back(it.index());
                 }
@@ -340,29 +342,76 @@ namespace sasktran2::solartransmission {
 
         double ssa = 0;
         double k = 0;
-        for (std::size_t index = 0; index < index_weights.size(); ++index) {
-            const auto ele = index_weights[index];
-            ssa += storage.ssa(ele.first, wavelidx) * ele.second;
-
-            k += storage.total_extinction(ele.first, wavelidx) * ele.second;
+        if constexpr (std::is_same_v<std::decay_t<IndexWeights>,
+                                     raytracing::InterpolationStencil1D>) {
+            if (index_weights.valid()) {
+                const int lower_index = index_weights.cell_index;
+                const double upper_weight = index_weights.upper_weight;
+                if (upper_weight == 0.0) {
+                    ssa = storage.ssa(lower_index, wavelidx);
+                    k = storage.total_extinction(lower_index, wavelidx);
+                } else if (upper_weight == 1.0) {
+                    ssa = storage.ssa(lower_index + 1, wavelidx);
+                    k = storage.total_extinction(lower_index + 1, wavelidx);
+                } else {
+                    const double lower_weight = 1.0 - upper_weight;
+                    ssa = storage.ssa(lower_index, wavelidx) * lower_weight +
+                          storage.ssa(lower_index + 1, wavelidx) * upper_weight;
+                    k = storage.total_extinction(lower_index, wavelidx) *
+                            lower_weight +
+                        storage.total_extinction(lower_index + 1, wavelidx) *
+                            upper_weight;
+                }
+            }
+        } else {
+            for (const auto& ele : index_weights) {
+                ssa += storage.ssa(ele.first, wavelidx) * ele.second;
+                k += storage.total_extinction(ele.first, wavelidx) * ele.second;
+            }
         }
 
-        // Evaluate the phase function with unit amplitude first. This keeps the
-        // local extinction and SSA derivatives well-defined when either k or
-        // SSA is exactly zero.
+        const double source_amplitude = k * ssa * solar_trans / (EIGEN_PI * 4);
+        const bool use_zero_safe_derivative_path =
+            calculate_derivatives && (k == 0.0 || ssa == 0.0);
+        if (!use_zero_safe_derivative_path) {
+            // The common path lets the phase handler work directly with the
+            // scaled source, avoiding a second dense derivative pass.
+            source.value(0) = source_amplitude;
+            phase_handler.scatter(threadidx, losidx, layeridx, index_weights,
+                                  is_entrance, source);
+
+            if (!calculate_derivatives) {
+                return;
+            }
+            for (auto it = solar_trans_iter; it; ++it) {
+                source.deriv(Eigen::placeholders::all, it.index()) -=
+                    it.value() * source.value;
+            }
+            for (std::size_t index = 0; index < index_weights.size(); ++index) {
+                const auto ele = index_weights[index];
+                source.deriv(Eigen::placeholders::all,
+                             atmosphere.ssa_deriv_start_index() + ele.first) +=
+                    ele.second * source.value / ssa;
+                source.deriv(Eigen::placeholders::all, ele.first) +=
+                    ele.second * source.value / k;
+            }
+            return;
+        }
+
+        // For derivatives at k == 0 or SSA == 0, evaluate the unit-amplitude
+        // phase first so the nonzero boundary derivative remains well-defined.
         source.value(0) = 1.0;
 
         phase_handler.scatter(threadidx, losidx, layeridx, index_weights,
                               is_entrance, source);
 
         const Eigen::Vector<double, NSTOKES> phase = source.value;
-        const double source_amplitude = k * ssa * solar_trans / (EIGEN_PI * 4);
         source.value *= source_amplitude;
 
         if (!calculate_derivatives) {
             return;
         }
-        if (use_active_derivatives) {
+        if constexpr (use_active_derivatives) {
             for (const int derivative_index : active_derivative_indices) {
                 source.deriv.col(derivative_index) *= source_amplitude;
             }

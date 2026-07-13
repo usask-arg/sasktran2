@@ -59,10 +59,15 @@ namespace sasktran2 {
         const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere;
         int m_num_geometry_locations = 0;
 
-        void attenuate_layer(
+        template <typename RayType>
+        void integrate_ray(
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
                 radiance,
-            const sasktran2::SparseODDualView& local_shell_od) const;
+            const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+            const RayType& ray,
+            const Eigen::SparseMatrix<double, Eigen::RowMajor>& od_matrix,
+            const Eigen::MatrixXd& shell_od, int wavelidx, int rayidx,
+            int wavel_threadidx, int threadidx) const;
 
       public:
         /**

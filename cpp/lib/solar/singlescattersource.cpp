@@ -301,11 +301,16 @@ namespace sasktran2::solartransmission {
             m_start_active_derivative_indices[threadidx];
         auto& end_active_derivative_indices =
             m_end_active_derivative_indices[threadidx];
-        const bool use_active_derivatives = m_geometry_2d != nullptr;
 
-        if (m_geometry_1d != nullptr &&
-            m_geometry_1d->altitude_grid().interpolation_method() ==
-                grids::interpolation::lower) {
+        bool use_lower_interpolation = false;
+        if constexpr (std::is_same_v<std::decay_t<EntranceWeights>,
+                                     raytracing::InterpolationStencil1D>) {
+            use_lower_interpolation =
+                m_geometry_1d->altitude_grid().interpolation_method() ==
+                grids::interpolation::lower;
+        }
+
+        if (use_lower_interpolation) {
             if (layer.r_exit > layer.r_entrance) {
                 scattering_source(
                     m_phase_handler, wavel_threadidx, losidx, layeridx,
@@ -313,8 +318,8 @@ namespace sasktran2::solartransmission {
                     *m_atmosphere,
                     Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
                         m_geometry_sparse, entrance_index),
-                    calculate_derivatives, use_active_derivatives,
-                    start_active_derivative_indices, start_phase);
+                    calculate_derivatives, start_active_derivative_indices,
+                    start_phase);
 
                 scattering_source(
                     m_phase_handler, wavel_threadidx, losidx, layeridx,
@@ -322,8 +327,8 @@ namespace sasktran2::solartransmission {
                     *m_atmosphere,
                     Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
                         m_geometry_sparse, exit_index),
-                    calculate_derivatives, use_active_derivatives,
-                    end_active_derivative_indices, end_phase);
+                    calculate_derivatives, end_active_derivative_indices,
+                    end_phase);
             } else {
                 scattering_source(
                     m_phase_handler, wavel_threadidx, losidx, layeridx,
@@ -331,8 +336,8 @@ namespace sasktran2::solartransmission {
                     *m_atmosphere,
                     Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
                         m_geometry_sparse, entrance_index),
-                    calculate_derivatives, use_active_derivatives,
-                    start_active_derivative_indices, start_phase);
+                    calculate_derivatives, start_active_derivative_indices,
+                    start_phase);
 
                 scattering_source(
                     m_phase_handler, wavel_threadidx, losidx, layeridx,
@@ -340,8 +345,8 @@ namespace sasktran2::solartransmission {
                     *m_atmosphere,
                     Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
                         m_geometry_sparse, exit_index),
-                    calculate_derivatives, use_active_derivatives,
-                    end_active_derivative_indices, end_phase);
+                    calculate_derivatives, end_active_derivative_indices,
+                    end_phase);
             }
         } else {
             scattering_source(
@@ -349,16 +354,16 @@ namespace sasktran2::solartransmission {
                 entrance_weights, true, solar_trans_entrance, *m_atmosphere,
                 Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
                     m_geometry_sparse, entrance_index),
-                calculate_derivatives, use_active_derivatives,
-                start_active_derivative_indices, start_phase);
+                calculate_derivatives, start_active_derivative_indices,
+                start_phase);
 
             scattering_source(
                 m_phase_handler, wavel_threadidx, losidx, layeridx, wavelidx,
                 exit_weights, false, solar_trans_exit, *m_atmosphere,
                 Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
                     m_geometry_sparse, exit_index),
-                calculate_derivatives, use_active_derivatives,
-                end_active_derivative_indices, end_phase);
+                calculate_derivatives, end_active_derivative_indices,
+                end_phase);
         }
 
         double source_factor1;
@@ -416,7 +421,8 @@ namespace sasktran2::solartransmission {
             // And add on d_phase. Structured 2D endpoints touch only a small
             // subset of the full atmosphere derivative vector, so avoid a
             // dense pass over every horizontal grid location for each layer.
-            if (use_active_derivatives) {
+            if constexpr (!std::is_same_v<std::decay_t<EntranceWeights>,
+                                          raytracing::InterpolationStencil1D>) {
                 for (const int derivative_index :
                      start_active_derivative_indices) {
                     source.deriv.col(derivative_index) +=

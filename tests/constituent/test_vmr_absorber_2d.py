@@ -3,10 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import sasktran2 as sk
-
 from sasktran2.constants import K_BOLTZMANN
 from sasktran2.optical.base import OpticalProperty, OpticalQuantities
-
 
 ALTITUDES_M = np.array([0.0, 10_000.0, 30_000.0])
 HORIZONTAL_ANGLES = np.array([-0.5, 0.0, 0.5])
@@ -18,9 +16,7 @@ class _ConstantAbsorber(OpticalProperty):
     def __init__(self) -> None:
         self.seen_vmr: list[np.ndarray] = []
 
-    def atmosphere_quantities(
-        self, atmo: sk.Atmosphere, **kwargs
-    ) -> OpticalQuantities:
+    def atmosphere_quantities(self, atmo: sk.Atmosphere, **kwargs) -> OpticalQuantities:
         self.seen_vmr.append(np.asarray(kwargs["vmr"]).copy())
         cross_section = np.broadcast_to(
             CROSS_SECTIONS_M2, (atmo.num_locations, CROSS_SECTIONS_M2.size)
@@ -37,9 +33,7 @@ def _config(*, transmission: bool = False) -> sk.Config:
     config.multiple_scatter_source = sk.MultipleScatterSource.NoSource
     config.emission_source = sk.EmissionSource.NoSource
     config.occultation_source = (
-        sk.OccultationSource.Standard
-        if transmission
-        else sk.OccultationSource.NoSource
+        sk.OccultationSource.Standard if transmission else sk.OccultationSource.NoSource
     )
     return config
 
@@ -237,13 +231,9 @@ def test_native_vmr_with_production_optical_database_matches_1d_columns():
     vmr = _vmr()
     atmosphere2d.pressure_pa = pressure
     atmosphere2d.temperature_k = temperature
-    atmosphere2d["ozone"] = sk.constituent.VMRAbsorber2D(
-        sk.optical.O3DBM(), vmr
-    )
+    atmosphere2d["ozone"] = sk.constituent.VMRAbsorber2D(sk.optical.O3DBM(), vmr)
     atmosphere2d.internal_object()
-    extinction2d = atmosphere2d.reshape_native(
-        atmosphere2d.storage.total_extinction
-    )
+    extinction2d = atmosphere2d.reshape_native(atmosphere2d.storage.total_extinction)
 
     geometry1d = sk.Geometry1D(
         cos_sza=0.6,
@@ -305,9 +295,7 @@ def test_native_vmr_derivative_is_local_finite_and_matches_storage_difference():
 def test_native_pressure_derivative_matches_storage_difference():
     geometry = _geometry2d()
     atmosphere = _atmosphere(geometry)
-    atmosphere["gas"] = sk.constituent.VMRAbsorber2D(
-        _ConstantAbsorber(), _vmr()
-    )
+    atmosphere["gas"] = sk.constituent.VMRAbsorber2D(_ConstantAbsorber(), _vmr())
     atmosphere.internal_object()
 
     base_extinction = atmosphere.storage.total_extinction.copy()
@@ -316,8 +304,7 @@ def test_native_pressure_derivative_matches_storage_difference():
     altitude_index = 1
     location_index = geometry.location_index(altitude_index, horizontal_index)
     analytic = (
-        mapping.d_extinction
-        * mapping.interpolator[:, location_index, np.newaxis]
+        mapping.d_extinction * mapping.interpolator[:, location_index, np.newaxis]
     )
 
     delta = 0.1
@@ -332,9 +319,7 @@ def test_broadcast_pressure_derivative_retains_altitude_dimension():
     atmosphere = _atmosphere(geometry)
     atmosphere.pressure_pa = np.array([100_000.0, 30_000.0, 1_000.0])
     atmosphere.temperature_k = np.array([280.0, 240.0, 210.0])
-    atmosphere["gas"] = sk.constituent.VMRAbsorber2D(
-        _ConstantAbsorber(), _vmr()
-    )
+    atmosphere["gas"] = sk.constituent.VMRAbsorber2D(_ConstantAbsorber(), _vmr())
     atmosphere.internal_object()
 
     mapping = atmosphere.storage.get_derivative_mapping("wf_gas_pressure_pa")
