@@ -24,6 +24,7 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<constituent::emission::PyThermalEmission>()?;
     m.add_class::<constituent::rayleigh::PyRayleigh>()?;
     m.add_class::<constituent::vmr_alt_absorber::PyVMRAltitudeAbsorber>()?;
+    m.add_class::<constituent::vmr_absorber_2d::PyVMRAbsorber2D>()?;
     m.add_class::<constituent::number_density_scatterer::PyNumberDensityScatterer>()?;
     m.add_class::<constituent::manual::PyManual>()?;
     m.add_class::<constituent::volume_emission_rate::PyMonochromaticVolumeEmissionRate>()?;

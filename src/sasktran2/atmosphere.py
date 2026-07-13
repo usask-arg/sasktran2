@@ -534,6 +534,16 @@ class Atmosphere:
         }
         for mapping_name in self.storage.derivative_mapping_names():
             mapping = self.storage.get_derivative_mapping(mapping_name)
+            interpolator = np.asarray(mapping.interpolator)
+            if mapping.interp_dim == "location" and (
+                interpolator.size == 0
+                or (
+                    interpolator.ndim == 2
+                    and interpolator.shape[1] == self._spatial_layout.num_locations
+                )
+            ):
+                self._derivative_output_shapes[mapping_name] = self.volume_shape
+
             state_name = next(
                 (
                     name
@@ -551,7 +561,6 @@ class Atmosphere:
             if state_value is None and state_name != "specific_humidity":
                 continue
 
-            interpolator = np.asarray(mapping.interpolator)
             if interpolator.size != 0 and (
                 interpolator.ndim != 2
                 or interpolator.shape[1] != self._spatial_layout.num_locations

@@ -484,13 +484,18 @@ void Sasktran2<NSTOKES>::calculate_radiance(
     auto& radiance = const_cast<std::vector<
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>>&>(
         m_thread_radiance);
-    radiance.resize(m_config.num_threads(),
-                    {NSTOKES, atmosphere.num_deriv(), true});
+    radiance.resize(m_config.num_threads());
+    for (auto& thread_radiance : radiance) {
+        thread_radiance.resize(NSTOKES, atmosphere.num_deriv(), false);
+    }
 
     auto& flux = const_cast<std::vector<
         sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>>&>(
         m_thread_flux);
-    flux.resize(m_config.num_threads(), {1, atmosphere.num_deriv(), true});
+    flux.resize(m_config.num_threads());
+    for (auto& thread_flux : flux) {
+        thread_flux.resize(1, atmosphere.num_deriv(), false);
+    }
 
     output.initialize(m_config, *m_geometry, m_internal_viewing_geometry,
                       atmosphere);

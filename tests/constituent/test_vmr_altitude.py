@@ -71,6 +71,38 @@ def test_vmr_altitude_setting():
     const.vmr *= 2.0
 
 
+def test_vmr_altitude_zero_out_of_bounds_mode():
+    config = sk.Config()
+    geometry = sk.Geometry1D(
+        0.6,
+        0,
+        6_327_000,
+        np.array([0.0, 10_000.0, 20_000.0, 30_000.0]),
+        sk.InterpolationMethod.LinearInterpolation,
+        sk.GeometryType.Spherical,
+    )
+    atmosphere = sk.Atmosphere(
+        geometry,
+        config,
+        wavelengths_nm=np.array([350.0]),
+        calculate_derivatives=False,
+    )
+    atmosphere.pressure_pa = np.full(4, 50_000.0)
+    atmosphere.temperature_k = np.full(4, 250.0)
+    atmosphere["absorber"] = sk.constituent.VMRAltitudeAbsorber(
+        sk.optical.O3DBM(),
+        np.array([10_000.0, 20_000.0]),
+        np.ones(2),
+        out_of_bounds_mode="zero",
+    )
+
+    atmosphere.internal_object()
+
+    assert atmosphere.storage.total_extinction[0, 0] == 0.0
+    assert atmosphere.storage.total_extinction[-1, 0] == 0.0
+    assert np.all(atmosphere.storage.total_extinction[1:3, 0] > 0.0)
+
+
 def test_vmr_altitude_wf_native_grid():
     """
     Tests that the VMRAltitudeAbsorber class calculates derivatives with respect to VMR correctly when

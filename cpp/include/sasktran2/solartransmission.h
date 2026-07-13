@@ -291,18 +291,55 @@ namespace sasktran2::solartransmission {
         const atmosphere::Atmosphere<NSTOKES>& atmosphere,
         Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
             solar_trans_iter,
-        bool calculate_derivatives,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
-        double& ssa, double& k) {
+        bool calculate_derivatives, bool use_active_derivatives,
+        std::vector<int>& active_derivative_indices,
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+            source) {
         const auto& storage = atmosphere.storage();
         source.value.setZero();
+        active_derivative_indices.clear();
 
         if (calculate_derivatives) {
-            source.deriv.setZero();
+            if (use_active_derivatives) {
+                for (auto it = solar_trans_iter; it; ++it) {
+                    active_derivative_indices.push_back(it.index());
+                }
+                for (std::size_t index = 0; index < index_weights.size();
+                     ++index) {
+                    const auto ele = index_weights[index];
+                    if (ele.second == 0.0) {
+                        continue;
+                    }
+                    active_derivative_indices.push_back(ele.first);
+                    active_derivative_indices.push_back(
+                        atmosphere.ssa_deriv_start_index() + ele.first);
+                    for (int derivative_group = 0;
+                         derivative_group <
+                         atmosphere.num_scattering_deriv_groups();
+                         ++derivative_group) {
+                        active_derivative_indices.push_back(
+                            atmosphere.scat_deriv_start_index() +
+                            derivative_group *
+                                atmosphere.storage().total_extinction.rows() +
+                            ele.first);
+                    }
+                }
+                std::sort(active_derivative_indices.begin(),
+                          active_derivative_indices.end());
+                active_derivative_indices.erase(
+                    std::unique(active_derivative_indices.begin(),
+                                active_derivative_indices.end()),
+                    active_derivative_indices.end());
+                for (const int derivative_index : active_derivative_indices) {
+                    source.deriv.col(derivative_index).setZero();
+                }
+            } else {
+                source.deriv.setZero();
+            }
         }
 
-        ssa = 0;
-        k = 0;
+        double ssa = 0;
+        double k = 0;
         for (std::size_t index = 0; index < index_weights.size(); ++index) {
             const auto ele = index_weights[index];
             ssa += storage.ssa(ele.first, wavelidx) * ele.second;
@@ -325,7 +362,13 @@ namespace sasktran2::solartransmission {
         if (!calculate_derivatives) {
             return;
         }
-        source.deriv *= source_amplitude;
+        if (use_active_derivatives) {
+            for (const int derivative_index : active_derivative_indices) {
+                source.deriv.col(derivative_index) *= source_amplitude;
+            }
+        } else {
+            source.deriv *= source_amplitude;
+        }
         // Solar transmission derivative factors
         for (auto it = solar_trans_iter; it; ++it) {
             source.deriv(Eigen::placeholders::all, it.index()) -=
@@ -359,12 +402,8 @@ namespace sasktran2::solartransmission {
 
         PhaseHandler<NSTOKES> m_phase_handler;
 
-        sasktran2::Dual<double> m_precomputed_sources;
-
-        mutable std::vector<std::vector<std::pair<int, double>>>
-            m_thread_index_cache_one;
-        mutable std::vector<std::vector<std::pair<int, double>>>
-            m_thread_index_cache_two;
+        mutable std::vector<std::vector<int>> m_start_active_derivative_indices;
+        mutable std::vector<std::vector<int>> m_end_active_derivative_indices;
 
         mutable std::vector<
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>>
@@ -382,15 +421,6 @@ namespace sasktran2::solartransmission {
         const std::vector<sasktran2::raytracing::TracedRay2D>* m_los_rays_2d =
             nullptr;
 
-        int m_num_cells;
-
-        void integrated_source_quadrature(
-            int wavelidx, int losidx, int layeridx, int threadidx,
-            const sasktran2::raytracing::SphericalLayer& layer,
-            const sasktran2::SparseODDualView& shell_od,
-            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                source) const;
-
         template <typename EntranceWeights, typename ExitWeights>
         void integrated_source_constant(
             int wavelidx, int losidx, int layeridx, int wavel_threadidx,
@@ -402,13 +432,6 @@ namespace sasktran2::solartransmission {
                 source,
             typename SourceTermInterface<NSTOKES>::IntegrationDirection
                 direction) const;
-
-        void integrated_source_linear(
-            int wavelidx, int losidx, int layeridx, int wavel_threadidx,
-            int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
-            const sasktran2::SparseODDualView& shell_od,
-            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                source) const;
 
       public:
         SingleScatterSource(

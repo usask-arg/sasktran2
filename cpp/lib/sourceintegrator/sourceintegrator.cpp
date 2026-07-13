@@ -5,7 +5,8 @@
 namespace sasktran2 {
     template <int NSTOKES>
     SourceIntegrator<NSTOKES>::SourceIntegrator(bool calculate_derivatives)
-        : m_calculate_derivatives(calculate_derivatives) {}
+        : m_derivatives_enabled(calculate_derivatives),
+          m_calculate_derivatives(calculate_derivatives) {}
 
     template <int NSTOKES>
     void SourceIntegrator<NSTOKES>::initialize_geometry(
@@ -23,7 +24,6 @@ namespace sasktran2 {
         }
 
         m_shell_od.resize(traced_rays.size());
-        m_exp_minus_shell_od.resize(traced_rays.size());
 
         m_traced_rays = &traced_rays;
         m_traced_rays_2d = nullptr;
@@ -42,7 +42,6 @@ namespace sasktran2 {
         }
 
         m_shell_od.resize(traced_rays.size());
-        m_exp_minus_shell_od.resize(traced_rays.size());
         m_traced_rays = nullptr;
         m_traced_rays_2d = &traced_rays;
         m_geometry_2d = &geometry;
@@ -72,9 +71,10 @@ namespace sasktran2 {
 
         m_atmosphere = &atmo;
 
-        if (atmo.num_deriv() == 0) {
-            m_calculate_derivatives = false;
-        }
+        // This object may be reused with derivative-free and derivative-enabled
+        // atmospheres. Do not let a derivative-free call permanently disable
+        // attenuation derivatives for later calculations.
+        m_calculate_derivatives = m_derivatives_enabled && atmo.num_deriv() > 0;
     }
 
     template <int NSTOKES>
