@@ -12,12 +12,19 @@ namespace sasktran2::emission {
                                Config::EmissionSource::standard>
     class EmissionSource : public SourceTermInterface<NSTOKES> {
       private:
-        const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere;
-        const std::vector<sasktran2::raytracing::TracedRay>* m_los_rays;
+        const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere =
+            nullptr;
+        const std::vector<sasktran2::raytracing::TracedRay>* m_los_rays =
+            nullptr;
+        const std::vector<sasktran2::raytracing::TracedRay2D>* m_los_rays_2d =
+            nullptr;
 
+        template <typename EntranceWeights, typename ExitWeights>
         void integrated_source_constant(
             int wavelidx, int losidx, int layeridx, int wavel_threadidx,
-            int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
+            int threadidx, const sasktran2::raytracing::LayerGeometry& layer,
+            const EntranceWeights& entrance_weights,
+            const ExitWeights& exit_weights,
             const sasktran2::SparseODDualView& shell_od,
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
                 source) const;
@@ -33,6 +40,10 @@ namespace sasktran2::emission {
         void initialize_geometry(
             const sasktran2::viewinggeometry::InternalViewingGeometry&
                 internal_viewing) override;
+
+        void initialize_geometry(
+            const std::vector<sasktran2::raytracing::TracedRay2D>& traced_rays,
+            const sasktran2::Geometry2D& geometry) override;
 
         /**
          *
@@ -60,6 +71,21 @@ namespace sasktran2::emission {
                 direction =
                     SourceTermInterface<NSTOKES>::IntegrationDirection::none)
             const override;
+
+        void integrated_source(
+            int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+            int threadidx,
+            const sasktran2::raytracing::StructuredLayer2D& layer,
+            const sasktran2::Geometry2D& geometry,
+            const sasktran2::SparseODDualView& shell_od,
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+                source,
+            typename SourceTermInterface<NSTOKES>::IntegrationDirection
+                direction =
+                    SourceTermInterface<NSTOKES>::IntegrationDirection::none)
+            const override;
+
+        bool supports_2d_interior_source() const override { return true; }
 
         /** Calculates the source term at the end of the ray.  Common examples
          * of this are ground scattering, ground emission, or the solar radiance

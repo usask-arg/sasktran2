@@ -2,6 +2,7 @@
 
 #include <sasktran2.h>
 #include <sasktran2/solartransmission.h>
+#include <numeric>
 
 namespace {
     constexpr double earth_radius = 10.0;
@@ -27,6 +28,10 @@ namespace {
         result.altitude_cell = altitude_cell;
         result.horizontal_cell = horizontal_cell;
         result.integrated_od.weights = weights;
+        result.layer_distance =
+            std::accumulate(weights.begin(), weights.end(), 0.0);
+        result.od_quad_start_fraction = 0.5;
+        result.od_quad_end_fraction = 0.5;
         return result;
     }
 
@@ -286,6 +291,52 @@ TEST_CASE("Regular 2D integration rejects interior sources before mutation",
     REQUIRE_THROWS_AS(integrator.integrate(radiance, sources, 0, 0, 0, 0),
                       std::invalid_argument);
     REQUIRE(radiance.value[0] == 0.0);
+}
+
+TEST_CASE("SourceIntegrator evaluates structured 2D volume emission and "
+          "derivatives",
+          "[sourceintegrator][emission][geometry2d]") {
+    const auto geometry = geometry2d();
+    std::vector<sasktran2::raytracing::TracedRay2D> rays(1);
+    auto emission_layer = layer(0, 0, {1.0, 2.0, 3.0, 4.0});
+    emission_layer.entrance_interpolation.altitude_upper_weight = 0.0;
+    emission_layer.entrance_interpolation.horizontal_upper_weight = 0.0;
+    emission_layer.exit_interpolation.altitude_upper_weight = 1.0;
+    emission_layer.exit_interpolation.horizontal_upper_weight = 1.0;
+    emission_layer.od_quad_start_fraction = 0.25;
+    emission_layer.od_quad_end_fraction = 0.75;
+    rays[0].layers = {emission_layer};
+
+    sasktran2::Config config;
+    sasktran2::atmosphere::Atmosphere<1> atmosphere(1, geometry, config, true);
+    atmosphere.storage().total_extinction.setZero();
+    atmosphere.storage().emission_source.setZero();
+    const int entrance_index = geometry.location_index(0, 0);
+    const int exit_index = geometry.location_index(1, 1);
+    atmosphere.storage().emission_source(entrance_index, 0) = 2.0;
+    atmosphere.storage().emission_source(exit_index, 0) = 6.0;
+
+    sasktran2::SourceIntegrator<1> integrator(true);
+    integrator.initialize_geometry(rays, geometry);
+    integrator.initialize_atmosphere(atmosphere);
+    sasktran2::emission::EmissionSource<
+        1, sasktran2::Config::EmissionSource::volume_emission_rate>
+        source;
+    source.initialize_geometry(rays, geometry);
+    source.initialize_atmosphere(atmosphere);
+    std::vector<SourceTermInterface<1>*> sources = {&source};
+    sasktran2::Dual<double, sasktran2::dualstorage::dense, 1> radiance(
+        1, atmosphere.num_deriv(), true);
+
+    integrator.integrate(radiance, sources, 0, 0, 0, 0);
+
+    const double distance = emission_layer.layer_distance;
+    REQUIRE(radiance.value[0] ==
+            Catch::Approx(distance * (0.25 * 2.0 + 0.75 * 6.0)));
+    const auto d_emission = radiance.d_emission(
+        geometry.size(), atmosphere.num_scattering_deriv_groups());
+    REQUIRE(d_emission(0, entrance_index) == Catch::Approx(0.25 * distance));
+    REQUIRE(d_emission(0, exit_index) == Catch::Approx(0.75 * distance));
 }
 
 #ifdef SKTRAN_RUST_SUPPORT

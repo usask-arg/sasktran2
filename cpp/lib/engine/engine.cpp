@@ -23,13 +23,15 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::initialize() {
                 sasktran2::Config::SingleScatterSource::none ||
             m_config.multiple_scatter_source() !=
                 sasktran2::Config::MultipleScatterSource::none ||
-            m_config.emission_source() !=
-                sasktran2::Config::EmissionSource::none ||
-            m_config.occultation_source() !=
-                sasktran2::Config::OccultationSource::standard) {
+            (m_config.emission_source() !=
+                 sasktran2::Config::EmissionSource::none &&
+             m_config.emission_source() !=
+                 sasktran2::Config::EmissionSource::standard &&
+             m_config.emission_source() !=
+                 sasktran2::Config::EmissionSource::volume_emission_rate)) {
             throw std::invalid_argument(
-                "Geometry2D currently supports only the standard occultation "
-                "source with all scattering and emission sources disabled");
+                "Geometry2D currently supports occultation, standard emission, "
+                "and volume emission rate sources, with scattering disabled");
         }
         if (!m_viewing_geometry.flux_observers().empty()) {
             throw std::invalid_argument(
@@ -93,11 +95,31 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_integrator() {
 template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
 
     if (m_geometry_2d != nullptr) {
-        m_source_terms.emplace_back(
-            std::make_unique<
-                sasktran2::solartransmission::OccultationSource<NSTOKES>>());
-        m_los_source_terms.push_back(m_source_terms.back().get());
-        m_source_terms.back()->initialize_config(m_config);
+        if (m_config.occultation_source() ==
+            sasktran2::Config::OccultationSource::standard) {
+            m_source_terms.emplace_back(
+                std::make_unique<sasktran2::solartransmission::
+                                     OccultationSource<NSTOKES>>());
+            m_los_source_terms.push_back(m_source_terms.back().get());
+        }
+        if (m_config.emission_source() ==
+            sasktran2::Config::EmissionSource::standard) {
+            m_source_terms.emplace_back(
+                std::make_unique<sasktran2::emission::EmissionSource<
+                    NSTOKES, sasktran2::Config::EmissionSource::standard>>());
+            m_los_source_terms.push_back(m_source_terms.back().get());
+        }
+        if (m_config.emission_source() ==
+            sasktran2::Config::EmissionSource::volume_emission_rate) {
+            m_source_terms.emplace_back(
+                std::make_unique<sasktran2::emission::EmissionSource<
+                    NSTOKES, sasktran2::Config::EmissionSource::
+                                 volume_emission_rate>>());
+            m_los_source_terms.push_back(m_source_terms.back().get());
+        }
+        for (auto& source : m_source_terms) {
+            source->initialize_config(m_config);
+        }
         return;
     }
 
@@ -300,7 +322,7 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::calculate_geometry() {
             m_internal_viewing_geometry.traced_rays_2d, *m_geometry_2d);
         for (auto& source : m_source_terms) {
             source->initialize_geometry(
-                m_internal_viewing_geometry.traced_rays_2d);
+                m_internal_viewing_geometry.traced_rays_2d, *m_geometry_2d);
         }
 
         FrameMarkEnd("Geometry");

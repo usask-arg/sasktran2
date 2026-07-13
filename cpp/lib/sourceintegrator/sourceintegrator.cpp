@@ -26,6 +26,8 @@ namespace sasktran2 {
         m_exp_minus_shell_od.resize(traced_rays.size());
 
         m_traced_rays = &traced_rays;
+        m_traced_rays_2d = nullptr;
+        m_geometry_2d = nullptr;
         m_num_geometry_locations = geometry.size();
     }
 
@@ -42,6 +44,8 @@ namespace sasktran2 {
         m_shell_od.resize(traced_rays.size());
         m_exp_minus_shell_od.resize(traced_rays.size());
         m_traced_rays = nullptr;
+        m_traced_rays_2d = &traced_rays;
+        m_geometry_2d = &geometry;
         m_num_geometry_locations = geometry.size();
     }
 
@@ -84,7 +88,8 @@ namespace sasktran2 {
         for (const auto& source : source_terms) {
             if (source->requires_integration()) {
                 have_to_integrate = true;
-                if (m_traced_rays == nullptr && source->has_interior_source()) {
+                if (m_traced_rays == nullptr && source->has_interior_source() &&
+                    !source->supports_2d_interior_source()) {
                     throw std::invalid_argument(
                         "Interior source integration is not supported for "
                         "structured 2D rays");
@@ -123,6 +128,17 @@ namespace sasktran2 {
                         local_shell_od, radiance,
                         SourceTermInterface<
                             NSTOKES>::IntegrationDirection::backward);
+                }
+            } else {
+                const auto& layer = m_traced_rays_2d->at(rayidx).layers.at(j);
+                for (const auto& source : source_terms) {
+                    if (source->has_interior_source()) {
+                        source->integrated_source(
+                            wavelidx, rayidx, j, wavel_threadidx, threadidx,
+                            layer, *m_geometry_2d, local_shell_od, radiance,
+                            SourceTermInterface<
+                                NSTOKES>::IntegrationDirection::backward);
+                    }
                 }
             }
 

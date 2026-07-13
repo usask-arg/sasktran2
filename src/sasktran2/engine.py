@@ -80,13 +80,17 @@ class Engine:
             if (
                 config.single_scatter_source != sk.SingleScatterSource.NoSource
                 or config.multiple_scatter_source != sk.MultipleScatterSource.NoSource
-                or config.emission_source != sk.EmissionSource.NoSource
-                or config.occultation_source != sk.OccultationSource.Standard
+                or config.emission_source
+                not in (
+                    sk.EmissionSource.NoSource,
+                    sk.EmissionSource.Standard,
+                    sk.EmissionSource.VolumeEmissionRate,
+                )
             ):
                 msg = (
-                    "Geometry2D Engine currently supports only transmission: "
-                    "set occultation_source=Standard and disable single "
-                    "scattering, multiple scattering, and emission"
+                    "Geometry2D Engine currently supports occultation, standard "
+                    "emission, and volume emission rate sources with scattering "
+                    "disabled"
                 )
                 raise NotImplementedError(msg)
             if viewing_geometry.flux_observers:

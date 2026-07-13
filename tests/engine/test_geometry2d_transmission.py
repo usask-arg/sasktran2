@@ -4,7 +4,6 @@ import numpy as np
 import pytest
 import sasktran2 as sk
 
-
 EARTH_RADIUS_M = 6_372_000.0
 ALTITUDES_M = np.array([0.0, 10_000.0, 30_000.0])
 HORIZONTAL_ANGLES = np.array([-0.5, 0.0, 0.5])
@@ -117,9 +116,7 @@ def test_horizontally_uniform_2d_transmission_matches_1d():
     viewing = sk.ViewingGeometry()
     viewing.add_ray(tangent_ray(12_000.0))
     viewing.add_ray(tangent_ray(22_000.0))
-    extinction = np.array(
-        [[1.0e-5, 2.0e-5], [2.0e-5, 1.0e-5], [0.5e-5, 0.7e-5]]
-    )
+    extinction = np.array([[1.0e-5, 2.0e-5], [2.0e-5, 1.0e-5], [0.5e-5, 0.7e-5]])
     atmosphere_1d = sk.Atmosphere(
         geometry_1d,
         config,
@@ -197,9 +194,7 @@ def test_native_2d_extinction_derivative_matches_finite_difference():
         horizontal_index, altitude_index, wavelength_index, 0, 0
     ]
     np.testing.assert_allclose(numeric, analytic, rtol=4.0e-5)
-    np.testing.assert_array_equal(
-        perturbed.radiance[1, 0, 0], base.radiance[1, 0, 0]
-    )
+    np.testing.assert_array_equal(perturbed.radiance[1, 0, 0], base.radiance[1, 0, 0])
 
 
 def test_vector_transmission_has_only_intensity_component():
@@ -228,7 +223,7 @@ def test_geometry2d_engine_rejects_unsupported_sources_and_mismatched_geometry()
     viewing = sk.ViewingGeometry()
     viewing.add_ray(tangent_ray())
     unsupported = sk.Config()
-    with pytest.raises(NotImplementedError, match="supports only transmission"):
+    with pytest.raises(NotImplementedError, match="supports occultation"):
         sk.Engine(unsupported, geometry, viewing)
 
     config = transmission_config()

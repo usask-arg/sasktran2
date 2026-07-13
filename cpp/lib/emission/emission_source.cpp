@@ -13,6 +13,15 @@ namespace sasktran2::emission {
             internal_viewing) {
         // Store the rays for later
         m_los_rays = &internal_viewing.traced_rays;
+        m_los_rays_2d = nullptr;
+    }
+
+    template <int NSTOKES, Config::EmissionSource EMISSION_SOURCE_TYPE>
+    void EmissionSource<NSTOKES, EMISSION_SOURCE_TYPE>::initialize_geometry(
+        const std::vector<sasktran2::raytracing::TracedRay2D>& traced_rays,
+        const sasktran2::Geometry2D& geometry) {
+        m_los_rays = nullptr;
+        m_los_rays_2d = &traced_rays;
     }
 
     template <int NSTOKES, Config::EmissionSource EMISSION_SOURCE_TYPE>
@@ -23,10 +32,13 @@ namespace sasktran2::emission {
     }
 
     template <int NSTOKES, Config::EmissionSource EMISSION_SOURCE_TYPE>
+    template <typename EntranceWeights, typename ExitWeights>
     void
     EmissionSource<NSTOKES, EMISSION_SOURCE_TYPE>::integrated_source_constant(
         int wavelidx, int losidx, int layeridx, int wavel_threadidx,
-        int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
+        int threadidx, const sasktran2::raytracing::LayerGeometry& layer,
+        const EntranceWeights& entrance_weights,
+        const ExitWeights& exit_weights,
         const sasktran2::SparseODDualView& shell_od,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
@@ -41,18 +53,16 @@ namespace sasktran2::emission {
         double emission_end = 0;
 
         // Calculate SSA and emission at the layer boundaries
-        for (std::size_t index = 0;
-             index < layer.entrance_interpolation_weights.size(); ++index) {
-            const auto ele = layer.entrance_interpolation_weights[index];
+        for (std::size_t index = 0; index < entrance_weights.size(); ++index) {
+            const auto ele = entrance_weights[index];
             ssa_start +=
                 m_atmosphere->storage().ssa(ele.first, wavelidx) * ele.second;
             emission_start +=
                 m_atmosphere->storage().emission_source(ele.first, wavelidx) *
                 ele.second;
         }
-        for (std::size_t index = 0;
-             index < layer.exit_interpolation_weights.size(); ++index) {
-            const auto ele = layer.exit_interpolation_weights[index];
+        for (std::size_t index = 0; index < exit_weights.size(); ++index) {
+            const auto ele = exit_weights[index];
             ssa_end +=
                 m_atmosphere->storage().ssa(ele.first, wavelidx) * ele.second;
             emission_end +=
@@ -114,11 +124,9 @@ namespace sasktran2::emission {
                 }
 
                 // And the SSA/emission derivatives
-                for (std::size_t index = 0;
-                     index < layer.entrance_interpolation_weights.size();
+                for (std::size_t index = 0; index < entrance_weights.size();
                      ++index) {
-                    const auto ele =
-                        layer.entrance_interpolation_weights[index];
+                    const auto ele = entrance_weights[index];
                     d_ssa(0, ele.first) -= ele.second * emission_start *
                                            source_factor1 *
                                            layer.od_quad_start_fraction;
@@ -126,9 +134,9 @@ namespace sasktran2::emission {
                                                 source_factor1 *
                                                 layer.od_quad_start_fraction;
                 }
-                for (std::size_t index = 0;
-                     index < layer.exit_interpolation_weights.size(); ++index) {
-                    const auto ele = layer.exit_interpolation_weights[index];
+                for (std::size_t index = 0; index < exit_weights.size();
+                     ++index) {
+                    const auto ele = exit_weights[index];
                     d_ssa(0, ele.first) -= ele.second * emission_end *
                                            source_factor1 *
                                            layer.od_quad_end_fraction;
@@ -143,17 +151,15 @@ namespace sasktran2::emission {
                         m_atmosphere->storage().ssa.rows(),
                         m_atmosphere->num_scattering_deriv_groups());
                 // And the emission derivatives
-                for (std::size_t index = 0;
-                     index < layer.entrance_interpolation_weights.size();
+                for (std::size_t index = 0; index < entrance_weights.size();
                      ++index) {
-                    const auto ele =
-                        layer.entrance_interpolation_weights[index];
+                    const auto ele = entrance_weights[index];
                     d_emission(0, ele.first) += ele.second * source_factor1 *
                                                 layer.od_quad_start_fraction;
                 }
-                for (std::size_t index = 0;
-                     index < layer.exit_interpolation_weights.size(); ++index) {
-                    const auto ele = layer.exit_interpolation_weights[index];
+                for (std::size_t index = 0; index < exit_weights.size();
+                     ++index) {
+                    const auto ele = exit_weights[index];
                     d_emission(0, ele.first) += ele.second * source_factor1 *
                                                 layer.od_quad_end_fraction;
                 }
@@ -177,8 +183,48 @@ namespace sasktran2::emission {
             return;
         }
 
+        integrated_source_constant(
+            wavelidx, losidx, layeridx, wavel_threadidx, threadidx, layer,
+            layer.entrance_interpolation_weights,
+            layer.exit_interpolation_weights, shell_od, source);
+    }
+
+    template <int NSTOKES, Config::EmissionSource EMISSION_SOURCE_TYPE>
+    void EmissionSource<NSTOKES, EMISSION_SOURCE_TYPE>::integrated_source(
+        int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+        int threadidx, const sasktran2::raytracing::StructuredLayer2D& layer,
+        const sasktran2::Geometry2D& geometry,
+        const sasktran2::SparseODDualView& shell_od,
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
+        typename SourceTermInterface<NSTOKES>::IntegrationDirection direction)
+        const {
+        if (layer.layer_distance < MINIMUM_SHELL_SIZE_M) {
+            return;
+        }
+
+        const std::array<int, 4> location_indices = {
+            geometry.location_index(layer.altitude_cell, layer.horizontal_cell),
+            geometry.location_index(layer.altitude_cell + 1,
+                                    layer.horizontal_cell),
+            geometry.location_index(layer.altitude_cell,
+                                    layer.horizontal_cell + 1),
+            geometry.location_index(layer.altitude_cell + 1,
+                                    layer.horizontal_cell + 1)};
+        const auto entrance_local_weights =
+            layer.entrance_interpolation.weights();
+        const auto exit_local_weights = layer.exit_interpolation.weights();
+        std::array<std::pair<int, double>, 4> entrance_weights;
+        std::array<std::pair<int, double>, 4> exit_weights;
+        for (int index = 0; index < 4; ++index) {
+            entrance_weights[index] = std::make_pair(
+                location_indices[index], entrance_local_weights[index]);
+            exit_weights[index] = std::make_pair(location_indices[index],
+                                                 exit_local_weights[index]);
+        }
+
         integrated_source_constant(wavelidx, losidx, layeridx, wavel_threadidx,
-                                   threadidx, layer, shell_od, source);
+                                   threadidx, layer, entrance_weights,
+                                   exit_weights, shell_od, source);
     }
 
     template <int NSTOKES, Config::EmissionSource EMISSION_SOURCE_TYPE>
@@ -186,7 +232,10 @@ namespace sasktran2::emission {
         int wavelidx, int losidx, int wavel_threadidx, int threadidx,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
-        if (m_los_rays->at(losidx).ground_is_hit) {
+        const bool ground_is_hit =
+            m_los_rays != nullptr ? m_los_rays->at(losidx).ground_is_hit
+                                  : m_los_rays_2d->at(losidx).ground_is_hit;
+        if (ground_is_hit) {
             double emission_surface =
                 m_atmosphere->surface().emission()[wavelidx];
             if constexpr (NSTOKES == 1) {

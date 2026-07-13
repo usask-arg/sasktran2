@@ -3,7 +3,6 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import sasktran2 as sk
-
 from sasktran2.constituent.base import Constituent
 
 
@@ -54,9 +53,7 @@ class _LegacyAltitudeConstituent(Constituent):
         mapping.d_ssa[:] = 0.0
         mapping.interp_dim = f"{name}_altitude"
         num_altitudes = atmo.volume_shape[-1]
-        mapping.interpolator = np.tile(
-            np.eye(num_altitudes), (atmo.volume_shape[0], 1)
-        )
+        mapping.interpolator = np.tile(np.eye(num_altitudes), (atmo.volume_shape[0], 1))
 
 
 class _FailingDerivativeConstituent(Constituent):
@@ -68,7 +65,8 @@ class _FailingDerivativeConstituent(Constituent):
 
     def register_derivative(self, atmo: sk.Atmosphere, name: str):  # noqa: ARG002
         if self.fail:
-            raise RuntimeError("intentional derivative failure")
+            msg = "intentional derivative failure"
+            raise RuntimeError(msg)
 
 
 class _InvalidSpatialModeConstituent(Constituent):
@@ -76,10 +74,10 @@ class _InvalidSpatialModeConstituent(Constituent):
     def volume_spatial_mode(self) -> str:
         return "horizontal_profile"
 
-    def add_to_atmosphere(self, atmo: sk.Atmosphere):  # noqa: ARG002
+    def add_to_atmosphere(self, atmo: sk.Atmosphere):
         pass
 
-    def register_derivative(self, atmo: sk.Atmosphere, name: str):  # noqa: ARG002
+    def register_derivative(self, atmo: sk.Atmosphere, name: str):
         pass
 
 
@@ -173,9 +171,7 @@ def test_legacy_constituent_receives_one_cached_profile_view_per_build():
 
 def test_native_constituent_receives_cached_flattened_state_per_build():
     atmosphere = atmosphere2d()
-    pressure = np.array(
-        [[100_000.0, 30_000.0, 1_000.0], [90_000.0, 25_000.0, 800.0]]
-    )
+    pressure = np.array([[100_000.0, 30_000.0, 1_000.0], [90_000.0, 25_000.0, 800.0]])
     atmosphere.pressure_pa = pressure
     constituent = _NativeStateConstituent()
     atmosphere["native"] = constituent
@@ -228,9 +224,7 @@ def test_manual_accepts_native_2d_fields_and_preserves_public_shape():
 def test_manual_rejects_shape_mismatches_before_entering_rust_kernel():
     atmosphere = atmosphere2d(calculate_derivatives=False)
 
-    atmosphere["wavelength"] = sk.constituent.Manual(
-        np.ones((3, 1)), np.zeros((3, 1))
-    )
+    atmosphere["wavelength"] = sk.constituent.Manual(np.ones((3, 1)), np.zeros((3, 1)))
     with pytest.raises(ValueError, match="wavelength dimension"):
         atmosphere.internal_object()
 
@@ -245,14 +239,10 @@ def test_manual_rejects_shape_mismatches_before_entering_rust_kernel():
         atmosphere.internal_object()
 
     with pytest.raises(ValueError, match="legendre_moments must have shape"):
-        sk.constituent.Manual(
-            np.ones((3, 2)), np.zeros((3, 2)), np.ones((3, 2))
-        )
+        sk.constituent.Manual(np.ones((3, 2)), np.zeros((3, 2)), np.ones((3, 2)))
 
     with pytest.raises(ValueError, match="delta_scale"):
-        sk.constituent.Manual(
-            np.ones((3, 2)), np.zeros((3, 2)), delta_scale=True
-        )
+        sk.constituent.Manual(np.ones((3, 2)), np.zeros((3, 2)), delta_scale=True)
 
 
 def test_broadcast_and_native_manual_constituents_mix_additively():
@@ -262,9 +252,7 @@ def test_broadcast_and_native_manual_constituents_mix_additively():
     native_extinction = np.arange(1.0, 13.0).reshape(2, 3, 2) / 10.0
     native_ssa = np.full((2, 3, 2), 0.75)
 
-    atmosphere["profile"] = sk.constituent.Manual(
-        profile_extinction, profile_ssa
-    )
+    atmosphere["profile"] = sk.constituent.Manual(profile_extinction, profile_ssa)
     atmosphere["native"] = sk.constituent.Manual(native_extinction, native_ssa)
     atmosphere.internal_object()
 
@@ -274,9 +262,7 @@ def test_broadcast_and_native_manual_constituents_mix_additively():
     expected_ssa = (
         profile_extinction * 0.25 + native_extinction * 0.75
     ) / expected_extinction
-    np.testing.assert_allclose(
-        atmosphere.storage.total_extinction, expected_extinction
-    )
+    np.testing.assert_allclose(atmosphere.storage.total_extinction, expected_extinction)
     np.testing.assert_allclose(atmosphere.storage.ssa, expected_ssa)
 
 
@@ -314,8 +300,7 @@ def test_broadcast_pressure_derivative_matches_finite_difference():
     mapping = atmosphere.storage.get_derivative_mapping("wf_rayleigh_pressure_pa")
     altitude_index = 1
     analytic = (
-        mapping.d_extinction
-        * mapping.interpolator[:, altitude_index, np.newaxis]
+        mapping.d_extinction * mapping.interpolator[:, altitude_index, np.newaxis]
     )
 
     delta = 0.1
@@ -331,9 +316,7 @@ def test_rayleigh_native_2d_state_keeps_independent_location_derivatives():
     atmosphere.pressure_pa = np.array(
         [[100_000.0, 30_000.0, 1_000.0], [90_000.0, 25_000.0, 800.0]]
     )
-    atmosphere.temperature_k = np.array(
-        [[280.0, 240.0, 210.0], [285.0, 245.0, 215.0]]
-    )
+    atmosphere.temperature_k = np.array([[280.0, 240.0, 210.0], [285.0, 245.0, 215.0]])
     atmosphere["rayleigh"] = sk.constituent.Rayleigh()
 
     atmosphere.internal_object()
@@ -399,9 +382,7 @@ def test_altitude_profile_scatterer_broadcasts_phase_and_profile_derivatives():
     np.testing.assert_allclose(ssa[0], ssa[1])
     np.testing.assert_allclose(legendre[:, 0], legendre[:, 1])
 
-    mapping = atmosphere.storage.get_derivative_mapping(
-        "wf_aerosol_number_density"
-    )
+    mapping = atmosphere.storage.get_derivative_mapping("wf_aerosol_number_density")
     assert mapping.interpolator.shape == (6, 3)
     assert mapping.interp_dim == "aerosol_altitude"
 
@@ -411,9 +392,7 @@ def test_native_pressure_derivative_is_local_and_matches_finite_difference():
     atmosphere.pressure_pa = np.array(
         [[100_000.0, 30_000.0, 1_000.0], [90_000.0, 25_000.0, 800.0]]
     )
-    atmosphere.temperature_k = np.array(
-        [[280.0, 240.0, 210.0], [285.0, 245.0, 215.0]]
-    )
+    atmosphere.temperature_k = np.array([[280.0, 240.0, 210.0], [285.0, 245.0, 215.0]])
     atmosphere["rayleigh"] = sk.constituent.Rayleigh()
     atmosphere.internal_object()
 
@@ -425,8 +404,7 @@ def test_native_pressure_derivative_is_local_and_matches_finite_difference():
         altitude_index, horizontal_index
     )
     analytic = (
-        mapping.d_extinction
-        * mapping.interpolator[:, location_index, np.newaxis]
+        mapping.d_extinction * mapping.interpolator[:, location_index, np.newaxis]
     )
 
     delta = 0.1
@@ -472,13 +450,9 @@ def test_state_derivative_layout_can_switch_between_broadcast_and_native():
     first_interpolator = first_mapping.interpolator.copy()
     atmosphere.internal_object()
     repeated_mapping = atmosphere.storage.get_derivative_mapping(mapping_name)
-    np.testing.assert_array_equal(
-        repeated_mapping.interpolator, first_interpolator
-    )
+    np.testing.assert_array_equal(repeated_mapping.interpolator, first_interpolator)
 
-    atmosphere.temperature_k = np.array(
-        [[280.0, 240.0, 210.0], [285.0, 245.0, 215.0]]
-    )
+    atmosphere.temperature_k = np.array([[280.0, 240.0, 210.0], [285.0, 245.0, 215.0]])
     atmosphere.internal_object()
     native_mapping = atmosphere.storage.get_derivative_mapping(mapping_name)
     assert native_mapping.interpolator.shape == (0, 0)
@@ -504,9 +478,7 @@ def test_legacy_constituents_rebuild_without_double_accumulation():
     first_legendre = atmosphere.storage.leg_coeff.copy()
     atmosphere.internal_object()
 
-    np.testing.assert_array_equal(
-        atmosphere.storage.total_extinction, first_extinction
-    )
+    np.testing.assert_array_equal(atmosphere.storage.total_extinction, first_extinction)
     np.testing.assert_array_equal(atmosphere.storage.ssa, first_ssa)
     np.testing.assert_array_equal(atmosphere.storage.leg_coeff, first_legendre)
 
@@ -533,9 +505,7 @@ def test_native_manual_supports_polarized_legendre_storage():
     atmosphere = atmosphere2d(calculate_derivatives=False, num_stokes=3)
     extinction = np.arange(1.0, 13.0).reshape(2, 3, 2)
     ssa = np.full((2, 3, 2), 0.5)
-    legendre = np.zeros(
-        (atmosphere.storage.leg_coeff.shape[0], 2, 3, 2), dtype=float
-    )
+    legendre = np.zeros((atmosphere.storage.leg_coeff.shape[0], 2, 3, 2), dtype=float)
     legendre[0] = 1.0
     constituent = sk.constituent.Manual(extinction, ssa, legendre)
     atmosphere["manual"] = constituent

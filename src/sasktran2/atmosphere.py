@@ -769,6 +769,19 @@ class Atmosphere:
                 deriv_mapping = self.surface.get_derivative_mapping("wf_albedo")
                 deriv_mapping.d_brdf[:] = 1.0
 
+                if self._config.emission_source != sk.EmissionSource.NoSource:
+                    deriv_mapping = self.storage.get_derivative_mapping("wf_emission")
+                    deriv_mapping.d_extinction[:] = 0.0
+                    deriv_mapping.d_ssa[:] = 0.0
+                    deriv_mapping.d_emission[:] = 1.0
+                    deriv_mapping.interp_dim = (
+                        "location" if self._spatial_layout.is_2d else "altitude"
+                    )
+                    if self._spatial_layout.is_2d:
+                        self._derivative_output_shapes["wf_emission"] = (
+                            self.volume_shape
+                        )
+
                 if self._legendre_derivative:
                     for i in range(self.storage.leg_coeff.shape[0]):
                         if i == 0:

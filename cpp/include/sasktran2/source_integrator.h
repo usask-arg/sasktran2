@@ -52,6 +52,9 @@ namespace sasktran2 {
 
         const std::vector<sasktran2::raytracing::TracedRay>*
             m_traced_rays; /**< Reference to the rays we are integrating */
+        const std::vector<sasktran2::raytracing::TracedRay2D>*
+            m_traced_rays_2d = nullptr;
+        const Geometry2D* m_geometry_2d = nullptr;
 
         const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere;
         int m_num_geometry_locations = 0;

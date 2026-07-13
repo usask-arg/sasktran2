@@ -42,6 +42,14 @@ template <int NSTOKES> class SourceTermInterface {
     virtual void initialize_geometry(
         const std::vector<sasktran2::raytracing::TracedRay2D>& traced_rays){};
 
+    /** Initializes geometry for a source that also needs the structured grid.
+     */
+    virtual void initialize_geometry(
+        const std::vector<sasktran2::raytracing::TracedRay2D>& traced_rays,
+        const sasktran2::Geometry2D& geometry) {
+        initialize_geometry(traced_rays);
+    };
+
     /**
      *
      */
@@ -74,6 +82,18 @@ template <int NSTOKES> class SourceTermInterface {
         const sasktran2::SparseODDualView& shell_od,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
         IntegrationDirection direction = IntegrationDirection::none) const = 0;
+
+    /** Calculates an interior source in one structured 2D layer. */
+    virtual void integrated_source(
+        int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+        int threadidx, const sasktran2::raytracing::StructuredLayer2D& layer,
+        const sasktran2::Geometry2D& geometry,
+        const sasktran2::SparseODDualView& shell_od,
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
+        IntegrationDirection direction = IntegrationDirection::none) const {
+        throw std::invalid_argument(
+            "Source does not implement structured 2D interior integration");
+    };
 
     /** Calculates the source term at the end of the ray.  Common examples of
      * this are ground scattering, ground emission, or the solar radiance if
@@ -122,4 +142,7 @@ template <int NSTOKES> class SourceTermInterface {
     /** Returns true when the source contributes within atmospheric layers and
      * therefore requires a geometry-specific layer representation. */
     virtual bool has_interior_source() const { return true; }
+
+    /** Returns true when the interior source supports structured 2D layers. */
+    virtual bool supports_2d_interior_source() const { return false; }
 };
