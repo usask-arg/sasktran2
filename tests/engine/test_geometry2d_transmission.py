@@ -72,6 +72,85 @@ def test_constant_extinction_matches_analytic_chord_transmission():
     )
 
 
+def test_geometry_relative_tangent_horizontal_angle_selects_expected_profile():
+    config = transmission_config(output_optical_depth=True)
+    geometry = geometry2d()
+    viewing = sk.ViewingGeometry()
+    tangent_altitude_m = 15_000.0
+    requested_angles = np.array([-0.2, 0.2])
+    for horizontal_angle in requested_angles:
+        viewing.add_ray(
+            sk.TangentAltitude(
+                tangent_altitude_m=tangent_altitude_m,
+                observer_altitude_m=100_000.0,
+                horizontal_angle_radians=horizontal_angle,
+                viewing_azimuth_radians=np.pi / 2.0,
+            )
+        )
+
+    atmosphere = sk.Atmosphere(
+        geometry,
+        config,
+        wavelengths_nm=np.array([500.0]),
+        calculate_derivatives=False,
+    )
+    horizontal_extinction = np.array([1.0e-6, 2.0e-6, 4.0e-6])
+    atmosphere.storage.total_extinction[:] = np.broadcast_to(
+        horizontal_extinction[:, np.newaxis, np.newaxis], (*geometry.shape, 1)
+    ).reshape(geometry.shape[0] * geometry.shape[1], 1)
+    atmosphere.storage.ssa[:] = 0.0
+
+    result = sk.Engine(config, geometry, viewing).calculate_radiance(atmosphere)
+
+    top_radius = EARTH_RADIUS_M + ALTITUDES_M[-1]
+    tangent_radius = EARTH_RADIUS_M + tangent_altitude_m
+    path_length_m = 2.0 * np.sqrt(top_radius**2 - tangent_radius**2)
+    sampled_extinction = np.interp(
+        requested_angles, HORIZONTAL_ANGLES, horizontal_extinction
+    )
+    expected_od = sampled_extinction * path_length_m
+    np.testing.assert_allclose(result.los_optical_depth[0], expected_od, rtol=2.0e-12)
+    np.testing.assert_allclose(
+        result.radiance[0, :, 0], np.exp(-expected_od), rtol=2.0e-12
+    )
+
+
+def test_geometry_relative_tangent_ray_does_not_move_with_solar_angles():
+    config = transmission_config(output_optical_depth=True)
+    viewing = sk.ViewingGeometry()
+    viewing.add_ray(
+        sk.TangentAltitude(
+            tangent_altitude_m=15_000.0,
+            observer_altitude_m=100_000.0,
+            horizontal_angle_radians=0.17,
+            viewing_azimuth_radians=0.35,
+        )
+    )
+    extinction = np.arange(1.0, 10.0).reshape(3, 3, 1) * 1.0e-7
+
+    optical_depths = []
+    for cos_sza, solar_azimuth in [(0.8, 0.0), (-0.2, 1.4)]:
+        geometry = sk.Geometry2D(
+            cos_sza=cos_sza,
+            solar_azimuth=solar_azimuth,
+            earth_radius_m=EARTH_RADIUS_M,
+            altitude_grid_m=ALTITUDES_M,
+            horizontal_angle_grid_radians=HORIZONTAL_ANGLES,
+        )
+        atmosphere = sk.Atmosphere(
+            geometry,
+            config,
+            wavelengths_nm=np.array([500.0]),
+            calculate_derivatives=False,
+        )
+        atmosphere.storage.total_extinction[:] = extinction.reshape(9, 1)
+        atmosphere.storage.ssa[:] = 0.0
+        result = sk.Engine(config, geometry, viewing).calculate_radiance(atmosphere)
+        optical_depths.append(result.los_optical_depth.copy())
+
+    np.testing.assert_allclose(optical_depths[0], optical_depths[1], rtol=0.0, atol=0.0)
+
+
 def test_transparent_limb_ray_is_unity_and_ground_ray_is_blocked():
     config = transmission_config()
     geometry = geometry2d()

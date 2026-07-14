@@ -13,6 +13,7 @@ Viewing Policies
 .. autosummary::
     :toctree: generated/
 
+    sasktran2.TangentAltitude
     sasktran2.TangentAltitudeSolar
     sasktran2.GroundViewingSolar
     sasktran2.SolarAnglesObserverLocation

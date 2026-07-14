@@ -5,9 +5,16 @@ namespace sasktran2::viewinggeometry {
     void ViewingGeometryContainer::add_ray(
         const sasktran2::viewinggeometry::ViewingGeometryBase& ray) {
 
-        if (dynamic_cast<
-                const sasktran2::viewinggeometry::TangentAltitudeSolar*>(
+        if (dynamic_cast<const sasktran2::viewinggeometry::TangentAltitude*>(
                 &ray)) {
+            m_observer_rays.push_back(
+                std::make_unique<sasktran2::viewinggeometry::TangentAltitude>(
+                    *dynamic_cast<
+                        const sasktran2::viewinggeometry::TangentAltitude*>(
+                        &ray)));
+        } else if (dynamic_cast<
+                       const sasktran2::viewinggeometry::TangentAltitudeSolar*>(
+                       &ray)) {
             m_observer_rays.push_back(
                 std::make_unique<
                     sasktran2::viewinggeometry::TangentAltitudeSolar>(

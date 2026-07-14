@@ -472,6 +472,15 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn sk_viewing_geometry_add_tangent_altitude(
+        geometry: *mut ViewingGeometry,
+        tangent_altitude_m: f64,
+        observer_altitude_m: f64,
+        horizontal_angle_radians: f64,
+        viewing_azimuth_radians: f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn sk_viewing_geometry_add_solar_angles_observer_location(
         geometry: *mut ViewingGeometry,
         cos_sza: f64,
