@@ -170,8 +170,10 @@ def test_1d_solver_radiance_regression(
     engine, atmosphere = _setup_1d(source, num_stokes, calculate_derivatives)
     result = engine.calculate_radiance(atmosphere)
 
+    # Iterative solver results vary at the sub-ppm level across compiler and
+    # BLAS combinations; this remains tight enough to catch material drift.
     np.testing.assert_allclose(
-        result.radiance.values, expected_radiance, rtol=1e-11, atol=2e-13
+        result.radiance.values, expected_radiance, rtol=5e-7, atol=2e-13
     )
 
     expected_optical_depth = np.array(

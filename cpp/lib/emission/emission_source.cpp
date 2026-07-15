@@ -6,6 +6,8 @@
 #include <sasktran2/config.h>
 #include <sasktran2/atmosphere/atmosphere.h>
 
+#include <stdexcept>
+
 namespace sasktran2::emission {
     template <int NSTOKES, Config::EmissionSource EMISSION_SOURCE_TYPE>
     void EmissionSource<NSTOKES, EMISSION_SOURCE_TYPE>::initialize_geometry(
@@ -27,6 +29,13 @@ namespace sasktran2::emission {
     template <int NSTOKES, Config::EmissionSource EMISSION_SOURCE_TYPE>
     void EmissionSource<NSTOKES, EMISSION_SOURCE_TYPE>::initialize_atmosphere(
         const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere) {
+        if (atmosphere.num_deriv() > 0 &&
+            !atmosphere.include_emission_derivatives()) {
+            throw std::invalid_argument(
+                "EmissionSource requires emission derivative storage when "
+                "atmospheric derivatives are enabled");
+        }
+
         // Store the atmosphere for later
         m_atmosphere = &atmosphere;
     }

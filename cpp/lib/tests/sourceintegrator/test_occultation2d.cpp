@@ -341,6 +341,8 @@ TEST_CASE("SourceIntegrator evaluates structured 2D volume emission and "
     rays[0].layers = {emission_layer};
 
     sasktran2::Config config;
+    config.set_emission_source(
+        sasktran2::Config::EmissionSource::volume_emission_rate);
     sasktran2::atmosphere::Atmosphere<1> atmosphere(1, geometry, config, true);
     atmosphere.storage().total_extinction.setZero();
     atmosphere.storage().emission_source.setZero();
@@ -370,6 +372,19 @@ TEST_CASE("SourceIntegrator evaluates structured 2D volume emission and "
         geometry.size(), atmosphere.num_scattering_deriv_groups());
     REQUIRE(d_emission(0, entrance_index) == Catch::Approx(0.25 * distance));
     REQUIRE(d_emission(0, exit_index) == Catch::Approx(0.75 * distance));
+}
+
+TEST_CASE("EmissionSource rejects missing atmospheric emission derivatives",
+          "[sourceintegrator][emission]") {
+    const auto geometry = geometry2d();
+    sasktran2::Config config;
+    sasktran2::atmosphere::Atmosphere<1> atmosphere(1, geometry, config, true);
+    sasktran2::emission::EmissionSource<
+        1, sasktran2::Config::EmissionSource::volume_emission_rate>
+        source;
+
+    REQUIRE_THROWS_AS(source.initialize_atmosphere(atmosphere),
+                      std::invalid_argument);
 }
 
 #ifdef SKTRAN_RUST_SUPPORT

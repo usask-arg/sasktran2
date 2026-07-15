@@ -7,6 +7,7 @@
 namespace {
     constexpr double altitude_tolerance_m = 1e-8;
     constexpr double angular_tolerance_rad = 1e-8;
+    constexpr double pi_rad = static_cast<double>(EIGEN_PI);
 
     struct AxisStencil {
         std::array<int, 2> indices{};
@@ -127,11 +128,11 @@ namespace {
     }
 
     double unwrap_angle_near(double angle, double center) {
-        constexpr double two_pi = 2.0 * EIGEN_PI;
-        while (angle - center > EIGEN_PI) {
+        constexpr double two_pi = 2.0 * pi_rad;
+        while (angle - center > pi_rad) {
             angle -= two_pi;
         }
-        while (angle - center < -EIGEN_PI) {
+        while (angle - center < -pi_rad) {
             angle += two_pi;
         }
         return angle;
@@ -406,7 +407,7 @@ namespace sasktran2 {
         }
         if (m_horizontal_angles[m_horizontal_angles.size() - 1] -
                 m_horizontal_angles[0] >=
-            EIGEN_PI) {
+            pi_rad) {
             spdlog::critical(
                 "Invalid horizontal angle grid: span must be less than pi");
             validation::throw_configuration_error();
