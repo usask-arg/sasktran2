@@ -5,35 +5,31 @@ on:
     types: [opened, reopened, synchronize, labeled]
   workflow_dispatch:
 
+concurrency:
+  group: performance-book-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   perf-book-pr:
-    if: ${{ contains( github.event.pull_request.labels.*.name, 'build-perf-book') && github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'build-perf-book') }}
     name: linux-pr
-    runs-on: ubuntu-20.04
-    env:
-      CONDA_ENV_FILE: conda/dev_env.yml
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - name: Set up conda environment
-        uses: mamba-org/setup-micromamba@v2
-        with:
-          environment-file: ${{env.CONDA_ENV_FILE}}
+      - name: Set up Pixi
+        uses: prefix-dev/setup-pixi@v0.9.3
 
       - name: Install sasktran2
-        shell: bash -l {0}
-        run: |
-          pip install .
+        run: pixi run pip install --no-build-isolation .
 
       - name: Build Book
-        shell: bash -l {0}
         id: benchmark
-        run: |
-          cd docs/performance_book
-          make html
+        run: pixi run make -C docs/performance_book html
 
       - uses: actions/upload-artifact@v6
         with:
@@ -41,39 +37,30 @@ jobs:
           path: docs/performance_book/build/html
 
   perf-book-main:
-    if: ${{ contains( github.event.pull_request.labels.*.name, 'build-perf-book') && github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'build-perf-book') }}
     name: linux-main
-    runs-on: ubuntu-20.04
-    env:
-      CONDA_ENV_FILE: conda/dev_env.yml
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          ref: main
-
-      - name: Set up conda environment
-        uses: mamba-org/setup-micromamba@v2
-        with:
-          environment-file: ${{env.CONDA_ENV_FILE}}
-
-      - name: Install sasktran2
-        shell: bash -l {0}
-        run: |
-          pip install .
-
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          ref: ''
+          path: main-source
+          ref: main
+
+      - name: Set up Pixi
+        uses: prefix-dev/setup-pixi@v0.9.3
+
+      - name: Install sasktran2
+        run: pixi run pip install --no-build-isolation ./main-source
 
       - name: Build Book
-        shell: bash -l {0}
         id: benchmark
-        run: |
-          cd docs/performance_book
-          make html
+        run: pixi run make -C docs/performance_book html
 
       - uses: actions/upload-artifact@v6
         with:
