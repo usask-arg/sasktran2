@@ -128,8 +128,8 @@ class BaumIceCrystal(OpticalDatabaseGenericScattererRust):
             raise ValueError(msg)
 
         if max_moments is not None:
-            if isinstance(max_moments, (bool, np.bool_)) or not isinstance(
-                max_moments, (int, np.integer)
+            if isinstance(max_moments, bool | np.bool_) or not isinstance(
+                max_moments, int | np.integer
             ):
                 msg = "max_moments must be an integer or None"
                 raise TypeError(msg)
