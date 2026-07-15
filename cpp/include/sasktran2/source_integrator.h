@@ -52,19 +52,16 @@ namespace sasktran2 {
                            for each layer */
         const std::vector<sasktran2::raytracing::TracedRay>*
             m_traced_rays; /**< Reference to the rays we are integrating */
-        const std::vector<sasktran2::raytracing::TracedRay2D>*
-            m_traced_rays_2d = nullptr;
-        const Geometry2D* m_geometry_2d = nullptr;
 
         const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere;
         int m_num_geometry_locations = 0;
+        int m_num_geometry_dimensions = 1;
 
-        template <typename RayType>
         void integrate_ray(
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
                 radiance,
             const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
-            const RayType& ray,
+            const sasktran2::raytracing::TracedRay& ray,
             const Eigen::SparseMatrix<double, Eigen::RowMajor>& od_matrix,
             const Eigen::MatrixXd& shell_od, int wavelidx, int rayidx,
             int wavel_threadidx, int threadidx) const;
@@ -95,11 +92,6 @@ namespace sasktran2 {
         void initialize_geometry(
             const std::vector<sasktran2::raytracing::TracedRay>& traced_rays,
             const Geometry& geometry);
-
-        /** Initializes the optical-depth geometry for structured 2D rays. */
-        void initialize_geometry(
-            const std::vector<sasktran2::raytracing::TracedRay2D>& traced_rays,
-            const Geometry2D& geometry);
 
         /** Initializes the atmosphere
          *

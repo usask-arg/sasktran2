@@ -21,18 +21,11 @@ namespace sasktran2::solartransmission {
     }
 
     template <int NSTOKES>
-    void OccultationSource<NSTOKES>::initialize_geometry(
-        const std::vector<sasktran2::raytracing::TracedRay2D>& traced_rays) {
-        m_ground_is_hit.resize(traced_rays.size());
-        std::transform(traced_rays.begin(), traced_rays.end(),
-                       m_ground_is_hit.begin(),
-                       [](const auto& ray) { return ray.ground_is_hit; });
-    }
-
-    template <int NSTOKES>
     void OccultationSource<NSTOKES>::integrated_source(
         int wavelidx, int losidx, int layeridx, int wavel_threadidx,
-        int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
+        int threadidx, const sasktran2::raytracing::TracedLayer& layer,
+        const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
+        const sasktran2::raytracing::GridWeightStencilView& exit_weights,
         const sasktran2::SparseODDualView& shell_od,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
         typename SourceTermInterface<NSTOKES>::IntegrationDirection direction)

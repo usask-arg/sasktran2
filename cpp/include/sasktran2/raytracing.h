@@ -3,6 +3,8 @@
 #include <sasktran2/internal_common.h>
 #include <sasktran2/math/scattering.h>
 
+#include <cstdint>
+
 #include <sasktran2/geometry.h>
 #include <sasktran2/viewinggeometry.h>
 
@@ -21,114 +23,6 @@ namespace sasktran2::raytracing {
      *
      */
     enum LayerType { complete, partial, tangent };
-
-    /** Heap-free interpolation weights on one structured 1D cell. */
-    struct InterpolationStencil1D {
-        int cell_index = -1;
-        double upper_weight = 0.0;
-
-        bool valid() const { return cell_index >= 0; }
-        bool empty() const { return !valid(); }
-
-        std::size_t size() const {
-            if (!valid()) {
-                return 0;
-            }
-            return upper_weight == 0.0 || upper_weight == 1.0 ? 1 : 2;
-        }
-
-        std::pair<int, double> operator[](std::size_t index) const {
-            assert(index < size());
-            if (size() == 1) {
-                return upper_weight == 0.0
-                           ? std::make_pair(cell_index, 1.0)
-                           : std::make_pair(cell_index + 1, 1.0);
-            }
-            return index == 0 ? std::make_pair(cell_index, 1.0 - upper_weight)
-                              : std::make_pair(cell_index + 1, upper_weight);
-        }
-
-        void reset() {
-            cell_index = -1;
-            upper_weight = 0.0;
-        }
-
-        void assign(const std::vector<std::pair<int, double>>& weights,
-                    int grid_size) {
-            reset();
-            if (grid_size < 2) {
-                return;
-            }
-            int first_index = grid_size;
-            int last_index = -1;
-            for (const auto& weight : weights) {
-                if (weight.second != 0.0) {
-                    first_index = std::min(first_index, weight.first);
-                    last_index = std::max(last_index, weight.first);
-                }
-            }
-            if (last_index < 0 || first_index < 0 || first_index >= grid_size) {
-                return;
-            }
-
-            cell_index = std::min(first_index, grid_size - 2);
-            if (last_index > cell_index + 1) {
-                reset();
-                return;
-            }
-
-            double lower_weight = 0.0;
-            upper_weight = 0.0;
-            for (const auto& weight : weights) {
-                if (weight.first == cell_index) {
-                    lower_weight += weight.second;
-                } else if (weight.first == cell_index + 1) {
-                    upper_weight += weight.second;
-                }
-            }
-            if (lower_weight + upper_weight != 1.0) {
-                reset();
-            }
-        }
-    };
-
-    /** Integrated optical-depth weights for one structured 1D cell.
-     *
-     * A traced 1D layer is confined to one altitude cell, so its optical depth
-     * can be written directly as weights on the cell's lower and upper grid
-     * points.  Keeping these combined weights avoids repeating endpoint
-     * interpolation when constructing geometry matrices.
-     */
-    struct IntegratedCellPath1D {
-        int cell_index = -1;
-        std::array<double, 2> weights = {0.0, 0.0};
-
-        bool valid() const { return cell_index >= 0; }
-
-        void reset() {
-            cell_index = -1;
-            weights = {0.0, 0.0};
-        }
-    };
-
-    /** Cell-local interpolation coordinates for a structured 2D endpoint. */
-    struct InterpolationCoordinates2D {
-        double altitude_upper_weight = 0.0;
-        double horizontal_upper_weight = 0.0;
-
-        std::array<double, 4> weights() const {
-            const double altitude_lower = 1.0 - altitude_upper_weight;
-            const double horizontal_lower = 1.0 - horizontal_upper_weight;
-            return {horizontal_lower * altitude_lower,
-                    horizontal_lower * altitude_upper_weight,
-                    horizontal_upper_weight * altitude_lower,
-                    horizontal_upper_weight * altitude_upper_weight};
-        }
-    };
-
-    struct IntegratedCellPath2D {
-        std::array<double, 4> weights = {0.0, 0.0, 0.0, 0.0};
-    };
 
     // Values needed to integrate a layer.  Rather than interpolating anything
     // we directly store weights/indices to the optical table to speed up
@@ -180,13 +74,43 @@ namespace sasktran2::raytracing {
         LayerType type; /**< The type of layer, complete, partial, or tangent */
     };
 
-    struct SphericalLayer : public LayerGeometry {
-        InterpolationStencil1D entrance_interpolation_weights;
-        InterpolationStencil1D exit_interpolation_weights;
+    /** A non-owning view over grid interpolation or path-integration weights.
+     *
+     * The backing storage is owned by TracedRay. Keeping the grid indices
+     * separate from the weights allows the same cell-node list to be reused
+     * for entrance interpolation, exit interpolation, and integrated optical
+     * depth without reserving a maximum-dimensional stencil in every layer.
+     */
+    class GridWeightStencilView {
+      private:
+        const int* m_indices = nullptr;
+        const double* m_weights = nullptr;
+        std::size_t m_size = 0;
 
-        IntegratedCellPath1D integrated_od; /**< Combined grid-point weights
-                                               for optical depth in 1D. */
+      public:
+        GridWeightStencilView() = default;
+        GridWeightStencilView(const int* indices, const double* weights,
+                              std::size_t size)
+            : m_indices(indices), m_weights(weights), m_size(size) {}
+
+        std::size_t size() const { return m_size; }
+        bool empty() const { return m_size == 0; }
+
+        std::pair<int, double> operator[](std::size_t index) const {
+            assert(index < m_size);
+            return {m_indices[index], m_weights[index]};
+        }
     };
+
+    /** One dimension-independent segment of a traced ray. */
+    struct TracedLayer : public LayerGeometry {
+        std::uint32_t grid_weight_offset = 0;
+        std::uint8_t grid_weight_count = 0;
+    };
+
+    // Retain the established 1D name for downstream code. The layer itself is
+    // now independent of atmosphere dimensionality.
+    using SphericalLayer = TracedLayer;
 
     /** The geometry information of a fully traced ray.
      */
@@ -194,56 +118,130 @@ namespace sasktran2::raytracing {
         sasktran2::viewinggeometry::ViewingRay
             observer_and_look; /**< The observer location and look direction */
 
-        bool is_straight;   /**< True if the ray is straight, i.e., the look
-                               vector does not change along the ray */
-        bool ground_is_hit; /**< True if the ground is hit by the ray */
+        bool is_straight = true;    /**< True if the ray is straight, i.e., the
+                                       look vector does not change along the ray */
+        bool ground_is_hit = false; /**< True if the ground is hit by the ray */
 
-        std::vector<SphericalLayer>
+        std::vector<TracedLayer>
             layers; /**< Set of traced ray layers, starting from the end of the
                        ray moving towards the observer */
 
-        double tangent_radius; /**< Radius of the tangent point in [m] INCLUDING
-                                  refractive effects. Could be negative if the
-                                  ray hits the ground. */
+        double tangent_radius =
+            std::numeric_limits<double>::quiet_NaN(); /**< Radius of the tangent
+                                                         point in [m] INCLUDING
+                                                         refractive effects.
+                                                         Could be negative if
+                                                         the ray hits the
+                                                         ground. */
 
         std::vector<std::pair<int, double>> interpolation_index_weights; /**<
             Workspace memory to be used by the raytracer.
          */
+
+      private:
+        std::vector<int> grid_weight_indices;
+        std::vector<double> entrance_grid_weights;
+        std::vector<double> exit_grid_weights;
+        std::vector<double> integrated_od_weights;
+
+      public:
+        /** Reserves storage for compiled grid weights without changing the
+         * ray. Views obtained before a mutation of the ray must not be kept. */
+        void reserve_grid_weights(std::size_t count) {
+            grid_weight_indices.reserve(count);
+            entrance_grid_weights.reserve(count);
+            exit_grid_weights.reserve(count);
+            integrated_od_weights.reserve(count);
+        }
+
+        std::size_t num_grid_weights() const {
+            return grid_weight_indices.size();
+        }
+
+        template <typename IndexContainer, typename EntranceContainer,
+                  typename ExitContainer, typename ODContainer>
+        void set_layer_weights(std::size_t layer_index,
+                               const IndexContainer& indices,
+                               const EntranceContainer& entrance_weights,
+                               const ExitContainer& exit_weights,
+                               const ODContainer& od_weights) {
+            const std::size_t count = indices.size();
+            if (entrance_weights.size() != count ||
+                exit_weights.size() != count || od_weights.size() != count) {
+                throw std::invalid_argument(
+                    "Traced-ray layer weight arrays must have equal sizes");
+            }
+            set_layer_weights(layer_index, indices.data(),
+                              entrance_weights.data(), exit_weights.data(),
+                              od_weights.data(), count);
+        }
+
+        void set_layer_weights(std::size_t layer_index, const int* indices,
+                               const double* entrance_weights,
+                               const double* exit_weights,
+                               const double* od_weights, std::size_t count) {
+            if (count > std::numeric_limits<std::uint8_t>::max() ||
+                grid_weight_indices.size() >
+                    std::numeric_limits<std::uint32_t>::max()) {
+                throw std::length_error(
+                    "Traced-ray grid-weight storage exceeds compact index "
+                    "limits");
+            }
+
+            auto& layer = layers.at(layer_index);
+            layer.grid_weight_offset = grid_weight_indices.size();
+            layer.grid_weight_count = count;
+            grid_weight_indices.insert(grid_weight_indices.end(), indices,
+                                       indices + count);
+            entrance_grid_weights.insert(entrance_grid_weights.end(),
+                                         entrance_weights,
+                                         entrance_weights + count);
+            exit_grid_weights.insert(exit_grid_weights.end(), exit_weights,
+                                     exit_weights + count);
+            integrated_od_weights.insert(integrated_od_weights.end(),
+                                         od_weights, od_weights + count);
+        }
+
+        GridWeightStencilView entrance_weights(std::size_t layer_index) const {
+            const auto& layer = layers.at(layer_index);
+            if (layer.grid_weight_count == 0) {
+                return {};
+            }
+            return {grid_weight_indices.data() + layer.grid_weight_offset,
+                    entrance_grid_weights.data() + layer.grid_weight_offset,
+                    layer.grid_weight_count};
+        }
+
+        GridWeightStencilView exit_weights(std::size_t layer_index) const {
+            const auto& layer = layers.at(layer_index);
+            if (layer.grid_weight_count == 0) {
+                return {};
+            }
+            return {grid_weight_indices.data() + layer.grid_weight_offset,
+                    exit_grid_weights.data() + layer.grid_weight_offset,
+                    layer.grid_weight_count};
+        }
+
+        GridWeightStencilView
+        optical_depth_weights(std::size_t layer_index) const {
+            const auto& layer = layers.at(layer_index);
+            if (layer.grid_weight_count == 0) {
+                return {};
+            }
+            return {grid_weight_indices.data() + layer.grid_weight_offset,
+                    integrated_od_weights.data() + layer.grid_weight_offset,
+                    layer.grid_weight_count};
+        }
 
         /** Resets the storage for the TracedRay so it can be traced again
          */
         void reset() {
             ground_is_hit = false;
             layers.resize(0);
-            tangent_radius = std::numeric_limits<double>::quiet_NaN();
-        }
-    };
-
-    /** A layer traced through one structured 2D cell. */
-    struct StructuredLayer2D : public LayerGeometry {
-        int altitude_cell = -1; /**< Altitude-cell index for this segment. */
-        int horizontal_cell =
-            -1; /**< Horizontal-cell index for this segment. */
-        InterpolationCoordinates2D entrance_interpolation;
-        InterpolationCoordinates2D exit_interpolation;
-        IntegratedCellPath2D integrated_od;
-    };
-
-    /** Standalone traced-ray output for Geometry2D.
-     *
-     * This is intentionally separate from TracedRay so the 2D topology is not
-     * coupled into the existing 1D engine path.
-     */
-    struct TracedRay2D {
-        sasktran2::viewinggeometry::ViewingRay observer_and_look;
-        bool is_straight = true;
-        bool ground_is_hit = false;
-        std::vector<StructuredLayer2D> layers;
-        double tangent_radius = std::numeric_limits<double>::quiet_NaN();
-
-        void reset() {
-            ground_is_hit = false;
-            layers.resize(0);
+            grid_weight_indices.clear();
+            entrance_grid_weights.clear();
+            exit_grid_weights.clear();
+            integrated_od_weights.clear();
             tangent_radius = std::numeric_limits<double>::quiet_NaN();
         }
     };
@@ -306,78 +304,94 @@ namespace sasktran2::raytracing {
                           layer.cos_sza_exit, layer.saz_exit, geo);
     }
 
-    inline void
-    add_interpolation_weights(SphericalLayer& layer,
-                              const sasktran2::Geometry1D& geometry,
-                              std::vector<std::pair<int, double>>& workspace) {
-        geometry.assign_interpolation_weights(layer.exit, workspace);
-        layer.exit_interpolation_weights.assign(workspace, geometry.size());
-        geometry.assign_interpolation_weights(layer.entrance, workspace);
-        layer.entrance_interpolation_weights.assign(workspace, geometry.size());
-    }
-
-    /** Combines endpoint interpolation and quadrature into one 1D cell
-     * stencil.  If a layer does not satisfy the structured-cell invariant, the
-     * stencil remains invalid and matrix construction falls back to the legacy
-     * endpoint calculation.
+    /** Resolves a 1D layer to flattened atmosphere-grid weights.
+     *
+     * All geometry-dependent interpolation is completed during tracing. The
+     * source and optical-depth paths therefore consume the same representation
+     * regardless of atmosphere dimensionality.
      */
     inline void
-    add_integrated_od_weights(SphericalLayer& layer,
-                              const sasktran2::Geometry1D& geometry) {
-        layer.integrated_od.reset();
+    add_interpolation_weights(TracedRay& ray, std::size_t layer_index,
+                              const sasktran2::Geometry1D& geometry,
+                              std::vector<std::pair<int, double>>& workspace) {
+        auto& layer = ray.layers.at(layer_index);
+        std::array<std::pair<int, double>, 2> entrance;
+        std::array<std::pair<int, double>, 2> exit;
+        std::size_t entrance_count = 0;
+        std::size_t exit_count = 0;
+        const auto assign = [&](const Location& location, auto& destination,
+                                std::size_t& count) {
+            geometry.assign_interpolation_weights(location, workspace);
+            if (workspace.size() > destination.size()) {
+                throw std::runtime_error(
+                    "Traced 1D endpoint spans more than one grid cell");
+            }
+            count = workspace.size();
+            std::copy(workspace.begin(), workspace.end(), destination.begin());
+        };
+        assign(layer.entrance, entrance, entrance_count);
+        assign(layer.exit, exit, exit_count);
 
-        int first_index = geometry.size();
-        int last_index = -1;
-        const auto add_support =
-            [&first_index, &last_index](const auto& interpolation_weights,
-                                        double quadrature_weight) {
-                for (std::size_t index = 0;
-                     index < interpolation_weights.size(); ++index) {
-                    const auto iw = interpolation_weights[index];
-                    if (iw.second * quadrature_weight != 0.0) {
-                        first_index = std::min(first_index, iw.first);
-                        last_index = std::max(last_index, iw.first);
-                    }
+        std::array<int, 4> indices;
+        std::size_t index_count = 0;
+        const auto add_indices = [&indices, &index_count](const auto& stencil,
+                                                          std::size_t count) {
+            for (std::size_t index = 0; index < count; ++index) {
+                if (stencil[index].second == 0.0) {
+                    continue;
                 }
-            };
-        add_support(layer.entrance_interpolation_weights, layer.od_quad_start);
-        add_support(layer.exit_interpolation_weights, layer.od_quad_end);
-
-        if (last_index < 0) {
-            first_index = std::min(layer.entrance.lower_alt_index,
-                                   layer.exit.lower_alt_index);
-            if (first_index < 0) {
-                return;
+                const int grid_index = stencil[index].first;
+                if (std::find(indices.begin(), indices.begin() + index_count,
+                              grid_index) == indices.begin() + index_count) {
+                    if (index_count == indices.size()) {
+                        throw std::runtime_error(
+                            "Traced 1D layer touches more than four grid "
+                            "points");
+                    }
+                    indices[index_count++] = grid_index;
+                }
             }
-            first_index = std::min(first_index, geometry.size() - 2);
-            last_index = first_index;
+        };
+        add_indices(entrance, entrance_count);
+        add_indices(exit, exit_count);
+        if (index_count == 0) {
+            throw std::runtime_error(
+                "Unable to resolve traced 1D layer interpolation weights");
         }
-        if (first_index < 0 || first_index >= geometry.size()) {
-            return;
-        }
+        std::sort(indices.begin(), indices.begin() + index_count);
 
-        const int cell_index = std::min(first_index, geometry.size() - 2);
-        if (last_index > cell_index + 1) {
-            return;
-        }
+        std::array<double, 4> entrance_weights = {0.0, 0.0, 0.0, 0.0};
+        std::array<double, 4> exit_weights = {0.0, 0.0, 0.0, 0.0};
+        const auto accumulate = [&indices, index_count](const auto& stencil,
+                                                        std::size_t count,
+                                                        auto& weights) {
+            for (std::size_t index = 0; index < count; ++index) {
+                const auto weight = stencil[index];
+                if (weight.second == 0.0) {
+                    continue;
+                }
+                const auto position =
+                    std::find(indices.begin(), indices.begin() + index_count,
+                              weight.first);
+                if (position == indices.begin() + index_count) {
+                    throw std::runtime_error(
+                        "Unable to map traced 1D interpolation weight");
+                }
+                weights[std::distance(indices.begin(), position)] +=
+                    weight.second;
+            }
+        };
+        accumulate(entrance, entrance_count, entrance_weights);
+        accumulate(exit, exit_count, exit_weights);
 
-        layer.integrated_od.cell_index = cell_index;
-        for (std::size_t index = 0;
-             index < layer.entrance_interpolation_weights.size(); ++index) {
-            const auto iw = layer.entrance_interpolation_weights[index];
-            const double weight = iw.second * layer.od_quad_start;
-            if (weight != 0.0) {
-                layer.integrated_od.weights[iw.first - cell_index] += weight;
-            }
+        std::array<double, 4> od_weights = {0.0, 0.0, 0.0, 0.0};
+        for (std::size_t index = 0; index < index_count; ++index) {
+            od_weights[index] = entrance_weights[index] * layer.od_quad_start +
+                                exit_weights[index] * layer.od_quad_end;
         }
-        for (std::size_t index = 0;
-             index < layer.exit_interpolation_weights.size(); ++index) {
-            const auto iw = layer.exit_interpolation_weights[index];
-            const double weight = iw.second * layer.od_quad_end;
-            if (weight != 0.0) {
-                layer.integrated_od.weights[iw.first - cell_index] += weight;
-            }
-        }
+        ray.set_layer_weights(layer_index, indices.data(),
+                              entrance_weights.data(), exit_weights.data(),
+                              od_weights.data(), index_count);
     }
 
     /** Populates a layer with the optical depth quadrature parameters
@@ -535,75 +549,19 @@ namespace sasktran2::raytracing {
         result.resize((long)traced_ray.layers.size(), geometry.size());
 
         typedef Eigen::Triplet<double> T;
-        std::vector<std::pair<int, double>> index_weights;
-
         std::vector<T> tripletList;
-        tripletList.reserve(traced_ray.layers.size() * 2);
+        tripletList.reserve(traced_ray.num_grid_weights());
 
         for (int i = (int)traced_ray.layers.size() - 1; i >= 0; --i) {
-            const auto& layer = traced_ray.layers[i];
-
-            if (layer.integrated_od.valid()) {
-                for (int j = 0; j < 2; ++j) {
-                    if (layer.integrated_od.weights[j] != 0.0) {
-                        tripletList.emplace_back(
-                            i, layer.integrated_od.cell_index + j,
-                            layer.integrated_od.weights[j]);
-                    }
+            const auto weights = traced_ray.optical_depth_weights(i);
+            for (std::size_t j = 0; j < weights.size(); ++j) {
+                const auto weight = weights[j];
+                if (weight.second != 0.0) {
+                    tripletList.emplace_back(i, weight.first, weight.second);
                 }
-                continue;
-            }
-
-            geometry.assign_interpolation_weights(layer.entrance,
-                                                  index_weights);
-
-            for (const auto& iw : index_weights) {
-                tripletList.push_back(
-                    T(i, iw.first, iw.second * layer.od_quad_start));
-            }
-
-            geometry.assign_interpolation_weights(layer.exit, index_weights);
-
-            for (const auto& iw : index_weights) {
-                tripletList.push_back(
-                    T(i, iw.first, iw.second * layer.od_quad_end));
             }
         }
         result.setFromTriplets(tripletList.begin(), tripletList.end());
-    }
-
-    /** Constructs the four-node-per-layer optical-depth matrix for a
-     * standalone structured 2D traced ray. */
-    inline void
-    construct_od_matrix(const TracedRay2D& traced_ray,
-                        const Geometry2D& geometry,
-                        Eigen::SparseMatrix<double, Eigen::RowMajor>& result) {
-        result.resize(static_cast<long>(traced_ray.layers.size()),
-                      geometry.size());
-        std::vector<Eigen::Triplet<double>> triplets;
-        triplets.reserve(traced_ray.layers.size() * 4);
-
-        for (int layer_index = 0; layer_index < traced_ray.layers.size();
-             ++layer_index) {
-            const auto& layer = traced_ray.layers[layer_index];
-            const std::array<int, 4> location_indices = {
-                geometry.location_index(layer.altitude_cell,
-                                        layer.horizontal_cell),
-                geometry.location_index(layer.altitude_cell + 1,
-                                        layer.horizontal_cell),
-                geometry.location_index(layer.altitude_cell,
-                                        layer.horizontal_cell + 1),
-                geometry.location_index(layer.altitude_cell + 1,
-                                        layer.horizontal_cell + 1)};
-            for (int local_index = 0; local_index < 4; ++local_index) {
-                if (layer.integrated_od.weights[local_index] != 0.0) {
-                    triplets.emplace_back(
-                        layer_index, location_indices[local_index],
-                        layer.integrated_od.weights[local_index]);
-                }
-            }
-        }
-        result.setFromTriplets(triplets.begin(), triplets.end());
     }
 
     /** Abstract base interface class for a ray tracer
@@ -969,16 +927,16 @@ namespace sasktran2::raytracing {
         ~RustRayTracer2D();
 
         void trace_ray(const sasktran2::viewinggeometry::ViewingRay& ray,
-                       TracedRay2D& tracedray) const;
+                       TracedRay& tracedray) const;
 
         void trace_ray(const sasktran2::viewinggeometry::ViewingRay& ray,
                        const Eigen::VectorXd& refractive_index,
-                       TracedRay2D& tracedray) const;
+                       TracedRay& tracedray) const;
 
       private:
         void trace_ray_impl(const sasktran2::viewinggeometry::ViewingRay& ray,
                             const Eigen::VectorXd* refractive_index,
-                            TracedRay2D& tracedray) const;
+                            TracedRay& tracedray) const;
 
         const sasktran2::Geometry2D& m_geometry;
         std::unique_ptr<RustRayTracer2DImpl> m_impl;

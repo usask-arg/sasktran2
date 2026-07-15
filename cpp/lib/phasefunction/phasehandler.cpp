@@ -5,41 +5,16 @@
 namespace sasktran2::solartransmission {
     namespace {
         std::vector<std::pair<int, double>>
-        endpoint_weights(const sasktran2::raytracing::SphericalLayer& layer,
-                         bool entrance, const sasktran2::Geometry& geometry) {
-            const auto& stencil = entrance
-                                      ? layer.entrance_interpolation_weights
-                                      : layer.exit_interpolation_weights;
+        endpoint_weights(const sasktran2::raytracing::TracedRay& ray,
+                         std::size_t layer_index, bool entrance) {
+            const auto stencil = entrance ? ray.entrance_weights(layer_index)
+                                          : ray.exit_weights(layer_index);
             std::vector<std::pair<int, double>> result;
             result.reserve(stencil.size());
             for (std::size_t index = 0; index < stencil.size(); ++index) {
-                result.push_back(stencil[index]);
-            }
-            return result;
-        }
-
-        std::vector<std::pair<int, double>>
-        endpoint_weights(const sasktran2::raytracing::StructuredLayer2D& layer,
-                         bool entrance, const sasktran2::Geometry& geometry) {
-            const auto& geometry_2d =
-                static_cast<const sasktran2::Geometry2D&>(geometry);
-            const std::array<int, 4> indices = {
-                geometry_2d.location_index(layer.altitude_cell,
-                                           layer.horizontal_cell),
-                geometry_2d.location_index(layer.altitude_cell + 1,
-                                           layer.horizontal_cell),
-                geometry_2d.location_index(layer.altitude_cell,
-                                           layer.horizontal_cell + 1),
-                geometry_2d.location_index(layer.altitude_cell + 1,
-                                           layer.horizontal_cell + 1)};
-            const auto local_weights =
-                entrance ? layer.entrance_interpolation.weights()
-                         : layer.exit_interpolation.weights();
-            std::vector<std::pair<int, double>> result;
-            result.reserve(4);
-            for (int index = 0; index < 4; ++index) {
-                if (local_weights[index] != 0.0) {
-                    result.emplace_back(indices[index], local_weights[index]);
+                const auto weight = stencil[index];
+                if (weight.second != 0.0) {
+                    result.push_back(weight);
                 }
             }
             return result;
@@ -54,16 +29,8 @@ namespace sasktran2::solartransmission {
     }
 
     template <int NSTOKES>
-    void PhaseHandler<NSTOKES>::initialize_geometry(
-        const std::vector<sasktran2::raytracing::TracedRay2D>& los_rays,
-        const std::vector<std::vector<int>>& index_map) {
-        initialize_geometry_impl(los_rays, index_map);
-    }
-
-    template <int NSTOKES>
-    template <typename RayType>
     void PhaseHandler<NSTOKES>::initialize_geometry_impl(
-        const std::vector<RayType>& los_rays,
+        const std::vector<sasktran2::raytracing::TracedRay>& los_rays,
         const std::vector<std::vector<int>>& index_map) {
 
         ZoneScopedN("Phase Handler Initialize Geometry");
@@ -85,7 +52,7 @@ namespace sasktran2::solartransmission {
         m_geometry_entrance_to_internal.resize(los_rays.size());
         m_geometry_exit_to_internal.resize(los_rays.size());
         for (int i = 0; i < los_rays.size(); ++i) {
-            const RayType& ray = los_rays[i];
+            const auto& ray = los_rays[i];
 
             // Empty rays don't need to be considered
             if (ray.layers.size() == 0) {
@@ -147,11 +114,8 @@ namespace sasktran2::solartransmission {
                     }
                 }
 
-                const auto& layer = ray.layers[j];
-                const auto entrance_weights =
-                    endpoint_weights(layer, true, m_geometry);
-                const auto exit_weights =
-                    endpoint_weights(layer, false, m_geometry);
+                const auto entrance_weights = endpoint_weights(ray, j, true);
+                const auto exit_weights = endpoint_weights(ray, j, false);
                 m_geometry_entrance_to_internal[i][j].resize(
                     entrance_weights.size());
                 m_geometry_exit_to_internal[i][j].resize(exit_weights.size());
@@ -167,7 +131,7 @@ namespace sasktran2::solartransmission {
                 bool can_share_exit = false;
                 if (j > 0) {
                     const auto previous_entrance_weights =
-                        endpoint_weights(ray.layers[j - 1], true, m_geometry);
+                        endpoint_weights(ray, j - 1, true);
                     can_share_exit =
                         exit_weights.size() == previous_entrance_weights.size();
                     for (int k = 0; can_share_exit && k < exit_weights.size();
@@ -343,7 +307,7 @@ namespace sasktran2::solartransmission {
     template <int NSTOKES>
     void PhaseHandler<NSTOKES>::scatter(
         int threadidx, int losidx, int layeridx,
-        const raytracing::InterpolationStencil1D& index_weights,
+        const raytracing::GridWeightStencilView& index_weights,
         bool is_entrance,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
@@ -352,21 +316,10 @@ namespace sasktran2::solartransmission {
     }
 
     template <int NSTOKES>
-    void PhaseHandler<NSTOKES>::scatter(
-        int threadidx, int losidx, int layeridx,
-        const std::array<std::pair<int, double>, 4>& index_weights,
-        bool is_entrance,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
-        const {
-        scatter_impl(threadidx, losidx, layeridx, index_weights, is_entrance,
-                     source);
-    }
-
-    template <int NSTOKES>
-    template <typename IndexWeights>
     void PhaseHandler<NSTOKES>::scatter_impl(
         int threadidx, int losidx, int layeridx,
-        const IndexWeights& index_weights, bool is_entrance,
+        const raytracing::GridWeightStencilView& index_weights,
+        bool is_entrance,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
         const auto& internal_indices =
@@ -376,24 +329,22 @@ namespace sasktran2::solartransmission {
         if constexpr (NSTOKES == 1) {
             double phase_result = 0.0;
 
-            if constexpr (std::is_same_v<std::decay_t<IndexWeights>,
-                                         raytracing::InterpolationStencil1D>) {
-                if (index_weights.valid()) {
-                    if (index_weights.upper_weight == 0.0 ||
-                        index_weights.upper_weight == 1.0) {
-                        phase_result =
-                            m_phase(0, internal_indices[0], threadidx);
-                    } else {
-                        phase_result =
-                            m_phase(0, internal_indices[0], threadidx) *
-                                (1.0 - index_weights.upper_weight) +
-                            m_phase(0, internal_indices[1], threadidx) *
-                                index_weights.upper_weight;
-                    }
+            if (index_weights.size() == 2) {
+                const auto lower = index_weights[0];
+                const auto upper = index_weights[1];
+                if (lower.second == 0.0 || upper.second == 0.0) {
+                    phase_result = m_phase(0, internal_indices[0], threadidx);
+                } else {
+                    phase_result = m_phase(0, internal_indices[0], threadidx) *
+                                       lower.second +
+                                   m_phase(0, internal_indices[1], threadidx) *
+                                       upper.second;
                 }
             } else {
                 int internal_offset = 0;
-                for (const auto& index_weight : index_weights) {
+                for (std::size_t index = 0; index < index_weights.size();
+                     ++index) {
+                    const auto index_weight = index_weights[index];
                     if (index_weight.second == 0.0) {
                         continue;
                     }
@@ -409,44 +360,19 @@ namespace sasktran2::solartransmission {
                 const int derivative_start =
                     m_atmosphere->scat_deriv_start_index() +
                     d * m_geometry.size();
-                if constexpr (std::is_same_v<
-                                  std::decay_t<IndexWeights>,
-                                  raytracing::InterpolationStencil1D>) {
-                    if (!index_weights.valid()) {
+                int derivative_internal_offset = 0;
+                for (std::size_t index = 0; index < index_weights.size();
+                     ++index) {
+                    const auto index_weight = index_weights[index];
+                    if (index_weight.second == 0.0) {
                         continue;
                     }
-                    const int lower_index = index_weights.cell_index;
-                    const double upper_weight = index_weights.upper_weight;
-                    if (upper_weight == 0.0 || upper_weight == 1.0) {
-                        const int geometry_index =
-                            lower_index + (upper_weight == 1.0 ? 1 : 0);
-                        source.deriv(0, derivative_start + geometry_index) +=
-                            source.value(0) *
-                            m_d_phase(0, internal_indices[0], d, threadidx);
-                    } else {
-                        source.deriv(0, derivative_start + lower_index) +=
-                            source.value(0) *
-                            m_d_phase(0, internal_indices[0], d, threadidx) *
-                            (1.0 - upper_weight);
-                        source.deriv(0, derivative_start + lower_index + 1) +=
-                            source.value(0) *
-                            m_d_phase(0, internal_indices[1], d, threadidx) *
-                            upper_weight;
-                    }
-                } else {
-                    int internal_offset = 0;
-                    for (const auto& index_weight : index_weights) {
-                        if (index_weight.second == 0.0) {
-                            continue;
-                        }
-                        const int internal_index =
-                            internal_indices[internal_offset++];
-                        source.deriv(0,
-                                     derivative_start + index_weight.first) +=
-                            source.value(0) *
-                            m_d_phase(0, internal_index, d, threadidx) *
-                            index_weight.second;
-                    }
+                    const int internal_index =
+                        internal_indices[derivative_internal_offset++];
+                    source.deriv(0, derivative_start + index_weight.first) +=
+                        source.value(0) *
+                        m_d_phase(0, internal_index, d, threadidx) *
+                        index_weight.second;
                 }
             }
             source.value(0) *= phase_result;
@@ -470,25 +396,24 @@ namespace sasktran2::solartransmission {
                 phase_result(2) += -S2 * off_diag;
             };
 
-            if constexpr (std::is_same_v<std::decay_t<IndexWeights>,
-                                         raytracing::InterpolationStencil1D>) {
-                if (index_weights.valid()) {
-                    const double upper_weight = index_weights.upper_weight;
-                    if (upper_weight == 0.0 || upper_weight == 1.0) {
-                        accumulate_phase(internal_indices[0], 1.0);
-                    } else {
-                        accumulate_phase(internal_indices[0],
-                                         1.0 - upper_weight);
-                        accumulate_phase(internal_indices[1], upper_weight);
-                    }
+            if (index_weights.size() == 2) {
+                const auto lower = index_weights[0];
+                const auto upper = index_weights[1];
+                if (lower.second == 0.0 || upper.second == 0.0) {
+                    accumulate_phase(internal_indices[0], 1.0);
+                } else {
+                    accumulate_phase(internal_indices[0], lower.second);
+                    accumulate_phase(internal_indices[1], upper.second);
                 }
             } else {
-                int internal_offset = 0;
-                for (const auto& index_weight : index_weights) {
+                int phase_internal_offset = 0;
+                for (std::size_t index = 0; index < index_weights.size();
+                     ++index) {
+                    const auto index_weight = index_weights[index];
                     if (index_weight.second == 0.0) {
                         continue;
                     }
-                    accumulate_phase(internal_indices[internal_offset++],
+                    accumulate_phase(internal_indices[phase_internal_offset++],
                                      index_weight.second);
                 }
             }
@@ -520,34 +445,16 @@ namespace sasktran2::solartransmission {
                         (-S2);
                 };
 
-                if constexpr (std::is_same_v<
-                                  std::decay_t<IndexWeights>,
-                                  raytracing::InterpolationStencil1D>) {
-                    if (!index_weights.valid()) {
+                int derivative_internal_offset = 0;
+                for (std::size_t index = 0; index < index_weights.size();
+                     ++index) {
+                    const auto index_weight = index_weights[index];
+                    if (index_weight.second == 0.0) {
                         continue;
                     }
-                    const int lower_index = index_weights.cell_index;
-                    const double upper_weight = index_weights.upper_weight;
-                    if (upper_weight == 0.0 || upper_weight == 1.0) {
-                        accumulate_derivative(
-                            internal_indices[0],
-                            lower_index + (upper_weight == 1.0 ? 1 : 0), 1.0);
-                    } else {
-                        accumulate_derivative(internal_indices[0], lower_index,
-                                              1.0 - upper_weight);
-                        accumulate_derivative(internal_indices[1],
-                                              lower_index + 1, upper_weight);
-                    }
-                } else {
-                    int internal_offset = 0;
-                    for (const auto& index_weight : index_weights) {
-                        if (index_weight.second == 0.0) {
-                            continue;
-                        }
-                        accumulate_derivative(
-                            internal_indices[internal_offset++],
-                            index_weight.first, index_weight.second);
-                    }
+                    accumulate_derivative(
+                        internal_indices[derivative_internal_offset++],
+                        index_weight.first, index_weight.second);
                 }
             }
 

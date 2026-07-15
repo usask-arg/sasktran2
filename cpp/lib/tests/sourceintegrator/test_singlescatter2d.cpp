@@ -21,22 +21,14 @@ namespace {
     }
 
     Eigen::VectorXd
-    direct_path_weights(const sasktran2::raytracing::TracedRay2D& ray,
+    direct_path_weights(const sasktran2::raytracing::TracedRay& ray,
                         const sasktran2::Geometry2D& geometry) {
         Eigen::VectorXd result = Eigen::VectorXd::Zero(geometry.size());
-        for (const auto& traced_layer : ray.layers) {
-            const std::array<int, 4> indices = {
-                geometry.location_index(traced_layer.altitude_cell,
-                                        traced_layer.horizontal_cell),
-                geometry.location_index(traced_layer.altitude_cell + 1,
-                                        traced_layer.horizontal_cell),
-                geometry.location_index(traced_layer.altitude_cell,
-                                        traced_layer.horizontal_cell + 1),
-                geometry.location_index(traced_layer.altitude_cell + 1,
-                                        traced_layer.horizontal_cell + 1)};
-            for (int local_index = 0; local_index < 4; ++local_index) {
-                result[indices[local_index]] +=
-                    traced_layer.integrated_od.weights[local_index];
+        for (std::size_t layer_index = 0; layer_index < ray.layers.size();
+             ++layer_index) {
+            const auto weights = ray.optical_depth_weights(layer_index);
+            for (std::size_t index = 0; index < weights.size(); ++index) {
+                result[weights[index].first] += weights[index].second;
             }
         }
         return result;
@@ -58,7 +50,7 @@ TEST_CASE("Exact solar transmission matrix matches direct Geometry2D rays",
     const auto geometry = geometry2d();
     sasktran2::raytracing::RustRayTracer2D raytracer(geometry);
 
-    sasktran2::raytracing::TracedRay2D line_of_sight;
+    sasktran2::raytracing::TracedRay line_of_sight;
     raytracer.trace_ray(
         viewing_ray({0.0, 0.0, earth_radius + 25.0}, {0.0, 0.0, -1.0}),
         line_of_sight);
@@ -76,7 +68,7 @@ TEST_CASE("Exact solar transmission matrix matches direct Geometry2D rays",
 
     sasktran2::viewinggeometry::ViewingRay solar_ray;
     solar_ray.look_away = geometry.coordinates().sun_unit();
-    sasktran2::raytracing::TracedRay2D traced_solar_ray;
+    sasktran2::raytracing::TracedRay traced_solar_ray;
 
     int row = 0;
     for (int layer_index = 0; layer_index < line_of_sight.layers.size();
@@ -120,7 +112,7 @@ TEST_CASE("Exact Geometry2D solar shadow is stable at a grazing surface ray",
                                          vector({-0.5, 0.5}));
     sasktran2::raytracing::RustRayTracer2D raytracer(geometry);
 
-    sasktran2::raytracing::TracedRay2D line_of_sight;
+    sasktran2::raytracing::TracedRay line_of_sight;
     line_of_sight.layers.resize(1);
     line_of_sight.layers[0].entrance.position =
         Eigen::Vector3d(0.0, 0.0, target_radius);

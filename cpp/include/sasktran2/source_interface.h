@@ -38,18 +38,6 @@ template <int NSTOKES> class SourceTermInterface {
         const sasktran2::viewinggeometry::InternalViewingGeometry&
             internal_viewing){};
 
-    /** Initializes geometry for structured 2D traced rays. */
-    virtual void initialize_geometry(
-        const std::vector<sasktran2::raytracing::TracedRay2D>& traced_rays){};
-
-    /** Initializes geometry for a source that also needs the structured grid.
-     */
-    virtual void initialize_geometry(
-        const std::vector<sasktran2::raytracing::TracedRay2D>& traced_rays,
-        const sasktran2::Geometry2D& geometry) {
-        initialize_geometry(traced_rays);
-    };
-
     /**
      *
      */
@@ -78,22 +66,12 @@ template <int NSTOKES> class SourceTermInterface {
      */
     virtual void integrated_source(
         int wavelidx, int losidx, int layeridx, int wavel_threadidx,
-        int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
+        int threadidx, const sasktran2::raytracing::TracedLayer& layer,
+        const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
+        const sasktran2::raytracing::GridWeightStencilView& exit_weights,
         const sasktran2::SparseODDualView& shell_od,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
         IntegrationDirection direction = IntegrationDirection::none) const = 0;
-
-    /** Calculates an interior source in one structured 2D layer. */
-    virtual void integrated_source(
-        int wavelidx, int losidx, int layeridx, int wavel_threadidx,
-        int threadidx, const sasktran2::raytracing::StructuredLayer2D& layer,
-        const sasktran2::Geometry2D& geometry,
-        const sasktran2::SparseODDualView& shell_od,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
-        IntegrationDirection direction = IntegrationDirection::none) const {
-        throw std::invalid_argument(
-            "Source does not implement structured 2D interior integration");
-    };
 
     /** Calculates the source term at the end of the ray.  Common examples of
      * this are ground scattering, ground emission, or the solar radiance if
@@ -139,10 +117,13 @@ template <int NSTOKES> class SourceTermInterface {
 
     virtual bool requires_integration() const { return true; }
 
-    /** Returns true when the source contributes within atmospheric layers and
-     * therefore requires a geometry-specific layer representation. */
+    /** Returns true when the source contributes within atmospheric layers. */
     virtual bool has_interior_source() const { return true; }
 
-    /** Returns true when the interior source supports structured 2D layers. */
-    virtual bool supports_2d_interior_source() const { return false; }
+    /** Returns whether this source supports the requested atmosphere
+     * dimensionality. Sources without an interior contribution are independent
+     * of the layer grid and need not override this method. */
+    virtual bool supports_geometry_dimension(int dimension) const {
+        return dimension == 1 || !has_interior_source();
+    }
 };

@@ -319,11 +319,10 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::calculate_geometry() {
     ZoneScopedN("calculate_geometry");
 
     m_internal_viewing_geometry.traced_rays.clear();
-    m_internal_viewing_geometry.traced_rays_2d.clear();
     m_internal_viewing_geometry.flux_observers.clear();
 
     if (m_geometry_2d != nullptr) {
-        m_internal_viewing_geometry.traced_rays_2d.resize(
+        m_internal_viewing_geometry.traced_rays.resize(
             m_viewing_geometry.observer_rays().size());
 
         for (int i = 0; i < m_viewing_geometry.observer_rays().size(); ++i) {
@@ -331,15 +330,14 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::calculate_geometry() {
             auto ray = viewing_ray->construct_ray(m_geometry->coordinates());
 #ifdef SKTRAN_RUST_SUPPORT
             m_raytracer_2d->trace_ray(
-                ray, m_internal_viewing_geometry.traced_rays_2d[i]);
+                ray, m_internal_viewing_geometry.traced_rays[i]);
 #endif
         }
 
         m_source_integrator->initialize_geometry(
-            m_internal_viewing_geometry.traced_rays_2d, *m_geometry_2d);
+            m_internal_viewing_geometry.traced_rays, *m_geometry_2d);
         for (auto& source : m_source_terms) {
-            source->initialize_geometry(
-                m_internal_viewing_geometry.traced_rays_2d, *m_geometry_2d);
+            source->initialize_geometry(m_internal_viewing_geometry);
         }
 
         FrameMarkEnd("Geometry");

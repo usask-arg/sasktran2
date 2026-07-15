@@ -21,59 +21,61 @@ namespace {
                 vector({-0.5, 0.0, 0.5})};
     }
 
-    sasktran2::raytracing::StructuredLayer2D
-    layer(int altitude_cell, int horizontal_cell,
-          std::array<double, 4> weights) {
-        sasktran2::raytracing::StructuredLayer2D result;
-        result.altitude_cell = altitude_cell;
-        result.horizontal_cell = horizontal_cell;
-        result.integrated_od.weights = weights;
+    void add_layer(sasktran2::raytracing::TracedRay& ray,
+                   const sasktran2::Geometry2D& geometry, int altitude_cell,
+                   int horizontal_cell, const std::array<double, 4>& od_weights,
+                   const std::array<double, 4>& entrance_weights = {0.25, 0.25,
+                                                                    0.25, 0.25},
+                   const std::array<double, 4>& exit_weights = {0.25, 0.25,
+                                                                0.25, 0.25}) {
+        sasktran2::raytracing::TracedLayer result;
         result.layer_distance =
-            std::accumulate(weights.begin(), weights.end(), 0.0);
+            std::accumulate(od_weights.begin(), od_weights.end(), 0.0);
         result.od_quad_start_fraction = 0.5;
         result.od_quad_end_fraction = 0.5;
-        return result;
+        ray.layers.push_back(result);
+        const std::array<int, 4> indices = {
+            geometry.location_index(altitude_cell, horizontal_cell),
+            geometry.location_index(altitude_cell + 1, horizontal_cell),
+            geometry.location_index(altitude_cell, horizontal_cell + 1),
+            geometry.location_index(altitude_cell + 1, horizontal_cell + 1)};
+        ray.set_layer_weights(ray.layers.size() - 1, indices, entrance_weights,
+                              exit_weights, od_weights);
     }
 
-    double direct_optical_depth(const sasktran2::raytracing::TracedRay2D& ray,
+    template <typename Source>
+    void initialize_source_geometry(
+        Source& source,
+        const std::vector<sasktran2::raytracing::TracedRay>& rays) {
+        sasktran2::viewinggeometry::InternalViewingGeometry viewing;
+        viewing.traced_rays = rays;
+        source.initialize_geometry(viewing);
+    }
+
+    double direct_optical_depth(const sasktran2::raytracing::TracedRay& ray,
                                 const sasktran2::Geometry2D& geometry,
                                 Eigen::Ref<const Eigen::VectorXd> extinction) {
         double result = 0.0;
-        for (const auto& traced_layer : ray.layers) {
-            const std::array<int, 4> indices = {
-                geometry.location_index(traced_layer.altitude_cell,
-                                        traced_layer.horizontal_cell),
-                geometry.location_index(traced_layer.altitude_cell + 1,
-                                        traced_layer.horizontal_cell),
-                geometry.location_index(traced_layer.altitude_cell,
-                                        traced_layer.horizontal_cell + 1),
-                geometry.location_index(traced_layer.altitude_cell + 1,
-                                        traced_layer.horizontal_cell + 1)};
-            for (int local_index = 0; local_index < 4; ++local_index) {
-                result += traced_layer.integrated_od.weights[local_index] *
-                          extinction[indices[local_index]];
+        for (std::size_t layer_index = 0; layer_index < ray.layers.size();
+             ++layer_index) {
+            const auto weights = ray.optical_depth_weights(layer_index);
+            for (std::size_t index = 0; index < weights.size(); ++index) {
+                result +=
+                    weights[index].second * extinction[weights[index].first];
             }
         }
         return result;
     }
 
     Eigen::VectorXd
-    direct_path_weights(const sasktran2::raytracing::TracedRay2D& ray,
+    direct_path_weights(const sasktran2::raytracing::TracedRay& ray,
                         const sasktran2::Geometry2D& geometry) {
         Eigen::VectorXd result = Eigen::VectorXd::Zero(geometry.size());
-        for (const auto& traced_layer : ray.layers) {
-            const std::array<int, 4> indices = {
-                geometry.location_index(traced_layer.altitude_cell,
-                                        traced_layer.horizontal_cell),
-                geometry.location_index(traced_layer.altitude_cell + 1,
-                                        traced_layer.horizontal_cell),
-                geometry.location_index(traced_layer.altitude_cell,
-                                        traced_layer.horizontal_cell + 1),
-                geometry.location_index(traced_layer.altitude_cell + 1,
-                                        traced_layer.horizontal_cell + 1)};
-            for (int local_index = 0; local_index < 4; ++local_index) {
-                result[indices[local_index]] +=
-                    traced_layer.integrated_od.weights[local_index];
+        for (std::size_t layer_index = 0; layer_index < ray.layers.size();
+             ++layer_index) {
+            const auto weights = ray.optical_depth_weights(layer_index);
+            for (std::size_t index = 0; index < weights.size(); ++index) {
+                result[weights[index].first] += weights[index].second;
             }
         }
         return result;
@@ -95,11 +97,14 @@ namespace {
     class InteriorTestSource : public SourceTermInterface<1> {
       public:
         void integrated_source(
-            int, int, int, int, int,
-            const sasktran2::raytracing::SphericalLayer&,
+            int, int, int, int, int, const sasktran2::raytracing::TracedLayer&,
+            const sasktran2::raytracing::GridWeightStencilView&,
+            const sasktran2::raytracing::GridWeightStencilView&,
             const sasktran2::SparseODDualView&,
             sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>&,
             IntegrationDirection) const override {}
+
+        bool supports_geometry_dimension(int) const override { return false; }
 
         void end_of_ray_source(
             int, int, int, int,
@@ -145,20 +150,18 @@ TEST_CASE("SourceIntegrator applies 2D occultation transmission and native "
         }
     }
 
-    std::vector<sasktran2::raytracing::TracedRay2D> rays(3);
-    rays[1].layers = {
-        layer(0, 0, {1.0, 2.0, 3.0, 4.0}),
-        layer(1, 1, {0.5, 1.5, 2.5, 3.5}),
-    };
+    std::vector<sasktran2::raytracing::TracedRay> rays(3);
+    add_layer(rays[1], geometry, 0, 0, {1.0, 2.0, 3.0, 4.0});
+    add_layer(rays[1], geometry, 1, 1, {0.5, 1.5, 2.5, 3.5});
+    rays[2] = rays[1];
     rays[2].ground_is_hit = true;
-    rays[2].layers = rays[1].layers;
 
     sasktran2::SourceIntegrator<1> integrator(true);
     integrator.initialize_geometry(rays, geometry);
     integrator.initialize_atmosphere(atmosphere);
 
     sasktran2::solartransmission::OccultationSource<1> source;
-    source.initialize_geometry(rays);
+    initialize_source_geometry(source, rays);
     source.initialize_atmosphere(atmosphere);
     std::vector<SourceTermInterface<1>*> sources = {&source};
 
@@ -206,8 +209,8 @@ TEST_CASE("SourceIntegrator restores derivatives after a derivative-free "
           "[sourceintegrator][occultation][geometry2d][derivatives]") {
     const auto geometry = geometry2d();
     sasktran2::Config config;
-    std::vector<sasktran2::raytracing::TracedRay2D> rays(1);
-    rays[0].layers = {layer(0, 0, {1.0, 2.0, 3.0, 4.0})};
+    std::vector<sasktran2::raytracing::TracedRay> rays(1);
+    add_layer(rays[0], geometry, 0, 0, {1.0, 2.0, 3.0, 4.0});
 
     sasktran2::atmosphere::Atmosphere<1> derivative_free(1, geometry, config,
                                                          false);
@@ -219,7 +222,7 @@ TEST_CASE("SourceIntegrator restores derivatives after a derivative-free "
     sasktran2::SourceIntegrator<1> integrator(true);
     integrator.initialize_geometry(rays, geometry);
     sasktran2::solartransmission::OccultationSource<1> source;
-    source.initialize_geometry(rays);
+    initialize_source_geometry(source, rays);
     std::vector<SourceTermInterface<1>*> sources = {&source};
 
     integrator.initialize_atmosphere(derivative_free);
@@ -246,9 +249,9 @@ TEST_CASE("OccultationSource blocks ground-terminated 1D and 2D rays",
     }
 
     SECTION("2D") {
-        std::vector<sasktran2::raytracing::TracedRay2D> rays(2);
+        std::vector<sasktran2::raytracing::TracedRay> rays(2);
         rays[1].ground_is_hit = true;
-        source.initialize_geometry(rays);
+        initialize_source_geometry(source, rays);
     }
 
     sasktran2::Dual<double, sasktran2::dualstorage::dense, 1> space(1, 0, true);
@@ -264,15 +267,15 @@ TEST_CASE("2D occultation transmission handles extreme OD and validates "
           "atmosphere size",
           "[sourceintegrator][occultation][geometry2d]") {
     const auto geometry = geometry2d();
-    std::vector<sasktran2::raytracing::TracedRay2D> rays(1);
-    rays[0].layers = {layer(0, 0, {1.0, 2.0, 3.0, 4.0})};
+    std::vector<sasktran2::raytracing::TracedRay> rays(1);
+    add_layer(rays[0], geometry, 0, 0, {1.0, 2.0, 3.0, 4.0});
     sasktran2::SourceIntegrator<1> integrator(false);
     integrator.initialize_geometry(rays, geometry);
 
     sasktran2::Config config;
     sasktran2::atmosphere::Atmosphere<1> atmosphere(1, geometry, config, false);
     sasktran2::solartransmission::OccultationSource<1> source;
-    source.initialize_geometry(rays);
+    initialize_source_geometry(source, rays);
     std::vector<SourceTermInterface<1>*> sources = {&source};
 
     SECTION("zero extinction") {
@@ -308,8 +311,8 @@ TEST_CASE("2D occultation transmission handles extreme OD and validates "
 TEST_CASE("Regular 2D integration rejects interior sources before mutation",
           "[sourceintegrator][geometry2d]") {
     const auto geometry = geometry2d();
-    std::vector<sasktran2::raytracing::TracedRay2D> rays(1);
-    rays[0].layers = {layer(0, 0, {1.0, 2.0, 3.0, 4.0})};
+    std::vector<sasktran2::raytracing::TracedRay> rays(1);
+    add_layer(rays[0], geometry, 0, 0, {1.0, 2.0, 3.0, 4.0});
     sasktran2::Config config;
     sasktran2::atmosphere::Atmosphere<1> atmosphere(1, geometry, config, false);
     atmosphere.storage().total_extinction.setConstant(0.1);
@@ -330,15 +333,12 @@ TEST_CASE("SourceIntegrator evaluates structured 2D volume emission and "
           "derivatives",
           "[sourceintegrator][emission][geometry2d]") {
     const auto geometry = geometry2d();
-    std::vector<sasktran2::raytracing::TracedRay2D> rays(1);
-    auto emission_layer = layer(0, 0, {1.0, 2.0, 3.0, 4.0});
-    emission_layer.entrance_interpolation.altitude_upper_weight = 0.0;
-    emission_layer.entrance_interpolation.horizontal_upper_weight = 0.0;
-    emission_layer.exit_interpolation.altitude_upper_weight = 1.0;
-    emission_layer.exit_interpolation.horizontal_upper_weight = 1.0;
+    std::vector<sasktran2::raytracing::TracedRay> rays(1);
+    add_layer(rays[0], geometry, 0, 0, {1.0, 2.0, 3.0, 4.0},
+              {1.0, 0.0, 0.0, 0.0}, {0.0, 0.0, 0.0, 1.0});
+    auto& emission_layer = rays[0].layers[0];
     emission_layer.od_quad_start_fraction = 0.25;
     emission_layer.od_quad_end_fraction = 0.75;
-    rays[0].layers = {emission_layer};
 
     sasktran2::Config config;
     config.set_emission_source(
@@ -357,7 +357,7 @@ TEST_CASE("SourceIntegrator evaluates structured 2D volume emission and "
     sasktran2::emission::EmissionSource<
         1, sasktran2::Config::EmissionSource::volume_emission_rate>
         source;
-    source.initialize_geometry(rays, geometry);
+    initialize_source_geometry(source, rays);
     source.initialize_atmosphere(atmosphere);
     std::vector<SourceTermInterface<1>*> sources = {&source};
     sasktran2::Dual<double, sasktran2::dualstorage::dense, 1> radiance(
@@ -394,7 +394,7 @@ TEST_CASE("RustRayTracer2D feeds refracted multi-wavelength occultation "
           "[sourceintegrator][occultation][geometry2d][rust]") {
     const auto geometry = geometry2d();
     sasktran2::raytracing::RustRayTracer2D tracer(geometry);
-    std::vector<sasktran2::raytracing::TracedRay2D> rays(3);
+    std::vector<sasktran2::raytracing::TracedRay> rays(3);
 
     tracer.trace_ray(
         viewing_ray(15.0 * radial_direction(-0.25), Eigen::Vector3d::UnitX()),
@@ -431,7 +431,7 @@ TEST_CASE("RustRayTracer2D feeds refracted multi-wavelength occultation "
     integrator.initialize_geometry(rays, geometry);
     integrator.initialize_atmosphere(atmosphere);
     sasktran2::solartransmission::OccultationSource<1> source;
-    source.initialize_geometry(rays);
+    initialize_source_geometry(source, rays);
     std::vector<SourceTermInterface<1>*> sources = {&source};
 
     for (int wavelength = 0; wavelength < num_wavelengths; ++wavelength) {
@@ -477,7 +477,7 @@ TEST_CASE("Horizontally constant 2D occultation transmission matches 1D",
     std::vector<sasktran2::raytracing::TracedRay> rays_1d(1);
     sasktran2::raytracing::RustRayTracer tracer_1d(geometry_1d);
     tracer_1d.trace_ray(ray, rays_1d[0]);
-    std::vector<sasktran2::raytracing::TracedRay2D> rays_2d(1);
+    std::vector<sasktran2::raytracing::TracedRay> rays_2d(1);
     sasktran2::raytracing::RustRayTracer2D tracer_2d(geometry_2d);
     tracer_2d.trace_ray(ray, rays_2d[0]);
 
@@ -516,7 +516,7 @@ TEST_CASE("Horizontally constant 2D occultation transmission matches 1D",
     sasktran2::solartransmission::OccultationSource<1> source_1d;
     source_1d.initialize_geometry(internal_1d);
     sasktran2::solartransmission::OccultationSource<1> source_2d;
-    source_2d.initialize_geometry(rays_2d);
+    initialize_source_geometry(source_2d, rays_2d);
     std::vector<SourceTermInterface<1>*> sources_2d = {&source_2d};
 
     for (int wavelength = 0; wavelength < num_wavelengths; ++wavelength) {

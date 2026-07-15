@@ -92,6 +92,8 @@ namespace sasktran2::raytracing {
 
         double rt_refracted = result.tangent_radius;
 
+        result.reserve_grid_weights(result.layers.size() * 2 + 2);
+
         double nt = refraction::refractive_index_at_altitude(
             m_geometry, rt_refracted - m_geometry.coordinates().earth_radius(),
             index_weights);
@@ -196,8 +198,8 @@ namespace sasktran2::raytracing {
             add_od_quadrature(
                 layer, sasktran2::geometrytype::spherical,
                 m_geometry.altitude_grid().interpolation_method());
-            add_interpolation_weights(layer, m_geometry, index_weights);
-            add_integrated_od_weights(layer, m_geometry);
+            add_interpolation_weights(result, result.layers.size() - i - 1,
+                                      m_geometry, index_weights);
             add_solar_parameters(m_geometry.coordinates().sun_unit(), layer);
         }
     }

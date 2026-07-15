@@ -98,16 +98,8 @@ namespace sasktran2::solartransmission {
         int wavelidx, int losidx, int wavel_threadidx, int threadidx,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
-        const bool ground_is_hit =
-            m_los_rays != nullptr ? m_los_rays->at(losidx).ground_is_hit
-                                  : m_los_rays_2d->at(losidx).ground_is_hit;
-        if (ground_is_hit) {
-            const auto& first_layer =
-                m_los_rays != nullptr
-                    ? static_cast<const raytracing::LayerGeometry&>(
-                          m_los_rays->at(losidx).layers[0])
-                    : static_cast<const raytracing::LayerGeometry&>(
-                          m_los_rays_2d->at(losidx).layers[0]);
+        if (m_los_ground_is_hit.at(losidx)) {
+            const auto& first_layer = m_los_end_layers.at(losidx);
             // Single scatter ground source is solar_trans * cos(th) * brdf
 
             // Cosine of direction to the sun at the surface
@@ -190,15 +182,25 @@ namespace sasktran2::solartransmission {
         if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
             {
                 ZoneScopedN("Single Scatter Source Exact Geometry Matrix");
-                // Generates the geometry matrix so that matrix * extinction =
-                // solar od at grid points
-                this->m_solar_transmission.generate_geometry_matrix(
-                    internal_viewing.traced_rays, m_geometry_matrix,
-                    m_ground_hit_flag);
-
-                // Usually faster to calculate the matrix densely and then
-                // convert to sparse
-                m_geometry_sparse = m_geometry_matrix.sparseView();
+                if (m_geometry_2d == nullptr) {
+                    // The 1D solar geometry is usually dense.
+                    this->m_solar_transmission.generate_geometry_matrix(
+                        internal_viewing.traced_rays, m_geometry_matrix,
+                        m_ground_hit_flag);
+                    m_geometry_sparse = m_geometry_matrix.sparseView();
+                } else {
+#ifdef SKTRAN_RUST_SUPPORT
+                    // Higher-dimensional solar paths remain sparse.
+                    m_geometry_matrix.resize(0, 0);
+                    m_solar_transmission.generate_geometry_matrix(
+                        internal_viewing.traced_rays, m_geometry_sparse,
+                        m_ground_hit_flag);
+#else
+                    throw std::invalid_argument(
+                        "Geometry2D exact solar transmission requires Rust "
+                        "support");
+#endif
+                }
             }
         }
         if constexpr (std::is_same_v<S, SolarTransmissionTable>) {
@@ -228,56 +230,24 @@ namespace sasktran2::solartransmission {
                 internal_viewing.traced_rays, m_index_map);
         }
 
-        // Store the rays for later
-        m_los_rays = &internal_viewing.traced_rays;
-        m_los_rays_2d = nullptr;
-    }
-
-    template <typename S, int NSTOKES>
-    void SingleScatterSource<S, NSTOKES>::initialize_geometry(
-        const std::vector<sasktran2::raytracing::TracedRay2D>& traced_rays,
-        const sasktran2::Geometry2D& geometry) {
-        if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
-            throw std::invalid_argument(
-                "Only exact solar transmission supports Geometry2D");
-        } else {
-#ifdef SKTRAN_RUST_SUPPORT
-            m_geometry_matrix.resize(0, 0);
-            m_solar_transmission.generate_geometry_matrix(
-                traced_rays, m_geometry_sparse, m_ground_hit_flag);
-
-            m_index_map.resize(traced_rays.size());
-            int point_index = 0;
-            for (int ray_index = 0; ray_index < traced_rays.size();
-                 ++ray_index) {
-                m_index_map[ray_index].resize(
-                    traced_rays[ray_index].layers.size());
-                for (int layer_index = 0;
-                     layer_index < m_index_map[ray_index].size();
-                     ++layer_index) {
-                    m_index_map[ray_index][layer_index] = point_index;
-                    ++point_index;
-                }
-                ++point_index;
+        m_los_ground_is_hit.resize(internal_viewing.traced_rays.size());
+        m_los_end_layers.resize(internal_viewing.traced_rays.size());
+        for (std::size_t ray_index = 0;
+             ray_index < internal_viewing.traced_rays.size(); ++ray_index) {
+            const auto& ray = internal_viewing.traced_rays[ray_index];
+            m_los_ground_is_hit[ray_index] = ray.ground_is_hit;
+            if (!ray.layers.empty()) {
+                m_los_end_layers[ray_index] = ray.layers.front();
             }
-
-            m_phase_handler.initialize_geometry(traced_rays, m_index_map);
-            m_los_rays = nullptr;
-            m_los_rays_2d = &traced_rays;
-#else
-            throw std::invalid_argument(
-                "Geometry2D exact solar transmission requires Rust support");
-#endif
         }
     }
 
     template <typename S, int NSTOKES>
-    template <typename EntranceWeights, typename ExitWeights>
     void SingleScatterSource<S, NSTOKES>::integrated_source_constant(
         int wavelidx, int losidx, int layeridx, int wavel_threadidx,
         int threadidx, const sasktran2::raytracing::LayerGeometry& layer,
-        const EntranceWeights& entrance_weights,
-        const ExitWeights& exit_weights,
+        const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
+        const sasktran2::raytracing::GridWeightStencilView& exit_weights,
         const sasktran2::SparseODDualView& shell_od,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
         typename SourceTermInterface<NSTOKES>::IntegrationDirection direction)
@@ -302,13 +272,11 @@ namespace sasktran2::solartransmission {
         auto& end_active_derivative_indices =
             m_end_active_derivative_indices[threadidx];
 
-        bool use_lower_interpolation = false;
-        if constexpr (std::is_same_v<std::decay_t<EntranceWeights>,
-                                     raytracing::InterpolationStencil1D>) {
-            use_lower_interpolation =
-                m_geometry_1d->altitude_grid().interpolation_method() ==
+        const bool use_active_derivatives = m_geometry_2d != nullptr;
+        const bool use_lower_interpolation =
+            m_geometry_1d != nullptr &&
+            m_geometry_1d->altitude_grid().interpolation_method() ==
                 grids::interpolation::lower;
-        }
 
         if (use_lower_interpolation) {
             if (layer.r_exit > layer.r_entrance) {
@@ -318,8 +286,8 @@ namespace sasktran2::solartransmission {
                     *m_atmosphere,
                     Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
                         m_geometry_sparse, entrance_index),
-                    calculate_derivatives, start_active_derivative_indices,
-                    start_phase);
+                    calculate_derivatives, use_active_derivatives,
+                    start_active_derivative_indices, start_phase);
 
                 scattering_source(
                     m_phase_handler, wavel_threadidx, losidx, layeridx,
@@ -327,8 +295,8 @@ namespace sasktran2::solartransmission {
                     *m_atmosphere,
                     Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
                         m_geometry_sparse, exit_index),
-                    calculate_derivatives, end_active_derivative_indices,
-                    end_phase);
+                    calculate_derivatives, use_active_derivatives,
+                    end_active_derivative_indices, end_phase);
             } else {
                 scattering_source(
                     m_phase_handler, wavel_threadidx, losidx, layeridx,
@@ -336,8 +304,8 @@ namespace sasktran2::solartransmission {
                     *m_atmosphere,
                     Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
                         m_geometry_sparse, entrance_index),
-                    calculate_derivatives, start_active_derivative_indices,
-                    start_phase);
+                    calculate_derivatives, use_active_derivatives,
+                    start_active_derivative_indices, start_phase);
 
                 scattering_source(
                     m_phase_handler, wavel_threadidx, losidx, layeridx,
@@ -345,8 +313,8 @@ namespace sasktran2::solartransmission {
                     *m_atmosphere,
                     Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
                         m_geometry_sparse, exit_index),
-                    calculate_derivatives, end_active_derivative_indices,
-                    end_phase);
+                    calculate_derivatives, use_active_derivatives,
+                    end_active_derivative_indices, end_phase);
             }
         } else {
             scattering_source(
@@ -354,16 +322,16 @@ namespace sasktran2::solartransmission {
                 entrance_weights, true, solar_trans_entrance, *m_atmosphere,
                 Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
                     m_geometry_sparse, entrance_index),
-                calculate_derivatives, start_active_derivative_indices,
-                start_phase);
+                calculate_derivatives, use_active_derivatives,
+                start_active_derivative_indices, start_phase);
 
             scattering_source(
                 m_phase_handler, wavel_threadidx, losidx, layeridx, wavelidx,
                 exit_weights, false, solar_trans_exit, *m_atmosphere,
                 Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
                     m_geometry_sparse, exit_index),
-                calculate_derivatives, end_active_derivative_indices,
-                end_phase);
+                calculate_derivatives, use_active_derivatives,
+                end_active_derivative_indices, end_phase);
         }
 
         double source_factor1;
@@ -421,8 +389,7 @@ namespace sasktran2::solartransmission {
             // And add on d_phase. Structured 2D endpoints touch only a small
             // subset of the full atmosphere derivative vector, so avoid a
             // dense pass over every horizontal grid location for each layer.
-            if constexpr (!std::is_same_v<std::decay_t<EntranceWeights>,
-                                          raytracing::InterpolationStencil1D>) {
+            if (use_active_derivatives) {
                 for (const int derivative_index :
                      start_active_derivative_indices) {
                     source.deriv.col(derivative_index) +=
@@ -461,7 +428,9 @@ namespace sasktran2::solartransmission {
     template <typename S, int NSTOKES>
     void SingleScatterSource<S, NSTOKES>::integrated_source(
         int wavelidx, int losidx, int layeridx, int wavel_threadidx,
-        int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
+        int threadidx, const sasktran2::raytracing::TracedLayer& layer,
+        const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
+        const sasktran2::raytracing::GridWeightStencilView& exit_weights,
         const sasktran2::SparseODDualView& shell_od,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
         typename SourceTermInterface<NSTOKES>::IntegrationDirection direction)
@@ -470,45 +439,6 @@ namespace sasktran2::solartransmission {
             // Essentially an empty shell from rounding, don't have to do
             // anything
             return;
-        }
-
-        integrated_source_constant(
-            wavelidx, losidx, layeridx, wavel_threadidx, threadidx, layer,
-            layer.entrance_interpolation_weights,
-            layer.exit_interpolation_weights, shell_od, source, direction);
-    }
-
-    template <typename S, int NSTOKES>
-    void SingleScatterSource<S, NSTOKES>::integrated_source(
-        int wavelidx, int losidx, int layeridx, int wavel_threadidx,
-        int threadidx, const sasktran2::raytracing::StructuredLayer2D& layer,
-        const sasktran2::Geometry2D& geometry,
-        const sasktran2::SparseODDualView& shell_od,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
-        typename SourceTermInterface<NSTOKES>::IntegrationDirection direction)
-        const {
-        if (layer.layer_distance < MINIMUM_SHELL_SIZE_M) {
-            return;
-        }
-
-        const std::array<int, 4> location_indices = {
-            geometry.location_index(layer.altitude_cell, layer.horizontal_cell),
-            geometry.location_index(layer.altitude_cell + 1,
-                                    layer.horizontal_cell),
-            geometry.location_index(layer.altitude_cell,
-                                    layer.horizontal_cell + 1),
-            geometry.location_index(layer.altitude_cell + 1,
-                                    layer.horizontal_cell + 1)};
-        const auto entrance_local_weights =
-            layer.entrance_interpolation.weights();
-        const auto exit_local_weights = layer.exit_interpolation.weights();
-        std::array<std::pair<int, double>, 4> entrance_weights;
-        std::array<std::pair<int, double>, 4> exit_weights;
-        for (int index = 0; index < 4; ++index) {
-            entrance_weights[index] = std::make_pair(
-                location_indices[index], entrance_local_weights[index]);
-            exit_weights[index] = std::make_pair(location_indices[index],
-                                                 exit_local_weights[index]);
         }
 
         integrated_source_constant(wavelidx, losidx, layeridx, wavel_threadidx,
