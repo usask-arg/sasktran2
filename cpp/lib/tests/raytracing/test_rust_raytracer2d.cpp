@@ -271,12 +271,14 @@ TEST_CASE("RustRayTracer2D splits extended edge cells at the angular seam",
 
     bool found_seam = false;
     for (std::size_t index = 1; index < traced.layers.size(); ++index) {
-        const auto& far = traced.layers[index - 1];
-        const auto& near = traced.layers[index];
-        if (far.horizontal_cell == 0 && near.horizontal_cell == 1 &&
-            far.entrance.position.z() < 0.0 &&
-            (far.entrance.position - near.exit.position).norm() <= tolerance) {
-            require_close(far.entrance.position.x(), 0.0);
+        const auto& before_seam = traced.layers[index - 1];
+        const auto& after_seam = traced.layers[index];
+        if (before_seam.horizontal_cell == 0 &&
+            after_seam.horizontal_cell == 1 &&
+            before_seam.entrance.position.z() < 0.0 &&
+            (before_seam.entrance.position - after_seam.exit.position).norm() <=
+                tolerance) {
+            require_close(before_seam.entrance.position.x(), 0.0);
             found_seam = true;
         }
     }
