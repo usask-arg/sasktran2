@@ -254,8 +254,13 @@ impl StructuredGrid2D {
     }
 
     /// Bilinear basis weights for a point interpreted from one specified
-    /// structured cell. This makes boundary interpolation one-sided and keeps
-    /// every traced layer on exactly four cell-local nodes.
+    /// structured cell.
+    ///
+    /// The result order is `(h0,a0), (h0,a1), (h1,a0), (h1,a1)`: altitude is
+    /// the fastest-varying axis, matching `location_index` and the C++ traced
+    /// ray stencil. Interpreting the point from the layer's known cell makes
+    /// boundary interpolation one-sided and keeps every layer on exactly four
+    /// cell-local nodes.
     pub fn cell_basis_weights(
         &self,
         point: Vec3,

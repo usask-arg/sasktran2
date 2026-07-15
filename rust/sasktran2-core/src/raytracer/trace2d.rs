@@ -541,6 +541,12 @@ fn add_structured_od_quadrature(layer: &mut Layer, grid: &StructuredGrid2D) {
         return;
     }
 
+    // Integrate each of the four cell-local bilinear basis functions along the
+    // ray. This produces geometry-only coefficients Q_j such that, for every
+    // wavelength, tau_layer = sum_j Q_j * extinction_j. Each panel applies a
+    // 16-point Gauss-Legendre rule on its fraction of [entrance, exit], for 64
+    // basis evaluations per layer. cell_basis_weights() and the C++ bridge use
+    // the same altitude-fastest corner order.
     const NUM_PANELS: usize = 4;
     let half_panel_width = 0.5 / NUM_PANELS as f64;
     for panel in 0..NUM_PANELS {

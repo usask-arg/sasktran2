@@ -54,14 +54,20 @@ namespace sasktran2::raytracing {
                                     length in the layer is layer_distance *
                                     curvature_factor */
 
-        // Quadrature parameters
-        double od_quad_start; /**< The OD in the layer is od_quad_start *
-                                 k_entrance + od_quad_end * k_exit */
-        double od_quad_end;   /**< The OD in the layer is od_quad_start *
-                                 k_entrance + od_quad_end * k_exit */
+        // Endpoint quadrature parameters. In 1D these give
+        //   layer OD = od_quad_start * k_entrance
+        //            + od_quad_end   * k_exit.
+        // Structured 2D extinction instead uses the path-integrated cell-basis
+        // stencil on TracedRay. These endpoint coefficients remain useful for
+        // source terms that approximate a varying source from its two boundary
+        // values.
+        double od_quad_start;
+        double od_quad_end;
 
-        double od_quad_start_fraction; /**< The fraction the start matters */
-        double od_quad_end_fraction;   /**< The fraction the end matters */
+        /** Normalized endpoint quadrature weights used to blend source values
+         * at the entrance and exit. They normally sum to one. */
+        double od_quad_start_fraction;
+        double od_quad_end_fraction;
 
         double saz_entrance; /**< Relative solar azimuth angle at entrance in
                                 radians, unrefracted */
@@ -74,12 +80,20 @@ namespace sasktran2::raytracing {
         LayerType type; /**< The type of layer, complete, partial, or tangent */
     };
 
-    /** A non-owning view over grid interpolation or path-integration weights.
+    /** A non-owning view of a sparse linear combination over atmosphere-grid
+     * nodes.
      *
-     * The backing storage is owned by TracedRay. Keeping the grid indices
-     * separate from the weights allows the same cell-node list to be reused
-     * for entrance interpolation, exit interpolation, and integrated optical
-     * depth without reserving a maximum-dimensional stencil in every layer.
+     * A stencil represents
+     * \f$ f(x) = \sum_j w_j f_{i_j} \f$, where `operator[](j)` returns
+     * \f$(i_j, w_j)\f$. For one traced layer the node indices \f$i_j\f$ are
+     * shared by its entrance interpolation, exit interpolation, and integrated
+     * optical-depth stencil; only the three weight arrays differ. A weight may
+     * therefore be zero when that particular operation does not use one of the
+     * layer's shared nodes.
+     *
+     * The backing structure-of-arrays storage is owned by TracedRay. A view is
+     * invalidated by any operation that can reallocate or reset that ray's
+     * compiled grid-weight storage. It must not outlive the TracedRay.
      */
     class GridWeightStencilView {
       private:
@@ -102,7 +116,13 @@ namespace sasktran2::raytracing {
         }
     };
 
-    /** One dimension-independent segment of a traced ray. */
+    /** One dimension-independent segment of a traced ray.
+     *
+     * `grid_weight_offset` and `grid_weight_count` select the contiguous slice
+     * belonging to this layer from every aligned weight array in TracedRay.
+     * Keeping only this compact slice descriptor in each layer avoids storing
+     * several heap-backed interpolation vectors per segment.
+     */
     struct TracedLayer : public LayerGeometry {
         std::uint32_t grid_weight_offset = 0;
         std::uint8_t grid_weight_count = 0;
@@ -139,14 +159,33 @@ namespace sasktran2::raytracing {
          */
 
       private:
+        /** Compiled layer stencils in structure-of-arrays form.
+         *
+         * For a layer with offset `o` and count `n`, slots `[o, o+n)` in all
+         * four vectors refer to the same atmosphere nodes. If slot `j` has
+         * node index `i`, then
+         *
+         *   entrance value = sum_j entrance[j] * field[i]
+         *   exit value     = sum_j exit[j]     * field[i]
+         *   layer OD       = sum_j integrated[j] * extinction[i]
+         *
+         * Each layer occupies one contiguous slice. Slices are appended while
+         * a ray is compiled and located through the offset stored in the
+         * corresponding TracedLayer, so consumers do not depend on the order
+         * in which layer slices were appended.
+         */
         std::vector<int> grid_weight_indices;
         std::vector<double> entrance_grid_weights;
         std::vector<double> exit_grid_weights;
         std::vector<double> integrated_od_weights;
 
       public:
-        /** Reserves storage for compiled grid weights without changing the
-         * ray. Views obtained before a mutation of the ray must not be kept. */
+        /** Reserves slots in each aligned compiled-weight array.
+         *
+         * This is a construction-time optimization only. Existing stencil
+         * views must not be retained across this call because a reserve may
+         * reallocate their backing arrays.
+         */
         void reserve_grid_weights(std::size_t count) {
             grid_weight_indices.reserve(count);
             entrance_grid_weights.reserve(count);
@@ -158,6 +197,15 @@ namespace sasktran2::raytracing {
             return grid_weight_indices.size();
         }
 
+        /** Appends one layer's common node list and three aligned weight lists.
+         *
+         * The caller defines the node order and must use the same order in all
+         * four containers. The 1D compiler supplies the sorted union of the
+         * entrance and exit interpolation nodes. The structured 2D bridge uses
+         * the four cell corners in altitude-fastest order. This method records
+         * the resulting slice on `layers[layer_index]`; it does not sort or
+         * otherwise reinterpret the supplied slots.
+         */
         template <typename IndexContainer, typename EntranceContainer,
                   typename ExitContainer, typename ODContainer>
         void set_layer_weights(std::size_t layer_index,
@@ -306,9 +354,21 @@ namespace sasktran2::raytracing {
 
     /** Resolves a 1D layer to flattened atmosphere-grid weights.
      *
-     * All geometry-dependent interpolation is completed during tracing. The
-     * source and optical-depth paths therefore consume the same representation
-     * regardless of atmosphere dimensionality.
+     * Each endpoint first receives its normal one- or two-node 1D
+     * interpolation stencil. Their nonzero node indices are unioned and sorted
+     * so entrance, exit, and optical depth can share one slot order. A rare
+     * boundary layer may touch three distinct nodes even though each endpoint
+     * individually touches at most two.
+     *
+     * If \f$E_j\f$ and \f$X_j\f$ are the entrance and exit interpolation
+     * weights in this common order, the compiled optical-depth weight is
+     *
+     * \f$Q_j = q_\mathrm{start} E_j + q_\mathrm{end} X_j\f$,
+     *
+     * where the geometry-only quadrature coefficients `q_start` and `q_end`
+     * are stored on the layer. Consequently a wavelength calculation obtains
+     * the layer optical depth with one sparse dot product, without repeating
+     * interpolation or quadrature.
      */
     inline void
     add_interpolation_weights(TracedRay& ray, std::size_t layer_index,

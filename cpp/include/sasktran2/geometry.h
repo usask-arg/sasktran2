@@ -402,9 +402,13 @@ namespace sasktran2 {
         /** Returns (num_horizontal_cells, num_altitude_cells). */
         std::pair<int, int> cell_shape() const;
 
+        /** Flattens a grid location with altitude as the fastest-varying axis:
+         * `horizontal_index * num_altitudes() + altitude_index`. */
         int location_index(int altitude_index, int horizontal_index) const;
         std::pair<int, int> location_indices(int location_index) const;
 
+        /** Flattens a cell with altitude-cell index as the fastest-varying
+         * axis. */
         int cell_index(int altitude_cell, int horizontal_cell) const;
         std::pair<int, int> cell_indices(int cell_index) const;
 
@@ -414,8 +418,13 @@ namespace sasktran2 {
         double altitude_at(const Location& location) const;
         double horizontal_angle_at(const Location& location) const;
 
-        /** Returns the upper-node fractions in altitude and horizontal angle
-         * for a location interpreted within one specified cell. */
+        /** Returns `(altitude_upper, horizontal_upper)` for a location
+         * interpreted within one specified cell.
+         *
+         * These fractions produce the four bilinear weights in the shared 2D
+         * stencil order `(h0,a0), (h0,a1), (h1,a0), (h1,a1)`, i.e. altitude
+         * varies fastest.
+         */
         std::pair<double, double>
         cell_interpolation_coordinates(const Location& location,
                                        int altitude_cell,

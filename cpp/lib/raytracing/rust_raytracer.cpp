@@ -165,6 +165,11 @@ namespace sasktran2::rust::raytracer {
             const auto exit_coordinates =
                 m_geometry.cell_interpolation_coordinates(
                     layer.exit, altitude_cell, horizontal_cell);
+            // One structured 2D layer is confined to one cell. All endpoint
+            // and integrated-OD weights use the same four cell corners in
+            // altitude-fastest order:
+            //   (h0,a0), (h0,a1), (h1,a0), (h1,a1).
+            // Geometry2D::location_index uses the same flattening convention.
             const std::array<int, 4> indices = {
                 m_geometry.location_index(altitude_cell, horizontal_cell),
                 m_geometry.location_index(altitude_cell + 1, horizontal_cell),
@@ -172,6 +177,8 @@ namespace sasktran2::rust::raytracer {
                 m_geometry.location_index(altitude_cell + 1,
                                           horizontal_cell + 1)};
             const auto interpolation_weights = [](const auto& coordinates) {
+                // coordinates = (altitude upper fraction,
+                //                horizontal upper fraction).
                 const double altitude_lower = 1.0 - coordinates.first;
                 const double horizontal_lower = 1.0 - coordinates.second;
                 return std::array<double, 4>{

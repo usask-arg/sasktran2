@@ -80,12 +80,20 @@ pub struct Layer {
     pub average_look_away: Vec3,
     pub geometric_distance: f64,
     pub curvature_factor: f64,
+    // Endpoint integration coefficients. They directly produce extinction OD
+    // in 1D; structured 2D uses `integrated_cell_weights` for extinction and
+    // retains these coefficients for endpoint-based source quadrature.
     pub od_quad_start: f64,
     pub od_quad_end: f64,
+    // Normalized endpoint coefficients used to blend boundary source values.
     pub od_quad_start_fraction: f64,
     pub od_quad_end_fraction: f64,
-    /// Integrated local cell-basis weights, altitude-fastest. Structured 2D
-    /// layers use all four entries; other geometries leave them zero.
+    /// Path-integrated local cell-basis weights.
+    ///
+    /// For cell basis functions `B_j(s)`, entry `j` is `integral B_j(s) ds`,
+    /// so the layer optical depth is `sum_j integrated[j] * extinction[j]`.
+    /// Structured 2D uses `(h0,a0), (h0,a1), (h1,a0), (h1,a1)`; other
+    /// geometries leave this array zero and use their endpoint quadrature.
     pub integrated_cell_weights: [f64; 4],
     pub saz_entrance: f64,
     pub saz_exit: f64,

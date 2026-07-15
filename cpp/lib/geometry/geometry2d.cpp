@@ -14,6 +14,10 @@ namespace {
     constexpr double pi_boundary_tolerance_rad =
         16.0 * std::numeric_limits<double>::epsilon() * pi_rad;
 
+    // A one-axis interpolation stencil. Exact/lower interpolation uses one
+    // slot; linear and shell interpolation use the lower and upper nodes. The
+    // Cartesian product of the horizontal and altitude stencils below forms
+    // the structured 2D stencil, with altitude as the inner/fast axis.
     struct AxisStencil {
         std::array<int, 2> indices{};
         std::array<double, 2> weights{};
@@ -336,6 +340,8 @@ namespace sasktran2 {
 
         index_weights.resize(altitude_weights.size * horizontal_weights.size);
         int output_index = 0;
+        // Keep this order consistent with location_index(), the Rust
+        // cell_basis_weights() result, and the traced-ray OD weights.
         for (int horizontal = 0; horizontal < horizontal_weights.size;
              ++horizontal) {
             for (int altitude = 0; altitude < altitude_weights.size;
