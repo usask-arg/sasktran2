@@ -21,8 +21,7 @@ class RustTwoStreamSourceAdapter final : public SourceTermInterface<1> {
     sasktran_disco::SKTRAN_DO_UserSpec m_spec;
     std::unique_ptr<sasktran_disco::GeometryLayerArray<1>> m_geometry_layers;
     const std::vector<sasktran2::raytracing::TracedRay>* m_los_rays = nullptr;
-    std::optional<::rust::Box<
-        sasktran2::rust::twostream::RustTwoStreamSource>>
+    std::optional<::rust::Box<sasktran2::rust::twostream::RustTwoStreamSource>>
         m_rust_source;
 
   public:
@@ -42,18 +41,18 @@ class RustTwoStreamSourceAdapter final : public SourceTermInterface<1> {
         int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
         const sasktran2::SparseODDualView& shell_od,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& source,
-        IntegrationDirection direction = IntegrationDirection::none) const
-        override {}
+        IntegrationDirection direction =
+            IntegrationDirection::none) const override {}
 
     void end_of_ray_source(
         int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& source) const
-        override {}
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& source)
+        const override {}
 
     void start_of_ray_source(
         int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& source) const
-        override;
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& source)
+        const override;
 };
 
 #endif

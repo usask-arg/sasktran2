@@ -32,20 +32,18 @@ void RustTwoStreamSourceAdapter<SOURCE_TYPE>::initialize_geometry(
         internal_viewing) {
     ZoneScopedN("Rust Twostream Initialize Geometry");
     const int nlyr = m_geometry.size() - 1;
-    m_pconfig.configure(
-        m_spec, *m_config, m_geometry.coordinates().cos_sza_at_reference(),
-        nlyr, internal_viewing.traced_rays);
+    m_pconfig.configure(m_spec, *m_config,
+                        m_geometry.coordinates().cos_sza_at_reference(), nlyr,
+                        internal_viewing.traced_rays);
     m_los_rays = &internal_viewing.traced_rays;
-    m_geometry_layers =
-        std::make_unique<sasktran_disco::GeometryLayerArray<1>>(m_pconfig,
-                                                                m_geometry);
+    m_geometry_layers = std::make_unique<sasktran_disco::GeometryLayerArray<1>>(
+        m_pconfig, m_geometry);
 
     std::vector<double> layer_thickness(nlyr);
     std::vector<double> chapman_factors(nlyr * nlyr);
     for (int layer = 0; layer < nlyr; ++layer) {
-        layer_thickness[layer] =
-            m_geometry_layers->layer_ceiling()(layer) -
-            m_geometry_layers->layer_floor()(layer);
+        layer_thickness[layer] = m_geometry_layers->layer_ceiling()(layer) -
+                                 m_geometry_layers->layer_floor()(layer);
         for (int boundary = 0; boundary < nlyr; ++boundary) {
             chapman_factors[boundary * nlyr + layer] =
                 m_geometry_layers->chapman_factors()(boundary, layer);
@@ -54,11 +52,10 @@ void RustTwoStreamSourceAdapter<SOURCE_TYPE>::initialize_geometry(
 
     constexpr int source_mode =
         sasktran2::twostream::has_solar<SOURCE_TYPE>() ? 0 : 1;
-    m_rust_source.emplace(
-        sasktran2::rust::twostream::new_rust_twostream_source(
-            as_slice(layer_thickness), as_slice(chapman_factors),
-            m_geometry.coordinates().cos_sza_at_reference(), source_mode,
-            static_cast<std::size_t>(m_config->num_threads())));
+    m_rust_source.emplace(sasktran2::rust::twostream::new_rust_twostream_source(
+        as_slice(layer_thickness), as_slice(chapman_factors),
+        m_geometry.coordinates().cos_sza_at_reference(), source_mode,
+        static_cast<std::size_t>(m_config->num_threads())));
 
     std::vector<double> viewing_cosines;
     std::vector<double> relative_azimuths;
@@ -72,12 +69,11 @@ void RustTwoStreamSourceAdapter<SOURCE_TYPE>::initialize_geometry(
                 "parallel radiances");
         }
         viewing_cosines.push_back(viewing_cosine);
-        relative_azimuths.push_back(
-            -ray.observer_and_look.relative_azimuth);
+        relative_azimuths.push_back(-ray.observer_and_look.relative_azimuth);
     }
-    sasktran2::rust::twostream::set_views(
-        **m_rust_source, as_slice(viewing_cosines),
-        as_slice(relative_azimuths));
+    sasktran2::rust::twostream::set_views(**m_rust_source,
+                                          as_slice(viewing_cosines),
+                                          as_slice(relative_azimuths));
 }
 
 template <sasktran2::twostream::SourceType SOURCE_TYPE>
@@ -103,10 +99,8 @@ void RustTwoStreamSourceAdapter<SOURCE_TYPE>::initialize_atmosphere(
         **m_rust_source, nwavel, nlevel,
         as_slice(storage.total_extinction.data(), nlevel * nwavel),
         as_slice(storage.ssa.data(), nlevel * nwavel),
-        as_slice(storage.leg_coeff.data(),
-                 num_legendre * nlevel * nwavel),
-        num_legendre,
-        as_slice(storage.emission_source.data(), nlevel * nwavel),
+        as_slice(storage.leg_coeff.data(), num_legendre * nlevel * nwavel),
+        num_legendre, as_slice(storage.emission_source.data(), nlevel * nwavel),
         as_slice(surface_albedo),
         as_slice(atmosphere.surface().emission().data(), nwavel),
         as_slice(storage.solar_irradiance.data(), nwavel),
@@ -121,8 +115,8 @@ void RustTwoStreamSourceAdapter<SOURCE_TYPE>::start_of_ray_source(
     const std::size_t nwavel = m_atmosphere->num_wavel();
     const std::size_t nlevel = m_atmosphere->storage().total_extinction.rows();
     const std::size_t surface_index = losidx * nwavel + wavelidx;
-    source.value(0) += sasktran2::rust::twostream::radiance(
-        **m_rust_source)[surface_index];
+    source.value(0) +=
+        sasktran2::rust::twostream::radiance(**m_rust_source)[surface_index];
 
     if (m_atmosphere->num_deriv() == 0) {
         return;
@@ -130,10 +124,8 @@ void RustTwoStreamSourceAdapter<SOURCE_TYPE>::start_of_ray_source(
 
     const auto extinction =
         sasktran2::rust::twostream::extinction_jacobian(**m_rust_source);
-    const auto ssa =
-        sasktran2::rust::twostream::ssa_jacobian(**m_rust_source);
-    const auto b1 =
-        sasktran2::rust::twostream::b1_jacobian(**m_rust_source);
+    const auto ssa = sasktran2::rust::twostream::ssa_jacobian(**m_rust_source);
+    const auto b1 = sasktran2::rust::twostream::b1_jacobian(**m_rust_source);
     const auto emission =
         sasktran2::rust::twostream::emission_jacobian(**m_rust_source);
     const std::size_t view_level_offset = losidx * nlevel * nwavel;
@@ -144,12 +136,12 @@ void RustTwoStreamSourceAdapter<SOURCE_TYPE>::start_of_ray_source(
         source.deriv(cpp_level) += extinction[index];
         source.deriv(m_atmosphere->ssa_deriv_start_index() + cpp_level) +=
             ssa[index];
-        for (int group = 0;
-             group < m_atmosphere->num_scattering_deriv_groups(); ++group) {
+        for (int group = 0; group < m_atmosphere->num_scattering_deriv_groups();
+             ++group) {
             source.deriv(m_atmosphere->scat_deriv_start_index() +
                          group * nlevel + cpp_level) +=
-                m_atmosphere->storage().d_leg_coeff(
-                    1, cpp_level, wavelidx, group) *
+                m_atmosphere->storage().d_leg_coeff(1, cpp_level, wavelidx,
+                                                    group) *
                 b1[index];
         }
         if constexpr (sasktran2::twostream::has_thermal<SOURCE_TYPE>()) {
@@ -160,17 +152,15 @@ void RustTwoStreamSourceAdapter<SOURCE_TYPE>::start_of_ray_source(
         }
     }
 
-    const double albedo =
-        sasktran2::rust::twostream::surface_albedo_jacobian(
-            **m_rust_source)[surface_index];
+    const double albedo = sasktran2::rust::twostream::surface_albedo_jacobian(
+        **m_rust_source)[surface_index];
     for (int deriv = 0; deriv < m_atmosphere->surface().num_deriv(); ++deriv) {
         source.deriv(m_atmosphere->surface_deriv_start_index() + deriv) +=
             albedo;
     }
     if constexpr (sasktran2::twostream::has_thermal<SOURCE_TYPE>()) {
         if (m_atmosphere->include_emission_derivatives()) {
-            source.deriv(
-                m_atmosphere->surface_emission_deriv_start_index()) +=
+            source.deriv(m_atmosphere->surface_emission_deriv_start_index()) +=
                 sasktran2::rust::twostream::surface_emission_jacobian(
                     **m_rust_source)[surface_index];
         }
