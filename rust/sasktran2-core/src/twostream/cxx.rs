@@ -4,7 +4,7 @@ use anyhow::{Result, anyhow};
 
 use super::{
     AtmosphereBatch, AtmosphereJacobians, ExecutionPolicy, Geometry, RadianceBatch, SourceMode,
-    TwoStreamSolver, View, Workspace,
+    SphericalGeometry, SphericalRayGeometry, TwoStreamSolver, View, Workspace,
 };
 
 #[cxx::bridge(namespace = "sasktran2::rust::twostream")]
@@ -24,6 +24,24 @@ pub mod ffi {
             source: Pin<&mut RustTwoStreamSource>,
             viewing_cosines: &[f64],
             relative_azimuths: &[f64],
+        ) -> Result<()>;
+
+        #[allow(clippy::too_many_arguments)]
+        fn set_spherical_geometry(
+            source: Pin<&mut RustTwoStreamSource>,
+            sza_grid: &[f64],
+            chapman_factors: &[f64],
+            ray_offsets: &[usize],
+            ground_hit: &[u8],
+            ground_cos_sza: &[f64],
+            segment_layers: &[usize],
+            segment_fractions: &[f64],
+            segment_cosines: &[f64],
+            segment_relative_azimuths: &[f64],
+            segment_cos_sza: &[f64],
+            od_offsets: &[usize],
+            od_indices: &[usize],
+            od_weights: &[f64],
         ) -> Result<()>;
 
         #[allow(clippy::too_many_arguments)]
@@ -55,6 +73,7 @@ pub mod ffi {
 pub struct RustTwoStreamSource {
     solver: TwoStreamSolver,
     views: Vec<View>,
+    spherical: Option<SphericalGeometry>,
     workspace: Workspace,
     pool: rayon::ThreadPool,
     radiance: Option<RadianceBatch>,
@@ -90,6 +109,7 @@ fn new_rust_twostream_source(
     Ok(Box::new(RustTwoStreamSource {
         solver,
         views: Vec::new(),
+        spherical: None,
         workspace: Workspace::new(),
         pool,
         radiance: None,
@@ -115,8 +135,69 @@ fn set_views(
             relative_azimuth,
         })
         .collect();
+    source.spherical = None;
     source.radiance = None;
     source.jacobians = None;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn set_spherical_geometry(
+    mut source: Pin<&mut RustTwoStreamSource>,
+    sza_grid: &[f64],
+    chapman_factors: &[f64],
+    ray_offsets: &[usize],
+    ground_hit: &[u8],
+    ground_cos_sza: &[f64],
+    segment_layers: &[usize],
+    segment_fractions: &[f64],
+    segment_cosines: &[f64],
+    segment_relative_azimuths: &[f64],
+    segment_cos_sza: &[f64],
+    od_offsets: &[usize],
+    od_indices: &[usize],
+    od_weights: &[f64],
+) -> Result<()> {
+    let num_levels = source.solver.geometry().num_layers() + 1;
+    let num_layers = num_levels - 1;
+    let expected_chapman = sza_grid
+        .len()
+        .checked_mul(num_layers)
+        .and_then(|value| value.checked_mul(num_layers))
+        .ok_or_else(|| anyhow!("spherical Chapman geometry is too large"))?;
+    if chapman_factors.len() != expected_chapman {
+        return Err(anyhow!("spherical Chapman factors have the wrong shape"));
+    }
+    let layer_thickness = source.solver.geometry().layer_thickness.clone();
+    let mut columns = Vec::with_capacity(sza_grid.len());
+    for (column, &solar_cosine) in sza_grid.iter().enumerate() {
+        let start = column * num_layers * num_layers;
+        columns.push(Geometry::new(
+            layer_thickness.clone(),
+            chapman_factors[start..start + num_layers * num_layers].to_vec(),
+            solar_cosine,
+        ));
+    }
+    let rays = SphericalRayGeometry::new(
+        num_levels,
+        ray_offsets.to_vec(),
+        ground_hit.iter().map(|&value| value != 0).collect(),
+        ground_cos_sza.to_vec(),
+        segment_layers.to_vec(),
+        segment_fractions.to_vec(),
+        segment_cosines.to_vec(),
+        segment_relative_azimuths.to_vec(),
+        segment_cos_sza.to_vec(),
+        od_offsets.to_vec(),
+        od_indices.to_vec(),
+        od_weights.to_vec(),
+    )?;
+    let spherical = SphericalGeometry::new(sza_grid.to_vec(), columns, rays)?;
+    let this = source.as_mut().get_mut();
+    this.views.clear();
+    this.spherical = Some(spherical);
+    this.radiance = None;
+    this.jacobians = None;
     Ok(())
 }
 
@@ -201,18 +282,24 @@ fn solve(
     let this = source.as_mut().get_mut();
     let solver = &this.solver;
     let views = &this.views;
+    let spherical = this.spherical.as_ref();
     let workspace = &mut this.workspace;
-    let result = this.pool.install(|| {
-        if calculate_jacobians {
-            solver
+    let result = this
+        .pool
+        .install(|| match (spherical, calculate_jacobians) {
+            (Some(geometry), true) => solver
+                .solve_spherical_atmosphere_with_jacobians(&atmosphere, geometry, workspace)
+                .map(|(radiance, jacobians)| (radiance, Some(jacobians))),
+            (Some(geometry), false) => solver
+                .solve_spherical_atmosphere(&atmosphere, geometry, workspace)
+                .map(|radiance| (radiance, None)),
+            (None, true) => solver
                 .solve_atmosphere_with_jacobians(&atmosphere, views, workspace)
-                .map(|(radiance, jacobians)| (radiance, Some(jacobians)))
-        } else {
-            solver
+                .map(|(radiance, jacobians)| (radiance, Some(jacobians))),
+            (None, false) => solver
                 .solve_atmosphere(&atmosphere, views, workspace)
-                .map(|radiance| (radiance, None))
-        }
-    })?;
+                .map(|radiance| (radiance, None)),
+        })?;
     this.radiance = Some(result.0);
     this.jacobians = result.1;
     Ok(())

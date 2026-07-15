@@ -28,6 +28,275 @@ fn atmosphere(n: usize, nw: usize, thermal: bool) -> AtmosphereBatch {
     }
 }
 
+fn spherical_geometry(n: usize) -> SphericalGeometry {
+    assert_eq!(n, 3);
+    let sza_grid = vec![0.35, 0.75];
+    let columns = sza_grid
+        .iter()
+        .map(|&cosine| {
+            let mut column = geometry(n);
+            column.solar_cosine = cosine;
+            column
+        })
+        .collect();
+    let segment_layers = vec![0, 1, 1, 0, 2, 1, 0, 1];
+    let segment_lengths = [0.8, 1.1, 1.1, 0.8, 1.3, 1.0, 0.7, 2.4];
+    let mut od_offsets = Vec::with_capacity(segment_layers.len() + 1);
+    let mut od_indices = Vec::with_capacity(2 * segment_layers.len());
+    let mut od_weights = Vec::with_capacity(2 * segment_layers.len());
+    od_offsets.push(0);
+    for (&layer, &distance) in segment_layers.iter().zip(&segment_lengths) {
+        od_indices.extend([layer, layer + 1]);
+        // These are the already path-integrated endpoint weights. The final
+        // tangent segment includes a synthetic 1.2 curvature factor.
+        od_weights.extend([0.5 * distance, 0.5 * distance]);
+        od_offsets.push(od_indices.len());
+    }
+    let rays = SphericalRayGeometry::new(
+        n + 1,
+        vec![0, 4, 7, 8],
+        vec![false, true, false],
+        vec![0.45, 0.62, 0.55],
+        segment_layers,
+        vec![0.5, 0.4, 0.6, 0.5, 0.8, 0.5, 0.3, 0.5],
+        vec![-0.75, -0.18, 0.18, 0.75, 0.82, 0.68, 0.55, 0.0],
+        vec![0.2, 0.5, 0.7, 0.9, 0.4, 0.3, 0.2, 1.1],
+        vec![0.4, 0.48, 0.57, 0.68, 0.62, 0.55, 0.46, 0.52],
+        od_offsets,
+        od_indices,
+        od_weights,
+    )
+    .unwrap();
+    SphericalGeometry::new(sza_grid, columns, rays).unwrap()
+}
+
+#[test]
+fn spherical_paths_support_signed_cosines_and_curvature_scaled_od() {
+    let spherical = spherical_geometry(3);
+    assert!(
+        spherical
+            .rays
+            .segment_cosines
+            .iter()
+            .any(|value| *value < 0.0)
+    );
+    assert!(
+        spherical
+            .rays
+            .segment_cosines
+            .iter()
+            .any(|value| *value > 0.0)
+    );
+    assert!(spherical.rays.segment_cosines.contains(&0.0));
+    let tangent = 7;
+    let start = spherical.rays.od_offsets[tangent];
+    let end = spherical.rays.od_offsets[tangent + 1];
+    assert!((spherical.rays.od_weights[start..end].iter().sum::<f64>() - 2.4).abs() < 1e-14);
+}
+
+#[test]
+fn spherical_geometry_compiles_straight_and_refracted_traced_rays() {
+    use crate::raytracer::{
+        GeometryKind, InterpolationMethod, Ray, RefractiveProfile, TraceOptions, Vec3,
+        VerticalGrid1D, VerticalRayTracer,
+    };
+
+    let earth_radius = 10.0;
+    let altitudes = vec![0.0, 10.0, 20.0, 30.0];
+    let grid = VerticalGrid1D::new(
+        earth_radius,
+        altitudes.clone(),
+        InterpolationMethod::Linear,
+        GeometryKind::Spherical,
+    )
+    .unwrap();
+    let tracer = VerticalRayTracer::new(grid);
+    let observer_radius: f64 = 50.0;
+    let tangent_radius: f64 = 25.0;
+    let ray = Ray::new(
+        Vec3::new(0.0, 0.0, observer_radius),
+        Vec3::new(
+            tangent_radius / observer_radius,
+            0.0,
+            -(1.0 - (tangent_radius / observer_radius).powi(2)).sqrt(),
+        ),
+    );
+    let straight = tracer.trace(ray, TraceOptions::default());
+    let unity = RefractiveProfile::new(earth_radius, altitudes.clone(), vec![1.0; altitudes.len()])
+        .unwrap();
+    let unity_traced = tracer.trace(
+        ray,
+        TraceOptions {
+            refraction: Some(&unity),
+            ..TraceOptions::default()
+        },
+    );
+    let refractive = RefractiveProfile::new(
+        earth_radius,
+        altitudes.clone(),
+        vec![1.00030, 1.00018, 1.00008, 1.00001],
+    )
+    .unwrap();
+    let refracted = tracer.trace(
+        ray,
+        TraceOptions {
+            refraction: Some(&refractive),
+            ..TraceOptions::default()
+        },
+    );
+
+    let straight_compiled =
+        SphericalRayGeometry::from_traced_rays(&altitudes, std::slice::from_ref(&straight))
+            .unwrap();
+    let unity_compiled =
+        SphericalRayGeometry::from_traced_rays(&altitudes, std::slice::from_ref(&unity_traced))
+            .unwrap();
+    assert_eq!(straight_compiled.od_indices, unity_compiled.od_indices);
+    for segment in 0..straight.layers.len() {
+        let straight_start = straight_compiled.od_offsets[segment];
+        let straight_end = straight_compiled.od_offsets[segment + 1];
+        let unity_start = unity_compiled.od_offsets[segment];
+        let unity_end = unity_compiled.od_offsets[segment + 1];
+        let straight_tau: f64 = straight_compiled.od_weights[straight_start..straight_end]
+            .iter()
+            .sum();
+        let unity_tau: f64 = unity_compiled.od_weights[unity_start..unity_end]
+            .iter()
+            .sum();
+        assert!((straight_tau - unity_tau).abs() < 1e-2);
+    }
+
+    let refracted_compiled =
+        SphericalRayGeometry::from_traced_rays(&altitudes, std::slice::from_ref(&refracted))
+            .unwrap();
+    assert!(
+        refracted
+            .layers
+            .iter()
+            .any(|layer| layer.curvature_factor != 1.0)
+    );
+    for (segment, layer) in refracted.layers.iter().enumerate() {
+        let start = refracted_compiled.od_offsets[segment];
+        let end = refracted_compiled.od_offsets[segment + 1];
+        let constant_extinction_tau: f64 = refracted_compiled.od_weights[start..end].iter().sum();
+        let expected = layer.geometric_distance * layer.curvature_factor;
+        assert!((constant_extinction_tau - expected).abs() < 1e-9 * expected.max(1.0));
+    }
+}
+
+#[test]
+fn spherical_explicit_adjoint_matches_central_differences() {
+    let n = 3;
+    let nw = 3;
+    let spherical = spherical_geometry(n);
+    let view = 1;
+    let level = 2;
+    let wave = 1;
+
+    for mode in [SourceMode::Solar, SourceMode::Thermal] {
+        let solver = TwoStreamSolver::new(spherical.columns[0].clone(), mode)
+            .unwrap()
+            .with_execution_policy(ExecutionPolicy::Serial);
+        let mut atmosphere = atmosphere(n, nw, mode == SourceMode::Thermal);
+        let (forward, jacobians) = solver
+            .solve_spherical_atmosphere_with_jacobians(
+                &atmosphere,
+                &spherical,
+                &mut Workspace::new(),
+            )
+            .unwrap();
+        assert!(forward.values.iter().all(|value| value.is_finite()));
+        let output_index = view * nw + wave;
+        let level_index = (view * (n + 1) + level) * nw + wave;
+        let surface_index = view * nw + wave;
+
+        macro_rules! check_field {
+            ($field:expr, $analytic:expr, $name:literal) => {{
+                let original = $field;
+                let step = 1.0e-5 * original.abs().max(1.0e-3);
+                $field = original + step;
+                let plus = solver
+                    .solve_spherical_atmosphere(&atmosphere, &spherical, &mut Workspace::new())
+                    .unwrap()
+                    .values[output_index];
+                $field = original - step;
+                let minus = solver
+                    .solve_spherical_atmosphere(&atmosphere, &spherical, &mut Workspace::new())
+                    .unwrap()
+                    .values[output_index];
+                $field = original;
+                let numeric = (plus - minus) / (2.0 * step);
+                let analytic = $analytic;
+                let tolerance = 2.0e-6 * numeric.abs().max(1.0);
+                assert!(
+                    (analytic - numeric).abs() < tolerance,
+                    "{mode:?} {} mismatch: analytic={analytic}, numeric={numeric}",
+                    $name,
+                );
+            }};
+        }
+
+        check_field!(
+            atmosphere.extinction[level * nw + wave],
+            jacobians.extinction[level_index],
+            "extinction"
+        );
+        check_field!(
+            atmosphere.single_scatter_albedo[level * nw + wave],
+            jacobians.single_scatter_albedo[level_index],
+            "SSA"
+        );
+        check_field!(
+            atmosphere.first_legendre[level * nw + wave],
+            jacobians.first_legendre[level_index],
+            "first Legendre"
+        );
+        check_field!(
+            atmosphere.surface_albedo[wave],
+            jacobians.surface_albedo[surface_index],
+            "surface albedo"
+        );
+        if mode == SourceMode::Thermal {
+            check_field!(
+                atmosphere.emission.as_mut().unwrap()[level * nw + wave],
+                jacobians.emission.as_ref().unwrap()[level_index],
+                "emission"
+            );
+            check_field!(
+                atmosphere.surface_emission.as_mut().unwrap()[wave],
+                jacobians.surface_emission.as_ref().unwrap()[surface_index],
+                "surface emission"
+            );
+        }
+    }
+}
+
+#[test]
+fn spherical_single_sza_column_is_supported() {
+    let n = 3;
+    let nw = 5;
+    let multi = spherical_geometry(n);
+    let single = SphericalGeometry::new(
+        vec![multi.sza_grid[0]],
+        vec![multi.columns[0].clone()],
+        multi.rays.clone(),
+    )
+    .unwrap();
+    for mode in [SourceMode::Solar, SourceMode::Thermal] {
+        let solver = TwoStreamSolver::new(single.columns[0].clone(), mode)
+            .unwrap()
+            .with_execution_policy(ExecutionPolicy::Serial);
+        let result = solver
+            .solve_spherical_atmosphere(
+                &atmosphere(n, nw, mode == SourceMode::Thermal),
+                &single,
+                &mut Workspace::new(),
+            )
+            .unwrap();
+        assert!(result.values.iter().all(|value| value.is_finite()));
+    }
+}
+
 #[test]
 fn batch_matches_independent_wavelengths() {
     let n = 4;

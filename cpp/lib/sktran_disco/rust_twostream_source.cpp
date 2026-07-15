@@ -1,15 +1,32 @@
 #include "sktran_disco/twostream/rust_source.h"
 
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+
 #ifdef SKTRAN_RUST_SUPPORT
 
 namespace {
-    ::rust::Slice<const double> as_slice(const std::vector<double>& values) {
+    template <typename T>
+    ::rust::Slice<const T> as_slice(const std::vector<T>& values) {
         return {values.data(), values.size()};
     }
 
     ::rust::Slice<const double> as_slice(const double* values,
                                          std::size_t size) {
         return {values, size};
+    }
+
+    std::pair<double, double>
+    normalized_source_weights(const sasktran2::raytracing::TracedLayer& layer) {
+        const double sum =
+            layer.od_quad_start_fraction + layer.od_quad_end_fraction;
+        if (std::isfinite(layer.od_quad_start_fraction) &&
+            std::isfinite(layer.od_quad_end_fraction) && sum > 0) {
+            return {layer.od_quad_start_fraction / sum,
+                    layer.od_quad_end_fraction / sum};
+        }
+        return {0.5, 0.5};
     }
 } // namespace
 
@@ -32,30 +49,166 @@ void RustTwoStreamSourceAdapter<SOURCE_TYPE>::initialize_geometry(
         internal_viewing) {
     ZoneScopedN("Rust Twostream Initialize Geometry");
     const int nlyr = m_geometry.size() - 1;
-    m_pconfig.configure(m_spec, *m_config,
-                        m_geometry.coordinates().cos_sza_at_reference(), nlyr,
-                        internal_viewing.traced_rays);
     m_los_rays = &internal_viewing.traced_rays;
-    m_geometry_layers = std::make_unique<sasktran_disco::GeometryLayerArray<1>>(
-        m_pconfig, m_geometry);
+
+    const bool spherical = m_geometry.coordinates().geometry_type() ==
+                           sasktran2::geometrytype::spherical;
+    std::vector<double> sza_grid;
+    const double reference_cos_sza =
+        m_geometry.coordinates().cos_sza_at_reference();
+    if constexpr (sasktran2::twostream::has_solar<SOURCE_TYPE>()) {
+        const int requested_sza = m_config->num_do_sza();
+        if (spherical && requested_sza > 1) {
+            const auto bounds =
+                sasktran2::raytracing::min_max_cos_sza_of_all_rays(*m_los_rays);
+            if (bounds.first <= bounds.second &&
+                bounds.second - bounds.first > 1e-14) {
+                sza_grid.resize(requested_sza);
+                for (int index = 0; index < requested_sza; ++index) {
+                    sza_grid[index] =
+                        bounds.first + (bounds.second - bounds.first) * index /
+                                           (requested_sza - 1);
+                }
+            }
+        }
+    }
+    if (sza_grid.empty()) {
+        sza_grid.push_back(reference_cos_sza);
+    }
+
+    m_pconfigs.clear();
+    m_geometry_layers.clear();
+    m_pconfigs.reserve(sza_grid.size());
+    m_geometry_layers.reserve(sza_grid.size());
+    for (const double cos_sza : sza_grid) {
+        auto pconfig =
+            std::make_unique<sasktran_disco::PersistentConfiguration<1>>();
+        pconfig->configure(m_spec, *m_config, cos_sza, nlyr,
+                           internal_viewing.traced_rays);
+        auto layers = std::make_unique<sasktran_disco::GeometryLayerArray<1>>(
+            *pconfig, m_geometry);
+        m_pconfigs.push_back(std::move(pconfig));
+        m_geometry_layers.push_back(std::move(layers));
+    }
 
     std::vector<double> layer_thickness(nlyr);
-    std::vector<double> chapman_factors(nlyr * nlyr);
+    std::vector<double> chapman_factors(sza_grid.size() * nlyr * nlyr);
     for (int layer = 0; layer < nlyr; ++layer) {
-        layer_thickness[layer] = m_geometry_layers->layer_ceiling()(layer) -
-                                 m_geometry_layers->layer_floor()(layer);
+        layer_thickness[layer] = m_geometry_layers[0]->layer_ceiling()(layer) -
+                                 m_geometry_layers[0]->layer_floor()(layer);
+    }
+    for (std::size_t sza = 0; sza < sza_grid.size(); ++sza) {
         for (int boundary = 0; boundary < nlyr; ++boundary) {
-            chapman_factors[boundary * nlyr + layer] =
-                m_geometry_layers->chapman_factors()(boundary, layer);
+            for (int layer = 0; layer < nlyr; ++layer) {
+                chapman_factors[sza * nlyr * nlyr + boundary * nlyr + layer] =
+                    m_geometry_layers[sza]->chapman_factors()(boundary, layer);
+            }
         }
     }
 
     constexpr int source_mode =
         sasktran2::twostream::has_solar<SOURCE_TYPE>() ? 0 : 1;
     m_rust_source.emplace(sasktran2::rust::twostream::new_rust_twostream_source(
-        as_slice(layer_thickness), as_slice(chapman_factors),
-        m_geometry.coordinates().cos_sza_at_reference(), source_mode,
+        as_slice(layer_thickness),
+        as_slice(chapman_factors.data(), nlyr * nlyr), sza_grid[0], source_mode,
         static_cast<std::size_t>(m_config->num_threads())));
+
+    if (spherical) {
+        const auto& altitude_grid = m_geometry.altitude_grid().grid();
+        const std::size_t nlevel = altitude_grid.size();
+        const double earth_radius = m_geometry.coordinates().earth_radius();
+        std::vector<std::size_t> ray_offsets;
+        std::vector<std::uint8_t> ground_hit;
+        std::vector<double> ground_cos_sza;
+        std::vector<std::size_t> segment_layers;
+        std::vector<double> segment_fractions;
+        std::vector<double> segment_cosines;
+        std::vector<double> segment_relative_azimuths;
+        std::vector<double> segment_cos_sza;
+        std::vector<std::size_t> od_offsets;
+        std::vector<std::size_t> od_indices;
+        std::vector<double> od_weights;
+        ray_offsets.reserve(m_los_rays->size() + 1);
+        ground_hit.reserve(m_los_rays->size());
+        ground_cos_sza.reserve(m_los_rays->size());
+        ray_offsets.push_back(0);
+        od_offsets.push_back(0);
+
+        for (const auto& ray : *m_los_rays) {
+            ground_hit.push_back(ray.ground_is_hit ? 1 : 0);
+            ground_cos_sza.push_back(ray.layers.empty()
+                                         ? reference_cos_sza
+                                         : ray.layers.front().cos_sza_exit);
+            for (std::size_t layer_index = 0; layer_index < ray.layers.size();
+                 ++layer_index) {
+                const auto& layer = ray.layers[layer_index];
+                const auto source_weights = normalized_source_weights(layer);
+                const Eigen::Vector3d position =
+                    source_weights.first * layer.entrance.position +
+                    source_weights.second * layer.exit.position;
+                const double altitude = position.norm() - earth_radius;
+                const double* upper =
+                    std::upper_bound(altitude_grid.data(),
+                                     altitude_grid.data() + nlevel, altitude);
+                std::size_t bottom_layer =
+                    upper == altitude_grid.data()
+                        ? 0
+                        : static_cast<std::size_t>(upper -
+                                                   altitude_grid.data() - 1);
+                bottom_layer = std::min(bottom_layer, nlevel - 2);
+                const double bottom = altitude_grid(bottom_layer);
+                const double top = altitude_grid(bottom_layer + 1);
+                const double fraction_from_top =
+                    std::clamp((top - altitude) / (top - bottom), 0.0, 1.0);
+                const Eigen::Vector3d local_up = position.normalized();
+                const double cosine = std::clamp(
+                    -layer.average_look_away.dot(local_up), -1.0, 1.0);
+                const double sin_azimuth =
+                    source_weights.first * std::sin(layer.saz_entrance) +
+                    source_weights.second * std::sin(layer.saz_exit);
+                const double cos_azimuth =
+                    source_weights.first * std::cos(layer.saz_entrance) +
+                    source_weights.second * std::cos(layer.saz_exit);
+
+                segment_layers.push_back(static_cast<std::size_t>(nlyr - 1) -
+                                         bottom_layer);
+                segment_fractions.push_back(fraction_from_top);
+                segment_cosines.push_back(cosine);
+                segment_relative_azimuths.push_back(
+                    std::atan2(sin_azimuth, cos_azimuth));
+                segment_cos_sza.push_back(
+                    std::clamp(source_weights.first * layer.cos_sza_entrance +
+                                   source_weights.second * layer.cos_sza_exit,
+                               -1.0, 1.0));
+
+                const auto stencil = ray.optical_depth_weights(layer_index);
+                for (std::size_t entry = 0; entry < stencil.size(); ++entry) {
+                    const auto [index, weight] = stencil[entry];
+                    if (index < 0 ||
+                        static_cast<std::size_t>(index) >= nlevel) {
+                        throw sasktran_disco::InternalRuntimeError(
+                            "Traced ray optical-depth stencil is outside the "
+                            "one-dimensional atmosphere grid");
+                    }
+                    if (weight != 0) {
+                        od_indices.push_back(nlevel - 1 - index);
+                        od_weights.push_back(weight);
+                    }
+                }
+                od_offsets.push_back(od_indices.size());
+            }
+            ray_offsets.push_back(segment_layers.size());
+        }
+
+        sasktran2::rust::twostream::set_spherical_geometry(
+            **m_rust_source, as_slice(sza_grid), as_slice(chapman_factors),
+            as_slice(ray_offsets), as_slice(ground_hit),
+            as_slice(ground_cos_sza), as_slice(segment_layers),
+            as_slice(segment_fractions), as_slice(segment_cosines),
+            as_slice(segment_relative_azimuths), as_slice(segment_cos_sza),
+            as_slice(od_offsets), as_slice(od_indices), as_slice(od_weights));
+        return;
+    }
 
     std::vector<double> viewing_cosines;
     std::vector<double> relative_azimuths;

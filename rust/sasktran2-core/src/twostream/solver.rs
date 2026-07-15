@@ -1,6 +1,6 @@
 use super::types::{
     AtmosphereAdjoints, AtmosphereBatch, AtmosphereJacobians, Geometry, LayerAdjoints, LayerInputs,
-    RadianceBatch, SourceMode, TwoStreamError, View,
+    RadianceBatch, SourceMode, SphericalGeometry, TwoStreamError, View,
 };
 
 const FOUR_PI: f64 = 4.0 * std::f64::consts::PI;
@@ -19,6 +19,7 @@ pub enum ExecutionPolicy {
 pub struct Workspace {
     scratch: ScalarWorkspace,
     explicit: super::explicit::ExplicitWorkspace,
+    spherical: super::explicit::SphericalExplicitWorkspace,
     #[cfg(test)]
     pub(super) reverse: super::reverse::ReverseWorkspace,
 }
@@ -29,7 +30,9 @@ impl Workspace {
     }
 
     pub fn capacity_bytes(&self) -> usize {
-        let bytes = self.scratch.capacity_bytes() + self.explicit.capacity_bytes();
+        let bytes = self.scratch.capacity_bytes()
+            + self.explicit.capacity_bytes()
+            + self.spherical.capacity_bytes();
         #[cfg(test)]
         {
             bytes + self.reverse.capacity_bytes()
@@ -685,6 +688,149 @@ impl TwoStreamSolver {
                         self.mode,
                         atmosphere,
                         views,
+                        start,
+                        len,
+                        &mut output,
+                        local,
+                    );
+                },
+            );
+        Ok((radiance, jacobians))
+    }
+
+    /// Evaluate the local two-stream source along traced spherical rays.
+    pub fn solve_spherical_atmosphere(
+        &self,
+        atmosphere: &AtmosphereBatch,
+        spherical: &SphericalGeometry,
+        workspace: &mut Workspace,
+    ) -> Result<RadianceBatch, TwoStreamError> {
+        validate_spherical_geometry(&self.geometry, self.mode, spherical)?;
+        validate_atmosphere(&spherical.columns[0], self.mode, atmosphere)?;
+        let nw = atmosphere.num_wavelengths;
+        let num_views = spherical.rays.num_views();
+        let value_count = num_views
+            .checked_mul(nw)
+            .ok_or_else(|| TwoStreamError::invalid("radiance allocation is too large"))?;
+        let mut radiance = RadianceBatch {
+            num_views,
+            num_wavelengths: nw,
+            values: try_zeroed(value_count, "radiance")?,
+        };
+        let ranges = wavelength_tile_ranges(self.execution, nw);
+        let output_tiles = super::explicit::split_radiance_outputs(&ranges, &mut radiance);
+        if ranges.len() == 1 {
+            let (start, len) = ranges[0];
+            let mut outputs = output_tiles;
+            super::explicit::solve_unprepared_spherical_forward_tile(
+                spherical,
+                self.mode,
+                atmosphere,
+                start,
+                len,
+                &mut outputs[0],
+                &mut workspace.spherical,
+            );
+            drop(outputs);
+            return Ok(radiance);
+        }
+
+        use rayon::prelude::*;
+        ranges
+            .into_par_iter()
+            .zip(output_tiles.into_par_iter())
+            .for_each_init(
+                super::explicit::SphericalExplicitWorkspace::default,
+                |local, ((start, len), mut output)| {
+                    super::explicit::solve_unprepared_spherical_forward_tile(
+                        spherical,
+                        self.mode,
+                        atmosphere,
+                        start,
+                        len,
+                        &mut output,
+                        local,
+                    );
+                },
+            );
+        Ok(radiance)
+    }
+
+    /// Spherical radiance and one explicit atmospheric Jacobian per ray.
+    pub fn solve_spherical_atmosphere_with_jacobians(
+        &self,
+        atmosphere: &AtmosphereBatch,
+        spherical: &SphericalGeometry,
+        workspace: &mut Workspace,
+    ) -> Result<(RadianceBatch, AtmosphereJacobians), TwoStreamError> {
+        validate_spherical_geometry(&self.geometry, self.mode, spherical)?;
+        validate_atmosphere(&spherical.columns[0], self.mode, atmosphere)?;
+        let nw = atmosphere.num_wavelengths;
+        let num_views = spherical.rays.num_views();
+        let num_levels = spherical.rays.num_levels;
+        let surface_count = num_views
+            .checked_mul(nw)
+            .ok_or_else(|| TwoStreamError::invalid("surface Jacobian allocation is too large"))?;
+        let level_count = surface_count
+            .checked_mul(num_levels)
+            .ok_or_else(|| TwoStreamError::invalid("level Jacobian allocation is too large"))?;
+        let mut radiance = RadianceBatch {
+            num_views,
+            num_wavelengths: nw,
+            values: try_zeroed(surface_count, "radiance")?,
+        };
+        let mut jacobians = AtmosphereJacobians {
+            num_views,
+            num_levels,
+            num_wavelengths: nw,
+            extinction: try_zeroed(level_count, "extinction Jacobian")?,
+            single_scatter_albedo: try_zeroed(level_count, "SSA Jacobian")?,
+            first_legendre: try_zeroed(level_count, "phase Jacobian")?,
+            emission: if self.mode == SourceMode::Thermal {
+                Some(try_zeroed(level_count, "emission Jacobian")?)
+            } else {
+                None
+            },
+            surface_albedo: try_zeroed(surface_count, "surface-albedo Jacobian")?,
+            surface_emission: if self.mode == SourceMode::Thermal {
+                Some(try_zeroed(surface_count, "surface-emission Jacobian")?)
+            } else {
+                None
+            },
+        };
+        let ranges = wavelength_tile_ranges(self.execution, nw);
+        let output_tiles = super::explicit::split_atmosphere_jacobian_outputs(
+            &ranges,
+            &mut radiance,
+            &mut jacobians,
+        );
+        if ranges.len() == 1 {
+            let (start, len) = ranges[0];
+            let mut outputs = output_tiles;
+            super::explicit::solve_unprepared_spherical_jacobian_tile(
+                spherical,
+                self.mode,
+                atmosphere,
+                start,
+                len,
+                &mut outputs[0],
+                &mut workspace.spherical,
+            );
+            drop(outputs);
+            return Ok((radiance, jacobians));
+        }
+
+        use rayon::prelude::*;
+        ranges
+            .into_par_iter()
+            .zip(output_tiles.into_par_iter())
+            .for_each_init(
+                super::explicit::SphericalExplicitWorkspace::default,
+                |local, ((start, len), mut output)| {
+                    super::explicit::solve_unprepared_spherical_jacobian_tile(
+                        spherical,
+                        self.mode,
+                        atmosphere,
                         start,
                         len,
                         &mut output,
@@ -1627,6 +1773,39 @@ fn validate_geometry(geometry: &Geometry) -> Result<(), TwoStreamError> {
         || geometry.quadrature_cosine == 0.0
     {
         return Err(TwoStreamError::invalid("invalid angular cosine"));
+    }
+    Ok(())
+}
+
+fn validate_spherical_geometry(
+    solver_geometry: &Geometry,
+    mode: SourceMode,
+    spherical: &SphericalGeometry,
+) -> Result<(), TwoStreamError> {
+    if spherical.columns.is_empty() || spherical.columns.len() != spherical.sza_grid.len() {
+        return Err(TwoStreamError::invalid(
+            "spherical SZA columns have inconsistent shapes",
+        ));
+    }
+    for (index, column) in spherical.columns.iter().enumerate() {
+        validate_geometry(column)?;
+        if column.layer_thickness != solver_geometry.layer_thickness
+            || column.quadrature_cosine != solver_geometry.quadrature_cosine
+        {
+            return Err(TwoStreamError::invalid(
+                "spherical columns do not match the solver vertical grid",
+            ));
+        }
+        if mode == SourceMode::Solar && column.solar_cosine != spherical.sza_grid[index] {
+            return Err(TwoStreamError::invalid(
+                "spherical column cosine does not match the SZA grid",
+            ));
+        }
+    }
+    if spherical.rays.num_levels != solver_geometry.num_layers() + 1 {
+        return Err(TwoStreamError::invalid(
+            "spherical rays do not match the solver vertical grid",
+        ));
     }
     Ok(())
 }

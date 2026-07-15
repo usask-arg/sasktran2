@@ -19,7 +19,7 @@ mod simd;
 pub use solver::{ExecutionPolicy, TwoStreamSolver, Workspace};
 pub use types::{
     AtmosphereAdjoints, AtmosphereBatch, AtmosphereJacobians, Geometry, LayerAdjoints, LayerInputs,
-    RadianceBatch, SourceMode, TwoStreamError, View,
+    RadianceBatch, SourceMode, SphericalGeometry, SphericalRayGeometry, TwoStreamError, View,
 };
 
 #[cfg(test)]

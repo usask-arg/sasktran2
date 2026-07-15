@@ -4,7 +4,7 @@ use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign};
 
 use super::{
     AtmosphereAdjoints, AtmosphereBatch, AtmosphereJacobians, ExecutionPolicy, Geometry,
-    LayerAdjoints, LayerInputs, RadianceBatch, SourceMode, View,
+    LayerAdjoints, LayerInputs, RadianceBatch, SourceMode, SphericalGeometry, View,
 };
 
 pub(super) const LANES: usize = 8;
@@ -241,6 +241,59 @@ pub(super) struct ExplicitWorkspace {
     d_solution: [Vec<Wide>; 2],
     source: Vec<Wide>,
     attenuation: Vec<Wide>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(super) struct SphericalExplicitWorkspace {
+    columns: Vec<ExplicitWorkspace>,
+    path_radiance: Vec<Wide>,
+    path_transmission: Vec<Wide>,
+    path_source: Vec<Wide>,
+    d_level_extinction: Vec<Wide>,
+    d_level_ssa: Vec<Wide>,
+    d_level_b1: Vec<Wide>,
+    d_level_emission: Vec<Wide>,
+}
+
+impl SphericalExplicitWorkspace {
+    fn resize_columns<const SOLAR: bool>(&mut self, columns: usize, layers: usize) {
+        self.columns
+            .resize_with(columns, ExplicitWorkspace::default);
+        for column in &mut self.columns {
+            column.resize::<SOLAR>(layers);
+        }
+    }
+
+    fn resize_path(&mut self, segments: usize) {
+        resize_for_overwrite(&mut self.path_radiance, segments + 1);
+        resize_for_overwrite(&mut self.path_transmission, segments);
+        resize_for_overwrite(&mut self.path_source, segments);
+    }
+
+    fn zero_level_adjoints<const SOLAR: bool>(&mut self, levels: usize) {
+        resize_and_zero(&mut self.d_level_extinction, levels);
+        resize_and_zero(&mut self.d_level_ssa, levels);
+        resize_and_zero(&mut self.d_level_b1, levels);
+        if !SOLAR {
+            resize_and_zero(&mut self.d_level_emission, levels);
+        }
+    }
+
+    pub(super) fn capacity_bytes(&self) -> usize {
+        let wide_capacity = self.path_radiance.capacity()
+            + self.path_transmission.capacity()
+            + self.path_source.capacity()
+            + self.d_level_extinction.capacity()
+            + self.d_level_ssa.capacity()
+            + self.d_level_b1.capacity()
+            + self.d_level_emission.capacity();
+        wide_capacity * std::mem::size_of::<Wide>()
+            + self
+                .columns
+                .iter()
+                .map(ExplicitWorkspace::capacity_bytes)
+                .sum::<usize>()
+    }
 }
 
 fn resize_for_overwrite(values: &mut Vec<Wide>, len: usize) {
@@ -663,6 +716,70 @@ pub(super) fn solve_unprepared_atmosphere_jacobian_tile(
                 geometry,
                 atmosphere,
                 views,
+                input_start + local_base,
+                local_base,
+                outputs,
+                workspace,
+            ),
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn solve_unprepared_spherical_forward_tile(
+    spherical: &SphericalGeometry,
+    mode: SourceMode,
+    atmosphere: &AtmosphereBatch,
+    input_start: usize,
+    len: usize,
+    radiance: &mut OutputRows<'_>,
+    workspace: &mut SphericalExplicitWorkspace,
+) {
+    for local_base in (0..len).step_by(LANES) {
+        match mode {
+            SourceMode::Solar => solve_spherical_forward_chunk::<true>(
+                spherical,
+                atmosphere,
+                input_start + local_base,
+                local_base,
+                radiance,
+                workspace,
+            ),
+            SourceMode::Thermal => solve_spherical_forward_chunk::<false>(
+                spherical,
+                atmosphere,
+                input_start + local_base,
+                local_base,
+                radiance,
+                workspace,
+            ),
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn solve_unprepared_spherical_jacobian_tile(
+    spherical: &SphericalGeometry,
+    mode: SourceMode,
+    atmosphere: &AtmosphereBatch,
+    input_start: usize,
+    len: usize,
+    outputs: &mut AtmosphereOutputTile<'_>,
+    workspace: &mut SphericalExplicitWorkspace,
+) {
+    for local_base in (0..len).step_by(LANES) {
+        match mode {
+            SourceMode::Solar => solve_spherical_jacobian_chunk::<true>(
+                spherical,
+                atmosphere,
+                input_start + local_base,
+                local_base,
+                outputs,
+                workspace,
+            ),
+            SourceMode::Thermal => solve_spherical_jacobian_chunk::<false>(
+                spherical,
+                atmosphere,
                 input_start + local_base,
                 local_base,
                 outputs,
@@ -1356,6 +1473,383 @@ fn solve_unprepared_atmosphere_jacobian_chunk<const SOLAR: bool>(
     }
 }
 
+fn prepare_spherical_columns<const SOLAR: bool>(
+    spherical: &SphericalGeometry,
+    atmosphere: &AtmosphereBatch,
+    input_base: usize,
+    workspace: &mut SphericalExplicitWorkspace,
+) -> (Wide, Wide) {
+    let n = spherical.columns[0].num_layers();
+    workspace.resize_columns::<SOLAR>(spherical.columns.len(), n);
+    let (first, remaining) = workspace.columns.split_first_mut().unwrap();
+    let boundary =
+        load_atmosphere_chunk_mode::<SOLAR>(&spherical.columns[0], atmosphere, input_base, first);
+    forward_layers::<SOLAR>(&spherical.columns[0], boundary.0, boundary.1, first);
+
+    for (geometry, column) in spherical.columns.iter().skip(1).zip(remaining) {
+        column.od.copy_from_slice(&first.od);
+        column.ssa.copy_from_slice(&first.ssa);
+        column.b1.copy_from_slice(&first.b1);
+        if SOLAR {
+            column.attenuation[0] = Wide::splat(0.0);
+            column.transmission[0] = first.transmission[0];
+            for boundary in 0..n {
+                let mut slant = Wide::splat(0.0);
+                for layer in 0..n {
+                    let factor = geometry.chapman_factors[boundary * n + layer];
+                    if factor != 0.0 {
+                        slant += column.od[layer] * factor;
+                    }
+                }
+                column.attenuation[boundary + 1] = -slant;
+                column.transmission[boundary + 1] = (-slant).exp() * column.transmission[0];
+            }
+            for layer in 0..n {
+                column.secant[layer] =
+                    (column.attenuation[layer] - column.attenuation[layer + 1]) / column.od[layer];
+            }
+        } else {
+            column.thermal_b0.copy_from_slice(&first.thermal_b0);
+            column.thermal_b1.copy_from_slice(&first.thermal_b1);
+        }
+        forward_layers::<SOLAR>(geometry, boundary.0, boundary.1, column);
+    }
+    boundary
+}
+
+fn sza_interpolation(grid: &[f64], cosine: f64) -> (usize, usize, f64) {
+    if grid.len() == 1 || cosine <= grid[0] {
+        return (0, 0, 0.0);
+    }
+    let last = grid.len() - 1;
+    if cosine >= grid[last] {
+        return (last, last, 0.0);
+    }
+    let upper = grid.partition_point(|value| *value < cosine);
+    let lower = upper - 1;
+    let upper_weight = (cosine - grid[lower]) / (grid[upper] - grid[lower]);
+    (lower, upper, upper_weight)
+}
+
+fn interpolated_local_source<const SOLAR: bool>(
+    spherical: &SphericalGeometry,
+    segment: usize,
+    columns: &[ExplicitWorkspace],
+) -> Wide {
+    let rays = &spherical.rays;
+    let (lower, upper, upper_weight) =
+        sza_interpolation(&spherical.sza_grid, rays.segment_cos_sza[segment]);
+    let evaluate = |column: usize| {
+        local_source::<SOLAR>(
+            &spherical.columns[column],
+            rays.segment_layers[segment],
+            rays.segment_fractions[segment],
+            rays.segment_cosines[segment],
+            rays.segment_relative_azimuths[segment],
+            &columns[column],
+        )
+    };
+    let lower_source = evaluate(lower);
+    if lower == upper {
+        lower_source
+    } else {
+        lower_source * (1.0 - upper_weight) + evaluate(upper) * upper_weight
+    }
+}
+
+fn interpolated_surface_source<const SOLAR: bool>(
+    spherical: &SphericalGeometry,
+    view: usize,
+    albedo: Wide,
+    thermal_surface: Wide,
+    columns: &[ExplicitWorkspace],
+) -> Wide {
+    let (lower, upper, upper_weight) =
+        sza_interpolation(&spherical.sza_grid, spherical.rays.ground_cos_sza[view]);
+    let lower_source = surface_source::<SOLAR>(
+        &spherical.columns[lower],
+        albedo,
+        thermal_surface,
+        &columns[lower],
+    );
+    if lower == upper {
+        lower_source
+    } else {
+        lower_source * (1.0 - upper_weight)
+            + surface_source::<SOLAR>(
+                &spherical.columns[upper],
+                albedo,
+                thermal_surface,
+                &columns[upper],
+            ) * upper_weight
+    }
+}
+
+fn segment_optical_depth(
+    spherical: &SphericalGeometry,
+    atmosphere: &AtmosphereBatch,
+    segment: usize,
+    input_base: usize,
+) -> Wide {
+    let mut optical_depth = Wide::splat(0.0);
+    let start = spherical.rays.od_offsets[segment];
+    let end = spherical.rays.od_offsets[segment + 1];
+    for stencil in start..end {
+        optical_depth += Wide::load_row(
+            &atmosphere.extinction,
+            spherical.rays.od_indices[stencil],
+            input_base,
+            atmosphere.num_wavelengths,
+        ) * spherical.rays.od_weights[stencil];
+    }
+    optical_depth
+}
+
+#[allow(clippy::too_many_arguments)]
+fn forward_spherical_ray<const SOLAR: bool>(
+    spherical: &SphericalGeometry,
+    atmosphere: &AtmosphereBatch,
+    view: usize,
+    input_base: usize,
+    albedo: Wide,
+    thermal_surface: Wide,
+    workspace: &mut SphericalExplicitWorkspace,
+) -> Wide {
+    let start = spherical.rays.ray_offsets[view];
+    let end = spherical.rays.ray_offsets[view + 1];
+    let segments = end - start;
+    workspace.resize_path(segments);
+    workspace.path_radiance[0] = if spherical.rays.ground_hit[view] {
+        interpolated_surface_source::<SOLAR>(
+            spherical,
+            view,
+            albedo,
+            thermal_surface,
+            &workspace.columns,
+        )
+    } else {
+        Wide::splat(0.0)
+    };
+    for (local, segment) in (start..end).enumerate() {
+        let transmission =
+            (-segment_optical_depth(spherical, atmosphere, segment, input_base)).exp();
+        let source = interpolated_local_source::<SOLAR>(spherical, segment, &workspace.columns);
+        workspace.path_transmission[local] = transmission;
+        workspace.path_source[local] = source;
+        workspace.path_radiance[local + 1] =
+            workspace.path_radiance[local] * transmission + source * (1.0 - transmission);
+    }
+    workspace.path_radiance[segments]
+}
+
+fn solve_spherical_forward_chunk<const SOLAR: bool>(
+    spherical: &SphericalGeometry,
+    atmosphere: &AtmosphereBatch,
+    input_base: usize,
+    output_base: usize,
+    radiance: &mut OutputRows<'_>,
+    workspace: &mut SphericalExplicitWorkspace,
+) {
+    let (albedo, thermal_surface) =
+        prepare_spherical_columns::<SOLAR>(spherical, atmosphere, input_base, workspace);
+    for view in 0..spherical.rays.num_views() {
+        let value = forward_spherical_ray::<SOLAR>(
+            spherical,
+            atmosphere,
+            view,
+            input_base,
+            albedo,
+            thermal_surface,
+            workspace,
+        );
+        radiance.write(view, output_base, value);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn reverse_interpolated_local_source<const SOLAR: bool>(
+    spherical: &SphericalGeometry,
+    segment: usize,
+    seed: Wide,
+    columns: &mut [ExplicitWorkspace],
+) {
+    let rays = &spherical.rays;
+    let (lower, upper, upper_weight) =
+        sza_interpolation(&spherical.sza_grid, rays.segment_cos_sza[segment]);
+    reverse_local_source::<SOLAR>(
+        &spherical.columns[lower],
+        rays.segment_layers[segment],
+        rays.segment_fractions[segment],
+        rays.segment_cosines[segment],
+        rays.segment_relative_azimuths[segment],
+        seed * (1.0 - upper_weight),
+        &mut columns[lower],
+    );
+    if lower != upper {
+        reverse_local_source::<SOLAR>(
+            &spherical.columns[upper],
+            rays.segment_layers[segment],
+            rays.segment_fractions[segment],
+            rays.segment_cosines[segment],
+            rays.segment_relative_azimuths[segment],
+            seed * upper_weight,
+            &mut columns[upper],
+        );
+    }
+}
+
+fn reverse_interpolated_surface<const SOLAR: bool>(
+    spherical: &SphericalGeometry,
+    view: usize,
+    albedo: Wide,
+    seed: Wide,
+    columns: &mut [ExplicitWorkspace],
+) -> (Wide, Wide) {
+    let (lower, upper, upper_weight) =
+        sza_interpolation(&spherical.sza_grid, spherical.rays.ground_cos_sza[view]);
+    let mut result = reverse_surface_source::<SOLAR>(
+        &spherical.columns[lower],
+        albedo,
+        seed * (1.0 - upper_weight),
+        &mut columns[lower],
+    );
+    if lower != upper {
+        let upper_result = reverse_surface_source::<SOLAR>(
+            &spherical.columns[upper],
+            albedo,
+            seed * upper_weight,
+            &mut columns[upper],
+        );
+        result.0 += upper_result.0;
+        result.1 += upper_result.1;
+    }
+    result
+}
+
+#[allow(clippy::too_many_arguments)]
+fn solve_spherical_jacobian_chunk<const SOLAR: bool>(
+    spherical: &SphericalGeometry,
+    atmosphere: &AtmosphereBatch,
+    input_base: usize,
+    output_base: usize,
+    outputs: &mut AtmosphereOutputTile<'_>,
+    workspace: &mut SphericalExplicitWorkspace,
+) {
+    let n = spherical.columns[0].num_layers();
+    let levels = n + 1;
+    let (albedo, thermal_surface) =
+        prepare_spherical_columns::<SOLAR>(spherical, atmosphere, input_base, workspace);
+
+    for view in 0..spherical.rays.num_views() {
+        for column in &mut workspace.columns {
+            column.resize::<SOLAR>(n);
+        }
+        workspace.zero_level_adjoints::<SOLAR>(levels);
+        let value = forward_spherical_ray::<SOLAR>(
+            spherical,
+            atmosphere,
+            view,
+            input_base,
+            albedo,
+            thermal_surface,
+            workspace,
+        );
+        outputs.radiance.write(view, output_base, value);
+
+        let start = spherical.rays.ray_offsets[view];
+        let end = spherical.rays.ray_offsets[view + 1];
+        let mut d_radiance = Wide::splat(1.0);
+        for local in (0..end - start).rev() {
+            let segment = start + local;
+            let transmission = workspace.path_transmission[local];
+            let source = workspace.path_source[local];
+            let incoming = workspace.path_radiance[local];
+            let d_transmission = d_radiance * (incoming - source);
+            let d_source = d_radiance * (1.0 - transmission);
+            let d_optical_depth = -d_transmission * transmission;
+            let od_start = spherical.rays.od_offsets[segment];
+            let od_end = spherical.rays.od_offsets[segment + 1];
+            for stencil in od_start..od_end {
+                workspace.d_level_extinction[spherical.rays.od_indices[stencil]] +=
+                    d_optical_depth * spherical.rays.od_weights[stencil];
+            }
+            reverse_interpolated_local_source::<SOLAR>(
+                spherical,
+                segment,
+                d_source,
+                &mut workspace.columns,
+            );
+            d_radiance = d_radiance * transmission;
+        }
+
+        let mut d_albedo = Wide::splat(0.0);
+        let mut d_thermal_surface = Wide::splat(0.0);
+        if spherical.rays.ground_hit[view] {
+            let ground = reverse_interpolated_surface::<SOLAR>(
+                spherical,
+                view,
+                albedo,
+                d_radiance,
+                &mut workspace.columns,
+            );
+            d_albedo += ground.0;
+            d_thermal_surface += ground.1;
+        }
+
+        for (geometry, column) in spherical.columns.iter().zip(&mut workspace.columns) {
+            let bvp = reverse_bvp::<SOLAR>(geometry, albedo, thermal_surface, column);
+            d_albedo += bvp.0;
+            d_thermal_surface += bvp.1;
+            reverse_layers::<SOLAR>(geometry, column);
+            prepare_spherical_column_atmosphere_adjoint::<SOLAR>(
+                geometry, atmosphere, input_base, column,
+            );
+            for level in 0..levels {
+                workspace.d_level_extinction[level] += column.d_level_extinction[level];
+                workspace.d_level_ssa[level] += column.d_level_ssa[level];
+                workspace.d_level_b1[level] += column.d_level_b1[level];
+                if !SOLAR {
+                    workspace.d_level_emission[level] += column.d_level_emission[level];
+                }
+            }
+        }
+
+        let level_row_offset = view * levels;
+        for level in 0..levels {
+            outputs.extinction.write(
+                level_row_offset + level,
+                output_base,
+                workspace.d_level_extinction[level],
+            );
+            outputs.single_scatter_albedo.write(
+                level_row_offset + level,
+                output_base,
+                workspace.d_level_ssa[level],
+            );
+            outputs.first_legendre.write(
+                level_row_offset + level,
+                output_base,
+                workspace.d_level_b1[level],
+            );
+            if !SOLAR {
+                outputs.emission.as_mut().unwrap().write(
+                    level_row_offset + level,
+                    output_base,
+                    workspace.d_level_emission[level],
+                );
+            }
+        }
+        outputs.surface_albedo.write(view, output_base, d_albedo);
+        if !SOLAR {
+            outputs
+                .surface_emission
+                .as_mut()
+                .unwrap()
+                .write(view, output_base, d_thermal_surface);
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn solve_chunk(
     geometry: &Geometry,
@@ -1707,6 +2201,115 @@ fn map_chunk_to_atmosphere(
     }
 }
 
+/// Map one spherical column's layer adjoints to atmospheric levels without
+/// writing them. The caller accumulates these level arrays across SZA columns
+/// before emitting the per-view Jacobian.
+fn prepare_spherical_column_atmosphere_adjoint<const SOLAR: bool>(
+    geometry: &Geometry,
+    atmosphere: &AtmosphereBatch,
+    input_base: usize,
+    w: &mut ExplicitWorkspace,
+) {
+    let n = geometry.num_layers();
+    let input_stride = atmosphere.num_wavelengths;
+
+    if SOLAR {
+        w.attenuation.fill(Wide::splat(0.0));
+        for boundary in 1..=n {
+            w.attenuation[boundary] = w.d_transmission[boundary] * w.transmission[boundary];
+        }
+        for layer in 0..n {
+            let inv_od = 1.0 / w.od[layer];
+            let weight = w.d_secant[layer] * inv_od;
+            w.attenuation[layer] += weight;
+            w.attenuation[layer + 1] -= weight;
+            w.d_od[layer] -= w.d_secant[layer] * w.secant[layer] * inv_od;
+        }
+        for layer in 0..n {
+            let mut contribution = Wide::splat(0.0);
+            for boundary in 1..=n {
+                contribution +=
+                    w.attenuation[boundary] * geometry.chapman_factors[(boundary - 1) * n + layer];
+            }
+            w.d_od[layer] -= contribution;
+        }
+    }
+
+    let mut top_extinction = Wide::load(&atmosphere.extinction, input_base, input_stride);
+    let mut top_ssa = Wide::load(&atmosphere.single_scatter_albedo, input_base, input_stride);
+    let mut top_b1 = Wide::load(&atmosphere.first_legendre, input_base, input_stride);
+    let mut top_emission = if SOLAR {
+        Wide::splat(0.0)
+    } else {
+        Wide::load(
+            atmosphere.emission.as_ref().unwrap(),
+            input_base,
+            input_stride,
+        )
+    };
+    for layer in 0..n {
+        let dz = geometry.layer_thickness[layer];
+        let od_density = w.od[layer] / dz;
+        let scattering_density = w.ssa[layer] * od_density;
+        let bottom_extinction =
+            Wide::load_row(&atmosphere.extinction, layer + 1, input_base, input_stride);
+        let bottom_ssa = Wide::load_row(
+            &atmosphere.single_scatter_albedo,
+            layer + 1,
+            input_base,
+            input_stride,
+        );
+        let bottom_b1 = Wide::load_row(
+            &atmosphere.first_legendre,
+            layer + 1,
+            input_base,
+            input_stride,
+        );
+        let common_od = 0.5 * w.d_od[layer] * dz;
+        let common_ssa = 0.5 * w.d_ssa[layer] / od_density;
+        let common_b1 = 0.5 * w.d_b1[layer] / scattering_density;
+        let (d_extinction, d_ssa, d_b1) = level_optical_adjoint(
+            top_extinction,
+            top_ssa,
+            top_b1,
+            w.ssa[layer],
+            w.b1[layer],
+            common_od,
+            common_ssa,
+            common_b1,
+        );
+        w.d_level_extinction[layer] += d_extinction;
+        w.d_level_ssa[layer] += d_ssa;
+        w.d_level_b1[layer] += d_b1;
+        let (d_extinction, d_ssa, d_b1) = level_optical_adjoint(
+            bottom_extinction,
+            bottom_ssa,
+            bottom_b1,
+            w.ssa[layer],
+            w.b1[layer],
+            common_od,
+            common_ssa,
+            common_b1,
+        );
+        w.d_level_extinction[layer + 1] += d_extinction;
+        w.d_level_ssa[layer + 1] += d_ssa;
+        w.d_level_b1[layer + 1] += d_b1;
+
+        if !SOLAR {
+            let emission = atmosphere.emission.as_ref().unwrap();
+            let bottom = Wide::load_row(emission, layer + 1, input_base, input_stride);
+            let d_b0 = w.d_thermal_b0[layer];
+            let d_b1 = w.d_thermal_b1[layer];
+            w.d_level_emission[layer] += d_b0 + d_b1 / (dz * top_emission);
+            w.d_level_emission[layer + 1] -= d_b1 / (dz * bottom);
+            top_emission = bottom;
+        }
+        top_extinction = bottom_extinction;
+        top_ssa = bottom_ssa;
+        top_b1 = bottom_b1;
+    }
+}
+
 fn forward_layers<const SOLAR: bool>(
     geometry: &Geometry,
     albedo: Wide,
@@ -1910,6 +2513,255 @@ fn pentadiagonal_transpose_solve(q: &Bvp, rhs: &mut [Wide]) {
     for i in (0..n.saturating_sub(2)).rev() {
         rhs[i] = (rhs[i] - q.gamma[i + 1] * rhs[i + 1] - q.e[i + 2] * rhs[i + 2]) * q.inv_mu[i];
     }
+}
+
+fn local_source<const SOLAR: bool>(
+    geometry: &Geometry,
+    layer: usize,
+    fraction_from_top: f64,
+    propagation_cosine: f64,
+    relative_azimuth: f64,
+    w: &ExplicitWorkspace,
+) -> Wide {
+    let mu = geometry.quadrature_cosine;
+    let naz = if SOLAR { 2 } else { 1 };
+    let phase_mu = propagation_cosine * mu;
+    let phase_sine = 0.25
+        * ((1.0 - propagation_cosine.powi(2)) * (1.0 - mu * mu))
+            .max(0.0)
+            .sqrt();
+    let azimuth_weight = [1.0, relative_azimuth.cos()];
+    let fraction_from_bottom = 1.0 - fraction_from_top;
+    let mut source = Wide::splat(0.0);
+
+    for (az, &azimuth_weight) in azimuth_weight.iter().enumerate().take(naz) {
+        let h = &w.homogeneous[az];
+        let p = &w.particular[az];
+        let (lp, lm) = lpsum::<SOLAR>(az, phase_mu, phase_sine, w.ssa[layer], w.b1[layer]);
+        let yp = lp * h.xp[layer] + lm * h.xm[layer];
+        let ym = lp * h.xm[layer] + lm * h.xp[layer];
+        let top_exponential = (-h.k[layer] * w.od[layer] * fraction_from_top).exp();
+        let bottom_exponential = (-h.k[layer] * w.od[layer] * fraction_from_bottom).exp();
+        let mut value = w.bvp[az].rhs[2 * layer] * yp * top_exponential
+            + w.bvp[az].rhs[2 * layer + 1] * ym * bottom_exponential;
+
+        if SOLAR {
+            let beam = (-w.secant[layer] * w.od[layer] * fraction_from_top).exp();
+            let plus =
+                w.transmission[layer] * (top_exponential - beam) / (w.secant[layer] - h.k[layer]);
+            let minus = w.transmission[layer] * (beam - p.exponential[layer] * bottom_exponential)
+                / (w.secant[layer] + h.k[layer]);
+            value += p.ap[layer] * yp * plus + p.am[layer] * ym * minus;
+        } else {
+            let thermal = (-w.thermal_b1[layer] * w.od[layer] * fraction_from_top).exp();
+            let plus = w.thermal_b0[layer] * (top_exponential - thermal)
+                / (w.thermal_b1[layer] - h.k[layer]);
+            let minus = w.thermal_b0[layer] * (thermal - p.exponential[layer] * bottom_exponential)
+                / (w.thermal_b1[layer] + h.k[layer]);
+            value += p.at[layer] * (yp * plus + ym * minus);
+        }
+        source += azimuth_weight * value;
+    }
+
+    if !SOLAR {
+        let thermal = (-w.thermal_b1[layer] * w.od[layer] * fraction_from_top).exp();
+        source += w.thermal_b0[layer] * thermal * (1.0 - w.ssa[layer]);
+    }
+    source
+}
+
+#[allow(clippy::too_many_arguments)]
+fn reverse_local_source<const SOLAR: bool>(
+    geometry: &Geometry,
+    layer: usize,
+    fraction_from_top: f64,
+    propagation_cosine: f64,
+    relative_azimuth: f64,
+    seed: Wide,
+    w: &mut ExplicitWorkspace,
+) {
+    let mu = geometry.quadrature_cosine;
+    let naz = if SOLAR { 2 } else { 1 };
+    let phase_mu = propagation_cosine * mu;
+    let phase_sine = 0.25
+        * ((1.0 - propagation_cosine.powi(2)) * (1.0 - mu * mu))
+            .max(0.0)
+            .sqrt();
+    let azimuth_weight = [1.0, relative_azimuth.cos()];
+    let fraction_from_bottom = 1.0 - fraction_from_top;
+
+    for (az, &azimuth_weight) in azimuth_weight.iter().enumerate().take(naz) {
+        let h = &w.homogeneous[az];
+        let p = &w.particular[az];
+        let (lp, lm) = lpsum::<SOLAR>(az, phase_mu, phase_sine, w.ssa[layer], w.b1[layer]);
+        let yp = lp * h.xp[layer] + lm * h.xm[layer];
+        let ym = lp * h.xm[layer] + lm * h.xp[layer];
+        let top_exponential = (-h.k[layer] * w.od[layer] * fraction_from_top).exp();
+        let bottom_exponential = (-h.k[layer] * w.od[layer] * fraction_from_bottom).exp();
+        let source_scale = seed * azimuth_weight;
+        let top_solution = w.bvp[az].rhs[2 * layer];
+        let bottom_solution = w.bvp[az].rhs[2 * layer + 1];
+        let mut d_yp = source_scale * top_solution * top_exponential;
+        let mut d_ym = source_scale * bottom_solution * bottom_exponential;
+        let mut d_top_exponential = source_scale * top_solution * yp;
+        let mut d_bottom_exponential = source_scale * bottom_solution * ym;
+        w.d_solution[az][2 * layer] += source_scale * yp * top_exponential;
+        w.d_solution[az][2 * layer + 1] += source_scale * ym * bottom_exponential;
+        let mut d_k = Wide::splat(0.0);
+
+        if SOLAR {
+            let beam = (-w.secant[layer] * w.od[layer] * fraction_from_top).exp();
+            let plus_denominator = w.secant[layer] - h.k[layer];
+            let minus_denominator = w.secant[layer] + h.k[layer];
+            let inv_plus_denominator = 1.0 / plus_denominator;
+            let inv_minus_denominator = 1.0 / minus_denominator;
+            let plus_numerator = top_exponential - beam;
+            let minus_numerator = beam - p.exponential[layer] * bottom_exponential;
+            let plus = w.transmission[layer] * plus_numerator * inv_plus_denominator;
+            let minus = w.transmission[layer] * minus_numerator * inv_minus_denominator;
+
+            w.d_particular[az].ap[layer] += source_scale * yp * plus;
+            d_yp += source_scale * p.ap[layer] * plus;
+            let d_plus = source_scale * p.ap[layer] * yp;
+            w.d_particular[az].am[layer] += source_scale * ym * minus;
+            d_ym += source_scale * p.am[layer] * minus;
+            let d_minus = source_scale * p.am[layer] * ym;
+
+            w.d_transmission[layer] += d_plus * plus_numerator * inv_plus_denominator;
+            let d_plus_numerator = d_plus * w.transmission[layer] * inv_plus_denominator;
+            let d_plus_denominator = -d_plus * plus * inv_plus_denominator;
+            d_top_exponential += d_plus_numerator;
+            let mut d_beam = -d_plus_numerator;
+            w.d_secant[layer] += d_plus_denominator;
+            d_k -= d_plus_denominator;
+
+            w.d_transmission[layer] += d_minus * minus_numerator * inv_minus_denominator;
+            let d_minus_numerator = d_minus * w.transmission[layer] * inv_minus_denominator;
+            let d_minus_denominator = -d_minus * minus * inv_minus_denominator;
+            d_beam += d_minus_numerator;
+            let d_layer_exponential = -d_minus_numerator * bottom_exponential;
+            d_bottom_exponential -= d_minus_numerator * p.exponential[layer];
+            w.d_secant[layer] += d_minus_denominator;
+            d_k += d_minus_denominator;
+
+            w.d_secant[layer] -= d_beam * beam * w.od[layer] * fraction_from_top;
+            w.d_od[layer] -= d_beam * beam * w.secant[layer] * fraction_from_top;
+            w.d_secant[layer] -= d_layer_exponential * p.exponential[layer] * w.od[layer];
+            w.d_od[layer] -= d_layer_exponential * p.exponential[layer] * w.secant[layer];
+        } else {
+            let thermal = (-w.thermal_b1[layer] * w.od[layer] * fraction_from_top).exp();
+            let plus_denominator = w.thermal_b1[layer] - h.k[layer];
+            let minus_denominator = w.thermal_b1[layer] + h.k[layer];
+            let inv_plus_denominator = 1.0 / plus_denominator;
+            let inv_minus_denominator = 1.0 / minus_denominator;
+            let plus_numerator = top_exponential - thermal;
+            let minus_numerator = thermal - p.exponential[layer] * bottom_exponential;
+            let plus = w.thermal_b0[layer] * plus_numerator * inv_plus_denominator;
+            let minus = w.thermal_b0[layer] * minus_numerator * inv_minus_denominator;
+
+            w.d_particular[az].at[layer] += source_scale * (yp * plus + ym * minus);
+            d_yp += source_scale * p.at[layer] * plus;
+            d_ym += source_scale * p.at[layer] * minus;
+            let d_plus = source_scale * p.at[layer] * yp;
+            let d_minus = source_scale * p.at[layer] * ym;
+
+            w.d_thermal_b0[layer] += d_plus * plus_numerator * inv_plus_denominator;
+            let d_plus_numerator = d_plus * w.thermal_b0[layer] * inv_plus_denominator;
+            let d_plus_denominator = -d_plus * plus * inv_plus_denominator;
+            d_top_exponential += d_plus_numerator;
+            let mut d_thermal = -d_plus_numerator;
+            w.d_thermal_b1[layer] += d_plus_denominator;
+            d_k -= d_plus_denominator;
+
+            w.d_thermal_b0[layer] += d_minus * minus_numerator * inv_minus_denominator;
+            let d_minus_numerator = d_minus * w.thermal_b0[layer] * inv_minus_denominator;
+            let d_minus_denominator = -d_minus * minus * inv_minus_denominator;
+            d_thermal += d_minus_numerator;
+            let d_layer_exponential = -d_minus_numerator * bottom_exponential;
+            d_bottom_exponential -= d_minus_numerator * p.exponential[layer];
+            w.d_thermal_b1[layer] += d_minus_denominator;
+            d_k += d_minus_denominator;
+
+            w.d_thermal_b1[layer] -= d_thermal * thermal * w.od[layer] * fraction_from_top;
+            w.d_od[layer] -= d_thermal * thermal * w.thermal_b1[layer] * fraction_from_top;
+            w.d_thermal_b1[layer] -= d_layer_exponential * p.exponential[layer] * w.od[layer];
+            w.d_od[layer] -= d_layer_exponential * p.exponential[layer] * w.thermal_b1[layer];
+        }
+
+        let d_lp = d_yp * h.xp[layer] + d_ym * h.xm[layer];
+        let d_lm = d_yp * h.xm[layer] + d_ym * h.xp[layer];
+        w.d_homogeneous[az].xp[layer] += d_yp * lp + d_ym * lm;
+        w.d_homogeneous[az].xm[layer] += d_yp * lm + d_ym * lp;
+        if SOLAR {
+            if az == 0 {
+                w.d_ssa[layer] += d_lp * 0.5 * (1.0 - w.b1[layer] * phase_mu)
+                    + d_lm * 0.5 * (1.0 + w.b1[layer] * phase_mu);
+                w.d_b1[layer] += d_lp * (-0.5 * w.ssa[layer] * phase_mu)
+                    + d_lm * (0.5 * w.ssa[layer] * phase_mu);
+            } else {
+                w.d_ssa[layer] += (d_lp + d_lm) * w.b1[layer] * phase_sine;
+                w.d_b1[layer] += (d_lp + d_lm) * w.ssa[layer] * phase_sine;
+            }
+        }
+
+        d_k -= d_top_exponential * top_exponential * w.od[layer] * fraction_from_top;
+        w.d_od[layer] -= d_top_exponential * top_exponential * h.k[layer] * fraction_from_top;
+        d_k -= d_bottom_exponential * bottom_exponential * w.od[layer] * fraction_from_bottom;
+        w.d_od[layer] -=
+            d_bottom_exponential * bottom_exponential * h.k[layer] * fraction_from_bottom;
+        w.d_homogeneous[az].k[layer] += d_k;
+    }
+
+    if !SOLAR {
+        let thermal = (-w.thermal_b1[layer] * w.od[layer] * fraction_from_top).exp();
+        w.d_thermal_b0[layer] += seed * thermal * (1.0 - w.ssa[layer]);
+        let d_thermal = seed * w.thermal_b0[layer] * (1.0 - w.ssa[layer]);
+        w.d_ssa[layer] -= seed * w.thermal_b0[layer] * thermal;
+        w.d_thermal_b1[layer] -= d_thermal * thermal * w.od[layer] * fraction_from_top;
+        w.d_od[layer] -= d_thermal * thermal * w.thermal_b1[layer] * fraction_from_top;
+    }
+}
+
+fn surface_source<const SOLAR: bool>(
+    geometry: &Geometry,
+    albedo: Wide,
+    thermal_surface: Wide,
+    w: &ExplicitWorkspace,
+) -> Wide {
+    let last = geometry.num_layers() - 1;
+    let base = w.particular[0].gpb[last]
+        + w.bvp[0].rhs[2 * last] * w.homogeneous[0].xp[last] * w.homogeneous[0].omega[last]
+        + w.bvp[0].rhs[2 * last + 1] * w.homogeneous[0].xm[last];
+    base * (2.0 * geometry.quadrature_cosine) * albedo
+        + if SOLAR {
+            Wide::splat(0.0)
+        } else {
+            thermal_surface
+        }
+}
+
+fn reverse_surface_source<const SOLAR: bool>(
+    geometry: &Geometry,
+    albedo: Wide,
+    seed: Wide,
+    w: &mut ExplicitWorkspace,
+) -> (Wide, Wide) {
+    let last = geometry.num_layers() - 1;
+    let base = w.particular[0].gpb[last]
+        + w.bvp[0].rhs[2 * last] * w.homogeneous[0].xp[last] * w.homogeneous[0].omega[last]
+        + w.bvp[0].rhs[2 * last + 1] * w.homogeneous[0].xm[last];
+    let scale = 2.0 * geometry.quadrature_cosine;
+    let d_base = seed * scale * albedo;
+    w.d_particular[0].gpb[last] += d_base;
+    w.d_solution[0][2 * last] += d_base * w.homogeneous[0].xp[last] * w.homogeneous[0].omega[last];
+    w.d_homogeneous[0].xp[last] += d_base * w.bvp[0].rhs[2 * last] * w.homogeneous[0].omega[last];
+    w.d_homogeneous[0].omega[last] += d_base * w.bvp[0].rhs[2 * last] * w.homogeneous[0].xp[last];
+    w.d_solution[0][2 * last + 1] += d_base * w.homogeneous[0].xm[last];
+    w.d_homogeneous[0].xm[last] += d_base * w.bvp[0].rhs[2 * last + 1];
+    (
+        seed * scale * base,
+        if SOLAR { Wide::splat(0.0) } else { seed },
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
