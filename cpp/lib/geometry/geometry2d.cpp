@@ -2,12 +2,15 @@
 #include <sasktran2/validation/validation.h>
 
 #include <climits>
+#include <limits>
 #include <stdexcept>
 
 namespace {
     constexpr double altitude_tolerance_m = 1e-8;
     constexpr double angular_tolerance_rad = 1e-8;
     constexpr double pi_rad = static_cast<double>(EIGEN_PI);
+    constexpr double pi_boundary_tolerance_rad =
+        16.0 * std::numeric_limits<double>::epsilon() * pi_rad;
 
     struct AxisStencil {
         std::array<int, 2> indices{};
@@ -407,7 +410,7 @@ namespace sasktran2 {
         }
         if (m_horizontal_angles[m_horizontal_angles.size() - 1] -
                 m_horizontal_angles[0] >=
-            pi_rad) {
+            pi_rad - pi_boundary_tolerance_rad) {
             spdlog::critical(
                 "Invalid horizontal angle grid: span must be less than pi");
             validation::throw_configuration_error();

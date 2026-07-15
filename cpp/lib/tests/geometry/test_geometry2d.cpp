@@ -132,6 +132,9 @@ TEST_CASE("Geometry2D validates its grids and coordinate type",
             std::runtime_error);
         REQUIRE_THROWS_AS(construct(grid({0.0, 10.0}), grid({0.0, EIGEN_PI})),
                           std::runtime_error);
+        REQUIRE_NOTHROW(
+            construct(grid({0.0, 10.0}),
+                      grid({0.0, static_cast<double>(EIGEN_PI) - 1e-10})));
     }
 
     SECTION("interpolation mode") {
