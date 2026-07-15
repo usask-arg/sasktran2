@@ -113,10 +113,46 @@ The following are the supported ways to specify the optical properties of scatte
 ```{eval-rst}
 .. autosummary::
     sasktran2.optical.henyey.HenyeyGreenstein
+    sasktran2.optical.BaumIceCrystal
     sasktran2.optical.database.OpticalDatabaseGenericScattererRust
     sasktran2.optical.mie.Mie
     sasktran2.database.MieDatabase
 ```
+
+### Baum ice-crystal database
+
+{py:class}`sasktran2.optical.BaumIceCrystal` provides the severely rough Baum
+V3.6 ice-crystal tables for effective diameters from 10 to 120 microns and
+wavelengths from 199 to 99,000 nm. Select the effective diameter at each
+constituent altitude using the `effective_diameter_um` keyword:
+
+```python
+ice = sk.optical.BaumIceCrystal(
+    particle_model="general_habit_mixture",
+    max_moments=256,
+)
+atmosphere["ice"] = sk.constituent.ExtinctionScatterer(
+    ice,
+    altitude_grid,
+    extinction_per_m,
+    extinction_wavelength_nm=550.0,
+    effective_diameter_um=effective_diameter_um,
+)
+```
+
+The standard database is distributed as two files. The default and any
+`max_moments` value up to 256 retrieve the smaller 256-moment file. Values above
+256 retrieve the several-gigabyte, 16,384-moment file and load only the requested
+prefix. Setting `max_moments=None` retrieves the full file and loads all 16,384
+stored moments, which can require several gigabytes of memory. Passing `db_filepath`
+always uses that exact local file and does not retrieve either standard-database
+artifact.
+
+The large file is a fixed-cap expansion rather than a guarantee that every source
+phase matrix has converged by 16,384 moments. Sharply peaked short-wavelength cases
+can reach the cap first. The file records these cases in
+`phase_reconstruction_converged` and includes the worst reconstruction errors in
+its global attributes.
 
 
 ## Scattering Constituents

@@ -32,17 +32,23 @@ class OpticalDatabase(OpticalProperty):
 
         Parameters
         ----------
-        db_filepath : Path
-            Path to the optical database file
+        db_filepath : Path, optional
+            Path to the optical database file.
+        db : xr.Dataset, optional
+            An already opened database. Exactly one of ``db_filepath`` and ``db``
+            must be supplied.
 
         Raises
         ------
-        OSError
-            If xarray is not installed
+        ValueError
+            If neither or both database inputs are supplied.
         """
         super().__init__()
         if db_filepath is None and db is None:
             msg = "Either db_filepath or db must be provided to OpticalDatabase"
+            raise ValueError(msg)
+        if db_filepath is not None and db is not None:
+            msg = "Only one of db_filepath or db may be provided to OpticalDatabase"
             raise ValueError(msg)
 
         if db is not None:
@@ -147,7 +153,11 @@ class OpticalDatabaseGenericAbsorber(OpticalDatabase):
 
 
 class OpticalDatabaseGenericScattererRust(OpticalDatabase):
-    def __init__(self, db_filepath: Path) -> None:
+    def __init__(
+        self,
+        db_filepath: Path | None = None,
+        db: xr.Dataset | None = None,
+    ) -> None:
         """
         A purely scattering optical property defined by a database file.  The database must contain the following
 
@@ -163,20 +173,21 @@ class OpticalDatabaseGenericScattererRust(OpticalDatabase):
 
         Parameters
         ----------
-        db_filepath : Path
+        db_filepath : Path, optional
             Path to the database file
+        db : xr.Dataset, optional
+            An already opened database. This is useful when a caller needs to select
+            a subset of a larger database before constructing the Rust interpolator.
         """
-        super().__init__(db_filepath)
-
-        self._validate_db()
+        super().__init__(db_filepath=db_filepath, db=db)
 
         # Reorient the dimensions
         dims = list(self._database["xs_total"].isel(wavelength_nm=0).dims)
         db = self._database.transpose(*dims, "wavelength_nm", "legendre", ...)
 
         # construct internal object
-        xs = db["xs_total"].to_numpy()
-        ssa = db["xs_scattering"].to_numpy()
+        xs = db["xs_total"].to_numpy().astype(np.float64)
+        ssa = db["xs_scattering"].to_numpy().astype(np.float64)
 
         db_shape = db["lm_a1"].shape
         leg_shape = np.atleast_1d(copy(db_shape))
@@ -238,7 +249,12 @@ class OpticalDatabaseGenericScattererRust(OpticalDatabase):
             )
 
     def _validate_db(self):
-        self._database["lm_a1"] /= self._database["lm_a1"].isel(legendre=0)
+        self._database["lm_a1"] = self._database["lm_a1"] / self._database[
+            "lm_a1"
+        ].isel(legendre=0)
+
+    def _into_rust_object(self):
+        return self._db
 
     def cross_sections(
         self, wavelengths_nm: np.array, altitudes_m: np.array, **kwargs
