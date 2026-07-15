@@ -17,6 +17,7 @@
     sasktran2.optical.HITRANTabulated
     sasktran2.optical.HITRANCollision
     sasktran2.optical.HenyeyGreenstein
+    sasktran2.optical.BaumIceCrystal
     sasktran2.optical.XsecAbsorber
     sasktran2.optical.database.OpticalDatabase
     sasktran2.optical.database.OpticalDatabaseGenericAbsorber

@@ -79,7 +79,7 @@ impl MieIntegrator {
         mut lm_a1: ArrayViewMut2<f64>,     // [distribution, legendre]
         mut lm_a2: ArrayViewMut2<f64>,     // [distribution, legendre]
         mut lm_a3: ArrayViewMut2<f64>,     // [distribution, legendre]
-        mut _lm_a4: ArrayViewMut2<f64>,    // [distribution, legendre]
+        mut lm_a4: ArrayViewMut2<f64>,     // [distribution, legendre]
         mut lm_b1: ArrayViewMut2<f64>,     // [distribution, legendre]
         mut lm_b2: ArrayViewMut2<f64>,     // [distribution, legendre]
     ) -> Result<()> {
@@ -101,6 +101,7 @@ impl MieIntegrator {
                 let mut lm_a1 = lm_a1.index_axis_mut(Axis(0), i);
                 let mut lm_a2 = lm_a2.index_axis_mut(Axis(0), i);
                 let mut lm_a3 = lm_a3.index_axis_mut(Axis(0), i);
+                let mut lm_a4 = lm_a4.index_axis_mut(Axis(0), i);
                 let mut lm_b1 = lm_b1.index_axis_mut(Axis(0), i);
                 let mut lm_b2 = lm_b2.index_axis_mut(Axis(0), i);
 
@@ -185,6 +186,7 @@ impl MieIntegrator {
                             *lm_a1 += w * lpoly_00 * p11;
                             *lm_a2 += (temp1 + temp2) / 2.0;
                             *lm_a3 += (temp1 - temp2) / 2.0;
+                            lm_a4[l] += w * lpoly_00 * p33;
 
                             *lm_b1 += w * lpoly_02 * p12;
                             *lm_b2 += -w * lpoly_02 * p34;
@@ -192,5 +194,58 @@ impl MieIntegrator {
                     });
             });
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ndarray::{Array1, Array2, array};
+
+    #[test]
+    fn mie_integrator_accumulates_a4_from_p33() {
+        let cos_angles = array![-0.8, 0.0, 0.8];
+        let angle_weights = array![0.5, 1.0, 0.5];
+        let integrator = MieIntegrator::new(cos_angles.view(), 1, 1).unwrap();
+
+        let mut xs_total = Array1::zeros(1);
+        let mut xs_scattering = Array1::zeros(1);
+        let mut p11 = Array2::zeros((1, 3));
+        let mut p12 = Array2::zeros((1, 3));
+        let mut p33 = Array2::zeros((1, 3));
+        let mut p34 = Array2::zeros((1, 3));
+        let mut lm_a1 = Array2::zeros((1, 1));
+        let mut lm_a2 = Array2::zeros((1, 1));
+        let mut lm_a3 = Array2::zeros((1, 1));
+        let mut lm_a4 = Array2::zeros((1, 1));
+        let mut lm_b1 = Array2::zeros((1, 1));
+        let mut lm_b2 = Array2::zeros((1, 1));
+
+        integrator
+            .integrate(
+                500.0,
+                Complex64::new(1.5, 0.01),
+                array![2.0].view(),
+                array![[1.0]].view(),
+                array![1.0].view(),
+                angle_weights.view(),
+                xs_total.view_mut(),
+                xs_scattering.view_mut(),
+                p11.view_mut(),
+                p12.view_mut(),
+                p33.view_mut(),
+                p34.view_mut(),
+                lm_a1.view_mut(),
+                lm_a2.view_mut(),
+                lm_a3.view_mut(),
+                lm_a4.view_mut(),
+                lm_b1.view_mut(),
+                lm_b2.view_mut(),
+            )
+            .unwrap();
+
+        let expected_a4 = 0.5 * p33.row(0).dot(&angle_weights);
+        assert!((lm_a4[[0, 0]] - expected_a4).abs() < 1e-13);
+        assert!(lm_a4[[0, 0]].abs() > 0.0);
     }
 }
