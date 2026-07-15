@@ -46,6 +46,124 @@ pub struct PyNumberDensityScatterer {
     optical_property: Py<PyAny>,
 }
 
+#[pyclass]
+pub struct PyNumberDensityScatterer2D {
+    pub inner: NumberDensityScattererCore<PyOpticalProperty>,
+    optical_property: Py<PyAny>,
+}
+
+#[pymethods]
+impl PyNumberDensityScatterer2D {
+    #[new]
+    #[pyo3(signature = (optical_property, number_density, **kwargs))]
+    fn new<'py>(
+        optical_property: Bound<'py, PyAny>,
+        number_density: PyReadonlyArray1<'py, f64>,
+        kwargs: Option<&Bound<'py, PyDict>>,
+    ) -> PyResult<Self> {
+        let mut inner =
+            NumberDensityScattererCore::new_native(number_density.as_array().to_owned());
+        inner.set_aux_inputs(extract_array_dict(kwargs)?);
+
+        Ok(Self {
+            inner,
+            optical_property: optical_property.into(),
+        })
+    }
+
+    #[getter]
+    fn get_number_density<'py>(this: Bound<'py, Self>) -> Bound<'py, PyArray1<f64>> {
+        let array = &this.borrow().inner.number_density;
+
+        unsafe { PyArray1::borrow_from_array(array, this.into_any()) }
+    }
+
+    #[setter]
+    fn set_number_density(&mut self, number_density: PyReadonlyArray1<f64>) -> PyResult<()> {
+        if number_density.len() != self.inner.number_density.len() {
+            return Err(PyValueError::new_err(format!(
+                "Length of number_density ({}) does not match native grid size ({})",
+                number_density.len(),
+                self.inner.number_density.len()
+            )));
+        }
+
+        self.inner.number_density = number_density.as_array().to_owned();
+        Ok(())
+    }
+
+    #[setter]
+    fn set_aux_inputs(&mut self, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<()> {
+        self.inner.set_aux_inputs(extract_array_dict(kwargs)?);
+        Ok(())
+    }
+
+    #[setter]
+    fn set_vertical_deriv_factor(
+        &mut self,
+        vertical_deriv_factor: PyReadonlyArray1<f64>,
+    ) -> PyResult<()> {
+        if vertical_deriv_factor.len() != self.inner.number_density.len() {
+            return Err(PyValueError::new_err(format!(
+                "Length of vertical_deriv_factor ({}) does not match native grid size ({})",
+                vertical_deriv_factor.len(),
+                self.inner.number_density.len()
+            )));
+        }
+
+        self.inner
+            .set_vertical_deriv_factor(vertical_deriv_factor.as_array().to_owned());
+        Ok(())
+    }
+
+    #[setter]
+    fn set_d_vertical_deriv_factor(
+        &mut self,
+        d_vertical_deriv_factor: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<()> {
+        self.inner
+            .set_d_vertical_deriv_factor(extract_array_dict(d_vertical_deriv_factor)?);
+        Ok(())
+    }
+
+    #[setter]
+    fn set_wf_name(&mut self, wf_name: String) {
+        self.inner.set_wf_name(wf_name);
+    }
+
+    fn add_to_atmosphere<'py>(&mut self, atmo: Bound<'py, PyAny>) -> PyResult<()> {
+        let mut rust_atmo = AtmosphereStorage::new(&atmo)?;
+        let aux_names = self.inner.aux_inputs.keys().cloned().collect();
+        let py_optical = PyOpticalProperty::new_with_aux_names(
+            self.optical_property.clone_ref(atmo.py()),
+            atmo.into(),
+            aux_names,
+        );
+
+        let _ = self.inner.with_optical_property(py_optical);
+        let result = self.inner.add_to_atmosphere(&mut rust_atmo);
+        let _ = self.inner.with_no_optical_property();
+        result.map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(())
+    }
+
+    fn register_derivative(&mut self, atmo: Bound<'_, PyAny>, name: &str) -> PyResult<()> {
+        let mut rust_atmo = AtmosphereStorage::new(&atmo)?;
+        let aux_names = self.inner.aux_inputs.keys().cloned().collect();
+        let py_optical = PyOpticalProperty::new_with_aux_names(
+            self.optical_property.clone_ref(atmo.py()),
+            atmo.into(),
+            aux_names,
+        );
+
+        let _ = self.inner.with_optical_property(py_optical);
+        let result = self.inner.register_derivatives(&mut rust_atmo, name);
+        let _ = self.inner.with_no_optical_property();
+        result.map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(())
+    }
+}
+
 #[pymethods]
 impl PyNumberDensityScatterer {
     #[new]
@@ -152,10 +270,9 @@ impl PyNumberDensityScatterer {
         );
 
         let _ = self.inner.with_optical_property(py_optical);
-        self.inner
-            .add_to_atmosphere(&mut rust_atmo)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let result = self.inner.add_to_atmosphere(&mut rust_atmo);
         let _ = self.inner.with_no_optical_property();
+        result.map_err(|e| PyValueError::new_err(e.to_string()))?;
 
         Ok(())
     }
@@ -171,10 +288,9 @@ impl PyNumberDensityScatterer {
         );
 
         let _ = self.inner.with_optical_property(py_optical);
-        self.inner
-            .register_derivatives(&mut rust_atmo, name)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let result = self.inner.register_derivatives(&mut rust_atmo, name);
         let _ = self.inner.with_no_optical_property();
+        result.map_err(|e| PyValueError::new_err(e.to_string()))?;
 
         Ok(())
     }

@@ -78,3 +78,12 @@ def test_config_multiple_instances():
     # Verify they're independent
     assert config1.log_level == sk.LogLevel.Debug
     assert config2.log_level == sk.LogLevel.Error
+
+
+def test_num_successive_order_points_round_trip():
+    """The Python property maps to the pluralized native config field."""
+    config = sk.Config()
+
+    config.num_successive_order_points = 17
+
+    assert config.num_successive_order_points == 17

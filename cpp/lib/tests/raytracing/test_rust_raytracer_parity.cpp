@@ -326,6 +326,16 @@ namespace {
         REQUIRE(adapted_ray.layers.size() == rust_layers.size());
 
         std::vector<std::pair<int, double>> expected_weights;
+        const auto require_weights = [](const auto& actual,
+                                        const auto& expected) {
+            std::vector<std::pair<int, double>> actual_nonzero;
+            for (std::size_t index = 0; index < actual.size(); ++index) {
+                if (actual[index].second != 0.0) {
+                    actual_nonzero.push_back(actual[index]);
+                }
+            }
+            REQUIRE(actual_nonzero == expected);
+        };
         for (size_t i = 0; i < rust_layers.size(); ++i) {
             CAPTURE(i);
             const auto& layer = adapted_ray.layers[i];
@@ -355,9 +365,9 @@ namespace {
 
             geometry.assign_interpolation_weights(layer.entrance,
                                                   expected_weights);
-            REQUIRE(layer.entrance.interpolation_weights == expected_weights);
+            require_weights(adapted_ray.entrance_weights(i), expected_weights);
             geometry.assign_interpolation_weights(layer.exit, expected_weights);
-            REQUIRE(layer.exit.interpolation_weights == expected_weights);
+            require_weights(adapted_ray.exit_weights(i), expected_weights);
         }
     }
 

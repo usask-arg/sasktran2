@@ -100,10 +100,22 @@ namespace sasktran2::viewinggeometry {
         virtual ~FluxGeometryBase(){};
     };
 
-    /** A singular line of sight that is defined from parameters at the tangent
-     * altitude of the measurement. This class should only be used for limb
-     * viewing lines of sight. And is only valid when operating in Spherical
-     * geometry.
+    /** A geometry-relative limb line of sight defined at its tangent point.
+     *
+     * This policy is independent of the solar position. The tangent point is
+     * located using the coordinate system carried by Geometry1D or Geometry2D.
+     * A horizontal angle of zero is the coordinate reference point; positive
+     * angles rotate from reference-z toward reference-x. The viewing azimuth
+     * rotates the line of sight within the tangent plane: zero follows the
+     * direction of increasing horizontal angle, pi reverses that direction,
+     * and +/- pi/2 points along the coordinate's invariant reference-y axis.
+     *
+     * The tangent out-of-plane angle controls the location of the tangent
+     * point in the invariant direction. It should normally remain zero for a
+     * Geometry2D atmosphere, whose fields do not vary in that direction.
+     *
+     * This class is only valid in spherical geometry and defines the geometric
+     * (unrefracted) tangent point of the ray.
      */
     class TangentAltitude : public ViewingGeometryBase {
       private:
@@ -112,28 +124,32 @@ namespace sasktran2::viewinggeometry {
         double m_observeraltitude; /**< The altitude of the observer in [m].  If
                                       None then the observer is assumed to be
                                       outside the atmosphere */
-        double m_relative_azimuth_angle; /**< Relative azimuth angle in
-                                            [radians] */
+        double m_viewing_azimuth;  /**< LOS azimuth in the local tangent plane
+                                      in [radians] */
 
-        double m_theta; /**< Angle in [radians] along the reference_plane
-                           direction */
-        double m_phi;   /**< Angle in [radians] along the cross reference_plane
-                           direction */
+        double m_horizontal_angle; /**< Tangent-point angle in [radians] along
+                                      the reference plane */
+        double m_tangent_out_of_plane_angle; /**< Tangent-point angle in
+                                                [radians] along the invariant
+                                                direction */
 
       public:
         /**
          * @param tangentaltitude The unrefracted tangent altitude of the line
          * of sight in [m]
-         * @param relative_azimuth_angle The relative azimuth angle for the line
-         * of sight in [radians]
+         * @param viewing_azimuth LOS azimuth in the local tangent plane in
+         * [radians]. Zero is in the Geometry2D plane toward increasing
+         * horizontal angle.
          * @param observeraltitude The altitude of the observer in [m].
-         * @param theta Angle in [radians] in the along reference plane
-         * direction
-         * @param phi Angle in [radians] in the across reference plane direction
+         * @param horizontal_angle Tangent-point angle in [radians] along the
+         * Geometry2D reference plane. Zero is the reference point.
+         * @param tangent_out_of_plane_angle Tangent-point angle in [radians]
+         * in the invariant direction. Geometry2D users should normally leave
+         * this at zero.
          */
-        TangentAltitude(double tangentaltitude, double relative_azimuth_angle,
-                        double observeraltitude, double theta = 0,
-                        double phi = 0);
+        TangentAltitude(double tangentaltitude, double viewing_azimuth,
+                        double observeraltitude, double horizontal_angle = 0,
+                        double tangent_out_of_plane_angle = 0);
 
         /** Constructs the ray from the user provided angles and altitudes
          *

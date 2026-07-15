@@ -22,6 +22,11 @@ class EquationOfState:
         self._M = molar_mass_dry_air
 
     @property
+    def molar_mass_dry_air(self) -> float:
+        """Molar mass of dry air in kg/mol."""
+        return self._M
+
+    @property
     def pressure_pa(self) -> np.array:
         """
         Returns

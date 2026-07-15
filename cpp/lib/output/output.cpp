@@ -9,11 +9,11 @@ namespace sasktran2 {
 
     template <int NSTOKES>
     void Output<NSTOKES>::initialize(
-        const sasktran2::Config& config, const sasktran2::Geometry1D& geometry,
+        const sasktran2::Config& config, const sasktran2::Geometry& geometry,
         const sasktran2::viewinggeometry::InternalViewingGeometry&
             internal_viewing,
         const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere) {
-        m_nlos = internal_viewing.traced_rays.size();
+        m_nlos = static_cast<int>(internal_viewing.num_rays());
         m_nfluxpos = internal_viewing.flux_observers.size();
         m_nfluxtype = (int)config.get_flux_types().size();
         m_nwavel = atmosphere.num_wavel();
@@ -35,8 +35,7 @@ namespace sasktran2 {
                 sasktran2::Config::StokesBasis::solar) {
                 for (int i = 0; i < m_nlos; ++i) {
                     auto CS = geometry.coordinates().stokes_standard_to_solar(
-                        internal_viewing.traced_rays[i]
-                            .observer_and_look.look_away);
+                        internal_viewing.viewing_ray(i).look_away);
 
                     m_stokes_C[i] = CS.first;
                     m_stokes_S[i] = CS.second;
@@ -46,10 +45,8 @@ namespace sasktran2 {
                 for (int i = 0; i < m_nlos; ++i) {
                     auto CS =
                         geometry.coordinates().stokes_standard_to_observer(
-                            internal_viewing.traced_rays[i]
-                                .observer_and_look.look_away,
-                            internal_viewing.traced_rays[i]
-                                .observer_and_look.observer.position);
+                            internal_viewing.viewing_ray(i).look_away,
+                            internal_viewing.viewing_ray(i).observer.position);
 
                     m_stokes_C[i] = CS.first;
                     m_stokes_S[i] = CS.second;

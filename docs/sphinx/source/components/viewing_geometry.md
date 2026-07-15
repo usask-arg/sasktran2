@@ -42,11 +42,71 @@ And we can look at all of the rays in our container
 viewing_geo.observer_rays
 ```
 
+### Geometry-relative tangent rays
+
+For a {py:class}`sasktran2.Geometry2D` atmosphere, the recommended limb
+viewing policy is {py:class}`sasktran2.TangentAltitude`. Unlike
+{py:class}`sasktran2.TangentAltitudeSolar`, it places the ray directly in the
+coordinate system of the atmospheric grid and does not use solar angles to
+choose the tangent point.
+
+The Geometry2D horizontal plane is spanned by the coordinate reference-z and
+reference-x directions. Its convention is:
+
+- horizontal angle `0` is the Geometry2D reference point;
+- positive horizontal angles rotate from reference-z toward reference-x;
+- the reference-y direction is normal to this plane and is the direction in
+  which the 2D atmosphere is invariant.
+
+The ray needs two angles. `horizontal_angle_radians` selects the tangent
+point's position on the Geometry2D horizontal grid.
+`viewing_azimuth_radians` selects the line-of-sight direction within the local
+tangent plane:
+
+| Viewing azimuth | Line-of-sight direction at the tangent point |
+| --- | --- |
+| `0` | In-plane, toward increasing horizontal angle |
+| `pi` | In-plane, toward decreasing horizontal angle |
+| `+pi/2` | Positive invariant/reference-y direction |
+| `-pi/2` | Negative invariant/reference-y direction |
+
+The direction is the propagation direction from the observer, through the
+tangent point, and toward the far side of the atmosphere. Thus azimuth `0`
+places the observer on the decreasing-horizontal-angle side of the tangent
+point, while azimuth `pi` places it on the increasing-angle side. A straight
+ray with azimuth `+/-pi/2` remains at one Geometry2D horizontal coordinate.
+
+```{code-cell}
+import numpy as np
+
+ray = sk.TangentAltitude(
+    tangent_altitude_m=20_000.0,
+    observer_altitude_m=200_000.0,
+    horizontal_angle_radians=0.1,
+    viewing_azimuth_radians=0.0,
+)
+viewing_geo.add_ray(ray)
+```
+
+The Sun is still specified by `cos_sza` and `solar_azimuth` on the model
+geometry. In particular, `solar_azimuth=0` puts the Sun in the Geometry2D plane
+toward increasing horizontal angle at the reference point, while
+`solar_azimuth=pi/2` puts the Sun normal to that plane. Changing those solar
+parameters changes the illumination and scattering angles, but it does not
+move a `TangentAltitude` ray relative to the atmospheric grid.
+
+The ray policy does not take a Geometry2D object in its constructor. The
+{py:class}`sasktran2.Engine` supplies the model coordinate system when it
+constructs the internal observer position and look direction. This also lets
+the same policy operate with a spherical Geometry1D atmosphere, where its
+horizontal placement is immaterial.
+
 
 ## Viewing Policies
 ```{eval-rst}
 .. autosummary::
 
+    sasktran2.TangentAltitude
     sasktran2.TangentAltitudeSolar
     sasktran2.GroundViewingSolar
     sasktran2.SolarAnglesObserverLocation

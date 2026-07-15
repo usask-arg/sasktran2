@@ -52,7 +52,7 @@ namespace sasktran2::grids {
         const interpolation m_interp_method;
         gridspacing m_grid_spacing;
         const outofbounds m_out_of_bounds_mode;
-        const Eigen::VectorXd m_grid_values;
+        Eigen::VectorXd m_grid_values;
 
         double m_dx; /**< Set when m_grid_spacing is constant, set to the
                         distance between grid points */
@@ -122,9 +122,7 @@ namespace sasktran2::grids {
          *
          * @return const interpolation
          */
-        const interpolation interpolation_method() const {
-            return m_interp_method;
-        }
+        interpolation interpolation_method() const { return m_interp_method; }
     };
 
     /** An AltitudeGrid is essentially the same as a Grid except we give it a

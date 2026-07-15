@@ -5,6 +5,7 @@ use crate::optical::traits::*;
 use crate::prelude::*;
 
 use anyhow::{Result, anyhow};
+use ndarray::{CowArray, Ix1};
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 
 pub struct NumberDensityScatterer<T>
@@ -19,6 +20,24 @@ where
     pub d_vertical_deriv_factor: HashMap<String, Array1<f64>>,
     pub wf_name: String,
     interp_mode: crate::interpolation::OutOfBoundsMode,
+    native_grid: bool,
+}
+
+enum ScattererAuxInputs<'a> {
+    Native(&'a HashMap<String, Array1<f64>>),
+    Interpolated(HashMap<String, Array1<f64>>),
+}
+
+impl AuxOpticalInputs for ScattererAuxInputs<'_> {
+    fn get_parameter(&self, name: &str) -> Option<CowArray<'_, f64, Ix1>> {
+        let inputs = match self {
+            ScattererAuxInputs::Native(inputs) => inputs,
+            ScattererAuxInputs::Interpolated(inputs) => inputs,
+        };
+        inputs
+            .get(name)
+            .map(|parameter| CowArray::from(parameter.view()))
+    }
 }
 
 impl<T> NumberDensityScatterer<T>
@@ -37,6 +56,23 @@ where
             d_vertical_deriv_factor: HashMap::new(),
             wf_name: "number_density".to_string(),
             interp_mode: crate::interpolation::OutOfBoundsMode::Zero,
+            native_grid: false,
+        }
+    }
+
+    pub fn new_native(number_density: Array1<f64>) -> Self {
+        let vertical_deriv_factor = Array1::ones(number_density.len());
+
+        NumberDensityScatterer {
+            number_density,
+            altitudes: Array1::zeros(0),
+            optical_property: None,
+            aux_inputs: HashMap::new(),
+            vertical_deriv_factor,
+            d_vertical_deriv_factor: HashMap::new(),
+            wf_name: "number_density".to_string(),
+            interp_mode: crate::interpolation::OutOfBoundsMode::Zero,
+            native_grid: true,
         }
     }
 
@@ -74,12 +110,105 @@ where
         self.wf_name = wf_name;
     }
 
-    fn interpolated_aux_inputs(&self, interp_matrix: &Array2<f64>) -> HashMap<String, Array1<f64>> {
-        self.aux_inputs
-            .iter()
-            .map(|(key, val)| (key.clone(), interp_matrix.dot(val)))
-            .collect()
+    fn interpolation_matrix<S>(&self, target_altitudes: &ArrayBase<S, Ix1>) -> Option<Array2<f64>>
+    where
+        S: Data<Elem = f64>,
+    {
+        if self.native_grid {
+            None
+        } else {
+            Some(linear_interpolating_matrix(
+                &self.altitudes,
+                target_altitudes,
+                self.interp_mode,
+            ))
+        }
     }
+
+    fn validate_spatial_values(
+        &self,
+        values: &Array1<f64>,
+        num_locations: usize,
+        name: &str,
+    ) -> Result<()> {
+        let expected_len = if self.native_grid {
+            num_locations
+        } else {
+            self.altitudes.len()
+        };
+        anyhow::ensure!(
+            values.len() == expected_len,
+            "{name} spatial dimension ({}) does not match expected size ({expected_len})",
+            values.len()
+        );
+        Ok(())
+    }
+
+    fn spatial_values<'a>(
+        &self,
+        values: &'a Array1<f64>,
+        interp_matrix: Option<&Array2<f64>>,
+        num_locations: usize,
+        name: &str,
+    ) -> Result<CowArray<'a, f64, Ix1>> {
+        self.validate_spatial_values(values, num_locations, name)?;
+        if let Some(interp_matrix) = interp_matrix {
+            Ok(CowArray::from(interp_matrix.dot(values)))
+        } else {
+            Ok(CowArray::from(values.view()))
+        }
+    }
+
+    fn spatial_aux_inputs(
+        &self,
+        interp_matrix: Option<&Array2<f64>>,
+        num_locations: usize,
+    ) -> Result<ScattererAuxInputs<'_>> {
+        if let Some(interp_matrix) = interp_matrix {
+            Ok(ScattererAuxInputs::Interpolated(
+                self.aux_inputs
+                    .iter()
+                    .map(|(key, values)| {
+                        self.validate_spatial_values(values, num_locations, key)?;
+                        Ok((key.clone(), interp_matrix.dot(values)))
+                    })
+                    .collect::<Result<_>>()?,
+            ))
+        } else {
+            for (key, values) in &self.aux_inputs {
+                self.validate_spatial_values(values, num_locations, key)?;
+            }
+            Ok(ScattererAuxInputs::Native(&self.aux_inputs))
+        }
+    }
+}
+
+fn scale_native_scatterer_derivative(
+    mapping: &mut DerivMappingView<'_>,
+    scale: &Array1<f64>,
+) -> Result<()> {
+    anyhow::ensure!(
+        mapping.d_extinction.nrows() == scale.len(),
+        "Native derivative scale length ({}) does not match atmosphere ({})",
+        scale.len(),
+        mapping.d_extinction.nrows()
+    );
+    let scat_factor = mapping
+        .scat_factor
+        .as_mut()
+        .ok_or_else(|| anyhow!("Scatterer derivative mapping missing scat_factor"))?;
+
+    Zip::from(mapping.d_extinction.rows_mut())
+        .and(mapping.d_ssa.rows_mut())
+        .and(scat_factor.rows_mut())
+        .and(scale)
+        .for_each(|mut d_extinction, mut d_ssa, mut scat_factor, scale| {
+            d_extinction *= *scale;
+            d_ssa *= *scale;
+            scat_factor *= *scale;
+        });
+
+    Ok(())
 }
 
 impl<T> Constituent for NumberDensityScatterer<T>
@@ -89,10 +218,15 @@ where
     fn add_to_atmosphere(&self, storage: &mut impl AtmosphereStorageAccess) -> Result<()> {
         let (inputs, outputs) = storage.split_inputs_outputs();
 
-        let interp_matrix =
-            linear_interpolating_matrix(&self.altitudes, &inputs.altitude_m(), self.interp_mode);
-        let interp_numden = interp_matrix.dot(&self.number_density);
-        let aux_inputs = self.interpolated_aux_inputs(&interp_matrix);
+        let num_locations = inputs.altitude_m().len();
+        let interp_matrix = self.interpolation_matrix(&inputs.altitude_m());
+        let interp_numden = self.spatial_values(
+            &self.number_density,
+            interp_matrix.as_ref(),
+            num_locations,
+            "Number density",
+        )?;
+        let aux_inputs = self.spatial_aux_inputs(interp_matrix.as_ref(), num_locations)?;
 
         let optical_prop = self
             .optical_property
@@ -164,9 +298,10 @@ where
         let (inputs, outputs, deriv_generator) = storage.split_inputs_outputs_deriv();
         let outputs = outputs.view();
 
-        let interp_matrix =
-            linear_interpolating_matrix(&self.altitudes, &inputs.altitude_m(), self.interp_mode);
-        let aux_inputs = self.interpolated_aux_inputs(&interp_matrix);
+        let num_locations = inputs.altitude_m().len();
+        let interp_matrix = self.interpolation_matrix(&inputs.altitude_m());
+        self.validate_spatial_values(&self.number_density, num_locations, "Number density")?;
+        let aux_inputs = self.spatial_aux_inputs(interp_matrix.as_ref(), num_locations)?;
 
         let optical_prop = self
             .optical_property
@@ -290,14 +425,20 @@ where
             });
         }
 
-        let mut density_interpolator = interp_matrix.clone();
-        Zip::from(density_interpolator.columns_mut())
-            .and(&self.vertical_deriv_factor)
-            .for_each(|mut col, factor| {
-                col *= *factor;
-            });
-        deriv_mapping.set_interpolator(&density_interpolator);
-        deriv_mapping.set_interp_dim(&format!("{constituent_name}_altitude"));
+        if let Some(interp_matrix) = interp_matrix.as_ref() {
+            let mut density_interpolator = interp_matrix.clone();
+            Zip::from(density_interpolator.columns_mut())
+                .and(&self.vertical_deriv_factor)
+                .for_each(|mut col, factor| {
+                    col *= *factor;
+                });
+            deriv_mapping.set_interpolator(&density_interpolator);
+            deriv_mapping.set_interp_dim(&format!("{constituent_name}_altitude"));
+        } else {
+            let mut mapping = deriv_mapping.mut_view();
+            scale_native_scatterer_derivative(&mut mapping, &self.vertical_deriv_factor)?;
+            deriv_mapping.set_interp_dim("location");
+        }
 
         let optical_derivs = optical_prop.optical_derivatives(inputs, &aux_inputs)?;
 
@@ -370,8 +511,18 @@ where
                 });
 
                 if let Some(d_vert) = self.d_vertical_deriv_factor.get(key) {
-                    let interp_vertical = interp_matrix.dot(&self.vertical_deriv_factor);
-                    let interp_d_vertical = interp_matrix.dot(d_vert);
+                    let interp_vertical = self.spatial_values(
+                        &self.vertical_deriv_factor,
+                        interp_matrix.as_ref(),
+                        num_locations,
+                        "Vertical derivative factor",
+                    )?;
+                    let interp_d_vertical = self.spatial_values(
+                        d_vert,
+                        interp_matrix.as_ref(),
+                        num_locations,
+                        &format!("Derivative factor for {key}"),
+                    )?;
 
                     thread_pool.install(|| {
                         Zip::from(mapping.d_extinction.axis_iter_mut(Axis(1)))
@@ -492,14 +643,20 @@ where
                 });
             }
 
-            let mut optical_interpolator = interp_matrix.clone();
-            Zip::from(optical_interpolator.columns_mut())
-                .and(&self.number_density)
-                .for_each(|mut col, number_density| {
-                    col *= *number_density;
-                });
-            deriv_mapping.set_interpolator(&optical_interpolator);
-            deriv_mapping.set_interp_dim(&format!("{constituent_name}_altitude"));
+            if let Some(interp_matrix) = interp_matrix.as_ref() {
+                let mut optical_interpolator = interp_matrix.clone();
+                Zip::from(optical_interpolator.columns_mut())
+                    .and(&self.number_density)
+                    .for_each(|mut col, number_density| {
+                        col *= *number_density;
+                    });
+                deriv_mapping.set_interpolator(&optical_interpolator);
+                deriv_mapping.set_interp_dim(&format!("{constituent_name}_altitude"));
+            } else {
+                let mut mapping = deriv_mapping.mut_view();
+                scale_native_scatterer_derivative(&mut mapping, &self.number_density)?;
+                deriv_mapping.set_interp_dim("location");
+            }
         }
 
         Ok(())

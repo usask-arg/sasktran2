@@ -10,6 +10,7 @@ use sasktran2_rs::constituent::traits::Constituent;
 use sasktran2_rs::constituent::types::rayleigh::Rayleigh as RustRayleighCore;
 
 use crate::constituent::atmo_storage::AtmosphereStorage;
+use crate::prelude::IntoPyResult;
 
 #[pyclass]
 /// An implementation of Rayleigh scattering.  Cross sections (and depolarization factors) can be
@@ -121,7 +122,9 @@ impl PyRayleigh {
     pub fn add_to_atmosphere<'py>(&self, atmo: &Bound<'py, PyAny>) -> PyResult<()> {
         let mut rust_atmo = AtmosphereStorage::new(atmo)?;
 
-        let _ = self.inner.add_to_atmosphere(&mut rust_atmo);
+        self.inner
+            .add_to_atmosphere(&mut rust_atmo)
+            .into_pyresult()?;
 
         Ok(())
     }
@@ -129,7 +132,9 @@ impl PyRayleigh {
     pub fn register_derivative(&self, atmo: &'_ Bound<'_, PyAny>, name: &str) -> PyResult<()> {
         let mut rust_atmo = AtmosphereStorage::new(atmo)?;
 
-        let _ = self.inner.register_derivatives(&mut rust_atmo, name);
+        self.inner
+            .register_derivatives(&mut rust_atmo, name)
+            .into_pyresult()?;
 
         Ok(())
     }

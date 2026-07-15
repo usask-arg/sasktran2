@@ -219,6 +219,14 @@ int sk_deriv_mapping_set_interpolator(DerivativeMapping* mapping,
     return 0;
 }
 
+int sk_deriv_mapping_clear_interpolator(DerivativeMapping* mapping) {
+    if (mapping == nullptr) {
+        return -1;
+    }
+    mapping->impl->clear_interpolator();
+    return 0;
+}
+
 int sk_deriv_mapping_get_interpolator(DerivativeMapping* mapping,
                                       double** interpolator, int* dim1,
                                       int* dim2) {

@@ -43,8 +43,14 @@ namespace sasktran2::raytracing {
             }
         }
 
+        result.reserve_grid_weights(result.layers.size() * 2 + 2);
+
         // For each layer, we go through and add in the computed solar angles
-        for (auto& layer : result.layers) {
+        for (std::size_t layer_index = 0; layer_index < result.layers.size();
+             ++layer_index) {
+            auto& layer = result.layers[layer_index];
+            add_interpolation_weights(result, layer_index, m_geometry,
+                                      result.interpolation_index_weights);
             add_solar_parameters(m_geometry.coordinates().sun_unit(), layer,
                                  sasktran2::geometrytype::planeparallel);
         }
@@ -58,7 +64,7 @@ namespace sasktran2::raytracing {
         result.observer_and_look = ray;
         result.ground_is_hit = true;
 
-        result.layers.resize(m_alt_grid.grid().size());
+        result.layers.resize(m_alt_grid.grid().size() - 1);
 
         for (int i = 0; i < m_alt_grid.grid().size() - 1; ++i) {
             complete_layer(result.layers[i], ray, i, ViewingDirection::down);
@@ -165,7 +171,6 @@ namespace sasktran2::raytracing {
 
         add_od_quadrature(layer, sasktran2::geometrytype::planeparallel,
                           m_alt_grid.interpolation_method());
-        add_interpolation_weights(layer, m_geometry);
     }
 
     void PlaneParallelRayTracer::partial_layer(
@@ -200,7 +205,6 @@ namespace sasktran2::raytracing {
 
         add_od_quadrature(layer, sasktran2::geometrytype::planeparallel,
                           m_alt_grid.interpolation_method());
-        add_interpolation_weights(layer, m_geometry);
     }
 
     double PlaneParallelRayTracer::distance_to_altitude(

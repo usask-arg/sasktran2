@@ -6,18 +6,30 @@
 #include <sasktran2/config.h>
 #include <sasktran2/atmosphere/atmosphere.h>
 
+#include <stdexcept>
+
 namespace sasktran2::emission {
     template <int NSTOKES, Config::EmissionSource EMISSION_SOURCE_TYPE>
     void EmissionSource<NSTOKES, EMISSION_SOURCE_TYPE>::initialize_geometry(
         const sasktran2::viewinggeometry::InternalViewingGeometry&
             internal_viewing) {
-        // Store the rays for later
-        m_los_rays = &internal_viewing.traced_rays;
+        m_ground_is_hit.resize(internal_viewing.traced_rays.size());
+        std::transform(internal_viewing.traced_rays.begin(),
+                       internal_viewing.traced_rays.end(),
+                       m_ground_is_hit.begin(),
+                       [](const auto& ray) { return ray.ground_is_hit; });
     }
 
     template <int NSTOKES, Config::EmissionSource EMISSION_SOURCE_TYPE>
     void EmissionSource<NSTOKES, EMISSION_SOURCE_TYPE>::initialize_atmosphere(
         const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere) {
+        if (atmosphere.num_deriv() > 0 &&
+            !atmosphere.include_emission_derivatives()) {
+            throw std::invalid_argument(
+                "EmissionSource requires emission derivative storage when "
+                "atmospheric derivatives are enabled");
+        }
+
         // Store the atmosphere for later
         m_atmosphere = &atmosphere;
     }
@@ -26,7 +38,9 @@ namespace sasktran2::emission {
     void
     EmissionSource<NSTOKES, EMISSION_SOURCE_TYPE>::integrated_source_constant(
         int wavelidx, int losidx, int layeridx, int wavel_threadidx,
-        int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
+        int threadidx, const sasktran2::raytracing::LayerGeometry& layer,
+        const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
+        const sasktran2::raytracing::GridWeightStencilView& exit_weights,
         const sasktran2::SparseODDualView& shell_od,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
@@ -41,14 +55,22 @@ namespace sasktran2::emission {
         double emission_end = 0;
 
         // Calculate SSA and emission at the layer boundaries
-        for (auto& ele : layer.entrance.interpolation_weights) {
+        for (std::size_t index = 0; index < entrance_weights.size(); ++index) {
+            const auto ele = entrance_weights[index];
+            if (ele.second == 0.0) {
+                continue;
+            }
             ssa_start +=
                 m_atmosphere->storage().ssa(ele.first, wavelidx) * ele.second;
             emission_start +=
                 m_atmosphere->storage().emission_source(ele.first, wavelidx) *
                 ele.second;
         }
-        for (auto& ele : layer.exit.interpolation_weights) {
+        for (std::size_t index = 0; index < exit_weights.size(); ++index) {
+            const auto ele = exit_weights[index];
+            if (ele.second == 0.0) {
+                continue;
+            }
             ssa_end +=
                 m_atmosphere->storage().ssa(ele.first, wavelidx) * ele.second;
             emission_end +=
@@ -110,7 +132,12 @@ namespace sasktran2::emission {
                 }
 
                 // And the SSA/emission derivatives
-                for (auto& ele : layer.entrance.interpolation_weights) {
+                for (std::size_t index = 0; index < entrance_weights.size();
+                     ++index) {
+                    const auto ele = entrance_weights[index];
+                    if (ele.second == 0.0) {
+                        continue;
+                    }
                     d_ssa(0, ele.first) -= ele.second * emission_start *
                                            source_factor1 *
                                            layer.od_quad_start_fraction;
@@ -118,7 +145,12 @@ namespace sasktran2::emission {
                                                 source_factor1 *
                                                 layer.od_quad_start_fraction;
                 }
-                for (auto& ele : layer.exit.interpolation_weights) {
+                for (std::size_t index = 0; index < exit_weights.size();
+                     ++index) {
+                    const auto ele = exit_weights[index];
+                    if (ele.second == 0.0) {
+                        continue;
+                    }
                     d_ssa(0, ele.first) -= ele.second * emission_end *
                                            source_factor1 *
                                            layer.od_quad_end_fraction;
@@ -133,11 +165,21 @@ namespace sasktran2::emission {
                         m_atmosphere->storage().ssa.rows(),
                         m_atmosphere->num_scattering_deriv_groups());
                 // And the emission derivatives
-                for (auto& ele : layer.entrance.interpolation_weights) {
+                for (std::size_t index = 0; index < entrance_weights.size();
+                     ++index) {
+                    const auto ele = entrance_weights[index];
+                    if (ele.second == 0.0) {
+                        continue;
+                    }
                     d_emission(0, ele.first) += ele.second * source_factor1 *
                                                 layer.od_quad_start_fraction;
                 }
-                for (auto& ele : layer.exit.interpolation_weights) {
+                for (std::size_t index = 0; index < exit_weights.size();
+                     ++index) {
+                    const auto ele = exit_weights[index];
+                    if (ele.second == 0.0) {
+                        continue;
+                    }
                     d_emission(0, ele.first) += ele.second * source_factor1 *
                                                 layer.od_quad_end_fraction;
                 }
@@ -150,7 +192,9 @@ namespace sasktran2::emission {
     template <int NSTOKES, Config::EmissionSource EMISSION_SOURCE_TYPE>
     void EmissionSource<NSTOKES, EMISSION_SOURCE_TYPE>::integrated_source(
         int wavelidx, int losidx, int layeridx, int wavel_threadidx,
-        int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
+        int threadidx, const sasktran2::raytracing::TracedLayer& layer,
+        const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
+        const sasktran2::raytracing::GridWeightStencilView& exit_weights,
         const sasktran2::SparseODDualView& shell_od,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
         typename SourceTermInterface<NSTOKES>::IntegrationDirection direction)
@@ -162,7 +206,8 @@ namespace sasktran2::emission {
         }
 
         integrated_source_constant(wavelidx, losidx, layeridx, wavel_threadidx,
-                                   threadidx, layer, shell_od, source);
+                                   threadidx, layer, entrance_weights,
+                                   exit_weights, shell_od, source);
     }
 
     template <int NSTOKES, Config::EmissionSource EMISSION_SOURCE_TYPE>
@@ -170,7 +215,7 @@ namespace sasktran2::emission {
         int wavelidx, int losidx, int wavel_threadidx, int threadidx,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
-        if (m_los_rays->at(losidx).ground_is_hit) {
+        if (m_ground_is_hit.at(losidx)) {
             double emission_surface =
                 m_atmosphere->surface().emission()[wavelidx];
             if constexpr (NSTOKES == 1) {

@@ -484,7 +484,7 @@ class Config:
         zenith angle.  Must be equal to or less than the number of atmosphere altitude grid points.
         Default is -1 which means to use every altitude grid point.
         """
-        return self._config.num_successive_order_points
+        return self._config.num_successive_orders_points
 
     @num_successive_order_points.setter
     def num_successive_order_points(self, value: int):
@@ -493,7 +493,7 @@ class Config:
         zenith angle.  Must be equal to or less than the number of atmosphere altitude grid points.
         Default is -1 which means to use every altitude grid point.
         """
-        self._config.num_successive_order_points = value
+        self._config.num_successive_orders_points = value
 
     @property
     def num_singlescatter_moments(self) -> int:

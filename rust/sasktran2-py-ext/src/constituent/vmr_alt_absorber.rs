@@ -12,6 +12,7 @@ use sasktran2_rs::constituent::types::vmr_alt_absorber::VMRAltitudeAbsorber as V
 
 use crate::constituent::atmo_storage::AtmosphereStorage;
 use crate::optical::optical_property::PyOpticalProperty;
+use crate::prelude::IntoPyResult;
 
 #[pyclass]
 pub struct PyVMRAltitudeAbsorber {
@@ -93,12 +94,16 @@ impl PyVMRAltitudeAbsorber {
     pub fn add_to_atmosphere<'py>(&mut self, atmo: Bound<'py, PyAny>) -> PyResult<()> {
         let mut rust_atmo = AtmosphereStorage::new(&atmo)?;
 
-        let py_optical =
-            PyOpticalProperty::new(self.optical_property.clone_ref(atmo.py()), atmo.into());
+        let py_optical = PyOpticalProperty::new_with_aux_names(
+            self.optical_property.clone_ref(atmo.py()),
+            atmo.into(),
+            vec!["vmr".to_string()],
+        );
 
         let _ = self.inner.with_optical_property(py_optical);
-        let _ = self.inner.add_to_atmosphere(&mut rust_atmo);
+        let result = self.inner.add_to_atmosphere(&mut rust_atmo);
         let _ = self.inner.with_no_optical_property();
+        result.into_pyresult()?;
 
         Ok(())
     }
@@ -106,16 +111,17 @@ impl PyVMRAltitudeAbsorber {
     pub fn register_derivative(&mut self, atmo: Bound<'_, PyAny>, name: &str) -> PyResult<()> {
         let mut rust_atmo = AtmosphereStorage::new(&atmo)?;
 
-        let py_optical =
-            PyOpticalProperty::new(self.optical_property.clone_ref(atmo.py()), atmo.into());
+        let py_optical = PyOpticalProperty::new_with_aux_names(
+            self.optical_property.clone_ref(atmo.py()),
+            atmo.into(),
+            vec!["vmr".to_string()],
+        );
 
         let _ = self.inner.with_optical_property(py_optical);
 
-        self.inner
-            .register_derivatives(&mut rust_atmo, name)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
-
+        let result = self.inner.register_derivatives(&mut rust_atmo, name);
         let _ = self.inner.with_no_optical_property();
+        result.into_pyresult()?;
 
         Ok(())
     }

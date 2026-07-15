@@ -28,6 +28,7 @@ class RustTwoStreamSourceAdapter final : public SourceTermInterface<1> {
     explicit RustTwoStreamSourceAdapter(const sasktran2::Geometry1D& geometry);
 
     bool requires_integration() const override { return false; }
+    bool has_interior_source() const override { return false; }
     void initialize_config(const sasktran2::Config& config) override;
     void initialize_geometry(
         const sasktran2::viewinggeometry::InternalViewingGeometry&
@@ -38,7 +39,9 @@ class RustTwoStreamSourceAdapter final : public SourceTermInterface<1> {
 
     void integrated_source(
         int wavelidx, int losidx, int layeridx, int wavel_threadidx,
-        int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
+        int threadidx, const sasktran2::raytracing::TracedLayer& layer,
+        const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
+        const sasktran2::raytracing::GridWeightStencilView& exit_weights,
         const sasktran2::SparseODDualView& shell_od,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& source,
         IntegrationDirection direction =

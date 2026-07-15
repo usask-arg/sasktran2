@@ -181,6 +181,12 @@ impl PyAtmosphereStorageView {
         Python::attach(|py| Py::new(py, mapping_view))
     }
 
+    fn derivative_mapping_names(&self) -> PyResult<Vec<String>> {
+        self.storage.derivative_mapping_names().map_err(|err| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(err)
+        })
+    }
+
     fn normalize_by_extinctions(&mut self) -> PyResult<()> {
         self.storage.normalize_by_extinctions();
         Ok(())

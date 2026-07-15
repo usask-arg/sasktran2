@@ -108,7 +108,9 @@ print(atmosphere["ozone"].vmr)
     sasktran2.constituent.Rayleigh
     sasktran2.constituent.VMRAltitudeAbsorber
     sasktran2.constituent.ExtinctionScatterer
+    sasktran2.constituent.ExtinctionScatterer2D
     sasktran2.constituent.NumberDensityScatterer
+    sasktran2.constituent.NumberDensityScatterer2D
     sasktran2.constituent.GaussianHeightExtinction
     sasktran2.constituent.LambertianSurface
 ```

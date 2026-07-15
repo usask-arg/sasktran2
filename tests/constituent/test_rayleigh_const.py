@@ -1,9 +1,56 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 import sasktran2 as sk
 
 from ._rayleigh_reference import RayleighReference as PyRayleigh
+
+
+@pytest.mark.parametrize(
+    ("pressure_derivative", "temperature_derivative", "expected_names"),
+    [
+        (False, False, set()),
+        (True, False, {"wf_rayleigh_pressure_pa"}),
+        (False, True, {"wf_rayleigh_temperature_k"}),
+        (
+            True,
+            True,
+            {"wf_rayleigh_pressure_pa", "wf_rayleigh_temperature_k"},
+        ),
+    ],
+)
+def test_derivative_flags_are_respected(
+    pressure_derivative: bool,
+    temperature_derivative: bool,
+    expected_names: set[str],
+):
+    config = sk.Config()
+    geometry = sk.Geometry1D(
+        cos_sza=0.6,
+        solar_azimuth=0.0,
+        earth_radius_m=6_372_000.0,
+        altitude_grid_m=np.array([0.0, 10_000.0, 30_000.0]),
+        interpolation_method=sk.InterpolationMethod.LinearInterpolation,
+        geometry_type=sk.GeometryType.Spherical,
+    )
+    atmosphere = sk.Atmosphere(
+        geometry,
+        config,
+        wavelengths_nm=np.array([600.0]),
+        calculate_derivatives=True,
+        pressure_derivative=pressure_derivative,
+        temperature_derivative=temperature_derivative,
+        specific_humidity_derivative=False,
+        legendre_derivative=False,
+    )
+    atmosphere.pressure_pa = np.array([100_000.0, 30_000.0, 1_000.0])
+    atmosphere.temperature_k = np.array([280.0, 240.0, 210.0])
+    atmosphere["rayleigh"] = sk.constituent.Rayleigh()
+
+    atmosphere.internal_object()
+
+    assert set(atmosphere.storage.derivative_mapping_names()) == expected_names
 
 
 def test_bates_identical():

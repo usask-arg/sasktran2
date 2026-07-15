@@ -3,12 +3,43 @@
 #include <spdlog/spdlog.h>
 
 namespace sasktran2::solartransmission {
+    namespace {
+        std::vector<std::pair<int, double>>
+        endpoint_weights(const sasktran2::raytracing::TracedRay& ray,
+                         std::size_t layer_index, bool entrance) {
+            const auto stencil = entrance ? ray.entrance_weights(layer_index)
+                                          : ray.exit_weights(layer_index);
+            std::vector<std::pair<int, double>> result;
+            result.reserve(stencil.size());
+            for (std::size_t index = 0; index < stencil.size(); ++index) {
+                const auto weight = stencil[index];
+                if (weight.second != 0.0) {
+                    result.push_back(weight);
+                }
+            }
+            return result;
+        }
+    } // namespace
+
     template <int NSTOKES>
     void PhaseHandler<NSTOKES>::initialize_geometry(
         const std::vector<sasktran2::raytracing::TracedRay>& los_rays,
         const std::vector<std::vector<int>>& index_map) {
+        initialize_geometry_impl(los_rays, index_map);
+    }
+
+    template <int NSTOKES>
+    void PhaseHandler<NSTOKES>::initialize_geometry_impl(
+        const std::vector<sasktran2::raytracing::TracedRay>& los_rays,
+        const std::vector<std::vector<int>>& index_map) {
 
         ZoneScopedN("Phase Handler Initialize Geometry");
+
+        m_scatter_angles.clear();
+        m_internal_to_geometry.clear();
+        m_internal_to_cos_scatter.clear();
+        m_geometry_entrance_to_internal.clear();
+        m_geometry_exit_to_internal.clear();
 
         int num_internal = 0;
         int num_scatter = 0;
@@ -21,7 +52,7 @@ namespace sasktran2::solartransmission {
         m_geometry_entrance_to_internal.resize(los_rays.size());
         m_geometry_exit_to_internal.resize(los_rays.size());
         for (int i = 0; i < los_rays.size(); ++i) {
-            const sasktran2::raytracing::TracedRay& ray = los_rays[i];
+            const auto& ray = los_rays[i];
 
             // Empty rays don't need to be considered
             if (ray.layers.size() == 0) {
@@ -60,14 +91,15 @@ namespace sasktran2::solartransmission {
 
                 // If the ray isn't straight every layer has a scattering angle
                 if (!ray.is_straight) {
+                    const auto& scatter_layer = ray.layers[0];
                     auto result =
                         m_geometry.coordinates().stokes_standard_to_observer_z(
-                            ray.layers[0].average_look_away,
+                            scatter_layer.average_look_away,
                             ray.observer_and_look.observer.position);
 
                     math::stokes_scattering_factors(
                         -1 * m_geometry.coordinates().sun_unit(),
-                        -1 * ray.layers[0].average_look_away, theta, C1, C2, S1,
+                        -1 * scatter_layer.average_look_away, theta, C1, C2, S1,
                         S2, negation);
                     if constexpr (NSTOKES == 3) {
                         double adjusted_C2 =
@@ -82,32 +114,40 @@ namespace sasktran2::solartransmission {
                     }
                 }
 
-                const sasktran2::raytracing::SphericalLayer& layer =
-                    ray.layers[j];
+                const auto entrance_weights = endpoint_weights(ray, j, true);
+                const auto exit_weights = endpoint_weights(ray, j, false);
                 m_geometry_entrance_to_internal[i][j].resize(
-                    layer.entrance.interpolation_weights.size());
-                m_geometry_exit_to_internal[i][j].resize(
-                    layer.exit.interpolation_weights.size());
+                    entrance_weights.size());
+                m_geometry_exit_to_internal[i][j].resize(exit_weights.size());
 
-                for (int k = 0; k < layer.entrance.interpolation_weights.size();
-                     ++k) {
+                for (int k = 0; k < entrance_weights.size(); ++k) {
                     m_geometry_entrance_to_internal[i][j][k] = num_internal;
                     ++num_internal;
 
-                    m_internal_to_geometry.push_back(
-                        layer.entrance.interpolation_weights[k].first);
+                    m_internal_to_geometry.push_back(entrance_weights[k].first);
                     m_internal_to_cos_scatter.push_back(num_scatter);
                 }
 
-                if (j == 0) {
-                    // End layer at TOA, need to use layer exit
-                    for (int k = 0; k < layer.exit.interpolation_weights.size();
+                bool can_share_exit = false;
+                if (j > 0) {
+                    const auto previous_entrance_weights =
+                        endpoint_weights(ray, j - 1, true);
+                    can_share_exit =
+                        exit_weights.size() == previous_entrance_weights.size();
+                    for (int k = 0; can_share_exit && k < exit_weights.size();
                          ++k) {
+                        can_share_exit = exit_weights[k].first ==
+                                         previous_entrance_weights[k].first;
+                    }
+                }
+
+                if (!can_share_exit) {
+                    // End layer at TOA, need to use layer exit
+                    for (int k = 0; k < exit_weights.size(); ++k) {
                         m_geometry_exit_to_internal[i][j][k] = num_internal;
                         ++num_internal;
 
-                        m_internal_to_geometry.push_back(
-                            layer.exit.interpolation_weights[k].first);
+                        m_internal_to_geometry.push_back(exit_weights[k].first);
                         m_internal_to_cos_scatter.push_back(num_scatter);
                     }
                 } else {
@@ -267,7 +307,18 @@ namespace sasktran2::solartransmission {
     template <int NSTOKES>
     void PhaseHandler<NSTOKES>::scatter(
         int threadidx, int losidx, int layeridx,
-        const std::vector<std::pair<int, double>>& index_weights,
+        const raytracing::GridWeightStencilView& index_weights,
+        bool is_entrance,
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
+        const {
+        scatter_impl(threadidx, losidx, layeridx, index_weights, is_entrance,
+                     source);
+    }
+
+    template <int NSTOKES>
+    void PhaseHandler<NSTOKES>::scatter_impl(
+        int threadidx, int losidx, int layeridx,
+        const raytracing::GridWeightStencilView& index_weights,
         bool is_entrance,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
@@ -278,22 +329,47 @@ namespace sasktran2::solartransmission {
         if constexpr (NSTOKES == 1) {
             double phase_result = 0.0;
 
-            for (int i = 0; i < index_weights.size(); ++i) {
-                const auto& index_weight = index_weights[i];
-                int internal_index = internal_indices[i];
-                phase_result +=
-                    m_phase(0, internal_index, threadidx) * index_weight.second;
+            if (index_weights.size() == 2) {
+                const auto lower = index_weights[0];
+                const auto upper = index_weights[1];
+                if (lower.second == 0.0 || upper.second == 0.0) {
+                    phase_result = m_phase(0, internal_indices[0], threadidx);
+                } else {
+                    phase_result = m_phase(0, internal_indices[0], threadidx) *
+                                       lower.second +
+                                   m_phase(0, internal_indices[1], threadidx) *
+                                       upper.second;
+                }
+            } else {
+                int internal_offset = 0;
+                for (std::size_t index = 0; index < index_weights.size();
+                     ++index) {
+                    const auto index_weight = index_weights[index];
+                    if (index_weight.second == 0.0) {
+                        continue;
+                    }
+                    const int internal_index =
+                        internal_indices[internal_offset++];
+                    phase_result += m_phase(0, internal_index, threadidx) *
+                                    index_weight.second;
+                }
             }
 
             for (int d = 0; d < m_atmosphere->num_scattering_deriv_groups();
                  ++d) {
-                for (int i = 0; i < index_weights.size(); ++i) {
-                    const auto& index_weight = index_weights[i];
-                    int internal_index = internal_indices[i];
-
-                    source.deriv(0, m_atmosphere->scat_deriv_start_index() +
-                                        d * m_geometry.size() +
-                                        index_weight.first) +=
+                const int derivative_start =
+                    m_atmosphere->scat_deriv_start_index() +
+                    d * m_geometry.size();
+                int derivative_internal_offset = 0;
+                for (std::size_t index = 0; index < index_weights.size();
+                     ++index) {
+                    const auto index_weight = index_weights[index];
+                    if (index_weight.second == 0.0) {
+                        continue;
+                    }
+                    const int internal_index =
+                        internal_indices[derivative_internal_offset++];
+                    source.deriv(0, derivative_start + index_weight.first) +=
                         source.value(0) *
                         m_d_phase(0, internal_index, d, threadidx) *
                         index_weight.second;
@@ -304,50 +380,81 @@ namespace sasktran2::solartransmission {
         } else if constexpr (NSTOKES == 3) {
             Eigen::Vector3d phase_result = Eigen::Vector3d::Zero();
 
-            for (int i = 0; i < index_weights.size(); ++i) {
-                const auto& index_weight = index_weights[i];
-                int internal_index = internal_indices[i];
-                double C2 = m_scatter_angles[m_internal_to_cos_scatter.at(
-                    internal_index)][1];
-                double S2 = m_scatter_angles[m_internal_to_cos_scatter.at(
-                    internal_index)][2];
+            const auto accumulate_phase = [&](int internal_index,
+                                              double weight) {
+                const auto& scatter_angle =
+                    m_scatter_angles[m_internal_to_cos_scatter[internal_index]];
+                const double C2 = scatter_angle[1];
+                const double S2 = scatter_angle[2];
 
-                double off_diag =
-                    m_phase(1, internal_index, threadidx) * index_weight.second;
+                const double off_diag =
+                    m_phase(1, internal_index, threadidx) * weight;
 
                 phase_result(0) +=
-                    m_phase(0, internal_index, threadidx) * index_weight.second;
+                    m_phase(0, internal_index, threadidx) * weight;
                 phase_result(1) += -C2 * off_diag;
                 phase_result(2) += -S2 * off_diag;
+            };
+
+            if (index_weights.size() == 2) {
+                const auto lower = index_weights[0];
+                const auto upper = index_weights[1];
+                if (lower.second == 0.0 || upper.second == 0.0) {
+                    accumulate_phase(internal_indices[0], 1.0);
+                } else {
+                    accumulate_phase(internal_indices[0], lower.second);
+                    accumulate_phase(internal_indices[1], upper.second);
+                }
+            } else {
+                int phase_internal_offset = 0;
+                for (std::size_t index = 0; index < index_weights.size();
+                     ++index) {
+                    const auto index_weight = index_weights[index];
+                    if (index_weight.second == 0.0) {
+                        continue;
+                    }
+                    accumulate_phase(internal_indices[phase_internal_offset++],
+                                     index_weight.second);
+                }
             }
+
             for (int d = 0; d < m_atmosphere->num_scattering_deriv_groups();
                  ++d) {
-                for (int i = 0; i < index_weights.size(); ++i) {
-                    const auto& index_weight = index_weights[i];
-
-                    int internal_index = internal_indices[i];
-                    double C2 = m_scatter_angles[m_internal_to_cos_scatter.at(
-                        internal_index)][1];
-                    double S2 = m_scatter_angles[m_internal_to_cos_scatter.at(
-                        internal_index)][2];
+                const auto accumulate_derivative = [&](int internal_index,
+                                                       int geometry_index,
+                                                       double weight) {
+                    const auto& scatter_angle = m_scatter_angles
+                        [m_internal_to_cos_scatter[internal_index]];
+                    const double C2 = scatter_angle[1];
+                    const double S2 = scatter_angle[2];
 
                     int deriv_index = m_atmosphere->scat_deriv_start_index() +
-                                      d * m_geometry.size() +
-                                      index_weight.first;
+                                      d * m_geometry.size() + geometry_index;
                     source.deriv(0, deriv_index) +=
                         source.value(0) *
-                        m_d_phase(0, internal_index, d, threadidx) *
-                        index_weight.second;
+                        m_d_phase(0, internal_index, d, threadidx) * weight;
 
                     source.deriv(1, deriv_index) +=
                         source.value(0) *
-                        m_d_phase(1, internal_index, d, threadidx) *
-                        index_weight.second * (-C2);
+                        m_d_phase(1, internal_index, d, threadidx) * weight *
+                        (-C2);
 
                     source.deriv(2, deriv_index) +=
                         source.value(0) *
-                        m_d_phase(1, internal_index, d, threadidx) *
-                        index_weight.second * (-S2);
+                        m_d_phase(1, internal_index, d, threadidx) * weight *
+                        (-S2);
+                };
+
+                int derivative_internal_offset = 0;
+                for (std::size_t index = 0; index < index_weights.size();
+                     ++index) {
+                    const auto index_weight = index_weights[index];
+                    if (index_weight.second == 0.0) {
+                        continue;
+                    }
+                    accumulate_derivative(
+                        internal_indices[derivative_internal_offset++],
+                        index_weight.first, index_weight.second);
                 }
             }
 

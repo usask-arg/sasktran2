@@ -3,7 +3,7 @@ use crate::threading;
 use super::atmosphere::Atmosphere;
 use super::common::openmp_support_enabled;
 use super::config::{Config, ThreadingLib};
-use super::geometry::Geometry1D;
+use super::geometry::{Geometry1D, Geometry2D};
 use super::output::Output;
 use super::prelude::*;
 use super::viewing_geometry::ViewingGeometry;
@@ -11,12 +11,17 @@ use rayon::current_thread_index;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use sasktran2_sys::ffi;
 
-/// Wrapper around the c++ sasktran2 Engine object.  Note that we also keep references to the
-/// rust Config, Geometry1D and ViewingGeometry objects which is why the lifetime is required
+pub enum EngineGeometry<'a> {
+    OneDimensional(&'a Geometry1D),
+    TwoDimensional(&'a Geometry2D),
+}
+
+/// Wrapper around the C++ SASKTRAN2 Engine object. The referenced inputs must
+/// outlive the engine because the C++ implementation retains their pointers.
 pub struct Engine<'a> {
     pub engine: *mut ffi::Engine,
     pub config: &'a Config,
-    pub geometry: &'a Geometry1D,
+    pub geometry: EngineGeometry<'a>,
     pub viewing_geometry: &'a ViewingGeometry,
 }
 
@@ -86,7 +91,37 @@ impl<'a> Engine<'a> {
         Ok(Engine {
             engine,
             config,
-            geometry,
+            geometry: EngineGeometry::OneDimensional(geometry),
+            viewing_geometry,
+        })
+    }
+
+    /// Creates a transmission-only engine on a structured 2D geometry.
+    pub fn new_2d(
+        config: &'a Config,
+        geometry: &'a Geometry2D,
+        viewing_geometry: &'a ViewingGeometry,
+    ) -> Result<Self> {
+        crate::threading::set_num_threads(config.num_threads().unwrap_or(1))?;
+
+        let engine = unsafe {
+            ffi::sk_engine_create_2d(
+                config.config,
+                geometry.geometry,
+                viewing_geometry.viewing_geometry,
+            )
+        };
+
+        if engine.is_null() {
+            return Err(anyhow::anyhow!(
+                "Failed to create transmission-only Geometry2D Engine"
+            ));
+        }
+
+        Ok(Engine {
+            engine,
+            config,
+            geometry: EngineGeometry::TwoDimensional(geometry),
             viewing_geometry,
         })
     }
@@ -213,6 +248,10 @@ impl<'a> Drop for Engine<'a> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::config::{
+        EmissionSource, MultipleScatterSource, OccultationSource, SingleScatterSource,
+    };
+    use super::super::geometry::Geometry2D;
     use super::super::geometry::GeometryType;
     use super::super::geometry::InterpolationMethod;
 
@@ -240,6 +279,44 @@ mod tests {
 
         let engine = Engine::new(&config, &geometry, &viewing_geometry).unwrap();
 
+        assert!(!engine.engine.is_null());
+    }
+
+    #[test]
+    fn test_geometry2d_engine_configuration_boundary() {
+        let mut config = Config::new();
+        let geometry = Geometry2D::new(
+            0.5,
+            0.0,
+            6_371_000.0,
+            vec![0.0, 10_000.0, 30_000.0],
+            vec![-0.5, 0.0, 0.5],
+            InterpolationMethod::Linear,
+        )
+        .unwrap();
+        let mut viewing_geometry = ViewingGeometry::new();
+        viewing_geometry.add_tangent_altitude_solar(15_000.0, 0.0, 100_000.0, 0.5);
+
+        let engine = Engine::new_2d(&config, &geometry, &viewing_geometry).unwrap();
+        assert!(!engine.engine.is_null());
+        drop(engine);
+
+        config
+            .with_single_scatter_source(SingleScatterSource::SolarTable)
+            .unwrap();
+        assert!(Engine::new_2d(&config, &geometry, &viewing_geometry).is_err());
+
+        config
+            .with_single_scatter_source(SingleScatterSource::None)
+            .unwrap()
+            .with_multiple_scatter_source(MultipleScatterSource::None)
+            .unwrap()
+            .with_emission_source(EmissionSource::None)
+            .unwrap()
+            .with_occultation_source(OccultationSource::Standard)
+            .unwrap();
+
+        let engine = Engine::new_2d(&config, &geometry, &viewing_geometry).unwrap();
         assert!(!engine.engine.is_null());
     }
 }

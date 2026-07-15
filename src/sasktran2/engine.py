@@ -24,13 +24,36 @@ def map_surface_derivative(
     )
 
 
+def atmosphere_derivative_dataarray(
+    atmosphere: sk.Atmosphere,
+    mapping_name: str,
+    mapping,
+    derivative: np.ndarray,
+    trailing_dims: list[str],
+) -> xr.DataArray:
+    output_shape = atmosphere.derivative_output_shape(mapping_name)
+    if output_shape is None:
+        return xr.DataArray(
+            derivative,
+            dims=[mapping.interp_dim, *trailing_dims],
+        )
+
+    if len(output_shape) != 2:
+        msg = f"Unsupported structured atmosphere derivative shape: {output_shape}"
+        raise ValueError(msg)
+    return xr.DataArray(
+        derivative.reshape((*output_shape, *derivative.shape[1:])),
+        dims=["horizontal_angle", "altitude", *trailing_dims],
+    )
+
+
 class Engine:
     _engine: PyEngine
 
     def __init__(
         self,
         config: sk.Config,
-        geometry: sk.Geometry1D,
+        geometry: sk.Geometry1D | sk.Geometry2D,
         viewing_geometry: sk.ViewingGeometry,
     ):
         """
@@ -48,11 +71,42 @@ class Engine:
         ----------
         config : sk.Config
             Configuration object
-        model_geometry : sk.Geometry1D
+        model_geometry : sk.Geometry1D | sk.Geometry2D
             Geometry for the model
         viewing_geo : sk.ViewingGeometry
             Viewing geometry
         """
+        if isinstance(geometry, sk.Geometry2D):
+            if (
+                config.single_scatter_source
+                not in (
+                    sk.SingleScatterSource.NoSource,
+                    sk.SingleScatterSource.Exact,
+                )
+                or config.multiple_scatter_source != sk.MultipleScatterSource.NoSource
+                or config.emission_source
+                not in (
+                    sk.EmissionSource.NoSource,
+                    sk.EmissionSource.Standard,
+                    sk.EmissionSource.VolumeEmissionRate,
+                )
+            ):
+                msg = (
+                    "Geometry2D Engine currently supports exact single scattering, "
+                    "occultation, standard emission, and volume emission rate "
+                    "sources with multiple scattering disabled"
+                )
+                raise NotImplementedError(msg)
+            if viewing_geometry.flux_observers:
+                msg = "Geometry2D Engine does not yet support flux observers"
+                raise NotImplementedError(msg)
+            if config.los_refraction:
+                msg = (
+                    "Geometry2D Engine does not yet accept per-ray refractive-index "
+                    "profiles"
+                )
+                raise NotImplementedError(msg)
+
         self._engine = PyEngine(
             config._config, geometry._geometry, viewing_geometry._viewing_geometry
         )
@@ -74,6 +128,24 @@ class Engine:
         xr.Dataset
             An xarray dataset containing the radiance and derivatives
         """
+        if isinstance(self._geometry, sk.Geometry2D) != isinstance(
+            atmosphere.model_geometry, sk.Geometry2D
+        ):
+            msg = (
+                "Engine and atmosphere geometry dimensions do not match: "
+                f"{type(self._geometry).__name__} != "
+                f"{type(atmosphere.model_geometry).__name__}"
+            )
+            raise ValueError(msg)
+        if isinstance(self._geometry, sk.Geometry2D) and (
+            atmosphere.model_geometry is not self._geometry
+        ):
+            msg = (
+                "A Geometry2D atmosphere must use the same Geometry2D object "
+                "that was supplied to the Engine"
+            )
+            raise ValueError(msg)
+
         output = self._engine.calculate_radiance(atmosphere.internal_object())
 
         out_ds = xr.Dataset()
@@ -110,13 +182,18 @@ class Engine:
 
             name = k if mapping.assign_name == "" else mapping.assign_name
 
+            mapped_derivative = atmosphere_derivative_dataarray(
+                atmosphere,
+                k,
+                mapping,
+                v,
+                ["wavelength", "los", "stokes"],
+            )
+
             if name in out_ds:
-                out_ds[name] += v
+                out_ds[name] += mapped_derivative
             else:
-                out_ds[name] = xr.DataArray(
-                    v,
-                    dims=[mapping.interp_dim, "wavelength", "los", "stokes"],
-                )
+                out_ds[name] = mapped_derivative
         for k, v in output.d_radiance_surf.items():
             mapping = atmosphere.surface.get_derivative_mapping(k)
 
@@ -135,13 +212,18 @@ class Engine:
             for i, flux_type in enumerate(flux_types):
                 name = f"{base_name}_{flux_type}_flux"
 
+                mapped_derivative = atmosphere_derivative_dataarray(
+                    atmosphere,
+                    k,
+                    mapping,
+                    v[:, i],
+                    ["wavelength", "flux_location"],
+                )
+
                 if name in out_ds:
-                    out_ds[name] += v[:, i]
+                    out_ds[name] += mapped_derivative
                 else:
-                    out_ds[name] = xr.DataArray(
-                        v[:, i],
-                        dims=[mapping.interp_dim, "wavelength", "flux_location"],
-                    )
+                    out_ds[name] = mapped_derivative
 
         for k, v in output.d_flux_surf.items():
             mapping = atmosphere.surface.get_derivative_mapping(k)
@@ -162,6 +244,14 @@ class Engine:
 
         if isinstance(self._viewing_geometry, ViewingGeometryContainer):
             out_ds = self._viewing_geometry.add_geometry_to_radiance(out_ds)
+
+        if isinstance(atmosphere.model_geometry, sk.Geometry2D):
+            if "horizontal_angle" in out_ds.dims:
+                out_ds.coords["horizontal_angle"] = (
+                    atmosphere.model_geometry.horizontal_angles()
+                )
+            if "altitude" in out_ds.dims:
+                out_ds.coords["altitude"] = atmosphere.model_geometry.altitudes()
 
         if self._config.output_los_optical_depth:
             los_od = output.los_optical_depth

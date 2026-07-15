@@ -26,47 +26,6 @@ namespace {
         location.lower_alt_index = lower_alt_index;
     }
 
-    void set_interpolation_weights(sasktran2::Location& location,
-                                   double altitude,
-                                   const sasktran2::Geometry1D& geometry) {
-        auto& weights = location.interpolation_weights;
-        const int lower = location.lower_alt_index;
-
-        if (location.on_exact_altitude && lower >= 0) {
-            weights.resize(1);
-            weights[0] = {lower, 1.0};
-            return;
-        }
-
-        const auto& altitude_grid = geometry.altitude_grid();
-        if (lower < 0 || lower + 1 >= altitude_grid.grid().size()) {
-            geometry.assign_interpolation_weights(location, weights);
-            return;
-        }
-
-        if (altitude_grid.interpolation_method() ==
-            sasktran2::grids::interpolation::lower) {
-            weights.resize(1);
-            weights[0] = {lower, 1.0};
-            return;
-        }
-
-        weights.resize(2);
-        weights[0].first = lower;
-        weights[1].first = lower + 1;
-        if (altitude_grid.interpolation_method() ==
-            sasktran2::grids::interpolation::shell) {
-            weights[0].second = 0.5;
-            weights[1].second = 0.5;
-            return;
-        }
-
-        const double lower_altitude = altitude_grid.grid()(lower);
-        const double upper_altitude = altitude_grid.grid()(lower + 1);
-        weights[1].second =
-            (altitude - lower_altitude) / (upper_altitude - lower_altitude);
-        weights[0].second = 1.0 - weights[1].second;
-    }
 } // namespace
 
 namespace sasktran2::rust::raytracer {
@@ -79,13 +38,13 @@ namespace sasktran2::rust::raytracer {
             : m_result(result), m_geometry(geometry), m_ray(ray) {}
 
         void prepare(const RustTraceSummary& summary) {
-            // Resize in place so repeated traces retain each Location's small
-            // interpolation-weight allocation.
+            m_result.reset();
             m_result.observer_and_look = m_ray;
             m_result.ground_is_hit = summary.ground_is_hit;
             m_result.is_straight = summary.is_straight;
             m_result.tangent_radius = summary.tangent_radius;
             m_result.layers.resize(summary.num_layers);
+            m_result.reserve_grid_weights(summary.num_layers * 2 + 2);
         }
 
         void set_layer(std::size_t index, const RustTraceLayer& rust_layer) {
@@ -128,10 +87,9 @@ namespace sasktran2::rust::raytracer {
             layer.saz_entrance = rust_layer.saz_entrance;
             layer.saz_exit = rust_layer.saz_exit;
 
-            set_interpolation_weights(layer.entrance,
-                                      rust_layer.entrance_altitude, m_geometry);
-            set_interpolation_weights(layer.exit, rust_layer.exit_altitude,
-                                      m_geometry);
+            sasktran2::raytracing::add_interpolation_weights(
+                m_result, index, m_geometry,
+                m_result.interpolation_index_weights);
         }
 
         void set_layers(::rust::Slice<const RustTraceLayer> layers) {
@@ -146,6 +104,109 @@ namespace sasktran2::rust::raytracer {
         const sasktran2::viewinggeometry::ViewingRay& m_ray;
     };
 
+    class CppTraceResult2D {
+      public:
+        CppTraceResult2D(sasktran2::raytracing::TracedRay& result,
+                         const sasktran2::Geometry2D& geometry,
+                         const sasktran2::viewinggeometry::ViewingRay& ray)
+            : m_result(result), m_geometry(geometry), m_ray(ray) {}
+
+        void prepare(const RustTraceSummary& summary) {
+            m_result.reset();
+            m_result.observer_and_look = m_ray;
+            m_result.ground_is_hit = summary.ground_is_hit;
+            m_result.is_straight = summary.is_straight;
+            m_result.tangent_radius = summary.tangent_radius;
+            m_result.layers.resize(summary.num_layers);
+            m_result.reserve_grid_weights(summary.num_layers * 4);
+        }
+
+        void set_layer(std::size_t index, const RustTraceLayer& rust_layer) {
+            auto& layer = m_result.layers[index];
+
+            layer.type = static_cast<sasktran2::raytracing::LayerType>(
+                rust_layer.layer_type);
+            set_location(layer.entrance,
+                         make_vector(rust_layer.entrance_x,
+                                     rust_layer.entrance_y,
+                                     rust_layer.entrance_z),
+                         rust_layer.entrance_on_exact_altitude, -1);
+            set_location(layer.exit,
+                         make_vector(rust_layer.exit_x, rust_layer.exit_y,
+                                     rust_layer.exit_z),
+                         rust_layer.exit_on_exact_altitude, -1);
+
+            layer.r_entrance = m_geometry.coordinates().earth_radius() +
+                               rust_layer.entrance_altitude;
+            layer.r_exit = m_geometry.coordinates().earth_radius() +
+                           rust_layer.exit_altitude;
+            layer.layer_distance = rust_layer.layer_distance;
+            if (layer.layer_distance == 0.0) {
+                layer.average_look_away = m_ray.look_away;
+            } else {
+                layer.average_look_away =
+                    (layer.exit.position - layer.entrance.position) /
+                    layer.layer_distance;
+            }
+            layer.curvature_factor = rust_layer.curvature_factor;
+            layer.od_quad_start = rust_layer.od_quad_start;
+            layer.od_quad_end = rust_layer.od_quad_end;
+            layer.od_quad_start_fraction = rust_layer.od_quad_start_fraction;
+            layer.od_quad_end_fraction = rust_layer.od_quad_end_fraction;
+            layer.cos_sza_entrance = rust_layer.cos_sza_entrance;
+            layer.cos_sza_exit = rust_layer.cos_sza_exit;
+            layer.saz_entrance = rust_layer.saz_entrance;
+            layer.saz_exit = rust_layer.saz_exit;
+            const int altitude_cell = rust_layer.cell_altitude_index;
+            const int horizontal_cell = rust_layer.cell_horizontal_index;
+            const auto entrance_coordinates =
+                m_geometry.cell_interpolation_coordinates(
+                    layer.entrance, altitude_cell, horizontal_cell);
+            const auto exit_coordinates =
+                m_geometry.cell_interpolation_coordinates(
+                    layer.exit, altitude_cell, horizontal_cell);
+            // One structured 2D layer is confined to one cell. All endpoint
+            // and integrated-OD weights use the same four cell corners in
+            // altitude-fastest order:
+            //   (h0,a0), (h0,a1), (h1,a0), (h1,a1).
+            // Geometry2D::location_index uses the same flattening convention.
+            const std::array<int, 4> indices = {
+                m_geometry.location_index(altitude_cell, horizontal_cell),
+                m_geometry.location_index(altitude_cell + 1, horizontal_cell),
+                m_geometry.location_index(altitude_cell, horizontal_cell + 1),
+                m_geometry.location_index(altitude_cell + 1,
+                                          horizontal_cell + 1)};
+            const auto interpolation_weights = [](const auto& coordinates) {
+                // coordinates = (altitude upper fraction,
+                //                horizontal upper fraction).
+                const double altitude_lower = 1.0 - coordinates.first;
+                const double horizontal_lower = 1.0 - coordinates.second;
+                return std::array<double, 4>{
+                    horizontal_lower * altitude_lower,
+                    horizontal_lower * coordinates.first,
+                    coordinates.second * altitude_lower,
+                    coordinates.second * coordinates.first};
+            };
+            const auto entrance_weights =
+                interpolation_weights(entrance_coordinates);
+            const auto exit_weights = interpolation_weights(exit_coordinates);
+            const std::array<double, 4> od_weights = {
+                rust_layer.integrated_od_weight_0,
+                rust_layer.integrated_od_weight_1,
+                rust_layer.integrated_od_weight_2,
+                rust_layer.integrated_od_weight_3};
+            m_result.set_layer_weights(index, indices, entrance_weights,
+                                       exit_weights, od_weights);
+            layer.entrance.lower_alt_index = altitude_cell;
+            layer.exit.lower_alt_index = altitude_cell;
+        }
+
+      private:
+        sasktran2::raytracing::TracedRay& m_result;
+        const sasktran2::Geometry2D& m_geometry;
+        const sasktran2::viewinggeometry::ViewingRay& m_ray;
+    };
+
     void prepare_trace_result(CppTraceResult& result,
                               const RustTraceSummary& summary) {
         result.prepare(summary);
@@ -153,6 +214,16 @@ namespace sasktran2::rust::raytracer {
 
     void set_trace_layer(CppTraceResult& result, std::size_t index,
                          const RustTraceLayer& layer) {
+        result.set_layer(index, layer);
+    }
+
+    void prepare_trace_result_2d(CppTraceResult2D& result,
+                                 const RustTraceSummary& summary) {
+        result.prepare(summary);
+    }
+
+    void set_trace_layer_2d(CppTraceResult2D& result, std::size_t index,
+                            const RustTraceLayer& layer) {
         result.set_layer(index, layer);
     }
 
@@ -175,6 +246,17 @@ namespace sasktran2::raytracing {
         ::rust::Box<sasktran2::rust::raytracer::RustVerticalTracer> rust_tracer;
     };
 
+    class RustRayTracer2DImpl {
+      public:
+        explicit RustRayTracer2DImpl(
+            ::rust::Box<sasktran2::rust::raytracer::RustStructuredTracer2D>
+                rust_tracer)
+            : rust_tracer(std::move(rust_tracer)) {}
+
+        ::rust::Box<sasktran2::rust::raytracer::RustStructuredTracer2D>
+            rust_tracer;
+    };
+
     RustRayTracer::RustRayTracer(const sasktran2::Geometry1D& geometry)
         : m_geometry(geometry) {
         auto altitudes = eigen_vector_to_std(geometry.altitude_grid().grid());
@@ -192,6 +274,26 @@ namespace sasktran2::raytracing {
 
     RustRayTracer::~RustRayTracer() = default;
 
+    RustRayTracer2D::RustRayTracer2D(const sasktran2::Geometry2D& geometry)
+        : m_geometry(geometry) {
+        auto altitudes = eigen_vector_to_std(geometry.altitude_grid().grid());
+        auto horizontal_angles =
+            eigen_vector_to_std(geometry.horizontal_angle_grid());
+        const auto& coordinates = geometry.coordinates();
+        const auto& reference_x = coordinates.reference_x();
+        const auto& reference_z = coordinates.reference_z();
+        const auto& sun = coordinates.sun_unit();
+        auto rust_tracer = sasktran2::rust::raytracer::new_structured_tracer_2d(
+            coordinates.earth_radius(), altitudes, horizontal_angles,
+            static_cast<int>(geometry.altitude_grid().interpolation_method()),
+            reference_x.x(), reference_x.y(), reference_x.z(), reference_z.x(),
+            reference_z.y(), reference_z.z(), sun.x(), sun.y(), sun.z());
+
+        m_impl = std::make_unique<RustRayTracer2DImpl>(std::move(rust_tracer));
+    }
+
+    RustRayTracer2D::~RustRayTracer2D() = default;
+
     void
     RustRayTracer::trace_ray(const sasktran2::viewinggeometry::ViewingRay& ray,
                              TracedRay& result, bool include_refraction) const {
@@ -202,6 +304,42 @@ namespace sasktran2::raytracing {
             ray.observer.position.y(), ray.observer.position.z(),
             ray.look_away.x(), ray.look_away.y(), ray.look_away.z(),
             include_refraction, cpp_result);
+    }
+
+    void RustRayTracer2D::trace_ray(
+        const sasktran2::viewinggeometry::ViewingRay& ray,
+        TracedRay& result) const {
+        trace_ray_impl(ray, nullptr, result);
+    }
+
+    void RustRayTracer2D::trace_ray(
+        const sasktran2::viewinggeometry::ViewingRay& ray,
+        const Eigen::VectorXd& refractive_index, TracedRay& result) const {
+        trace_ray_impl(ray, &refractive_index, result);
+    }
+
+    void RustRayTracer2D::trace_ray_impl(
+        const sasktran2::viewinggeometry::ViewingRay& ray,
+        const Eigen::VectorXd* refractive_index, TracedRay& result) const {
+        if (refractive_index != nullptr &&
+            refractive_index->size() != m_geometry.num_altitudes()) {
+            throw std::invalid_argument(
+                "The per-ray refractive-index profile must have one value "
+                "per Geometry2D altitude");
+        }
+
+        const ::rust::Slice<const double> profile(
+            refractive_index == nullptr ? nullptr : refractive_index->data(),
+            refractive_index == nullptr
+                ? 0
+                : static_cast<std::size_t>(refractive_index->size()));
+        sasktran2::rust::raytracer::CppTraceResult2D cpp_result(
+            result, m_geometry, ray);
+        sasktran2::rust::raytracer::trace_structured_ray_2d_into_cpp_result(
+            *m_impl->rust_tracer, ray.observer.position.x(),
+            ray.observer.position.y(), ray.observer.position.z(),
+            ray.look_away.x(), ray.look_away.y(), ray.look_away.z(), profile,
+            cpp_result);
     }
 
 } // namespace sasktran2::raytracing

@@ -224,6 +224,9 @@ namespace sasktran2 {
             m_interpolator = interpolator;
         }
 
+        /** Remove the optional native-to-output interpolation. */
+        void clear_interpolator() { m_interpolator.reset(); }
+
         /**
          * @brief Get the interp dim
          *

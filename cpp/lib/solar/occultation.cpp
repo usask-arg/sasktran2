@@ -12,12 +12,20 @@ namespace sasktran2::solartransmission {
     template <int NSTOKES>
     void OccultationSource<NSTOKES>::initialize_geometry(
         const sasktran2::viewinggeometry::InternalViewingGeometry&
-            internal_viewing) {}
+            internal_viewing) {
+        m_ground_is_hit.resize(internal_viewing.traced_rays.size());
+        std::transform(internal_viewing.traced_rays.begin(),
+                       internal_viewing.traced_rays.end(),
+                       m_ground_is_hit.begin(),
+                       [](const auto& ray) { return ray.ground_is_hit; });
+    }
 
     template <int NSTOKES>
     void OccultationSource<NSTOKES>::integrated_source(
         int wavelidx, int losidx, int layeridx, int wavel_threadidx,
-        int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
+        int threadidx, const sasktran2::raytracing::TracedLayer& layer,
+        const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
+        const sasktran2::raytracing::GridWeightStencilView& exit_weights,
         const sasktran2::SparseODDualView& shell_od,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
         typename SourceTermInterface<NSTOKES>::IntegrationDirection direction)
@@ -35,6 +43,9 @@ namespace sasktran2::solartransmission {
         int wavelidx, int losidx, int wavel_threadidx, int threadidx,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
+        if (m_ground_is_hit.at(losidx)) {
+            return;
+        }
         if constexpr (NSTOKES == 1) {
             source.value.array() += 1;
         } else {

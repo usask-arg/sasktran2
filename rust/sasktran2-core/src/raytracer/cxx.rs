@@ -1,8 +1,10 @@
 #![allow(clippy::too_many_arguments)]
 
 use super::{
-    GeometryKind, InterpolationMethod, Layer, LayerType, Ray, RefractiveProfile, SolarContext,
-    TraceOptions, TraceScratch, TracedRay, Vec3, VerticalGrid1D, VerticalRayTracer,
+    AngularBasis, CellId, GeometryKind, InterpolationMethod, Layer, LayerType, Ray,
+    RefractiveProfile, SolarContext, StructuredGrid2D, StructuredRayTracer2D, TraceOptions,
+    TraceOptions2D, TraceScratch, TraceScratch2D, TracedRay, Vec3, VerticalGrid1D,
+    VerticalRayTracer,
 };
 use anyhow::{Result, anyhow};
 use cxx::CxxVector;
@@ -37,10 +39,16 @@ pub mod ffi {
         od_quad_end: f64,
         od_quad_start_fraction: f64,
         od_quad_end_fraction: f64,
+        integrated_od_weight_0: f64,
+        integrated_od_weight_1: f64,
+        integrated_od_weight_2: f64,
+        integrated_od_weight_3: f64,
         cos_sza_entrance: f64,
         cos_sza_exit: f64,
         saz_entrance: f64,
         saz_exit: f64,
+        cell_altitude_index: i32,
+        cell_horizontal_index: i32,
     }
 
     struct RustTimingSummary {
@@ -53,13 +61,21 @@ pub mod ffi {
         include!("sasktran2/raytracing_rust_bridge.h");
 
         type CppTraceResult;
+        type CppTraceResult2D;
 
         fn prepare_trace_result(result: Pin<&mut CppTraceResult>, summary: &RustTraceSummary);
         fn set_trace_layer(result: Pin<&mut CppTraceResult>, index: usize, layer: &RustTraceLayer);
+        fn prepare_trace_result_2d(result: Pin<&mut CppTraceResult2D>, summary: &RustTraceSummary);
+        fn set_trace_layer_2d(
+            result: Pin<&mut CppTraceResult2D>,
+            index: usize,
+            layer: &RustTraceLayer,
+        );
     }
 
     extern "Rust" {
         type RustVerticalTracer;
+        type RustStructuredTracer2D;
 
         fn new_vertical_tracer(
             earth_radius: f64,
@@ -129,6 +145,34 @@ pub mod ffi {
             include_refraction: bool,
             iterations: usize,
         ) -> Result<RustTimingSummary>;
+
+        fn new_structured_tracer_2d(
+            earth_radius: f64,
+            altitudes: &CxxVector<f64>,
+            horizontal_angles: &CxxVector<f64>,
+            interpolation_method: i32,
+            reference_x_x: f64,
+            reference_x_y: f64,
+            reference_x_z: f64,
+            reference_z_x: f64,
+            reference_z_y: f64,
+            reference_z_z: f64,
+            sun_x: f64,
+            sun_y: f64,
+            sun_z: f64,
+        ) -> Result<Box<RustStructuredTracer2D>>;
+
+        fn trace_structured_ray_2d_into_cpp_result(
+            tracer: &RustStructuredTracer2D,
+            origin_x: f64,
+            origin_y: f64,
+            origin_z: f64,
+            look_x: f64,
+            look_y: f64,
+            look_z: f64,
+            refractive_index: &[f64],
+            result: Pin<&mut CppTraceResult2D>,
+        ) -> Result<RustTraceSummary>;
     }
 }
 
@@ -139,9 +183,19 @@ pub struct RustVerticalTracer {
     solar: SolarContext,
 }
 
+pub struct RustStructuredTracer2D {
+    tracer: StructuredRayTracer2D,
+    solar: SolarContext,
+}
+
 struct ReusableTraceStorage {
     result: TracedRay,
     scratch: TraceScratch,
+}
+
+struct ReusableTraceStorage2D {
+    result: TracedRay,
+    scratch: TraceScratch2D,
 }
 
 impl ReusableTraceStorage {
@@ -161,8 +215,22 @@ impl ReusableTraceStorage {
     }
 }
 
+impl ReusableTraceStorage2D {
+    fn new(interpolation: InterpolationMethod, primitive_capacity: usize) -> Self {
+        Self {
+            result: TracedRay::new(
+                Ray::new(Vec3::ZERO, Vec3::new(0.0, 0.0, 1.0)),
+                GeometryKind::Spherical,
+                interpolation,
+            ),
+            scratch: TraceScratch2D::with_capacity(primitive_capacity),
+        }
+    }
+}
+
 thread_local! {
     static TRACE_STORAGE: RefCell<Option<ReusableTraceStorage>> = const { RefCell::new(None) };
+    static TRACE_STORAGE_2D: RefCell<Option<ReusableTraceStorage2D>> = const { RefCell::new(None) };
 }
 
 fn new_vertical_tracer(
@@ -197,6 +265,93 @@ fn new_vertical_tracer(
         profile,
         geometry,
         solar: SolarContext::new(Vec3::new(sun_x, sun_y, sun_z), geometry),
+    }))
+}
+
+fn new_structured_tracer_2d(
+    earth_radius: f64,
+    altitudes: &CxxVector<f64>,
+    horizontal_angles: &CxxVector<f64>,
+    interpolation_method: i32,
+    reference_x_x: f64,
+    reference_x_y: f64,
+    reference_x_z: f64,
+    reference_z_x: f64,
+    reference_z_y: f64,
+    reference_z_z: f64,
+    sun_x: f64,
+    sun_y: f64,
+    sun_z: f64,
+) -> Result<Box<RustStructuredTracer2D>> {
+    let interpolation = interpolation_from_i32(interpolation_method)?;
+    let basis = AngularBasis::new(
+        Vec3::new(reference_z_x, reference_z_y, reference_z_z),
+        Vec3::new(reference_x_x, reference_x_y, reference_x_z),
+    )?;
+    let grid = StructuredGrid2D::new_with_basis(
+        earth_radius,
+        altitudes.iter().copied().collect(),
+        horizontal_angles.iter().copied().collect(),
+        interpolation,
+        basis,
+    )?;
+
+    Ok(Box::new(RustStructuredTracer2D {
+        tracer: StructuredRayTracer2D::new(grid),
+        solar: SolarContext::new(Vec3::new(sun_x, sun_y, sun_z), GeometryKind::Spherical),
+    }))
+}
+
+fn trace_structured_ray_2d_into_cpp_result(
+    tracer: &RustStructuredTracer2D,
+    origin_x: f64,
+    origin_y: f64,
+    origin_z: f64,
+    look_x: f64,
+    look_y: f64,
+    look_z: f64,
+    refractive_index: &[f64],
+    mut result: Pin<&mut ffi::CppTraceResult2D>,
+) -> Result<ffi::RustTraceSummary> {
+    let profile = if refractive_index.is_empty() {
+        None
+    } else {
+        Some(RefractiveProfile::new_with_interpolation(
+            tracer.tracer.grid().earth_radius(),
+            tracer.tracer.grid().altitudes().to_vec(),
+            refractive_index.to_vec(),
+            tracer.tracer.grid().altitude_interpolation(),
+        )?)
+    };
+    let ray = Ray::new(
+        Vec3::new(origin_x, origin_y, origin_z),
+        Vec3::new(look_x, look_y, look_z),
+    );
+
+    Ok(TRACE_STORAGE_2D.with(|storage| {
+        let mut storage = storage.borrow_mut();
+        let storage = storage.get_or_insert_with(|| {
+            ReusableTraceStorage2D::new(
+                tracer.tracer.grid().altitude_interpolation(),
+                tracer.tracer.primitives().len(),
+            )
+        });
+        tracer.tracer.trace_into(
+            ray,
+            &mut storage.result,
+            &mut storage.scratch,
+            TraceOptions2D {
+                solar: Some(tracer.solar),
+                refraction: profile.as_ref(),
+            },
+        );
+
+        let summary = summary_to_ffi(&storage.result);
+        ffi::prepare_trace_result_2d(result.as_mut(), &summary);
+        for (index, layer) in storage.result.layers.iter().enumerate() {
+            ffi::set_trace_layer_2d(result.as_mut(), index, &layer_to_ffi(layer));
+        }
+        summary
     }))
 }
 
@@ -486,6 +641,15 @@ fn interpolation_from_i32(value: i32) -> Result<InterpolationMethod> {
 }
 
 fn layer_to_ffi(layer: &Layer) -> ffi::RustTraceLayer {
+    let (cell_altitude_index, cell_horizontal_index) = match layer.cell {
+        Some(CellId::Structured2D {
+            altitude_index,
+            horizontal_index,
+        }) => (altitude_index as i32, horizontal_index as i32),
+        Some(CellId::AltitudeLayer(altitude_index)) => (altitude_index as i32, -1),
+        Some(CellId::Unstructured(_)) => (-1, -1),
+        None => (-1, -1),
+    };
     ffi::RustTraceLayer {
         layer_type: match layer.layer_type {
             LayerType::Complete => 0,
@@ -510,10 +674,16 @@ fn layer_to_ffi(layer: &Layer) -> ffi::RustTraceLayer {
         od_quad_end: layer.od_quad_end,
         od_quad_start_fraction: layer.od_quad_start_fraction,
         od_quad_end_fraction: layer.od_quad_end_fraction,
+        integrated_od_weight_0: layer.integrated_cell_weights[0],
+        integrated_od_weight_1: layer.integrated_cell_weights[1],
+        integrated_od_weight_2: layer.integrated_cell_weights[2],
+        integrated_od_weight_3: layer.integrated_cell_weights[3],
         cos_sza_entrance: layer.cos_sza_entrance,
         cos_sza_exit: layer.cos_sza_exit,
         saz_entrance: layer.saz_entrance,
         saz_exit: layer.saz_exit,
+        cell_altitude_index,
+        cell_horizontal_index,
     }
 }
 

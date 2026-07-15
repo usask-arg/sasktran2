@@ -28,7 +28,7 @@ namespace sasktran2::atmosphere {
 
     template <int NSTOKES>
     Atmosphere<NSTOKES>::Atmosphere(int nwavel,
-                                    const sasktran2::Geometry1D& geometry,
+                                    const sasktran2::Geometry& geometry,
                                     const sasktran2::Config& config,
                                     bool calculate_derivatives)
         : m_storage_holder(std::make_shared<AtmosphereGridStorageFull<NSTOKES>>(

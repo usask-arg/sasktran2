@@ -6,10 +6,16 @@ add_executable(
   viewinggeometry/test_groundviewing.cpp
   unitsphere/test_lebedev.cpp
   geometry/test_geometry.cpp
+  geometry/test_geometry1d.cpp
+  geometry/test_geometry2d.cpp
   grids/test_grid.cpp
   raytracing/test_spherical_shell.cpp
   raytracing/test_plane_parallel.cpp
+  raytracing/test_od_weights.cpp
   raytracing/test_rust_raytracer_parity.cpp
+  raytracing/test_rust_raytracer2d.cpp
+  sourceintegrator/test_occultation2d.cpp
+  sourceintegrator/test_singlescatter2d.cpp
   engine/test_engine_basic.cpp
   engine/wf/test_wf_singlescatter_scalar.cpp
   engine/wf/test_wf_vector.cpp
