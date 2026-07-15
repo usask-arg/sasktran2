@@ -258,6 +258,16 @@ TEST_CASE("Geometry1D validates exact-altitude cache metadata",
         REQUIRE(weights.size() == 1);
         require_weight(weights[0], 2, 1.0);
     }
+    SECTION("sub-metre shell reconstruction drift uses cache") {
+        auto location = spherical_location(4'000.5);
+        location.on_exact_altitude = true;
+        location.lower_alt_index = 2;
+
+        model_geometry.assign_interpolation_weights(location, weights);
+
+        REQUIRE(weights.size() == 1);
+        require_weight(weights[0], 2, 1.0);
+    }
     SECTION("stale cache falls back to the location") {
         auto location = spherical_location(2'500.0);
         location.on_exact_altitude = true;

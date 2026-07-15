@@ -88,7 +88,12 @@ namespace sasktran2 {
         for (const auto& source : source_terms) {
             if (source->requires_integration()) {
                 have_to_integrate = true;
-                if (m_traced_rays == nullptr && source->has_interior_source() &&
+                if (m_traced_rays != nullptr) {
+                    // Preserve the 1D hot path: no additional source
+                    // validation is needed once integration is required.
+                    break;
+                }
+                if (source->has_interior_source() &&
                     !source->supports_2d_interior_source()) {
                     throw std::invalid_argument(
                         "Interior source integration is not supported for "

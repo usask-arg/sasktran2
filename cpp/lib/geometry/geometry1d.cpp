@@ -34,7 +34,12 @@ namespace sasktran2 {
             sasktran2::validation::throw_configuration_error();
         }
 
-        constexpr double exact_altitude_tolerance_m = 1e-4;
+        // Shell intersections carry an authoritative grid index, but their
+        // reconstructed Cartesian radius can differ slightly from the shell
+        // radius.  Preserve the historical one-metre diagnostic tolerance so
+        // harmless coordinate roundoff does not turn an exact endpoint into
+        // an interpolated one, while still rejecting genuinely stale indices.
+        constexpr double exact_altitude_tolerance_m = 1.0;
         const bool valid_exact_index =
             loc.lower_alt_index >= 0 &&
             loc.lower_alt_index < m_alt_grid.grid().size();

@@ -454,57 +454,100 @@ namespace sasktran2::solartransmission {
         } else if constexpr (NSTOKES == 3) {
             Eigen::Vector3d phase_result = Eigen::Vector3d::Zero();
 
-            int internal_offset = 0;
-            for (int i = 0; i < index_weights.size(); ++i) {
-                const auto index_weight = index_weights[i];
-                if (index_weight.second == 0.0) {
-                    continue;
-                }
-                int internal_index = internal_indices[internal_offset++];
-                double C2 = m_scatter_angles[m_internal_to_cos_scatter.at(
-                    internal_index)][1];
-                double S2 = m_scatter_angles[m_internal_to_cos_scatter.at(
-                    internal_index)][2];
+            const auto accumulate_phase = [&](int internal_index,
+                                              double weight) {
+                const auto& scatter_angle =
+                    m_scatter_angles[m_internal_to_cos_scatter[internal_index]];
+                const double C2 = scatter_angle[1];
+                const double S2 = scatter_angle[2];
 
-                double off_diag =
-                    m_phase(1, internal_index, threadidx) * index_weight.second;
+                const double off_diag =
+                    m_phase(1, internal_index, threadidx) * weight;
 
                 phase_result(0) +=
-                    m_phase(0, internal_index, threadidx) * index_weight.second;
+                    m_phase(0, internal_index, threadidx) * weight;
                 phase_result(1) += -C2 * off_diag;
                 phase_result(2) += -S2 * off_diag;
-            }
-            for (int d = 0; d < m_atmosphere->num_scattering_deriv_groups();
-                 ++d) {
+            };
+
+            if constexpr (std::is_same_v<std::decay_t<IndexWeights>,
+                                         raytracing::InterpolationStencil1D>) {
+                if (index_weights.valid()) {
+                    const double upper_weight = index_weights.upper_weight;
+                    if (upper_weight == 0.0 || upper_weight == 1.0) {
+                        accumulate_phase(internal_indices[0], 1.0);
+                    } else {
+                        accumulate_phase(internal_indices[0],
+                                         1.0 - upper_weight);
+                        accumulate_phase(internal_indices[1], upper_weight);
+                    }
+                }
+            } else {
                 int internal_offset = 0;
-                for (int i = 0; i < index_weights.size(); ++i) {
-                    const auto index_weight = index_weights[i];
+                for (const auto& index_weight : index_weights) {
                     if (index_weight.second == 0.0) {
                         continue;
                     }
-                    int internal_index = internal_indices[internal_offset++];
-                    double C2 = m_scatter_angles[m_internal_to_cos_scatter.at(
-                        internal_index)][1];
-                    double S2 = m_scatter_angles[m_internal_to_cos_scatter.at(
-                        internal_index)][2];
+                    accumulate_phase(internal_indices[internal_offset++],
+                                     index_weight.second);
+                }
+            }
+
+            for (int d = 0; d < m_atmosphere->num_scattering_deriv_groups();
+                 ++d) {
+                const auto accumulate_derivative = [&](int internal_index,
+                                                       int geometry_index,
+                                                       double weight) {
+                    const auto& scatter_angle = m_scatter_angles
+                        [m_internal_to_cos_scatter[internal_index]];
+                    const double C2 = scatter_angle[1];
+                    const double S2 = scatter_angle[2];
 
                     int deriv_index = m_atmosphere->scat_deriv_start_index() +
-                                      d * m_geometry.size() +
-                                      index_weight.first;
+                                      d * m_geometry.size() + geometry_index;
                     source.deriv(0, deriv_index) +=
                         source.value(0) *
-                        m_d_phase(0, internal_index, d, threadidx) *
-                        index_weight.second;
+                        m_d_phase(0, internal_index, d, threadidx) * weight;
 
                     source.deriv(1, deriv_index) +=
                         source.value(0) *
-                        m_d_phase(1, internal_index, d, threadidx) *
-                        index_weight.second * (-C2);
+                        m_d_phase(1, internal_index, d, threadidx) * weight *
+                        (-C2);
 
                     source.deriv(2, deriv_index) +=
                         source.value(0) *
-                        m_d_phase(1, internal_index, d, threadidx) *
-                        index_weight.second * (-S2);
+                        m_d_phase(1, internal_index, d, threadidx) * weight *
+                        (-S2);
+                };
+
+                if constexpr (std::is_same_v<
+                                  std::decay_t<IndexWeights>,
+                                  raytracing::InterpolationStencil1D>) {
+                    if (!index_weights.valid()) {
+                        continue;
+                    }
+                    const int lower_index = index_weights.cell_index;
+                    const double upper_weight = index_weights.upper_weight;
+                    if (upper_weight == 0.0 || upper_weight == 1.0) {
+                        accumulate_derivative(
+                            internal_indices[0],
+                            lower_index + (upper_weight == 1.0 ? 1 : 0), 1.0);
+                    } else {
+                        accumulate_derivative(internal_indices[0], lower_index,
+                                              1.0 - upper_weight);
+                        accumulate_derivative(internal_indices[1],
+                                              lower_index + 1, upper_weight);
+                    }
+                } else {
+                    int internal_offset = 0;
+                    for (const auto& index_weight : index_weights) {
+                        if (index_weight.second == 0.0) {
+                            continue;
+                        }
+                        accumulate_derivative(
+                            internal_indices[internal_offset++],
+                            index_weight.first, index_weight.second);
+                    }
                 }
             }
 
