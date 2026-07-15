@@ -8,7 +8,9 @@
 namespace {
     constexpr double altitude_tolerance_m = 1e-8;
     constexpr double angular_tolerance_rad = 1e-8;
-    constexpr double pi_rad = static_cast<double>(EIGEN_PI);
+    // Keep this explicitly binary64. Some older GCC/x87 builds retain the
+    // excess precision of Eigen's long-double EIGEN_PI literal in comparisons.
+    constexpr double pi_rad = 3.14159265358979323846;
     constexpr double pi_boundary_tolerance_rad =
         16.0 * std::numeric_limits<double>::epsilon() * pi_rad;
 
