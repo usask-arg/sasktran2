@@ -7,6 +7,7 @@
 #include <sasktran2/atmosphere/atmosphere.h>
 #include <sasktran2/config.h>
 #include <sasktran2/dual.h>
+#include <array>
 
 namespace sasktran2::solartransmission {
     /** Generates one row of what is known as the geometry matrix.  The optical
@@ -240,6 +241,15 @@ namespace sasktran2::solartransmission {
                      sasktran2::Dual<double, sasktran2::dualstorage::dense,
                                      NSTOKES>& source) const;
 
+        /** Returns the interpolated phase vector and accumulates its
+         * scattering-property derivatives directly into a target source. */
+        Eigen::Vector<double, NSTOKES> scatter_and_accumulate_derivative(
+            int threadidx, int losidx, int layeridx,
+            const raytracing::GridWeightStencilView& index_weights,
+            bool is_entrance, double source_amplitude, double derivative_scale,
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+                target) const;
+
       private:
         void initialize_geometry_impl(
             const std::vector<sasktran2::raytracing::TracedRay>& los_rays,
@@ -253,8 +263,8 @@ namespace sasktran2::solartransmission {
                                      NSTOKES>& source) const;
     };
 
-    template <bool USE_ACTIVE_DERIVATIVES, int NSTOKES>
-    inline void scattering_source_impl(
+    template <int NSTOKES>
+    inline void scattering_source(
         const PhaseHandler<NSTOKES>& phase_handler, int threadidx, int losidx,
         int layeridx, int wavelidx,
         const raytracing::GridWeightStencilView& index_weights,
@@ -262,50 +272,14 @@ namespace sasktran2::solartransmission {
         const atmosphere::Atmosphere<NSTOKES>& atmosphere,
         Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
             solar_trans_iter,
-        bool calculate_derivatives, std::vector<int>& active_derivative_indices,
+        bool calculate_derivatives,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
             source) {
         const auto& storage = atmosphere.storage();
         source.value.setZero();
 
         if (calculate_derivatives) {
-            if constexpr (USE_ACTIVE_DERIVATIVES) {
-                active_derivative_indices.clear();
-                for (auto it = solar_trans_iter; it; ++it) {
-                    active_derivative_indices.push_back(it.index());
-                }
-                for (std::size_t index = 0; index < index_weights.size();
-                     ++index) {
-                    const auto ele = index_weights[index];
-                    if (ele.second == 0.0) {
-                        continue;
-                    }
-                    active_derivative_indices.push_back(ele.first);
-                    active_derivative_indices.push_back(
-                        atmosphere.ssa_deriv_start_index() + ele.first);
-                    for (int derivative_group = 0;
-                         derivative_group <
-                         atmosphere.num_scattering_deriv_groups();
-                         ++derivative_group) {
-                        active_derivative_indices.push_back(
-                            atmosphere.scat_deriv_start_index() +
-                            derivative_group *
-                                atmosphere.storage().total_extinction.rows() +
-                            ele.first);
-                    }
-                }
-                std::sort(active_derivative_indices.begin(),
-                          active_derivative_indices.end());
-                active_derivative_indices.erase(
-                    std::unique(active_derivative_indices.begin(),
-                                active_derivative_indices.end()),
-                    active_derivative_indices.end());
-                for (const int derivative_index : active_derivative_indices) {
-                    source.deriv.col(derivative_index).setZero();
-                }
-            } else {
-                source.deriv.setZero();
-            }
+            source.deriv.setZero();
         }
 
         double ssa = 0;
@@ -387,13 +361,7 @@ namespace sasktran2::solartransmission {
         if (!calculate_derivatives) {
             return;
         }
-        if constexpr (USE_ACTIVE_DERIVATIVES) {
-            for (const int derivative_index : active_derivative_indices) {
-                source.deriv.col(derivative_index) *= source_amplitude;
-            }
-        } else {
-            source.deriv *= source_amplitude;
-        }
+        source.deriv *= source_amplitude;
         // Solar transmission derivative factors
         for (auto it = solar_trans_iter; it; ++it) {
             source.deriv(Eigen::placeholders::all, it.index()) -=
@@ -415,8 +383,11 @@ namespace sasktran2::solartransmission {
         }
     }
 
+    /** Evaluates one exact single-scatter endpoint and accumulates its
+     * derivatives directly into the integrated ray source. This avoids
+     * materializing and then copying a dense endpoint derivative buffer. */
     template <int NSTOKES>
-    inline void scattering_source(
+    inline Eigen::Vector<double, NSTOKES> accumulate_exact_scattering_source(
         const PhaseHandler<NSTOKES>& phase_handler, int threadidx, int losidx,
         int layeridx, int wavelidx,
         const raytracing::GridWeightStencilView& index_weights,
@@ -424,23 +395,50 @@ namespace sasktran2::solartransmission {
         const atmosphere::Atmosphere<NSTOKES>& atmosphere,
         Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
             solar_trans_iter,
-        bool calculate_derivatives, bool use_active_derivatives,
-        std::vector<int>& active_derivative_indices,
+        double derivative_scale,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-            source) {
-        if (use_active_derivatives) {
-            scattering_source_impl<true>(
-                phase_handler, threadidx, losidx, layeridx, wavelidx,
-                index_weights, is_entrance, solar_trans, atmosphere,
-                solar_trans_iter, calculate_derivatives,
-                active_derivative_indices, source);
-        } else {
-            scattering_source_impl<false>(
-                phase_handler, threadidx, losidx, layeridx, wavelidx,
-                index_weights, is_entrance, solar_trans, atmosphere,
-                solar_trans_iter, calculate_derivatives,
-                active_derivative_indices, source);
+            target) {
+        const auto& storage = atmosphere.storage();
+        double ssa = 0.0;
+        double extinction = 0.0;
+        for (std::size_t index = 0; index < index_weights.size(); ++index) {
+            const auto weight = index_weights[index];
+            if (weight.second == 0.0) {
+                continue;
+            }
+            ssa += storage.ssa(weight.first, wavelidx) * weight.second;
+            extinction += storage.total_extinction(weight.first, wavelidx) *
+                          weight.second;
         }
+
+        const double unscaled_amplitude = solar_trans / (EIGEN_PI * 4);
+        const double source_amplitude = extinction * ssa * unscaled_amplitude;
+        const Eigen::Vector<double, NSTOKES> phase =
+            phase_handler.scatter_and_accumulate_derivative(
+                threadidx, losidx, layeridx, index_weights, is_entrance,
+                source_amplitude, derivative_scale, target);
+        const Eigen::Vector<double, NSTOKES> endpoint_source =
+            source_amplitude * phase;
+
+        for (auto it = solar_trans_iter; it; ++it) {
+            target.deriv.col(it.index()) -=
+                derivative_scale * it.value() * endpoint_source;
+        }
+
+        for (std::size_t index = 0; index < index_weights.size(); ++index) {
+            const auto weight = index_weights[index];
+            if (weight.second == 0.0) {
+                continue;
+            }
+            target.deriv.col(atmosphere.ssa_deriv_start_index() +
+                             weight.first) += derivative_scale * weight.second *
+                                              extinction * unscaled_amplitude *
+                                              phase;
+            target.deriv.col(weight.first) += derivative_scale * weight.second *
+                                              ssa * unscaled_amplitude * phase;
+        }
+
+        return endpoint_source;
     }
 
     template <typename S, int NSTOKES>
@@ -458,8 +456,14 @@ namespace sasktran2::solartransmission {
 
         PhaseHandler<NSTOKES> m_phase_handler;
 
-        mutable std::vector<std::vector<int>> m_start_active_derivative_indices;
-        mutable std::vector<std::vector<int>> m_end_active_derivative_indices;
+        // [los][layer][solar endpoint][geometry endpoint], where endpoint 0 is
+        // the layer exit and endpoint 1 is the layer entrance.
+        using ActiveDerivativeIndices =
+            std::array<std::array<std::vector<int>, 2>, 2>;
+        std::vector<std::vector<ActiveDerivativeIndices>>
+            m_active_derivative_indices;
+        const std::vector<sasktran2::raytracing::TracedRay>* m_traced_rays =
+            nullptr;
 
         mutable std::vector<
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>>
@@ -475,6 +479,8 @@ namespace sasktran2::solartransmission {
 
         std::vector<bool> m_los_ground_is_hit;
         std::vector<sasktran2::raytracing::LayerGeometry> m_los_end_layers;
+
+        void initialize_active_derivative_indices();
 
         void integrated_source_constant(
             int wavelidx, int losidx, int layeridx, int wavel_threadidx,
@@ -560,6 +566,17 @@ namespace sasktran2::solartransmission {
             return dimension == 1 ||
                    (dimension == 2 && m_geometry_2d != nullptr);
         }
+
+        bool supports_sparse_derivative_tracking() const override {
+            return std::is_same_v<S, SolarTransmissionExact>;
+        }
+
+        void append_end_of_ray_active_derivatives(
+            int losidx, std::vector<int>& derivative_indices) const override;
+
+        void append_interior_active_derivatives(
+            int losidx, int layeridx,
+            std::vector<int>& derivative_indices) const override;
 
         /** Calculates the source term at the end of the ray.  Common examples
          * of this are ground scattering, ground emission, or the solar radiance

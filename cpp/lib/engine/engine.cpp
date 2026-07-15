@@ -477,6 +477,7 @@ void Sasktran2<NSTOKES>::calculate_radiance(
     }
 
     m_source_integrator->initialize_atmosphere(atmosphere);
+    m_source_integrator->initialize_derivative_sparsity(m_los_source_terms);
 
     // Allocate memory, should be moved to thread storage?
     auto& radiance = const_cast<std::vector<

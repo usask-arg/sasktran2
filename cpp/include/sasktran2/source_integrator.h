@@ -50,12 +50,16 @@ namespace sasktran2 {
         std::vector<Eigen::MatrixXd>
             m_shell_od; /**< Vector of matrices that stores the optical depth
                            for each layer */
-        const std::vector<sasktran2::raytracing::TracedRay>*
-            m_traced_rays; /**< Reference to the rays we are integrating */
+        const std::vector<sasktran2::raytracing::TracedRay>* m_traced_rays =
+            nullptr; /**< Reference to the rays we are integrating */
 
-        const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere;
+        const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere =
+            nullptr;
         int m_num_geometry_locations = 0;
         int m_num_geometry_dimensions = 1;
+        bool m_use_sparse_derivative_tracking = false;
+        std::vector<std::vector<std::vector<std::pair<int, int>>>>
+            m_attenuation_active_derivative_ranges;
 
         void integrate_ray(
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
@@ -82,6 +86,8 @@ namespace sasktran2 {
         void set_calculate_derivatives(bool enable) {
             m_derivatives_enabled = enable;
             m_calculate_derivatives = enable;
+            m_use_sparse_derivative_tracking = false;
+            m_attenuation_active_derivative_ranges.clear();
         }
 
         /** Initializes the geometry of the source integrator
@@ -99,6 +105,12 @@ namespace sasktran2 {
          */
         void initialize_atmosphere(
             const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmo);
+
+        /** Precomputes the cumulative derivative columns that can be nonzero
+         * before each layer attenuation. This is enabled only when every
+         * active source can report its derivative sparsity exactly. */
+        void initialize_derivative_sparsity(
+            const std::vector<SourceTermInterface<NSTOKES>*>& source_terms);
 
         /** Integrates the source terms and stores the result in radiance
          *

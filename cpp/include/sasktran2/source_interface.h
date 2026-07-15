@@ -126,4 +126,20 @@ template <int NSTOKES> class SourceTermInterface {
     virtual bool supports_geometry_dimension(int dimension) const {
         return dimension == 1 || !has_interior_source();
     }
+
+    /** Returns true when this source can report every derivative column that
+     * it may modify. The source integrator uses this information to avoid
+     * scaling derivative columns that are still identically zero. */
+    virtual bool supports_sparse_derivative_tracking() const { return false; }
+
+    /** Appends derivative columns that may be modified by the source at the
+     * end of a ray. */
+    virtual void append_end_of_ray_active_derivatives(int,
+                                                      std::vector<int>&) const {
+    }
+
+    /** Appends derivative columns that may be modified by the source within a
+     * layer. */
+    virtual void append_interior_active_derivatives(int, int,
+                                                    std::vector<int>&) const {}
 };
