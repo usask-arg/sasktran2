@@ -264,11 +264,6 @@ jobs:
             -e USE_OMP=ON
             -e SKTRAN_BLAS_VENDOR=SCIPY_OPENBLAS
             -e RUNNER_OS=Linux
-        env:
-          # The Rust build links C++ archives produced outside Cargo's normal
-          # dependency graph. Include the C++ tree in sccache's key so a wheel
-          # can never reuse native output from an older revision.
-          SCCACHE_C_CUSTOM_CACHE_BUSTER: ${{ hashFiles('cpp/**') }}
 
       - name: test wheel import
         run: |
@@ -342,7 +337,6 @@ jobs:
           USE_OMP: ON
           SKTRAN_BLAS_VENDOR: SCIPY_OPENBLAS
           RUNNER_OS: MacOS
-          SCCACHE_C_CUSTOM_CACHE_BUSTER: ${{ hashFiles('cpp/**') }}
 
       - name: Get OpenBLAS lib dir and set env var
         id: get-lib-dir-13
@@ -408,7 +402,6 @@ jobs:
           USE_OMP: ON
           SKTRAN_BLAS_VENDOR: SCIPY_OPENBLAS
           RUNNER_OS: Windows
-          SCCACHE_C_CUSTOM_CACHE_BUSTER: ${{ hashFiles('cpp/**') }}
           PKG_CONFIG_PATH: C:/opt/64/lib/pkgconfig
           CMAKE_PREFIX_PATH: C:/opt/64/
 
