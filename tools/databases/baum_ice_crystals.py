@@ -764,9 +764,7 @@ def _initialize_output(
         chunksizes=scalar_chunks,
         **compression,
     )
-    variables[
-        "required_moments"
-    ].description = (
+    variables["required_moments"].description = (
         "moments at convergence, or the safety cap when convergence was not reached"
     )
     variables["phase_reconstruction_converged"] = output.createVariable(
@@ -776,9 +774,7 @@ def _initialize_output(
         chunksizes=scalar_chunks,
         **compression,
     )
-    variables[
-        "phase_reconstruction_converged"
-    ].description = (
+    variables["phase_reconstruction_converged"].description = (
         "1 when both phase reconstruction criteria passed for two consecutive blocks"
     )
     variables["phase_relative_rms_error"] = output.createVariable(

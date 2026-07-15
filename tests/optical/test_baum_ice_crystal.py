@@ -312,7 +312,7 @@ def test_adaptive_transform_reports_safety_cap_failure():
     assert capped.coefficients.shape[-1] == 8
 
 
-@pytest.fixture
+@pytest.fixture()
 def baum_runtime_database(tmp_path) -> Path:
     models = np.asarray(tuple(MODEL_FILES), dtype=object)
     diameters = np.array([10.0, 20.0])
