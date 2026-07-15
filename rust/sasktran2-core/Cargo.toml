@@ -14,10 +14,19 @@ num = "*"
 anyhow = "*"
 cxx = "1.0"
 gauss-quad = "0.2.4"
+rayon = "*"
+wide = { version = "0.7.33", optional = true }
+
+[dev-dependencies]
+criterion = "*"
 
 [features]
 nightly = ["simd"]
-simd = []
+simd = ["dep:wide"]
 
 [lib]
 crate-type = ["staticlib", "rlib"]
+
+[[bench]]
+name = "twostream"
+harness = false
