@@ -13,6 +13,7 @@ namespace sasktran2 {
           m_do_forced_azimuth(-1), m_do_backprop(false),
           m_singlescatter_phasemode(SingleScatterPhaseMode::from_legendre),
           m_threading_model(ThreadingModel::wavelength),
+          m_two_stream_backend(TwoStreamBackend::cpp),
           m_initialize_hr_with_do_solution(false),
           m_output_los_optical_depth(false),
           m_input_validation_mode(InputValidationMode::strict),
@@ -31,6 +32,15 @@ namespace sasktran2 {
     }
 
     void Config::validate_config() const {
+#ifndef SKTRAN_RUST_SUPPORT
+        if (m_two_stream_backend == TwoStreamBackend::rust &&
+            (m_multiple_scatter_source == MultipleScatterSource::twostream ||
+             m_emission_source == EmissionSource::twostream)) {
+            spdlog::critical(
+                "two_stream_backend=rust requires a build with Rust support");
+            sasktran2::validation::throw_configuration_error();
+        }
+#endif
         if (input_validation_mode() == InputValidationMode::disabled) {
             return;
         }

@@ -531,6 +531,18 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn sk_config_get_two_stream_backend(
+        config: *mut Config,
+        backend: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_set_two_stream_backend(
+        config: *mut Config,
+        backend: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn sk_config_get_num_singlescatter_moments(
         config: *mut Config,
         num_moments: *mut ::std::os::raw::c_int,

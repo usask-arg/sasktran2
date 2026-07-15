@@ -59,7 +59,7 @@ struct Engine {
             }
             return -1; // Error: impl is null
         } catch (const std::exception& e) {
-            // Handle the exception, log it, etc.
+            spdlog::error("Error calculating radiance: {}", e.what());
             return -3; // Error: exception occurred
         }
     }
@@ -116,7 +116,7 @@ int sk_engine_calculate_radiance_thread(Engine* engine, Atmosphere* atmosphere,
         }
         return -1; // Error: impl is null
     } catch (const std::exception& e) {
-        // Handle the exception, log it, etc.
+        spdlog::error("Error calculating radiance thread: {}", e.what());
         return -3; // Error: exception occurred
     }
 }

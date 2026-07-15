@@ -31,6 +31,8 @@ int sk_config_get_num_threads(Config* config, int* num_threads);
 int sk_config_set_num_threads(Config* config, int num_threads);
 int sk_config_get_threading_model(Config* config, int* threading_model);
 int sk_config_set_threading_model(Config* config, int threading_model);
+int sk_config_get_two_stream_backend(Config* config, int* backend);
+int sk_config_set_two_stream_backend(Config* config, int backend);
 
 // Single scatter configuration methods
 int sk_config_get_num_singlescatter_moments(Config* config, int* num_moments);

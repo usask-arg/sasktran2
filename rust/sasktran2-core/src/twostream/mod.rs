@@ -5,6 +5,8 @@
 //! is stored at `layer * num_wavelengths + wavel`.  That layout is part of the
 //! API because the hot kernels vectorize over wavelength.
 
+#[cfg(not(test))]
+mod cxx;
 mod explicit;
 #[cfg(test)]
 mod reverse;
@@ -16,8 +18,8 @@ mod simd;
 
 pub use solver::{ExecutionPolicy, TwoStreamSolver, Workspace};
 pub use types::{
-    AtmosphereAdjoints, AtmosphereBatch, Geometry, LayerAdjoints, LayerInputs, RadianceBatch,
-    SourceMode, TwoStreamError, View,
+    AtmosphereAdjoints, AtmosphereBatch, AtmosphereJacobians, Geometry, LayerAdjoints, LayerInputs,
+    RadianceBatch, SourceMode, TwoStreamError, View,
 };
 
 #[cfg(test)]

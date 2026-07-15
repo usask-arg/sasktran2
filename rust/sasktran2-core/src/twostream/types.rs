@@ -106,6 +106,25 @@ pub struct AtmosphereAdjoints {
     pub surface_emission: Option<Vec<f64>>,
 }
 
+/// Per-view atmospheric Jacobians for a radiance batch.
+///
+/// Level quantities have shape `[view, level, wavelength]`; surface
+/// quantities have shape `[view, wavelength]`.  The wavelength dimension is
+/// contiguous so the engine can copy one wavelength/view result without
+/// transposing the SIMD-friendly storage.
+#[derive(Clone, Debug)]
+pub struct AtmosphereJacobians {
+    pub num_views: usize,
+    pub num_levels: usize,
+    pub num_wavelengths: usize,
+    pub extinction: Vec<f64>,
+    pub single_scatter_albedo: Vec<f64>,
+    pub first_legendre: Vec<f64>,
+    pub emission: Option<Vec<f64>>,
+    pub surface_albedo: Vec<f64>,
+    pub surface_emission: Option<Vec<f64>>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TwoStreamError(pub(crate) String);
 

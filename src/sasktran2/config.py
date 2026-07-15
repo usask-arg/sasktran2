@@ -13,6 +13,7 @@ from sasktran2._core_rust import (
     StokesBasis,
     ThreadingLib,
     ThreadingModel,
+    TwoStreamBackend,
 )
 
 
@@ -82,6 +83,19 @@ class Config:
             is small.
         """
         self._config.threading_model = value
+
+    @property
+    def two_stream_backend(self) -> TwoStreamBackend:
+        """Selects the implementation used by solar and thermal two-stream sources.
+
+        The C++ backend is the default. The Rust backend batches all wavelengths
+        and caches per-view Jacobians for faster derivative calculations.
+        """
+        return self._config.two_stream_backend
+
+    @two_stream_backend.setter
+    def two_stream_backend(self, value: TwoStreamBackend):
+        self._config.two_stream_backend = value
 
     @property
     def input_validation_mode(self) -> InputValidationMode:

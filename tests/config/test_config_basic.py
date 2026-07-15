@@ -9,6 +9,13 @@ def test_config_creation():
     assert config is not None
 
 
+def test_two_stream_backend_roundtrip():
+    config = sk.Config()
+    assert config.two_stream_backend == sk.TwoStreamBackend.Cpp
+    config.two_stream_backend = sk.TwoStreamBackend.Rust
+    assert config.two_stream_backend == sk.TwoStreamBackend.Rust
+
+
 def test_log_level_default():
     """Test that default log level is Warn"""
     config = sk.Config()

@@ -1,6 +1,6 @@
 use super::types::{
-    AtmosphereAdjoints, AtmosphereBatch, Geometry, LayerAdjoints, LayerInputs, RadianceBatch,
-    SourceMode, TwoStreamError, View,
+    AtmosphereAdjoints, AtmosphereBatch, AtmosphereJacobians, Geometry, LayerAdjoints, LayerInputs,
+    RadianceBatch, SourceMode, TwoStreamError, View,
 };
 
 const FOUR_PI: f64 = 4.0 * std::f64::consts::PI;
@@ -538,6 +538,163 @@ impl TwoStreamSolver {
         Ok((radiance, atmosphere_gradient))
     }
 
+    /// Fused atmospheric preparation and SIMD radiance evaluation.
+    ///
+    /// Unlike [`Self::prepare`] followed by [`Self::solve`], this path never
+    /// materializes batch-wide layer inputs and is intended for embedding in
+    /// the main engine.
+    pub fn solve_atmosphere(
+        &self,
+        atmosphere: &AtmosphereBatch,
+        views: &[View],
+        workspace: &mut Workspace,
+    ) -> Result<RadianceBatch, TwoStreamError> {
+        validate_atmosphere(&self.geometry, self.mode, atmosphere)?;
+        validate_views(views)?;
+        let nw = atmosphere.num_wavelengths;
+        let value_count = views
+            .len()
+            .checked_mul(nw)
+            .ok_or_else(|| TwoStreamError::invalid("radiance allocation is too large"))?;
+        let mut radiance = RadianceBatch {
+            num_views: views.len(),
+            num_wavelengths: nw,
+            values: try_zeroed(value_count, "radiance")?,
+        };
+        let ranges = wavelength_tile_ranges(self.execution, nw);
+        let output_tiles = super::explicit::split_radiance_outputs(&ranges, &mut radiance);
+
+        if ranges.len() == 1 {
+            let (start, len) = ranges[0];
+            let mut outputs = output_tiles;
+            super::explicit::solve_unprepared_atmosphere_forward_tile(
+                &self.geometry,
+                self.mode,
+                atmosphere,
+                views,
+                start,
+                len,
+                &mut outputs[0],
+                &mut workspace.explicit,
+            );
+            drop(outputs);
+            return Ok(radiance);
+        }
+
+        use rayon::prelude::*;
+        ranges
+            .into_par_iter()
+            .zip(output_tiles.into_par_iter())
+            .for_each_init(
+                super::explicit::ExplicitWorkspace::default,
+                |local, ((start, len), mut output)| {
+                    super::explicit::solve_unprepared_atmosphere_forward_tile(
+                        &self.geometry,
+                        self.mode,
+                        atmosphere,
+                        views,
+                        start,
+                        len,
+                        &mut output,
+                        local,
+                    );
+                },
+            );
+        Ok(radiance)
+    }
+
+    /// Fused atmospheric preparation, radiance, and one Jacobian per view.
+    ///
+    /// The atmospheric preparation, layer forward sweep, and BVP
+    /// factorization are shared by every view in a wavelength tile.  Only the
+    /// line-of-sight and explicit-adjoint sweeps are repeated per view.
+    pub fn solve_atmosphere_with_jacobians(
+        &self,
+        atmosphere: &AtmosphereBatch,
+        views: &[View],
+        workspace: &mut Workspace,
+    ) -> Result<(RadianceBatch, AtmosphereJacobians), TwoStreamError> {
+        validate_atmosphere(&self.geometry, self.mode, atmosphere)?;
+        validate_views(views)?;
+        let nw = atmosphere.num_wavelengths;
+        let num_levels = self.geometry.num_layers() + 1;
+        let surface_count = views
+            .len()
+            .checked_mul(nw)
+            .ok_or_else(|| TwoStreamError::invalid("surface Jacobian allocation is too large"))?;
+        let level_count = surface_count
+            .checked_mul(num_levels)
+            .ok_or_else(|| TwoStreamError::invalid("level Jacobian allocation is too large"))?;
+        let mut radiance = RadianceBatch {
+            num_views: views.len(),
+            num_wavelengths: nw,
+            values: try_zeroed(surface_count, "radiance")?,
+        };
+        let mut jacobians = AtmosphereJacobians {
+            num_views: views.len(),
+            num_levels,
+            num_wavelengths: nw,
+            extinction: try_zeroed(level_count, "extinction Jacobian")?,
+            single_scatter_albedo: try_zeroed(level_count, "SSA Jacobian")?,
+            first_legendre: try_zeroed(level_count, "phase Jacobian")?,
+            emission: if self.mode == SourceMode::Thermal {
+                Some(try_zeroed(level_count, "emission Jacobian")?)
+            } else {
+                None
+            },
+            surface_albedo: try_zeroed(surface_count, "surface-albedo Jacobian")?,
+            surface_emission: if self.mode == SourceMode::Thermal {
+                Some(try_zeroed(surface_count, "surface-emission Jacobian")?)
+            } else {
+                None
+            },
+        };
+        let ranges = wavelength_tile_ranges(self.execution, nw);
+        let output_tiles = super::explicit::split_atmosphere_jacobian_outputs(
+            &ranges,
+            &mut radiance,
+            &mut jacobians,
+        );
+
+        if ranges.len() == 1 {
+            let (start, len) = ranges[0];
+            let mut outputs = output_tiles;
+            super::explicit::solve_unprepared_atmosphere_jacobian_tile(
+                &self.geometry,
+                self.mode,
+                atmosphere,
+                views,
+                start,
+                len,
+                &mut outputs[0],
+                &mut workspace.explicit,
+            );
+            drop(outputs);
+            return Ok((radiance, jacobians));
+        }
+
+        use rayon::prelude::*;
+        ranges
+            .into_par_iter()
+            .zip(output_tiles.into_par_iter())
+            .for_each_init(
+                super::explicit::ExplicitWorkspace::default,
+                |local, ((start, len), mut output)| {
+                    super::explicit::solve_unprepared_atmosphere_jacobian_tile(
+                        &self.geometry,
+                        self.mode,
+                        atmosphere,
+                        views,
+                        start,
+                        len,
+                        &mut output,
+                        local,
+                    );
+                },
+            );
+        Ok((radiance, jacobians))
+    }
+
     /// Map layer-input adjoints back to atmospheric level quantities.
     pub fn map_adjoint_to_atmosphere(
         &self,
@@ -555,6 +712,33 @@ impl TwoStreamSolver {
             self.execution,
         )
     }
+}
+
+fn try_zeroed(count: usize, name: &str) -> Result<Vec<f64>, TwoStreamError> {
+    let mut values = Vec::new();
+    values
+        .try_reserve_exact(count)
+        .map_err(|_| TwoStreamError::invalid(format!("unable to allocate {name}")))?;
+    values.resize(count, 0.0);
+    Ok(values)
+}
+
+fn wavelength_tile_ranges(execution: ExecutionPolicy, nw: usize) -> Vec<(usize, usize)> {
+    if execution == ExecutionPolicy::Serial || nw < 2 * super::explicit::LANES {
+        return vec![(0, nw)];
+    }
+    let threads = rayon::current_num_threads().min(nw.div_ceil(super::explicit::LANES));
+    if threads == 1 {
+        return vec![(0, nw)];
+    }
+    let target_tiles = (4 * threads).min(nw.div_ceil(super::explicit::LANES));
+    const CACHE_LINE_VALUES: usize = 64 / std::mem::size_of::<f64>();
+    let tile_alignment = CACHE_LINE_VALUES.max(super::explicit::LANES);
+    let tile_size = nw.div_ceil(target_tiles * tile_alignment) * tile_alignment;
+    (0..nw)
+        .step_by(tile_size)
+        .map(|start| (start, (nw - start).min(tile_size)))
+        .collect()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1379,10 +1563,8 @@ fn map_layer_adjoint_range(
                     d_b0 + d_b1 / (dz * emission[l * input_nw + wave]);
                 out.emission.as_mut().unwrap()[(l + 1) * len + output_wave] -=
                     d_b1 / (dz * emission[(l + 1) * input_nw + wave]);
-                out.extinction[l * len + output_wave] +=
-                    d_b1 * inputs.thermal_b1.as_ref().unwrap()[li] * 0.5 / dz;
-                out.extinction[(l + 1) * len + output_wave] +=
-                    d_b1 * inputs.thermal_b1.as_ref().unwrap()[li] * 0.5 / dz;
+                // `dz` is fixed geometry, so differentiating the thermal
+                // profile parameterization adds no extinction contribution.
             }
         }
     }

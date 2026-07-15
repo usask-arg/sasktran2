@@ -3,8 +3,8 @@
 use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign};
 
 use super::{
-    AtmosphereAdjoints, AtmosphereBatch, ExecutionPolicy, Geometry, LayerAdjoints, LayerInputs,
-    RadianceBatch, SourceMode, View,
+    AtmosphereAdjoints, AtmosphereBatch, AtmosphereJacobians, ExecutionPolicy, Geometry,
+    LayerAdjoints, LayerInputs, RadianceBatch, SourceMode, View,
 };
 
 pub(super) const LANES: usize = 8;
@@ -602,6 +602,76 @@ pub(super) fn solve_unprepared_atmosphere_tile(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+pub(super) fn solve_unprepared_atmosphere_forward_tile(
+    geometry: &Geometry,
+    mode: SourceMode,
+    atmosphere: &AtmosphereBatch,
+    views: &[View],
+    input_start: usize,
+    len: usize,
+    radiance: &mut OutputRows<'_>,
+    workspace: &mut ExplicitWorkspace,
+) {
+    for local_base in (0..len).step_by(LANES) {
+        match mode {
+            SourceMode::Solar => solve_unprepared_atmosphere_forward_chunk::<true>(
+                geometry,
+                atmosphere,
+                views,
+                input_start + local_base,
+                local_base,
+                radiance,
+                workspace,
+            ),
+            SourceMode::Thermal => solve_unprepared_atmosphere_forward_chunk::<false>(
+                geometry,
+                atmosphere,
+                views,
+                input_start + local_base,
+                local_base,
+                radiance,
+                workspace,
+            ),
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn solve_unprepared_atmosphere_jacobian_tile(
+    geometry: &Geometry,
+    mode: SourceMode,
+    atmosphere: &AtmosphereBatch,
+    views: &[View],
+    input_start: usize,
+    len: usize,
+    outputs: &mut AtmosphereOutputTile<'_>,
+    workspace: &mut ExplicitWorkspace,
+) {
+    for local_base in (0..len).step_by(LANES) {
+        match mode {
+            SourceMode::Solar => solve_unprepared_atmosphere_jacobian_chunk::<true>(
+                geometry,
+                atmosphere,
+                views,
+                input_start + local_base,
+                local_base,
+                outputs,
+                workspace,
+            ),
+            SourceMode::Thermal => solve_unprepared_atmosphere_jacobian_chunk::<false>(
+                geometry,
+                atmosphere,
+                views,
+                input_start + local_base,
+                local_base,
+                outputs,
+                workspace,
+            ),
+        }
+    }
+}
+
 fn empty_atmosphere_outputs(
     mode: SourceMode,
     n: usize,
@@ -734,7 +804,7 @@ fn copy_rows(
     }
 }
 
-struct OutputRows<'a> {
+pub(super) struct OutputRows<'a> {
     rows: Vec<&'a mut [f64]>,
 }
 
@@ -807,6 +877,52 @@ pub(super) fn split_atmosphere_outputs<'a>(
     let mut surface_albedo =
         split_output_rows(&mut adjoints.surface_albedo, nw, ranges).into_iter();
     let mut surface_emission = adjoints
+        .surface_emission
+        .as_mut()
+        .map(|values| split_output_rows(values, nw, ranges).into_iter());
+
+    (0..ranges.len())
+        .map(|_| AtmosphereOutputTile {
+            radiance: radiance.next().unwrap(),
+            extinction: extinction.next().unwrap(),
+            single_scatter_albedo: single_scatter_albedo.next().unwrap(),
+            first_legendre: first_legendre.next().unwrap(),
+            emission: emission.as_mut().map(|rows| rows.next().unwrap()),
+            surface_albedo: surface_albedo.next().unwrap(),
+            surface_emission: surface_emission.as_mut().map(|rows| rows.next().unwrap()),
+        })
+        .collect()
+}
+
+pub(super) fn split_radiance_outputs<'a>(
+    ranges: &[(usize, usize)],
+    radiance: &'a mut RadianceBatch,
+) -> Vec<OutputRows<'a>> {
+    split_output_rows(&mut radiance.values, radiance.num_wavelengths, ranges)
+}
+
+pub(super) fn split_atmosphere_jacobian_outputs<'a>(
+    ranges: &[(usize, usize)],
+    radiance: &'a mut RadianceBatch,
+    jacobians: &'a mut AtmosphereJacobians,
+) -> Vec<AtmosphereOutputTile<'a>> {
+    let nw = radiance.num_wavelengths;
+    debug_assert_eq!(jacobians.num_wavelengths, nw);
+    debug_assert_eq!(jacobians.num_views, radiance.num_views);
+
+    let mut radiance = split_output_rows(&mut radiance.values, nw, ranges).into_iter();
+    let mut extinction = split_output_rows(&mut jacobians.extinction, nw, ranges).into_iter();
+    let mut single_scatter_albedo =
+        split_output_rows(&mut jacobians.single_scatter_albedo, nw, ranges).into_iter();
+    let mut first_legendre =
+        split_output_rows(&mut jacobians.first_legendre, nw, ranges).into_iter();
+    let mut emission = jacobians
+        .emission
+        .as_mut()
+        .map(|values| split_output_rows(values, nw, ranges).into_iter());
+    let mut surface_albedo =
+        split_output_rows(&mut jacobians.surface_albedo, nw, ranges).into_iter();
+    let mut surface_emission = jacobians
         .surface_emission
         .as_mut()
         .map(|values| split_output_rows(values, nw, ranges).into_iter());
@@ -972,10 +1088,11 @@ fn run_loaded_chunk_mode<const SOLAR: bool>(
         albedo,
         thermal_surface,
         views,
-        cotangent,
+        ViewSeed::Cotangent(cotangent),
         input_base,
         input_stride,
         output_base,
+        0,
         radiance,
         w,
     );
@@ -986,6 +1103,13 @@ fn run_loaded_chunk_mode<const SOLAR: bool>(
     reverse_layers::<SOLAR>(geometry, w);
 
     (d_albedo, d_thermal_surface)
+}
+
+#[derive(Clone, Copy)]
+enum ViewSeed<'a> {
+    Cotangent(&'a [f64]),
+    Unit,
+    None,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1033,6 +1157,29 @@ fn run_atmosphere_chunk_mode<const SOLAR: bool>(
     input_base: usize,
     output_base: usize,
     radiance: &mut OutputRows<'_>,
+    w: &mut ExplicitWorkspace,
+) -> (Wide, Wide) {
+    let input_stride = atmosphere.num_wavelengths;
+    let (albedo, thermal_surface) =
+        load_atmosphere_chunk_mode::<SOLAR>(geometry, atmosphere, input_base, w);
+    run_loaded_chunk_mode::<SOLAR>(
+        geometry,
+        albedo,
+        thermal_surface,
+        views,
+        cotangent,
+        input_base,
+        input_stride,
+        output_base,
+        radiance,
+        w,
+    )
+}
+
+fn load_atmosphere_chunk_mode<const SOLAR: bool>(
+    geometry: &Geometry,
+    atmosphere: &AtmosphereBatch,
+    input_base: usize,
     w: &mut ExplicitWorkspace,
 ) -> (Wide, Wide) {
     let n = geometry.num_layers();
@@ -1120,18 +1267,93 @@ fn run_atmosphere_chunk_mode<const SOLAR: bool>(
             input_stride,
         )
     };
-    run_loaded_chunk_mode::<SOLAR>(
+    (albedo, thermal_surface)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn solve_unprepared_atmosphere_forward_chunk<const SOLAR: bool>(
+    geometry: &Geometry,
+    atmosphere: &AtmosphereBatch,
+    views: &[View],
+    input_base: usize,
+    output_base: usize,
+    radiance: &mut OutputRows<'_>,
+    w: &mut ExplicitWorkspace,
+) {
+    let (albedo, thermal_surface) =
+        load_atmosphere_chunk_mode::<SOLAR>(geometry, atmosphere, input_base, w);
+    forward_layers::<SOLAR>(geometry, albedo, thermal_surface, w);
+    reverse_views::<SOLAR>(
         geometry,
         albedo,
         thermal_surface,
         views,
-        cotangent,
+        ViewSeed::None,
         input_base,
-        input_stride,
+        atmosphere.num_wavelengths,
         output_base,
+        0,
         radiance,
         w,
-    )
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn solve_unprepared_atmosphere_jacobian_chunk<const SOLAR: bool>(
+    geometry: &Geometry,
+    atmosphere: &AtmosphereBatch,
+    views: &[View],
+    input_base: usize,
+    output_base: usize,
+    outputs: &mut AtmosphereOutputTile<'_>,
+    w: &mut ExplicitWorkspace,
+) {
+    let n = geometry.num_layers();
+    let (albedo, thermal_surface) =
+        load_atmosphere_chunk_mode::<SOLAR>(geometry, atmosphere, input_base, w);
+    forward_layers::<SOLAR>(geometry, albedo, thermal_surface, w);
+
+    for (view_index, view) in views.iter().enumerate() {
+        // Preserve the shared forward/BVP state while clearing only adjoints
+        // from the preceding view.
+        w.resize::<SOLAR>(n);
+        let (mut d_albedo, mut d_thermal_surface) = reverse_views::<SOLAR>(
+            geometry,
+            albedo,
+            thermal_surface,
+            std::slice::from_ref(view),
+            ViewSeed::Unit,
+            input_base,
+            atmosphere.num_wavelengths,
+            output_base,
+            view_index,
+            &mut outputs.radiance,
+            w,
+        );
+        let (bvp_albedo, bvp_thermal_surface) =
+            reverse_bvp::<SOLAR>(geometry, albedo, thermal_surface, w);
+        d_albedo += bvp_albedo;
+        d_thermal_surface += bvp_thermal_surface;
+        reverse_layers::<SOLAR>(geometry, w);
+
+        map_chunk_to_atmosphere(
+            geometry,
+            if SOLAR {
+                SourceMode::Solar
+            } else {
+                SourceMode::Thermal
+            },
+            atmosphere,
+            input_base,
+            output_base,
+            d_albedo,
+            d_thermal_surface,
+            view_index * (n + 1),
+            view_index,
+            outputs,
+            w,
+        );
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1268,6 +1490,8 @@ fn solve_atmosphere_chunk(
         output_base,
         d_albedo,
         d_thermal_surface,
+        0,
+        0,
         outputs,
         w,
     );
@@ -1304,6 +1528,8 @@ fn solve_unprepared_atmosphere_chunk(
         output_base,
         d_albedo,
         d_thermal_surface,
+        0,
+        0,
         outputs,
         w,
     );
@@ -1338,6 +1564,8 @@ fn map_chunk_to_atmosphere(
     output_base: usize,
     d_albedo: Wide,
     d_thermal_surface: Wide,
+    level_row_offset: usize,
+    surface_row: usize,
     adjoints: &mut AtmosphereOutputTile<'_>,
     w: &mut ExplicitWorkspace,
 ) {
@@ -1435,9 +1663,9 @@ fn map_chunk_to_atmosphere(
             let d_b1 = w.d_thermal_b1[layer];
             w.d_level_emission[layer] += d_b0 + d_b1 / (dz * top_emission);
             w.d_level_emission[layer + 1] -= d_b1 / (dz * bottom);
-            let d_extinction = 0.5 * d_b1 * w.thermal_b1[layer] / dz;
-            w.d_level_extinction[layer] += d_extinction;
-            w.d_level_extinction[layer + 1] += d_extinction;
+            // The physical layer thickness is geometry, not an atmospheric
+            // variable.  Therefore thermal_b1 has no additional extinction
+            // contribution when mapping back to level quantities.
             top_emission = bottom;
         }
         top_extinction = bottom_extinction;
@@ -1446,30 +1674,36 @@ fn map_chunk_to_atmosphere(
     }
 
     for level in 0..=n {
-        adjoints
-            .extinction
-            .write(level, output_base, w.d_level_extinction[level]);
-        adjoints
-            .single_scatter_albedo
-            .write(level, output_base, w.d_level_ssa[level]);
+        adjoints.extinction.write(
+            level_row_offset + level,
+            output_base,
+            w.d_level_extinction[level],
+        );
+        adjoints.single_scatter_albedo.write(
+            level_row_offset + level,
+            output_base,
+            w.d_level_ssa[level],
+        );
         adjoints
             .first_legendre
-            .write(level, output_base, w.d_level_b1[level]);
+            .write(level_row_offset + level, output_base, w.d_level_b1[level]);
         if mode == SourceMode::Thermal {
             adjoints.emission.as_mut().unwrap().write(
-                level,
+                level_row_offset + level,
                 output_base,
                 w.d_level_emission[level],
             );
         }
     }
-    adjoints.surface_albedo.write(0, output_base, d_albedo);
+    adjoints
+        .surface_albedo
+        .write(surface_row, output_base, d_albedo);
     if mode == SourceMode::Thermal {
-        adjoints
-            .surface_emission
-            .as_mut()
-            .unwrap()
-            .write(0, output_base, d_thermal_surface);
+        adjoints.surface_emission.as_mut().unwrap().write(
+            surface_row,
+            output_base,
+            d_thermal_surface,
+        );
     }
 }
 
@@ -1684,10 +1918,11 @@ fn reverse_views<const SOLAR: bool>(
     albedo: Wide,
     thermal_surface: Wide,
     views: &[View],
-    cotangent: &[f64],
+    seed: ViewSeed<'_>,
     input_base: usize,
     input_stride: usize,
     output_base: usize,
+    output_view_offset: usize,
     radiance: &mut OutputRows<'_>,
     w: &mut ExplicitWorkspace,
 ) -> (Wide, Wide) {
@@ -1755,9 +1990,16 @@ fn reverse_views<const SOLAR: bool>(
             + w.bvp[0].rhs[2 * last + 1] * w.homogeneous[0].xm[last];
         let surface = base_surface * (2.0 * mu) * albedo;
         let output = integrated + w.attenuation[n] * (surface + thermal_surface);
-        radiance.write(view_index, output_base, output);
+        let output_view = output_view_offset + view_index;
+        radiance.write(output_view, output_base, output);
 
-        let seed = Wide::load_row(cotangent, view_index, input_base, input_stride);
+        let seed = match seed {
+            ViewSeed::Cotangent(cotangent) => {
+                Wide::load_row(cotangent, output_view, input_base, input_stride)
+            }
+            ViewSeed::Unit => Wide::splat(1.0),
+            ViewSeed::None => continue,
+        };
         let d_surface = seed * w.attenuation[n];
         d_thermal_surface += seed * w.attenuation[n];
         let d_base_surface = d_surface * (2.0 * mu) * albedo;

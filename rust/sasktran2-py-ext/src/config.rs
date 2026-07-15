@@ -54,6 +54,13 @@ pub enum ThreadingModel {
 
 #[pyclass(eq, eq_int)]
 #[derive(PartialEq, Clone)]
+pub enum TwoStreamBackend {
+    Cpp,
+    Rust,
+}
+
+#[pyclass(eq, eq_int)]
+#[derive(PartialEq, Clone)]
 pub enum InputValidationMode {
     Strict,
     Standard,
@@ -174,6 +181,26 @@ impl PyConfig {
         };
         self.config.with_threading_model(model).into_pyresult()?;
 
+        Ok(())
+    }
+
+    #[getter]
+    fn two_stream_backend(&self) -> PyResult<TwoStreamBackend> {
+        match self.config.two_stream_backend().into_pyresult()? {
+            config::TwoStreamBackend::Cpp => Ok(TwoStreamBackend::Cpp),
+            config::TwoStreamBackend::Rust => Ok(TwoStreamBackend::Rust),
+        }
+    }
+
+    #[setter]
+    fn set_two_stream_backend(&mut self, backend: PyRef<'_, TwoStreamBackend>) -> PyResult<()> {
+        let backend = match *backend {
+            TwoStreamBackend::Cpp => config::TwoStreamBackend::Cpp,
+            TwoStreamBackend::Rust => config::TwoStreamBackend::Rust,
+        };
+        self.config
+            .with_two_stream_backend(backend)
+            .into_pyresult()?;
         Ok(())
     }
 

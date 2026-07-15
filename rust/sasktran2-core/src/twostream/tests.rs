@@ -124,6 +124,164 @@ fn assert_atmosphere_close(actual: &AtmosphereAdjoints, expected: &AtmosphereAdj
 }
 
 #[test]
+fn shared_forward_jacobians_match_one_hot_vjps() {
+    let n = 4;
+    let nw = 17;
+    let views = [
+        View {
+            cosine: 0.72,
+            relative_azimuth: 0.1,
+        },
+        View {
+            cosine: 0.43,
+            relative_azimuth: 1.1,
+        },
+    ];
+
+    for mode in [SourceMode::Solar, SourceMode::Thermal] {
+        for execution in [ExecutionPolicy::Serial, ExecutionPolicy::Rayon] {
+            let atmosphere = atmosphere(n, nw, mode == SourceMode::Thermal);
+            let solver = TwoStreamSolver::new(geometry(n), mode)
+                .unwrap()
+                .with_execution_policy(execution);
+            let forward = solver
+                .solve_atmosphere(&atmosphere, &views, &mut Workspace::new())
+                .unwrap();
+            let (radiance, jacobians) = solver
+                .solve_atmosphere_with_jacobians(&atmosphere, &views, &mut Workspace::new())
+                .unwrap();
+            assert_wide_close(&radiance.values, &forward.values);
+            assert_eq!(jacobians.num_views, views.len());
+            assert_eq!(jacobians.num_levels, n + 1);
+            assert_eq!(jacobians.num_wavelengths, nw);
+
+            let level_values = (n + 1) * nw;
+            for view in 0..views.len() {
+                let mut cotangent = vec![0.0; views.len() * nw];
+                cotangent[view * nw..(view + 1) * nw].fill(1.0);
+                let (_, expected) = solver
+                    .solve_atmosphere_with_vjp(
+                        &atmosphere,
+                        &views,
+                        &cotangent,
+                        &mut Workspace::new(),
+                    )
+                    .unwrap();
+                let levels = view * level_values..(view + 1) * level_values;
+                let surface = view * nw..(view + 1) * nw;
+                assert_wide_close(&jacobians.extinction[levels.clone()], &expected.extinction);
+                assert_wide_close(
+                    &jacobians.single_scatter_albedo[levels.clone()],
+                    &expected.single_scatter_albedo,
+                );
+                assert_wide_close(
+                    &jacobians.first_legendre[levels.clone()],
+                    &expected.first_legendre,
+                );
+                assert_wide_close(
+                    &jacobians.surface_albedo[surface.clone()],
+                    &expected.surface_albedo,
+                );
+                if mode == SourceMode::Thermal {
+                    assert_wide_close(
+                        &jacobians.emission.as_ref().unwrap()[levels],
+                        expected.emission.as_ref().unwrap(),
+                    );
+                    assert_wide_close(
+                        &jacobians.surface_emission.as_ref().unwrap()[surface],
+                        expected.surface_emission.as_ref().unwrap(),
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn atmosphere_jacobians_match_end_to_end_finite_differences() {
+    let n = 3;
+    let nw = 5;
+    let views = [
+        View {
+            cosine: 0.71,
+            relative_azimuth: 0.3,
+        },
+        View {
+            cosine: 0.44,
+            relative_azimuth: 1.0,
+        },
+    ];
+    let view = 1;
+    let level = 2;
+    let wave = 3;
+
+    for mode in [SourceMode::Solar, SourceMode::Thermal] {
+        let solver = TwoStreamSolver::new(geometry(n), mode)
+            .unwrap()
+            .with_execution_policy(ExecutionPolicy::Serial);
+        let mut atmosphere = atmosphere(n, nw, mode == SourceMode::Thermal);
+        let (_, jacobians) = solver
+            .solve_atmosphere_with_jacobians(&atmosphere, &views, &mut Workspace::new())
+            .unwrap();
+        let jacobian_index = (view * (n + 1) + level) * nw + wave;
+        let surface_index = view * nw + wave;
+        let output_index = view * nw + wave;
+
+        macro_rules! check_field {
+            ($field:expr, $analytic:expr) => {{
+                let original = $field;
+                let step = 1.0e-5 * original.abs().max(1.0e-3);
+                $field = original + step;
+                let plus = solver
+                    .solve_atmosphere(&atmosphere, &views, &mut Workspace::new())
+                    .unwrap()
+                    .values[output_index];
+                $field = original - step;
+                let minus = solver
+                    .solve_atmosphere(&atmosphere, &views, &mut Workspace::new())
+                    .unwrap()
+                    .values[output_index];
+                $field = original;
+                let numeric = (plus - minus) / (2.0 * step);
+                let analytic = $analytic;
+                let tolerance = 5.0e-8 * numeric.abs().max(1.0);
+                assert!(
+                    (analytic - numeric).abs() < tolerance,
+                    "{mode:?} Jacobian mismatch: analytic={analytic}, numeric={numeric}"
+                );
+            }};
+        }
+
+        check_field!(
+            atmosphere.extinction[level * nw + wave],
+            jacobians.extinction[jacobian_index]
+        );
+        check_field!(
+            atmosphere.single_scatter_albedo[level * nw + wave],
+            jacobians.single_scatter_albedo[jacobian_index]
+        );
+        check_field!(
+            atmosphere.first_legendre[level * nw + wave],
+            jacobians.first_legendre[jacobian_index]
+        );
+        check_field!(
+            atmosphere.surface_albedo[wave],
+            jacobians.surface_albedo[surface_index]
+        );
+        if mode == SourceMode::Thermal {
+            check_field!(
+                atmosphere.emission.as_mut().unwrap()[level * nw + wave],
+                jacobians.emission.as_ref().unwrap()[jacobian_index]
+            );
+            check_field!(
+                atmosphere.surface_emission.as_mut().unwrap()[wave],
+                jacobians.surface_emission.as_ref().unwrap()[surface_index]
+            );
+        }
+    }
+}
+
+#[test]
 fn explicit_adjoint_matches_tape_for_all_fields() {
     let nw = 5;
     let views = [
