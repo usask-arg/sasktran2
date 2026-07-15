@@ -1,9 +1,9 @@
 //! Straight and altitude-only refracted tracing through [`StructuredGrid2D`].
 //!
-//! This is currently a Rust-only API. It is intentionally not connected to the
-//! CXX bridge, Python bindings, or the engine's default raytracer selection.
+//! This remains a standalone API: the CXX adapter exposes its geometry output,
+//! but it is not connected to Python, atmosphere storage, or engine selection.
 
-use super::grid::{BoundarySet, BoundaryTag, GeometryKind, MediumGrid, VerticalGrid1D};
+use super::grid::{BoundarySet, BoundaryTag, CellId, GeometryKind, MediumGrid, VerticalGrid1D};
 use super::grid2d::StructuredGrid2D;
 use super::layer::{Layer, TraceEvent, TraceEventKind, TracePoint, TracedRay};
 use super::od_quadrature::add_od_quadrature;
@@ -71,7 +71,8 @@ impl TraceScratch2D {
     }
 }
 
-/// Ray tracer for a finite spherical altitude-by-angle grid.
+/// Ray tracer for a spherical altitude-by-angle grid with a finite altitude
+/// domain and horizontally extended edge cells.
 ///
 /// Refracted rays assume spherical symmetry for each individual trace: the
 /// supplied refractive profile may differ between rays, but varies only with
@@ -172,6 +173,7 @@ impl StructuredRayTracer2D {
                 GeometryKind::Spherical,
                 self.grid.altitude_interpolation(),
             );
+            add_structured_od_quadrature(layer, &self.grid);
             if let Some(solar) = options.solar {
                 let exit_solar = if reuse_shared_boundary_solar {
                     shared_boundary_solar
@@ -341,12 +343,12 @@ impl StructuredRayTracer2D {
 
             if total_angle > ANGULAR_EVENT_EPSILON {
                 for (horizontal_index, horizontal_angle) in
-                    self.grid.horizontal_angles().iter().enumerate()
+                    self.grid.horizontal_topology_boundaries()
                 {
                     let Some(crossing_direction) = angular_crossing_direction(
                         ray_plane_normal,
-                        self.grid.basis().angular_normal(*horizontal_angle),
-                        self.grid.basis().radial_direction(*horizontal_angle),
+                        self.grid.basis().angular_normal(horizontal_angle),
+                        self.grid.basis().radial_direction(horizontal_angle),
                         self.epsilon,
                     ) else {
                         continue;
@@ -374,9 +376,11 @@ impl StructuredRayTracer2D {
                     let radius = integral.radius;
                     let position = radius * crossing_direction;
                     let mut boundaries = BoundarySet::new();
-                    boundaries.push(BoundaryTag::Horizontal {
-                        index: horizontal_index,
-                    });
+                    boundaries.push(
+                        horizontal_index.map_or(BoundaryTag::HorizontalSeam, |index| {
+                            BoundaryTag::Horizontal { index }
+                        }),
+                    );
                     scratch.curved_events.push(CurvedEvent2D {
                         angle: crossing_angle,
                         path_distance: integral.integral.path_length,
@@ -446,9 +450,15 @@ impl StructuredRayTracer2D {
     fn structured_point(&self, point: TracePoint, distance: f64) -> TracePoint {
         let mut boundaries = point.event.boundaries;
         let angle = self.grid.horizontal_angle_at(point.position);
-        for (index, boundary) in self.grid.horizontal_angles().iter().enumerate() {
-            if (angle - boundary).abs() <= 1e-8 {
-                boundaries.push(BoundaryTag::Horizontal { index });
+        for (index, boundary) in self.grid.horizontal_topology_boundaries() {
+            if (angle - boundary)
+                .rem_euclid(2.0 * std::f64::consts::PI)
+                .min((boundary - angle).rem_euclid(2.0 * std::f64::consts::PI))
+                <= 1e-8
+            {
+                boundaries.push(index.map_or(BoundaryTag::HorizontalSeam, |index| {
+                    BoundaryTag::Horizontal { index }
+                }));
             }
         }
         let event = TraceEvent {
@@ -490,6 +500,90 @@ impl StructuredRayTracer2D {
             on_exact_vertical_boundary: event.boundaries.contains_vertical(),
         }
     }
+}
+
+// Positive half of the 16-point Gauss-Legendre rule. Four panels keep angular
+// interpolation accurate near a spherical tangent while all work remains a
+// one-time geometry cost shared by every wavelength.
+const GQ16_NODES: [f64; 8] = [
+    0.095_012_509_837_637_44,
+    0.281_603_550_779_258_9,
+    0.458_016_777_657_227_4,
+    0.617_876_244_402_643_8,
+    0.755_404_408_355_003,
+    0.865_631_202_387_831_8,
+    0.944_575_023_073_232_6,
+    0.989_400_934_991_649_9,
+];
+const GQ16_WEIGHTS: [f64; 8] = [
+    0.189_450_610_455_068_5,
+    0.182_603_415_044_923_6,
+    0.169_156_519_395_002_54,
+    0.149_595_988_816_576_73,
+    0.124_628_971_255_533_87,
+    0.095_158_511_682_492_78,
+    0.062_253_523_938_647_89,
+    0.027_152_459_411_754_095,
+];
+
+fn add_structured_od_quadrature(layer: &mut Layer, grid: &StructuredGrid2D) {
+    let Some(CellId::Structured2D {
+        altitude_index,
+        horizontal_index,
+    }) = layer.cell
+    else {
+        return;
+    };
+
+    layer.integrated_cell_weights = [0.0; 4];
+    let effective_distance = layer.effective_distance();
+    if effective_distance == 0.0 {
+        return;
+    }
+
+    // Integrate each of the four cell-local bilinear basis functions along the
+    // ray. This produces geometry-only coefficients Q_j such that, for every
+    // wavelength, tau_layer = sum_j Q_j * extinction_j. Each panel applies a
+    // 16-point Gauss-Legendre rule on its fraction of [entrance, exit], for 64
+    // basis evaluations per layer. cell_basis_weights() and the C++ bridge use
+    // the same altitude-fastest corner order.
+    const NUM_PANELS: usize = 4;
+    let half_panel_width = 0.5 / NUM_PANELS as f64;
+    for panel in 0..NUM_PANELS {
+        let center = (panel as f64 + 0.5) / NUM_PANELS as f64;
+        for (&node, &weight) in GQ16_NODES.iter().zip(GQ16_WEIGHTS.iter()) {
+            for signed_node in [-node, node] {
+                let fraction = center + half_panel_width * signed_node;
+                let point = layer_position_at_fraction(layer, fraction);
+                let basis = grid.cell_basis_weights(point, altitude_index, horizontal_index);
+                for (integrated, local) in layer.integrated_cell_weights.iter_mut().zip(basis) {
+                    *integrated += effective_distance * half_panel_width * weight * local;
+                }
+            }
+        }
+    }
+}
+
+fn layer_position_at_fraction(layer: &Layer, fraction: f64) -> Vec3 {
+    if layer.curvature_factor == 1.0 {
+        return layer.entrance.position
+            + fraction * (layer.exit.position - layer.entrance.position);
+    }
+
+    let entrance_radius = layer.entrance.position.norm();
+    let exit_radius = layer.exit.position.norm();
+    let radius = entrance_radius + fraction * (exit_radius - entrance_radius);
+    let entrance_direction = layer.entrance.position / entrance_radius;
+    let exit_direction = layer.exit.position / exit_radius;
+    let cosine = entrance_direction.dot(exit_direction).clamp(-1.0, 1.0);
+    let angle = cosine.acos();
+    if angle <= 1e-14 {
+        return radius * entrance_direction;
+    }
+    let sine = angle.sin();
+    let direction = ((1.0 - fraction) * angle).sin() / sine * entrance_direction
+        + (fraction * angle).sin() / sine * exit_direction;
+    radius * direction
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -731,11 +825,11 @@ mod tests {
         let traced = StructuredRayTracer2D::new(grid())
             .trace(Ray::new(origin, Vec3::UNIT_X), TraceOptions2D::default());
 
-        assert_eq!(traced.layers.len(), 2);
+        assert_eq!(traced.layers.len(), 3);
         assert_eq!(
             traced.layers[0].cell,
             Some(CellId::Structured2D {
-                altitude_index: 0,
+                altitude_index: 1,
                 horizontal_index: 1,
             })
         );
@@ -743,38 +837,84 @@ mod tests {
             traced.layers[1].cell,
             Some(CellId::Structured2D {
                 altitude_index: 0,
+                horizontal_index: 1,
+            })
+        );
+        assert_eq!(
+            traced.layers[2].cell,
+            Some(CellId::Structured2D {
+                altitude_index: 0,
                 horizontal_index: 0,
             })
         );
         assert_close(
-            traced.layers[0].entrance.position.x,
-            traced.layers[1].exit.position.x,
+            traced.layers[1].entrance.position.x,
+            traced.layers[2].exit.position.x,
         );
-        assert_close(traced.layers[0].entrance.position.x, 0.0);
-        assert_eq!(traced.layers[0].layer_type, LayerType::Tangent);
+        assert_close(traced.layers[1].entrance.position.x, 0.0);
         assert_eq!(traced.layers[1].layer_type, LayerType::Tangent);
+        assert_eq!(traced.layers[2].layer_type, LayerType::Tangent);
     }
 
     #[test]
-    fn ray_can_enter_through_horizontal_domain_boundary() {
+    fn ray_is_split_when_extended_edge_cells_meet_at_the_angle_seam() {
+        let traced = StructuredRayTracer2D::new(grid()).trace(
+            Ray::new(15.0 * radial_direction(3.0), -Vec3::UNIT_X),
+            TraceOptions2D::default(),
+        );
+
+        let seam_pair = traced.layers.windows(2).find(|layers| {
+            layers[0]
+                .entrance
+                .event
+                .boundaries
+                .contains(BoundaryTag::HorizontalSeam)
+                && layers[1]
+                    .exit
+                    .event
+                    .boundaries
+                    .contains(BoundaryTag::HorizontalSeam)
+        });
+        let seam_pair = seam_pair.expect("the extended edge-cell seam is a trace boundary");
+        assert!(matches!(
+            seam_pair[0].cell,
+            Some(CellId::Structured2D {
+                horizontal_index: 0,
+                ..
+            })
+        ));
+        assert!(matches!(
+            seam_pair[1].cell,
+            Some(CellId::Structured2D {
+                horizontal_index: 1,
+                ..
+            })
+        ));
+        assert_close(seam_pair[0].entrance.position.x, 0.0);
+        assert!(seam_pair[0].entrance.position.z < 0.0);
+    }
+
+    #[test]
+    fn ray_starts_inside_extended_horizontal_edge_cell() {
         let origin = 15.0 * radial_direction(-0.75);
         let traced = StructuredRayTracer2D::new(grid())
             .trace(Ray::new(origin, Vec3::UNIT_X), TraceOptions2D::default());
 
         assert!(!traced.layers.is_empty());
         let near_layer = traced.layers.last().unwrap();
-        assert!(
-            near_layer
-                .entrance
-                .event
-                .boundaries
-                .contains(BoundaryTag::Horizontal { index: 0 })
+        assert_eq!(
+            near_layer.cell,
+            Some(CellId::Structured2D {
+                altitude_index: 0,
+                horizontal_index: 0,
+            })
         );
+        assert!(near_layer.entrance.event.is_observer());
     }
 
     #[test]
     fn altitude_and_horizontal_corner_hits_are_merged() {
-        let boundary_angle = -0.5;
+        let boundary_angle = 0.0;
         let corner = 30.0 * radial_direction(boundary_angle);
         let inward_and_across = (-radial_direction(boundary_angle)
             + 0.3 * AngularBasis::CANONICAL.angular_normal(boundary_angle))
@@ -795,7 +935,7 @@ mod tests {
                 .entrance
                 .event
                 .boundaries
-                .contains(BoundaryTag::Horizontal { index: 0 })
+                .contains(BoundaryTag::Horizontal { index: 1 })
         );
         assert!(near_layer.entrance.event.boundaries.contains_vertical());
         assert!(near_layer.entrance.event.boundaries.contains_horizontal());
@@ -804,16 +944,23 @@ mod tests {
     }
 
     #[test]
-    fn ray_missing_horizontal_domain_is_empty() {
+    fn radial_ray_outside_sampled_angles_uses_extended_edge_cell() {
         let traced = StructuredRayTracer2D::new(grid())
             .trace(radial_ray(40.0, 0.75, true), TraceOptions2D::default());
 
-        assert!(traced.layers.is_empty());
-        assert!(!traced.ground_is_hit);
+        assert_eq!(traced.layers.len(), 2);
+        assert!(traced.ground_is_hit);
+        assert!(traced.layers.iter().all(|layer| matches!(
+            layer.cell,
+            Some(CellId::Structured2D {
+                horizontal_index: 1,
+                ..
+            })
+        )));
     }
 
     #[test]
-    fn surface_blocks_far_side_atmosphere() {
+    fn opposite_angles_use_the_extended_edge_cell_before_the_surface() {
         let far_side_grid = StructuredGrid2D::new(
             10.0,
             vec![0.0, 10.0, 20.0],
@@ -824,8 +971,15 @@ mod tests {
         let traced = StructuredRayTracer2D::new(far_side_grid)
             .trace(radial_ray(40.0, 0.0, true), TraceOptions2D::default());
 
-        assert!(traced.layers.is_empty());
-        assert!(!traced.ground_is_hit);
+        assert_eq!(traced.layers.len(), 2);
+        assert!(traced.ground_is_hit);
+        assert!(traced.layers.iter().all(|layer| matches!(
+            layer.cell,
+            Some(CellId::Structured2D {
+                horizontal_index: 0,
+                ..
+            })
+        )));
     }
 
     #[test]
@@ -908,9 +1062,117 @@ mod tests {
         let optical_depth: f64 = traced
             .layers
             .iter()
-            .map(|layer| layer.od_quad_start + layer.od_quad_end)
+            .map(|layer| layer.integrated_cell_weights.iter().sum::<f64>())
             .sum();
         assert_close(optical_depth, 20.0);
+    }
+
+    #[test]
+    fn integrated_cell_weights_match_high_resolution_straight_reference() {
+        let tracer = StructuredRayTracer2D::new(grid());
+        let origin = 15.0 * radial_direction(-0.25);
+        let traced = tracer.trace(Ray::new(origin, Vec3::UNIT_X), TraceOptions2D::default());
+        let field = [0.3, 1.1, 2.7, 4.2];
+        let mut endpoint_gap_found = false;
+
+        for layer in &traced.layers {
+            let Some(CellId::Structured2D {
+                altitude_index,
+                horizontal_index,
+            }) = layer.cell
+            else {
+                panic!("expected structured cell");
+            };
+            let quadrature: f64 = layer
+                .integrated_cell_weights
+                .iter()
+                .zip(field)
+                .map(|(weight, value)| weight * value)
+                .sum();
+
+            const NUM_REFERENCE_POINTS: usize = 20_000;
+            let mut reference_weights = [0.0; 4];
+            for index in 0..NUM_REFERENCE_POINTS {
+                let fraction = (index as f64 + 0.5) / NUM_REFERENCE_POINTS as f64;
+                let point = layer_position_at_fraction(layer, fraction);
+                let basis = tracer
+                    .grid
+                    .cell_basis_weights(point, altitude_index, horizontal_index);
+                for (integrated, local) in reference_weights.iter_mut().zip(basis) {
+                    *integrated += local;
+                }
+            }
+            for weight in &mut reference_weights {
+                *weight *= layer.effective_distance() / NUM_REFERENCE_POINTS as f64;
+            }
+            let reference: f64 = reference_weights
+                .iter()
+                .zip(field)
+                .map(|(weight, value)| weight * value)
+                .sum();
+            assert!(
+                (quadrature - reference).abs() <= 5e-5 * reference.abs().max(1.0),
+                "cell=({altitude_index},{horizontal_index}), distance={}, quadrature={quadrature}, reference={reference}, difference={}, weights={:?}, reference_weights={reference_weights:?}",
+                layer.effective_distance(),
+                quadrature - reference,
+                layer.integrated_cell_weights
+            );
+
+            let entrance_value: f64 = tracer
+                .grid
+                .cell_basis_weights(layer.entrance.position, altitude_index, horizontal_index)
+                .iter()
+                .zip(field)
+                .map(|(weight, value)| weight * value)
+                .sum();
+            let exit_value: f64 = tracer
+                .grid
+                .cell_basis_weights(layer.exit.position, altitude_index, horizontal_index)
+                .iter()
+                .zip(field)
+                .map(|(weight, value)| weight * value)
+                .sum();
+            let endpoint_approximation =
+                layer.od_quad_start * entrance_value + layer.od_quad_end * exit_value;
+            endpoint_gap_found |= (endpoint_approximation - quadrature).abs() > 1e-6;
+        }
+        assert!(endpoint_gap_found);
+    }
+
+    #[test]
+    fn refracted_integrated_weights_are_finite_positive_and_conservative() {
+        let tracer = StructuredRayTracer2D::new(grid());
+        let tangent_radius = 15.0;
+        let observer_radius = 40.0;
+        let ray = Ray::new(
+            Vec3::new(0.0, 0.0, observer_radius),
+            Vec3::new(
+                tangent_radius / observer_radius,
+                0.0,
+                -(1.0 - (tangent_radius / observer_radius).powi(2)).sqrt(),
+            ),
+        );
+        let profile = refractive_profile(1.0);
+        let traced = tracer.trace(
+            ray,
+            TraceOptions2D {
+                refraction: Some(&profile),
+                ..TraceOptions2D::default()
+            },
+        );
+
+        for layer in &traced.layers {
+            assert!(
+                layer
+                    .integrated_cell_weights
+                    .iter()
+                    .all(|weight| weight.is_finite() && *weight >= 0.0)
+            );
+            assert_close(
+                layer.integrated_cell_weights.iter().sum(),
+                layer.effective_distance(),
+            );
+        }
     }
 
     #[test]
@@ -966,7 +1228,7 @@ mod tests {
         let mut scratch = TraceScratch2D::with_capacity(tracer.primitives().len());
 
         tracer.trace_into(
-            radial_ray(40.0, 0.75, true),
+            radial_ray(40.0, 0.75, false),
             &mut result,
             &mut scratch,
             TraceOptions2D::default(),
@@ -1024,7 +1286,7 @@ mod tests {
     }
 
     #[test]
-    fn refracted_ray_can_enter_through_horizontal_domain_boundary() {
+    fn refracted_ray_starts_inside_extended_horizontal_edge_cell() {
         let tracer = StructuredRayTracer2D::new(grid());
         let profile = refractive_profile(1.0);
         let ray = Ray::new(15.0 * radial_direction(-0.75), Vec3::UNIT_X);
@@ -1038,18 +1300,19 @@ mod tests {
 
         assert!(!traced.is_straight);
         let near_layer = traced.layers.last().expect("ray enters the 2D domain");
-        assert!(
-            near_layer
-                .entrance
-                .event
-                .boundaries
-                .contains(BoundaryTag::Horizontal { index: 0 })
+        assert_eq!(
+            near_layer.cell,
+            Some(CellId::Structured2D {
+                altitude_index: 0,
+                horizontal_index: 0,
+            })
         );
+        assert!(near_layer.entrance.event.is_observer());
     }
 
     #[test]
     fn unity_profile_altitude_and_horizontal_corner_is_single_event() {
-        let boundary_angle = -0.5;
+        let boundary_angle = 0.0;
         let corner = 30.0 * radial_direction(boundary_angle);
         let inward_and_across = (-radial_direction(boundary_angle)
             + 0.3 * AngularBasis::CANONICAL.angular_normal(boundary_angle))
@@ -1076,7 +1339,7 @@ mod tests {
                     && point
                         .event
                         .boundaries
-                        .contains(BoundaryTag::Horizontal { index: 0 })
+                        .contains(BoundaryTag::Horizontal { index: 1 })
             })
             .expect("unity-profile trace preserves the corner event");
         assert_eq!(corner_event.event.boundaries.len(), 2);
@@ -1102,7 +1365,7 @@ mod tests {
     }
 
     #[test]
-    fn refracted_surface_blocks_far_side_horizontal_domain() {
+    fn refracted_ray_uses_extended_horizontal_cell_before_surface() {
         let far_side_grid = StructuredGrid2D::new(
             10.0,
             vec![0.0, 10.0, 20.0],
@@ -1120,8 +1383,15 @@ mod tests {
         );
 
         assert!(!traced.is_straight);
-        assert!(traced.layers.is_empty());
-        assert!(!traced.ground_is_hit);
+        assert!(!traced.layers.is_empty());
+        assert!(traced.ground_is_hit);
+        assert!(traced.layers.iter().all(|layer| matches!(
+            layer.cell,
+            Some(CellId::Structured2D {
+                horizontal_index: 0,
+                ..
+            })
+        )));
     }
 
     #[test]

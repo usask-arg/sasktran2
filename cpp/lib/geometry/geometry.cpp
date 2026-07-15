@@ -6,7 +6,8 @@
 namespace sasktran2 {
     Coordinates::Coordinates(double cos_sza, double saa, double earth_radius,
                              geometrytype geotype, bool force_sun_z)
-        : m_geotype(geotype), m_earth_radius(earth_radius) {
+        : m_earth_radius(earth_radius), m_geotype(geotype),
+          m_force_sun_z(force_sun_z) {
 
         if (!force_sun_z) {
             // Create the default x,y,z local coordinates
@@ -30,8 +31,6 @@ namespace sasktran2 {
 
             m_x_unit = m_y_unit.cross(m_z_unit);
         }
-
-        m_force_sun_z = force_sun_z;
         validate();
     }
 
@@ -39,16 +38,49 @@ namespace sasktran2 {
                              Eigen::Vector3d ref_plane_unit,
                              Eigen::Vector3d sun_unit, double earth_radius,
                              geometrytype geotype)
-        : m_z_unit(ref_point_unit), m_x_unit(ref_plane_unit),
+        : m_x_unit(ref_plane_unit),
           m_y_unit(ref_point_unit.cross(ref_plane_unit).normalized()),
-          m_sun_unit(sun_unit), m_geotype(geotype),
-          m_earth_radius(earth_radius) {
+          m_z_unit(ref_point_unit), m_sun_unit(sun_unit),
+          m_earth_radius(earth_radius), m_geotype(geotype),
+          m_force_sun_z(false) {
         validate();
     }
 
     void Coordinates::validate() const {
-        if (m_earth_radius < 0) {
+        switch (m_geotype) {
+        case geometrytype::planeparallel:
+        case geometrytype::pseudospherical:
+        case geometrytype::spherical:
+        case geometrytype::ellipsoidal:
+            break;
+        default:
+            spdlog::critical("Invalid geometry type: {}",
+                             static_cast<int>(m_geotype));
+            sasktran2::validation::throw_configuration_error();
+        }
+
+        if (!std::isfinite(m_earth_radius) || m_earth_radius < 0) {
             spdlog::critical("Invalid earth radius: {}", m_earth_radius);
+            sasktran2::validation::throw_configuration_error();
+        }
+
+        if (!m_x_unit.allFinite() || !m_y_unit.allFinite() ||
+            !m_z_unit.allFinite() || !m_sun_unit.allFinite()) {
+            spdlog::critical("Coordinate unit vectors must be finite");
+            sasktran2::validation::throw_configuration_error();
+        }
+
+        constexpr double unit_tolerance = 1e-12;
+        if (std::abs(m_x_unit.squaredNorm() - 1.0) > unit_tolerance ||
+            std::abs(m_y_unit.squaredNorm() - 1.0) > unit_tolerance ||
+            std::abs(m_z_unit.squaredNorm() - 1.0) > unit_tolerance ||
+            std::abs(m_sun_unit.squaredNorm() - 1.0) > unit_tolerance ||
+            std::abs(m_x_unit.dot(m_y_unit)) > unit_tolerance ||
+            std::abs(m_x_unit.dot(m_z_unit)) > unit_tolerance ||
+            std::abs(m_y_unit.dot(m_z_unit)) > unit_tolerance) {
+            spdlog::critical(
+                "Coordinate basis and sun vectors must be unit vectors, and "
+                "the coordinate basis must be orthogonal");
             sasktran2::validation::throw_configuration_error();
         }
 

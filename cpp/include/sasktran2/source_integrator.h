@@ -38,6 +38,8 @@ namespace sasktran2 {
             std::vector<RaySourceInterpolationWeights<NSTOKES>>;
 
       private:
+        bool m_derivatives_enabled; /**< Whether this integrator was configured
+                                       to calculate derivatives */
         bool m_calculate_derivatives; /**< True if we are calculating
                                          derivatives */
         std::vector<Eigen::SparseMatrix<double, Eigen::RowMajor>>
@@ -48,12 +50,21 @@ namespace sasktran2 {
         std::vector<Eigen::MatrixXd>
             m_shell_od; /**< Vector of matrices that stores the optical depth
                            for each layer */
-        std::vector<Eigen::MatrixXd> m_exp_minus_shell_od;
-
         const std::vector<sasktran2::raytracing::TracedRay>*
             m_traced_rays; /**< Reference to the rays we are integrating */
 
         const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere;
+        int m_num_geometry_locations = 0;
+        int m_num_geometry_dimensions = 1;
+
+        void integrate_ray(
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+                radiance,
+            const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+            const sasktran2::raytracing::TracedRay& ray,
+            const Eigen::SparseMatrix<double, Eigen::RowMajor>& od_matrix,
+            const Eigen::MatrixXd& shell_od, int wavelidx, int rayidx,
+            int wavel_threadidx, int threadidx) const;
 
       public:
         /**
@@ -69,6 +80,7 @@ namespace sasktran2 {
          * derivatives
          */
         void set_calculate_derivatives(bool enable) {
+            m_derivatives_enabled = enable;
             m_calculate_derivatives = enable;
         }
 

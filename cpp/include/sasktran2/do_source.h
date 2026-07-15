@@ -371,7 +371,10 @@ namespace sasktran2 {
 
         void integrated_source(
             int wavelidx, int losidx, int layeridx, int wavel_threadidx,
-            int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
+            int threadidx, const sasktran2::raytracing::TracedLayer& layer,
+            const sasktran2::raytracing::GridWeightStencilView&
+                entrance_weights,
+            const sasktran2::raytracing::GridWeightStencilView& exit_weights,
             const sasktran2::SparseODDualView& shell_od,
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
                 source,
@@ -463,7 +466,10 @@ namespace sasktran2 {
 
         void integrated_source(
             int wavelidx, int losidx, int layeridx, int wavel_threadidx,
-            int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
+            int threadidx, const sasktran2::raytracing::TracedLayer& layer,
+            const sasktran2::raytracing::GridWeightStencilView&
+                entrance_weights,
+            const sasktran2::raytracing::GridWeightStencilView& exit_weights,
             const sasktran2::SparseODDualView& shell_od,
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
                 source,

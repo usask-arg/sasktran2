@@ -136,18 +136,31 @@ impl DerivativeMapping {
         }
     }
 
-    pub fn get_interpolator(&self) -> ArrayView2<'_, f64> {
+    pub fn clear_interpolator(&mut self) {
+        unsafe {
+            ffi::sk_deriv_mapping_clear_interpolator(self.mapping);
+        }
+    }
+
+    pub fn get_interpolator(&self) -> Option<ArrayView2<'_, f64>> {
         let mut interpolator: *mut f64 = std::ptr::null_mut();
         let mut dim1: i32 = 0;
         let mut dim2: i32 = 0;
         unsafe {
-            ffi::sk_deriv_mapping_get_interpolator(
+            let result = ffi::sk_deriv_mapping_get_interpolator(
                 self.mapping,
                 &mut interpolator,
                 &mut dim1,
                 &mut dim2,
             );
-            ArrayView2::from_shape_ptr((dim1 as usize, dim2 as usize).f(), interpolator)
+            if result != 0 || interpolator.is_null() {
+                None
+            } else {
+                Some(ArrayView2::from_shape_ptr(
+                    (dim1 as usize, dim2 as usize).f(),
+                    interpolator,
+                ))
+            }
         }
     }
 
@@ -223,18 +236,25 @@ impl SurfaceDerivativeMapping {
         }
     }
 
-    pub fn get_interpolator(&self) -> ArrayView2<'_, f64> {
+    pub fn get_interpolator(&self) -> Option<ArrayView2<'_, f64>> {
         let mut interpolator: *mut f64 = std::ptr::null_mut();
         let mut dim1: i32 = 0;
         let mut dim2: i32 = 0;
         unsafe {
-            ffi::sk_surface_deriv_mapping_get_interpolator(
+            let result = ffi::sk_surface_deriv_mapping_get_interpolator(
                 self.mapping,
                 &mut interpolator,
                 &mut dim1,
                 &mut dim2,
             );
-            ArrayView2::from_shape_ptr((dim1 as usize, dim2 as usize).f(), interpolator)
+            if result != 0 || interpolator.is_null() {
+                None
+            } else {
+                Some(ArrayView2::from_shape_ptr(
+                    (dim1 as usize, dim2 as usize).f(),
+                    interpolator,
+                ))
+            }
         }
     }
 

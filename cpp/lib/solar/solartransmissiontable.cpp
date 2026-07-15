@@ -23,7 +23,7 @@ namespace sasktran2::solartransmission {
             cos_sza_grid_values(0) = min_max_cos_sza.first;
         }
 
-        Eigen::VectorXd alt_values = m_geometry.altitude_grid().grid();
+        Eigen::VectorXd alt_values = m_geometry_1d->altitude_grid().grid();
 
         // create the location interpolator
         m_location_interpolator = std::make_unique<
@@ -50,9 +50,6 @@ namespace sasktran2::solartransmission {
 
         ray_to_sun.look_away = m_geometry.coordinates().sun_unit();
 
-        // common memory
-        std::vector<std::pair<int, double>> index_weights;
-
         raytracing::TracedRay traced_ray;
 
         for (int i = 0; i < m_location_interpolator->num_interior_points();
@@ -62,11 +59,10 @@ namespace sasktran2::solartransmission {
                                                        i);
 
             // This method specifically does not allow for refraction
-            m_raytracer.trace_ray(ray_to_sun, traced_ray, false);
+            m_raytracer->trace_ray(ray_to_sun, traced_ray, false);
 
             if (!traced_ray.ground_is_hit) {
-                assign_dense_matrix_column(i, traced_ray, m_geometry,
-                                           m_geometry_matrix, index_weights);
+                assign_dense_matrix_column(i, traced_ray, m_geometry_matrix);
                 m_ground_hit_flag[i] = false;
             } else {
                 m_ground_hit_flag[i] = true;

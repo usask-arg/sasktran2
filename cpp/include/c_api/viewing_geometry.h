@@ -20,6 +20,12 @@ int sk_viewing_geometry_add_tangent_altitude_solar(
     ViewingGeometry* geometry, double tangent_altitude_m,
     double relative_azimuth_angle, double observeraltitude, double cos_sza);
 
+int sk_viewing_geometry_add_tangent_altitude(ViewingGeometry* geometry,
+                                             double tangent_altitude_m,
+                                             double observer_altitude_m,
+                                             double horizontal_angle_radians,
+                                             double viewing_azimuth_radians);
+
 int sk_viewing_geometry_add_solar_angles_observer_location(
     ViewingGeometry* geometry, double cos_sza, double relative_azimuth_angle,
     double cos_viewing_zenith, double observeraltitude);

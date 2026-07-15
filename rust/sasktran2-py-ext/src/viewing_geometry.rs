@@ -1,3 +1,5 @@
+use crate::prelude::IntoPyResult;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use sasktran2_rs::bindings::viewing_geometry;
 
@@ -33,6 +35,45 @@ pub struct PyTangentAltitudeSolar {
     relative_azimuth: f64,
     observer_altitude_m: f64,
     cos_sza: f64,
+}
+
+#[pyclass]
+pub struct PyTangentAltitude {
+    tangent_altitude_m: f64,
+    observer_altitude_m: f64,
+    horizontal_angle_radians: f64,
+    viewing_azimuth_radians: f64,
+}
+
+#[pymethods]
+impl PyTangentAltitude {
+    #[new]
+    fn new(
+        tangent_altitude_m: f64,
+        observer_altitude_m: f64,
+        horizontal_angle_radians: f64,
+        viewing_azimuth_radians: f64,
+    ) -> PyResult<Self> {
+        if !tangent_altitude_m.is_finite() || tangent_altitude_m < 0.0 {
+            return Err(PyValueError::new_err(
+                "tangent_altitude_m must be finite and non-negative",
+            ));
+        }
+        if !observer_altitude_m.is_finite() || observer_altitude_m < tangent_altitude_m {
+            return Err(PyValueError::new_err(
+                "observer_altitude_m must be finite and greater than or equal to tangent_altitude_m",
+            ));
+        }
+        if !horizontal_angle_radians.is_finite() || !viewing_azimuth_radians.is_finite() {
+            return Err(PyValueError::new_err("viewing angles must be finite"));
+        }
+        Ok(Self {
+            tangent_altitude_m,
+            observer_altitude_m,
+            horizontal_angle_radians,
+            viewing_azimuth_radians,
+        })
+    }
 }
 
 #[pymethods]
@@ -110,7 +151,19 @@ impl PyViewingGeometry {
         }
     }
 
-    fn add_ray<'py>(&mut self, ray: Bound<'py, PyAny>) {
+    fn add_ray<'py>(&mut self, ray: Bound<'py, PyAny>) -> PyResult<()> {
+        if let Ok(ray) = ray.cast::<PyTangentAltitude>() {
+            let ray = ray.borrow();
+            self.viewing_geometry
+                .add_tangent_altitude(
+                    ray.tangent_altitude_m,
+                    ray.observer_altitude_m,
+                    ray.horizontal_angle_radians,
+                    ray.viewing_azimuth_radians,
+                )
+                .into_pyresult()?;
+        }
+
         if let Ok(ray) = ray.cast::<PyGroundViewingSolar>() {
             let ray = ray.borrow();
             self.viewing_geometry.add_ground_viewing_solar(
@@ -140,6 +193,7 @@ impl PyViewingGeometry {
                 ray.observer_altitude_m,
             );
         }
+        Ok(())
     }
 
     fn add_flux_observer<'py>(&mut self, observer: Bound<'py, PyAny>) {

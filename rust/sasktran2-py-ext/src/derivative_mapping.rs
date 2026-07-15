@@ -1,3 +1,4 @@
+use numpy::ndarray::Array2;
 use numpy::*;
 use pyo3::prelude::*;
 use sasktran2_rs::bindings::deriv_mapping;
@@ -72,15 +73,20 @@ impl PyDerivativeMappingView {
     #[getter]
     fn get_interpolator<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyArray2<f64>>> {
         let binding = this.borrow();
-        let array = &binding.derivative_mapping.get_interpolator();
-
-        unsafe { Ok(PyArray2::borrow_from_array(array, this.into_any())) }
+        match binding.derivative_mapping.get_interpolator() {
+            Some(array) => unsafe { Ok(PyArray2::borrow_from_array(&array, this.into_any())) },
+            None => Ok(Array2::zeros((0, 0)).into_pyarray(this.py())),
+        }
     }
 
     #[setter]
     fn set_interpolator(&mut self, interpolator: PyReadonlyArray2<f64>) {
         let mut interpolator = interpolator.to_owned().as_array().to_owned();
         self.derivative_mapping.set_interpolator(&mut interpolator);
+    }
+
+    fn clear_interpolator(&mut self) {
+        self.derivative_mapping.clear_interpolator();
     }
 
     #[setter]
@@ -116,9 +122,10 @@ impl PySurfaceDerivativeMappingView {
     #[getter]
     fn get_interpolator<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyArray2<f64>>> {
         let binding = this.borrow();
-        let array = &binding.derivative_mapping.get_interpolator();
-
-        unsafe { Ok(PyArray2::borrow_from_array(array, this.into_any())) }
+        match binding.derivative_mapping.get_interpolator() {
+            Some(array) => unsafe { Ok(PyArray2::borrow_from_array(&array, this.into_any())) },
+            None => Ok(Array2::zeros((0, 0)).into_pyarray(this.py())),
+        }
     }
 
     #[setter]

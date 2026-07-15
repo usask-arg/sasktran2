@@ -34,11 +34,17 @@ template <int NSTOKES> class Sasktran2 : public Sasktran2Interface {
     const sasktran2::Config& m_config; /**< Internal reference to the config */
     const sasktran2::viewinggeometry::ViewingGeometryContainer&
         m_viewing_geometry; /**< Internal reference to the viewing geometry */
-    const sasktran2::Geometry1D*
+    const sasktran2::Geometry*
         m_geometry; /**< Internal reference to the model geometry */
+    const sasktran2::Geometry1D* m_geometry_1d = nullptr;
+    const sasktran2::Geometry2D* m_geometry_2d = nullptr;
 
     std::unique_ptr<const sasktran2::raytracing::RayTracerBase>
         m_raytracer; /**< Ray tracer that is internally constructed */
+#ifdef SKTRAN_RUST_SUPPORT
+    std::unique_ptr<const sasktran2::raytracing::RustRayTracer2D>
+        m_raytracer_2d;
+#endif
 
     sasktran2::viewinggeometry::InternalViewingGeometry
         m_internal_viewing_geometry; /**< Internal viewing geometry
@@ -94,6 +100,8 @@ template <int NSTOKES> class Sasktran2 : public Sasktran2Interface {
     void validate_input_atmosphere(
         const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere) const;
 
+    void initialize();
+
   public:
     /** Constructs the model
      *
@@ -106,24 +114,19 @@ template <int NSTOKES> class Sasktran2 : public Sasktran2Interface {
               const sasktran2::viewinggeometry::ViewingGeometryContainer&
                   viewing_rays)
         : m_config(config), m_viewing_geometry(viewing_rays),
-          m_geometry(geometry) {
-        // Validate config
-        m_config.validate_config();
-        m_config.validate_config_geometry(
-            m_geometry->coordinates().geometry_type());
+          m_geometry(geometry), m_geometry_1d(geometry) {
+        initialize();
+    }
 
-        // First create the ray tracer
-        construct_raytracer();
-
-        // Then the integrator
-        construct_integrator();
-
-        // Then all of our source terms
-        construct_source_terms();
-
-        // And finally create all of the geometry only information
-        calculate_geometry();
-    };
+    /** Constructs the transmission-only structured 2D model. */
+    Sasktran2(const sasktran2::Config& config,
+              const sasktran2::Geometry2D* geometry,
+              const sasktran2::viewinggeometry::ViewingGeometryContainer&
+                  viewing_rays)
+        : m_config(config), m_viewing_geometry(viewing_rays),
+          m_geometry(geometry), m_geometry_2d(geometry) {
+        initialize();
+    }
 
     virtual ~Sasktran2() {}
 

@@ -24,6 +24,7 @@ add_library(
   sourceintegrator/source_algorithms.cpp
   geometry/geometry.cpp
   geometry/geometry1d.cpp
+  geometry/geometry2d.cpp
   geometry/geodetic.cpp
   viewinggeometry/tangentaltitude.cpp
   viewinggeometry/groundviewing.cpp

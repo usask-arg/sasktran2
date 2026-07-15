@@ -161,6 +161,8 @@ The following are the supported ways to specify the amount of scatterers.
 ```{eval-rst}
 .. autosummary::
     sasktran2.constituent.ExtinctionScatterer
+    sasktran2.constituent.ExtinctionScatterer2D
     sasktran2.constituent.NumberDensityScatterer
+    sasktran2.constituent.NumberDensityScatterer2D
     sasktran2.constituent.GaussianHeightExtinction
 ```

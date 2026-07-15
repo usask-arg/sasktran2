@@ -140,7 +140,11 @@ fn main() {
         dst.display()
     );
 
-    println!("cargo:rustc-link-lib=static=csasktran2");
+    // Do not pack the native archives into sasktran2-sys.rlib. Rust compiler
+    // caches cannot see changes to these external C++ inputs, so the default
+    // +bundle behavior can preserve stale native objects inside a cached rlib.
+    // -bundle defers selecting the archives until the final extension link.
+    println!("cargo:rustc-link-lib=static:-bundle=csasktran2");
     if target_os == "linux" {
         // The Rust CXX bridge implementations are members of libsasktran2.a.
         // When the Rust ray tracer is not selected by CMake, no C++ engine
@@ -148,9 +152,9 @@ fn main() {
         // before it sees the corresponding references from Rust, leaving
         // unresolved CXX helper symbols in the Python extension. Keep the
         // complete C++ archive on Linux so both compile-flag paths are valid.
-        println!("cargo:rustc-link-lib=static:+whole-archive=sasktran2");
+        println!("cargo:rustc-link-lib=static:-bundle,+whole-archive=sasktran2");
     } else {
-        println!("cargo:rustc-link-lib=static=sasktran2");
+        println!("cargo:rustc-link-lib=static:-bundle=sasktran2");
     }
     //println!("cargo:rustc-link-lib=static=TracyClient");
 

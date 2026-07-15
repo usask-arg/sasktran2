@@ -42,6 +42,19 @@ fn get_optional_array1<'py, T: Element>(
     }
 }
 
+fn call_optional_array1<'py, T: Element>(
+    obj: &Bound<'py, PyAny>,
+    method_name: &str,
+    arg: &str,
+) -> PyResult<Option<PyReadonlyArray1<'py, T>>> {
+    let value = obj.call_method1(method_name, (arg,))?;
+    if value.is_none() {
+        Ok(None)
+    } else {
+        Ok(Some(value.extract()?))
+    }
+}
+
 pub struct AtmosphereStorageOutputs<'py> {
     num_stokes: usize,
     pub py_total_extinction: PyReadwriteArray2<'py, f64>,
@@ -191,8 +204,9 @@ pub struct AtmosphereStorage<'py> {
 
 impl<'py> AtmosphereStorage<'py> {
     pub fn new(atmo: &Bound<'py, PyAny>) -> PyResult<Self> {
-        let pressure_pa_array = get_optional_array1::<f64>(atmo, "pressure_pa").unwrap();
-        let temperature_k_array = get_optional_array1::<f64>(atmo, "temperature_k").unwrap();
+        let pressure_pa_array = call_optional_array1::<f64>(atmo, "_native_state", "pressure_pa")?;
+        let temperature_k_array =
+            call_optional_array1::<f64>(atmo, "_native_state", "temperature_k")?;
         let wavelengths_nm_array = get_optional_array1::<f64>(atmo, "wavelengths_nm").unwrap();
         let wavenumber_cminv_array = get_optional_array1::<f64>(atmo, "wavenumbers_cminv").unwrap();
         let wavenumber_cminv_left_array =
@@ -215,7 +229,7 @@ impl<'py> AtmosphereStorage<'py> {
         let emission_source_obj = storage.getattr("emission_source").unwrap();
         let emission_source: PyReadwriteArray2<f64> = emission_source_obj.extract().unwrap();
 
-        let state_eqn_obj = atmo.getattr("state_equation").unwrap();
+        let state_eqn_obj = atmo.call_method0("_native_state_equation")?;
 
         let num_stokes_obj = atmo.getattr("nstokes").unwrap();
         let num_stokes: usize = num_stokes_obj.extract().unwrap();
@@ -232,8 +246,7 @@ impl<'py> AtmosphereStorage<'py> {
             }
         };
 
-        let geometry_obj = atmo.getattr("model_geometry").unwrap();
-        let altitudes_m = geometry_obj.call_method0("altitudes").unwrap();
+        let altitudes_m = atmo.call_method0("_native_altitudes")?;
         let altitudes_m: PyReadonlyArray1<f64> = altitudes_m.extract().unwrap();
 
         let calculate_pressure_derivative = atmo

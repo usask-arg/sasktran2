@@ -67,6 +67,33 @@ impl ViewingGeometry {
         }
     }
 
+    pub fn add_tangent_altitude(
+        &mut self,
+        tangent_altitude_m: f64,
+        observer_altitude_m: f64,
+        horizontal_angle_radians: f64,
+        viewing_azimuth_radians: f64,
+    ) -> Result<()> {
+        let error_code = unsafe {
+            ffi::sk_viewing_geometry_add_tangent_altitude(
+                self.viewing_geometry,
+                tangent_altitude_m,
+                observer_altitude_m,
+                horizontal_angle_radians,
+                viewing_azimuth_radians,
+            )
+        };
+        match error_code {
+            0 => Ok(()),
+            -1 => Err(anyhow!("Cannot add a ray to a null viewing geometry")),
+            -2 => Err(anyhow!("Invalid geometry-relative tangent ray")),
+            _ => Err(anyhow!(
+                "Error adding geometry-relative tangent ray: error code {}",
+                error_code
+            )),
+        }
+    }
+
     pub fn add_solar_angles_observer_location(
         &mut self,
         cos_sza: f64,
@@ -161,6 +188,29 @@ mod tests {
         );
 
         assert_eq!(viewing_geometry.num_rays().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_viewing_geometry_geometry_relative_tangent_altitude() {
+        let mut viewing_geometry = ViewingGeometry::new();
+
+        viewing_geometry
+            .add_tangent_altitude(30_000.0, 700_000.0, 0.25, 0.4)
+            .unwrap();
+
+        assert_eq!(viewing_geometry.num_rays().unwrap(), 1);
+    }
+
+    #[test]
+    fn test_viewing_geometry_rejects_invalid_geometry_relative_tangent_ray() {
+        let mut viewing_geometry = ViewingGeometry::new();
+
+        assert!(
+            viewing_geometry
+                .add_tangent_altitude(30_000.0, 20_000.0, 0.0, 0.0)
+                .is_err()
+        );
+        assert_eq!(viewing_geometry.num_rays().unwrap(), 0);
     }
 
     #[test]

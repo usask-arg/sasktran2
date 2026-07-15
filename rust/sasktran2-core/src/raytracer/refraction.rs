@@ -5,12 +5,19 @@ use super::grid::InterpolationMethod;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum RefractiveProfileError {
+    NonFiniteEarthRadius,
     MismatchedLength {
         altitudes: usize,
         refractive_index: usize,
     },
     TooFewPoints,
     NonIncreasingAltitude {
+        index: usize,
+    },
+    NonFiniteAltitude {
+        index: usize,
+    },
+    NonFiniteRefractiveIndex {
         index: usize,
     },
     NonPositiveRefractiveIndex {
@@ -21,6 +28,7 @@ pub enum RefractiveProfileError {
 impl fmt::Display for RefractiveProfileError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::NonFiniteEarthRadius => write!(f, "earth radius must be finite"),
             Self::MismatchedLength {
                 altitudes,
                 refractive_index,
@@ -34,6 +42,12 @@ impl fmt::Display for RefractiveProfileError {
                     f,
                     "altitudes must be strictly increasing near index {index}"
                 )
+            }
+            Self::NonFiniteAltitude { index } => {
+                write!(f, "altitude must be finite at index {index}")
+            }
+            Self::NonFiniteRefractiveIndex { index } => {
+                write!(f, "refractive index must be finite at index {index}")
             }
             Self::NonPositiveRefractiveIndex { index } => {
                 write!(f, "refractive index must be positive at index {index}")
@@ -59,6 +73,9 @@ impl RefractiveProfile {
         altitudes: Vec<f64>,
         refractive_index: Vec<f64>,
     ) -> Result<Self, RefractiveProfileError> {
+        if !earth_radius.is_finite() {
+            return Err(RefractiveProfileError::NonFiniteEarthRadius);
+        }
         Self::new_with_interpolation(
             earth_radius,
             altitudes,
@@ -82,12 +99,20 @@ impl RefractiveProfile {
         if altitudes.len() < 2 {
             return Err(RefractiveProfileError::TooFewPoints);
         }
+        for (index, altitude) in altitudes.iter().enumerate() {
+            if !altitude.is_finite() {
+                return Err(RefractiveProfileError::NonFiniteAltitude { index });
+            }
+        }
         for i in 1..altitudes.len() {
             if altitudes[i] <= altitudes[i - 1] {
                 return Err(RefractiveProfileError::NonIncreasingAltitude { index: i });
             }
         }
         for (index, value) in refractive_index.iter().enumerate() {
+            if !value.is_finite() {
+                return Err(RefractiveProfileError::NonFiniteRefractiveIndex { index });
+            }
             if *value <= 0.0 {
                 return Err(RefractiveProfileError::NonPositiveRefractiveIndex { index });
             }
@@ -388,6 +413,26 @@ mod tests {
         let profile = RefractiveProfile::new(0.0, vec![0.0, 10.0], vec![1.0, 4.0]).unwrap();
 
         assert!((profile.refractive_index_at_altitude(5.0) - 2.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn rejects_non_finite_profile_inputs() {
+        assert_eq!(
+            RefractiveProfile::new(f64::NAN, vec![0.0, 10.0], vec![1.0, 1.0]),
+            Err(RefractiveProfileError::NonFiniteEarthRadius)
+        );
+        assert_eq!(
+            RefractiveProfile::new(10.0, vec![0.0, f64::NAN], vec![1.0, 1.0]),
+            Err(RefractiveProfileError::NonFiniteAltitude { index: 1 })
+        );
+        assert_eq!(
+            RefractiveProfile::new(10.0, vec![0.0, 10.0], vec![1.0, f64::NAN]),
+            Err(RefractiveProfileError::NonFiniteRefractiveIndex { index: 1 })
+        );
+        assert_eq!(
+            RefractiveProfile::new(10.0, vec![0.0, 10.0], vec![1.0, f64::INFINITY]),
+            Err(RefractiveProfileError::NonFiniteRefractiveIndex { index: 1 })
+        );
     }
 
     #[test]

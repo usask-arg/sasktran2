@@ -92,6 +92,8 @@ namespace sasktran2::raytracing {
 
         double rt_refracted = result.tangent_radius;
 
+        result.reserve_grid_weights(result.layers.size() * 2 + 2);
+
         double nt = refraction::refractive_index_at_altitude(
             m_geometry, rt_refracted - m_geometry.coordinates().earth_radius(),
             index_weights);
@@ -196,7 +198,8 @@ namespace sasktran2::raytracing {
             add_od_quadrature(
                 layer, sasktran2::geometrytype::spherical,
                 m_geometry.altitude_grid().interpolation_method());
-            add_interpolation_weights(layer, m_geometry);
+            add_interpolation_weights(result, result.layers.size() - i - 1,
+                                      m_geometry, index_weights);
             add_solar_parameters(m_geometry.coordinates().sun_unit(), layer);
         }
     }
@@ -314,6 +317,18 @@ namespace sasktran2::raytracing {
         double tangent_altitude, ViewingDirection direction,
         TangentSide side) const {
         double entrance_altitude, exit_altitude;
+        constexpr double exact_altitude_tolerance_m = 1e-4;
+        int tangent_altitude_index = int(upper_index - 1);
+        bool tangent_on_exact_altitude =
+            std::abs(tangent_altitude -
+                     m_alt_grid.grid()(tangent_altitude_index)) <=
+            exact_altitude_tolerance_m;
+        if (!tangent_on_exact_altitude &&
+            std::abs(tangent_altitude - m_alt_grid.grid()(upper_index)) <=
+                exact_altitude_tolerance_m) {
+            tangent_altitude_index = int(upper_index);
+            tangent_on_exact_altitude = true;
+        }
 
         layer.type = LayerType::tangent;
 
@@ -324,8 +339,8 @@ namespace sasktran2::raytracing {
             layer.exit.on_exact_altitude = true;
             layer.exit.lower_alt_index = int(upper_index);
 
-            layer.entrance.on_exact_altitude = false;
-            layer.entrance.lower_alt_index = int(upper_index - 1);
+            layer.entrance.on_exact_altitude = tangent_on_exact_altitude;
+            layer.entrance.lower_alt_index = tangent_altitude_index;
         } else {
             exit_altitude = tangent_altitude;
             entrance_altitude = m_alt_grid.grid()(upper_index);
@@ -333,8 +348,8 @@ namespace sasktran2::raytracing {
             layer.entrance.on_exact_altitude = true;
             layer.entrance.lower_alt_index = int(upper_index);
 
-            layer.exit.on_exact_altitude = false;
-            layer.exit.lower_alt_index = int(upper_index - 1);
+            layer.exit.on_exact_altitude = tangent_on_exact_altitude;
+            layer.exit.lower_alt_index = tangent_altitude_index;
         }
 
         layer.r_entrance = entrance_altitude + m_earth_radius;
@@ -347,6 +362,18 @@ namespace sasktran2::raytracing {
         double tangent_altitude, ViewingDirection direction,
         TangentSide side) const {
         double entrance_altitude, exit_altitude;
+        constexpr double exact_altitude_tolerance_m = 1e-4;
+        int tangent_altitude_index = int(start_index - 1);
+        bool tangent_on_exact_altitude =
+            std::abs(tangent_altitude -
+                     m_alt_grid.grid()(tangent_altitude_index)) <=
+            exact_altitude_tolerance_m;
+        if (!tangent_on_exact_altitude &&
+            std::abs(tangent_altitude - m_alt_grid.grid()(start_index)) <=
+                exact_altitude_tolerance_m) {
+            tangent_altitude_index = int(start_index);
+            tangent_on_exact_altitude = true;
+        }
 
         layer.type = LayerType::tangent;
 
@@ -361,8 +388,8 @@ namespace sasktran2::raytracing {
             layer.entrance.on_exact_altitude = false;
             layer.entrance.lower_alt_index = int(start_index - 1);
 
-            layer.exit.on_exact_altitude = false;
-            layer.exit.lower_alt_index = int(start_index - 1);
+            layer.exit.on_exact_altitude = tangent_on_exact_altitude;
+            layer.exit.lower_alt_index = tangent_altitude_index;
 
             layer.r_exit = exit_altitude + m_earth_radius;
             layer.r_entrance = entrance_altitude + m_earth_radius;

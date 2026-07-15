@@ -32,6 +32,25 @@ int sk_viewing_geometry_add_tangent_altitude_solar(
     return 0; // Success
 }
 
+int sk_viewing_geometry_add_tangent_altitude(ViewingGeometry* geometry,
+                                             double tangent_altitude_m,
+                                             double observer_altitude_m,
+                                             double horizontal_angle_radians,
+                                             double viewing_azimuth_radians) {
+    if (geometry == nullptr) {
+        return -1;
+    }
+    try {
+        geometry->impl.observer_rays().emplace_back(
+            std::make_unique<sasktran2::viewinggeometry::TangentAltitude>(
+                tangent_altitude_m, viewing_azimuth_radians,
+                observer_altitude_m, horizontal_angle_radians, 0.0));
+    } catch (const std::invalid_argument&) {
+        return -2;
+    }
+    return 0;
+}
+
 int sk_viewing_geometry_add_solar_angles_observer_location(
     ViewingGeometry* geometry, double cos_sza, double relative_azimuth_angle,
     double cos_viewing_zenith, double observeraltitude) {

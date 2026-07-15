@@ -4,15 +4,30 @@ on:
   pull_request:
     types: [opened, reopened, synchronize, labeled]
   workflow_dispatch:
+    inputs:
+      base_sha:
+        description: Commit to use as the benchmark baseline
+        required: true
+        type: string
+      contender_sha:
+        description: Commit to benchmark (defaults to the selected ref)
+        required: false
+        type: string
+
+concurrency:
+  group: benchmark-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   benchmark:
-    if: ${{ contains( github.event.pull_request.labels.*.name, 'run-benchmark') && github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'run-benchmark') }}
     name: Linux
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
     env:
       ASV_DIR: "./asv_bench"
-      CONDA_ENV_FILE: conda/dev_env.yml
+      BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || inputs.base_sha }}
+      CONTENDER_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.contender_sha || github.sha }}
 
     steps:
       - uses: actions/checkout@v6
@@ -20,13 +35,17 @@ jobs:
           fetch-depth: 0
 
       - name: Set up conda environment
-        uses: mamba-org/setup-micromamba@v2
+        uses: mamba-org/setup-micromamba@v3
         with:
-          conda-version: "24.1.2"
-          environment-file: ${{env.CONDA_ENV_FILE}}
+          environment-name: asv-runner
+          create-args: >-
+            python=3.12
+            asv
+            conda
+          cache-downloads: true
 
       - name: Run benchmarks
-        shell: bash -l {0}
+        shell: bash -leo pipefail {0}
         id: benchmark
         env:
           OPENBLAS_NUM_THREADS: 1
@@ -35,20 +54,19 @@ jobs:
           ASV_FACTOR: 1.05
           ASV_SKIP_SLOW: 1
         run: |
-          conda install asv
           set -x
+          conda --version
+          asv --version
           # ID this runner
           asv machine --yes
-          echo "Baseline:  ${{ github.event.pull_request.base.sha }} (${{ github.event.pull_request.base.label }})"
-          echo "Contender: ${GITHUB_SHA} (${{ github.event.pull_request.head.label }})"
-          # Use mamba for env creation
-          # export CONDA_EXE=$(which mamba)
-          export CONDA_EXE=$(which conda)
+          echo "Baseline:  ${BASE_SHA}"
+          echo "Contender: ${CONTENDER_SHA}"
+          export CONDA_EXE="$(command -v conda)"
           # Run benchmarks for current commit against base
           ASV_OPTIONS="--factor $ASV_FACTOR"
-          asv run ${{ github.event.pull_request.base.sha }}^!
-          asv run ${GITHUB_SHA}^!
-          asv compare $ASV_OPTIONS ${{ github.event.pull_request.base.sha }} ${GITHUB_SHA} \
+          asv run "${BASE_SHA}^!"
+          asv run "${CONTENDER_SHA}^!"
+          asv compare $ASV_OPTIONS "${BASE_SHA}" "${CONTENDER_SHA}" \
               | tee benchmarks.log
         working-directory: ${{ env.ASV_DIR }}
 
@@ -59,11 +77,12 @@ jobs:
           path: ${{ env.ASV_DIR }}/benchmarks.log
 
   save-pr-number:
-    if: ${{ contains( github.event.pull_request.labels.*.name, 'run-benchmark') && github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'run-benchmark') }}
     # The comment-on-pr workflow needs the issue number of the PR to be able to
     # comment so we output that to a file and pass it over as an artifact.
 
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Write PR number to file
         if: ${{ github.event_name == 'pull_request' }}

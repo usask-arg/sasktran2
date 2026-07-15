@@ -80,6 +80,110 @@ impl Drop for Geometry1D {
     }
 }
 
+/// Owning wrapper around the C++ structured Geometry2D object.
+pub struct Geometry2D {
+    pub geometry: *mut ffi::Geometry2D,
+}
+
+impl Geometry2D {
+    pub fn new(
+        cos_sza: f64,
+        saa: f64,
+        earth_radius: f64,
+        altitude_grid_values: Vec<f64>,
+        horizontal_angle_grid_values: Vec<f64>,
+        altitude_interp_method: InterpolationMethod,
+    ) -> Result<Self> {
+        let num_altitudes = i32::try_from(altitude_grid_values.len())
+            .map_err(|_| anyhow!("Altitude grid is too large"))?;
+        let num_horizontal_locations = i32::try_from(horizontal_angle_grid_values.len())
+            .map_err(|_| anyhow!("Horizontal angle grid is too large"))?;
+        let geometry = unsafe {
+            ffi::sk_geometry2d_create(
+                cos_sza,
+                saa,
+                earth_radius,
+                altitude_grid_values.as_ptr(),
+                num_altitudes,
+                horizontal_angle_grid_values.as_ptr(),
+                num_horizontal_locations,
+                altitude_interp_method as i32,
+            )
+        };
+        if geometry.is_null() {
+            return Err(anyhow!("Failed to create Geometry2D"));
+        }
+        Ok(Self { geometry })
+    }
+
+    pub fn location_shape(&self) -> Result<(usize, usize)> {
+        let mut num_horizontal_locations = 0;
+        let mut num_altitudes = 0;
+        let result = unsafe {
+            ffi::sk_geometry2d_get_location_shape(
+                self.geometry,
+                &mut num_horizontal_locations,
+                &mut num_altitudes,
+            )
+        };
+        if result != 0 {
+            return Err(anyhow!("Failed to get Geometry2D location shape"));
+        }
+        Ok((num_horizontal_locations as usize, num_altitudes as usize))
+    }
+
+    pub fn altitudes_m(&self) -> Result<Array1<f64>> {
+        let (_, num_altitudes) = self.location_shape()?;
+        let mut altitudes = vec![0.0; num_altitudes];
+        let result =
+            unsafe { ffi::sk_geometry2d_get_altitudes(self.geometry, altitudes.as_mut_ptr()) };
+        if result != 0 {
+            return Err(anyhow!("Failed to get Geometry2D altitudes"));
+        }
+        Ok(Array1::from(altitudes))
+    }
+
+    pub fn horizontal_angles(&self) -> Result<Array1<f64>> {
+        let (num_horizontal_locations, _) = self.location_shape()?;
+        let mut horizontal_angles = vec![0.0; num_horizontal_locations];
+        let result = unsafe {
+            ffi::sk_geometry2d_get_horizontal_angles(self.geometry, horizontal_angles.as_mut_ptr())
+        };
+        if result != 0 {
+            return Err(anyhow!("Failed to get Geometry2D horizontal angles"));
+        }
+        Ok(Array1::from(horizontal_angles))
+    }
+
+    pub fn location_index(&self, altitude_index: usize, horizontal_index: usize) -> Result<usize> {
+        let altitude_index =
+            i32::try_from(altitude_index).map_err(|_| anyhow!("Altitude index is too large"))?;
+        let horizontal_index = i32::try_from(horizontal_index)
+            .map_err(|_| anyhow!("Horizontal index is too large"))?;
+        let mut location_index = 0;
+        let result = unsafe {
+            ffi::sk_geometry2d_get_location_index(
+                self.geometry,
+                altitude_index,
+                horizontal_index,
+                &mut location_index,
+            )
+        };
+        if result != 0 {
+            return Err(anyhow!("Geometry2D location index is out of range"));
+        }
+        Ok(location_index as usize)
+    }
+}
+
+impl Drop for Geometry2D {
+    fn drop(&mut self) {
+        unsafe {
+            ffi::sk_geometry2d_destroy(self.geometry);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -207,5 +311,56 @@ mod tests {
         assert!(!geom_linear.geometry.is_null());
         assert!(!geom_shell.geometry.is_null());
         assert!(!geom_lower.geometry.is_null());
+    }
+
+    #[test]
+    fn test_geometry2d_grids_shape_and_indexing() {
+        let altitudes = vec![0.0, 10_000.0, 20_000.0];
+        let horizontal_angles = vec![-0.2, 0.0, 0.3, 0.6];
+        let geometry = Geometry2D::new(
+            0.5,
+            0.1,
+            6_371_000.0,
+            altitudes.clone(),
+            horizontal_angles.clone(),
+            InterpolationMethod::Linear,
+        )
+        .unwrap();
+
+        assert_eq!(geometry.location_shape().unwrap(), (4, 3));
+        assert_eq!(geometry.altitudes_m().unwrap().to_vec(), altitudes);
+        assert_eq!(
+            geometry.horizontal_angles().unwrap().to_vec(),
+            horizontal_angles
+        );
+        assert_eq!(geometry.location_index(2, 3).unwrap(), 11);
+        assert!(geometry.location_index(3, 0).is_err());
+        assert!(geometry.location_index(0, 4).is_err());
+    }
+
+    #[test]
+    fn test_geometry2d_rejects_invalid_grids() {
+        assert!(
+            Geometry2D::new(
+                0.5,
+                0.1,
+                6_371_000.0,
+                vec![0.0],
+                vec![-0.2, 0.2],
+                InterpolationMethod::Linear,
+            )
+            .is_err()
+        );
+        assert!(
+            Geometry2D::new(
+                0.5,
+                0.1,
+                6_371_000.0,
+                vec![0.0, 10_000.0],
+                vec![0.2, -0.2],
+                InterpolationMethod::Linear,
+            )
+            .is_err()
+        );
     }
 }

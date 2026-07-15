@@ -95,7 +95,9 @@ namespace sasktran2 {
     template <int NSTOKES, int CNSTR>
     void DOSourceInterpolatedPostProcessing<NSTOKES, CNSTR>::integrated_source(
         int wavelidx, int losidx, int layeridx, int wavel_threadidx,
-        int ray_threadidx, const sasktran2::raytracing::SphericalLayer& layer,
+        int ray_threadidx, const sasktran2::raytracing::TracedLayer& layer,
+        const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
+        const sasktran2::raytracing::GridWeightStencilView& exit_weights,
         const sasktran2::SparseODDualView& shell_od,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
         typename SourceTermInterface<NSTOKES>::IntegrationDirection direction)

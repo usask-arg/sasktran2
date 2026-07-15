@@ -5,6 +5,8 @@ use super::primitive::{Intersection, Primitive, PrimitiveId};
 use super::vec3::Vec3;
 
 pub const MAX_BOUNDARY_TAGS: usize = 4;
+// A point uses at most two vertical nodes in 1D and four bilinear cell corners
+// in the current structured 2D geometry.
 pub const MAX_STENCIL_WEIGHTS: usize = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -26,6 +28,7 @@ pub enum BoundaryTag {
     TopOfAtmosphere { altitude_index: usize },
     Altitude { index: usize },
     Horizontal { index: usize },
+    HorizontalSeam,
     Custom { id: u32 },
 }
 
@@ -37,7 +40,7 @@ impl BoundaryTag {
                 Some(altitude_index)
             }
             Self::Altitude { index } => Some(index),
-            Self::Horizontal { .. } | Self::Custom { .. } => None,
+            Self::Horizontal { .. } | Self::HorizontalSeam | Self::Custom { .. } => None,
         }
     }
 
@@ -66,7 +69,7 @@ impl BoundaryTag {
 
     #[inline(always)]
     pub fn is_horizontal(self) -> bool {
-        self.horizontal_index().is_some()
+        matches!(self, Self::Horizontal { .. } | Self::HorizontalSeam)
     }
 }
 
@@ -160,6 +163,12 @@ pub struct InterpolationWeight {
     pub weight: f64,
 }
 
+/// One sparse interpolation rule over flattened atmosphere-grid values.
+///
+/// The stencil represents `value(point) = sum(weight * field[index])`. Entries
+/// retain insertion order; the type does not sort, merge, or normalize them.
+/// The fixed capacity covers the four nodes needed by the current structured
+/// 2D grid while avoiding a heap allocation at every traced boundary point.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct InterpolationStencil {
     weights: [InterpolationWeight; MAX_STENCIL_WEIGHTS],

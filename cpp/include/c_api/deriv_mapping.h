@@ -47,6 +47,7 @@ int sk_deriv_mapping_get_interp_dim(DerivativeMapping* mapping,
                                     const char** name);
 int sk_deriv_mapping_set_interpolator(DerivativeMapping* mapping,
                                       double* interpolator, int dim1, int dim2);
+int sk_deriv_mapping_clear_interpolator(DerivativeMapping* mapping);
 int sk_deriv_mapping_get_interpolator(DerivativeMapping* mapping,
                                       double** interpolator, int* dim1,
                                       int* dim2);

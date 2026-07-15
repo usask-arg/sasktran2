@@ -188,6 +188,12 @@ impl Constituent for Rayleigh {
         let thread_pool = crate::threading::thread_pool()?;
 
         for (deriv_name, deriv_val) in deriv_names.iter().zip(deriv_vals.iter()) {
+            if (*deriv_name == "pressure_pa" && !inputs.calculate_pressure_derivative())
+                || (*deriv_name == "temperature_k"
+                    && !inputs.calculate_temperature_derivative())
+            {
+                continue;
+            }
             let full_name = "wf_".to_owned() + constituent_name + "_" + deriv_name;
             let mut deriv = derivative_generator
                 .get_derivative_mapping(&full_name)

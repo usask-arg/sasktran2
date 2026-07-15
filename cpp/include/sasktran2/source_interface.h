@@ -66,7 +66,9 @@ template <int NSTOKES> class SourceTermInterface {
      */
     virtual void integrated_source(
         int wavelidx, int losidx, int layeridx, int wavel_threadidx,
-        int threadidx, const sasktran2::raytracing::SphericalLayer& layer,
+        int threadidx, const sasktran2::raytracing::TracedLayer& layer,
+        const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
+        const sasktran2::raytracing::GridWeightStencilView& exit_weights,
         const sasktran2::SparseODDualView& shell_od,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
         IntegrationDirection direction = IntegrationDirection::none) const = 0;
@@ -114,4 +116,14 @@ template <int NSTOKES> class SourceTermInterface {
     }
 
     virtual bool requires_integration() const { return true; }
+
+    /** Returns true when the source contributes within atmospheric layers. */
+    virtual bool has_interior_source() const { return true; }
+
+    /** Returns whether this source supports the requested atmosphere
+     * dimensionality. Sources without an interior contribution are independent
+     * of the layer grid and need not override this method. */
+    virtual bool supports_geometry_dimension(int dimension) const {
+        return dimension == 1 || !has_interior_source();
+    }
 };

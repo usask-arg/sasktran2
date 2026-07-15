@@ -5,7 +5,8 @@
 namespace sasktran2 {
     template <int NSTOKES>
     SourceIntegrator<NSTOKES>::SourceIntegrator(bool calculate_derivatives)
-        : m_calculate_derivatives(calculate_derivatives) {}
+        : m_derivatives_enabled(calculate_derivatives),
+          m_calculate_derivatives(calculate_derivatives) {}
 
     template <int NSTOKES>
     void SourceIntegrator<NSTOKES>::initialize_geometry(
@@ -23,14 +24,20 @@ namespace sasktran2 {
         }
 
         m_shell_od.resize(traced_rays.size());
-        m_exp_minus_shell_od.resize(traced_rays.size());
 
         m_traced_rays = &traced_rays;
+        m_num_geometry_locations = geometry.size();
+        m_num_geometry_dimensions = geometry.num_atmosphere_dimensions();
     }
 
     template <int NSTOKES>
     void SourceIntegrator<NSTOKES>::initialize_atmosphere(
         const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmo) {
+        if (atmo.storage().total_extinction.rows() !=
+            m_num_geometry_locations) {
+            throw std::invalid_argument(
+                "Atmosphere extinction size does not match ray geometry");
+        }
 // Multithread over LOS? or wavelength? Or just let Eigen do it?
 #pragma omp parallel for
         for (int i = 0; i < m_traced_ray_od_matrix.size(); ++i) {
@@ -46,9 +53,10 @@ namespace sasktran2 {
 
         m_atmosphere = &atmo;
 
-        if (atmo.num_deriv() == 0) {
-            m_calculate_derivatives = false;
-        }
+        // This object may be reused with derivative-free and derivative-enabled
+        // atmospheres. Do not let a derivative-free call permanently disable
+        // attenuation derivatives for later calculations.
+        m_calculate_derivatives = m_derivatives_enabled && atmo.num_deriv() > 0;
     }
 
     template <int NSTOKES>
@@ -62,11 +70,21 @@ namespace sasktran2 {
         for (const auto& source : source_terms) {
             if (source->requires_integration()) {
                 have_to_integrate = true;
-                break;
+                if (m_num_geometry_dimensions == 1) {
+                    // Preserve the 1D hot path: no additional source
+                    // validation is needed once integration is required.
+                    break;
+                }
+                if (source->has_interior_source() &&
+                    !source->supports_geometry_dimension(
+                        m_num_geometry_dimensions)) {
+                    throw std::invalid_argument(
+                        "Interior source integration is not supported for "
+                        "the configured atmosphere dimensionality");
+                }
             }
         }
 
-        const auto& ray = (*m_traced_rays)[rayidx];
         // Add source at the end of the ray
         for (const auto& source : source_terms) {
             source->end_of_ray_source(wavelidx, rayidx, wavel_threadidx,
@@ -76,39 +94,52 @@ namespace sasktran2 {
         if (!have_to_integrate) {
             return;
         }
-        // Iterate through each layer from the end of the ray to the observer
-        for (int j = 0; j < ray.layers.size(); ++j) {
-            const sasktran2::raytracing::SphericalLayer& layer = ray.layers[j];
 
+        const auto& od_matrix = m_traced_ray_od_matrix[rayidx];
+        const auto& shell_od = m_shell_od[rayidx];
+        integrate_ray(radiance, source_terms, (*m_traced_rays)[rayidx],
+                      od_matrix, shell_od, wavelidx, rayidx, wavel_threadidx,
+                      threadidx);
+    }
+
+    template <int NSTOKES>
+    void SourceIntegrator<NSTOKES>::integrate_ray(
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+            radiance,
+        const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+        const sasktran2::raytracing::TracedRay& ray,
+        const Eigen::SparseMatrix<double, Eigen::RowMajor>& od_matrix,
+        const Eigen::MatrixXd& shell_od, int wavelidx, int rayidx,
+        int wavel_threadidx, int threadidx) const {
+        for (int layeridx = 0; layeridx < ray.layers.size(); ++layeridx) {
             sasktran2::SparseODDualView local_shell_od(
-                m_shell_od[rayidx](j, wavelidx),
-                std::exp(-m_shell_od[rayidx](j, wavelidx)),
-                m_traced_ray_od_matrix[rayidx], j);
+                shell_od(layeridx, wavelidx),
+                std::exp(-shell_od(layeridx, wavelidx)), od_matrix, layeridx);
 
-            // Attenuate the radiance by the layer OD
-            // rad = rad * atten, drad = drad * atten + rad * datten
-            // Atten effects all derivative, datten only affects the extinction
-            // derivatives
-
+            // rad = rad * atten, drad = drad * atten + rad * datten.
             if (m_calculate_derivatives) {
                 for (auto it = local_shell_od.deriv_iter; it; ++it) {
                     radiance.deriv(Eigen::placeholders::all, it.index()) -=
                         it.value() * radiance.value;
                 }
             }
-
             radiance.value *= local_shell_od.exp_minus_od;
             if (m_calculate_derivatives) {
                 radiance.deriv *= local_shell_od.exp_minus_od;
             }
 
-            // Calculate all of the layer sources
+            const auto& layer = ray.layers[layeridx];
+            const auto entrance_weights = ray.entrance_weights(layeridx);
+            const auto exit_weights = ray.exit_weights(layeridx);
             for (const auto& source : source_terms) {
-                source->integrated_source(
-                    wavelidx, rayidx, j, wavel_threadidx, threadidx, layer,
-                    local_shell_od, radiance,
-                    SourceTermInterface<
-                        NSTOKES>::IntegrationDirection::backward);
+                if (source->has_interior_source()) {
+                    source->integrated_source(
+                        wavelidx, rayidx, layeridx, wavel_threadidx, threadidx,
+                        layer, entrance_weights, exit_weights, local_shell_od,
+                        radiance,
+                        SourceTermInterface<
+                            NSTOKES>::IntegrationDirection::backward);
+                }
             }
 
 #ifdef SASKTRAN_DEBUG_ASSERTS
@@ -117,7 +148,7 @@ namespace sasktran2 {
                 if (!message) {
                     spdlog::error("One of the sources was  NaN Ray: {} layer: "
                                   "{} Layer od: {} Layer Atten Factor: {}",
-                                  rayidx, j, local_shell_od.od,
+                                  rayidx, layeridx, local_shell_od.od,
                                   local_shell_od.exp_minus_od);
                     message = true;
                 }
@@ -129,7 +160,7 @@ namespace sasktran2 {
     template <int NSTOKES>
     void SourceIntegrator<NSTOKES>::integrate_optical_depth(
         Eigen::MatrixXd& optical_depth) {
-        for (int i = 0; i < m_traced_rays->size(); ++i) {
+        for (int i = 0; i < m_shell_od.size(); ++i) {
             optical_depth.col(i) = m_shell_od[i].colwise().sum();
         }
     }
@@ -155,6 +186,8 @@ namespace sasktran2 {
         double current_od = 0;
         for (int j = (int)ray.layers.size() - 1; j >= 0; --j) {
             const sasktran2::raytracing::SphericalLayer& layer = ray.layers[j];
+            const auto entrance_weights = ray.entrance_weights(j);
+            const auto exit_weights = ray.exit_weights(j);
 
             sasktran2::SparseODDualView local_shell_od(
                 m_shell_od[rayidx](j, wavelidx),
@@ -169,7 +202,8 @@ namespace sasktran2 {
             for (const auto& source : source_terms) {
                 source->integrated_source(
                     wavelidx, rayidx, j, wavel_threadidx, threadidx, layer,
-                    local_shell_od, layer_source,
+                    entrance_weights, exit_weights, local_shell_od,
+                    layer_source,
                     SourceTermInterface<
                         NSTOKES>::IntegrationDirection::forward);
             }
