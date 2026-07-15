@@ -14,6 +14,10 @@ class GeometrySingleScatterComparison:
     """Track the calculation-only cost of equivalent 1D and 2D scenes."""
 
     def setup(self, geometry_kind, calculate_derivatives):
+        if geometry_kind == "2d" and not hasattr(sk, "Geometry2D"):
+            reason = "Geometry2D is unavailable in this commit"
+            raise NotImplementedError(reason)
+
         config = sk.Config()
         config.num_threads = 1
         config.single_scatter_source = sk.SingleScatterSource.Exact
