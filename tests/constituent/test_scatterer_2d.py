@@ -108,9 +108,7 @@ def _radius_dependent_optical_property() -> sk.optical.HenyeyGreenstein:
             ),
             "ssa": (
                 ("radius", "wavelength_nm"),
-                np.array(
-                    [[1.6e-12, 2.8e-12], [4.8e-12, 12.6e-12]]
-                ),
+                np.array([[1.6e-12, 2.8e-12], [4.8e-12, 12.6e-12]]),
             ),
             "asymmetry_parameter": (
                 ("radius", "wavelength_nm"),
@@ -360,9 +358,7 @@ def test_extinction_scatterer_2d_normalizes_each_native_location():
     numeric = (atmosphere.storage.total_extinction - base_extinction) / delta
     expected_derivative = np.zeros_like(numeric)
     expected_derivative[location_index] = analytic_d_extinction[location_index]
-    np.testing.assert_allclose(
-        numeric, expected_derivative, rtol=2.0e-11, atol=1.0e-13
-    )
+    np.testing.assert_allclose(numeric, expected_derivative, rtol=2.0e-11, atol=1.0e-13)
 
 
 def test_extinction_scatterer_2d_aux_derivative_includes_normalization_change():
@@ -409,9 +405,7 @@ def test_native_extinction_scatterer_single_scatter_wf_matches_finite_difference
 ):
     config = _single_scatter_config()
     geometry = _geometry2d()
-    extinction = np.array(
-        [[1.0e-6, 2.0e-6, 3.0e-6], [4.0e-6, 5.0e-6, 6.0e-6]]
-    )
+    extinction = np.array([[1.0e-6, 2.0e-6, 3.0e-6], [4.0e-6, 5.0e-6, 6.0e-6]])
     radius = np.array([[1.2, 1.4, 1.6], [1.8, 2.0, 2.2]])
     constituent = sk.constituent.ExtinctionScatterer2D(
         _radius_dependent_optical_property(), extinction, 500.0, radius=radius

@@ -42,9 +42,7 @@ class NumberDensityScatterer2D(Constituent):
         **kwargs,
     ) -> None:
         super().__init__()
-        number_density = self._validate_native_profile(
-            number_density, "number_density"
-        )
+        number_density = self._validate_native_profile(number_density, "number_density")
 
         self._volume_shape = number_density.shape
         self._optical_property = optical_property
@@ -66,9 +64,7 @@ class NumberDensityScatterer2D(Constituent):
     def _validate_native_profile(value: np.ndarray, name: str) -> np.ndarray:
         value = np.asarray(value, dtype=np.float64)
         if value.ndim != 2:
-            msg = (
-                f"{name} must have shape (horizontal, altitude); got {value.shape}"
-            )
+            msg = f"{name} must have shape (horizontal, altitude); got {value.shape}"
             raise ValueError(msg)
         if 0 in value.shape:
             msg = f"{name} horizontal and altitude dimensions must both be non-empty"
@@ -135,9 +131,9 @@ class NumberDensityScatterer2D(Constituent):
                 f"got {number_density.shape}"
             )
             raise ValueError(msg)
-        self._constituent.number_density = np.ascontiguousarray(
-            number_density
-        ).reshape(-1)
+        self._constituent.number_density = np.ascontiguousarray(number_density).reshape(
+            -1
+        )
 
     def _validate_atmosphere(self, atmo: Atmosphere) -> None:
         if not isinstance(atmo.model_geometry, sk.Geometry2D):
@@ -244,16 +240,16 @@ class ExtinctionScatterer2D(NumberDensityScatterer2D):
         )
         self._d_vertical_deriv_factor = {}
         for name, derivative in derivatives.items():
-            derivative = np.asarray(derivative, dtype=np.float64)
-            if derivative.size != expected_size:
+            derivative_array = np.asarray(derivative, dtype=np.float64)
+            if derivative_array.size != expected_size:
                 msg = (
                     f"Cross-section derivative {name!r} has spatial size "
-                    f"{derivative.size}; expected {expected_size}"
+                    f"{derivative_array.size}; expected {expected_size}"
                 )
                 raise ValueError(msg)
-            derivative = derivative.reshape(self._volume_shape)
+            derivative_array = derivative_array.reshape(self._volume_shape)
             self._d_vertical_deriv_factor[name] = (
-                -derivative * self._vertical_deriv_factor**2
+                -derivative_array * self._vertical_deriv_factor**2
             )
 
     @property
