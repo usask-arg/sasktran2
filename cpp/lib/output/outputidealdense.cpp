@@ -55,6 +55,13 @@ namespace sasktran2 {
         const sasktran2::WavelengthBlock& block,
         const sasktran2::WavelengthBlockDual<NSTOKES>& radiance, int losidx,
         int) {
+        if (block.count == 1) {
+            const sasktran2::WavelengthBlockConstLaneDualView<NSTOKES>
+                radiance_lane(radiance, 0);
+            assign_lane(radiance_lane, losidx, block.start);
+            return;
+        }
+
         const int stride = NSTOKES * this->m_nlos;
         const int first = stride * block.start + NSTOKES * losidx;
         const auto output_indices = [&](int stokes) {

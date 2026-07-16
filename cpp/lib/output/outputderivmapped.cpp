@@ -233,6 +233,13 @@ namespace sasktran2 {
         const sasktran2::WavelengthBlock& block,
         const sasktran2::WavelengthBlockDual<NSTOKES>& radiance, int losidx,
         int threadidx) {
+        if (block.count == 1) {
+            const sasktran2::WavelengthBlockConstLaneDualView<NSTOKES>
+                radiance_lane(radiance, 0);
+            assign_lane(radiance_lane, losidx, block.start, threadidx);
+            return;
+        }
+
         double stokes_c = 1.0;
         double stokes_s = 0.0;
         if constexpr (NSTOKES >= 3) {
