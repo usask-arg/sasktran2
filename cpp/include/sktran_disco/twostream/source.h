@@ -15,7 +15,7 @@
 #include <memory>
 
 template <int NSTOKES, sasktran2::twostream::SourceType SOURCE_TYPE>
-class TwoStreamSource : public SourceTermInterface<NSTOKES> {
+class TwoStreamSource : public ScalarSourceTermInterface<NSTOKES> {
   private:
     mutable std::vector<sasktran2::twostream::Solution<SOURCE_TYPE>>
         m_solutions;

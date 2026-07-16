@@ -3,7 +3,7 @@
 #include <sasktran2/internal_common.h>
 #include <sasktran2/raytracing.h>
 #include <sasktran2/viewinggeometry_internal.h>
-#include <sasktran2/wavelength_batch.h>
+#include <sasktran2/wavelength_block.h>
 #include <sasktran2/dual.h>
 #include <sasktran2/config.h>
 #include <sasktran2/atmosphere/atmosphere.h>
@@ -12,7 +12,6 @@
  *
  */
 template <int NSTOKES> class SourceTermInterface {
-  protected:
   public:
     // Enum determinig the direction the source integration happens
     // Knowing the direction of integration when calculating the source can
@@ -45,21 +44,11 @@ template <int NSTOKES> class SourceTermInterface {
     virtual void initialize_atmosphere(
         const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere){};
 
-    /** Triggers an internal calculation of the source term.  This method is
-     * called at the beginning of each 'wavelength' calculation.
-     *
-     * @param wavelidx Index of the wavelength being calculated
-     */
-    virtual void calculate(int wavelidx, int threadidx){};
+    /** Triggers calculation for a contiguous block of wavelengths. */
+    virtual void calculate(const sasktran2::WavelengthBlock& block,
+                           int threadidx){};
 
-    virtual bool supports_wavelength_batching() const { return false; }
-
-    virtual void initialize_wavelength_batching(int) {}
-
-    virtual void calculate_batch(const sasktran2::WavelengthBatch&, int) {
-        throw std::logic_error(
-            "Source does not implement wavelength batch calculation");
-    }
+    virtual bool supports_wavelength_blocks() const { return false; }
 
     // TODO: Is Dual proper here? what about when the source term derivative is
     // sparse? Maybe it isn't that important... Should we be templated over
@@ -67,55 +56,37 @@ template <int NSTOKES> class SourceTermInterface {
 
     /** Calculates the integrated source term for a given layer.
      *
-     * @param losidx Raw index pointing to the ray that was previously passed in
-     * initialize_geometry
+     * @param block Contiguous wavelengths being integrated
+     * @param losidx Raw index pointing to the ray that was previously passed
+     * in initialize_geometry
      * @param layeridx Raw index pointing to the layer that was previosuly
      * passed in initialize_geometry
      * @param layer The layer that we are integrating over
      * @param source The returned source term
      */
     virtual void integrated_source(
-        int wavelidx, int losidx, int layeridx, int wavel_threadidx,
-        int threadidx, const sasktran2::raytracing::TracedLayer& layer,
-        const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
-        const sasktran2::raytracing::GridWeightStencilView& exit_weights,
-        const sasktran2::SparseODDualView& shell_od,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
-        IntegrationDirection direction = IntegrationDirection::none) const = 0;
-
-    virtual void integrated_source_batch(
-        const sasktran2::WavelengthBatch&, int losidx, int layeridx,
+        const sasktran2::WavelengthBlock&, int losidx, int layeridx,
         int wavel_threadidx, int threadidx,
         const sasktran2::raytracing::TracedLayer& layer,
         const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
         const sasktran2::raytracing::GridWeightStencilView& exit_weights,
-        const sasktran2::WavelengthBatchODView& shell_od,
-        sasktran2::WavelengthBatchDual<NSTOKES>& source,
-        IntegrationDirection direction = IntegrationDirection::none) const {
-        throw std::logic_error(
-            "Source does not implement wavelength batch integration");
-    }
+        const sasktran2::WavelengthBlockODView& shell_od,
+        sasktran2::WavelengthBlockDualView<NSTOKES>& source,
+        IntegrationDirection direction = IntegrationDirection::none) const = 0;
 
     /** Calculates the source term at the end of the ray.  Common examples of
      * this are ground scattering, ground emission, or the solar radiance if
      * looking directly at the sun.
      *
-     * @param wavelidx Raw index for the wavelength we are calculating
+     * @param block Contiguous wavelengths being integrated
      * @param losidx Raw index pointing to the ray that was previously passed in
      * initialize_geometry
      * @param source The returned source term
      */
     virtual void end_of_ray_source(
-        int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
-        const = 0;
-
-    virtual void end_of_ray_source_batch(
-        const sasktran2::WavelengthBatch&, int losidx, int wavel_threadidx,
-        int threadidx, sasktran2::WavelengthBatchDual<NSTOKES>& source) const {
-        throw std::logic_error(
-            "Source does not implement wavelength batch end source");
-    }
+        const sasktran2::WavelengthBlock&, int losidx, int wavel_threadidx,
+        int threadidx,
+        sasktran2::WavelengthBlockDualView<NSTOKES>& source) const = 0;
 
     /** Calculates the radiance at the start of the ray, i.e., the source term
      * has done the equivalent of the integration along the ray.  This is useful
@@ -127,23 +98,16 @@ template <int NSTOKES> class SourceTermInterface {
      *  Typically source terms will only either implement start_of_ray_source,
      * or integrated_source + end_of_ray_source and not both
      *
-     * @param wavelidx
+     * @param block Contiguous wavelengths being integrated
      * @param losidx
      * @param wavel_threadidx
      * @param threadidx
      * @param source
      */
     virtual void start_of_ray_source(
-        int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
-        const = 0;
-
-    virtual void start_of_ray_source_batch(
-        const sasktran2::WavelengthBatch&, int losidx, int wavel_threadidx,
-        int threadidx, sasktran2::WavelengthBatchDual<NSTOKES>& source) const {
-        throw std::logic_error(
-            "Source does not implement wavelength batch start source");
-    }
+        const sasktran2::WavelengthBlock&, int losidx, int wavel_threadidx,
+        int threadidx,
+        sasktran2::WavelengthBlockDualView<NSTOKES>& source) const = 0;
 
     virtual void
     flux(int wavelidx, int fluxidx, int wavelt_threadidx, int threadidx,
@@ -179,4 +143,80 @@ template <int NSTOKES> class SourceTermInterface {
      * layer. */
     virtual void append_interior_active_derivatives(int, int,
                                                     std::vector<int>&) const {}
+};
+
+/** Adapts scalar-only source implementations to the block-oriented engine
+ * interface. Scalar sources remain unchanged internally and cause the engine
+ * to select blocks of size one. */
+template <int NSTOKES>
+class ScalarSourceTermInterface : public SourceTermInterface<NSTOKES> {
+  protected:
+    static void validate_scalar_block(const sasktran2::WavelengthBlock& block) {
+        if (!block.is_scalar() || block.count != 1) {
+            throw std::logic_error("Scalar source received a wavelength block");
+        }
+    }
+
+    virtual void calculate(int, int) {}
+
+    virtual void integrated_source(
+        int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+        int threadidx, const sasktran2::raytracing::TracedLayer& layer,
+        const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
+        const sasktran2::raytracing::GridWeightStencilView& exit_weights,
+        const sasktran2::SparseODDualView& shell_od,
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
+        typename SourceTermInterface<NSTOKES>::IntegrationDirection direction =
+            SourceTermInterface<NSTOKES>::IntegrationDirection::none) const = 0;
+
+    virtual void end_of_ray_source(
+        int wavelidx, int losidx, int wavel_threadidx, int threadidx,
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
+        const = 0;
+
+    virtual void start_of_ray_source(
+        int wavelidx, int losidx, int wavel_threadidx, int threadidx,
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
+        const = 0;
+
+  public:
+    void calculate(const sasktran2::WavelengthBlock& block,
+                   int threadidx) final {
+        validate_scalar_block(block);
+        calculate(block.start, threadidx);
+    }
+
+    void integrated_source(
+        const sasktran2::WavelengthBlock& block, int losidx, int layeridx,
+        int wavel_threadidx, int threadidx,
+        const sasktran2::raytracing::TracedLayer& layer,
+        const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
+        const sasktran2::raytracing::GridWeightStencilView& exit_weights,
+        const sasktran2::WavelengthBlockODView& shell_od,
+        sasktran2::WavelengthBlockDualView<NSTOKES>& source,
+        typename SourceTermInterface<NSTOKES>::IntegrationDirection direction)
+        const final {
+        validate_scalar_block(block);
+        integrated_source(block.start, losidx, layeridx, wavel_threadidx,
+                          threadidx, layer, entrance_weights, exit_weights,
+                          shell_od.scalar(), source.scalar(), direction);
+    }
+
+    void end_of_ray_source(
+        const sasktran2::WavelengthBlock& block, int losidx,
+        int wavel_threadidx, int threadidx,
+        sasktran2::WavelengthBlockDualView<NSTOKES>& source) const final {
+        validate_scalar_block(block);
+        end_of_ray_source(block.start, losidx, wavel_threadidx, threadidx,
+                          source.scalar());
+    }
+
+    void start_of_ray_source(
+        const sasktran2::WavelengthBlock& block, int losidx,
+        int wavel_threadidx, int threadidx,
+        sasktran2::WavelengthBlockDualView<NSTOKES>& source) const final {
+        validate_scalar_block(block);
+        start_of_ray_source(block.start, losidx, wavel_threadidx, threadidx,
+                            source.scalar());
+    }
 };

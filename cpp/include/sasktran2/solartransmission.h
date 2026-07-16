@@ -234,9 +234,9 @@ namespace sasktran2::solartransmission {
          */
         void calculate(int wavelidx, int threadidx);
 
-        void initialize_wavelength_batching(int batch_size);
+        void initialize_wavelength_blocks(int batch_size);
 
-        void calculate_batch(const sasktran2::WavelengthBatch& batch,
+        void calculate_block(const sasktran2::WavelengthBlock& batch,
                              int threadidx);
 
         /**
@@ -266,13 +266,13 @@ namespace sasktran2::solartransmission {
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
                 target) const;
 
-        void scatter_and_accumulate_derivative_batch(
+        void scatter_and_accumulate_derivative_block(
             int threadidx, int losidx, int layeridx,
             const raytracing::GridWeightStencilView& index_weights,
             bool is_entrance,
             const Eigen::Ref<const Eigen::RowVectorXd>& source_amplitude,
             const Eigen::Ref<const Eigen::RowVectorXd>& derivative_scale,
-            sasktran2::WavelengthBatchDual<NSTOKES>& target,
+            sasktran2::WavelengthBlockDual<NSTOKES>& target,
             Eigen::Matrix<double, NSTOKES, Eigen::Dynamic, Eigen::RowMajor>&
                 phase_result) const;
 
@@ -467,7 +467,7 @@ namespace sasktran2::solartransmission {
         return endpoint_source;
     }
 
-    template <int NSTOKES> struct ExactScatteringBatchScratch {
+    template <int NSTOKES> struct ExactScatteringBlockScratch {
         using BatchMatrix =
             Eigen::Matrix<double, NSTOKES, Eigen::Dynamic, Eigen::RowMajor>;
 
@@ -488,7 +488,7 @@ namespace sasktran2::solartransmission {
         }
     };
 
-    template <int NSTOKES> struct ExactIntegrationBatchScratch {
+    template <int NSTOKES> struct ExactIntegrationBlockScratch {
         using BatchMatrix =
             Eigen::Matrix<double, NSTOKES, Eigen::Dynamic, Eigen::RowMajor>;
 
@@ -513,9 +513,9 @@ namespace sasktran2::solartransmission {
      * fixed atmospheric/derivative coordinate are contiguous in wavelength so
      * Eigen can vectorize the common arithmetic. */
     template <int NSTOKES>
-    inline void accumulate_exact_scattering_source_batch(
+    inline void accumulate_exact_scattering_source_block(
         const PhaseHandler<NSTOKES>& phase_handler, int threadidx, int losidx,
-        int layeridx, const sasktran2::WavelengthBatch& batch,
+        int layeridx, const sasktran2::WavelengthBlock& batch,
         const raytracing::GridWeightStencilView& index_weights,
         bool is_entrance,
         const Eigen::Ref<const Eigen::RowVectorXd>& solar_trans,
@@ -523,8 +523,8 @@ namespace sasktran2::solartransmission {
         Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
             solar_trans_iter,
         const Eigen::Ref<const Eigen::RowVectorXd>& derivative_scale,
-        sasktran2::WavelengthBatchDual<NSTOKES>& target,
-        ExactScatteringBatchScratch<NSTOKES>& scratch) {
+        sasktran2::WavelengthBlockDual<NSTOKES>& target,
+        ExactScatteringBlockScratch<NSTOKES>& scratch) {
         const auto& storage = atmosphere.storage();
         auto ssa = scratch.ssa.head(batch.count);
         auto extinction = scratch.extinction.head(batch.count);
@@ -550,7 +550,7 @@ namespace sasktran2::solartransmission {
         unscaled_amplitude.array() = solar_trans.array() / (EIGEN_PI * 4);
         source_amplitude.array() =
             extinction.array() * ssa.array() * unscaled_amplitude.array();
-        phase_handler.scatter_and_accumulate_derivative_batch(
+        phase_handler.scatter_and_accumulate_derivative_block(
             threadidx, losidx, layeridx, index_weights, is_entrance,
             source_amplitude, derivative_scale, target, scratch.phase);
         auto phase = scratch.phase.leftCols(batch.count);
@@ -627,9 +627,9 @@ namespace sasktran2::solartransmission {
         mutable std::vector<
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>>
             m_end_source_cache;
-        mutable std::vector<std::array<ExactScatteringBatchScratch<NSTOKES>, 2>>
+        mutable std::vector<std::array<ExactScatteringBlockScratch<NSTOKES>, 2>>
             m_batch_source_cache;
-        mutable std::vector<ExactIntegrationBatchScratch<NSTOKES>>
+        mutable std::vector<ExactIntegrationBlockScratch<NSTOKES>>
             m_batch_integration_cache;
 
         const Geometry& m_geometry;
@@ -697,16 +697,27 @@ namespace sasktran2::solartransmission {
          *
          * @param wavelidx Index of the wavelength being calculated
          */
-        void calculate(int wavelidx, int threadidx) override;
-
-        bool supports_wavelength_batching() const override {
+        bool supports_wavelength_blocks() const override {
             return std::is_same_v<S, SolarTransmissionExact>;
         }
 
-        void initialize_wavelength_batching(int batch_size) override;
+      private:
+        void calculate(int wavelidx, int threadidx);
 
-        void calculate_batch(const sasktran2::WavelengthBatch& batch,
-                             int threadidx) override;
+        void initialize_wavelength_blocks(int block_size);
+
+        void calculate_block(const sasktran2::WavelengthBlock& block,
+                             int threadidx);
+
+      public:
+        void calculate(const sasktran2::WavelengthBlock& block,
+                       int threadidx) override {
+            if (block.is_scalar()) {
+                calculate(block.start, threadidx);
+            } else {
+                calculate_block(block, threadidx);
+            }
+        }
 
         /** Calculates the integrated source term for a given layer.
          *
@@ -717,6 +728,7 @@ namespace sasktran2::solartransmission {
          * @param layer The layer that we are integrating over
          * @param source The returned source term
          */
+      private:
         void integrated_source(
             int wavelidx, int losidx, int layeridx, int wavel_threadidx,
             int threadidx, const sasktran2::raytracing::TracedLayer& layer,
@@ -726,24 +738,49 @@ namespace sasktran2::solartransmission {
             const sasktran2::SparseODDualView& shell_od,
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
                 source,
-            typename SourceTermInterface<NSTOKES>::IntegrationDirection
-                direction =
-                    SourceTermInterface<NSTOKES>::IntegrationDirection::none)
-            const override;
+            typename SourceTermInterface<
+                NSTOKES>::IntegrationDirection direction =
+                SourceTermInterface<NSTOKES>::IntegrationDirection::none) const;
 
-        void integrated_source_batch(
-            const sasktran2::WavelengthBatch& batch, int losidx, int layeridx,
+        void integrated_source_block(
+            const sasktran2::WavelengthBlock& batch, int losidx, int layeridx,
             int wavel_threadidx, int threadidx,
             const sasktran2::raytracing::TracedLayer& layer,
             const sasktran2::raytracing::GridWeightStencilView&
                 entrance_weights,
             const sasktran2::raytracing::GridWeightStencilView& exit_weights,
-            const sasktran2::WavelengthBatchODView& shell_od,
-            sasktran2::WavelengthBatchDual<NSTOKES>& source,
+            const sasktran2::WavelengthBlockODView& shell_od,
+            sasktran2::WavelengthBlockDual<NSTOKES>& source,
+            typename SourceTermInterface<
+                NSTOKES>::IntegrationDirection direction =
+                SourceTermInterface<NSTOKES>::IntegrationDirection::none) const;
+
+      public:
+        void integrated_source(
+            const sasktran2::WavelengthBlock& block, int losidx, int layeridx,
+            int wavel_threadidx, int threadidx,
+            const sasktran2::raytracing::TracedLayer& layer,
+            const sasktran2::raytracing::GridWeightStencilView&
+                entrance_weights,
+            const sasktran2::raytracing::GridWeightStencilView& exit_weights,
+            const sasktran2::WavelengthBlockODView& shell_od,
+            sasktran2::WavelengthBlockDualView<NSTOKES>& source,
             typename SourceTermInterface<NSTOKES>::IntegrationDirection
                 direction =
                     SourceTermInterface<NSTOKES>::IntegrationDirection::none)
-            const override;
+            const override {
+            if (source.is_scalar()) {
+                integrated_source(
+                    block.start, losidx, layeridx, wavel_threadidx, threadidx,
+                    layer, entrance_weights, exit_weights, shell_od.scalar(),
+                    source.scalar(), direction);
+            } else {
+                integrated_source_block(block, losidx, layeridx,
+                                        wavel_threadidx, threadidx, layer,
+                                        entrance_weights, exit_weights,
+                                        shell_od, source.block(), direction);
+            }
+        }
 
         bool supports_geometry_dimension(int dimension) const override {
             return dimension == 1 ||
@@ -770,15 +807,30 @@ namespace sasktran2::solartransmission {
          * @param surface The surface object
          * @param source The returned source term
          */
+      private:
         void end_of_ray_source(
             int wavelidx, int losidx, int wavel_threadidx, int threadidx,
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                source) const override;
+                source) const;
 
-        void end_of_ray_source_batch(
-            const sasktran2::WavelengthBatch& batch, int losidx,
+        void end_of_ray_source_block(
+            const sasktran2::WavelengthBlock& batch, int losidx,
             int wavel_threadidx, int threadidx,
-            sasktran2::WavelengthBatchDual<NSTOKES>& source) const override;
+            sasktran2::WavelengthBlockDual<NSTOKES>& source) const;
+
+      public:
+        void end_of_ray_source(const sasktran2::WavelengthBlock& block,
+                               int losidx, int wavel_threadidx, int threadidx,
+                               sasktran2::WavelengthBlockDualView<NSTOKES>&
+                                   source) const override {
+            if (source.is_scalar()) {
+                end_of_ray_source(block.start, losidx, wavel_threadidx,
+                                  threadidx, source.scalar());
+            } else {
+                end_of_ray_source_block(block, losidx, wavel_threadidx,
+                                        threadidx, source.block());
+            }
+        }
 
         /**
          * @brief Not used for the Single Scatter source.
@@ -789,14 +841,9 @@ namespace sasktran2::solartransmission {
          * @param threadidx
          * @param source
          */
-        virtual void start_of_ray_source(
-            int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                source) const override{};
-
-        void start_of_ray_source_batch(
-            const sasktran2::WavelengthBatch&, int, int, int,
-            sasktran2::WavelengthBatchDual<NSTOKES>&) const override {}
+        void start_of_ray_source(
+            const sasktran2::WavelengthBlock&, int, int, int,
+            sasktran2::WavelengthBlockDualView<NSTOKES>&) const override {}
     };
 
     template <int NSTOKES>
@@ -830,11 +877,18 @@ namespace sasktran2::solartransmission {
          *
          * @param wavelidx Index of the wavelength being calculated
          */
-        void calculate(int wavelidx, int threadidx) override;
+        bool supports_wavelength_blocks() const override { return true; }
 
-        bool supports_wavelength_batching() const override { return true; }
+      private:
+        void calculate(int wavelidx, int threadidx);
 
-        void calculate_batch(const sasktran2::WavelengthBatch&, int) override {}
+      public:
+        void calculate(const sasktran2::WavelengthBlock& block,
+                       int threadidx) override {
+            if (block.is_scalar()) {
+                calculate(block.start, threadidx);
+            }
+        }
 
         /** Calculates the integrated source term for a given layer.
          *
@@ -845,6 +899,7 @@ namespace sasktran2::solartransmission {
          * @param layer The layer that we are integrating over
          * @param source The returned source term
          */
+      private:
         void integrated_source(
             int wavelidx, int losidx, int layeridx, int wavel_threadidx,
             int threadidx, const sasktran2::raytracing::TracedLayer& layer,
@@ -854,20 +909,31 @@ namespace sasktran2::solartransmission {
             const sasktran2::SparseODDualView& shell_od,
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
                 source,
+            typename SourceTermInterface<
+                NSTOKES>::IntegrationDirection direction =
+                SourceTermInterface<NSTOKES>::IntegrationDirection::none) const;
+
+      public:
+        void integrated_source(
+            const sasktran2::WavelengthBlock& block, int losidx, int layeridx,
+            int wavel_threadidx, int threadidx,
+            const sasktran2::raytracing::TracedLayer& layer,
+            const sasktran2::raytracing::GridWeightStencilView&
+                entrance_weights,
+            const sasktran2::raytracing::GridWeightStencilView& exit_weights,
+            const sasktran2::WavelengthBlockODView& shell_od,
+            sasktran2::WavelengthBlockDualView<NSTOKES>& source,
             typename SourceTermInterface<NSTOKES>::IntegrationDirection
                 direction =
                     SourceTermInterface<NSTOKES>::IntegrationDirection::none)
-            const override;
-
-        void integrated_source_batch(
-            const sasktran2::WavelengthBatch&, int, int, int, int,
-            const sasktran2::raytracing::TracedLayer&,
-            const sasktran2::raytracing::GridWeightStencilView&,
-            const sasktran2::raytracing::GridWeightStencilView&,
-            const sasktran2::WavelengthBatchODView&,
-            sasktran2::WavelengthBatchDual<NSTOKES>&,
-            typename SourceTermInterface<NSTOKES>::IntegrationDirection)
-            const override {}
+            const override {
+            if (source.is_scalar()) {
+                integrated_source(
+                    block.start, losidx, layeridx, wavel_threadidx, threadidx,
+                    layer, entrance_weights, exit_weights, shell_od.scalar(),
+                    source.scalar(), direction);
+            }
+        }
 
         /** Calculates the source term at the end of the ray.  Common examples
          * of this are ground scattering, ground emission, or the solar radiance
@@ -878,15 +944,30 @@ namespace sasktran2::solartransmission {
          * passed in initialize_geometry
          * @param source The returned source term
          */
+      private:
         void end_of_ray_source(
             int wavelidx, int losidx, int wavel_threadidx, int threadidx,
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                source) const override;
+                source) const;
 
-        void end_of_ray_source_batch(
-            const sasktran2::WavelengthBatch& batch, int losidx,
+        void end_of_ray_source_block(
+            const sasktran2::WavelengthBlock& batch, int losidx,
             int wavel_threadidx, int threadidx,
-            sasktran2::WavelengthBatchDual<NSTOKES>& source) const override;
+            sasktran2::WavelengthBlockDual<NSTOKES>& source) const;
+
+      public:
+        void end_of_ray_source(const sasktran2::WavelengthBlock& block,
+                               int losidx, int wavel_threadidx, int threadidx,
+                               sasktran2::WavelengthBlockDualView<NSTOKES>&
+                                   source) const override {
+            if (source.is_scalar()) {
+                end_of_ray_source(block.start, losidx, wavel_threadidx,
+                                  threadidx, source.scalar());
+            } else {
+                end_of_ray_source_block(block, losidx, wavel_threadidx,
+                                        threadidx, source.block());
+            }
+        }
 
         /**
          * @brief Not used for the occultation source.
@@ -897,14 +978,9 @@ namespace sasktran2::solartransmission {
          * @param threadidx
          * @param source
          */
-        virtual void start_of_ray_source(
-            int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                source) const override{};
-
-        void start_of_ray_source_batch(
-            const sasktran2::WavelengthBatch&, int, int, int,
-            sasktran2::WavelengthBatchDual<NSTOKES>&) const override {}
+        void start_of_ray_source(
+            const sasktran2::WavelengthBlock&, int, int, int,
+            sasktran2::WavelengthBlockDualView<NSTOKES>&) const override {}
 
         bool has_interior_source() const override { return false; }
     };

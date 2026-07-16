@@ -216,7 +216,7 @@ namespace sasktran2 {
      * @tparam CNSTR
      */
     template <int NSTOKES, int CNSTR = -1>
-    class DOSource : public SourceTermInterface<NSTOKES> {
+    class DOSource : public ScalarSourceTermInterface<NSTOKES> {
       private:
         using SInterpolator =
             std::vector<std::vector<std::vector<std::pair<int, double>>>>;
@@ -408,7 +408,7 @@ namespace sasktran2 {
 
     template <int NSTOKES, int CNSTR = -1>
     class DOSourcePlaneParallelPostProcessing
-        : public SourceTermInterface<NSTOKES> {
+        : public ScalarSourceTermInterface<NSTOKES> {
       private:
         const sasktran2::Geometry1D& m_geometry;
         const sasktran2::Config* m_config;

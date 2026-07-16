@@ -211,14 +211,14 @@ namespace sasktran2::emission {
     }
 
     template <int NSTOKES, Config::EmissionSource EMISSION_SOURCE_TYPE>
-    void EmissionSource<NSTOKES, EMISSION_SOURCE_TYPE>::integrated_source_batch(
-        const sasktran2::WavelengthBatch& batch, int losidx, int layeridx,
+    void EmissionSource<NSTOKES, EMISSION_SOURCE_TYPE>::integrated_source_block(
+        const sasktran2::WavelengthBlock& batch, int losidx, int layeridx,
         int wavel_threadidx, int threadidx,
         const sasktran2::raytracing::TracedLayer& layer,
         const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
         const sasktran2::raytracing::GridWeightStencilView& exit_weights,
-        const sasktran2::WavelengthBatchODView& shell_od,
-        sasktran2::WavelengthBatchDual<NSTOKES>& source,
+        const sasktran2::WavelengthBlockODView& shell_od,
+        sasktran2::WavelengthBlockDual<NSTOKES>& source,
         typename SourceTermInterface<NSTOKES>::IntegrationDirection direction)
         const {
         if (layer.layer_distance < MINIMUM_SHELL_SIZE_M) {
@@ -280,8 +280,8 @@ namespace sasktran2::emission {
             }
             if constexpr (EMISSION_SOURCE_TYPE ==
                           Config::EmissionSource::standard) {
-                for (auto derivative = shell_od.deriv_iter; derivative;
-                     ++derivative) {
+                for (auto derivative = shell_od.derivative_iterator();
+                     derivative; ++derivative) {
                     source.derivative(derivative.index(), batch.count)(
                         0, lane) += derivative.value() * attenuation(lane) *
                                     ((1.0 - ssa_start) * emission_start *
@@ -351,10 +351,10 @@ namespace sasktran2::emission {
     }
 
     template <int NSTOKES, Config::EmissionSource EMISSION_SOURCE_TYPE>
-    void EmissionSource<NSTOKES, EMISSION_SOURCE_TYPE>::end_of_ray_source_batch(
-        const sasktran2::WavelengthBatch& batch, int losidx,
+    void EmissionSource<NSTOKES, EMISSION_SOURCE_TYPE>::end_of_ray_source_block(
+        const sasktran2::WavelengthBlock& batch, int losidx,
         int wavel_threadidx, int threadidx,
-        sasktran2::WavelengthBatchDual<NSTOKES>& source) const {
+        sasktran2::WavelengthBlockDual<NSTOKES>& source) const {
         if (!m_ground_is_hit.at(losidx)) {
             return;
         }

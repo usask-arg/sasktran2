@@ -118,40 +118,6 @@ int sk_engine_calculate_radiance(Engine* engine, Atmosphere* atmosphere,
     return engine->calculate_radiance(atmosphere, output, only_initialize);
 }
 
-int sk_engine_calculate_radiance_thread(Engine* engine, Atmosphere* atmosphere,
-                                        OutputC* output, int wavelength_idx,
-                                        int thread_idx) {
-    try {
-        if (engine->impl) {
-            if (engine->_config->impl.num_stokes() == 1) {
-                Sasktran2<1>* impl1 =
-                    dynamic_cast<Sasktran2<1>*>(engine->impl.get());
-                impl1->calculate_radiance_thread(
-                    *static_cast<sasktran2::atmosphere::Atmosphere<1>*>(
-                        atmosphere->impl.get()),
-                    *static_cast<sasktran2::Output<1>*>(output->impl.get()),
-                    wavelength_idx, thread_idx);
-                return 0;
-            } else if (engine->_config->impl.num_stokes() == 3) {
-                Sasktran2<3>* impl3 =
-                    dynamic_cast<Sasktran2<3>*>(engine->impl.get());
-                impl3->calculate_radiance_thread(
-                    *static_cast<sasktran2::atmosphere::Atmosphere<3>*>(
-                        atmosphere->impl.get()),
-                    *static_cast<sasktran2::Output<3>*>(output->impl.get()),
-                    wavelength_idx, thread_idx);
-                return 0;
-            } else {
-                return -2; // Error: invalid number of Stokes parameters
-            }
-        }
-        return -1; // Error: impl is null
-    } catch (const std::exception& e) {
-        // Handle the exception, log it, etc.
-        return -3; // Error: exception occurred
-    }
-}
-
 int sk_engine_effective_wavelength_batch_size(Engine* engine,
                                               int num_wavelengths) {
     try {
@@ -172,34 +138,36 @@ int sk_engine_effective_wavelength_batch_size(Engine* engine,
     }
 }
 
-int sk_engine_calculate_radiance_batch_thread(
+int sk_engine_calculate_radiance_block_thread(
     Engine* engine, Atmosphere* atmosphere, OutputC* output,
-    int wavelength_start, int wavelength_count, int thread_idx) {
+    int wavelength_start, int wavelength_count, int block_capacity,
+    int thread_idx) {
     try {
         if (engine == nullptr || !engine->impl || atmosphere == nullptr ||
             output == nullptr) {
             return -1;
         }
-        if (wavelength_start < 0 || wavelength_count < 1 || thread_idx < 0) {
+        if (wavelength_start < 0 || wavelength_count < 1 ||
+            block_capacity < wavelength_count || thread_idx < 0) {
             return -2;
         }
-        const sasktran2::WavelengthBatch batch{wavelength_start,
-                                               wavelength_count};
+        const sasktran2::WavelengthBlock block{
+            wavelength_start, wavelength_count, block_capacity};
         if (engine->_config->impl.num_stokes() == 1) {
             auto* impl = dynamic_cast<Sasktran2<1>*>(engine->impl.get());
-            impl->calculate_radiance_batch_thread(
+            impl->calculate_radiance_block_thread(
                 *static_cast<sasktran2::atmosphere::Atmosphere<1>*>(
                     atmosphere->impl.get()),
-                *static_cast<sasktran2::Output<1>*>(output->impl.get()), batch,
+                *static_cast<sasktran2::Output<1>*>(output->impl.get()), block,
                 thread_idx);
             return 0;
         }
         if (engine->_config->impl.num_stokes() == 3) {
             auto* impl = dynamic_cast<Sasktran2<3>*>(engine->impl.get());
-            impl->calculate_radiance_batch_thread(
+            impl->calculate_radiance_block_thread(
                 *static_cast<sasktran2::atmosphere::Atmosphere<3>*>(
                     atmosphere->impl.get()),
-                *static_cast<sasktran2::Output<3>*>(output->impl.get()), batch,
+                *static_cast<sasktran2::Output<3>*>(output->impl.get()), block,
                 thread_idx);
             return 0;
         }

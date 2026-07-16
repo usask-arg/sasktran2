@@ -27,6 +27,12 @@ namespace sasktran2::solartransmission {
             } else {
                 m_active_derivative_indices.clear();
             }
+
+            const int block_size = std::min(m_config->wavelength_batch_size(),
+                                            atmosphere.num_wavel());
+            if (block_size > 1) {
+                initialize_wavelength_blocks(block_size);
+            }
         }
 
         // Initialize some local memory storage
@@ -99,35 +105,35 @@ namespace sasktran2::solartransmission {
     }
 
     template <typename S, int NSTOKES>
-    void SingleScatterSource<S, NSTOKES>::initialize_wavelength_batching(
-        int batch_size) {
+    void SingleScatterSource<S, NSTOKES>::initialize_wavelength_blocks(
+        int block_size) {
         if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
             throw std::logic_error(
                 "Solar transmission tables do not support wavelength "
                 "batching");
         } else {
-            m_wavelength_batch_capacity = batch_size;
+            m_wavelength_batch_capacity = block_size;
             m_solar_trans_batch.resize(m_config->num_wavelength_threads());
             for (auto& storage : m_solar_trans_batch) {
-                storage.resize(m_geometry_sparse.rows(), batch_size);
+                storage.resize(m_geometry_sparse.rows(), block_size);
             }
             m_batch_source_cache.resize(m_config->num_threads());
             m_batch_integration_cache.resize(m_config->num_threads());
             for (auto& thread_cache : m_batch_source_cache) {
                 for (auto& endpoint_cache : thread_cache) {
-                    endpoint_cache.resize(batch_size);
+                    endpoint_cache.resize(block_size);
                 }
             }
             for (auto& thread_cache : m_batch_integration_cache) {
-                thread_cache.resize(batch_size);
+                thread_cache.resize(block_size);
             }
-            m_phase_handler.initialize_wavelength_batching(batch_size);
+            m_phase_handler.initialize_wavelength_blocks(block_size);
         }
     }
 
     template <typename S, int NSTOKES>
-    void SingleScatterSource<S, NSTOKES>::calculate_batch(
-        const sasktran2::WavelengthBatch& batch, int threadidx) {
+    void SingleScatterSource<S, NSTOKES>::calculate_block(
+        const sasktran2::WavelengthBlock& batch, int threadidx) {
         if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
             throw std::logic_error(
                 "Solar transmission tables do not support wavelength "
@@ -140,7 +146,7 @@ namespace sasktran2::solartransmission {
                     "capacity");
             }
 
-            m_phase_handler.calculate_batch(batch, threadidx);
+            m_phase_handler.calculate_block(batch, threadidx);
             auto solar_trans =
                 m_solar_trans_batch[threadidx].leftCols(batch.count);
             const auto extinction =
@@ -247,10 +253,10 @@ namespace sasktran2::solartransmission {
     }
 
     template <typename S, int NSTOKES>
-    void SingleScatterSource<S, NSTOKES>::end_of_ray_source_batch(
-        const sasktran2::WavelengthBatch& batch, int losidx,
+    void SingleScatterSource<S, NSTOKES>::end_of_ray_source_block(
+        const sasktran2::WavelengthBlock& batch, int losidx,
         int wavel_threadidx, int threadidx,
-        sasktran2::WavelengthBatchDual<NSTOKES>& source) const {
+        sasktran2::WavelengthBlockDual<NSTOKES>& source) const {
         if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
             throw std::logic_error(
                 "Solar transmission tables do not support wavelength "
@@ -777,14 +783,14 @@ namespace sasktran2::solartransmission {
     }
 
     template <typename S, int NSTOKES>
-    void SingleScatterSource<S, NSTOKES>::integrated_source_batch(
-        const sasktran2::WavelengthBatch& batch, int losidx, int layeridx,
+    void SingleScatterSource<S, NSTOKES>::integrated_source_block(
+        const sasktran2::WavelengthBlock& batch, int losidx, int layeridx,
         int wavel_threadidx, int threadidx,
         const sasktran2::raytracing::TracedLayer& layer,
         const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
         const sasktran2::raytracing::GridWeightStencilView& exit_weights,
-        const sasktran2::WavelengthBatchODView& shell_od,
-        sasktran2::WavelengthBatchDual<NSTOKES>& source,
+        const sasktran2::WavelengthBlockODView& shell_od,
+        sasktran2::WavelengthBlockDual<NSTOKES>& source,
         typename SourceTermInterface<NSTOKES>::IntegrationDirection direction)
         const {
         if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
@@ -814,7 +820,7 @@ namespace sasktran2::solartransmission {
             auto source_factor_derivative =
                 integration_cache.source_factor_derivative.head(batch.count);
             for (int lane = 0; lane < batch.count; ++lane) {
-                const double od = shell_od.od_data[lane];
+                const double od = shell_od.od(lane);
                 if (std::abs(od) < 1e-12) {
                     source_factor(lane) = 1.0;
                     source_factor_derivative(lane) = -0.5;
@@ -847,7 +853,7 @@ namespace sasktran2::solartransmission {
                 integration_cache.start_derivative_scale.head(batch.count);
             start_derivative_scale = source_factor * layer.od_quad_start;
             auto& start_cache = m_batch_source_cache[threadidx][0];
-            accumulate_exact_scattering_source_batch(
+            accumulate_exact_scattering_source_block(
                 m_phase_handler, wavel_threadidx, losidx, layeridx, batch,
                 *start_weights, start_is_entrance, solar_trans_entrance,
                 *m_atmosphere,
@@ -861,7 +867,7 @@ namespace sasktran2::solartransmission {
                 integration_cache.end_derivative_scale.head(batch.count);
             end_derivative_scale = source_factor * layer.od_quad_end;
             auto& end_cache = m_batch_source_cache[threadidx][1];
-            accumulate_exact_scattering_source_batch(
+            accumulate_exact_scattering_source_block(
                 m_phase_handler, wavel_threadidx, losidx, layeridx, batch,
                 *end_weights, end_is_entrance, solar_trans_exit, *m_atmosphere,
                 Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
@@ -883,8 +889,8 @@ namespace sasktran2::solartransmission {
                     integration_cache.endpoint_quadrature.leftCols(batch.count);
                 endpoint_quadrature = start_value * layer.od_quad_start +
                                       end_value * layer.od_quad_end;
-                for (auto derivative = shell_od.deriv_iter; derivative;
-                     ++derivative) {
+                for (auto derivative = shell_od.derivative_iterator();
+                     derivative; ++derivative) {
                     auto target_derivative =
                         source.derivative(derivative.index(), batch.count);
                     target_derivative.array() +=

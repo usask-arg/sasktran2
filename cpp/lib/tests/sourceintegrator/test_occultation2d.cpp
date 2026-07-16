@@ -94,7 +94,7 @@ namespace {
         return result;
     }
 
-    class InteriorTestSource : public SourceTermInterface<1> {
+    class InteriorTestSource : public ScalarSourceTermInterface<1> {
       public:
         void integrated_source(
             int, int, int, int, int, const sasktran2::raytracing::TracedLayer&,
@@ -116,6 +116,20 @@ namespace {
             sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>&)
             const override {}
     };
+
+    template <int NSTOKES>
+    void
+    integrate_scalar(sasktran2::SourceIntegrator<NSTOKES>& integrator,
+                     sasktran2::Dual<double, sasktran2::dualstorage::dense,
+                                     NSTOKES>& radiance,
+                     const std::vector<SourceTermInterface<NSTOKES>*>& sources,
+                     int wavelength, int ray_index, int wavelength_thread_index,
+                     int thread_index) {
+        const sasktran2::WavelengthBlock block{wavelength, 1};
+        sasktran2::WavelengthBlockDualView<NSTOKES> radiance_view(radiance);
+        integrator.integrate(radiance_view, sources, block, ray_index,
+                             wavelength_thread_index, thread_index);
+    }
 } // namespace
 
 TEST_CASE("Atmosphere allocates flattened storage from Geometry2D",
@@ -172,8 +186,8 @@ TEST_CASE("SourceIntegrator applies 2D occultation transmission and native "
         for (int ray_index = 0; ray_index < rays.size(); ++ray_index) {
             sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>
                 transmission(1, atmosphere.num_deriv(), true);
-            integrator.integrate(transmission, sources, wavelength, ray_index,
-                                 0, 0);
+            integrate_scalar(integrator, transmission, sources, wavelength,
+                             ray_index, 0, 0);
 
             const double od = direct_optical_depth(
                 rays[ray_index], geometry,
@@ -227,12 +241,12 @@ TEST_CASE("SourceIntegrator restores derivatives after a derivative-free "
 
     integrator.initialize_atmosphere(derivative_free);
     sasktran2::Dual<double, sasktran2::dualstorage::dense, 1> first(1, 0, true);
-    integrator.integrate(first, sources, 0, 0, 0, 0);
+    integrate_scalar(integrator, first, sources, 0, 0, 0, 0);
 
     integrator.initialize_atmosphere(with_derivatives);
     sasktran2::Dual<double, sasktran2::dualstorage::dense, 1> second(
         1, with_derivatives.num_deriv(), true);
-    integrator.integrate(second, sources, 0, 0, 0, 0);
+    integrate_scalar(integrator, second, sources, 0, 0, 0, 0);
 
     REQUIRE(second.deriv.leftCols(geometry.size()).cwiseAbs().maxCoeff() > 0.0);
 }
@@ -257,8 +271,11 @@ TEST_CASE("OccultationSource blocks ground-terminated 1D and 2D rays",
     sasktran2::Dual<double, sasktran2::dualstorage::dense, 1> space(1, 0, true);
     sasktran2::Dual<double, sasktran2::dualstorage::dense, 1> ground(1, 0,
                                                                      true);
-    source.end_of_ray_source(0, 0, 0, 0, space);
-    source.end_of_ray_source(0, 1, 0, 0, ground);
+    const sasktran2::WavelengthBlock block{0, 1};
+    sasktran2::WavelengthBlockDualView<1> space_view(space);
+    sasktran2::WavelengthBlockDualView<1> ground_view(ground);
+    source.end_of_ray_source(block, 0, 0, 0, space_view);
+    source.end_of_ray_source(block, 1, 0, 0, ground_view);
     REQUIRE(space.value[0] == 1.0);
     REQUIRE(ground.value[0] == 0.0);
 }
@@ -283,7 +300,7 @@ TEST_CASE("2D occultation transmission handles extreme OD and validates "
         integrator.initialize_atmosphere(atmosphere);
         sasktran2::Dual<double, sasktran2::dualstorage::dense, 1> transmission(
             1, 0, true);
-        integrator.integrate(transmission, sources, 0, 0, 0, 0);
+        integrate_scalar(integrator, transmission, sources, 0, 0, 0, 0);
         REQUIRE(transmission.value[0] == 1.0);
     }
 
@@ -292,7 +309,7 @@ TEST_CASE("2D occultation transmission handles extreme OD and validates "
         integrator.initialize_atmosphere(atmosphere);
         sasktran2::Dual<double, sasktran2::dualstorage::dense, 1> transmission(
             1, 0, true);
-        integrator.integrate(transmission, sources, 0, 0, 0, 0);
+        integrate_scalar(integrator, transmission, sources, 0, 0, 0, 0);
         REQUIRE(transmission.value[0] == 0.0);
         REQUIRE(std::isfinite(transmission.value[0]));
     }
@@ -324,8 +341,9 @@ TEST_CASE("Regular 2D integration rejects interior sources before mutation",
     std::vector<SourceTermInterface<1>*> sources = {&source};
     sasktran2::Dual<double, sasktran2::dualstorage::dense, 1> radiance(1, 0,
                                                                        true);
-    REQUIRE_THROWS_AS(integrator.integrate(radiance, sources, 0, 0, 0, 0),
-                      std::invalid_argument);
+    REQUIRE_THROWS_AS(
+        integrate_scalar(integrator, radiance, sources, 0, 0, 0, 0),
+        std::invalid_argument);
     REQUIRE(radiance.value[0] == 0.0);
 }
 
@@ -363,7 +381,7 @@ TEST_CASE("SourceIntegrator evaluates structured 2D volume emission and "
     sasktran2::Dual<double, sasktran2::dualstorage::dense, 1> radiance(
         1, atmosphere.num_deriv(), true);
 
-    integrator.integrate(radiance, sources, 0, 0, 0, 0);
+    integrate_scalar(integrator, radiance, sources, 0, 0, 0, 0);
 
     const double distance = emission_layer.layer_distance;
     REQUIRE(radiance.value[0] ==
@@ -438,8 +456,8 @@ TEST_CASE("RustRayTracer2D feeds refracted multi-wavelength occultation "
         for (int ray_index = 0; ray_index < rays.size(); ++ray_index) {
             sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>
                 transmission(1, atmosphere.num_deriv(), true);
-            integrator.integrate(transmission, sources, wavelength, ray_index,
-                                 0, 0);
+            integrate_scalar(integrator, transmission, sources, wavelength,
+                             ray_index, 0, 0);
             const double od = direct_optical_depth(
                 rays[ray_index], geometry,
                 atmosphere.storage().total_extinction.col(wavelength));
@@ -455,13 +473,13 @@ TEST_CASE("RustRayTracer2D feeds refracted multi-wavelength occultation "
     constexpr double delta = 1e-7;
     sasktran2::Dual<double, sasktran2::dualstorage::dense, 1> analytic(
         1, atmosphere.num_deriv(), true);
-    integrator.integrate(analytic, sources, wavelength, 1, 0, 0);
+    integrate_scalar(integrator, analytic, sources, wavelength, 1, 0, 0);
     atmosphere.storage().total_extinction(perturbed_location, wavelength) +=
         delta;
     integrator.initialize_atmosphere(atmosphere);
     sasktran2::Dual<double, sasktran2::dualstorage::dense, 1> perturbed(
         1, atmosphere.num_deriv(), true);
-    integrator.integrate(perturbed, sources, wavelength, 1, 0, 0);
+    integrate_scalar(integrator, perturbed, sources, wavelength, 1, 0, 0);
     REQUIRE((perturbed.value[0] - analytic.value[0]) / delta ==
             Catch::Approx(analytic.deriv(0, perturbed_location)).epsilon(2e-6));
 }
@@ -523,11 +541,12 @@ TEST_CASE("Horizontally constant 2D occultation transmission matches 1D",
         sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>
             transmission_1d(1, 0, true);
         std::vector<SourceTermInterface<1>*> sources = {&source_1d};
-        integrator_1d.integrate(transmission_1d, sources, wavelength, 0, 0, 0);
+        integrate_scalar(integrator_1d, transmission_1d, sources, wavelength, 0,
+                         0, 0);
         sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>
             transmission_2d(1, 0, true);
-        integrator_2d.integrate(transmission_2d, sources_2d, wavelength, 0, 0,
-                                0);
+        integrate_scalar(integrator_2d, transmission_2d, sources_2d, wavelength,
+                         0, 0, 0);
         REQUIRE(transmission_2d.value[0] ==
                 Catch::Approx(transmission_1d.value[0]).epsilon(5e-8));
     }

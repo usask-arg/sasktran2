@@ -42,7 +42,7 @@ namespace sasktran2::hr {
      * @tparam NSTOKES
      */
     template <int NSTOKES>
-    class DiffuseTable : public SourceTermInterface<NSTOKES> {
+    class DiffuseTable : public ScalarSourceTermInterface<NSTOKES> {
         using SInterpolator =
             std::vector<RaySourceInterpolationWeights<NSTOKES>>;
 

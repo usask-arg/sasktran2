@@ -7,10 +7,9 @@ namespace sasktran2 {
     }
 
     template <int NSTOKES>
-    void OutputIdealDense<NSTOKES>::assign(
-        const sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-            radiance,
-        int losidx, int wavelidx, int threadidx) {
+    template <typename Radiance>
+    void OutputIdealDense<NSTOKES>::assign_lane(const Radiance& radiance,
+                                                int losidx, int wavelidx) {
 
         int linear_index = NSTOKES * this->m_nlos * wavelidx + NSTOKES * losidx;
 
@@ -48,6 +47,21 @@ namespace sasktran2 {
             m_radiance.value(linear_index + 3) = radiance.value(3);
             m_radiance.deriv(linear_index + 3, Eigen::placeholders::all) =
                 radiance.deriv(3, Eigen::placeholders::all);
+        }
+    }
+
+    template <int NSTOKES>
+    void OutputIdealDense<NSTOKES>::assign(
+        const sasktran2::WavelengthBlock& block,
+        const sasktran2::WavelengthBlockDualView<NSTOKES>& radiance, int losidx,
+        int) {
+        if (radiance.is_scalar()) {
+            assign_lane(radiance.scalar(), losidx, block.start);
+            return;
+        }
+
+        for (int lane = 0; lane < block.count; ++lane) {
+            assign_lane(radiance.lane(lane), losidx, block.wavelength(lane));
         }
     }
 

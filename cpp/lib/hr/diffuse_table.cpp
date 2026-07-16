@@ -884,8 +884,9 @@ namespace sasktran2::hr {
 
     template <int NSTOKES>
     void DiffuseTable<NSTOKES>::calculate(int wavelidx, int threadidx) {
+        const sasktran2::WavelengthBlock block{wavelidx, 1};
         for (auto& source : m_initial_owned_sources) {
-            source->calculate(wavelidx, threadidx);
+            source->calculate(block, threadidx);
         }
 
         int nthreads = m_config->num_source_threads();

@@ -305,7 +305,7 @@ namespace sasktran2::solartransmission {
     }
 
     template <int NSTOKES>
-    void PhaseHandler<NSTOKES>::initialize_wavelength_batching(int batch_size) {
+    void PhaseHandler<NSTOKES>::initialize_wavelength_blocks(int batch_size) {
         m_wavelength_batch_capacity = batch_size;
         const int num_phase_components = NSTOKES == 1 ? 1 : 2;
         const int num_internal =
@@ -328,8 +328,8 @@ namespace sasktran2::solartransmission {
     }
 
     template <int NSTOKES>
-    void PhaseHandler<NSTOKES>::calculate_batch(
-        const sasktran2::WavelengthBatch& batch, int threadidx) {
+    void PhaseHandler<NSTOKES>::calculate_block(
+        const sasktran2::WavelengthBlock& batch, int threadidx) {
         if (m_config->singlescatter_phasemode() !=
             sasktran2::Config::SingleScatterPhaseMode::from_legendre) {
             throw std::runtime_error("Phase mode not implemented");
@@ -618,13 +618,13 @@ namespace sasktran2::solartransmission {
     }
 
     template <int NSTOKES>
-    void PhaseHandler<NSTOKES>::scatter_and_accumulate_derivative_batch(
+    void PhaseHandler<NSTOKES>::scatter_and_accumulate_derivative_block(
         int threadidx, int losidx, int layeridx,
         const raytracing::GridWeightStencilView& index_weights,
         bool is_entrance,
         const Eigen::Ref<const Eigen::RowVectorXd>& source_amplitude,
         const Eigen::Ref<const Eigen::RowVectorXd>& derivative_scale,
-        sasktran2::WavelengthBatchDual<NSTOKES>& target,
+        sasktran2::WavelengthBlockDual<NSTOKES>& target,
         Eigen::Matrix<double, NSTOKES, Eigen::Dynamic, Eigen::RowMajor>&
             phase_result) const {
         const int count = static_cast<int>(source_amplitude.size());

@@ -46,40 +46,23 @@ pub struct SafeFFIAtmosphere(pub *mut ffi::Atmosphere);
 unsafe impl Send for SafeFFIAtmosphere {}
 unsafe impl Sync for SafeFFIAtmosphere {}
 
-/// Allows us to call the c++ thread-safe function from multiple threads
-fn safe_calc_thread(
-    engine: &SafeFFIEngine,
-    atmosphere: &SafeFFIAtmosphere,
-    output: &SafeFFIOutput,
-    wavel: i32,
-    thread_idx: i32,
-) {
-    unsafe {
-        ffi::sk_engine_calculate_radiance_thread(
-            engine.0,
-            atmosphere.0,
-            output.0,
-            wavel,
-            thread_idx,
-        );
-    }
-}
-
-fn safe_calc_batch_thread(
+fn safe_calc_block_thread(
     engine: &SafeFFIEngine,
     atmosphere: &SafeFFIAtmosphere,
     output: &SafeFFIOutput,
     wavelength_start: i32,
     wavelength_count: i32,
+    block_capacity: i32,
     thread_idx: i32,
 ) -> Result<()> {
     let result = unsafe {
-        ffi::sk_engine_calculate_radiance_batch_thread(
+        ffi::sk_engine_calculate_radiance_block_thread(
             engine.0,
             atmosphere.0,
             output.0,
             wavelength_start,
             wavelength_count,
+            block_capacity,
             thread_idx,
         )
     };
@@ -87,7 +70,7 @@ fn safe_calc_batch_thread(
         Ok(())
     } else {
         Err(anyhow::anyhow!(
-            "Failed to calculate wavelength batch: {}",
+            "Failed to calculate wavelength block: {}",
             result
         ))
     }
@@ -264,12 +247,13 @@ impl<'a> Engine<'a> {
                             }
                             let wavelength_start = batch_index * batch_size;
                             let wavelength_count = (num_wavel - wavelength_start).min(batch_size);
-                            safe_calc_batch_thread(
+                            safe_calc_block_thread(
                                 &safe_engine,
                                 &safe_atmosphere,
                                 &safe_output,
                                 wavelength_start as i32,
                                 wavelength_count as i32,
+                                batch_size as i32,
                                 thread_idx,
                             )
                         })
@@ -279,21 +263,22 @@ impl<'a> Engine<'a> {
                     (0..num_wavel)
                         .into_par_iter()
                         .with_min_len(min_length)
-                        .for_each(|w| {
+                        .try_for_each(|w| {
                             let thread_idx = current_thread_index().unwrap() as i32;
                             if thread_idx >= num_threads as i32 {
-                                panic!("Thread index out of bounds");
+                                return Err(anyhow::anyhow!("Thread index out of bounds"));
                             }
-                            let wavel = w as i32;
-                            safe_calc_thread(
+                            safe_calc_block_thread(
                                 &safe_engine,
                                 &safe_atmosphere,
                                 &safe_output,
-                                wavel,
+                                w as i32,
+                                1,
+                                1,
                                 thread_idx,
-                            );
+                            )
                         })
-                })
+                })?;
             }
         }
 

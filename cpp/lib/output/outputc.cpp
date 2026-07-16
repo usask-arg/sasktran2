@@ -27,10 +27,9 @@ namespace sasktran2 {
     }
 
     template <int NSTOKES>
-    void OutputC<NSTOKES>::assign(
-        const sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-            radiance,
-        int losidx, int wavelidx, int threadidx) {
+    template <typename Radiance>
+    void OutputC<NSTOKES>::assign_lane(const Radiance& radiance, int losidx,
+                                       int wavelidx, int threadidx) {
 
         int linear_index = NSTOKES * this->m_nlos * wavelidx + NSTOKES * losidx;
 
@@ -47,12 +46,8 @@ namespace sasktran2 {
 
         // Do the atmosphere mappings
         for (auto& [name, deriv] : m_derivatives) {
-            Eigen::Ref<const Eigen::Matrix<double, NSTOKES, -1>>
-                d_rad_by_d_ssa = radiance.d_ssa(
-                    this->m_ngeometry); // Col vector [stokes X N]
-            Eigen::Ref<const Eigen::Matrix<double, NSTOKES, -1>> d_rad_by_d_k =
-                radiance.d_extinction(
-                    this->m_ngeometry); // col vector [stokes X N]
+            const auto d_rad_by_d_ssa = radiance.d_ssa(this->m_ngeometry);
+            const auto d_rad_by_d_k = radiance.d_extinction(this->m_ngeometry);
 
             const auto& mapping =
                 this->m_atmosphere->storage().derivative_mappings_const().at(
@@ -74,9 +69,8 @@ namespace sasktran2 {
 
             if (mapping.is_scattering_derivative()) {
                 // Have to include the scattering terms
-                Eigen::Ref<const Eigen::Matrix<double, NSTOKES, -1>>
-                    d_rad_by_d_scat = radiance.d_scatterer(
-                        this->m_ngeometry, mapping.get_scattering_index());
+                const auto d_rad_by_d_scat = radiance.d_scatterer(
+                    this->m_ngeometry, mapping.get_scattering_index());
                 const auto& scat_factor =
                     mapping.native_mapping()
                         .scat_factor.value(); // [N x wavelength]
@@ -91,10 +85,9 @@ namespace sasktran2 {
             if (mapping.native_mapping().d_emission.has_value() &&
                 include_emission_derivatives) {
                 // Include the emission terms
-                Eigen::Ref<const Eigen::Matrix<double, NSTOKES, -1>>
-                    d_rad_by_d_emission = radiance.d_emission(
-                        this->m_ngeometry,
-                        this->m_atmosphere->num_scattering_deriv_groups());
+                const auto d_rad_by_d_emission = radiance.d_emission(
+                    this->m_ngeometry,
+                    this->m_atmosphere->num_scattering_deriv_groups());
 
                 const auto& d_emission =
                     mapping.native_mapping().d_emission.value();
@@ -165,12 +158,10 @@ namespace sasktran2 {
         // Then do the surface mappings
         for (auto& [name, deriv] : m_surface_derivatives) {
 
-            Eigen::Ref<const Eigen::Matrix<double, NSTOKES, -1>>
-                d_rad_by_d_surface = radiance.d_brdf(
-                    this->m_ngeometry,
-                    this->m_atmosphere->num_scattering_deriv_groups(),
-                    this->m_atmosphere->surface()
-                        .num_deriv()); // [stokes X num_brdf_deriv]
+            const auto d_rad_by_d_surface = radiance.d_brdf(
+                this->m_ngeometry,
+                this->m_atmosphere->num_scattering_deriv_groups(),
+                this->m_atmosphere->surface().num_deriv());
             const auto& mapping =
                 this->m_atmosphere->surface().derivative_mappings().at(name);
 
@@ -233,6 +224,22 @@ namespace sasktran2 {
         if constexpr (NSTOKES == 4) {
             // V component is a strict copy
             m_radiance(linear_index + 3) = radiance.value(3);
+        }
+    }
+
+    template <int NSTOKES>
+    void OutputC<NSTOKES>::assign(
+        const sasktran2::WavelengthBlock& block,
+        const sasktran2::WavelengthBlockDualView<NSTOKES>& radiance, int losidx,
+        int threadidx) {
+        if (radiance.is_scalar()) {
+            assign_lane(radiance.scalar(), losidx, block.start, threadidx);
+            return;
+        }
+
+        for (int lane = 0; lane < block.count; ++lane) {
+            assign_lane(radiance.lane(lane), losidx, block.wavelength(lane),
+                        threadidx);
         }
     }
 

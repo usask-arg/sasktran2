@@ -985,27 +985,19 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
-    pub fn sk_engine_calculate_radiance_thread(
-        engine: *mut Engine,
-        atmosphere: *mut Atmosphere,
-        output: *mut OutputC,
-        wavelength_idx: ::std::os::raw::c_int,
-        thread_idx: ::std::os::raw::c_int,
-    ) -> ::std::os::raw::c_int;
-}
-unsafe extern "C" {
     pub fn sk_engine_effective_wavelength_batch_size(
         engine: *mut Engine,
         num_wavelengths: ::std::os::raw::c_int,
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
-    pub fn sk_engine_calculate_radiance_batch_thread(
+    pub fn sk_engine_calculate_radiance_block_thread(
         engine: *mut Engine,
         atmosphere: *mut Atmosphere,
         output: *mut OutputC,
         wavelength_start: ::std::os::raw::c_int,
         wavelength_count: ::std::os::raw::c_int,
+        block_capacity: ::std::os::raw::c_int,
         thread_idx: ::std::os::raw::c_int,
     ) -> ::std::os::raw::c_int;
 }

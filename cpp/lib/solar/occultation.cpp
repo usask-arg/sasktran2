@@ -54,10 +54,10 @@ namespace sasktran2::solartransmission {
     }
 
     template <int NSTOKES>
-    void OccultationSource<NSTOKES>::end_of_ray_source_batch(
-        const sasktran2::WavelengthBatch& batch, int losidx,
+    void OccultationSource<NSTOKES>::end_of_ray_source_block(
+        const sasktran2::WavelengthBlock& batch, int losidx,
         int wavel_threadidx, int threadidx,
-        sasktran2::WavelengthBatchDual<NSTOKES>& source) const {
+        sasktran2::WavelengthBlockDual<NSTOKES>& source) const {
         if (m_ground_is_hit.at(losidx)) {
             return;
         }

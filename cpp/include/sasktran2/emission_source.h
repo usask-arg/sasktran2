@@ -27,9 +27,9 @@ namespace sasktran2::emission {
                 source) const;
 
       public:
-        bool supports_wavelength_batching() const override { return true; }
+        bool supports_wavelength_blocks() const override { return true; }
 
-        void calculate_batch(const sasktran2::WavelengthBatch&, int) override {}
+        void calculate(const sasktran2::WavelengthBlock&, int) override {}
         /** Here the emission source term saves the los_rays, which are
          * needed to detect ground hits and whether to include
          * surface emissions at the end of the ray.
@@ -57,6 +57,7 @@ namespace sasktran2::emission {
          * @param layer The layer that we are integrating over
          * @param source The returned source term
          */
+      private:
         void integrated_source(
             int wavelidx, int losidx, int layeridx, int wavel_threadidx,
             int threadidx, const sasktran2::raytracing::TracedLayer& layer,
@@ -66,24 +67,49 @@ namespace sasktran2::emission {
             const sasktran2::SparseODDualView& shell_od,
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
                 source,
-            typename SourceTermInterface<NSTOKES>::IntegrationDirection
-                direction =
-                    SourceTermInterface<NSTOKES>::IntegrationDirection::none)
-            const override;
+            typename SourceTermInterface<
+                NSTOKES>::IntegrationDirection direction =
+                SourceTermInterface<NSTOKES>::IntegrationDirection::none) const;
 
-        void integrated_source_batch(
-            const sasktran2::WavelengthBatch& batch, int losidx, int layeridx,
+        void integrated_source_block(
+            const sasktran2::WavelengthBlock& batch, int losidx, int layeridx,
             int wavel_threadidx, int threadidx,
             const sasktran2::raytracing::TracedLayer& layer,
             const sasktran2::raytracing::GridWeightStencilView&
                 entrance_weights,
             const sasktran2::raytracing::GridWeightStencilView& exit_weights,
-            const sasktran2::WavelengthBatchODView& shell_od,
-            sasktran2::WavelengthBatchDual<NSTOKES>& source,
+            const sasktran2::WavelengthBlockODView& shell_od,
+            sasktran2::WavelengthBlockDual<NSTOKES>& source,
+            typename SourceTermInterface<
+                NSTOKES>::IntegrationDirection direction =
+                SourceTermInterface<NSTOKES>::IntegrationDirection::none) const;
+
+      public:
+        void integrated_source(
+            const sasktran2::WavelengthBlock& block, int losidx, int layeridx,
+            int wavel_threadidx, int threadidx,
+            const sasktran2::raytracing::TracedLayer& layer,
+            const sasktran2::raytracing::GridWeightStencilView&
+                entrance_weights,
+            const sasktran2::raytracing::GridWeightStencilView& exit_weights,
+            const sasktran2::WavelengthBlockODView& shell_od,
+            sasktran2::WavelengthBlockDualView<NSTOKES>& source,
             typename SourceTermInterface<NSTOKES>::IntegrationDirection
                 direction =
                     SourceTermInterface<NSTOKES>::IntegrationDirection::none)
-            const override;
+            const override {
+            if (source.is_scalar()) {
+                integrated_source(
+                    block.start, losidx, layeridx, wavel_threadidx, threadidx,
+                    layer, entrance_weights, exit_weights, shell_od.scalar(),
+                    source.scalar(), direction);
+            } else {
+                integrated_source_block(block, losidx, layeridx,
+                                        wavel_threadidx, threadidx, layer,
+                                        entrance_weights, exit_weights,
+                                        shell_od, source.block(), direction);
+            }
+        }
 
         bool supports_geometry_dimension(int dimension) const override {
             return dimension >= 1;
@@ -98,15 +124,30 @@ namespace sasktran2::emission {
          * passed in initialize_geometry
          * @param source The returned source term
          */
+      private:
         void end_of_ray_source(
             int wavelidx, int losidx, int wavel_threadidx, int threadidx,
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                source) const override;
+                source) const;
 
-        void end_of_ray_source_batch(
-            const sasktran2::WavelengthBatch& batch, int losidx,
+        void end_of_ray_source_block(
+            const sasktran2::WavelengthBlock& batch, int losidx,
             int wavel_threadidx, int threadidx,
-            sasktran2::WavelengthBatchDual<NSTOKES>& source) const override;
+            sasktran2::WavelengthBlockDual<NSTOKES>& source) const;
+
+      public:
+        void end_of_ray_source(const sasktran2::WavelengthBlock& block,
+                               int losidx, int wavel_threadidx, int threadidx,
+                               sasktran2::WavelengthBlockDualView<NSTOKES>&
+                                   source) const override {
+            if (source.is_scalar()) {
+                end_of_ray_source(block.start, losidx, wavel_threadidx,
+                                  threadidx, source.scalar());
+            } else {
+                end_of_ray_source_block(block, losidx, wavel_threadidx,
+                                        threadidx, source.block());
+            }
+        }
 
         /** Calculates the radiance at the start of the ray, i.e., the source
          * term has done the equivalent of the integration along the ray.  This
@@ -128,14 +169,9 @@ namespace sasktran2::emission {
          * @param threadidx
          * @param source
          */
-        virtual void start_of_ray_source(
-            int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                source) const override{};
-
-        void start_of_ray_source_batch(
-            const sasktran2::WavelengthBatch&, int, int, int,
-            sasktran2::WavelengthBatchDual<NSTOKES>&) const override {}
+        void start_of_ray_source(
+            const sasktran2::WavelengthBlock&, int, int, int,
+            sasktran2::WavelengthBlockDualView<NSTOKES>&) const override {}
     };
 
 } // namespace sasktran2::emission

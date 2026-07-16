@@ -52,8 +52,8 @@ namespace sasktran2 {
                            for each layer */
         using RowMajorMatrix = Eigen::Matrix<double, Eigen::Dynamic,
                                              Eigen::Dynamic, Eigen::RowMajor>;
-        std::vector<RowMajorMatrix> m_shell_od_batch;
-        int m_wavelength_batch_size = 1;
+        std::vector<RowMajorMatrix> m_shell_od_block;
+        int m_wavelength_block_size = 1;
         const std::vector<sasktran2::raytracing::TracedRay>* m_traced_rays =
             nullptr; /**< Reference to the rays we are integrating */
 
@@ -65,7 +65,7 @@ namespace sasktran2 {
         std::vector<std::vector<std::vector<std::pair<int, int>>>>
             m_attenuation_active_derivative_ranges;
 
-        void integrate_ray(
+        void integrate_ray_single(
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
                 radiance,
             const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
@@ -74,14 +74,27 @@ namespace sasktran2 {
             const Eigen::MatrixXd& shell_od, int wavelidx, int rayidx,
             int wavel_threadidx, int threadidx) const;
 
-        void integrate_ray_batch(
-            sasktran2::WavelengthBatchDual<NSTOKES>& radiance,
+        void integrate_ray_block(
+            sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
             const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
             const sasktran2::raytracing::TracedRay& ray,
             const Eigen::SparseMatrix<double, Eigen::RowMajor>& od_matrix,
             const RowMajorMatrix& shell_od,
-            const sasktran2::WavelengthBatch& batch, int rayidx,
+            const sasktran2::WavelengthBlock& batch, int rayidx,
             int wavel_threadidx, int threadidx) const;
+
+        void integrate_single(
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+                radiance,
+            const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+            const sasktran2::WavelengthBlock& block, int rayidx,
+            int wavel_threadidx, int threadidx);
+
+        void integrate_block(
+            sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
+            const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+            const sasktran2::WavelengthBlock& block, int rayidx,
+            int wavel_threadidx, int threadidx);
 
       public:
         /**
@@ -103,8 +116,8 @@ namespace sasktran2 {
             m_attenuation_active_derivative_ranges.clear();
         }
 
-        void set_wavelength_batch_size(int batch_size) {
-            m_wavelength_batch_size = std::max(1, batch_size);
+        void set_wavelength_block_size(int batch_size) {
+            m_wavelength_block_size = std::max(1, batch_size);
         }
 
         /** Initializes the geometry of the source integrator
@@ -138,16 +151,10 @@ namespace sasktran2 {
          * @param threadidx
          * @param rayidx
          */
-        void integrate(sasktran2::Dual<double, sasktran2::dualstorage::dense,
-                                       NSTOKES>& radiance,
-                       std::vector<SourceTermInterface<NSTOKES>*> source_terms,
-                       int wavelidx, int rayidx, int wavel_threadidx,
-                       int threadidx);
-
-        void integrate_batch(
-            sasktran2::WavelengthBatchDual<NSTOKES>& radiance,
+        void integrate(
+            sasktran2::WavelengthBlockDualView<NSTOKES>& radiance,
             const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
-            const sasktran2::WavelengthBatch& batch, int rayidx,
+            const sasktran2::WavelengthBlock& block, int rayidx,
             int wavel_threadidx, int threadidx);
 
         void integrate_and_emplace_accumulation_triplets(
