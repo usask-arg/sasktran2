@@ -3,6 +3,30 @@
 #include <sasktran2/output.h>
 
 namespace sasktran2::detail {
+    template <typename Output>
+    auto strided_output_vector(Output& output, int first, int count,
+                               int stride) {
+        using Scalar = typename std::decay_t<Output>::Scalar;
+        using StridedMap =
+            Eigen::Map<Eigen::Matrix<Scalar, Eigen::Dynamic, 1>,
+                       Eigen::Unaligned, Eigen::InnerStride<Eigen::Dynamic>>;
+        return StridedMap(output.data() + first, count,
+                          Eigen::InnerStride<Eigen::Dynamic>(stride));
+    }
+
+    template <typename Output>
+    auto strided_output_matrix(Output& output, int first, int rows, int columns,
+                               int inner_stride) {
+        using Scalar = typename std::decay_t<Output>::Scalar;
+        using StridedMap =
+            Eigen::Map<Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic>,
+                       Eigen::Unaligned,
+                       Eigen::Stride<Eigen::Dynamic, Eigen::Dynamic>>;
+        return StridedMap(output.data() + first, rows, columns,
+                          Eigen::Stride<Eigen::Dynamic, Eigen::Dynamic>(
+                              output.outerStride(), inner_stride));
+    }
+
     template <int NSTOKES, typename RadianceVector,
               typename DerivativeCollection,
               typename SurfaceDerivativeCollection>
@@ -20,24 +44,21 @@ namespace sasktran2::detail {
         const int output_stride = NSTOKES * nlos;
         const int first_output = output_stride * block.start + NSTOKES * losidx;
 
-        const auto output_indices = [&](int stokes) {
-            return Eigen::seqN(first_output + stokes, count, output_stride);
+        const auto output_value = [&](int stokes) {
+            return strided_output_vector(output, first_output + stokes, count,
+                                         output_stride);
         };
-        output(output_indices(0)) =
-            radiance.value.row(0).head(count).transpose();
+        output_value(0) = radiance.value.row(0).head(count).transpose();
         if constexpr (NSTOKES >= 3) {
-            output(output_indices(1)) =
-                (stokes_c * radiance.value.row(1).head(count) -
-                 stokes_s * radiance.value.row(2).head(count))
-                    .transpose();
-            output(output_indices(2)) =
-                (stokes_s * radiance.value.row(1).head(count) +
-                 stokes_c * radiance.value.row(2).head(count))
-                    .transpose();
+            output_value(1) = (stokes_c * radiance.value.row(1).head(count) -
+                               stokes_s * radiance.value.row(2).head(count))
+                                  .transpose();
+            output_value(2) = (stokes_s * radiance.value.row(1).head(count) +
+                               stokes_c * radiance.value.row(2).head(count))
+                                  .transpose();
         }
         if constexpr (NSTOKES == 4) {
-            output(output_indices(3)) =
-                radiance.value.row(3).head(count).transpose();
+            output_value(3) = radiance.value.row(3).head(count).transpose();
         }
 
         const auto mapping_columns = Eigen::seqN(block.start, count);
@@ -98,8 +119,9 @@ namespace sasktran2::detail {
             const int num_output = derivative_output.cols();
             auto& derivative_result = derivative_output;
             const auto assign_stokes = [&](int stokes, const auto& values) {
-                derivative_result(output_indices(stokes),
-                                  Eigen::placeholders::all) = values;
+                strided_output_matrix(derivative_result, first_output + stokes,
+                                      count, num_output, output_stride) =
+                    values;
             };
             if (mapping.get_interpolator_const().has_value()) {
                 const auto& interpolator =
@@ -151,10 +173,10 @@ namespace sasktran2::detail {
                 const auto radiance_i =
                     radiance.value.row(0).head(count).transpose();
                 for (int stokes = 0; stokes < NSTOKES; ++stokes) {
-                    derivative_output(output_indices(stokes),
-                                      Eigen::placeholders::all)
-                        .array()
-                        .colwise() /= radiance_i.array();
+                    auto result = strided_output_matrix(
+                        derivative_output, first_output + stokes, count,
+                        num_output, output_stride);
+                    result.array().colwise() /= radiance_i.array();
                 }
             }
         }
@@ -181,16 +203,19 @@ namespace sasktran2::detail {
                                         .rowwise()
                                         .sum();
                 }
-                derivative_output(output_indices(0), 0) =
+                strided_output_matrix(derivative_output, first_output, count, 1,
+                                      output_stride) =
                     mapped_storage.middleRows(0, count).col(0);
                 if constexpr (NSTOKES >= 3) {
-                    derivative_output(output_indices(1), 0) =
+                    strided_output_matrix(derivative_output, first_output + 1,
+                                          count, 1, output_stride) =
                         stokes_c *
                             mapped_storage.middleRows(capacity, count).col(0) -
                         stokes_s *
                             mapped_storage.middleRows(2 * capacity, count)
                                 .col(0);
-                    derivative_output(output_indices(2), 0) =
+                    strided_output_matrix(derivative_output, first_output + 2,
+                                          count, 1, output_stride) =
                         stokes_s *
                             mapped_storage.middleRows(capacity, count).col(0) +
                         stokes_c *
@@ -204,13 +229,14 @@ namespace sasktran2::detail {
                 const auto radiance_emission = radiance.derivative_stokes(
                     atmosphere.surface_emission_deriv_start_index(), 1, 0,
                     count);
-                derivative_output(output_indices(0), 0).array() =
-                    radiance_emission.transpose().array().col(0) *
-                    mapping.native_surface_mapping()
-                        .d_emission.value()
-                        .middleRows(block.start, count)
-                        .col(0)
-                        .array();
+                strided_output_matrix(derivative_output, first_output, count, 1,
+                                      output_stride)
+                    .array() = radiance_emission.transpose().array().col(0) *
+                               mapping.native_surface_mapping()
+                                   .d_emission.value()
+                                   .middleRows(block.start, count)
+                                   .col(0)
+                                   .array();
             }
         }
     }

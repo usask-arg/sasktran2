@@ -893,6 +893,33 @@ namespace sasktran2::solartransmission {
         }
     }
 
+#define SASKTRAN2_INSTANTIATE_SINGLE_SCATTER_BLOCK(NSTOKES, BLOCK_SIZE)        \
+    template void SingleScatterSource<SolarTransmissionExact, NSTOKES>::       \
+        calculate_block<BLOCK_SIZE>(                                           \
+            const sasktran2::WavelengthBlock<BLOCK_SIZE>&, int);               \
+    template void SingleScatterSource<SolarTransmissionExact, NSTOKES>::       \
+        end_of_ray_source_block<BLOCK_SIZE>(                                   \
+            const sasktran2::WavelengthBlock<BLOCK_SIZE>&, int, int, int,      \
+            sasktran2::WavelengthBlockDual<NSTOKES>&) const;                   \
+    template void SingleScatterSource<SolarTransmissionExact, NSTOKES>::       \
+        integrated_source_block<BLOCK_SIZE>(                                   \
+            const sasktran2::WavelengthBlock<BLOCK_SIZE>&, int, int, int, int, \
+            const sasktran2::raytracing::TracedLayer&,                         \
+            const sasktran2::raytracing::GridWeightStencilView&,               \
+            const sasktran2::raytracing::GridWeightStencilView&,               \
+            const sasktran2::WavelengthBlockODView&,                           \
+            sasktran2::WavelengthBlockDual<NSTOKES>&,                          \
+            SourceTermInterface<NSTOKES>::IntegrationDirection) const
+
+    SASKTRAN2_INSTANTIATE_SINGLE_SCATTER_BLOCK(1, Eigen::Dynamic);
+    SASKTRAN2_INSTANTIATE_SINGLE_SCATTER_BLOCK(1, 1);
+    SASKTRAN2_INSTANTIATE_SINGLE_SCATTER_BLOCK(1, 4);
+    SASKTRAN2_INSTANTIATE_SINGLE_SCATTER_BLOCK(3, Eigen::Dynamic);
+    SASKTRAN2_INSTANTIATE_SINGLE_SCATTER_BLOCK(3, 1);
+    SASKTRAN2_INSTANTIATE_SINGLE_SCATTER_BLOCK(3, 4);
+
+#undef SASKTRAN2_INSTANTIATE_SINGLE_SCATTER_BLOCK
+
     template class SingleScatterSource<SolarTransmissionExact, 1>;
     template class SingleScatterSource<SolarTransmissionExact, 3>;
 
