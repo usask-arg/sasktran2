@@ -23,8 +23,8 @@ namespace sasktran2 {
 
     template <int NSTOKES, int CNSTR>
     void DOSourceInterpolatedPostProcessing<NSTOKES, CNSTR>::calculate(
-        int wavelidx, int threadidx) {
-        DOSource<NSTOKES, CNSTR>::calculate(wavelidx, threadidx);
+        const sasktran2::WavelengthBlock& block, int threadidx) {
+        DOSource<NSTOKES, CNSTR>::calculate(block, threadidx);
     }
 
     template <int NSTOKES, int CNSTR>
@@ -94,14 +94,17 @@ namespace sasktran2 {
 
     template <int NSTOKES, int CNSTR>
     void DOSourceInterpolatedPostProcessing<NSTOKES, CNSTR>::integrated_source(
-        int wavelidx, int losidx, int layeridx, int wavel_threadidx,
-        int ray_threadidx, const sasktran2::raytracing::TracedLayer& layer,
+        const sasktran2::WavelengthBlock& block, int losidx, int layeridx,
+        int wavel_threadidx, int ray_threadidx,
+        const sasktran2::raytracing::TracedLayer& layer,
         const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
         const sasktran2::raytracing::GridWeightStencilView& exit_weights,
-        const sasktran2::SparseODDualView& shell_od,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
+        const sasktran2::WavelengthBlockODView& shell_od,
+        sasktran2::WavelengthBlockDual<NSTOKES>& block_source,
         typename SourceTermInterface<NSTOKES>::IntegrationDirection direction)
         const {
+        const int wavelidx = block.start;
+        sasktran2::WavelengthBlockLaneDualView<NSTOKES> source(block_source, 0);
         ZoneScopedN("DO Integrated Source");
         if (layer.layer_distance < MINIMUM_SHELL_SIZE_M) {
             // Essentially an empty shell from rounding, don't have to do
@@ -120,7 +123,7 @@ namespace sasktran2 {
                      index_weight.second;
         }
 
-        double source_factor = (1 - shell_od.exp_minus_od);
+        double source_factor = (1 - shell_od.exp_minus_od(0));
 
         for (int s = 0; s < NSTOKES; ++s) {
             // Need some temporaries
@@ -140,7 +143,7 @@ namespace sasktran2 {
 
             if (m_atmosphere->num_deriv() > 0) {
                 // Now we need dJ/dthickness
-                for (auto it = shell_od.deriv_iter; it; ++it) {
+                for (auto it = shell_od.derivative_iterator(); it; ++it) {
                     source.deriv(s, it.index()) +=
                         it.value() * (1 - source_factor) * source_value * omega;
                 }
@@ -172,9 +175,10 @@ namespace sasktran2 {
 
     template <int NSTOKES, int CNSTR>
     void DOSourceInterpolatedPostProcessing<NSTOKES, CNSTR>::end_of_ray_source(
-        int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
-        const {
+        const sasktran2::WavelengthBlock&, int losidx, int wavel_threadidx,
+        int threadidx,
+        sasktran2::WavelengthBlockDual<NSTOKES>& block_source) const {
+        sasktran2::WavelengthBlockLaneDualView<NSTOKES> source(block_source, 0);
 
         if (m_los_ground_source_interpolator[losidx]) {
             // Ground is hit

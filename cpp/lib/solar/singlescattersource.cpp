@@ -30,9 +30,7 @@ namespace sasktran2::solartransmission {
 
             const int block_size = std::min(m_config->wavelength_batch_size(),
                                             atmosphere.num_wavel());
-            if (block_size > 1) {
-                initialize_wavelength_blocks(block_size);
-            }
+            initialize_wavelength_blocks(block_size);
         }
 
         // Initialize some local memory storage
@@ -61,8 +59,8 @@ namespace sasktran2::solartransmission {
     }
 
     template <typename S, int NSTOKES>
-    void SingleScatterSource<S, NSTOKES>::calculate(int wavelidx,
-                                                    int threadidx) {
+    void SingleScatterSource<S, NSTOKES>::calculate_single(int wavelidx,
+                                                           int threadidx) {
         ZoneScopedN("Single Scatter Source Calculation");
         // Don't have to do anything here
         m_phase_handler.calculate(wavelidx, threadidx);
@@ -175,10 +173,9 @@ namespace sasktran2::solartransmission {
     }
 
     template <typename S, int NSTOKES>
-    void SingleScatterSource<S, NSTOKES>::end_of_ray_source(
+    void SingleScatterSource<S, NSTOKES>::end_of_ray_source_single(
         int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
-        const {
+        sasktran2::WavelengthBlockLaneDualView<NSTOKES>& source) const {
         if (m_los_ground_is_hit.at(losidx)) {
             const auto& first_layer = m_los_end_layers.at(losidx);
             // Single scatter ground source is solar_trans * cos(th) * brdf
@@ -539,8 +536,8 @@ namespace sasktran2::solartransmission {
         int threadidx, const sasktran2::raytracing::LayerGeometry& layer,
         const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
         const sasktran2::raytracing::GridWeightStencilView& exit_weights,
-        const sasktran2::SparseODDualView& shell_od,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
+        const sasktran2::WavelengthBlockODView& shell_od,
+        sasktran2::WavelengthBlockLaneDualView<NSTOKES>& source,
         typename SourceTermInterface<NSTOKES>::IntegrationDirection direction)
         const {
         ZoneScopedN("Single Scatter Source Constant Calculation");
@@ -559,85 +556,10 @@ namespace sasktran2::solartransmission {
         auto& start_phase = m_start_source_cache[threadidx];
         auto& end_phase = m_end_source_cache[threadidx];
 
-        // Exact solar-transmission rows are expressed directly in atmosphere
-        // extinction coordinates, so the derivative of an endpoint source only
-        // touches the nonzero solar-path columns plus the local interpolation
-        // stencil. This is sparse for both 1D and 2D geometries. The table
-        // source uses an intermediate table-coordinate matrix, so retain its
-        // dense derivative path until that mapping is explicitly composed.
         const bool use_lower_interpolation =
             m_geometry_1d != nullptr &&
             m_geometry_1d->altitude_grid().interpolation_method() ==
                 grids::interpolation::lower;
-        const bool use_fused_exact_derivatives =
-            calculate_derivatives && std::is_same_v<S, SolarTransmissionExact>;
-
-        if (use_fused_exact_derivatives) {
-            double source_factor;
-            double source_factor_derivative;
-            if (std::abs(shell_od.od) < 1e-12) {
-                source_factor = 1.0;
-                source_factor_derivative = -0.5;
-            } else {
-                source_factor = -std::expm1(-shell_od.od) / shell_od.od;
-                source_factor_derivative =
-                    1 / shell_od.od - source_factor * (1 + 1 / shell_od.od);
-            }
-
-            const auto* start_weights = &entrance_weights;
-            const auto* end_weights = &exit_weights;
-            bool start_is_entrance = true;
-            bool end_is_entrance = false;
-            if (use_lower_interpolation) {
-                if (layer.r_exit > layer.r_entrance) {
-                    end_weights = &entrance_weights;
-                    end_is_entrance = true;
-                } else {
-                    start_weights = &exit_weights;
-                    start_is_entrance = false;
-                }
-            }
-
-            const Eigen::Vector<double, NSTOKES> start_value =
-                accumulate_exact_scattering_source(
-                    m_phase_handler, wavel_threadidx, losidx, layeridx,
-                    wavelidx, *start_weights, start_is_entrance,
-                    solar_trans_entrance, *m_atmosphere,
-                    Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
-                        m_geometry_sparse, entrance_index),
-                    source_factor * layer.od_quad_start, source);
-            const Eigen::Vector<double, NSTOKES> end_value =
-                accumulate_exact_scattering_source(
-                    m_phase_handler, wavel_threadidx, losidx, layeridx,
-                    wavelidx, *end_weights, end_is_entrance, solar_trans_exit,
-                    *m_atmosphere,
-                    Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
-                        m_geometry_sparse, exit_index),
-                    source_factor * layer.od_quad_end, source);
-
-            const Eigen::Vector<double, NSTOKES> source_value =
-                source_factor *
-                (start_value.array() * layer.od_quad_start_fraction +
-                 end_value.array() * layer.od_quad_end_fraction) *
-                layer.layer_distance;
-            source.value += source_value;
-
-            for (auto derivative = shell_od.deriv_iter; derivative;
-                 ++derivative) {
-                source.deriv.col(derivative.index()) +=
-                    derivative.value() * source_factor_derivative *
-                    (start_value * layer.od_quad_start +
-                     end_value * layer.od_quad_end);
-            }
-
-#ifdef SASKTRAN_DEBUG_ASSERTS
-            if (source_value.hasNaN()) {
-                spdlog::error(
-                    "NaN detected in fused exact single scatter source");
-            }
-#endif
-            return;
-        }
 
         if (use_lower_interpolation) {
             if (layer.r_exit > layer.r_entrance) {
@@ -691,13 +613,13 @@ namespace sasktran2::solartransmission {
 
         double source_factor1;
         double d_source_factor1;
-        if (std::abs(shell_od.od) < 1e-12) {
+        const double od = shell_od.od(0);
+        if (std::abs(od) < 1e-12) {
             source_factor1 = 1.0;
             d_source_factor1 = -0.5;
         } else {
-            source_factor1 = -std::expm1(-shell_od.od) / shell_od.od;
-            d_source_factor1 =
-                1 / shell_od.od - source_factor1 * (1 + 1 / shell_od.od);
+            source_factor1 = -std::expm1(-od) / od;
+            d_source_factor1 = 1 / od - source_factor1 * (1 + 1 / od);
         }
         // Note dsource_factor = d_od * (1/od - source_factor * (1 + 1/od))
 
@@ -735,7 +657,7 @@ namespace sasktran2::solartransmission {
         if (calculate_derivatives) {
             // Now for the derivatives, start with dsource_factor which is
             // sparse
-            for (auto it = shell_od.deriv_iter; it; ++it) {
+            for (auto it = shell_od.derivative_iterator(); it; ++it) {
                 source.deriv(Eigen::placeholders::all, it.index()).array() +=
                     it.value() * d_source_factor1 *
                     (start_phase.value.array() * layer.od_quad_start +
@@ -762,13 +684,13 @@ namespace sasktran2::solartransmission {
     }
 
     template <typename S, int NSTOKES>
-    void SingleScatterSource<S, NSTOKES>::integrated_source(
+    void SingleScatterSource<S, NSTOKES>::integrated_source_single(
         int wavelidx, int losidx, int layeridx, int wavel_threadidx,
         int threadidx, const sasktran2::raytracing::TracedLayer& layer,
         const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
         const sasktran2::raytracing::GridWeightStencilView& exit_weights,
-        const sasktran2::SparseODDualView& shell_od,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
+        const sasktran2::WavelengthBlockODView& shell_od,
+        sasktran2::WavelengthBlockLaneDualView<NSTOKES>& source,
         typename SourceTermInterface<NSTOKES>::IntegrationDirection direction)
         const {
         if (layer.layer_distance < MINIMUM_SHELL_SIZE_M) {

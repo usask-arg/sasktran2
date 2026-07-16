@@ -39,30 +39,19 @@ pub struct SafeFFIOutput(pub *mut ffi::OutputC);
 unsafe impl Send for SafeFFIOutput {}
 unsafe impl Sync for SafeFFIOutput {}
 
-// Newtype wrapper so you own the impl.
-pub struct SafeFFIAtmosphere(pub *mut ffi::Atmosphere);
-
-// “Hey Rust, trust me, this is thread‐safe.”
-unsafe impl Send for SafeFFIAtmosphere {}
-unsafe impl Sync for SafeFFIAtmosphere {}
-
 fn safe_calc_block_thread(
     engine: &SafeFFIEngine,
-    atmosphere: &SafeFFIAtmosphere,
     output: &SafeFFIOutput,
     wavelength_start: i32,
     wavelength_count: i32,
-    block_capacity: i32,
     thread_idx: i32,
 ) -> Result<()> {
     let result = unsafe {
         ffi::sk_engine_calculate_radiance_block_thread(
             engine.0,
-            atmosphere.0,
             output.0,
             wavelength_start,
             wavelength_count,
-            block_capacity,
             thread_idx,
         )
     };
@@ -221,7 +210,6 @@ impl<'a> Engine<'a> {
 
             let safe_engine = SafeFFIEngine(self.engine);
             let safe_output = SafeFFIOutput(output.output);
-            let safe_atmosphere = SafeFFIAtmosphere(atmosphere.atmosphere);
 
             let thread_pool = threading::thread_pool()?;
             let batch_size = unsafe {
@@ -249,11 +237,9 @@ impl<'a> Engine<'a> {
                             let wavelength_count = (num_wavel - wavelength_start).min(batch_size);
                             safe_calc_block_thread(
                                 &safe_engine,
-                                &safe_atmosphere,
                                 &safe_output,
                                 wavelength_start as i32,
                                 wavelength_count as i32,
-                                batch_size as i32,
                                 thread_idx,
                             )
                         })
@@ -270,10 +256,8 @@ impl<'a> Engine<'a> {
                             }
                             safe_calc_block_thread(
                                 &safe_engine,
-                                &safe_atmosphere,
                                 &safe_output,
                                 w as i32,
-                                1,
                                 1,
                                 thread_idx,
                             )

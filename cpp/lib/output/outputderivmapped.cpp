@@ -222,15 +222,12 @@ namespace sasktran2 {
     template <int NSTOKES>
     void OutputDerivMapped<NSTOKES>::assign(
         const sasktran2::WavelengthBlock& block,
-        const sasktran2::WavelengthBlockDualView<NSTOKES>& radiance, int losidx,
+        const sasktran2::WavelengthBlockDual<NSTOKES>& radiance, int losidx,
         int threadidx) {
-        if (radiance.is_scalar()) {
-            assign_lane(radiance.scalar(), losidx, block.start, threadidx);
-            return;
-        }
-
         for (int lane = 0; lane < block.count; ++lane) {
-            assign_lane(radiance.lane(lane), losidx, block.wavelength(lane),
+            const sasktran2::WavelengthBlockConstLaneDualView<NSTOKES>
+                radiance_lane(radiance, lane);
+            assign_lane(radiance_lane, losidx, block.wavelength(lane),
                         threadidx);
         }
     }

@@ -138,26 +138,22 @@ int sk_engine_effective_wavelength_batch_size(Engine* engine,
     }
 }
 
-int sk_engine_calculate_radiance_block_thread(
-    Engine* engine, Atmosphere* atmosphere, OutputC* output,
-    int wavelength_start, int wavelength_count, int block_capacity,
-    int thread_idx) {
+int sk_engine_calculate_radiance_block_thread(Engine* engine, OutputC* output,
+                                              int wavelength_start,
+                                              int wavelength_count,
+                                              int thread_idx) {
     try {
-        if (engine == nullptr || !engine->impl || atmosphere == nullptr ||
-            output == nullptr) {
+        if (engine == nullptr || !engine->impl || output == nullptr) {
             return -1;
         }
-        if (wavelength_start < 0 || wavelength_count < 1 ||
-            block_capacity < wavelength_count || thread_idx < 0) {
+        if (wavelength_start < 0 || wavelength_count < 1 || thread_idx < 0) {
             return -2;
         }
-        const sasktran2::WavelengthBlock block{
-            wavelength_start, wavelength_count, block_capacity};
+        const sasktran2::WavelengthBlock block{wavelength_start,
+                                               wavelength_count};
         if (engine->_config->impl.num_stokes() == 1) {
             auto* impl = dynamic_cast<Sasktran2<1>*>(engine->impl.get());
             impl->calculate_radiance_block_thread(
-                *static_cast<sasktran2::atmosphere::Atmosphere<1>*>(
-                    atmosphere->impl.get()),
                 *static_cast<sasktran2::Output<1>*>(output->impl.get()), block,
                 thread_idx);
             return 0;
@@ -165,8 +161,6 @@ int sk_engine_calculate_radiance_block_thread(
         if (engine->_config->impl.num_stokes() == 3) {
             auto* impl = dynamic_cast<Sasktran2<3>*>(engine->impl.get());
             impl->calculate_radiance_block_thread(
-                *static_cast<sasktran2::atmosphere::Atmosphere<3>*>(
-                    atmosphere->impl.get()),
                 *static_cast<sasktran2::Output<3>*>(output->impl.get()), block,
                 thread_idx);
             return 0;

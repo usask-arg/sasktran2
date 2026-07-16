@@ -48,7 +48,8 @@ template <int NSTOKES> class SourceTermInterface {
     virtual void calculate(const sasktran2::WavelengthBlock& block,
                            int threadidx){};
 
-    virtual bool supports_wavelength_blocks() const { return false; }
+    /** Maximum number of wavelengths this source can process together. */
+    virtual int maximum_wavelength_block_size() const { return 1; }
 
     // TODO: Is Dual proper here? what about when the source term derivative is
     // sparse? Maybe it isn't that important... Should we be templated over
@@ -71,7 +72,7 @@ template <int NSTOKES> class SourceTermInterface {
         const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
         const sasktran2::raytracing::GridWeightStencilView& exit_weights,
         const sasktran2::WavelengthBlockODView& shell_od,
-        sasktran2::WavelengthBlockDualView<NSTOKES>& source,
+        sasktran2::WavelengthBlockDual<NSTOKES>& source,
         IntegrationDirection direction = IntegrationDirection::none) const = 0;
 
     /** Calculates the source term at the end of the ray.  Common examples of
@@ -86,7 +87,7 @@ template <int NSTOKES> class SourceTermInterface {
     virtual void end_of_ray_source(
         const sasktran2::WavelengthBlock&, int losidx, int wavel_threadidx,
         int threadidx,
-        sasktran2::WavelengthBlockDualView<NSTOKES>& source) const = 0;
+        sasktran2::WavelengthBlockDual<NSTOKES>& source) const = 0;
 
     /** Calculates the radiance at the start of the ray, i.e., the source term
      * has done the equivalent of the integration along the ray.  This is useful
@@ -107,7 +108,7 @@ template <int NSTOKES> class SourceTermInterface {
     virtual void start_of_ray_source(
         const sasktran2::WavelengthBlock&, int losidx, int wavel_threadidx,
         int threadidx,
-        sasktran2::WavelengthBlockDualView<NSTOKES>& source) const = 0;
+        sasktran2::WavelengthBlockDual<NSTOKES>& source) const = 0;
 
     virtual void
     flux(int wavelidx, int fluxidx, int wavelt_threadidx, int threadidx,
@@ -143,80 +144,4 @@ template <int NSTOKES> class SourceTermInterface {
      * layer. */
     virtual void append_interior_active_derivatives(int, int,
                                                     std::vector<int>&) const {}
-};
-
-/** Adapts scalar-only source implementations to the block-oriented engine
- * interface. Scalar sources remain unchanged internally and cause the engine
- * to select blocks of size one. */
-template <int NSTOKES>
-class ScalarSourceTermInterface : public SourceTermInterface<NSTOKES> {
-  protected:
-    static void validate_scalar_block(const sasktran2::WavelengthBlock& block) {
-        if (!block.is_scalar() || block.count != 1) {
-            throw std::logic_error("Scalar source received a wavelength block");
-        }
-    }
-
-    virtual void calculate(int, int) {}
-
-    virtual void integrated_source(
-        int wavelidx, int losidx, int layeridx, int wavel_threadidx,
-        int threadidx, const sasktran2::raytracing::TracedLayer& layer,
-        const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
-        const sasktran2::raytracing::GridWeightStencilView& exit_weights,
-        const sasktran2::SparseODDualView& shell_od,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
-        typename SourceTermInterface<NSTOKES>::IntegrationDirection direction =
-            SourceTermInterface<NSTOKES>::IntegrationDirection::none) const = 0;
-
-    virtual void end_of_ray_source(
-        int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
-        const = 0;
-
-    virtual void start_of_ray_source(
-        int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
-        const = 0;
-
-  public:
-    void calculate(const sasktran2::WavelengthBlock& block,
-                   int threadidx) final {
-        validate_scalar_block(block);
-        calculate(block.start, threadidx);
-    }
-
-    void integrated_source(
-        const sasktran2::WavelengthBlock& block, int losidx, int layeridx,
-        int wavel_threadidx, int threadidx,
-        const sasktran2::raytracing::TracedLayer& layer,
-        const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
-        const sasktran2::raytracing::GridWeightStencilView& exit_weights,
-        const sasktran2::WavelengthBlockODView& shell_od,
-        sasktran2::WavelengthBlockDualView<NSTOKES>& source,
-        typename SourceTermInterface<NSTOKES>::IntegrationDirection direction)
-        const final {
-        validate_scalar_block(block);
-        integrated_source(block.start, losidx, layeridx, wavel_threadidx,
-                          threadidx, layer, entrance_weights, exit_weights,
-                          shell_od.scalar(), source.scalar(), direction);
-    }
-
-    void end_of_ray_source(
-        const sasktran2::WavelengthBlock& block, int losidx,
-        int wavel_threadidx, int threadidx,
-        sasktran2::WavelengthBlockDualView<NSTOKES>& source) const final {
-        validate_scalar_block(block);
-        end_of_ray_source(block.start, losidx, wavel_threadidx, threadidx,
-                          source.scalar());
-    }
-
-    void start_of_ray_source(
-        const sasktran2::WavelengthBlock& block, int losidx,
-        int wavel_threadidx, int threadidx,
-        sasktran2::WavelengthBlockDualView<NSTOKES>& source) const final {
-        validate_scalar_block(block);
-        start_of_ray_source(block.start, losidx, wavel_threadidx, threadidx,
-                            source.scalar());
-    }
 };

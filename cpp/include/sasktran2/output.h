@@ -79,7 +79,7 @@ namespace sasktran2 {
          */
         virtual void
         assign(const sasktran2::WavelengthBlock& block,
-               const sasktran2::WavelengthBlockDualView<NSTOKES>& radiance,
+               const sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
                int losidx, int threadidx) = 0;
 
         virtual void assign_flux(
@@ -134,7 +134,7 @@ namespace sasktran2 {
         OutputIdealDense(){};
 
         void assign(const sasktran2::WavelengthBlock& block,
-                    const sasktran2::WavelengthBlockDualView<NSTOKES>& radiance,
+                    const sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
                     int losidx, int threadidx) override;
 
         /**
@@ -172,7 +172,7 @@ namespace sasktran2 {
         OutputDerivMapped(){};
 
         void assign(const sasktran2::WavelengthBlock& block,
-                    const sasktran2::WavelengthBlockDualView<NSTOKES>& radiance,
+                    const sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
                     int losidx, int threadidx) override;
 
         /**
@@ -285,7 +285,7 @@ namespace sasktran2 {
         }
 
         void assign(const sasktran2::WavelengthBlock& block,
-                    const sasktran2::WavelengthBlockDualView<NSTOKES>& radiance,
+                    const sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
                     int losidx, int threadidx) override;
 
         void

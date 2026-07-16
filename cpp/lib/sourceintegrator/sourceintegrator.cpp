@@ -27,7 +27,6 @@ namespace sasktran2 {
         }
 
         m_shell_od.resize(traced_rays.size());
-        m_shell_od_block.resize(traced_rays.size());
 
         m_traced_rays = &traced_rays;
         m_num_geometry_locations = geometry.size();
@@ -48,21 +47,11 @@ namespace sasktran2 {
 // Multithread over LOS? or wavelength? Or just let Eigen do it?
 #pragma omp parallel for
         for (int i = 0; i < m_traced_ray_od_matrix.size(); ++i) {
-            if (m_wavelength_block_size > 1) {
-                m_shell_od_block[i].noalias() =
-                    m_traced_ray_od_matrix[i] * atmo.storage().total_extinction;
-                m_shell_od[i].resize(0, 0);
-            } else {
-                m_shell_od[i].noalias() =
-                    m_traced_ray_od_matrix[i] * atmo.storage().total_extinction;
-                m_shell_od_block[i].resize(0, 0);
-            }
+            m_shell_od[i].noalias() =
+                m_traced_ray_od_matrix[i] * atmo.storage().total_extinction;
 
 #ifdef SASKTRAN_DEBUG_ASSERTS
-            const bool finite = m_wavelength_block_size > 1
-                                    ? m_shell_od_block[i].allFinite()
-                                    : m_shell_od[i].allFinite();
-            if (!finite) {
+            if (!m_shell_od[i].allFinite()) {
                 spdlog::error("Error calculating Layer OD for ray: ", i);
             }
 #endif
@@ -156,76 +145,22 @@ namespace sasktran2 {
 
     template <int NSTOKES>
     void SourceIntegrator<NSTOKES>::integrate(
-        sasktran2::WavelengthBlockDualView<NSTOKES>& radiance,
-        const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
-        const sasktran2::WavelengthBlock& block, int rayidx,
-        int wavel_threadidx, int threadidx) {
-        if (radiance.is_scalar()) {
-            integrate_single(radiance.scalar(), source_terms, block, rayidx,
-                             wavel_threadidx, threadidx);
-        } else {
-            integrate_block(radiance.block(), source_terms, block, rayidx,
-                            wavel_threadidx, threadidx);
-        }
-    }
-
-    template <int NSTOKES>
-    void SourceIntegrator<NSTOKES>::integrate_single(
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-            radiance,
-        const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
-        const sasktran2::WavelengthBlock& block, int rayidx,
-        int wavel_threadidx, int threadidx) {
-        if (!block.is_scalar() || block.count != 1) {
-            throw std::logic_error(
-                "Scalar integration requires one wavelength");
-        }
-
-        bool have_to_integrate = false;
-        for (const auto& source : source_terms) {
-            if (source->requires_integration()) {
-                have_to_integrate = true;
-                if (m_num_geometry_dimensions == 1) {
-                    // Preserve the 1D hot path: no additional source
-                    // validation is needed once integration is required.
-                    break;
-                }
-                if (source->has_interior_source() &&
-                    !source->supports_geometry_dimension(
-                        m_num_geometry_dimensions)) {
-                    throw std::invalid_argument(
-                        "Interior source integration is not supported for "
-                        "the configured atmosphere dimensionality");
-                }
-            }
-        }
-
-        // Add source at the end of the ray
-        sasktran2::WavelengthBlockDualView<NSTOKES> radiance_view(radiance);
-        for (const auto& source : source_terms) {
-            source->end_of_ray_source(block, rayidx, wavel_threadidx, threadidx,
-                                      radiance_view);
-        }
-
-        if (!have_to_integrate) {
-            return;
-        }
-
-        const auto& od_matrix = m_traced_ray_od_matrix[rayidx];
-        const auto& shell_od = m_shell_od[rayidx];
-        integrate_ray_single(radiance, source_terms, (*m_traced_rays)[rayidx],
-                             od_matrix, shell_od, block.start, rayidx,
-                             wavel_threadidx, threadidx);
-    }
-
-    template <int NSTOKES>
-    void SourceIntegrator<NSTOKES>::integrate_block(
         sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
         const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
-        const sasktran2::WavelengthBlock& batch, int rayidx,
+        const sasktran2::WavelengthBlock& block, int rayidx,
         int wavel_threadidx, int threadidx) {
+        if (block.count < 1 || block.count > radiance.block_capacity()) {
+            throw std::invalid_argument(
+                "Wavelength block does not fit the radiance storage");
+        }
+
         bool have_to_integrate = false;
         for (const auto* source : source_terms) {
+            if (source->maximum_wavelength_block_size() < block.count) {
+                throw std::invalid_argument(
+                    "Source does not support the requested wavelength block "
+                    "size");
+            }
             if (source->requires_integration()) {
                 have_to_integrate = true;
                 if (source->has_interior_source() &&
@@ -236,92 +171,24 @@ namespace sasktran2 {
                         "the configured atmosphere dimensionality");
                 }
             }
-            sasktran2::WavelengthBlockDualView<NSTOKES> radiance_view(radiance);
-            source->end_of_ray_source(batch, rayidx, wavel_threadidx, threadidx,
-                                      radiance_view);
+        }
+
+        for (const auto* source : source_terms) {
+            source->end_of_ray_source(block, rayidx, wavel_threadidx, threadidx,
+                                      radiance);
         }
 
         if (!have_to_integrate) {
             return;
         }
 
-        integrate_ray_block(radiance, source_terms, (*m_traced_rays)[rayidx],
-                            m_traced_ray_od_matrix[rayidx],
-                            m_shell_od_block[rayidx], batch, rayidx,
-                            wavel_threadidx, threadidx);
+        integrate_ray(radiance, source_terms, (*m_traced_rays)[rayidx],
+                      m_traced_ray_od_matrix[rayidx], m_shell_od[rayidx], block,
+                      rayidx, wavel_threadidx, threadidx);
     }
 
     template <int NSTOKES>
-    void SourceIntegrator<NSTOKES>::integrate_ray_single(
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-            radiance,
-        const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
-        const sasktran2::raytracing::TracedRay& ray,
-        const Eigen::SparseMatrix<double, Eigen::RowMajor>& od_matrix,
-        const Eigen::MatrixXd& shell_od, int wavelidx, int rayidx,
-        int wavel_threadidx, int threadidx) const {
-        for (int layeridx = 0; layeridx < ray.layers.size(); ++layeridx) {
-            sasktran2::SparseODDualView local_shell_od(
-                shell_od(layeridx, wavelidx),
-                std::exp(-shell_od(layeridx, wavelidx)), od_matrix, layeridx);
-
-            // rad = rad * atten, drad = drad * atten + rad * datten.
-            if (m_calculate_derivatives) {
-                for (auto it = local_shell_od.deriv_iter; it; ++it) {
-                    radiance.deriv(Eigen::placeholders::all, it.index()) -=
-                        it.value() * radiance.value;
-                }
-            }
-            radiance.value *= local_shell_od.exp_minus_od;
-            if (m_calculate_derivatives) {
-                if (m_use_sparse_derivative_tracking) {
-                    for (const auto& [derivative_start, derivative_count] :
-                         m_attenuation_active_derivative_ranges[rayidx]
-                                                               [layeridx]) {
-                        radiance.deriv.middleCols(derivative_start,
-                                                  derivative_count) *=
-                            local_shell_od.exp_minus_od;
-                    }
-                } else {
-                    radiance.deriv *= local_shell_od.exp_minus_od;
-                }
-            }
-
-            const auto& layer = ray.layers[layeridx];
-            const auto entrance_weights = ray.entrance_weights(layeridx);
-            const auto exit_weights = ray.exit_weights(layeridx);
-            const sasktran2::WavelengthBlock block{wavelidx, 1};
-            const sasktran2::WavelengthBlockODView block_shell_od(
-                local_shell_od);
-            sasktran2::WavelengthBlockDualView<NSTOKES> radiance_view(radiance);
-            for (const auto& source : source_terms) {
-                if (source->has_interior_source()) {
-                    source->integrated_source(
-                        block, rayidx, layeridx, wavel_threadidx, threadidx,
-                        layer, entrance_weights, exit_weights, block_shell_od,
-                        radiance_view,
-                        SourceTermInterface<
-                            NSTOKES>::IntegrationDirection::backward);
-                }
-            }
-
-#ifdef SASKTRAN_DEBUG_ASSERTS
-            if (radiance.value.hasNaN()) {
-                static bool message = false;
-                if (!message) {
-                    spdlog::error("One of the sources was  NaN Ray: {} layer: "
-                                  "{} Layer od: {} Layer Atten Factor: {}",
-                                  rayidx, layeridx, local_shell_od.od,
-                                  local_shell_od.exp_minus_od);
-                    message = true;
-                }
-            }
-#endif
-        }
-    }
-
-    template <int NSTOKES>
-    void SourceIntegrator<NSTOKES>::integrate_ray_block(
+    void SourceIntegrator<NSTOKES>::integrate_ray(
         sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
         const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
         const sasktran2::raytracing::TracedRay& ray,
@@ -367,13 +234,12 @@ namespace sasktran2 {
             const auto& layer = ray.layers[layeridx];
             const auto entrance_weights = ray.entrance_weights(layeridx);
             const auto exit_weights = ray.exit_weights(layeridx);
-            sasktran2::WavelengthBlockDualView<NSTOKES> radiance_view(radiance);
             for (const auto* source : source_terms) {
                 if (source->has_interior_source()) {
                     source->integrated_source(
                         batch, rayidx, layeridx, wavel_threadidx, threadidx,
                         layer, entrance_weights, exit_weights, local_shell_od,
-                        radiance_view,
+                        radiance,
                         SourceTermInterface<
                             NSTOKES>::IntegrationDirection::backward);
                 }
@@ -385,11 +251,7 @@ namespace sasktran2 {
     void SourceIntegrator<NSTOKES>::integrate_optical_depth(
         Eigen::MatrixXd& optical_depth) {
         for (int i = 0; i < m_shell_od.size(); ++i) {
-            if (m_wavelength_block_size > 1) {
-                optical_depth.col(i) = m_shell_od_block[i].colwise().sum();
-            } else {
-                optical_depth.col(i) = m_shell_od[i].colwise().sum();
-            }
+            optical_depth.col(i) = m_shell_od[i].colwise().sum();
         }
     }
 
@@ -408,8 +270,8 @@ namespace sasktran2 {
         // If we don't have to calculate derivatives then it is faster to
         // iterate over the ray backwards, i.e., from the observer to the end of
         // the atmosphere
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>
-            layer_source(NSTOKES, 0);
+        sasktran2::WavelengthBlockDual<NSTOKES> layer_source;
+        layer_source.resize(1, 0);
 
         double current_od = 0;
         for (int j = (int)ray.layers.size() - 1; j >= 0; --j) {
@@ -417,30 +279,28 @@ namespace sasktran2 {
             const auto entrance_weights = ray.entrance_weights(j);
             const auto exit_weights = ray.exit_weights(j);
 
-            sasktran2::SparseODDualView local_shell_od(
-                m_shell_od[rayidx](j, wavelidx),
-                std::exp(-m_shell_od[rayidx](j, wavelidx)),
+            const double shell_od = m_shell_od[rayidx](j, wavelidx);
+            const double shell_attenuation = std::exp(-shell_od);
+            const sasktran2::WavelengthBlockODView block_shell_od(
+                &shell_od, &shell_attenuation, 1,
                 m_traced_ray_od_matrix[rayidx], j);
             const auto& layer_interpolator = interpolator.interior_weights[j];
             // Calculate and add the layer source to the radiance
             double atten_factor = std::exp(-current_od);
 
             // Calculate all of the layer sources
-            layer_source.value.setZero();
+            layer_source.set_zero(1);
             const sasktran2::WavelengthBlock block{wavelidx, 1};
-            const sasktran2::WavelengthBlockODView block_shell_od(
-                local_shell_od);
-            sasktran2::WavelengthBlockDualView<NSTOKES> source_view(
-                layer_source);
             for (const auto& source : source_terms) {
                 source->integrated_source(
                     block, rayidx, j, wavel_threadidx, threadidx, layer,
-                    entrance_weights, exit_weights, block_shell_od, source_view,
+                    entrance_weights, exit_weights, block_shell_od,
+                    layer_source,
                     SourceTermInterface<
                         NSTOKES>::IntegrationDirection::forward);
             }
 
-            radiance.value += layer_source.value * atten_factor;
+            radiance.value += layer_source.value.col(0) * atten_factor;
 
             // Assign the accumulation weights
             double omega = 0;
@@ -451,7 +311,7 @@ namespace sasktran2 {
                     index_weight.second;
             }
             double source_factor =
-                omega * (1 - local_shell_od.exp_minus_od) * atten_factor;
+                omega * (1 - shell_attenuation) * atten_factor;
 
             for (const auto& ele : layer_interpolator.second) {
                 for (int s = 0; s < NSTOKES; ++s) {
@@ -460,20 +320,18 @@ namespace sasktran2 {
                 }
             }
 
-            current_od += local_shell_od.od;
+            current_od += shell_od;
         }
 
         // Add source at the end of the ray
-        layer_source.value.setZero();
+        layer_source.set_zero(1);
         const sasktran2::WavelengthBlock end_block{wavelidx, 1};
-        sasktran2::WavelengthBlockDualView<NSTOKES> end_source_view(
-            layer_source);
         for (const auto& source : source_terms) {
             source->end_of_ray_source(end_block, rayidx, wavel_threadidx,
-                                      threadidx, end_source_view);
+                                      threadidx, layer_source);
         }
 
-        radiance.value += layer_source.value * std::exp(-1 * current_od);
+        radiance.value += layer_source.value.col(0) * std::exp(-1 * current_od);
 
         // Add ground interpolation triplets
         if (ray.ground_is_hit) {

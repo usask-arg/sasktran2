@@ -42,7 +42,7 @@ namespace sasktran2::hr {
      * @tparam NSTOKES
      */
     template <int NSTOKES>
-    class DiffuseTable : public ScalarSourceTermInterface<NSTOKES> {
+    class DiffuseTable : public SourceTermInterface<NSTOKES> {
         using SInterpolator =
             std::vector<RaySourceInterpolationWeights<NSTOKES>>;
 
@@ -190,7 +190,8 @@ namespace sasktran2::hr {
          *
          * @param wavelidx Index of the wavelength being calculated
          */
-        virtual void calculate(int wavelidx, int threadidx);
+        void calculate(const sasktran2::WavelengthBlock& block,
+                       int threadidx) override;
 
         /** Calculates the integrated source term for a given layer.
          *
@@ -201,18 +202,19 @@ namespace sasktran2::hr {
          * @param layer The layer that we are integrating over
          * @param source The returned source term
          */
-        virtual void integrated_source(
-            int wavelidx, int losidx, int layeridx, int wavel_threadidx,
-            int threadidx, const sasktran2::raytracing::TracedLayer& layer,
+        void integrated_source(
+            const sasktran2::WavelengthBlock& block, int losidx, int layeridx,
+            int wavel_threadidx, int threadidx,
+            const sasktran2::raytracing::TracedLayer& layer,
             const sasktran2::raytracing::GridWeightStencilView&
                 entrance_weights,
             const sasktran2::raytracing::GridWeightStencilView& exit_weights,
-            const sasktran2::SparseODDualView& shell_od,
-            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                source,
-            typename SourceTermInterface<
-                NSTOKES>::IntegrationDirection direction =
-                SourceTermInterface<NSTOKES>::IntegrationDirection::none) const;
+            const sasktran2::WavelengthBlockODView& shell_od,
+            sasktran2::WavelengthBlockDual<NSTOKES>& source,
+            typename SourceTermInterface<NSTOKES>::IntegrationDirection
+                direction =
+                    SourceTermInterface<NSTOKES>::IntegrationDirection::none)
+            const override;
 
         /** Calculates the source term at the end of the ray.  Common examples
          * of this are ground scattering, ground emission, or the solar radiance
@@ -223,10 +225,10 @@ namespace sasktran2::hr {
          * passed in initialize_geometry
          * @param source The returned source term
          */
-        virtual void end_of_ray_source(
-            int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                source) const;
+        void end_of_ray_source(
+            const sasktran2::WavelengthBlock& block, int losidx,
+            int wavel_threadidx, int threadidx,
+            sasktran2::WavelengthBlockDual<NSTOKES>& source) const override;
 
         /**
          * @brief Not used for the HR source.
@@ -237,9 +239,8 @@ namespace sasktran2::hr {
          * @param threadidx
          * @param source
          */
-        virtual void start_of_ray_source(
-            int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                source) const override{};
+        void start_of_ray_source(
+            const sasktran2::WavelengthBlock&, int, int, int,
+            sasktran2::WavelengthBlockDual<NSTOKES>&) const override {}
     };
 } // namespace sasktran2::hr

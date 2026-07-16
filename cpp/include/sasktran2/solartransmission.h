@@ -648,9 +648,8 @@ namespace sasktran2::solartransmission {
             const sasktran2::raytracing::GridWeightStencilView&
                 entrance_weights,
             const sasktran2::raytracing::GridWeightStencilView& exit_weights,
-            const sasktran2::SparseODDualView& shell_od,
-            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                source,
+            const sasktran2::WavelengthBlockODView& shell_od,
+            sasktran2::WavelengthBlockLaneDualView<NSTOKES>& source,
             typename SourceTermInterface<NSTOKES>::IntegrationDirection
                 direction) const;
 
@@ -697,12 +696,14 @@ namespace sasktran2::solartransmission {
          *
          * @param wavelidx Index of the wavelength being calculated
          */
-        bool supports_wavelength_blocks() const override {
-            return std::is_same_v<S, SolarTransmissionExact>;
+        int maximum_wavelength_block_size() const override {
+            return std::is_same_v<S, SolarTransmissionExact>
+                       ? std::numeric_limits<int>::max()
+                       : 1;
         }
 
       private:
-        void calculate(int wavelidx, int threadidx);
+        void calculate_single(int wavelidx, int threadidx);
 
         void initialize_wavelength_blocks(int block_size);
 
@@ -712,10 +713,10 @@ namespace sasktran2::solartransmission {
       public:
         void calculate(const sasktran2::WavelengthBlock& block,
                        int threadidx) override {
-            if (block.is_scalar()) {
-                calculate(block.start, threadidx);
-            } else {
+            if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
                 calculate_block(block, threadidx);
+            } else {
+                calculate_single(block.start, threadidx);
             }
         }
 
@@ -729,15 +730,14 @@ namespace sasktran2::solartransmission {
          * @param source The returned source term
          */
       private:
-        void integrated_source(
+        void integrated_source_single(
             int wavelidx, int losidx, int layeridx, int wavel_threadidx,
             int threadidx, const sasktran2::raytracing::TracedLayer& layer,
             const sasktran2::raytracing::GridWeightStencilView&
                 entrance_weights,
             const sasktran2::raytracing::GridWeightStencilView& exit_weights,
-            const sasktran2::SparseODDualView& shell_od,
-            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                source,
+            const sasktran2::WavelengthBlockODView& shell_od,
+            sasktran2::WavelengthBlockLaneDualView<NSTOKES>& source,
             typename SourceTermInterface<
                 NSTOKES>::IntegrationDirection direction =
                 SourceTermInterface<NSTOKES>::IntegrationDirection::none) const;
@@ -764,21 +764,23 @@ namespace sasktran2::solartransmission {
                 entrance_weights,
             const sasktran2::raytracing::GridWeightStencilView& exit_weights,
             const sasktran2::WavelengthBlockODView& shell_od,
-            sasktran2::WavelengthBlockDualView<NSTOKES>& source,
+            sasktran2::WavelengthBlockDual<NSTOKES>& source,
             typename SourceTermInterface<NSTOKES>::IntegrationDirection
                 direction =
                     SourceTermInterface<NSTOKES>::IntegrationDirection::none)
             const override {
-            if (source.is_scalar()) {
-                integrated_source(
-                    block.start, losidx, layeridx, wavel_threadidx, threadidx,
-                    layer, entrance_weights, exit_weights, shell_od.scalar(),
-                    source.scalar(), direction);
-            } else {
+            if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
                 integrated_source_block(block, losidx, layeridx,
                                         wavel_threadidx, threadidx, layer,
                                         entrance_weights, exit_weights,
-                                        shell_od, source.block(), direction);
+                                        shell_od, source, direction);
+            } else {
+                sasktran2::WavelengthBlockLaneDualView<NSTOKES> source_lane(
+                    source, 0);
+                integrated_source_single(block.start, losidx, layeridx,
+                                         wavel_threadidx, threadidx, layer,
+                                         entrance_weights, exit_weights,
+                                         shell_od, source_lane, direction);
             }
         }
 
@@ -808,10 +810,9 @@ namespace sasktran2::solartransmission {
          * @param source The returned source term
          */
       private:
-        void end_of_ray_source(
+        void end_of_ray_source_single(
             int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                source) const;
+            sasktran2::WavelengthBlockLaneDualView<NSTOKES>& source) const;
 
         void end_of_ray_source_block(
             const sasktran2::WavelengthBlock& batch, int losidx,
@@ -819,16 +820,18 @@ namespace sasktran2::solartransmission {
             sasktran2::WavelengthBlockDual<NSTOKES>& source) const;
 
       public:
-        void end_of_ray_source(const sasktran2::WavelengthBlock& block,
-                               int losidx, int wavel_threadidx, int threadidx,
-                               sasktran2::WavelengthBlockDualView<NSTOKES>&
-                                   source) const override {
-            if (source.is_scalar()) {
-                end_of_ray_source(block.start, losidx, wavel_threadidx,
-                                  threadidx, source.scalar());
-            } else {
+        void end_of_ray_source(
+            const sasktran2::WavelengthBlock& block, int losidx,
+            int wavel_threadidx, int threadidx,
+            sasktran2::WavelengthBlockDual<NSTOKES>& source) const override {
+            if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
                 end_of_ray_source_block(block, losidx, wavel_threadidx,
-                                        threadidx, source.block());
+                                        threadidx, source);
+            } else {
+                sasktran2::WavelengthBlockLaneDualView<NSTOKES> source_lane(
+                    source, 0);
+                end_of_ray_source_single(block.start, losidx, wavel_threadidx,
+                                         threadidx, source_lane);
             }
         }
 
@@ -843,7 +846,7 @@ namespace sasktran2::solartransmission {
          */
         void start_of_ray_source(
             const sasktran2::WavelengthBlock&, int, int, int,
-            sasktran2::WavelengthBlockDualView<NSTOKES>&) const override {}
+            sasktran2::WavelengthBlockDual<NSTOKES>&) const override {}
     };
 
     template <int NSTOKES>
@@ -877,18 +880,11 @@ namespace sasktran2::solartransmission {
          *
          * @param wavelidx Index of the wavelength being calculated
          */
-        bool supports_wavelength_blocks() const override { return true; }
-
-      private:
-        void calculate(int wavelidx, int threadidx);
-
-      public:
-        void calculate(const sasktran2::WavelengthBlock& block,
-                       int threadidx) override {
-            if (block.is_scalar()) {
-                calculate(block.start, threadidx);
-            }
+        int maximum_wavelength_block_size() const override {
+            return std::numeric_limits<int>::max();
         }
+
+        void calculate(const sasktran2::WavelengthBlock&, int) override {}
 
         /** Calculates the integrated source term for a given layer.
          *
@@ -899,41 +895,16 @@ namespace sasktran2::solartransmission {
          * @param layer The layer that we are integrating over
          * @param source The returned source term
          */
-      private:
         void integrated_source(
-            int wavelidx, int losidx, int layeridx, int wavel_threadidx,
-            int threadidx, const sasktran2::raytracing::TracedLayer& layer,
-            const sasktran2::raytracing::GridWeightStencilView&
-                entrance_weights,
-            const sasktran2::raytracing::GridWeightStencilView& exit_weights,
-            const sasktran2::SparseODDualView& shell_od,
-            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                source,
-            typename SourceTermInterface<
-                NSTOKES>::IntegrationDirection direction =
-                SourceTermInterface<NSTOKES>::IntegrationDirection::none) const;
-
-      public:
-        void integrated_source(
-            const sasktran2::WavelengthBlock& block, int losidx, int layeridx,
-            int wavel_threadidx, int threadidx,
-            const sasktran2::raytracing::TracedLayer& layer,
-            const sasktran2::raytracing::GridWeightStencilView&
-                entrance_weights,
-            const sasktran2::raytracing::GridWeightStencilView& exit_weights,
-            const sasktran2::WavelengthBlockODView& shell_od,
-            sasktran2::WavelengthBlockDualView<NSTOKES>& source,
-            typename SourceTermInterface<NSTOKES>::IntegrationDirection
-                direction =
-                    SourceTermInterface<NSTOKES>::IntegrationDirection::none)
-            const override {
-            if (source.is_scalar()) {
-                integrated_source(
-                    block.start, losidx, layeridx, wavel_threadidx, threadidx,
-                    layer, entrance_weights, exit_weights, shell_od.scalar(),
-                    source.scalar(), direction);
-            }
-        }
+            const sasktran2::WavelengthBlock&, int, int, int, int,
+            const sasktran2::raytracing::TracedLayer&,
+            const sasktran2::raytracing::GridWeightStencilView&,
+            const sasktran2::raytracing::GridWeightStencilView&,
+            const sasktran2::WavelengthBlockODView&,
+            sasktran2::WavelengthBlockDual<NSTOKES>&,
+            typename SourceTermInterface<NSTOKES>::IntegrationDirection =
+                SourceTermInterface<NSTOKES>::IntegrationDirection::none)
+            const override {}
 
         /** Calculates the source term at the end of the ray.  Common examples
          * of this are ground scattering, ground emission, or the solar radiance
@@ -944,30 +915,10 @@ namespace sasktran2::solartransmission {
          * passed in initialize_geometry
          * @param source The returned source term
          */
-      private:
         void end_of_ray_source(
-            int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                source) const;
-
-        void end_of_ray_source_block(
-            const sasktran2::WavelengthBlock& batch, int losidx,
+            const sasktran2::WavelengthBlock& block, int losidx,
             int wavel_threadidx, int threadidx,
-            sasktran2::WavelengthBlockDual<NSTOKES>& source) const;
-
-      public:
-        void end_of_ray_source(const sasktran2::WavelengthBlock& block,
-                               int losidx, int wavel_threadidx, int threadidx,
-                               sasktran2::WavelengthBlockDualView<NSTOKES>&
-                                   source) const override {
-            if (source.is_scalar()) {
-                end_of_ray_source(block.start, losidx, wavel_threadidx,
-                                  threadidx, source.scalar());
-            } else {
-                end_of_ray_source_block(block, losidx, wavel_threadidx,
-                                        threadidx, source.block());
-            }
-        }
+            sasktran2::WavelengthBlockDual<NSTOKES>& source) const override;
 
         /**
          * @brief Not used for the occultation source.
@@ -980,7 +931,7 @@ namespace sasktran2::solartransmission {
          */
         void start_of_ray_source(
             const sasktran2::WavelengthBlock&, int, int, int,
-            sasktran2::WavelengthBlockDualView<NSTOKES>&) const override {}
+            sasktran2::WavelengthBlockDual<NSTOKES>&) const override {}
 
         bool has_interior_source() const override { return false; }
     };

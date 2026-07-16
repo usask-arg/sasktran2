@@ -343,10 +343,7 @@ def test_rayon_wavelength_batch_parity():
         )
 
 
-def test_unsupported_sources_fall_back_to_scalar_wavelengths():
-    scalar_engine, scalar_atmosphere = _setup_1d(
-        "discrete_ordinates", 1, False, num_wavelengths=3
-    )
+def test_unsupported_sources_reject_wavelength_batching():
     configured_engine, configured_atmosphere = _setup_1d(
         "discrete_ordinates",
         1,
@@ -355,9 +352,5 @@ def test_unsupported_sources_fall_back_to_scalar_wavelengths():
         wavelength_batch_size=8,
     )
 
-    scalar = scalar_engine.calculate_radiance(scalar_atmosphere)
-    configured = configured_engine.calculate_radiance(configured_atmosphere)
-    for variable in scalar.data_vars:
-        np.testing.assert_array_equal(
-            configured[variable].values, scalar[variable].values
-        )
+    with pytest.raises(RuntimeError):
+        configured_engine.calculate_radiance(configured_atmosphere)

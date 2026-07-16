@@ -15,7 +15,7 @@
 #include <memory>
 
 template <int NSTOKES, sasktran2::twostream::SourceType SOURCE_TYPE>
-class TwoStreamSource : public ScalarSourceTermInterface<NSTOKES> {
+class TwoStreamSource : public SourceTermInterface<NSTOKES> {
   private:
     mutable std::vector<sasktran2::twostream::Solution<SOURCE_TYPE>>
         m_solutions;
@@ -131,7 +131,9 @@ class TwoStreamSource : public ScalarSourceTermInterface<NSTOKES> {
         }
     };
 
-    virtual void calculate(int wavelidx, int threadidx) {
+    void calculate(const sasktran2::WavelengthBlock& block,
+                   int threadidx) override {
+        const int wavelidx = block.start;
         ZoneScopedN("Twostream Calculate");
         auto& input = m_inputs[threadidx];
         auto& solution = m_solutions[threadidx];
@@ -147,22 +149,21 @@ class TwoStreamSource : public ScalarSourceTermInterface<NSTOKES> {
         }
     };
 
-    virtual void integrated_source(
-        int wavelidx, int losidx, int layeridx, int wavel_threadidx,
-        int threadidx, const sasktran2::raytracing::TracedLayer& layer,
-        const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
-        const sasktran2::raytracing::GridWeightStencilView& exit_weights,
-        const sasktran2::SparseODDualView& shell_od,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
-        typename SourceTermInterface<NSTOKES>::IntegrationDirection direction =
-            SourceTermInterface<NSTOKES>::IntegrationDirection::none) const {};
+    void integrated_source(
+        const sasktran2::WavelengthBlock&, int, int, int, int,
+        const sasktran2::raytracing::TracedLayer&,
+        const sasktran2::raytracing::GridWeightStencilView&,
+        const sasktran2::raytracing::GridWeightStencilView&,
+        const sasktran2::WavelengthBlockODView&,
+        sasktran2::WavelengthBlockDual<NSTOKES>&,
+        typename SourceTermInterface<NSTOKES>::IntegrationDirection =
+            SourceTermInterface<NSTOKES>::IntegrationDirection::none)
+        const override {}
 
-    virtual void end_of_ray_source(
-        int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
-        const {
-
-        };
+    void
+    end_of_ray_source(const sasktran2::WavelengthBlock&, int, int, int,
+                      sasktran2::WavelengthBlockDual<NSTOKES>&) const override {
+    }
 
     /** Calculates the radiance at the start of the ray, i.e., the source term
      * has done the equivalent of the integration along the ray.  This is useful
@@ -180,10 +181,11 @@ class TwoStreamSource : public ScalarSourceTermInterface<NSTOKES> {
      * @param threadidx
      * @param source
      */
-    virtual void start_of_ray_source(
-        int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
-        const override {
+    void start_of_ray_source(
+        const sasktran2::WavelengthBlock&, int losidx, int wavel_threadidx,
+        int threadidx,
+        sasktran2::WavelengthBlockDual<NSTOKES>& block_source) const override {
+        sasktran2::WavelengthBlockLaneDualView<NSTOKES> source(block_source, 0);
         ZoneScopedN("Twostream Start of Ray Source");
         auto& sources = m_sources[threadidx];
         const auto& ray = (*m_los_rays)[losidx];

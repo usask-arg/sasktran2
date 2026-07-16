@@ -883,8 +883,10 @@ namespace sasktran2::hr {
     }
 
     template <int NSTOKES>
-    void DiffuseTable<NSTOKES>::calculate(int wavelidx, int threadidx) {
-        const sasktran2::WavelengthBlock block{wavelidx, 1};
+    void
+    DiffuseTable<NSTOKES>::calculate(const sasktran2::WavelengthBlock& block,
+                                     int threadidx) {
+        const int wavelidx = block.start;
         for (auto& source : m_initial_owned_sources) {
             source->calculate(block, threadidx);
         }
@@ -961,14 +963,17 @@ namespace sasktran2::hr {
 
     template <int NSTOKES>
     void DiffuseTable<NSTOKES>::integrated_source(
-        int wavelidx, int losidx, int layeridx, int wavel_threadidx,
-        int threadidx, const sasktran2::raytracing::TracedLayer& layer,
+        const sasktran2::WavelengthBlock& block, int losidx, int layeridx,
+        int wavel_threadidx, int threadidx,
+        const sasktran2::raytracing::TracedLayer& layer,
         const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
         const sasktran2::raytracing::GridWeightStencilView& exit_weights,
-        const sasktran2::SparseODDualView& shell_od,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
+        const sasktran2::WavelengthBlockODView& shell_od,
+        sasktran2::WavelengthBlockDual<NSTOKES>& block_source,
         typename SourceTermInterface<NSTOKES>::IntegrationDirection direction)
         const {
+        const int wavelidx = block.start;
+        sasktran2::WavelengthBlockLaneDualView<NSTOKES> source(block_source, 0);
         auto& storage = m_thread_storage[wavel_threadidx];
 
         auto& interpolator =
@@ -982,7 +987,7 @@ namespace sasktran2::hr {
                      index_weight.second;
         }
 
-        double source_factor = (1 - exp(-1 * shell_od.od));
+        double source_factor = (1 - exp(-1 * shell_od.od(0)));
 
         for (int i = 0; i < interpolator.second.size(); ++i) {
             auto& index_weight = interpolator.second[i];
@@ -997,7 +1002,7 @@ namespace sasktran2::hr {
 
                 if (m_atmosphere->num_deriv() > 0) {
                     // Now we need dJ/dthickness
-                    for (auto it = shell_od.deriv_iter; it; ++it) {
+                    for (auto it = shell_od.derivative_iterator(); it; ++it) {
                         source.deriv(s, it.index()) += it.value() *
                                                        (1 - source_factor) *
                                                        source_value * omega;
@@ -1027,9 +1032,10 @@ namespace sasktran2::hr {
 
     template <int NSTOKES>
     void DiffuseTable<NSTOKES>::end_of_ray_source(
-        int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
-        const {
+        const sasktran2::WavelengthBlock& block, int losidx,
+        int wavel_threadidx, int threadidx,
+        sasktran2::WavelengthBlockDual<NSTOKES>& block_source) const {
+        sasktran2::WavelengthBlockLaneDualView<NSTOKES> source(block_source, 0);
         auto& interpolator = m_los_source_weights[losidx].ground_weights;
         auto& storage = m_thread_storage[wavel_threadidx];
 

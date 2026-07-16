@@ -94,27 +94,27 @@ namespace {
         return result;
     }
 
-    class InteriorTestSource : public ScalarSourceTermInterface<1> {
+    class InteriorTestSource : public SourceTermInterface<1> {
       public:
-        void integrated_source(
-            int, int, int, int, int, const sasktran2::raytracing::TracedLayer&,
-            const sasktran2::raytracing::GridWeightStencilView&,
-            const sasktran2::raytracing::GridWeightStencilView&,
-            const sasktran2::SparseODDualView&,
-            sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>&,
-            IntegrationDirection) const override {}
+        void
+        integrated_source(const sasktran2::WavelengthBlock&, int, int, int, int,
+                          const sasktran2::raytracing::TracedLayer&,
+                          const sasktran2::raytracing::GridWeightStencilView&,
+                          const sasktran2::raytracing::GridWeightStencilView&,
+                          const sasktran2::WavelengthBlockODView&,
+                          sasktran2::WavelengthBlockDual<1>&,
+                          IntegrationDirection) const override {}
 
         bool supports_geometry_dimension(int) const override { return false; }
 
-        void end_of_ray_source(
-            int, int, int, int,
-            sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>&)
-            const override {}
+        void
+        end_of_ray_source(const sasktran2::WavelengthBlock&, int, int, int,
+                          sasktran2::WavelengthBlockDual<1>&) const override {}
 
-        void start_of_ray_source(
-            int, int, int, int,
-            sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>&)
-            const override {}
+        void
+        start_of_ray_source(const sasktran2::WavelengthBlock&, int, int, int,
+                            sasktran2::WavelengthBlockDual<1>&) const override {
+        }
     };
 
     template <int NSTOKES>
@@ -126,9 +126,16 @@ namespace {
                      int wavelength, int ray_index, int wavelength_thread_index,
                      int thread_index) {
         const sasktran2::WavelengthBlock block{wavelength, 1};
-        sasktran2::WavelengthBlockDualView<NSTOKES> radiance_view(radiance);
-        integrator.integrate(radiance_view, sources, block, ray_index,
+        sasktran2::WavelengthBlockDual<NSTOKES> block_radiance;
+        block_radiance.resize(1, radiance.deriv.cols(), true);
+        integrator.integrate(block_radiance, sources, block, ray_index,
                              wavelength_thread_index, thread_index);
+        radiance.value = block_radiance.value.col(0);
+        for (int derivative = 0; derivative < radiance.deriv.cols();
+             ++derivative) {
+            radiance.deriv.col(derivative) =
+                block_radiance.derivative(derivative, 1).col(0);
+        }
     }
 } // namespace
 
@@ -268,16 +275,15 @@ TEST_CASE("OccultationSource blocks ground-terminated 1D and 2D rays",
         initialize_source_geometry(source, rays);
     }
 
-    sasktran2::Dual<double, sasktran2::dualstorage::dense, 1> space(1, 0, true);
-    sasktran2::Dual<double, sasktran2::dualstorage::dense, 1> ground(1, 0,
-                                                                     true);
+    sasktran2::WavelengthBlockDual<1> space;
+    sasktran2::WavelengthBlockDual<1> ground;
+    space.resize(1, 0, true);
+    ground.resize(1, 0, true);
     const sasktran2::WavelengthBlock block{0, 1};
-    sasktran2::WavelengthBlockDualView<1> space_view(space);
-    sasktran2::WavelengthBlockDualView<1> ground_view(ground);
-    source.end_of_ray_source(block, 0, 0, 0, space_view);
-    source.end_of_ray_source(block, 1, 0, 0, ground_view);
-    REQUIRE(space.value[0] == 1.0);
-    REQUIRE(ground.value[0] == 0.0);
+    source.end_of_ray_source(block, 0, 0, 0, space);
+    source.end_of_ray_source(block, 1, 0, 0, ground);
+    REQUIRE(space.value(0, 0) == 1.0);
+    REQUIRE(ground.value(0, 0) == 0.0);
 }
 
 TEST_CASE("2D occultation transmission handles extreme OD and validates "

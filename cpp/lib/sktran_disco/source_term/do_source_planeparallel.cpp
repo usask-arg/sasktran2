@@ -18,7 +18,8 @@ namespace sasktran2 {
 
     template <int NSTOKES, int CNSTR>
     void DOSourcePlaneParallelPostProcessing<NSTOKES, CNSTR>::calculate(
-        int wavelidx, int threadidx) {
+        const sasktran2::WavelengthBlock& block, int threadidx) {
+        const int wavelidx = block.start;
         bool include_single_scatter =
             m_config->single_scatter_source() ==
             sasktran2::Config::SingleScatterSource::discrete_ordinates;
@@ -712,9 +713,10 @@ namespace sasktran2 {
     template <int NSTOKES, int CNSTR>
     void
     DOSourcePlaneParallelPostProcessing<NSTOKES, CNSTR>::start_of_ray_source(
-        int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
-        const {
+        const sasktran2::WavelengthBlock&, int losidx, int wavel_threadidx,
+        int threadidx,
+        sasktran2::WavelengthBlockDual<NSTOKES>& block_source) const {
+        sasktran2::WavelengthBlockLaneDualView<NSTOKES> source(block_source, 0);
         source.value += m_radiances[threadidx][losidx].value;
         source.deriv += m_radiances[threadidx][losidx].deriv;
     }
