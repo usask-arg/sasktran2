@@ -7,7 +7,7 @@ namespace sasktran2::detail {
               typename DerivativeCollection,
               typename SurfaceDerivativeCollection>
     void assign_mapped_block(
-        const sasktran2::WavelengthBlock& block,
+        const sasktran2::WavelengthBlock<>& block,
         const sasktran2::WavelengthBlockDual<NSTOKES>& radiance, int losidx,
         int nlos, int ngeometry, double stokes_c, double stokes_s,
         bool include_emission_derivatives,

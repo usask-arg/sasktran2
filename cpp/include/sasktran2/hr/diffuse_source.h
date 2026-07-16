@@ -190,7 +190,7 @@ namespace sasktran2::hr {
          *
          * @param wavelidx Index of the wavelength being calculated
          */
-        void calculate(const sasktran2::WavelengthBlock& block,
+        void calculate(const sasktran2::WavelengthBlock<>& block,
                        int threadidx) override;
 
         /** Calculates the integrated source term for a given layer.
@@ -203,7 +203,7 @@ namespace sasktran2::hr {
          * @param source The returned source term
          */
         void integrated_source(
-            const sasktran2::WavelengthBlock& block, int losidx, int layeridx,
+            const sasktran2::WavelengthBlock<>& block, int losidx, int layeridx,
             int wavel_threadidx, int threadidx,
             const sasktran2::raytracing::TracedLayer& layer,
             const sasktran2::raytracing::GridWeightStencilView&
@@ -226,7 +226,7 @@ namespace sasktran2::hr {
          * @param source The returned source term
          */
         void end_of_ray_source(
-            const sasktran2::WavelengthBlock& block, int losidx,
+            const sasktran2::WavelengthBlock<>& block, int losidx,
             int wavel_threadidx, int threadidx,
             sasktran2::WavelengthBlockDual<NSTOKES>& source) const override;
 
@@ -240,7 +240,7 @@ namespace sasktran2::hr {
          * @param source
          */
         void start_of_ray_source(
-            const sasktran2::WavelengthBlock&, int, int, int,
+            const sasktran2::WavelengthBlock<>&, int, int, int,
             sasktran2::WavelengthBlockDual<NSTOKES>&) const override {}
     };
 } // namespace sasktran2::hr

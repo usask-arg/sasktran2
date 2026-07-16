@@ -78,7 +78,7 @@ namespace sasktran2 {
          * @param threadidx The source-integration thread index
          */
         virtual void
-        assign(const sasktran2::WavelengthBlock& block,
+        assign(const sasktran2::WavelengthBlock<>& block,
                const sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
                int losidx, int threadidx) = 0;
 
@@ -133,7 +133,7 @@ namespace sasktran2 {
       public:
         OutputIdealDense(){};
 
-        void assign(const sasktran2::WavelengthBlock& block,
+        void assign(const sasktran2::WavelengthBlock<>& block,
                     const sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
                     int losidx, int threadidx) override;
 
@@ -172,7 +172,7 @@ namespace sasktran2 {
       public:
         OutputDerivMapped(){};
 
-        void assign(const sasktran2::WavelengthBlock& block,
+        void assign(const sasktran2::WavelengthBlock<>& block,
                     const sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
                     int losidx, int threadidx) override;
 
@@ -286,7 +286,7 @@ namespace sasktran2 {
                                                   derivative_mapping.cols());
         }
 
-        void assign(const sasktran2::WavelengthBlock& block,
+        void assign(const sasktran2::WavelengthBlock<>& block,
                     const sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
                     int losidx, int threadidx) override;
 

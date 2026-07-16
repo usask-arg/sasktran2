@@ -23,7 +23,7 @@ namespace sasktran2 {
 
     template <int NSTOKES, int CNSTR>
     void DOSourceInterpolatedPostProcessing<NSTOKES, CNSTR>::calculate(
-        const sasktran2::WavelengthBlock& block, int threadidx) {
+        const sasktran2::WavelengthBlock<>& block, int threadidx) {
         DOSource<NSTOKES, CNSTR>::calculate(block, threadidx);
     }
 
@@ -94,7 +94,7 @@ namespace sasktran2 {
 
     template <int NSTOKES, int CNSTR>
     void DOSourceInterpolatedPostProcessing<NSTOKES, CNSTR>::integrated_source(
-        const sasktran2::WavelengthBlock& block, int losidx, int layeridx,
+        const sasktran2::WavelengthBlock<>& block, int losidx, int layeridx,
         int wavel_threadidx, int ray_threadidx,
         const sasktran2::raytracing::TracedLayer& layer,
         const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
@@ -175,7 +175,7 @@ namespace sasktran2 {
 
     template <int NSTOKES, int CNSTR>
     void DOSourceInterpolatedPostProcessing<NSTOKES, CNSTR>::end_of_ray_source(
-        const sasktran2::WavelengthBlock&, int losidx, int wavel_threadidx,
+        const sasktran2::WavelengthBlock<>&, int losidx, int wavel_threadidx,
         int threadidx,
         sasktran2::WavelengthBlockDual<NSTOKES>& block_source) const {
         sasktran2::WavelengthBlockLaneDualView<NSTOKES> source(block_source, 0);

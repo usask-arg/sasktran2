@@ -884,7 +884,7 @@ namespace sasktran2::hr {
 
     template <int NSTOKES>
     void
-    DiffuseTable<NSTOKES>::calculate(const sasktran2::WavelengthBlock& block,
+    DiffuseTable<NSTOKES>::calculate(const sasktran2::WavelengthBlock<>& block,
                                      int threadidx) {
         const int wavelidx = block.start;
         for (auto& source : m_initial_owned_sources) {
@@ -963,7 +963,7 @@ namespace sasktran2::hr {
 
     template <int NSTOKES>
     void DiffuseTable<NSTOKES>::integrated_source(
-        const sasktran2::WavelengthBlock& block, int losidx, int layeridx,
+        const sasktran2::WavelengthBlock<>& block, int losidx, int layeridx,
         int wavel_threadidx, int threadidx,
         const sasktran2::raytracing::TracedLayer& layer,
         const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
@@ -1032,7 +1032,7 @@ namespace sasktran2::hr {
 
     template <int NSTOKES>
     void DiffuseTable<NSTOKES>::end_of_ray_source(
-        const sasktran2::WavelengthBlock& block, int losidx,
+        const sasktran2::WavelengthBlock<>& block, int losidx,
         int wavel_threadidx, int threadidx,
         sasktran2::WavelengthBlockDual<NSTOKES>& block_source) const {
         sasktran2::WavelengthBlockLaneDualView<NSTOKES> source(block_source, 0);

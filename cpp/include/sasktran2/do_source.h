@@ -319,11 +319,11 @@ namespace sasktran2 {
          * @param wavelidx
          * @param threadidx
          */
-        void calculate(const sasktran2::WavelengthBlock& block,
+        void calculate(const sasktran2::WavelengthBlock<>& block,
                        int threadidx) override;
 
         void end_of_ray_source(
-            const sasktran2::WavelengthBlock& block, int losidx,
+            const sasktran2::WavelengthBlock<>& block, int losidx,
             int wavel_threadidx, int threadidx,
             sasktran2::WavelengthBlockDual<NSTOKES>& source) const override;
     };
@@ -360,7 +360,7 @@ namespace sasktran2 {
             const sasktran2::raytracing::RayTracerBase& raytracer,
             bool will_integrate_sources = true);
 
-        void calculate(const sasktran2::WavelengthBlock& block,
+        void calculate(const sasktran2::WavelengthBlock<>& block,
                        int threadidx) override;
         virtual void initialize_geometry(
             const sasktran2::viewinggeometry::InternalViewingGeometry&
@@ -372,7 +372,7 @@ namespace sasktran2 {
         initialize_config(const sasktran2::Config& config) override;
 
         void integrated_source(
-            const sasktran2::WavelengthBlock& block, int losidx, int layeridx,
+            const sasktran2::WavelengthBlock<>& block, int losidx, int layeridx,
             int wavel_threadidx, int threadidx,
             const sasktran2::raytracing::TracedLayer& layer,
             const sasktran2::raytracing::GridWeightStencilView&
@@ -395,11 +395,11 @@ namespace sasktran2 {
          * @param source
          */
         void start_of_ray_source(
-            const sasktran2::WavelengthBlock&, int, int, int,
+            const sasktran2::WavelengthBlock<>&, int, int, int,
             sasktran2::WavelengthBlockDual<NSTOKES>&) const override {}
 
         void end_of_ray_source(
-            const sasktran2::WavelengthBlock& block, int losidx,
+            const sasktran2::WavelengthBlock<>& block, int losidx,
             int wavel_threadidx, int threadidx,
             sasktran2::WavelengthBlockDual<NSTOKES>& source) const override;
 
@@ -455,7 +455,7 @@ namespace sasktran2 {
         DOSourcePlaneParallelPostProcessing(
             const sasktran2::Geometry1D& geometry);
 
-        void calculate(const sasktran2::WavelengthBlock& block,
+        void calculate(const sasktran2::WavelengthBlock<>& block,
                        int threadidx) override;
 
         virtual void initialize_geometry(
@@ -468,7 +468,7 @@ namespace sasktran2 {
         initialize_config(const sasktran2::Config& config) override;
 
         void integrated_source(
-            const sasktran2::WavelengthBlock&, int, int, int, int,
+            const sasktran2::WavelengthBlock<>&, int, int, int, int,
             const sasktran2::raytracing::TracedLayer&,
             const sasktran2::raytracing::GridWeightStencilView&,
             const sasktran2::raytracing::GridWeightStencilView&,
@@ -480,7 +480,7 @@ namespace sasktran2 {
             const override {}
 
         void end_of_ray_source(
-            const sasktran2::WavelengthBlock&, int, int, int,
+            const sasktran2::WavelengthBlock<>&, int, int, int,
             sasktran2::WavelengthBlockDual<NSTOKES>&) const override {}
 
         /**
@@ -493,7 +493,7 @@ namespace sasktran2 {
          * @param source
          */
         void start_of_ray_source(
-            const sasktran2::WavelengthBlock& block, int losidx,
+            const sasktran2::WavelengthBlock<>& block, int losidx,
             int wavel_threadidx, int threadidx,
             sasktran2::WavelengthBlockDual<NSTOKES>& source) const override;
 

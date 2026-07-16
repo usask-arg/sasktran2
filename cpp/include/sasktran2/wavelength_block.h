@@ -4,14 +4,96 @@
 #include <sasktran2/internal_common.h>
 
 namespace sasktran2 {
-    /** A contiguous range of wavelengths processed together. */
-    struct WavelengthBlock {
+    /** A contiguous range of wavelengths processed together.
+     *
+     * A fixed N lets hot kernels expose their width to Eigen and the compiler.
+     * Eigen::Dynamic is the type-erased form used at virtual/API boundaries.
+     */
+    template <int N = Eigen::Dynamic> struct WavelengthBlock {
+        static_assert(N == Eigen::Dynamic || N > 0,
+                      "Wavelength block size must be positive or dynamic");
+
+        static constexpr int static_size = N;
+
         int start = 0;
-        int count = 0;
+        int count = N == Eigen::Dynamic ? 0 : N;
+
+        WavelengthBlock() = default;
+
+        WavelengthBlock(int block_start, int block_count)
+            : start(block_start), count(block_count) {
+            if constexpr (N != Eigen::Dynamic) {
+                if (block_count != N) {
+                    throw std::invalid_argument(
+                        "Runtime wavelength block size does not match its "
+                        "static size");
+                }
+            }
+        }
+
+        template <int M,
+                  std::enable_if_t<N == Eigen::Dynamic && M != Eigen::Dynamic,
+                                   int> = 0>
+        WavelengthBlock(const WavelengthBlock<M>& other)
+            : start(other.start), count(other.count) {}
 
         int end() const { return start + count; }
         int wavelength(int lane) const { return start + lane; }
+
+        WavelengthBlock<> dynamic() const { return {start, count}; }
     };
+
+    /** Dispatches supported fixed widths and preserves an arbitrary-width
+     * dynamic fallback. Dispatch is based on the active count, so tails also
+     * use fixed-width kernels when possible. */
+    template <typename Function>
+    decltype(auto) dispatch_wavelength_block(const WavelengthBlock<>& block,
+                                             Function&& function) {
+        switch (block.count) {
+        case 1:
+            return std::forward<Function>(function)(
+                WavelengthBlock<1>{block.start, block.count});
+        case 4:
+            return std::forward<Function>(function)(
+                WavelengthBlock<4>{block.start, block.count});
+        // Larger fixed Eigen expressions increased register pressure in the
+        // single-scatter derivative kernels. Keep them on the dynamic path;
+        // fixed 1- and 4-wide tails still avoid scalar redispatch overhead.
+        default:
+            return std::forward<Function>(function)(block);
+        }
+    }
+
+    template <int N, typename Derived>
+    auto wavelength_head(Derived&& vector, const WavelengthBlock<N>& block) {
+        if constexpr (N == Eigen::Dynamic) {
+            return std::forward<Derived>(vector).head(block.count);
+        } else {
+            return std::forward<Derived>(vector).template head<N>();
+        }
+    }
+
+    template <int N, typename Derived>
+    auto wavelength_left_cols(Derived&& matrix,
+                              const WavelengthBlock<N>& block) {
+        if constexpr (N == Eigen::Dynamic) {
+            return std::forward<Derived>(matrix).leftCols(block.count);
+        } else {
+            return std::forward<Derived>(matrix).template leftCols<N>();
+        }
+    }
+
+    template <int N, typename Derived>
+    auto wavelength_middle_cols(Derived&& matrix,
+                                const WavelengthBlock<N>& block) {
+        if constexpr (N == Eigen::Dynamic) {
+            return std::forward<Derived>(matrix).middleCols(block.start,
+                                                            block.count);
+        } else {
+            return std::forward<Derived>(matrix).template middleCols<N>(
+                block.start);
+        }
+    }
 
     template <int NSTOKES> class WavelengthBlockDual {
       public:
@@ -44,12 +126,40 @@ namespace sasktran2 {
             deriv.leftCols(count).setZero();
         }
 
+        template <int N> void set_zero(const WavelengthBlock<N>& block) {
+            wavelength_left_cols(value, block).setZero();
+            wavelength_left_cols(deriv, block).setZero();
+        }
+
         auto derivative(int derivative_index, int count) {
             return deriv.block(derivative_index * NSTOKES, 0, NSTOKES, count);
         }
 
         auto derivative(int derivative_index, int count) const {
             return deriv.block(derivative_index * NSTOKES, 0, NSTOKES, count);
+        }
+
+        template <int N>
+        auto derivative(int derivative_index, const WavelengthBlock<N>& block) {
+            if constexpr (N == Eigen::Dynamic) {
+                return deriv.block(derivative_index * NSTOKES, 0, NSTOKES,
+                                   block.count);
+            } else {
+                return deriv.template block<NSTOKES, N>(
+                    derivative_index * NSTOKES, 0);
+            }
+        }
+
+        template <int N>
+        auto derivative(int derivative_index,
+                        const WavelengthBlock<N>& block) const {
+            if constexpr (N == Eigen::Dynamic) {
+                return deriv.block(derivative_index * NSTOKES, 0, NSTOKES,
+                                   block.count);
+            } else {
+                return deriv.template block<NSTOKES, N>(
+                    derivative_index * NSTOKES, 0);
+            }
         }
 
         auto derivative_range(int derivative_start, int derivative_count,
@@ -62,6 +172,32 @@ namespace sasktran2 {
                               int wavelength_count) const {
             return deriv.block(derivative_start * NSTOKES, 0,
                                derivative_count * NSTOKES, wavelength_count);
+        }
+
+        template <int N>
+        auto derivative_range(int derivative_start, int derivative_count,
+                              const WavelengthBlock<N>& block) {
+            if constexpr (N == Eigen::Dynamic) {
+                return deriv.block(derivative_start * NSTOKES, 0,
+                                   derivative_count * NSTOKES, block.count);
+            } else {
+                return deriv.template block<Eigen::Dynamic, N>(
+                    derivative_start * NSTOKES, 0, derivative_count * NSTOKES,
+                    N);
+            }
+        }
+
+        template <int N>
+        auto derivative_range(int derivative_start, int derivative_count,
+                              const WavelengthBlock<N>& block) const {
+            if constexpr (N == Eigen::Dynamic) {
+                return deriv.block(derivative_start * NSTOKES, 0,
+                                   derivative_count * NSTOKES, block.count);
+            } else {
+                return deriv.template block<Eigen::Dynamic, N>(
+                    derivative_start * NSTOKES, 0, derivative_count * NSTOKES,
+                    N);
+            }
         }
 
         using ConstDerivativeStokesMap =
@@ -90,10 +226,29 @@ namespace sasktran2 {
     };
 
     /** Mutable Dual-like view of one lane in wavelength-block storage. */
-    template <int NSTOKES> class WavelengthBlockLaneDualView {
+    template <int NSTOKES, int BlockCapacity = Eigen::Dynamic>
+    class WavelengthBlockLaneDualView {
       private:
-        using ValueStride = Eigen::InnerStride<Eigen::Dynamic>;
-        using DerivativeStride = Eigen::Stride<Eigen::Dynamic, Eigen::Dynamic>;
+        static_assert(BlockCapacity == Eigen::Dynamic || BlockCapacity > 0,
+                      "Block capacity must be positive or dynamic");
+        static constexpr int DerivativeOuterStride =
+            BlockCapacity == Eigen::Dynamic ? Eigen::Dynamic
+                                            : NSTOKES * BlockCapacity;
+        using ValueStride = Eigen::InnerStride<BlockCapacity>;
+        using DerivativeStride =
+            Eigen::Stride<DerivativeOuterStride, BlockCapacity>;
+
+        static double* value_data(WavelengthBlockDual<NSTOKES>& block,
+                                  int lane) {
+            if constexpr (BlockCapacity != Eigen::Dynamic) {
+                if (block.block_capacity() != BlockCapacity) {
+                    throw std::invalid_argument(
+                        "Wavelength block storage capacity does not match "
+                        "its static lane view");
+                }
+            }
+            return block.value.data() + lane;
+        }
 
         static double* derivative_data(WavelengthBlockDual<NSTOKES>& block,
                                        int lane) {
@@ -111,7 +266,7 @@ namespace sasktran2 {
 
         WavelengthBlockLaneDualView(WavelengthBlockDual<NSTOKES>& block,
                                     int lane)
-            : value(block.value.data() + lane, NSTOKES,
+            : value(value_data(block, lane), NSTOKES,
                     ValueStride(block.block_capacity())),
               deriv(derivative_data(block, lane), NSTOKES,
                     block.derivative_size(),

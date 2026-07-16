@@ -473,6 +473,8 @@ void Sasktran2<NSTOKES>::calculate_radiance(
 
     const int wavelength_batch_size =
         effective_wavelength_batch_size(atmosphere.num_wavel());
+    m_source_integrator->initialize_thread_storage(m_config.num_threads(),
+                                                   wavelength_batch_size);
 
     // Initialize each source term with the atmosphere
     for (auto& source : m_source_terms) {
@@ -490,9 +492,6 @@ void Sasktran2<NSTOKES>::calculate_radiance(
         thread_radiance.resize(wavelength_batch_size, atmosphere.num_deriv(),
                                false);
     }
-    m_source_integrator->initialize_thread_storage(m_config.num_threads(),
-                                                   wavelength_batch_size);
-
     auto& flux = const_cast<std::vector<
         sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>>&>(
         m_thread_flux);
@@ -527,7 +526,7 @@ void Sasktran2<NSTOKES>::calculate_radiance(
         const int thread_idx = 0;
 #endif
         const int start = block_index * wavelength_batch_size;
-        const sasktran2::WavelengthBlock block{
+        const sasktran2::WavelengthBlock<> block{
             start,
             std::min(wavelength_batch_size, atmosphere.num_wavel() - start)};
         calculate_radiance_block_thread(output, block, thread_idx);
@@ -562,8 +561,8 @@ int Sasktran2<NSTOKES>::effective_wavelength_batch_size(
 
 template <int NSTOKES>
 void Sasktran2<NSTOKES>::calculate_radiance_block_thread(
-    sasktran2::Output<NSTOKES>& output, const sasktran2::WavelengthBlock& batch,
-    int thread_idx) const {
+    sasktran2::Output<NSTOKES>& output,
+    const sasktran2::WavelengthBlock<>& batch, int thread_idx) const {
     if (thread_idx < 0 || thread_idx >= m_thread_radiance.size() ||
         batch.count < 1 ||
         batch.count > m_thread_radiance[thread_idx].block_capacity()) {

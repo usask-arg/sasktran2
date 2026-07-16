@@ -18,7 +18,7 @@ namespace sasktran2 {
 
     template <int NSTOKES, int CNSTR>
     void DOSourcePlaneParallelPostProcessing<NSTOKES, CNSTR>::calculate(
-        const sasktran2::WavelengthBlock& block, int threadidx) {
+        const sasktran2::WavelengthBlock<>& block, int threadidx) {
         const int wavelidx = block.start;
         bool include_single_scatter =
             m_config->single_scatter_source() ==
@@ -713,7 +713,7 @@ namespace sasktran2 {
     template <int NSTOKES, int CNSTR>
     void
     DOSourcePlaneParallelPostProcessing<NSTOKES, CNSTR>::start_of_ray_source(
-        const sasktran2::WavelengthBlock&, int losidx, int wavel_threadidx,
+        const sasktran2::WavelengthBlock<>&, int losidx, int wavel_threadidx,
         int threadidx,
         sasktran2::WavelengthBlockDual<NSTOKES>& block_source) const {
         sasktran2::WavelengthBlockLaneDualView<NSTOKES> source(block_source, 0);

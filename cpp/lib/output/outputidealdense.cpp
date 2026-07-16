@@ -52,7 +52,7 @@ namespace sasktran2 {
 
     template <int NSTOKES>
     void OutputIdealDense<NSTOKES>::assign(
-        const sasktran2::WavelengthBlock& block,
+        const sasktran2::WavelengthBlock<>& block,
         const sasktran2::WavelengthBlockDual<NSTOKES>& radiance, int losidx,
         int) {
         if (block.count == 1) {

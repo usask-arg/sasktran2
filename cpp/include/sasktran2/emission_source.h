@@ -21,7 +21,7 @@ namespace sasktran2::emission {
             return std::numeric_limits<int>::max();
         }
 
-        void calculate(const sasktran2::WavelengthBlock&, int) override {}
+        void calculate(const sasktran2::WavelengthBlock<>&, int) override {}
         /** Here the emission source term saves the los_rays, which are
          * needed to detect ground hits and whether to include
          * surface emissions at the end of the ray.
@@ -50,7 +50,7 @@ namespace sasktran2::emission {
          * @param source The returned source term
          */
         void integrated_source(
-            const sasktran2::WavelengthBlock& block, int losidx, int layeridx,
+            const sasktran2::WavelengthBlock<>& block, int losidx, int layeridx,
             int wavel_threadidx, int threadidx,
             const sasktran2::raytracing::TracedLayer& layer,
             const sasktran2::raytracing::GridWeightStencilView&
@@ -77,7 +77,7 @@ namespace sasktran2::emission {
          * @param source The returned source term
          */
         void end_of_ray_source(
-            const sasktran2::WavelengthBlock& block, int losidx,
+            const sasktran2::WavelengthBlock<>& block, int losidx,
             int wavel_threadidx, int threadidx,
             sasktran2::WavelengthBlockDual<NSTOKES>& source) const override;
 
@@ -102,7 +102,7 @@ namespace sasktran2::emission {
          * @param source
          */
         void start_of_ray_source(
-            const sasktran2::WavelengthBlock&, int, int, int,
+            const sasktran2::WavelengthBlock<>&, int, int, int,
             sasktran2::WavelengthBlockDual<NSTOKES>&) const override {}
     };
 

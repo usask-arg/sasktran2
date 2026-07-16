@@ -97,8 +97,8 @@ namespace {
     class InteriorTestSource : public SourceTermInterface<1> {
       public:
         void
-        integrated_source(const sasktran2::WavelengthBlock&, int, int, int, int,
-                          const sasktran2::raytracing::TracedLayer&,
+        integrated_source(const sasktran2::WavelengthBlock<>&, int, int, int,
+                          int, const sasktran2::raytracing::TracedLayer&,
                           const sasktran2::raytracing::GridWeightStencilView&,
                           const sasktran2::raytracing::GridWeightStencilView&,
                           const sasktran2::WavelengthBlockODView&,
@@ -108,11 +108,11 @@ namespace {
         bool supports_geometry_dimension(int) const override { return false; }
 
         void
-        end_of_ray_source(const sasktran2::WavelengthBlock&, int, int, int,
+        end_of_ray_source(const sasktran2::WavelengthBlock<>&, int, int, int,
                           sasktran2::WavelengthBlockDual<1>&) const override {}
 
         void
-        start_of_ray_source(const sasktran2::WavelengthBlock&, int, int, int,
+        start_of_ray_source(const sasktran2::WavelengthBlock<>&, int, int, int,
                             sasktran2::WavelengthBlockDual<1>&) const override {
         }
     };
@@ -125,7 +125,7 @@ namespace {
                      const std::vector<SourceTermInterface<NSTOKES>*>& sources,
                      int wavelength, int ray_index, int wavelength_thread_index,
                      int thread_index) {
-        const sasktran2::WavelengthBlock block{wavelength, 1};
+        const sasktran2::WavelengthBlock<> block{wavelength, 1};
         sasktran2::WavelengthBlockDual<NSTOKES> block_radiance;
         block_radiance.resize(1, radiance.deriv.cols(), true);
         integrator.integrate(block_radiance, sources, block, ray_index,
@@ -279,7 +279,7 @@ TEST_CASE("OccultationSource blocks ground-terminated 1D and 2D rays",
     sasktran2::WavelengthBlockDual<1> ground;
     space.resize(1, 0, true);
     ground.resize(1, 0, true);
-    const sasktran2::WavelengthBlock block{0, 1};
+    const sasktran2::WavelengthBlock<> block{0, 1};
     source.end_of_ray_source(block, 0, 0, 0, space);
     source.end_of_ray_source(block, 1, 0, 0, ground);
     REQUIRE(space.value(0, 0) == 1.0);

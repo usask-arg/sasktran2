@@ -36,7 +36,7 @@ namespace sasktran2::emission {
 
     template <int NSTOKES, Config::EmissionSource EMISSION_SOURCE_TYPE>
     void EmissionSource<NSTOKES, EMISSION_SOURCE_TYPE>::integrated_source(
-        const sasktran2::WavelengthBlock& batch, int losidx, int layeridx,
+        const sasktran2::WavelengthBlock<>& batch, int losidx, int layeridx,
         int wavel_threadidx, int threadidx,
         const sasktran2::raytracing::TracedLayer& layer,
         const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
@@ -155,7 +155,7 @@ namespace sasktran2::emission {
 
     template <int NSTOKES, Config::EmissionSource EMISSION_SOURCE_TYPE>
     void EmissionSource<NSTOKES, EMISSION_SOURCE_TYPE>::end_of_ray_source(
-        const sasktran2::WavelengthBlock& batch, int losidx,
+        const sasktran2::WavelengthBlock<>& batch, int losidx,
         int wavel_threadidx, int threadidx,
         sasktran2::WavelengthBlockDual<NSTOKES>& source) const {
         if (!m_ground_is_hit.at(losidx)) {

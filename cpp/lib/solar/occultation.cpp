@@ -26,7 +26,7 @@ namespace sasktran2::solartransmission {
 
     template <int NSTOKES>
     void OccultationSource<NSTOKES>::end_of_ray_source(
-        const sasktran2::WavelengthBlock& batch, int losidx,
+        const sasktran2::WavelengthBlock<>& batch, int losidx,
         int wavel_threadidx, int threadidx,
         sasktran2::WavelengthBlockDual<NSTOKES>& source) const {
         if (m_ground_is_hit.at(losidx)) {

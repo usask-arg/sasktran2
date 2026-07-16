@@ -131,7 +131,7 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
         }
     };
 
-    void calculate(const sasktran2::WavelengthBlock& block,
+    void calculate(const sasktran2::WavelengthBlock<>& block,
                    int threadidx) override {
         const int wavelidx = block.start;
         ZoneScopedN("Twostream Calculate");
@@ -150,7 +150,7 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
     };
 
     void integrated_source(
-        const sasktran2::WavelengthBlock&, int, int, int, int,
+        const sasktran2::WavelengthBlock<>&, int, int, int, int,
         const sasktran2::raytracing::TracedLayer&,
         const sasktran2::raytracing::GridWeightStencilView&,
         const sasktran2::raytracing::GridWeightStencilView&,
@@ -161,7 +161,7 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
         const override {}
 
     void
-    end_of_ray_source(const sasktran2::WavelengthBlock&, int, int, int,
+    end_of_ray_source(const sasktran2::WavelengthBlock<>&, int, int, int,
                       sasktran2::WavelengthBlockDual<NSTOKES>&) const override {
     }
 
@@ -182,7 +182,7 @@ class TwoStreamSource : public SourceTermInterface<NSTOKES> {
      * @param source
      */
     void start_of_ray_source(
-        const sasktran2::WavelengthBlock&, int losidx, int wavel_threadidx,
+        const sasktran2::WavelengthBlock<>&, int losidx, int wavel_threadidx,
         int threadidx,
         sasktran2::WavelengthBlockDual<NSTOKES>& block_source) const override {
         sasktran2::WavelengthBlockLaneDualView<NSTOKES> source(block_source, 0);

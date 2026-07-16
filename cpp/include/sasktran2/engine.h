@@ -143,6 +143,6 @@ template <int NSTOKES> class Sasktran2 : public Sasktran2Interface {
 
     void
     calculate_radiance_block_thread(sasktran2::Output<NSTOKES>& output,
-                                    const sasktran2::WavelengthBlock& batch,
+                                    const sasktran2::WavelengthBlock<>& batch,
                                     int thread_idx) const;
 };

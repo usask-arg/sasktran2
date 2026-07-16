@@ -238,7 +238,7 @@ namespace sasktran2 {
 
     template <int NSTOKES>
     void OutputC<NSTOKES>::assign(
-        const sasktran2::WavelengthBlock& block,
+        const sasktran2::WavelengthBlock<>& block,
         const sasktran2::WavelengthBlockDual<NSTOKES>& radiance, int losidx,
         int threadidx) {
         if (block.count == 1) {

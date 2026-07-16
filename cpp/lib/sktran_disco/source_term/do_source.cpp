@@ -15,9 +15,8 @@ namespace sasktran2 {
     }
 
     template <int NSTOKES, int CNSTR>
-    void
-    DOSource<NSTOKES, CNSTR>::calculate(const sasktran2::WavelengthBlock& block,
-                                        int threadidx) {
+    void DOSource<NSTOKES, CNSTR>::calculate(
+        const sasktran2::WavelengthBlock<>& block, int threadidx) {
         const int wavelidx = block.start;
         for (int i = 0; i < m_thread_storage[threadidx].boundary_sources.size();
              ++i) {
@@ -187,7 +186,7 @@ namespace sasktran2 {
 
     template <int NSTOKES, int CNSTR>
     void DOSource<NSTOKES, CNSTR>::end_of_ray_source(
-        const sasktran2::WavelengthBlock&, int, int, int,
+        const sasktran2::WavelengthBlock<>&, int, int, int,
         sasktran2::WavelengthBlockDual<NSTOKES>&) const {
         // Postprocessing for ground source
     }
