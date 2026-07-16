@@ -16,8 +16,9 @@ namespace sasktran2 {
       public:
         using ValueStorage =
             Eigen::Matrix<double, NSTOKES, Eigen::Dynamic, Eigen::RowMajor>;
-        using DerivativeStorage = Eigen::Matrix<double, Eigen::Dynamic,
-                                                Eigen::Dynamic, Eigen::RowMajor>;
+        using DerivativeStorage =
+            Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic,
+                          Eigen::RowMajor>;
 
         ValueStorage value;
         DerivativeStorage deriv;
@@ -62,13 +63,12 @@ namespace sasktran2 {
                                derivative_count * NSTOKES, wavelength_count);
         }
 
-        void copy_lane_to(
-            int lane,
-            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                target) const {
+        void copy_lane_to(int lane,
+                          sasktran2::Dual<double, sasktran2::dualstorage::dense,
+                                          NSTOKES>& target) const {
             target.value = value.col(lane);
-            for (int derivative_index = 0;
-                 derivative_index < m_num_derivatives; ++derivative_index) {
+            for (int derivative_index = 0; derivative_index < m_num_derivatives;
+                 ++derivative_index) {
                 target.deriv.col(derivative_index) =
                     derivative(derivative_index, m_batch_capacity).col(lane);
             }
