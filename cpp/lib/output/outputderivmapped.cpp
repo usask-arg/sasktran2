@@ -1,14 +1,16 @@
 #include <sasktran2/output.h>
+#include "outputblock.h"
 
 namespace sasktran2 {
     template <int NSTOKES> void OutputDerivMapped<NSTOKES>::resize() {
         m_radiance.resize(NSTOKES * this->m_nwavel * this->m_nlos, 0, false);
 
-        int i = 0;
+        int max_output = 1;
         for (auto& [name, deriv] :
              this->m_atmosphere->storage().derivative_mappings_const()) {
             m_derivatives[name].resize(NSTOKES * this->m_nwavel * this->m_nlos,
                                        deriv.num_output());
+            max_output = std::max(max_output, deriv.num_output());
         }
 
         for (auto& [name, deriv] :
@@ -17,9 +19,16 @@ namespace sasktran2 {
                 NSTOKES * this->m_nwavel * this->m_nlos, 1);
         }
 
+        const int block_capacity =
+            std::max(1, std::min(this->m_config->wavelength_batch_size(),
+                                 this->m_nwavel));
         m_native_thread_storage.resize(this->m_config->num_threads());
-        for (auto& storage : m_native_thread_storage) {
-            storage.resize(NSTOKES, this->m_ngeometry);
+        m_mapped_thread_storage.resize(this->m_config->num_threads());
+        for (int thread = 0; thread < this->m_config->num_threads(); ++thread) {
+            m_native_thread_storage[thread].resize(NSTOKES * block_capacity,
+                                                   this->m_ngeometry);
+            m_mapped_thread_storage[thread].resize(NSTOKES * block_capacity,
+                                                   max_output);
         }
     }
 
@@ -224,12 +233,18 @@ namespace sasktran2 {
         const sasktran2::WavelengthBlock& block,
         const sasktran2::WavelengthBlockDual<NSTOKES>& radiance, int losidx,
         int threadidx) {
-        for (int lane = 0; lane < block.count; ++lane) {
-            const sasktran2::WavelengthBlockConstLaneDualView<NSTOKES>
-                radiance_lane(radiance, lane);
-            assign_lane(radiance_lane, losidx, block.wavelength(lane),
-                        threadidx);
+        double stokes_c = 1.0;
+        double stokes_s = 0.0;
+        if constexpr (NSTOKES >= 3) {
+            stokes_c = this->m_stokes_C[losidx];
+            stokes_s = this->m_stokes_S[losidx];
         }
+        detail::assign_mapped_block(block, radiance, losidx, this->m_nlos,
+                                    this->m_ngeometry, stokes_c, stokes_s, true,
+                                    *this->m_atmosphere, m_radiance.value,
+                                    m_derivatives, m_surface_derivatives,
+                                    m_native_thread_storage[threadidx],
+                                    m_mapped_thread_storage[threadidx]);
     }
 
     template class OutputDerivMapped<1>;

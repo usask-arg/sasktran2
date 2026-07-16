@@ -162,6 +162,7 @@ def test_actinic_flux_output():
     config.flux_types = [sk.FluxType.Actinic]
     config.num_streams = 4
     config.num_forced_azimuth = 1
+    config.wavelength_batch_size = 4
 
     model_geometry = sk.Geometry1D(
         cos_sza=0.6,

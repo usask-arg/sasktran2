@@ -161,6 +161,7 @@ namespace sasktran2 {
         std::map<std::string, Eigen::MatrixXd> m_derivatives;
         std::map<std::string, Eigen::MatrixXd> m_surface_derivatives;
         std::vector<Eigen::MatrixXd> m_native_thread_storage;
+        std::vector<Eigen::MatrixXd> m_mapped_thread_storage;
 
         void resize();
 
@@ -215,6 +216,7 @@ namespace sasktran2 {
         std::map<std::string, Eigen::Map<Eigen::MatrixXd>>
             m_flux_surface_derivatives;
         std::vector<Eigen::MatrixXd> m_native_thread_storage;
+        std::vector<Eigen::MatrixXd> m_mapped_thread_storage;
 
         void resize();
 

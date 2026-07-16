@@ -52,6 +52,7 @@ namespace sasktran2 {
         std::vector<RowMajorMatrix>
             m_shell_od; /**< Optical depth for every ray, layer, and
                            wavelength. */
+        mutable std::vector<Eigen::RowVectorXd> m_thread_attenuation{1};
         const std::vector<sasktran2::raytracing::TracedRay>* m_traced_rays =
             nullptr; /**< Reference to the rays we are integrating */
 
@@ -107,6 +108,14 @@ namespace sasktran2 {
          */
         void initialize_atmosphere(
             const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmo);
+
+        /** Allocates reusable wavelength-block scratch for engine threads. */
+        void initialize_thread_storage(int num_threads, int block_capacity) {
+            m_thread_attenuation.resize(num_threads);
+            for (auto& attenuation : m_thread_attenuation) {
+                attenuation.resize(block_capacity);
+            }
+        }
 
         /** Precomputes the cumulative derivative columns that can be nonzero
          * before each layer attenuation. This is enabled only when every

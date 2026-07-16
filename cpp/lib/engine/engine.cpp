@@ -490,6 +490,8 @@ void Sasktran2<NSTOKES>::calculate_radiance(
         thread_radiance.resize(wavelength_batch_size, atmosphere.num_deriv(),
                                false);
     }
+    m_source_integrator->initialize_thread_storage(m_config.num_threads(),
+                                                   wavelength_batch_size);
 
     auto& flux = const_cast<std::vector<
         sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>>&>(
@@ -535,18 +537,25 @@ void Sasktran2<NSTOKES>::calculate_radiance(
 template <int NSTOKES>
 int Sasktran2<NSTOKES>::effective_wavelength_batch_size(
     int num_wavelengths) const {
-    const int block_size = std::max(
+    const int requested_block_size = std::max(
         1, std::min(m_config.wavelength_batch_size(), num_wavelengths));
-    if (block_size > 1 && !m_internal_viewing_geometry.flux_observers.empty()) {
-        throw std::invalid_argument(
-            "Wavelength batching is not supported with flux observers");
+    int block_size = requested_block_size;
+    if (!m_internal_viewing_geometry.flux_observers.empty()) {
+        block_size = 1;
     }
     for (const auto& source : m_source_terms) {
-        if (source->maximum_wavelength_block_size() < block_size) {
-            throw std::invalid_argument(
-                "Configured wavelength batch size is not supported by all "
-                "active sources");
+        const int source_block_size = source->maximum_wavelength_block_size();
+        if (source_block_size < 1) {
+            throw std::logic_error(
+                "Source reported an invalid maximum wavelength block size");
         }
+        block_size = std::min(block_size, source_block_size);
+    }
+    if (block_size < requested_block_size) {
+        spdlog::debug(
+            "Reducing wavelength batch size from {} to {} for active sources "
+            "and observers",
+            requested_block_size, block_size);
     }
     return block_size;
 }

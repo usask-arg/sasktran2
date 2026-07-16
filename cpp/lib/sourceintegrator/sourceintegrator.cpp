@@ -195,7 +195,15 @@ namespace sasktran2 {
         const Eigen::SparseMatrix<double, Eigen::RowMajor>& od_matrix,
         const RowMajorMatrix& shell_od, const sasktran2::WavelengthBlock& batch,
         int rayidx, int wavel_threadidx, int threadidx) const {
-        Eigen::RowVectorXd attenuation(batch.count);
+        if (threadidx < 0 || threadidx >= m_thread_attenuation.size()) {
+            throw std::invalid_argument(
+                "Source-integrator thread scratch is not initialized");
+        }
+        auto& attenuation_storage = m_thread_attenuation[threadidx];
+        if (attenuation_storage.size() < batch.count) {
+            attenuation_storage.resize(batch.count);
+        }
+        auto attenuation = attenuation_storage.head(batch.count);
         for (int layeridx = 0; layeridx < ray.layers.size(); ++layeridx) {
             const auto od =
                 shell_od.block(layeridx, batch.start, 1, batch.count);

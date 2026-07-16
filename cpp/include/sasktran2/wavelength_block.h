@@ -64,6 +64,26 @@ namespace sasktran2 {
                                derivative_count * NSTOKES, wavelength_count);
         }
 
+        using ConstDerivativeStokesMap =
+            Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic,
+                                           Eigen::Dynamic, Eigen::RowMajor>,
+                       0, Eigen::Stride<Eigen::Dynamic, Eigen::Dynamic>>;
+
+        ConstDerivativeStokesMap derivative_stokes(int derivative_start,
+                                                   int derivative_count,
+                                                   int stokes,
+                                                   int wavelength_count) const {
+            static const double dummy = 0.0;
+            const double* derivative_data =
+                m_num_derivatives == 0
+                    ? &dummy
+                    : deriv.data() + (derivative_start * NSTOKES + stokes) *
+                                         m_block_capacity;
+            return {derivative_data, derivative_count, wavelength_count,
+                    Eigen::Stride<Eigen::Dynamic, Eigen::Dynamic>(
+                        NSTOKES * m_block_capacity, 1)};
+        }
+
       private:
         int m_block_capacity = 0;
         int m_num_derivatives = 0;
@@ -74,6 +94,13 @@ namespace sasktran2 {
       private:
         using ValueStride = Eigen::InnerStride<Eigen::Dynamic>;
         using DerivativeStride = Eigen::Stride<Eigen::Dynamic, Eigen::Dynamic>;
+
+        static double* derivative_data(WavelengthBlockDual<NSTOKES>& block,
+                                       int lane) {
+            static double dummy = 0.0;
+            return block.derivative_size() == 0 ? &dummy
+                                                : block.deriv.data() + lane;
+        }
 
       public:
         using ValueMap =
@@ -86,7 +113,8 @@ namespace sasktran2 {
                                     int lane)
             : value(block.value.data() + lane, NSTOKES,
                     ValueStride(block.block_capacity())),
-              deriv(block.deriv.data() + lane, NSTOKES, block.derivative_size(),
+              deriv(derivative_data(block, lane), NSTOKES,
+                    block.derivative_size(),
                     DerivativeStride(NSTOKES * block.block_capacity(),
                                      block.block_capacity())) {}
 
@@ -129,6 +157,13 @@ namespace sasktran2 {
         using ValueStride = Eigen::InnerStride<Eigen::Dynamic>;
         using DerivativeStride = Eigen::Stride<Eigen::Dynamic, Eigen::Dynamic>;
 
+        static const double*
+        derivative_data(const WavelengthBlockDual<NSTOKES>& block, int lane) {
+            static const double dummy = 0.0;
+            return block.derivative_size() == 0 ? &dummy
+                                                : block.deriv.data() + lane;
+        }
+
       public:
         using ValueMap =
             Eigen::Map<const Eigen::Vector<double, NSTOKES>, 0, ValueStride>;
@@ -140,7 +175,8 @@ namespace sasktran2 {
             const WavelengthBlockDual<NSTOKES>& block, int lane)
             : value(block.value.data() + lane, NSTOKES,
                     ValueStride(block.block_capacity())),
-              deriv(block.deriv.data() + lane, NSTOKES, block.derivative_size(),
+              deriv(derivative_data(block, lane), NSTOKES,
+                    block.derivative_size(),
                     DerivativeStride(NSTOKES * block.block_capacity(),
                                      block.block_capacity())) {}
 

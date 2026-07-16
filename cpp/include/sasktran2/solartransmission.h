@@ -475,6 +475,8 @@ namespace sasktran2::solartransmission {
         Eigen::RowVectorXd extinction;
         Eigen::RowVectorXd unscaled_amplitude;
         Eigen::RowVectorXd source_amplitude;
+        Eigen::RowVectorXd ssa_factor;
+        Eigen::RowVectorXd extinction_factor;
         BatchMatrix phase;
         BatchMatrix endpoint_source;
 
@@ -483,6 +485,8 @@ namespace sasktran2::solartransmission {
             extinction.resize(capacity);
             unscaled_amplitude.resize(capacity);
             source_amplitude.resize(capacity);
+            ssa_factor.resize(capacity);
+            extinction_factor.resize(capacity);
             phase.resize(NSTOKES, capacity);
             endpoint_source.resize(NSTOKES, capacity);
         }
@@ -576,15 +580,18 @@ namespace sasktran2::solartransmission {
                 auto ssa_derivative = target.derivative(
                     atmosphere.ssa_deriv_start_index() + weight.first,
                     batch.count);
-                const Eigen::RowVectorXd ssa_factor =
-                    weight.second * derivative_scale.array() *
-                    extinction.array() * unscaled_amplitude.array();
+                auto ssa_factor = scratch.ssa_factor.head(batch.count);
+                ssa_factor.array() = weight.second * derivative_scale.array() *
+                                     extinction.array() *
+                                     unscaled_amplitude.array();
                 ssa_derivative.array() +=
                     phase.array().rowwise() * ssa_factor.array();
 
                 auto extinction_derivative =
                     target.derivative(weight.first, batch.count);
-                const Eigen::RowVectorXd extinction_factor =
+                auto extinction_factor =
+                    scratch.extinction_factor.head(batch.count);
+                extinction_factor.array() =
                     weight.second * derivative_scale.array() * ssa.array() *
                     unscaled_amplitude.array();
                 extinction_derivative.array() +=
