@@ -27,6 +27,7 @@ namespace sasktran2 {
         }
 
         m_shell_od.resize(traced_rays.size());
+        m_shell_od_batch.resize(traced_rays.size());
 
         m_traced_rays = &traced_rays;
         m_num_geometry_locations = geometry.size();
@@ -47,11 +48,21 @@ namespace sasktran2 {
 // Multithread over LOS? or wavelength? Or just let Eigen do it?
 #pragma omp parallel for
         for (int i = 0; i < m_traced_ray_od_matrix.size(); ++i) {
-            m_shell_od[i].noalias() =
-                m_traced_ray_od_matrix[i] * atmo.storage().total_extinction;
+            if (m_wavelength_batch_size > 1) {
+                m_shell_od_batch[i].noalias() =
+                    m_traced_ray_od_matrix[i] * atmo.storage().total_extinction;
+                m_shell_od[i].resize(0, 0);
+            } else {
+                m_shell_od[i].noalias() =
+                    m_traced_ray_od_matrix[i] * atmo.storage().total_extinction;
+                m_shell_od_batch[i].resize(0, 0);
+            }
 
 #ifdef SASKTRAN_DEBUG_ASSERTS
-            if (!m_shell_od[i].allFinite()) {
+            const bool finite = m_wavelength_batch_size > 1
+                                    ? m_shell_od_batch[i].allFinite()
+                                    : m_shell_od[i].allFinite();
+            if (!finite) {
                 spdlog::error("Error calculating Layer OD for ray: ", i);
             }
 #endif
@@ -187,6 +198,38 @@ namespace sasktran2 {
     }
 
     template <int NSTOKES>
+    void SourceIntegrator<NSTOKES>::integrate_batch(
+        sasktran2::WavelengthBatchDual<NSTOKES>& radiance,
+        const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+        const sasktran2::WavelengthBatch& batch, int rayidx,
+        int wavel_threadidx, int threadidx) {
+        bool have_to_integrate = false;
+        for (const auto* source : source_terms) {
+            if (source->requires_integration()) {
+                have_to_integrate = true;
+                if (source->has_interior_source() &&
+                    !source->supports_geometry_dimension(
+                        m_num_geometry_dimensions)) {
+                    throw std::invalid_argument(
+                        "Interior source integration is not supported for "
+                        "the configured atmosphere dimensionality");
+                }
+            }
+            source->end_of_ray_source_batch(batch, rayidx, wavel_threadidx,
+                                            threadidx, radiance);
+        }
+
+        if (!have_to_integrate) {
+            return;
+        }
+
+        integrate_ray_batch(radiance, source_terms, (*m_traced_rays)[rayidx],
+                            m_traced_ray_od_matrix[rayidx],
+                            m_shell_od_batch[rayidx], batch, rayidx,
+                            wavel_threadidx, threadidx);
+    }
+
+    template <int NSTOKES>
     void SourceIntegrator<NSTOKES>::integrate_ray(
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
             radiance,
@@ -252,10 +295,74 @@ namespace sasktran2 {
     }
 
     template <int NSTOKES>
+    void SourceIntegrator<NSTOKES>::integrate_ray_batch(
+        sasktran2::WavelengthBatchDual<NSTOKES>& radiance,
+        const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+        const sasktran2::raytracing::TracedRay& ray,
+        const Eigen::SparseMatrix<double, Eigen::RowMajor>& od_matrix,
+        const RowMajorMatrix& shell_od, const sasktran2::WavelengthBatch& batch,
+        int rayidx, int wavel_threadidx, int threadidx) const {
+        Eigen::RowVectorXd attenuation(batch.count);
+        for (int layeridx = 0; layeridx < ray.layers.size(); ++layeridx) {
+            const auto od =
+                shell_od.block(layeridx, batch.start, 1, batch.count);
+            attenuation.array() = (-od.array()).exp();
+            sasktran2::WavelengthBatchODView local_shell_od(
+                od.data(), attenuation.data(), batch.count, od_matrix,
+                layeridx);
+
+            if (m_calculate_derivatives) {
+                for (auto it = local_shell_od.deriv_iter; it; ++it) {
+                    radiance.derivative(it.index(), batch.count).array() -=
+                        it.value() *
+                        radiance.value.leftCols(batch.count).array();
+                }
+            }
+
+            radiance.value.leftCols(batch.count).array().rowwise() *=
+                attenuation.array();
+            if (m_calculate_derivatives) {
+                if (m_use_sparse_derivative_tracking) {
+                    for (const auto& [derivative_start, derivative_count] :
+                         m_attenuation_active_derivative_ranges[rayidx]
+                                                               [layeridx]) {
+                        radiance
+                            .derivative_range(derivative_start,
+                                              derivative_count, batch.count)
+                            .array()
+                            .rowwise() *= attenuation.array();
+                    }
+                } else {
+                    radiance.deriv.leftCols(batch.count).array().rowwise() *=
+                        attenuation.array();
+                }
+            }
+
+            const auto& layer = ray.layers[layeridx];
+            const auto entrance_weights = ray.entrance_weights(layeridx);
+            const auto exit_weights = ray.exit_weights(layeridx);
+            for (const auto* source : source_terms) {
+                if (source->has_interior_source()) {
+                    source->integrated_source_batch(
+                        batch, rayidx, layeridx, wavel_threadidx, threadidx,
+                        layer, entrance_weights, exit_weights, local_shell_od,
+                        radiance,
+                        SourceTermInterface<
+                            NSTOKES>::IntegrationDirection::backward);
+                }
+            }
+        }
+    }
+
+    template <int NSTOKES>
     void SourceIntegrator<NSTOKES>::integrate_optical_depth(
         Eigen::MatrixXd& optical_depth) {
         for (int i = 0; i < m_shell_od.size(); ++i) {
-            optical_depth.col(i) = m_shell_od[i].colwise().sum();
+            if (m_wavelength_batch_size > 1) {
+                optical_depth.col(i) = m_shell_od_batch[i].colwise().sum();
+            } else {
+                optical_depth.col(i) = m_shell_od[i].colwise().sum();
+            }
         }
     }
 

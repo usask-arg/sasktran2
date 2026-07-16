@@ -471,11 +471,18 @@ void Sasktran2<NSTOKES>::calculate_radiance(
     // Use this method for observer geometries and make a different method for
     // interior fluxes?
 
+    const int wavelength_batch_size =
+        effective_wavelength_batch_size(atmosphere.num_wavel());
+
     // Initialize each source term with the atmosphere
     for (auto& source : m_source_terms) {
         source->initialize_atmosphere(atmosphere);
+        if (wavelength_batch_size > 1) {
+            source->initialize_wavelength_batching(wavelength_batch_size);
+        }
     }
 
+    m_source_integrator->set_wavelength_batch_size(wavelength_batch_size);
     m_source_integrator->initialize_atmosphere(atmosphere);
     m_source_integrator->initialize_derivative_sparsity(m_los_source_terms);
 
@@ -486,6 +493,17 @@ void Sasktran2<NSTOKES>::calculate_radiance(
     radiance.resize(m_config.num_threads());
     for (auto& thread_radiance : radiance) {
         thread_radiance.resize(NSTOKES, atmosphere.num_deriv(), false);
+    }
+
+    auto& batch_radiance =
+        const_cast<std::vector<sasktran2::WavelengthBatchDual<NSTOKES>>&>(
+            m_thread_batch_radiance);
+    if (wavelength_batch_size > 1) {
+        batch_radiance.resize(m_config.num_threads());
+        for (auto& thread_radiance : batch_radiance) {
+            thread_radiance.resize(wavelength_batch_size,
+                                   atmosphere.num_deriv(), false);
+        }
     }
 
     auto& flux = const_cast<std::vector<
@@ -508,6 +526,27 @@ void Sasktran2<NSTOKES>::calculate_radiance(
     }
 
     if (only_initialize) {
+        return;
+    }
+
+    if (wavelength_batch_size > 1) {
+        const int num_batches =
+            (atmosphere.num_wavel() + wavelength_batch_size - 1) /
+            wavelength_batch_size;
+#pragma omp parallel for num_threads(m_config.num_wavelength_threads())
+        for (int batch_index = 0; batch_index < num_batches; ++batch_index) {
+#ifdef SKTRAN_OPENMP_SUPPORT
+            const int thread_idx = omp_get_thread_num();
+#else
+            const int thread_idx = 0;
+#endif
+            const int start = batch_index * wavelength_batch_size;
+            const sasktran2::WavelengthBatch batch{
+                start, std::min(wavelength_batch_size,
+                                atmosphere.num_wavel() - start)};
+            calculate_radiance_batch_thread(atmosphere, output, batch,
+                                            thread_idx);
+        }
         return;
     }
 
@@ -587,6 +626,69 @@ void Sasktran2<NSTOKES>::calculate_radiance(
         }
         FrameMarkEnd("Frame");
     }
+}
+
+template <int NSTOKES>
+int Sasktran2<NSTOKES>::effective_wavelength_batch_size(
+    int num_wavelengths) const {
+    if (m_config.wavelength_batch_size() <= 1 || num_wavelengths <= 1 ||
+        !m_internal_viewing_geometry.flux_observers.empty()) {
+        return 1;
+    }
+    for (const auto& source : m_source_terms) {
+        if (!source->supports_wavelength_batching()) {
+            return 1;
+        }
+    }
+    return std::min(m_config.wavelength_batch_size(), num_wavelengths);
+}
+
+template <int NSTOKES>
+void Sasktran2<NSTOKES>::calculate_radiance_batch_thread(
+    const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
+    sasktran2::Output<NSTOKES>& output, const sasktran2::WavelengthBatch& batch,
+    int thread_idx) const {
+    FrameMarkStart("WavelengthBatch");
+    for (auto& source : m_source_terms) {
+        ZoneScopedN("Batch Source Calculation");
+        source->calculate_batch(batch, thread_idx);
+    }
+
+    auto& batch_storage =
+        const_cast<std::vector<sasktran2::WavelengthBatchDual<NSTOKES>>&>(
+            m_thread_batch_radiance);
+    auto& scalar_storage = const_cast<std::vector<
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>>&>(
+        m_thread_radiance);
+
+#pragma omp parallel for num_threads(m_config.num_source_threads())            \
+    schedule(dynamic)
+    for (int ray_index = 0; ray_index < m_internal_viewing_geometry.num_rays();
+         ++ray_index) {
+#ifdef SKTRAN_OPENMP_SUPPORT
+        const int ray_threadidx = omp_get_thread_num() + thread_idx;
+#else
+        const int ray_threadidx = thread_idx;
+#endif
+        auto& radiance = batch_storage[ray_threadidx];
+        radiance.set_zero(batch.count);
+        m_source_integrator->integrate_batch(radiance, m_los_source_terms,
+                                             batch, ray_index, thread_idx,
+                                             ray_threadidx);
+
+        for (const auto* source : m_los_source_terms) {
+            source->start_of_ray_source_batch(batch, ray_index, thread_idx,
+                                              ray_threadidx, radiance);
+        }
+
+        auto& scalar = scalar_storage[ray_threadidx];
+        for (int lane = 0; lane < batch.count; ++lane) {
+            radiance.copy_lane_to(lane, scalar);
+            output.assign(scalar, ray_index, batch.wavelength(lane),
+                          ray_threadidx);
+        }
+    }
+    FrameMarkEnd("WavelengthBatch");
 }
 
 template <int NSTOKES>

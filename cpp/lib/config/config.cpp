@@ -3,9 +3,10 @@
 
 namespace sasktran2 {
     Config::Config()
-        : m_nstokes(1), m_nthreads(1), m_ndostreams(16), m_enable_wfs(true),
-          m_apply_delta_scaling(false), m_los_refraction(false),
-          m_ms_refraction(false), m_solar_refraction(false),
+        : m_nthreads(1), m_wavelength_batch_size(1), m_nstokes(1),
+          m_ndostreams(16), m_enable_wfs(true), m_apply_delta_scaling(false),
+          m_los_refraction(false), m_ms_refraction(false),
+          m_solar_refraction(false),
           m_wf_precision(WeightingFunctionPrecision::full),
           m_nsinglescatter_moments(16), m_ndosza(1),
           m_ndosphericaliterations(0), m_hr_nincoming(110), m_hr_noutgoing(110),
@@ -48,6 +49,13 @@ namespace sasktran2 {
                 "Invalid number of threads: {}, must be at least 1",
                 m_nthreads);
 
+            sasktran2::validation::throw_configuration_error();
+        }
+
+        if (m_wavelength_batch_size < 1) {
+            spdlog::critical("Invalid wavelength batch size: {}, must be at "
+                             "least 1",
+                             m_wavelength_batch_size);
             sasktran2::validation::throw_configuration_error();
         }
 

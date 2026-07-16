@@ -53,6 +53,17 @@ namespace sasktran2::solartransmission {
         }
     }
 
+    template <int NSTOKES>
+    void OccultationSource<NSTOKES>::end_of_ray_source_batch(
+        const sasktran2::WavelengthBatch& batch, int losidx,
+        int wavel_threadidx, int threadidx,
+        sasktran2::WavelengthBatchDual<NSTOKES>& source) const {
+        if (m_ground_is_hit.at(losidx)) {
+            return;
+        }
+        source.value.row(0).head(batch.count).array() += 1.0;
+    }
+
     template class OccultationSource<1>;
     template class OccultationSource<3>;
 

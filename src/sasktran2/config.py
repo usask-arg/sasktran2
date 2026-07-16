@@ -50,6 +50,20 @@ class Config:
         self._config.num_threads = value
 
     @property
+    def wavelength_batch_size(self) -> int:
+        """Number of contiguous wavelengths integrated together.
+
+        The default value of 1 preserves scalar wavelength integration.
+        Batch-capable source combinations may use larger values to improve
+        locality and reduce repeated ray traversal.
+        """
+        return self._config.wavelength_batch_size
+
+    @wavelength_batch_size.setter
+    def wavelength_batch_size(self, value: int):
+        self._config.wavelength_batch_size = value
+
+    @property
     def threading_model(self) -> ThreadingModel:
         """
         Sets the multi-threading mode to use in the calculation.

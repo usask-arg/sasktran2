@@ -3,6 +3,7 @@
 #include <sasktran2/internal_common.h>
 #include <sasktran2/raytracing.h>
 #include <sasktran2/viewinggeometry_internal.h>
+#include <sasktran2/wavelength_batch.h>
 #include <sasktran2/dual.h>
 #include <sasktran2/config.h>
 #include <sasktran2/atmosphere/atmosphere.h>
@@ -51,6 +52,15 @@ template <int NSTOKES> class SourceTermInterface {
      */
     virtual void calculate(int wavelidx, int threadidx){};
 
+    virtual bool supports_wavelength_batching() const { return false; }
+
+    virtual void initialize_wavelength_batching(int) {}
+
+    virtual void calculate_batch(const sasktran2::WavelengthBatch&, int) {
+        throw std::logic_error(
+            "Source does not implement wavelength batch calculation");
+    }
+
     // TODO: Is Dual proper here? what about when the source term derivative is
     // sparse? Maybe it isn't that important... Should we be templated over
     // NSTOKES in the interface?
@@ -73,6 +83,19 @@ template <int NSTOKES> class SourceTermInterface {
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
         IntegrationDirection direction = IntegrationDirection::none) const = 0;
 
+    virtual void integrated_source_batch(
+        const sasktran2::WavelengthBatch&, int losidx, int layeridx,
+        int wavel_threadidx, int threadidx,
+        const sasktran2::raytracing::TracedLayer& layer,
+        const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
+        const sasktran2::raytracing::GridWeightStencilView& exit_weights,
+        const sasktran2::WavelengthBatchODView& shell_od,
+        sasktran2::WavelengthBatchDual<NSTOKES>& source,
+        IntegrationDirection direction = IntegrationDirection::none) const {
+        throw std::logic_error(
+            "Source does not implement wavelength batch integration");
+    }
+
     /** Calculates the source term at the end of the ray.  Common examples of
      * this are ground scattering, ground emission, or the solar radiance if
      * looking directly at the sun.
@@ -86,6 +109,13 @@ template <int NSTOKES> class SourceTermInterface {
         int wavelidx, int losidx, int wavel_threadidx, int threadidx,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const = 0;
+
+    virtual void end_of_ray_source_batch(
+        const sasktran2::WavelengthBatch&, int losidx, int wavel_threadidx,
+        int threadidx, sasktran2::WavelengthBatchDual<NSTOKES>& source) const {
+        throw std::logic_error(
+            "Source does not implement wavelength batch end source");
+    }
 
     /** Calculates the radiance at the start of the ray, i.e., the source term
      * has done the equivalent of the integration along the ray.  This is useful
@@ -107,6 +137,13 @@ template <int NSTOKES> class SourceTermInterface {
         int wavelidx, int losidx, int wavel_threadidx, int threadidx,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const = 0;
+
+    virtual void start_of_ray_source_batch(
+        const sasktran2::WavelengthBatch&, int losidx, int wavel_threadidx,
+        int threadidx, sasktran2::WavelengthBatchDual<NSTOKES>& source) const {
+        throw std::logic_error(
+            "Source does not implement wavelength batch start source");
+    }
 
     virtual void
     flux(int wavelidx, int fluxidx, int wavelt_threadidx, int threadidx,

@@ -27,6 +27,9 @@ namespace sasktran2::emission {
                 source) const;
 
       public:
+        bool supports_wavelength_batching() const override { return true; }
+
+        void calculate_batch(const sasktran2::WavelengthBatch&, int) override {}
         /** Here the emission source term saves the los_rays, which are
          * needed to detect ground hits and whether to include
          * surface emissions at the end of the ray.
@@ -68,6 +71,20 @@ namespace sasktran2::emission {
                     SourceTermInterface<NSTOKES>::IntegrationDirection::none)
             const override;
 
+        void integrated_source_batch(
+            const sasktran2::WavelengthBatch& batch, int losidx, int layeridx,
+            int wavel_threadidx, int threadidx,
+            const sasktran2::raytracing::TracedLayer& layer,
+            const sasktran2::raytracing::GridWeightStencilView&
+                entrance_weights,
+            const sasktran2::raytracing::GridWeightStencilView& exit_weights,
+            const sasktran2::WavelengthBatchODView& shell_od,
+            sasktran2::WavelengthBatchDual<NSTOKES>& source,
+            typename SourceTermInterface<NSTOKES>::IntegrationDirection
+                direction =
+                    SourceTermInterface<NSTOKES>::IntegrationDirection::none)
+            const override;
+
         bool supports_geometry_dimension(int dimension) const override {
             return dimension >= 1;
         }
@@ -85,6 +102,11 @@ namespace sasktran2::emission {
             int wavelidx, int losidx, int wavel_threadidx, int threadidx,
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
                 source) const override;
+
+        void end_of_ray_source_batch(
+            const sasktran2::WavelengthBatch& batch, int losidx,
+            int wavel_threadidx, int threadidx,
+            sasktran2::WavelengthBatchDual<NSTOKES>& source) const override;
 
         /** Calculates the radiance at the start of the ray, i.e., the source
          * term has done the equivalent of the integration along the ray.  This
@@ -110,6 +132,10 @@ namespace sasktran2::emission {
             int wavelidx, int losidx, int wavel_threadidx, int threadidx,
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
                 source) const override{};
+
+        void start_of_ray_source_batch(
+            const sasktran2::WavelengthBatch&, int, int, int,
+            sasktran2::WavelengthBatchDual<NSTOKES>&) const override {}
     };
 
 } // namespace sasktran2::emission

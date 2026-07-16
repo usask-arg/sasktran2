@@ -152,6 +152,63 @@ int sk_engine_calculate_radiance_thread(Engine* engine, Atmosphere* atmosphere,
     }
 }
 
+int sk_engine_effective_wavelength_batch_size(Engine* engine,
+                                              int num_wavelengths) {
+    try {
+        if (engine == nullptr || !engine->impl) {
+            return -1;
+        }
+        if (engine->_config->impl.num_stokes() == 1) {
+            auto* impl = dynamic_cast<Sasktran2<1>*>(engine->impl.get());
+            return impl->effective_wavelength_batch_size(num_wavelengths);
+        }
+        if (engine->_config->impl.num_stokes() == 3) {
+            auto* impl = dynamic_cast<Sasktran2<3>*>(engine->impl.get());
+            return impl->effective_wavelength_batch_size(num_wavelengths);
+        }
+        return -2;
+    } catch (const std::exception&) {
+        return -3;
+    }
+}
+
+int sk_engine_calculate_radiance_batch_thread(
+    Engine* engine, Atmosphere* atmosphere, OutputC* output,
+    int wavelength_start, int wavelength_count, int thread_idx) {
+    try {
+        if (engine == nullptr || !engine->impl || atmosphere == nullptr ||
+            output == nullptr) {
+            return -1;
+        }
+        if (wavelength_start < 0 || wavelength_count < 1 || thread_idx < 0) {
+            return -2;
+        }
+        const sasktran2::WavelengthBatch batch{wavelength_start,
+                                               wavelength_count};
+        if (engine->_config->impl.num_stokes() == 1) {
+            auto* impl = dynamic_cast<Sasktran2<1>*>(engine->impl.get());
+            impl->calculate_radiance_batch_thread(
+                *static_cast<sasktran2::atmosphere::Atmosphere<1>*>(
+                    atmosphere->impl.get()),
+                *static_cast<sasktran2::Output<1>*>(output->impl.get()), batch,
+                thread_idx);
+            return 0;
+        }
+        if (engine->_config->impl.num_stokes() == 3) {
+            auto* impl = dynamic_cast<Sasktran2<3>*>(engine->impl.get());
+            impl->calculate_radiance_batch_thread(
+                *static_cast<sasktran2::atmosphere::Atmosphere<3>*>(
+                    atmosphere->impl.get()),
+                *static_cast<sasktran2::Output<3>*>(output->impl.get()), batch,
+                thread_idx);
+            return 0;
+        }
+        return -2;
+    } catch (const std::exception&) {
+        return -3;
+    }
+}
+
 int sk_openmp_support_enabled() {
 #ifdef SKTRAN_OPENMP_SUPPORT
     return 1; // OpenMP support is enabled

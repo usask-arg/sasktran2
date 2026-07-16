@@ -99,6 +99,76 @@ namespace sasktran2::solartransmission {
     }
 
     template <typename S, int NSTOKES>
+    void SingleScatterSource<S, NSTOKES>::initialize_wavelength_batching(
+        int batch_size) {
+        if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
+            throw std::logic_error(
+                "Solar transmission tables do not support wavelength "
+                "batching");
+        } else {
+            m_wavelength_batch_capacity = batch_size;
+            m_solar_trans_batch.resize(m_config->num_wavelength_threads());
+            for (auto& storage : m_solar_trans_batch) {
+                storage.resize(m_geometry_sparse.rows(), batch_size);
+            }
+            m_batch_source_cache.resize(m_config->num_threads());
+            m_batch_integration_cache.resize(m_config->num_threads());
+            for (auto& thread_cache : m_batch_source_cache) {
+                for (auto& endpoint_cache : thread_cache) {
+                    endpoint_cache.resize(batch_size);
+                }
+            }
+            for (auto& thread_cache : m_batch_integration_cache) {
+                thread_cache.resize(batch_size);
+            }
+            m_phase_handler.initialize_wavelength_batching(batch_size);
+        }
+    }
+
+    template <typename S, int NSTOKES>
+    void SingleScatterSource<S, NSTOKES>::calculate_batch(
+        const sasktran2::WavelengthBatch& batch, int threadidx) {
+        if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
+            throw std::logic_error(
+                "Solar transmission tables do not support wavelength "
+                "batching");
+        } else {
+            ZoneScopedN("Single Scatter Source Batch Calculation");
+            if (batch.count > m_wavelength_batch_capacity) {
+                throw std::invalid_argument(
+                    "Wavelength batch exceeds single scatter storage "
+                    "capacity");
+            }
+
+            m_phase_handler.calculate_batch(batch, threadidx);
+            auto solar_trans =
+                m_solar_trans_batch[threadidx].leftCols(batch.count);
+            const auto extinction =
+                m_atmosphere->storage().total_extinction.middleCols(
+                    batch.start, batch.count);
+            if (m_geometry_matrix.size() > 0 &&
+                double(m_geometry_sparse.nonZeros()) /
+                        double(m_geometry_matrix.size()) >
+                    DENSE_GEOMETRY_THRESHOLD) {
+                solar_trans.noalias() = m_geometry_matrix * extinction;
+            } else {
+                solar_trans.noalias() = m_geometry_sparse * extinction;
+            }
+            solar_trans = (-solar_trans.array()).exp().matrix();
+            for (int lane = 0; lane < batch.count; ++lane) {
+                solar_trans.col(lane) *=
+                    m_atmosphere->storage().solar_irradiance(
+                        batch.wavelength(lane));
+            }
+            for (int row = 0; row < m_ground_hit_flag.size(); ++row) {
+                if (m_ground_hit_flag[row]) {
+                    solar_trans.row(row).setZero();
+                }
+            }
+        }
+    }
+
+    template <typename S, int NSTOKES>
     void SingleScatterSource<S, NSTOKES>::end_of_ray_source(
         int wavelidx, int losidx, int wavel_threadidx, int threadidx,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
@@ -171,6 +241,73 @@ namespace sasktran2::solartransmission {
                                      k) +=
                         solar_trans * mu_in *
                         brdf_deriv(Eigen::placeholders::all, 0);
+                }
+            }
+        }
+    }
+
+    template <typename S, int NSTOKES>
+    void SingleScatterSource<S, NSTOKES>::end_of_ray_source_batch(
+        const sasktran2::WavelengthBatch& batch, int losidx,
+        int wavel_threadidx, int threadidx,
+        sasktran2::WavelengthBatchDual<NSTOKES>& source) const {
+        if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
+            throw std::logic_error(
+                "Solar transmission tables do not support wavelength "
+                "batching");
+        } else {
+            if (!m_los_ground_is_hit.at(losidx)) {
+                return;
+            }
+
+            const auto& first_layer = m_los_end_layers.at(losidx);
+            const double mu_in = first_layer.exit.cos_zenith_angle(
+                m_geometry.coordinates().sun_unit());
+            if (mu_in <= 0.0) {
+                return;
+            }
+            const double mu_out = -first_layer.exit.cos_zenith_angle(
+                first_layer.average_look_away);
+            const double phi_diff = first_layer.saz_exit;
+            const int exit_index = m_index_map[losidx][0];
+            const auto solar_trans = m_solar_trans_batch[wavel_threadidx]
+                                         .row(exit_index)
+                                         .head(batch.count);
+
+            for (int lane = 0; lane < batch.count; ++lane) {
+                const int wavelength = batch.wavelength(lane);
+                const auto brdf = m_atmosphere->surface().brdf(
+                    wavelength, mu_in, mu_out, phi_diff);
+                const Eigen::Vector<double, NSTOKES> source_value =
+                    solar_trans(lane) * brdf(Eigen::placeholders::all, 0) *
+                    mu_in;
+                source.value.col(lane) += source_value;
+
+                if (source.derivative_size() == 0) {
+                    continue;
+                }
+                if (m_config->wf_precision() !=
+                    sasktran2::Config::WeightingFunctionPrecision::limited) {
+                    for (Eigen::SparseMatrix<double,
+                                             Eigen::RowMajor>::InnerIterator
+                             derivative(m_geometry_sparse, exit_index);
+                         derivative; ++derivative) {
+                        source.derivative(derivative.index(), batch.count)
+                            .col(lane) -= derivative.value() * source_value;
+                    }
+                }
+                for (int derivative = 0;
+                     derivative < m_atmosphere->surface().num_deriv();
+                     ++derivative) {
+                    const auto brdf_derivative = m_atmosphere->surface().d_brdf(
+                        wavelength, mu_in, mu_out, phi_diff, derivative);
+                    source
+                        .derivative(m_atmosphere->surface_deriv_start_index() +
+                                        derivative,
+                                    batch.count)
+                        .col(lane) +=
+                        solar_trans(lane) * mu_in *
+                        brdf_derivative(Eigen::placeholders::all, 0);
                 }
             }
         }
@@ -637,6 +774,126 @@ namespace sasktran2::solartransmission {
         integrated_source_constant(wavelidx, losidx, layeridx, wavel_threadidx,
                                    threadidx, layer, entrance_weights,
                                    exit_weights, shell_od, source, direction);
+    }
+
+    template <typename S, int NSTOKES>
+    void SingleScatterSource<S, NSTOKES>::integrated_source_batch(
+        const sasktran2::WavelengthBatch& batch, int losidx, int layeridx,
+        int wavel_threadidx, int threadidx,
+        const sasktran2::raytracing::TracedLayer& layer,
+        const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
+        const sasktran2::raytracing::GridWeightStencilView& exit_weights,
+        const sasktran2::WavelengthBatchODView& shell_od,
+        sasktran2::WavelengthBatchDual<NSTOKES>& source,
+        typename SourceTermInterface<NSTOKES>::IntegrationDirection direction)
+        const {
+        if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
+            throw std::logic_error(
+                "Solar transmission tables do not support wavelength "
+                "batching");
+        } else {
+            (void)direction;
+            if (layer.layer_distance < MINIMUM_SHELL_SIZE_M) {
+                return;
+            }
+
+            ZoneScopedN("Single Scatter Source Batch Constant Calculation");
+            const int exit_index = m_index_map[losidx][layeridx];
+            const int entrance_index = exit_index + 1;
+            const auto solar_trans_exit = m_solar_trans_batch[wavel_threadidx]
+                                              .row(exit_index)
+                                              .head(batch.count);
+            const auto solar_trans_entrance =
+                m_solar_trans_batch[wavel_threadidx]
+                    .row(entrance_index)
+                    .head(batch.count);
+
+            auto& integration_cache = m_batch_integration_cache[threadidx];
+            auto source_factor =
+                integration_cache.source_factor.head(batch.count);
+            auto source_factor_derivative =
+                integration_cache.source_factor_derivative.head(batch.count);
+            for (int lane = 0; lane < batch.count; ++lane) {
+                const double od = shell_od.od_data[lane];
+                if (std::abs(od) < 1e-12) {
+                    source_factor(lane) = 1.0;
+                    source_factor_derivative(lane) = -0.5;
+                } else {
+                    source_factor(lane) = -std::expm1(-od) / od;
+                    source_factor_derivative(lane) =
+                        1 / od - source_factor(lane) * (1 + 1 / od);
+                }
+            }
+
+            const auto* start_weights = &entrance_weights;
+            const auto* end_weights = &exit_weights;
+            bool start_is_entrance = true;
+            bool end_is_entrance = false;
+            const bool use_lower_interpolation =
+                m_geometry_1d != nullptr &&
+                m_geometry_1d->altitude_grid().interpolation_method() ==
+                    grids::interpolation::lower;
+            if (use_lower_interpolation) {
+                if (layer.r_exit > layer.r_entrance) {
+                    end_weights = &entrance_weights;
+                    end_is_entrance = true;
+                } else {
+                    start_weights = &exit_weights;
+                    start_is_entrance = false;
+                }
+            }
+
+            auto start_derivative_scale =
+                integration_cache.start_derivative_scale.head(batch.count);
+            start_derivative_scale = source_factor * layer.od_quad_start;
+            auto& start_cache = m_batch_source_cache[threadidx][0];
+            accumulate_exact_scattering_source_batch(
+                m_phase_handler, wavel_threadidx, losidx, layeridx, batch,
+                *start_weights, start_is_entrance, solar_trans_entrance,
+                *m_atmosphere,
+                Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
+                    m_geometry_sparse, entrance_index),
+                start_derivative_scale, source, start_cache);
+            const auto start_value =
+                start_cache.endpoint_source.leftCols(batch.count);
+
+            auto end_derivative_scale =
+                integration_cache.end_derivative_scale.head(batch.count);
+            end_derivative_scale = source_factor * layer.od_quad_end;
+            auto& end_cache = m_batch_source_cache[threadidx][1];
+            accumulate_exact_scattering_source_batch(
+                m_phase_handler, wavel_threadidx, losidx, layeridx, batch,
+                *end_weights, end_is_entrance, solar_trans_exit, *m_atmosphere,
+                Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
+                    m_geometry_sparse, exit_index),
+                end_derivative_scale, source, end_cache);
+            const auto end_value =
+                end_cache.endpoint_source.leftCols(batch.count);
+
+            auto integrated_value =
+                integration_cache.integrated_value.leftCols(batch.count);
+            integrated_value = start_value * layer.od_quad_start_fraction +
+                               end_value * layer.od_quad_end_fraction;
+            integrated_value.array().rowwise() *= source_factor.array();
+            integrated_value *= layer.layer_distance;
+            source.value.leftCols(batch.count) += integrated_value;
+
+            if (source.derivative_size() > 0) {
+                auto endpoint_quadrature =
+                    integration_cache.endpoint_quadrature.leftCols(batch.count);
+                endpoint_quadrature = start_value * layer.od_quad_start +
+                                      end_value * layer.od_quad_end;
+                for (auto derivative = shell_od.deriv_iter; derivative;
+                     ++derivative) {
+                    auto target_derivative =
+                        source.derivative(derivative.index(), batch.count);
+                    target_derivative.array() +=
+                        derivative.value() *
+                        (endpoint_quadrature.array().rowwise() *
+                         source_factor_derivative.array());
+                }
+            }
+        }
     }
 
     template class SingleScatterSource<SolarTransmissionExact, 1>;

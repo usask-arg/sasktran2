@@ -65,6 +65,34 @@ fn safe_calc_thread(
     }
 }
 
+fn safe_calc_batch_thread(
+    engine: &SafeFFIEngine,
+    atmosphere: &SafeFFIAtmosphere,
+    output: &SafeFFIOutput,
+    wavelength_start: i32,
+    wavelength_count: i32,
+    thread_idx: i32,
+) -> Result<()> {
+    let result = unsafe {
+        ffi::sk_engine_calculate_radiance_batch_thread(
+            engine.0,
+            atmosphere.0,
+            output.0,
+            wavelength_start,
+            wavelength_count,
+            thread_idx,
+        )
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!(
+            "Failed to calculate wavelength batch: {}",
+            result
+        ))
+    }
+}
+
 impl<'a> Engine<'a> {
     /// Creates a new engine object
     pub fn new(
@@ -213,26 +241,60 @@ impl<'a> Engine<'a> {
             let safe_atmosphere = SafeFFIAtmosphere(atmosphere.atmosphere);
 
             let thread_pool = threading::thread_pool()?;
+            let batch_size = unsafe {
+                ffi::sk_engine_effective_wavelength_batch_size(self.engine, num_wavel as i32)
+            };
+            if batch_size < 1 {
+                return Err(anyhow::anyhow!(
+                    "Failed to determine wavelength batch size: {}",
+                    batch_size
+                ));
+            }
 
-            thread_pool.install(|| {
-                (0..num_wavel)
-                    .into_par_iter()
-                    .with_min_len(min_length)
-                    .for_each(|w| {
-                        let thread_idx = current_thread_index().unwrap() as i32;
-                        if thread_idx > num_threads as i32 {
-                            panic!("Thread index out of bounds");
-                        }
-                        let wavel = w as i32;
-                        safe_calc_thread(
-                            &safe_engine,
-                            &safe_atmosphere,
-                            &safe_output,
-                            wavel,
-                            thread_idx,
-                        );
-                    })
-            })
+            if batch_size > 1 {
+                let batch_size = batch_size as usize;
+                let num_batches = num_wavel.div_ceil(batch_size);
+                thread_pool.install(|| {
+                    (0..num_batches)
+                        .into_par_iter()
+                        .try_for_each(|batch_index| {
+                            let thread_idx = current_thread_index().unwrap() as i32;
+                            if thread_idx >= num_threads as i32 {
+                                return Err(anyhow::anyhow!("Thread index out of bounds"));
+                            }
+                            let wavelength_start = batch_index * batch_size;
+                            let wavelength_count = (num_wavel - wavelength_start).min(batch_size);
+                            safe_calc_batch_thread(
+                                &safe_engine,
+                                &safe_atmosphere,
+                                &safe_output,
+                                wavelength_start as i32,
+                                wavelength_count as i32,
+                                thread_idx,
+                            )
+                        })
+                })?;
+            } else {
+                thread_pool.install(|| {
+                    (0..num_wavel)
+                        .into_par_iter()
+                        .with_min_len(min_length)
+                        .for_each(|w| {
+                            let thread_idx = current_thread_index().unwrap() as i32;
+                            if thread_idx >= num_threads as i32 {
+                                panic!("Thread index out of bounds");
+                            }
+                            let wavel = w as i32;
+                            safe_calc_thread(
+                                &safe_engine,
+                                &safe_atmosphere,
+                                &safe_output,
+                                wavel,
+                                thread_idx,
+                            );
+                        })
+                })
+            }
         }
 
         Ok(output)
