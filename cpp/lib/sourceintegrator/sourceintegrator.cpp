@@ -12,6 +12,9 @@ namespace sasktran2 {
     void SourceIntegrator<NSTOKES>::initialize_geometry(
         const std::vector<sasktran2::raytracing::TracedRay>& traced_rays,
         const Geometry& geometry) {
+        m_use_sparse_derivative_tracking = false;
+        m_attenuation_active_derivative_ranges.clear();
+
         // Construct the optical depth matrices.
         // This is the matrix so that matrix @ extinction = layer od, one matrix
         // for each ray Calculating this matrix beforehand makes calculating
@@ -33,6 +36,9 @@ namespace sasktran2 {
     template <int NSTOKES>
     void SourceIntegrator<NSTOKES>::initialize_atmosphere(
         const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmo) {
+        m_use_sparse_derivative_tracking = false;
+        m_attenuation_active_derivative_ranges.clear();
+
         if (atmo.storage().total_extinction.rows() !=
             m_num_geometry_locations) {
             throw std::invalid_argument(
@@ -57,6 +63,84 @@ namespace sasktran2 {
         // atmospheres. Do not let a derivative-free call permanently disable
         // attenuation derivatives for later calculations.
         m_calculate_derivatives = m_derivatives_enabled && atmo.num_deriv() > 0;
+    }
+
+    template <int NSTOKES>
+    void SourceIntegrator<NSTOKES>::initialize_derivative_sparsity(
+        const std::vector<SourceTermInterface<NSTOKES>*>& source_terms) {
+        m_use_sparse_derivative_tracking = false;
+        m_attenuation_active_derivative_ranges.clear();
+
+        if (!m_calculate_derivatives || m_traced_rays == nullptr ||
+            source_terms.empty()) {
+            return;
+        }
+
+        for (const auto* source : source_terms) {
+            if (!source->supports_sparse_derivative_tracking()) {
+                return;
+            }
+        }
+
+        const auto sort_and_deduplicate = [](std::vector<int>& indices) {
+            std::sort(indices.begin(), indices.end());
+            indices.erase(std::unique(indices.begin(), indices.end()),
+                          indices.end());
+        };
+
+        const auto assign_contiguous_ranges =
+            [](const std::vector<int>& indices,
+               std::vector<std::pair<int, int>>& ranges) {
+                ranges.clear();
+                for (const int index : indices) {
+                    if (ranges.empty() ||
+                        index != ranges.back().first + ranges.back().second) {
+                        ranges.emplace_back(index, 1);
+                    } else {
+                        ++ranges.back().second;
+                    }
+                }
+            };
+
+        m_attenuation_active_derivative_ranges.resize(m_traced_rays->size());
+        for (std::size_t ray_index = 0; ray_index < m_traced_rays->size();
+             ++ray_index) {
+            const auto& ray = (*m_traced_rays)[ray_index];
+            auto& ray_active =
+                m_attenuation_active_derivative_ranges[ray_index];
+            ray_active.resize(ray.layers.size());
+
+            std::vector<int> cumulative_active;
+            for (const auto* source : source_terms) {
+                source->append_end_of_ray_active_derivatives(
+                    static_cast<int>(ray_index), cumulative_active);
+            }
+            sort_and_deduplicate(cumulative_active);
+
+            for (std::size_t layer_index = 0; layer_index < ray.layers.size();
+                 ++layer_index) {
+                for (Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
+                         derivative(m_traced_ray_od_matrix[ray_index],
+                                    static_cast<int>(layer_index));
+                     derivative; ++derivative) {
+                    cumulative_active.push_back(derivative.index());
+                }
+                sort_and_deduplicate(cumulative_active);
+                assign_contiguous_ranges(cumulative_active,
+                                         ray_active[layer_index]);
+
+                for (const auto* source : source_terms) {
+                    if (source->has_interior_source()) {
+                        source->append_interior_active_derivatives(
+                            static_cast<int>(ray_index),
+                            static_cast<int>(layer_index), cumulative_active);
+                    }
+                }
+                sort_and_deduplicate(cumulative_active);
+            }
+        }
+
+        m_use_sparse_derivative_tracking = true;
     }
 
     template <int NSTOKES>
@@ -125,7 +209,17 @@ namespace sasktran2 {
             }
             radiance.value *= local_shell_od.exp_minus_od;
             if (m_calculate_derivatives) {
-                radiance.deriv *= local_shell_od.exp_minus_od;
+                if (m_use_sparse_derivative_tracking) {
+                    for (const auto& [derivative_start, derivative_count] :
+                         m_attenuation_active_derivative_ranges[rayidx]
+                                                               [layeridx]) {
+                        radiance.deriv.middleCols(derivative_start,
+                                                  derivative_count) *=
+                            local_shell_od.exp_minus_od;
+                    }
+                } else {
+                    radiance.deriv *= local_shell_od.exp_minus_od;
+                }
             }
 
             const auto& layer = ray.layers[layeridx];

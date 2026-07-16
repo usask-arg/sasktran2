@@ -322,6 +322,21 @@ namespace sasktran2::solartransmission {
         bool is_entrance,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
+        const double source_amplitude = source.value(0);
+        const auto phase = scatter_and_accumulate_derivative(
+            threadidx, losidx, layeridx, index_weights, is_entrance,
+            source_amplitude, 1.0, source);
+        source.value = source_amplitude * phase;
+    }
+
+    template <int NSTOKES>
+    Eigen::Vector<double, NSTOKES>
+    PhaseHandler<NSTOKES>::scatter_and_accumulate_derivative(
+        int threadidx, int losidx, int layeridx,
+        const raytracing::GridWeightStencilView& index_weights,
+        bool is_entrance, double source_amplitude, double derivative_scale,
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& target)
+        const {
         const auto& internal_indices =
             is_entrance ? m_geometry_entrance_to_internal[losidx][layeridx]
                         : m_geometry_exit_to_internal[losidx][layeridx];
@@ -369,13 +384,13 @@ namespace sasktran2::solartransmission {
                     }
                     const int internal_index =
                         internal_indices[derivative_internal_offset++];
-                    source.deriv(0, derivative_start + index_weight.first) +=
-                        source.value(0) *
+                    target.deriv(0, derivative_start + index_weight.first) +=
+                        derivative_scale * source_amplitude *
                         m_d_phase(0, internal_index, d, threadidx) *
                         index_weight.second;
                 }
             }
-            source.value(0) *= phase_result;
+            return Eigen::Vector<double, 1>::Constant(phase_result);
 
         } else if constexpr (NSTOKES == 3) {
             Eigen::Vector3d phase_result = Eigen::Vector3d::Zero();
@@ -430,17 +445,17 @@ namespace sasktran2::solartransmission {
 
                     int deriv_index = m_atmosphere->scat_deriv_start_index() +
                                       d * m_geometry.size() + geometry_index;
-                    source.deriv(0, deriv_index) +=
-                        source.value(0) *
+                    target.deriv(0, deriv_index) +=
+                        derivative_scale * source_amplitude *
                         m_d_phase(0, internal_index, d, threadidx) * weight;
 
-                    source.deriv(1, deriv_index) +=
-                        source.value(0) *
+                    target.deriv(1, deriv_index) +=
+                        derivative_scale * source_amplitude *
                         m_d_phase(1, internal_index, d, threadidx) * weight *
                         (-C2);
 
-                    source.deriv(2, deriv_index) +=
-                        source.value(0) *
+                    target.deriv(2, deriv_index) +=
+                        derivative_scale * source_amplitude *
                         m_d_phase(1, internal_index, d, threadidx) * weight *
                         (-S2);
                 };
@@ -458,8 +473,9 @@ namespace sasktran2::solartransmission {
                 }
             }
 
-            source.value.array() = source.value(0) * phase_result.array();
+            return phase_result;
         } else {
+            return Eigen::Vector<double, NSTOKES>::Zero();
         }
     }
 
