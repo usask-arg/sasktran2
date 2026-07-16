@@ -23,7 +23,8 @@ namespace sasktran2::detail {
         const auto output_indices = [&](int stokes) {
             return Eigen::seqN(first_output + stokes, count, output_stride);
         };
-        output(output_indices(0)) = radiance.value.row(0).head(count).transpose();
+        output(output_indices(0)) =
+            radiance.value.row(0).head(count).transpose();
         if constexpr (NSTOKES >= 3) {
             output(output_indices(1)) =
                 (stokes_c * radiance.value.row(1).head(count) -
@@ -52,12 +53,12 @@ namespace sasktran2::detail {
                     native_storage.middleRows(stokes * capacity, count);
                 const auto radiance_ssa = radiance.derivative_stokes(
                     ngeometry, ngeometry, stokes, count);
-                const auto radiance_extinction = radiance.derivative_stokes(
-                    0, ngeometry, stokes, count);
+                const auto radiance_extinction =
+                    radiance.derivative_stokes(0, ngeometry, stokes, count);
                 native.array() =
                     d_ssa(Eigen::placeholders::all, mapping_columns)
-                        .transpose()
-                        .array() *
+                            .transpose()
+                            .array() *
                         radiance_ssa.transpose().array() +
                     d_extinction(Eigen::placeholders::all, mapping_columns)
                             .transpose()
@@ -70,12 +71,11 @@ namespace sasktran2::detail {
                     const auto radiance_scatter = radiance.derivative_stokes(
                         (2 + mapping.get_scattering_index()) * ngeometry,
                         ngeometry, stokes, count);
-                    native.array() +=
-                        scatter_factor(Eigen::placeholders::all,
-                                       mapping_columns)
-                                .transpose()
-                                .array() *
-                        radiance_scatter.transpose().array();
+                    native.array() += scatter_factor(Eigen::placeholders::all,
+                                                     mapping_columns)
+                                          .transpose()
+                                          .array() *
+                                      radiance_scatter.transpose().array();
                 }
 
                 if (stokes == 0 &&
@@ -89,8 +89,8 @@ namespace sasktran2::detail {
                         ngeometry, 0, count);
                     native.array() +=
                         d_emission(Eigen::placeholders::all, mapping_columns)
-                                .transpose()
-                                .array() *
+                            .transpose()
+                            .array() *
                         radiance_emission.transpose().array();
                 }
             }
@@ -105,53 +105,45 @@ namespace sasktran2::detail {
                 const auto& interpolator =
                     mapping.get_interpolator_const().value();
                 for (int stokes = 0; stokes < NSTOKES; ++stokes) {
-                    auto mapped = mapped_storage
-                                      .middleRows(stokes * capacity, count)
-                                      .leftCols(num_output);
+                    auto mapped =
+                        mapped_storage.middleRows(stokes * capacity, count)
+                            .leftCols(num_output);
                     mapped.noalias() =
                         native_storage.middleRows(stokes * capacity, count) *
                         interpolator;
                 }
-                assign_stokes(0, mapped_storage.middleRows(0, count)
-                                      .leftCols(num_output));
+                assign_stokes(0, mapped_storage.middleRows(0, count).leftCols(
+                                     num_output));
                 if constexpr (NSTOKES >= 3) {
                     assign_stokes(
-                        1, stokes_c *
-                                   mapped_storage.middleRows(capacity, count)
-                                       .leftCols(num_output) -
-                               stokes_s *
-                                   mapped_storage
-                                       .middleRows(2 * capacity, count)
-                                       .leftCols(num_output));
+                        1, stokes_c * mapped_storage.middleRows(capacity, count)
+                                          .leftCols(num_output) -
+                               stokes_s * mapped_storage
+                                              .middleRows(2 * capacity, count)
+                                              .leftCols(num_output));
                     assign_stokes(
-                        2, stokes_s *
-                                   mapped_storage.middleRows(capacity, count)
-                                       .leftCols(num_output) +
-                               stokes_c *
-                                   mapped_storage
-                                       .middleRows(2 * capacity, count)
-                                       .leftCols(num_output));
+                        2, stokes_s * mapped_storage.middleRows(capacity, count)
+                                          .leftCols(num_output) +
+                               stokes_c * mapped_storage
+                                              .middleRows(2 * capacity, count)
+                                              .leftCols(num_output));
                 }
             } else {
-                assign_stokes(0, native_storage.middleRows(0, count)
-                                      .leftCols(num_output));
+                assign_stokes(0, native_storage.middleRows(0, count).leftCols(
+                                     num_output));
                 if constexpr (NSTOKES >= 3) {
                     assign_stokes(
-                        1, stokes_c *
-                                   native_storage.middleRows(capacity, count)
-                                       .leftCols(num_output) -
-                               stokes_s *
-                                   native_storage
-                                       .middleRows(2 * capacity, count)
-                                       .leftCols(num_output));
+                        1, stokes_c * native_storage.middleRows(capacity, count)
+                                          .leftCols(num_output) -
+                               stokes_s * native_storage
+                                              .middleRows(2 * capacity, count)
+                                              .leftCols(num_output));
                     assign_stokes(
-                        2, stokes_s *
-                                   native_storage.middleRows(capacity, count)
-                                       .leftCols(num_output) +
-                               stokes_c *
-                                   native_storage
-                                       .middleRows(2 * capacity, count)
-                                       .leftCols(num_output));
+                        2, stokes_s * native_storage.middleRows(capacity, count)
+                                          .leftCols(num_output) +
+                               stokes_c * native_storage
+                                              .middleRows(2 * capacity, count)
+                                              .leftCols(num_output));
                 }
             }
 
@@ -175,21 +167,19 @@ namespace sasktran2::detail {
                 atmosphere.surface().derivative_mappings().at(name);
             if (mapping.native_surface_mapping().d_brdf.has_value()) {
                 const auto brdf_rows =
-                    mapping.native_surface_mapping()
-                        .d_brdf.value()
-                        .middleRows(block.start, count);
+                    mapping.native_surface_mapping().d_brdf.value().middleRows(
+                        block.start, count);
                 for (int stokes = 0; stokes < NSTOKES; ++stokes) {
                     const auto radiance_surface = radiance.derivative_stokes(
                         surface_derivative_start, surface_derivative_count,
                         stokes, count);
-                    auto mapped = mapped_storage
-                                      .middleRows(stokes * capacity, count)
-                                      .leftCols(1);
-                    mapped.col(0) =
-                        (radiance_surface.transpose().array() *
-                         brdf_rows.array())
-                            .rowwise()
-                            .sum();
+                    auto mapped =
+                        mapped_storage.middleRows(stokes * capacity, count)
+                            .leftCols(1);
+                    mapped.col(0) = (radiance_surface.transpose().array() *
+                                     brdf_rows.array())
+                                        .rowwise()
+                                        .sum();
                 }
                 derivative_output(output_indices(0), 0) =
                     mapped_storage.middleRows(0, count).col(0);
