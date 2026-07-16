@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 import sasktran2 as sk
 
 
@@ -95,4 +96,30 @@ def test_rust_spherical_thermal_and_combined_refracted_sources_are_finite():
     geometry, viewing, atmosphere = _case(config)
     combined = sk.Engine(config, geometry, viewing).calculate_radiance(atmosphere)
     assert all(np.isfinite(value).all() for value in combined.data_vars.values())
-    np.testing.assert_allclose(combined["radiance"], separate[0] + separate[1], rtol=1e-12)
+    np.testing.assert_allclose(
+        combined["radiance"], separate[0] + separate[1], rtol=1e-12
+    )
+
+
+@pytest.mark.parametrize("refracted", [False, True])
+def test_rust_spherical_multithread_matches_serial(refracted: bool):
+    serial_config = _config(solar=True, thermal=True, refracted=refracted)
+    geometry, viewing, atmosphere = _case(serial_config)
+    serial = sk.Engine(serial_config, geometry, viewing).calculate_radiance(atmosphere)
+
+    parallel_config = _config(solar=True, thermal=True, refracted=refracted)
+    parallel_config.num_threads = 4
+    parallel_geometry, parallel_viewing, parallel_atmosphere = _case(parallel_config)
+    parallel = sk.Engine(
+        parallel_config, parallel_geometry, parallel_viewing
+    ).calculate_radiance(parallel_atmosphere)
+
+    assert parallel.data_vars.keys() == serial.data_vars.keys()
+    for name in serial.data_vars:
+        np.testing.assert_allclose(
+            parallel[name],
+            serial[name],
+            rtol=1.0e-12,
+            atol=1.0e-13,
+            err_msg=f"threading changed {name}",
+        )
