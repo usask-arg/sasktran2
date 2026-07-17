@@ -154,6 +154,10 @@ namespace sasktran2::raytracing {
                                                          the ray hits the
                                                          ground. */
 
+        double los_refraction_deflection_angle; /**< Final LOS refraction
+                                                   bending angle in [radians].
+                                                 */
+
         std::vector<std::pair<int, double>> interpolation_index_weights; /**<
             Workspace memory to be used by the raytracer.
          */
@@ -291,6 +295,7 @@ namespace sasktran2::raytracing {
             exit_grid_weights.clear();
             integrated_od_weights.clear();
             tangent_radius = std::numeric_limits<double>::quiet_NaN();
+            los_refraction_deflection_angle = 0.0;
         }
     };
 

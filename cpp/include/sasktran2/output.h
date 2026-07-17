@@ -50,6 +50,7 @@ namespace sasktran2 {
 
         // Diagnostic qunatities
         Eigen::MatrixXd m_los_optical_depth;
+        Eigen::VectorXd m_los_refraction_deflection_angle;
 
         const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere;
         const sasktran2::Config* m_config;
@@ -123,6 +124,14 @@ namespace sasktran2 {
         }
 
         Eigen::MatrixXd& los_optical_depth() { return m_los_optical_depth; }
+
+        const Eigen::VectorXd& los_refraction_deflection_angle() const {
+            return m_los_refraction_deflection_angle;
+        }
+
+        Eigen::VectorXd& los_refraction_deflection_angle() {
+            return m_los_refraction_deflection_angle;
+        }
     };
 
     /** An idealized output container where only the line of sight radiances are

@@ -5,8 +5,20 @@
 
 #include <sasktran2/geometry.h>
 #include <sasktran2/viewinggeometry.h>
+#include <cmath>
 
 namespace sasktran2::raytracing::refraction {
+
+    inline bool refractive_index_is_unity(const sasktran2::Geometry1D& geometry,
+                                          double tolerance = 1e-12) {
+        for (int i = 0; i < geometry.refractive_index().size(); ++i) {
+            if (std::abs(geometry.refractive_index()[i] - 1.0) >= tolerance) {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     /**
      * @brief Calculates the refractive index at a given altitude by

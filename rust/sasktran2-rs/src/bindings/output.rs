@@ -191,6 +191,19 @@ impl Output {
 
         output
     }
+
+    pub fn los_refraction_deflection_angle(&self) -> Array1<f64> {
+        let mut internal: *mut f64 = std::ptr::null_mut();
+        let internal_view = unsafe {
+            ffi::sk_output_get_los_refraction_deflection_angle(self.output, &mut internal);
+            ArrayView1::from_shape_ptr(self.num_los, internal)
+        };
+
+        let mut output = Array1::<f64>::zeros(self.num_los);
+        output.assign(&internal_view);
+
+        output
+    }
 }
 
 impl Drop for Output {
