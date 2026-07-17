@@ -11,6 +11,14 @@ use rayon::current_thread_index;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use sasktran2_sys::ffi;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum LinearizationMode {
+    Jacobian = 0,
+    Jvp = 1,
+    Vjp = 2,
+}
+
 pub enum EngineGeometry<'a> {
     OneDimensional(&'a Geometry1D),
     TwoDimensional(&'a Geometry2D),
@@ -124,6 +132,21 @@ impl<'a> Engine<'a> {
             geometry: EngineGeometry::TwoDimensional(geometry),
             viewing_geometry,
         })
+    }
+
+    pub fn supports_linearization(&self, mode: LinearizationMode) -> Result<bool> {
+        let mut supported = 0i32;
+        let result = unsafe {
+            ffi::sk_engine_supports_linearization(self.engine, mode as i32, &mut supported)
+        };
+        if result == 0 {
+            Ok(supported != 0)
+        } else {
+            Err(anyhow::anyhow!(
+                "Failed to query linearization support: {}",
+                result
+            ))
+        }
     }
 
     pub fn calculate_radiance(&self, atmosphere: &Atmosphere) -> Result<Output> {
@@ -311,6 +334,15 @@ mod tests {
         let engine = Engine::new(&config, &geometry, &viewing_geometry).unwrap();
 
         assert!(!engine.engine.is_null());
+        assert!(engine
+            .supports_linearization(LinearizationMode::Jacobian)
+            .unwrap());
+        assert!(!engine
+            .supports_linearization(LinearizationMode::Jvp)
+            .unwrap());
+        assert!(!engine
+            .supports_linearization(LinearizationMode::Vjp)
+            .unwrap());
     }
 
     #[test]

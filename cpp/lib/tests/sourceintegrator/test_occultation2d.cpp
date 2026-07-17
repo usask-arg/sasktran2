@@ -155,6 +155,33 @@ TEST_CASE("Atmosphere allocates flattened storage from Geometry2D",
     REQUIRE(atmosphere.num_deriv() >= 2 * geometry.size());
 }
 
+TEST_CASE("SourceIntegrator reports native linearization capabilities",
+          "[sourceintegrator][linearization]") {
+    class NoJacobianSource : public InteriorTestSource {
+      public:
+        bool
+        supports_linearization(sasktran2::LinearizationMode) const override {
+            return false;
+        }
+    };
+
+    sasktran2::SourceIntegrator<1> integrator(true);
+    InteriorTestSource default_source;
+    std::vector<SourceTermInterface<1>*> default_sources = {&default_source};
+    REQUIRE(integrator.supports_linearization(
+        sasktran2::LinearizationMode::Jacobian, default_sources));
+    REQUIRE_FALSE(integrator.supports_linearization(
+        sasktran2::LinearizationMode::JVP, default_sources));
+    REQUIRE_FALSE(integrator.supports_linearization(
+        sasktran2::LinearizationMode::VJP, default_sources));
+
+    NoJacobianSource unsupported_source;
+    std::vector<SourceTermInterface<1>*> unsupported_sources = {
+        &default_source, &unsupported_source};
+    REQUIRE_FALSE(integrator.supports_linearization(
+        sasktran2::LinearizationMode::Jacobian, unsupported_sources));
+}
+
 TEST_CASE("SourceIntegrator applies 2D occultation transmission and native "
           "derivatives",
           "[sourceintegrator][occultation][geometry2d]") {

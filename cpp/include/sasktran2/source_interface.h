@@ -10,7 +10,12 @@
 
 namespace sasktran2 {
     template <int NSTOKES> class SourceIntegrator;
-}
+
+    /** Native derivative execution modes that an engine component may
+     * implement. Capability reporting is kept separate from execution so
+     * specialized JVP/VJP interfaces can be added without placeholder hooks. */
+    enum class LinearizationMode { Jacobian = 0, JVP = 1, VJP = 2 };
+} // namespace sasktran2
 
 /** Base interface class that provides source term functionality to the Engine
  *
@@ -211,6 +216,12 @@ template <int NSTOKES> class SourceTermInterface {
 
     /** Returns true when the source contributes within atmospheric layers. */
     virtual bool has_interior_source() const { return true; }
+
+    /** Reports native support for a derivative execution mode. */
+    virtual bool
+    supports_linearization(sasktran2::LinearizationMode mode) const {
+        return mode == sasktran2::LinearizationMode::Jacobian;
+    }
 
     /** Returns whether this source supports the requested atmosphere
      * dimensionality. Sources without an interior contribution are independent

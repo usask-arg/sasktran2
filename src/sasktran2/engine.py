@@ -5,6 +5,7 @@ import xarray as xr
 
 import sasktran2 as sk
 from sasktran2._core_rust import PyEngine
+from sasktran2.linearization import Linearization, _ParameterSpec
 from sasktran2.viewinggeo.base import ViewingGeometryContainer
 
 
@@ -128,6 +129,45 @@ class Engine:
         xr.Dataset
             An xarray dataset containing the radiance and derivatives
         """
+        result, _ = self._calculate_radiance(atmosphere)
+        return result
+
+    def linearize(self, atmosphere: sk.Atmosphere) -> Linearization:
+        """Construct the local linear radiance model for an atmosphere.
+
+        The initial implementation calculates and caches the complete
+        structured radiance Jacobian. JVP and VJP operations on the returned
+        object do not run the radiative-transfer model again. The returned
+        linearization is fixed at the atmosphere state captured by this call;
+        subsequent changes to ``atmosphere`` do not affect it.
+
+        Parameters
+        ----------
+        atmosphere : sk.Atmosphere
+            Atmosphere defining the linearization point. It must have been
+            constructed with calculate_derivatives=True.
+
+        Returns
+        -------
+        Linearization
+            The radiance and local derivative operations.
+        """
+        if not atmosphere.calculate_derivatives:
+            msg = (
+                "Engine.linearize requires an atmosphere constructed with "
+                "calculate_derivatives=True"
+            )
+            raise ValueError(msg)
+        if not self._engine._supports_linearization(0):
+            msg = "The configured engine does not support full-Jacobian linearization"
+            raise NotImplementedError(msg)
+
+        result, specs = self._calculate_radiance(atmosphere)
+        return Linearization._from_result(result, specs)
+
+    def _calculate_radiance(
+        self, atmosphere: sk.Atmosphere
+    ) -> tuple[xr.Dataset, dict[str, _ParameterSpec]]:
         if isinstance(self._geometry, sk.Geometry2D) != isinstance(
             atmosphere.model_geometry, sk.Geometry2D
         ):
@@ -149,6 +189,7 @@ class Engine:
         output = self._engine.calculate_radiance(atmosphere.internal_object())
 
         out_ds = xr.Dataset()
+        radiance_derivative_specs: dict[str, _ParameterSpec] = {}
 
         out_ds["radiance"] = xr.DataArray(
             output.radiance,
@@ -194,6 +235,14 @@ class Engine:
                 out_ds[name] += mapped_derivative
             else:
                 out_ds[name] = mapped_derivative
+            spec = _ParameterSpec(tuple(mapped_derivative.dims[:-3]))
+            previous_spec = radiance_derivative_specs.setdefault(name, spec)
+            if previous_spec != spec:
+                msg = (
+                    f"Radiance derivative mappings assigned to {name!r} have "
+                    "incompatible parameter dimensions"
+                )
+                raise ValueError(msg)
         for k, v in output.d_radiance_surf.items():
             mapping = atmosphere.surface.get_derivative_mapping(k)
 
@@ -203,6 +252,12 @@ class Engine:
             if mapping.interp_dim == "dummy":
                 mapped_derivative = mapped_derivative.isel(**{mapping.interp_dim: 0})
             out_ds[k] = mapped_derivative
+
+            if mapping.interpolator is None or len(mapping.interpolator) == 0:
+                spec = _ParameterSpec(("wavelength",), ("wavelength",))
+            else:
+                spec = _ParameterSpec(tuple(mapped_derivative.dims[:-3]))
+            radiance_derivative_specs[k] = spec
 
         for k, v in output.d_flux.items():
             mapping = atmosphere.storage.get_derivative_mapping(k)
@@ -260,4 +315,4 @@ class Engine:
                 dims=["wavelength", "los"],
             )
 
-        return out_ds
+        return out_ds, radiance_derivative_specs

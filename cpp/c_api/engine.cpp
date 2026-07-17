@@ -138,6 +138,36 @@ int sk_engine_effective_wavelength_batch_size(Engine* engine,
     }
 }
 
+int sk_engine_supports_linearization(Engine* engine, int mode, int* supported) {
+    try {
+        if (engine == nullptr || !engine->impl || supported == nullptr) {
+            return -1;
+        }
+        if (mode < static_cast<int>(sasktran2::LinearizationMode::Jacobian) ||
+            mode > static_cast<int>(sasktran2::LinearizationMode::VJP)) {
+            return -2;
+        }
+
+        const auto linearization_mode =
+            static_cast<sasktran2::LinearizationMode>(mode);
+        if (engine->_config->impl.num_stokes() == 1) {
+            auto* impl = dynamic_cast<Sasktran2<1>*>(engine->impl.get());
+            *supported =
+                impl->supports_linearization(linearization_mode) ? 1 : 0;
+            return 0;
+        }
+        if (engine->_config->impl.num_stokes() == 3) {
+            auto* impl = dynamic_cast<Sasktran2<3>*>(engine->impl.get());
+            *supported =
+                impl->supports_linearization(linearization_mode) ? 1 : 0;
+            return 0;
+        }
+        return -2;
+    } catch (const std::exception&) {
+        return -3;
+    }
+}
+
 int sk_engine_calculate_radiance_block_thread(Engine* engine, OutputC* output,
                                               int wavelength_start,
                                               int wavelength_count,

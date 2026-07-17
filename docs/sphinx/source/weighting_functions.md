@@ -22,6 +22,7 @@ For example, if we set up a simple calculation,
 ```{code-cell} ipython3
 import sasktran2 as sk
 import numpy as np
+import xarray as xr
 
 config = sk.Config()
 
@@ -74,6 +75,32 @@ We can take a look at one of the weighting functions,
 ```{code-cell} ipython3
 radiance["wf_ozone_vmr"].isel(los=1, stokes=0).sel(wavelength=330, method="nearest").plot(y="ozone_altitude")
 ```
+
+## Jacobian-vector and vector-Jacobian products
+
+The same derivatives are available as a local linear model of the radiance:
+
+    linearization = engine.linearize(atmosphere)
+
+    # A labeled perturbation. Parameters not included here are held fixed.
+    tangent = linearization.tangent_template[["ozone_vmr"]]
+    tangent["ozone_vmr"].data[:] = ozone_perturbation
+    radiance_perturbation = linearization.jvp(tangent)
+
+    # Propagate a scalar objective's radiance sensitivity back to every input.
+    parameter_gradients = linearization.vjp(radiance_sensitivity)
+
+The linearization.value property is the radiance at the linearization point
+and linearization.jacobian contains one labeled block per semantic parameter
+(for example, ozone_vmr rather than wf_ozone_vmr). In the initial
+implementation the complete radiance Jacobian is calculated and cached when
+linearize is called. Repeated JVP and VJP operations reuse that cache, but
+the memory cost is therefore the same as requesting all weighting functions.
+Flux and diagnostic outputs are not part of this linearization interface.
+The tangent_template property describes the shape, dimensions, and coordinates
+of every parameter without accessing the full Jacobian. A linearization is
+fixed at the atmosphere state captured by linearize; changing the atmosphere
+afterward does not alter its value, JVPs, or VJPs.
 
 ## The Details
 
