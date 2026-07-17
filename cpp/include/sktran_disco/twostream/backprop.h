@@ -58,10 +58,10 @@ namespace sasktran2::twostream::backprop {
         }
     };
 
-    template <SourceType Source>
-    inline void map_to_atmosphere(
-        const Input<Source>& input, const GradientMap<Source>& internal_grad,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& source) {
+    template <SourceType Source, typename SourceStorage>
+    inline void map_to_atmosphere(const Input<Source>& input,
+                                  const GradientMap<Source>& internal_grad,
+                                  SourceStorage& source) {
         ZoneScopedN("Twostream Backprop Map To Atmosphere");
         int n = input.nlyr + 1;
         int nlyr = input.nlyr;

@@ -67,9 +67,7 @@ template <int NSTOKES> class Sasktran2 : public Sasktran2Interface {
     std::vector<SourceTermInterface<NSTOKES>*>
         m_thermal_source; /**< Thermal source terms (planck, photochemical) */
 
-    // Thread storage to avoid reallocs on the derivatives of radiance
-    std::vector<sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>>
-        m_thread_radiance;
+    std::vector<sasktran2::WavelengthBlockDual<NSTOKES>> m_thread_radiance;
 
     // Thread storage to avoid reallocs on the derivatives of flux
     // Can't reuse radiance storage because flux NSTOKES is always 1 for flux
@@ -141,12 +139,10 @@ template <int NSTOKES> class Sasktran2 : public Sasktran2Interface {
         const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
         sasktran2::Output<NSTOKES>& output, bool only_initialize = false) const;
 
-    /**
-     * @brief
-     *
-     */
-    void calculate_radiance_thread(
-        const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
-        sasktran2::Output<NSTOKES>& output, int wavelength_idx,
-        int thread_idx) const;
+    int effective_wavelength_batch_size(int num_wavelengths) const;
+
+    void
+    calculate_radiance_block_thread(sasktran2::Output<NSTOKES>& output,
+                                    const sasktran2::WavelengthBlock<>& batch,
+                                    int thread_idx) const;
 };

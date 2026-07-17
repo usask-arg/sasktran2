@@ -471,23 +471,28 @@ void Sasktran2<NSTOKES>::calculate_radiance(
     // Use this method for observer geometries and make a different method for
     // interior fluxes?
 
+    const int wavelength_batch_size =
+        effective_wavelength_batch_size(atmosphere.num_wavel());
+    m_source_integrator->initialize_thread_storage(m_config.num_threads(),
+                                                   wavelength_batch_size);
+
     // Initialize each source term with the atmosphere
     for (auto& source : m_source_terms) {
+        source->set_wavelength_block_capacity(wavelength_batch_size);
         source->initialize_atmosphere(atmosphere);
     }
 
     m_source_integrator->initialize_atmosphere(atmosphere);
     m_source_integrator->initialize_derivative_sparsity(m_los_source_terms);
 
-    // Allocate memory, should be moved to thread storage?
-    auto& radiance = const_cast<std::vector<
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>>&>(
-        m_thread_radiance);
+    auto& radiance =
+        const_cast<std::vector<sasktran2::WavelengthBlockDual<NSTOKES>>&>(
+            m_thread_radiance);
     radiance.resize(m_config.num_threads());
     for (auto& thread_radiance : radiance) {
-        thread_radiance.resize(NSTOKES, atmosphere.num_deriv(), false);
+        thread_radiance.resize(wavelength_batch_size, atmosphere.num_deriv(),
+                               false);
     }
-
     auto& flux = const_cast<std::vector<
         sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>>&>(
         m_thread_flux);
@@ -496,6 +501,7 @@ void Sasktran2<NSTOKES>::calculate_radiance(
         thread_flux.resize(1, atmosphere.num_deriv(), false);
     }
 
+    output.set_wavelength_block_capacity(wavelength_batch_size);
     output.initialize(m_config, *m_geometry, m_internal_viewing_geometry,
                       atmosphere);
 
@@ -511,135 +517,93 @@ void Sasktran2<NSTOKES>::calculate_radiance(
         return;
     }
 
+    const int num_blocks =
+        (atmosphere.num_wavel() + wavelength_batch_size - 1) /
+        wavelength_batch_size;
 #pragma omp parallel for num_threads(m_config.num_wavelength_threads())
-    for (int w = 0; w < atmosphere.num_wavel(); ++w) {
+    for (int block_index = 0; block_index < num_blocks; ++block_index) {
 #ifdef SKTRAN_OPENMP_SUPPORT
-        int thread_idx = omp_get_thread_num();
+        const int thread_idx = omp_get_thread_num();
 #else
-        int thread_idx = 0;
+        const int thread_idx = 0;
 #endif
-        FrameMarkStart("Frame");
-
-        // Trigger source term generation for this wavelength
-        for (auto& source : m_source_terms) {
-            ZoneScopedN("Source Calculation");
-            source->calculate(w, thread_idx);
-        }
-
-#pragma omp parallel for num_threads(m_config.num_source_threads())            \
-    schedule(dynamic)
-        for (int i = 0; i < m_internal_viewing_geometry.num_rays(); ++i) {
-#ifdef SKTRAN_OPENMP_SUPPORT
-            int ray_threadidx = omp_get_thread_num() + thread_idx;
-#else
-            int ray_threadidx = 0;
-#endif
-
-            // Set the radiance thread storage to 0
-            radiance[ray_threadidx].value.setZero();
-            radiance[ray_threadidx].deriv.setZero();
-
-            {
-                ZoneScopedN("Source Integration");
-                // Integrate all of the sources for the ray
-                m_source_integrator->integrate(radiance[ray_threadidx],
-                                               m_los_source_terms, w, i,
-                                               thread_idx, ray_threadidx);
-            }
-
-            // Add on any start of ray sources
-            for (const SourceTermInterface<NSTOKES>* source :
-                 m_los_source_terms) {
-                source->start_of_ray_source(w, i, thread_idx, ray_threadidx,
-                                            radiance[ray_threadidx]);
-            }
-
-            // And assign it to the output
-            output.assign(radiance[ray_threadidx], i, w, ray_threadidx);
-        }
-
-#pragma omp parallel for num_threads(m_config.num_source_threads())            \
-    schedule(dynamic)
-        for (int i = 0; i < m_internal_viewing_geometry.flux_observers.size();
-             ++i) {
-#ifdef SKTRAN_OPENMP_SUPPORT
-            int ray_threadidx = omp_get_thread_num() + thread_idx;
-#else
-            int ray_threadidx = 0;
-#endif
-            for (int flux_type_idx = 0;
-                 flux_type_idx < m_config.get_flux_types().size();
-                 ++flux_type_idx) {
-                auto flux_type = m_config.get_flux_types()[flux_type_idx];
-                // Set the flux thread storage to 0
-                flux[ray_threadidx].value.setZero();
-                flux[ray_threadidx].deriv.setZero();
-
-                for (const SourceTermInterface<NSTOKES>* source :
-                     m_los_source_terms) {
-                    source->flux(w, i, thread_idx, ray_threadidx,
-                                 flux[ray_threadidx], flux_type);
-                }
-
-                output.assign_flux(flux[ray_threadidx], i, w, ray_threadidx,
-                                   flux_type_idx);
-            }
-        }
-        FrameMarkEnd("Frame");
+        const int start = block_index * wavelength_batch_size;
+        const sasktran2::WavelengthBlock<> block{
+            start,
+            std::min(wavelength_batch_size, atmosphere.num_wavel() - start)};
+        calculate_radiance_block_thread(output, block, thread_idx);
     }
 }
 
 template <int NSTOKES>
-void Sasktran2<NSTOKES>::calculate_radiance_thread(
-    const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
-    sasktran2::Output<NSTOKES>& output, int wavelength_idx,
-    int thread_idx) const {
+int Sasktran2<NSTOKES>::effective_wavelength_batch_size(
+    int num_wavelengths) const {
+    const int requested_block_size = std::max(
+        1, std::min(m_config.wavelength_batch_size(), num_wavelengths));
+    int block_size = requested_block_size;
+    if (!m_internal_viewing_geometry.flux_observers.empty()) {
+        block_size = 1;
+    }
+    for (const auto& source : m_source_terms) {
+        const int source_block_size = source->maximum_wavelength_block_size();
+        if (source_block_size < 1) {
+            throw std::logic_error(
+                "Source reported an invalid maximum wavelength block size");
+        }
+        block_size = std::min(block_size, source_block_size);
+    }
+    if (block_size < requested_block_size) {
+        spdlog::debug(
+            "Reducing wavelength batch size from {} to {} for active sources "
+            "and observers",
+            requested_block_size, block_size);
+    }
+    return block_size;
+}
 
-    auto& radiance = const_cast<std::vector<
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>>&>(
-        m_thread_radiance)[thread_idx];
-
-    auto& flux = const_cast<std::vector<
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>>&>(
-        m_thread_flux)[thread_idx];
-
-    int w = wavelength_idx;
-    FrameMarkStart("Frame");
-
-    // Trigger source term generation for this wavelength
-    for (auto& source : m_source_terms) {
-        ZoneScopedN("Source Calculation");
-        source->calculate(w, thread_idx);
+template <int NSTOKES>
+void Sasktran2<NSTOKES>::calculate_radiance_block_thread(
+    sasktran2::Output<NSTOKES>& output,
+    const sasktran2::WavelengthBlock<>& batch, int thread_idx) const {
+    if (thread_idx < 0 || thread_idx >= m_thread_radiance.size() ||
+        batch.count < 1 ||
+        batch.count > m_thread_radiance[thread_idx].block_capacity()) {
+        throw std::invalid_argument(
+            "Invalid wavelength block for engine thread storage");
     }
 
+    FrameMarkStart("WavelengthBlock");
+    for (auto& source : m_source_terms) {
+        ZoneScopedN("Batch Source Calculation");
+        source->calculate(batch, thread_idx);
+    }
+
+    auto& radiance_storage =
+        const_cast<std::vector<sasktran2::WavelengthBlockDual<NSTOKES>>&>(
+            m_thread_radiance);
+    auto& flux_storage = const_cast<std::vector<
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>>&>(
+        m_thread_flux);
 #pragma omp parallel for num_threads(m_config.num_source_threads())            \
     schedule(dynamic)
-    for (int i = 0; i < m_internal_viewing_geometry.num_rays(); ++i) {
+    for (int ray_index = 0; ray_index < m_internal_viewing_geometry.num_rays();
+         ++ray_index) {
 #ifdef SKTRAN_OPENMP_SUPPORT
-        int ray_threadidx = omp_get_thread_num() + thread_idx;
+        const int ray_threadidx = omp_get_thread_num() + thread_idx;
 #else
-        int ray_threadidx = thread_idx;
+        const int ray_threadidx = thread_idx;
 #endif
+        auto& radiance = radiance_storage[ray_threadidx];
+        radiance.set_zero(batch.count);
+        m_source_integrator->integrate(radiance, m_los_source_terms, batch,
+                                       ray_index, thread_idx, ray_threadidx);
 
-        // Set the radiance thread storage to 0
-        radiance.value.setZero();
-        radiance.deriv.setZero();
-
-        {
-            ZoneScopedN("Source Integration");
-            // Integrate all of the sources for the ray
-            m_source_integrator->integrate(radiance, m_los_source_terms, w, i,
-                                           thread_idx, ray_threadidx);
+        for (const auto* source : m_los_source_terms) {
+            source->start_of_ray_source(batch, ray_index, thread_idx,
+                                        ray_threadidx, radiance);
         }
 
-        // Add on any start of ray sources
-        for (const SourceTermInterface<NSTOKES>* source : m_los_source_terms) {
-            source->start_of_ray_source(w, i, thread_idx, ray_threadidx,
-                                        radiance);
-        }
-
-        // And assign it to the output
-        output.assign(radiance, i, w, ray_threadidx);
+        output.assign(batch, radiance, ray_index, ray_threadidx);
     }
 
 #pragma omp parallel for num_threads(m_config.num_source_threads())            \
@@ -651,26 +615,28 @@ void Sasktran2<NSTOKES>::calculate_radiance_thread(
 #else
         int ray_threadidx = thread_idx;
 #endif
-        for (int flux_type_idx = 0;
-             flux_type_idx < m_config.get_flux_types().size();
-             ++flux_type_idx) {
-            auto flux_type = m_config.get_flux_types()[flux_type_idx];
-            // Set the flux thread storage to 0
-            flux.value.setZero();
-            flux.deriv.setZero();
+        auto& flux = flux_storage[ray_threadidx];
+        for (int lane = 0; lane < batch.count; ++lane) {
+            const int wavelength = batch.wavelength(lane);
+            for (int flux_type_idx = 0;
+                 flux_type_idx < m_config.get_flux_types().size();
+                 ++flux_type_idx) {
+                auto flux_type = m_config.get_flux_types()[flux_type_idx];
+                flux.value.setZero();
+                flux.deriv.setZero();
 
-            for (const SourceTermInterface<NSTOKES>* source :
-                 m_los_source_terms) {
-                source->flux(w, i, thread_idx, ray_threadidx, flux, flux_type);
+                for (const SourceTermInterface<NSTOKES>* source :
+                     m_los_source_terms) {
+                    source->flux(wavelength, i, thread_idx, ray_threadidx, flux,
+                                 flux_type);
+                }
+
+                output.assign_flux(flux, i, wavelength, ray_threadidx,
+                                   flux_type_idx);
             }
-
-            output.assign_flux(flux, i, w, ray_threadidx, flux_type_idx);
         }
     }
-
-    // TODO: Is this where we should generate fluxes or other quantities
-    // that aren't through the integrator?
-    FrameMarkEnd("Frame");
+    FrameMarkEnd("WavelengthBlock");
 }
 
 template class Sasktran2<1>;

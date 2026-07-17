@@ -118,6 +118,22 @@ int sk_config_set_threading_model(Config* config, int threading_model) {
     return 0; // Success
 }
 
+int sk_config_get_wavelength_batch_size(Config* config, int* batch_size) {
+    if (config == nullptr || batch_size == nullptr) {
+        return -1;
+    }
+    *batch_size = config->impl.wavelength_batch_size();
+    return 0;
+}
+
+int sk_config_set_wavelength_batch_size(Config* config, int batch_size) {
+    if (config == nullptr || batch_size < 1) {
+        return -1;
+    }
+    config->impl.set_wavelength_batch_size(batch_size);
+    return 0;
+}
+
 int sk_config_get_num_singlescatter_moments(Config* config, int* num_moments) {
     if (config == nullptr || num_moments == nullptr) {
         return -1; // Error: null pointer

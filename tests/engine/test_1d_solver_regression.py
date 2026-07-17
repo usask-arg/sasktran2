@@ -5,19 +5,38 @@ import pytest
 import sasktran2 as sk
 
 
-def _setup_1d(source: str, num_stokes: int, calculate_derivatives: bool):
+def _setup_1d(
+    source: str,
+    num_stokes: int,
+    calculate_derivatives: bool,
+    *,
+    num_wavelengths: int | None = None,
+    wavelength_batch_size: int = 1,
+    num_threads: int = 1,
+    threading_lib: sk.ThreadingLib | None = None,
+    threading_model: sk.ThreadingModel | None = None,
+    emission_source: sk.EmissionSource = sk.EmissionSource.NoSource,
+    occultation_source: sk.OccultationSource = sk.OccultationSource.NoSource,
+):
     config = sk.Config()
-    config.num_threads = 1
+    config.num_threads = num_threads
     config.num_stokes = num_stokes
     config.num_streams = 8
     config.num_singlescatter_moments = 16
     config.num_sza = 2
     config.output_los_optical_depth = True
+    config.wavelength_batch_size = wavelength_batch_size
+    config.emission_source = emission_source
+    config.occultation_source = occultation_source
+    if threading_lib is not None:
+        config.threading_lib = threading_lib
+    if threading_model is not None:
+        config.threading_model = threading_model
 
     if source == "discrete_ordinates":
         config.single_scatter_source = sk.SingleScatterSource.DiscreteOrdinates
         config.multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
-        num_wavelengths = 3
+        default_num_wavelengths = 3
     elif source == "successive_orders":
         config.single_scatter_source = sk.SingleScatterSource.Exact
         config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
@@ -25,11 +44,14 @@ def _setup_1d(source: str, num_stokes: int, calculate_derivatives: bool):
         config.num_successive_orders_incoming = 26
         config.num_successive_orders_outgoing = 26
         config.init_successive_orders_with_discrete_ordinates = False
-        num_wavelengths = 2
+        default_num_wavelengths = 2
     else:
         config.single_scatter_source = sk.SingleScatterSource.Exact
         config.multiple_scatter_source = sk.MultipleScatterSource.NoSource
-        num_wavelengths = 1
+        default_num_wavelengths = 1
+
+    if num_wavelengths is None:
+        num_wavelengths = default_num_wavelengths
 
     altitude_grid_m = np.linspace(0.0, 60_000.0, 25)
     cos_sza = 0.42
@@ -75,6 +97,11 @@ def _setup_1d(source: str, num_stokes: int, calculate_derivatives: bool):
         atmosphere.leg_coeff.a2[2, :, :] = 3.0
         atmosphere.leg_coeff.b1[2, :, :] = -np.sqrt(6.0) / 2.0
     atmosphere.surface.albedo[:] = np.linspace(0.08, 0.31, num_wavelengths)
+    if emission_source != sk.EmissionSource.NoSource:
+        atmosphere.storage.emission_source[:] = (
+            3.0e-4 * np.exp(-altitude_grid_m / 12_000.0)[:, np.newaxis]
+        ) * np.linspace(0.7, 1.4, num_wavelengths)[np.newaxis, :]
+        atmosphere.surface.emission[:] = np.linspace(1.0e-4, 7.0e-4, num_wavelengths)
 
     return sk.Engine(config, geometry, viewing_geometry), atmosphere
 
@@ -231,3 +258,186 @@ def test_1d_polarized_b1_phase_coefficient_wf():
     numeric_wf = (radiance_plus - radiance_minus) / (2 * step)
     analytic_wf = result.wf_leg_coeff_11.values[altitude_index, 0]
     np.testing.assert_allclose(analytic_wf, numeric_wf[0], rtol=1e-7, atol=1e-10)
+
+
+@pytest.mark.parametrize(
+    ("num_stokes", "calculate_derivatives"),
+    [(1, False), (1, True), (3, False), (3, True)],
+)
+def test_exact_single_scatter_wavelength_batch_parity(
+    num_stokes: int, calculate_derivatives: bool
+):
+    """Batch execution, including a partial tail, matches the scalar path."""
+    scalar_engine, scalar_atmosphere = _setup_1d(
+        "single_scatter",
+        num_stokes,
+        calculate_derivatives,
+        num_wavelengths=7,
+    )
+    batch_engine, batch_atmosphere = _setup_1d(
+        "single_scatter",
+        num_stokes,
+        calculate_derivatives,
+        num_wavelengths=7,
+        wavelength_batch_size=4,
+    )
+
+    scalar = scalar_engine.calculate_radiance(scalar_atmosphere)
+    batched = batch_engine.calculate_radiance(batch_atmosphere)
+
+    assert scalar.data_vars.keys() == batched.data_vars.keys()
+    for variable in scalar.data_vars:
+        np.testing.assert_allclose(
+            batched[variable].values,
+            scalar[variable].values,
+            rtol=2e-13,
+            atol=2e-14,
+        )
+
+
+@pytest.mark.parametrize(
+    "emission_source",
+    [sk.EmissionSource.Standard, sk.EmissionSource.VolumeEmissionRate],
+)
+def test_mixed_sources_wavelength_batch_parity(emission_source):
+    options = {
+        "num_wavelengths": 7,
+        "emission_source": emission_source,
+        "occultation_source": sk.OccultationSource.Standard,
+    }
+    scalar_engine, scalar_atmosphere = _setup_1d("single_scatter", 3, True, **options)
+    batch_engine, batch_atmosphere = _setup_1d(
+        "single_scatter", 3, True, wavelength_batch_size=4, **options
+    )
+
+    scalar = scalar_engine.calculate_radiance(scalar_atmosphere)
+    batched = batch_engine.calculate_radiance(batch_atmosphere)
+    for variable in scalar.data_vars:
+        np.testing.assert_allclose(
+            batched[variable].values,
+            scalar[variable].values,
+            rtol=2e-13,
+            atol=2e-14,
+        )
+
+
+@pytest.mark.parametrize("wavelength_batch_size", [1, 4])
+def test_surface_albedo_wf_with_atmospheric_emission(wavelength_batch_size):
+    """Atmospheric-emission derivatives must not displace surface derivatives."""
+    engine, atmosphere = _setup_1d(
+        "single_scatter",
+        1,
+        True,
+        num_wavelengths=5,
+        wavelength_batch_size=wavelength_batch_size,
+        emission_source=sk.EmissionSource.Standard,
+    )
+    result = engine.calculate_radiance(atmosphere)
+
+    step = 1e-5
+    atmosphere.surface.albedo[:] += step
+    radiance_above = engine.calculate_radiance(atmosphere).radiance.values.copy()
+    atmosphere.surface.albedo[:] -= 2 * step
+    radiance_below = engine.calculate_radiance(atmosphere).radiance.values.copy()
+    atmosphere.surface.albedo[:] += step
+
+    numeric_wf = (radiance_above - radiance_below) / (2 * step)
+    np.testing.assert_allclose(
+        result.wf_albedo.values,
+        numeric_wf,
+        rtol=1e-7,
+        atol=1e-10,
+    )
+
+
+def test_rayon_wavelength_batch_parity():
+    scalar_engine, scalar_atmosphere = _setup_1d(
+        "single_scatter", 1, True, num_wavelengths=9
+    )
+    batch_engine, batch_atmosphere = _setup_1d(
+        "single_scatter",
+        1,
+        True,
+        num_wavelengths=9,
+        wavelength_batch_size=4,
+        num_threads=2,
+        threading_lib=sk.ThreadingLib.Rayon,
+    )
+
+    scalar = scalar_engine.calculate_radiance(scalar_atmosphere)
+    batched = batch_engine.calculate_radiance(batch_atmosphere)
+    for variable in scalar.data_vars:
+        np.testing.assert_allclose(
+            batched[variable].values,
+            scalar[variable].values,
+            rtol=5e-12,
+            atol=2e-13,
+        )
+
+
+def test_unsupported_sources_fall_back_to_scalar_wavelengths():
+    scalar_engine, scalar_atmosphere = _setup_1d(
+        "discrete_ordinates", 1, False, num_wavelengths=3
+    )
+    configured_engine, configured_atmosphere = _setup_1d(
+        "discrete_ordinates",
+        1,
+        False,
+        num_wavelengths=3,
+        wavelength_batch_size=8,
+    )
+
+    scalar = scalar_engine.calculate_radiance(scalar_atmosphere)
+    configured = configured_engine.calculate_radiance(configured_atmosphere)
+    for variable in scalar.data_vars:
+        np.testing.assert_array_equal(
+            configured[variable].values, scalar[variable].values
+        )
+
+
+def test_mixed_batch_and_nonbatch_sources_fall_back_to_scalar_wavelengths():
+    """A non-batched source caps exact single scatter to the scalar kernel."""
+    scalar_engine, scalar_atmosphere = _setup_1d(
+        "successive_orders", 1, True, num_wavelengths=3
+    )
+    configured_engine, configured_atmosphere = _setup_1d(
+        "successive_orders",
+        1,
+        True,
+        num_wavelengths=3,
+        wavelength_batch_size=8,
+    )
+
+    scalar = scalar_engine.calculate_radiance(scalar_atmosphere)
+    configured = configured_engine.calculate_radiance(configured_atmosphere)
+    for variable in scalar.data_vars:
+        np.testing.assert_array_equal(
+            configured[variable].values, scalar[variable].values
+        )
+
+
+def test_rayon_source_threading_uses_cpp_source_threads():
+    """Rayon only partitions wavelengths; source threading stays in C++."""
+    scalar_engine, scalar_atmosphere = _setup_1d(
+        "single_scatter", 1, True, num_wavelengths=5
+    )
+    threaded_engine, threaded_atmosphere = _setup_1d(
+        "single_scatter",
+        1,
+        True,
+        num_wavelengths=5,
+        wavelength_batch_size=4,
+        num_threads=2,
+        threading_lib=sk.ThreadingLib.Rayon,
+        threading_model=sk.ThreadingModel.Source,
+    )
+
+    scalar = scalar_engine.calculate_radiance(scalar_atmosphere)
+    threaded = threaded_engine.calculate_radiance(threaded_atmosphere)
+    for variable in scalar.data_vars:
+        np.testing.assert_allclose(
+            threaded[variable].values,
+            scalar[variable].values,
+            rtol=5e-12,
+            atol=2e-13,
+        )

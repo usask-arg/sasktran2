@@ -1,17 +1,19 @@
 #include "sasktran2/config.h"
 #include <sasktran2/output.h>
+#include "outputblock.h"
 
 namespace sasktran2 {
     template <int NSTOKES> void OutputC<NSTOKES>::resize() {
         // TODO: Check that the size of the passed in vector is correct
         // m_radiance.resize(NSTOKES * this->m_nwavel * this->m_nlos, 0, false);
 
-        int i = 0;
+        int max_output = 1;
         for (auto& [name, deriv] :
              this->m_atmosphere->storage().derivative_mappings_const()) {
             // m_derivatives[name].resize(NSTOKES * this->m_nwavel *
             // this->m_nlos,
             //                            deriv.num_output());
+            max_output = std::max(max_output, deriv.num_output());
         }
 
         for (auto& [name, deriv] :
@@ -20,17 +22,21 @@ namespace sasktran2 {
             //     NSTOKES * this->m_nwavel * this->m_nlos, 1);
         }
 
+        const int block_capacity = this->m_wavelength_block_capacity;
         m_native_thread_storage.resize(this->m_config->num_threads());
-        for (auto& storage : m_native_thread_storage) {
-            storage.resize(NSTOKES, this->m_ngeometry);
+        m_mapped_thread_storage.resize(this->m_config->num_threads());
+        for (int thread = 0; thread < this->m_config->num_threads(); ++thread) {
+            m_native_thread_storage[thread].resize(NSTOKES * block_capacity,
+                                                   this->m_ngeometry);
+            m_mapped_thread_storage[thread].resize(NSTOKES * block_capacity,
+                                                   max_output);
         }
     }
 
     template <int NSTOKES>
-    void OutputC<NSTOKES>::assign(
-        const sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-            radiance,
-        int losidx, int wavelidx, int threadidx) {
+    template <typename Radiance>
+    void OutputC<NSTOKES>::assign_lane(const Radiance& radiance, int losidx,
+                                       int wavelidx, int threadidx) {
 
         int linear_index = NSTOKES * this->m_nlos * wavelidx + NSTOKES * losidx;
 
@@ -47,12 +53,8 @@ namespace sasktran2 {
 
         // Do the atmosphere mappings
         for (auto& [name, deriv] : m_derivatives) {
-            Eigen::Ref<const Eigen::Matrix<double, NSTOKES, -1>>
-                d_rad_by_d_ssa = radiance.d_ssa(
-                    this->m_ngeometry); // Col vector [stokes X N]
-            Eigen::Ref<const Eigen::Matrix<double, NSTOKES, -1>> d_rad_by_d_k =
-                radiance.d_extinction(
-                    this->m_ngeometry); // col vector [stokes X N]
+            const auto d_rad_by_d_ssa = radiance.d_ssa(this->m_ngeometry);
+            const auto d_rad_by_d_k = radiance.d_extinction(this->m_ngeometry);
 
             const auto& mapping =
                 this->m_atmosphere->storage().derivative_mappings_const().at(
@@ -74,9 +76,8 @@ namespace sasktran2 {
 
             if (mapping.is_scattering_derivative()) {
                 // Have to include the scattering terms
-                Eigen::Ref<const Eigen::Matrix<double, NSTOKES, -1>>
-                    d_rad_by_d_scat = radiance.d_scatterer(
-                        this->m_ngeometry, mapping.get_scattering_index());
+                const auto d_rad_by_d_scat = radiance.d_scatterer(
+                    this->m_ngeometry, mapping.get_scattering_index());
                 const auto& scat_factor =
                     mapping.native_mapping()
                         .scat_factor.value(); // [N x wavelength]
@@ -91,10 +92,9 @@ namespace sasktran2 {
             if (mapping.native_mapping().d_emission.has_value() &&
                 include_emission_derivatives) {
                 // Include the emission terms
-                Eigen::Ref<const Eigen::Matrix<double, NSTOKES, -1>>
-                    d_rad_by_d_emission = radiance.d_emission(
-                        this->m_ngeometry,
-                        this->m_atmosphere->num_scattering_deriv_groups());
+                const auto d_rad_by_d_emission = radiance.d_emission(
+                    this->m_ngeometry,
+                    this->m_atmosphere->num_scattering_deriv_groups());
 
                 const auto& d_emission =
                     mapping.native_mapping().d_emission.value();
@@ -165,12 +165,10 @@ namespace sasktran2 {
         // Then do the surface mappings
         for (auto& [name, deriv] : m_surface_derivatives) {
 
-            Eigen::Ref<const Eigen::Matrix<double, NSTOKES, -1>>
-                d_rad_by_d_surface = radiance.d_brdf(
-                    this->m_ngeometry,
-                    this->m_atmosphere->num_scattering_deriv_groups(),
-                    this->m_atmosphere->surface()
-                        .num_deriv()); // [stokes X num_brdf_deriv]
+            const auto d_rad_by_d_surface =
+                radiance.d_brdf(this->m_ngeometry,
+                                this->m_atmosphere->num_source_deriv_groups(),
+                                this->m_atmosphere->surface().num_deriv());
             const auto& mapping =
                 this->m_atmosphere->surface().derivative_mappings().at(name);
 
@@ -234,6 +232,32 @@ namespace sasktran2 {
             // V component is a strict copy
             m_radiance(linear_index + 3) = radiance.value(3);
         }
+    }
+
+    template <int NSTOKES>
+    void OutputC<NSTOKES>::assign(
+        const sasktran2::WavelengthBlock<>& block,
+        const sasktran2::WavelengthBlockDual<NSTOKES>& radiance, int losidx,
+        int threadidx) {
+        if (block.count == 1) {
+            const sasktran2::WavelengthBlockConstLaneDualView<NSTOKES>
+                radiance_lane(radiance, 0);
+            assign_lane(radiance_lane, losidx, block.start, threadidx);
+            return;
+        }
+
+        double stokes_c = 1.0;
+        double stokes_s = 0.0;
+        if constexpr (NSTOKES >= 3) {
+            stokes_c = this->m_stokes_C[losidx];
+            stokes_s = this->m_stokes_S[losidx];
+        }
+        detail::assign_mapped_block(
+            block, radiance, losidx, this->m_nlos, this->m_ngeometry, stokes_c,
+            stokes_s, this->m_atmosphere->include_emission_derivatives(),
+            *this->m_atmosphere, m_radiance, m_derivatives,
+            m_surface_derivatives, m_native_thread_storage[threadidx],
+            m_mapped_thread_storage[threadidx]);
     }
 
     template <int NSTOKES>
@@ -331,7 +355,7 @@ namespace sasktran2 {
 
             Eigen::Ref<const Eigen::Matrix<double, 1, -1>> d_rad_by_d_surface =
                 flux.d_brdf(this->m_ngeometry,
-                            this->m_atmosphere->num_scattering_deriv_groups(),
+                            this->m_atmosphere->num_source_deriv_groups(),
                             this->m_atmosphere->surface()
                                 .num_deriv()); // [stokes X num_brdf_deriv]
             const auto& mapping =

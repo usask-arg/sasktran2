@@ -21,36 +21,18 @@ namespace sasktran2::solartransmission {
     }
 
     template <int NSTOKES>
-    void OccultationSource<NSTOKES>::integrated_source(
-        int wavelidx, int losidx, int layeridx, int wavel_threadidx,
-        int threadidx, const sasktran2::raytracing::TracedLayer& layer,
-        const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
-        const sasktran2::raytracing::GridWeightStencilView& exit_weights,
-        const sasktran2::SparseODDualView& shell_od,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source,
-        typename SourceTermInterface<NSTOKES>::IntegrationDirection direction)
-        const {}
-
-    template <int NSTOKES>
-    void OccultationSource<NSTOKES>::calculate(int wavelidx, int threadidx) {}
-
-    template <int NSTOKES>
     void OccultationSource<NSTOKES>::initialize_atmosphere(
         const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere) {}
 
     template <int NSTOKES>
     void OccultationSource<NSTOKES>::end_of_ray_source(
-        int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
-        const {
+        const sasktran2::WavelengthBlock<>& batch, int losidx,
+        int wavel_threadidx, int threadidx,
+        sasktran2::WavelengthBlockDual<NSTOKES>& source) const {
         if (m_ground_is_hit.at(losidx)) {
             return;
         }
-        if constexpr (NSTOKES == 1) {
-            source.value.array() += 1;
-        } else {
-            source.value(0) += 1;
-        }
+        source.value.row(0).head(batch.count).array() += 1.0;
     }
 
     template class OccultationSource<1>;

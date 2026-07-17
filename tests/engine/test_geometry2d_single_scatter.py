@@ -687,3 +687,34 @@ def test_geometry2d_rejects_nonexact_single_scatter_sources(
 
     with pytest.raises(NotImplementedError, match="exact single scattering"):
         sk.Engine(config, geometry2d(), parity_viewing())
+
+
+def test_geometry2d_wavelength_batch_matches_scalar():
+    wavelengths = np.linspace(500.0, 800.0, 5)
+    geometry = geometry2d(np.array([-0.6, 0.0, 0.6]))
+    viewing = parity_viewing()
+
+    def calculate(batch_size: int):
+        config = single_scatter_config(num_stokes=3)
+        config.wavelength_batch_size = batch_size
+        atmosphere = sk.Atmosphere(
+            geometry,
+            config,
+            wavelengths_nm=wavelengths,
+            calculate_derivatives=True,
+        )
+        location = np.arange(np.prod(geometry.shape))[:, np.newaxis]
+        spectral = np.linspace(0.8, 1.2, wavelengths.size)[np.newaxis, :]
+        atmosphere.storage.total_extinction[:] = (1.0e-6 + location * 0.1e-6) * spectral
+        atmosphere.storage.ssa[:] = 0.45 + 0.01 * location
+        atmosphere.surface.albedo[:] = np.linspace(0.1, 0.3, wavelengths.size)
+        set_phase(atmosphere)
+        return sk.Engine(config, geometry, viewing).calculate_radiance(atmosphere)
+
+    scalar = calculate(1)
+    batched = calculate(3)
+    assert scalar.data_vars.keys() == batched.data_vars.keys()
+    for variable in scalar.data_vars:
+        np.testing.assert_allclose(
+            batched[variable], scalar[variable], rtol=5.0e-12, atol=2.0e-13
+        )

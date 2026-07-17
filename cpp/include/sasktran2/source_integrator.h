@@ -47,9 +47,16 @@ namespace sasktran2 {
                                        atmosphere_extinction = OD for each layer
                                        in that ray */
 
+        using RowMajorMatrix = Eigen::Matrix<double, Eigen::Dynamic,
+                                             Eigen::Dynamic, Eigen::RowMajor>;
+        std::vector<RowMajorMatrix>
+            m_shell_od; /**< Optical depth for every ray, layer, and
+                           wavelength. */
         std::vector<Eigen::MatrixXd>
-            m_shell_od; /**< Vector of matrices that stores the optical depth
-                           for each layer */
+            m_scalar_shell_od; /**< Column-major optical depth storage used
+                                  when the configured block capacity is one. */
+        int m_wavelength_block_capacity = 1;
+        mutable std::vector<Eigen::RowVectorXd> m_thread_attenuation{1};
         const std::vector<sasktran2::raytracing::TracedRay>* m_traced_rays =
             nullptr; /**< Reference to the rays we are integrating */
 
@@ -61,13 +68,21 @@ namespace sasktran2 {
         std::vector<std::vector<std::vector<std::pair<int, int>>>>
             m_attenuation_active_derivative_ranges;
 
+        template <int N>
+        void integrate_block(
+            sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
+            const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+            const sasktran2::WavelengthBlock<N>& block, int rayidx,
+            int wavel_threadidx, int threadidx) const;
+
+        template <int N, typename ShellODMatrix>
         void integrate_ray(
-            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                radiance,
+            sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
             const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
             const sasktran2::raytracing::TracedRay& ray,
             const Eigen::SparseMatrix<double, Eigen::RowMajor>& od_matrix,
-            const Eigen::MatrixXd& shell_od, int wavelidx, int rayidx,
+            const ShellODMatrix& shell_od,
+            const sasktran2::WavelengthBlock<N>& batch, int rayidx,
             int wavel_threadidx, int threadidx) const;
 
       public:
@@ -106,6 +121,17 @@ namespace sasktran2 {
         void initialize_atmosphere(
             const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmo);
 
+        /** Configures the active wavelength-block capacity and allocates
+         * reusable thread scratch. This must precede initialize_atmosphere so
+         * shell optical depth uses the matching scalar or batched layout. */
+        void initialize_thread_storage(int num_threads, int block_capacity) {
+            m_wavelength_block_capacity = block_capacity;
+            m_thread_attenuation.resize(num_threads);
+            for (auto& attenuation : m_thread_attenuation) {
+                attenuation.resize(block_capacity);
+            }
+        }
+
         /** Precomputes the cumulative derivative columns that can be nonzero
          * before each layer attenuation. This is enabled only when every
          * active source can report its derivative sparsity exactly. */
@@ -121,11 +147,11 @@ namespace sasktran2 {
          * @param threadidx
          * @param rayidx
          */
-        void integrate(sasktran2::Dual<double, sasktran2::dualstorage::dense,
-                                       NSTOKES>& radiance,
-                       std::vector<SourceTermInterface<NSTOKES>*> source_terms,
-                       int wavelidx, int rayidx, int wavel_threadidx,
-                       int threadidx);
+        void integrate(
+            sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
+            const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+            const sasktran2::WavelengthBlock<>& block, int rayidx,
+            int wavel_threadidx, int threadidx);
 
         void integrate_and_emplace_accumulation_triplets(
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&

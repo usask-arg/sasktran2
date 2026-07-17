@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 import sasktran2 as sk
 
 
@@ -80,3 +81,14 @@ def test_num_successive_order_points_round_trip():
     config.num_successive_order_points = 17
 
     assert config.num_successive_order_points == 17
+
+
+def test_wavelength_batch_size_round_trip_and_validation():
+    config = sk.Config()
+
+    assert config.wavelength_batch_size == 1
+    config.wavelength_batch_size = 16
+    assert config.wavelength_batch_size == 16
+
+    with pytest.raises(RuntimeError, match="at least 1"):
+        config.wavelength_batch_size = 0

@@ -8,6 +8,7 @@
 #include <Eigen/src/Core/Matrix.h>
 #include <sasktran2/internal_common.h>
 #include <sasktran2/dual.h>
+#include <sasktran2/wavelength_block.h>
 
 namespace sasktran2 {
 
@@ -42,6 +43,7 @@ namespace sasktran2 {
         int m_nwavel;
         int m_nderiv;
         int m_ngeometry;
+        int m_wavelength_block_capacity = 1;
 
         Eigen::VectorXd m_stokes_C;
         Eigen::VectorXd m_stokes_S;
@@ -67,18 +69,28 @@ namespace sasktran2 {
                 internal_viewing,
             const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere);
 
-        /** Method the Sasktran2 engine calls for each integrated line of
-         * sight/wavelength
+        /** Sets the wavelength block capacity negotiated by the engine. */
+        void set_wavelength_block_capacity(int block_capacity) {
+            if (block_capacity < 1) {
+                throw std::invalid_argument(
+                    "Output wavelength block capacity must be positive");
+            }
+            m_wavelength_block_capacity = block_capacity;
+        }
+
+        /** Method the Sasktran2 engine calls for each integrated line of sight
+         * and contiguous wavelength block.
          *
+         * @param block Contiguous wavelengths represented by radiance
          * @param radiance The final calculated radiance and corresponding
          * derivatives
          * @param losidx The index of this line of sight
-         * @param wavelidx The index of this wavelength
+         * @param threadidx The source-integration thread index
          */
         virtual void
-        assign(const sasktran2::Dual<double, sasktran2::dualstorage::dense,
-                                     NSTOKES>& radiance,
-               int losidx, int wavelidx, int threadidx) = 0;
+        assign(const sasktran2::WavelengthBlock<>& block,
+               const sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
+               int losidx, int threadidx) = 0;
 
         virtual void assign_flux(
             const sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>&
@@ -125,12 +137,15 @@ namespace sasktran2 {
 
         void resize();
 
+        template <typename Radiance>
+        void assign_lane(const Radiance& radiance, int losidx, int wavelidx);
+
       public:
         OutputIdealDense(){};
 
-        void assign(const sasktran2::Dual<double, sasktran2::dualstorage::dense,
-                                          NSTOKES>& radiance,
-                    int losidx, int wavelidx, int threadidx);
+        void assign(const sasktran2::WavelengthBlock<>& block,
+                    const sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
+                    int losidx, int threadidx) override;
 
         /**
          *
@@ -156,15 +171,20 @@ namespace sasktran2 {
         std::map<std::string, Eigen::MatrixXd> m_derivatives;
         std::map<std::string, Eigen::MatrixXd> m_surface_derivatives;
         std::vector<Eigen::MatrixXd> m_native_thread_storage;
+        std::vector<Eigen::MatrixXd> m_mapped_thread_storage;
 
         void resize();
+
+        template <typename Radiance>
+        void assign_lane(const Radiance& radiance, int losidx, int wavelidx,
+                         int threadidx);
 
       public:
         OutputDerivMapped(){};
 
-        void assign(const sasktran2::Dual<double, sasktran2::dualstorage::dense,
-                                          NSTOKES>& radiance,
-                    int losidx, int wavelidx, int threadidx);
+        void assign(const sasktran2::WavelengthBlock<>& block,
+                    const sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
+                    int losidx, int threadidx) override;
 
         /**
          *
@@ -206,8 +226,13 @@ namespace sasktran2 {
         std::map<std::string, Eigen::Map<Eigen::MatrixXd>>
             m_flux_surface_derivatives;
         std::vector<Eigen::MatrixXd> m_native_thread_storage;
+        std::vector<Eigen::MatrixXd> m_mapped_thread_storage;
 
         void resize();
+
+        template <typename Radiance>
+        void assign_lane(const Radiance& radiance, int losidx, int wavelidx,
+                         int threadidx);
 
       public:
         OutputC(Eigen::Map<Eigen::VectorXd> radiance,
@@ -271,9 +296,9 @@ namespace sasktran2 {
                                                   derivative_mapping.cols());
         }
 
-        void assign(const sasktran2::Dual<double, sasktran2::dualstorage::dense,
-                                          NSTOKES>& radiance,
-                    int losidx, int wavelidx, int threadidx) override;
+        void assign(const sasktran2::WavelengthBlock<>& block,
+                    const sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
+                    int losidx, int threadidx) override;
 
         void
         assign_flux(const sasktran2::Dual<double, sasktran2::dualstorage::dense,
