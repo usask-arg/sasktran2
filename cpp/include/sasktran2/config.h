@@ -196,6 +196,15 @@ namespace sasktran2 {
             }
         }
 
+        /** Requested number of contiguous wavelengths processed together. The
+         * engine reduces this to the capacity supported by all active sources
+         * and observers. A value of one processes one wavelength per block. */
+        int wavelength_batch_size() const { return m_wavelength_batch_size; }
+
+        void set_wavelength_batch_size(int batch_size) {
+            m_wavelength_batch_size = batch_size;
+        }
+
         /**
          * @brief The number of threads to use in calculation of the sources at
          * each wavelength
@@ -689,6 +698,7 @@ namespace sasktran2 {
         // TODO: Refactor these into individual source configs?
 
         int m_nthreads;
+        int m_wavelength_batch_size;
         int m_nstokes;
         int m_ndostreams;
         int m_ndosza;

@@ -39,29 +39,29 @@ pub struct SafeFFIOutput(pub *mut ffi::OutputC);
 unsafe impl Send for SafeFFIOutput {}
 unsafe impl Sync for SafeFFIOutput {}
 
-// Newtype wrapper so you own the impl.
-pub struct SafeFFIAtmosphere(pub *mut ffi::Atmosphere);
-
-// “Hey Rust, trust me, this is thread‐safe.”
-unsafe impl Send for SafeFFIAtmosphere {}
-unsafe impl Sync for SafeFFIAtmosphere {}
-
-/// Allows us to call the c++ thread-safe function from multiple threads
-fn safe_calc_thread(
+fn safe_calc_block_thread(
     engine: &SafeFFIEngine,
-    atmosphere: &SafeFFIAtmosphere,
     output: &SafeFFIOutput,
-    wavel: i32,
+    wavelength_start: i32,
+    wavelength_count: i32,
     thread_idx: i32,
-) {
-    unsafe {
-        ffi::sk_engine_calculate_radiance_thread(
+) -> Result<()> {
+    let result = unsafe {
+        ffi::sk_engine_calculate_radiance_block_thread(
             engine.0,
-            atmosphere.0,
             output.0,
-            wavel,
+            wavelength_start,
+            wavelength_count,
             thread_idx,
-        );
+        )
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!(
+            "Failed to calculate wavelength block: {}",
+            result
+        ))
     }
 }
 
@@ -161,13 +161,13 @@ impl<'a> Engine<'a> {
             output.with_surface_derivative(deriv_name);
         }
 
-        // We use rayon threading either when the user explicitly enables it, or when
-        // openMP support is not enabled.  Also only use it if the number of threads is greater than 1.
+        // Rayon partitions wavelengths, so only use it with wavelength
+        // threading. Source threading remains inside the C++ engine.
         let use_rayon_threading = (self.config.threading_lib() == ThreadingLib::Rayon
-            && self.config.num_threads()? > 1)
-            || (!openmp_support_enabled() && self.config.num_threads()? > 1)
-                && self.config.threading_model()?
-                    == crate::bindings::config::ThreadingModel::Wavelength;
+            || !openmp_support_enabled())
+            && self.config.num_threads()? > 1
+            && self.config.threading_model()?
+                == crate::bindings::config::ThreadingModel::Wavelength;
 
         if !use_rayon_threading {
             let result = unsafe {
@@ -210,29 +210,60 @@ impl<'a> Engine<'a> {
 
             let safe_engine = SafeFFIEngine(self.engine);
             let safe_output = SafeFFIOutput(output.output);
-            let safe_atmosphere = SafeFFIAtmosphere(atmosphere.atmosphere);
 
             let thread_pool = threading::thread_pool()?;
+            let batch_size = unsafe {
+                ffi::sk_engine_effective_wavelength_batch_size(self.engine, num_wavel as i32)
+            };
+            if batch_size < 1 {
+                return Err(anyhow::anyhow!(
+                    "Failed to determine wavelength batch size: {}",
+                    batch_size
+                ));
+            }
 
-            thread_pool.install(|| {
-                (0..num_wavel)
-                    .into_par_iter()
-                    .with_min_len(min_length)
-                    .for_each(|w| {
-                        let thread_idx = current_thread_index().unwrap() as i32;
-                        if thread_idx > num_threads as i32 {
-                            panic!("Thread index out of bounds");
-                        }
-                        let wavel = w as i32;
-                        safe_calc_thread(
-                            &safe_engine,
-                            &safe_atmosphere,
-                            &safe_output,
-                            wavel,
-                            thread_idx,
-                        );
-                    })
-            })
+            if batch_size > 1 {
+                let batch_size = batch_size as usize;
+                let num_batches = num_wavel.div_ceil(batch_size);
+                thread_pool.install(|| {
+                    (0..num_batches)
+                        .into_par_iter()
+                        .try_for_each(|batch_index| {
+                            let thread_idx = current_thread_index().unwrap() as i32;
+                            if thread_idx >= num_threads as i32 {
+                                return Err(anyhow::anyhow!("Thread index out of bounds"));
+                            }
+                            let wavelength_start = batch_index * batch_size;
+                            let wavelength_count = (num_wavel - wavelength_start).min(batch_size);
+                            safe_calc_block_thread(
+                                &safe_engine,
+                                &safe_output,
+                                wavelength_start as i32,
+                                wavelength_count as i32,
+                                thread_idx,
+                            )
+                        })
+                })?;
+            } else {
+                thread_pool.install(|| {
+                    (0..num_wavel)
+                        .into_par_iter()
+                        .with_min_len(min_length)
+                        .try_for_each(|w| {
+                            let thread_idx = current_thread_index().unwrap() as i32;
+                            if thread_idx >= num_threads as i32 {
+                                return Err(anyhow::anyhow!("Thread index out of bounds"));
+                            }
+                            safe_calc_block_thread(
+                                &safe_engine,
+                                &safe_output,
+                                w as i32,
+                                1,
+                                thread_idx,
+                            )
+                        })
+                })?;
+            }
         }
 
         Ok(output)

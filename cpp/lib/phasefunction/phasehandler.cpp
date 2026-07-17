@@ -305,6 +305,145 @@ namespace sasktran2::solartransmission {
     }
 
     template <int NSTOKES>
+    void PhaseHandler<NSTOKES>::initialize_wavelength_blocks(int batch_size) {
+        m_wavelength_batch_capacity = batch_size;
+        const int num_phase_components = NSTOKES == 1 ? 1 : 2;
+        const int num_internal =
+            static_cast<int>(m_internal_to_geometry.size());
+        const int num_derivatives =
+            m_atmosphere == nullptr
+                ? 0
+                : m_atmosphere->num_scattering_deriv_groups();
+
+        m_phase_batch.resize(m_config->num_wavelength_threads());
+        m_d_phase_batch.resize(m_config->num_wavelength_threads());
+        for (int threadidx = 0; threadidx < m_config->num_wavelength_threads();
+             ++threadidx) {
+            m_phase_batch[threadidx].resize(num_phase_components * num_internal,
+                                            batch_size);
+            m_d_phase_batch[threadidx].resize(
+                num_derivatives * num_phase_components * num_internal,
+                batch_size);
+        }
+    }
+
+    template <int NSTOKES>
+    template <int N>
+    void PhaseHandler<NSTOKES>::calculate_block(
+        const sasktran2::WavelengthBlock<N>& batch, int threadidx) {
+        if (m_config->singlescatter_phasemode() !=
+            sasktran2::Config::SingleScatterPhaseMode::from_legendre) {
+            throw std::runtime_error("Phase mode not implemented");
+        }
+        if (batch.count > m_wavelength_batch_capacity) {
+            throw std::invalid_argument(
+                "Wavelength batch exceeds phase storage capacity");
+        }
+
+        auto& phase = m_phase_batch[threadidx];
+        auto& d_phase = m_d_phase_batch[threadidx];
+        wavelength_left_cols(phase, batch).setZero();
+        wavelength_left_cols(d_phase, batch).setZero();
+
+        const int num_internal =
+            static_cast<int>(m_internal_to_geometry.size());
+        const int num_phase_components = NSTOKES == 1 ? 1 : 2;
+        const auto phase_row = [num_internal](int component,
+                                              int internal_index) {
+            return component * num_internal + internal_index;
+        };
+        const auto derivative_row =
+            [num_internal, num_phase_components](int derivative, int component,
+                                                 int internal_index) {
+                return (derivative * num_phase_components + component) *
+                           num_internal +
+                       internal_index;
+            };
+
+        for (int internal_index = 0; internal_index < num_internal;
+             ++internal_index) {
+            const int scatter_index = m_internal_to_cos_scatter[internal_index];
+            const int atmosphere_index = m_internal_to_geometry[internal_index];
+
+            for (int lane = 0; lane < batch.count; ++lane) {
+                const int wavelength = batch.wavelength(lane);
+                const int max_order = m_atmosphere->storage().max_order(
+                    atmosphere_index, wavelength);
+
+                if constexpr (NSTOKES == 1) {
+                    phase(phase_row(0, internal_index), lane) =
+                        Eigen::Map<const Eigen::VectorXd>(
+                            &m_atmosphere->storage().leg_coeff(
+                                0, atmosphere_index, wavelength),
+                            max_order)
+                            .dot(m_wigner_d00(Eigen::seq(0, max_order - 1),
+                                              scatter_index));
+                } else {
+                    phase(phase_row(0, internal_index), lane) =
+                        Eigen::Map<const Eigen::VectorXd, 0,
+                                   Eigen::InnerStride<4>>(
+                            &m_atmosphere->storage().leg_coeff(
+                                0, atmosphere_index, wavelength),
+                            max_order)
+                            .dot(m_wigner_d00(Eigen::seq(0, max_order - 1),
+                                              scatter_index));
+                    phase(phase_row(1, internal_index), lane) =
+                        Eigen::Map<const Eigen::VectorXd, 0,
+                                   Eigen::InnerStride<4>>(
+                            &m_atmosphere->storage().leg_coeff(
+                                3, atmosphere_index, wavelength),
+                            max_order)
+                            .dot(m_wigner_d02(Eigen::seq(0, max_order - 1),
+                                              scatter_index));
+                }
+
+                for (int derivative = 0;
+                     derivative < m_atmosphere->num_scattering_deriv_groups();
+                     ++derivative) {
+                    const int derivative_max_order =
+                        m_atmosphere->storage().d_max_order[derivative](
+                            atmosphere_index, wavelength);
+                    if constexpr (NSTOKES == 1) {
+                        d_phase(derivative_row(derivative, 0, internal_index),
+                                lane) =
+                            Eigen::Map<const Eigen::VectorXd>(
+                                &m_atmosphere->storage().d_leg_coeff(
+                                    0, atmosphere_index, wavelength,
+                                    derivative),
+                                derivative_max_order)
+                                .dot(m_wigner_d00(
+                                    Eigen::seq(0, derivative_max_order - 1),
+                                    scatter_index));
+                    } else {
+                        d_phase(derivative_row(derivative, 0, internal_index),
+                                lane) =
+                            Eigen::Map<const Eigen::VectorXd, 0,
+                                       Eigen::InnerStride<4>>(
+                                &m_atmosphere->storage().d_leg_coeff(
+                                    0, atmosphere_index, wavelength,
+                                    derivative),
+                                derivative_max_order)
+                                .dot(m_wigner_d00(
+                                    Eigen::seq(0, derivative_max_order - 1),
+                                    scatter_index));
+                        d_phase(derivative_row(derivative, 1, internal_index),
+                                lane) =
+                            Eigen::Map<const Eigen::VectorXd, 0,
+                                       Eigen::InnerStride<4>>(
+                                &m_atmosphere->storage().d_leg_coeff(
+                                    3, atmosphere_index, wavelength,
+                                    derivative),
+                                derivative_max_order)
+                                .dot(m_wigner_d02(
+                                    Eigen::seq(0, derivative_max_order - 1),
+                                    scatter_index));
+                    }
+                }
+            }
+        }
+    }
+
+    template <int NSTOKES>
     void PhaseHandler<NSTOKES>::scatter(
         int threadidx, int losidx, int layeridx,
         const raytracing::GridWeightStencilView& index_weights,
@@ -322,6 +461,46 @@ namespace sasktran2::solartransmission {
         bool is_entrance,
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
+        const double source_amplitude = source.value(0);
+        const auto phase = scatter_and_accumulate_derivative(
+            threadidx, losidx, layeridx, index_weights, is_entrance,
+            source_amplitude, 1.0, source);
+        source.value = source_amplitude * phase;
+    }
+
+    template <int NSTOKES>
+    Eigen::Vector<double, NSTOKES>
+    PhaseHandler<NSTOKES>::scatter_and_accumulate_derivative(
+        int threadidx, int losidx, int layeridx,
+        const raytracing::GridWeightStencilView& index_weights,
+        bool is_entrance, double source_amplitude, double derivative_scale,
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& target)
+        const {
+        return scatter_and_accumulate_derivative_impl(
+            threadidx, losidx, layeridx, index_weights, is_entrance,
+            source_amplitude, derivative_scale, target);
+    }
+
+    template <int NSTOKES>
+    Eigen::Vector<double, NSTOKES>
+    PhaseHandler<NSTOKES>::scatter_and_accumulate_derivative(
+        int threadidx, int losidx, int layeridx,
+        const raytracing::GridWeightStencilView& index_weights,
+        bool is_entrance, double source_amplitude, double derivative_scale,
+        sasktran2::WavelengthBlockLaneDualView<NSTOKES, 1>& target) const {
+        return scatter_and_accumulate_derivative_impl(
+            threadidx, losidx, layeridx, index_weights, is_entrance,
+            source_amplitude, derivative_scale, target);
+    }
+
+    template <int NSTOKES>
+    template <typename Target>
+    Eigen::Vector<double, NSTOKES>
+    PhaseHandler<NSTOKES>::scatter_and_accumulate_derivative_impl(
+        int threadidx, int losidx, int layeridx,
+        const raytracing::GridWeightStencilView& index_weights,
+        bool is_entrance, double source_amplitude, double derivative_scale,
+        Target& target) const {
         const auto& internal_indices =
             is_entrance ? m_geometry_entrance_to_internal[losidx][layeridx]
                         : m_geometry_exit_to_internal[losidx][layeridx];
@@ -369,13 +548,13 @@ namespace sasktran2::solartransmission {
                     }
                     const int internal_index =
                         internal_indices[derivative_internal_offset++];
-                    source.deriv(0, derivative_start + index_weight.first) +=
-                        source.value(0) *
+                    target.deriv(0, derivative_start + index_weight.first) +=
+                        derivative_scale * source_amplitude *
                         m_d_phase(0, internal_index, d, threadidx) *
                         index_weight.second;
                 }
             }
-            source.value(0) *= phase_result;
+            return Eigen::Vector<double, 1>::Constant(phase_result);
 
         } else if constexpr (NSTOKES == 3) {
             Eigen::Vector3d phase_result = Eigen::Vector3d::Zero();
@@ -430,17 +609,17 @@ namespace sasktran2::solartransmission {
 
                     int deriv_index = m_atmosphere->scat_deriv_start_index() +
                                       d * m_geometry.size() + geometry_index;
-                    source.deriv(0, deriv_index) +=
-                        source.value(0) *
+                    target.deriv(0, deriv_index) +=
+                        derivative_scale * source_amplitude *
                         m_d_phase(0, internal_index, d, threadidx) * weight;
 
-                    source.deriv(1, deriv_index) +=
-                        source.value(0) *
+                    target.deriv(1, deriv_index) +=
+                        derivative_scale * source_amplitude *
                         m_d_phase(1, internal_index, d, threadidx) * weight *
                         (-C2);
 
-                    source.deriv(2, deriv_index) +=
-                        source.value(0) *
+                    target.deriv(2, deriv_index) +=
+                        derivative_scale * source_amplitude *
                         m_d_phase(1, internal_index, d, threadidx) * weight *
                         (-S2);
                 };
@@ -458,10 +637,145 @@ namespace sasktran2::solartransmission {
                 }
             }
 
-            source.value.array() = source.value(0) * phase_result.array();
+            return phase_result;
         } else {
+            return Eigen::Vector<double, NSTOKES>::Zero();
         }
     }
+
+    template <int NSTOKES>
+    template <int N>
+    void PhaseHandler<NSTOKES>::scatter_and_accumulate_derivative_block(
+        int threadidx, int losidx, int layeridx,
+        const raytracing::GridWeightStencilView& index_weights,
+        bool is_entrance, const sasktran2::WavelengthBlock<N>& batch,
+        const Eigen::Ref<const Eigen::Matrix<double, 1, N, Eigen::RowMajor>>&
+            source_amplitude,
+        const Eigen::Ref<const Eigen::Matrix<double, 1, N, Eigen::RowMajor>>&
+            derivative_scale,
+        sasktran2::WavelengthBlockDual<NSTOKES>& target,
+        Eigen::Matrix<double, NSTOKES, Eigen::Dynamic, Eigen::RowMajor>&
+            phase_result) const {
+        wavelength_left_cols(phase_result, batch).setZero();
+
+        const auto& phase = m_phase_batch[threadidx];
+        const auto& d_phase = m_d_phase_batch[threadidx];
+        const int num_internal =
+            static_cast<int>(m_internal_to_geometry.size());
+        const int num_phase_components = NSTOKES == 1 ? 1 : 2;
+        const auto phase_row = [num_internal](int component,
+                                              int internal_index) {
+            return component * num_internal + internal_index;
+        };
+        const auto derivative_row =
+            [num_internal, num_phase_components](int derivative, int component,
+                                                 int internal_index) {
+                return (derivative * num_phase_components + component) *
+                           num_internal +
+                       internal_index;
+            };
+        const auto& internal_indices =
+            is_entrance ? m_geometry_entrance_to_internal[losidx][layeridx]
+                        : m_geometry_exit_to_internal[losidx][layeridx];
+
+        const auto accumulate_phase = [&](int internal_index, double weight) {
+            wavelength_head(phase_result.row(0), batch).array() +=
+                weight *
+                wavelength_head(phase.row(phase_row(0, internal_index)), batch)
+                    .array();
+            if constexpr (NSTOKES == 3) {
+                const auto& scatter_angle =
+                    m_scatter_angles[m_internal_to_cos_scatter[internal_index]];
+                const auto off_diagonal =
+                    weight * wavelength_head(
+                                 phase.row(phase_row(1, internal_index)), batch)
+                                 .array();
+                wavelength_head(phase_result.row(1), batch).array() -=
+                    scatter_angle[1] * off_diagonal;
+                wavelength_head(phase_result.row(2), batch).array() -=
+                    scatter_angle[2] * off_diagonal;
+            }
+        };
+
+        if (index_weights.size() == 2 && (index_weights[0].second == 0.0 ||
+                                          index_weights[1].second == 0.0)) {
+            accumulate_phase(internal_indices[0], 1.0);
+        } else {
+            int internal_offset = 0;
+            for (std::size_t index = 0; index < index_weights.size(); ++index) {
+                const auto weight = index_weights[index];
+                if (weight.second == 0.0) {
+                    continue;
+                }
+                accumulate_phase(internal_indices[internal_offset++],
+                                 weight.second);
+            }
+        }
+
+        for (int derivative = 0;
+             target.derivative_size() > 0 &&
+             derivative < m_atmosphere->num_scattering_deriv_groups();
+             ++derivative) {
+            int internal_offset = 0;
+            for (std::size_t index = 0; index < index_weights.size(); ++index) {
+                const auto weight = index_weights[index];
+                if (weight.second == 0.0) {
+                    continue;
+                }
+                const int internal_index = internal_indices[internal_offset++];
+                const int derivative_index =
+                    m_atmosphere->scat_deriv_start_index() +
+                    derivative * m_geometry.size() + weight.first;
+                auto target_derivative =
+                    target.derivative(derivative_index, batch);
+                const auto common_factor = weight.second *
+                                           derivative_scale.array() *
+                                           source_amplitude.array();
+                target_derivative.row(0).array() +=
+                    common_factor *
+                    wavelength_head(d_phase.row(derivative_row(derivative, 0,
+                                                               internal_index)),
+                                    batch)
+                        .array();
+                if constexpr (NSTOKES == 3) {
+                    const auto& scatter_angle = m_scatter_angles
+                        [m_internal_to_cos_scatter[internal_index]];
+                    const auto polarized =
+                        common_factor *
+                        wavelength_head(d_phase.row(derivative_row(
+                                            derivative, 1, internal_index)),
+                                        batch)
+                            .array();
+                    target_derivative.row(1).array() -=
+                        scatter_angle[1] * polarized;
+                    target_derivative.row(2).array() -=
+                        scatter_angle[2] * polarized;
+                }
+            }
+        }
+    }
+
+#define SASKTRAN2_INSTANTIATE_PHASE_BLOCK(NSTOKES, N)                          \
+    template void PhaseHandler<NSTOKES>::calculate_block<N>(                   \
+        const sasktran2::WavelengthBlock<N>&, int);                            \
+    template void                                                              \
+    PhaseHandler<NSTOKES>::scatter_and_accumulate_derivative_block<N>(         \
+        int, int, int, const raytracing::GridWeightStencilView&, bool,         \
+        const sasktran2::WavelengthBlock<N>&,                                  \
+        const Eigen::Ref<const Eigen::Matrix<double, 1, N, Eigen::RowMajor>>&, \
+        const Eigen::Ref<const Eigen::Matrix<double, 1, N, Eigen::RowMajor>>&, \
+        sasktran2::WavelengthBlockDual<NSTOKES>&,                              \
+        Eigen::Matrix<double, NSTOKES, Eigen::Dynamic, Eigen::RowMajor>&)      \
+        const;
+
+    SASKTRAN2_INSTANTIATE_PHASE_BLOCK(1, Eigen::Dynamic)
+    SASKTRAN2_INSTANTIATE_PHASE_BLOCK(1, 1)
+    SASKTRAN2_INSTANTIATE_PHASE_BLOCK(1, 4)
+    SASKTRAN2_INSTANTIATE_PHASE_BLOCK(3, Eigen::Dynamic)
+    SASKTRAN2_INSTANTIATE_PHASE_BLOCK(3, 1)
+    SASKTRAN2_INSTANTIATE_PHASE_BLOCK(3, 4)
+
+#undef SASKTRAN2_INSTANTIATE_PHASE_BLOCK
 
     template class PhaseHandler<1>;
     template class PhaseHandler<3>;

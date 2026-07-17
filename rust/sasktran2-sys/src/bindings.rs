@@ -604,6 +604,18 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn sk_config_get_wavelength_batch_size(
+        config: *mut Config,
+        batch_size: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_set_wavelength_batch_size(
+        config: *mut Config,
+        batch_size: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn sk_config_get_num_singlescatter_moments(
         config: *mut Config,
         num_moments: *mut ::std::os::raw::c_int,
@@ -985,11 +997,17 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
-    pub fn sk_engine_calculate_radiance_thread(
+    pub fn sk_engine_effective_wavelength_batch_size(
         engine: *mut Engine,
-        atmosphere: *mut Atmosphere,
+        num_wavelengths: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_engine_calculate_radiance_block_thread(
+        engine: *mut Engine,
         output: *mut OutputC,
-        wavelength_idx: ::std::os::raw::c_int,
+        wavelength_start: ::std::os::raw::c_int,
+        wavelength_count: ::std::os::raw::c_int,
         thread_idx: ::std::os::raw::c_int,
     ) -> ::std::os::raw::c_int;
 }

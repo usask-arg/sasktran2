@@ -165,6 +165,19 @@ impl PyConfig {
     }
 
     #[getter]
+    fn wavelength_batch_size(&self) -> PyResult<usize> {
+        self.config.wavelength_batch_size().into_pyresult()
+    }
+
+    #[setter]
+    fn set_wavelength_batch_size(&mut self, batch_size: usize) -> PyResult<()> {
+        self.config
+            .with_wavelength_batch_size(batch_size)
+            .into_pyresult()?;
+        Ok(())
+    }
+
+    #[getter]
     fn threading_model(&self) -> PyResult<ThreadingModel> {
         let model = self.config.threading_model().into_pyresult()?;
         match model {

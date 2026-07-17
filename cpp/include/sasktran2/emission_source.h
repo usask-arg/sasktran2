@@ -16,17 +16,12 @@ namespace sasktran2::emission {
             nullptr;
         std::vector<bool> m_ground_is_hit;
 
-        void integrated_source_constant(
-            int wavelidx, int losidx, int layeridx, int wavel_threadidx,
-            int threadidx, const sasktran2::raytracing::LayerGeometry& layer,
-            const sasktran2::raytracing::GridWeightStencilView&
-                entrance_weights,
-            const sasktran2::raytracing::GridWeightStencilView& exit_weights,
-            const sasktran2::SparseODDualView& shell_od,
-            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                source) const;
-
       public:
+        int maximum_wavelength_block_size() const override {
+            return std::numeric_limits<int>::max();
+        }
+
+        void calculate(const sasktran2::WavelengthBlock<>&, int) override {}
         /** Here the emission source term saves the los_rays, which are
          * needed to detect ground hits and whether to include
          * surface emissions at the end of the ray.
@@ -55,14 +50,14 @@ namespace sasktran2::emission {
          * @param source The returned source term
          */
         void integrated_source(
-            int wavelidx, int losidx, int layeridx, int wavel_threadidx,
-            int threadidx, const sasktran2::raytracing::TracedLayer& layer,
+            const sasktran2::WavelengthBlock<>& block, int losidx, int layeridx,
+            int wavel_threadidx, int threadidx,
+            const sasktran2::raytracing::TracedLayer& layer,
             const sasktran2::raytracing::GridWeightStencilView&
                 entrance_weights,
             const sasktran2::raytracing::GridWeightStencilView& exit_weights,
-            const sasktran2::SparseODDualView& shell_od,
-            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                source,
+            const sasktran2::WavelengthBlockODView& shell_od,
+            sasktran2::WavelengthBlockDual<NSTOKES>& source,
             typename SourceTermInterface<NSTOKES>::IntegrationDirection
                 direction =
                     SourceTermInterface<NSTOKES>::IntegrationDirection::none)
@@ -82,9 +77,9 @@ namespace sasktran2::emission {
          * @param source The returned source term
          */
         void end_of_ray_source(
-            int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                source) const override;
+            const sasktran2::WavelengthBlock<>& block, int losidx,
+            int wavel_threadidx, int threadidx,
+            sasktran2::WavelengthBlockDual<NSTOKES>& source) const override;
 
         /** Calculates the radiance at the start of the ray, i.e., the source
          * term has done the equivalent of the integration along the ray.  This
@@ -106,10 +101,9 @@ namespace sasktran2::emission {
          * @param threadidx
          * @param source
          */
-        virtual void start_of_ray_source(
-            int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                source) const override{};
+        void start_of_ray_source(
+            const sasktran2::WavelengthBlock<>&, int, int, int,
+            sasktran2::WavelengthBlockDual<NSTOKES>&) const override {}
     };
 
 } // namespace sasktran2::emission

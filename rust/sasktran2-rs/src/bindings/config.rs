@@ -215,6 +215,36 @@ impl Config {
         }
     }
 
+    pub fn wavelength_batch_size(&self) -> Result<usize> {
+        let mut batch_size = 0i32;
+        let error_code =
+            unsafe { ffi::sk_config_get_wavelength_batch_size(self.config, &mut batch_size) };
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting wavelength batch size: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(batch_size as usize)
+        }
+    }
+
+    pub fn with_wavelength_batch_size(&mut self, batch_size: usize) -> Result<&mut Self> {
+        if batch_size < 1 || batch_size > i32::MAX as usize {
+            return Err(anyhow!("Wavelength batch size must be at least 1"));
+        }
+        let error_code =
+            unsafe { ffi::sk_config_set_wavelength_batch_size(self.config, batch_size as i32) };
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting wavelength batch size: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
     pub fn input_validation_mode(&self) -> Result<InputValidationMode> {
         let mut input_validation_mode = 0i32;
         let error_code = unsafe {
@@ -1019,6 +1049,7 @@ mod tests {
 
         // Test default values
         assert_eq!(config.num_threads().unwrap(), 1);
+        assert_eq!(config.wavelength_batch_size().unwrap(), 1);
         assert_eq!(
             config.threading_model().unwrap(),
             ThreadingModel::Wavelength
@@ -1048,6 +1079,10 @@ mod tests {
         // Test setters and getters
         config.with_num_threads(4).unwrap();
         assert_eq!(config.num_threads().unwrap(), 4);
+
+        config.with_wavelength_batch_size(16).unwrap();
+        assert_eq!(config.wavelength_batch_size().unwrap(), 16);
+        assert!(config.with_wavelength_batch_size(0).is_err());
 
         config.with_threading_model(ThreadingModel::Source).unwrap();
         assert_eq!(config.threading_model().unwrap(), ThreadingModel::Source);

@@ -7,22 +7,23 @@ import sasktran2 as sk
 
 
 def ecef_to_sasktran2_ray(
-    observer: np.array,
-    look_vector: np.array,
+    observer: np.ndarray,
+    look_vector: np.ndarray,
     time: pd.Timestamp,
     geoid: sk.Geodetic | None = None,
-    solar_handler: sk.SolarGeometryHandlerBase | None = None,
+    solar_handler: sk.solar.SolarGeometryHandlerBase | None = None,
     ground_elevation: float = 0.0,
-) -> sk.ViewingGeometry:
+) -> sk.GroundViewingSolar | sk.TangentAltitudeSolar:
     """
     Converts an observer, look vector in ECEF coordinates and time to a sasktran2 viewing ray object
 
     Parameters
     ----------
-    observer : np.array
+    observer : np.ndarray
         Observer position in ECEF (ITRF) coordinates
-    look_vector : np.array
-        Local lok vector in ECEF (ITRF) coordinates
+    look_vector : np.ndarray
+        Look vector from the observer in ECEF (ITRF) coordinates. The vector
+        does not need to be normalized.
     time: pd.Timestamp
         Time of the observation.  Used to lookup the sun position if applicable.
     geoid : sk.Geodetic
@@ -32,13 +33,23 @@ def ecef_to_sasktran2_ray(
 
     Returns
     -------
-    sk.ViewingGeometryBase
+    sk.GroundViewingSolar or sk.TangentAltitudeSolar
+        A ground-viewing ray when the look vector intersects the requested
+        ground elevation, otherwise a limb-viewing ray.
     """
     if solar_handler is None:
-        solar_handler = sk.SolarGeometryHandlerForced(0, 0)
+        solar_handler = sk.solar.SolarGeometryHandlerForced(0, 0)
 
     if geoid is None:
         geoid = sk.WGS84()
+
+    observer = np.asarray(observer, dtype=float)
+    look_vector = np.asarray(look_vector, dtype=float)
+    look_vector_norm = np.linalg.norm(look_vector)
+    if not np.isfinite(look_vector_norm) or look_vector_norm == 0:
+        msg = "look_vector must be finite and non-zero"
+        raise ValueError(msg)
+    look_vector = look_vector / look_vector_norm
 
     # Start by determining the observer's geodetic coordinates
     geoid.from_xyz(observer)
@@ -78,16 +89,20 @@ def ecef_to_sasktran2_ray(
         geoid.latitude, geoid.longitude, geoid.altitude, time
     )
 
-    cos_viewing_zenith = np.dot(look_vector, geoid.local_up)
+    # GroundViewingSolar defines the viewing cosine from the ground toward the
+    # observer, opposite to the supplied observer-to-ground look vector.
+    cos_viewing_zenith = -np.dot(look_vector, geoid.local_up)
 
     if np.abs(cos_viewing_zenith) > (1 - 1e-8):
         # Basically nadir viewing and so we can't get an observer azimuth
         viewing_azimuth = 0.0
     else:
         # Get the viewing azimuth angle
-        viewing_azimuth = -np.arctan2(
-            np.dot(look_vector, geoid.local_west),
-            -np.dot(look_vector, geoid.local_south),
+        viewing_azimuth = -np.rad2deg(
+            np.arctan2(
+                np.dot(look_vector, geoid.local_west),
+                -np.dot(look_vector, geoid.local_south),
+            )
         )
 
     return sk.GroundViewingSolar(
