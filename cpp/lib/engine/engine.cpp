@@ -478,6 +478,7 @@ void Sasktran2<NSTOKES>::calculate_radiance(
 
     // Initialize each source term with the atmosphere
     for (auto& source : m_source_terms) {
+        source->set_wavelength_block_capacity(wavelength_batch_size);
         source->initialize_atmosphere(atmosphere);
     }
 
@@ -500,6 +501,7 @@ void Sasktran2<NSTOKES>::calculate_radiance(
         thread_flux.resize(1, atmosphere.num_deriv(), false);
     }
 
+    output.set_wavelength_block_capacity(wavelength_batch_size);
     output.initialize(m_config, *m_geometry, m_internal_viewing_geometry,
                       atmosphere);
 

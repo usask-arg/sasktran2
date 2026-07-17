@@ -98,6 +98,10 @@ template <int NSTOKES> class SourceTermInterface {
     virtual void initialize_atmosphere(
         const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere){};
 
+    /** Sets the wavelength block capacity negotiated by the engine for the
+     * current calculation. Sources may use this to size per-block storage. */
+    virtual void set_wavelength_block_capacity(int block_capacity) {}
+
     /** Triggers calculation for a contiguous block of wavelengths. */
     virtual void calculate(const sasktran2::WavelengthBlock<>& block,
                            int threadidx){};

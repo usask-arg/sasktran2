@@ -14,6 +14,7 @@ def _setup_1d(
     wavelength_batch_size: int = 1,
     num_threads: int = 1,
     threading_lib: sk.ThreadingLib | None = None,
+    threading_model: sk.ThreadingModel | None = None,
     emission_source: sk.EmissionSource = sk.EmissionSource.NoSource,
     occultation_source: sk.OccultationSource = sk.OccultationSource.NoSource,
 ):
@@ -29,6 +30,8 @@ def _setup_1d(
     config.occultation_source = occultation_source
     if threading_lib is not None:
         config.threading_lib = threading_lib
+    if threading_model is not None:
+        config.threading_model = threading_model
 
     if source == "discrete_ordinates":
         config.single_scatter_source = sk.SingleScatterSource.DiscreteOrdinates
@@ -360,4 +363,52 @@ def test_unsupported_sources_fall_back_to_scalar_wavelengths():
     for variable in scalar.data_vars:
         np.testing.assert_array_equal(
             configured[variable].values, scalar[variable].values
+        )
+
+
+def test_mixed_batch_and_nonbatch_sources_fall_back_to_scalar_wavelengths():
+    """A non-batched source caps exact single scatter to the scalar kernel."""
+    scalar_engine, scalar_atmosphere = _setup_1d(
+        "successive_orders", 1, True, num_wavelengths=3
+    )
+    configured_engine, configured_atmosphere = _setup_1d(
+        "successive_orders",
+        1,
+        True,
+        num_wavelengths=3,
+        wavelength_batch_size=8,
+    )
+
+    scalar = scalar_engine.calculate_radiance(scalar_atmosphere)
+    configured = configured_engine.calculate_radiance(configured_atmosphere)
+    for variable in scalar.data_vars:
+        np.testing.assert_array_equal(
+            configured[variable].values, scalar[variable].values
+        )
+
+
+def test_rayon_source_threading_uses_cpp_source_threads():
+    """Rayon only partitions wavelengths; source threading stays in C++."""
+    scalar_engine, scalar_atmosphere = _setup_1d(
+        "single_scatter", 1, True, num_wavelengths=5
+    )
+    threaded_engine, threaded_atmosphere = _setup_1d(
+        "single_scatter",
+        1,
+        True,
+        num_wavelengths=5,
+        wavelength_batch_size=4,
+        num_threads=2,
+        threading_lib=sk.ThreadingLib.Rayon,
+        threading_model=sk.ThreadingModel.Source,
+    )
+
+    scalar = scalar_engine.calculate_radiance(scalar_atmosphere)
+    threaded = threaded_engine.calculate_radiance(threaded_atmosphere)
+    for variable in scalar.data_vars:
+        np.testing.assert_allclose(
+            threaded[variable].values,
+            scalar[variable].values,
+            rtol=5e-12,
+            atol=2e-13,
         )

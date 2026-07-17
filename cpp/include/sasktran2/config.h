@@ -193,8 +193,9 @@ namespace sasktran2 {
             }
         }
 
-        /** Number of contiguous wavelengths processed by batch-capable source
-         * terms. A value of one selects the legacy scalar wavelength path. */
+        /** Requested number of contiguous wavelengths processed together. The
+         * engine reduces this to the capacity supported by all active sources
+         * and observers. A value of one processes one wavelength per block. */
         int wavelength_batch_size() const { return m_wavelength_batch_size; }
 
         void set_wavelength_batch_size(int batch_size) {

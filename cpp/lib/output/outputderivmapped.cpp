@@ -19,9 +19,7 @@ namespace sasktran2 {
                 NSTOKES * this->m_nwavel * this->m_nlos, 1);
         }
 
-        const int block_capacity =
-            std::max(1, std::min(this->m_config->wavelength_batch_size(),
-                                 this->m_nwavel));
+        const int block_capacity = this->m_wavelength_block_capacity;
         m_native_thread_storage.resize(this->m_config->num_threads());
         m_mapped_thread_storage.resize(this->m_config->num_threads());
         for (int thread = 0; thread < this->m_config->num_threads(); ++thread) {

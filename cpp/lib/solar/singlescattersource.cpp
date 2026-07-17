@@ -28,9 +28,7 @@ namespace sasktran2::solartransmission {
                 m_active_derivative_indices.clear();
             }
 
-            const int block_size = std::min(m_config->wavelength_batch_size(),
-                                            atmosphere.num_wavel());
-            initialize_wavelength_blocks(block_size);
+            initialize_wavelength_blocks(m_wavelength_batch_capacity);
         }
 
         // Initialize some local memory storage

@@ -635,7 +635,7 @@ namespace sasktran2::solartransmission {
         using RowMajorMatrix = Eigen::Matrix<double, Eigen::Dynamic,
                                              Eigen::Dynamic, Eigen::RowMajor>;
         std::vector<RowMajorMatrix> m_solar_trans_batch;
-        int m_wavelength_batch_capacity = 0;
+        int m_wavelength_batch_capacity = 1;
         std::vector<std::vector<int>> m_index_map;
 
         PhaseHandler<NSTOKES> m_phase_handler;
@@ -731,6 +731,15 @@ namespace sasktran2::solartransmission {
         void initialize_atmosphere(
             const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere)
             override;
+
+        void set_wavelength_block_capacity(int block_capacity) override {
+            if (block_capacity < 1) {
+                throw std::invalid_argument(
+                    "Single scatter wavelength block capacity must be "
+                    "positive");
+            }
+            m_wavelength_batch_capacity = block_capacity;
+        }
 
         /** Triggers an internal calculation of the source term.  This method is
          * called at the beginning of each 'wavelength' calculation.

@@ -43,6 +43,7 @@ namespace sasktran2 {
         int m_nwavel;
         int m_nderiv;
         int m_ngeometry;
+        int m_wavelength_block_capacity = 1;
 
         Eigen::VectorXd m_stokes_C;
         Eigen::VectorXd m_stokes_S;
@@ -67,6 +68,15 @@ namespace sasktran2 {
             const sasktran2::viewinggeometry::InternalViewingGeometry&
                 internal_viewing,
             const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere);
+
+        /** Sets the wavelength block capacity negotiated by the engine. */
+        void set_wavelength_block_capacity(int block_capacity) {
+            if (block_capacity < 1) {
+                throw std::invalid_argument(
+                    "Output wavelength block capacity must be positive");
+            }
+            m_wavelength_block_capacity = block_capacity;
+        }
 
         /** Method the Sasktran2 engine calls for each integrated line of sight
          * and contiguous wavelength block.

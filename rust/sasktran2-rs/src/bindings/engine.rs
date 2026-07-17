@@ -161,13 +161,13 @@ impl<'a> Engine<'a> {
             output.with_surface_derivative(deriv_name);
         }
 
-        // We use rayon threading either when the user explicitly enables it, or when
-        // openMP support is not enabled.  Also only use it if the number of threads is greater than 1.
+        // Rayon partitions wavelengths, so only use it with wavelength
+        // threading. Source threading remains inside the C++ engine.
         let use_rayon_threading = (self.config.threading_lib() == ThreadingLib::Rayon
-            && self.config.num_threads()? > 1)
-            || (!openmp_support_enabled() && self.config.num_threads()? > 1)
-                && self.config.threading_model()?
-                    == crate::bindings::config::ThreadingModel::Wavelength;
+            || !openmp_support_enabled())
+            && self.config.num_threads()? > 1
+            && self.config.threading_model()?
+                == crate::bindings::config::ThreadingModel::Wavelength;
 
         if !use_rayon_threading {
             let result = unsafe {
