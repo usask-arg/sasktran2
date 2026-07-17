@@ -165,10 +165,10 @@ namespace sasktran2 {
         // Then do the surface mappings
         for (auto& [name, deriv] : m_surface_derivatives) {
 
-            const auto d_rad_by_d_surface = radiance.d_brdf(
-                this->m_ngeometry,
-                this->m_atmosphere->num_scattering_deriv_groups(),
-                this->m_atmosphere->surface().num_deriv());
+            const auto d_rad_by_d_surface =
+                radiance.d_brdf(this->m_ngeometry,
+                                this->m_atmosphere->num_source_deriv_groups(),
+                                this->m_atmosphere->surface().num_deriv());
             const auto& mapping =
                 this->m_atmosphere->surface().derivative_mappings().at(name);
 
@@ -355,7 +355,7 @@ namespace sasktran2 {
 
             Eigen::Ref<const Eigen::Matrix<double, 1, -1>> d_rad_by_d_surface =
                 flux.d_brdf(this->m_ngeometry,
-                            this->m_atmosphere->num_scattering_deriv_groups(),
+                            this->m_atmosphere->num_source_deriv_groups(),
                             this->m_atmosphere->surface()
                                 .num_deriv()); // [stokes X num_brdf_deriv]
             const auto& mapping =

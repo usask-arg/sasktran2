@@ -183,7 +183,7 @@ namespace sasktran2::detail {
 
         const int surface_derivative_count = atmosphere.surface().num_deriv();
         const int surface_derivative_start =
-            (2 + atmosphere.num_scattering_deriv_groups()) * ngeometry;
+            atmosphere.surface_deriv_start_index();
         for (auto& [name, derivative_output] : surface_derivatives) {
             const auto& mapping =
                 atmosphere.surface().derivative_mappings().at(name);

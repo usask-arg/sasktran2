@@ -321,6 +321,35 @@ def test_mixed_sources_wavelength_batch_parity(emission_source):
         )
 
 
+@pytest.mark.parametrize("wavelength_batch_size", [1, 4])
+def test_surface_albedo_wf_with_atmospheric_emission(wavelength_batch_size):
+    """Atmospheric-emission derivatives must not displace surface derivatives."""
+    engine, atmosphere = _setup_1d(
+        "single_scatter",
+        1,
+        True,
+        num_wavelengths=5,
+        wavelength_batch_size=wavelength_batch_size,
+        emission_source=sk.EmissionSource.Standard,
+    )
+    result = engine.calculate_radiance(atmosphere)
+
+    step = 1e-5
+    atmosphere.surface.albedo[:] += step
+    radiance_above = engine.calculate_radiance(atmosphere).radiance.values.copy()
+    atmosphere.surface.albedo[:] -= 2 * step
+    radiance_below = engine.calculate_radiance(atmosphere).radiance.values.copy()
+    atmosphere.surface.albedo[:] += step
+
+    numeric_wf = (radiance_above - radiance_below) / (2 * step)
+    np.testing.assert_allclose(
+        result.wf_albedo.values,
+        numeric_wf,
+        rtol=1e-7,
+        atol=1e-10,
+    )
+
+
 def test_rayon_wavelength_batch_parity():
     scalar_engine, scalar_atmosphere = _setup_1d(
         "single_scatter", 1, True, num_wavelengths=9

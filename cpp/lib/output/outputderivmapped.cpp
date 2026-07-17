@@ -156,10 +156,9 @@ namespace sasktran2 {
             }
         }
 
-        const auto d_rad_by_d_surface =
-            radiance.d_brdf(this->m_ngeometry,
-                            this->m_atmosphere->num_scattering_deriv_groups(),
-                            this->m_atmosphere->surface().num_deriv());
+        const auto d_rad_by_d_surface = radiance.d_brdf(
+            this->m_ngeometry, this->m_atmosphere->num_source_deriv_groups(),
+            this->m_atmosphere->surface().num_deriv());
         // Then do the surface mappings
         for (auto& [name, deriv] : m_surface_derivatives) {
             const auto& mapping =
