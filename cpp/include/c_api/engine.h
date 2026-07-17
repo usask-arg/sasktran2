@@ -22,6 +22,7 @@ int sk_engine_calculate_radiance(Engine* engine, Atmosphere* atmosphere,
                                  OutputC* output, int only_initialize);
 int sk_engine_effective_wavelength_batch_size(Engine* engine,
                                               int num_wavelengths);
+int sk_engine_supports_linearization(Engine* engine, int mode, int* supported);
 int sk_engine_calculate_radiance_block_thread(Engine* engine, OutputC* output,
                                               int wavelength_start,
                                               int wavelength_count,

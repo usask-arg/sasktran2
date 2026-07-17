@@ -991,6 +991,13 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn sk_engine_supports_linearization(
+        engine: *mut Engine,
+        mode: ::std::os::raw::c_int,
+        supported: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn sk_engine_calculate_radiance_block_thread(
         engine: *mut Engine,
         output: *mut OutputC,

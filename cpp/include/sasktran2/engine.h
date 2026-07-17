@@ -141,6 +141,13 @@ template <int NSTOKES> class Sasktran2 : public Sasktran2Interface {
 
     int effective_wavelength_batch_size(int num_wavelengths) const;
 
+    /** Reports whether the complete line-of-sight model supports a native
+     * derivative execution mode. */
+    bool supports_linearization(sasktran2::LinearizationMode mode) const {
+        return m_source_integrator->supports_linearization(mode,
+                                                           m_los_source_terms);
+    }
+
     void
     calculate_radiance_block_thread(sasktran2::Output<NSTOKES>& output,
                                     const sasktran2::WavelengthBlock<>& batch,

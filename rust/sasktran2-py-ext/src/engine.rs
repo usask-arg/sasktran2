@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
-use sasktran2_rs::bindings::engine;
+use sasktran2_rs::bindings::engine::{self, LinearizationMode};
 
 use crate::config::PyConfig;
 use crate::geometry::{PyGeometry1D, PyGeometry2D};
@@ -78,5 +78,19 @@ impl PyEngine {
             .into_pyresult()?;
 
         Py::new(py, crate::output::PyOutput { output })
+    }
+
+    fn _supports_linearization(&self, mode: u8) -> PyResult<bool> {
+        let mode = match mode {
+            0 => LinearizationMode::Jacobian,
+            1 => LinearizationMode::Jvp,
+            2 => LinearizationMode::Vjp,
+            _ => {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "linearization mode must be 0 (Jacobian), 1 (JVP), or 2 (VJP)",
+                ));
+            }
+        };
+        self.engine.supports_linearization(mode).into_pyresult()
     }
 }

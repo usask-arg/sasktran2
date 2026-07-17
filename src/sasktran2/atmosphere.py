@@ -346,6 +346,11 @@ class Atmosphere:
         return self._nstokes
 
     @property
+    def calculate_derivatives(self) -> bool:
+        """Whether the atmosphere registers and calculates derivatives."""
+        return self._calculate_derivatives
+
+    @property
     def calculate_temperature_derivative(self) -> bool:
         """
         True if we are calculating the derivative with respect to temperature
