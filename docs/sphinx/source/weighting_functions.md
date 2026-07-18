@@ -90,17 +90,28 @@ The same derivatives are available as a local linear model of the radiance:
     # Propagate a scalar objective's radiance sensitivity back to every input.
     parameter_gradients = linearization.vjp(radiance_sensitivity)
 
-The linearization.value property is the radiance at the linearization point
-and linearization.jacobian contains one labeled block per semantic parameter
-(for example, ozone_vmr rather than wf_ozone_vmr). In the initial
-implementation the complete radiance Jacobian is calculated and cached when
-linearize is called. Repeated JVP and VJP operations reuse that cache, but
-the memory cost is therefore the same as requesting all weighting functions.
-Flux and diagnostic outputs are not part of this linearization interface.
-The tangent_template property describes the shape, dimensions, and coordinates
-of every parameter without accessing the full Jacobian. A linearization is
-fixed at the atmosphere state captured by linearize; changing the atmosphere
-afterward does not alter its value, JVPs, or VJPs.
+The `linearization.value` property is the radiance at the linearization point.
+JVP and VJP operations contract the native derivative rows as they are produced,
+so they do not allocate the complete mapped Jacobian. Accessing
+`linearization.jacobian` materializes and caches one labeled block per semantic
+parameter (for example, `ozone_vmr` rather than `wf_ozone_vmr`). The
+`tangent_template` property describes the shape, dimensions, and coordinates of
+every parameter without materializing the Jacobian. Flux and diagnostic outputs
+are not part of this interface.
+
+A linearization keeps a reference to the atmosphere; it does not copy it. The
+atmosphere's revision is recorded when the linearization is created. Rebuilding
+a constituent-backed atmosphere advances this revision automatically. When
+modifying a borrowed raw-storage NumPy view, call `atmosphere.mark_changed()`
+after the modification. Once the revision changes, new JVPs, VJPs, and a
+first-time Jacobian materialization raise `StaleLinearizationError`; already
+cached `value` and `jacobian` objects remain readable. Create a new
+linearization to evaluate derivatives at the changed state.
+
+Weighting functions configured in log-radiance space are converted back to
+radiance derivatives by this interface, so `jvp`, `vjp`, and `jacobian` always
+describe the derivative of `linearization.value`. The legacy
+`calculate_radiance()` output is unchanged.
 
 ## The Details
 

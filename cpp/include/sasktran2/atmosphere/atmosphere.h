@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../geometry.h"
+#include <cstdint>
 #include <sasktran2/config.h>
 #include <sasktran2/atmosphere/grid_storage.h>
 #include <sasktran2/atmosphere/surface.h>
@@ -36,6 +37,8 @@ namespace sasktran2::atmosphere {
                                          derivatives */
         bool m_include_emission_derivatives; /** True if we are going to include
                                                 emission derivatives */
+        std::uint64_t m_revision = 0; /** Monotonic revision of the built native
+                                         atmosphere state. */
 
       public:
         /** Directly constructs the atmosphere from it's base objects, taking
@@ -142,5 +145,11 @@ namespace sasktran2::atmosphere {
         bool include_emission_derivatives() const {
             return m_include_emission_derivatives;
         }
+
+        /** Marks the native atmosphere state as changed. */
+        void mark_changed() { ++m_revision; }
+
+        /** Revision of the native atmosphere state. */
+        std::uint64_t revision() const { return m_revision; }
     };
 } // namespace sasktran2::atmosphere

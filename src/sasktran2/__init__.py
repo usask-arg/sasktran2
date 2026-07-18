@@ -42,7 +42,7 @@ from .config import Config
 from .engine import Engine
 from .geodetic import WGS84, Geodetic, SphericalGeoid
 from .geometry import Geometry1D, Geometry2D
-from .linearization import Linearization
+from .linearization import Linearization, StaleLinearizationError
 from .viewinggeo.wrappers import (
     FluxObserverSolar,
     GroundViewingSolar,

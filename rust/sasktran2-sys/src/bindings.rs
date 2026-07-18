@@ -205,6 +205,12 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn sk_deriv_mapping_get_log_radiance_space(
+        mapping: *mut DerivativeMapping,
+        log_radiance_space: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn sk_deriv_mapping_is_scattering_derivative(
         mapping: *mut DerivativeMapping,
         is_scattering_derivative: *mut ::std::os::raw::c_int,
@@ -398,6 +404,15 @@ unsafe extern "C" {
     pub fn sk_atmosphere_apply_delta_m_scaling(
         atmosphere: *mut Atmosphere,
         order: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_atmosphere_mark_changed(atmosphere: *mut Atmosphere) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_atmosphere_get_revision(
+        atmosphere: *mut Atmosphere,
+        revision: *mut ::std::os::raw::c_ulonglong,
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
@@ -903,6 +918,16 @@ unsafe extern "C" {
 pub struct OutputC {
     _unused: [u8; 0],
 }
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct OutputJVP {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct OutputVJP {
+    _unused: [u8; 0],
+}
 unsafe extern "C" {
     pub fn sk_output_create(
         radiance: *mut f64,
@@ -957,6 +982,63 @@ unsafe extern "C" {
         od: *mut *mut f64,
     ) -> ::std::os::raw::c_int;
 }
+unsafe extern "C" {
+    pub fn sk_output_jvp_create(
+        radiance: *mut f64,
+        jvp: *mut f64,
+        nrad: ::std::os::raw::c_int,
+        nstokes: ::std::os::raw::c_int,
+    ) -> *mut OutputJVP;
+}
+unsafe extern "C" {
+    pub fn sk_output_jvp_destroy(output: *mut OutputJVP);
+}
+unsafe extern "C" {
+    pub fn sk_output_jvp_assign_derivative_tangent(
+        output: *mut OutputJVP,
+        name: *const ::std::os::raw::c_char,
+        tangent: *const f64,
+        nparam: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_output_jvp_assign_surface_tangent(
+        output: *mut OutputJVP,
+        name: *const ::std::os::raw::c_char,
+        tangent: *const f64,
+        nparam: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_output_vjp_create(
+        radiance: *mut f64,
+        cotangent: *const f64,
+        nrad: ::std::os::raw::c_int,
+        nstokes: ::std::os::raw::c_int,
+    ) -> *mut OutputVJP;
+}
+unsafe extern "C" {
+    pub fn sk_output_vjp_destroy(output: *mut OutputVJP);
+}
+unsafe extern "C" {
+    pub fn sk_output_vjp_assign_derivative_gradient(
+        output: *mut OutputVJP,
+        name: *const ::std::os::raw::c_char,
+        gradient: *mut f64,
+        nparam: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_output_vjp_assign_surface_gradient(
+        output: *mut OutputVJP,
+        name: *const ::std::os::raw::c_char,
+        gradient: *mut f64,
+        nparam: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_output_vjp_finalize(output: *mut OutputVJP) -> ::std::os::raw::c_int;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct Engine {
@@ -995,6 +1077,27 @@ unsafe extern "C" {
         engine: *mut Engine,
         mode: ::std::os::raw::c_int,
         supported: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_engine_linearization_backend(
+        engine: *mut Engine,
+        mode: ::std::os::raw::c_int,
+        backend: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_engine_calculate_jvp(
+        engine: *mut Engine,
+        atmosphere: *mut Atmosphere,
+        output: *mut OutputJVP,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_engine_calculate_vjp(
+        engine: *mut Engine,
+        atmosphere: *mut Atmosphere,
+        output: *mut OutputVJP,
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {

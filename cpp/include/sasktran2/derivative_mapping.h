@@ -366,6 +366,10 @@ namespace sasktran2 {
             return m_interpolator;
         }
 
+        const std::optional<Eigen::MatrixXd>& get_interpolator_const() const {
+            return m_interpolator;
+        }
+
         /**
          * @brief Set the interpolator object
          *

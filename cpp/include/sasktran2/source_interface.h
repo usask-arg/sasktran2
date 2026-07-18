@@ -15,6 +15,11 @@ namespace sasktran2 {
      * implement. Capability reporting is kept separate from execution so
      * specialized JVP/VJP interfaces can be added without placeholder hooks. */
     enum class LinearizationMode { Jacobian = 0, JVP = 1, VJP = 2 };
+    enum class LinearizationBackend {
+        Unavailable = 0,
+        StreamingJacobian = 1,
+        Native = 2
+    };
 } // namespace sasktran2
 
 /** Base interface class that provides source term functionality to the Engine

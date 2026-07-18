@@ -470,6 +470,42 @@ int sk_atmosphere_apply_delta_m_scaling(Atmosphere* atmosphere, int order) {
     return 0;
 }
 
+int sk_atmosphere_mark_changed(Atmosphere* atmosphere) {
+    if (atmosphere == nullptr || atmosphere->impl == nullptr) {
+        return -1;
+    }
+    if (auto* impl = dynamic_cast<sasktran2::atmosphere::Atmosphere<1>*>(
+            atmosphere->impl.get())) {
+        impl->mark_changed();
+        return 0;
+    }
+    if (auto* impl = dynamic_cast<sasktran2::atmosphere::Atmosphere<3>*>(
+            atmosphere->impl.get())) {
+        impl->mark_changed();
+        return 0;
+    }
+    return -2;
+}
+
+int sk_atmosphere_get_revision(Atmosphere* atmosphere,
+                               unsigned long long* revision) {
+    if (atmosphere == nullptr || atmosphere->impl == nullptr ||
+        revision == nullptr) {
+        return -1;
+    }
+    if (auto* impl = dynamic_cast<sasktran2::atmosphere::Atmosphere<1>*>(
+            atmosphere->impl.get())) {
+        *revision = static_cast<unsigned long long>(impl->revision());
+        return 0;
+    }
+    if (auto* impl = dynamic_cast<sasktran2::atmosphere::Atmosphere<3>*>(
+            atmosphere->impl.get())) {
+        *revision = static_cast<unsigned long long>(impl->revision());
+        return 0;
+    }
+    return -2;
+}
+
 int sk_atmosphere_storage_finalize_scattering_derivatives(
     AtmosphereStorage* storage) {
     if (storage == nullptr) {

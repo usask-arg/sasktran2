@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import sasktran2 as sk
+import xarray as xr
 
 EARTH_RADIUS_M = 6_372_000.0
 ALTITUDES_M = np.array([0.0, 10_000.0, 30_000.0])
@@ -274,6 +275,41 @@ def test_native_2d_extinction_derivative_matches_finite_difference():
     ]
     np.testing.assert_allclose(numeric, analytic, rtol=4.0e-5)
     np.testing.assert_array_equal(perturbed.radiance[1, 0, 0], base.radiance[1, 0, 0])
+
+
+def test_native_2d_linearization_products_preserve_structured_parameters():
+    config = transmission_config()
+    geometry = geometry2d()
+    viewing = sk.ViewingGeometry()
+    viewing.add_ray(tangent_ray())
+    atmosphere = sk.Atmosphere(
+        geometry,
+        config,
+        wavelengths_nm=WAVELENGTHS_NM,
+        legendre_derivative=False,
+    )
+    atmosphere.storage.total_extinction[:] = np.linspace(0.7e-5, 1.5e-5, 18).reshape(
+        9, 2
+    )
+    atmosphere.storage.ssa[:] = 0.0
+    engine = sk.Engine(config, geometry, viewing)
+    lin = engine.linearize(atmosphere)
+
+    assert lin.parameter_dims["extinction"] == ("horizontal_angle", "altitude")
+    tangent = lin.tangent_template[["extinction"]]
+    tangent["extinction"].data[:] = np.arange(9.0).reshape(3, 3)
+    xr.testing.assert_allclose(
+        lin.jvp(tangent),
+        (lin.jacobian["extinction"] * tangent["extinction"]).sum(
+            ("horizontal_angle", "altitude")
+        ),
+    )
+
+    cotangent = xr.ones_like(lin.value) * 0.4
+    xr.testing.assert_allclose(
+        lin.vjp(cotangent)["extinction"],
+        (lin.jacobian["extinction"] * cotangent).sum(lin.value.dims),
+    )
 
 
 def test_vector_transmission_has_only_intensity_component():

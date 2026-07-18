@@ -351,6 +351,20 @@ class Atmosphere:
         return self._calculate_derivatives
 
     @property
+    def revision(self) -> int:
+        """Monotonic revision of the built native atmosphere state."""
+        return self._atmosphere.revision
+
+    def mark_changed(self) -> None:
+        """Indicate that directly mutable native atmosphere storage changed.
+
+        Constituent-backed atmospheres call this automatically when their
+        native representation is rebuilt. Users of the raw storage interface
+        must call it after modifying a borrowed NumPy storage view.
+        """
+        self._atmosphere.mark_changed()
+
+    @property
     def calculate_temperature_derivative(self) -> bool:
         """
         True if we are calculating the derivative with respect to temperature
@@ -715,6 +729,10 @@ class Atmosphere:
 
         if len(self._constituents) > 0:
             logging.debug("Setting atmosphere from constituents")
+            # Rebuilding mutates shared native storage. Invalidate existing
+            # linearization sessions before any mutation, including rebuilds
+            # that subsequently fail.
+            self.mark_changed()
             # Using the constituent interface
             if self._storage_needs_reset:
                 self._zero_storage()

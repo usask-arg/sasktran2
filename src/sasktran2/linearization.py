@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
@@ -161,19 +161,129 @@ class _FullJacobianBackend:
         return xr.Dataset(gradients)
 
 
-class Linearization:
-    """Radiance and its local linear model at a fixed atmosphere state.
+class StaleLinearizationError(RuntimeError):
+    """Raised when an operation requires an atmosphere that has changed."""
 
-    Instances are created by sasktran2.Engine.linearize. The initial
-    implementation stores the complete structured radiance Jacobian and uses
-    it to evaluate both Jacobian-vector and vector-Jacobian products. A
-    linearization is a snapshot: later mutation or recalculation of the
-    atmosphere used to create it does not change its value or derivative
-    products.
+
+class _EngineBackend:
+    """Streaming engine backend with lazy full-Jacobian materialization."""
+
+    def __init__(
+        self,
+        value: xr.DataArray,
+        specs: Mapping[str, _ParameterSpec],
+        tangent_template: xr.Dataset,
+        atmosphere,
+        revision: int,
+        jacobian_loader: Callable[[], xr.Dataset],
+        jvp_evaluator: Callable[[xr.Dataset], xr.DataArray],
+        vjp_evaluator: Callable[[xr.DataArray], xr.Dataset],
+        owner,
+    ) -> None:
+        self.value = value
+        self.specs = MappingProxyType(dict(specs))
+        self.tangent_template = tangent_template
+        self._atmosphere = atmosphere
+        self._revision = revision
+        self._jacobian_loader = jacobian_loader
+        self._jvp_evaluator = jvp_evaluator
+        self._vjp_evaluator = vjp_evaluator
+        self._owner = owner
+        self._jacobian: xr.Dataset | None = None
+
+    def _require_current(self) -> None:
+        if self._atmosphere.revision != self._revision:
+            msg = (
+                "The atmosphere has changed since this linearization was "
+                "created. Call engine.linearize(atmosphere) again."
+            )
+            raise StaleLinearizationError(msg)
+
+    @property
+    def jacobian(self) -> xr.Dataset:
+        if self._jacobian is None:
+            self._require_current()
+            self._jacobian = self._jacobian_loader()
+        return self._jacobian
+
+    def jvp(self, tangent: xr.Dataset) -> xr.DataArray:
+        if not isinstance(tangent, xr.Dataset):
+            msg = "The JVP tangent must be an xarray.Dataset"
+            raise TypeError(msg)
+
+        unknown = set(tangent.data_vars) - set(self.specs)
+        if unknown:
+            names = ", ".join(sorted(unknown))
+            msg = f"Unknown tangent parameter(s): {names}"
+            raise ValueError(msg)
+
+        normalized: dict[str, xr.DataArray] = {}
+        for name in tangent.data_vars:
+            normalized[name] = _validated_array(
+                tangent[name],
+                self.tangent_template[name],
+                self.specs[name].parameter_dims,
+                f"Tangent parameter {name!r}",
+            )
+
+        self._require_current()
+        return self._jvp_evaluator(xr.Dataset(normalized))
+
+    def vjp(self, cotangent: xr.DataArray) -> xr.Dataset:
+        cotangent = _validated_array(
+            cotangent,
+            self.value,
+            tuple(self.value.dims),
+            "The VJP radiance cotangent",
+        )
+        self._require_current()
+        return self._vjp_evaluator(cotangent)
+
+
+class Linearization:
+    """Radiance and its local linear model at a built atmosphere state.
+
+    Engine-created instances stream Jacobian-vector and vector-Jacobian
+    contractions through the radiative-transfer output path. The complete
+    structured Jacobian is materialized only when requested.
     """
 
-    def __init__(self, backend: _FullJacobianBackend) -> None:
+    def __init__(self, backend: _FullJacobianBackend | _EngineBackend) -> None:
         self._backend = backend
+
+    @classmethod
+    def _from_engine(
+        cls,
+        value: xr.DataArray,
+        specs: Mapping[str, _ParameterSpec],
+        tangent_template: xr.Dataset,
+        atmosphere,
+        revision: int,
+        jacobian_loader: Callable[[], xr.Dataset],
+        jvp_evaluator: Callable[[xr.Dataset], xr.DataArray],
+        vjp_evaluator: Callable[[xr.DataArray], xr.Dataset],
+        owner,
+    ) -> Linearization:
+        if not specs:
+            msg = (
+                "No radiance derivative mappings are available. Construct the "
+                "atmosphere with calculate_derivatives=True and register at "
+                "least one differentiable parameter."
+            )
+            raise ValueError(msg)
+        return cls(
+            _EngineBackend(
+                value,
+                specs,
+                tangent_template,
+                atmosphere,
+                revision,
+                jacobian_loader,
+                jvp_evaluator,
+                vjp_evaluator,
+                owner,
+            )
+        )
 
     @classmethod
     def _from_result(

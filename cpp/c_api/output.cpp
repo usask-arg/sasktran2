@@ -19,6 +19,112 @@ OutputC::OutputC(double* radiance, int nrad, int nstokes, double* flux,
     }
 }
 
+OutputJVP::OutputJVP(double* radiance, double* jvp, int nrad, int nstokes) {
+    Eigen::Map<Eigen::VectorXd> radiance_map(radiance, nrad * nstokes);
+    Eigen::Map<Eigen::VectorXd> jvp_map(jvp, nrad * nstokes);
+    if (nstokes == 1) {
+        impl = std::make_unique<sasktran2::OutputJVP<1>>(radiance_map, jvp_map);
+    } else if (nstokes == 3) {
+        impl = std::make_unique<sasktran2::OutputJVP<3>>(radiance_map, jvp_map);
+    }
+}
+
+int OutputJVP::assign_derivative_tangent(const char* name,
+                                         const double* tangent, int nparam) {
+    if (impl == nullptr || tangent == nullptr || nparam < 0) {
+        return -1;
+    }
+    Eigen::Map<const Eigen::VectorXd> tangent_map(tangent, nparam);
+    if (auto* output = dynamic_cast<sasktran2::OutputJVP<1>*>(impl.get())) {
+        output->set_derivative_tangent(name, tangent_map);
+        return 0;
+    }
+    if (auto* output = dynamic_cast<sasktran2::OutputJVP<3>*>(impl.get())) {
+        output->set_derivative_tangent(name, tangent_map);
+        return 0;
+    }
+    return -2;
+}
+
+int OutputJVP::assign_surface_tangent(const char* name, const double* tangent,
+                                      int nparam) {
+    if (impl == nullptr || tangent == nullptr || nparam < 0) {
+        return -1;
+    }
+    Eigen::Map<const Eigen::VectorXd> tangent_map(tangent, nparam);
+    if (auto* output = dynamic_cast<sasktran2::OutputJVP<1>*>(impl.get())) {
+        output->set_surface_tangent(name, tangent_map);
+        return 0;
+    }
+    if (auto* output = dynamic_cast<sasktran2::OutputJVP<3>*>(impl.get())) {
+        output->set_surface_tangent(name, tangent_map);
+        return 0;
+    }
+    return -2;
+}
+
+OutputVJP::OutputVJP(double* radiance, const double* cotangent, int nrad,
+                     int nstokes) {
+    Eigen::Map<Eigen::VectorXd> radiance_map(radiance, nrad * nstokes);
+    Eigen::Map<const Eigen::VectorXd> cotangent_map(cotangent, nrad * nstokes);
+    if (nstokes == 1) {
+        impl = std::make_unique<sasktran2::OutputVJP<1>>(radiance_map,
+                                                         cotangent_map);
+    } else if (nstokes == 3) {
+        impl = std::make_unique<sasktran2::OutputVJP<3>>(radiance_map,
+                                                         cotangent_map);
+    }
+}
+
+int OutputVJP::assign_derivative_gradient(const char* name, double* gradient,
+                                          int nparam) {
+    if (impl == nullptr || gradient == nullptr || nparam < 0) {
+        return -1;
+    }
+    Eigen::Map<Eigen::VectorXd> gradient_map(gradient, nparam);
+    if (auto* output = dynamic_cast<sasktran2::OutputVJP<1>*>(impl.get())) {
+        output->set_derivative_gradient_memory(name, gradient_map);
+        return 0;
+    }
+    if (auto* output = dynamic_cast<sasktran2::OutputVJP<3>*>(impl.get())) {
+        output->set_derivative_gradient_memory(name, gradient_map);
+        return 0;
+    }
+    return -2;
+}
+
+int OutputVJP::assign_surface_gradient(const char* name, double* gradient,
+                                       int nparam) {
+    if (impl == nullptr || gradient == nullptr || nparam < 0) {
+        return -1;
+    }
+    Eigen::Map<Eigen::VectorXd> gradient_map(gradient, nparam);
+    if (auto* output = dynamic_cast<sasktran2::OutputVJP<1>*>(impl.get())) {
+        output->set_surface_gradient_memory(name, gradient_map);
+        return 0;
+    }
+    if (auto* output = dynamic_cast<sasktran2::OutputVJP<3>*>(impl.get())) {
+        output->set_surface_gradient_memory(name, gradient_map);
+        return 0;
+    }
+    return -2;
+}
+
+int OutputVJP::finalize() {
+    if (impl == nullptr) {
+        return -1;
+    }
+    if (auto* output = dynamic_cast<sasktran2::OutputVJP<1>*>(impl.get())) {
+        output->finalize();
+        return 0;
+    }
+    if (auto* output = dynamic_cast<sasktran2::OutputVJP<3>*>(impl.get())) {
+        output->finalize();
+        return 0;
+    }
+    return -2;
+}
+
 int OutputC::assign_derivative_memory(const char* name,
                                       double* derivative_mapping, int nrad,
                                       int nstokes, int nderiv) {
@@ -194,5 +300,52 @@ int sk_output_get_los_optical_depth(OutputC* output, double** od) {
         // Handle error case
         return -1;
     }
+}
+
+OutputJVP* sk_output_jvp_create(double* radiance, double* jvp, int nrad,
+                                int nstokes) {
+    return new OutputJVP(radiance, jvp, nrad, nstokes);
+}
+
+void sk_output_jvp_destroy(OutputJVP* output) { delete output; }
+
+int sk_output_jvp_assign_derivative_tangent(OutputJVP* output, const char* name,
+                                            const double* tangent, int nparam) {
+    return output == nullptr
+               ? -1
+               : output->assign_derivative_tangent(name, tangent, nparam);
+}
+
+int sk_output_jvp_assign_surface_tangent(OutputJVP* output, const char* name,
+                                         const double* tangent, int nparam) {
+    return output == nullptr
+               ? -1
+               : output->assign_surface_tangent(name, tangent, nparam);
+}
+
+OutputVJP* sk_output_vjp_create(double* radiance, const double* cotangent,
+                                int nrad, int nstokes) {
+    return new OutputVJP(radiance, cotangent, nrad, nstokes);
+}
+
+void sk_output_vjp_destroy(OutputVJP* output) { delete output; }
+
+int sk_output_vjp_assign_derivative_gradient(OutputVJP* output,
+                                             const char* name, double* gradient,
+                                             int nparam) {
+    return output == nullptr
+               ? -1
+               : output->assign_derivative_gradient(name, gradient, nparam);
+}
+
+int sk_output_vjp_assign_surface_gradient(OutputVJP* output, const char* name,
+                                          double* gradient, int nparam) {
+    return output == nullptr
+               ? -1
+               : output->assign_surface_gradient(name, gradient, nparam);
+}
+
+int sk_output_vjp_finalize(OutputVJP* output) {
+    return output == nullptr ? -1 : output->finalize();
 }
 }
