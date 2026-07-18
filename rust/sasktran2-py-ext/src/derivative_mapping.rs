@@ -94,6 +94,11 @@ impl PyDerivativeMappingView {
         self.derivative_mapping
             .set_log_radiance_space(log_radiance_space);
     }
+
+    #[getter]
+    fn get_log_radiance_space(&self) -> bool {
+        self.derivative_mapping.log_radiance_space()
+    }
 }
 
 #[pyclass(unsendable)]

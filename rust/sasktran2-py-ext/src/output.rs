@@ -1,10 +1,64 @@
-use numpy::{PyArray2, PyArray3, PyArray4};
+use numpy::{PyArray1, PyArray2, PyArray3, PyArray4};
 use pyo3::{prelude::*, types::PyDict};
 use sasktran2_rs::bindings::output;
 
 #[pyclass(unsendable)]
 pub struct PyOutput {
     pub output: output::Output,
+}
+
+#[pyclass(unsendable)]
+pub struct PyJvpOutput {
+    pub output: output::JvpOutput,
+}
+
+#[pymethods]
+impl PyJvpOutput {
+    #[getter]
+    fn get_radiance<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyArray3<f64>>> {
+        let array = &this.borrow().output.radiance;
+        unsafe { Ok(PyArray3::borrow_from_array(array, this.into_any())) }
+    }
+
+    #[getter]
+    fn get_jvp<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyArray3<f64>>> {
+        let array = &this.borrow().output.jvp;
+        unsafe { Ok(PyArray3::borrow_from_array(array, this.into_any())) }
+    }
+}
+
+#[pyclass(unsendable)]
+pub struct PyVjpOutput {
+    pub output: output::VjpOutput,
+}
+
+#[pymethods]
+impl PyVjpOutput {
+    #[getter]
+    fn get_radiance<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyArray3<f64>>> {
+        let array = &this.borrow().output.radiance;
+        unsafe { Ok(PyArray3::borrow_from_array(array, this.into_any())) }
+    }
+
+    #[getter]
+    fn get_derivative_gradients<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyDict>> {
+        let result = PyDict::new(this.py());
+        for (name, gradient) in &this.borrow().output.derivative_gradients {
+            let array = unsafe { PyArray1::borrow_from_array(gradient, this.clone().into_any()) };
+            result.set_item(name, array)?;
+        }
+        Ok(result)
+    }
+
+    #[getter]
+    fn get_surface_gradients<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyDict>> {
+        let result = PyDict::new(this.py());
+        for (name, gradient) in &this.borrow().output.surface_gradients {
+            let array = unsafe { PyArray1::borrow_from_array(gradient, this.clone().into_any()) };
+            result.set_item(name, array)?;
+        }
+        Ok(result)
+    }
 }
 
 impl PyOutput {

@@ -4,12 +4,14 @@ use super::atmosphere::Atmosphere;
 use super::common::openmp_support_enabled;
 use super::config::{Config, ThreadingLib};
 use super::geometry::{Geometry1D, Geometry2D};
-use super::output::Output;
+use super::output::{JvpOutput, Output, VjpOutput};
 use super::prelude::*;
 use super::viewing_geometry::ViewingGeometry;
+use ndarray::{Array1, Array3};
 use rayon::current_thread_index;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use sasktran2_sys::ffi;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]
@@ -17,6 +19,14 @@ pub enum LinearizationMode {
     Jacobian = 0,
     Jvp = 1,
     Vjp = 2,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum LinearizationBackend {
+    Unavailable = 0,
+    StreamingJacobian = 1,
+    Native = 2,
 }
 
 pub enum EngineGeometry<'a> {
@@ -146,6 +156,27 @@ impl<'a> Engine<'a> {
                 "Failed to query linearization support: {}",
                 result
             ))
+        }
+    }
+
+    pub fn linearization_backend(&self, mode: LinearizationMode) -> Result<LinearizationBackend> {
+        let mut backend = 0i32;
+        let result =
+            unsafe { ffi::sk_engine_linearization_backend(self.engine, mode as i32, &mut backend) };
+        if result != 0 {
+            return Err(anyhow::anyhow!(
+                "Failed to select linearization backend: {}",
+                result
+            ));
+        }
+        match backend {
+            0 => Ok(LinearizationBackend::Unavailable),
+            1 => Ok(LinearizationBackend::StreamingJacobian),
+            2 => Ok(LinearizationBackend::Native),
+            _ => Err(anyhow::anyhow!(
+                "Unknown linearization backend: {}",
+                backend
+            )),
         }
     }
 
@@ -291,6 +322,77 @@ impl<'a> Engine<'a> {
 
         Ok(output)
     }
+
+    pub fn calculate_jvp(
+        &self,
+        atmosphere: &Atmosphere,
+        derivative_tangents: &HashMap<String, Array1<f64>>,
+        surface_tangents: &HashMap<String, Array1<f64>>,
+    ) -> Result<JvpOutput> {
+        crate::threading::set_num_threads(self.config.num_threads()?)?;
+        let mut output = JvpOutput::new(
+            atmosphere.num_wavel(),
+            self.viewing_geometry.num_rays()?,
+            self.config.num_stokes()?,
+        );
+        for (name, tangent) in derivative_tangents {
+            output
+                .with_derivative_tangent(name, tangent)
+                .map_err(anyhow::Error::msg)?;
+        }
+        for (name, tangent) in surface_tangents {
+            output
+                .with_surface_tangent(name, tangent)
+                .map_err(anyhow::Error::msg)?;
+        }
+        let result = unsafe {
+            ffi::sk_engine_calculate_jvp(self.engine, atmosphere.atmosphere, output.output)
+        };
+        if result != 0 {
+            return Err(anyhow::anyhow!("Failed to calculate JVP: {}", result));
+        }
+        Ok(output)
+    }
+
+    pub fn calculate_vjp(
+        &self,
+        atmosphere: &Atmosphere,
+        cotangent: &Array3<f64>,
+        derivative_sizes: &HashMap<String, usize>,
+        surface_sizes: &HashMap<String, usize>,
+    ) -> Result<VjpOutput> {
+        crate::threading::set_num_threads(self.config.num_threads()?)?;
+        let expected = (
+            atmosphere.num_wavel(),
+            self.viewing_geometry.num_rays()?,
+            self.config.num_stokes()?,
+        );
+        if cotangent.dim() != expected {
+            return Err(anyhow::anyhow!(
+                "Radiance cotangent shape {:?} does not match {:?}",
+                cotangent.dim(),
+                expected
+            ));
+        }
+        let mut output = VjpOutput::new(cotangent);
+        for (name, size) in derivative_sizes {
+            output
+                .with_derivative_gradient(name, *size)
+                .map_err(anyhow::Error::msg)?;
+        }
+        for (name, size) in surface_sizes {
+            output
+                .with_surface_gradient(name, *size)
+                .map_err(anyhow::Error::msg)?;
+        }
+        let result = unsafe {
+            ffi::sk_engine_calculate_vjp(self.engine, atmosphere.atmosphere, output.output)
+        };
+        if result != 0 {
+            return Err(anyhow::anyhow!("Failed to calculate VJP: {}", result));
+        }
+        Ok(output)
+    }
 }
 impl<'a> Drop for Engine<'a> {
     fn drop(&mut self) {
@@ -334,15 +436,39 @@ mod tests {
         let engine = Engine::new(&config, &geometry, &viewing_geometry).unwrap();
 
         assert!(!engine.engine.is_null());
-        assert!(engine
-            .supports_linearization(LinearizationMode::Jacobian)
-            .unwrap());
-        assert!(!engine
-            .supports_linearization(LinearizationMode::Jvp)
-            .unwrap());
-        assert!(!engine
-            .supports_linearization(LinearizationMode::Vjp)
-            .unwrap());
+        assert!(
+            engine
+                .supports_linearization(LinearizationMode::Jacobian)
+                .unwrap()
+        );
+        assert!(
+            !engine
+                .supports_linearization(LinearizationMode::Jvp)
+                .unwrap()
+        );
+        assert!(
+            !engine
+                .supports_linearization(LinearizationMode::Vjp)
+                .unwrap()
+        );
+        assert_eq!(
+            engine
+                .linearization_backend(LinearizationMode::Jacobian)
+                .unwrap(),
+            LinearizationBackend::Native
+        );
+        assert_eq!(
+            engine
+                .linearization_backend(LinearizationMode::Jvp)
+                .unwrap(),
+            LinearizationBackend::StreamingJacobian
+        );
+        assert_eq!(
+            engine
+                .linearization_backend(LinearizationMode::Vjp)
+                .unwrap(),
+            LinearizationBackend::StreamingJacobian
+        );
     }
 
     #[test]

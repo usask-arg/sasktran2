@@ -306,4 +306,91 @@ namespace sasktran2 {
                     int fluxidx, int wavelidx, int threadidx,
                     int flux_type_idx) override;
     };
+
+    /** Output adapter that contracts each native radiance derivative row with
+     * one labeled parameter direction without storing a Jacobian. */
+    template <int NSTOKES> class OutputJVP : public Output<NSTOKES> {
+      private:
+        Eigen::Map<Eigen::VectorXd> m_radiance;
+        Eigen::Map<Eigen::VectorXd> m_jvp;
+        std::map<std::string, Eigen::VectorXd> m_derivative_tangents;
+        std::map<std::string, Eigen::VectorXd> m_surface_tangents;
+        std::vector<Eigen::MatrixXd> m_native_thread_storage;
+        std::vector<Eigen::MatrixXd> m_mapped_thread_storage;
+
+        void resize();
+
+        template <typename Radiance>
+        void assign_lane(const Radiance& radiance, int losidx, int wavelidx,
+                         int threadidx);
+
+      public:
+        OutputJVP(Eigen::Map<Eigen::VectorXd> radiance,
+                  Eigen::Map<Eigen::VectorXd> jvp)
+            : m_radiance(radiance), m_jvp(jvp) {}
+
+        void set_derivative_tangent(const std::string& name,
+                                    Eigen::Ref<const Eigen::VectorXd> tangent) {
+            m_derivative_tangents[name] = tangent;
+        }
+
+        void set_surface_tangent(const std::string& name,
+                                 Eigen::Ref<const Eigen::VectorXd> tangent) {
+            m_surface_tangents[name] = tangent;
+        }
+
+        void assign(const sasktran2::WavelengthBlock<>& block,
+                    const sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
+                    int losidx, int threadidx) override;
+
+        void assign_flux(
+            const sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>&,
+            int, int, int, int) override {}
+    };
+
+    /** Output adapter that contracts radiance cotangents with each native
+     * derivative row and accumulates labeled parameter gradients. */
+    template <int NSTOKES> class OutputVJP : public Output<NSTOKES> {
+      private:
+        Eigen::Map<Eigen::VectorXd> m_radiance;
+        Eigen::Map<const Eigen::VectorXd> m_cotangent;
+        std::map<std::string, Eigen::Map<Eigen::VectorXd>>
+            m_derivative_gradients;
+        std::map<std::string, Eigen::Map<Eigen::VectorXd>> m_surface_gradients;
+        std::vector<std::map<std::string, Eigen::VectorXd>>
+            m_thread_derivative_gradients;
+        std::vector<std::map<std::string, Eigen::VectorXd>>
+            m_thread_surface_gradients;
+        std::vector<Eigen::MatrixXd> m_native_thread_storage;
+
+        void resize();
+
+        template <typename Radiance>
+        void assign_lane(const Radiance& radiance, int losidx, int wavelidx,
+                         int threadidx);
+
+      public:
+        OutputVJP(Eigen::Map<Eigen::VectorXd> radiance,
+                  Eigen::Map<const Eigen::VectorXd> cotangent)
+            : m_radiance(radiance), m_cotangent(cotangent) {}
+
+        void set_derivative_gradient_memory(
+            const std::string& name,
+            Eigen::Map<Eigen::VectorXd> derivative_gradient);
+
+        void set_surface_gradient_memory(
+            const std::string& name,
+            Eigen::Map<Eigen::VectorXd> derivative_gradient);
+
+        void assign(const sasktran2::WavelengthBlock<>& block,
+                    const sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
+                    int losidx, int threadidx) override;
+
+        void assign_flux(
+            const sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>&,
+            int, int, int, int) override {}
+
+        /** Reduces thread-local gradient accumulation into caller memory. */
+        void finalize();
+    };
 } // namespace sasktran2

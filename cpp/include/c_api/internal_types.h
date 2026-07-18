@@ -98,6 +98,26 @@ struct OutputC {
                                               int nrad);
 };
 
+struct OutputJVP {
+    std::unique_ptr<sasktran2::OutputInterface> impl;
+
+    OutputJVP(double* radiance, double* jvp, int nrad, int nstokes);
+    int assign_derivative_tangent(const char* name, const double* tangent,
+                                  int nparam);
+    int assign_surface_tangent(const char* name, const double* tangent,
+                               int nparam);
+};
+
+struct OutputVJP {
+    std::unique_ptr<sasktran2::OutputInterface> impl;
+
+    OutputVJP(double* radiance, const double* cotangent, int nrad, int nstokes);
+    int assign_derivative_gradient(const char* name, double* gradient,
+                                   int nparam);
+    int assign_surface_gradient(const char* name, double* gradient, int nparam);
+    int finalize();
+};
+
 struct ViewingGeometry {
     sasktran2::viewinggeometry::ViewingGeometryContainer impl;
 
