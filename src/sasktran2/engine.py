@@ -154,9 +154,10 @@ class Engine:
     def linearize(self, atmosphere: sk.Atmosphere) -> Linearization:
         """Construct the local linear radiance model for an atmosphere.
 
-        JVP and VJP operations stream contractions through the native output
-        path without allocating the complete structured radiance Jacobian.
-        The Jacobian is calculated and cached only if requested.
+        JVP and VJP operations use the most specialized backend supported by
+        all active line-of-sight sources. They do not allocate the complete
+        structured radiance Jacobian. The Jacobian is calculated and cached
+        only if requested.
 
         Parameters
         ----------

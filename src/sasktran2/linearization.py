@@ -298,9 +298,9 @@ class _EngineBackend:
 class Linearization:
     """Radiance and its local linear model at a built atmosphere state.
 
-    Engine-created instances stream Jacobian-vector and vector-Jacobian
-    contractions through the radiative-transfer output path. The complete
-    structured Jacobian is materialized only when requested.
+    Engine-created instances evaluate Jacobian-vector and vector-Jacobian
+    products with the best backend supported by the active sources. The
+    complete structured Jacobian is materialized only when requested.
     """
 
     def __init__(self, backend: _FullJacobianBackend | _EngineBackend) -> None:

@@ -98,8 +98,13 @@ The same derivatives are available as a local linear model of the radiance:
     )
 
 The `linearization.value` property is the radiance at the linearization point.
-JVP and VJP operations contract the native derivative rows as they are produced,
-so they do not allocate the complete mapped Jacobian.
+JVP and VJP operations use the most specialized backend supported by every
+active line-of-sight source. The exact single-scatter source propagates a
+direction or cotangent directly through its source and line-of-sight
+integration, applying the existing constituent derivative mappings only at the
+atmosphere boundary. Source combinations without a specialized product backend
+contract native Jacobian rows as they are produced. Neither path allocates the
+complete mapped Jacobian.
 
 The read-only `linearization.backends` mapping reports whether each product
 uses a `LinearizationBackend.Native`, `StreamingJacobian`, or

@@ -11,6 +11,18 @@
 namespace sasktran2 {
     template <int NSTOKES> class SourceIntegrator;
 
+    template <int NSTOKES> struct RadianceJVP {
+        Eigen::Vector<double, NSTOKES> value =
+            Eigen::Vector<double, NSTOKES>::Zero();
+        Eigen::Vector<double, NSTOKES> jvp =
+            Eigen::Vector<double, NSTOKES>::Zero();
+
+        void set_zero() {
+            value.setZero();
+            jvp.setZero();
+        }
+    };
+
     /** Native derivative execution modes that an engine component may
      * implement. Capability reporting is kept separate from execution so
      * specialized JVP/VJP interfaces can be added without placeholder hooks. */
@@ -226,6 +238,42 @@ template <int NSTOKES> class SourceTermInterface {
     virtual bool
     supports_linearization(sasktran2::LinearizationMode mode) const {
         return mode == sasktran2::LinearizationMode::Jacobian;
+    }
+
+    virtual void end_of_ray_source_jvp(int, int, int, int,
+                                       Eigen::Ref<const Eigen::VectorXd>,
+                                       sasktran2::RadianceJVP<NSTOKES>&) const {
+        throw std::logic_error("Native source JVP is not implemented");
+    }
+
+    virtual void
+    integrated_source_jvp(int, int, int, int, int,
+                          const sasktran2::raytracing::TracedLayer&,
+                          const sasktran2::raytracing::GridWeightStencilView&,
+                          const sasktran2::raytracing::GridWeightStencilView&,
+                          const sasktran2::WavelengthBlockODView&,
+                          Eigen::Ref<const Eigen::VectorXd>,
+                          sasktran2::RadianceJVP<NSTOKES>&) const {
+        throw std::logic_error(
+            "Native integrated source JVP is not implemented");
+    }
+
+    virtual void end_of_ray_source_vjp(int, int, int, int,
+                                       const Eigen::Vector<double, NSTOKES>&,
+                                       Eigen::Ref<Eigen::VectorXd>) const {
+        throw std::logic_error("Native source VJP is not implemented");
+    }
+
+    virtual void
+    integrated_source_vjp(int, int, int, int, int,
+                          const sasktran2::raytracing::TracedLayer&,
+                          const sasktran2::raytracing::GridWeightStencilView&,
+                          const sasktran2::raytracing::GridWeightStencilView&,
+                          const sasktran2::WavelengthBlockODView&,
+                          const Eigen::Vector<double, NSTOKES>&,
+                          Eigen::Ref<Eigen::VectorXd>) const {
+        throw std::logic_error(
+            "Native integrated source VJP is not implemented");
     }
 
     /** Returns whether this source supports the requested atmosphere

@@ -205,18 +205,36 @@ int sk_engine_calculate_jvp(Engine* engine, Atmosphere* atmosphere,
     try {
         if (engine->_config->impl.num_stokes() == 1) {
             auto* impl = dynamic_cast<Sasktran2<1>*>(engine->impl.get());
-            impl->calculate_radiance(
+            auto& native_atmosphere =
                 *static_cast<sasktran2::atmosphere::Atmosphere<1>*>(
-                    atmosphere->impl.get()),
-                *static_cast<sasktran2::Output<1>*>(output->impl.get()));
+                    atmosphere->impl.get());
+            if (impl->supports_linearization(
+                    sasktran2::LinearizationMode::JVP)) {
+                impl->calculate_jvp(
+                    native_atmosphere,
+                    *static_cast<sasktran2::OutputJVP<1>*>(output->impl.get()));
+            } else {
+                impl->calculate_radiance(
+                    native_atmosphere,
+                    *static_cast<sasktran2::Output<1>*>(output->impl.get()));
+            }
             return 0;
         }
         if (engine->_config->impl.num_stokes() == 3) {
             auto* impl = dynamic_cast<Sasktran2<3>*>(engine->impl.get());
-            impl->calculate_radiance(
+            auto& native_atmosphere =
                 *static_cast<sasktran2::atmosphere::Atmosphere<3>*>(
-                    atmosphere->impl.get()),
-                *static_cast<sasktran2::Output<3>*>(output->impl.get()));
+                    atmosphere->impl.get());
+            if (impl->supports_linearization(
+                    sasktran2::LinearizationMode::JVP)) {
+                impl->calculate_jvp(
+                    native_atmosphere,
+                    *static_cast<sasktran2::OutputJVP<3>*>(output->impl.get()));
+            } else {
+                impl->calculate_radiance(
+                    native_atmosphere,
+                    *static_cast<sasktran2::Output<3>*>(output->impl.get()));
+            }
             return 0;
         }
         return -2;
@@ -234,17 +252,35 @@ int sk_engine_calculate_vjp(Engine* engine, Atmosphere* atmosphere,
         int result = -2;
         if (engine->_config->impl.num_stokes() == 1) {
             auto* impl = dynamic_cast<Sasktran2<1>*>(engine->impl.get());
-            impl->calculate_radiance(
+            auto& native_atmosphere =
                 *static_cast<sasktran2::atmosphere::Atmosphere<1>*>(
-                    atmosphere->impl.get()),
-                *static_cast<sasktran2::Output<1>*>(output->impl.get()));
+                    atmosphere->impl.get());
+            if (impl->supports_linearization(
+                    sasktran2::LinearizationMode::VJP)) {
+                impl->calculate_vjp(
+                    native_atmosphere,
+                    *static_cast<sasktran2::OutputVJP<1>*>(output->impl.get()));
+            } else {
+                impl->calculate_radiance(
+                    native_atmosphere,
+                    *static_cast<sasktran2::Output<1>*>(output->impl.get()));
+            }
             result = 0;
         } else if (engine->_config->impl.num_stokes() == 3) {
             auto* impl = dynamic_cast<Sasktran2<3>*>(engine->impl.get());
-            impl->calculate_radiance(
+            auto& native_atmosphere =
                 *static_cast<sasktran2::atmosphere::Atmosphere<3>*>(
-                    atmosphere->impl.get()),
-                *static_cast<sasktran2::Output<3>*>(output->impl.get()));
+                    atmosphere->impl.get());
+            if (impl->supports_linearization(
+                    sasktran2::LinearizationMode::VJP)) {
+                impl->calculate_vjp(
+                    native_atmosphere,
+                    *static_cast<sasktran2::OutputVJP<3>*>(output->impl.get()));
+            } else {
+                impl->calculate_radiance(
+                    native_atmosphere,
+                    *static_cast<sasktran2::Output<3>*>(output->impl.get()));
+            }
             result = 0;
         }
         if (result == 0) {

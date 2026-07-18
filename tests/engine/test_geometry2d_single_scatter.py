@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import sasktran2 as sk
+import xarray as xr
 
 EARTH_RADIUS_M = 6_372_000.0
 ALTITUDES_M = np.array([0.0, 10_000.0, 30_000.0])
@@ -459,6 +460,63 @@ def test_native_2d_extinction_ssa_and_phase_derivatives_match_finite_difference(
     numeric = (perturbed.radiance - base.radiance) / phase_delta
     analytic = base.wf_leg_coeff_2[horizontal_index, altitude_index]
     np.testing.assert_allclose(numeric, analytic, rtol=2.0e-6, atol=1.0e-12)
+
+
+def test_native_2d_exact_single_scatter_jvp_vjp_match_jacobian():
+    config = single_scatter_config()
+    geometry = geometry2d(np.array([-0.6, 0.0, 0.6]))
+    atmosphere = sk.Atmosphere(
+        geometry,
+        config,
+        wavelengths_nm=np.array([500.0, 650.0]),
+    )
+    location_factor = np.arange(np.prod(geometry.shape)).reshape(geometry.shape)
+    spectral_factor = np.array([1.0, 1.15])
+    atmosphere.storage.total_extinction[:] = (
+        1.0e-6 + 0.12e-6 * location_factor.ravel()[:, np.newaxis]
+    ) * spectral_factor
+    atmosphere.storage.ssa[:] = (
+        0.45 + 0.015 * location_factor.ravel()[:, np.newaxis]
+    ) * spectral_factor
+    atmosphere.leg_coeff.a1[0] = 1.0
+    atmosphere.leg_coeff.a1[2] = (
+        0.2 + 0.01 * location_factor.ravel()[:, np.newaxis]
+    ) * spectral_factor
+
+    engine = sk.Engine(config, geometry, parity_viewing())
+    lin = engine.linearize(atmosphere)
+    assert engine._engine._linearization_backend(1) == 2
+    assert engine._engine._linearization_backend(2) == 2
+
+    names = ["extinction", "ssa", "leg_coeff_2"]
+    tangent = lin.tangent_template[names]
+    for index, name in enumerate(names, start=1):
+        tangent[name].data[:] = np.linspace(
+            -0.2 * index,
+            0.3 * index,
+            tangent[name].size,
+        ).reshape(tangent[name].shape)
+
+    native_jvp = lin.jvp(tangent)
+    cotangent = xr.ones_like(lin.value)
+    cotangent.data[:] = np.linspace(-0.4, 0.7, cotangent.size).reshape(cotangent.shape)
+    native_vjp = lin.vjp(cotangent)
+    assert lin._backend._jacobian is None
+
+    expected_jvp = xr.zeros_like(lin.value)
+    for name in names:
+        expected_jvp += (lin.jacobian[name] * tangent[name]).sum(
+            lin.parameter_dims[name]
+        )
+        xr.testing.assert_allclose(
+            native_vjp[name],
+            (lin.jacobian[name] * cotangent).sum(lin.value.dims),
+        )
+    xr.testing.assert_allclose(native_jvp, expected_jvp)
+
+    lhs = float((native_jvp * cotangent).sum())
+    rhs = sum(float((tangent[name] * native_vjp[name]).sum()) for name in names)
+    np.testing.assert_allclose(lhs, rhs)
 
 
 def test_native_2d_polarized_phase_derivative_matches_finite_difference():

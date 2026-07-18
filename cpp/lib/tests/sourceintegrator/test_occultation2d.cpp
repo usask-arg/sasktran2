@@ -157,6 +157,14 @@ TEST_CASE("Atmosphere allocates flattened storage from Geometry2D",
 
 TEST_CASE("SourceIntegrator reports native linearization capabilities",
           "[sourceintegrator][linearization]") {
+    class NativeProductSource : public InteriorTestSource {
+      public:
+        bool
+        supports_linearization(sasktran2::LinearizationMode) const override {
+            return true;
+        }
+    };
+
     class NoJacobianSource : public InteriorTestSource {
       public:
         bool
@@ -174,6 +182,22 @@ TEST_CASE("SourceIntegrator reports native linearization capabilities",
         sasktran2::LinearizationMode::JVP, default_sources));
     REQUIRE_FALSE(integrator.supports_linearization(
         sasktran2::LinearizationMode::VJP, default_sources));
+
+    NativeProductSource native_source;
+    std::vector<SourceTermInterface<1>*> native_sources = {&native_source};
+    REQUIRE(integrator.supports_linearization(
+        sasktran2::LinearizationMode::Jacobian, native_sources));
+    REQUIRE(integrator.supports_linearization(sasktran2::LinearizationMode::JVP,
+                                              native_sources));
+    REQUIRE(integrator.supports_linearization(sasktran2::LinearizationMode::VJP,
+                                              native_sources));
+
+    std::vector<SourceTermInterface<1>*> mixed_sources = {&native_source,
+                                                          &default_source};
+    REQUIRE_FALSE(integrator.supports_linearization(
+        sasktran2::LinearizationMode::JVP, mixed_sources));
+    REQUIRE_FALSE(integrator.supports_linearization(
+        sasktran2::LinearizationMode::VJP, mixed_sources));
 
     NoJacobianSource unsupported_source;
     std::vector<SourceTermInterface<1>*> unsupported_sources = {

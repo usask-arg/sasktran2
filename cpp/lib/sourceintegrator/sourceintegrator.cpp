@@ -170,6 +170,136 @@ namespace sasktran2 {
     }
 
     template <int NSTOKES>
+    void SourceIntegrator<NSTOKES>::integrate_jvp(
+        sasktran2::RadianceJVP<NSTOKES>& radiance,
+        const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+        int wavelength, int rayidx, int wavel_threadidx, int threadidx,
+        Eigen::Ref<const Eigen::VectorXd> native_tangent) const {
+        if (m_wavelength_block_capacity != 1 || m_scalar_shell_od.empty()) {
+            throw std::logic_error(
+                "Native JVP requires scalar source-integrator storage");
+        }
+        radiance.set_zero();
+        for (const auto* source : source_terms) {
+            source->end_of_ray_source_jvp(wavelength, rayidx, wavel_threadidx,
+                                          threadidx, native_tangent, radiance);
+        }
+
+        const auto& ray = (*m_traced_rays)[rayidx];
+        const auto& od_matrix = m_traced_ray_od_matrix[rayidx];
+        for (int layeridx = 0; layeridx < ray.layers.size(); ++layeridx) {
+            const double od = m_scalar_shell_od[rayidx](layeridx, wavelength);
+            const double attenuation = std::exp(-od);
+            const sasktran2::WavelengthBlockODView shell_od(
+                &od, &attenuation, 1, od_matrix, layeridx);
+            double od_jvp = 0.0;
+            for (auto derivative = shell_od.derivative_iterator(); derivative;
+                 ++derivative) {
+                od_jvp +=
+                    derivative.value() * native_tangent(derivative.index());
+            }
+            radiance.jvp =
+                attenuation * (radiance.jvp - od_jvp * radiance.value);
+            radiance.value *= attenuation;
+
+            const auto& layer = ray.layers[layeridx];
+            const auto entrance_weights = ray.entrance_weights(layeridx);
+            const auto exit_weights = ray.exit_weights(layeridx);
+            for (const auto* source : source_terms) {
+                if (source->has_interior_source()) {
+                    source->integrated_source_jvp(
+                        wavelength, rayidx, layeridx, wavel_threadidx,
+                        threadidx, layer, entrance_weights, exit_weights,
+                        shell_od, native_tangent, radiance);
+                }
+            }
+        }
+    }
+
+    template <int NSTOKES>
+    void SourceIntegrator<NSTOKES>::integrate_vjp(
+        Eigen::Vector<double, NSTOKES>& radiance,
+        const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+        int wavelength, int rayidx, int wavel_threadidx, int threadidx,
+        const Eigen::Vector<double, NSTOKES>& cotangent,
+        Eigen::Ref<Eigen::VectorXd> native_gradient) const {
+        if (m_wavelength_block_capacity != 1 || m_scalar_shell_od.empty()) {
+            throw std::logic_error(
+                "Native VJP requires scalar source-integrator storage");
+        }
+        const auto& ray = (*m_traced_rays)[rayidx];
+        const auto& od_matrix = m_traced_ray_od_matrix[rayidx];
+        const Eigen::VectorXd zero_tangent =
+            Eigen::VectorXd::Zero(m_atmosphere->num_deriv());
+        sasktran2::RadianceJVP<NSTOKES> state;
+        for (const auto* source : source_terms) {
+            source->end_of_ray_source_jvp(wavelength, rayidx, wavel_threadidx,
+                                          threadidx, zero_tangent, state);
+        }
+
+        std::vector<Eigen::Vector<double, NSTOKES>> values_before_layer(
+            ray.layers.size());
+        std::vector<double> attenuation(ray.layers.size());
+        for (int layeridx = 0; layeridx < ray.layers.size(); ++layeridx) {
+            values_before_layer[layeridx] = state.value;
+            const double od = m_scalar_shell_od[rayidx](layeridx, wavelength);
+            attenuation[layeridx] = std::exp(-od);
+            const sasktran2::WavelengthBlockODView shell_od(
+                &od, &attenuation[layeridx], 1, od_matrix, layeridx);
+            state.value *= attenuation[layeridx];
+
+            const auto& layer = ray.layers[layeridx];
+            const auto entrance_weights = ray.entrance_weights(layeridx);
+            const auto exit_weights = ray.exit_weights(layeridx);
+            for (const auto* source : source_terms) {
+                if (source->has_interior_source()) {
+                    source->integrated_source_jvp(
+                        wavelength, rayidx, layeridx, wavel_threadidx,
+                        threadidx, layer, entrance_weights, exit_weights,
+                        shell_od, zero_tangent, state);
+                }
+            }
+        }
+        radiance = state.value;
+
+        Eigen::Vector<double, NSTOKES> state_cotangent = cotangent;
+        for (int layeridx = static_cast<int>(ray.layers.size()) - 1;
+             layeridx >= 0; --layeridx) {
+            const double od = m_scalar_shell_od[rayidx](layeridx, wavelength);
+            const sasktran2::WavelengthBlockODView shell_od(
+                &od, &attenuation[layeridx], 1, od_matrix, layeridx);
+            const auto& layer = ray.layers[layeridx];
+            const auto entrance_weights = ray.entrance_weights(layeridx);
+            const auto exit_weights = ray.exit_weights(layeridx);
+            for (const auto* source : source_terms) {
+                if (source->has_interior_source()) {
+                    source->integrated_source_vjp(
+                        wavelength, rayidx, layeridx, wavel_threadidx,
+                        threadidx, layer, entrance_weights, exit_weights,
+                        shell_od, state_cotangent, native_gradient);
+                }
+            }
+
+            const double attenuation_cotangent =
+                state_cotangent.dot(values_before_layer[layeridx]);
+            const double od_cotangent =
+                -attenuation[layeridx] * attenuation_cotangent;
+            for (auto derivative = shell_od.derivative_iterator(); derivative;
+                 ++derivative) {
+                native_gradient(derivative.index()) +=
+                    derivative.value() * od_cotangent;
+            }
+            state_cotangent *= attenuation[layeridx];
+        }
+
+        for (const auto* source : source_terms) {
+            source->end_of_ray_source_vjp(wavelength, rayidx, wavel_threadidx,
+                                          threadidx, state_cotangent,
+                                          native_gradient);
+        }
+    }
+
+    template <int NSTOKES>
     template <int N>
     void SourceIntegrator<NSTOKES>::integrate_block(
         sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
