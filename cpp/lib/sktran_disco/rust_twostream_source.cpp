@@ -262,14 +262,17 @@ void RustTwoStreamSourceAdapter<SOURCE_TYPE>::initialize_atmosphere(
 
 template <sasktran2::twostream::SourceType SOURCE_TYPE>
 void RustTwoStreamSourceAdapter<SOURCE_TYPE>::start_of_ray_source(
-    int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-    sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& source) const {
+    const sasktran2::WavelengthBlock<>& block, int losidx, int wavel_threadidx,
+    int threadidx, sasktran2::WavelengthBlockDual<1>& source) const {
     ZoneScopedN("Rust Twostream Cached Source");
     const std::size_t nwavel = m_atmosphere->num_wavel();
     const std::size_t nlevel = m_atmosphere->storage().total_extinction.rows();
-    const std::size_t surface_index = losidx * nwavel + wavelidx;
-    source.value(0) +=
-        sasktran2::rust::twostream::radiance(**m_rust_source)[surface_index];
+    const std::size_t wavelength_start = block.start;
+    const std::size_t surface_index = losidx * nwavel + wavelength_start;
+    const auto radiance = sasktran2::rust::twostream::radiance(**m_rust_source);
+    source.value.row(0).head(block.count) +=
+        Eigen::Map<const Eigen::RowVectorXd>(radiance.data() + surface_index,
+                                             block.count);
 
     if (m_atmosphere->num_deriv() == 0) {
         return;
@@ -285,37 +288,50 @@ void RustTwoStreamSourceAdapter<SOURCE_TYPE>::start_of_ray_source(
     for (std::size_t rust_level = 0; rust_level < nlevel; ++rust_level) {
         const std::size_t cpp_level = nlevel - 1 - rust_level;
         const std::size_t index =
-            view_level_offset + rust_level * nwavel + wavelidx;
-        source.deriv(cpp_level) += extinction[index];
-        source.deriv(m_atmosphere->ssa_deriv_start_index() + cpp_level) +=
-            ssa[index];
+            view_level_offset + rust_level * nwavel + wavelength_start;
+        source.deriv.row(cpp_level).head(block.count) +=
+            Eigen::Map<const Eigen::RowVectorXd>(extinction.data() + index,
+                                                 block.count);
+        source.deriv.row(m_atmosphere->ssa_deriv_start_index() + cpp_level)
+            .head(block.count) += Eigen::Map<const Eigen::RowVectorXd>(
+            ssa.data() + index, block.count);
         for (int group = 0; group < m_atmosphere->num_scattering_deriv_groups();
              ++group) {
-            source.deriv(m_atmosphere->scat_deriv_start_index() +
-                         group * nlevel + cpp_level) +=
-                m_atmosphere->storage().d_leg_coeff(1, cpp_level, wavelidx,
-                                                    group) *
-                b1[index];
+            const int derivative_index =
+                m_atmosphere->scat_deriv_start_index() + group * nlevel +
+                cpp_level;
+            for (int lane = 0; lane < block.count; ++lane) {
+                source.deriv(derivative_index, lane) +=
+                    m_atmosphere->storage().d_leg_coeff(
+                        1, cpp_level, block.wavelength(lane), group) *
+                    b1[index + lane];
+            }
         }
         if constexpr (sasktran2::twostream::has_thermal<SOURCE_TYPE>()) {
             if (m_atmosphere->include_emission_derivatives()) {
-                source.deriv(m_atmosphere->emission_deriv_start_index() +
-                             cpp_level) += emission[index];
+                source.deriv
+                    .row(m_atmosphere->emission_deriv_start_index() + cpp_level)
+                    .head(block.count) += Eigen::Map<const Eigen::RowVectorXd>(
+                    emission.data() + index, block.count);
             }
         }
     }
 
-    const double albedo = sasktran2::rust::twostream::surface_albedo_jacobian(
-        **m_rust_source)[surface_index];
+    const auto albedo_jacobian =
+        sasktran2::rust::twostream::surface_albedo_jacobian(**m_rust_source);
     for (int deriv = 0; deriv < m_atmosphere->surface().num_deriv(); ++deriv) {
-        source.deriv(m_atmosphere->surface_deriv_start_index() + deriv) +=
-            albedo;
+        source.deriv.row(m_atmosphere->surface_deriv_start_index() + deriv)
+            .head(block.count) += Eigen::Map<const Eigen::RowVectorXd>(
+            albedo_jacobian.data() + surface_index, block.count);
     }
     if constexpr (sasktran2::twostream::has_thermal<SOURCE_TYPE>()) {
         if (m_atmosphere->include_emission_derivatives()) {
-            source.deriv(m_atmosphere->surface_emission_deriv_start_index()) +=
+            const auto surface_emission =
                 sasktran2::rust::twostream::surface_emission_jacobian(
-                    **m_rust_source)[surface_index];
+                    **m_rust_source);
+            source.deriv.row(m_atmosphere->surface_emission_deriv_start_index())
+                .head(block.count) += Eigen::Map<const Eigen::RowVectorXd>(
+                surface_emission.data() + surface_index, block.count);
         }
     }
 }

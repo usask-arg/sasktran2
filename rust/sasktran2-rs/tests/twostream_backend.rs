@@ -287,6 +287,7 @@ fn rust_twostream_multithread_matches_serial() -> Result<()> {
     let mut parallel_config = config(TwoStreamBackend::Rust, true);
     parallel_config.with_num_threads(4)?;
     parallel_config.with_threading_lib(ThreadingLib::Rayon)?;
+    parallel_config.with_wavelength_batch_size(8)?;
     let serial =
         Engine::new(&serial_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
     let parallel =
@@ -310,6 +311,62 @@ fn rust_twostream_multithread_matches_serial() -> Result<()> {
             serial_derivative.as_slice().unwrap(),
             1.0e-11,
         );
+    }
+    Ok(())
+}
+
+#[test]
+fn rust_twostream_wavelength_batches_match_scalar() -> Result<()> {
+    let nlevel = 13;
+    let nwavel = 17;
+
+    for (calculate_derivatives, refracted) in [(false, false), (true, false), (true, true)] {
+        let atmosphere =
+            make_atmosphere_with_derivatives(nlevel, nwavel, true, calculate_derivatives);
+        let (geometry, viewing) = spherical_geometry_and_views(nlevel, refracted);
+        let mut scalar_config = config(TwoStreamBackend::Rust, true);
+        scalar_config.with_multiple_scatter_source(MultipleScatterSource::TwoStream)?;
+        scalar_config.with_num_sza(3)?;
+        scalar_config.with_los_refraction(refracted)?;
+
+        let mut batch_config = config(TwoStreamBackend::Rust, true);
+        batch_config.with_multiple_scatter_source(MultipleScatterSource::TwoStream)?;
+        batch_config.with_num_sza(3)?;
+        batch_config.with_los_refraction(refracted)?;
+        batch_config.with_wavelength_batch_size(8)?;
+
+        let scalar_engine = Engine::new(&scalar_config, &geometry, &viewing)?;
+        let batch_engine = Engine::new(&batch_config, &geometry, &viewing)?;
+        let effective_batch_size = unsafe {
+            sasktran2_sys::ffi::sk_engine_effective_wavelength_batch_size(
+                batch_engine.engine,
+                nwavel as i32,
+            )
+        };
+        assert_eq!(effective_batch_size, 8);
+
+        let scalar = scalar_engine.calculate_radiance(&atmosphere)?;
+        let batch = batch_engine.calculate_radiance(&atmosphere)?;
+
+        assert_close(
+            batch.radiance.as_slice().unwrap(),
+            scalar.radiance.as_slice().unwrap(),
+            1.0e-12,
+        );
+        for (name, scalar_derivative) in &scalar.d_radiance {
+            assert_close(
+                batch.d_radiance[name].as_slice().unwrap(),
+                scalar_derivative.as_slice().unwrap(),
+                1.0e-12,
+            );
+        }
+        for (name, scalar_derivative) in &scalar.d_radiance_surf {
+            assert_close(
+                batch.d_radiance_surf[name].as_slice().unwrap(),
+                scalar_derivative.as_slice().unwrap(),
+                1.0e-12,
+            );
+        }
     }
     Ok(())
 }

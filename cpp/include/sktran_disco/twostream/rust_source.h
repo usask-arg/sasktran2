@@ -9,6 +9,7 @@
 #include "sasktran2/viewinggeometry_internal.h"
 #include "sktran_disco/sktran_do.h"
 #include "sktran_disco/twostream/meta.h"
+#include <limits>
 #include <optional>
 
 template <sasktran2::twostream::SourceType SOURCE_TYPE>
@@ -37,27 +38,32 @@ class RustTwoStreamSourceAdapter final : public SourceTermInterface<1> {
             internal_viewing) override;
     void initialize_atmosphere(
         const sasktran2::atmosphere::Atmosphere<1>& atmosphere) override;
-    void calculate(int wavelidx, int threadidx) override {}
+    int maximum_wavelength_block_size() const override {
+        return std::numeric_limits<int>::max();
+    }
+    void calculate(const sasktran2::WavelengthBlock<>& block,
+                   int threadidx) override {}
 
     void integrated_source(
-        int wavelidx, int losidx, int layeridx, int wavel_threadidx,
-        int threadidx, const sasktran2::raytracing::TracedLayer& layer,
+        const sasktran2::WavelengthBlock<>& block, int losidx, int layeridx,
+        int wavel_threadidx, int threadidx,
+        const sasktran2::raytracing::TracedLayer& layer,
         const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
         const sasktran2::raytracing::GridWeightStencilView& exit_weights,
-        const sasktran2::SparseODDualView& shell_od,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& source,
+        const sasktran2::WavelengthBlockODView& shell_od,
+        sasktran2::WavelengthBlockDual<1>& source,
         IntegrationDirection direction =
             IntegrationDirection::none) const override {}
 
     void end_of_ray_source(
-        int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& source)
-        const override {}
+        const sasktran2::WavelengthBlock<>& block, int losidx,
+        int wavel_threadidx, int threadidx,
+        sasktran2::WavelengthBlockDual<1>& source) const override {}
 
     void start_of_ray_source(
-        int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>& source)
-        const override;
+        const sasktran2::WavelengthBlock<>& block, int losidx,
+        int wavel_threadidx, int threadidx,
+        sasktran2::WavelengthBlockDual<1>& source) const override;
 };
 
 #endif
