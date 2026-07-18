@@ -644,6 +644,131 @@ namespace sasktran2::solartransmission {
     }
 
     template <int NSTOKES>
+    Eigen::Vector<double, NSTOKES> PhaseHandler<NSTOKES>::scatter_value(
+        int threadidx, int losidx, int layeridx,
+        const raytracing::GridWeightStencilView& index_weights,
+        bool is_entrance) const {
+        Eigen::Vector<double, NSTOKES> phase =
+            Eigen::Vector<double, NSTOKES>::Zero();
+        const auto& internal_indices =
+            is_entrance ? m_geometry_entrance_to_internal[losidx][layeridx]
+                        : m_geometry_exit_to_internal[losidx][layeridx];
+
+        const auto accumulate_phase = [&](int internal_index, double weight) {
+            phase(0) += m_phase(0, internal_index, threadidx) * weight;
+            if constexpr (NSTOKES == 3) {
+                const auto& scatter_angle =
+                    m_scatter_angles[m_internal_to_cos_scatter[internal_index]];
+                const double polarized =
+                    m_phase(1, internal_index, threadidx) * weight;
+                phase(1) -= scatter_angle[1] * polarized;
+                phase(2) -= scatter_angle[2] * polarized;
+            }
+        };
+
+        if (index_weights.size() == 2 && (index_weights[0].second == 0.0 ||
+                                          index_weights[1].second == 0.0)) {
+            accumulate_phase(internal_indices[0], 1.0);
+        } else {
+            int internal_offset = 0;
+            for (std::size_t index = 0; index < index_weights.size(); ++index) {
+                const auto weight = index_weights[index];
+                if (weight.second == 0.0) {
+                    continue;
+                }
+                accumulate_phase(internal_indices[internal_offset++],
+                                 weight.second);
+            }
+        }
+
+        return phase;
+    }
+
+    template <int NSTOKES>
+    void PhaseHandler<NSTOKES>::scatter_jvp(
+        int threadidx, int losidx, int layeridx,
+        const raytracing::GridWeightStencilView& index_weights,
+        bool is_entrance, Eigen::Ref<const Eigen::VectorXd> native_tangent,
+        Eigen::Vector<double, NSTOKES>& phase,
+        Eigen::Vector<double, NSTOKES>& phase_jvp) const {
+        phase = scatter_value(threadidx, losidx, layeridx, index_weights,
+                              is_entrance);
+        phase_jvp.setZero();
+        const auto& internal_indices =
+            is_entrance ? m_geometry_entrance_to_internal[losidx][layeridx]
+                        : m_geometry_exit_to_internal[losidx][layeridx];
+
+        for (int derivative = 0;
+             derivative < m_atmosphere->num_scattering_deriv_groups();
+             ++derivative) {
+            int internal_offset = 0;
+            const int derivative_start =
+                m_atmosphere->scat_deriv_start_index() +
+                derivative * m_geometry.size();
+            for (std::size_t index = 0; index < index_weights.size(); ++index) {
+                const auto weight = index_weights[index];
+                if (weight.second == 0.0) {
+                    continue;
+                }
+                const int internal_index = internal_indices[internal_offset++];
+                const double direction =
+                    native_tangent(derivative_start + weight.first) *
+                    weight.second;
+                phase_jvp(0) += direction * m_d_phase(0, internal_index,
+                                                      derivative, threadidx);
+                if constexpr (NSTOKES == 3) {
+                    const auto& scatter_angle = m_scatter_angles
+                        [m_internal_to_cos_scatter[internal_index]];
+                    const double polarized =
+                        direction *
+                        m_d_phase(1, internal_index, derivative, threadidx);
+                    phase_jvp(1) -= scatter_angle[1] * polarized;
+                    phase_jvp(2) -= scatter_angle[2] * polarized;
+                }
+            }
+        }
+    }
+
+    template <int NSTOKES>
+    void PhaseHandler<NSTOKES>::scatter_vjp(
+        int threadidx, int losidx, int layeridx,
+        const raytracing::GridWeightStencilView& index_weights,
+        bool is_entrance, const Eigen::Vector<double, NSTOKES>& phase_cotangent,
+        Eigen::Ref<Eigen::VectorXd> native_gradient) const {
+        const auto& internal_indices =
+            is_entrance ? m_geometry_entrance_to_internal[losidx][layeridx]
+                        : m_geometry_exit_to_internal[losidx][layeridx];
+        for (int derivative = 0;
+             derivative < m_atmosphere->num_scattering_deriv_groups();
+             ++derivative) {
+            int internal_offset = 0;
+            const int derivative_start =
+                m_atmosphere->scat_deriv_start_index() +
+                derivative * m_geometry.size();
+            for (std::size_t index = 0; index < index_weights.size(); ++index) {
+                const auto weight = index_weights[index];
+                if (weight.second == 0.0) {
+                    continue;
+                }
+                const int internal_index = internal_indices[internal_offset++];
+                double derivative_value =
+                    phase_cotangent(0) *
+                    m_d_phase(0, internal_index, derivative, threadidx);
+                if constexpr (NSTOKES == 3) {
+                    const auto& scatter_angle = m_scatter_angles
+                        [m_internal_to_cos_scatter[internal_index]];
+                    derivative_value +=
+                        (-scatter_angle[1] * phase_cotangent(1) -
+                         scatter_angle[2] * phase_cotangent(2)) *
+                        m_d_phase(1, internal_index, derivative, threadidx);
+                }
+                native_gradient(derivative_start + weight.first) +=
+                    weight.second * derivative_value;
+            }
+        }
+    }
+
+    template <int NSTOKES>
     template <int N>
     void PhaseHandler<NSTOKES>::scatter_and_accumulate_derivative_block(
         int threadidx, int losidx, int layeridx,

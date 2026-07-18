@@ -171,6 +171,238 @@ namespace sasktran2::solartransmission {
     }
 
     template <typename S, int NSTOKES>
+    void SingleScatterSource<S, NSTOKES>::endpoint_source_jvp(
+        int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+        int solar_index,
+        const sasktran2::raytracing::GridWeightStencilView& weights,
+        bool is_entrance, Eigen::Ref<const Eigen::VectorXd> native_tangent,
+        sasktran2::RadianceJVP<NSTOKES>& result) const {
+        if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
+            throw std::logic_error(
+                "Native JVP requires exact solar transmission");
+        } else {
+            const auto& storage = m_atmosphere->storage();
+            double extinction = 0.0;
+            double ssa = 0.0;
+            double extinction_jvp = 0.0;
+            double ssa_jvp = 0.0;
+            for (std::size_t index = 0; index < weights.size(); ++index) {
+                const auto weight = weights[index];
+                if (weight.second == 0.0) {
+                    continue;
+                }
+                extinction += storage.total_extinction(weight.first, wavelidx) *
+                              weight.second;
+                ssa += storage.ssa(weight.first, wavelidx) * weight.second;
+                extinction_jvp += native_tangent(weight.first) * weight.second;
+                ssa_jvp +=
+                    native_tangent(m_atmosphere->ssa_deriv_start_index() +
+                                   weight.first) *
+                    weight.second;
+            }
+
+            const double solar_trans =
+                m_solar_trans[wavel_threadidx](solar_index);
+            double solar_od_jvp = 0.0;
+            for (Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
+                     derivative(m_geometry_sparse, solar_index);
+                 derivative; ++derivative) {
+                solar_od_jvp +=
+                    derivative.value() * native_tangent(derivative.index());
+            }
+            const double solar_trans_jvp = -solar_trans * solar_od_jvp;
+
+            Eigen::Vector<double, NSTOKES> phase;
+            Eigen::Vector<double, NSTOKES> phase_jvp;
+            m_phase_handler.scatter_jvp(wavel_threadidx, losidx, layeridx,
+                                        weights, is_entrance, native_tangent,
+                                        phase, phase_jvp);
+
+            const double scale = 1.0 / (EIGEN_PI * 4);
+            const double amplitude = extinction * ssa * solar_trans * scale;
+            const double amplitude_jvp =
+                scale * (extinction_jvp * ssa * solar_trans +
+                         extinction * ssa_jvp * solar_trans +
+                         extinction * ssa * solar_trans_jvp);
+            result.value = amplitude * phase;
+            result.jvp = amplitude_jvp * phase + amplitude * phase_jvp;
+        }
+    }
+
+    template <typename S, int NSTOKES>
+    Eigen::Vector<double, NSTOKES>
+    SingleScatterSource<S, NSTOKES>::endpoint_source_vjp(
+        int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+        int solar_index,
+        const sasktran2::raytracing::GridWeightStencilView& weights,
+        bool is_entrance, const Eigen::Vector<double, NSTOKES>& cotangent,
+        Eigen::Ref<Eigen::VectorXd> native_gradient) const {
+        if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
+            throw std::logic_error(
+                "Native VJP requires exact solar transmission");
+        } else {
+            const auto& storage = m_atmosphere->storage();
+            double extinction = 0.0;
+            double ssa = 0.0;
+            for (std::size_t index = 0; index < weights.size(); ++index) {
+                const auto weight = weights[index];
+                if (weight.second == 0.0) {
+                    continue;
+                }
+                extinction += storage.total_extinction(weight.first, wavelidx) *
+                              weight.second;
+                ssa += storage.ssa(weight.first, wavelidx) * weight.second;
+            }
+
+            const double solar_trans =
+                m_solar_trans[wavel_threadidx](solar_index);
+            const Eigen::Vector<double, NSTOKES> phase =
+                m_phase_handler.scatter_value(wavel_threadidx, losidx, layeridx,
+                                              weights, is_entrance);
+
+            const double scale = 1.0 / (EIGEN_PI * 4);
+            const double amplitude = extinction * ssa * solar_trans * scale;
+            const double amplitude_cotangent = cotangent.dot(phase);
+            const double extinction_cotangent =
+                amplitude_cotangent * ssa * solar_trans * scale;
+            const double ssa_cotangent =
+                amplitude_cotangent * extinction * solar_trans * scale;
+            const double solar_trans_cotangent =
+                amplitude_cotangent * extinction * ssa * scale;
+
+            for (std::size_t index = 0; index < weights.size(); ++index) {
+                const auto weight = weights[index];
+                if (weight.second == 0.0) {
+                    continue;
+                }
+                native_gradient(weight.first) +=
+                    weight.second * extinction_cotangent;
+                native_gradient(m_atmosphere->ssa_deriv_start_index() +
+                                weight.first) += weight.second * ssa_cotangent;
+            }
+            for (Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
+                     derivative(m_geometry_sparse, solar_index);
+                 derivative; ++derivative) {
+                native_gradient(derivative.index()) -=
+                    derivative.value() * solar_trans * solar_trans_cotangent;
+            }
+            m_phase_handler.scatter_vjp(wavel_threadidx, losidx, layeridx,
+                                        weights, is_entrance,
+                                        amplitude * cotangent, native_gradient);
+            return amplitude * phase;
+        }
+    }
+
+    template <typename S, int NSTOKES>
+    void SingleScatterSource<S, NSTOKES>::end_of_ray_source_jvp(
+        int wavelidx, int losidx, int wavel_threadidx, int threadidx,
+        Eigen::Ref<const Eigen::VectorXd> native_tangent,
+        sasktran2::RadianceJVP<NSTOKES>& source) const {
+        (void)threadidx;
+        if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
+            throw std::logic_error(
+                "Native JVP requires exact solar transmission");
+        } else {
+            if (!m_los_ground_is_hit.at(losidx)) {
+                return;
+            }
+            const auto& first_layer = m_los_end_layers.at(losidx);
+            const double mu_in = first_layer.exit.cos_zenith_angle(
+                m_geometry.coordinates().sun_unit());
+            if (mu_in <= 0.0) {
+                return;
+            }
+            const double mu_out = -first_layer.exit.cos_zenith_angle(
+                first_layer.average_look_away);
+            const double phi_diff = first_layer.saz_exit;
+            const int solar_index = m_index_map[losidx][0];
+            const double solar_trans =
+                m_solar_trans[wavel_threadidx](solar_index);
+            double solar_od_jvp = 0.0;
+            if (m_config->wf_precision() !=
+                sasktran2::Config::WeightingFunctionPrecision::limited) {
+                for (Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
+                         derivative(m_geometry_sparse, solar_index);
+                     derivative; ++derivative) {
+                    solar_od_jvp +=
+                        derivative.value() * native_tangent(derivative.index());
+                }
+            }
+            const double solar_trans_jvp = -solar_trans * solar_od_jvp;
+            const auto brdf =
+                m_atmosphere->surface().brdf(wavelidx, mu_in, mu_out, phi_diff);
+            Eigen::Matrix<double, NSTOKES, NSTOKES> brdf_jvp =
+                Eigen::Matrix<double, NSTOKES, NSTOKES>::Zero();
+            for (int derivative = 0;
+                 derivative < m_atmosphere->surface().num_deriv();
+                 ++derivative) {
+                brdf_jvp +=
+                    native_tangent(m_atmosphere->surface_deriv_start_index() +
+                                   derivative) *
+                    m_atmosphere->surface().d_brdf(wavelidx, mu_in, mu_out,
+                                                   phi_diff, derivative);
+            }
+            source.value +=
+                solar_trans * mu_in * brdf(Eigen::placeholders::all, 0);
+            source.jvp +=
+                mu_in * (solar_trans_jvp * brdf(Eigen::placeholders::all, 0) +
+                         solar_trans * brdf_jvp(Eigen::placeholders::all, 0));
+        }
+    }
+
+    template <typename S, int NSTOKES>
+    void SingleScatterSource<S, NSTOKES>::end_of_ray_source_vjp(
+        int wavelidx, int losidx, int wavel_threadidx, int threadidx,
+        const Eigen::Vector<double, NSTOKES>& cotangent,
+        Eigen::Ref<Eigen::VectorXd> native_gradient) const {
+        (void)threadidx;
+        if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
+            throw std::logic_error(
+                "Native VJP requires exact solar transmission");
+        } else {
+            if (!m_los_ground_is_hit.at(losidx)) {
+                return;
+            }
+            const auto& first_layer = m_los_end_layers.at(losidx);
+            const double mu_in = first_layer.exit.cos_zenith_angle(
+                m_geometry.coordinates().sun_unit());
+            if (mu_in <= 0.0) {
+                return;
+            }
+            const double mu_out = -first_layer.exit.cos_zenith_angle(
+                first_layer.average_look_away);
+            const double phi_diff = first_layer.saz_exit;
+            const int solar_index = m_index_map[losidx][0];
+            const double solar_trans =
+                m_solar_trans[wavel_threadidx](solar_index);
+            const auto brdf =
+                m_atmosphere->surface().brdf(wavelidx, mu_in, mu_out, phi_diff);
+            const double solar_trans_cotangent =
+                mu_in * cotangent.dot(brdf(Eigen::placeholders::all, 0));
+            if (m_config->wf_precision() !=
+                sasktran2::Config::WeightingFunctionPrecision::limited) {
+                for (Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
+                         derivative(m_geometry_sparse, solar_index);
+                     derivative; ++derivative) {
+                    native_gradient(derivative.index()) -=
+                        derivative.value() * solar_trans *
+                        solar_trans_cotangent;
+                }
+            }
+            for (int derivative = 0;
+                 derivative < m_atmosphere->surface().num_deriv();
+                 ++derivative) {
+                const auto brdf_derivative = m_atmosphere->surface().d_brdf(
+                    wavelidx, mu_in, mu_out, phi_diff, derivative);
+                native_gradient(m_atmosphere->surface_deriv_start_index() +
+                                derivative) +=
+                    solar_trans * mu_in *
+                    cotangent.dot(brdf_derivative(Eigen::placeholders::all, 0));
+            }
+        }
+    }
+
+    template <typename S, int NSTOKES>
     void SingleScatterSource<S, NSTOKES>::end_of_ray_source_single(
         int wavelidx, int losidx, int wavel_threadidx, int threadidx,
         sasktran2::WavelengthBlockLaneDualView<NSTOKES, 1>& source) const {
@@ -770,6 +1002,145 @@ namespace sasktran2::solartransmission {
         integrated_source_constant(wavelidx, losidx, layeridx, wavel_threadidx,
                                    threadidx, layer, entrance_weights,
                                    exit_weights, shell_od, source, direction);
+    }
+
+    template <typename S, int NSTOKES>
+    void SingleScatterSource<S, NSTOKES>::integrated_source_jvp(
+        int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+        int threadidx, const sasktran2::raytracing::TracedLayer& layer,
+        const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
+        const sasktran2::raytracing::GridWeightStencilView& exit_weights,
+        const sasktran2::WavelengthBlockODView& shell_od,
+        Eigen::Ref<const Eigen::VectorXd> native_tangent,
+        sasktran2::RadianceJVP<NSTOKES>& source) const {
+        (void)threadidx;
+        if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
+            throw std::logic_error(
+                "Native JVP requires exact solar transmission");
+        } else {
+            if (layer.layer_distance < MINIMUM_SHELL_SIZE_M) {
+                return;
+            }
+            const int exit_index = m_index_map[losidx][layeridx];
+            const int entrance_index = exit_index + 1;
+            const auto* start_weights = &entrance_weights;
+            const auto* end_weights = &exit_weights;
+            bool start_is_entrance = true;
+            bool end_is_entrance = false;
+            const bool use_lower_interpolation =
+                m_geometry_1d != nullptr &&
+                m_geometry_1d->altitude_grid().interpolation_method() ==
+                    grids::interpolation::lower;
+            if (use_lower_interpolation) {
+                if (layer.r_exit > layer.r_entrance) {
+                    end_weights = &entrance_weights;
+                    end_is_entrance = true;
+                } else {
+                    start_weights = &exit_weights;
+                    start_is_entrance = false;
+                }
+            }
+
+            sasktran2::RadianceJVP<NSTOKES> start;
+            sasktran2::RadianceJVP<NSTOKES> end;
+            endpoint_source_jvp(wavelidx, losidx, layeridx, wavel_threadidx,
+                                entrance_index, *start_weights,
+                                start_is_entrance, native_tangent, start);
+            endpoint_source_jvp(wavelidx, losidx, layeridx, wavel_threadidx,
+                                exit_index, *end_weights, end_is_entrance,
+                                native_tangent, end);
+
+            const double od = shell_od.od(0);
+            double factor;
+            double factor_derivative;
+            if (std::abs(od) < 1e-12) {
+                factor = 1.0;
+                factor_derivative = -0.5;
+            } else {
+                factor = -std::expm1(-od) / od;
+                factor_derivative = 1 / od - factor * (1 + 1 / od);
+            }
+            double od_jvp = 0.0;
+            for (auto derivative = shell_od.derivative_iterator(); derivative;
+                 ++derivative) {
+                od_jvp +=
+                    derivative.value() * native_tangent(derivative.index());
+            }
+            const auto endpoint_value = start.value * layer.od_quad_start +
+                                        end.value * layer.od_quad_end;
+            const auto endpoint_jvp =
+                start.jvp * layer.od_quad_start + end.jvp * layer.od_quad_end;
+            source.value += factor * endpoint_value;
+            source.jvp += factor * endpoint_jvp +
+                          factor_derivative * od_jvp * endpoint_value;
+        }
+    }
+
+    template <typename S, int NSTOKES>
+    void SingleScatterSource<S, NSTOKES>::integrated_source_vjp(
+        int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+        int threadidx, const sasktran2::raytracing::TracedLayer& layer,
+        const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
+        const sasktran2::raytracing::GridWeightStencilView& exit_weights,
+        const sasktran2::WavelengthBlockODView& shell_od,
+        const Eigen::Vector<double, NSTOKES>& cotangent,
+        Eigen::Ref<Eigen::VectorXd> native_gradient) const {
+        (void)threadidx;
+        if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
+            throw std::logic_error(
+                "Native VJP requires exact solar transmission");
+        } else {
+            if (layer.layer_distance < MINIMUM_SHELL_SIZE_M) {
+                return;
+            }
+            const int exit_index = m_index_map[losidx][layeridx];
+            const int entrance_index = exit_index + 1;
+            const auto* start_weights = &entrance_weights;
+            const auto* end_weights = &exit_weights;
+            bool start_is_entrance = true;
+            bool end_is_entrance = false;
+            const bool use_lower_interpolation =
+                m_geometry_1d != nullptr &&
+                m_geometry_1d->altitude_grid().interpolation_method() ==
+                    grids::interpolation::lower;
+            if (use_lower_interpolation) {
+                if (layer.r_exit > layer.r_entrance) {
+                    end_weights = &entrance_weights;
+                    end_is_entrance = true;
+                } else {
+                    start_weights = &exit_weights;
+                    start_is_entrance = false;
+                }
+            }
+
+            const double od = shell_od.od(0);
+            double factor;
+            double factor_derivative;
+            if (std::abs(od) < 1e-12) {
+                factor = 1.0;
+                factor_derivative = -0.5;
+            } else {
+                factor = -std::expm1(-od) / od;
+                factor_derivative = 1 / od - factor * (1 + 1 / od);
+            }
+            const auto start_value = endpoint_source_vjp(
+                wavelidx, losidx, layeridx, wavel_threadidx, entrance_index,
+                *start_weights, start_is_entrance,
+                factor * layer.od_quad_start * cotangent, native_gradient);
+            const auto end_value = endpoint_source_vjp(
+                wavelidx, losidx, layeridx, wavel_threadidx, exit_index,
+                *end_weights, end_is_entrance,
+                factor * layer.od_quad_end * cotangent, native_gradient);
+            const double od_cotangent =
+                factor_derivative *
+                cotangent.dot(start_value * layer.od_quad_start +
+                              end_value * layer.od_quad_end);
+            for (auto derivative = shell_od.derivative_iterator(); derivative;
+                 ++derivative) {
+                native_gradient(derivative.index()) +=
+                    derivative.value() * od_cotangent;
+            }
+        }
     }
 
     template <typename S, int NSTOKES>

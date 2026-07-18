@@ -442,12 +442,12 @@ mod tests {
                 .unwrap()
         );
         assert!(
-            !engine
+            engine
                 .supports_linearization(LinearizationMode::Jvp)
                 .unwrap()
         );
         assert!(
-            !engine
+            engine
                 .supports_linearization(LinearizationMode::Vjp)
                 .unwrap()
         );
@@ -461,13 +461,13 @@ mod tests {
             engine
                 .linearization_backend(LinearizationMode::Jvp)
                 .unwrap(),
-            LinearizationBackend::StreamingJacobian
+            LinearizationBackend::Native
         );
         assert_eq!(
             engine
                 .linearization_backend(LinearizationMode::Vjp)
                 .unwrap(),
-            LinearizationBackend::StreamingJacobian
+            LinearizationBackend::Native
         );
     }
 
