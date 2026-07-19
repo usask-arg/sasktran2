@@ -49,6 +49,7 @@ class ModelRun:
     profiles: dict[str, np.ndarray]
     initial_run_seconds: float
     num_lines_of_sight: int
+    viewing_labels: list[tuple[str, str]]
 
 
 SCENARIOS = {
@@ -186,6 +187,16 @@ def _viewing_geometry(scenario: Scenario) -> sk.ViewingGeometry:
     return viewing
 
 
+def _viewing_labels(scenario: Scenario) -> list[tuple[str, str]]:
+    if scenario.geometry == "spherical_limb":
+        return [
+            ("limb", "tangent_12.345_km"),
+            ("limb", "tangent_27.123_km"),
+            ("ground", "ground_mu_0.45"),
+        ]
+    return [("ground", "ground_mu_0.25"), ("ground", "ground_mu_0.75")]
+
+
 def _continuous_profiles(altitude_m: np.ndarray) -> dict[str, np.ndarray]:
     base_shape = np.exp(-altitude_m / 7_500.0)
     base_shape += 0.08 * np.exp(-0.5 * ((altitude_m - 18_000.0) / 2_000.0) ** 2)
@@ -209,12 +220,31 @@ def _continuous_profiles(altitude_m: np.ndarray) -> dict[str, np.ndarray]:
     return {"extinction": extinction, "ssa": ssa, "emission": emission}
 
 
+def _grid_linear_profiles(altitude_m: np.ndarray) -> dict[str, np.ndarray]:
+    """Profiles represented identically on every candidate altitude grid."""
+    optical_depth = np.array([0.05, 0.5, 3.0])
+    extinction = (
+        (1.5 - 0.5 * altitude_m[:, np.newaxis] / TOP_OF_ATMOSPHERE_M)
+        * optical_depth[np.newaxis, :]
+        / (1.25 * TOP_OF_ATMOSPHERE_M)
+    )
+    ssa = np.broadcast_to(
+        np.array([0.90, 0.92, 0.88])[np.newaxis, :], extinction.shape
+    ).copy()
+    emission = (
+        2.0e-5
+        + 6.0e-5 * altitude_m[:, np.newaxis] / TOP_OF_ATMOSPHERE_M
+    ) * np.array([0.7, 1.0, 1.4])[np.newaxis, :]
+    return {"extinction": extinction, "ssa": ssa, "emission": emission}
+
+
 def _build_run(
     scenario: Scenario,
     spacing_m: float,
     *,
     derivatives: bool,
     num_threads: int,
+    profile_shape: str = "continuous",
 ) -> ModelRun:
     start = perf_counter()
     altitude_m = _altitude_grid(spacing_m)
@@ -243,7 +273,11 @@ def _build_run(
         specific_humidity_derivative=False,
         legendre_derivative=False,
     )
-    profiles = _continuous_profiles(altitude_m)
+    profiles = (
+        _continuous_profiles(altitude_m)
+        if profile_shape == "continuous"
+        else _grid_linear_profiles(altitude_m)
+    )
     atmosphere.storage.total_extinction[:] = profiles["extinction"]
     atmosphere.storage.ssa[:] = profiles["ssa"]
     atmosphere.storage.solar_irradiance[:] = 1.0
@@ -280,6 +314,7 @@ def _build_run(
         profiles=profiles,
         initial_run_seconds=perf_counter() - start,
         num_lines_of_sight=len(result.los),
+        viewing_labels=_viewing_labels(scenario),
     )
 
 
@@ -401,6 +436,36 @@ def _safe_ratio(value: float, baseline: float) -> float | None:
     return value / baseline
 
 
+def _viewing_accuracy_rows(
+    scenario: Scenario,
+    run: ModelRun,
+    reference: ModelRun,
+    *,
+    comparison: str,
+    spacing_m: float,
+    floor_fraction: float,
+) -> list[dict[str, Any]]:
+    rows = []
+    for los_index, (viewing_kind, viewing_label) in enumerate(run.viewing_labels):
+        metrics = accuracy_metrics(
+            run.result.radiance.values[:, los_index, ...],
+            reference.result.radiance.values[:, los_index, ...],
+            floor_fraction=floor_fraction,
+        )
+        rows.append(
+            {
+                "scenario": scenario.name,
+                "comparison": comparison,
+                "spacing_m": spacing_m,
+                "los_index": los_index,
+                "viewing_kind": viewing_kind,
+                "viewing_label": viewing_label,
+                **metrics.as_dict(),
+            }
+        )
+    return rows
+
+
 def _package_version() -> str:
     try:
         return version("sasktran2")
@@ -456,6 +521,15 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", type=Path, default=Path("build/source-integration"))
     parser.add_argument("--num-threads", type=int, default=1)
     parser.add_argument(
+        "--profile-shape",
+        choices=["continuous", "grid-linear"],
+        default="continuous",
+        help=(
+            "continuous measures end-to-end altitude-grid convergence; "
+            "grid-linear isolates source-integration convergence"
+        ),
+    )
+    parser.add_argument(
         "--reference-spacing",
         type=float,
         help="override each scenario's primary dense spacing",
@@ -495,6 +569,7 @@ def main(argv: list[str] | None = None) -> int:
     derivatives = args.derivatives or args.finite_difference
     baseline = _baseline_rows(args.baseline)
     accuracy_rows: list[dict[str, Any]] = []
+    viewing_accuracy_rows: list[dict[str, Any]] = []
     directional_rows: list[dict[str, Any]] = []
     finite_difference_rows: list[dict[str, Any]] = []
     summaries: list[dict[str, Any]] = []
@@ -522,17 +597,29 @@ def main(argv: list[str] | None = None) -> int:
             confirmation_spacing_m,
             derivatives=derivatives,
             num_threads=args.num_threads,
+            profile_shape=args.profile_shape,
         )
         reference = _build_run(
             scenario,
             reference_spacing_m,
             derivatives=derivatives,
             num_threads=args.num_threads,
+            profile_shape=args.profile_shape,
         )
         reference_metrics = accuracy_metrics(
             reference.result.radiance.values,
             confirmation.result.radiance.values,
             floor_fraction=args.floor_fraction,
+        )
+        viewing_accuracy_rows.extend(
+            _viewing_accuracy_rows(
+                scenario,
+                reference,
+                confirmation,
+                comparison="reference_confirmation",
+                spacing_m=reference_spacing_m,
+                floor_fraction=args.floor_fraction,
+            )
         )
         if reference_metrics.max_normalized > args.reference_tolerance:
             gate_failures.append(
@@ -577,11 +664,22 @@ def main(argv: list[str] | None = None) -> int:
                 spacing_m,
                 derivatives=derivatives,
                 num_threads=args.num_threads,
+                profile_shape=args.profile_shape,
             )
             metrics = accuracy_metrics(
                 run.result.radiance.values,
                 confirmation.result.radiance.values,
                 floor_fraction=args.floor_fraction,
+            )
+            viewing_accuracy_rows.extend(
+                _viewing_accuracy_rows(
+                    scenario,
+                    run,
+                    confirmation,
+                    comparison="candidate_confirmation",
+                    spacing_m=spacing_m,
+                    floor_fraction=args.floor_fraction,
+                )
             )
             row: dict[str, Any] = {
                 "scenario": scenario.name,
@@ -711,11 +809,13 @@ def main(argv: list[str] | None = None) -> int:
             "sasktran2_version": _package_version(),
             "spacings_m": spacings,
             "num_threads": args.num_threads,
+            "profile_shape": args.profile_shape,
             "derivatives": derivatives,
             "timing_samples": args.timing_samples,
         },
         "summaries": summaries,
         "accuracy": accuracy_rows,
+        "viewing_accuracy": viewing_accuracy_rows,
         "directional_derivatives": directional_rows,
         "finite_difference": finite_difference_rows,
         "gate_failures": gate_failures,
@@ -724,6 +824,7 @@ def main(argv: list[str] | None = None) -> int:
     with (args.output / "report.json").open("w") as stream:
         json.dump(report, stream, indent=2, allow_nan=False)
     _write_csv(args.output / "accuracy.csv", accuracy_rows)
+    _write_csv(args.output / "viewing_accuracy.csv", viewing_accuracy_rows)
     _write_csv(args.output / "directional_derivatives.csv", directional_rows)
     _write_csv(args.output / "finite_difference.csv", finite_difference_rows)
     _write_csv(args.output / "summaries.csv", summaries)

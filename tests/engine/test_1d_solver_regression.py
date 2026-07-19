@@ -144,46 +144,46 @@ def _setup_1d(
                 [
                     [
                         [
-                            0.03485848278767426,
-                            -0.0012438171986974716,
-                            -0.01313439668613118,
+                            0.03487881026981297,
+                            -0.00124316541303497,
+                            -0.01314548100918043,
                         ],
                         [
-                            0.018305818732869187,
-                            0.005400715559354511,
-                            0.005256718675979713,
+                            0.01831988355394738,
+                            0.00541017116490373,
+                            0.00526530587157729,
                         ],
                         [
-                            0.1009590532632837,
-                            -0.002179747695663314,
-                            -0.013811326250175521,
+                            0.10089919369378429,
+                            -0.00218236779748394,
+                            -0.01380271800612797,
                         ],
                         [
-                            0.023692987924552825,
-                            -0.0024894020696831325,
-                            0.006213385479745916,
+                            0.02369529466976244,
+                            -0.00248958274668614,
+                            0.00621405101739553,
                         ],
                     ],
                     [
                         [
-                            0.06499456949466546,
-                            -0.0024770876498211134,
-                            -0.019698355214306774,
+                            0.06504608631897622,
+                            -0.00247543580099724,
+                            -0.01972644669751338,
                         ],
                         [
-                            0.04381448739788437,
-                            0.008772698896414867,
-                            0.008513519953347171,
+                            0.04385019586199645,
+                            0.00879670525593665,
+                            0.00853532155068815,
                         ],
                         [
-                            0.12467626601396885,
-                            -0.0031932263361659366,
-                            -0.016039333469915443,
+                            0.12438054390170515,
+                            -0.00320617033244291,
+                            -0.01599680646656557,
                         ],
                         [
-                            0.04355957469824446,
-                            -0.004374975287664437,
-                            0.010797214016246497,
+                            0.04356468206543259,
+                            -0.00437537532482198,
+                            0.01079868758391228,
                         ],
                     ],
                 ]
@@ -286,11 +286,14 @@ def test_exact_single_scatter_wavelength_batch_parity(
     batched = batch_engine.calculate_radiance(batch_atmosphere)
 
     assert scalar.data_vars.keys() == batched.data_vars.keys()
+    # GEMV and GEMM solar-transmission paths differ by a few final bits. The
+    # log-transmission weights expose that difference most strongly in WFs.
+    parity_rtol = 1e-11 if calculate_derivatives else 2e-13
     for variable in scalar.data_vars:
         np.testing.assert_allclose(
             batched[variable].values,
             scalar[variable].values,
-            rtol=2e-13,
+            rtol=parity_rtol,
             atol=2e-14,
         )
 
@@ -316,7 +319,7 @@ def test_mixed_sources_wavelength_batch_parity(emission_source):
         np.testing.assert_allclose(
             batched[variable].values,
             scalar[variable].values,
-            rtol=2e-13,
+            rtol=1e-11,
             atol=2e-14,
         )
 
@@ -370,7 +373,7 @@ def test_rayon_wavelength_batch_parity():
         np.testing.assert_allclose(
             batched[variable].values,
             scalar[variable].values,
-            rtol=5e-12,
+            rtol=1e-11,
             atol=2e-13,
         )
 
@@ -438,6 +441,6 @@ def test_rayon_source_threading_uses_cpp_source_threads():
         np.testing.assert_allclose(
             threaded[variable].values,
             scalar[variable].values,
-            rtol=5e-12,
+            rtol=1e-11,
             atol=2e-13,
         )

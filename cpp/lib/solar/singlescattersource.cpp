@@ -538,12 +538,13 @@ namespace sasktran2::solartransmission {
         sasktran2::WavelengthBlockLaneDualView<NSTOKES, 1>& source,
         typename SourceTermInterface<NSTOKES>::IntegrationDirection direction)
         const {
-        ZoneScopedN("Single Scatter Source Constant Calculation");
+        ZoneScopedN("Single Scatter Source Layer Calculation");
 
         bool calculate_derivatives = source.derivative_size() > 0;
 
-        // Integrates assuming the source is constant in the layer and
-        // determined by the average of the layer boundaries
+        // Solar transmission is available at each layer boundary. Exact
+        // transmission uses analytic log-linear weights below; table-based and
+        // shadow-boundary cases retain the endpoint-average fallback.
         int exit_index = m_index_map[losidx][layeridx];
         int entrance_index = m_index_map[losidx][layeridx] + 1;
 
@@ -558,8 +559,103 @@ namespace sasktran2::solartransmission {
             m_geometry_1d != nullptr &&
             m_geometry_1d->altitude_grid().interpolation_method() ==
                 grids::interpolation::lower;
+        const bool use_log_linear_solar_transmission =
+            std::is_same_v<S, SolarTransmissionExact> &&
+            solar_trans_entrance > 0.0 && solar_trans_exit > 0.0;
         const bool use_fused_exact_derivatives =
-            calculate_derivatives && std::is_same_v<S, SolarTransmissionExact>;
+            calculate_derivatives &&
+            std::is_same_v<S, SolarTransmissionExact> &&
+            !use_log_linear_solar_transmission;
+
+        if (use_log_linear_solar_transmission) {
+            const double od = shell_od.od(0);
+            const auto integration_weights =
+                sasktran2::sourcealgo::single_scatter_source_weights(
+                    od, shell_od.exp_minus_od(0), solar_trans_entrance,
+                    solar_trans_exit, layer.od_quad_start_fraction,
+                    layer.od_quad_end_fraction);
+
+            const auto* start_weights = &entrance_weights;
+            const auto* end_weights = &exit_weights;
+            bool start_is_entrance = true;
+            bool end_is_entrance = false;
+            if (use_lower_interpolation) {
+                if (layer.r_exit > layer.r_entrance) {
+                    end_weights = &entrance_weights;
+                    end_is_entrance = true;
+                } else {
+                    start_weights = &exit_weights;
+                    start_is_entrance = false;
+                }
+            }
+
+            const Eigen::Vector<double, NSTOKES> start_value =
+                accumulate_exact_scattering_source(
+                    m_phase_handler, wavel_threadidx, losidx, layeridx,
+                    wavelidx, *start_weights, start_is_entrance, 1.0,
+                    *m_atmosphere,
+                    Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
+                        m_geometry_sparse, entrance_index),
+                    layer.layer_distance * integration_weights.start, 0.0,
+                    source);
+            const Eigen::Vector<double, NSTOKES> end_value =
+                accumulate_exact_scattering_source(
+                    m_phase_handler, wavel_threadidx, losidx, layeridx,
+                    wavelidx, *end_weights, end_is_entrance, 1.0, *m_atmosphere,
+                    Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
+                        m_geometry_sparse, exit_index),
+                    layer.layer_distance * integration_weights.end, 0.0,
+                    source);
+
+            const Eigen::Vector<double, NSTOKES> source_value =
+                layer.layer_distance *
+                (integration_weights.start * start_value +
+                 integration_weights.end * end_value);
+            source.value += source_value;
+
+            if (calculate_derivatives) {
+                const Eigen::Vector<double, NSTOKES> view_od_derivative =
+                    layer.layer_distance *
+                    (integration_weights.d_start_d_view_od * start_value +
+                     integration_weights.d_end_d_view_od * end_value);
+                for (auto derivative = shell_od.derivative_iterator();
+                     derivative; ++derivative) {
+                    source.deriv.col(derivative.index()) +=
+                        derivative.value() * view_od_derivative;
+                }
+
+                const Eigen::Vector<double, NSTOKES> solar_start_od_derivative =
+                    layer.layer_distance *
+                    (integration_weights.d_start_d_solar_start_od *
+                         start_value +
+                     integration_weights.d_end_d_solar_start_od * end_value);
+                for (Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
+                         derivative(m_geometry_sparse, entrance_index);
+                     derivative; ++derivative) {
+                    source.deriv.col(derivative.index()) +=
+                        derivative.value() * solar_start_od_derivative;
+                }
+
+                const Eigen::Vector<double, NSTOKES> solar_end_od_derivative =
+                    layer.layer_distance *
+                    (integration_weights.d_start_d_solar_end_od * start_value +
+                     integration_weights.d_end_d_solar_end_od * end_value);
+                for (Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
+                         derivative(m_geometry_sparse, exit_index);
+                     derivative; ++derivative) {
+                    source.deriv.col(derivative.index()) +=
+                        derivative.value() * solar_end_od_derivative;
+                }
+            }
+
+#ifdef SASKTRAN_DEBUG_ASSERTS
+            if (source_value.hasNaN()) {
+                spdlog::error(
+                    "NaN detected in log-linear single scatter source");
+            }
+#endif
+            return;
+        }
 
         if (use_fused_exact_derivatives) {
             const double od = shell_od.od(0);
@@ -595,6 +691,7 @@ namespace sasktran2::solartransmission {
                     solar_trans_entrance, *m_atmosphere,
                     Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
                         m_geometry_sparse, entrance_index),
+                    source_factor * layer.od_quad_start,
                     source_factor * layer.od_quad_start, source);
             const Eigen::Vector<double, NSTOKES> end_value =
                 accumulate_exact_scattering_source(
@@ -603,6 +700,7 @@ namespace sasktran2::solartransmission {
                     *m_atmosphere,
                     Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
                         m_geometry_sparse, exit_index),
+                    source_factor * layer.od_quad_end,
                     source_factor * layer.od_quad_end, source);
 
             const Eigen::Vector<double, NSTOKES> source_value =
@@ -794,7 +892,7 @@ namespace sasktran2::solartransmission {
                 return;
             }
 
-            ZoneScopedN("Single Scatter Source Batch Constant Calculation");
+            ZoneScopedN("Single Scatter Source Batch Layer Calculation");
             const int exit_index = m_index_map[losidx][layeridx];
             const int entrance_index = exit_index + 1;
             const auto solar_trans_exit = wavelength_head(
@@ -808,6 +906,34 @@ namespace sasktran2::solartransmission {
                 wavelength_head(integration_cache.source_factor, batch);
             auto source_factor_derivative = wavelength_head(
                 integration_cache.source_factor_derivative, batch);
+            auto endpoint_solar_transmission_start = wavelength_head(
+                integration_cache.endpoint_solar_transmission_start, batch);
+            auto endpoint_solar_transmission_end = wavelength_head(
+                integration_cache.endpoint_solar_transmission_end, batch);
+            auto start_weight =
+                wavelength_head(integration_cache.start_weight, batch);
+            auto end_weight =
+                wavelength_head(integration_cache.end_weight, batch);
+            auto d_start_d_view_od =
+                wavelength_head(integration_cache.d_start_d_view_od, batch);
+            auto d_end_d_view_od =
+                wavelength_head(integration_cache.d_end_d_view_od, batch);
+            auto d_start_d_solar_start_od = wavelength_head(
+                integration_cache.d_start_d_solar_start_od, batch);
+            auto d_end_d_solar_start_od = wavelength_head(
+                integration_cache.d_end_d_solar_start_od, batch);
+            auto d_start_d_solar_end_od = wavelength_head(
+                integration_cache.d_start_d_solar_end_od, batch);
+            auto d_end_d_solar_end_od =
+                wavelength_head(integration_cache.d_end_d_solar_end_od, batch);
+            auto start_derivative_scale = wavelength_head(
+                integration_cache.start_derivative_scale, batch);
+            auto end_derivative_scale =
+                wavelength_head(integration_cache.end_derivative_scale, batch);
+            auto start_solar_derivative_scale = wavelength_head(
+                integration_cache.start_solar_derivative_scale, batch);
+            auto end_solar_derivative_scale = wavelength_head(
+                integration_cache.end_solar_derivative_scale, batch);
             for (int lane = 0; lane < batch.count; ++lane) {
                 const double od = shell_od.od(lane);
                 if (std::abs(od) < 1e-12) {
@@ -817,6 +943,58 @@ namespace sasktran2::solartransmission {
                     source_factor(lane) = -std::expm1(-od) / od;
                     source_factor_derivative(lane) =
                         1 / od - source_factor(lane) * (1 + 1 / od);
+                }
+
+                const bool use_log_linear_solar_transmission =
+                    solar_trans_entrance(lane) > 0.0 &&
+                    solar_trans_exit(lane) > 0.0;
+                if (use_log_linear_solar_transmission) {
+                    const auto weights =
+                        sasktran2::sourcealgo::single_scatter_source_weights(
+                            od, shell_od.exp_minus_od(lane),
+                            solar_trans_entrance(lane), solar_trans_exit(lane),
+                            layer.od_quad_start_fraction,
+                            layer.od_quad_end_fraction);
+                    endpoint_solar_transmission_start(lane) = 1.0;
+                    endpoint_solar_transmission_end(lane) = 1.0;
+                    start_weight(lane) = weights.start;
+                    end_weight(lane) = weights.end;
+                    d_start_d_view_od(lane) = weights.d_start_d_view_od;
+                    d_end_d_view_od(lane) = weights.d_end_d_view_od;
+                    d_start_d_solar_start_od(lane) =
+                        weights.d_start_d_solar_start_od;
+                    d_end_d_solar_start_od(lane) =
+                        weights.d_end_d_solar_start_od;
+                    d_start_d_solar_end_od(lane) =
+                        weights.d_start_d_solar_end_od;
+                    d_end_d_solar_end_od(lane) = weights.d_end_d_solar_end_od;
+                    start_derivative_scale(lane) =
+                        layer.layer_distance * weights.start;
+                    end_derivative_scale(lane) =
+                        layer.layer_distance * weights.end;
+                    start_solar_derivative_scale(lane) = 0.0;
+                    end_solar_derivative_scale(lane) = 0.0;
+                } else {
+                    endpoint_solar_transmission_start(lane) =
+                        solar_trans_entrance(lane);
+                    endpoint_solar_transmission_end(lane) =
+                        solar_trans_exit(lane);
+                    start_weight(lane) = 0.0;
+                    end_weight(lane) = 0.0;
+                    d_start_d_view_od(lane) = 0.0;
+                    d_end_d_view_od(lane) = 0.0;
+                    d_start_d_solar_start_od(lane) = 0.0;
+                    d_end_d_solar_start_od(lane) = 0.0;
+                    d_start_d_solar_end_od(lane) = 0.0;
+                    d_end_d_solar_end_od(lane) = 0.0;
+                    start_derivative_scale(lane) =
+                        source_factor(lane) * layer.od_quad_start;
+                    end_derivative_scale(lane) =
+                        source_factor(lane) * layer.od_quad_end;
+                    start_solar_derivative_scale(lane) =
+                        start_derivative_scale(lane);
+                    end_solar_derivative_scale(lane) =
+                        end_derivative_scale(lane);
                 }
             }
 
@@ -838,54 +1016,108 @@ namespace sasktran2::solartransmission {
                 }
             }
 
-            auto start_derivative_scale = wavelength_head(
-                integration_cache.start_derivative_scale, batch);
-            start_derivative_scale = source_factor * layer.od_quad_start;
             auto& start_cache = m_batch_source_cache[threadidx][0];
             accumulate_exact_scattering_source_block<NSTOKES, N>(
                 m_phase_handler, wavel_threadidx, losidx, layeridx, batch,
-                *start_weights, start_is_entrance, solar_trans_entrance,
-                *m_atmosphere,
+                *start_weights, start_is_entrance,
+                endpoint_solar_transmission_start, *m_atmosphere,
                 Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
                     m_geometry_sparse, entrance_index),
-                start_derivative_scale, source, start_cache);
+                start_derivative_scale, start_solar_derivative_scale, source,
+                start_cache);
             const auto start_value =
                 wavelength_left_cols(start_cache.endpoint_source, batch);
 
-            auto end_derivative_scale =
-                wavelength_head(integration_cache.end_derivative_scale, batch);
-            end_derivative_scale = source_factor * layer.od_quad_end;
             auto& end_cache = m_batch_source_cache[threadidx][1];
             accumulate_exact_scattering_source_block<NSTOKES, N>(
                 m_phase_handler, wavel_threadidx, losidx, layeridx, batch,
-                *end_weights, end_is_entrance, solar_trans_exit, *m_atmosphere,
+                *end_weights, end_is_entrance, endpoint_solar_transmission_end,
+                *m_atmosphere,
                 Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
                     m_geometry_sparse, exit_index),
-                end_derivative_scale, source, end_cache);
+                end_derivative_scale, end_solar_derivative_scale, source,
+                end_cache);
             const auto end_value =
                 wavelength_left_cols(end_cache.endpoint_source, batch);
 
             auto integrated_value =
                 wavelength_left_cols(integration_cache.integrated_value, batch);
-            integrated_value = start_value * layer.od_quad_start_fraction +
-                               end_value * layer.od_quad_end_fraction;
-            integrated_value.array().rowwise() *= source_factor.array();
-            integrated_value *= layer.layer_distance;
+            for (int lane = 0; lane < batch.count; ++lane) {
+                if (solar_trans_entrance(lane) > 0.0 &&
+                    solar_trans_exit(lane) > 0.0) {
+                    integrated_value.col(lane) =
+                        layer.layer_distance *
+                        (start_weight(lane) * start_value.col(lane) +
+                         end_weight(lane) * end_value.col(lane));
+                } else {
+                    integrated_value.col(lane) =
+                        source_factor(lane) * layer.layer_distance *
+                        (layer.od_quad_start_fraction * start_value.col(lane) +
+                         layer.od_quad_end_fraction * end_value.col(lane));
+                }
+            }
             wavelength_left_cols(source.value, batch) += integrated_value;
 
             if (source.derivative_size() > 0) {
                 auto endpoint_quadrature = wavelength_left_cols(
                     integration_cache.endpoint_quadrature, batch);
-                endpoint_quadrature = start_value * layer.od_quad_start +
-                                      end_value * layer.od_quad_end;
+                for (int lane = 0; lane < batch.count; ++lane) {
+                    if (solar_trans_entrance(lane) > 0.0 &&
+                        solar_trans_exit(lane) > 0.0) {
+                        endpoint_quadrature.col(lane) =
+                            layer.layer_distance *
+                            (d_start_d_view_od(lane) * start_value.col(lane) +
+                             d_end_d_view_od(lane) * end_value.col(lane));
+                    } else {
+                        endpoint_quadrature.col(lane) =
+                            source_factor_derivative(lane) *
+                            (layer.od_quad_start * start_value.col(lane) +
+                             layer.od_quad_end * end_value.col(lane));
+                    }
+                }
                 for (auto derivative = shell_od.derivative_iterator();
                      derivative; ++derivative) {
                     auto target_derivative =
                         source.derivative(derivative.index(), batch);
-                    target_derivative.array() +=
-                        derivative.value() *
-                        (endpoint_quadrature.array().rowwise() *
-                         source_factor_derivative.array());
+                    for (int lane = 0; lane < batch.count; ++lane) {
+                        target_derivative.col(lane) +=
+                            derivative.value() * endpoint_quadrature.col(lane);
+                    }
+                }
+
+                for (int lane = 0; lane < batch.count; ++lane) {
+                    endpoint_quadrature.col(lane) =
+                        layer.layer_distance *
+                        (d_start_d_solar_start_od(lane) *
+                             start_value.col(lane) +
+                         d_end_d_solar_start_od(lane) * end_value.col(lane));
+                }
+                for (Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
+                         derivative(m_geometry_sparse, entrance_index);
+                     derivative; ++derivative) {
+                    auto target_derivative =
+                        source.derivative(derivative.index(), batch);
+                    for (int lane = 0; lane < batch.count; ++lane) {
+                        target_derivative.col(lane) +=
+                            derivative.value() * endpoint_quadrature.col(lane);
+                    }
+                }
+
+                for (int lane = 0; lane < batch.count; ++lane) {
+                    endpoint_quadrature.col(lane) =
+                        layer.layer_distance *
+                        (d_start_d_solar_end_od(lane) * start_value.col(lane) +
+                         d_end_d_solar_end_od(lane) * end_value.col(lane));
+                }
+                for (Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
+                         derivative(m_geometry_sparse, exit_index);
+                     derivative; ++derivative) {
+                    auto target_derivative =
+                        source.derivative(derivative.index(), batch);
+                    for (int lane = 0; lane < batch.count; ++lane) {
+                        target_derivative.col(lane) +=
+                            derivative.value() * endpoint_quadrature.col(lane);
+                    }
                 }
             }
         }

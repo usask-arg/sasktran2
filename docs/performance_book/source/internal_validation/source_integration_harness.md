@@ -30,6 +30,21 @@ pixi run python docs/performance_book/source/internal_validation/source_integrat
   --output build/source-integration/quick
 ```
 
+For spherical single scatter, use the grid-linear profile to isolate layer-source
+integration error from error caused by sampling a curved atmospheric profile on a
+coarse grid:
+
+```bash
+pixi run python docs/performance_book/source/internal_validation/source_integration_harness.py \
+  --scenarios single_scatter_exact \
+  --profile-shape grid-linear \
+  --spacings 2000,1000,500,250,125 \
+  --output build/source-integration/single-scatter-integration-only
+```
+
+Use the default `--profile-shape continuous` for end-to-end altitude-grid
+convergence. Baseline and candidate reports must use the same profile shape.
+
 To enforce regression gates against a saved report:
 
 ```bash
@@ -43,7 +58,10 @@ pixi run python docs/performance_book/source/internal_validation/source_integrat
 ```
 
 The output directory contains a complete JSON report and flat CSV files for radiance
-accuracy, directional derivatives, finite-difference checks, and scenario summaries.
+accuracy, per-viewing-geometry accuracy, directional derivatives, finite-difference
+checks, and scenario summaries. `viewing_accuracy.csv` keeps limb tangent rays and
+ground-looking rays separate so an aggregate improvement cannot hide a regression in
+either geometry.
 
 ## Metrics
 

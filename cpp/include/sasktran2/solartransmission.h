@@ -440,7 +440,8 @@ namespace sasktran2::solartransmission {
         const atmosphere::Atmosphere<NSTOKES>& atmosphere,
         Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
             solar_trans_iter,
-        double derivative_scale, Target& target) {
+        double derivative_scale, double solar_derivative_scale,
+        Target& target) {
         const auto& storage = atmosphere.storage();
         double ssa = 0.0;
         double extinction = 0.0;
@@ -463,9 +464,13 @@ namespace sasktran2::solartransmission {
         const Eigen::Vector<double, NSTOKES> endpoint_source =
             source_amplitude * phase;
 
+        if (target.deriv.size() == 0) {
+            return endpoint_source;
+        }
+
         for (auto it = solar_trans_iter; it; ++it) {
             target.deriv.col(it.index()) -=
-                derivative_scale * it.value() * endpoint_source;
+                solar_derivative_scale * it.value() * endpoint_source;
         }
 
         for (std::size_t index = 0; index < index_weights.size(); ++index) {
@@ -515,16 +520,40 @@ namespace sasktran2::solartransmission {
 
         Eigen::RowVectorXd source_factor;
         Eigen::RowVectorXd source_factor_derivative;
+        Eigen::RowVectorXd endpoint_solar_transmission_start;
+        Eigen::RowVectorXd endpoint_solar_transmission_end;
+        Eigen::RowVectorXd start_weight;
+        Eigen::RowVectorXd end_weight;
+        Eigen::RowVectorXd d_start_d_view_od;
+        Eigen::RowVectorXd d_end_d_view_od;
+        Eigen::RowVectorXd d_start_d_solar_start_od;
+        Eigen::RowVectorXd d_end_d_solar_start_od;
+        Eigen::RowVectorXd d_start_d_solar_end_od;
+        Eigen::RowVectorXd d_end_d_solar_end_od;
         Eigen::RowVectorXd start_derivative_scale;
         Eigen::RowVectorXd end_derivative_scale;
+        Eigen::RowVectorXd start_solar_derivative_scale;
+        Eigen::RowVectorXd end_solar_derivative_scale;
         BatchMatrix integrated_value;
         BatchMatrix endpoint_quadrature;
 
         void resize(int capacity) {
             source_factor.resize(capacity);
             source_factor_derivative.resize(capacity);
+            endpoint_solar_transmission_start.resize(capacity);
+            endpoint_solar_transmission_end.resize(capacity);
+            start_weight.resize(capacity);
+            end_weight.resize(capacity);
+            d_start_d_view_od.resize(capacity);
+            d_end_d_view_od.resize(capacity);
+            d_start_d_solar_start_od.resize(capacity);
+            d_end_d_solar_start_od.resize(capacity);
+            d_start_d_solar_end_od.resize(capacity);
+            d_end_d_solar_end_od.resize(capacity);
             start_derivative_scale.resize(capacity);
             end_derivative_scale.resize(capacity);
+            start_solar_derivative_scale.resize(capacity);
+            end_solar_derivative_scale.resize(capacity);
             integrated_value.resize(NSTOKES, capacity);
             endpoint_quadrature.resize(NSTOKES, capacity);
         }
@@ -546,6 +575,8 @@ namespace sasktran2::solartransmission {
             solar_trans_iter,
         const Eigen::Ref<const Eigen::Matrix<double, 1, N, Eigen::RowMajor>>&
             derivative_scale,
+        const Eigen::Ref<const Eigen::Matrix<double, 1, N, Eigen::RowMajor>>&
+            solar_derivative_scale,
         sasktran2::WavelengthBlockDual<NSTOKES>& target,
         ExactScatteringBlockScratch<NSTOKES>& scratch) {
         const auto& storage = atmosphere.storage();
@@ -590,7 +621,7 @@ namespace sasktran2::solartransmission {
                     target.derivative(derivative.index(), batch);
                 target_derivative.array() -=
                     (endpoint_source.array().rowwise() *
-                     derivative_scale.array()) *
+                     solar_derivative_scale.array()) *
                     derivative.value();
             }
 
