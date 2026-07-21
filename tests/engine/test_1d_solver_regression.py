@@ -39,6 +39,7 @@ def _setup_1d(
         default_num_wavelengths = 3
     elif source == "successive_orders":
         config.single_scatter_source = sk.SingleScatterSource.Exact
+        config.single_scatter_source_quadrature = True
         config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
         config.num_successive_orders_iterations = 3
         config.num_successive_orders_incoming = 26
@@ -47,6 +48,7 @@ def _setup_1d(
         default_num_wavelengths = 2
     else:
         config.single_scatter_source = sk.SingleScatterSource.Exact
+        config.single_scatter_source_quadrature = True
         config.multiple_scatter_source = sk.MultipleScatterSource.NoSource
         default_num_wavelengths = 1
 
@@ -144,46 +146,46 @@ def _setup_1d(
                 [
                     [
                         [
-                            0.03487881026981297,
-                            -0.00124316541303497,
-                            -0.01314548100918043,
+                            0.034936366381428566,
+                            -0.0012413199189356924,
+                            -0.013176865640599757,
                         ],
                         [
-                            0.01831988355394738,
-                            0.00541017116490373,
-                            0.00526530587157729,
+                            0.018334170309223304,
+                            0.005419775974073816,
+                            0.0052740285678225625,
                         ],
                         [
-                            0.10089919369378429,
-                            -0.00218236779748394,
-                            -0.01380271800612797,
+                            0.10101583592960905,
+                            -0.002177262272385747,
+                            -0.013819492013034933,
                         ],
                         [
-                            0.02369529466976244,
-                            -0.00248958274668614,
-                            0.00621405101739553,
+                            0.023694377041345326,
+                            -0.0024895108729691886,
+                            0.006213786265026091,
                         ],
                     ],
                     [
                         [
-                            0.06504608631897622,
-                            -0.00247543580099724,
-                            -0.01972644669751338,
+                            0.06518620377948575,
+                            -0.0024709430383814523,
+                            -0.01980285100506755,
                         ],
                         [
-                            0.04385019586199645,
-                            0.00879670525593665,
-                            0.00853532155068815,
+                            0.04388975426157416,
+                            0.008823299879535885,
+                            0.008559473703979848,
                         ],
                         [
-                            0.12438054390170515,
-                            -0.00320617033244291,
-                            -0.01599680646656557,
+                            0.12481301751864142,
+                            -0.0031872406120893684,
+                            -0.01605899933680915,
                         ],
                         [
-                            0.04356468206543259,
-                            -0.00437537532482198,
-                            0.01079868758391228,
+                            0.043564593780457656,
+                            -0.004375368409855985,
+                            0.010798662112102711,
                         ],
                     ],
                 ]
@@ -258,6 +260,35 @@ def test_1d_polarized_b1_phase_coefficient_wf():
     numeric_wf = (radiance_plus - radiance_minus) / (2 * step)
     analytic_wf = result.wf_leg_coeff_11.values[altitude_index, 0]
     np.testing.assert_allclose(analytic_wf, numeric_wf[0], rtol=1e-7, atol=1e-10)
+
+
+def test_exact_single_scatter_radiance_is_independent_of_derivative_mode():
+    """Enabling weighting functions must not change the dispatched radiance."""
+    value_engine, value_atmosphere = _setup_1d("single_scatter", 3, False)
+    wf_engine, wf_atmosphere = _setup_1d("single_scatter", 3, True)
+
+    value = value_engine.calculate_radiance(value_atmosphere).radiance.values
+    with_wf = wf_engine.calculate_radiance(wf_atmosphere).radiance.values
+    np.testing.assert_allclose(with_wf, value, rtol=2e-13, atol=2e-14)
+
+
+def test_gauss8_single_scatter_extinction_wf_matches_finite_difference():
+    """Fixed Gauss-8 solar, viewing-OD, and local-source WFs are analytic."""
+    engine, atmosphere = _setup_1d("single_scatter", 1, True)
+    result = engine.calculate_radiance(atmosphere)
+
+    for altitude_index in (0, 5, 12, 20, 24):
+        original = atmosphere.storage.total_extinction[altitude_index, 0]
+        step = max(1e-10, original * 2e-5)
+        atmosphere.storage.total_extinction[altitude_index, 0] = original + step
+        above = engine.calculate_radiance(atmosphere).radiance.values.copy()
+        atmosphere.storage.total_extinction[altitude_index, 0] = original - step
+        below = engine.calculate_radiance(atmosphere).radiance.values.copy()
+        atmosphere.storage.total_extinction[altitude_index, 0] = original
+
+        numeric = (above - below) / (2 * step)
+        analytic = result.wf_extinction.values[altitude_index, 0]
+        np.testing.assert_allclose(analytic, numeric[0], rtol=2e-7, atol=2e-9)
 
 
 @pytest.mark.parametrize(

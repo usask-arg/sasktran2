@@ -337,6 +337,41 @@ impl Config {
         }
     }
 
+    pub fn single_scatter_source_quadrature(&self) -> Result<bool> {
+        let mut enabled = 0i32;
+        let error_code = unsafe {
+            ffi::sk_config_get_single_scatter_source_quadrature(self.config, &mut enabled)
+        };
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting single scatter source quadrature: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(enabled != 0)
+        }
+    }
+
+    pub fn with_single_scatter_source_quadrature(
+        &mut self,
+        enabled: bool,
+    ) -> Result<&mut Self> {
+        let error_code = unsafe {
+            ffi::sk_config_set_single_scatter_source_quadrature(
+                self.config,
+                if enabled { 1 } else { 0 },
+            )
+        };
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting single scatter source quadrature: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
     pub fn occultation_source(&self) -> Result<OccultationSource> {
         let mut occultation_source = 0i32;
         let error_code =
@@ -1033,6 +1068,7 @@ mod tests {
             config.single_scatter_source().unwrap(),
             SingleScatterSource::Exact
         );
+        assert!(!config.single_scatter_source_quadrature().unwrap());
         assert_eq!(config.stokes_basis().unwrap(), StokesBasis::Standard);
         assert_eq!(config.log_level().unwrap(), LogLevel::Warn);
     }
@@ -1081,6 +1117,11 @@ mod tests {
             config.single_scatter_source().unwrap(),
             SingleScatterSource::SolarTable
         );
+
+        config
+            .with_single_scatter_source_quadrature(true)
+            .unwrap();
+        assert!(config.single_scatter_source_quadrature().unwrap());
 
         config.with_stokes_basis(StokesBasis::Observer).unwrap();
         assert_eq!(config.stokes_basis().unwrap(), StokesBasis::Observer);

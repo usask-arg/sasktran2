@@ -148,6 +148,7 @@ def _configure(scenario: Scenario, num_threads: int) -> sk.Config:
         config.emission_source = sk.EmissionSource.VolumeEmissionRate
     elif scenario.solver == "single_scatter_exact":
         config.single_scatter_source = sk.SingleScatterSource.Exact
+        config.single_scatter_source_quadrature = True
     elif scenario.solver in {
         "discrete_ordinates_solar",
         "discrete_ordinates_thermal",
@@ -158,6 +159,7 @@ def _configure(scenario: Scenario, num_threads: int) -> sk.Config:
             config.emission_source = sk.EmissionSource.DiscreteOrdinates
     elif scenario.solver == "successive_orders":
         config.single_scatter_source = sk.SingleScatterSource.Exact
+        config.single_scatter_source_quadrature = True
         config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
         config.num_successive_orders_iterations = 3
         config.num_successive_orders_incoming = 26

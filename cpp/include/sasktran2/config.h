@@ -250,6 +250,15 @@ namespace sasktran2 {
             m_single_scatter_source = source;
         }
 
+        /** Enables fixed Gauss-8 integration for exact single scattering in
+         * supported straight 1D spherical geometry. */
+        bool single_scatter_source_quadrature() const {
+            return m_single_scatter_source_quadrature;
+        }
+        void set_single_scatter_source_quadrature(bool enabled) {
+            m_single_scatter_source_quadrature = enabled;
+        }
+
         /**
          *
          * @return The type of multiple scatter source to include
@@ -708,6 +717,7 @@ namespace sasktran2 {
         bool m_apply_delta_scaling;
 
         bool m_enable_wfs;
+        bool m_single_scatter_source_quadrature;
 
         bool m_los_refraction;
         bool m_solar_refraction;

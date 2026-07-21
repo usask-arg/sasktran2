@@ -40,19 +40,28 @@ namespace sasktran2::solartransmission {
         m_internal_to_cos_scatter.clear();
         m_geometry_entrance_to_internal.clear();
         m_geometry_exit_to_internal.clear();
+        m_geometry_to_internal.clear();
 
         int num_internal = 0;
         int num_scatter = 0;
         double theta, C1, C2, S1, S2;
         int negation;
+        const bool cache_interior_grid_points =
+            m_config->single_scatter_source_quadrature();
         // First we need to iterate through and figure out how many internal
         // indices we will end up with and how many scatter angles we will need
 
         // Keep track of the entrance and exits separately
         m_geometry_entrance_to_internal.resize(los_rays.size());
         m_geometry_exit_to_internal.resize(los_rays.size());
+        if (cache_interior_grid_points) {
+            m_geometry_to_internal.resize(los_rays.size());
+        }
         for (int i = 0; i < los_rays.size(); ++i) {
             const auto& ray = los_rays[i];
+            if (cache_interior_grid_points) {
+                m_geometry_to_internal[i].assign(m_geometry.size(), -1);
+            }
 
             // Empty rays don't need to be considered
             if (ray.layers.size() == 0) {
@@ -122,6 +131,12 @@ namespace sasktran2::solartransmission {
 
                 for (int k = 0; k < entrance_weights.size(); ++k) {
                     m_geometry_entrance_to_internal[i][j][k] = num_internal;
+                    if (cache_interior_grid_points && ray.is_straight &&
+                        m_geometry_to_internal[i][entrance_weights[k].first] <
+                            0) {
+                        m_geometry_to_internal[i][entrance_weights[k].first] =
+                            num_internal;
+                    }
                     ++num_internal;
 
                     m_internal_to_geometry.push_back(entrance_weights[k].first);
@@ -145,6 +160,12 @@ namespace sasktran2::solartransmission {
                     // End layer at TOA, need to use layer exit
                     for (int k = 0; k < exit_weights.size(); ++k) {
                         m_geometry_exit_to_internal[i][j][k] = num_internal;
+                        if (cache_interior_grid_points && ray.is_straight &&
+                            m_geometry_to_internal[i][exit_weights[k].first] <
+                                0) {
+                            m_geometry_to_internal[i][exit_weights[k].first] =
+                                num_internal;
+                        }
                         ++num_internal;
 
                         m_internal_to_geometry.push_back(exit_weights[k].first);
@@ -158,6 +179,28 @@ namespace sasktran2::solartransmission {
 
                 if (!ray.is_straight) {
                     ++num_scatter;
+                }
+            }
+            if (cache_interior_grid_points && ray.is_straight) {
+                // Interior quadrature can interpolate against the grid point
+                // immediately below a tangent point even though that point is
+                // not present in any layer-endpoint stencil. Only that adjacent
+                // point is needed; locations farther below the tangent cannot
+                // contribute to this LOS.
+                int lowest_cached_index = m_geometry.size();
+                for (int geometry_index = 0; geometry_index < m_geometry.size();
+                     ++geometry_index) {
+                    if (m_geometry_to_internal[i][geometry_index] >= 0) {
+                        lowest_cached_index = geometry_index;
+                        break;
+                    }
+                }
+                if (lowest_cached_index > 0 &&
+                    lowest_cached_index < m_geometry.size()) {
+                    const int geometry_index = lowest_cached_index - 1;
+                    m_geometry_to_internal[i][geometry_index] = num_internal++;
+                    m_internal_to_geometry.push_back(geometry_index);
+                    m_internal_to_cos_scatter.push_back(num_scatter);
                 }
             }
             if (ray.is_straight) {
@@ -474,11 +517,11 @@ namespace sasktran2::solartransmission {
         int threadidx, int losidx, int layeridx,
         const raytracing::GridWeightStencilView& index_weights,
         bool is_entrance, double source_amplitude, double derivative_scale,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& target)
-        const {
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& target,
+        bool use_geometry_lookup) const {
         return scatter_and_accumulate_derivative_impl(
             threadidx, losidx, layeridx, index_weights, is_entrance,
-            source_amplitude, derivative_scale, target);
+            source_amplitude, derivative_scale, target, use_geometry_lookup);
     }
 
     template <int NSTOKES>
@@ -487,10 +530,11 @@ namespace sasktran2::solartransmission {
         int threadidx, int losidx, int layeridx,
         const raytracing::GridWeightStencilView& index_weights,
         bool is_entrance, double source_amplitude, double derivative_scale,
-        sasktran2::WavelengthBlockLaneDualView<NSTOKES, 1>& target) const {
+        sasktran2::WavelengthBlockLaneDualView<NSTOKES, 1>& target,
+        bool use_geometry_lookup) const {
         return scatter_and_accumulate_derivative_impl(
             threadidx, losidx, layeridx, index_weights, is_entrance,
-            source_amplitude, derivative_scale, target);
+            source_amplitude, derivative_scale, target, use_geometry_lookup);
     }
 
     template <int NSTOKES>
@@ -500,15 +544,27 @@ namespace sasktran2::solartransmission {
         int threadidx, int losidx, int layeridx,
         const raytracing::GridWeightStencilView& index_weights,
         bool is_entrance, double source_amplitude, double derivative_scale,
-        Target& target) const {
+        Target& target, bool use_geometry_lookup) const {
         const auto& internal_indices =
             is_entrance ? m_geometry_entrance_to_internal[losidx][layeridx]
                         : m_geometry_exit_to_internal[losidx][layeridx];
+        const auto internal_index = [&](int offset, int geometry_index) {
+            if (use_geometry_lookup) {
+                const int result =
+                    m_geometry_to_internal[losidx][geometry_index];
+                if (result < 0) {
+                    throw std::logic_error(
+                        "No cached phase value for quadrature grid point");
+                }
+                return result;
+            }
+            return internal_indices[offset];
+        };
 
         if constexpr (NSTOKES == 1) {
             double phase_result = 0.0;
 
-            if (index_weights.size() == 2) {
+            if (!use_geometry_lookup && index_weights.size() == 2) {
                 const auto lower = index_weights[0];
                 const auto upper = index_weights[1];
                 if (lower.second == 0.0 || upper.second == 0.0) {
@@ -527,9 +583,9 @@ namespace sasktran2::solartransmission {
                     if (index_weight.second == 0.0) {
                         continue;
                     }
-                    const int internal_index =
-                        internal_indices[internal_offset++];
-                    phase_result += m_phase(0, internal_index, threadidx) *
+                    const int phase_index =
+                        internal_index(internal_offset++, index_weight.first);
+                    phase_result += m_phase(0, phase_index, threadidx) *
                                     index_weight.second;
                 }
             }
@@ -546,11 +602,11 @@ namespace sasktran2::solartransmission {
                     if (index_weight.second == 0.0) {
                         continue;
                     }
-                    const int internal_index =
-                        internal_indices[derivative_internal_offset++];
+                    const int phase_index = internal_index(
+                        derivative_internal_offset++, index_weight.first);
                     target.deriv(0, derivative_start + index_weight.first) +=
                         derivative_scale * source_amplitude *
-                        m_d_phase(0, internal_index, d, threadidx) *
+                        m_d_phase(0, phase_index, d, threadidx) *
                         index_weight.second;
                 }
             }
@@ -575,7 +631,7 @@ namespace sasktran2::solartransmission {
                 phase_result(2) += -S2 * off_diag;
             };
 
-            if (index_weights.size() == 2) {
+            if (!use_geometry_lookup && index_weights.size() == 2) {
                 const auto lower = index_weights[0];
                 const auto upper = index_weights[1];
                 if (lower.second == 0.0 || upper.second == 0.0) {
@@ -592,7 +648,8 @@ namespace sasktran2::solartransmission {
                     if (index_weight.second == 0.0) {
                         continue;
                     }
-                    accumulate_phase(internal_indices[phase_internal_offset++],
+                    accumulate_phase(internal_index(phase_internal_offset++,
+                                                    index_weight.first),
                                      index_weight.second);
                 }
             }
@@ -632,7 +689,8 @@ namespace sasktran2::solartransmission {
                         continue;
                     }
                     accumulate_derivative(
-                        internal_indices[derivative_internal_offset++],
+                        internal_index(derivative_internal_offset++,
+                                       index_weight.first),
                         index_weight.first, index_weight.second);
                 }
             }
@@ -655,7 +713,8 @@ namespace sasktran2::solartransmission {
             derivative_scale,
         sasktran2::WavelengthBlockDual<NSTOKES>& target,
         Eigen::Matrix<double, NSTOKES, Eigen::Dynamic, Eigen::RowMajor>&
-            phase_result) const {
+            phase_result,
+        bool use_geometry_lookup) const {
         wavelength_left_cols(phase_result, batch).setZero();
 
         const auto& phase = m_phase_batch[threadidx];
@@ -677,6 +736,18 @@ namespace sasktran2::solartransmission {
         const auto& internal_indices =
             is_entrance ? m_geometry_entrance_to_internal[losidx][layeridx]
                         : m_geometry_exit_to_internal[losidx][layeridx];
+        const auto internal_index = [&](int offset, int geometry_index) {
+            if (use_geometry_lookup) {
+                const int result =
+                    m_geometry_to_internal[losidx][geometry_index];
+                if (result < 0) {
+                    throw std::logic_error(
+                        "No cached phase value for quadrature grid point");
+                }
+                return result;
+            }
+            return internal_indices[offset];
+        };
 
         const auto accumulate_phase = [&](int internal_index, double weight) {
             wavelength_head(phase_result.row(0), batch).array() +=
@@ -697,8 +768,9 @@ namespace sasktran2::solartransmission {
             }
         };
 
-        if (index_weights.size() == 2 && (index_weights[0].second == 0.0 ||
-                                          index_weights[1].second == 0.0)) {
+        if (!use_geometry_lookup && index_weights.size() == 2 &&
+            (index_weights[0].second == 0.0 ||
+             index_weights[1].second == 0.0)) {
             accumulate_phase(internal_indices[0], 1.0);
         } else {
             int internal_offset = 0;
@@ -707,8 +779,9 @@ namespace sasktran2::solartransmission {
                 if (weight.second == 0.0) {
                     continue;
                 }
-                accumulate_phase(internal_indices[internal_offset++],
-                                 weight.second);
+                accumulate_phase(
+                    internal_index(internal_offset++, weight.first),
+                    weight.second);
             }
         }
 
@@ -722,7 +795,8 @@ namespace sasktran2::solartransmission {
                 if (weight.second == 0.0) {
                     continue;
                 }
-                const int internal_index = internal_indices[internal_offset++];
+                const int phase_index =
+                    internal_index(internal_offset++, weight.first);
                 const int derivative_index =
                     m_atmosphere->scat_deriv_start_index() +
                     derivative * m_geometry.size() + weight.first;
@@ -733,17 +807,17 @@ namespace sasktran2::solartransmission {
                                            source_amplitude.array();
                 target_derivative.row(0).array() +=
                     common_factor *
-                    wavelength_head(d_phase.row(derivative_row(derivative, 0,
-                                                               internal_index)),
-                                    batch)
+                    wavelength_head(
+                        d_phase.row(derivative_row(derivative, 0, phase_index)),
+                        batch)
                         .array();
                 if constexpr (NSTOKES == 3) {
                     const auto& scatter_angle = m_scatter_angles
-                        [m_internal_to_cos_scatter[internal_index]];
+                        [m_internal_to_cos_scatter[phase_index]];
                     const auto polarized =
                         common_factor *
                         wavelength_head(d_phase.row(derivative_row(
-                                            derivative, 1, internal_index)),
+                                            derivative, 1, phase_index)),
                                         batch)
                             .array();
                     target_derivative.row(1).array() -=
@@ -765,8 +839,8 @@ namespace sasktran2::solartransmission {
         const Eigen::Ref<const Eigen::Matrix<double, 1, N, Eigen::RowMajor>>&, \
         const Eigen::Ref<const Eigen::Matrix<double, 1, N, Eigen::RowMajor>>&, \
         sasktran2::WavelengthBlockDual<NSTOKES>&,                              \
-        Eigen::Matrix<double, NSTOKES, Eigen::Dynamic, Eigen::RowMajor>&)      \
-        const;
+        Eigen::Matrix<double, NSTOKES, Eigen::Dynamic, Eigen::RowMajor>&,      \
+        bool) const;
 
     SASKTRAN2_INSTANTIATE_PHASE_BLOCK(1, Eigen::Dynamic)
     SASKTRAN2_INSTANTIATE_PHASE_BLOCK(1, 1)

@@ -69,6 +69,24 @@ int sk_config_set_single_scatter_source(Config* config,
     return 0; // Success
 }
 
+int sk_config_get_single_scatter_source_quadrature(Config* config,
+                                                   int* enabled) {
+    if (config == nullptr || enabled == nullptr) {
+        return -1;
+    }
+    *enabled = config->impl.single_scatter_source_quadrature() ? 1 : 0;
+    return 0;
+}
+
+int sk_config_set_single_scatter_source_quadrature(Config* config,
+                                                   int enabled) {
+    if (config == nullptr) {
+        return -1;
+    }
+    config->impl.set_single_scatter_source_quadrature(enabled != 0);
+    return 0;
+}
+
 int sk_config_get_num_streams(Config* config, int* num_streams) {
     if (config == nullptr || num_streams == nullptr) {
         return -1; // Error: null pointer

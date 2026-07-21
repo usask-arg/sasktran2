@@ -10,6 +10,7 @@ def _grid_linear_single_scatter(spacing_m: float) -> np.ndarray:
     config = sk.Config()
     config.num_threads = 1
     config.single_scatter_source = sk.SingleScatterSource.Exact
+    config.single_scatter_source_quadrature = True
     config.multiple_scatter_source = sk.MultipleScatterSource.NoSource
     config.emission_source = sk.EmissionSource.NoSource
 

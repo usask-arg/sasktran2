@@ -198,6 +198,20 @@ class Config:
         self._config.single_scatter_source = value
 
     @property
+    def single_scatter_source_quadrature(self) -> bool:
+        """Use fixed Gauss-8 integration for exact single scattering.
+
+        This is currently supported for straight rays in 1D spherical
+        geometry. Unsupported rays retain the endpoint integration rule.
+        Defaults to ``False``.
+        """
+        return self._config.single_scatter_source_quadrature
+
+    @single_scatter_source_quadrature.setter
+    def single_scatter_source_quadrature(self, value: bool):
+        self._config.single_scatter_source_quadrature = value
+
+    @property
     def occultation_source(self) -> OccultationSource:
         """
         Sets which (if any) occultation source is to be used inside the calculation.

@@ -292,6 +292,21 @@ impl PyConfig {
     }
 
     #[getter]
+    fn get_single_scatter_source_quadrature(&self) -> PyResult<bool> {
+        self.config
+            .single_scatter_source_quadrature()
+            .into_pyresult()
+    }
+
+    #[setter]
+    fn set_single_scatter_source_quadrature(&mut self, enabled: bool) -> PyResult<()> {
+        self.config
+            .with_single_scatter_source_quadrature(enabled)
+            .into_pyresult()?;
+        Ok(())
+    }
+
+    #[getter]
     fn get_occultation_source(&self) -> PyResult<OccultationSource> {
         let source = self.config.occultation_source().into_pyresult()?;
 
