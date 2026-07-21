@@ -214,6 +214,11 @@ namespace sasktran2 {
                 }
             }
         }
+        for (const auto* source : source_terms) {
+            source->start_of_ray_source_jvp(wavelength, rayidx, wavel_threadidx,
+                                            threadidx, native_tangent,
+                                            radiance);
+        }
     }
 
     template <int NSTOKES>
@@ -229,40 +234,56 @@ namespace sasktran2 {
         }
         const auto& ray = (*m_traced_rays)[rayidx];
         const auto& od_matrix = m_traced_ray_od_matrix[rayidx];
-        const Eigen::VectorXd zero_tangent =
-            Eigen::VectorXd::Zero(m_atmosphere->num_deriv());
-        sasktran2::RadianceJVP<NSTOKES> state;
+        const sasktran2::WavelengthBlock<1> block{wavelength, 1};
+        sasktran2::WavelengthBlockDual<NSTOKES> state;
+        state.resize(1, 0, true);
         for (const auto* source : source_terms) {
-            source->end_of_ray_source_jvp(wavelength, rayidx, wavel_threadidx,
-                                          threadidx, zero_tangent, state);
+            source->end_of_ray_source(block.dynamic(), rayidx, wavel_threadidx,
+                                      threadidx, state);
         }
 
         std::vector<Eigen::Vector<double, NSTOKES>> values_before_layer(
             ray.layers.size());
         std::vector<double> attenuation(ray.layers.size());
         for (int layeridx = 0; layeridx < ray.layers.size(); ++layeridx) {
-            values_before_layer[layeridx] = state.value;
+            values_before_layer[layeridx] = state.value.col(0);
             const double od = m_scalar_shell_od[rayidx](layeridx, wavelength);
             attenuation[layeridx] = std::exp(-od);
             const sasktran2::WavelengthBlockODView shell_od(
                 &od, &attenuation[layeridx], 1, od_matrix, layeridx);
-            state.value *= attenuation[layeridx];
+            state.value.col(0) *= attenuation[layeridx];
 
             const auto& layer = ray.layers[layeridx];
             const auto entrance_weights = ray.entrance_weights(layeridx);
             const auto exit_weights = ray.exit_weights(layeridx);
             for (const auto* source : source_terms) {
                 if (source->has_interior_source()) {
-                    source->integrated_source_jvp(
-                        wavelength, rayidx, layeridx, wavel_threadidx,
-                        threadidx, layer, entrance_weights, exit_weights,
-                        shell_od, zero_tangent, state);
+                    source->dispatch_integrated_source(
+                        block, rayidx, layeridx, wavel_threadidx, threadidx,
+                        layer, entrance_weights, exit_weights, shell_od, state,
+                        SourceTermInterface<
+                            NSTOKES>::IntegrationDirection::backward);
                 }
             }
         }
-        radiance = state.value;
+
+        std::vector<Eigen::Vector<double, NSTOKES>> values_before_start;
+        values_before_start.reserve(source_terms.size());
+        for (const auto* source : source_terms) {
+            values_before_start.push_back(state.value.col(0));
+            source->start_of_ray_source(block.dynamic(), rayidx,
+                                        wavel_threadidx, threadidx, state);
+        }
+        radiance = state.value.col(0);
 
         Eigen::Vector<double, NSTOKES> state_cotangent = cotangent;
+        for (int source_index = static_cast<int>(source_terms.size()) - 1;
+             source_index >= 0; --source_index) {
+            source_terms[source_index]->start_of_ray_source_vjp(
+                wavelength, rayidx, wavel_threadidx, threadidx,
+                values_before_start[source_index], state_cotangent,
+                native_gradient);
+        }
         for (int layeridx = static_cast<int>(ray.layers.size()) - 1;
              layeridx >= 0; --layeridx) {
             const double od = m_scalar_shell_od[rayidx](layeridx, wavelength);

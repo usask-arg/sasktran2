@@ -1066,13 +1066,24 @@ namespace sasktran2::solartransmission {
                 od_jvp +=
                     derivative.value() * native_tangent(derivative.index());
             }
-            const auto endpoint_value = start.value * layer.od_quad_start +
-                                        end.value * layer.od_quad_end;
+            // Match the established source-value quadrature exactly.  The
+            // optical-depth endpoint coefficients are not source blending
+            // weights for lower interpolation: one is the full path length
+            // and the other is zero, while the source remains the average of
+            // its endpoint values.
+            const auto endpoint_value =
+                (start.value * layer.od_quad_start_fraction +
+                 end.value * layer.od_quad_end_fraction) *
+                layer.layer_distance;
+            const auto optical_depth_endpoint_value =
+                start.value * layer.od_quad_start +
+                end.value * layer.od_quad_end;
             const auto endpoint_jvp =
                 start.jvp * layer.od_quad_start + end.jvp * layer.od_quad_end;
             source.value += factor * endpoint_value;
-            source.jvp += factor * endpoint_jvp +
-                          factor_derivative * od_jvp * endpoint_value;
+            source.jvp +=
+                factor * endpoint_jvp +
+                factor_derivative * od_jvp * optical_depth_endpoint_value;
         }
     }
 

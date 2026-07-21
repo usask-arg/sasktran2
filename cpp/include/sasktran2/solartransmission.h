@@ -1053,6 +1053,16 @@ namespace sasktran2::solartransmission {
         void start_of_ray_source(
             const sasktran2::WavelengthBlock<>&, int, int, int,
             sasktran2::WavelengthBlockDual<NSTOKES>&) const override {}
+
+        void start_of_ray_source_jvp(
+            int, int, int, int, Eigen::Ref<const Eigen::VectorXd>,
+            sasktran2::RadianceJVP<NSTOKES>&) const override {}
+
+        void
+        start_of_ray_source_vjp(int, int, int, int,
+                                const Eigen::Vector<double, NSTOKES>&,
+                                Eigen::Vector<double, NSTOKES>&,
+                                Eigen::Ref<Eigen::VectorXd>) const override {}
     };
 
     template <int NSTOKES>

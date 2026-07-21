@@ -238,7 +238,11 @@ def test_engine_products_reject_complex_inputs():
         lin.vjp(xr.ones_like(lin.value).astype(np.complex128))
 
 
-def _raw_engine_scenario(*, calculate_derivatives: bool = True):
+def _raw_engine_scenario(
+    *,
+    calculate_derivatives: bool = True,
+    interpolation: sk.InterpolationMethod = sk.InterpolationMethod.LinearInterpolation,
+):
     config = sk.Config()
     config.single_scatter_source = sk.SingleScatterSource.Exact
     geometry = sk.Geometry1D(
@@ -246,7 +250,7 @@ def _raw_engine_scenario(*, calculate_derivatives: bool = True):
         0.0,
         6_372_000.0,
         np.arange(0.0, 30_001.0, 5_000.0),
-        sk.InterpolationMethod.LinearInterpolation,
+        interpolation,
         sk.GeometryType.Spherical,
     )
     viewing = sk.ViewingGeometry()
@@ -560,6 +564,31 @@ def test_distinct_atmosphere_linearisations_coexist_on_one_engine():
     ).sum(linearization_a.value.dims)
     gradient_a = linearization_a.vjp(cotangent_a, parameters=("surface_albedo",))
     xr.testing.assert_allclose(gradient_a["surface_albedo"], expected_gradient_a)
+
+
+def test_native_products_match_lower_interpolation_jacobian():
+    engine, atmosphere = _raw_engine_scenario(
+        interpolation=sk.InterpolationMethod.LowerInterpolation
+    )
+    expected = engine.calculate_radiance(atmosphere)
+    lin = engine.linearize(atmosphere)
+    xr.testing.assert_allclose(lin.value, expected["radiance"])
+
+    tangent = lin.tangent_template[["extinction", "ssa"]]
+    tangent["extinction"].data[:] = np.linspace(0.2, 0.8, 7)
+    tangent["ssa"].data[:] = np.linspace(-0.3, 0.1, 7)
+    expected_jvp = (lin.jacobian["extinction"] * tangent["extinction"]).sum(
+        "altitude"
+    ) + (lin.jacobian["ssa"] * tangent["ssa"]).sum("altitude")
+    xr.testing.assert_allclose(lin.jvp(tangent), expected_jvp)
+
+    cotangent = xr.ones_like(lin.value) * 1.7
+    gradient = lin.vjp(cotangent)
+    for name in tangent:
+        xr.testing.assert_allclose(
+            gradient[name],
+            (lin.jacobian[name] * cotangent).sum(lin.value.dims),
+        )
 
 
 def test_native_products_do_not_materialize_jacobian():

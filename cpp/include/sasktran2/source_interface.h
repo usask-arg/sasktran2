@@ -258,6 +258,18 @@ template <int NSTOKES> class SourceTermInterface {
             "Native integrated source JVP is not implemented");
     }
 
+    /** Applies a source contribution evaluated after line-of-sight
+     * integration to a value/tangent pair.  Unlike end-of-ray and interior
+     * hooks, this operation may transform the radiance already accumulated by
+     * earlier sources, so the source owns both the input and output state. */
+    virtual void
+    start_of_ray_source_jvp(int, int, int, int,
+                            Eigen::Ref<const Eigen::VectorXd>,
+                            sasktran2::RadianceJVP<NSTOKES>&) const {
+        throw std::logic_error(
+            "Native start-of-ray source JVP is not implemented");
+    }
+
     virtual void end_of_ray_source_vjp(int, int, int, int,
                                        const Eigen::Vector<double, NSTOKES>&,
                                        Eigen::Ref<Eigen::VectorXd>) const {
@@ -274,6 +286,18 @@ template <int NSTOKES> class SourceTermInterface {
                           Eigen::Ref<Eigen::VectorXd>) const {
         throw std::logic_error(
             "Native integrated source VJP is not implemented");
+    }
+
+    /** Pulls a cotangent through a post-integration source contribution.
+     * `value_before` is the radiance immediately before this source was
+     * applied.  Implementations add parameter gradients to `native_gradient`
+     * and replace `cotangent` with the cotangent of `value_before`. */
+    virtual void start_of_ray_source_vjp(int, int, int, int,
+                                         const Eigen::Vector<double, NSTOKES>&,
+                                         Eigen::Vector<double, NSTOKES>&,
+                                         Eigen::Ref<Eigen::VectorXd>) const {
+        throw std::logic_error(
+            "Native start-of-ray source VJP is not implemented");
     }
 
     /** Returns whether this source supports the requested atmosphere
