@@ -53,6 +53,7 @@ pub mod ffi {
             single_scatter_albedo: &[f64],
             legendre_coefficients: &[f64],
             num_legendre: usize,
+            delta_m_fraction: &[f64],
             emission: &[f64],
             surface_albedo: &[f64],
             surface_emission: &[f64],
@@ -210,6 +211,7 @@ fn solve(
     single_scatter_albedo: &[f64],
     legendre_coefficients: &[f64],
     num_legendre: usize,
+    delta_m_fraction: &[f64],
     emission: &[f64],
     surface_albedo: &[f64],
     surface_emission: &[f64],
@@ -232,6 +234,9 @@ fn solve(
                 .ok_or_else(|| anyhow!("Legendre array is too large"))?
     {
         return Err(anyhow!("Legendre coefficient array has the wrong shape"));
+    }
+    if delta_m_fraction.len() != level_values {
+        return Err(anyhow!("delta-M fraction array has the wrong shape"));
     }
     if surface_albedo.len() != num_wavelengths {
         return Err(anyhow!("surface albedo array has the wrong shape"));
@@ -261,8 +266,17 @@ fn solve(
             let cpp_index = wave * num_levels + cpp_level;
             rust_extinction[rust_index] = extinction[cpp_index];
             rust_ssa[rust_index] = single_scatter_albedo[cpp_index];
-            rust_b1[rust_index] = legendre_coefficients
+            let delta_m = delta_m_fraction[cpp_index];
+            let one_minus_delta_m = 1.0 - delta_m;
+            if !delta_m.is_finite() || one_minus_delta_m == 0.0 {
+                return Err(anyhow!("delta-M fraction contains an invalid value"));
+            }
+            let scaled_b1 = legendre_coefficients
                 [wave * num_levels * num_legendre + cpp_level * num_legendre + 1];
+            // Atmosphere::apply_delta_m_scaling performs the common half
+            // transform. Complete the multiple-scatter phase transform used
+            // by the discrete-ordinate layer preparation for moment l = 1.
+            rust_b1[rust_index] = scaled_b1 - 3.0 * delta_m / one_minus_delta_m;
             if let Some(rust_emission) = &mut rust_emission {
                 rust_emission[rust_index] = emission[cpp_index];
             }

@@ -55,6 +55,11 @@ fn make_atmosphere_with_derivatives(
         mapping.d_extinction().fill(0.0);
         mapping.d_ssa().fill(0.0);
         mapping.scat_factor().fill(1.0);
+        let mapping = atmosphere.storage.get_derivative_mapping("wf_b2").unwrap();
+        mapping.d_leg_coeff().slice_mut(s![2, .., ..]).fill(1.0);
+        mapping.d_extinction().fill(0.0);
+        mapping.d_ssa().fill(0.0);
+        mapping.scat_factor().fill(1.0);
         if thermal {
             let mapping = atmosphere
                 .storage
@@ -274,6 +279,57 @@ fn rust_twostream_engine_matches_cpp_radiances_and_jacobians() -> Result<()> {
                 "surface emission"
             );
         }
+    }
+    Ok(())
+}
+
+#[test]
+fn rust_twostream_delta_m_matches_two_stream_discrete_ordinates() -> Result<()> {
+    let nlevel = 8;
+    let nwavel = 17;
+    let mut atmosphere = make_atmosphere(nlevel, nwavel, false);
+    for level in 0..nlevel {
+        for wave in 0..nwavel {
+            let g = 0.62 + 0.01 * wave as f64 / nwavel as f64;
+            atmosphere.storage.leg_coeff[[1, level, wave]] = 3.0 * g;
+            atmosphere.storage.leg_coeff[[2, level, wave]] = 5.0 * g * g;
+            atmosphere.storage.leg_coeff[[3, level, wave]] = 7.0 * g * g * g;
+        }
+    }
+    atmosphere.apply_delta_m_scaling(2)?;
+
+    let (geometry, viewing) = geometry_and_views(nlevel);
+    let mut rust_config = config(TwoStreamBackend::Rust, false);
+    rust_config.with_do_backprop(true)?;
+    rust_config.with_wavelength_batch_size(8)?;
+
+    let mut discrete_ordinates_config = config(TwoStreamBackend::Cpp, false);
+    discrete_ordinates_config
+        .with_multiple_scatter_source(MultipleScatterSource::DiscreteOrdinates)?;
+    discrete_ordinates_config.with_do_backprop(true)?;
+
+    let rust = Engine::new(&rust_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
+    let discrete_ordinates = Engine::new(&discrete_ordinates_config, &geometry, &viewing)?
+        .calculate_radiance(&atmosphere)?;
+
+    assert_close(
+        rust.radiance.as_slice().unwrap(),
+        discrete_ordinates.radiance.as_slice().unwrap(),
+        2.0e-9,
+    );
+    for (name, expected) in &discrete_ordinates.d_radiance {
+        assert_close(
+            rust.d_radiance[name].as_slice().unwrap(),
+            expected.as_slice().unwrap(),
+            2.0e-8,
+        );
+    }
+    for (name, expected) in &discrete_ordinates.d_radiance_surf {
+        assert_close(
+            rust.d_radiance_surf[name].as_slice().unwrap(),
+            expected.as_slice().unwrap(),
+            2.0e-8,
+        );
     }
     Ok(())
 }

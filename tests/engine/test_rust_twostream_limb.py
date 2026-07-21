@@ -83,6 +83,74 @@ def test_rust_spherical_solar_is_close_to_two_stream_interpolated_do():
     )
 
 
+def test_rust_twostream_delta_m_matches_two_stream_discrete_ordinates():
+    def calculate(multiple_scatter_source, backend):
+        config = sk.Config()
+        config.num_threads = 1
+        config.num_streams = 2
+        config.num_singlescatter_moments = 4
+        config.do_backprop = True
+        config.delta_m_scaling = True
+        config.single_scatter_source = sk.SingleScatterSource.NoSource
+        config.multiple_scatter_source = multiple_scatter_source
+        config.two_stream_backend = backend
+        config.wavelength_batch_size = 4
+
+        altitude_grid = np.arange(0.0, 40_001.0, 5_000.0)
+        geometry = sk.Geometry1D(
+            cos_sza=0.6,
+            solar_azimuth=0.2,
+            earth_radius_m=6_371_000.0,
+            altitude_grid_m=altitude_grid,
+            interpolation_method=sk.InterpolationMethod.LinearInterpolation,
+            geometry_type=sk.GeometryType.PlaneParallel,
+        )
+        viewing = sk.ViewingGeometry()
+        viewing.add_ray(sk.GroundViewingSolar(0.6, 0.3, 0.7, 200_000.0))
+        viewing.add_ray(sk.GroundViewingSolar(0.6, -0.4, 0.35, 200_000.0))
+
+        num_wavelengths = 9
+        atmosphere = sk.Atmosphere(
+            geometry,
+            config,
+            calculate_derivatives=True,
+            numwavel=num_wavelengths,
+        )
+        spectral = 0.8 + 0.04 * np.arange(num_wavelengths)[np.newaxis, :]
+        atmosphere.storage.total_extinction[:] = (
+            2.0e-5 * np.exp(-altitude_grid[:, np.newaxis] / 8_000.0) + 1.0e-8
+        ) * spectral
+        atmosphere.storage.ssa[:] = 0.87
+        g = 0.62 + 0.01 * np.arange(num_wavelengths)[np.newaxis, :] / num_wavelengths
+        atmosphere.leg_coeff.a1[0, :, :] = 1.0
+        atmosphere.leg_coeff.a1[1, :, :] = 3.0 * g
+        atmosphere.leg_coeff.a1[2, :, :] = 5.0 * g**2
+        atmosphere.leg_coeff.a1[3, :, :] = 7.0 * g**3
+        atmosphere.surface.albedo[:] = 0.2
+        atmosphere.storage.solar_irradiance[:] = 1.1
+
+        return sk.Engine(config, geometry, viewing).calculate_radiance(atmosphere)
+
+    rust = calculate(
+        sk.MultipleScatterSource.TwoStream,
+        sk.TwoStreamBackend.Rust,
+    )
+    discrete_ordinates = calculate(
+        sk.MultipleScatterSource.DiscreteOrdinates,
+        sk.TwoStreamBackend.Cpp,
+    )
+
+    assert rust.data_vars.keys() == discrete_ordinates.data_vars.keys()
+    for name in rust.data_vars:
+        np.testing.assert_allclose(
+            rust[name],
+            discrete_ordinates[name],
+            rtol=2.0e-8,
+            atol=2.0e-12,
+            err_msg=f"delta-M mismatch for {name}",
+        )
+
+
 def test_rust_spherical_thermal_and_combined_refracted_sources_are_finite():
     separate = []
     for solar, thermal in [(True, False), (False, True)]:

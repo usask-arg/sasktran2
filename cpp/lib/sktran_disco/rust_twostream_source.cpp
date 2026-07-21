@@ -253,7 +253,8 @@ void RustTwoStreamSourceAdapter<SOURCE_TYPE>::initialize_atmosphere(
         as_slice(storage.total_extinction.data(), nlevel * nwavel),
         as_slice(storage.ssa.data(), nlevel * nwavel),
         as_slice(storage.leg_coeff.data(), num_legendre * nlevel * nwavel),
-        num_legendre, as_slice(storage.emission_source.data(), nlevel * nwavel),
+        num_legendre, as_slice(storage.f.data(), nlevel * nwavel),
+        as_slice(storage.emission_source.data(), nlevel * nwavel),
         as_slice(surface_albedo),
         as_slice(atmosphere.surface().emission().data(), nwavel),
         as_slice(storage.solar_irradiance.data(), nwavel),
@@ -301,10 +302,21 @@ void RustTwoStreamSourceAdapter<SOURCE_TYPE>::start_of_ray_source(
                 m_atmosphere->scat_deriv_start_index() + group * nlevel +
                 cpp_level;
             for (int lane = 0; lane < block.count; ++lane) {
+                const int wavelength = block.wavelength(lane);
+                double phase_derivative = m_atmosphere->storage().d_leg_coeff(
+                    1, cpp_level, wavelength, group);
+                if (m_atmosphere->storage().applied_f_order > 0) {
+                    const double delta_m =
+                        m_atmosphere->storage().f(cpp_level, wavelength);
+                    // Reverse b1* - 3 f / (1 - f), matching the standard DO
+                    // layer derivative for the two-stream l = 1 moment.
+                    phase_derivative -= 3.0 *
+                                        m_atmosphere->storage().d_f(
+                                            cpp_level, wavelength, group) /
+                                        ((1.0 - delta_m) * (1.0 - delta_m));
+                }
                 source.deriv(derivative_index, lane) +=
-                    m_atmosphere->storage().d_leg_coeff(
-                        1, cpp_level, block.wavelength(lane), group) *
-                    b1[index + lane];
+                    phase_derivative * b1[index + lane];
             }
         }
         if constexpr (sasktran2::twostream::has_thermal<SOURCE_TYPE>()) {
