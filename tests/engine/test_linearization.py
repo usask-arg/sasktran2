@@ -171,6 +171,39 @@ def test_jvp_validation_and_omitted_parameters():
         )
 
 
+@pytest.mark.parametrize("dtype", [np.int64, np.float32])
+def test_engine_products_accept_real_numeric_dtypes(dtype):
+    engine, atmosphere = _raw_engine_scenario()
+    lin = engine.linearize(atmosphere)
+
+    tangent = xr.Dataset(
+        {
+            "extinction": xr.DataArray(
+                np.ones(atmosphere.num_locations, dtype=dtype),
+                dims="altitude",
+                coords={"altitude": lin.tangent_template.altitude},
+            )
+        }
+    )
+    expected_jvp = lin.jacobian["extinction"].sum("altitude")
+    xr.testing.assert_allclose(lin.jvp(tangent), expected_jvp)
+
+    cotangent = xr.ones_like(lin.value).astype(dtype)
+    expected_vjp = (lin.jacobian["extinction"] * cotangent).sum(lin.value.dims)
+    xr.testing.assert_allclose(lin.vjp(cotangent)["extinction"], expected_vjp)
+
+
+def test_engine_products_reject_complex_inputs():
+    engine, atmosphere = _raw_engine_scenario()
+    lin = engine.linearize(atmosphere)
+    tangent = lin.tangent_template[["extinction"]].astype(np.complex128)
+
+    with pytest.raises(ValueError, match="real numeric"):
+        lin.jvp(tangent)
+    with pytest.raises(ValueError, match="real numeric"):
+        lin.vjp(xr.ones_like(lin.value).astype(np.complex128))
+
+
 def _raw_engine_scenario(*, calculate_derivatives: bool = True):
     config = sk.Config()
     config.single_scatter_source = sk.SingleScatterSource.Exact
@@ -264,6 +297,17 @@ def test_streaming_products_cover_surface_parameterizations(surface):
     cotangent = xr.ones_like(lin.value) * 0.7
     expected_vjp = (lin.jacobian[name] * cotangent).sum(lin.value.dims)
     xr.testing.assert_allclose(lin.vjp(cotangent)[name], expected_vjp)
+
+
+def test_constant_surface_parameter_has_scalar_domain():
+    engine, atmosphere = _constituent_engine_scenario(
+        sk.constituent.LambertianSurface(0.3)
+    )
+    lin = engine.linearize(atmosphere)
+
+    assert lin.parameter_dims["surface_albedo"] == ()
+    assert lin.tangent_template["surface_albedo"].dims == ()
+    assert lin.jacobian["surface_albedo"].dims == lin.value.dims
 
 
 def test_streaming_products_apply_polarized_output_rotation():

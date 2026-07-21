@@ -192,6 +192,18 @@ class Engine:
             jacobian: dict[str, xr.DataArray] = {}
             for parameter, output_name in registry.output_names.items():
                 block = result[output_name]
+                if not registry.specs[parameter].parameter_dims:
+                    scalar_dims = tuple(
+                        dim for dim in block.dims if dim not in value.dims
+                    )
+                    for dim in scalar_dims:
+                        if block.sizes[dim] != 1:
+                            msg = (
+                                f"Scalar parameter {parameter!r} has a non-scalar "
+                                f"Jacobian dimension {dim!r}"
+                            )
+                            raise ValueError(msg)
+                        block = block.isel({dim: 0}, drop=True)
                 if parameter in registry.log_parameters:
                     block = block * result["radiance"]
                 jacobian[parameter] = block
@@ -201,7 +213,9 @@ class Engine:
             volume_tangents: dict[str, np.ndarray] = {}
             surface_tangents: dict[str, np.ndarray] = {}
             for parameter in tangent.data_vars:
-                values = np.ascontiguousarray(tangent[parameter].values).reshape(-1)
+                values = np.ascontiguousarray(
+                    tangent[parameter].values, dtype=np.float64
+                ).reshape(-1)
                 for name in registry.volume_names.get(parameter, ()):
                     volume_tangents[name] = values
                 for name in registry.surface_names.get(parameter, ()):
@@ -214,7 +228,7 @@ class Engine:
         def evaluate_vjp(cotangent: xr.DataArray) -> xr.Dataset:
             output = self._engine._calculate_vjp(
                 native_atmosphere,
-                np.ascontiguousarray(cotangent.values),
+                np.ascontiguousarray(cotangent.values, dtype=np.float64),
                 registry.volume_sizes,
                 registry.surface_sizes,
             )
@@ -355,7 +369,7 @@ class Engine:
             interpolator = np.asarray(mapping.interpolator)
             if interpolator.size:
                 size = int(interpolator.shape[1])
-                if mapping.interp_dim == "dummy":
+                if mapping.interp_dim == "dummy" or size == 1:
                     dims: tuple[str, ...] = ()
                     shape: tuple[int, ...] = ()
                 else:

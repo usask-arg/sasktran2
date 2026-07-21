@@ -67,8 +67,10 @@ def _validated_array(
             msg = f"{description} coordinate for dimension {dim!r} does not match"
             raise ValueError(msg)
 
-    if not np.issubdtype(array.dtype, np.number):
-        msg = f"{description} must contain numeric values; got {array.dtype}"
+    if not np.issubdtype(array.dtype, np.number) or np.issubdtype(
+        array.dtype, np.complexfloating
+    ):
+        msg = f"{description} must contain real numeric values; got {array.dtype}"
         raise ValueError(msg)
 
     return array
