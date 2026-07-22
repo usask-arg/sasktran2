@@ -109,7 +109,8 @@ class Config:
     def two_stream_backend(self) -> TwoStreamBackend:
         """Selects the implementation used by solar and thermal two-stream sources.
 
-        The C++ backend is the default. The Rust backend solves and caches one
+        Builds with Rust support use the Rust backend by default; builds without
+        Rust support use the C++ backend. The Rust backend solves and caches one
         engine wavelength block at a time. Its SIMD kernels are most effective
         when ``wavelength_batch_size`` is roughly 32--256; wavelength threading
         also requires at least one block per worker.

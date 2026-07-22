@@ -12,9 +12,9 @@ def test_config_creation():
 
 def test_two_stream_backend_roundtrip():
     config = sk.Config()
-    assert config.two_stream_backend == sk.TwoStreamBackend.Cpp
-    config.two_stream_backend = sk.TwoStreamBackend.Rust
     assert config.two_stream_backend == sk.TwoStreamBackend.Rust
+    config.two_stream_backend = sk.TwoStreamBackend.Cpp
+    assert config.two_stream_backend == sk.TwoStreamBackend.Cpp
 
 
 def test_log_level_default():

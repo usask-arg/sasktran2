@@ -7,24 +7,23 @@
 
 const THERMAL_MIN_OPTICAL_DEPTH: f64 = 1.0e-10;
 const THERMAL_MIN_EMISSION: f64 = 1.0e-30;
-const THERMAL_RELATIVE_DIFFERENCE: f64 = 1.0e-15;
 
 #[inline]
 fn thermal_profile_is_active(top: f64, bottom: f64, optical_depth: f64) -> bool {
     optical_depth > THERMAL_MIN_OPTICAL_DEPTH
         && top > THERMAL_MIN_EMISSION
         && bottom > THERMAL_MIN_EMISSION
-        && (top - bottom).abs() > THERMAL_RELATIVE_DIFFERENCE * top.max(bottom)
 }
 
 /// Exponential thermal-source slope in optical-depth coordinates.
 ///
-/// The thresholds match the standard discrete-ordinate layer preparation and
-/// make transparent, vanishing-emission, and isothermal limits constant.
+/// Transparent and vanishing-emission layers use a constant profile. Positive
+/// profiles use `ln1p` so the isothermal limit remains continuous and retains
+/// its well-defined derivatives with respect to the endpoint emissions.
 #[inline]
 fn thermal_profile_slope(top: f64, bottom: f64, optical_depth: f64) -> f64 {
     if thermal_profile_is_active(top, bottom, optical_depth) {
-        (top / bottom).ln() / optical_depth
+        ((top - bottom) / bottom).ln_1p() / optical_depth
     } else {
         0.0
     }
@@ -47,6 +46,42 @@ fn thermal_profile_slope_adjoint(
         )
     } else {
         (0.0, 0.0, 0.0)
+    }
+}
+
+#[cfg(test)]
+mod thermal_profile_tests {
+    use super::{thermal_profile_slope, thermal_profile_slope_adjoint};
+
+    #[test]
+    fn isothermal_slope_has_continuous_endpoint_derivatives() {
+        let emission = 2.0;
+        let optical_depth = 0.5;
+        let slope = thermal_profile_slope(emission, emission, optical_depth);
+        assert_eq!(slope, 0.0);
+
+        let (d_top, d_bottom, d_od) =
+            thermal_profile_slope_adjoint(emission, emission, optical_depth, slope, 1.0);
+        assert_eq!(d_top, 1.0);
+        assert_eq!(d_bottom, -1.0);
+        assert_eq!(d_od, 0.0);
+
+        let epsilon = 1.0e-6;
+        let numeric_top = (thermal_profile_slope(
+            emission + epsilon,
+            emission,
+            optical_depth,
+        ) - thermal_profile_slope(emission - epsilon, emission, optical_depth))
+            / (2.0 * epsilon);
+        let numeric_bottom = (thermal_profile_slope(
+            emission,
+            emission + epsilon,
+            optical_depth,
+        ) - thermal_profile_slope(emission, emission - epsilon, optical_depth))
+            / (2.0 * epsilon);
+
+        assert!((d_top - numeric_top).abs() < 1.0e-10);
+        assert!((d_bottom - numeric_bottom).abs() < 1.0e-10);
     }
 }
 

@@ -14,7 +14,11 @@ namespace sasktran2 {
           m_do_forced_azimuth(-1), m_do_backprop(false),
           m_singlescatter_phasemode(SingleScatterPhaseMode::from_legendre),
           m_threading_model(ThreadingModel::wavelength),
+#ifdef SKTRAN_RUST_SUPPORT
+          m_two_stream_backend(TwoStreamBackend::rust),
+#else
           m_two_stream_backend(TwoStreamBackend::cpp),
+#endif
           m_initialize_hr_with_do_solution(false),
           m_output_los_optical_depth(false),
           m_input_validation_mode(InputValidationMode::strict),

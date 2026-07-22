@@ -1054,7 +1054,10 @@ mod tests {
             config.threading_model().unwrap(),
             ThreadingModel::Wavelength
         );
-        assert_eq!(config.two_stream_backend().unwrap(), TwoStreamBackend::Cpp);
+        assert_eq!(
+            config.two_stream_backend().unwrap(),
+            TwoStreamBackend::Rust
+        );
         assert_eq!(
             config.input_validation_mode().unwrap(),
             InputValidationMode::Strict
