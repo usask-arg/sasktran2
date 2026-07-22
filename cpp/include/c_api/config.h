@@ -73,6 +73,24 @@ int sk_config_set_num_hr_full_incoming_points(Config* config, int num_points);
 int sk_config_get_initialize_hr_with_do(Config* config, int* initialize);
 int sk_config_set_initialize_hr_with_do(Config* config, int initialize);
 
+// Rust successive-orders solver configuration
+int sk_config_get_successive_orders_max_iterations(Config* config,
+                                                   int* max_iterations);
+int sk_config_set_successive_orders_max_iterations(Config* config,
+                                                   int max_iterations);
+int sk_config_get_successive_orders_relative_tolerance(Config* config,
+                                                       double* tolerance);
+int sk_config_set_successive_orders_relative_tolerance(Config* config,
+                                                       double tolerance);
+int sk_config_get_successive_orders_absolute_tolerance(Config* config,
+                                                       double* tolerance);
+int sk_config_set_successive_orders_absolute_tolerance(Config* config,
+                                                       double tolerance);
+int sk_config_get_successive_orders_anderson_depth(Config* config, int* depth);
+int sk_config_set_successive_orders_anderson_depth(Config* config, int depth);
+int sk_config_get_successive_orders_damping(Config* config, double* damping);
+int sk_config_set_successive_orders_damping(Config* config, double damping);
+
 // Source configuration methods
 int sk_config_get_occultation_source(Config* config, int* occultation_source);
 int sk_config_set_occultation_source(Config* config, int occultation_source);

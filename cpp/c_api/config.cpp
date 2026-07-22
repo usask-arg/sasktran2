@@ -354,6 +354,92 @@ int sk_config_set_initialize_hr_with_do(Config* config, int initialize) {
     return 0; // Success
 }
 
+int sk_config_get_successive_orders_max_iterations(Config* config,
+                                                   int* max_iterations) {
+    if (config == nullptr || max_iterations == nullptr) {
+        return -1;
+    }
+    *max_iterations = config->impl.successive_orders_max_iterations();
+    return 0;
+}
+
+int sk_config_set_successive_orders_max_iterations(Config* config,
+                                                   int max_iterations) {
+    if (config == nullptr || max_iterations < 1) {
+        return -1;
+    }
+    config->impl.set_successive_orders_max_iterations(max_iterations);
+    return 0;
+}
+
+int sk_config_get_successive_orders_relative_tolerance(Config* config,
+                                                       double* tolerance) {
+    if (config == nullptr || tolerance == nullptr) {
+        return -1;
+    }
+    *tolerance = config->impl.successive_orders_relative_tolerance();
+    return 0;
+}
+
+int sk_config_set_successive_orders_relative_tolerance(Config* config,
+                                                       double tolerance) {
+    if (config == nullptr || tolerance < 0) {
+        return -1;
+    }
+    config->impl.set_successive_orders_relative_tolerance(tolerance);
+    return 0;
+}
+
+int sk_config_get_successive_orders_absolute_tolerance(Config* config,
+                                                       double* tolerance) {
+    if (config == nullptr || tolerance == nullptr) {
+        return -1;
+    }
+    *tolerance = config->impl.successive_orders_absolute_tolerance();
+    return 0;
+}
+
+int sk_config_set_successive_orders_absolute_tolerance(Config* config,
+                                                       double tolerance) {
+    if (config == nullptr || tolerance < 0) {
+        return -1;
+    }
+    config->impl.set_successive_orders_absolute_tolerance(tolerance);
+    return 0;
+}
+
+int sk_config_get_successive_orders_anderson_depth(Config* config, int* depth) {
+    if (config == nullptr || depth == nullptr) {
+        return -1;
+    }
+    *depth = config->impl.successive_orders_anderson_depth();
+    return 0;
+}
+
+int sk_config_set_successive_orders_anderson_depth(Config* config, int depth) {
+    if (config == nullptr || depth < 0) {
+        return -1;
+    }
+    config->impl.set_successive_orders_anderson_depth(depth);
+    return 0;
+}
+
+int sk_config_get_successive_orders_damping(Config* config, double* damping) {
+    if (config == nullptr || damping == nullptr) {
+        return -1;
+    }
+    *damping = config->impl.successive_orders_damping();
+    return 0;
+}
+
+int sk_config_set_successive_orders_damping(Config* config, double damping) {
+    if (config == nullptr || damping <= 0 || damping > 1) {
+        return -1;
+    }
+    config->impl.set_successive_orders_damping(damping);
+    return 0;
+}
+
 int sk_config_get_occultation_source(Config* config, int* occultation_source) {
     if (config == nullptr || occultation_source == nullptr) {
         return -1; // Error: null pointer

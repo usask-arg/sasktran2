@@ -7,6 +7,10 @@
 #include <sasktran2/do_source.h>
 #include <sasktran2/hr/diffuse_point.h>
 
+#ifdef SKTRAN_RUST_SUPPORT
+#include "sasktran2-core/src/successive_orders/cxx.rs.h"
+#endif
+
 namespace sasktran2::hr {
     /** Thread specific storage for the diffuse table
      *
@@ -31,6 +35,10 @@ namespace sasktran2::hr {
 
         std::vector<Eigen::VectorXd> accumulation_value_storage;
         Eigen::VectorXd accumulation_summed_values;
+
+        std::vector<double>
+            rust_scattering_values; /**< Row-major packed scattering blocks
+                                       passed to the Rust solver. */
     };
 
     /** An implementation of the successive orders of scattering technique.  We
@@ -135,6 +143,14 @@ namespace sasktran2::hr {
         Eigen::VectorXi m_outer_starts;
         Eigen::VectorXi m_inner_nnz;
 
+        bool m_use_rust_solver;
+
+#ifdef SKTRAN_RUST_SUPPORT
+        std::vector<::rust::Box<
+            sasktran2::rust::successive_orders::RustSuccessiveOrdersSolver>>
+            m_rust_solvers;
+#endif
+
       private:
         sasktran2::grids::Grid generate_cos_sza_grid(double min_cos_sza,
                                                      double max_cos_sza);
@@ -145,6 +161,9 @@ namespace sasktran2::hr {
         void generate_scattering_matrices(int wavelidx, int threadidx);
         void generate_accumulation_matrix(int wavelidx, int threadidx);
         void iterate_to_solution(int wavelidx, int threadidx);
+#ifdef SKTRAN_RUST_SUPPORT
+        void iterate_to_solution_rust(int threadidx);
+#endif
         void interpolate_sources(const Eigen::VectorXd& old_outgoing,
                                  sasktran2::Dual<double>& new_outgoing);
         void generate_source_interpolation_weights(
@@ -160,7 +179,8 @@ namespace sasktran2::hr {
 
       public:
         DiffuseTable(const sasktran2::raytracing::RayTracerBase& ray_tracer,
-                     const sasktran2::Geometry1D& geometry);
+                     const sasktran2::Geometry1D& geometry,
+                     bool use_rust_solver = false);
 
         /** Initializes the config inside the source term
          *

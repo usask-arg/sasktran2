@@ -17,6 +17,10 @@ def _setup_1d(
     threading_model: sk.ThreadingModel | None = None,
     emission_source: sk.EmissionSource = sk.EmissionSource.NoSource,
     occultation_source: sk.OccultationSource = sk.OccultationSource.NoSource,
+    successive_orders_iterations: int = 3,
+    successive_orders_relative_tolerance: float = 0.0,
+    successive_orders_absolute_tolerance: float = 0.0,
+    successive_orders_anderson_depth: int = 0,
 ):
     config = sk.Config()
     config.num_threads = num_threads
@@ -40,10 +44,25 @@ def _setup_1d(
     elif source == "successive_orders":
         config.single_scatter_source = sk.SingleScatterSource.Exact
         config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
-        config.num_successive_orders_iterations = 3
+        config.num_successive_orders_iterations = successive_orders_iterations
         config.num_successive_orders_incoming = 26
         config.num_successive_orders_outgoing = 26
         config.init_successive_orders_with_discrete_ordinates = False
+        default_num_wavelengths = 2
+    elif source == "successive_orders_rust":
+        config.single_scatter_source = sk.SingleScatterSource.Exact
+        config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrdersRust
+        config.num_successive_orders_incoming = 26
+        config.num_successive_orders_outgoing = 26
+        config.successive_orders_max_iterations = successive_orders_iterations
+        config.successive_orders_relative_tolerance = (
+            successive_orders_relative_tolerance
+        )
+        config.successive_orders_absolute_tolerance = (
+            successive_orders_absolute_tolerance
+        )
+        config.successive_orders_anderson_depth = successive_orders_anderson_depth
+        config.successive_orders_damping = 1.0
         default_num_wavelengths = 2
     else:
         config.single_scatter_source = sk.SingleScatterSource.Exact
@@ -441,3 +460,43 @@ def test_rayon_source_threading_uses_cpp_source_threads():
             rtol=5e-12,
             atol=2e-13,
         )
+
+
+@pytest.mark.parametrize("num_stokes", [1, 3])
+def test_rust_successive_orders_matches_legacy_fixed_iterations(num_stokes):
+    legacy_engine, legacy_atmosphere = _setup_1d(
+        "successive_orders", num_stokes, False, num_wavelengths=1
+    )
+    rust_engine, rust_atmosphere = _setup_1d(
+        "successive_orders_rust", num_stokes, False, num_wavelengths=1
+    )
+
+    legacy = legacy_engine.calculate_radiance(legacy_atmosphere).radiance.values
+    rust = rust_engine.calculate_radiance(rust_atmosphere).radiance.values
+
+    np.testing.assert_allclose(rust, legacy, rtol=2.0e-12, atol=1.0e-14)
+
+
+def test_rust_successive_orders_anderson_matches_converged_legacy():
+    legacy_engine, legacy_atmosphere = _setup_1d(
+        "successive_orders",
+        1,
+        False,
+        num_wavelengths=1,
+        successive_orders_iterations=50,
+    )
+    rust_engine, rust_atmosphere = _setup_1d(
+        "successive_orders_rust",
+        1,
+        False,
+        num_wavelengths=1,
+        successive_orders_iterations=50,
+        successive_orders_relative_tolerance=1.0e-10,
+        successive_orders_absolute_tolerance=1.0e-13,
+        successive_orders_anderson_depth=3,
+    )
+
+    legacy = legacy_engine.calculate_radiance(legacy_atmosphere).radiance.values
+    rust = rust_engine.calculate_radiance(rust_atmosphere).radiance.values
+
+    np.testing.assert_allclose(rust, legacy, rtol=2.0e-8, atol=1.0e-12)

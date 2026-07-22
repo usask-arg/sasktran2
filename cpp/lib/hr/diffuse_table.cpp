@@ -11,14 +11,29 @@
 #include <sasktran2/do_source.h>
 
 #include <fstream>
+#include <stdexcept>
+
+#ifdef SKTRAN_RUST_SUPPORT
+namespace {
+    template <typename T>
+    ::rust::Slice<const T> as_rust_slice(const std::vector<T>& values) {
+        return {values.data(), values.size()};
+    }
+
+    ::rust::Slice<const double> as_rust_slice(const Eigen::VectorXd& values) {
+        return {values.data(), static_cast<std::size_t>(values.size())};
+    }
+} // namespace
+#endif
 
 namespace sasktran2::hr {
 
     template <int NSTOKES>
     DiffuseTable<NSTOKES>::DiffuseTable(
         const sasktran2::raytracing::RayTracerBase& ray_tracer,
-        const sasktran2::Geometry1D& geometry)
-        : m_raytracer(ray_tracer), m_geometry(geometry), m_integrator(false) {}
+        const sasktran2::Geometry1D& geometry, bool use_rust_solver)
+        : m_raytracer(ray_tracer), m_geometry(geometry), m_integrator(false),
+          m_use_rust_solver(use_rust_solver) {}
 
     template <int NSTOKES>
     sasktran2::grids::Grid
@@ -468,12 +483,92 @@ namespace sasktran2::hr {
             }
             storage.accumulation_summed_values.resize(total_nnz);
         }
+
+#ifdef SKTRAN_RUST_SUPPORT
+        if (m_use_rust_solver) {
+            std::vector<std::size_t> transport_row_offsets(
+                m_outer_starts.size());
+            std::vector<std::size_t> transport_column_indices(
+                m_inner_indicies.size());
+            for (int index = 0; index < m_outer_starts.size(); ++index) {
+                transport_row_offsets[index] =
+                    static_cast<std::size_t>(m_outer_starts[index]);
+            }
+            for (int index = 0; index < m_inner_indicies.size(); ++index) {
+                transport_column_indices[index] =
+                    static_cast<std::size_t>(m_inner_indicies[index]);
+            }
+
+            std::vector<std::size_t> scattering_output_offsets = {0};
+            std::vector<std::size_t> scattering_input_offsets = {0};
+            std::vector<std::size_t> scattering_value_offsets = {0};
+            scattering_output_offsets.reserve(m_diffuse_points.size() + 1);
+            scattering_input_offsets.reserve(m_diffuse_points.size() + 1);
+            scattering_value_offsets.reserve(m_diffuse_points.size() + 1);
+
+            for (const auto& point : m_diffuse_points) {
+                const std::size_t output_size =
+                    static_cast<std::size_t>(point->num_outgoing() * NSTOKES);
+                const std::size_t input_size =
+                    static_cast<std::size_t>(point->num_incoming() * NSTOKES);
+                scattering_output_offsets.push_back(
+                    scattering_output_offsets.back() + output_size);
+                scattering_input_offsets.push_back(
+                    scattering_input_offsets.back() + input_size);
+                scattering_value_offsets.push_back(
+                    scattering_value_offsets.back() + output_size * input_size);
+            }
+
+            for (auto& storage : m_thread_storage) {
+                storage.rust_scattering_values.resize(
+                    scattering_value_offsets.back());
+            }
+
+            m_rust_solvers.clear();
+            m_rust_solvers.reserve(m_thread_storage.size());
+            for (std::size_t thread = 0; thread < m_thread_storage.size();
+                 ++thread) {
+                m_rust_solvers.push_back(
+                    sasktran2::rust::successive_orders::
+                        new_successive_orders_solver(
+                            static_cast<std::size_t>(
+                                m_thread_storage[thread]
+                                    .m_incoming_radiances.value.size()),
+                            static_cast<std::size_t>(
+                                m_thread_storage[thread]
+                                    .m_outgoing_sources.value.size()),
+                            as_rust_slice(transport_row_offsets),
+                            as_rust_slice(transport_column_indices),
+                            as_rust_slice(scattering_output_offsets),
+                            as_rust_slice(scattering_input_offsets),
+                            as_rust_slice(scattering_value_offsets),
+                            static_cast<std::size_t>(
+                                m_config->successive_orders_max_iterations()),
+                            m_config->successive_orders_relative_tolerance(),
+                            m_config->successive_orders_absolute_tolerance(),
+                            static_cast<std::size_t>(
+                                m_config->successive_orders_anderson_depth()),
+                            m_config->successive_orders_damping()));
+            }
+        }
+#endif
     }
 
     template <int NSTOKES>
     void
     DiffuseTable<NSTOKES>::initialize_config(const sasktran2::Config& config) {
         m_config = &config;
+
+        if (m_use_rust_solver && m_config->num_hr_full_incoming_points() > 0) {
+            throw std::invalid_argument(
+                "The Rust successive-orders source currently requires all "
+                "diffuse points to have explicitly traced incoming rays");
+        }
+        if (m_use_rust_solver && m_config->initialize_hr_with_do()) {
+            throw std::invalid_argument(
+                "The Rust successive-orders source does not yet support a "
+                "discrete-ordinates initial guess");
+        }
 
         m_thread_storage.resize(m_config->num_wavelength_threads());
 
@@ -723,6 +818,12 @@ namespace sasktran2::hr {
     void DiffuseTable<NSTOKES>::iterate_to_solution(int wavelidx,
                                                     int threadidx) {
         ZoneScopedN("Iterate to Solution");
+#ifdef SKTRAN_RUST_SUPPORT
+        if (m_use_rust_solver) {
+            iterate_to_solution_rust(threadidx);
+            return;
+        }
+#endif
         auto& storage = m_thread_storage[threadidx];
 
         Eigen::Map<Eigen::SparseMatrix<double, Eigen::RowMajor>>
@@ -818,6 +919,64 @@ namespace sasktran2::hr {
             }
         }
     }
+
+#ifdef SKTRAN_RUST_SUPPORT
+    template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::iterate_to_solution_rust(int threadidx) {
+        ZoneScopedN("Rust Successive Orders Solve");
+        auto& storage = m_thread_storage[threadidx];
+
+        std::size_t value_offset = 0;
+        for (std::size_t point_index = 0; point_index < m_diffuse_points.size();
+             ++point_index) {
+            const auto& matrix = storage.point_scattering_matrices[point_index];
+            for (int row = 0; row < matrix.rows(); ++row) {
+                for (int column = 0; column < matrix.cols(); ++column) {
+                    storage.rust_scattering_values[value_offset++] =
+                        matrix(row, column);
+                }
+            }
+        }
+
+        const std::vector<double> no_initial_guess;
+        auto& solver = m_rust_solvers[threadidx];
+        sasktran2::rust::successive_orders::solve(
+            *solver, as_rust_slice(storage.accumulation_summed_values),
+            as_rust_slice(storage.rust_scattering_values),
+            as_rust_slice(storage.m_firstorder_radiances.value),
+            as_rust_slice(no_initial_guess));
+
+        const auto solution =
+            sasktran2::rust::successive_orders::solution(*solver);
+        if (solution.size() !=
+            static_cast<std::size_t>(storage.m_outgoing_sources.value.size())) {
+            throw std::runtime_error(
+                "Rust successive-orders solver returned an invalid solution "
+                "size");
+        }
+        std::copy(solution.begin(), solution.end(),
+                  storage.m_outgoing_sources.value.data());
+
+        const bool tolerance_requested =
+            m_config->successive_orders_relative_tolerance() > 0 ||
+            m_config->successive_orders_absolute_tolerance() > 0;
+        if (tolerance_requested &&
+            !sasktran2::rust::successive_orders::converged(*solver)) {
+            spdlog::warn(
+                "Rust successive-orders source reached {} iterations with "
+                "residual {}",
+                sasktran2::rust::successive_orders::iterations(*solver),
+                sasktran2::rust::successive_orders::final_residual(*solver));
+        } else {
+            spdlog::debug(
+                "Rust successive-orders source completed {} iterations; "
+                "initial residual {}, final residual {}",
+                sasktran2::rust::successive_orders::iterations(*solver),
+                sasktran2::rust::successive_orders::initial_residual(*solver),
+                sasktran2::rust::successive_orders::final_residual(*solver));
+        }
+    }
+#endif
 
     template <int NSTOKES>
     void DiffuseTable<NSTOKES>::interpolate_sources(

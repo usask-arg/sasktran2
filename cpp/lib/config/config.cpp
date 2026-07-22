@@ -1,5 +1,6 @@
 #include <sasktran2/config.h>
 #include <sasktran2/validation/validation.h>
+#include <cmath>
 
 namespace sasktran2 {
     Config::Config()
@@ -11,7 +12,12 @@ namespace sasktran2 {
           m_nsinglescatter_moments(16), m_ndosza(1),
           m_ndosphericaliterations(0), m_hr_nincoming(110), m_hr_noutgoing(110),
           m_hr_nspherical_iterations(50), m_hr_num_incoming_points(-1),
-          m_do_forced_azimuth(-1), m_do_backprop(false),
+          m_successive_orders_max_iterations(50),
+          m_successive_orders_relative_tolerance(1.0e-6),
+          m_successive_orders_absolute_tolerance(1.0e-12),
+          m_successive_orders_anderson_depth(3),
+          m_successive_orders_damping(1.0), m_do_forced_azimuth(-1),
+          m_do_backprop(false),
           m_singlescatter_phasemode(SingleScatterPhaseMode::from_legendre),
           m_threading_model(ThreadingModel::wavelength),
 #ifdef SKTRAN_RUST_SUPPORT
@@ -43,6 +49,13 @@ namespace sasktran2 {
              m_emission_source == EmissionSource::twostream)) {
             spdlog::critical(
                 "two_stream_backend=rust requires a build with Rust support");
+            sasktran2::validation::throw_configuration_error();
+        }
+        if (m_multiple_scatter_source ==
+            MultipleScatterSource::successive_orders_rust) {
+            spdlog::critical(
+                "multiple_scatter_source=successive_orders_rust requires a "
+                "build with Rust support");
             sasktran2::validation::throw_configuration_error();
         }
 #endif
@@ -98,6 +111,37 @@ namespace sasktran2 {
                              m_ndostreams);
 
             sasktran2::validation::throw_configuration_error();
+        }
+
+        if (m_multiple_scatter_source ==
+            MultipleScatterSource::successive_orders_rust) {
+            if (m_successive_orders_max_iterations < 1) {
+                spdlog::critical(
+                    "successive_orders_max_iterations must be at least 1");
+                sasktran2::validation::throw_configuration_error();
+            }
+            if (!std::isfinite(m_successive_orders_relative_tolerance) ||
+                m_successive_orders_relative_tolerance < 0 ||
+                !std::isfinite(m_successive_orders_absolute_tolerance) ||
+                m_successive_orders_absolute_tolerance < 0) {
+                spdlog::critical(
+                    "successive-orders tolerances must be finite and "
+                    "non-negative");
+                sasktran2::validation::throw_configuration_error();
+            }
+            if (m_successive_orders_anderson_depth < 0) {
+                spdlog::critical(
+                    "successive_orders_anderson_depth must be non-negative");
+                sasktran2::validation::throw_configuration_error();
+            }
+            if (!std::isfinite(m_successive_orders_damping) ||
+                m_successive_orders_damping <= 0 ||
+                m_successive_orders_damping > 1) {
+                spdlog::critical(
+                    "successive_orders_damping must be in the interval (0, "
+                    "1]");
+                sasktran2::validation::throw_configuration_error();
+            }
         }
 
         // Check that the number of single scatter moments is valid

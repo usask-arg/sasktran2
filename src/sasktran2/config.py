@@ -286,6 +286,10 @@ class Config:
             The successive orders of scattering method is used to estimate the multiple scatter
             signal
 
+        `sasktran2.MultipleScatterSource.SuccessiveOrdersRust`
+            The experimental Rust successive-orders implementation is used. It currently supports
+            1-D radiances without weighting functions or flux observers.
+
         """
         return self._config.multiple_scatter_source
 
@@ -432,6 +436,55 @@ class Config:
         source.
         """
         self._config.num_successive_orders_iterations = value
+
+    @property
+    def successive_orders_max_iterations(self) -> int:
+        """Maximum iterations for ``SuccessiveOrdersRust``. Defaults to 50."""
+        return self._config.successive_orders_max_iterations
+
+    @successive_orders_max_iterations.setter
+    def successive_orders_max_iterations(self, value: int):
+        self._config.successive_orders_max_iterations = value
+
+    @property
+    def successive_orders_relative_tolerance(self) -> float:
+        """Relative fixed-point residual tolerance for ``SuccessiveOrdersRust``.
+
+        Set this and ``successive_orders_absolute_tolerance`` to zero to use a
+        fixed iteration count.
+        """
+        return self._config.successive_orders_relative_tolerance
+
+    @successive_orders_relative_tolerance.setter
+    def successive_orders_relative_tolerance(self, value: float):
+        self._config.successive_orders_relative_tolerance = value
+
+    @property
+    def successive_orders_absolute_tolerance(self) -> float:
+        """Absolute fixed-point residual tolerance for ``SuccessiveOrdersRust``."""
+        return self._config.successive_orders_absolute_tolerance
+
+    @successive_orders_absolute_tolerance.setter
+    def successive_orders_absolute_tolerance(self, value: float):
+        self._config.successive_orders_absolute_tolerance = value
+
+    @property
+    def successive_orders_anderson_depth(self) -> int:
+        """Anderson history depth; zero selects damped Picard iteration."""
+        return self._config.successive_orders_anderson_depth
+
+    @successive_orders_anderson_depth.setter
+    def successive_orders_anderson_depth(self, value: int):
+        self._config.successive_orders_anderson_depth = value
+
+    @property
+    def successive_orders_damping(self) -> float:
+        """Fixed-point damping in the interval ``(0, 1]``."""
+        return self._config.successive_orders_damping
+
+    @successive_orders_damping.setter
+    def successive_orders_damping(self, value: float):
+        self._config.successive_orders_damping = value
 
     @property
     def init_successive_orders_with_discrete_ordinates(self) -> bool:

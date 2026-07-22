@@ -9,6 +9,7 @@ pub enum MultipleScatterSource {
     SuccessiveOrders = 1,
     TwoStream = 2,
     None = 3,
+    SuccessiveOrdersRust = 4,
 }
 
 #[repr(i32)]
@@ -682,6 +683,145 @@ impl Config {
         }
     }
 
+    pub fn successive_orders_max_iterations(&self) -> Result<usize> {
+        let mut value = 0i32;
+        let error_code =
+            unsafe { ffi::sk_config_get_successive_orders_max_iterations(self.config, &mut value) };
+        if error_code == 0 {
+            Ok(value as usize)
+        } else {
+            Err(anyhow!(
+                "Error getting Rust successive-orders maximum iterations: error code {}",
+                error_code
+            ))
+        }
+    }
+
+    pub fn with_successive_orders_max_iterations(&mut self, value: usize) -> Result<&mut Self> {
+        let error_code = unsafe {
+            ffi::sk_config_set_successive_orders_max_iterations(self.config, value as i32)
+        };
+        if error_code == 0 {
+            Ok(self)
+        } else {
+            Err(anyhow!(
+                "Error setting Rust successive-orders maximum iterations: error code {}",
+                error_code
+            ))
+        }
+    }
+
+    pub fn successive_orders_relative_tolerance(&self) -> Result<f64> {
+        let mut value = 0.0;
+        let error_code = unsafe {
+            ffi::sk_config_get_successive_orders_relative_tolerance(self.config, &mut value)
+        };
+        if error_code == 0 {
+            Ok(value)
+        } else {
+            Err(anyhow!(
+                "Error getting successive-orders relative tolerance: error code {}",
+                error_code
+            ))
+        }
+    }
+
+    pub fn with_successive_orders_relative_tolerance(&mut self, value: f64) -> Result<&mut Self> {
+        let error_code =
+            unsafe { ffi::sk_config_set_successive_orders_relative_tolerance(self.config, value) };
+        if error_code == 0 {
+            Ok(self)
+        } else {
+            Err(anyhow!(
+                "Error setting successive-orders relative tolerance: error code {}",
+                error_code
+            ))
+        }
+    }
+
+    pub fn successive_orders_absolute_tolerance(&self) -> Result<f64> {
+        let mut value = 0.0;
+        let error_code = unsafe {
+            ffi::sk_config_get_successive_orders_absolute_tolerance(self.config, &mut value)
+        };
+        if error_code == 0 {
+            Ok(value)
+        } else {
+            Err(anyhow!(
+                "Error getting successive-orders absolute tolerance: error code {}",
+                error_code
+            ))
+        }
+    }
+
+    pub fn with_successive_orders_absolute_tolerance(&mut self, value: f64) -> Result<&mut Self> {
+        let error_code =
+            unsafe { ffi::sk_config_set_successive_orders_absolute_tolerance(self.config, value) };
+        if error_code == 0 {
+            Ok(self)
+        } else {
+            Err(anyhow!(
+                "Error setting successive-orders absolute tolerance: error code {}",
+                error_code
+            ))
+        }
+    }
+
+    pub fn successive_orders_anderson_depth(&self) -> Result<usize> {
+        let mut value = 0i32;
+        let error_code =
+            unsafe { ffi::sk_config_get_successive_orders_anderson_depth(self.config, &mut value) };
+        if error_code == 0 {
+            Ok(value as usize)
+        } else {
+            Err(anyhow!(
+                "Error getting successive-orders Anderson depth: error code {}",
+                error_code
+            ))
+        }
+    }
+
+    pub fn with_successive_orders_anderson_depth(&mut self, value: usize) -> Result<&mut Self> {
+        let error_code = unsafe {
+            ffi::sk_config_set_successive_orders_anderson_depth(self.config, value as i32)
+        };
+        if error_code == 0 {
+            Ok(self)
+        } else {
+            Err(anyhow!(
+                "Error setting successive-orders Anderson depth: error code {}",
+                error_code
+            ))
+        }
+    }
+
+    pub fn successive_orders_damping(&self) -> Result<f64> {
+        let mut value = 0.0;
+        let error_code =
+            unsafe { ffi::sk_config_get_successive_orders_damping(self.config, &mut value) };
+        if error_code == 0 {
+            Ok(value)
+        } else {
+            Err(anyhow!(
+                "Error getting successive-orders damping: error code {}",
+                error_code
+            ))
+        }
+    }
+
+    pub fn with_successive_orders_damping(&mut self, value: f64) -> Result<&mut Self> {
+        let error_code =
+            unsafe { ffi::sk_config_set_successive_orders_damping(self.config, value) };
+        if error_code == 0 {
+            Ok(self)
+        } else {
+            Err(anyhow!(
+                "Error setting successive-orders damping: error code {}",
+                error_code
+            ))
+        }
+    }
+
     pub fn init_successive_orders_with_discrete_ordinates(&self) -> Result<bool> {
         let mut init = 0i32;
         let error_code =
@@ -1054,10 +1194,7 @@ mod tests {
             config.threading_model().unwrap(),
             ThreadingModel::Wavelength
         );
-        assert_eq!(
-            config.two_stream_backend().unwrap(),
-            TwoStreamBackend::Rust
-        );
+        assert_eq!(config.two_stream_backend().unwrap(), TwoStreamBackend::Rust);
         assert_eq!(
             config.input_validation_mode().unwrap(),
             InputValidationMode::Strict
@@ -1116,6 +1253,35 @@ mod tests {
             config.multiple_scatter_source().unwrap(),
             MultipleScatterSource::SuccessiveOrders
         );
+
+        config
+            .with_multiple_scatter_source(MultipleScatterSource::SuccessiveOrdersRust)
+            .unwrap()
+            .with_successive_orders_max_iterations(31)
+            .unwrap()
+            .with_successive_orders_relative_tolerance(2.0e-7)
+            .unwrap()
+            .with_successive_orders_absolute_tolerance(3.0e-13)
+            .unwrap()
+            .with_successive_orders_anderson_depth(4)
+            .unwrap()
+            .with_successive_orders_damping(0.85)
+            .unwrap();
+        assert_eq!(
+            config.multiple_scatter_source().unwrap(),
+            MultipleScatterSource::SuccessiveOrdersRust
+        );
+        assert_eq!(config.successive_orders_max_iterations().unwrap(), 31);
+        assert_eq!(
+            config.successive_orders_relative_tolerance().unwrap(),
+            2.0e-7
+        );
+        assert_eq!(
+            config.successive_orders_absolute_tolerance().unwrap(),
+            3.0e-13
+        );
+        assert_eq!(config.successive_orders_anderson_depth().unwrap(), 4);
+        assert_eq!(config.successive_orders_damping().unwrap(), 0.85);
 
         config
             .with_single_scatter_source(SingleScatterSource::SolarTable)

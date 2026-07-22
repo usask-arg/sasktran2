@@ -43,6 +43,9 @@ namespace sasktran2 {
          *  'hr' Uses a successive orders of scattering method to calculate the
          * multiple scatter source.
          *
+         *  'successive_orders_rust' Uses the experimental Rust fixed-point
+         * successive-orders solver with C++ traced geometry.
+         *
          *  'none' Removes the multiple scatter source from the calculation.
          *
          */
@@ -50,7 +53,8 @@ namespace sasktran2 {
             discrete_ordinates = 0,
             hr = 1,
             twostream = 2,
-            none = 3
+            none = 3,
+            successive_orders_rust = 4
         };
 
         /** Enum that determines the accuracy of the weighting function solution
@@ -451,6 +455,46 @@ namespace sasktran2 {
             m_hr_nspherical_iterations = n;
         }
 
+        /** Maximum fixed-point iterations for the Rust successive-orders
+         * source. */
+        int successive_orders_max_iterations() const {
+            return m_successive_orders_max_iterations;
+        }
+        void set_successive_orders_max_iterations(int iterations) {
+            m_successive_orders_max_iterations = iterations;
+        }
+
+        /** Relative residual tolerance. Set both tolerances to zero to use a
+         * fixed iteration count. */
+        double successive_orders_relative_tolerance() const {
+            return m_successive_orders_relative_tolerance;
+        }
+        void set_successive_orders_relative_tolerance(double tolerance) {
+            m_successive_orders_relative_tolerance = tolerance;
+        }
+
+        double successive_orders_absolute_tolerance() const {
+            return m_successive_orders_absolute_tolerance;
+        }
+        void set_successive_orders_absolute_tolerance(double tolerance) {
+            m_successive_orders_absolute_tolerance = tolerance;
+        }
+
+        /** Anderson history depth. Zero selects damped Picard iteration. */
+        int successive_orders_anderson_depth() const {
+            return m_successive_orders_anderson_depth;
+        }
+        void set_successive_orders_anderson_depth(int depth) {
+            m_successive_orders_anderson_depth = depth;
+        }
+
+        double successive_orders_damping() const {
+            return m_successive_orders_damping;
+        }
+        void set_successive_orders_damping(double damping) {
+            m_successive_orders_damping = damping;
+        }
+
         /**
          *
          * @return The number of incoming points at each diffuse point in the HR
@@ -715,6 +759,12 @@ namespace sasktran2 {
 
         int m_hr_nspherical_iterations;
         int m_hr_num_incoming_points;
+
+        int m_successive_orders_max_iterations;
+        double m_successive_orders_relative_tolerance;
+        double m_successive_orders_absolute_tolerance;
+        int m_successive_orders_anderson_depth;
+        double m_successive_orders_damping;
 
         bool m_apply_delta_scaling;
 

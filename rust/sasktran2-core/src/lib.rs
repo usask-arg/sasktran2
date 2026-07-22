@@ -2,6 +2,7 @@
 
 pub mod math;
 pub mod raytracer;
+pub mod successive_orders;
 pub mod twostream;
 
 #[cxx::bridge(namespace = "sasktran2::rust::testing")]

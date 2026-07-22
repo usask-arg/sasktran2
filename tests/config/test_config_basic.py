@@ -99,3 +99,23 @@ def test_wavelength_batch_size_round_trip_and_validation():
 
     with pytest.raises(RuntimeError, match="at least 1"):
         config.wavelength_batch_size = 0
+
+
+def test_rust_successive_orders_config_round_trip():
+    config = sk.Config()
+
+    config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrdersRust
+    config.successive_orders_max_iterations = 31
+    config.successive_orders_relative_tolerance = 2.0e-7
+    config.successive_orders_absolute_tolerance = 3.0e-13
+    config.successive_orders_anderson_depth = 4
+    config.successive_orders_damping = 0.85
+
+    assert (
+        config.multiple_scatter_source == sk.MultipleScatterSource.SuccessiveOrdersRust
+    )
+    assert config.successive_orders_max_iterations == 31
+    assert config.successive_orders_relative_tolerance == 2.0e-7
+    assert config.successive_orders_absolute_tolerance == 3.0e-13
+    assert config.successive_orders_anderson_depth == 4
+    assert config.successive_orders_damping == 0.85

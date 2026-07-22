@@ -7,6 +7,7 @@ use sasktran2_rs::bindings::config;
 pub enum MultipleScatterSource {
     DiscreteOrdinates,
     SuccessiveOrders,
+    SuccessiveOrdersRust,
     TwoStream,
     NoSource,
 }
@@ -125,6 +126,9 @@ impl PyConfig {
             config::MultipleScatterSource::SuccessiveOrders => {
                 MultipleScatterSource::SuccessiveOrders
             }
+            config::MultipleScatterSource::SuccessiveOrdersRust => {
+                MultipleScatterSource::SuccessiveOrdersRust
+            }
             config::MultipleScatterSource::TwoStream => MultipleScatterSource::TwoStream,
             config::MultipleScatterSource::None => MultipleScatterSource::NoSource,
         }
@@ -141,6 +145,9 @@ impl PyConfig {
             }
             MultipleScatterSource::SuccessiveOrders => {
                 config::MultipleScatterSource::SuccessiveOrders
+            }
+            MultipleScatterSource::SuccessiveOrdersRust => {
+                config::MultipleScatterSource::SuccessiveOrdersRust
             }
             MultipleScatterSource::TwoStream => config::MultipleScatterSource::TwoStream,
             MultipleScatterSource::NoSource => config::MultipleScatterSource::None,
@@ -489,6 +496,79 @@ impl PyConfig {
             .with_num_successive_orders_iterations(num_iterations)
             .into_pyresult()?;
 
+        Ok(())
+    }
+
+    #[getter]
+    fn successive_orders_max_iterations(&self) -> PyResult<usize> {
+        self.config
+            .successive_orders_max_iterations()
+            .into_pyresult()
+    }
+
+    #[setter]
+    fn set_successive_orders_max_iterations(&mut self, value: usize) -> PyResult<()> {
+        self.config
+            .with_successive_orders_max_iterations(value)
+            .into_pyresult()?;
+        Ok(())
+    }
+
+    #[getter]
+    fn successive_orders_relative_tolerance(&self) -> PyResult<f64> {
+        self.config
+            .successive_orders_relative_tolerance()
+            .into_pyresult()
+    }
+
+    #[setter]
+    fn set_successive_orders_relative_tolerance(&mut self, value: f64) -> PyResult<()> {
+        self.config
+            .with_successive_orders_relative_tolerance(value)
+            .into_pyresult()?;
+        Ok(())
+    }
+
+    #[getter]
+    fn successive_orders_absolute_tolerance(&self) -> PyResult<f64> {
+        self.config
+            .successive_orders_absolute_tolerance()
+            .into_pyresult()
+    }
+
+    #[setter]
+    fn set_successive_orders_absolute_tolerance(&mut self, value: f64) -> PyResult<()> {
+        self.config
+            .with_successive_orders_absolute_tolerance(value)
+            .into_pyresult()?;
+        Ok(())
+    }
+
+    #[getter]
+    fn successive_orders_anderson_depth(&self) -> PyResult<usize> {
+        self.config
+            .successive_orders_anderson_depth()
+            .into_pyresult()
+    }
+
+    #[setter]
+    fn set_successive_orders_anderson_depth(&mut self, value: usize) -> PyResult<()> {
+        self.config
+            .with_successive_orders_anderson_depth(value)
+            .into_pyresult()?;
+        Ok(())
+    }
+
+    #[getter]
+    fn successive_orders_damping(&self) -> PyResult<f64> {
+        self.config.successive_orders_damping().into_pyresult()
+    }
+
+    #[setter]
+    fn set_successive_orders_damping(&mut self, value: f64) -> PyResult<()> {
+        self.config
+            .with_successive_orders_damping(value)
+            .into_pyresult()?;
         Ok(())
     }
 

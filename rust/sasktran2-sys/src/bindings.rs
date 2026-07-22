@@ -760,6 +760,66 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn sk_config_get_successive_orders_max_iterations(
+        config: *mut Config,
+        max_iterations: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_set_successive_orders_max_iterations(
+        config: *mut Config,
+        max_iterations: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_get_successive_orders_relative_tolerance(
+        config: *mut Config,
+        tolerance: *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_set_successive_orders_relative_tolerance(
+        config: *mut Config,
+        tolerance: f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_get_successive_orders_absolute_tolerance(
+        config: *mut Config,
+        tolerance: *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_set_successive_orders_absolute_tolerance(
+        config: *mut Config,
+        tolerance: f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_get_successive_orders_anderson_depth(
+        config: *mut Config,
+        depth: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_set_successive_orders_anderson_depth(
+        config: *mut Config,
+        depth: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_get_successive_orders_damping(
+        config: *mut Config,
+        damping: *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_set_successive_orders_damping(
+        config: *mut Config,
+        damping: f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn sk_config_get_occultation_source(
         config: *mut Config,
         occultation_source: *mut ::std::os::raw::c_int,
