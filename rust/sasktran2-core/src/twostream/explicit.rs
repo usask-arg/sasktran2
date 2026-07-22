@@ -120,6 +120,12 @@ impl Wide {
         if (0..LANES).all(|lane| ((b.0[lane] - a.0[lane]) * thickness.0[lane]).abs() > 1.0e-5) {
             return (exp_a - exp_b) / (b - a);
         }
+        if (0..LANES).all(|lane| ((b.0[lane] - a.0[lane]) * thickness.0[lane]).abs() <= 1.0e-4) {
+            return ultra_thin_exp_difference_ratio(exp_a, a, b, thickness).0;
+        }
+        if (0..LANES).all(|lane| ((b.0[lane] - a.0[lane]) * thickness.0[lane]).abs() <= 1.0e-3) {
+            return near_exp_difference_ratio(exp_a, a, b, thickness).0;
+        }
         Self(std::array::from_fn(|lane| {
             exp_difference_ratio_scalar(
                 exp_a.0[lane],
@@ -150,6 +156,15 @@ impl Wide {
                 adjoint * (thickness * exp_b * delta - numerator) * inv_delta_squared,
                 adjoint * (-a * exp_a + b * exp_b) * inv_delta,
             );
+        }
+        if (0..LANES).all(|lane| ((b.0[lane] - a.0[lane]) * thickness.0[lane]).abs() <= 1.0e-4) {
+            let (_, d_a, d_b, d_thickness) =
+                ultra_thin_exp_difference_ratio(exp_a, a, b, thickness);
+            return (adjoint * d_a, adjoint * d_b, adjoint * d_thickness);
+        }
+        if (0..LANES).all(|lane| ((b.0[lane] - a.0[lane]) * thickness.0[lane]).abs() <= 1.0e-3) {
+            let (_, d_a, d_b, d_thickness) = near_exp_difference_ratio(exp_a, a, b, thickness);
+            return (adjoint * d_a, adjoint * d_b, adjoint * d_thickness);
         }
         let derivatives: [(f64, f64, f64); LANES] = std::array::from_fn(|lane| {
             let (_, d_a, d_b, d_thickness) = exp_difference_ratio_scalar(
@@ -188,6 +203,18 @@ impl Wide {
             let g_a = (1.0 - exp_a) / a;
             let g_b = (1.0 - exp_b) / b;
             return (g_a - g_b) / (b - a);
+        }
+        if (0..LANES).all(|lane| {
+            (a.0[lane] * thickness.0[lane]).abs() <= 1.0e-4
+                && (b.0[lane] * thickness.0[lane]).abs() <= 1.0e-4
+        }) {
+            return ultra_thin_integrated_exp_difference_ratio(a, b, thickness).0;
+        }
+        if (0..LANES).all(|lane| {
+            (a.0[lane] * thickness.0[lane]).abs() <= 1.0e-2
+                && (b.0[lane] * thickness.0[lane]).abs() <= 1.0e-2
+        }) {
+            return near_integrated_exp_difference_ratio(a, b, thickness).0;
         }
         Self(std::array::from_fn(|lane| {
             integrated_exp_difference_ratio_scalar(
@@ -229,6 +256,21 @@ impl Wide {
                 adjoint * (exp_a - exp_b) * inv_delta,
             );
         }
+        if (0..LANES).all(|lane| {
+            (a.0[lane] * thickness.0[lane]).abs() <= 1.0e-4
+                && (b.0[lane] * thickness.0[lane]).abs() <= 1.0e-4
+        }) {
+            let (_, d_a, d_b, d_thickness) =
+                ultra_thin_integrated_exp_difference_ratio(a, b, thickness);
+            return (adjoint * d_a, adjoint * d_b, adjoint * d_thickness);
+        }
+        if (0..LANES).all(|lane| {
+            (a.0[lane] * thickness.0[lane]).abs() <= 1.0e-2
+                && (b.0[lane] * thickness.0[lane]).abs() <= 1.0e-2
+        }) {
+            let (_, d_a, d_b, d_thickness) = near_integrated_exp_difference_ratio(a, b, thickness);
+            return (adjoint * d_a, adjoint * d_b, adjoint * d_thickness);
+        }
         let derivatives: [(f64, f64, f64); LANES] = std::array::from_fn(|lane| {
             let (_, d_a, d_b, d_thickness) = integrated_exp_difference_ratio_scalar(
                 exp_a.0[lane],
@@ -249,6 +291,126 @@ impl Wide {
             Self(std::array::from_fn(|lane| derivatives[lane].2)),
         )
     }
+}
+
+#[inline]
+/// Short `phi_1` series for tiles whose scaled rate separation is negligible.
+fn ultra_thin_exp_difference_ratio(
+    exp_a: Wide,
+    a: Wide,
+    b: Wide,
+    thickness: Wide,
+) -> (Wide, Wide, Wide, Wide) {
+    let x = (b - a) * thickness;
+    let x2 = x * x;
+    let phi = 1.0 - 0.5 * x + x2 / 6.0 - x2 * x / 24.0;
+    let phi_prime = -0.5 + x / 3.0 - x2 / 8.0;
+    let value = thickness * exp_a * phi;
+    let thickness_squared = thickness * thickness;
+    let d_a = -thickness_squared * exp_a * (phi + phi_prime);
+    let d_b = thickness_squared * exp_a * phi_prime;
+    let d_thickness = exp_a * ((1.0 - a * thickness) * phi + x * phi_prime);
+    (value, d_a, d_b, d_thickness)
+}
+
+#[inline]
+/// Higher-order `phi_1` series for close rates at finite optical depth.
+fn near_exp_difference_ratio(
+    exp_a: Wide,
+    a: Wide,
+    b: Wide,
+    thickness: Wide,
+) -> (Wide, Wide, Wide, Wide) {
+    let x = (b - a) * thickness;
+    let phi = 1.0
+        + x * (-0.5
+            + x * (1.0 / 6.0
+                + x * (-1.0 / 24.0
+                    + x * (1.0 / 120.0 + x * (-1.0 / 720.0 + x * (1.0 / 5040.0 - x / 40320.0))))));
+    let phi_prime = -0.5
+        + x * (1.0 / 3.0
+            + x * (-1.0 / 8.0
+                + x * (1.0 / 30.0 + x * (-1.0 / 144.0 + x * (1.0 / 840.0 - x / 5760.0)))));
+    let value = thickness * exp_a * phi;
+    let thickness_squared = thickness * thickness;
+    let d_a = -thickness_squared * exp_a * (phi + phi_prime);
+    let d_b = thickness_squared * exp_a * phi_prime;
+    let d_thickness = exp_a * ((1.0 - a * thickness) * phi + x * phi_prime);
+    (value, d_a, d_b, d_thickness)
+}
+
+#[inline]
+/// Bivariate thin-layer series for the integrated exponential divided difference.
+fn ultra_thin_integrated_exp_difference_ratio(
+    a: Wide,
+    b: Wide,
+    thickness: Wide,
+) -> (Wide, Wide, Wide, Wide) {
+    let x = a * thickness;
+    let y = b * thickness;
+    let x2 = x * x;
+    let y2 = y * y;
+    let xy = x * y;
+    let sum1 = x + y;
+    let sum2 = x2 + xy + y2;
+    let sum3 = x2 * x + x2 * y + x * y2 + y2 * y;
+    let psi = 0.5 - sum1 / 6.0 + sum2 / 24.0 - sum3 / 120.0;
+    let d_psi_x = -1.0 / 6.0 + (2.0 * x + y) / 24.0 - (3.0 * x2 + 2.0 * xy + y2) / 120.0;
+    let d_psi_y = -1.0 / 6.0 + (x + 2.0 * y) / 24.0 - (x2 + 2.0 * xy + 3.0 * y2) / 120.0;
+    let thickness_squared = thickness * thickness;
+    let thickness_cubed = thickness_squared * thickness;
+    let value = thickness_squared * psi;
+    let d_a = thickness_cubed * d_psi_x;
+    let d_b = thickness_cubed * d_psi_y;
+    let d_thickness = thickness * (2.0 * psi + x * d_psi_x + y * d_psi_y);
+    (value, d_a, d_b, d_thickness)
+}
+
+#[inline]
+/// Higher-order bivariate series used before falling back to scalar moments.
+fn near_integrated_exp_difference_ratio(
+    a: Wide,
+    b: Wide,
+    thickness: Wide,
+) -> (Wide, Wide, Wide, Wide) {
+    let x = a * thickness;
+    let y = b * thickness;
+    let x2 = x * x;
+    let y2 = y * y;
+    let x3 = x2 * x;
+    let y3 = y2 * y;
+    let x4 = x3 * x;
+    let y4 = y3 * y;
+    let xy = x * y;
+    let x2y = x2 * y;
+    let xy2 = x * y2;
+    let x3y = x3 * y;
+    let x2y2 = x2 * y2;
+    let xy3 = x * y3;
+    let x4y = x4 * y;
+    let x3y2 = x3 * y2;
+    let x2y3 = x2 * y3;
+    let xy4 = x * y4;
+
+    let sum1 = x + y;
+    let sum2 = x2 + xy + y2;
+    let sum3 = x3 + x2y + xy2 + y3;
+    let sum4 = x4 + x3y + x2y2 + xy3 + y4;
+    let sum5 = x4 * x + x4y + x3y2 + x2y3 + xy4 + y4 * y;
+    let psi = 0.5 - sum1 / 6.0 + sum2 / 24.0 - sum3 / 120.0 + sum4 / 720.0 - sum5 / 5040.0;
+    let d_psi_x = -1.0 / 6.0 + (2.0 * x + y) / 24.0 - (3.0 * x2 + 2.0 * xy + y2) / 120.0
+        + (4.0 * x3 + 3.0 * x2y + 2.0 * xy2 + y3) / 720.0
+        - (5.0 * x4 + 4.0 * x3y + 3.0 * x2y2 + 2.0 * xy3 + y4) / 5040.0;
+    let d_psi_y = -1.0 / 6.0 + (x + 2.0 * y) / 24.0 - (x2 + 2.0 * xy + 3.0 * y2) / 120.0
+        + (x3 + 2.0 * x2y + 3.0 * xy2 + 4.0 * y3) / 720.0
+        - (x4 + 2.0 * x3y + 3.0 * x2y2 + 4.0 * xy3 + 5.0 * y4) / 5040.0;
+    let thickness_squared = thickness * thickness;
+    let thickness_cubed = thickness_squared * thickness;
+    let value = thickness_squared * psi;
+    let d_a = thickness_cubed * d_psi_x;
+    let d_b = thickness_cubed * d_psi_y;
+    let d_thickness = thickness * (2.0 * psi + x * d_psi_x + y * d_psi_y);
+    (value, d_a, d_b, d_thickness)
 }
 
 /// `(exp(-a t) - exp(-b t)) / (b - a)` and its partial derivatives.

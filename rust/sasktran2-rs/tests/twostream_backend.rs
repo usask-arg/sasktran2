@@ -514,16 +514,18 @@ fn rust_twostream_engine_resonances_are_finite() -> Result<()> {
     );
     let mut thermal_viewing = ViewingGeometry::new();
     thermal_viewing.add_ground_viewing_solar(0.6, 0.0, 2.0, 0.5);
-    let mut thermal_atmosphere = make_atmosphere(2, 1, true);
+    let mut thermal_atmosphere = make_atmosphere(2, 2, true);
     thermal_atmosphere.storage.total_extinction.fill(1.0);
     thermal_atmosphere.storage.ssa.fill(thermal_ssa);
     thermal_atmosphere.storage.leg_coeff.fill(0.0);
-    thermal_atmosphere.storage.leg_coeff[[0, 0, 0]] = 1.0;
-    thermal_atmosphere.storage.leg_coeff[[0, 1, 0]] = 1.0;
-    thermal_atmosphere.storage.leg_coeff[[1, 0, 0]] = first_legendre;
-    thermal_atmosphere.storage.leg_coeff[[1, 1, 0]] = first_legendre;
-    thermal_atmosphere.storage.emission_source[[0, 0]] = 1.0;
-    thermal_atmosphere.storage.emission_source[[1, 0]] = thermal_eigenvalue.exp();
+    for (wave, sign) in [1.0, -1.0].into_iter().enumerate() {
+        thermal_atmosphere.storage.leg_coeff[[0, 0, wave]] = 1.0;
+        thermal_atmosphere.storage.leg_coeff[[0, 1, wave]] = 1.0;
+        thermal_atmosphere.storage.leg_coeff[[1, 0, wave]] = first_legendre;
+        thermal_atmosphere.storage.leg_coeff[[1, 1, wave]] = first_legendre;
+        thermal_atmosphere.storage.emission_source[[0, wave]] = 1.0;
+        thermal_atmosphere.storage.emission_source[[1, wave]] = (sign * thermal_eigenvalue).exp();
+    }
     thermal_atmosphere.surface.brdf_args.fill(0.2);
     thermal_atmosphere.surface.emission.fill(1.0);
     let mut thermal_config = config(TwoStreamBackend::Rust, true);

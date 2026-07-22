@@ -1041,6 +1041,47 @@ fn transparent_thermal_atmosphere_is_finite_and_transmits_surface() {
 }
 
 #[test]
+fn ultra_thin_simd_adjoint_matches_end_to_end_difference() {
+    let n = 2;
+    let nw = 8;
+    let solver = TwoStreamSolver::new(geometry(n), SourceMode::Solar)
+        .unwrap()
+        .with_execution_policy(ExecutionPolicy::Serial);
+    let mut atmosphere = atmosphere(n, nw, false);
+    atmosphere.extinction.fill(1.0e-6);
+    let views = [View {
+        cosine: 0.63,
+        relative_azimuth: 0.2,
+    }];
+    let (_, jacobians) = solver
+        .solve_atmosphere_with_jacobians(&atmosphere, &views, &mut Workspace::new())
+        .unwrap();
+
+    let level = 1;
+    let wave = 3;
+    let index = level * nw + wave;
+    let original = atmosphere.extinction[index];
+    let h = 1.0e-8;
+    atmosphere.extinction[index] = original + h;
+    let plus = solver
+        .solve_atmosphere(&atmosphere, &views, &mut Workspace::new())
+        .unwrap()
+        .values[wave];
+    atmosphere.extinction[index] = original - h;
+    let minus = solver
+        .solve_atmosphere(&atmosphere, &views, &mut Workspace::new())
+        .unwrap()
+        .values[wave];
+    let numerical = (plus - minus) / (2.0 * h);
+    let analytic = jacobians.extinction[index];
+    let tolerance = 2.0e-6 * analytic.abs().max(numerical.abs()).max(1.0);
+    assert!(
+        (analytic - numerical).abs() < tolerance,
+        "ultra-thin extinction derivative: analytic={analytic:e}, numerical={numerical:e}"
+    );
+}
+
+#[test]
 fn removable_source_resonances_have_finite_values_and_adjoints() {
     let mu: f64 = 0.5;
     let ssa: f64 = 0.2;
@@ -1129,27 +1170,31 @@ fn removable_source_resonances_have_finite_values_and_adjoints() {
     let thermal_solver = TwoStreamSolver::new(geometry, SourceMode::Thermal)
         .unwrap()
         .with_execution_policy(ExecutionPolicy::Serial);
-    let thermal = thermal_solver
-        .solve(&thermal_inputs, &views, &mut Workspace::new())
-        .unwrap();
-    let (thermal_explicit, thermal_gradient) = thermal_solver
-        .solve_with_vjp(&thermal_inputs, &views, &[1.0], &mut Workspace::new())
-        .unwrap();
-    assert!(thermal.values[0].is_finite());
-    assert!(thermal_explicit.values[0].is_finite());
-    assert!((thermal.values[0] - thermal_explicit.values[0]).abs() < 1.0e-14);
-    assert!(thermal_gradient.optical_depth[0].is_finite());
-    assert!(thermal_gradient.thermal_b1.as_ref().unwrap()[0].is_finite());
-    assert_derivative(
-        thermal_gradient.thermal_b1.as_ref().unwrap()[0],
-        numerical_layer_derivative(
-            &thermal_solver,
-            &thermal_inputs,
-            &views,
-            eigenvalue,
-            |input, value| input.thermal_b1.as_mut().unwrap()[0] = value,
-        ),
-    );
+    for thermal_rate in [eigenvalue, -eigenvalue] {
+        let mut inputs = thermal_inputs.clone();
+        inputs.thermal_b1.as_mut().unwrap()[0] = thermal_rate;
+        let thermal = thermal_solver
+            .solve(&inputs, &views, &mut Workspace::new())
+            .unwrap();
+        let (thermal_explicit, thermal_gradient) = thermal_solver
+            .solve_with_vjp(&inputs, &views, &[1.0], &mut Workspace::new())
+            .unwrap();
+        assert!(thermal.values[0].is_finite());
+        assert!(thermal_explicit.values[0].is_finite());
+        assert!((thermal.values[0] - thermal_explicit.values[0]).abs() < 1.0e-14);
+        assert!(thermal_gradient.optical_depth[0].is_finite());
+        assert!(thermal_gradient.thermal_b1.as_ref().unwrap()[0].is_finite());
+        assert_derivative(
+            thermal_gradient.thermal_b1.as_ref().unwrap()[0],
+            numerical_layer_derivative(
+                &thermal_solver,
+                &inputs,
+                &views,
+                thermal_rate,
+                |input, value| input.thermal_b1.as_mut().unwrap()[0] = value,
+            ),
+        );
+    }
 }
 
 #[test]
