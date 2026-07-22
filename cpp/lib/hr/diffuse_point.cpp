@@ -7,11 +7,14 @@ namespace sasktran2::hr {
     IncomingOutgoingSpherePair<NSTOKES>::IncomingOutgoingSpherePair(
         int nlegendre,
         std::unique_ptr<const sasktran2::math::UnitSphere>&& incoming_sphere,
-        std::unique_ptr<const sasktran2::math::UnitSphere>&& outgoing_sphere)
+        std::unique_ptr<const sasktran2::math::UnitSphere>&& outgoing_sphere,
+        bool configure_scattering_geometry)
         : m_incoming_sphere(std::move(incoming_sphere)),
           m_outgoing_sphere(std::move(outgoing_sphere)),
           m_legendre_scat_mats(nlegendre), m_is_configured(false) {
-        configure_geometry();
+        if (configure_scattering_geometry) {
+            configure_geometry();
+        }
     }
 
     template <>

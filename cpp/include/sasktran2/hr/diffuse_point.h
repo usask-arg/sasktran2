@@ -29,7 +29,8 @@ namespace sasktran2::hr {
             std::unique_ptr<const sasktran2::math::UnitSphere>&&
                 incoming_sphere,
             std::unique_ptr<const sasktran2::math::UnitSphere>&&
-                outgoing_sphere);
+                outgoing_sphere,
+            bool configure_scattering_geometry = true);
 
         void calculate_scattering_matrix(
             const sasktran2::atmosphere::AtmosphereGridStorageFull<NSTOKES>&

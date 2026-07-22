@@ -7,14 +7,18 @@
 //! implementations therefore do not depend on altitude, solar-zenith angle,
 //! or structured-cell conventions.
 
+mod coefficient;
 #[cfg(not(test))]
 mod cxx;
 mod geometry;
 mod operator;
 mod solver;
 
+pub use coefficient::{ScalarCoefficientBasis, ScalarCoefficientScattering};
 pub use geometry::{CompressedStencils, SourceNode};
-pub use operator::{BlockDiagonalMatrix, CsrMatrix, FixedPointProblem, OperatorError};
+pub use operator::{
+    BlockDiagonalMatrix, CsrMatrix, FixedPointProblem, OperatorError, ScatteringOperator,
+};
 pub use solver::{
     ConvergenceReason, SolverConfig, SolverDiagnostics, SolverError, SuccessiveOrdersSolver,
 };

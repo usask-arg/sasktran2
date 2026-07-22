@@ -23,6 +23,13 @@ namespace {
     ::rust::Slice<const double> as_rust_slice(const Eigen::VectorXd& values) {
         return {values.data(), static_cast<std::size_t>(values.size())};
     }
+
+    ::rust::Slice<const std::int32_t>
+    as_rust_slice(const Eigen::VectorXi& values) {
+        static_assert(sizeof(int) == sizeof(std::int32_t));
+        return {reinterpret_cast<const std::int32_t*>(values.data()),
+                static_cast<std::size_t>(values.size())};
+    }
 } // namespace
 #endif
 
@@ -33,7 +40,9 @@ namespace sasktran2::hr {
         const sasktran2::raytracing::RayTracerBase& ray_tracer,
         const sasktran2::Geometry1D& geometry, bool use_rust_solver)
         : m_raytracer(ray_tracer), m_geometry(geometry), m_integrator(false),
-          m_use_rust_solver(use_rust_solver) {}
+          m_use_rust_solver(use_rust_solver) {
+        m_integrator.set_on_demand_optical_depth(use_rust_solver);
+    }
 
     template <int NSTOKES>
     sasktran2::grids::Grid
@@ -99,7 +108,8 @@ namespace sasktran2::hr {
             std::move(std::make_unique<sasktran2::math::LebedevSphere>(
                 m_config->num_hr_incoming())),
             std::move(std::make_unique<sasktran2::math::LebedevSphere>(
-                m_config->num_hr_outgoing())));
+                m_config->num_hr_outgoing())),
+            !(m_use_rust_solver && NSTOKES == 1));
 
         // TODO: Same number of streams for the ground term? probably... to be
         // figured out when BRDF is implemented
@@ -227,7 +237,11 @@ namespace sasktran2::hr {
 
             storage.point_scattering_matrices.resize(m_diffuse_points.size());
             for (int i = 0; i < m_diffuse_points.size(); ++i) {
-                if (m_diffuse_point_full_calculation[i]) {
+                const bool coefficient_space_atmosphere =
+                    m_use_rust_solver && NSTOKES == 1 &&
+                    i < m_location_interpolator->num_interior_points();
+                if (m_diffuse_point_full_calculation[i] &&
+                    !coefficient_space_atmosphere) {
                     storage.point_scattering_matrices[i].resize(
                         m_diffuse_points[i]->num_outgoing() * NSTOKES,
                         m_diffuse_points[i]->num_incoming() * NSTOKES);
@@ -308,15 +322,13 @@ namespace sasktran2::hr {
             m_do_source->initialize_geometry(internal_viewing);
         }
 
-        int temp;
         generate_source_interpolation_weights(m_internal_viewing.traced_rays,
-                                              m_diffuse_source_weights,
-                                              m_total_num_diffuse_weights);
+                                              m_diffuse_source_weights);
 
         construct_accumulation_sparsity();
 
         generate_source_interpolation_weights(internal_viewing.traced_rays,
-                                              m_los_source_weights, temp);
+                                              m_los_source_weights);
 
         if (m_config->initialize_hr_with_do()) {
             // Have to create a vector of all locations and directions
@@ -363,15 +375,11 @@ namespace sasktran2::hr {
         ZoneScopedN("Construct Accumulation Sparsity");
         // These are the length of the rows
         m_outer_starts.resize(NSTOKES * m_diffuse_source_weights.size() + 1);
-        m_inner_nnz.resize(NSTOKES * m_diffuse_source_weights.size());
-
         std::vector<Eigen::VectorXi> inner_indicies;
 
         inner_indicies.resize(NSTOKES * m_diffuse_source_weights.size());
 
-        std::vector<
-            std::tuple<int, std::tuple<int, double, std::array<int, NSTOKES>>*>>
-            sorting_helper;
+        std::vector<std::pair<int, std::array<int, NSTOKES>*>> sorting_helper;
 
         int total_nnz = 0;
         // Construct the matrix NSTOKES rows at a time
@@ -381,40 +389,35 @@ namespace sasktran2::hr {
 
             // Start by setting the index storage to be equal to the weight
             // index
-            for (int i = 0; i < weights.interior_weights.size(); ++i) {
-                auto& weight = weights.interior_weights[i].second;
-
-                for (int j = 0; j < weight.size(); ++j) {
-                    sorting_helper.push_back(
-                        std::make_tuple(std::get<0>(weight[j]), &weight[j]));
+            for (const auto& layer : weights.interior_weights) {
+                for (std::size_t index = layer.source_offset;
+                     index < layer.source_offset + layer.source_count;
+                     ++index) {
+                    sorting_helper.emplace_back(
+                        weights.source_indices[index],
+                        &weights.source_accumulation_indices[index]);
                 }
             }
             // And for the ground weights
-            for (int i = 0; i < weights.ground_weights.size(); ++i) {
-                auto& weight = weights.ground_weights[i];
-
-                sorting_helper.push_back(
-                    std::make_tuple(std::get<0>(weight), &weight));
+            for (std::size_t index = 0;
+                 index < weights.ground_source_indices.size(); ++index) {
+                sorting_helper.emplace_back(
+                    weights.ground_source_indices[index],
+                    &weights.ground_accumulation_indices[index]);
             }
 
             // Now we have to sort on the column indices
-            std::stable_sort(
-                std::begin(sorting_helper), std::end(sorting_helper),
-                [](const std::tuple<
-                       int, std::tuple<int, double, std::array<int, NSTOKES>>*>&
-                       left,
-                   const std::tuple<
-                       int, std::tuple<int, double, std::array<int, NSTOKES>>*>&
-                       right) {
-                    return std::get<0>(left) < std::get<0>(right);
-                });
+            std::stable_sort(std::begin(sorting_helper),
+                             std::end(sorting_helper),
+                             [](const auto& left, const auto& right) {
+                                 return left.first < right.first;
+                             });
 
             if (sorting_helper.size() == 0) {
                 // 0 Elements in this row, not sure what this means? Probably
                 // never actually happens
-                for (int s = 0; s < NSTOKES; ++s) {
-                    m_inner_nnz(row * NSTOKES + s) = 0;
-                }
+                std::vector<int>().swap(weights.source_indices);
+                std::vector<int>().swap(weights.ground_source_indices);
                 continue;
             }
 
@@ -422,8 +425,7 @@ namespace sasktran2::hr {
             // the number of unique elements (nnz)
             int nnz = 1;
             for (int i = 1; i < sorting_helper.size(); ++i) {
-                if (std::get<0>(sorting_helper[i]) !=
-                    std::get<0>(sorting_helper[i - 1])) {
+                if (sorting_helper[i].first != sorting_helper[i - 1].first) {
                     ++nnz;
                 }
             }
@@ -431,29 +433,29 @@ namespace sasktran2::hr {
             // Go through our NSTOKES rows
             for (int s = 0; s < NSTOKES; ++s) {
                 auto& inner = inner_indicies[row * NSTOKES + s];
-                // First assign nnz
-                m_inner_nnz(row * NSTOKES + s) = nnz;
-
                 inner.resize(nnz);
 
                 int inner_index = 0;
                 // Now go through the sorting helper and assign our indicies
                 for (int i = 0; i < sorting_helper.size(); ++i) {
                     if (i > 0) {
-                        if (std::get<0>(sorting_helper[i]) !=
-                            std::get<0>(sorting_helper[i - 1])) {
+                        if (sorting_helper[i].first !=
+                            sorting_helper[i - 1].first) {
                             ++inner_index;
                         }
                     }
-                    inner[inner_index] =
-                        std::get<0>(*std::get<1>(sorting_helper[i])) * NSTOKES +
-                        s;
+                    inner[inner_index] = sorting_helper[i].first * NSTOKES + s;
 
-                    std::get<2>(*std::get<1>(sorting_helper[i]))[s] =
-                        inner_index + total_nnz;
+                    (*sorting_helper[i].second)[s] = inner_index + total_nnz;
                 }
                 total_nnz += nnz;
             }
+
+            // The output column is now represented by m_inner_indicies. Only
+            // each interpolation weight and its CSR value index are needed at
+            // wavelength time.
+            std::vector<int>().swap(weights.source_indices);
+            std::vector<int>().swap(weights.ground_source_indices);
         }
 
         // Now we have to copy our row inner indicies to the full matrix
@@ -473,32 +475,15 @@ namespace sasktran2::hr {
                 m_outer_starts(i) + inner_indicies[i].size();
         }
 
-        // And we can now resize our value storage
+        // Each traced ray writes a disjoint CSR row range, so all source
+        // threads can populate one shared values vector without atomics or a
+        // reduction buffer.
         for (auto& storage : m_thread_storage) {
-            storage.accumulation_value_storage.resize(
-                m_config->num_source_threads());
-
-            for (auto& vec : storage.accumulation_value_storage) {
-                vec.resize(total_nnz);
-            }
             storage.accumulation_summed_values.resize(total_nnz);
         }
 
 #ifdef SKTRAN_RUST_SUPPORT
         if (m_use_rust_solver) {
-            std::vector<std::size_t> transport_row_offsets(
-                m_outer_starts.size());
-            std::vector<std::size_t> transport_column_indices(
-                m_inner_indicies.size());
-            for (int index = 0; index < m_outer_starts.size(); ++index) {
-                transport_row_offsets[index] =
-                    static_cast<std::size_t>(m_outer_starts[index]);
-            }
-            for (int index = 0; index < m_inner_indicies.size(); ++index) {
-                transport_column_indices[index] =
-                    static_cast<std::size_t>(m_inner_indicies[index]);
-            }
-
             std::vector<std::size_t> scattering_output_offsets = {0};
             std::vector<std::size_t> scattering_input_offsets = {0};
             std::vector<std::size_t> scattering_value_offsets = {0};
@@ -519,36 +504,114 @@ namespace sasktran2::hr {
                     scattering_value_offsets.back() + output_size * input_size);
             }
 
+            const std::size_t coefficient_blocks = static_cast<std::size_t>(
+                m_location_interpolator->num_interior_points());
+            std::vector<double> incoming_directions;
+            std::vector<double> incoming_weights;
+            std::vector<double> outgoing_directions;
+            if constexpr (NSTOKES == 1) {
+                const auto& spheres = m_diffuse_points.front()->sphere_pair();
+                incoming_directions.reserve(
+                    spheres.incoming_sphere().num_points() * 3);
+                incoming_weights.reserve(
+                    spheres.incoming_sphere().num_points());
+                for (int index = 0;
+                     index < spheres.incoming_sphere().num_points(); ++index) {
+                    const auto direction =
+                        spheres.incoming_sphere().get_quad_position(index);
+                    incoming_directions.insert(incoming_directions.end(),
+                                               direction.data(),
+                                               direction.data() + 3);
+                    incoming_weights.push_back(
+                        spheres.incoming_sphere().quadrature_weight(index));
+                }
+                outgoing_directions.reserve(
+                    spheres.outgoing_sphere().num_points() * 3);
+                for (int index = 0;
+                     index < spheres.outgoing_sphere().num_points(); ++index) {
+                    const auto direction =
+                        spheres.outgoing_sphere().get_quad_position(index);
+                    outgoing_directions.insert(outgoing_directions.end(),
+                                               direction.data(),
+                                               direction.data() + 3);
+                }
+            }
+
             for (auto& storage : m_thread_storage) {
-                storage.rust_scattering_values.resize(
-                    scattering_value_offsets.back());
+                if constexpr (NSTOKES == 1) {
+                    storage.rust_scattering_coefficients.resize(
+                        coefficient_blocks * m_config->num_do_streams());
+                    storage.rust_boundary_scattering_values.resize(
+                        scattering_value_offsets.back() -
+                        scattering_value_offsets[coefficient_blocks]);
+                } else {
+                    storage.rust_scattering_values.resize(
+                        scattering_value_offsets.back());
+                }
             }
 
             m_rust_solvers.clear();
             m_rust_solvers.reserve(m_thread_storage.size());
             for (std::size_t thread = 0; thread < m_thread_storage.size();
                  ++thread) {
-                m_rust_solvers.push_back(
-                    sasktran2::rust::successive_orders::
-                        new_successive_orders_solver(
-                            static_cast<std::size_t>(
-                                m_thread_storage[thread]
-                                    .m_incoming_radiances.value.size()),
-                            static_cast<std::size_t>(
-                                m_thread_storage[thread]
-                                    .m_outgoing_sources.value.size()),
-                            as_rust_slice(transport_row_offsets),
-                            as_rust_slice(transport_column_indices),
-                            as_rust_slice(scattering_output_offsets),
-                            as_rust_slice(scattering_input_offsets),
-                            as_rust_slice(scattering_value_offsets),
-                            static_cast<std::size_t>(
-                                m_config->successive_orders_max_iterations()),
-                            m_config->successive_orders_relative_tolerance(),
-                            m_config->successive_orders_absolute_tolerance(),
-                            static_cast<std::size_t>(
-                                m_config->successive_orders_anderson_depth()),
-                            m_config->successive_orders_damping()));
+                if constexpr (NSTOKES == 1) {
+                    m_rust_solvers.push_back(
+                        sasktran2::rust::successive_orders::
+                            new_scalar_coefficient_successive_orders_solver(
+                                static_cast<std::size_t>(
+                                    m_thread_storage[thread]
+                                        .m_incoming_radiances.value.size()),
+                                static_cast<std::size_t>(
+                                    m_thread_storage[thread]
+                                        .m_outgoing_sources.value.size()),
+                                as_rust_slice(m_outer_starts),
+                                as_rust_slice(m_inner_indicies),
+                                as_rust_slice(scattering_output_offsets),
+                                as_rust_slice(scattering_input_offsets),
+                                coefficient_blocks,
+                                static_cast<std::size_t>(
+                                    m_config->num_do_streams()),
+                                as_rust_slice(incoming_directions),
+                                as_rust_slice(incoming_weights),
+                                as_rust_slice(outgoing_directions),
+                                static_cast<std::size_t>(
+                                    m_config
+                                        ->successive_orders_max_iterations()),
+                                m_config
+                                    ->successive_orders_relative_tolerance(),
+                                m_config
+                                    ->successive_orders_absolute_tolerance(),
+                                static_cast<std::size_t>(
+                                    m_config
+                                        ->successive_orders_anderson_depth()),
+                                m_config->successive_orders_damping()));
+                } else {
+                    m_rust_solvers.push_back(
+                        sasktran2::rust::successive_orders::
+                            new_successive_orders_solver(
+                                static_cast<std::size_t>(
+                                    m_thread_storage[thread]
+                                        .m_incoming_radiances.value.size()),
+                                static_cast<std::size_t>(
+                                    m_thread_storage[thread]
+                                        .m_outgoing_sources.value.size()),
+                                as_rust_slice(m_outer_starts),
+                                as_rust_slice(m_inner_indicies),
+                                as_rust_slice(scattering_output_offsets),
+                                as_rust_slice(scattering_input_offsets),
+                                as_rust_slice(scattering_value_offsets),
+                                static_cast<std::size_t>(
+                                    m_config
+                                        ->successive_orders_max_iterations()),
+                                m_config
+                                    ->successive_orders_relative_tolerance(),
+                                m_config
+                                    ->successive_orders_absolute_tolerance(),
+                                static_cast<std::size_t>(
+                                    m_config
+                                        ->successive_orders_anderson_depth()),
+                                m_config->successive_orders_damping()));
+                }
             }
         }
 #endif
@@ -615,10 +678,8 @@ namespace sasktran2::hr {
     template <int NSTOKES>
     void DiffuseTable<NSTOKES>::generate_source_interpolation_weights(
         const std::vector<sasktran2::raytracing::TracedRay>& rays,
-        SInterpolator& interpolator, int& total_num_weights) const {
+        SInterpolator& interpolator) const {
         ZoneScopedN("Generate Source Interpolation Weights");
-        total_num_weights = 0;
-
         interpolator.resize(rays.size());
 
         int nthreads = m_config->num_threads();
@@ -627,9 +688,12 @@ namespace sasktran2::hr {
             thread_temp_location_storage;
         std::vector<std::vector<std::pair<int, double>>>
             thread_temp_direction_storage;
+        std::vector<std::vector<std::pair<int, double>>>
+            thread_temp_atmosphere_storage;
 
         thread_temp_location_storage.resize(nthreads);
         thread_temp_direction_storage.resize(nthreads);
+        thread_temp_atmosphere_storage.resize(nthreads);
 
         int num_location, num_direction;
 
@@ -650,24 +714,45 @@ namespace sasktran2::hr {
                 thread_temp_location_storage[threadidx];
             auto& temp_direction_storage =
                 thread_temp_direction_storage[threadidx];
+            auto& temp_atmosphere_storage =
+                thread_temp_atmosphere_storage[threadidx];
 
             auto& ray_interpolator = interpolator[rayidx];
             const auto& ray = rays[rayidx];
 
+            ray_interpolator = {};
             ray_interpolator.interior_weights.resize(ray.layers.size());
+            ray_interpolator.atmosphere_indices.reserve(ray.layers.size() * 2);
+            ray_interpolator.atmosphere_weights.reserve(ray.layers.size() * 2);
+            ray_interpolator.source_indices.reserve(ray.layers.size() * 12);
+            ray_interpolator.source_weights.reserve(ray.layers.size() * 12);
+            ray_interpolator.source_accumulation_indices.reserve(
+                ray.layers.size() * 12);
 
             for (int layeridx = 0; layeridx < ray.layers.size(); ++layeridx) {
                 const auto& layer = ray.layers[layeridx];
                 auto& layer_interpolator =
-                    ray_interpolator.interior_weights[layeridx].second;
-                auto& atmosphere_interpolator =
-                    ray_interpolator.interior_weights[layeridx].first;
+                    ray_interpolator.interior_weights[layeridx];
 
                 temp_location.position =
                     (layer.entrance.position + layer.exit.position) / 2.0;
 
                 m_geometry.assign_interpolation_weights(
-                    temp_location, atmosphere_interpolator);
+                    temp_location, temp_atmosphere_storage);
+                layer_interpolator.atmosphere_offset =
+                    static_cast<std::uint32_t>(
+                        ray_interpolator.atmosphere_indices.size());
+                layer_interpolator.atmosphere_count =
+                    static_cast<std::uint32_t>(temp_atmosphere_storage.size());
+                for (const auto& index_weight : temp_atmosphere_storage) {
+                    ray_interpolator.atmosphere_indices.push_back(
+                        index_weight.first);
+                    ray_interpolator.atmosphere_weights.push_back(
+                        index_weight.second);
+                }
+
+                layer_interpolator.source_offset = static_cast<std::uint32_t>(
+                    ray_interpolator.source_indices.size());
 
                 m_location_interpolator->interior_interpolation_weights(
                     m_geometry.coordinates(), temp_location,
@@ -706,16 +791,20 @@ namespace sasktran2::hr {
                         }
 #endif
 
-                        layer_interpolator.emplace_back(std::make_tuple(
+                        ray_interpolator.source_indices.push_back(
                             m_diffuse_outgoing_index_map
-                                    [temp_location_storage[locidx].first] +
-                                temp_direction_storage[diridx].first,
+                                [temp_location_storage[locidx].first] +
+                            temp_direction_storage[diridx].first);
+                        ray_interpolator.source_weights.push_back(
                             temp_location_storage[locidx].second *
-                                temp_direction_storage[diridx].second,
-                            std::array<int, NSTOKES>{}));
+                            temp_direction_storage[diridx].second);
+                        ray_interpolator.source_accumulation_indices.push_back(
+                            std::array<int, NSTOKES>{});
                     }
                 }
-                total_num_weights += num_location * num_direction;
+                layer_interpolator.source_count = static_cast<std::uint32_t>(
+                    ray_interpolator.source_indices.size() -
+                    layer_interpolator.source_offset);
             }
 
             ray_interpolator.ground_is_hit = ray.ground_is_hit;
@@ -749,17 +838,17 @@ namespace sasktran2::hr {
                                      num_direction);
 
                     for (int diridx = 0; diridx < num_direction; ++diridx) {
-                        ray_interpolator.ground_weights.emplace_back(
-                            std::make_tuple(
-                                m_diffuse_outgoing_index_map
-                                        [temp_location_storage[locidx].first] +
-                                    temp_direction_storage[diridx].first,
-                                temp_location_storage[locidx].second *
-                                    temp_direction_storage[diridx].second,
-                                std::array<int, NSTOKES>{}));
+                        ray_interpolator.ground_source_indices.push_back(
+                            m_diffuse_outgoing_index_map
+                                [temp_location_storage[locidx].first] +
+                            temp_direction_storage[diridx].first);
+                        ray_interpolator.ground_source_weights.push_back(
+                            temp_location_storage[locidx].second *
+                            temp_direction_storage[diridx].second);
+                        ray_interpolator.ground_accumulation_indices.push_back(
+                            std::array<int, NSTOKES>{});
                     }
                 }
-                total_num_weights += num_location * num_direction;
             }
         }
     }
@@ -779,6 +868,26 @@ namespace sasktran2::hr {
             }
 
             const auto& point = m_diffuse_points[i];
+
+            if constexpr (NSTOKES == 1) {
+                if (m_use_rust_solver) {
+                    for (int degree = 0; degree < m_config->num_do_streams();
+                         ++degree) {
+                        double coefficient = 0.0;
+                        for (const auto& index_weight :
+                             m_diffuse_point_interpolation_weights[i]) {
+                            coefficient +=
+                                index_weight.second *
+                                m_atmosphere->storage().leg_coeff(
+                                    degree, index_weight.first, wavelidx);
+                        }
+                        storage.rust_scattering_coefficients
+                            [i * m_config->num_do_streams() + degree] =
+                            coefficient;
+                    }
+                    continue;
+                }
+            }
 
             point->sphere_pair().calculate_scattering_matrix(
                 m_atmosphere->storage(), wavelidx,
@@ -927,24 +1036,54 @@ namespace sasktran2::hr {
         auto& storage = m_thread_storage[threadidx];
 
         std::size_t value_offset = 0;
-        for (std::size_t point_index = 0; point_index < m_diffuse_points.size();
-             ++point_index) {
-            const auto& matrix = storage.point_scattering_matrices[point_index];
-            for (int row = 0; row < matrix.rows(); ++row) {
-                for (int column = 0; column < matrix.cols(); ++column) {
-                    storage.rust_scattering_values[value_offset++] =
-                        matrix(row, column);
+        if constexpr (NSTOKES == 1) {
+            for (std::size_t point_index = static_cast<std::size_t>(
+                     m_location_interpolator->num_interior_points());
+                 point_index < m_diffuse_points.size(); ++point_index) {
+                const auto& matrix =
+                    storage.point_scattering_matrices[point_index];
+                for (int row = 0; row < matrix.rows(); ++row) {
+                    for (int column = 0; column < matrix.cols(); ++column) {
+                        storage
+                            .rust_boundary_scattering_values[value_offset++] =
+                            matrix(row, column);
+                    }
+                }
+            }
+        } else {
+            for (std::size_t point_index = 0;
+                 point_index < m_diffuse_points.size(); ++point_index) {
+                const auto& matrix =
+                    storage.point_scattering_matrices[point_index];
+                for (int row = 0; row < matrix.rows(); ++row) {
+                    for (int column = 0; column < matrix.cols(); ++column) {
+                        storage.rust_scattering_values[value_offset++] =
+                            matrix(row, column);
+                    }
                 }
             }
         }
 
         const std::vector<double> no_initial_guess;
         auto& solver = m_rust_solvers[threadidx];
-        sasktran2::rust::successive_orders::solve(
-            *solver, as_rust_slice(storage.accumulation_summed_values),
-            as_rust_slice(storage.rust_scattering_values),
-            as_rust_slice(storage.m_firstorder_radiances.value),
-            as_rust_slice(no_initial_guess));
+        if constexpr (NSTOKES == 1) {
+            sasktran2::rust::successive_orders::solve_scalar_coefficients(
+                *solver, as_rust_slice(m_outer_starts),
+                as_rust_slice(m_inner_indicies),
+                as_rust_slice(storage.accumulation_summed_values),
+                as_rust_slice(storage.rust_scattering_coefficients),
+                as_rust_slice(storage.rust_boundary_scattering_values),
+                as_rust_slice(storage.m_firstorder_radiances.value),
+                as_rust_slice(no_initial_guess));
+        } else {
+            sasktran2::rust::successive_orders::solve(
+                *solver, as_rust_slice(m_outer_starts),
+                as_rust_slice(m_inner_indicies),
+                as_rust_slice(storage.accumulation_summed_values),
+                as_rust_slice(storage.rust_scattering_values),
+                as_rust_slice(storage.m_firstorder_radiances.value),
+                as_rust_slice(no_initial_guess));
+        }
 
         const auto solution =
             sasktran2::rust::successive_orders::solution(*solver);
@@ -1059,11 +1198,7 @@ namespace sasktran2::hr {
                 temp_result;
             temp_result.resize(nthreads);
 
-            for (int i = 0; i < nthreads; ++i) {
-                m_thread_storage[threadidx]
-                    .accumulation_value_storage[i]
-                    .setZero();
-            }
+            m_thread_storage[threadidx].accumulation_summed_values.setZero();
 
 #pragma omp parallel for num_threads(nthreads)
             for (int rayidx = 0; rayidx < m_internal_viewing.traced_rays.size();
@@ -1086,8 +1221,7 @@ namespace sasktran2::hr {
                     temp_result[ray_threadidx], m_initial_sources, wavelidx,
                     rayidx, threadidx, ray_threadidx + threadidx,
                     m_diffuse_source_weights,
-                    m_thread_storage[threadidx]
-                        .accumulation_value_storage[ray_threadidx]);
+                    m_thread_storage[threadidx].accumulation_summed_values);
 
                 m_thread_storage[threadidx].m_firstorder_radiances.value(
                     Eigen::seq(rayidx * NSTOKES,
@@ -1099,12 +1233,6 @@ namespace sasktran2::hr {
                     spdlog::error("Incoming Ray: {} has NaN", rayidx);
                 }
 #endif
-            }
-
-            m_thread_storage[threadidx].accumulation_summed_values.setZero();
-            for (int i = 0; i < nthreads; ++i) {
-                m_thread_storage[threadidx].accumulation_summed_values +=
-                    m_thread_storage[threadidx].accumulation_value_storage[i];
             }
 
             // Else, start with total first order incoming
@@ -1135,27 +1263,35 @@ namespace sasktran2::hr {
         sasktran2::WavelengthBlockLaneDualView<NSTOKES> source(block_source, 0);
         auto& storage = m_thread_storage[wavel_threadidx];
 
-        auto& interpolator =
-            m_los_source_weights[losidx].interior_weights[layeridx];
+        const auto& ray_interpolator = m_los_source_weights[losidx];
+        const auto& layer_interpolator =
+            ray_interpolator.interior_weights[layeridx];
 
         // Start by calculating ssa at the source point
         double omega = 0;
-        for (int i = 0; i < interpolator.first.size(); ++i) {
-            auto& index_weight = interpolator.first[i];
-            omega += m_atmosphere->storage().ssa(index_weight.first, wavelidx) *
-                     index_weight.second;
+        for (std::size_t i = layer_interpolator.atmosphere_offset;
+             i < layer_interpolator.atmosphere_offset +
+                     layer_interpolator.atmosphere_count;
+             ++i) {
+            omega += m_atmosphere->storage().ssa(
+                         ray_interpolator.atmosphere_indices[i], wavelidx) *
+                     ray_interpolator.atmosphere_weights[i];
         }
 
         double source_factor = (1 - exp(-1 * shell_od.od(0)));
 
-        for (int i = 0; i < interpolator.second.size(); ++i) {
-            auto& index_weight = interpolator.second[i];
+        for (std::size_t i = layer_interpolator.source_offset;
+             i <
+             layer_interpolator.source_offset + layer_interpolator.source_count;
+             ++i) {
+            const int source_index = ray_interpolator.source_indices[i];
+            const double interpolation_weight =
+                ray_interpolator.source_weights[i];
 
             for (int s = 0; s < NSTOKES; ++s) {
-                double source_value =
-                    storage.m_outgoing_sources.value(
-                        (std::get<0>(index_weight) * NSTOKES + s)) *
-                    std::get<1>(index_weight);
+                double source_value = storage.m_outgoing_sources.value(
+                                          source_index * NSTOKES + s) *
+                                      interpolation_weight;
 
                 source.value(s) += omega * source_factor * source_value;
 
@@ -1168,10 +1304,19 @@ namespace sasktran2::hr {
                     }
 
                     // And dJ/dssa
-                    for (auto& ele : interpolator.first) {
-                        source.deriv(s, m_atmosphere->ssa_deriv_start_index() +
-                                            ele.first) +=
-                            ele.second * source_factor * source_value;
+                    for (std::size_t atmosphere_index =
+                             layer_interpolator.atmosphere_offset;
+                         atmosphere_index <
+                         layer_interpolator.atmosphere_offset +
+                             layer_interpolator.atmosphere_count;
+                         ++atmosphere_index) {
+                        source.deriv(
+                            s, m_atmosphere->ssa_deriv_start_index() +
+                                   ray_interpolator
+                                       .atmosphere_indices[atmosphere_index]) +=
+                            ray_interpolator
+                                .atmosphere_weights[atmosphere_index] *
+                            source_factor * source_value;
                     }
 
                     if (this->m_config->wf_precision() ==
@@ -1179,9 +1324,9 @@ namespace sasktran2::hr {
                                 full &&
                         m_config->initialize_hr_with_do()) {
                         source.deriv(s, Eigen::placeholders::all) +=
-                            omega * source_factor * std::get<1>(index_weight) *
+                            omega * source_factor * interpolation_weight *
                             storage.m_outgoing_sources.deriv(
-                                std::get<0>(index_weight) * NSTOKES + s,
+                                source_index * NSTOKES + s,
                                 Eigen::placeholders::all);
                     }
                 }
@@ -1195,17 +1340,19 @@ namespace sasktran2::hr {
         int wavel_threadidx, int threadidx,
         sasktran2::WavelengthBlockDual<NSTOKES>& block_source) const {
         sasktran2::WavelengthBlockLaneDualView<NSTOKES> source(block_source, 0);
-        auto& interpolator = m_los_source_weights[losidx].ground_weights;
+        const auto& interpolator = m_los_source_weights[losidx];
         auto& storage = m_thread_storage[wavel_threadidx];
 
-        for (int i = 0; i < interpolator.size(); ++i) {
-            auto& index_weight = interpolator[i];
+        for (std::size_t i = 0; i < interpolator.ground_source_indices.size();
+             ++i) {
+            const int source_index = interpolator.ground_source_indices[i];
+            const double interpolation_weight =
+                interpolator.ground_source_weights[i];
 
             for (int s = 0; s < NSTOKES; ++s) {
-                double source_value =
-                    storage.m_outgoing_sources.value(
-                        (std::get<0>(index_weight) * NSTOKES + s)) *
-                    std::get<1>(index_weight);
+                double source_value = storage.m_outgoing_sources.value(
+                                          source_index * NSTOKES + s) *
+                                      interpolation_weight;
 
                 source.value(s) += source_value;
 
@@ -1213,10 +1360,9 @@ namespace sasktran2::hr {
                         sasktran2::Config::WeightingFunctionPrecision::full &&
                     m_config->initialize_hr_with_do()) {
                     source.deriv(s, Eigen::placeholders::all) +=
-                        std::get<1>(index_weight) *
-                        storage.m_outgoing_sources.deriv(
-                            std::get<0>(index_weight) * NSTOKES + s,
-                            Eigen::placeholders::all);
+                        interpolation_weight * storage.m_outgoing_sources.deriv(
+                                                   source_index * NSTOKES + s,
+                                                   Eigen::placeholders::all);
                 }
             }
         }

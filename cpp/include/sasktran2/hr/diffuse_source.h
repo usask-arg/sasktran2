@@ -33,12 +33,19 @@ namespace sasktran2::hr {
             point_scattering_matrices; /** For each point, outgoing source =
                                           scattering matrix @ incoming */
 
-        std::vector<Eigen::VectorXd> accumulation_value_storage;
+        /** CSR transport values. Each traced ray owns a disjoint row range,
+         *  so source threads can fill this single vector concurrently. */
         Eigen::VectorXd accumulation_summed_values;
 
         std::vector<double>
             rust_scattering_values; /**< Row-major packed scattering blocks
                                        passed to the Rust solver. */
+        std::vector<double>
+            rust_scattering_coefficients; /**< Interpolated atmospheric
+                                             Legendre coefficients. */
+        std::vector<double>
+            rust_boundary_scattering_values; /**< Row-major dense boundary
+                                                scattering blocks. */
     };
 
     /** An implementation of the successive orders of scattering technique.  We
@@ -128,9 +135,6 @@ namespace sasktran2::hr {
             m_diffuse_source_weights; /** Interpolator mapping from incoming
                                          rays to source terms in this table */
 
-        int m_total_num_diffuse_weights; /** Total number of diffuse weights,
-                                            used to help memory allocs */
-
         Eigen::SparseMatrix<double, Eigen::RowMajor>
             m_do_to_diffuse_outgoing_interpolator; /** Mapping from the DO
                                                       source terms to the
@@ -141,8 +145,6 @@ namespace sasktran2::hr {
         // Accumulation matrix sparsity
         Eigen::VectorXi m_inner_indicies;
         Eigen::VectorXi m_outer_starts;
-        Eigen::VectorXi m_inner_nnz;
-
         bool m_use_rust_solver;
 
 #ifdef SKTRAN_RUST_SUPPORT
@@ -168,7 +170,7 @@ namespace sasktran2::hr {
                                  sasktran2::Dual<double>& new_outgoing);
         void generate_source_interpolation_weights(
             const std::vector<sasktran2::raytracing::TracedRay>& rays,
-            SInterpolator& interpolator, int& total_num_weights) const;
+            SInterpolator& interpolator) const;
 
         void construct_accumulation_sparsity();
 

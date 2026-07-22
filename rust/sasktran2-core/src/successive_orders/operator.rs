@@ -1,5 +1,7 @@
 use std::fmt::{Display, Formatter};
 
+use super::ScalarCoefficientScattering;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OperatorError {
     InvalidRowOffsets,
@@ -7,6 +9,7 @@ pub enum OperatorError {
     ColumnOutOfBounds,
     DimensionMismatch,
     NonFiniteValue,
+    UnsupportedOperator,
 }
 
 impl Display for OperatorError {
@@ -19,51 +22,56 @@ impl Display for OperatorError {
             }
             Self::DimensionMismatch => formatter.write_str("operator dimensions do not match"),
             Self::NonFiniteValue => formatter.write_str("operator contains a non-finite value"),
+            Self::UnsupportedOperator => {
+                formatter.write_str("operation is not supported by this operator")
+            }
         }
     }
 }
 
 impl std::error::Error for OperatorError {}
 
-/// Sparse transport operator with immutable structure and replaceable values.
+/// Sparse transport operator metadata.
+///
+/// The row offsets, column indices, and values remain owned by the caller and
+/// are borrowed for each solve. This keeps the C++/Rust integration from
+/// retaining a second, widened copy of the transport operator.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CsrMatrix {
     rows: usize,
     columns: usize,
-    row_offsets: Vec<usize>,
-    column_indices: Vec<usize>,
-    values: Vec<f64>,
+    num_nonzero: usize,
 }
 
 impl CsrMatrix {
     pub fn new(
         rows: usize,
         columns: usize,
-        row_offsets: Vec<usize>,
-        column_indices: Vec<usize>,
-        values: Vec<f64>,
+        row_offsets: &[i32],
+        column_indices: &[i32],
     ) -> Result<Self, OperatorError> {
-        if row_offsets.len() != rows + 1
-            || row_offsets.first().copied() != Some(0)
-            || row_offsets.last().copied() != Some(values.len())
-            || row_offsets.windows(2).any(|window| window[0] > window[1])
-            || column_indices.len() != values.len()
-        {
-            return Err(OperatorError::InvalidRowOffsets);
-        }
-        if column_indices.iter().any(|&column| column >= columns) {
-            return Err(OperatorError::ColumnOutOfBounds);
+        validate_csr_structure(rows, columns, row_offsets, column_indices)?;
+        Ok(Self {
+            rows,
+            columns,
+            num_nonzero: column_indices.len(),
+        })
+    }
+
+    pub fn validate_data(
+        &self,
+        row_offsets: &[i32],
+        column_indices: &[i32],
+        values: &[f64],
+    ) -> Result<(), OperatorError> {
+        validate_csr_structure(self.rows, self.columns, row_offsets, column_indices)?;
+        if column_indices.len() != self.num_nonzero || values.len() != self.num_nonzero {
+            return Err(OperatorError::DimensionMismatch);
         }
         if values.iter().any(|value| !value.is_finite()) {
             return Err(OperatorError::NonFiniteValue);
         }
-        Ok(Self {
-            rows,
-            columns,
-            row_offsets,
-            column_indices,
-            values,
-        })
+        Ok(())
     }
 
     #[inline]
@@ -78,35 +86,55 @@ impl CsrMatrix {
 
     #[inline]
     pub fn num_nonzero(&self) -> usize {
-        self.values.len()
+        self.num_nonzero
     }
 
-    pub fn set_values(&mut self, values: &[f64]) -> Result<(), OperatorError> {
-        if values.len() != self.values.len() {
-            return Err(OperatorError::DimensionMismatch);
-        }
-        if values.iter().any(|value| !value.is_finite()) {
-            return Err(OperatorError::NonFiniteValue);
-        }
-        self.values.copy_from_slice(values);
-        Ok(())
-    }
-
-    pub fn apply(&self, input: &[f64], output: &mut [f64]) -> Result<(), OperatorError> {
+    pub fn apply(
+        &self,
+        row_offsets: &[i32],
+        column_indices: &[i32],
+        values: &[f64],
+        input: &[f64],
+        output: &mut [f64],
+    ) -> Result<(), OperatorError> {
         if input.len() != self.columns || output.len() != self.rows {
             return Err(OperatorError::DimensionMismatch);
         }
         for (row, result) in output.iter_mut().enumerate() {
-            let start = self.row_offsets[row];
-            let end = self.row_offsets[row + 1];
-            *result = self.column_indices[start..end]
+            let start = row_offsets[row] as usize;
+            let end = row_offsets[row + 1] as usize;
+            *result = column_indices[start..end]
                 .iter()
-                .zip(&self.values[start..end])
-                .map(|(&column, &value)| value * input[column])
+                .zip(&values[start..end])
+                .map(|(&column, &value)| value * input[column as usize])
                 .sum();
         }
         Ok(())
     }
+}
+
+fn validate_csr_structure(
+    rows: usize,
+    columns: usize,
+    row_offsets: &[i32],
+    column_indices: &[i32],
+) -> Result<(), OperatorError> {
+    if row_offsets.len() != rows + 1
+        || row_offsets.first().copied() != Some(0)
+        || row_offsets.last().copied() != i32::try_from(column_indices.len()).ok()
+        || row_offsets
+            .windows(2)
+            .any(|window| window[0] < 0 || window[0] > window[1])
+    {
+        return Err(OperatorError::InvalidRowOffsets);
+    }
+    if column_indices
+        .iter()
+        .any(|&column| column < 0 || column as usize >= columns)
+    {
+        return Err(OperatorError::ColumnOutOfBounds);
+    }
+    Ok(())
 }
 
 /// Dense rectangular blocks arranged diagonally.
@@ -121,6 +149,63 @@ pub struct BlockDiagonalMatrix {
     input_offsets: Vec<usize>,
     value_offsets: Vec<usize>,
     values: Vec<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ScatteringOperator {
+    Dense(BlockDiagonalMatrix),
+    ScalarCoefficients(ScalarCoefficientScattering),
+}
+
+impl ScatteringOperator {
+    #[inline]
+    pub fn output_size(&self) -> usize {
+        match self {
+            Self::Dense(matrix) => matrix.output_size(),
+            Self::ScalarCoefficients(matrix) => matrix.output_size(),
+        }
+    }
+
+    #[inline]
+    pub fn input_size(&self) -> usize {
+        match self {
+            Self::Dense(matrix) => matrix.input_size(),
+            Self::ScalarCoefficients(matrix) => matrix.input_size(),
+        }
+    }
+
+    pub fn set_dense_values(&mut self, values: &[f64]) -> Result<(), OperatorError> {
+        match self {
+            Self::Dense(matrix) => matrix.set_values(values),
+            Self::ScalarCoefficients(matrix) => matrix.set_dense_values(values),
+        }
+    }
+
+    pub fn set_coefficients(&mut self, values: &[f64]) -> Result<(), OperatorError> {
+        match self {
+            Self::Dense(_) => Err(OperatorError::UnsupportedOperator),
+            Self::ScalarCoefficients(matrix) => matrix.set_coefficients(values),
+        }
+    }
+
+    pub fn apply(&self, input: &[f64], output: &mut [f64]) -> Result<(), OperatorError> {
+        match self {
+            Self::Dense(matrix) => matrix.apply(input, output),
+            Self::ScalarCoefficients(matrix) => matrix.apply(input, output),
+        }
+    }
+}
+
+impl From<BlockDiagonalMatrix> for ScatteringOperator {
+    fn from(value: BlockDiagonalMatrix) -> Self {
+        Self::Dense(value)
+    }
+}
+
+impl From<ScalarCoefficientScattering> for ScatteringOperator {
+    fn from(value: ScalarCoefficientScattering) -> Self {
+        Self::ScalarCoefficients(value)
+    }
 }
 
 impl BlockDiagonalMatrix {
@@ -220,29 +305,23 @@ impl BlockDiagonalMatrix {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FixedPointProblem {
     transport: CsrMatrix,
-    scattering: BlockDiagonalMatrix,
-    forcing: Vec<f64>,
+    scattering: ScatteringOperator,
 }
 
 impl FixedPointProblem {
-    pub fn new(
+    pub fn new<S: Into<ScatteringOperator>>(
         transport: CsrMatrix,
-        scattering: BlockDiagonalMatrix,
-        forcing: Vec<f64>,
+        scattering: S,
     ) -> Result<Self, OperatorError> {
+        let scattering = scattering.into();
         if transport.rows() != scattering.input_size()
             || transport.columns() != scattering.output_size()
-            || forcing.len() != transport.rows()
         {
             return Err(OperatorError::DimensionMismatch);
-        }
-        if forcing.iter().any(|value| !value.is_finite()) {
-            return Err(OperatorError::NonFiniteValue);
         }
         Ok(Self {
             transport,
             scattering,
-            forcing,
         })
     }
 
@@ -256,33 +335,54 @@ impl FixedPointProblem {
         self.transport.rows()
     }
 
-    pub fn set_transport_values(&mut self, values: &[f64]) -> Result<(), OperatorError> {
-        self.transport.set_values(values)
-    }
-
     pub fn set_scattering_values(&mut self, values: &[f64]) -> Result<(), OperatorError> {
-        self.scattering.set_values(values)
+        self.scattering.set_dense_values(values)
     }
 
-    pub fn set_forcing(&mut self, forcing: &[f64]) -> Result<(), OperatorError> {
-        if forcing.len() != self.forcing.len() {
+    pub fn set_scattering_coefficients(&mut self, values: &[f64]) -> Result<(), OperatorError> {
+        self.scattering.set_coefficients(values)
+    }
+
+    pub fn validate_iteration_data(
+        &self,
+        transport_row_offsets: &[i32],
+        transport_column_indices: &[i32],
+        transport_values: &[f64],
+        forcing: &[f64],
+    ) -> Result<(), OperatorError> {
+        self.transport.validate_data(
+            transport_row_offsets,
+            transport_column_indices,
+            transport_values,
+        )?;
+        if forcing.len() != self.transport.rows() {
             return Err(OperatorError::DimensionMismatch);
         }
         if forcing.iter().any(|value| !value.is_finite()) {
             return Err(OperatorError::NonFiniteValue);
         }
-        self.forcing.copy_from_slice(forcing);
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn apply(
         &self,
+        transport_row_offsets: &[i32],
+        transport_column_indices: &[i32],
+        transport_values: &[f64],
+        forcing: &[f64],
         state: &[f64],
         output: &mut [f64],
         incoming_scratch: &mut [f64],
     ) -> Result<(), OperatorError> {
-        self.transport.apply(state, incoming_scratch)?;
-        for (incoming, forcing) in incoming_scratch.iter_mut().zip(&self.forcing) {
+        self.transport.apply(
+            transport_row_offsets,
+            transport_column_indices,
+            transport_values,
+            state,
+            incoming_scratch,
+        )?;
+        for (incoming, forcing) in incoming_scratch.iter_mut().zip(forcing) {
             *incoming += forcing;
         }
         self.scattering.apply(incoming_scratch, output)

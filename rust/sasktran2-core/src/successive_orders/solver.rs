@@ -150,7 +150,20 @@ impl SuccessiveOrdersSolver {
         &self.diagnostics
     }
 
-    pub fn solve(&mut self, initial_guess: Option<&[f64]>) -> Result<&[f64], SolverError> {
+    pub fn solve(
+        &mut self,
+        transport_row_offsets: &[i32],
+        transport_column_indices: &[i32],
+        transport_values: &[f64],
+        forcing: &[f64],
+        initial_guess: Option<&[f64]>,
+    ) -> Result<&[f64], SolverError> {
+        self.problem.validate_iteration_data(
+            transport_row_offsets,
+            transport_column_indices,
+            transport_values,
+            forcing,
+        )?;
         if let Some(initial_guess) = initial_guess {
             if initial_guess.len() != self.solution.len() {
                 return Err(SolverError::InitialGuessSize);
@@ -171,8 +184,15 @@ impl SuccessiveOrdersSolver {
             .reserve(self.config.max_iterations);
 
         for iteration in 0..self.config.max_iterations {
-            self.problem
-                .apply(&self.solution, &mut self.mapped, &mut self.incoming)?;
+            self.problem.apply(
+                transport_row_offsets,
+                transport_column_indices,
+                transport_values,
+                forcing,
+                &self.solution,
+                &mut self.mapped,
+                &mut self.incoming,
+            )?;
             for index in 0..self.solution.len() {
                 self.residual[index] = self.mapped[index] - self.solution[index];
             }
@@ -199,16 +219,19 @@ impl SuccessiveOrdersSolver {
                 return Ok(&self.solution);
             }
 
-            self.record_history();
-            let accelerated = self.config.anderson_depth > 0
-                && self.state_history.len() >= 2
-                && anderson_update(
-                    &mut self.solution,
-                    &self.mapped,
-                    &self.state_history,
-                    &self.residual_vector_history,
-                    self.config.damping,
-                );
+            let accelerated = if self.config.anderson_depth > 0 {
+                self.record_history();
+                self.state_history.len() >= 2
+                    && anderson_update(
+                        &mut self.solution,
+                        &mut self.mapped,
+                        &self.state_history,
+                        &self.residual_vector_history,
+                        self.config.damping,
+                    )
+            } else {
+                false
+            };
             if !accelerated {
                 damped_update(&mut self.solution, &self.residual, self.config.damping);
             }
@@ -245,30 +268,25 @@ fn damped_update(state: &mut [f64], residual: &[f64], damping: f64) {
 /// is singular, allowing the caller to fall back to damped Picard iteration.
 fn anderson_update(
     state: &mut [f64],
-    mapped: &[f64],
+    mapped: &mut [f64],
     states: &[Vec<f64>],
     residuals: &[Vec<f64>],
     damping: f64,
 ) -> bool {
     let differences = states.len() - 1;
     let vector_size = state.len();
-    let mut delta_states = vec![vec![0.0; vector_size]; differences];
-    let mut delta_residuals = vec![vec![0.0; vector_size]; differences];
-    for column in 0..differences {
-        for row in 0..vector_size {
-            delta_states[column][row] = states[column + 1][row] - states[column][row];
-            delta_residuals[column][row] = residuals[column + 1][row] - residuals[column][row];
-        }
-    }
-
     let current_residual = residuals.last().unwrap();
     let mut normal = vec![0.0; differences * differences];
     let mut right = vec![0.0; differences];
     for row in 0..differences {
-        right[row] = dot(&delta_residuals[row], current_residual);
+        right[row] = dot_difference(&residuals[row + 1], &residuals[row], current_residual);
         for column in 0..differences {
-            normal[row * differences + column] =
-                dot(&delta_residuals[row], &delta_residuals[column]);
+            normal[row * differences + column] = dot_differences(
+                &residuals[row + 1],
+                &residuals[row],
+                &residuals[column + 1],
+                &residuals[column],
+            );
         }
         normal[row * differences + row] += 1.0e-14;
     }
@@ -276,26 +294,46 @@ fn anderson_update(
         return false;
     }
 
-    let mut candidate = vec![0.0; vector_size];
     for row in 0..vector_size {
-        candidate[row] = mapped[row];
+        let mut candidate = mapped[row];
         for column in 0..differences {
-            candidate[row] -=
-                right[column] * (delta_states[column][row] + delta_residuals[column][row]);
+            let delta_state = states[column + 1][row] - states[column][row];
+            let delta_residual = residuals[column + 1][row] - residuals[column][row];
+            candidate -= right[column] * (delta_state + delta_residual);
         }
-        candidate[row] = (1.0 - damping) * state[row] + damping * candidate[row];
+        mapped[row] = (1.0 - damping) * state[row] + damping * candidate;
     }
-    if candidate.iter().any(|value| !value.is_finite()) {
+    if mapped.iter().any(|value| !value.is_finite()) {
         return false;
     }
-    state.copy_from_slice(&candidate);
+    state.copy_from_slice(mapped);
     true
 }
 
-fn dot(left: &[f64], right: &[f64]) -> f64 {
-    left.iter()
+fn dot_difference(upper: &[f64], lower: &[f64], right: &[f64]) -> f64 {
+    upper
+        .iter()
+        .zip(lower)
         .zip(right)
-        .map(|(left, right)| left * right)
+        .map(|((&upper, &lower), &right)| (upper - lower) * right)
+        .sum()
+}
+
+fn dot_differences(
+    left_upper: &[f64],
+    left_lower: &[f64],
+    right_upper: &[f64],
+    right_lower: &[f64],
+) -> f64 {
+    left_upper
+        .iter()
+        .zip(left_lower)
+        .zip(right_upper.iter().zip(right_lower))
+        .map(
+            |((&left_upper, &left_lower), (&right_upper, &right_lower))| {
+                (left_upper - left_lower) * (right_upper - right_lower)
+            },
+        )
         .sum()
 }
 

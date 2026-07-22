@@ -20,10 +20,22 @@ namespace sasktran2 {
         // for each ray Calculating this matrix beforehand makes calculating
         // derivatives easier, and removes excess computation for every
         // wavelength
-        m_traced_ray_od_matrix.resize(traced_rays.size());
-        for (int i = 0; i < traced_rays.size(); ++i) {
-            sasktran2::raytracing::construct_od_matrix(
-                traced_rays[i], geometry, m_traced_ray_od_matrix[i]);
+        if (m_on_demand_optical_depth) {
+            m_traced_ray_od_matrix.clear();
+            std::size_t max_layers = 0;
+            for (const auto& ray : traced_rays) {
+                max_layers = std::max(max_layers, ray.layers.size());
+            }
+            m_empty_od_matrix.resize(static_cast<int>(max_layers),
+                                     geometry.size());
+            m_empty_od_matrix.setZero();
+            m_empty_od_matrix.makeCompressed();
+        } else {
+            m_traced_ray_od_matrix.resize(traced_rays.size());
+            for (int i = 0; i < traced_rays.size(); ++i) {
+                sasktran2::raytracing::construct_od_matrix(
+                    traced_rays[i], geometry, m_traced_ray_od_matrix[i]);
+            }
         }
 
         m_traced_rays = &traced_rays;
@@ -41,6 +53,13 @@ namespace sasktran2 {
             m_num_geometry_locations) {
             throw std::invalid_argument(
                 "Atmosphere extinction size does not match ray geometry");
+        }
+        m_atmosphere = &atmo;
+        if (m_on_demand_optical_depth) {
+            m_scalar_shell_od.clear();
+            m_shell_od.clear();
+            m_calculate_derivatives = false;
+            return;
         }
         if (m_wavelength_block_capacity == 1) {
             m_scalar_shell_od.resize(m_traced_ray_od_matrix.size());
@@ -70,8 +89,6 @@ namespace sasktran2 {
             }
 #endif
         }
-
-        m_atmosphere = &atmo;
 
         // This object may be reused with derivative-free and derivative-enabled
         // atmospheres. Do not let a derivative-free call permanently disable
@@ -386,13 +403,27 @@ namespace sasktran2 {
             const auto entrance_weights = ray.entrance_weights(j);
             const auto exit_weights = ray.exit_weights(j);
 
-            const double shell_od = m_wavelength_block_capacity == 1
-                                        ? m_scalar_shell_od[rayidx](j, wavelidx)
-                                        : m_shell_od[rayidx](j, wavelidx);
+            double shell_od = 0.0;
+            if (m_on_demand_optical_depth) {
+                const auto optical_depth_weights = ray.optical_depth_weights(j);
+                for (std::size_t index = 0;
+                     index < optical_depth_weights.size(); ++index) {
+                    const auto index_weight = optical_depth_weights[index];
+                    shell_od += index_weight.second *
+                                m_atmosphere->storage().total_extinction(
+                                    index_weight.first, wavelidx);
+                }
+            } else {
+                shell_od = m_wavelength_block_capacity == 1
+                               ? m_scalar_shell_od[rayidx](j, wavelidx)
+                               : m_shell_od[rayidx](j, wavelidx);
+            }
             const double shell_attenuation = std::exp(-shell_od);
+            const auto& derivative_matrix =
+                m_on_demand_optical_depth ? m_empty_od_matrix
+                                          : m_traced_ray_od_matrix[rayidx];
             const sasktran2::WavelengthBlockODView block_shell_od(
-                &shell_od, &shell_attenuation, 1,
-                m_traced_ray_od_matrix[rayidx], j);
+                &shell_od, &shell_attenuation, 1, derivative_matrix, j);
             const auto& layer_interpolator = interpolator.interior_weights[j];
             // Calculate and add the layer source to the radiance
             double atten_factor = std::exp(-current_od);
@@ -413,19 +444,25 @@ namespace sasktran2 {
 
             // Assign the accumulation weights
             double omega = 0;
-            for (int i = 0; i < layer_interpolator.first.size(); ++i) {
-                auto& index_weight = layer_interpolator.first[i];
-                omega +=
-                    m_atmosphere->storage().ssa(index_weight.first, wavelidx) *
-                    index_weight.second;
+            for (std::size_t i = layer_interpolator.atmosphere_offset;
+                 i < layer_interpolator.atmosphere_offset +
+                         layer_interpolator.atmosphere_count;
+                 ++i) {
+                omega += m_atmosphere->storage().ssa(
+                             interpolator.atmosphere_indices[i], wavelidx) *
+                         interpolator.atmosphere_weights[i];
             }
             double source_factor =
                 omega * (1 - shell_attenuation) * atten_factor;
 
-            for (const auto& ele : layer_interpolator.second) {
+            for (std::size_t i = layer_interpolator.source_offset;
+                 i < layer_interpolator.source_offset +
+                         layer_interpolator.source_count;
+                 ++i) {
                 for (int s = 0; s < NSTOKES; ++s) {
-                    accumulation_values(std::get<2>(ele)[s]) +=
-                        std::get<1>(ele) * source_factor;
+                    accumulation_values(
+                        interpolator.source_accumulation_indices[i][s]) +=
+                        interpolator.source_weights[i] * source_factor;
                 }
             }
 
@@ -444,12 +481,13 @@ namespace sasktran2 {
 
         // Add ground interpolation triplets
         if (ray.ground_is_hit) {
-            const auto& ground_interpolator = interpolator.ground_weights;
-
-            for (const auto& ele : ground_interpolator) {
+            for (std::size_t i = 0;
+                 i < interpolator.ground_source_weights.size(); ++i) {
                 for (int s = 0; s < NSTOKES; ++s) {
-                    accumulation_values(std::get<2>(ele)[s]) +=
-                        std::get<1>(ele) * std::exp(-1 * current_od);
+                    accumulation_values(
+                        interpolator.ground_accumulation_indices[i][s]) +=
+                        interpolator.ground_source_weights[i] *
+                        std::exp(-1 * current_od);
                 }
             }
         }

@@ -500,3 +500,23 @@ def test_rust_successive_orders_anderson_matches_converged_legacy():
     rust = rust_engine.calculate_radiance(rust_atmosphere).radiance.values
 
     np.testing.assert_allclose(rust, legacy, rtol=2.0e-8, atol=1.0e-12)
+
+
+def test_rust_successive_orders_source_threading_matches_serial():
+    serial_engine, serial_atmosphere = _setup_1d(
+        "successive_orders_rust", 1, False, num_wavelengths=2
+    )
+    threaded_engine, threaded_atmosphere = _setup_1d(
+        "successive_orders_rust",
+        1,
+        False,
+        num_wavelengths=2,
+        num_threads=2,
+        threading_lib=sk.ThreadingLib.OpenMP,
+        threading_model=sk.ThreadingModel.Source,
+    )
+
+    serial = serial_engine.calculate_radiance(serial_atmosphere).radiance.values
+    threaded = threaded_engine.calculate_radiance(threaded_atmosphere).radiance.values
+
+    np.testing.assert_allclose(threaded, serial, rtol=2.0e-12, atol=1.0e-14)

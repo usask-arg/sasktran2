@@ -7,13 +7,27 @@
 namespace sasktran2 {
 
     template <int NSTOKES> struct RaySourceInterpolationWeights {
-        std::vector<std::pair<
-            std::vector<std::pair<int, double>>,
-            std::vector<std::tuple<int, double, std::array<int, NSTOKES>>>>>
-            interior_weights;
-        std::vector<std::tuple<int, double, std::array<int, NSTOKES>>>
-            ground_weights;
-        bool ground_is_hit;
+        struct Layer {
+            std::uint32_t atmosphere_offset = 0;
+            std::uint32_t source_offset = 0;
+            std::uint32_t atmosphere_count = 0;
+            std::uint32_t source_count = 0;
+        };
+
+        std::vector<Layer> interior_weights;
+
+        // Structure-of-arrays storage avoids tuple padding and replaces two
+        // heap allocations per traced layer with a few allocations per ray.
+        std::vector<int> atmosphere_indices;
+        std::vector<double> atmosphere_weights;
+        std::vector<int> source_indices;
+        std::vector<double> source_weights;
+        std::vector<std::array<int, NSTOKES>> source_accumulation_indices;
+
+        std::vector<int> ground_source_indices;
+        std::vector<double> ground_source_weights;
+        std::vector<std::array<int, NSTOKES>> ground_accumulation_indices;
+        bool ground_is_hit = false;
     };
 
     /** Class that integrates source terms along the ray.  Note that in
@@ -46,6 +60,10 @@ namespace sasktran2 {
             m_traced_ray_od_matrix; /**< Vector of matrices A such that A *
                                        atmosphere_extinction = OD for each layer
                                        in that ray */
+        Eigen::SparseMatrix<double, Eigen::RowMajor>
+            m_empty_od_matrix; /**< Derivative-free matrix view used when
+                                  optical depth is evaluated on demand. */
+        bool m_on_demand_optical_depth = false;
 
         using RowMajorMatrix = Eigen::Matrix<double, Eigen::Dynamic,
                                              Eigen::Dynamic, Eigen::RowMajor>;
@@ -92,6 +110,13 @@ namespace sasktran2 {
          * calculate derivatives
          */
         SourceIntegrator(bool calculate_derivatives);
+
+        /** Avoid persistent optical-depth matrices and wavelength caches.
+         *  Intended for derivative-free callers that use
+         *  integrate_and_emplace_accumulation_triplets. */
+        void set_on_demand_optical_depth(bool enable) {
+            m_on_demand_optical_depth = enable;
+        }
 
         /**
          *
