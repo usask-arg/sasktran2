@@ -677,7 +677,7 @@ fn differentiate_chunk(
                 p.gmt[layer] = am * cm * xp;
                 p.gmb[layer] = ap * cp * xm;
             } else {
-                let at = mu * (1.0 - ssa[layer]) * (xp + xm) / norm;
+                let at = (1.0 - ssa[layer]) * (xp + xm) / norm;
                 let ex = (-tb1[layer] * od[layer]).exp();
                 let cp = tb0[layer] * (omega - ex) / (tb1[layer] - k);
                 let cm = tb0[layer] * (1.0 - omega * ex) / (tb1[layer] + k);
@@ -713,12 +713,13 @@ fn differentiate_chunk(
         }
         let last = size - 1;
         let delta = if az == 0 { 1.0 } else { 0.0 };
-        q.rhs[last] = if mode == SourceMode::Solar {
+        let direct_boundary_source = if mode == SourceMode::Solar {
             delta * geometry.solar_cosine * albedo / std::f64::consts::PI * transmission[n]
-                - (p.gmb[n - 1] - 2.0 * delta * geometry.quadrature_cosine * albedo * p.gpb[n - 1])
         } else {
             thermal_surface
         };
+        q.rhs[last] = direct_boundary_source
+            - (p.gmb[n - 1] - 2.0 * delta * geometry.quadrature_cosine * albedo * p.gpb[n - 1]);
         q.d[0] = h.xp[0];
         q.a[0] = h.xm[0] * h.omega[0];
         for l in 0..n - 1 {
@@ -770,21 +771,19 @@ fn differentiate_chunk(
                 let h = &hs[az];
                 let p = &ps[az];
                 let azi = (az as f64 * view.relative_azimuth).cos();
-                let (lp, lm) = if mode == SourceMode::Solar {
-                    if az == 0 {
-                        (
-                            ssa[l] * (1.0 - b1[l] * view.cosine * geometry.quadrature_cosine) * 0.5,
-                            ssa[l] * (1.0 + b1[l] * view.cosine * geometry.quadrature_cosine) * 0.5,
-                        )
-                    } else {
-                        let x = ssa[l]
-                            * b1[l]
-                            * ((1.0 - view.cosine.powi(2))
-                                * (1.0 - geometry.quadrature_cosine.powi(2)))
-                            .sqrt()
-                            * 0.25;
-                        (x, x)
-                    }
+                let (lp, lm) = if az == 0 {
+                    (
+                        ssa[l] * (1.0 - b1[l] * view.cosine * geometry.quadrature_cosine) * 0.5,
+                        ssa[l] * (1.0 + b1[l] * view.cosine * geometry.quadrature_cosine) * 0.5,
+                    )
+                } else if mode == SourceMode::Solar {
+                    let x = ssa[l]
+                        * b1[l]
+                        * ((1.0 - view.cosine.powi(2))
+                            * (1.0 - geometry.quadrature_cosine.powi(2)))
+                        .sqrt()
+                        * 0.25;
+                    (x, x)
                 } else {
                     (zero, zero)
                 };

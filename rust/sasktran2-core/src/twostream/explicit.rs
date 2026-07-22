@@ -47,16 +47,61 @@ impl Wide {
         Self(self.0.map(f64::exp))
     }
 
-    fn ln(self) -> Self {
-        Self(self.0.map(f64::ln))
-    }
-
     fn min(self, rhs: Self) -> Self {
         Self(std::array::from_fn(|i| self.0[i].min(rhs.0[i])))
     }
 
     fn sqrt(self) -> Self {
         Self(self.0.map(f64::sqrt))
+    }
+
+    fn positive_ratio_or_zero(numerator: Self, denominator: Self) -> Self {
+        Self(std::array::from_fn(|lane| {
+            if denominator.0[lane] > 0.0 {
+                numerator.0[lane] / denominator.0[lane]
+            } else {
+                0.0
+            }
+        }))
+    }
+
+    fn positive_reciprocal_or_zero(self) -> Self {
+        Self(std::array::from_fn(|lane| {
+            if self.0[lane] > 0.0 {
+                1.0 / self.0[lane]
+            } else {
+                0.0
+            }
+        }))
+    }
+
+    fn thermal_profile_slope(top: Self, bottom: Self, optical_depth: Self) -> Self {
+        Self(std::array::from_fn(|lane| {
+            super::thermal_profile_slope(top.0[lane], bottom.0[lane], optical_depth.0[lane])
+        }))
+    }
+
+    fn thermal_profile_slope_adjoint(
+        top: Self,
+        bottom: Self,
+        optical_depth: Self,
+        slope: Self,
+        adjoint: Self,
+    ) -> (Self, Self, Self) {
+        let derivatives: [(f64, f64, f64); LANES] = std::array::from_fn(|lane| {
+            super::thermal_profile_slope_adjoint(
+                top.0[lane],
+                bottom.0[lane],
+                optical_depth.0[lane],
+                slope.0[lane],
+                adjoint.0[lane],
+            )
+        });
+        (
+            Self(std::array::from_fn(|lane| derivatives[lane].0)),
+            Self(std::array::from_fn(|lane| derivatives[lane].1)),
+            Self(std::array::from_fn(|lane| derivatives[lane].2)),
+        )
     }
 
     fn transmission_ratio(top: Self, bottom: Self, exponent: Self) -> Self {
@@ -1334,15 +1379,18 @@ fn load_atmosphere_chunk_mode<const SOLAR: bool>(
         let avg_extinction = 0.5 * (top_extinction + bottom_extinction);
         let avg_scattering = 0.5 * (scattering_top + scattering_bottom);
         w.od[layer] = avg_extinction * geometry.layer_thickness[layer];
-        w.ssa[layer] = (avg_scattering / avg_extinction).min(Wide::splat(1.0 - 1.0e-9));
-        w.b1[layer] =
-            0.5 * (scattering_top * top_b1 + scattering_bottom * bottom_b1) / avg_scattering;
+        w.ssa[layer] = Wide::positive_ratio_or_zero(avg_scattering, avg_extinction)
+            .min(Wide::splat(1.0 - 1.0e-9));
+        w.b1[layer] = Wide::positive_ratio_or_zero(
+            0.5 * (scattering_top * top_b1 + scattering_bottom * bottom_b1),
+            avg_scattering,
+        );
 
         if !SOLAR {
             let emission = atmosphere.emission.as_ref().unwrap();
             let bottom = Wide::load_row(emission, layer + 1, input_base, input_stride);
             w.thermal_b0[layer] = top_emission;
-            w.thermal_b1[layer] = -(bottom / top_emission).ln() / geometry.layer_thickness[layer];
+            w.thermal_b1[layer] = Wide::thermal_profile_slope(top_emission, bottom, w.od[layer]);
             top_emission = bottom;
         }
         top_extinction = bottom_extinction;
@@ -1370,7 +1418,10 @@ fn load_atmosphere_chunk_mode<const SOLAR: bool>(
             w.transmission[boundary + 1] = (-slant).exp() * irradiance;
         }
         for layer in 0..n {
-            w.secant[layer] = (w.attenuation[layer] - w.attenuation[layer + 1]) / w.od[layer];
+            w.secant[layer] = Wide::positive_ratio_or_zero(
+                w.attenuation[layer] - w.attenuation[layer + 1],
+                w.od[layer],
+            );
         }
     }
 
@@ -1505,8 +1556,10 @@ fn prepare_spherical_columns<const SOLAR: bool>(
                 column.transmission[boundary + 1] = (-slant).exp() * column.transmission[0];
             }
             for layer in 0..n {
-                column.secant[layer] =
-                    (column.attenuation[layer] - column.attenuation[layer + 1]) / column.od[layer];
+                column.secant[layer] = Wide::positive_ratio_or_zero(
+                    column.attenuation[layer] - column.attenuation[layer + 1],
+                    column.od[layer],
+                );
             }
         } else {
             column.thermal_b0.copy_from_slice(&first.thermal_b0);
@@ -2072,7 +2125,7 @@ fn map_chunk_to_atmosphere(
             w.attenuation[boundary] = w.d_transmission[boundary] * w.transmission[boundary];
         }
         for layer in 0..n {
-            let inv_od = 1.0 / w.od[layer];
+            let inv_od = w.od[layer].positive_reciprocal_or_zero();
             let weight = w.d_secant[layer] * inv_od;
             w.attenuation[layer] += weight;
             w.attenuation[layer + 1] -= weight;
@@ -2104,8 +2157,8 @@ fn map_chunk_to_atmosphere(
         let dz = geometry.layer_thickness[layer];
         let od_density = w.od[layer] / dz;
         let scattering_density = w.ssa[layer] * od_density;
-        let inv_od_density = 1.0 / od_density;
-        let inv_scattering_density = 1.0 / scattering_density;
+        let inv_od_density = od_density.positive_reciprocal_or_zero();
+        let inv_scattering_density = scattering_density.positive_reciprocal_or_zero();
         let bottom_extinction =
             Wide::load_row(&atmosphere.extinction, layer + 1, input_base, input_stride);
         let bottom_ssa = Wide::load_row(
@@ -2120,6 +2173,24 @@ fn map_chunk_to_atmosphere(
             input_base,
             input_stride,
         );
+
+        if mode == SourceMode::Thermal {
+            let emission = atmosphere.emission.as_ref().unwrap();
+            let bottom = Wide::load_row(emission, layer + 1, input_base, input_stride);
+            let d_b0 = w.d_thermal_b0[layer];
+            let (d_top, d_bottom, d_od) = Wide::thermal_profile_slope_adjoint(
+                top_emission,
+                bottom,
+                w.od[layer],
+                w.thermal_b1[layer],
+                w.d_thermal_b1[layer],
+            );
+            w.d_level_emission[layer] += d_b0 + d_top;
+            w.d_level_emission[layer + 1] += d_bottom;
+            w.d_od[layer] += d_od;
+            top_emission = bottom;
+        }
+
         let common_od = 0.5 * w.d_od[layer] * dz;
         let common_ssa = 0.5 * w.d_ssa[layer] * inv_od_density;
         let common_b1 = 0.5 * w.d_b1[layer] * inv_scattering_density;
@@ -2150,18 +2221,6 @@ fn map_chunk_to_atmosphere(
         w.d_level_ssa[layer + 1] += d_ssa;
         w.d_level_b1[layer + 1] += d_b1;
 
-        if mode == SourceMode::Thermal {
-            let emission = atmosphere.emission.as_ref().unwrap();
-            let bottom = Wide::load_row(emission, layer + 1, input_base, input_stride);
-            let d_b0 = w.d_thermal_b0[layer];
-            let d_b1 = w.d_thermal_b1[layer];
-            w.d_level_emission[layer] += d_b0 + d_b1 / (dz * top_emission);
-            w.d_level_emission[layer + 1] -= d_b1 / (dz * bottom);
-            // The physical layer thickness is geometry, not an atmospheric
-            // variable.  Therefore thermal_b1 has no additional extinction
-            // contribution when mapping back to level quantities.
-            top_emission = bottom;
-        }
         top_extinction = bottom_extinction;
         top_ssa = bottom_ssa;
         top_b1 = bottom_b1;
@@ -2219,7 +2278,7 @@ fn prepare_spherical_column_atmosphere_adjoint<const SOLAR: bool>(
             w.attenuation[boundary] = w.d_transmission[boundary] * w.transmission[boundary];
         }
         for layer in 0..n {
-            let inv_od = 1.0 / w.od[layer];
+            let inv_od = w.od[layer].positive_reciprocal_or_zero();
             let weight = w.d_secant[layer] * inv_od;
             w.attenuation[layer] += weight;
             w.attenuation[layer + 1] -= weight;
@@ -2251,6 +2310,8 @@ fn prepare_spherical_column_atmosphere_adjoint<const SOLAR: bool>(
         let dz = geometry.layer_thickness[layer];
         let od_density = w.od[layer] / dz;
         let scattering_density = w.ssa[layer] * od_density;
+        let inv_od_density = od_density.positive_reciprocal_or_zero();
+        let inv_scattering_density = scattering_density.positive_reciprocal_or_zero();
         let bottom_extinction =
             Wide::load_row(&atmosphere.extinction, layer + 1, input_base, input_stride);
         let bottom_ssa = Wide::load_row(
@@ -2265,9 +2326,27 @@ fn prepare_spherical_column_atmosphere_adjoint<const SOLAR: bool>(
             input_base,
             input_stride,
         );
+
+        if !SOLAR {
+            let emission = atmosphere.emission.as_ref().unwrap();
+            let bottom = Wide::load_row(emission, layer + 1, input_base, input_stride);
+            let d_b0 = w.d_thermal_b0[layer];
+            let (d_top, d_bottom, d_od) = Wide::thermal_profile_slope_adjoint(
+                top_emission,
+                bottom,
+                w.od[layer],
+                w.thermal_b1[layer],
+                w.d_thermal_b1[layer],
+            );
+            w.d_level_emission[layer] += d_b0 + d_top;
+            w.d_level_emission[layer + 1] += d_bottom;
+            w.d_od[layer] += d_od;
+            top_emission = bottom;
+        }
+
         let common_od = 0.5 * w.d_od[layer] * dz;
-        let common_ssa = 0.5 * w.d_ssa[layer] / od_density;
-        let common_b1 = 0.5 * w.d_b1[layer] / scattering_density;
+        let common_ssa = 0.5 * w.d_ssa[layer] * inv_od_density;
+        let common_b1 = 0.5 * w.d_b1[layer] * inv_scattering_density;
         let (d_extinction, d_ssa, d_b1) = level_optical_adjoint(
             top_extinction,
             top_ssa,
@@ -2295,15 +2374,6 @@ fn prepare_spherical_column_atmosphere_adjoint<const SOLAR: bool>(
         w.d_level_ssa[layer + 1] += d_ssa;
         w.d_level_b1[layer + 1] += d_b1;
 
-        if !SOLAR {
-            let emission = atmosphere.emission.as_ref().unwrap();
-            let bottom = Wide::load_row(emission, layer + 1, input_base, input_stride);
-            let d_b0 = w.d_thermal_b0[layer];
-            let d_b1 = w.d_thermal_b1[layer];
-            w.d_level_emission[layer] += d_b0 + d_b1 / (dz * top_emission);
-            w.d_level_emission[layer + 1] -= d_b1 / (dz * bottom);
-            top_emission = bottom;
-        }
         top_extinction = bottom_extinction;
         top_ssa = bottom_ssa;
         top_b1 = bottom_b1;
@@ -2388,7 +2458,7 @@ fn forward_layers<const SOLAR: bool>(
                 p.gmt[layer] = am * cm * xp;
                 p.gmb[layer] = ap * cp * xm;
             } else {
-                let at = mu * (1.0 - w.ssa[layer]) * (xp + xm) * inv_norm;
+                let at = (1.0 - w.ssa[layer]) * (xp + xm) * inv_norm;
                 let exponential = p.exponential[layer];
                 let cp = w.thermal_b0[layer] * (omega - exponential) / (w.thermal_b1[layer] - k);
                 let cm =
@@ -2431,12 +2501,13 @@ fn build_and_solve_bvp<const SOLAR: bool>(
     }
     let last = size - 1;
     let delta = if az == 0 { 1.0 } else { 0.0 };
-    q.rhs[last] = if SOLAR {
+    let direct_boundary_source = if SOLAR {
         delta * geometry.solar_cosine * albedo / std::f64::consts::PI * w.transmission[n]
-            - (p.gmb[n - 1] - 2.0 * delta * mu * albedo * p.gpb[n - 1])
     } else {
         thermal_surface
     };
+    q.rhs[last] =
+        direct_boundary_source - (p.gmb[n - 1] - 2.0 * delta * mu * albedo * p.gpb[n - 1]);
     q.d[0] = h.xp[0];
     q.a[0] = h.xm[0] * h.omega[0];
     for layer in 0..n - 1 {
@@ -2692,16 +2763,14 @@ fn reverse_local_source<const SOLAR: bool>(
         let d_lm = d_yp * h.xm[layer] + d_ym * h.xp[layer];
         w.d_homogeneous[az].xp[layer] += d_yp * lp + d_ym * lm;
         w.d_homogeneous[az].xm[layer] += d_yp * lm + d_ym * lp;
-        if SOLAR {
-            if az == 0 {
-                w.d_ssa[layer] += d_lp * 0.5 * (1.0 - w.b1[layer] * phase_mu)
-                    + d_lm * 0.5 * (1.0 + w.b1[layer] * phase_mu);
-                w.d_b1[layer] += d_lp * (-0.5 * w.ssa[layer] * phase_mu)
-                    + d_lm * (0.5 * w.ssa[layer] * phase_mu);
-            } else {
-                w.d_ssa[layer] += (d_lp + d_lm) * w.b1[layer] * phase_sine;
-                w.d_b1[layer] += (d_lp + d_lm) * w.ssa[layer] * phase_sine;
-            }
+        if az == 0 {
+            w.d_ssa[layer] += d_lp * 0.5 * (1.0 - w.b1[layer] * phase_mu)
+                + d_lm * 0.5 * (1.0 + w.b1[layer] * phase_mu);
+            w.d_b1[layer] +=
+                d_lp * (-0.5 * w.ssa[layer] * phase_mu) + d_lm * (0.5 * w.ssa[layer] * phase_mu);
+        } else if SOLAR {
+            w.d_ssa[layer] += (d_lp + d_lm) * w.b1[layer] * phase_sine;
+            w.d_b1[layer] += (d_lp + d_lm) * w.ssa[layer] * phase_sine;
         }
 
         d_k -= d_top_exponential * top_exponential * w.od[layer] * fraction_from_top;
@@ -2931,17 +3000,16 @@ fn lpsum<const SOLAR: bool>(
     ssa: Wide,
     b1: Wide,
 ) -> (Wide, Wide) {
-    if !SOLAR {
-        return (Wide::splat(0.0), Wide::splat(0.0));
-    }
     if az == 0 {
         (
             0.5 * ssa * (1.0 - b1 * phase_mu),
             0.5 * ssa * (1.0 + b1 * phase_mu),
         )
-    } else {
+    } else if SOLAR {
         let value = ssa * b1 * phase_sine;
         (value, value)
+    } else {
+        (Wide::splat(0.0), Wide::splat(0.0))
     }
 }
 
@@ -3063,16 +3131,14 @@ fn reverse_view_azimuth<const SOLAR: bool>(
     let d_lm = d_yp * h.xm[layer] + d_ym * h.xp[layer];
     w.d_homogeneous[az].xp[layer] += d_yp * lp + d_ym * lm;
     w.d_homogeneous[az].xm[layer] += d_yp * lm + d_ym * lp;
-    if SOLAR {
-        if az == 0 {
-            w.d_ssa[layer] += d_lp * 0.5 * (1.0 - w.b1[layer] * phase_mu)
-                + d_lm * 0.5 * (1.0 + w.b1[layer] * phase_mu);
-            w.d_b1[layer] +=
-                d_lp * (-0.5 * w.ssa[layer] * phase_mu) + d_lm * (0.5 * w.ssa[layer] * phase_mu);
-        } else {
-            w.d_ssa[layer] += (d_lp + d_lm) * w.b1[layer] * phase_sine;
-            w.d_b1[layer] += (d_lp + d_lm) * w.ssa[layer] * phase_sine;
-        }
+    if az == 0 {
+        w.d_ssa[layer] += d_lp * 0.5 * (1.0 - w.b1[layer] * phase_mu)
+            + d_lm * 0.5 * (1.0 + w.b1[layer] * phase_mu);
+        w.d_b1[layer] +=
+            d_lp * (-0.5 * w.ssa[layer] * phase_mu) + d_lm * (0.5 * w.ssa[layer] * phase_mu);
+    } else if SOLAR {
+        w.d_ssa[layer] += (d_lp + d_lm) * w.b1[layer] * phase_sine;
+        w.d_b1[layer] += (d_lp + d_lm) * w.ssa[layer] * phase_sine;
     }
 }
 
@@ -3104,14 +3170,14 @@ fn reverse_bvp<const SOLAR: bool>(
             w.d_particular[az].gpb[layer] -= lambda[2 * layer + 2];
         }
         let last_row = size - 1;
+        d_albedo += lambda[last_row] * 2.0 * delta * mu * w.particular[az].gpb[n - 1];
+        w.d_particular[az].gmb[n - 1] -= lambda[last_row];
+        w.d_particular[az].gpb[n - 1] += lambda[last_row] * 2.0 * delta * mu * albedo;
         if SOLAR {
             w.d_transmission[n] +=
                 lambda[last_row] * delta * geometry.solar_cosine * albedo / std::f64::consts::PI;
-            d_albedo += lambda[last_row]
-                * (delta * geometry.solar_cosine / std::f64::consts::PI * w.transmission[n]
-                    + 2.0 * delta * mu * w.particular[az].gpb[n - 1]);
-            w.d_particular[az].gmb[n - 1] -= lambda[last_row];
-            w.d_particular[az].gpb[n - 1] += lambda[last_row] * 2.0 * delta * mu * albedo;
+            d_albedo += lambda[last_row] * delta * geometry.solar_cosine / std::f64::consts::PI
+                * w.transmission[n];
         } else {
             d_thermal_surface += lambda[last_row];
         }
@@ -3249,9 +3315,9 @@ fn reverse_layers<const SOLAR: bool>(geometry: &Geometry, w: &mut ExplicitWorksp
                 let inv_norm = 1.0 / h.norm[layer];
                 let d_at_numerator = d_at * inv_norm;
                 d_norm -= d_at * p.at[layer] * inv_norm;
-                w.d_ssa[layer] -= d_at_numerator * mu * (h.xp[layer] + h.xm[layer]);
-                d_xp += d_at_numerator * mu * (1.0 - w.ssa[layer]);
-                d_xm += d_at_numerator * mu * (1.0 - w.ssa[layer]);
+                w.d_ssa[layer] -= d_at_numerator * (h.xp[layer] + h.xm[layer]);
+                d_xp += d_at_numerator * (1.0 - w.ssa[layer]);
+                d_xm += d_at_numerator * (1.0 - w.ssa[layer]);
             }
 
             let mut d_exponential = Wide::splat(0.0);

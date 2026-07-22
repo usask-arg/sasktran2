@@ -894,7 +894,7 @@ fn parallel_thermal_atmosphere_vjp_matches_serial() {
 }
 
 #[test]
-fn matches_cpp_low_level_oracles() {
+fn matches_low_level_regression_oracles() {
     let n = 3;
     let geo = Geometry::new(vec![1.0; n], vec![0.0; n * n], 0.5);
     let view = [View {
@@ -939,7 +939,105 @@ fn matches_cpp_low_level_oracles() {
         .with_execution_policy(ExecutionPolicy::Serial)
         .solve(&thermal_inputs, &view, &mut Workspace::new())
         .unwrap();
-    assert!((thermal.values[0] - 1.415_893_270_107_338).abs() < 1.0e-13);
+    assert!((thermal.values[0] - 1.479_020_565_824_959_3).abs() < 1.0e-13);
+}
+
+#[test]
+fn pure_absorption_thermal_matches_formal_solution() {
+    let optical_depth = vec![0.15, 0.2, 0.1];
+    let thermal_b0 = vec![2.0, 1.8, 1.65];
+    let thermal_b1 = vec![0.2, -0.1, 0.05];
+    let surface_emission = 1.4;
+    let view_cosine = 0.63;
+    let inputs = LayerInputs {
+        num_layers: optical_depth.len(),
+        num_wavelengths: 1,
+        optical_depth: optical_depth.clone(),
+        single_scatter_albedo: vec![0.0; optical_depth.len()],
+        first_legendre: vec![0.0; optical_depth.len()],
+        transmission: None,
+        average_secant: None,
+        thermal_b0: Some(thermal_b0.clone()),
+        thermal_b1: Some(thermal_b1.clone()),
+        surface_albedo: vec![0.0],
+        surface_emission: Some(vec![surface_emission]),
+    };
+    let view = [View {
+        cosine: view_cosine,
+        relative_azimuth: 0.0,
+    }];
+    let solver = TwoStreamSolver::new(
+        Geometry::new(vec![1.0; optical_depth.len()], vec![0.0; 9], 0.5),
+        SourceMode::Thermal,
+    )
+    .unwrap()
+    .with_execution_policy(ExecutionPolicy::Serial);
+    let actual = solver
+        .solve(&inputs, &view, &mut Workspace::new())
+        .unwrap()
+        .values[0];
+
+    let mut attenuation = 1.0;
+    let mut expected = 0.0;
+    for layer in 0..optical_depth.len() {
+        let exponent = thermal_b1[layer] + 1.0 / view_cosine;
+        expected +=
+            attenuation * thermal_b0[layer] * (1.0 - (-exponent * optical_depth[layer]).exp())
+                / (1.0 + thermal_b1[layer] * view_cosine);
+        attenuation *= (-optical_depth[layer] / view_cosine).exp();
+    }
+    expected += attenuation * surface_emission;
+    assert!((actual - expected).abs() < 2.0e-13);
+}
+
+#[test]
+fn transparent_thermal_atmosphere_is_finite_and_transmits_surface() {
+    let n = 3;
+    let nw = 5;
+    let solver = TwoStreamSolver::new(geometry(n), SourceMode::Thermal)
+        .unwrap()
+        .with_execution_policy(ExecutionPolicy::Serial);
+    let mut atmosphere = atmosphere(n, nw, true);
+    atmosphere.extinction.fill(0.0);
+    let views = [
+        View {
+            cosine: 0.72,
+            relative_azimuth: 0.0,
+        },
+        View {
+            cosine: 0.43,
+            relative_azimuth: 1.0,
+        },
+    ];
+    let cotangent = vec![1.0; views.len() * nw];
+    let (radiance, adjoint) = solver
+        .solve_atmosphere_with_vjp(&atmosphere, &views, &cotangent, &mut Workspace::new())
+        .unwrap();
+
+    for (view, values) in radiance.values.chunks_exact(nw).enumerate() {
+        for (wave, &value) in values.iter().enumerate() {
+            assert!(
+                (value - atmosphere.surface_emission.as_ref().unwrap()[wave]).abs() < 1.0e-13,
+                "transparent thermal radiance mismatch for view {view}, wavelength {wave}"
+            );
+        }
+    }
+    assert!(radiance.values.iter().all(|value| value.is_finite()));
+    assert!(adjoint.extinction.iter().all(|value| value.is_finite()));
+    assert!(
+        adjoint
+            .single_scatter_albedo
+            .iter()
+            .all(|value| value.is_finite())
+    );
+    assert!(
+        adjoint
+            .emission
+            .as_ref()
+            .unwrap()
+            .iter()
+            .all(|value| value.is_finite())
+    );
 }
 
 #[test]

@@ -117,22 +117,25 @@ impl TwoStreamSolver {
                     * (ks_top * atmosphere.first_legendre[top]
                         + ks_bottom * atmosphere.first_legendre[bottom]);
                 od[out] = avg_k * dz;
-                ssa[out] = (avg_ks / avg_k).min(1.0 - 1.0e-9);
-                b1[out] = avg_b1 / avg_ks;
+                ssa[out] = if avg_k > 0.0 {
+                    (avg_ks / avg_k).min(1.0 - 1.0e-9)
+                } else {
+                    0.0
+                };
+                b1[out] = if avg_ks > 0.0 { avg_b1 / avg_ks } else { 0.0 };
             }
         }
 
         if self.mode == SourceMode::Thermal {
             let emission = atmosphere.emission.as_ref().expect("validated");
             for layer in 0..n {
-                let dz = self.geometry.layer_thickness[layer];
                 for wave in 0..w {
                     let top = layer * w + wave;
                     let bottom = (layer + 1) * w + wave;
                     let out = layer * w + wave;
                     thermal_b0.as_mut().unwrap()[out] = emission[top];
                     thermal_b1.as_mut().unwrap()[out] =
-                        -(emission[bottom] / emission[top]).ln() / dz;
+                        super::thermal_profile_slope(emission[top], emission[bottom], od[out]);
                 }
             }
         }
@@ -944,7 +947,11 @@ fn prepare_average_secant_row(
     for (((output, top), bottom), optical_depth) in
         output.iter_mut().zip(top).zip(bottom).zip(optical_depth)
     {
-        *output = (top - bottom) / optical_depth;
+        *output = if *optical_depth > 0.0 {
+            (top - bottom) / optical_depth
+        } else {
+            0.0
+        };
     }
 }
 
@@ -1206,7 +1213,7 @@ fn solve_layers(geometry: &Geometry, mode: SourceMode, _albedo: f64, w: &mut Sca
                 p.g_minus_top[layer] = am * cm * xp;
                 p.g_minus_bottom[layer] = ap * cp * xm;
             } else {
-                let at = mu * (1.0 - ssa) * (xp + xm) / norm;
+                let at = (1.0 - ssa) * (xp + xm) / norm;
                 let exp_thermal = (-w.thermal_b1[layer] * w.od[layer]).exp();
                 let cp = w.thermal_b0[layer] * (omega - exp_thermal) / (w.thermal_b1[layer] - k);
                 let cm =
@@ -1242,13 +1249,14 @@ fn solve_bvp(
             bvp.rhs[2 * layer + 2] = p.g_plus_top[layer + 1] - p.g_plus_bottom[layer];
         }
         let last = 2 * n - 1;
-        bvp.rhs[last] = if mode == SourceMode::Solar {
-            let delta = if az == 0 { 1.0 } else { 0.0 };
+        let delta = if az == 0 { 1.0 } else { 0.0 };
+        let direct_boundary_source = if mode == SourceMode::Solar {
             delta * geometry.solar_cosine * albedo / std::f64::consts::PI * w.transmission[n]
-                - (p.g_minus_bottom[n - 1] - 2.0 * delta * mu * albedo * p.g_plus_bottom[n - 1])
         } else {
             thermal_surface
         };
+        bvp.rhs[last] = direct_boundary_source
+            - (p.g_minus_bottom[n - 1] - 2.0 * delta * mu * albedo * p.g_plus_bottom[n - 1]);
 
         bvp.d[0] = h.x_plus[0];
         bvp.a[0] = h.x_minus[0] * h.omega[0];
@@ -1263,7 +1271,6 @@ fn solve_bvp(
             bvp.d[row + 2] = -h.x_plus[layer + 1];
             bvp.a[row + 2] = -h.x_minus[layer + 1] * h.omega[layer + 1];
         }
-        let delta = if az == 0 { 1.0 } else { 0.0 };
         bvp.c[last] =
             (h.x_minus[n - 1] - 2.0 * mu * albedo * delta * h.x_plus[n - 1]) * h.omega[n - 1];
         bvp.d[last] = h.x_plus[n - 1] - 2.0 * mu * albedo * delta * h.x_minus[n - 1];
@@ -1347,19 +1354,17 @@ fn post_process(
             let h = &w.homogeneous[az];
             let p = &w.particular[az];
             let azi = (az as f64 * view.relative_azimuth).cos();
-            let (lp, lm) = if mode == SourceMode::Solar {
-                if az == 0 {
-                    (
-                        0.5 * w.ssa[layer] * (1.0 - w.b1[layer] * vmu * mu),
-                        0.5 * w.ssa[layer] * (1.0 + w.b1[layer] * vmu * mu),
-                    )
-                } else {
-                    let value = 0.25
-                        * w.ssa[layer]
-                        * w.b1[layer]
-                        * ((1.0 - vmu * vmu) * (1.0 - mu * mu)).sqrt();
-                    (value, value)
-                }
+            let (lp, lm) = if az == 0 {
+                (
+                    0.5 * w.ssa[layer] * (1.0 - w.b1[layer] * vmu * mu),
+                    0.5 * w.ssa[layer] * (1.0 + w.b1[layer] * vmu * mu),
+                )
+            } else if mode == SourceMode::Solar {
+                let value = 0.25
+                    * w.ssa[layer]
+                    * w.b1[layer]
+                    * ((1.0 - vmu * vmu) * (1.0 - mu * mu)).sqrt();
+                (value, value)
             } else {
                 (0.0, 0.0)
             };
@@ -1651,11 +1656,15 @@ fn map_layer_adjoint_range(
                 let li = l * input_nw + wave;
                 let layer_li = l * layer_nw + layer_wave;
                 let output_li = l * len + output_wave;
-                let weight = d_secant[layer_li] / inputs.optical_depth[li];
+                let inv_od = if inputs.optical_depth[li] > 0.0 {
+                    1.0 / inputs.optical_depth[li]
+                } else {
+                    0.0
+                };
+                let weight = d_secant[layer_li] * inv_od;
                 d_slant[l] += weight;
                 d_slant[l + 1] -= weight;
-                d_od[output_li] -=
-                    d_secant[layer_li] * average_secant[li] / inputs.optical_depth[li];
+                d_od[output_li] -= d_secant[layer_li] * average_secant[li] * inv_od;
             }
             for l in 0..n {
                 for (boundary, d_slant) in d_slant.iter().enumerate().skip(1) {
@@ -1672,45 +1681,65 @@ fn map_layer_adjoint_range(
             let li = l * input_nw + wave;
             let layer_li = l * layer_nw + layer_start + output_wave;
             let output_li = l * len + output_wave;
+
+            if mode == SourceMode::Thermal {
+                let emission = atmosphere.emission.as_ref().unwrap();
+                let top = emission[l * input_nw + wave];
+                let bottom = emission[(l + 1) * input_nw + wave];
+                let d_b0 = layer.thermal_b0.as_ref().unwrap()[layer_li];
+                let d_b1 = layer.thermal_b1.as_ref().unwrap()[layer_li];
+                let (d_top, d_bottom, d_layer_od) = super::thermal_profile_slope_adjoint(
+                    top,
+                    bottom,
+                    inputs.optical_depth[li],
+                    inputs.thermal_b1.as_ref().unwrap()[li],
+                    d_b1,
+                );
+                out.emission.as_mut().unwrap()[l * len + output_wave] += d_b0 + d_top;
+                out.emission.as_mut().unwrap()[(l + 1) * len + output_wave] += d_bottom;
+                d_od[output_li] += d_layer_od;
+            }
+
+            let od_density = inputs.optical_depth[li] / dz;
+            let scattering_density = inputs.single_scatter_albedo[li] * od_density;
+            let inv_od_density = if od_density > 0.0 {
+                1.0 / od_density
+            } else {
+                0.0
+            };
+            let inv_scattering_density = if scattering_density > 0.0 {
+                1.0 / scattering_density
+            } else {
+                0.0
+            };
             for level in [l, l + 1] {
                 let i = level * input_nw + wave;
                 let output_i = level * len + output_wave;
                 out.extinction[output_i] += 0.5 * d_od[output_li] * dz;
-                out.single_scatter_albedo[output_i] +=
-                    0.5 * layer.single_scatter_albedo[layer_li] * atmosphere.extinction[i]
-                        / (inputs.optical_depth[li] / dz);
+                out.single_scatter_albedo[output_i] += 0.5
+                    * layer.single_scatter_albedo[layer_li]
+                    * atmosphere.extinction[i]
+                    * inv_od_density;
                 out.extinction[output_i] += 0.5
                     * layer.single_scatter_albedo[layer_li]
                     * (atmosphere.single_scatter_albedo[i] - inputs.single_scatter_albedo[li])
-                    / (inputs.optical_depth[li] / dz);
+                    * inv_od_density;
 
-                let denom = inputs.single_scatter_albedo[li] * inputs.optical_depth[li] / dz;
                 out.first_legendre[output_i] += 0.5
                     * layer.first_legendre[layer_li]
                     * atmosphere.single_scatter_albedo[i]
                     * atmosphere.extinction[i]
-                    / denom;
+                    * inv_scattering_density;
                 out.extinction[output_i] += 0.5
                     * layer.first_legendre[layer_li]
                     * atmosphere.single_scatter_albedo[i]
                     * (atmosphere.first_legendre[i] - inputs.first_legendre[li])
-                    / denom;
+                    * inv_scattering_density;
                 out.single_scatter_albedo[output_i] += 0.5
                     * layer.first_legendre[layer_li]
                     * atmosphere.extinction[i]
                     * (atmosphere.first_legendre[i] - inputs.first_legendre[li])
-                    / denom;
-            }
-            if mode == SourceMode::Thermal {
-                let emission = atmosphere.emission.as_ref().unwrap();
-                let d_b0 = layer.thermal_b0.as_ref().unwrap()[layer_li];
-                let d_b1 = layer.thermal_b1.as_ref().unwrap()[layer_li];
-                out.emission.as_mut().unwrap()[l * len + output_wave] +=
-                    d_b0 + d_b1 / (dz * emission[l * input_nw + wave]);
-                out.emission.as_mut().unwrap()[(l + 1) * len + output_wave] -=
-                    d_b1 / (dz * emission[(l + 1) * input_nw + wave]);
-                // `dz` is fixed geometry, so differentiating the thermal
-                // profile parameterization adds no extinction contribution.
+                    * inv_scattering_density;
             }
         }
     }

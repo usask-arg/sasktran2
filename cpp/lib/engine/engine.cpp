@@ -235,6 +235,18 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
                         std::make_unique<
                             sasktran2::DOSourceInterpolatedPostProcessing<
                                 NSTOKES, 2>>(*m_geometry_1d, *m_raytracer));
+                } else if (m_config.emission_source() ==
+                           sasktran2::Config::EmissionSource::
+                               discrete_ordinates) {
+                    // The hand-specialized CNSTR=2 plane-parallel
+                    // postprocessor only implements the solar particular
+                    // solution. Use the generic implementation when thermal
+                    // emission is enabled so the atmospheric thermal source is
+                    // integrated as well.
+                    m_source_terms.emplace_back(
+                        std::make_unique<
+                            sasktran2::DOSourcePlaneParallelPostProcessing<
+                                NSTOKES, -1>>(*m_geometry_1d));
                 } else {
                     m_source_terms.emplace_back(
                         std::make_unique<

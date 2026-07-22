@@ -76,7 +76,7 @@ pub struct RustTwoStreamSource {
     views: Vec<View>,
     spherical: Option<SphericalGeometry>,
     workspace: Workspace,
-    pool: rayon::ThreadPool,
+    pool: Option<rayon::ThreadPool>,
     radiance: Option<RadianceBatch>,
     jacobians: Option<AtmosphereJacobians>,
 }
@@ -98,15 +98,20 @@ fn new_rust_twostream_source(
         chapman_factors.to_vec(),
         solar_cosine,
     );
-    let solver = TwoStreamSolver::new(geometry, mode)?.with_execution_policy(if num_threads == 1 {
-        ExecutionPolicy::Serial
-    } else {
+    let use_rayon = num_threads > 1;
+    let solver = TwoStreamSolver::new(geometry, mode)?.with_execution_policy(if use_rayon {
         ExecutionPolicy::Rayon
+    } else {
+        ExecutionPolicy::Serial
     });
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(num_threads.max(1))
-        .thread_name(|index| format!("sasktran2-twostream-{index}"))
-        .build()?;
+    let pool = use_rayon
+        .then(|| {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(num_threads)
+                .thread_name(|index| format!("sasktran2-twostream-{index}"))
+                .build()
+        })
+        .transpose()?;
     Ok(Box::new(RustTwoStreamSource {
         solver,
         views: Vec::new(),
@@ -298,22 +303,25 @@ fn solve(
     let views = &this.views;
     let spherical = this.spherical.as_ref();
     let workspace = &mut this.workspace;
-    let result = this
-        .pool
-        .install(|| match (spherical, calculate_jacobians) {
-            (Some(geometry), true) => solver
-                .solve_spherical_atmosphere_with_jacobians(&atmosphere, geometry, workspace)
-                .map(|(radiance, jacobians)| (radiance, Some(jacobians))),
-            (Some(geometry), false) => solver
-                .solve_spherical_atmosphere(&atmosphere, geometry, workspace)
-                .map(|radiance| (radiance, None)),
-            (None, true) => solver
-                .solve_atmosphere_with_jacobians(&atmosphere, views, workspace)
-                .map(|(radiance, jacobians)| (radiance, Some(jacobians))),
-            (None, false) => solver
-                .solve_atmosphere(&atmosphere, views, workspace)
-                .map(|radiance| (radiance, None)),
-        })?;
+    let mut solve = || match (spherical, calculate_jacobians) {
+        (Some(geometry), true) => solver
+            .solve_spherical_atmosphere_with_jacobians(&atmosphere, geometry, workspace)
+            .map(|(radiance, jacobians)| (radiance, Some(jacobians))),
+        (Some(geometry), false) => solver
+            .solve_spherical_atmosphere(&atmosphere, geometry, workspace)
+            .map(|radiance| (radiance, None)),
+        (None, true) => solver
+            .solve_atmosphere_with_jacobians(&atmosphere, views, workspace)
+            .map(|(radiance, jacobians)| (radiance, Some(jacobians))),
+        (None, false) => solver
+            .solve_atmosphere(&atmosphere, views, workspace)
+            .map(|radiance| (radiance, None)),
+    };
+    let result = if let Some(pool) = &this.pool {
+        pool.install(solve)
+    } else {
+        solve()
+    }?;
     this.radiance = Some(result.0);
     this.jacobians = result.1;
     Ok(())

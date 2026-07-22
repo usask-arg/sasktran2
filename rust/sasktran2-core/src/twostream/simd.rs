@@ -1,6 +1,6 @@
 //! Portable-SIMD preprocessing kernels.
 
-use std::simd::{Simd, num::SimdFloat};
+use std::simd::{Simd, cmp::SimdPartialOrd, num::SimdFloat};
 
 const LANES: usize = 4;
 type F64x4 = Simd<f64, LANES>;
@@ -88,12 +88,20 @@ pub(super) fn prepare_average_secant(
     let chunks = output.len() / LANES;
     for chunk in 0..chunks {
         let offset = chunk * LANES;
-        let value = (F64x4::from_slice(&top[offset..]) - F64x4::from_slice(&bottom[offset..]))
-            / F64x4::from_slice(&optical_depth[offset..]);
+        let optical_depth = F64x4::from_slice(&optical_depth[offset..]);
+        let value = optical_depth.simd_gt(F64x4::splat(0.0)).select(
+            (F64x4::from_slice(&top[offset..]) - F64x4::from_slice(&bottom[offset..]))
+                / optical_depth,
+            F64x4::splat(0.0),
+        );
         value.copy_to_slice(&mut output[offset..offset + LANES]);
     }
     for wave in chunks * LANES..output.len() {
-        output[wave] = (top[wave] - bottom[wave]) / optical_depth[wave];
+        output[wave] = if optical_depth[wave] > 0.0 {
+            (top[wave] - bottom[wave]) / optical_depth[wave]
+        } else {
+            0.0
+        };
     }
 }
 
@@ -183,8 +191,13 @@ fn prepare_optical_layer(
         let ksb = kb * sb;
         let avg_ks = (kst + ksb) * F64x4::splat(0.5);
         let od = avg_k * F64x4::splat(layer_thickness);
-        let ssa = (avg_ks / avg_k).simd_min(clamp);
-        let b1 = ((kst * bt + ksb * bb) * F64x4::splat(0.5)) / avg_ks;
+        let zero = F64x4::splat(0.0);
+        let ssa = avg_k
+            .simd_gt(zero)
+            .select((avg_ks / avg_k).simd_min(clamp), zero);
+        let b1 = avg_ks
+            .simd_gt(zero)
+            .select(((kst * bt + ksb * bb) * F64x4::splat(0.5)) / avg_ks, zero);
         od.copy_to_slice(&mut optical_depth[offset..offset + LANES]);
         ssa.copy_to_slice(&mut layer_ssa[offset..offset + LANES]);
         b1.copy_to_slice(&mut layer_b1[offset..offset + LANES]);
@@ -197,7 +210,15 @@ fn prepare_optical_layer(
         let ksb = extinction[bi] * level_ssa[bi];
         let avg_ks = 0.5 * (kst + ksb);
         optical_depth[wave] = avg_k * layer_thickness;
-        layer_ssa[wave] = (avg_ks / avg_k).min(1.0 - 1.0e-9);
-        layer_b1[wave] = 0.5 * (kst * level_b1[ti] + ksb * level_b1[bi]) / avg_ks;
+        layer_ssa[wave] = if avg_k > 0.0 {
+            (avg_ks / avg_k).min(1.0 - 1.0e-9)
+        } else {
+            0.0
+        };
+        layer_b1[wave] = if avg_ks > 0.0 {
+            0.5 * (kst * level_b1[ti] + ksb * level_b1[bi]) / avg_ks
+        } else {
+            0.0
+        };
     }
 }

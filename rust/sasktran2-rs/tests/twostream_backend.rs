@@ -1,5 +1,7 @@
 use ndarray::s;
-use sasktran2_rs::bindings::config::{EmissionSource, ThreadingLib, TwoStreamBackend};
+use sasktran2_rs::bindings::config::{
+    EmissionSource, ThreadingLib, ThreadingModel, TwoStreamBackend,
+};
 use sasktran2_rs::bindings::prelude::*;
 
 fn make_atmosphere(nlevel: usize, nwavel: usize, thermal: bool) -> Atmosphere {
@@ -176,47 +178,45 @@ fn rust_twostream_engine_matches_cpp_radiances_and_jacobians() -> Result<()> {
 
         let cpp = cpp_engine.calculate_radiance(&atmosphere)?;
         let rust = rust_engine.calculate_radiance(&atmosphere)?;
-        assert_close(
-            rust.radiance.as_slice().unwrap(),
-            cpp.radiance.as_slice().unwrap(),
-            1.0e-10,
-        );
-        for (name, cpp_derivative) in &cpp.d_radiance {
-            // The existing C++ thermal backprop has known inconsistencies
-            // with end-to-end finite differences for these fields. They are
-            // checked against finite differences below instead.
-            if thermal && (name == "wf_emission" || name == "wf_b1" || name == "wf_extinction") {
-                continue;
-            }
+        if !thermal {
             assert_close(
-                rust.d_radiance[name].as_slice().unwrap(),
-                cpp_derivative.as_slice().unwrap(),
-                3.0e-8,
+                rust.radiance.as_slice().unwrap(),
+                cpp.radiance.as_slice().unwrap(),
+                1.0e-10,
             );
-        }
-        for (name, cpp_derivative) in &cpp.d_radiance_surf {
-            // The C++ surface-albedo adjoint does not match a perturbation of
-            // the Lambertian albedo, while the Rust explicit adjoint does.
-            if name == "wf_albedo" || (thermal && name == "wf_surface_emission") {
-                continue;
+            for (name, cpp_derivative) in &cpp.d_radiance {
+                assert_close(
+                    rust.d_radiance[name].as_slice().unwrap(),
+                    cpp_derivative.as_slice().unwrap(),
+                    3.0e-8,
+                );
             }
-            assert_close(
-                rust.d_radiance_surf[name].as_slice().unwrap(),
-                cpp_derivative.as_slice().unwrap(),
-                3.0e-8,
-            );
+            for (name, cpp_derivative) in &cpp.d_radiance_surf {
+                // The C++ surface-albedo adjoint does not match a perturbation
+                // of the Lambertian albedo, while the Rust explicit adjoint does.
+                if name == "wf_albedo" {
+                    continue;
+                }
+                assert_close(
+                    rust.d_radiance_surf[name].as_slice().unwrap(),
+                    cpp_derivative.as_slice().unwrap(),
+                    3.0e-8,
+                );
+            }
         }
 
         // Reusing the Rust engine must refresh the batch cache.
         let original_extinction = atmosphere.storage.total_extinction[[2, 3]];
         atmosphere.storage.total_extinction[[2, 3]] *= 1.02;
-        let cpp_updated = cpp_engine.calculate_radiance(&atmosphere)?;
         let rust_updated = rust_engine.calculate_radiance(&atmosphere)?;
-        assert_close(
-            rust_updated.radiance.as_slice().unwrap(),
-            cpp_updated.radiance.as_slice().unwrap(),
-            1.0e-10,
-        );
+        if !thermal {
+            let cpp_updated = cpp_engine.calculate_radiance(&atmosphere)?;
+            assert_close(
+                rust_updated.radiance.as_slice().unwrap(),
+                cpp_updated.radiance.as_slice().unwrap(),
+                1.0e-10,
+            );
+        }
         atmosphere.storage.total_extinction[[2, 3]] = original_extinction;
 
         // Verify the engine-level indexing and derivative mapping against
@@ -340,33 +340,37 @@ fn rust_twostream_multithread_matches_serial() -> Result<()> {
     let atmosphere = make_atmosphere(nlevel, 65, true);
     let (geometry, viewing) = geometry_and_views(nlevel);
     let serial_config = config(TwoStreamBackend::Rust, true);
-    let mut parallel_config = config(TwoStreamBackend::Rust, true);
-    parallel_config.with_num_threads(4)?;
-    parallel_config.with_threading_lib(ThreadingLib::Rayon)?;
-    parallel_config.with_wavelength_batch_size(8)?;
     let serial =
         Engine::new(&serial_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
-    let parallel =
-        Engine::new(&parallel_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
 
-    assert_close(
-        parallel.radiance.as_slice().unwrap(),
-        serial.radiance.as_slice().unwrap(),
-        1.0e-12,
-    );
-    for (name, serial_derivative) in &serial.d_radiance {
+    for threading_model in [ThreadingModel::Wavelength, ThreadingModel::Source] {
+        let mut parallel_config = config(TwoStreamBackend::Rust, true);
+        parallel_config.with_num_threads(4)?;
+        parallel_config.with_threading_lib(ThreadingLib::Rayon)?;
+        parallel_config.with_threading_model(threading_model)?;
+        parallel_config.with_wavelength_batch_size(8)?;
+        let parallel =
+            Engine::new(&parallel_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
+
         assert_close(
-            parallel.d_radiance[name].as_slice().unwrap(),
-            serial_derivative.as_slice().unwrap(),
-            1.0e-11,
+            parallel.radiance.as_slice().unwrap(),
+            serial.radiance.as_slice().unwrap(),
+            1.0e-12,
         );
-    }
-    for (name, serial_derivative) in &serial.d_radiance_surf {
-        assert_close(
-            parallel.d_radiance_surf[name].as_slice().unwrap(),
-            serial_derivative.as_slice().unwrap(),
-            1.0e-11,
-        );
+        for (name, serial_derivative) in &serial.d_radiance {
+            assert_close(
+                parallel.d_radiance[name].as_slice().unwrap(),
+                serial_derivative.as_slice().unwrap(),
+                1.0e-11,
+            );
+        }
+        for (name, serial_derivative) in &serial.d_radiance_surf {
+            assert_close(
+                parallel.d_radiance_surf[name].as_slice().unwrap(),
+                serial_derivative.as_slice().unwrap(),
+                1.0e-11,
+            );
+        }
     }
     Ok(())
 }
@@ -432,17 +436,52 @@ fn rust_solar_and_thermal_twostream_sources_coexist() -> Result<()> {
     let nlevel = 6;
     let atmosphere = make_atmosphere(nlevel, 17, true);
     let (geometry, viewing) = geometry_and_views(nlevel);
-    let mut cpp_config = config(TwoStreamBackend::Cpp, true);
-    cpp_config.with_multiple_scatter_source(MultipleScatterSource::TwoStream)?;
     let mut rust_config = config(TwoStreamBackend::Rust, true);
     rust_config.with_multiple_scatter_source(MultipleScatterSource::TwoStream)?;
-    let cpp = Engine::new(&cpp_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
+    let combined =
+        Engine::new(&rust_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
+
+    let solar_config = config(TwoStreamBackend::Rust, false);
+    let solar = Engine::new(&solar_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
+    let thermal_config = config(TwoStreamBackend::Rust, true);
+    let thermal =
+        Engine::new(&thermal_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
+
+    let expected = &solar.radiance + &thermal.radiance;
+    assert_close(
+        combined.radiance.as_slice().unwrap(),
+        expected.as_slice().unwrap(),
+        1.0e-12,
+    );
+    Ok(())
+}
+
+#[test]
+fn rust_twostream_thermal_radiance_matches_two_stream_discrete_ordinates() -> Result<()> {
+    let nlevel = 6;
+    let nwavel = 17;
+    let mut atmosphere = make_atmosphere(nlevel, nwavel, true);
+    atmosphere.storage.solar_irradiance.fill(0.0);
+    let (geometry, viewing) = geometry_and_views(nlevel);
+
+    let rust_config = config(TwoStreamBackend::Rust, true);
+    let mut do_config = config(TwoStreamBackend::Cpp, true);
+    do_config.with_emission_source(EmissionSource::DiscreteOrdinates)?;
+    do_config.with_multiple_scatter_source(MultipleScatterSource::DiscreteOrdinates)?;
+    do_config.with_single_scatter_source(SingleScatterSource::DiscreteOrdinates)?;
+
     let rust = Engine::new(&rust_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
+    let discrete_ordinates =
+        Engine::new(&do_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
+
     assert_close(
         rust.radiance.as_slice().unwrap(),
-        cpp.radiance.as_slice().unwrap(),
-        1.0e-10,
+        discrete_ordinates.radiance.as_slice().unwrap(),
+        2.0e-8,
     );
+    // The standard DO thermal Jacobians are not a reliable oracle here; the
+    // Rust extinction, SSA, phase, atmospheric-emission, and surface
+    // derivatives are checked end to end against central differences above.
     Ok(())
 }
 
@@ -545,27 +584,45 @@ fn benchmark_twostream_engine_backends() -> Result<()> {
     use std::time::Instant;
 
     let nlevel = 21;
-    let atmosphere = make_atmosphere(nlevel, 8192, false);
     let (geometry, viewing) = geometry_and_views(nlevel);
-    for threads in [1, 4] {
-        for backend in [TwoStreamBackend::Cpp, TwoStreamBackend::Rust] {
-            let mut benchmark_config = config(backend, false);
-            benchmark_config.with_num_threads(threads)?;
-            benchmark_config.with_threading_lib(ThreadingLib::Rayon)?;
-            let engine = Engine::new(&benchmark_config, &geometry, &viewing)?;
-            black_box(engine.calculate_radiance(&atmosphere)?);
-            let mut samples = Vec::with_capacity(5);
-            for _ in 0..5 {
-                let start = Instant::now();
-                let output = engine.calculate_radiance(&atmosphere)?;
-                black_box(output.radiance[[0, 0, 0]]);
-                samples.push(start.elapsed().as_secs_f64() * 1.0e3);
+    for calculate_derivatives in [false, true] {
+        let atmosphere =
+            make_atmosphere_with_derivatives(nlevel, 8192, false, calculate_derivatives);
+        for threads in [1, 4] {
+            let mut cases = vec![(TwoStreamBackend::Cpp, ThreadingModel::Wavelength, 1)];
+            for batch_size in [1, 8, 32, 128, 512, 2048, 8192] {
+                cases.push((
+                    TwoStreamBackend::Rust,
+                    ThreadingModel::Wavelength,
+                    batch_size,
+                ));
             }
-            samples.sort_by(f64::total_cmp);
-            eprintln!(
-                "backend={backend:?}, threads={threads}, median_ms={:.3}",
-                samples[samples.len() / 2]
-            );
+            if threads > 1 {
+                for batch_size in [128, 512, 2048, 8192] {
+                    cases.push((TwoStreamBackend::Rust, ThreadingModel::Source, batch_size));
+                }
+            }
+            for (backend, threading_model, batch_size) in cases {
+                let mut benchmark_config = config(backend, false);
+                benchmark_config.with_num_threads(threads)?;
+                benchmark_config.with_threading_lib(ThreadingLib::Rayon)?;
+                benchmark_config.with_threading_model(threading_model)?;
+                benchmark_config.with_wavelength_batch_size(batch_size)?;
+                let engine = Engine::new(&benchmark_config, &geometry, &viewing)?;
+                black_box(engine.calculate_radiance(&atmosphere)?);
+                let mut samples = Vec::with_capacity(5);
+                for _ in 0..5 {
+                    let start = Instant::now();
+                    let output = engine.calculate_radiance(&atmosphere)?;
+                    black_box(output.radiance[[0, 0, 0]]);
+                    samples.push(start.elapsed().as_secs_f64() * 1.0e3);
+                }
+                samples.sort_by(f64::total_cmp);
+                eprintln!(
+                    "backend={backend:?}, derivatives={calculate_derivatives}, threads={threads}, threading={threading_model:?}, batch={batch_size}, median_ms={:.3}",
+                    samples[samples.len() / 2]
+                );
+            }
         }
     }
     Ok(())
@@ -593,6 +650,8 @@ fn benchmark_spherical_twostream_limb_against_interpolated_do() -> Result<()> {
                 if backend == "interpolated-do" {
                     benchmark_config
                         .with_multiple_scatter_source(MultipleScatterSource::DiscreteOrdinates)?;
+                } else {
+                    benchmark_config.with_wavelength_batch_size(128)?;
                 }
                 let engine = Engine::new(&benchmark_config, &geometry, &viewing)?;
                 black_box(engine.calculate_radiance(&atmosphere)?);

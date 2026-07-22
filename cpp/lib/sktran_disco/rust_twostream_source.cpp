@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <stdexcept>
 
 #ifdef SKTRAN_RUST_SUPPORT
 
@@ -108,10 +109,20 @@ void RustTwoStreamSourceAdapter<SOURCE_TYPE>::initialize_geometry(
 
     constexpr int source_mode =
         sasktran2::twostream::has_solar<SOURCE_TYPE>() ? 0 : 1;
-    m_rust_source.emplace(sasktran2::rust::twostream::new_rust_twostream_source(
-        as_slice(layer_thickness),
-        as_slice(chapman_factors.data(), nlyr * nlyr), sza_grid[0], source_mode,
-        static_cast<std::size_t>(m_config->num_threads())));
+    const int worker_count = std::max(1, m_config->num_wavelength_threads());
+    const int worker_threads = worker_count == 1 ? m_config->num_threads() : 1;
+    m_rust_sources.clear();
+    m_rust_sources.reserve(worker_count);
+    for (int worker = 0; worker < worker_count; ++worker) {
+        m_rust_sources.push_back(
+            sasktran2::rust::twostream::new_rust_twostream_source(
+                as_slice(layer_thickness),
+                as_slice(chapman_factors.data(), nlyr * nlyr), sza_grid[0],
+                source_mode, static_cast<std::size_t>(worker_threads)));
+    }
+    m_surface_albedo.assign(
+        worker_count,
+        std::vector<double>(static_cast<std::size_t>(m_block_capacity)));
 
     if (spherical) {
         const auto& altitude_grid = m_geometry.altitude_grid().grid();
@@ -200,13 +211,16 @@ void RustTwoStreamSourceAdapter<SOURCE_TYPE>::initialize_geometry(
             ray_offsets.push_back(segment_layers.size());
         }
 
-        sasktran2::rust::twostream::set_spherical_geometry(
-            **m_rust_source, as_slice(sza_grid), as_slice(chapman_factors),
-            as_slice(ray_offsets), as_slice(ground_hit),
-            as_slice(ground_cos_sza), as_slice(segment_layers),
-            as_slice(segment_fractions), as_slice(segment_cosines),
-            as_slice(segment_relative_azimuths), as_slice(segment_cos_sza),
-            as_slice(od_offsets), as_slice(od_indices), as_slice(od_weights));
+        for (auto& source : m_rust_sources) {
+            sasktran2::rust::twostream::set_spherical_geometry(
+                *source, as_slice(sza_grid), as_slice(chapman_factors),
+                as_slice(ray_offsets), as_slice(ground_hit),
+                as_slice(ground_cos_sza), as_slice(segment_layers),
+                as_slice(segment_fractions), as_slice(segment_cosines),
+                as_slice(segment_relative_azimuths), as_slice(segment_cos_sza),
+                as_slice(od_offsets), as_slice(od_indices),
+                as_slice(od_weights));
+        }
         return;
     }
 
@@ -224,40 +238,76 @@ void RustTwoStreamSourceAdapter<SOURCE_TYPE>::initialize_geometry(
         viewing_cosines.push_back(viewing_cosine);
         relative_azimuths.push_back(-ray.observer_and_look.relative_azimuth);
     }
-    sasktran2::rust::twostream::set_views(**m_rust_source,
-                                          as_slice(viewing_cosines),
-                                          as_slice(relative_azimuths));
+    for (auto& source : m_rust_sources) {
+        sasktran2::rust::twostream::set_views(
+            *source, as_slice(viewing_cosines), as_slice(relative_azimuths));
+    }
 }
 
 template <sasktran2::twostream::SourceType SOURCE_TYPE>
 void RustTwoStreamSourceAdapter<SOURCE_TYPE>::initialize_atmosphere(
     const sasktran2::atmosphere::Atmosphere<1>& atmosphere) {
-    ZoneScopedN("Rust Twostream Atmosphere Batch");
     m_atmosphere = &atmosphere;
+}
+
+template <sasktran2::twostream::SourceType SOURCE_TYPE>
+void RustTwoStreamSourceAdapter<SOURCE_TYPE>::set_wavelength_block_capacity(
+    int block_capacity) {
+    if (block_capacity < 1) {
+        throw std::invalid_argument(
+            "Rust two-stream wavelength block capacity must be positive");
+    }
+    m_block_capacity = block_capacity;
+    for (auto& albedo : m_surface_albedo) {
+        albedo.resize(static_cast<std::size_t>(block_capacity));
+    }
+}
+
+template <sasktran2::twostream::SourceType SOURCE_TYPE>
+void RustTwoStreamSourceAdapter<SOURCE_TYPE>::calculate(
+    const sasktran2::WavelengthBlock<>& block, int threadidx) {
+    ZoneScopedN("Rust Twostream Calculate Block");
     if (m_los_rays->empty()) {
         return;
     }
+    if (m_atmosphere == nullptr || threadidx < 0 ||
+        static_cast<std::size_t>(threadidx) >= m_rust_sources.size() ||
+        block.count < 1 || block.count > m_block_capacity || block.start < 0 ||
+        block.start + block.count > m_atmosphere->num_wavel()) {
+        throw std::invalid_argument("Invalid Rust two-stream wavelength block");
+    }
+
+    const auto& atmosphere = *m_atmosphere;
     const auto& storage = atmosphere.storage();
-    const std::size_t nwavel = atmosphere.num_wavel();
+    const std::size_t nwavel = static_cast<std::size_t>(block.count);
+    const std::size_t wavelength_start = static_cast<std::size_t>(block.start);
     const std::size_t nlevel = storage.total_extinction.rows();
     const std::size_t num_legendre = storage.leg_coeff.dimension(0);
+    const std::size_t level_offset = wavelength_start * nlevel;
+    const std::size_t legendre_offset = level_offset * num_legendre;
 
-    std::vector<double> surface_albedo(nwavel);
-    for (std::size_t wave = 0; wave < nwavel; ++wave) {
-        surface_albedo[wave] =
-            atmosphere.surface().brdf(wave, 0, 0, 0)(0, 0) * EIGEN_PI;
+    auto& surface_albedo = m_surface_albedo[threadidx];
+    for (std::size_t lane = 0; lane < nwavel; ++lane) {
+        surface_albedo[lane] =
+            atmosphere.surface().brdf(wavelength_start + lane, 0, 0, 0)(0, 0) *
+            EIGEN_PI;
     }
 
     sasktran2::rust::twostream::solve(
-        **m_rust_source, nwavel, nlevel,
-        as_slice(storage.total_extinction.data(), nlevel * nwavel),
-        as_slice(storage.ssa.data(), nlevel * nwavel),
-        as_slice(storage.leg_coeff.data(), num_legendre * nlevel * nwavel),
-        num_legendre, as_slice(storage.f.data(), nlevel * nwavel),
-        as_slice(storage.emission_source.data(), nlevel * nwavel),
-        as_slice(surface_albedo),
-        as_slice(atmosphere.surface().emission().data(), nwavel),
-        as_slice(storage.solar_irradiance.data(), nwavel),
+        *m_rust_sources[threadidx], nwavel, nlevel,
+        as_slice(storage.total_extinction.data() + level_offset,
+                 nlevel * nwavel),
+        as_slice(storage.ssa.data() + level_offset, nlevel * nwavel),
+        as_slice(storage.leg_coeff.data() + legendre_offset,
+                 num_legendre * nlevel * nwavel),
+        num_legendre,
+        as_slice(storage.f.data() + level_offset, nlevel * nwavel),
+        as_slice(storage.emission_source.data() + level_offset,
+                 nlevel * nwavel),
+        as_slice(surface_albedo.data(), nwavel),
+        as_slice(atmosphere.surface().emission().data() + wavelength_start,
+                 nwavel),
+        as_slice(storage.solar_irradiance.data() + wavelength_start, nwavel),
         atmosphere.num_deriv() > 0);
 }
 
@@ -266,11 +316,15 @@ void RustTwoStreamSourceAdapter<SOURCE_TYPE>::start_of_ray_source(
     const sasktran2::WavelengthBlock<>& block, int losidx, int wavel_threadidx,
     int threadidx, sasktran2::WavelengthBlockDual<1>& source) const {
     ZoneScopedN("Rust Twostream Cached Source");
-    const std::size_t nwavel = m_atmosphere->num_wavel();
+    if (wavel_threadidx < 0 ||
+        static_cast<std::size_t>(wavel_threadidx) >= m_rust_sources.size()) {
+        throw std::invalid_argument("Invalid Rust two-stream worker index");
+    }
+    const auto& rust_source = *m_rust_sources[wavel_threadidx];
+    const std::size_t nwavel = static_cast<std::size_t>(block.count);
     const std::size_t nlevel = m_atmosphere->storage().total_extinction.rows();
-    const std::size_t wavelength_start = block.start;
-    const std::size_t surface_index = losidx * nwavel + wavelength_start;
-    const auto radiance = sasktran2::rust::twostream::radiance(**m_rust_source);
+    const std::size_t surface_index = losidx * nwavel;
+    const auto radiance = sasktran2::rust::twostream::radiance(rust_source);
     source.value.row(0).head(block.count) +=
         Eigen::Map<const Eigen::RowVectorXd>(radiance.data() + surface_index,
                                              block.count);
@@ -280,16 +334,15 @@ void RustTwoStreamSourceAdapter<SOURCE_TYPE>::start_of_ray_source(
     }
 
     const auto extinction =
-        sasktran2::rust::twostream::extinction_jacobian(**m_rust_source);
-    const auto ssa = sasktran2::rust::twostream::ssa_jacobian(**m_rust_source);
-    const auto b1 = sasktran2::rust::twostream::b1_jacobian(**m_rust_source);
+        sasktran2::rust::twostream::extinction_jacobian(rust_source);
+    const auto ssa = sasktran2::rust::twostream::ssa_jacobian(rust_source);
+    const auto b1 = sasktran2::rust::twostream::b1_jacobian(rust_source);
     const auto emission =
-        sasktran2::rust::twostream::emission_jacobian(**m_rust_source);
+        sasktran2::rust::twostream::emission_jacobian(rust_source);
     const std::size_t view_level_offset = losidx * nlevel * nwavel;
     for (std::size_t rust_level = 0; rust_level < nlevel; ++rust_level) {
         const std::size_t cpp_level = nlevel - 1 - rust_level;
-        const std::size_t index =
-            view_level_offset + rust_level * nwavel + wavelength_start;
+        const std::size_t index = view_level_offset + rust_level * nwavel;
         source.deriv.row(cpp_level).head(block.count) +=
             Eigen::Map<const Eigen::RowVectorXd>(extinction.data() + index,
                                                  block.count);
@@ -330,7 +383,7 @@ void RustTwoStreamSourceAdapter<SOURCE_TYPE>::start_of_ray_source(
     }
 
     const auto albedo_jacobian =
-        sasktran2::rust::twostream::surface_albedo_jacobian(**m_rust_source);
+        sasktran2::rust::twostream::surface_albedo_jacobian(rust_source);
     for (int deriv = 0; deriv < m_atmosphere->surface().num_deriv(); ++deriv) {
         source.deriv.row(m_atmosphere->surface_deriv_start_index() + deriv)
             .head(block.count) += Eigen::Map<const Eigen::RowVectorXd>(
@@ -340,7 +393,7 @@ void RustTwoStreamSourceAdapter<SOURCE_TYPE>::start_of_ray_source(
         if (m_atmosphere->include_emission_derivatives()) {
             const auto surface_emission =
                 sasktran2::rust::twostream::surface_emission_jacobian(
-                    **m_rust_source);
+                    rust_source);
             source.deriv.row(m_atmosphere->surface_emission_deriv_start_index())
                 .head(block.count) += Eigen::Map<const Eigen::RowVectorXd>(
                 surface_emission.data() + surface_index, block.count);

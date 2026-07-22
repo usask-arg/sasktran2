@@ -10,7 +10,7 @@
 #include "sktran_disco/sktran_do.h"
 #include "sktran_disco/twostream/meta.h"
 #include <limits>
-#include <optional>
+#include <vector>
 
 template <sasktran2::twostream::SourceType SOURCE_TYPE>
 class RustTwoStreamSourceAdapter final : public SourceTermInterface<1> {
@@ -24,8 +24,10 @@ class RustTwoStreamSourceAdapter final : public SourceTermInterface<1> {
     std::vector<std::unique_ptr<sasktran_disco::GeometryLayerArray<1>>>
         m_geometry_layers;
     const std::vector<sasktran2::raytracing::TracedRay>* m_los_rays = nullptr;
-    std::optional<::rust::Box<sasktran2::rust::twostream::RustTwoStreamSource>>
-        m_rust_source;
+    std::vector<::rust::Box<sasktran2::rust::twostream::RustTwoStreamSource>>
+        m_rust_sources;
+    std::vector<std::vector<double>> m_surface_albedo;
+    int m_block_capacity = 1;
 
   public:
     explicit RustTwoStreamSourceAdapter(const sasktran2::Geometry1D& geometry);
@@ -38,11 +40,12 @@ class RustTwoStreamSourceAdapter final : public SourceTermInterface<1> {
             internal_viewing) override;
     void initialize_atmosphere(
         const sasktran2::atmosphere::Atmosphere<1>& atmosphere) override;
+    void set_wavelength_block_capacity(int block_capacity) override;
     int maximum_wavelength_block_size() const override {
         return std::numeric_limits<int>::max();
     }
     void calculate(const sasktran2::WavelengthBlock<>& block,
-                   int threadidx) override {}
+                   int threadidx) override;
 
     void integrated_source(
         const sasktran2::WavelengthBlock<>& block, int losidx, int layeridx,
