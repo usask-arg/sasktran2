@@ -145,15 +145,25 @@ namespace sasktran2 {
         supports_linearization(sasktran2::LinearizationMode mode,
                                const std::vector<SourceTermInterface<NSTOKES>*>&
                                    source_terms) const {
-            if (mode != sasktran2::LinearizationMode::Jacobian) {
-                return false;
-            }
             return std::all_of(
                 source_terms.begin(), source_terms.end(),
                 [mode](const SourceTermInterface<NSTOKES>* source) {
                     return source->supports_linearization(mode);
                 });
         }
+
+        void integrate_jvp(
+            sasktran2::RadianceJVP<NSTOKES>& radiance,
+            const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+            int wavelength, int rayidx, int wavel_threadidx, int threadidx,
+            Eigen::Ref<const Eigen::VectorXd> native_tangent) const;
+
+        void integrate_vjp(
+            Eigen::Vector<double, NSTOKES>& radiance,
+            const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+            int wavelength, int rayidx, int wavel_threadidx, int threadidx,
+            const Eigen::Vector<double, NSTOKES>& cotangent,
+            Eigen::Ref<Eigen::VectorXd> native_gradient) const;
 
         /** Integrates the source terms and stores the result in radiance
          *

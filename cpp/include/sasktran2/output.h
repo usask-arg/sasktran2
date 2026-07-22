@@ -343,6 +343,12 @@ namespace sasktran2 {
                     const sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
                     int losidx, int threadidx) override;
 
+        void native_tangent(int wavelidx, Eigen::VectorXd& tangent) const;
+
+        void assign_native(int losidx, int wavelidx,
+                           const Eigen::Vector<double, NSTOKES>& value,
+                           const Eigen::Vector<double, NSTOKES>& jvp);
+
         void assign_flux(
             const sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>&,
             int, int, int, int) override {}
@@ -385,6 +391,16 @@ namespace sasktran2 {
         void assign(const sasktran2::WavelengthBlock<>& block,
                     const sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
                     int losidx, int threadidx) override;
+
+        Eigen::Vector<double, NSTOKES> native_cotangent(int losidx,
+                                                        int wavelidx) const;
+
+        void assign_native_value(int losidx, int wavelidx,
+                                 const Eigen::Vector<double, NSTOKES>& value);
+
+        void accumulate_native_gradient(
+            int wavelidx, int threadidx,
+            Eigen::Ref<const Eigen::VectorXd> native_gradient);
 
         void assign_flux(
             const sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>&,

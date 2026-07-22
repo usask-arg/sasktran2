@@ -117,6 +117,106 @@ namespace sasktran2 {
     }
 
     template <int NSTOKES>
+    void OutputJVP<NSTOKES>::native_tangent(int wavelidx,
+                                            Eigen::VectorXd& tangent) const {
+        tangent.setZero(this->m_atmosphere->num_deriv());
+        const int num_geometry = this->m_ngeometry;
+        for (const auto& [name, parameter_tangent] : m_derivative_tangents) {
+            const auto& mapping =
+                this->m_atmosphere->storage().derivative_mappings_const().at(
+                    name);
+            Eigen::VectorXd native_parameter;
+            if (mapping.get_interpolator_const().has_value()) {
+                native_parameter = mapping.get_interpolator_const().value() *
+                                   parameter_tangent;
+            } else {
+                native_parameter = parameter_tangent;
+            }
+            const auto& native_mapping = mapping.native_mapping();
+            if (native_mapping.d_extinction.has_value()) {
+                tangent.head(num_geometry).array() +=
+                    native_mapping.d_extinction.value().col(wavelidx).array() *
+                    native_parameter.array();
+            }
+            if (native_mapping.d_ssa.has_value()) {
+                tangent
+                    .segment(this->m_atmosphere->ssa_deriv_start_index(),
+                             num_geometry)
+                    .array() +=
+                    native_mapping.d_ssa.value().col(wavelidx).array() *
+                    native_parameter.array();
+            }
+            if (mapping.is_scattering_derivative()) {
+                const int start = this->m_atmosphere->scat_deriv_start_index() +
+                                  mapping.get_scattering_index() * num_geometry;
+                tangent.segment(start, num_geometry).array() +=
+                    native_mapping.scat_factor.value().col(wavelidx).array() *
+                    native_parameter.array();
+            }
+            if (native_mapping.d_emission.has_value() &&
+                this->m_atmosphere->include_emission_derivatives()) {
+                tangent
+                    .segment(this->m_atmosphere->emission_deriv_start_index(),
+                             num_geometry)
+                    .array() +=
+                    native_mapping.d_emission.value().col(wavelidx).array() *
+                    native_parameter.array();
+            }
+        }
+
+        for (const auto& [name, parameter_tangent] : m_surface_tangents) {
+            const auto& mapping =
+                this->m_atmosphere->surface().derivative_mappings().at(name);
+            double parameter_direction;
+            if (mapping.get_interpolator_const().has_value()) {
+                parameter_direction =
+                    mapping.get_interpolator_const().value().row(wavelidx).dot(
+                        parameter_tangent);
+            } else {
+                parameter_direction = parameter_tangent(wavelidx);
+            }
+            const auto& native_mapping = mapping.native_surface_mapping();
+            if (native_mapping.d_brdf.has_value()) {
+                tangent
+                    .segment(this->m_atmosphere->surface_deriv_start_index(),
+                             this->m_atmosphere->surface().num_deriv())
+                    .array() +=
+                    parameter_direction * native_mapping.d_brdf.value()
+                                              .row(wavelidx)
+                                              .transpose()
+                                              .array();
+            }
+            if (native_mapping.d_emission.has_value() &&
+                this->m_atmosphere->include_emission_derivatives()) {
+                tangent(
+                    this->m_atmosphere->surface_emission_deriv_start_index()) +=
+                    parameter_direction *
+                    native_mapping.d_emission.value()(wavelidx, 0);
+            }
+        }
+    }
+
+    template <int NSTOKES>
+    void OutputJVP<NSTOKES>::assign_native(
+        int losidx, int wavelidx, const Eigen::Vector<double, NSTOKES>& value,
+        const Eigen::Vector<double, NSTOKES>& jvp) {
+        const int linear_index =
+            NSTOKES * this->m_nlos * wavelidx + NSTOKES * losidx;
+        double c = 1.0;
+        double s = 0.0;
+        if constexpr (NSTOKES >= 3) {
+            c = this->m_stokes_C[losidx];
+            s = this->m_stokes_S[losidx];
+        }
+        const auto rotated_value = rotate_stokes<NSTOKES>(value, c, s);
+        const auto rotated_jvp = rotate_stokes<NSTOKES>(jvp, c, s);
+        for (int stokes = 0; stokes < NSTOKES; ++stokes) {
+            m_radiance(linear_index + stokes) = rotated_value(stokes);
+            m_jvp(linear_index + stokes) = rotated_jvp(stokes);
+        }
+    }
+
+    template <int NSTOKES>
     template <typename Radiance>
     void OutputJVP<NSTOKES>::assign_lane(const Radiance& radiance, int losidx,
                                          int wavelidx, int threadidx) {
@@ -257,6 +357,125 @@ namespace sasktran2 {
             for (const auto& [name, gradient] : m_surface_gradients) {
                 m_thread_surface_gradients[thread][name] =
                     Eigen::VectorXd::Zero(gradient.size());
+            }
+        }
+    }
+
+    template <int NSTOKES>
+    Eigen::Vector<double, NSTOKES>
+    OutputVJP<NSTOKES>::native_cotangent(int losidx, int wavelidx) const {
+        const int linear_index =
+            NSTOKES * this->m_nlos * wavelidx + NSTOKES * losidx;
+        Eigen::Vector<double, NSTOKES> cotangent;
+        for (int stokes = 0; stokes < NSTOKES; ++stokes) {
+            cotangent(stokes) = m_cotangent(linear_index + stokes);
+        }
+        double c = 1.0;
+        double s = 0.0;
+        if constexpr (NSTOKES >= 3) {
+            c = this->m_stokes_C[losidx];
+            s = this->m_stokes_S[losidx];
+        }
+        return transpose_rotate_stokes<NSTOKES>(cotangent, c, s);
+    }
+
+    template <int NSTOKES>
+    void OutputVJP<NSTOKES>::assign_native_value(
+        int losidx, int wavelidx, const Eigen::Vector<double, NSTOKES>& value) {
+        const int linear_index =
+            NSTOKES * this->m_nlos * wavelidx + NSTOKES * losidx;
+        double c = 1.0;
+        double s = 0.0;
+        if constexpr (NSTOKES >= 3) {
+            c = this->m_stokes_C[losidx];
+            s = this->m_stokes_S[losidx];
+        }
+        const auto rotated = rotate_stokes<NSTOKES>(value, c, s);
+        for (int stokes = 0; stokes < NSTOKES; ++stokes) {
+            m_radiance(linear_index + stokes) = rotated(stokes);
+        }
+    }
+
+    template <int NSTOKES>
+    void OutputVJP<NSTOKES>::accumulate_native_gradient(
+        int wavelidx, int threadidx,
+        Eigen::Ref<const Eigen::VectorXd> native_gradient) {
+        const int num_geometry = this->m_ngeometry;
+        Eigen::VectorXd native_parameter(num_geometry);
+        for (const auto& [name, gradient] : m_derivative_gradients) {
+            const auto& mapping =
+                this->m_atmosphere->storage().derivative_mappings_const().at(
+                    name);
+            const auto& native_mapping = mapping.native_mapping();
+            native_parameter.setZero();
+            if (native_mapping.d_extinction.has_value()) {
+                native_parameter.array() +=
+                    native_mapping.d_extinction.value().col(wavelidx).array() *
+                    native_gradient.head(num_geometry).array();
+            }
+            if (native_mapping.d_ssa.has_value()) {
+                native_parameter.array() +=
+                    native_mapping.d_ssa.value().col(wavelidx).array() *
+                    native_gradient
+                        .segment(this->m_atmosphere->ssa_deriv_start_index(),
+                                 num_geometry)
+                        .array();
+            }
+            if (mapping.is_scattering_derivative()) {
+                const int start = this->m_atmosphere->scat_deriv_start_index() +
+                                  mapping.get_scattering_index() * num_geometry;
+                native_parameter.array() +=
+                    native_mapping.scat_factor.value().col(wavelidx).array() *
+                    native_gradient.segment(start, num_geometry).array();
+            }
+            if (native_mapping.d_emission.has_value() &&
+                this->m_atmosphere->include_emission_derivatives()) {
+                native_parameter.array() +=
+                    native_mapping.d_emission.value().col(wavelidx).array() *
+                    native_gradient
+                        .segment(
+                            this->m_atmosphere->emission_deriv_start_index(),
+                            num_geometry)
+                        .array();
+            }
+            auto& target = m_thread_derivative_gradients[threadidx].at(name);
+            if (mapping.get_interpolator_const().has_value()) {
+                target.noalias() +=
+                    mapping.get_interpolator_const().value().transpose() *
+                    native_parameter;
+            } else {
+                target += native_parameter;
+            }
+        }
+
+        for (const auto& [name, gradient] : m_surface_gradients) {
+            const auto& mapping =
+                this->m_atmosphere->surface().derivative_mappings().at(name);
+            const auto& native_mapping = mapping.native_surface_mapping();
+            double native_parameter_gradient = 0.0;
+            if (native_mapping.d_brdf.has_value()) {
+                native_parameter_gradient +=
+                    native_mapping.d_brdf.value().row(wavelidx).dot(
+                        native_gradient.segment(
+                            this->m_atmosphere->surface_deriv_start_index(),
+                            this->m_atmosphere->surface().num_deriv()));
+            }
+            if (native_mapping.d_emission.has_value() &&
+                this->m_atmosphere->include_emission_derivatives()) {
+                native_parameter_gradient +=
+                    native_mapping.d_emission.value()(wavelidx, 0) *
+                    native_gradient(this->m_atmosphere
+                                        ->surface_emission_deriv_start_index());
+            }
+            auto& target = m_thread_surface_gradients[threadidx].at(name);
+            if (mapping.get_interpolator_const().has_value()) {
+                target.noalias() += mapping.get_interpolator_const()
+                                        .value()
+                                        .row(wavelidx)
+                                        .transpose() *
+                                    native_parameter_gradient;
+            } else {
+                target(wavelidx) += native_parameter_gradient;
             }
         }
     }

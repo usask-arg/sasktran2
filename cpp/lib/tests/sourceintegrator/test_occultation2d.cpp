@@ -157,6 +157,14 @@ TEST_CASE("Atmosphere allocates flattened storage from Geometry2D",
 
 TEST_CASE("SourceIntegrator reports native linearization capabilities",
           "[sourceintegrator][linearization]") {
+    class NativeProductSource : public InteriorTestSource {
+      public:
+        bool
+        supports_linearization(sasktran2::LinearizationMode) const override {
+            return true;
+        }
+    };
+
     class NoJacobianSource : public InteriorTestSource {
       public:
         bool
@@ -175,11 +183,111 @@ TEST_CASE("SourceIntegrator reports native linearization capabilities",
     REQUIRE_FALSE(integrator.supports_linearization(
         sasktran2::LinearizationMode::VJP, default_sources));
 
+    NativeProductSource native_source;
+    std::vector<SourceTermInterface<1>*> native_sources = {&native_source};
+    REQUIRE(integrator.supports_linearization(
+        sasktran2::LinearizationMode::Jacobian, native_sources));
+    REQUIRE(integrator.supports_linearization(sasktran2::LinearizationMode::JVP,
+                                              native_sources));
+    REQUIRE(integrator.supports_linearization(sasktran2::LinearizationMode::VJP,
+                                              native_sources));
+
+    std::vector<SourceTermInterface<1>*> mixed_sources = {&native_source,
+                                                          &default_source};
+    REQUIRE_FALSE(integrator.supports_linearization(
+        sasktran2::LinearizationMode::JVP, mixed_sources));
+    REQUIRE_FALSE(integrator.supports_linearization(
+        sasktran2::LinearizationMode::VJP, mixed_sources));
+
     NoJacobianSource unsupported_source;
     std::vector<SourceTermInterface<1>*> unsupported_sources = {
         &default_source, &unsupported_source};
     REQUIRE_FALSE(integrator.supports_linearization(
         sasktran2::LinearizationMode::Jacobian, unsupported_sources));
+}
+
+TEST_CASE("SourceIntegrator differentiates start-of-ray source transforms",
+          "[sourceintegrator][linearization]") {
+    class NativeTransformSource : public InteriorTestSource {
+      public:
+        bool has_interior_source() const override { return false; }
+
+        bool
+        supports_linearization(sasktran2::LinearizationMode) const override {
+            return true;
+        }
+
+        void end_of_ray_source(
+            const sasktran2::WavelengthBlock<>&, int, int, int,
+            sasktran2::WavelengthBlockDual<1>& source) const override {
+            source.value(0, 0) += 2.0;
+        }
+
+        void end_of_ray_source_jvp(
+            int, int, int, int,
+            Eigen::Ref<const Eigen::VectorXd> native_tangent,
+            sasktran2::RadianceJVP<1>& source) const override {
+            source.value[0] += 2.0;
+            source.jvp[0] += native_tangent[0];
+        }
+
+        void end_of_ray_source_vjp(
+            int, int, int, int, const Eigen::Vector<double, 1>& cotangent,
+            Eigen::Ref<Eigen::VectorXd> native_gradient) const override {
+            native_gradient[0] += cotangent[0];
+        }
+
+        void start_of_ray_source(
+            const sasktran2::WavelengthBlock<>&, int, int, int,
+            sasktran2::WavelengthBlockDual<1>& source) const override {
+            source.value(0, 0) = 3.0 * source.value(0, 0) + 4.0;
+        }
+
+        void start_of_ray_source_jvp(
+            int, int, int, int,
+            Eigen::Ref<const Eigen::VectorXd> native_tangent,
+            sasktran2::RadianceJVP<1>& source) const override {
+            const double value_before = source.value[0];
+            source.value[0] = 3.0 * value_before + 4.0;
+            source.jvp[0] =
+                3.0 * source.jvp[0] + native_tangent[1] * value_before;
+        }
+
+        void start_of_ray_source_vjp(
+            int, int, int, int, const Eigen::Vector<double, 1>& value_before,
+            Eigen::Vector<double, 1>& cotangent,
+            Eigen::Ref<Eigen::VectorXd> native_gradient) const override {
+            native_gradient[1] += cotangent[0] * value_before[0];
+            cotangent *= 3.0;
+        }
+    };
+
+    const auto geometry = geometry2d();
+    sasktran2::Config config;
+    sasktran2::atmosphere::Atmosphere<1> atmosphere(1, geometry, config, true);
+    std::vector<sasktran2::raytracing::TracedRay> rays(1);
+    sasktran2::SourceIntegrator<1> integrator(true);
+    integrator.initialize_geometry(rays, geometry);
+    integrator.initialize_thread_storage(1, 1);
+    integrator.initialize_atmosphere(atmosphere);
+
+    NativeTransformSource source;
+    std::vector<SourceTermInterface<1>*> sources = {&source};
+    Eigen::VectorXd tangent = Eigen::VectorXd::Zero(atmosphere.num_deriv());
+    tangent[0] = 5.0;
+    tangent[1] = 7.0;
+    sasktran2::RadianceJVP<1> jvp;
+    integrator.integrate_jvp(jvp, sources, 0, 0, 0, 0, tangent);
+    REQUIRE(jvp.value[0] == Catch::Approx(10.0));
+    REQUIRE(jvp.jvp[0] == Catch::Approx(29.0));
+
+    Eigen::VectorXd gradient = Eigen::VectorXd::Zero(atmosphere.num_deriv());
+    Eigen::Vector<double, 1> value;
+    integrator.integrate_vjp(value, sources, 0, 0, 0, 0,
+                             Eigen::Vector<double, 1>::Ones(), gradient);
+    REQUIRE(value[0] == Catch::Approx(10.0));
+    REQUIRE(gradient[0] == Catch::Approx(3.0));
+    REQUIRE(gradient[1] == Catch::Approx(2.0));
 }
 
 TEST_CASE("SourceIntegrator applies 2D occultation transmission and native "

@@ -9,6 +9,7 @@ import sasktran2 as sk
 from sasktran2._core_rust import PyEngine
 from sasktran2.linearization import (
     Linearization,
+    LinearizationBackend,
     _ParameterSpec,
     _semantic_parameter_name,
 )
@@ -153,9 +154,10 @@ class Engine:
     def linearize(self, atmosphere: sk.Atmosphere) -> Linearization:
         """Construct the local linear radiance model for an atmosphere.
 
-        JVP and VJP operations stream contractions through the native output
-        path without allocating the complete structured radiance Jacobian.
-        The Jacobian is calculated and cached only if requested.
+        JVP and VJP operations use the most specialized backend supported by
+        all active line-of-sight sources. They do not allocate the complete
+        structured radiance Jacobian. The Jacobian is calculated and cached
+        only if requested.
 
         Parameters
         ----------
@@ -184,6 +186,14 @@ class Engine:
         initial_output = self._engine._calculate_jvp(native_atmosphere, {}, {})
         value = self._radiance_dataarray(initial_output.radiance, atmosphere)
         registry = self._linearization_registry(atmosphere)
+        backend_names = {
+            1: LinearizationBackend.StreamingJacobian,
+            2: LinearizationBackend.Native,
+        }
+        backends = {
+            mode: backend_names[self._engine._linearization_backend(mode_index)]
+            for mode, mode_index in (("jvp", 1), ("vjp", 2))
+        }
 
         def load_jacobian() -> xr.Dataset:
             result, _ = self._calculate_radiance(
@@ -192,6 +202,18 @@ class Engine:
             jacobian: dict[str, xr.DataArray] = {}
             for parameter, output_name in registry.output_names.items():
                 block = result[output_name]
+                if not registry.specs[parameter].parameter_dims:
+                    scalar_dims = tuple(
+                        dim for dim in block.dims if dim not in value.dims
+                    )
+                    for dim in scalar_dims:
+                        if block.sizes[dim] != 1:
+                            msg = (
+                                f"Scalar parameter {parameter!r} has a non-scalar "
+                                f"Jacobian dimension {dim!r}"
+                            )
+                            raise ValueError(msg)
+                        block = block.isel({dim: 0}, drop=True)
                 if parameter in registry.log_parameters:
                     block = block * result["radiance"]
                 jacobian[parameter] = block
@@ -201,7 +223,9 @@ class Engine:
             volume_tangents: dict[str, np.ndarray] = {}
             surface_tangents: dict[str, np.ndarray] = {}
             for parameter in tangent.data_vars:
-                values = np.ascontiguousarray(tangent[parameter].values).reshape(-1)
+                values = np.ascontiguousarray(
+                    tangent[parameter].values, dtype=np.float64
+                ).reshape(-1)
                 for name in registry.volume_names.get(parameter, ()):
                     volume_tangents[name] = values
                 for name in registry.surface_names.get(parameter, ()):
@@ -211,24 +235,37 @@ class Engine:
             )
             return self._radiance_dataarray(output.jvp, atmosphere)
 
-        def evaluate_vjp(cotangent: xr.DataArray) -> xr.Dataset:
+        def evaluate_vjp(
+            cotangent: xr.DataArray, parameters: tuple[str, ...]
+        ) -> xr.Dataset:
+            if not parameters:
+                return xr.Dataset()
+            volume_sizes = {
+                name: registry.volume_sizes[name]
+                for parameter in parameters
+                for name in registry.volume_names.get(parameter, ())
+            }
+            surface_sizes = {
+                name: registry.surface_sizes[name]
+                for parameter in parameters
+                for name in registry.surface_names.get(parameter, ())
+            }
             output = self._engine._calculate_vjp(
                 native_atmosphere,
-                np.ascontiguousarray(cotangent.values),
-                registry.volume_sizes,
-                registry.surface_sizes,
+                np.ascontiguousarray(cotangent.values, dtype=np.float64),
+                volume_sizes,
+                surface_sizes,
             )
             gradients = {
                 parameter: xr.zeros_like(registry.tangent_template[parameter])
-                for parameter in registry.specs
+                for parameter in parameters
             }
-            for parameter, names in registry.volume_names.items():
-                for name in names:
+            for parameter in parameters:
+                for name in registry.volume_names.get(parameter, ()):
                     gradients[parameter].data += np.asarray(
                         output.derivative_gradients[name]
                     ).reshape(gradients[parameter].shape)
-            for parameter, names in registry.surface_names.items():
-                for name in names:
+                for name in registry.surface_names.get(parameter, ()):
                     gradients[parameter].data += np.asarray(
                         output.surface_gradients[name]
                     ).reshape(gradients[parameter].shape)
@@ -243,6 +280,7 @@ class Engine:
             load_jacobian,
             evaluate_jvp,
             evaluate_vjp,
+            backends,
             (self, native_atmosphere),
         )
 
@@ -355,7 +393,7 @@ class Engine:
             interpolator = np.asarray(mapping.interpolator)
             if interpolator.size:
                 size = int(interpolator.shape[1])
-                if mapping.interp_dim == "dummy":
+                if mapping.interp_dim == "dummy" or size == 1:
                     dims: tuple[str, ...] = ()
                     shape: tuple[int, ...] = ()
                 else:

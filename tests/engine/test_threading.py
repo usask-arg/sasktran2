@@ -70,3 +70,52 @@ def test_threading(threading_lib, threading_model):
         rad_threaded["radiance"].to_numpy(),
         rtol=1e-8,
     )
+
+
+@pytest.mark.parametrize(
+    "threading_model",
+    [sk.ThreadingModel.Wavelength, sk.ThreadingModel.Source],
+)
+def test_native_linearization_threading(threading_model):
+    if not build_info.openmp_support_enabled():
+        pytest.skip("OpenMP support is not enabled in this build of sasktran2.")
+
+    config = sk.Config()
+    config.single_scatter_source = sk.SingleScatterSource.Exact
+    config.multiple_scatter_source = sk.MultipleScatterSource.NoSource
+    config.threading_lib = sk.ThreadingLib.OpenMP
+    config.threading_model = threading_model
+    geometry = sk.Geometry1D(
+        0.6,
+        0.0,
+        6_372_000.0,
+        np.arange(0.0, 30_001.0, 5_000.0),
+        sk.InterpolationMethod.LinearInterpolation,
+        sk.GeometryType.Spherical,
+    )
+    viewing = sk.ViewingGeometry()
+    for cos_viewing_zenith in [0.5, 0.65, 0.8, 0.95]:
+        viewing.add_ray(sk.GroundViewingSolar(0.6, 0.2, cos_viewing_zenith, 100_000.0))
+    atmosphere = sk.Atmosphere(
+        geometry, config, wavelengths_nm=np.array([300.0, 350.0, 400.0])
+    )
+    sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
+    atmosphere["rayleigh"] = sk.constituent.Rayleigh()
+    atmosphere["surface"] = sk.constituent.LambertianSurface(0.3)
+
+    config.num_threads = 1
+    serial = sk.Engine(config, geometry, viewing).linearize(atmosphere)
+    tangent = serial.tangent_template[["pressure_pa"]]
+    tangent["pressure_pa"].data[:] = np.linspace(0.2, 0.8, atmosphere.num_locations)
+    serial_value = serial.value.copy(deep=True)
+    serial_jvp = serial.jvp(tangent).copy(deep=True)
+    cotangent = serial.value * 0 + 0.7
+    serial_vjp = serial.vjp(cotangent)["pressure_pa"].copy(deep=True)
+
+    config.num_threads = 2
+    threaded = sk.Engine(config, geometry, viewing).linearize(atmosphere)
+    np.testing.assert_allclose(threaded.value, serial_value, rtol=1e-12)
+    np.testing.assert_allclose(threaded.jvp(tangent), serial_jvp, rtol=1e-12)
+    np.testing.assert_allclose(
+        threaded.vjp(cotangent)["pressure_pa"], serial_vjp, rtol=1e-12
+    )
