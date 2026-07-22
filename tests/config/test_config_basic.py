@@ -92,3 +92,27 @@ def test_wavelength_batch_size_round_trip_and_validation():
 
     with pytest.raises(RuntimeError, match="at least 1"):
         config.wavelength_batch_size = 0
+
+
+def test_single_scatter_source_quadrature_round_trip():
+    config = sk.Config()
+
+    assert not config.single_scatter_source_quadrature
+    config.single_scatter_source_quadrature = True
+    assert config.single_scatter_source_quadrature
+
+
+def test_single_scatter_solar_transmission_round_trip():
+    config = sk.Config()
+
+    assert (
+        config.single_scatter_solar_transmission
+        == sk.SingleScatterSolarTransmission.Exact
+    )
+    config.single_scatter_solar_transmission = (
+        sk.SingleScatterSolarTransmission.RayTable
+    )
+    assert (
+        config.single_scatter_solar_transmission
+        == sk.SingleScatterSolarTransmission.RayTable
+    )

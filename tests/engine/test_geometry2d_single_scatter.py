@@ -153,6 +153,36 @@ def test_vertical_isotropic_single_scatter_matches_analytic_solution():
     np.testing.assert_allclose(result.radiance[:, 0, 0], expected, rtol=2.0e-12)
 
 
+def test_2d_ray_table_setting_retains_exact_endpoint_path_until_supported():
+    geometry = vertical_geometry2d()
+    viewing = vertical_ground_viewing()
+
+    def calculate(use_ray_table: bool):
+        config = single_scatter_config()
+        config.single_scatter_source_quadrature = use_ray_table
+        if use_ray_table:
+            config.single_scatter_solar_transmission = (
+                sk.SingleScatterSolarTransmission.RayTable
+            )
+        atmosphere = sk.Atmosphere(
+            geometry,
+            config,
+            wavelengths_nm=WAVELENGTHS_NM,
+            calculate_derivatives=True,
+        )
+        atmosphere.storage.total_extinction[:] = np.array([1.0e-5, 2.5e-5])
+        atmosphere.storage.ssa[:] = np.array([0.4, 0.7])
+        atmosphere.leg_coeff.a1[0] = 1.0
+        return sk.Engine(config, geometry, viewing).calculate_radiance(atmosphere)
+
+    endpoint = calculate(False)
+    configured_ray_table = calculate(True)
+    for variable in endpoint.data_vars:
+        np.testing.assert_allclose(
+            configured_ray_table[variable], endpoint[variable], rtol=0.0, atol=0.0
+        )
+
+
 def test_vertical_cell_corner_path_matches_analytic_solution():
     config = single_scatter_config()
     geometry = sk.Geometry2D(

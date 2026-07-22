@@ -8,6 +8,7 @@ from sasktran2._core_rust import (
     MultipleScatterSource,
     OccultationSource,
     PyConfig,
+    SingleScatterSolarTransmission,
     SingleScatterSource,
     SpectralGridMode,
     StokesBasis,
@@ -157,8 +158,8 @@ class Config:
         Sets which (if any) single scatter source is to be used inside the calculation.
 
         `sasktran2.SingleScatterSource.Exact` (Default)
-            A single scatter source where exact ray tracing is performed at each quadrature
-            point along the observer lines of sight towards the sun
+            A single scatter source with explicitly traced solar paths. The
+            within-cell rule and solar-path provider are configured separately.
 
         `sasktran2.SingleScatterSource.Table`
             A single scatter source where a pre-computed table is used to calculate solar
@@ -180,8 +181,8 @@ class Config:
         Sets which (if any) single scatter source is to be used inside the calculation.
 
         `sasktran2.SingleScatterSource.Exact` (Default)
-            A single scatter source where exact ray tracing is performed at each quadrature
-            point along the observer lines of sight towards the sun
+            A single scatter source with explicitly traced solar paths. The
+            within-cell rule and solar-path provider are configured separately.
 
         `sasktran2.SingleScatterSource.Table`
             A single scatter source where a pre-computed table is used to calculate solar
@@ -196,6 +197,34 @@ class Config:
             Disables the single scatter source
         """
         self._config.single_scatter_source = value
+
+    @property
+    def single_scatter_source_quadrature(self) -> bool:
+        """Use fixed Gauss-8 integration for exact single scattering.
+
+        This is currently supported for straight rays in 1D spherical
+        geometry. Unsupported rays retain the endpoint integration rule.
+        Defaults to ``False``.
+        """
+        return self._config.single_scatter_source_quadrature
+
+    @single_scatter_source_quadrature.setter
+    def single_scatter_source_quadrature(self, value: bool):
+        self._config.single_scatter_source_quadrature = value
+
+    @property
+    def single_scatter_solar_transmission(self) -> SingleScatterSolarTransmission:
+        """Solar-path method used by fixed single-scatter quadrature.
+
+        ``Exact`` traces a solar ray from every quadrature point and is the
+        default. ``RayTable`` reuses an impact-parameter ray table for speed;
+        it is currently supported in 1D spherical geometry.
+        """
+        return self._config.single_scatter_solar_transmission
+
+    @single_scatter_solar_transmission.setter
+    def single_scatter_solar_transmission(self, value: SingleScatterSolarTransmission):
+        self._config.single_scatter_solar_transmission = value
 
     @property
     def occultation_source(self) -> OccultationSource:

@@ -22,6 +22,13 @@ pub enum SingleScatterSource {
 
 #[pyclass(eq, eq_int)]
 #[derive(PartialEq, Clone)]
+pub enum SingleScatterSolarTransmission {
+    Exact,
+    RayTable,
+}
+
+#[pyclass(eq, eq_int)]
+#[derive(PartialEq, Clone)]
 pub enum OccultationSource {
     NoSource,
     Standard,
@@ -288,6 +295,58 @@ impl PyConfig {
             .with_single_scatter_source(source)
             .into_pyresult()?;
 
+        Ok(())
+    }
+
+    #[getter]
+    fn get_single_scatter_source_quadrature(&self) -> PyResult<bool> {
+        self.config
+            .single_scatter_source_quadrature()
+            .into_pyresult()
+    }
+
+    #[setter]
+    fn set_single_scatter_source_quadrature(&mut self, enabled: bool) -> PyResult<()> {
+        self.config
+            .with_single_scatter_source_quadrature(enabled)
+            .into_pyresult()?;
+        Ok(())
+    }
+
+    #[getter]
+    fn get_single_scatter_solar_transmission(
+        &self,
+    ) -> PyResult<SingleScatterSolarTransmission> {
+        match self
+            .config
+            .single_scatter_solar_transmission()
+            .into_pyresult()?
+        {
+            config::SingleScatterSolarTransmission::Exact => {
+                Ok(SingleScatterSolarTransmission::Exact)
+            }
+            config::SingleScatterSolarTransmission::RayTable => {
+                Ok(SingleScatterSolarTransmission::RayTable)
+            }
+        }
+    }
+
+    #[setter]
+    fn set_single_scatter_solar_transmission(
+        &mut self,
+        transmission: PyRef<'_, SingleScatterSolarTransmission>,
+    ) -> PyResult<()> {
+        let transmission = match *transmission {
+            SingleScatterSolarTransmission::Exact => {
+                config::SingleScatterSolarTransmission::Exact
+            }
+            SingleScatterSolarTransmission::RayTable => {
+                config::SingleScatterSolarTransmission::RayTable
+            }
+        };
+        self.config
+            .with_single_scatter_solar_transmission(transmission)
+            .into_pyresult()?;
         Ok(())
     }
 

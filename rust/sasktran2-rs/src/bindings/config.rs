@@ -22,6 +22,13 @@ pub enum SingleScatterSource {
 
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SingleScatterSolarTransmission {
+    Exact = 0,
+    RayTable = 1,
+}
+
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum OccultationSource {
     None = 1,
     Standard = 0,
@@ -330,6 +337,83 @@ impl Config {
         if error_code != 0 {
             Err(anyhow!(
                 "Error setting single scatter source: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn single_scatter_source_quadrature(&self) -> Result<bool> {
+        let mut enabled = 0i32;
+        let error_code = unsafe {
+            ffi::sk_config_get_single_scatter_source_quadrature(self.config, &mut enabled)
+        };
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting single scatter source quadrature: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(enabled != 0)
+        }
+    }
+
+    pub fn with_single_scatter_source_quadrature(
+        &mut self,
+        enabled: bool,
+    ) -> Result<&mut Self> {
+        let error_code = unsafe {
+            ffi::sk_config_set_single_scatter_source_quadrature(
+                self.config,
+                if enabled { 1 } else { 0 },
+            )
+        };
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting single scatter source quadrature: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn single_scatter_solar_transmission(
+        &self,
+    ) -> Result<SingleScatterSolarTransmission> {
+        let mut transmission = 0i32;
+        let error_code = unsafe {
+            ffi::sk_config_get_single_scatter_solar_transmission(
+                self.config,
+                &mut transmission,
+            )
+        };
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting single scatter solar transmission: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(unsafe {
+                std::mem::transmute::<i32, SingleScatterSolarTransmission>(transmission)
+            })
+        }
+    }
+
+    pub fn with_single_scatter_solar_transmission(
+        &mut self,
+        transmission: SingleScatterSolarTransmission,
+    ) -> Result<&mut Self> {
+        let error_code = unsafe {
+            ffi::sk_config_set_single_scatter_solar_transmission(
+                self.config,
+                transmission as i32,
+            )
+        };
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting single scatter solar transmission: error code {}",
                 error_code
             ))
         } else {
@@ -1033,6 +1117,11 @@ mod tests {
             config.single_scatter_source().unwrap(),
             SingleScatterSource::Exact
         );
+        assert!(!config.single_scatter_source_quadrature().unwrap());
+        assert_eq!(
+            config.single_scatter_solar_transmission().unwrap(),
+            SingleScatterSolarTransmission::Exact
+        );
         assert_eq!(config.stokes_basis().unwrap(), StokesBasis::Standard);
         assert_eq!(config.log_level().unwrap(), LogLevel::Warn);
     }
@@ -1080,6 +1169,21 @@ mod tests {
         assert_eq!(
             config.single_scatter_source().unwrap(),
             SingleScatterSource::SolarTable
+        );
+
+        config
+            .with_single_scatter_source_quadrature(true)
+            .unwrap();
+        assert!(config.single_scatter_source_quadrature().unwrap());
+
+        config
+            .with_single_scatter_solar_transmission(
+                SingleScatterSolarTransmission::RayTable,
+            )
+            .unwrap();
+        assert_eq!(
+            config.single_scatter_solar_transmission().unwrap(),
+            SingleScatterSolarTransmission::RayTable
         );
 
         config.with_stokes_basis(StokesBasis::Observer).unwrap();
