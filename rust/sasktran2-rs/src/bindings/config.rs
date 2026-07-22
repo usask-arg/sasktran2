@@ -52,6 +52,13 @@ pub enum ThreadingModel {
     Source = 1,
 }
 
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TwoStreamBackend {
+    Cpp = 0,
+    Rust = 1,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ThreadingLib {
     Rayon,
@@ -174,6 +181,33 @@ impl Config {
         if error_code != 0 {
             Err(anyhow!(
                 "Error setting threading model: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn two_stream_backend(&self) -> Result<TwoStreamBackend> {
+        let mut backend = 0i32;
+        let error_code =
+            unsafe { ffi::sk_config_get_two_stream_backend(self.config, &mut backend) };
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting two-stream backend: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(unsafe { std::mem::transmute::<i32, TwoStreamBackend>(backend) })
+        }
+    }
+
+    pub fn with_two_stream_backend(&mut self, backend: TwoStreamBackend) -> Result<&mut Self> {
+        let error_code =
+            unsafe { ffi::sk_config_set_two_stream_backend(self.config, backend as i32) };
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting two-stream backend: error code {}",
                 error_code
             ))
         } else {
@@ -1021,6 +1055,10 @@ mod tests {
             ThreadingModel::Wavelength
         );
         assert_eq!(
+            config.two_stream_backend().unwrap(),
+            TwoStreamBackend::Rust
+        );
+        assert_eq!(
             config.input_validation_mode().unwrap(),
             InputValidationMode::Strict
         );
@@ -1051,6 +1089,11 @@ mod tests {
 
         config.with_threading_model(ThreadingModel::Source).unwrap();
         assert_eq!(config.threading_model().unwrap(), ThreadingModel::Source);
+
+        config
+            .with_two_stream_backend(TwoStreamBackend::Rust)
+            .unwrap();
+        assert_eq!(config.two_stream_backend().unwrap(), TwoStreamBackend::Rust);
 
         config
             .with_input_validation_mode(InputValidationMode::Strict)

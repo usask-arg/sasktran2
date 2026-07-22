@@ -592,6 +592,18 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn sk_config_get_two_stream_backend(
+        config: *mut Config,
+        backend: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_set_two_stream_backend(
+        config: *mut Config,
+        backend: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn sk_config_get_wavelength_batch_size(
         config: *mut Config,
         batch_size: *mut ::std::os::raw::c_int,

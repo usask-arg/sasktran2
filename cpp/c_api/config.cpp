@@ -118,6 +118,26 @@ int sk_config_set_threading_model(Config* config, int threading_model) {
     return 0; // Success
 }
 
+int sk_config_get_two_stream_backend(Config* config, int* backend) {
+    if (config == nullptr || backend == nullptr) {
+        return -1;
+    }
+    *backend = static_cast<int>(config->impl.two_stream_backend());
+    return 0;
+}
+
+int sk_config_set_two_stream_backend(Config* config, int backend) {
+    if (config == nullptr) {
+        return -1;
+    }
+    if (backend < 0 || backend > 1) {
+        return -2;
+    }
+    config->impl.set_two_stream_backend(
+        static_cast<sasktran2::Config::TwoStreamBackend>(backend));
+    return 0;
+}
+
 int sk_config_get_wavelength_batch_size(Config* config, int* batch_size) {
     if (config == nullptr || batch_size == nullptr) {
         return -1;

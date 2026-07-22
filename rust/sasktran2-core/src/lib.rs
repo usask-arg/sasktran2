@@ -1,5 +1,8 @@
+#![cfg_attr(feature = "simd", feature(portable_simd))]
+
 pub mod math;
 pub mod raytracer;
+pub mod twostream;
 
 #[cxx::bridge(namespace = "sasktran2::rust::testing")]
 pub mod ffi {

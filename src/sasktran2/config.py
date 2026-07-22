@@ -13,6 +13,7 @@ from sasktran2._core_rust import (
     StokesBasis,
     ThreadingLib,
     ThreadingModel,
+    TwoStreamBackend,
 )
 
 
@@ -58,6 +59,11 @@ class Config:
         engine automatically reduces the requested size to the maximum
         supported by every active source and observer; sources that do not
         support batching therefore reduce the effective size to 1.
+
+        The Rust two-stream backend vectorizes across each block. For large
+        spectra, blocks containing roughly 32--256 wavelengths usually avoid
+        per-block overhead while retaining enough blocks for wavelength
+        threading. Scalar blocks are supported but are not performance-optimal.
         """
         return self._config.wavelength_batch_size
 
@@ -98,6 +104,22 @@ class Config:
             is small.
         """
         self._config.threading_model = value
+
+    @property
+    def two_stream_backend(self) -> TwoStreamBackend:
+        """Selects the implementation used by solar and thermal two-stream sources.
+
+        Builds with Rust support use the Rust backend by default; builds without
+        Rust support use the C++ backend. The Rust backend solves and caches one
+        engine wavelength block at a time. Its SIMD kernels are most effective
+        when ``wavelength_batch_size`` is roughly 32--256; wavelength threading
+        also requires at least one block per worker.
+        """
+        return self._config.two_stream_backend
+
+    @two_stream_backend.setter
+    def two_stream_backend(self, value: TwoStreamBackend):
+        self._config.two_stream_backend = value
 
     @property
     def input_validation_mode(self) -> InputValidationMode:

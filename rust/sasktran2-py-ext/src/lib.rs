@@ -57,6 +57,7 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<config::EmissionSource>()?;
     m.add_class::<config::StokesBasis>()?;
     m.add_class::<config::ThreadingModel>()?;
+    m.add_class::<config::TwoStreamBackend>()?;
     m.add_class::<config::InputValidationMode>()?;
     m.add_class::<config::ThreadingLib>()?;
     m.add_class::<config::SpectralGridMode>()?;

@@ -31,6 +31,8 @@ int sk_config_get_num_threads(Config* config, int* num_threads);
 int sk_config_set_num_threads(Config* config, int num_threads);
 int sk_config_get_threading_model(Config* config, int* threading_model);
 int sk_config_set_threading_model(Config* config, int threading_model);
+int sk_config_get_two_stream_backend(Config* config, int* backend);
+int sk_config_set_two_stream_backend(Config* config, int backend);
 int sk_config_get_wavelength_batch_size(Config* config, int* batch_size);
 int sk_config_set_wavelength_batch_size(Config* config, int batch_size);
 

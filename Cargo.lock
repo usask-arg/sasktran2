@@ -842,7 +842,9 @@ dependencies = [
  "gauss-quad",
  "ndarray",
  "num",
+ "rayon",
  "version_check",
+ "wide",
 ]
 
 [[package]]
