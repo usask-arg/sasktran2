@@ -1,11 +1,20 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
+from enum import Enum
 from types import MappingProxyType
 
 import numpy as np
 import xarray as xr
+
+
+class LinearizationBackend(str, Enum):
+    """Execution strategy used for a radiance derivative product."""
+
+    Native = "native"
+    StreamingJacobian = "streaming_jacobian"
+    MaterializedJacobian = "materialized_jacobian"
 
 
 @dataclass(frozen=True)
@@ -92,6 +101,31 @@ def _parameter_template(block: xr.DataArray, spec: _ParameterSpec) -> xr.DataArr
     )
 
 
+def _selected_parameters(
+    parameters: Iterable[str] | None,
+    specs: Mapping[str, _ParameterSpec],
+) -> tuple[str, ...]:
+    if parameters is None:
+        return tuple(specs)
+    if isinstance(parameters, str):
+        parameters = (parameters,)
+
+    selected = tuple(parameters)
+    if any(not isinstance(name, str) for name in selected):
+        msg = "VJP parameter names must be strings"
+        raise TypeError(msg)
+    if len(set(selected)) != len(selected):
+        msg = "VJP parameter names must not contain duplicates"
+        raise ValueError(msg)
+
+    unknown = set(selected) - set(specs)
+    if unknown:
+        names = ", ".join(sorted(unknown))
+        msg = f"Unknown VJP parameter(s): {names}"
+        raise ValueError(msg)
+    return selected
+
+
 class _FullJacobianBackend:
     """Linearization backend that contracts a cached structured Jacobian."""
 
@@ -106,6 +140,12 @@ class _FullJacobianBackend:
         self.jacobian = jacobian
         self.specs = MappingProxyType(dict(specs))
         self.tangent_template = tangent_template
+        self.backends = MappingProxyType(
+            {
+                "jvp": LinearizationBackend.MaterializedJacobian,
+                "vjp": LinearizationBackend.MaterializedJacobian,
+            }
+        )
 
     def jvp(self, tangent: xr.Dataset) -> xr.DataArray:
         if not isinstance(tangent, xr.Dataset):
@@ -141,17 +181,23 @@ class _FullJacobianBackend:
 
         return result
 
-    def vjp(self, cotangent: xr.DataArray) -> xr.Dataset:
+    def vjp(
+        self,
+        cotangent: xr.DataArray,
+        parameters: Iterable[str] | None = None,
+    ) -> xr.Dataset:
         cotangent = _validated_array(
             cotangent,
             self.value,
             tuple(self.value.dims),
             "The VJP radiance cotangent",
         )
+        selected = _selected_parameters(parameters, self.specs)
 
         gradients: dict[str, xr.DataArray] = {}
         output_dims = tuple(self.value.dims)
-        for name, spec in self.specs.items():
+        for name in selected:
+            spec = self.specs[name]
             weighted = self.jacobian[name] * cotangent
             contraction_dims = tuple(
                 dim for dim in output_dims if dim not in spec.diagonal_dims
@@ -179,7 +225,8 @@ class _EngineBackend:
         revision: int,
         jacobian_loader: Callable[[], xr.Dataset],
         jvp_evaluator: Callable[[xr.Dataset], xr.DataArray],
-        vjp_evaluator: Callable[[xr.DataArray], xr.Dataset],
+        vjp_evaluator: Callable[[xr.DataArray, tuple[str, ...]], xr.Dataset],
+        backends: Mapping[str, LinearizationBackend],
         owner,
     ) -> None:
         self.value = value
@@ -190,6 +237,7 @@ class _EngineBackend:
         self._jacobian_loader = jacobian_loader
         self._jvp_evaluator = jvp_evaluator
         self._vjp_evaluator = vjp_evaluator
+        self.backends = MappingProxyType(dict(backends))
         self._owner = owner
         self._jacobian: xr.Dataset | None = None
 
@@ -231,15 +279,20 @@ class _EngineBackend:
         self._require_current()
         return self._jvp_evaluator(xr.Dataset(normalized))
 
-    def vjp(self, cotangent: xr.DataArray) -> xr.Dataset:
+    def vjp(
+        self,
+        cotangent: xr.DataArray,
+        parameters: Iterable[str] | None = None,
+    ) -> xr.Dataset:
         cotangent = _validated_array(
             cotangent,
             self.value,
             tuple(self.value.dims),
             "The VJP radiance cotangent",
         )
+        selected = _selected_parameters(parameters, self.specs)
         self._require_current()
-        return self._vjp_evaluator(cotangent)
+        return self._vjp_evaluator(cotangent, selected)
 
 
 class Linearization:
@@ -263,7 +316,8 @@ class Linearization:
         revision: int,
         jacobian_loader: Callable[[], xr.Dataset],
         jvp_evaluator: Callable[[xr.Dataset], xr.DataArray],
-        vjp_evaluator: Callable[[xr.DataArray], xr.Dataset],
+        vjp_evaluator: Callable[[xr.DataArray, tuple[str, ...]], xr.Dataset],
+        backends: Mapping[str, LinearizationBackend],
         owner,
     ) -> Linearization:
         if not specs:
@@ -283,6 +337,7 @@ class Linearization:
                 jacobian_loader,
                 jvp_evaluator,
                 vjp_evaluator,
+                backends,
                 owner,
             )
         )
@@ -350,6 +405,11 @@ class Linearization:
         )
 
     @property
+    def backends(self) -> Mapping[str, LinearizationBackend]:
+        """Derivative-product execution strategies selected by the engine."""
+        return self._backend.backends
+
+    @property
     def tangent_template(self) -> xr.Dataset:
         """Zero tangent containing every parameter's input grid.
 
@@ -364,6 +424,20 @@ class Linearization:
         """Apply the radiance Jacobian to one labeled tangent direction."""
         return self._backend.jvp(tangent)
 
-    def vjp(self, cotangent: xr.DataArray) -> xr.Dataset:
-        """Apply the transpose radiance Jacobian to one radiance cotangent."""
-        return self._backend.vjp(cotangent)
+    def vjp(
+        self,
+        cotangent: xr.DataArray,
+        parameters: Iterable[str] | None = None,
+    ) -> xr.Dataset:
+        """Apply the transpose radiance Jacobian to one radiance cotangent.
+
+        Parameters
+        ----------
+        cotangent
+            Labeled radiance cotangent matching :attr:`value`.
+        parameters
+            Semantic parameter names to return. By default every parameter is
+            returned. Restricting this collection also avoids evaluating
+            unrequested derivative mappings in engine-created backends.
+        """
+        return self._backend.vjp(cotangent, parameters)

@@ -90,11 +90,27 @@ The same derivatives are available as a local linear model of the radiance:
     # Propagate a scalar objective's radiance sensitivity back to every input.
     parameter_gradients = linearization.vjp(radiance_sensitivity)
 
+    # Retrievals can request only their active parameters. Unrequested
+    # derivative mappings are then excluded from the VJP calculation.
+    retrieval_gradients = linearization.vjp(
+        radiance_sensitivity,
+        parameters=("ozone_vmr",),
+    )
+
 The `linearization.value` property is the radiance at the linearization point.
 JVP and VJP operations contract the native derivative rows as they are produced,
-so they do not allocate the complete mapped Jacobian. Accessing
-`linearization.jacobian` materializes and caches one labeled block per semantic
-parameter (for example, `ozone_vmr` rather than `wf_ozone_vmr`). The
+so they do not allocate the complete mapped Jacobian.
+
+The read-only `linearization.backends` mapping reports whether each product
+uses a `LinearizationBackend.Native`, `StreamingJacobian`, or
+`MaterializedJacobian` implementation. A streaming-Jacobian product avoids
+allocating the complete mapped Jacobian, but repeats the full derivative
+propagation for every call. Iterative solvers may therefore prefer a native
+product backend, or explicitly materialize the Jacobian once when only a
+streaming backend is available.
+
+Accessing `linearization.jacobian` materializes and caches one labeled block per
+semantic parameter (for example, `ozone_vmr` rather than `wf_ozone_vmr`). The
 `tangent_template` property describes the shape, dimensions, and coordinates of
 every parameter without materializing the Jacobian. Flux and diagnostic outputs
 are not part of this interface.
@@ -107,6 +123,13 @@ after the modification. Once the revision changes, new JVPs, VJPs, and a
 first-time Jacobian materialization raise `StaleLinearizationError`; already
 cached `value` and `jacobian` objects remain readable. Create a new
 linearization to evaluate derivatives at the changed state.
+
+Trust-region solvers may need to evaluate a trial atmosphere while retaining
+the linearization at the currently accepted state. Use two distinct
+`Atmosphere` instances for these states. Linearisations backed by distinct
+atmospheres can coexist and be evaluated sequentially with the same `Engine`;
+rebuilding one atmosphere does not invalidate a linearization backed by the
+other. Concurrent calls on a shared engine are not supported.
 
 Weighting functions configured in log-radiance space are converted back to
 radiance derivatives by this interface, so `jvp`, `vjp`, and `jacobian` always
