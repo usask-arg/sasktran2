@@ -206,6 +206,15 @@ namespace sasktran_disco {
         inline HomogType d_streamTransmittance(
             Location loc, AEOrder m, SolutionIndex j, uint derivIndex,
             const LayerInputDerivative<NSTOKES>& deriv) const {
+            return d_streamTransmittance(loc, m, j, derivIndex, deriv,
+                                         streamTransmittance(loc, m, j));
+        }
+
+        inline HomogType
+        d_streamTransmittance(Location loc, AEOrder m, SolutionIndex j,
+                              uint derivIndex,
+                              const LayerInputDerivative<NSTOKES>& deriv,
+                              HomogType stream_transmittance) const {
             if (loc != Location::INSIDE) {
                 abort();
             }
@@ -214,7 +223,7 @@ namespace sasktran_disco {
             return -(m_solutions[m].value.dual_eigval().deriv(derivIndex, j) *
                          M_OPTICAL_THICKNESS +
                      m_solutions[m].value.eigval(j) * d_od) *
-                   streamTransmittance(loc, m, j);
+                   stream_transmittance;
         }
 
         /**
@@ -240,7 +249,8 @@ namespace sasktran_disco {
             // Have no cross derivatives
             for (uint i = 0; i < deriv.numDerivativeLayer(M_INDEX); ++i) {
                 result.deriv[i + derivStart] = d_streamTransmittance(
-                    loc, m, j, i, deriv.layerDerivatives()[derivStart + i]);
+                    loc, m, j, i, deriv.layerDerivatives()[derivStart + i],
+                    result.value);
             }
 
             return result;

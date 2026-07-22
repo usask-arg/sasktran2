@@ -1938,10 +1938,11 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpTOACondition(
 
     for (StreamIndex i = 0; i < N * NSTOKES; ++i) {
         for (SolutionIndex j = 0; j < N * NSTOKES; ++j) {
+            const auto stream_transmittance =
+                layer.streamTransmittance(Location::INSIDE, m, j);
             mat(i, j) = solution.homog_plus(i, j);
             mat(i, j + N * NSTOKES) =
-                solution.homog_minus(i, j) *
-                layer.streamTransmittance(Location::INSIDE, m, j);
+                solution.homog_minus(i, j) * stream_transmittance;
 
             // This condition does not contain any cross derivatives
             for (uint l = 0; l < numDeriv; ++l) {
@@ -1949,12 +1950,12 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpTOACondition(
 
                 d_mat(i, j) = solution.d_homog_plus(i, j, l);
                 d_mat(i, j + N * NSTOKES) =
-                    solution.d_homog_minus(i, j, l) *
-                        layer.streamTransmittance(Location::INSIDE, m, j) +
+                    solution.d_homog_minus(i, j, l) * stream_transmittance +
                     solution.homog_minus(i, j) *
                         layer.d_streamTransmittance(
                             Location::INSIDE, m, j, l,
-                            input_deriv[l + derivStartIndex]);
+                            input_deriv[l + derivStartIndex],
+                            stream_transmittance);
             }
         }
     }
@@ -1990,15 +1991,15 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpContinuityCondition(
     for (StreamIndex i = 0; i < N * NSTOKES; ++i) {
         for (SolutionIndex j = 0, j_top = 0, j_bot = this->M_NSTR * NSTOKES;
              j < N * NSTOKES; ++j, ++j_top, ++j_bot) {
-            mat(i + N * NSTOKES, j_top) =
-                upper.solution.homog_plus(i, j) *
+            const auto upper_stream_transmittance =
                 upper.optical.streamTransmittance(Location::INSIDE, m, j);
+            mat(i + N * NSTOKES, j_top) =
+                upper.solution.homog_plus(i, j) * upper_stream_transmittance;
             mat(i + N * NSTOKES, j_bot) = -lower.solution.homog_plus(i, j);
 
-            mat(i, j_top) =
-                sasktran_disco::stokes_negation_factor<NSTOKES>(i) *
-                upper.solution.homog_minus(i, j) *
-                upper.optical.streamTransmittance(Location::INSIDE, m, j);
+            mat(i, j_top) = sasktran_disco::stokes_negation_factor<NSTOKES>(i) *
+                            upper.solution.homog_minus(i, j) *
+                            upper_stream_transmittance;
             mat(i, j_bot) =
                 -sasktran_disco::stokes_negation_factor<NSTOKES>(i) *
                 lower.solution.homog_minus(i, j);
@@ -2010,22 +2011,22 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpContinuityCondition(
 
                 d_mat(i + N * NSTOKES, j_top) =
                     upper.solution.d_homog_plus(i, j, k) *
-                        upper.optical.streamTransmittance(Location::INSIDE, m,
-                                                          j) +
+                        upper_stream_transmittance +
                     upper.solution.homog_plus(i, j) *
                         upper.optical.d_streamTransmittance(
                             Location::INSIDE, m, j, k,
-                            input_deriv[upper.layerDerivStart + k]);
+                            input_deriv[upper.layerDerivStart + k],
+                            upper_stream_transmittance);
 
                 d_mat(i, j_top) =
                     sasktran_disco::stokes_negation_factor<NSTOKES>(i) *
                     (upper.solution.d_homog_minus(i, j, k) *
-                         upper.optical.streamTransmittance(Location::INSIDE, m,
-                                                           j) +
+                         upper_stream_transmittance +
                      upper.solution.homog_minus(i, j) *
                          upper.optical.d_streamTransmittance(
                              Location::INSIDE, m, j, k,
-                             input_deriv[upper.layerDerivStart + k]));
+                             input_deriv[upper.layerDerivStart + k],
+                             upper_stream_transmittance));
             }
             for (uint k = 0; k < lower.numDeriv; ++k) {
                 auto& d_mat = d_A[lower.layerDerivStart + k].layer();
@@ -2041,17 +2042,17 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpContinuityCondition(
                            j_bot = this->M_NSTR * NSTOKES +
                                    this->M_NSTR / 2 * NSTOKES;
              j < N * NSTOKES; ++j, ++j_top, ++j_bot) {
+            const auto lower_stream_transmittance =
+                lower.optical.streamTransmittance(Location::INSIDE, m, j);
             mat(i + N * NSTOKES, j_top) = upper.solution.homog_minus(i, j);
             mat(i + N * NSTOKES, j_bot) =
-                -lower.solution.homog_minus(i, j) *
-                lower.optical.streamTransmittance(Location::INSIDE, m, j);
+                -lower.solution.homog_minus(i, j) * lower_stream_transmittance;
 
             mat(i, j_top) = sasktran_disco::stokes_negation_factor<NSTOKES>(i) *
                             upper.solution.homog_plus(i, j);
             mat(i, j_bot) =
                 -sasktran_disco::stokes_negation_factor<NSTOKES>(i) *
-                lower.solution.homog_plus(i, j) *
-                lower.optical.streamTransmittance(Location::INSIDE, m, j);
+                lower.solution.homog_plus(i, j) * lower_stream_transmittance;
 
             // We still have no cross derivatives, but we have to treat the
             // derivatives for the upper and lower layers separately
@@ -2060,22 +2061,22 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpContinuityCondition(
 
                 d_mat(i + N * NSTOKES, j_bot) =
                     -lower.solution.d_homog_minus(i, j, k) *
-                        lower.optical.streamTransmittance(Location::INSIDE, m,
-                                                          j) -
+                        lower_stream_transmittance -
                     lower.solution.homog_minus(i, j) *
                         lower.optical.d_streamTransmittance(
                             Location::INSIDE, m, j, k,
-                            input_deriv[lower.layerDerivStart + k]);
+                            input_deriv[lower.layerDerivStart + k],
+                            lower_stream_transmittance);
 
                 d_mat(i, j_bot) =
                     -sasktran_disco::stokes_negation_factor<NSTOKES>(i) *
                     (lower.solution.d_homog_plus(i, j, k) *
-                         lower.optical.streamTransmittance(Location::INSIDE, m,
-                                                           j) +
+                         lower_stream_transmittance +
                      lower.solution.homog_plus(i, j) *
                          lower.optical.d_streamTransmittance(
                              Location::INSIDE, m, j, k,
-                             input_deriv[lower.layerDerivStart + k]));
+                             input_deriv[lower.layerDerivStart + k],
+                             lower_stream_transmittance));
             }
             for (uint k = 0; k < upper.numDeriv; ++k) {
                 auto& d_mat = d_A[upper.layerDerivStart + k].upper();
@@ -2114,10 +2115,11 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpGroundCondition(
     // Build the LHS bottom layer to ground coupling condition
     for (StreamIndex i = 0; i < N * NSTOKES; ++i) {
         for (SolutionIndex j = 0; j < N * NSTOKES; ++j) {
+            const auto stream_transmittance =
+                layer.streamTransmittance(Location::INSIDE, m, j);
             sum_vm = v_minus(m, layer, i, j);
             mat(i, j) = sasktran_disco::stokes_negation_factor<NSTOKES>(i) *
-                        sum_vm *
-                        layer.streamTransmittance(Location::INSIDE, m, j);
+                        sum_vm * stream_transmittance;
 
             sum_vp = v_plus(m, layer, i, j);
             mat(i, j + N * NSTOKES) =
@@ -2130,10 +2132,11 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::bvpGroundCondition(
                                   input_deriv[layerDerivStart + k]);
                 d_mat(i, j) =
                     sasktran_disco::stokes_negation_factor<NSTOKES>(i) *
-                    (d_sum * layer.streamTransmittance(Location::INSIDE, m, j) +
+                    (d_sum * stream_transmittance +
                      sum_vm * layer.d_streamTransmittance(
                                   Location::INSIDE, m, j, k,
-                                  input_deriv[layerDerivStart + k]));
+                                  input_deriv[layerDerivStart + k],
+                                  stream_transmittance));
 
                 d_sum = d_v_plus(m, layer, i, j, k,
                                  input_deriv[layerDerivStart + k]);

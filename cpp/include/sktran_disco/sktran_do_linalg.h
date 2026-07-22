@@ -247,20 +247,13 @@ namespace sasktran_disco {
         inline void assign_rhs_d_bvp(int colindex, Eigen::MatrixXd& d_b,
                                      const Eigen::VectorXd& b) {
 
-            // Then subtract off the multiplication terms
-            for (uint i = 0; i < m_data.rows(); ++i) {
-                for (uint j = 0; j < m_data.cols(); ++j) {
-                    d_b(i + m_row_offset, colindex) -=
-                        b[j + m_col_offset] * m_data(i, j);
-                }
-            }
+            d_b.col(colindex).segment(m_row_offset, m_data.rows()).noalias() -=
+                m_data * b.segment(m_col_offset, m_data.cols());
 
-            for (uint i = 0; i < m_upper_data.rows(); ++i) {
-                for (uint j = 0; j < m_upper_data.cols(); ++j) {
-                    d_b(i + m_upper_row_offset, colindex) -=
-                        b[j + m_upper_col_offset] * m_upper_data(i, j);
-                }
-            }
+            d_b.col(colindex)
+                .segment(m_upper_row_offset, m_upper_data.rows())
+                .noalias() -= m_upper_data * b.segment(m_upper_col_offset,
+                                                       m_upper_data.cols());
         }
 
       private:
