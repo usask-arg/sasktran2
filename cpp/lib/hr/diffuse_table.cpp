@@ -234,6 +234,12 @@ namespace sasktran2::hr {
                                                   0, false);
             storage.m_outgoing_sources.resize(start_outgoing_idx * NSTOKES, 0,
                                               false);
+            if constexpr (NSTOKES == 1) {
+                if (m_use_rust_solver && m_wavelength_block_capacity > 1) {
+                    storage.rust_batch_outgoing_sources.resize(
+                        start_outgoing_idx * m_wavelength_block_capacity);
+                }
+            }
 
             storage.point_scattering_matrices.resize(m_diffuse_points.size());
             for (int i = 0; i < m_diffuse_points.size(); ++i) {
@@ -367,6 +373,33 @@ namespace sasktran2::hr {
 
         for (auto& source : m_initial_owned_sources) {
             source->initialize_atmosphere(atmosphere);
+        }
+    }
+
+    template <int NSTOKES>
+    void
+    DiffuseTable<NSTOKES>::set_wavelength_block_capacity(int block_capacity) {
+        if (block_capacity < 1 ||
+            block_capacity > maximum_wavelength_block_size()) {
+            throw std::invalid_argument(
+                "Invalid successive-orders wavelength block capacity");
+        }
+        m_wavelength_block_capacity = block_capacity;
+
+        if constexpr (NSTOKES == 1) {
+            if (m_use_rust_solver) {
+                for (auto& storage : m_thread_storage) {
+                    if (block_capacity == 1) {
+                        std::vector<double>().swap(
+                            storage.rust_batch_outgoing_sources);
+                    } else {
+                        storage.rust_batch_outgoing_sources.resize(
+                            static_cast<std::size_t>(
+                                storage.m_outgoing_sources.value.size()) *
+                            block_capacity);
+                    }
+                }
+            }
         }
     }
 
@@ -1031,10 +1064,9 @@ namespace sasktran2::hr {
 
 #ifdef SKTRAN_RUST_SUPPORT
     template <int NSTOKES>
-    void DiffuseTable<NSTOKES>::iterate_to_solution_rust(int threadidx) {
-        ZoneScopedN("Rust Successive Orders Solve");
+    void
+    DiffuseTable<NSTOKES>::pack_rust_boundary_scattering_values(int threadidx) {
         auto& storage = m_thread_storage[threadidx];
-
         std::size_t value_offset = 0;
         if constexpr (NSTOKES == 1) {
             for (std::size_t point_index = static_cast<std::size_t>(
@@ -1063,6 +1095,14 @@ namespace sasktran2::hr {
                 }
             }
         }
+    }
+
+    template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::iterate_to_solution_rust(int threadidx) {
+        ZoneScopedN("Rust Successive Orders Solve");
+        auto& storage = m_thread_storage[threadidx];
+
+        pack_rust_boundary_scattering_values(threadidx);
 
         const std::vector<double> no_initial_guess;
         auto& solver = m_rust_solvers[threadidx];
@@ -1115,6 +1155,7 @@ namespace sasktran2::hr {
                 sasktran2::rust::successive_orders::final_residual(*solver));
         }
     }
+
 #endif
 
     template <int NSTOKES>
@@ -1181,12 +1222,11 @@ namespace sasktran2::hr {
     }
 
     template <int NSTOKES>
-    void
-    DiffuseTable<NSTOKES>::calculate(const sasktran2::WavelengthBlock<>& block,
-                                     int threadidx) {
-        const int wavelidx = block.start;
+    void DiffuseTable<NSTOKES>::prepare_wavelength(int wavelidx,
+                                                   int threadidx) {
+        const sasktran2::WavelengthBlock<> scalar_block{wavelidx, 1};
         for (auto& source : m_initial_owned_sources) {
-            source->calculate(block, threadidx);
+            source->calculate(scalar_block, threadidx);
         }
 
         int nthreads = m_config->num_source_threads();
@@ -1243,9 +1283,46 @@ namespace sasktran2::hr {
             generate_scattering_matrices(wavelidx, threadidx);
             generate_accumulation_matrix(wavelidx, threadidx);
         }
+    }
 
-        // Iterate to the solution
-        iterate_to_solution(wavelidx, threadidx);
+    template <int NSTOKES>
+    void
+    DiffuseTable<NSTOKES>::calculate(const sasktran2::WavelengthBlock<>& block,
+                                     int threadidx) {
+        if (block.count < 1 || block.count > maximum_wavelength_block_size() ||
+            block.count > m_wavelength_block_capacity) {
+            throw std::invalid_argument(
+                "Invalid successive-orders wavelength block");
+        }
+
+#ifdef SKTRAN_RUST_SUPPORT
+        if constexpr (NSTOKES == 1) {
+            if (m_use_rust_solver) {
+                auto& storage = m_thread_storage[threadidx];
+                if (m_wavelength_block_capacity == 1) {
+                    prepare_wavelength(block.start, threadidx);
+                    iterate_to_solution(block.start, threadidx);
+                    return;
+                }
+                const std::size_t state_size = static_cast<std::size_t>(
+                    storage.m_outgoing_sources.value.size());
+                for (int lane = 0; lane < block.count; ++lane) {
+                    prepare_wavelength(block.wavelength(lane), threadidx);
+                    iterate_to_solution(block.wavelength(lane), threadidx);
+                    for (std::size_t element = 0; element < state_size;
+                         ++element) {
+                        storage.rust_batch_outgoing_sources
+                            [element * m_wavelength_block_capacity + lane] =
+                            storage.m_outgoing_sources.value[element];
+                    }
+                }
+                return;
+            }
+        }
+#endif
+
+        prepare_wavelength(block.start, threadidx);
+        iterate_to_solution(block.start, threadidx);
     }
 
     template <int NSTOKES>
@@ -1259,75 +1336,97 @@ namespace sasktran2::hr {
         sasktran2::WavelengthBlockDual<NSTOKES>& block_source,
         typename SourceTermInterface<NSTOKES>::IntegrationDirection direction)
         const {
-        const int wavelidx = block.start;
-        sasktran2::WavelengthBlockLaneDualView<NSTOKES> source(block_source, 0);
         auto& storage = m_thread_storage[wavel_threadidx];
 
         const auto& ray_interpolator = m_los_source_weights[losidx];
         const auto& layer_interpolator =
             ray_interpolator.interior_weights[layeridx];
 
-        // Start by calculating ssa at the source point
-        double omega = 0;
-        for (std::size_t i = layer_interpolator.atmosphere_offset;
-             i < layer_interpolator.atmosphere_offset +
-                     layer_interpolator.atmosphere_count;
-             ++i) {
-            omega += m_atmosphere->storage().ssa(
-                         ray_interpolator.atmosphere_indices[i], wavelidx) *
-                     ray_interpolator.atmosphere_weights[i];
-        }
+        for (int lane = 0; lane < block.count; ++lane) {
+            const int wavelidx = block.wavelength(lane);
+            sasktran2::WavelengthBlockLaneDualView<NSTOKES> source(block_source,
+                                                                   lane);
 
-        double source_factor = (1 - exp(-1 * shell_od.od(0)));
+            // Start by calculating ssa at the source point.
+            double omega = 0;
+            for (std::size_t i = layer_interpolator.atmosphere_offset;
+                 i < layer_interpolator.atmosphere_offset +
+                         layer_interpolator.atmosphere_count;
+                 ++i) {
+                omega += m_atmosphere->storage().ssa(
+                             ray_interpolator.atmosphere_indices[i], wavelidx) *
+                         ray_interpolator.atmosphere_weights[i];
+            }
 
-        for (std::size_t i = layer_interpolator.source_offset;
-             i <
-             layer_interpolator.source_offset + layer_interpolator.source_count;
-             ++i) {
-            const int source_index = ray_interpolator.source_indices[i];
-            const double interpolation_weight =
-                ray_interpolator.source_weights[i];
+            const double source_factor = 1 - std::exp(-shell_od.od(lane));
 
-            for (int s = 0; s < NSTOKES; ++s) {
-                double source_value = storage.m_outgoing_sources.value(
-                                          source_index * NSTOKES + s) *
-                                      interpolation_weight;
+            for (std::size_t i = layer_interpolator.source_offset;
+                 i < layer_interpolator.source_offset +
+                         layer_interpolator.source_count;
+                 ++i) {
+                const int source_index = ray_interpolator.source_indices[i];
+                const double interpolation_weight =
+                    ray_interpolator.source_weights[i];
 
-                source.value(s) += omega * source_factor * source_value;
-
-                if (m_atmosphere->num_deriv() > 0) {
-                    // Now we need dJ/dthickness
-                    for (auto it = shell_od.derivative_iterator(); it; ++it) {
-                        source.deriv(s, it.index()) += it.value() *
-                                                       (1 - source_factor) *
-                                                       source_value * omega;
+                for (int s = 0; s < NSTOKES; ++s) {
+                    const std::size_t outgoing_index =
+                        static_cast<std::size_t>(source_index * NSTOKES + s);
+                    double outgoing_value;
+                    if constexpr (NSTOKES == 1) {
+                        if (m_use_rust_solver &&
+                            m_wavelength_block_capacity > 1) {
+                            outgoing_value =
+                                storage.rust_batch_outgoing_sources
+                                    [outgoing_index *
+                                         m_wavelength_block_capacity +
+                                     lane];
+                        } else {
+                            outgoing_value = storage.m_outgoing_sources.value(
+                                outgoing_index);
+                        }
+                    } else {
+                        outgoing_value =
+                            storage.m_outgoing_sources.value(outgoing_index);
                     }
+                    const double source_value =
+                        outgoing_value * interpolation_weight;
 
-                    // And dJ/dssa
-                    for (std::size_t atmosphere_index =
-                             layer_interpolator.atmosphere_offset;
-                         atmosphere_index <
-                         layer_interpolator.atmosphere_offset +
-                             layer_interpolator.atmosphere_count;
-                         ++atmosphere_index) {
-                        source.deriv(
-                            s, m_atmosphere->ssa_deriv_start_index() +
-                                   ray_interpolator
-                                       .atmosphere_indices[atmosphere_index]) +=
-                            ray_interpolator
-                                .atmosphere_weights[atmosphere_index] *
-                            source_factor * source_value;
-                    }
+                    source.value(s) += omega * source_factor * source_value;
 
-                    if (this->m_config->wf_precision() ==
-                            sasktran2::Config::WeightingFunctionPrecision::
-                                full &&
-                        m_config->initialize_hr_with_do()) {
-                        source.deriv(s, Eigen::placeholders::all) +=
-                            omega * source_factor * interpolation_weight *
-                            storage.m_outgoing_sources.deriv(
-                                source_index * NSTOKES + s,
-                                Eigen::placeholders::all);
+                    if (m_atmosphere->num_deriv() > 0) {
+                        // Now we need dJ/dthickness.
+                        for (auto it = shell_od.derivative_iterator(); it;
+                             ++it) {
+                            source.deriv(s, it.index()) += it.value() *
+                                                           (1 - source_factor) *
+                                                           source_value * omega;
+                        }
+
+                        // And dJ/dssa.
+                        for (std::size_t atmosphere_index =
+                                 layer_interpolator.atmosphere_offset;
+                             atmosphere_index <
+                             layer_interpolator.atmosphere_offset +
+                                 layer_interpolator.atmosphere_count;
+                             ++atmosphere_index) {
+                            source.deriv(s,
+                                         m_atmosphere->ssa_deriv_start_index() +
+                                             ray_interpolator.atmosphere_indices
+                                                 [atmosphere_index]) +=
+                                ray_interpolator
+                                    .atmosphere_weights[atmosphere_index] *
+                                source_factor * source_value;
+                        }
+
+                        if (this->m_config->wf_precision() ==
+                                sasktran2::Config::WeightingFunctionPrecision::
+                                    full &&
+                            m_config->initialize_hr_with_do()) {
+                            source.deriv(s, Eigen::placeholders::all) +=
+                                omega * source_factor * interpolation_weight *
+                                storage.m_outgoing_sources.deriv(
+                                    outgoing_index, Eigen::placeholders::all);
+                        }
                     }
                 }
             }
@@ -1339,30 +1438,49 @@ namespace sasktran2::hr {
         const sasktran2::WavelengthBlock<>& block, int losidx,
         int wavel_threadidx, int threadidx,
         sasktran2::WavelengthBlockDual<NSTOKES>& block_source) const {
-        sasktran2::WavelengthBlockLaneDualView<NSTOKES> source(block_source, 0);
         const auto& interpolator = m_los_source_weights[losidx];
         auto& storage = m_thread_storage[wavel_threadidx];
 
-        for (std::size_t i = 0; i < interpolator.ground_source_indices.size();
-             ++i) {
-            const int source_index = interpolator.ground_source_indices[i];
-            const double interpolation_weight =
-                interpolator.ground_source_weights[i];
+        for (int lane = 0; lane < block.count; ++lane) {
+            sasktran2::WavelengthBlockLaneDualView<NSTOKES> source(block_source,
+                                                                   lane);
+            for (std::size_t i = 0;
+                 i < interpolator.ground_source_indices.size(); ++i) {
+                const int source_index = interpolator.ground_source_indices[i];
+                const double interpolation_weight =
+                    interpolator.ground_source_weights[i];
 
-            for (int s = 0; s < NSTOKES; ++s) {
-                double source_value = storage.m_outgoing_sources.value(
-                                          source_index * NSTOKES + s) *
-                                      interpolation_weight;
+                for (int s = 0; s < NSTOKES; ++s) {
+                    const std::size_t outgoing_index =
+                        static_cast<std::size_t>(source_index * NSTOKES + s);
+                    double outgoing_value;
+                    if constexpr (NSTOKES == 1) {
+                        if (m_use_rust_solver &&
+                            m_wavelength_block_capacity > 1) {
+                            outgoing_value =
+                                storage.rust_batch_outgoing_sources
+                                    [outgoing_index *
+                                         m_wavelength_block_capacity +
+                                     lane];
+                        } else {
+                            outgoing_value = storage.m_outgoing_sources.value(
+                                outgoing_index);
+                        }
+                    } else {
+                        outgoing_value =
+                            storage.m_outgoing_sources.value(outgoing_index);
+                    }
+                    source.value(s) += outgoing_value * interpolation_weight;
 
-                source.value(s) += source_value;
-
-                if (this->m_config->wf_precision() ==
-                        sasktran2::Config::WeightingFunctionPrecision::full &&
-                    m_config->initialize_hr_with_do()) {
-                    source.deriv(s, Eigen::placeholders::all) +=
-                        interpolation_weight * storage.m_outgoing_sources.deriv(
-                                                   source_index * NSTOKES + s,
-                                                   Eigen::placeholders::all);
+                    if (this->m_config->wf_precision() ==
+                            sasktran2::Config::WeightingFunctionPrecision::
+                                full &&
+                        m_config->initialize_hr_with_do()) {
+                        source.deriv(s, Eigen::placeholders::all) +=
+                            interpolation_weight *
+                            storage.m_outgoing_sources.deriv(
+                                outgoing_index, Eigen::placeholders::all);
+                    }
                 }
             }
         }

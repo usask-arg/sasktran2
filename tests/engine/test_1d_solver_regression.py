@@ -477,6 +477,34 @@ def test_rust_successive_orders_matches_legacy_fixed_iterations(num_stokes):
     np.testing.assert_allclose(rust, legacy, rtol=2.0e-12, atol=1.0e-14)
 
 
+def test_rust_successive_orders_wavelength_batch_matches_scalar():
+    scalar_engine, scalar_atmosphere = _setup_1d(
+        "successive_orders_rust",
+        1,
+        False,
+        num_wavelengths=5,
+        wavelength_batch_size=1,
+    )
+    batch_engine, batch_atmosphere = _setup_1d(
+        "successive_orders_rust",
+        1,
+        False,
+        num_wavelengths=5,
+        wavelength_batch_size=4,
+    )
+
+    scalar = scalar_engine.calculate_radiance(scalar_atmosphere)
+    batch = batch_engine.calculate_radiance(batch_atmosphere)
+
+    for variable in scalar.data_vars:
+        np.testing.assert_allclose(
+            batch[variable].values,
+            scalar[variable].values,
+            rtol=2.0e-12,
+            atol=1.0e-14,
+        )
+
+
 def test_rust_successive_orders_anderson_matches_converged_legacy():
     legacy_engine, legacy_atmosphere = _setup_1d(
         "successive_orders",

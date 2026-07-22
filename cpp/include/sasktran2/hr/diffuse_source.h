@@ -46,6 +46,10 @@ namespace sasktran2::hr {
         std::vector<double>
             rust_boundary_scattering_values; /**< Row-major dense boundary
                                                 scattering blocks. */
+
+        /** Wavelength-contiguous outgoing sources retained until LOS
+         *  integration completes. */
+        std::vector<double> rust_batch_outgoing_sources;
     };
 
     /** An implementation of the successive orders of scattering technique.  We
@@ -146,6 +150,7 @@ namespace sasktran2::hr {
         Eigen::VectorXi m_inner_indicies;
         Eigen::VectorXi m_outer_starts;
         bool m_use_rust_solver;
+        int m_wavelength_block_capacity = 1;
 
 #ifdef SKTRAN_RUST_SUPPORT
         std::vector<::rust::Box<
@@ -162,8 +167,10 @@ namespace sasktran2::hr {
         void trace_incoming_rays();
         void generate_scattering_matrices(int wavelidx, int threadidx);
         void generate_accumulation_matrix(int wavelidx, int threadidx);
+        void prepare_wavelength(int wavelidx, int threadidx);
         void iterate_to_solution(int wavelidx, int threadidx);
 #ifdef SKTRAN_RUST_SUPPORT
+        void pack_rust_boundary_scattering_values(int threadidx);
         void iterate_to_solution_rust(int threadidx);
 #endif
         void interpolate_sources(const Eigen::VectorXd& old_outgoing,
@@ -206,6 +213,19 @@ namespace sasktran2::hr {
          */
         virtual void initialize_atmosphere(
             const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere);
+
+        void set_wavelength_block_capacity(int block_capacity) override;
+
+        int maximum_wavelength_block_size() const override {
+#ifdef SKTRAN_RUST_SUPPORT
+            if constexpr (NSTOKES == 1) {
+                // Four wavelengths match the engine's optimized fixed-width
+                // integration dispatch while bounding retained source data.
+                return m_use_rust_solver ? 4 : 1;
+            }
+#endif
+            return 1;
+        }
 
         /** Triggers an internal calculation of the source term.  This method is
          * called at the beginning of each 'wavelength' calculation.
