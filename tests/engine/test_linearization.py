@@ -60,6 +60,10 @@ def test_structured_jvp_vjp_and_adjoint_identity():
     lin = _synthetic_linearization()
     assert lin.parameters == ("profile", "surface", "scalar", "structured")
     assert lin.parameter_dims["surface"] == ("wavelength",)
+    assert lin.backends == {
+        "jvp": sk.LinearizationBackend.MaterializedJacobian,
+        "vjp": sk.LinearizationBackend.MaterializedJacobian,
+    }
 
     tangent = xr.Dataset(
         {
@@ -117,6 +121,36 @@ def test_structured_jvp_vjp_and_adjoint_identity():
     lhs = float((lin.jvp(tangent) * cotangent).sum())
     rhs = sum(float((tangent[name] * gradient[name]).sum()) for name in tangent)
     np.testing.assert_allclose(lhs, rhs)
+
+
+def test_vjp_can_select_parameters():
+    lin = _synthetic_linearization()
+    cotangent = xr.ones_like(lin.value)
+
+    selected = lin.vjp(cotangent, parameters=("structured", "scalar"))
+
+    assert tuple(selected.data_vars) == ("structured", "scalar")
+    xr.testing.assert_allclose(
+        selected["structured"],
+        (lin.jacobian["structured"] * cotangent).sum(lin.value.dims),
+    )
+    xr.testing.assert_allclose(
+        selected["scalar"],
+        (lin.jacobian["scalar"] * cotangent).sum(lin.value.dims),
+    )
+    assert len(lin.vjp(cotangent, parameters=()).data_vars) == 0
+
+
+def test_vjp_rejects_invalid_parameter_selection():
+    lin = _synthetic_linearization()
+    cotangent = xr.ones_like(lin.value)
+
+    with pytest.raises(ValueError, match="Unknown VJP parameter"):
+        lin.vjp(cotangent, parameters=("missing",))
+    with pytest.raises(ValueError, match="must not contain duplicates"):
+        lin.vjp(cotangent, parameters=("profile", "profile"))
+    with pytest.raises(TypeError, match="must be strings"):
+        lin.vjp(cotangent, parameters=("profile", 1))
 
 
 def test_tangent_template_describes_parameter_domain():
@@ -266,6 +300,10 @@ def test_engine_linearize_matches_weighting_function_output():
     assert engine._engine._linearization_backend(0) == 2
     assert engine._engine._linearization_backend(1) == 1
     assert engine._engine._linearization_backend(2) == 1
+    assert lin.backends == {
+        "jvp": sk.LinearizationBackend.StreamingJacobian,
+        "vjp": sk.LinearizationBackend.StreamingJacobian,
+    }
     xr.testing.assert_allclose(lin.value, expected["radiance"])
     xr.testing.assert_allclose(lin.jacobian["extinction"], expected["wf_extinction"])
     xr.testing.assert_allclose(lin.jacobian["ssa"], expected["wf_ssa"])
@@ -296,7 +334,9 @@ def test_streaming_products_cover_surface_parameterizations(surface):
 
     cotangent = xr.ones_like(lin.value) * 0.7
     expected_vjp = (lin.jacobian[name] * cotangent).sum(lin.value.dims)
-    xr.testing.assert_allclose(lin.vjp(cotangent)[name], expected_vjp)
+    gradient = lin.vjp(cotangent, parameters=(name,))
+    assert tuple(gradient.data_vars) == (name,)
+    xr.testing.assert_allclose(gradient[name], expected_vjp)
 
 
 def test_constant_surface_parameter_has_scalar_domain():
@@ -387,7 +427,17 @@ def test_scalar_surface_emission_products():
         np.full((7, 2), 1.0e-5), np.zeros((7, 2))
     )
     atmosphere["surface"] = sk.constituent.SurfaceThermalEmission(290.0, 0.8)
-    lin = sk.Engine(config, geometry, viewing).linearize(atmosphere)
+    engine = sk.Engine(config, geometry, viewing)
+    lin = engine.linearize(atmosphere)
+
+    assert not engine._engine._supports_linearization(1)
+    assert not engine._engine._supports_linearization(2)
+    assert engine._engine._linearization_backend(1) == 1
+    assert engine._engine._linearization_backend(2) == 1
+    assert lin.backends == {
+        "jvp": sk.LinearizationBackend.StreamingJacobian,
+        "vjp": sk.LinearizationBackend.StreamingJacobian,
+    }
 
     assert lin.parameter_dims["surface_temperature_k"] == ()
     assert lin.parameter_dims["surface_emissivity"] == ()
@@ -409,6 +459,12 @@ def test_scalar_surface_emission_products():
         xr.testing.assert_allclose(
             gradient[name], (lin.jacobian[name] * cotangent).sum(lin.value.dims)
         )
+    selected_gradient = lin.vjp(cotangent, parameters=("surface_temperature_k",))
+    assert tuple(selected_gradient.data_vars) == ("surface_temperature_k",)
+    xr.testing.assert_allclose(
+        selected_gradient["surface_temperature_k"],
+        gradient["surface_temperature_k"],
+    )
 
 
 def test_log_radiance_mapping_is_converted_for_linearization():
@@ -470,6 +526,40 @@ def test_engine_streaming_products_match_materialized_jacobian():
     lhs = float((lin.jvp(tangent) * cotangent).sum())
     rhs = sum(float((tangent[name] * gradient[name]).sum()) for name in tangent)
     np.testing.assert_allclose(lhs, rhs)
+
+
+def test_distinct_atmosphere_linearisations_coexist_on_one_engine():
+    engine, atmosphere_a = _constituent_engine_scenario(
+        sk.constituent.LambertianSurface(0.2)
+    )
+    _, atmosphere_b = _constituent_engine_scenario(
+        sk.constituent.LambertianSurface(0.6)
+    )
+
+    linearization_a = engine.linearize(atmosphere_a)
+    tangent_a = linearization_a.tangent_template[["surface_albedo"]]
+    tangent_a["surface_albedo"].data[...] = 0.4
+    expected_a = (
+        linearization_a.jacobian["surface_albedo"] * tangent_a["surface_albedo"]
+    )
+
+    linearization_b = engine.linearize(atmosphere_b)
+    tangent_b = linearization_b.tangent_template[["surface_albedo"]]
+    tangent_b["surface_albedo"].data[...] = -0.3
+    expected_b = (
+        linearization_b.jacobian["surface_albedo"] * tangent_b["surface_albedo"]
+    )
+
+    assert not np.allclose(linearization_a.value, linearization_b.value)
+    xr.testing.assert_allclose(linearization_a.jvp(tangent_a), expected_a)
+    xr.testing.assert_allclose(linearization_b.jvp(tangent_b), expected_b)
+
+    cotangent_a = xr.ones_like(linearization_a.value) * 0.7
+    expected_gradient_a = (
+        linearization_a.jacobian["surface_albedo"] * cotangent_a
+    ).sum(linearization_a.value.dims)
+    gradient_a = linearization_a.vjp(cotangent_a, parameters=("surface_albedo",))
+    xr.testing.assert_allclose(gradient_a["surface_albedo"], expected_gradient_a)
 
 
 def test_streaming_products_do_not_materialize_jacobian():

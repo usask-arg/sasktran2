@@ -9,6 +9,7 @@ import sasktran2 as sk
 from sasktran2._core_rust import PyEngine
 from sasktran2.linearization import (
     Linearization,
+    LinearizationBackend,
     _ParameterSpec,
     _semantic_parameter_name,
 )
@@ -184,6 +185,14 @@ class Engine:
         initial_output = self._engine._calculate_jvp(native_atmosphere, {}, {})
         value = self._radiance_dataarray(initial_output.radiance, atmosphere)
         registry = self._linearization_registry(atmosphere)
+        backend_names = {
+            1: LinearizationBackend.StreamingJacobian,
+            2: LinearizationBackend.Native,
+        }
+        backends = {
+            mode: backend_names[self._engine._linearization_backend(mode_index)]
+            for mode, mode_index in (("jvp", 1), ("vjp", 2))
+        }
 
         def load_jacobian() -> xr.Dataset:
             result, _ = self._calculate_radiance(
@@ -225,24 +234,37 @@ class Engine:
             )
             return self._radiance_dataarray(output.jvp, atmosphere)
 
-        def evaluate_vjp(cotangent: xr.DataArray) -> xr.Dataset:
+        def evaluate_vjp(
+            cotangent: xr.DataArray, parameters: tuple[str, ...]
+        ) -> xr.Dataset:
+            if not parameters:
+                return xr.Dataset()
+            volume_sizes = {
+                name: registry.volume_sizes[name]
+                for parameter in parameters
+                for name in registry.volume_names.get(parameter, ())
+            }
+            surface_sizes = {
+                name: registry.surface_sizes[name]
+                for parameter in parameters
+                for name in registry.surface_names.get(parameter, ())
+            }
             output = self._engine._calculate_vjp(
                 native_atmosphere,
                 np.ascontiguousarray(cotangent.values, dtype=np.float64),
-                registry.volume_sizes,
-                registry.surface_sizes,
+                volume_sizes,
+                surface_sizes,
             )
             gradients = {
                 parameter: xr.zeros_like(registry.tangent_template[parameter])
-                for parameter in registry.specs
+                for parameter in parameters
             }
-            for parameter, names in registry.volume_names.items():
-                for name in names:
+            for parameter in parameters:
+                for name in registry.volume_names.get(parameter, ()):
                     gradients[parameter].data += np.asarray(
                         output.derivative_gradients[name]
                     ).reshape(gradients[parameter].shape)
-            for parameter, names in registry.surface_names.items():
-                for name in names:
+                for name in registry.surface_names.get(parameter, ()):
                     gradients[parameter].data += np.asarray(
                         output.surface_gradients[name]
                     ).reshape(gradients[parameter].shape)
@@ -257,6 +279,7 @@ class Engine:
             load_jacobian,
             evaluate_jvp,
             evaluate_vjp,
+            backends,
             (self, native_atmosphere),
         )
 
