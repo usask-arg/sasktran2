@@ -568,6 +568,18 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn sk_config_get_single_scatter_solar_transmission(
+        config: *mut Config,
+        transmission: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_set_single_scatter_solar_transmission(
+        config: *mut Config,
+        transmission: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn sk_config_get_num_streams(
         config: *mut Config,
         num_streams: *mut ::std::os::raw::c_int,

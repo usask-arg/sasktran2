@@ -24,8 +24,9 @@ namespace {
     }
 
     Eigen::VectorXd table_path_weights(
-        const sasktran2::solartransmission::SolarRayTable& table,
-        const sasktran2::solartransmission::SolarRayTable::Query& query,
+        const sasktran2::solartransmission::SolarTransmissionRayTable& table,
+        const sasktran2::solartransmission::SolarTransmissionRayTable::Query&
+            query,
         const sasktran2::Geometry1D& geometry) {
         Eigen::VectorXd result = Eigen::VectorXd::Zero(geometry.size());
         for (std::size_t sample_index = 0; sample_index < query.count;
@@ -76,7 +77,8 @@ TEST_CASE("Solar ray table analytically evaluates partial shells",
         sasktran2::grids::interpolation::linear,
         sasktran2::geometrytype::spherical);
     const sasktran2::raytracing::SphericalShellRayTracer raytracer(geometry);
-    sasktran2::solartransmission::SolarRayTable table(geometry, raytracer);
+    sasktran2::solartransmission::SolarTransmissionRayTable table(geometry,
+                                                                  raytracer);
     table.initialize();
 
     // This impact parameter is an exact table ray, while the location lies
@@ -112,7 +114,8 @@ TEST_CASE("Solar ray table interpolates impact parameter and preserves shadow",
         sasktran2::grids::interpolation::linear,
         sasktran2::geometrytype::spherical);
     const sasktran2::raytracing::SphericalShellRayTracer raytracer(geometry);
-    sasktran2::solartransmission::SolarRayTable table(geometry, raytracer);
+    sasktran2::solartransmission::SolarTransmissionRayTable table(geometry,
+                                                                  raytracer);
     table.initialize();
 
     const double impact_parameter = earth_radius + 11'300.0;
@@ -156,7 +159,8 @@ TEST_CASE("Solar ray table tracks direct spherical slant optical depth",
         sasktran2::grids::interpolation::linear,
         sasktran2::geometrytype::spherical);
     const sasktran2::raytracing::SphericalShellRayTracer raytracer(geometry);
-    sasktran2::solartransmission::SolarRayTable table(geometry, raytracer);
+    sasktran2::solartransmission::SolarTransmissionRayTable table(geometry,
+                                                                  raytracer);
     table.initialize();
 
     const auto sun = geometry.coordinates().sun_unit().normalized();

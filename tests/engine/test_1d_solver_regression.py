@@ -17,6 +17,9 @@ def _setup_1d(
     threading_model: sk.ThreadingModel | None = None,
     emission_source: sk.EmissionSource = sk.EmissionSource.NoSource,
     occultation_source: sk.OccultationSource = sk.OccultationSource.NoSource,
+    solar_transmission: sk.SingleScatterSolarTransmission = (
+        sk.SingleScatterSolarTransmission.Exact
+    ),
 ):
     config = sk.Config()
     config.num_threads = num_threads
@@ -40,6 +43,7 @@ def _setup_1d(
     elif source == "successive_orders":
         config.single_scatter_source = sk.SingleScatterSource.Exact
         config.single_scatter_source_quadrature = True
+        config.single_scatter_solar_transmission = solar_transmission
         config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
         config.num_successive_orders_iterations = 3
         config.num_successive_orders_incoming = 26
@@ -49,6 +53,7 @@ def _setup_1d(
     else:
         config.single_scatter_source = sk.SingleScatterSource.Exact
         config.single_scatter_source_quadrature = True
+        config.single_scatter_solar_transmission = solar_transmission
         config.multiple_scatter_source = sk.MultipleScatterSource.NoSource
         default_num_wavelengths = 1
 
@@ -146,46 +151,46 @@ def _setup_1d(
                 [
                     [
                         [
-                            0.034936366381428566,
-                            -0.0012413199189356924,
-                            -0.013176865640599757,
+                            0.03493718059465559,
+                            -0.00124129381179148,
+                            -0.01317730962094016,
                         ],
                         [
-                            0.018334170309223304,
-                            0.005419775974073816,
-                            0.0052740285678225625,
+                            0.01833445832490121,
+                            0.00541996960345787,
+                            0.00527420441413781,
                         ],
                         [
-                            0.10101583592960905,
-                            -0.002177262272385747,
-                            -0.013819492013034933,
+                            0.10101664567724669,
+                            -0.00217722682907605,
+                            -0.01381960846066964,
                         ],
                         [
-                            0.023694377041345326,
-                            -0.0024895108729691886,
-                            0.006213786265026091,
+                            0.02369440387264463,
+                            -0.00248951297454448,
+                            0.00621379400634047,
                         ],
                     ],
                     [
                         [
-                            0.06518620377948575,
-                            -0.0024709430383814523,
-                            -0.01980285100506755,
+                            0.06518818242260963,
+                            -0.00247087959465485,
+                            -0.01980392993454027,
                         ],
                         [
-                            0.04388975426157416,
-                            0.008823299879535885,
-                            0.008559473703979848,
+                            0.04389054236089,
+                            0.00882382970897506,
+                            0.00855995487348336,
                         ],
                         [
-                            0.12481301751864142,
-                            -0.0031872406120893684,
-                            -0.01605899933680915,
+                            0.12481456275373466,
+                            -0.00318717297589828,
+                            -0.01605922155292107,
                         ],
                         [
-                            0.043564593780457656,
-                            -0.004375368409855985,
-                            0.010798662112102711,
+                            0.04356467734399301,
+                            -0.0043753749550128,
+                            0.01079868622169172,
                         ],
                     ],
                 ]
@@ -272,9 +277,20 @@ def test_exact_single_scatter_radiance_is_independent_of_derivative_mode():
     np.testing.assert_allclose(with_wf, value, rtol=2e-13, atol=2e-14)
 
 
-def test_gauss8_single_scatter_extinction_wf_matches_finite_difference():
+@pytest.mark.parametrize(
+    "solar_transmission",
+    [
+        sk.SingleScatterSolarTransmission.Exact,
+        sk.SingleScatterSolarTransmission.RayTable,
+    ],
+)
+def test_gauss8_single_scatter_extinction_wf_matches_finite_difference(
+    solar_transmission: sk.SingleScatterSolarTransmission,
+):
     """Fixed Gauss-8 solar, viewing-OD, and local-source WFs are analytic."""
-    engine, atmosphere = _setup_1d("single_scatter", 1, True)
+    engine, atmosphere = _setup_1d(
+        "single_scatter", 1, True, solar_transmission=solar_transmission
+    )
     result = engine.calculate_radiance(atmosphere)
 
     for altitude_index in (0, 5, 12, 20, 24):

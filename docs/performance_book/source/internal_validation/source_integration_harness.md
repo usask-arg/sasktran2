@@ -37,6 +37,9 @@ coarse grid:
 ```bash
 pixi run python docs/performance_book/source/internal_validation/source_integration_harness.py \
   --scenarios single_scatter_exact \
+  --single-scatter-candidate-integration gauss8 \
+  --single-scatter-solar-transmission ray-table \
+  --single-scatter-reference-integration endpoint \
   --profile-shape grid-linear \
   --spacings 2000,1000,500,250,125 \
   --output build/source-integration/single-scatter-integration-only
@@ -44,6 +47,15 @@ pixi run python docs/performance_book/source/internal_validation/source_integrat
 
 Use the default `--profile-shape continuous` for end-to-end altitude-grid
 convergence. Baseline and candidate reports must use the same profile shape.
+For single scatter, candidate Gauss-8 runs default to the ray-table solar
+provider, while both dense reference grids use the legacy endpoint rule with
+direct solar tracing. This keeps the validation path independent. Use
+`--single-scatter-solar-transmission exact` to isolate the viewing-cell
+quadrature from ray-table interpolation, or
+`--single-scatter-reference-integration gauss8` for an exact-ray Gauss-8
+cross-check on smaller cases. Use
+`--single-scatter-candidate-integration endpoint` to measure the old rule in
+the same harness.
 
 To enforce regression gates against a saved report:
 

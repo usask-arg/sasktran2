@@ -131,7 +131,13 @@ def _altitude_grid(spacing_m: float) -> np.ndarray:
     return np.linspace(0.0, TOP_OF_ATMOSPHERE_M, num_layers + 1)
 
 
-def _configure(scenario: Scenario, num_threads: int) -> sk.Config:
+def _configure(
+    scenario: Scenario,
+    num_threads: int,
+    *,
+    single_scatter_quadrature: bool,
+    single_scatter_solar_transmission: str,
+) -> sk.Config:
     config = sk.Config()
     config.num_threads = num_threads
     config.num_stokes = 1
@@ -148,7 +154,11 @@ def _configure(scenario: Scenario, num_threads: int) -> sk.Config:
         config.emission_source = sk.EmissionSource.VolumeEmissionRate
     elif scenario.solver == "single_scatter_exact":
         config.single_scatter_source = sk.SingleScatterSource.Exact
-        config.single_scatter_source_quadrature = True
+        config.single_scatter_source_quadrature = single_scatter_quadrature
+        config.single_scatter_solar_transmission = {
+            "exact": sk.SingleScatterSolarTransmission.Exact,
+            "ray-table": sk.SingleScatterSolarTransmission.RayTable,
+        }[single_scatter_solar_transmission]
     elif scenario.solver in {
         "discrete_ordinates_solar",
         "discrete_ordinates_thermal",
@@ -247,10 +257,17 @@ def _build_run(
     derivatives: bool,
     num_threads: int,
     profile_shape: str = "continuous",
+    single_scatter_quadrature: bool = True,
+    single_scatter_solar_transmission: str = "ray-table",
 ) -> ModelRun:
     start = perf_counter()
     altitude_m = _altitude_grid(spacing_m)
-    config = _configure(scenario, num_threads)
+    config = _configure(
+        scenario,
+        num_threads,
+        single_scatter_quadrature=single_scatter_quadrature,
+        single_scatter_solar_transmission=single_scatter_solar_transmission,
+    )
     geometry_type = (
         sk.GeometryType.Spherical
         if scenario.geometry == "spherical_limb"
@@ -532,6 +549,27 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--single-scatter-solar-transmission",
+        choices=["exact", "ray-table"],
+        default="ray-table",
+        help="solar-path provider for candidate single-scatter runs",
+    )
+    parser.add_argument(
+        "--single-scatter-candidate-integration",
+        choices=["endpoint", "gauss8"],
+        default="gauss8",
+        help="within-cell rule for candidate single-scatter runs",
+    )
+    parser.add_argument(
+        "--single-scatter-reference-integration",
+        choices=["endpoint", "gauss8"],
+        default="endpoint",
+        help=(
+            "independent dense-reference rule; endpoint avoids sharing the "
+            "candidate's Gauss-8 implementation"
+        ),
+    )
+    parser.add_argument(
         "--reference-spacing",
         type=float,
         help="override each scenario's primary dense spacing",
@@ -600,6 +638,10 @@ def main(argv: list[str] | None = None) -> int:
             derivatives=derivatives,
             num_threads=args.num_threads,
             profile_shape=args.profile_shape,
+            single_scatter_quadrature=(
+                args.single_scatter_reference_integration == "gauss8"
+            ),
+            single_scatter_solar_transmission="exact",
         )
         reference = _build_run(
             scenario,
@@ -607,6 +649,10 @@ def main(argv: list[str] | None = None) -> int:
             derivatives=derivatives,
             num_threads=args.num_threads,
             profile_shape=args.profile_shape,
+            single_scatter_quadrature=(
+                args.single_scatter_reference_integration == "gauss8"
+            ),
+            single_scatter_solar_transmission="exact",
         )
         reference_metrics = accuracy_metrics(
             reference.result.radiance.values,
@@ -667,6 +713,12 @@ def main(argv: list[str] | None = None) -> int:
                 derivatives=derivatives,
                 num_threads=args.num_threads,
                 profile_shape=args.profile_shape,
+                single_scatter_quadrature=(
+                    args.single_scatter_candidate_integration == "gauss8"
+                ),
+                single_scatter_solar_transmission=(
+                    args.single_scatter_solar_transmission
+                ),
             )
             metrics = accuracy_metrics(
                 run.result.radiance.values,
@@ -814,6 +866,15 @@ def main(argv: list[str] | None = None) -> int:
             "profile_shape": args.profile_shape,
             "derivatives": derivatives,
             "timing_samples": args.timing_samples,
+            "single_scatter_solar_transmission": (
+                args.single_scatter_solar_transmission
+            ),
+            "single_scatter_candidate_integration": (
+                args.single_scatter_candidate_integration
+            ),
+            "single_scatter_reference_integration": (
+                args.single_scatter_reference_integration
+            ),
         },
         "summaries": summaries,
         "accuracy": accuracy_rows,

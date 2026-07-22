@@ -21,7 +21,7 @@ namespace sasktran2::solartransmission {
         }
     } // namespace
 
-    void SolarRayTable::initialize() {
+    void SolarTransmissionRayTable::initialize() {
         m_sun_unit = m_geometry.coordinates().sun_unit().normalized();
         m_perpendicular_unit = m_sun_unit.unitOrthogonal().normalized();
         m_ground_radius = m_geometry.coordinates().earth_radius() +
@@ -65,7 +65,7 @@ namespace sasktran2::solartransmission {
         m_num_cumulative_rows = 0;
     }
 
-    void SolarRayTable::ensure_ray(int ray_index) {
+    void SolarTransmissionRayTable::ensure_ray(int ray_index) {
         if (m_cumulative_row_offsets.at(ray_index) >= 0) {
             return;
         }
@@ -89,8 +89,9 @@ namespace sasktran2::solartransmission {
             static_cast<int>(m_rays[ray_index].layers.size()) + 1;
     }
 
-    SolarRayTable::SingleRayQuery
-    SolarRayTable::query_ray(int ray_index, double ray_coordinate) const {
+    SolarTransmissionRayTable::SingleRayQuery
+    SolarTransmissionRayTable::query_ray(int ray_index,
+                                         double ray_coordinate) const {
         SingleRayQuery result;
         result.sample.ray_index = ray_index;
         const auto& ray = m_rays.at(ray_index);
@@ -179,8 +180,8 @@ namespace sasktran2::solartransmission {
         return result;
     }
 
-    SolarRayTable::Query
-    SolarRayTable::query(const sasktran2::Location& location) {
+    SolarTransmissionRayTable::Query
+    SolarTransmissionRayTable::query(const sasktran2::Location& location) {
         if (m_rays.empty()) {
             throw std::logic_error("Solar ray table is not initialized");
         }

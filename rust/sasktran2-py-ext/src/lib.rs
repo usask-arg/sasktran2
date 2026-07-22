@@ -52,7 +52,7 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Configuration opbject
     m.add_class::<config::MultipleScatterSource>()?;
     m.add_class::<config::SingleScatterSource>()?;
-    m.add_class::<config::SingleScatterSource>()?;
+    m.add_class::<config::SingleScatterSolarTransmission>()?;
     m.add_class::<config::OccultationSource>()?;
     m.add_class::<config::EmissionSource>()?;
     m.add_class::<config::StokesBasis>()?;

@@ -47,7 +47,12 @@ namespace sasktran2::solartransmission {
         double theta, C1, C2, S1, S2;
         int negation;
         const bool cache_interior_grid_points =
-            m_config->single_scatter_source_quadrature();
+            m_config->single_scatter_source_quadrature() &&
+            m_config->single_scatter_source() ==
+                sasktran2::Config::SingleScatterSource::exact &&
+            m_geometry.num_atmosphere_dimensions() == 1 &&
+            m_geometry.coordinates().geometry_type() ==
+                sasktran2::geometrytype::spherical;
         // First we need to iterate through and figure out how many internal
         // indices we will end up with and how many scatter angles we will need
 

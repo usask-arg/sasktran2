@@ -21,7 +21,10 @@ impl Stokes {
 }
 
 pub use super::atmosphere::Atmosphere;
-pub use super::config::{Config, MultipleScatterSource, SingleScatterSource};
+pub use super::config::{
+    Config, MultipleScatterSource, SingleScatterSolarTransmission,
+    SingleScatterSource,
+};
 pub use super::engine::Engine;
 pub use super::geometry::{Geometry1D, Geometry2D};
 pub use super::geometry::{GeometryType, InterpolationMethod};

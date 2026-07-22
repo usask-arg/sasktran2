@@ -34,6 +34,15 @@ namespace sasktran2 {
             none = 3
         };
 
+        /** Solar-path construction used by fixed single-scatter quadrature.
+         *
+         * `exact` traces from every quadrature point to the sun. `ray_table`
+         * traces a shared impact-parameter table and interpolates its optical
+         * depth queries. The latter is currently available only in 1D
+         * spherical geometry.
+         */
+        enum class SingleScatterSolarTransmission { exact = 0, ray_table = 1 };
+
         /** Enum determining the type of multiple scatter source to be included
          * within the model.
          *
@@ -257,6 +266,15 @@ namespace sasktran2 {
         }
         void set_single_scatter_source_quadrature(bool enabled) {
             m_single_scatter_source_quadrature = enabled;
+        }
+
+        SingleScatterSolarTransmission
+        single_scatter_solar_transmission() const {
+            return m_single_scatter_solar_transmission;
+        }
+        void set_single_scatter_solar_transmission(
+            SingleScatterSolarTransmission transmission) {
+            m_single_scatter_solar_transmission = transmission;
         }
 
         /**
@@ -726,6 +744,7 @@ namespace sasktran2 {
         std::vector<FluxType> m_flux_types;
 
         SingleScatterSource m_single_scatter_source;
+        SingleScatterSolarTransmission m_single_scatter_solar_transmission;
         MultipleScatterSource m_multiple_scatter_source;
         OccultationSource m_occultation_source;
         EmissionSource m_emission_source;

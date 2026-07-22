@@ -69,7 +69,7 @@ namespace sasktran2::solartransmission {
      * used by the spherical ray tracer.  Source integration only evaluates
      * the resulting stencils; it never traces an interior solar ray.
      */
-    class SolarRayTable {
+    class SolarTransmissionRayTable {
       public:
         static constexpr std::size_t MAX_PARTIAL_WEIGHTS = 4;
 
@@ -114,8 +114,9 @@ namespace sasktran2::solartransmission {
         SingleRayQuery query_ray(int ray_index, double ray_coordinate) const;
 
       public:
-        SolarRayTable(const Geometry1D& geometry,
-                      const sasktran2::raytracing::RayTracerBase& raytracer)
+        SolarTransmissionRayTable(
+            const Geometry1D& geometry,
+            const sasktran2::raytracing::RayTracerBase& raytracer)
             : m_geometry(geometry), m_raytracer(raytracer) {}
 
         void initialize();
@@ -140,6 +141,11 @@ namespace sasktran2::solartransmission {
     class SolarTransmissionExact : public SolarTransmissionBase {
       private:
       public:
+        struct Query {
+            sasktran2::raytracing::TracedRay ray;
+            bool shadowed = false;
+        };
+
         SolarTransmissionExact(
             const Geometry1D& geometry,
             const sasktran2::raytracing::RayTracerBase& raytracer)
@@ -153,8 +159,11 @@ namespace sasktran2::solartransmission {
 
         void generate_geometry_matrix(
             const std::vector<sasktran2::raytracing::TracedRay>& rays,
-            Eigen::MatrixXd& od_matrix,
-            std::vector<bool>& ground_hit_flag) const;
+            Eigen::MatrixXd& od_matrix, std::vector<bool>& ground_hit_flag,
+            const std::vector<bool>* required_rows = nullptr) const;
+
+        /** Trace a solar path from an arbitrary source-integration point. */
+        Query query(const sasktran2::Location& location) const;
 
 #ifdef SKTRAN_RUST_SUPPORT
         SolarTransmissionExact(
@@ -831,11 +840,13 @@ namespace sasktran2::solartransmission {
         std::vector<std::vector<int>> m_index_map;
 
         static constexpr std::size_t GAUSS_ORDER = 8;
-        std::unique_ptr<SolarRayTable> m_solar_ray_table;
+        const sasktran2::raytracing::RayTracerBase* m_raytracer_1d = nullptr;
+        std::unique_ptr<SolarTransmissionRayTable> m_solar_ray_table;
         struct GaussNodeGeometry {
-            SolarRayTable::Query solar_query;
-            SolarRayTable::PartialODStencil viewing_od;
-            SolarRayTable::PartialODStencil atmospheric_interpolation;
+            std::size_t solar_query_index = 0;
+            SolarTransmissionRayTable::PartialODStencil viewing_od;
+            SolarTransmissionRayTable::PartialODStencil
+                atmospheric_interpolation;
             bool valid = false;
 
             raytracing::GridWeightStencilView interpolation_weights() const {
@@ -844,6 +855,8 @@ namespace sasktran2::solartransmission {
                         atmospheric_interpolation.count};
             }
         };
+        std::vector<SolarTransmissionExact::Query> m_exact_solar_queries;
+        std::vector<SolarTransmissionRayTable::Query> m_table_solar_queries;
         std::vector<std::vector<std::array<GaussNodeGeometry, GAUSS_ORDER>>>
             m_cell_gauss_nodes;
         bool m_requires_endpoint_solar_transmission = true;
@@ -910,11 +923,8 @@ namespace sasktran2::solartransmission {
             const Geometry1D& geometry,
             const sasktran2::raytracing::RayTracerBase& raytracer)
             : m_solar_transmission(geometry, raytracer), m_geometry(geometry),
-              m_geometry_1d(&geometry), m_phase_handler(geometry) {
-            if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
-                m_solar_ray_table =
-                    std::make_unique<SolarRayTable>(geometry, raytracer);
-            }
+              m_geometry_1d(&geometry), m_raytracer_1d(&raytracer),
+              m_phase_handler(geometry) {
             initialize_fixed_dispatch();
         };
 
