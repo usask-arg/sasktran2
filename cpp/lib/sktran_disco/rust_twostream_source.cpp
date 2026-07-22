@@ -211,15 +211,18 @@ void RustTwoStreamSourceAdapter<SOURCE_TYPE>::initialize_geometry(
             ray_offsets.push_back(segment_layers.size());
         }
 
+        auto spherical_geometry =
+            sasktran2::rust::twostream::new_rust_spherical_geometry(
+                *m_rust_sources.front(), as_slice(sza_grid),
+                as_slice(chapman_factors), as_slice(ray_offsets),
+                as_slice(ground_hit), as_slice(ground_cos_sza),
+                as_slice(segment_layers), as_slice(segment_fractions),
+                as_slice(segment_cosines), as_slice(segment_relative_azimuths),
+                as_slice(segment_cos_sza), as_slice(od_offsets),
+                as_slice(od_indices), as_slice(od_weights));
         for (auto& source : m_rust_sources) {
             sasktran2::rust::twostream::set_spherical_geometry(
-                *source, as_slice(sza_grid), as_slice(chapman_factors),
-                as_slice(ray_offsets), as_slice(ground_hit),
-                as_slice(ground_cos_sza), as_slice(segment_layers),
-                as_slice(segment_fractions), as_slice(segment_cosines),
-                as_slice(segment_relative_azimuths), as_slice(segment_cos_sza),
-                as_slice(od_offsets), as_slice(od_indices),
-                as_slice(od_weights));
+                *source, *spherical_geometry);
         }
         return;
     }

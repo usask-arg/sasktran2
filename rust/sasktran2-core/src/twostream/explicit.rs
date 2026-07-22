@@ -115,6 +115,254 @@ impl Wide {
             exponent.0[lane].exp()
         }))
     }
+
+    fn exp_difference_ratio(exp_a: Self, exp_b: Self, a: Self, b: Self, thickness: Self) -> Self {
+        if (0..LANES).all(|lane| ((b.0[lane] - a.0[lane]) * thickness.0[lane]).abs() > 1.0e-5) {
+            return (exp_a - exp_b) / (b - a);
+        }
+        Self(std::array::from_fn(|lane| {
+            exp_difference_ratio_scalar(
+                exp_a.0[lane],
+                exp_b.0[lane],
+                a.0[lane],
+                b.0[lane],
+                thickness.0[lane],
+            )
+            .0
+        }))
+    }
+
+    fn exp_difference_ratio_adjoint(
+        exp_a: Self,
+        exp_b: Self,
+        a: Self,
+        b: Self,
+        thickness: Self,
+        adjoint: Self,
+    ) -> (Self, Self, Self) {
+        if (0..LANES).all(|lane| ((b.0[lane] - a.0[lane]) * thickness.0[lane]).abs() > 1.0e-5) {
+            let delta = b - a;
+            let numerator = exp_a - exp_b;
+            let inv_delta = 1.0 / delta;
+            let inv_delta_squared = inv_delta * inv_delta;
+            return (
+                adjoint * (-thickness * exp_a * delta + numerator) * inv_delta_squared,
+                adjoint * (thickness * exp_b * delta - numerator) * inv_delta_squared,
+                adjoint * (-a * exp_a + b * exp_b) * inv_delta,
+            );
+        }
+        let derivatives: [(f64, f64, f64); LANES] = std::array::from_fn(|lane| {
+            let (_, d_a, d_b, d_thickness) = exp_difference_ratio_scalar(
+                exp_a.0[lane],
+                exp_b.0[lane],
+                a.0[lane],
+                b.0[lane],
+                thickness.0[lane],
+            );
+            (
+                adjoint.0[lane] * d_a,
+                adjoint.0[lane] * d_b,
+                adjoint.0[lane] * d_thickness,
+            )
+        });
+        (
+            Self(std::array::from_fn(|lane| derivatives[lane].0)),
+            Self(std::array::from_fn(|lane| derivatives[lane].1)),
+            Self(std::array::from_fn(|lane| derivatives[lane].2)),
+        )
+    }
+
+    fn integrated_exp_difference_ratio(
+        exp_a: Self,
+        exp_b: Self,
+        a: Self,
+        b: Self,
+        thickness: Self,
+    ) -> Self {
+        if (0..LANES).all(|lane| {
+            let t = thickness.0[lane];
+            ((b.0[lane] - a.0[lane]) * t).abs() > 1.0e-4
+                && (a.0[lane] * t).abs() > 1.0e-5
+                && (b.0[lane] * t).abs() > 1.0e-5
+        }) {
+            let g_a = (1.0 - exp_a) / a;
+            let g_b = (1.0 - exp_b) / b;
+            return (g_a - g_b) / (b - a);
+        }
+        Self(std::array::from_fn(|lane| {
+            integrated_exp_difference_ratio_scalar(
+                exp_a.0[lane],
+                exp_b.0[lane],
+                a.0[lane],
+                b.0[lane],
+                thickness.0[lane],
+            )
+            .0
+        }))
+    }
+
+    fn integrated_exp_difference_ratio_adjoint(
+        exp_a: Self,
+        exp_b: Self,
+        a: Self,
+        b: Self,
+        thickness: Self,
+        adjoint: Self,
+    ) -> (Self, Self, Self) {
+        if (0..LANES).all(|lane| {
+            let t = thickness.0[lane];
+            ((b.0[lane] - a.0[lane]) * t).abs() > 1.0e-4
+                && (a.0[lane] * t).abs() > 1.0e-5
+                && (b.0[lane] * t).abs() > 1.0e-5
+        }) {
+            let delta = b - a;
+            let inv_delta = 1.0 / delta;
+            let inv_delta_squared = inv_delta * inv_delta;
+            let g_a = (1.0 - exp_a) / a;
+            let g_b = (1.0 - exp_b) / b;
+            let numerator = g_a - g_b;
+            let dg_a = (thickness * exp_a * a - (1.0 - exp_a)) / (a * a);
+            let dg_b = (thickness * exp_b * b - (1.0 - exp_b)) / (b * b);
+            return (
+                adjoint * (dg_a * delta + numerator) * inv_delta_squared,
+                adjoint * (-dg_b * delta - numerator) * inv_delta_squared,
+                adjoint * (exp_a - exp_b) * inv_delta,
+            );
+        }
+        let derivatives: [(f64, f64, f64); LANES] = std::array::from_fn(|lane| {
+            let (_, d_a, d_b, d_thickness) = integrated_exp_difference_ratio_scalar(
+                exp_a.0[lane],
+                exp_b.0[lane],
+                a.0[lane],
+                b.0[lane],
+                thickness.0[lane],
+            );
+            (
+                adjoint.0[lane] * d_a,
+                adjoint.0[lane] * d_b,
+                adjoint.0[lane] * d_thickness,
+            )
+        });
+        (
+            Self(std::array::from_fn(|lane| derivatives[lane].0)),
+            Self(std::array::from_fn(|lane| derivatives[lane].1)),
+            Self(std::array::from_fn(|lane| derivatives[lane].2)),
+        )
+    }
+}
+
+/// `(exp(-a t) - exp(-b t)) / (b - a)` and its partial derivatives.
+///
+/// The midpoint form is used around `a == b`, where the direct expression is
+/// a removable singularity. Cached exponentials keep the common path free of
+/// additional transcendental evaluations.
+#[inline]
+pub(super) fn exp_difference_ratio_scalar(
+    exp_a: f64,
+    exp_b: f64,
+    a: f64,
+    b: f64,
+    thickness: f64,
+) -> (f64, f64, f64, f64) {
+    let delta = b - a;
+    let scaled_delta = delta * thickness;
+    if scaled_delta.abs() > 1.0e-5 {
+        let numerator = exp_a - exp_b;
+        let inv_delta = 1.0 / delta;
+        let value = numerator * inv_delta;
+        let inv_delta_squared = inv_delta * inv_delta;
+        let d_a = (-thickness * exp_a * delta + numerator) * inv_delta_squared;
+        let d_b = (thickness * exp_b * delta - numerator) * inv_delta_squared;
+        let d_thickness = (-a * exp_a + b * exp_b) * inv_delta;
+        return (value, d_a, d_b, d_thickness);
+    }
+
+    let midpoint = 0.5 * (a + b);
+    let half_delta = 0.5 * delta;
+    let u = half_delta * thickness;
+    let u2 = u * u;
+    let sinhc = 1.0 + u2 * (1.0 / 6.0 + u2 * (1.0 / 120.0 + u2 / 5040.0));
+    let sinhc_prime = u * (1.0 / 3.0 + u2 * (1.0 / 30.0 + u2 / 840.0));
+    let exp_midpoint = (-midpoint * thickness).exp();
+    let value = thickness * exp_midpoint * sinhc;
+    let d_midpoint = -thickness * value;
+    let d_half_delta = thickness * thickness * exp_midpoint * sinhc_prime;
+    let d_a = 0.5 * (d_midpoint - d_half_delta);
+    let d_b = 0.5 * (d_midpoint + d_half_delta);
+    let d_thickness = exp_midpoint
+        * ((1.0 - midpoint * thickness) * sinhc + thickness * half_delta * sinhc_prime);
+    (value, d_a, d_b, d_thickness)
+}
+
+#[inline]
+fn exp_moment(order: usize, rate: f64, thickness: f64) -> f64 {
+    if thickness == 0.0 {
+        return 0.0;
+    }
+    let scaled_rate = rate * thickness;
+    let unit_moment = if scaled_rate.abs() < 0.5 {
+        let mut factorial_term = 1.0;
+        let mut sum = 0.0;
+        for term in 0..40 {
+            let contribution = factorial_term / (order + term + 1) as f64;
+            sum += contribution;
+            if contribution.abs() <= f64::EPSILON * sum.abs().max(1.0) {
+                break;
+            }
+            factorial_term *= -scaled_rate / (term + 1) as f64;
+        }
+        sum
+    } else {
+        let exponential = (-scaled_rate).exp();
+        let mut moment = -(-scaled_rate).exp_m1() / scaled_rate;
+        for current_order in 1..=order {
+            moment = (current_order as f64 * moment - exponential) / scaled_rate;
+        }
+        moment
+    };
+    thickness.powi((order + 1) as i32) * unit_moment
+}
+
+/// The divided difference of `G(r) = (1 - exp(-r t)) / r`.
+///
+/// This is the second exponential divided difference needed by formal source
+/// integration. Its equal-rate limit is the first exponential moment.
+#[inline]
+pub(super) fn integrated_exp_difference_ratio_scalar(
+    exp_a: f64,
+    exp_b: f64,
+    a: f64,
+    b: f64,
+    thickness: f64,
+) -> (f64, f64, f64, f64) {
+    let delta = b - a;
+    if (delta * thickness).abs() > 1.0e-4 {
+        let (g_a, _, dg_a, _) = exp_difference_ratio_scalar(1.0, exp_a, 0.0, a, thickness);
+        let (g_b, _, dg_b, _) = exp_difference_ratio_scalar(1.0, exp_b, 0.0, b, thickness);
+        let numerator = g_a - g_b;
+        let inv_delta = 1.0 / delta;
+        let value = numerator * inv_delta;
+        let inv_delta_squared = inv_delta * inv_delta;
+        let d_a = (dg_a * delta + numerator) * inv_delta_squared;
+        let d_b = (-dg_b * delta - numerator) * inv_delta_squared;
+        let d_thickness = exp_difference_ratio_scalar(exp_a, exp_b, a, b, thickness).0;
+        return (value, d_a, d_b, d_thickness);
+    }
+
+    let midpoint = 0.5 * (a + b);
+    let half_delta = 0.5 * delta;
+    let half_delta_squared = half_delta * half_delta;
+    let moment1 = exp_moment(1, midpoint, thickness);
+    let moment2 = exp_moment(2, midpoint, thickness);
+    let moment3 = exp_moment(3, midpoint, thickness);
+    let moment4 = exp_moment(4, midpoint, thickness);
+    let value = moment1 + half_delta_squared * moment3 / 6.0;
+    let d_midpoint = -moment2 - half_delta_squared * moment4 / 6.0;
+    let d_half_delta = half_delta * moment3 / 3.0;
+    let d_a = 0.5 * (d_midpoint - d_half_delta);
+    let d_b = 0.5 * (d_midpoint + d_half_delta);
+    let d_thickness = exp_difference_ratio_scalar(exp_a, exp_b, a, b, thickness).0;
+    (value, d_a, d_b, d_thickness)
 }
 
 macro_rules! wide_binary {
@@ -2444,9 +2692,32 @@ fn forward_layers<const SOLAR: bool>(
                 let ap = (qp * xp + qm * xm) * inv_norm;
                 let am = (qm * xp + qp * xm) * inv_norm;
                 let exponential = p.exponential[layer];
-                let cp = w.transmission[layer] * (omega - exponential) / (w.secant[layer] - k);
-                let cm =
-                    w.transmission[layer] * (1.0 - omega * exponential) / (w.secant[layer] + k);
+                let (cp_ratio, cm_ratio) =
+                    if column_source_nonresonant(w.secant[layer], k, w.od[layer]) {
+                        (
+                            (omega - exponential) / (w.secant[layer] - k),
+                            (1.0 - omega * exponential) / (w.secant[layer] + k),
+                        )
+                    } else {
+                        (
+                            Wide::exp_difference_ratio(
+                                omega,
+                                exponential,
+                                k,
+                                w.secant[layer],
+                                w.od[layer],
+                            ),
+                            Wide::exp_difference_ratio(
+                                Wide::splat(1.0),
+                                omega * exponential,
+                                Wide::splat(0.0),
+                                w.secant[layer] + k,
+                                w.od[layer],
+                            ),
+                        )
+                    };
+                let cp = w.transmission[layer] * cp_ratio;
+                let cm = w.transmission[layer] * cm_ratio;
                 p.qp[layer] = qp;
                 p.qm[layer] = qm;
                 p.ap[layer] = ap;
@@ -2460,9 +2731,32 @@ fn forward_layers<const SOLAR: bool>(
             } else {
                 let at = (1.0 - w.ssa[layer]) * (xp + xm) * inv_norm;
                 let exponential = p.exponential[layer];
-                let cp = w.thermal_b0[layer] * (omega - exponential) / (w.thermal_b1[layer] - k);
-                let cm =
-                    w.thermal_b0[layer] * (1.0 - omega * exponential) / (w.thermal_b1[layer] + k);
+                let (cp_ratio, cm_ratio) =
+                    if column_source_nonresonant(w.thermal_b1[layer], k, w.od[layer]) {
+                        (
+                            (omega - exponential) / (w.thermal_b1[layer] - k),
+                            (1.0 - omega * exponential) / (w.thermal_b1[layer] + k),
+                        )
+                    } else {
+                        (
+                            Wide::exp_difference_ratio(
+                                omega,
+                                exponential,
+                                k,
+                                w.thermal_b1[layer],
+                                w.od[layer],
+                            ),
+                            Wide::exp_difference_ratio(
+                                Wide::splat(1.0),
+                                omega * exponential,
+                                Wide::splat(0.0),
+                                w.thermal_b1[layer] + k,
+                                w.od[layer],
+                            ),
+                        )
+                    };
+                let cp = w.thermal_b0[layer] * cp_ratio;
+                let cm = w.thermal_b0[layer] * cm_ratio;
                 p.at[layer] = at;
                 p.cp[layer] = cp;
                 p.cm[layer] = cm;
@@ -2618,17 +2912,43 @@ fn local_source<const SOLAR: bool>(
 
         if SOLAR {
             let beam = (-w.secant[layer] * w.od[layer] * fraction_from_top).exp();
-            let plus =
-                w.transmission[layer] * (top_exponential - beam) / (w.secant[layer] - h.k[layer]);
-            let minus = w.transmission[layer] * (beam - p.exponential[layer] * bottom_exponential)
-                / (w.secant[layer] + h.k[layer]);
+            let plus = w.transmission[layer]
+                * Wide::exp_difference_ratio(
+                    top_exponential,
+                    beam,
+                    h.k[layer],
+                    w.secant[layer],
+                    w.od[layer] * fraction_from_top,
+                );
+            let minus = w.transmission[layer]
+                * fraction_from_bottom
+                * Wide::exp_difference_ratio(
+                    beam,
+                    p.exponential[layer] * bottom_exponential,
+                    w.secant[layer] * fraction_from_top,
+                    w.secant[layer] + h.k[layer] * fraction_from_bottom,
+                    w.od[layer],
+                );
             value += p.ap[layer] * yp * plus + p.am[layer] * ym * minus;
         } else {
             let thermal = (-w.thermal_b1[layer] * w.od[layer] * fraction_from_top).exp();
-            let plus = w.thermal_b0[layer] * (top_exponential - thermal)
-                / (w.thermal_b1[layer] - h.k[layer]);
-            let minus = w.thermal_b0[layer] * (thermal - p.exponential[layer] * bottom_exponential)
-                / (w.thermal_b1[layer] + h.k[layer]);
+            let plus = w.thermal_b0[layer]
+                * Wide::exp_difference_ratio(
+                    top_exponential,
+                    thermal,
+                    h.k[layer],
+                    w.thermal_b1[layer],
+                    w.od[layer] * fraction_from_top,
+                );
+            let minus = w.thermal_b0[layer]
+                * fraction_from_bottom
+                * Wide::exp_difference_ratio(
+                    thermal,
+                    p.exponential[layer] * bottom_exponential,
+                    w.thermal_b1[layer] * fraction_from_top,
+                    w.thermal_b1[layer] + h.k[layer] * fraction_from_bottom,
+                    w.od[layer],
+                );
             value += p.at[layer] * (yp * plus + ym * minus);
         }
         source += azimuth_weight * value;
@@ -2674,22 +2994,31 @@ fn reverse_local_source<const SOLAR: bool>(
         let bottom_solution = w.bvp[az].rhs[2 * layer + 1];
         let mut d_yp = source_scale * top_solution * top_exponential;
         let mut d_ym = source_scale * bottom_solution * bottom_exponential;
-        let mut d_top_exponential = source_scale * top_solution * yp;
-        let mut d_bottom_exponential = source_scale * bottom_solution * ym;
+        let d_top_exponential = source_scale * top_solution * yp;
+        let d_bottom_exponential = source_scale * bottom_solution * ym;
         w.d_solution[az][2 * layer] += source_scale * yp * top_exponential;
         w.d_solution[az][2 * layer + 1] += source_scale * ym * bottom_exponential;
         let mut d_k = Wide::splat(0.0);
 
         if SOLAR {
             let beam = (-w.secant[layer] * w.od[layer] * fraction_from_top).exp();
-            let plus_denominator = w.secant[layer] - h.k[layer];
-            let minus_denominator = w.secant[layer] + h.k[layer];
-            let inv_plus_denominator = 1.0 / plus_denominator;
-            let inv_minus_denominator = 1.0 / minus_denominator;
-            let plus_numerator = top_exponential - beam;
-            let minus_numerator = beam - p.exponential[layer] * bottom_exponential;
-            let plus = w.transmission[layer] * plus_numerator * inv_plus_denominator;
-            let minus = w.transmission[layer] * minus_numerator * inv_minus_denominator;
+            let plus_ratio = Wide::exp_difference_ratio(
+                top_exponential,
+                beam,
+                h.k[layer],
+                w.secant[layer],
+                w.od[layer] * fraction_from_top,
+            );
+            let minus_ratio = fraction_from_bottom
+                * Wide::exp_difference_ratio(
+                    beam,
+                    p.exponential[layer] * bottom_exponential,
+                    w.secant[layer] * fraction_from_top,
+                    w.secant[layer] + h.k[layer] * fraction_from_bottom,
+                    w.od[layer],
+                );
+            let plus = w.transmission[layer] * plus_ratio;
+            let minus = w.transmission[layer] * minus_ratio;
 
             w.d_particular[az].ap[layer] += source_scale * yp * plus;
             d_yp += source_scale * p.ap[layer] * plus;
@@ -2698,37 +3027,45 @@ fn reverse_local_source<const SOLAR: bool>(
             d_ym += source_scale * p.am[layer] * minus;
             let d_minus = source_scale * p.am[layer] * ym;
 
-            w.d_transmission[layer] += d_plus * plus_numerator * inv_plus_denominator;
-            let d_plus_numerator = d_plus * w.transmission[layer] * inv_plus_denominator;
-            let d_plus_denominator = -d_plus * plus * inv_plus_denominator;
-            d_top_exponential += d_plus_numerator;
-            let mut d_beam = -d_plus_numerator;
-            w.d_secant[layer] += d_plus_denominator;
-            d_k -= d_plus_denominator;
-
-            w.d_transmission[layer] += d_minus * minus_numerator * inv_minus_denominator;
-            let d_minus_numerator = d_minus * w.transmission[layer] * inv_minus_denominator;
-            let d_minus_denominator = -d_minus * minus * inv_minus_denominator;
-            d_beam += d_minus_numerator;
-            let d_layer_exponential = -d_minus_numerator * bottom_exponential;
-            d_bottom_exponential -= d_minus_numerator * p.exponential[layer];
-            w.d_secant[layer] += d_minus_denominator;
-            d_k += d_minus_denominator;
-
-            w.d_secant[layer] -= d_beam * beam * w.od[layer] * fraction_from_top;
-            w.d_od[layer] -= d_beam * beam * w.secant[layer] * fraction_from_top;
-            w.d_secant[layer] -= d_layer_exponential * p.exponential[layer] * w.od[layer];
-            w.d_od[layer] -= d_layer_exponential * p.exponential[layer] * w.secant[layer];
+            w.d_transmission[layer] += d_plus * plus_ratio + d_minus * minus_ratio;
+            let (d_plus_k, d_plus_rate, d_plus_thickness) = Wide::exp_difference_ratio_adjoint(
+                top_exponential,
+                beam,
+                h.k[layer],
+                w.secant[layer],
+                w.od[layer] * fraction_from_top,
+                d_plus * w.transmission[layer],
+            );
+            let (d_minus_a, d_minus_b, d_minus_thickness) = Wide::exp_difference_ratio_adjoint(
+                beam,
+                p.exponential[layer] * bottom_exponential,
+                w.secant[layer] * fraction_from_top,
+                w.secant[layer] + h.k[layer] * fraction_from_bottom,
+                w.od[layer],
+                d_minus * w.transmission[layer] * fraction_from_bottom,
+            );
+            d_k += d_plus_k + d_minus_b * fraction_from_bottom;
+            w.d_secant[layer] += d_plus_rate + d_minus_a * fraction_from_top + d_minus_b;
+            w.d_od[layer] += d_plus_thickness * fraction_from_top + d_minus_thickness;
         } else {
             let thermal = (-w.thermal_b1[layer] * w.od[layer] * fraction_from_top).exp();
-            let plus_denominator = w.thermal_b1[layer] - h.k[layer];
-            let minus_denominator = w.thermal_b1[layer] + h.k[layer];
-            let inv_plus_denominator = 1.0 / plus_denominator;
-            let inv_minus_denominator = 1.0 / minus_denominator;
-            let plus_numerator = top_exponential - thermal;
-            let minus_numerator = thermal - p.exponential[layer] * bottom_exponential;
-            let plus = w.thermal_b0[layer] * plus_numerator * inv_plus_denominator;
-            let minus = w.thermal_b0[layer] * minus_numerator * inv_minus_denominator;
+            let plus_ratio = Wide::exp_difference_ratio(
+                top_exponential,
+                thermal,
+                h.k[layer],
+                w.thermal_b1[layer],
+                w.od[layer] * fraction_from_top,
+            );
+            let minus_ratio = fraction_from_bottom
+                * Wide::exp_difference_ratio(
+                    thermal,
+                    p.exponential[layer] * bottom_exponential,
+                    w.thermal_b1[layer] * fraction_from_top,
+                    w.thermal_b1[layer] + h.k[layer] * fraction_from_bottom,
+                    w.od[layer],
+                );
+            let plus = w.thermal_b0[layer] * plus_ratio;
+            let minus = w.thermal_b0[layer] * minus_ratio;
 
             w.d_particular[az].at[layer] += source_scale * (yp * plus + ym * minus);
             d_yp += source_scale * p.at[layer] * plus;
@@ -2736,27 +3073,26 @@ fn reverse_local_source<const SOLAR: bool>(
             let d_plus = source_scale * p.at[layer] * yp;
             let d_minus = source_scale * p.at[layer] * ym;
 
-            w.d_thermal_b0[layer] += d_plus * plus_numerator * inv_plus_denominator;
-            let d_plus_numerator = d_plus * w.thermal_b0[layer] * inv_plus_denominator;
-            let d_plus_denominator = -d_plus * plus * inv_plus_denominator;
-            d_top_exponential += d_plus_numerator;
-            let mut d_thermal = -d_plus_numerator;
-            w.d_thermal_b1[layer] += d_plus_denominator;
-            d_k -= d_plus_denominator;
-
-            w.d_thermal_b0[layer] += d_minus * minus_numerator * inv_minus_denominator;
-            let d_minus_numerator = d_minus * w.thermal_b0[layer] * inv_minus_denominator;
-            let d_minus_denominator = -d_minus * minus * inv_minus_denominator;
-            d_thermal += d_minus_numerator;
-            let d_layer_exponential = -d_minus_numerator * bottom_exponential;
-            d_bottom_exponential -= d_minus_numerator * p.exponential[layer];
-            w.d_thermal_b1[layer] += d_minus_denominator;
-            d_k += d_minus_denominator;
-
-            w.d_thermal_b1[layer] -= d_thermal * thermal * w.od[layer] * fraction_from_top;
-            w.d_od[layer] -= d_thermal * thermal * w.thermal_b1[layer] * fraction_from_top;
-            w.d_thermal_b1[layer] -= d_layer_exponential * p.exponential[layer] * w.od[layer];
-            w.d_od[layer] -= d_layer_exponential * p.exponential[layer] * w.thermal_b1[layer];
+            w.d_thermal_b0[layer] += d_plus * plus_ratio + d_minus * minus_ratio;
+            let (d_plus_k, d_plus_rate, d_plus_thickness) = Wide::exp_difference_ratio_adjoint(
+                top_exponential,
+                thermal,
+                h.k[layer],
+                w.thermal_b1[layer],
+                w.od[layer] * fraction_from_top,
+                d_plus * w.thermal_b0[layer],
+            );
+            let (d_minus_a, d_minus_b, d_minus_thickness) = Wide::exp_difference_ratio_adjoint(
+                thermal,
+                p.exponential[layer] * bottom_exponential,
+                w.thermal_b1[layer] * fraction_from_top,
+                w.thermal_b1[layer] + h.k[layer] * fraction_from_bottom,
+                w.od[layer],
+                d_minus * w.thermal_b0[layer] * fraction_from_bottom,
+            );
+            d_k += d_plus_k + d_minus_b * fraction_from_bottom;
+            w.d_thermal_b1[layer] += d_plus_rate + d_minus_a * fraction_from_top + d_minus_b;
+            w.d_od[layer] += d_plus_thickness * fraction_from_top + d_minus_thickness;
         }
 
         let d_lp = d_yp * h.xp[layer] + d_ym * h.xm[layer];
@@ -2858,6 +3194,16 @@ fn reverse_views<const SOLAR: bool>(
         let phase_mu = vmu * mu;
         let phase_sine = 0.25 * ((1.0 - vmu * vmu) * (1.0 - mu * mu)).sqrt();
         let azimuth_weight = [1.0, view.relative_azimuth.cos()];
+        let view_nonresonant = (0..n).all(|layer| {
+            let rate = if SOLAR {
+                w.secant[layer]
+            } else {
+                w.thermal_b1[layer]
+            };
+            (0..naz).all(|az| {
+                plane_source_nonresonant(rate, w.homogeneous[az].k[layer], w.od[layer], inv_vmu)
+            })
+        });
         w.source.fill(Wide::splat(0.0));
         w.attenuation[0] = Wide::splat(1.0);
         let mut integrated = Wide::splat(0.0);
@@ -2865,32 +3211,82 @@ fn reverse_views<const SOLAR: bool>(
             let beam = (-w.od[layer] * inv_vmu).exp();
             w.beam[layer] = beam;
             let exponential = w.particular[0].exponential[layer];
-            let denominator = if SOLAR {
-                1.0 + w.secant[layer] * vmu
+            let rate = if SOLAR {
+                w.secant[layer]
             } else {
-                1.0 + w.thermal_b1[layer] * vmu
+                w.thermal_b1[layer]
             };
-            let inv_denominator = 1.0 / denominator;
-            let source_integral = (1.0 - exponential * beam) * inv_denominator;
+            let inverse_view = Wide::splat(inv_vmu);
+            let source_integral = if view_nonresonant {
+                (1.0 - exponential * beam) / (1.0 + rate * vmu)
+            } else {
+                inv_vmu
+                    * Wide::exp_difference_ratio(
+                        Wide::splat(1.0),
+                        exponential * beam,
+                        Wide::splat(0.0),
+                        rate + inverse_view,
+                        w.od[layer],
+                    )
+            };
             for (az, &azimuth_weight) in azimuth_weight.iter().enumerate().take(naz) {
                 let h = &w.homogeneous[az];
                 let p = &w.particular[az];
                 let (lp, lm) = lpsum::<SOLAR>(az, phase_mu, phase_sine, w.ssa[layer], w.b1[layer]);
                 let yp = lp * h.xp[layer] + lm * h.xm[layer];
                 let ym = lp * h.xm[layer] + lm * h.xp[layer];
-                let hm = (h.omega[layer] - beam) / (1.0 - h.k[layer] * vmu);
-                let hp = (1.0 - h.omega[layer] * beam) / (1.0 + h.k[layer] * vmu);
+                let (hm, hp, dp_ratio, dm_ratio) = if view_nonresonant {
+                    let hm = (h.omega[layer] - beam) / (1.0 - h.k[layer] * vmu);
+                    let hp = (1.0 - h.omega[layer] * beam) / (1.0 + h.k[layer] * vmu);
+                    (
+                        hm,
+                        hp,
+                        (source_integral - exponential * hm) / (rate + h.k[layer]),
+                        (hp - source_integral) / (rate - h.k[layer]),
+                    )
+                } else {
+                    (
+                        inv_vmu
+                            * Wide::exp_difference_ratio(
+                                h.omega[layer],
+                                beam,
+                                h.k[layer],
+                                inverse_view,
+                                w.od[layer],
+                            ),
+                        inv_vmu
+                            * Wide::exp_difference_ratio(
+                                Wide::splat(1.0),
+                                h.omega[layer] * beam,
+                                Wide::splat(0.0),
+                                h.k[layer] + inverse_view,
+                                w.od[layer],
+                            ),
+                        inv_vmu
+                            * Wide::integrated_exp_difference_ratio(
+                                exponential * h.omega[layer],
+                                exponential * beam,
+                                rate + h.k[layer],
+                                rate + inverse_view,
+                                w.od[layer],
+                            ),
+                        inv_vmu
+                            * Wide::integrated_exp_difference_ratio(
+                                h.omega[layer] * beam,
+                                exponential * beam,
+                                h.k[layer] + inverse_view,
+                                rate + inverse_view,
+                                w.od[layer],
+                            ),
+                    )
+                };
                 let v = if SOLAR {
-                    let dp = w.transmission[layer] * (source_integral - exponential * hm)
-                        / (w.secant[layer] + h.k[layer]);
-                    let dm = w.transmission[layer] * (hp - source_integral)
-                        / (w.secant[layer] - h.k[layer]);
+                    let dp = w.transmission[layer] * dp_ratio;
+                    let dm = w.transmission[layer] * dm_ratio;
                     p.ap[layer] * yp * dm + p.am[layer] * ym * dp
                 } else {
-                    let dp = w.thermal_b0[layer] * (source_integral - exponential * hm)
-                        / (w.thermal_b1[layer] + h.k[layer]);
-                    let dm = w.thermal_b0[layer] * (hp - source_integral)
-                        / (w.thermal_b1[layer] - h.k[layer]);
+                    let dp = w.thermal_b0[layer] * dp_ratio;
+                    let dm = w.thermal_b0[layer] * dm_ratio;
                     p.at[layer] * (yp * dm + ym * dp)
                 };
                 w.source[layer] += azimuth_weight
@@ -2942,50 +3338,99 @@ fn reverse_views<const SOLAR: bool>(
             d_attenuation = d_attenuation * beam + seed * w.source[layer];
             let d_source = seed * w.attenuation[layer];
             let exponential = w.particular[0].exponential[layer];
-            let denominator = if SOLAR {
-                1.0 + w.secant[layer] * vmu
+            let rate = if SOLAR {
+                w.secant[layer]
             } else {
-                1.0 + w.thermal_b1[layer] * vmu
+                w.thermal_b1[layer]
             };
-            let inv_denominator = 1.0 / denominator;
-            let source_integral = (1.0 - exponential * beam) * inv_denominator;
-            let mut d_exponential = Wide::splat(0.0);
-            let mut d_source_integral = Wide::splat(0.0);
-            for (az, &azimuth_weight) in azimuth_weight.iter().enumerate().take(naz) {
-                reverse_view_azimuth::<SOLAR>(
-                    az,
-                    *view,
-                    azimuth_weight,
-                    phase_mu,
-                    phase_sine,
-                    layer,
-                    beam,
-                    exponential,
-                    source_integral,
-                    d_source,
-                    &mut d_beam,
-                    &mut d_exponential,
-                    &mut d_source_integral,
-                    w,
-                );
-                if !SOLAR {
-                    w.d_thermal_b0[layer] += d_source * source_integral * (1.0 - w.ssa[layer]);
-                    d_source_integral += d_source * w.thermal_b0[layer] * (1.0 - w.ssa[layer]);
-                    w.d_ssa[layer] -= d_source * w.thermal_b0[layer] * source_integral;
-                }
-            }
-            let d_numerator = d_source_integral * inv_denominator;
-            let d_denominator = -d_source_integral * source_integral * inv_denominator;
-            d_exponential -= d_numerator * beam;
-            d_beam -= d_numerator * exponential;
-            if SOLAR {
-                w.d_secant[layer] += d_denominator * vmu;
-                w.d_secant[layer] -= d_exponential * exponential * w.od[layer];
-                w.d_od[layer] -= d_exponential * exponential * w.secant[layer];
+            let inverse_view = Wide::splat(inv_vmu);
+            let source_integral = if view_nonresonant {
+                (1.0 - exponential * beam) / (1.0 + rate * vmu)
             } else {
-                w.d_thermal_b1[layer] += d_denominator * vmu;
-                w.d_thermal_b1[layer] -= d_exponential * exponential * w.od[layer];
-                w.d_od[layer] -= d_exponential * exponential * w.thermal_b1[layer];
+                inv_vmu
+                    * Wide::exp_difference_ratio(
+                        Wide::splat(1.0),
+                        exponential * beam,
+                        Wide::splat(0.0),
+                        rate + inverse_view,
+                        w.od[layer],
+                    )
+            };
+            let mut d_source_integral = Wide::splat(0.0);
+            if view_nonresonant {
+                let mut d_exponential = Wide::splat(0.0);
+                for (az, &azimuth_weight) in azimuth_weight.iter().enumerate().take(naz) {
+                    reverse_view_azimuth_fast::<SOLAR>(
+                        az,
+                        *view,
+                        azimuth_weight,
+                        phase_mu,
+                        phase_sine,
+                        layer,
+                        beam,
+                        exponential,
+                        source_integral,
+                        d_source,
+                        &mut d_beam,
+                        &mut d_exponential,
+                        &mut d_source_integral,
+                        w,
+                    );
+                    if !SOLAR {
+                        w.d_thermal_b0[layer] += d_source * source_integral * (1.0 - w.ssa[layer]);
+                        d_source_integral += d_source * w.thermal_b0[layer] * (1.0 - w.ssa[layer]);
+                        w.d_ssa[layer] -= d_source * w.thermal_b0[layer] * source_integral;
+                    }
+                }
+                let denominator = 1.0 + rate * vmu;
+                let inv_denominator = 1.0 / denominator;
+                let d_numerator = d_source_integral * inv_denominator;
+                let d_denominator = -d_source_integral * source_integral * inv_denominator;
+                d_exponential -= d_numerator * beam;
+                d_beam -= d_numerator * exponential;
+                if SOLAR {
+                    w.d_secant[layer] += d_denominator * vmu;
+                    w.d_secant[layer] -= d_exponential * exponential * w.od[layer];
+                    w.d_od[layer] -= d_exponential * exponential * w.secant[layer];
+                } else {
+                    w.d_thermal_b1[layer] += d_denominator * vmu;
+                    w.d_thermal_b1[layer] -= d_exponential * exponential * w.od[layer];
+                    w.d_od[layer] -= d_exponential * exponential * w.thermal_b1[layer];
+                }
+            } else {
+                for (az, &azimuth_weight) in azimuth_weight.iter().enumerate().take(naz) {
+                    reverse_view_azimuth::<SOLAR>(
+                        az,
+                        *view,
+                        azimuth_weight,
+                        phase_mu,
+                        phase_sine,
+                        layer,
+                        beam,
+                        exponential,
+                        d_source,
+                        w,
+                    );
+                    if !SOLAR {
+                        w.d_thermal_b0[layer] += d_source * source_integral * (1.0 - w.ssa[layer]);
+                        d_source_integral += d_source * w.thermal_b0[layer] * (1.0 - w.ssa[layer]);
+                        w.d_ssa[layer] -= d_source * w.thermal_b0[layer] * source_integral;
+                    }
+                }
+                let (_, d_rate, d_thickness) = Wide::exp_difference_ratio_adjoint(
+                    Wide::splat(1.0),
+                    exponential * beam,
+                    Wide::splat(0.0),
+                    rate + inverse_view,
+                    w.od[layer],
+                    d_source_integral * inv_vmu,
+                );
+                if SOLAR {
+                    w.d_secant[layer] += d_rate;
+                } else {
+                    w.d_thermal_b1[layer] += d_rate;
+                }
+                w.d_od[layer] += d_thickness;
             }
             w.d_od[layer] -= d_beam * beam * inv_vmu;
         }
@@ -3013,8 +3458,42 @@ fn lpsum<const SOLAR: bool>(
     }
 }
 
+#[inline]
+fn plane_source_nonresonant(
+    rate: Wide,
+    eigenvalue: Wide,
+    optical_depth: Wide,
+    inverse_view: f64,
+) -> bool {
+    (0..LANES).all(|lane| {
+        let thickness = optical_depth.0[lane];
+        let rate = rate.0[lane];
+        let eigenvalue = eigenvalue.0[lane];
+        [
+            rate + inverse_view,
+            inverse_view - eigenvalue,
+            eigenvalue + inverse_view,
+            rate + eigenvalue,
+            rate - eigenvalue,
+        ]
+        .into_iter()
+        .all(|difference| (difference * thickness).abs() > 1.0e-5)
+    })
+}
+
+#[inline]
+fn column_source_nonresonant(rate: Wide, eigenvalue: Wide, optical_depth: Wide) -> bool {
+    (0..LANES).all(|lane| {
+        let thickness = optical_depth.0[lane];
+        let rate = rate.0[lane];
+        let eigenvalue = eigenvalue.0[lane];
+        ((rate - eigenvalue) * thickness).abs() > 1.0e-5
+            && ((rate + eigenvalue) * thickness).abs() > 1.0e-5
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
-fn reverse_view_azimuth<const SOLAR: bool>(
+fn reverse_view_azimuth_fast<const SOLAR: bool>(
     az: usize,
     view: View,
     azimuth_weight: f64,
@@ -3126,6 +3605,161 @@ fn reverse_view_azimuth<const SOLAR: bool>(
     w.d_homogeneous[az].omega[layer] += d_hm_numerator;
     *d_beam -= d_hm_numerator;
     w.d_homogeneous[az].k[layer] -= d_hm_denominator * vmu;
+
+    let d_lp = d_yp * h.xp[layer] + d_ym * h.xm[layer];
+    let d_lm = d_yp * h.xm[layer] + d_ym * h.xp[layer];
+    w.d_homogeneous[az].xp[layer] += d_yp * lp + d_ym * lm;
+    w.d_homogeneous[az].xm[layer] += d_yp * lm + d_ym * lp;
+    if az == 0 {
+        w.d_ssa[layer] += d_lp * 0.5 * (1.0 - w.b1[layer] * phase_mu)
+            + d_lm * 0.5 * (1.0 + w.b1[layer] * phase_mu);
+        w.d_b1[layer] +=
+            d_lp * (-0.5 * w.ssa[layer] * phase_mu) + d_lm * (0.5 * w.ssa[layer] * phase_mu);
+    } else if SOLAR {
+        w.d_ssa[layer] += (d_lp + d_lm) * w.b1[layer] * phase_sine;
+        w.d_b1[layer] += (d_lp + d_lm) * w.ssa[layer] * phase_sine;
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn reverse_view_azimuth<const SOLAR: bool>(
+    az: usize,
+    view: View,
+    azimuth_weight: f64,
+    phase_mu: f64,
+    phase_sine: f64,
+    layer: usize,
+    beam: Wide,
+    exponential: Wide,
+    d_source: Wide,
+    w: &mut ExplicitWorkspace,
+) {
+    let vmu = view.cosine;
+    let inv_vmu = 1.0 / vmu;
+    let inverse_view = Wide::splat(inv_vmu);
+    let h = &w.homogeneous[az];
+    let p = &w.particular[az];
+    let rate = if SOLAR {
+        w.secant[layer]
+    } else {
+        w.thermal_b1[layer]
+    };
+    let (lp, lm) = lpsum::<SOLAR>(az, phase_mu, phase_sine, w.ssa[layer], w.b1[layer]);
+    let yp = lp * h.xp[layer] + lm * h.xm[layer];
+    let ym = lp * h.xm[layer] + lm * h.xp[layer];
+    let hm = inv_vmu
+        * Wide::exp_difference_ratio(h.omega[layer], beam, h.k[layer], inverse_view, w.od[layer]);
+    let hp = inv_vmu
+        * Wide::exp_difference_ratio(
+            Wide::splat(1.0),
+            h.omega[layer] * beam,
+            Wide::splat(0.0),
+            h.k[layer] + inverse_view,
+            w.od[layer],
+        );
+    let dp_ratio = inv_vmu
+        * Wide::integrated_exp_difference_ratio(
+            exponential * h.omega[layer],
+            exponential * beam,
+            rate + h.k[layer],
+            rate + inverse_view,
+            w.od[layer],
+        );
+    let dm_ratio = inv_vmu
+        * Wide::integrated_exp_difference_ratio(
+            h.omega[layer] * beam,
+            exponential * beam,
+            h.k[layer] + inverse_view,
+            rate + inverse_view,
+            w.od[layer],
+        );
+    let source_scale = d_source * azimuth_weight;
+    let mut d_yp = source_scale * w.bvp[az].rhs[2 * layer] * hp;
+    let mut d_ym = source_scale * w.bvp[az].rhs[2 * layer + 1] * hm;
+    let d_hp = source_scale * w.bvp[az].rhs[2 * layer] * yp;
+    let d_hm = source_scale * w.bvp[az].rhs[2 * layer + 1] * ym;
+    w.d_solution[az][2 * layer] += source_scale * yp * hp;
+    w.d_solution[az][2 * layer + 1] += source_scale * ym * hm;
+
+    let (source_amplitude, dp, dm) = if SOLAR {
+        (
+            w.transmission[layer],
+            w.transmission[layer] * dp_ratio,
+            w.transmission[layer] * dm_ratio,
+        )
+    } else {
+        (
+            w.thermal_b0[layer],
+            w.thermal_b0[layer] * dp_ratio,
+            w.thermal_b0[layer] * dm_ratio,
+        )
+    };
+    let (d_dp, d_dm) = if SOLAR {
+        w.d_particular[az].ap[layer] += source_scale * yp * dm;
+        d_yp += source_scale * p.ap[layer] * dm;
+        w.d_particular[az].am[layer] += source_scale * ym * dp;
+        d_ym += source_scale * p.am[layer] * dp;
+        (
+            source_scale * p.am[layer] * ym,
+            source_scale * p.ap[layer] * yp,
+        )
+    } else {
+        w.d_particular[az].at[layer] += source_scale * (yp * dm + ym * dp);
+        d_yp += source_scale * p.at[layer] * dm;
+        d_ym += source_scale * p.at[layer] * dp;
+        (
+            source_scale * p.at[layer] * ym,
+            source_scale * p.at[layer] * yp,
+        )
+    };
+
+    let d_source_amplitude = d_dp * dp_ratio + d_dm * dm_ratio;
+    if SOLAR {
+        w.d_transmission[layer] += d_source_amplitude;
+    } else {
+        w.d_thermal_b0[layer] += d_source_amplitude;
+    }
+
+    let (d_dp_a, d_dp_b, d_dp_thickness) = Wide::integrated_exp_difference_ratio_adjoint(
+        exponential * h.omega[layer],
+        exponential * beam,
+        rate + h.k[layer],
+        rate + inverse_view,
+        w.od[layer],
+        d_dp * source_amplitude * inv_vmu,
+    );
+    let (d_dm_a, d_dm_b, d_dm_thickness) = Wide::integrated_exp_difference_ratio_adjoint(
+        h.omega[layer] * beam,
+        exponential * beam,
+        h.k[layer] + inverse_view,
+        rate + inverse_view,
+        w.od[layer],
+        d_dm * source_amplitude * inv_vmu,
+    );
+    let (_, d_hp_rate, d_hp_thickness) = Wide::exp_difference_ratio_adjoint(
+        Wide::splat(1.0),
+        h.omega[layer] * beam,
+        Wide::splat(0.0),
+        h.k[layer] + inverse_view,
+        w.od[layer],
+        d_hp * inv_vmu,
+    );
+    let (d_hm_rate, _, d_hm_thickness) = Wide::exp_difference_ratio_adjoint(
+        h.omega[layer],
+        beam,
+        h.k[layer],
+        inverse_view,
+        w.od[layer],
+        d_hm * inv_vmu,
+    );
+    let d_rate = d_dp_a + d_dp_b + d_dm_b;
+    if SOLAR {
+        w.d_secant[layer] += d_rate;
+    } else {
+        w.d_thermal_b1[layer] += d_rate;
+    }
+    w.d_homogeneous[az].k[layer] += d_dp_a + d_dm_a + d_hp_rate + d_hm_rate;
+    w.d_od[layer] += d_dp_thickness + d_dm_thickness + d_hp_thickness + d_hm_thickness;
 
     let d_lp = d_yp * h.xp[layer] + d_ym * h.xm[layer];
     let d_lm = d_yp * h.xm[layer] + d_ym * h.xp[layer];
@@ -3320,55 +3954,128 @@ fn reverse_layers<const SOLAR: bool>(geometry: &Geometry, w: &mut ExplicitWorksp
                 d_xm += d_at_numerator * (1.0 - w.ssa[layer]);
             }
 
-            let mut d_exponential = Wide::splat(0.0);
-            if SOLAR {
-                let cp_denominator = w.secant[layer] - h.k[layer];
-                let inv_cp_denominator = 1.0 / cp_denominator;
-                let cp_numerator = h.omega[layer] - p.exponential[layer];
-                w.d_transmission[layer] += d_cp * cp_numerator * inv_cp_denominator;
-                let d_cp_numerator = d_cp * w.transmission[layer] * inv_cp_denominator;
-                let d_cp_denominator = -d_cp * p.cp[layer] * inv_cp_denominator;
-                d_omega += d_cp_numerator;
-                d_exponential -= d_cp_numerator;
-                w.d_secant[layer] += d_cp_denominator;
-                d_k -= d_cp_denominator;
-
-                let cm_denominator = w.secant[layer] + h.k[layer];
-                let inv_cm_denominator = 1.0 / cm_denominator;
-                let cm_numerator = 1.0 - h.omega[layer] * p.exponential[layer];
-                w.d_transmission[layer] += d_cm * cm_numerator * inv_cm_denominator;
-                let d_cm_numerator = d_cm * w.transmission[layer] * inv_cm_denominator;
-                let d_cm_denominator = -d_cm * p.cm[layer] * inv_cm_denominator;
-                d_omega -= d_cm_numerator * p.exponential[layer];
-                d_exponential -= d_cm_numerator * h.omega[layer];
-                w.d_secant[layer] += d_cm_denominator;
-                d_k += d_cm_denominator;
-                w.d_secant[layer] -= d_exponential * p.exponential[layer] * w.od[layer];
-                w.d_od[layer] -= d_exponential * p.exponential[layer] * w.secant[layer];
+            let rate = if SOLAR {
+                w.secant[layer]
             } else {
-                let cp_denominator = w.thermal_b1[layer] - h.k[layer];
+                w.thermal_b1[layer]
+            };
+            if column_source_nonresonant(rate, h.k[layer], w.od[layer]) {
+                let mut d_exponential = Wide::splat(0.0);
+                let cp_denominator = rate - h.k[layer];
                 let inv_cp_denominator = 1.0 / cp_denominator;
                 let cp_numerator = h.omega[layer] - p.exponential[layer];
-                w.d_thermal_b0[layer] += d_cp * cp_numerator * inv_cp_denominator;
-                let d_cp_numerator = d_cp * w.thermal_b0[layer] * inv_cp_denominator;
+                let source_scale = if SOLAR {
+                    w.transmission[layer]
+                } else {
+                    w.thermal_b0[layer]
+                };
+                if SOLAR {
+                    w.d_transmission[layer] += d_cp * cp_numerator * inv_cp_denominator;
+                } else {
+                    w.d_thermal_b0[layer] += d_cp * cp_numerator * inv_cp_denominator;
+                }
+                let d_cp_numerator = d_cp * source_scale * inv_cp_denominator;
                 let d_cp_denominator = -d_cp * p.cp[layer] * inv_cp_denominator;
                 d_omega += d_cp_numerator;
                 d_exponential -= d_cp_numerator;
-                w.d_thermal_b1[layer] += d_cp_denominator;
+                if SOLAR {
+                    w.d_secant[layer] += d_cp_denominator;
+                } else {
+                    w.d_thermal_b1[layer] += d_cp_denominator;
+                }
                 d_k -= d_cp_denominator;
 
-                let cm_denominator = w.thermal_b1[layer] + h.k[layer];
+                let cm_denominator = rate + h.k[layer];
                 let inv_cm_denominator = 1.0 / cm_denominator;
                 let cm_numerator = 1.0 - h.omega[layer] * p.exponential[layer];
-                w.d_thermal_b0[layer] += d_cm * cm_numerator * inv_cm_denominator;
-                let d_cm_numerator = d_cm * w.thermal_b0[layer] * inv_cm_denominator;
+                if SOLAR {
+                    w.d_transmission[layer] += d_cm * cm_numerator * inv_cm_denominator;
+                } else {
+                    w.d_thermal_b0[layer] += d_cm * cm_numerator * inv_cm_denominator;
+                }
+                let d_cm_numerator = d_cm * source_scale * inv_cm_denominator;
                 let d_cm_denominator = -d_cm * p.cm[layer] * inv_cm_denominator;
                 d_omega -= d_cm_numerator * p.exponential[layer];
                 d_exponential -= d_cm_numerator * h.omega[layer];
-                w.d_thermal_b1[layer] += d_cm_denominator;
+                if SOLAR {
+                    w.d_secant[layer] += d_cm_denominator;
+                    w.d_secant[layer] -= d_exponential * p.exponential[layer] * w.od[layer];
+                } else {
+                    w.d_thermal_b1[layer] += d_cm_denominator;
+                    w.d_thermal_b1[layer] -= d_exponential * p.exponential[layer] * w.od[layer];
+                }
                 d_k += d_cm_denominator;
-                w.d_thermal_b1[layer] -= d_exponential * p.exponential[layer] * w.od[layer];
-                w.d_od[layer] -= d_exponential * p.exponential[layer] * w.thermal_b1[layer];
+                w.d_od[layer] -= d_exponential * p.exponential[layer] * rate;
+            } else if SOLAR {
+                let cp_ratio = Wide::exp_difference_ratio(
+                    h.omega[layer],
+                    p.exponential[layer],
+                    h.k[layer],
+                    w.secant[layer],
+                    w.od[layer],
+                );
+                let cm_ratio = Wide::exp_difference_ratio(
+                    Wide::splat(1.0),
+                    h.omega[layer] * p.exponential[layer],
+                    Wide::splat(0.0),
+                    w.secant[layer] + h.k[layer],
+                    w.od[layer],
+                );
+                w.d_transmission[layer] += d_cp * cp_ratio + d_cm * cm_ratio;
+                let (d_cp_k, d_cp_rate, d_cp_thickness) = Wide::exp_difference_ratio_adjoint(
+                    h.omega[layer],
+                    p.exponential[layer],
+                    h.k[layer],
+                    w.secant[layer],
+                    w.od[layer],
+                    d_cp * w.transmission[layer],
+                );
+                let (_, d_cm_rate, d_cm_thickness) = Wide::exp_difference_ratio_adjoint(
+                    Wide::splat(1.0),
+                    h.omega[layer] * p.exponential[layer],
+                    Wide::splat(0.0),
+                    w.secant[layer] + h.k[layer],
+                    w.od[layer],
+                    d_cm * w.transmission[layer],
+                );
+                d_k += d_cp_k + d_cm_rate;
+                w.d_secant[layer] += d_cp_rate + d_cm_rate;
+                w.d_od[layer] += d_cp_thickness + d_cm_thickness;
+            } else {
+                let cp_ratio = Wide::exp_difference_ratio(
+                    h.omega[layer],
+                    p.exponential[layer],
+                    h.k[layer],
+                    w.thermal_b1[layer],
+                    w.od[layer],
+                );
+                let cm_ratio = Wide::exp_difference_ratio(
+                    Wide::splat(1.0),
+                    h.omega[layer] * p.exponential[layer],
+                    Wide::splat(0.0),
+                    w.thermal_b1[layer] + h.k[layer],
+                    w.od[layer],
+                );
+                w.d_thermal_b0[layer] += d_cp * cp_ratio + d_cm * cm_ratio;
+                let (d_cp_k, d_cp_rate, d_cp_thickness) = Wide::exp_difference_ratio_adjoint(
+                    h.omega[layer],
+                    p.exponential[layer],
+                    h.k[layer],
+                    w.thermal_b1[layer],
+                    w.od[layer],
+                    d_cp * w.thermal_b0[layer],
+                );
+                let (_, d_cm_rate, d_cm_thickness) = Wide::exp_difference_ratio_adjoint(
+                    Wide::splat(1.0),
+                    h.omega[layer] * p.exponential[layer],
+                    Wide::splat(0.0),
+                    w.thermal_b1[layer] + h.k[layer],
+                    w.od[layer],
+                    d_cm * w.thermal_b0[layer],
+                );
+                d_k += d_cp_k + d_cm_rate;
+                w.d_thermal_b1[layer] += d_cp_rate + d_cm_rate;
+                w.d_od[layer] += d_cp_thickness + d_cm_thickness;
             }
 
             d_xp += d_norm * 2.0 * mu * h.xp[layer];

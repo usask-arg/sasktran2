@@ -1041,6 +1041,118 @@ fn transparent_thermal_atmosphere_is_finite_and_transmits_surface() {
 }
 
 #[test]
+fn removable_source_resonances_have_finite_values_and_adjoints() {
+    let mu: f64 = 0.5;
+    let ssa: f64 = 0.2;
+    let b1: f64 = 0.4;
+    let eigenvalue = ((ssa * b1 * mu - 1.0 / mu) * ((ssa - 1.0) / mu)).sqrt();
+    let geometry = Geometry::new(vec![1.0], vec![1.0], 1.0 / eigenvalue);
+    let views = [View {
+        cosine: 0.7,
+        relative_azimuth: 0.2,
+    }];
+
+    let solar_inputs = LayerInputs {
+        num_layers: 1,
+        num_wavelengths: 1,
+        optical_depth: vec![1.0],
+        single_scatter_albedo: vec![ssa],
+        first_legendre: vec![b1],
+        transmission: Some(vec![1.0, (-eigenvalue).exp()]),
+        average_secant: Some(vec![eigenvalue]),
+        thermal_b0: None,
+        thermal_b1: None,
+        surface_albedo: vec![0.2],
+        surface_emission: None,
+    };
+    let solar_solver = TwoStreamSolver::new(geometry.clone(), SourceMode::Solar)
+        .unwrap()
+        .with_execution_policy(ExecutionPolicy::Serial);
+    let solar = solar_solver
+        .solve(&solar_inputs, &views, &mut Workspace::new())
+        .unwrap();
+    let (solar_explicit, solar_gradient) = solar_solver
+        .solve_with_vjp(&solar_inputs, &views, &[1.0], &mut Workspace::new())
+        .unwrap();
+    assert!(solar.values[0].is_finite());
+    assert!(solar_explicit.values[0].is_finite());
+    assert!((solar.values[0] - solar_explicit.values[0]).abs() < 1.0e-14);
+    assert!(solar_gradient.optical_depth[0].is_finite());
+    assert!(solar_gradient.average_secant.as_ref().unwrap()[0].is_finite(),);
+    assert_derivative(
+        solar_gradient.average_secant.as_ref().unwrap()[0],
+        numerical_layer_derivative(
+            &solar_solver,
+            &solar_inputs,
+            &views,
+            eigenvalue,
+            |input, value| input.average_secant.as_mut().unwrap()[0] = value,
+        ),
+    );
+
+    let mut view_resonance_inputs = solar_inputs.clone();
+    view_resonance_inputs.average_secant.as_mut().unwrap()[0] = 1.3;
+    view_resonance_inputs.transmission.as_mut().unwrap()[1] = (-1.3_f64).exp();
+    let view_resonance = [View {
+        cosine: 1.0 / eigenvalue,
+        relative_azimuth: 0.2,
+    }];
+    let (view_radiance, view_gradient) = solar_solver
+        .solve_with_vjp(
+            &view_resonance_inputs,
+            &view_resonance,
+            &[1.0],
+            &mut Workspace::new(),
+        )
+        .unwrap();
+    assert!(view_radiance.values[0].is_finite());
+    assert!(view_gradient.single_scatter_albedo[0].is_finite());
+    assert_derivative(
+        view_gradient.single_scatter_albedo[0],
+        numerical_layer_derivative(
+            &solar_solver,
+            &view_resonance_inputs,
+            &view_resonance,
+            ssa,
+            |input, value| input.single_scatter_albedo[0] = value,
+        ),
+    );
+
+    let thermal_inputs = LayerInputs {
+        transmission: None,
+        average_secant: None,
+        thermal_b0: Some(vec![1.0]),
+        thermal_b1: Some(vec![eigenvalue]),
+        surface_emission: Some(vec![1.0]),
+        ..solar_inputs
+    };
+    let thermal_solver = TwoStreamSolver::new(geometry, SourceMode::Thermal)
+        .unwrap()
+        .with_execution_policy(ExecutionPolicy::Serial);
+    let thermal = thermal_solver
+        .solve(&thermal_inputs, &views, &mut Workspace::new())
+        .unwrap();
+    let (thermal_explicit, thermal_gradient) = thermal_solver
+        .solve_with_vjp(&thermal_inputs, &views, &[1.0], &mut Workspace::new())
+        .unwrap();
+    assert!(thermal.values[0].is_finite());
+    assert!(thermal_explicit.values[0].is_finite());
+    assert!((thermal.values[0] - thermal_explicit.values[0]).abs() < 1.0e-14);
+    assert!(thermal_gradient.optical_depth[0].is_finite());
+    assert!(thermal_gradient.thermal_b1.as_ref().unwrap()[0].is_finite());
+    assert_derivative(
+        thermal_gradient.thermal_b1.as_ref().unwrap()[0],
+        numerical_layer_derivative(
+            &thermal_solver,
+            &thermal_inputs,
+            &views,
+            eigenvalue,
+            |input, value| input.thermal_b1.as_mut().unwrap()[0] = value,
+        ),
+    );
+}
+
+#[test]
 fn solar_atmosphere_mapping_matches_end_to_end_difference() {
     let n = 2;
     let nw = 1;

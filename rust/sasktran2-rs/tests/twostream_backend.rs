@@ -457,6 +457,84 @@ fn rust_solar_and_thermal_twostream_sources_coexist() -> Result<()> {
 }
 
 #[test]
+fn rust_twostream_engine_resonances_are_finite() -> Result<()> {
+    fn assert_finite(output: &Output) {
+        assert!(output.radiance.iter().all(|value| value.is_finite()));
+        for values in output.d_radiance.values() {
+            assert!(values.iter().all(|value| value.is_finite()));
+        }
+        for values in output.d_radiance_surf.values() {
+            assert!(values.iter().all(|value| value.is_finite()));
+        }
+    }
+
+    let mu: f64 = 0.5;
+    let first_legendre: f64 = 0.4;
+
+    let solar_ssa: f64 = 0.2;
+    let solar_eigenvalue =
+        ((solar_ssa * first_legendre * mu - 1.0 / mu) * ((solar_ssa - 1.0) / mu)).sqrt();
+    let solar_cosine = 1.0 / solar_eigenvalue;
+    let solar_geometry = Geometry1D::new(
+        solar_cosine,
+        0.0,
+        6_371_000.0,
+        vec![0.0, 1.0],
+        InterpolationMethod::Linear,
+        GeometryType::PlaneParallel,
+    );
+    let mut solar_viewing = ViewingGeometry::new();
+    solar_viewing.add_ground_viewing_solar(solar_cosine, 0.0, 2.0, 0.7);
+    let mut solar_atmosphere = make_atmosphere(2, 1, false);
+    solar_atmosphere.storage.total_extinction.fill(1.0);
+    solar_atmosphere.storage.ssa.fill(solar_ssa);
+    solar_atmosphere.storage.leg_coeff.fill(0.0);
+    solar_atmosphere.storage.leg_coeff[[0, 0, 0]] = 1.0;
+    solar_atmosphere.storage.leg_coeff[[0, 1, 0]] = 1.0;
+    solar_atmosphere.storage.leg_coeff[[1, 0, 0]] = first_legendre;
+    solar_atmosphere.storage.leg_coeff[[1, 1, 0]] = first_legendre;
+    solar_atmosphere.storage.solar_irradiance.fill(1.0);
+    solar_atmosphere.surface.brdf_args.fill(0.2);
+    let mut solar_config = config(TwoStreamBackend::Rust, false);
+    solar_config.with_do_backprop(true)?;
+    let solar = Engine::new(&solar_config, &solar_geometry, &solar_viewing)?
+        .calculate_radiance(&solar_atmosphere)?;
+    assert_finite(&solar);
+
+    let thermal_ssa: f64 = 0.7;
+    let thermal_eigenvalue =
+        ((thermal_ssa * first_legendre * mu - 1.0 / mu) * ((thermal_ssa - 1.0) / mu)).sqrt();
+    let thermal_geometry = Geometry1D::new(
+        0.6,
+        0.0,
+        6_371_000.0,
+        vec![0.0, 1.0],
+        InterpolationMethod::Linear,
+        GeometryType::PlaneParallel,
+    );
+    let mut thermal_viewing = ViewingGeometry::new();
+    thermal_viewing.add_ground_viewing_solar(0.6, 0.0, 2.0, 0.5);
+    let mut thermal_atmosphere = make_atmosphere(2, 1, true);
+    thermal_atmosphere.storage.total_extinction.fill(1.0);
+    thermal_atmosphere.storage.ssa.fill(thermal_ssa);
+    thermal_atmosphere.storage.leg_coeff.fill(0.0);
+    thermal_atmosphere.storage.leg_coeff[[0, 0, 0]] = 1.0;
+    thermal_atmosphere.storage.leg_coeff[[0, 1, 0]] = 1.0;
+    thermal_atmosphere.storage.leg_coeff[[1, 0, 0]] = first_legendre;
+    thermal_atmosphere.storage.leg_coeff[[1, 1, 0]] = first_legendre;
+    thermal_atmosphere.storage.emission_source[[0, 0]] = 1.0;
+    thermal_atmosphere.storage.emission_source[[1, 0]] = thermal_eigenvalue.exp();
+    thermal_atmosphere.surface.brdf_args.fill(0.2);
+    thermal_atmosphere.surface.emission.fill(1.0);
+    let mut thermal_config = config(TwoStreamBackend::Rust, true);
+    thermal_config.with_do_backprop(true)?;
+    let thermal = Engine::new(&thermal_config, &thermal_geometry, &thermal_viewing)?
+        .calculate_radiance(&thermal_atmosphere)?;
+    assert_finite(&thermal);
+    Ok(())
+}
+
+#[test]
 fn rust_twostream_thermal_radiance_matches_two_stream_discrete_ordinates() -> Result<()> {
     let nlevel = 6;
     let nwavel = 17;

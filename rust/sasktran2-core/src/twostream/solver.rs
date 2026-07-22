@@ -1203,8 +1203,24 @@ fn solve_layers(geometry: &Geometry, mode: SourceMode, _albedo: f64, w: &mut Sca
                 let ap = (qp * xp + qm * xm) / norm;
                 let am = (qm * xp + qp * xm) / norm;
                 let expsec = (-w.secant[layer] * w.od[layer]).exp();
-                let cp = w.transmission[layer] * (omega - expsec) / (w.secant[layer] - k);
-                let cm = w.transmission[layer] * (1.0 - omega * expsec) / (w.secant[layer] + k);
+                let cp = w.transmission[layer]
+                    * super::explicit::exp_difference_ratio_scalar(
+                        omega,
+                        expsec,
+                        k,
+                        w.secant[layer],
+                        w.od[layer],
+                    )
+                    .0;
+                let cm = w.transmission[layer]
+                    * super::explicit::exp_difference_ratio_scalar(
+                        1.0,
+                        omega * expsec,
+                        0.0,
+                        w.secant[layer] + k,
+                        w.od[layer],
+                    )
+                    .0;
                 let p = &mut w.particular[az];
                 p.a_plus[layer] = ap;
                 p.a_minus[layer] = am;
@@ -1215,9 +1231,24 @@ fn solve_layers(geometry: &Geometry, mode: SourceMode, _albedo: f64, w: &mut Sca
             } else {
                 let at = (1.0 - ssa) * (xp + xm) / norm;
                 let exp_thermal = (-w.thermal_b1[layer] * w.od[layer]).exp();
-                let cp = w.thermal_b0[layer] * (omega - exp_thermal) / (w.thermal_b1[layer] - k);
-                let cm =
-                    w.thermal_b0[layer] * (1.0 - omega * exp_thermal) / (w.thermal_b1[layer] + k);
+                let cp = w.thermal_b0[layer]
+                    * super::explicit::exp_difference_ratio_scalar(
+                        omega,
+                        exp_thermal,
+                        k,
+                        w.thermal_b1[layer],
+                        w.od[layer],
+                    )
+                    .0;
+                let cm = w.thermal_b0[layer]
+                    * super::explicit::exp_difference_ratio_scalar(
+                        1.0,
+                        omega * exp_thermal,
+                        0.0,
+                        w.thermal_b1[layer] + k,
+                        w.od[layer],
+                    )
+                    .0;
                 let p = &mut w.particular[az];
                 p.a_thermal[layer] = at;
                 p.g_plus_top[layer] = at * cm * xm;
@@ -1339,16 +1370,26 @@ fn post_process(
         } else {
             0.0
         };
-        let e_solar = if mode == SourceMode::Solar {
-            (1.0 - expsec * beam) / (1.0 + w.secant[layer] * vmu)
+        let rate = if mode == SourceMode::Solar {
+            w.secant[layer]
         } else {
-            0.0
+            w.thermal_b1[layer]
         };
-        let e_thermal = if mode == SourceMode::Thermal {
-            (1.0 - expthermal * beam) / (1.0 + w.thermal_b1[layer] * vmu)
+        let exponential = if mode == SourceMode::Solar {
+            expsec
         } else {
-            0.0
+            expthermal
         };
+        let inverse_view = 1.0 / vmu;
+        let source_integral = inverse_view
+            * super::explicit::exp_difference_ratio_scalar(
+                1.0,
+                exponential * beam,
+                0.0,
+                rate + inverse_view,
+                w.od[layer],
+            )
+            .0;
 
         for az in 0..naz {
             let h = &w.homogeneous[az];
@@ -1370,25 +1411,56 @@ fn post_process(
             };
             let yp = lp * h.x_plus[layer] + lm * h.x_minus[layer];
             let ym = lp * h.x_minus[layer] + lm * h.x_plus[layer];
-            let hm = (h.omega[layer] - beam) / (1.0 - h.k[layer] * vmu);
-            let hp = (1.0 - h.omega[layer] * beam) / (1.0 + h.k[layer] * vmu);
+            let hm = inverse_view
+                * super::explicit::exp_difference_ratio_scalar(
+                    h.omega[layer],
+                    beam,
+                    h.k[layer],
+                    inverse_view,
+                    w.od[layer],
+                )
+                .0;
+            let hp = inverse_view
+                * super::explicit::exp_difference_ratio_scalar(
+                    1.0,
+                    h.omega[layer] * beam,
+                    0.0,
+                    h.k[layer] + inverse_view,
+                    w.od[layer],
+                )
+                .0;
+            let dp_ratio = inverse_view
+                * super::explicit::integrated_exp_difference_ratio_scalar(
+                    exponential * h.omega[layer],
+                    exponential * beam,
+                    rate + h.k[layer],
+                    rate + inverse_view,
+                    w.od[layer],
+                )
+                .0;
+            let dm_ratio = inverse_view
+                * super::explicit::integrated_exp_difference_ratio_scalar(
+                    h.omega[layer] * beam,
+                    exponential * beam,
+                    h.k[layer] + inverse_view,
+                    rate + inverse_view,
+                    w.od[layer],
+                )
+                .0;
             let v = if mode == SourceMode::Solar {
-                let dp = w.transmission[layer] * (e_solar - expsec * hm)
-                    / (w.secant[layer] + h.k[layer]);
-                let dm = w.transmission[layer] * (hp - e_solar) / (w.secant[layer] - h.k[layer]);
+                let dp = w.transmission[layer] * dp_ratio;
+                let dm = w.transmission[layer] * dm_ratio;
                 p.a_plus[layer] * yp * dm + p.a_minus[layer] * ym * dp
             } else {
-                let dp = w.thermal_b0[layer] * (e_thermal - expthermal * hm)
-                    / (w.thermal_b1[layer] + h.k[layer]);
-                let dm =
-                    w.thermal_b0[layer] * (hp - e_thermal) / (w.thermal_b1[layer] - h.k[layer]);
+                let dp = w.thermal_b0[layer] * dp_ratio;
+                let dm = w.thermal_b0[layer] * dm_ratio;
                 p.a_thermal[layer] * (yp * dm + ym * dp)
             };
             w.source[layer] += azi
                 * (w.bvp[az].rhs[2 * layer] * yp * hp + w.bvp[az].rhs[2 * layer + 1] * ym * hm + v);
             if mode == SourceMode::Thermal {
                 // This is inside the azimuth loop in the C++ implementation.
-                w.source[layer] += w.thermal_b0[layer] * e_thermal * (1.0 - w.ssa[layer]);
+                w.source[layer] += w.thermal_b0[layer] * source_integral * (1.0 - w.ssa[layer]);
             }
         }
         integrated += w.source[layer] * attenuation;

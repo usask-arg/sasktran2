@@ -1,4 +1,4 @@
-use std::pin::Pin;
+use std::{pin::Pin, sync::Arc};
 
 use anyhow::{Result, anyhow};
 
@@ -11,6 +11,7 @@ use super::{
 pub mod ffi {
     extern "Rust" {
         type RustTwoStreamSource;
+        type RustSphericalGeometry;
 
         fn new_rust_twostream_source(
             layer_thickness: &[f64],
@@ -27,8 +28,8 @@ pub mod ffi {
         ) -> Result<()>;
 
         #[allow(clippy::too_many_arguments)]
-        fn set_spherical_geometry(
-            source: Pin<&mut RustTwoStreamSource>,
+        fn new_rust_spherical_geometry(
+            source: &RustTwoStreamSource,
             sza_grid: &[f64],
             chapman_factors: &[f64],
             ray_offsets: &[usize],
@@ -42,7 +43,12 @@ pub mod ffi {
             od_offsets: &[usize],
             od_indices: &[usize],
             od_weights: &[f64],
-        ) -> Result<()>;
+        ) -> Result<Box<RustSphericalGeometry>>;
+
+        fn set_spherical_geometry(
+            source: Pin<&mut RustTwoStreamSource>,
+            geometry: &RustSphericalGeometry,
+        );
 
         #[allow(clippy::too_many_arguments)]
         fn solve(
@@ -74,11 +80,16 @@ pub mod ffi {
 pub struct RustTwoStreamSource {
     solver: TwoStreamSolver,
     views: Vec<View>,
-    spherical: Option<SphericalGeometry>,
+    spherical: Option<Arc<SphericalGeometry>>,
+    atmosphere: AtmosphereBatch,
     workspace: Workspace,
     pool: Option<rayon::ThreadPool>,
     radiance: Option<RadianceBatch>,
     jacobians: Option<AtmosphereJacobians>,
+}
+
+pub struct RustSphericalGeometry {
+    geometry: Arc<SphericalGeometry>,
 }
 
 fn new_rust_twostream_source(
@@ -116,6 +127,16 @@ fn new_rust_twostream_source(
         solver,
         views: Vec::new(),
         spherical: None,
+        atmosphere: AtmosphereBatch {
+            num_wavelengths: 0,
+            extinction: Vec::new(),
+            single_scatter_albedo: Vec::new(),
+            first_legendre: Vec::new(),
+            emission: (mode == SourceMode::Thermal).then(Vec::new),
+            surface_albedo: Vec::new(),
+            surface_emission: (mode == SourceMode::Thermal).then(Vec::new),
+            solar_irradiance: (mode == SourceMode::Solar).then(Vec::new),
+        },
         workspace: Workspace::new(),
         pool,
         radiance: None,
@@ -148,8 +169,8 @@ fn set_views(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn set_spherical_geometry(
-    mut source: Pin<&mut RustTwoStreamSource>,
+fn new_rust_spherical_geometry(
+    source: &RustTwoStreamSource,
     sza_grid: &[f64],
     chapman_factors: &[f64],
     ray_offsets: &[usize],
@@ -163,7 +184,7 @@ fn set_spherical_geometry(
     od_offsets: &[usize],
     od_indices: &[usize],
     od_weights: &[f64],
-) -> Result<()> {
+) -> Result<Box<RustSphericalGeometry>> {
     let num_levels = source.solver.geometry().num_layers() + 1;
     let num_layers = num_levels - 1;
     let expected_chapman = sza_grid
@@ -199,12 +220,20 @@ fn set_spherical_geometry(
         od_weights.to_vec(),
     )?;
     let spherical = SphericalGeometry::new(sza_grid.to_vec(), columns, rays)?;
+    Ok(Box::new(RustSphericalGeometry {
+        geometry: Arc::new(spherical),
+    }))
+}
+
+fn set_spherical_geometry(
+    mut source: Pin<&mut RustTwoStreamSource>,
+    geometry: &RustSphericalGeometry,
+) {
     let this = source.as_mut().get_mut();
     this.views.clear();
-    this.spherical = Some(spherical);
+    this.spherical = Some(Arc::clone(&geometry.geometry));
     this.radiance = None;
     this.jacobians = None;
-    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -258,19 +287,25 @@ fn solve(
     }
 
     // Eigen stores the C++ level-by-wavelength matrices wavelength-major in
-    // raw memory.  Reverse the bottom-up C++ level order while transposing to
-    // the Rust `[top-down level, wavelength]` layout once per atmosphere.
-    let mut rust_extinction = vec![0.0; level_values];
-    let mut rust_ssa = vec![0.0; level_values];
-    let mut rust_b1 = vec![0.0; level_values];
-    let mut rust_emission = (mode == SourceMode::Thermal).then(|| vec![0.0; level_values]);
+    // raw memory. Reverse the bottom-up C++ level order while transposing to
+    // the Rust `[top-down level, wavelength]` layout. The worker owns these
+    // buffers so repeated wavelength blocks reuse their allocations.
+    let this = source.as_mut().get_mut();
+    let atmosphere = &mut this.atmosphere;
+    atmosphere.num_wavelengths = num_wavelengths;
+    atmosphere.extinction.resize(level_values, 0.0);
+    atmosphere.single_scatter_albedo.resize(level_values, 0.0);
+    atmosphere.first_legendre.resize(level_values, 0.0);
+    if let Some(emission) = &mut atmosphere.emission {
+        emission.resize(level_values, 0.0);
+    }
     for rust_level in 0..num_levels {
         let cpp_level = num_levels - 1 - rust_level;
         for wave in 0..num_wavelengths {
             let rust_index = rust_level * num_wavelengths + wave;
             let cpp_index = wave * num_levels + cpp_level;
-            rust_extinction[rust_index] = extinction[cpp_index];
-            rust_ssa[rust_index] = single_scatter_albedo[cpp_index];
+            atmosphere.extinction[rust_index] = extinction[cpp_index];
+            atmosphere.single_scatter_albedo[rust_index] = single_scatter_albedo[cpp_index];
             let delta_m = delta_m_fraction[cpp_index];
             let one_minus_delta_m = 1.0 - delta_m;
             if !delta_m.is_finite() || one_minus_delta_m == 0.0 {
@@ -281,40 +316,39 @@ fn solve(
             // Atmosphere::apply_delta_m_scaling performs the common half
             // transform. Complete the multiple-scatter phase transform used
             // by the discrete-ordinate layer preparation for moment l = 1.
-            rust_b1[rust_index] = scaled_b1 - 3.0 * delta_m / one_minus_delta_m;
-            if let Some(rust_emission) = &mut rust_emission {
+            atmosphere.first_legendre[rust_index] = scaled_b1 - 3.0 * delta_m / one_minus_delta_m;
+            if let Some(rust_emission) = &mut atmosphere.emission {
                 rust_emission[rust_index] = emission[cpp_index];
             }
         }
     }
-    let atmosphere = AtmosphereBatch {
-        num_wavelengths,
-        extinction: rust_extinction,
-        single_scatter_albedo: rust_ssa,
-        first_legendre: rust_b1,
-        emission: rust_emission,
-        surface_albedo: surface_albedo.to_vec(),
-        surface_emission: (mode == SourceMode::Thermal).then(|| surface_emission.to_vec()),
-        solar_irradiance: (mode == SourceMode::Solar).then(|| solar_irradiance.to_vec()),
-    };
+    atmosphere.surface_albedo.resize(num_wavelengths, 0.0);
+    atmosphere.surface_albedo.copy_from_slice(surface_albedo);
+    if let Some(target) = &mut atmosphere.surface_emission {
+        target.resize(num_wavelengths, 0.0);
+        target.copy_from_slice(surface_emission);
+    }
+    if let Some(target) = &mut atmosphere.solar_irradiance {
+        target.resize(num_wavelengths, 0.0);
+        target.copy_from_slice(solar_irradiance);
+    }
 
-    let this = source.as_mut().get_mut();
     let solver = &this.solver;
     let views = &this.views;
     let spherical = this.spherical.as_ref();
     let workspace = &mut this.workspace;
     let mut solve = || match (spherical, calculate_jacobians) {
         (Some(geometry), true) => solver
-            .solve_spherical_atmosphere_with_jacobians(&atmosphere, geometry, workspace)
+            .solve_spherical_atmosphere_with_jacobians(atmosphere, geometry, workspace)
             .map(|(radiance, jacobians)| (radiance, Some(jacobians))),
         (Some(geometry), false) => solver
-            .solve_spherical_atmosphere(&atmosphere, geometry, workspace)
+            .solve_spherical_atmosphere(atmosphere, geometry, workspace)
             .map(|radiance| (radiance, None)),
         (None, true) => solver
-            .solve_atmosphere_with_jacobians(&atmosphere, views, workspace)
+            .solve_atmosphere_with_jacobians(atmosphere, views, workspace)
             .map(|(radiance, jacobians)| (radiance, Some(jacobians))),
         (None, false) => solver
-            .solve_atmosphere(&atmosphere, views, workspace)
+            .solve_atmosphere(atmosphere, views, workspace)
             .map(|radiance| (radiance, None)),
     };
     let result = if let Some(pool) = &this.pool {
