@@ -14,7 +14,10 @@ mod geometry;
 mod operator;
 mod solver;
 
-pub use coefficient::{ScalarCoefficientBasis, ScalarCoefficientScattering};
+pub use coefficient::{
+    ScalarCoefficientBasis, ScalarCoefficientScattering, VectorCoefficientBasis,
+    VectorCoefficientScattering,
+};
 pub use geometry::{CompressedStencils, SourceNode};
 pub use operator::{
     BlockDiagonalMatrix, CsrMatrix, FixedPointProblem, OperatorError, ScatteringOperator,

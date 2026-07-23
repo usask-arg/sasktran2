@@ -1,4 +1,5 @@
 use super::*;
+use crate::math::wigner::WignerDCalculator;
 
 fn scalar_problem(config: SolverConfig) -> SuccessiveOrdersSolver {
     let transport = CsrMatrix::new(1, 1, &[0, 1], &[0]).unwrap();
@@ -158,6 +159,189 @@ fn scalar_coefficient_scattering_matches_dense_legendre_kernel() {
             "{actual} != {expected}"
         );
     }
+}
+
+#[test]
+fn vector_coefficient_scattering_matches_dense_greek_kernel() {
+    let incoming = [
+        normalize([1.0, 0.2, 0.4]),
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, -1.0],
+        normalize([-0.8, -0.2, 0.3]),
+    ];
+    let incoming_weights = [0.17, 0.23, 0.29, 0.31];
+    let outgoing = [incoming[0], [0.0, 0.0, 1.0], normalize([0.6, -0.3, 0.2])];
+    let num_coefficients = 5;
+    let coefficients = [
+        1.0, 0.0, 0.0, 0.0, 0.21, -0.04, 0.03, 0.02, -0.13, 0.34, -0.08, 0.11, 0.07, -0.12, 0.19,
+        -0.05, -0.02, 0.06, -0.09, 0.04,
+    ];
+    let input = [
+        2.0, -0.3, 0.2, 0.7, 0.1, -0.4, 1.2, -0.2, -0.1, 0.4, 0.3, 0.15,
+    ];
+
+    for (output_index, &output_direction) in outgoing.iter().enumerate() {
+        for (input_index, &input_direction) in incoming.iter().enumerate() {
+            let pair_basis = VectorCoefficientBasis::from_directions(
+                &[input_direction],
+                &[incoming_weights[input_index]],
+                &[output_direction],
+                num_coefficients,
+            )
+            .unwrap();
+            let mut pair_scattering =
+                VectorCoefficientScattering::new(vec![0, 3], vec![0, 3], 1, pair_basis).unwrap();
+            pair_scattering.set_coefficients(&coefficients).unwrap();
+            let mut pair_output = [0.0; 3];
+            pair_scattering
+                .apply(
+                    &input[input_index * 3..input_index * 3 + 3],
+                    &mut pair_output,
+                )
+                .unwrap();
+            let mut pair_expected = [0.0; 3];
+            for degree in 0..num_coefficients {
+                let matrix = polarized_greek_matrix(
+                    input_direction,
+                    output_direction,
+                    degree,
+                    &coefficients[degree * 4..degree * 4 + 4],
+                );
+                for row in 0..3 {
+                    for column in 0..3 {
+                        pair_expected[row] += incoming_weights[input_index]
+                            * matrix[row][column]
+                            * input[input_index * 3 + column];
+                    }
+                }
+            }
+            for row in 0..3 {
+                assert!(
+                    (pair_output[row] - pair_expected[row]).abs() < 3.0e-12,
+                    "pair ({input_index}, {output_index}) row {row}: {} != {}",
+                    pair_output[row],
+                    pair_expected[row]
+                );
+            }
+        }
+    }
+
+    let basis = VectorCoefficientBasis::from_directions(
+        &incoming,
+        &incoming_weights,
+        &outgoing,
+        num_coefficients,
+    )
+    .unwrap();
+    let mut scattering = VectorCoefficientScattering::new(
+        vec![0, outgoing.len() * 3],
+        vec![0, incoming.len() * 3],
+        1,
+        basis,
+    )
+    .unwrap();
+    scattering.set_coefficients(&coefficients).unwrap();
+    let mut output = vec![0.0; outgoing.len() * 3];
+    scattering.apply(&input, &mut output).unwrap();
+
+    let mut expected = vec![0.0; outgoing.len() * 3];
+    for (output_index, output_direction) in outgoing.iter().enumerate() {
+        for (input_index, input_direction) in incoming.iter().enumerate() {
+            for degree in 0..num_coefficients {
+                let matrix = polarized_greek_matrix(
+                    *input_direction,
+                    *output_direction,
+                    degree,
+                    &coefficients[degree * 4..degree * 4 + 4],
+                );
+                for row in 0..3 {
+                    for column in 0..3 {
+                        expected[output_index * 3 + row] += incoming_weights[input_index]
+                            * matrix[row][column]
+                            * input[input_index * 3 + column];
+                    }
+                }
+            }
+        }
+    }
+
+    for (actual, expected) in output.iter().zip(expected) {
+        assert!(
+            (actual - expected).abs() < 3.0e-12,
+            "{actual} != {expected}"
+        );
+    }
+}
+
+fn polarized_greek_matrix(
+    incoming: [f64; 3],
+    outgoing: [f64; 3],
+    degree: usize,
+    coefficients: &[f64],
+) -> [[f64; 3]; 3] {
+    let (theta, c1, c2, s1, s2) = stokes_scattering_factors(negate(incoming), negate(outgoing));
+    let d00 = WignerDCalculator::new(0, 0).d(theta, degree as i32);
+    let d22 = WignerDCalculator::new(2, 2).d(theta, degree as i32);
+    let d02 = WignerDCalculator::new(0, 2).d(theta, degree as i32);
+    let d2m2 = WignerDCalculator::new(2, -2).d(theta, degree as i32);
+    let w_add = d22 + d2m2;
+    let w_minus = d22 - d2m2;
+    let [a1, a2, a3, b1] = coefficients.try_into().unwrap();
+    let mut result = [[0.0; 3]; 3];
+    result[0][0] = a1 * d00;
+    result[1][0] = -b1 * c2 * d02;
+    result[2][0] = -b1 * s2 * d02;
+    result[0][1] = -b1 * c1 * d02;
+    result[0][2] = b1 * s1 * d02;
+    result[1][1] = 0.5
+        * (a2 * (c1 * c2 * w_add - s1 * s2 * w_minus) + a3 * (c1 * c2 * w_minus - s1 * s2 * w_add));
+    result[2][1] = 0.5
+        * (a2 * (c1 * s2 * w_add + s1 * c2 * w_minus) + a3 * (c1 * s2 * w_minus + s1 * c2 * w_add));
+    result[1][2] = -0.5
+        * (a2 * (s1 * c2 * w_add + c1 * s2 * w_minus) + a3 * (s1 * c2 * w_minus + c1 * s2 * w_add));
+    result[2][2] = 0.5
+        * (a2 * (-s1 * s2 * w_add + c1 * c2 * w_minus)
+            + a3 * (-s1 * s2 * w_minus + c1 * c2 * w_add));
+    result
+}
+
+fn stokes_scattering_factors(incoming: [f64; 3], outgoing: [f64; 3]) -> (f64, f64, f64, f64, f64) {
+    let cosine = dot(incoming, outgoing).clamp(-1.0, 1.0);
+    let theta = cosine.acos();
+    let sin_scatter = theta.sin();
+    if sin_scatter.abs() < 1.0e-8 {
+        return (theta, 1.0, 1.0, 0.0, 0.0);
+    }
+    let cos_incoming = incoming[2].clamp(-1.0, 1.0);
+    let cos_outgoing = outgoing[2].clamp(-1.0, 1.0);
+    let sin_incoming = cos_incoming.acos().sin();
+    let sin_outgoing = cos_outgoing.acos().sin();
+    if sin_incoming.abs() < 1.0e-8 || sin_outgoing.abs() < 1.0e-8 {
+        return (theta, 1.0, 1.0, 0.0, 0.0);
+    }
+    let cosine1 =
+        ((cos_outgoing - cos_incoming * cosine) / (sin_incoming * sin_scatter)).clamp(-1.0, 1.0);
+    let cosine2 =
+        ((cos_incoming - cos_outgoing * cosine) / (sin_outgoing * sin_scatter)).clamp(-1.0, 1.0);
+    let mut sine1 = 2.0 * (1.0 - cosine1 * cosine1).sqrt() * cosine1;
+    let mut sine2 = 2.0 * (1.0 - cosine2 * cosine2).sqrt() * cosine2;
+    let phi_incoming = incoming[1].atan2(incoming[0]);
+    let phi_outgoing = outgoing[1].atan2(outgoing[0]);
+    if (phi_incoming - phi_outgoing).rem_euclid(2.0 * std::f64::consts::PI) < std::f64::consts::PI {
+        sine1 *= -1.0;
+        sine2 *= -1.0;
+    }
+    (
+        theta,
+        2.0 * cosine1 * cosine1 - 1.0,
+        2.0 * cosine2 * cosine2 - 1.0,
+        sine1,
+        sine2,
+    )
+}
+
+fn negate(direction: [f64; 3]) -> [f64; 3] {
+    [-direction[0], -direction[1], -direction[2]]
 }
 
 fn normalize(direction: [f64; 3]) -> [f64; 3] {

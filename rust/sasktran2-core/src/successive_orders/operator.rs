@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter};
 
-use super::ScalarCoefficientScattering;
+use super::{ScalarCoefficientScattering, VectorCoefficientScattering};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OperatorError {
@@ -155,6 +155,7 @@ pub struct BlockDiagonalMatrix {
 pub enum ScatteringOperator {
     Dense(BlockDiagonalMatrix),
     ScalarCoefficients(ScalarCoefficientScattering),
+    VectorCoefficients(VectorCoefficientScattering),
 }
 
 impl ScatteringOperator {
@@ -163,6 +164,7 @@ impl ScatteringOperator {
         match self {
             Self::Dense(matrix) => matrix.output_size(),
             Self::ScalarCoefficients(matrix) => matrix.output_size(),
+            Self::VectorCoefficients(matrix) => matrix.output_size(),
         }
     }
 
@@ -171,6 +173,7 @@ impl ScatteringOperator {
         match self {
             Self::Dense(matrix) => matrix.input_size(),
             Self::ScalarCoefficients(matrix) => matrix.input_size(),
+            Self::VectorCoefficients(matrix) => matrix.input_size(),
         }
     }
 
@@ -178,6 +181,7 @@ impl ScatteringOperator {
         match self {
             Self::Dense(matrix) => matrix.set_values(values),
             Self::ScalarCoefficients(matrix) => matrix.set_dense_values(values),
+            Self::VectorCoefficients(matrix) => matrix.set_dense_values(values),
         }
     }
 
@@ -185,6 +189,7 @@ impl ScatteringOperator {
         match self {
             Self::Dense(_) => Err(OperatorError::UnsupportedOperator),
             Self::ScalarCoefficients(matrix) => matrix.set_coefficients(values),
+            Self::VectorCoefficients(matrix) => matrix.set_coefficients(values),
         }
     }
 
@@ -192,6 +197,7 @@ impl ScatteringOperator {
         match self {
             Self::Dense(matrix) => matrix.apply(input, output),
             Self::ScalarCoefficients(matrix) => matrix.apply(input, output),
+            Self::VectorCoefficients(matrix) => matrix.apply(input, output),
         }
     }
 }
@@ -205,6 +211,12 @@ impl From<BlockDiagonalMatrix> for ScatteringOperator {
 impl From<ScalarCoefficientScattering> for ScatteringOperator {
     fn from(value: ScalarCoefficientScattering) -> Self {
         Self::ScalarCoefficients(value)
+    }
+}
+
+impl From<VectorCoefficientScattering> for ScatteringOperator {
+    fn from(value: VectorCoefficientScattering) -> Self {
+        Self::VectorCoefficients(value)
     }
 }
 

@@ -109,7 +109,7 @@ namespace sasktran2::hr {
                 m_config->num_hr_incoming())),
             std::move(std::make_unique<sasktran2::math::LebedevSphere>(
                 m_config->num_hr_outgoing())),
-            !(m_use_rust_solver && NSTOKES == 1));
+            !m_use_rust_solver);
 
         // TODO: Same number of streams for the ground term? probably... to be
         // figured out when BRDF is implemented
@@ -127,7 +127,8 @@ namespace sasktran2::hr {
                 std::make_unique<sasktran2::math::UnitSphereGround>(
                     std::move(std::make_unique<sasktran2::math::LebedevSphere>(
                         m_config->num_hr_outgoing())),
-                    location));
+                    location),
+                !m_use_rust_solver);
         }
 
         m_diffuse_points.resize(m_location_interpolator->num_interior_points() +
@@ -234,17 +235,15 @@ namespace sasktran2::hr {
                                                   0, false);
             storage.m_outgoing_sources.resize(start_outgoing_idx * NSTOKES, 0,
                                               false);
-            if constexpr (NSTOKES == 1) {
-                if (m_use_rust_solver && m_wavelength_block_capacity > 1) {
-                    storage.rust_batch_outgoing_sources.resize(
-                        start_outgoing_idx * m_wavelength_block_capacity);
-                }
+            if (m_use_rust_solver && m_wavelength_block_capacity > 1) {
+                storage.rust_batch_outgoing_sources.resize(
+                    start_outgoing_idx * NSTOKES * m_wavelength_block_capacity);
             }
 
             storage.point_scattering_matrices.resize(m_diffuse_points.size());
             for (int i = 0; i < m_diffuse_points.size(); ++i) {
                 const bool coefficient_space_atmosphere =
-                    m_use_rust_solver && NSTOKES == 1 &&
+                    m_use_rust_solver &&
                     i < m_location_interpolator->num_interior_points();
                 if (m_diffuse_point_full_calculation[i] &&
                     !coefficient_space_atmosphere) {
@@ -386,18 +385,16 @@ namespace sasktran2::hr {
         }
         m_wavelength_block_capacity = block_capacity;
 
-        if constexpr (NSTOKES == 1) {
-            if (m_use_rust_solver) {
-                for (auto& storage : m_thread_storage) {
-                    if (block_capacity == 1) {
-                        std::vector<double>().swap(
-                            storage.rust_batch_outgoing_sources);
-                    } else {
-                        storage.rust_batch_outgoing_sources.resize(
-                            static_cast<std::size_t>(
-                                storage.m_outgoing_sources.value.size()) *
-                            block_capacity);
-                    }
+        if (m_use_rust_solver) {
+            for (auto& storage : m_thread_storage) {
+                if (block_capacity == 1) {
+                    std::vector<double>().swap(
+                        storage.rust_batch_outgoing_sources);
+                } else {
+                    storage.rust_batch_outgoing_sources.resize(
+                        static_cast<std::size_t>(
+                            storage.m_outgoing_sources.value.size()) *
+                        block_capacity);
                 }
             }
         }
@@ -542,45 +539,39 @@ namespace sasktran2::hr {
             std::vector<double> incoming_directions;
             std::vector<double> incoming_weights;
             std::vector<double> outgoing_directions;
-            if constexpr (NSTOKES == 1) {
-                const auto& spheres = m_diffuse_points.front()->sphere_pair();
-                incoming_directions.reserve(
-                    spheres.incoming_sphere().num_points() * 3);
-                incoming_weights.reserve(
-                    spheres.incoming_sphere().num_points());
-                for (int index = 0;
-                     index < spheres.incoming_sphere().num_points(); ++index) {
-                    const auto direction =
-                        spheres.incoming_sphere().get_quad_position(index);
-                    incoming_directions.insert(incoming_directions.end(),
-                                               direction.data(),
-                                               direction.data() + 3);
-                    incoming_weights.push_back(
-                        spheres.incoming_sphere().quadrature_weight(index));
-                }
-                outgoing_directions.reserve(
-                    spheres.outgoing_sphere().num_points() * 3);
-                for (int index = 0;
-                     index < spheres.outgoing_sphere().num_points(); ++index) {
-                    const auto direction =
-                        spheres.outgoing_sphere().get_quad_position(index);
-                    outgoing_directions.insert(outgoing_directions.end(),
-                                               direction.data(),
-                                               direction.data() + 3);
-                }
+            const auto& spheres = m_diffuse_points.front()->sphere_pair();
+            incoming_directions.reserve(spheres.incoming_sphere().num_points() *
+                                        3);
+            incoming_weights.reserve(spheres.incoming_sphere().num_points());
+            for (int index = 0; index < spheres.incoming_sphere().num_points();
+                 ++index) {
+                const auto direction =
+                    spheres.incoming_sphere().get_quad_position(index);
+                incoming_directions.insert(incoming_directions.end(),
+                                           direction.data(),
+                                           direction.data() + 3);
+                incoming_weights.push_back(
+                    spheres.incoming_sphere().quadrature_weight(index));
+            }
+            outgoing_directions.reserve(spheres.outgoing_sphere().num_points() *
+                                        3);
+            for (int index = 0; index < spheres.outgoing_sphere().num_points();
+                 ++index) {
+                const auto direction =
+                    spheres.outgoing_sphere().get_quad_position(index);
+                outgoing_directions.insert(outgoing_directions.end(),
+                                           direction.data(),
+                                           direction.data() + 3);
             }
 
             for (auto& storage : m_thread_storage) {
-                if constexpr (NSTOKES == 1) {
-                    storage.rust_scattering_coefficients.resize(
-                        coefficient_blocks * m_config->num_do_streams());
-                    storage.rust_boundary_scattering_values.resize(
-                        scattering_value_offsets.back() -
-                        scattering_value_offsets[coefficient_blocks]);
-                } else {
-                    storage.rust_scattering_values.resize(
-                        scattering_value_offsets.back());
-                }
+                const std::size_t coefficient_families = NSTOKES == 1 ? 1 : 4;
+                storage.rust_scattering_coefficients.resize(
+                    coefficient_blocks * m_config->num_do_streams() *
+                    coefficient_families);
+                storage.rust_boundary_scattering_values.resize(
+                    scattering_value_offsets.back() -
+                    scattering_value_offsets[coefficient_blocks]);
             }
 
             m_rust_solvers.clear();
@@ -621,7 +612,7 @@ namespace sasktran2::hr {
                 } else {
                     m_rust_solvers.push_back(
                         sasktran2::rust::successive_orders::
-                            new_successive_orders_solver(
+                            new_vector_coefficient_successive_orders_solver(
                                 static_cast<std::size_t>(
                                     m_thread_storage[thread]
                                         .m_incoming_radiances.value.size()),
@@ -632,7 +623,12 @@ namespace sasktran2::hr {
                                 as_rust_slice(m_inner_indicies),
                                 as_rust_slice(scattering_output_offsets),
                                 as_rust_slice(scattering_input_offsets),
-                                as_rust_slice(scattering_value_offsets),
+                                coefficient_blocks,
+                                static_cast<std::size_t>(
+                                    m_config->num_do_streams()),
+                                as_rust_slice(incoming_directions),
+                                as_rust_slice(incoming_weights),
+                                as_rust_slice(outgoing_directions),
                                 static_cast<std::size_t>(
                                     m_config
                                         ->successive_orders_max_iterations()),
@@ -902,8 +898,8 @@ namespace sasktran2::hr {
 
             const auto& point = m_diffuse_points[i];
 
-            if constexpr (NSTOKES == 1) {
-                if (m_use_rust_solver) {
+            if (m_use_rust_solver) {
+                if constexpr (NSTOKES == 1) {
                     for (int degree = 0; degree < m_config->num_do_streams();
                          ++degree) {
                         double coefficient = 0.0;
@@ -918,8 +914,26 @@ namespace sasktran2::hr {
                             [i * m_config->num_do_streams() + degree] =
                             coefficient;
                     }
-                    continue;
+                } else {
+                    for (int degree = 0; degree < m_config->num_do_streams();
+                         ++degree) {
+                        for (int family = 0; family < 4; ++family) {
+                            double coefficient = 0.0;
+                            for (const auto& index_weight :
+                                 m_diffuse_point_interpolation_weights[i]) {
+                                coefficient +=
+                                    index_weight.second *
+                                    m_atmosphere->storage().leg_coeff(
+                                        degree * 4 + family, index_weight.first,
+                                        wavelidx);
+                            }
+                            storage.rust_scattering_coefficients
+                                [(i * m_config->num_do_streams() + degree) * 4 +
+                                 family] = coefficient;
+                        }
+                    }
                 }
+                continue;
             }
 
             point->sphere_pair().calculate_scattering_matrix(
@@ -1068,30 +1082,14 @@ namespace sasktran2::hr {
     DiffuseTable<NSTOKES>::pack_rust_boundary_scattering_values(int threadidx) {
         auto& storage = m_thread_storage[threadidx];
         std::size_t value_offset = 0;
-        if constexpr (NSTOKES == 1) {
-            for (std::size_t point_index = static_cast<std::size_t>(
-                     m_location_interpolator->num_interior_points());
-                 point_index < m_diffuse_points.size(); ++point_index) {
-                const auto& matrix =
-                    storage.point_scattering_matrices[point_index];
-                for (int row = 0; row < matrix.rows(); ++row) {
-                    for (int column = 0; column < matrix.cols(); ++column) {
-                        storage
-                            .rust_boundary_scattering_values[value_offset++] =
-                            matrix(row, column);
-                    }
-                }
-            }
-        } else {
-            for (std::size_t point_index = 0;
-                 point_index < m_diffuse_points.size(); ++point_index) {
-                const auto& matrix =
-                    storage.point_scattering_matrices[point_index];
-                for (int row = 0; row < matrix.rows(); ++row) {
-                    for (int column = 0; column < matrix.cols(); ++column) {
-                        storage.rust_scattering_values[value_offset++] =
-                            matrix(row, column);
-                    }
+        for (std::size_t point_index = static_cast<std::size_t>(
+                 m_location_interpolator->num_interior_points());
+             point_index < m_diffuse_points.size(); ++point_index) {
+            const auto& matrix = storage.point_scattering_matrices[point_index];
+            for (int row = 0; row < matrix.rows(); ++row) {
+                for (int column = 0; column < matrix.cols(); ++column) {
+                    storage.rust_boundary_scattering_values[value_offset++] =
+                        matrix(row, column);
                 }
             }
         }
@@ -1116,11 +1114,12 @@ namespace sasktran2::hr {
                 as_rust_slice(storage.m_firstorder_radiances.value),
                 as_rust_slice(no_initial_guess));
         } else {
-            sasktran2::rust::successive_orders::solve(
+            sasktran2::rust::successive_orders::solve_vector_coefficients(
                 *solver, as_rust_slice(m_outer_starts),
                 as_rust_slice(m_inner_indicies),
                 as_rust_slice(storage.accumulation_summed_values),
-                as_rust_slice(storage.rust_scattering_values),
+                as_rust_slice(storage.rust_scattering_coefficients),
+                as_rust_slice(storage.rust_boundary_scattering_values),
                 as_rust_slice(storage.m_firstorder_radiances.value),
                 as_rust_slice(no_initial_guess));
         }
@@ -1296,28 +1295,25 @@ namespace sasktran2::hr {
         }
 
 #ifdef SKTRAN_RUST_SUPPORT
-        if constexpr (NSTOKES == 1) {
-            if (m_use_rust_solver) {
-                auto& storage = m_thread_storage[threadidx];
-                if (m_wavelength_block_capacity == 1) {
-                    prepare_wavelength(block.start, threadidx);
-                    iterate_to_solution(block.start, threadidx);
-                    return;
-                }
-                const std::size_t state_size = static_cast<std::size_t>(
-                    storage.m_outgoing_sources.value.size());
-                for (int lane = 0; lane < block.count; ++lane) {
-                    prepare_wavelength(block.wavelength(lane), threadidx);
-                    iterate_to_solution(block.wavelength(lane), threadidx);
-                    for (std::size_t element = 0; element < state_size;
-                         ++element) {
-                        storage.rust_batch_outgoing_sources
-                            [element * m_wavelength_block_capacity + lane] =
-                            storage.m_outgoing_sources.value[element];
-                    }
-                }
+        if (m_use_rust_solver) {
+            auto& storage = m_thread_storage[threadidx];
+            if (m_wavelength_block_capacity == 1) {
+                prepare_wavelength(block.start, threadidx);
+                iterate_to_solution(block.start, threadidx);
                 return;
             }
+            const std::size_t state_size = static_cast<std::size_t>(
+                storage.m_outgoing_sources.value.size());
+            for (int lane = 0; lane < block.count; ++lane) {
+                prepare_wavelength(block.wavelength(lane), threadidx);
+                iterate_to_solution(block.wavelength(lane), threadidx);
+                for (std::size_t element = 0; element < state_size; ++element) {
+                    storage.rust_batch_outgoing_sources
+                        [element * m_wavelength_block_capacity + lane] =
+                        storage.m_outgoing_sources.value[element];
+                }
+            }
+            return;
         }
 #endif
 
@@ -1372,18 +1368,11 @@ namespace sasktran2::hr {
                     const std::size_t outgoing_index =
                         static_cast<std::size_t>(source_index * NSTOKES + s);
                     double outgoing_value;
-                    if constexpr (NSTOKES == 1) {
-                        if (m_use_rust_solver &&
-                            m_wavelength_block_capacity > 1) {
-                            outgoing_value =
-                                storage.rust_batch_outgoing_sources
-                                    [outgoing_index *
-                                         m_wavelength_block_capacity +
-                                     lane];
-                        } else {
-                            outgoing_value = storage.m_outgoing_sources.value(
-                                outgoing_index);
-                        }
+                    if (m_use_rust_solver && m_wavelength_block_capacity > 1) {
+                        outgoing_value =
+                            storage.rust_batch_outgoing_sources
+                                [outgoing_index * m_wavelength_block_capacity +
+                                 lane];
                     } else {
                         outgoing_value =
                             storage.m_outgoing_sources.value(outgoing_index);
@@ -1454,18 +1443,11 @@ namespace sasktran2::hr {
                     const std::size_t outgoing_index =
                         static_cast<std::size_t>(source_index * NSTOKES + s);
                     double outgoing_value;
-                    if constexpr (NSTOKES == 1) {
-                        if (m_use_rust_solver &&
-                            m_wavelength_block_capacity > 1) {
-                            outgoing_value =
-                                storage.rust_batch_outgoing_sources
-                                    [outgoing_index *
-                                         m_wavelength_block_capacity +
-                                     lane];
-                        } else {
-                            outgoing_value = storage.m_outgoing_sources.value(
-                                outgoing_index);
-                        }
+                    if (m_use_rust_solver && m_wavelength_block_capacity > 1) {
+                        outgoing_value =
+                            storage.rust_batch_outgoing_sources
+                                [outgoing_index * m_wavelength_block_capacity +
+                                 lane];
                     } else {
                         outgoing_value =
                             storage.m_outgoing_sources.value(outgoing_index);

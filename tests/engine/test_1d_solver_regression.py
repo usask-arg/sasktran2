@@ -474,20 +474,26 @@ def test_rust_successive_orders_matches_legacy_fixed_iterations(num_stokes):
     legacy = legacy_engine.calculate_radiance(legacy_atmosphere).radiance.values
     rust = rust_engine.calculate_radiance(rust_atmosphere).radiance.values
 
-    np.testing.assert_allclose(rust, legacy, rtol=2.0e-12, atol=1.0e-14)
+    # The polarized coefficient path changes the summation order relative to
+    # the legacy dense matrices, so its roundoff accumulates slightly
+    # differently over successive orders.
+    rtol = 1.0e-9 if num_stokes == 3 else 2.0e-12
+    atol = 1.0e-11 if num_stokes == 3 else 1.0e-14
+    np.testing.assert_allclose(rust, legacy, rtol=rtol, atol=atol)
 
 
-def test_rust_successive_orders_wavelength_batch_matches_scalar():
+@pytest.mark.parametrize("num_stokes", [1, 3])
+def test_rust_successive_orders_wavelength_batch_matches_scalar(num_stokes):
     scalar_engine, scalar_atmosphere = _setup_1d(
         "successive_orders_rust",
-        1,
+        num_stokes,
         False,
         num_wavelengths=5,
         wavelength_batch_size=1,
     )
     batch_engine, batch_atmosphere = _setup_1d(
         "successive_orders_rust",
-        1,
+        num_stokes,
         False,
         num_wavelengths=5,
         wavelength_batch_size=4,

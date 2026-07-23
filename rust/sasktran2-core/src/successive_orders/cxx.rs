@@ -1,11 +1,14 @@
 use std::pin::Pin;
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 
 use super::{
     BlockDiagonalMatrix, CsrMatrix, FixedPointProblem, SolverConfig, SuccessiveOrdersSolver,
 };
-use super::{ScalarCoefficientBasis, ScalarCoefficientScattering};
+use super::{
+    ScalarCoefficientBasis, ScalarCoefficientScattering, VectorCoefficientBasis,
+    VectorCoefficientScattering,
+};
 
 #[cxx::bridge(namespace = "sasktran2::rust::successive_orders")]
 pub mod ffi {
@@ -48,6 +51,26 @@ pub mod ffi {
             damping: f64,
         ) -> Result<Box<RustSuccessiveOrdersSolver>>;
 
+        #[allow(clippy::too_many_arguments)]
+        fn new_vector_coefficient_successive_orders_solver(
+            transport_rows: usize,
+            transport_columns: usize,
+            transport_row_offsets: &[i32],
+            transport_column_indices: &[i32],
+            scattering_output_offsets: &[usize],
+            scattering_input_offsets: &[usize],
+            coefficient_blocks: usize,
+            num_coefficients: usize,
+            incoming_directions: &[f64],
+            incoming_weights: &[f64],
+            outgoing_directions: &[f64],
+            max_iterations: usize,
+            relative_tolerance: f64,
+            absolute_tolerance: f64,
+            anderson_depth: usize,
+            damping: f64,
+        ) -> Result<Box<RustSuccessiveOrdersSolver>>;
+
         fn solve(
             solver: Pin<&mut RustSuccessiveOrdersSolver>,
             transport_row_offsets: &[i32],
@@ -60,6 +83,18 @@ pub mod ffi {
 
         #[allow(clippy::too_many_arguments)]
         fn solve_scalar_coefficients(
+            solver: Pin<&mut RustSuccessiveOrdersSolver>,
+            transport_row_offsets: &[i32],
+            transport_column_indices: &[i32],
+            transport_values: &[f64],
+            scattering_coefficients: &[f64],
+            boundary_scattering_values: &[f64],
+            first_order_forcing: &[f64],
+            initial_guess: &[f64],
+        ) -> Result<()>;
+
+        #[allow(clippy::too_many_arguments)]
+        fn solve_vector_coefficients(
             solver: Pin<&mut RustSuccessiveOrdersSolver>,
             transport_row_offsets: &[i32],
             transport_column_indices: &[i32],
@@ -179,6 +214,58 @@ fn new_scalar_coefficient_successive_orders_solver(
     }))
 }
 
+#[allow(clippy::too_many_arguments)]
+fn new_vector_coefficient_successive_orders_solver(
+    transport_rows: usize,
+    transport_columns: usize,
+    transport_row_offsets: &[i32],
+    transport_column_indices: &[i32],
+    scattering_output_offsets: &[usize],
+    scattering_input_offsets: &[usize],
+    coefficient_blocks: usize,
+    num_coefficients: usize,
+    incoming_directions: &[f64],
+    incoming_weights: &[f64],
+    outgoing_directions: &[f64],
+    max_iterations: usize,
+    relative_tolerance: f64,
+    absolute_tolerance: f64,
+    anderson_depth: usize,
+    damping: f64,
+) -> Result<Box<RustSuccessiveOrdersSolver>> {
+    let transport = CsrMatrix::new(
+        transport_rows,
+        transport_columns,
+        transport_row_offsets,
+        transport_column_indices,
+    )?;
+    let incoming_directions = unpack_directions(incoming_directions)?;
+    let outgoing_directions = unpack_directions(outgoing_directions)?;
+    let basis = VectorCoefficientBasis::from_directions(
+        &incoming_directions,
+        incoming_weights,
+        &outgoing_directions,
+        num_coefficients,
+    )?;
+    let scattering = VectorCoefficientScattering::new(
+        scattering_output_offsets.to_vec(),
+        scattering_input_offsets.to_vec(),
+        coefficient_blocks,
+        basis,
+    )?;
+    let problem = FixedPointProblem::new(transport, scattering)?;
+    let config = SolverConfig {
+        max_iterations,
+        relative_tolerance,
+        absolute_tolerance,
+        anderson_depth,
+        damping,
+    };
+    Ok(Box::new(RustSuccessiveOrdersSolver {
+        solver: SuccessiveOrdersSolver::new(problem, config)?,
+    }))
+}
+
 fn solve(
     mut solver: Pin<&mut RustSuccessiveOrdersSolver>,
     transport_row_offsets: &[i32],
@@ -205,6 +292,35 @@ fn solve(
 
 #[allow(clippy::too_many_arguments)]
 fn solve_scalar_coefficients(
+    mut solver: Pin<&mut RustSuccessiveOrdersSolver>,
+    transport_row_offsets: &[i32],
+    transport_column_indices: &[i32],
+    transport_values: &[f64],
+    scattering_coefficients: &[f64],
+    boundary_scattering_values: &[f64],
+    first_order_forcing: &[f64],
+    initial_guess: &[f64],
+) -> Result<()> {
+    let this = solver.as_mut().get_mut();
+    this.solver
+        .problem_mut()
+        .set_scattering_coefficients(scattering_coefficients)?;
+    this.solver
+        .problem_mut()
+        .set_scattering_values(boundary_scattering_values)?;
+    let initial_guess = (!initial_guess.is_empty()).then_some(initial_guess);
+    this.solver.solve(
+        transport_row_offsets,
+        transport_column_indices,
+        transport_values,
+        first_order_forcing,
+        initial_guess,
+    )?;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn solve_vector_coefficients(
     mut solver: Pin<&mut RustSuccessiveOrdersSolver>,
     transport_row_offsets: &[i32],
     transport_column_indices: &[i32],

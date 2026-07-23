@@ -38,9 +38,6 @@ namespace sasktran2::hr {
         Eigen::VectorXd accumulation_summed_values;
 
         std::vector<double>
-            rust_scattering_values; /**< Row-major packed scattering blocks
-                                       passed to the Rust solver. */
-        std::vector<double>
             rust_scattering_coefficients; /**< Interpolated atmospheric
                                              Legendre coefficients. */
         std::vector<double>
@@ -218,11 +215,9 @@ namespace sasktran2::hr {
 
         int maximum_wavelength_block_size() const override {
 #ifdef SKTRAN_RUST_SUPPORT
-            if constexpr (NSTOKES == 1) {
-                // Four wavelengths match the engine's optimized fixed-width
-                // integration dispatch while bounding retained source data.
-                return m_use_rust_solver ? 4 : 1;
-            }
+            // Four wavelengths match the engine's optimized fixed-width
+            // integration dispatch while bounding retained source data.
+            return m_use_rust_solver ? 4 : 1;
 #endif
             return 1;
         }

@@ -264,8 +264,8 @@ namespace sasktran2::hr {
         const sasktran2::Location& loc, int wavelidx,
         double* phase_storage_location) const {
         Eigen::Map<Eigen::MatrixXd> phase_matrix(
-            phase_storage_location, m_legendre_scat_mats[0][0].rows(),
-            m_legendre_scat_mats[0][0].cols());
+            phase_storage_location, m_outgoing_sphere->num_points() * NSTOKES,
+            m_incoming_sphere->num_points() * NSTOKES);
         // scattering matrix elements are brdf * mu_in,
         // but quadrature is sut up for 4pi normalization so we multiply this by
         // 4pi
