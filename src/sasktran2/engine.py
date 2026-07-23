@@ -19,13 +19,14 @@ from sasktran2.viewinggeo.base import ViewingGeometryContainer
 def map_surface_derivative(
     mapping, np_deriv: np.ndarray, dims: list[str]
 ) -> xr.DataArray:
-    if mapping.interpolator is None or len(mapping.interpolator) == 0:
+    if not mapping.has_interpolator:
         return xr.DataArray(np_deriv, dims=dims)
+    interpolator = np.asarray(mapping.interpolator)
     return xr.DataArray(
         np.einsum(
             "ij..., il->lij...",
             np_deriv,
-            mapping.interpolator,
+            interpolator,
             optimize=True,
         ),
         dims=[mapping.interp_dim, *dims],
@@ -177,8 +178,10 @@ class Engine:
                 "calculate_derivatives=True"
             )
             raise ValueError(msg)
-        if not self._engine._supports_linearization(0):
-            msg = "The configured engine does not support full-Jacobian linearization"
+        jvp_backend_index = self._engine._linearization_backend(1)
+        vjp_backend_index = self._engine._linearization_backend(2)
+        if jvp_backend_index == 0 or vjp_backend_index == 0:
+            msg = "The configured engine does not support radiance JVP/VJP products"
             raise NotImplementedError(msg)
 
         native_atmosphere = atmosphere.internal_object()
@@ -191,11 +194,17 @@ class Engine:
             2: LinearizationBackend.Native,
         }
         backends = {
-            mode: backend_names[self._engine._linearization_backend(mode_index)]
-            for mode, mode_index in (("jvp", 1), ("vjp", 2))
+            "jvp": backend_names[jvp_backend_index],
+            "vjp": backend_names[vjp_backend_index],
         }
 
         def load_jacobian() -> xr.Dataset:
+            if self._engine._linearization_backend(0) == 0:
+                msg = (
+                    "The configured engine supports native JVP/VJP products, "
+                    "but not materialization of the complete Jacobian"
+                )
+                raise NotImplementedError(msg)
             result, _ = self._calculate_radiance(
                 atmosphere, internal_atmosphere=native_atmosphere
             )
@@ -362,7 +371,11 @@ class Engine:
 
         for internal_name in atmosphere.storage.derivative_mapping_names():
             mapping = atmosphere.storage.get_derivative_mapping(internal_name)
-            interpolator = np.asarray(mapping.interpolator)
+            interpolator = (
+                np.asarray(mapping.interpolator)
+                if mapping.has_interpolator
+                else np.empty((0, 0))
+            )
             size = (
                 int(interpolator.shape[1])
                 if interpolator.size
@@ -390,7 +403,11 @@ class Engine:
 
         for internal_name in atmosphere.surface.derivative_mapping_names():
             mapping = atmosphere.surface.get_derivative_mapping(internal_name)
-            interpolator = np.asarray(mapping.interpolator)
+            interpolator = (
+                np.asarray(mapping.interpolator)
+                if mapping.has_interpolator
+                else np.empty((0, 0))
+            )
             if interpolator.size:
                 size = int(interpolator.shape[1])
                 if mapping.interp_dim == "dummy" or size == 1:
@@ -520,7 +537,7 @@ class Engine:
                 mapped_derivative = mapped_derivative.isel(**{mapping.interp_dim: 0})
             out_ds[k] = mapped_derivative
 
-            if mapping.interpolator is None or len(mapping.interpolator) == 0:
+            if not mapping.has_interpolator:
                 spec = _ParameterSpec(("wavelength",), ("wavelength",))
             else:
                 spec = _ParameterSpec(tuple(mapped_derivative.dims[:-3]))

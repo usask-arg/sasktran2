@@ -36,16 +36,12 @@ namespace sasktran2::successive_orders {
                 internal_viewing);
         }
 
-        void initialize_atmosphere(
-            const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere)
-            override {
-            if (atmosphere.num_deriv() != 0) {
-                throw std::invalid_argument(
-                    "The Rust successive-orders source does not yet support "
-                    "weighting functions");
+        bool supports_linearization(
+            sasktran2::LinearizationMode mode) const override {
+            if (mode == sasktran2::LinearizationMode::Jacobian) {
+                return false;
             }
-            sasktran2::hr::DiffuseTable<NSTOKES>::initialize_atmosphere(
-                atmosphere);
+            return this->native_products_available();
         }
     };
 } // namespace sasktran2::successive_orders

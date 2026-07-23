@@ -3,6 +3,8 @@ use numpy::*;
 use pyo3::prelude::*;
 use sasktran2_rs::atmosphere::{DerivMapping, DerivMappingView};
 
+use crate::derivative_mapping::PyDerivativeMappingView;
+
 pub struct PyDerivMapping<'py> {
     py_mapping: Bound<'py, PyAny>,
     pub d_extinction: PyReadwriteArray2<'py, f64>,
@@ -67,6 +69,15 @@ impl<'py> DerivMapping<'_> for PyDerivMapping<'py> {
     }
 
     fn set_interpolator(&mut self, interpolator: &Array2<f64>) {
+        if let Ok(mapping) = self.py_mapping.cast::<PyDerivativeMappingView>() {
+            let mut interpolator = interpolator.to_owned();
+            mapping
+                .borrow_mut()
+                .derivative_mapping
+                .set_interpolator(&mut interpolator);
+            return;
+        }
+
         let pyarray = interpolator.clone().into_pyarray(self.py_mapping.py());
 
         self.py_mapping

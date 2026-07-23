@@ -109,6 +109,8 @@ namespace sasktran2::raytracing {
 
         std::size_t size() const { return m_size; }
         bool empty() const { return m_size == 0; }
+        const int* indices_data() const { return m_indices; }
+        const double* weights_data() const { return m_weights; }
 
         std::pair<int, double> operator[](std::size_t index) const {
             assert(index < m_size);

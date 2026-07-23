@@ -553,7 +553,11 @@ class Atmosphere:
         }
         for mapping_name in self.storage.derivative_mapping_names():
             mapping = self.storage.get_derivative_mapping(mapping_name)
-            interpolator = np.asarray(mapping.interpolator)
+            interpolator = (
+                np.asarray(mapping.interpolator)
+                if mapping.has_interpolator
+                else np.empty((0, 0))
+            )
             if mapping.interp_dim == "location" and (
                 interpolator.size == 0
                 or (

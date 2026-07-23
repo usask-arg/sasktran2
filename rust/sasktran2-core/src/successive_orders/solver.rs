@@ -75,6 +75,8 @@ impl Default for SolverDiagnostics {
 pub enum SolverError {
     InvalidConfiguration,
     InitialGuessSize,
+    LinearizationBeforeSolve,
+    UnsupportedLinearizationConfiguration,
     NonFiniteIteration,
     Operator(OperatorError),
 }
@@ -88,6 +90,12 @@ impl Display for SolverError {
             Self::InitialGuessSize => {
                 formatter.write_str("successive-orders initial guess has the wrong size")
             }
+            Self::LinearizationBeforeSolve => {
+                formatter.write_str("successive-orders must be solved before linearization")
+            }
+            Self::UnsupportedLinearizationConfiguration => formatter.write_str(
+                "native successive-orders products do not support Anderson acceleration",
+            ),
             Self::NonFiniteIteration => {
                 formatter.write_str("successive-orders iteration produced a non-finite value")
             }
@@ -112,6 +120,7 @@ pub struct SuccessiveOrdersSolver {
     mapped: Vec<f64>,
     residual: Vec<f64>,
     incoming: Vec<f64>,
+    initial_state: Vec<f64>,
     state_history: Vec<Vec<f64>>,
     residual_vector_history: Vec<Vec<f64>>,
     diagnostics: SolverDiagnostics,
@@ -129,6 +138,7 @@ impl SuccessiveOrdersSolver {
             mapped: vec![0.0; state_size],
             residual: vec![0.0; state_size],
             incoming: vec![0.0; incoming_size],
+            initial_state: vec![0.0; state_size],
             state_history: Vec::with_capacity(config.anderson_depth + 1),
             residual_vector_history: Vec::with_capacity(config.anderson_depth + 1),
             diagnostics: SolverDiagnostics::default(),
@@ -175,6 +185,7 @@ impl SuccessiveOrdersSolver {
         if self.solution.iter().any(|value| !value.is_finite()) {
             return Err(SolverError::NonFiniteIteration);
         }
+        self.initial_state.copy_from_slice(&self.solution);
 
         self.state_history.clear();
         self.residual_vector_history.clear();
@@ -241,6 +252,148 @@ impl SuccessiveOrdersSolver {
         Ok(&self.solution)
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn solve_jvp(
+        &self,
+        transport_row_offsets: &[i32],
+        transport_column_indices: &[i32],
+        transport_values: &[f64],
+        transport_value_tangent: &[f64],
+        forcing: &[f64],
+        forcing_tangent: &[f64],
+        scattering_coefficient_tangent: &[f64],
+        dense_scattering_value_tangent: &[f64],
+    ) -> Result<Vec<f64>, SolverError> {
+        self.validate_linearization_configuration()?;
+        let iterations = self.diagnostics.iterations;
+        let mut state = self.initial_state.clone();
+        let mut state_tangent = vec![0.0; self.solution.len()];
+        let mut mapped = vec![0.0; self.solution.len()];
+        let mut mapped_tangent = vec![0.0; self.solution.len()];
+        let mut incoming = vec![0.0; self.problem.incoming_size()];
+        let mut incoming_tangent = vec![0.0; self.problem.incoming_size()];
+        for iteration in 0..iterations {
+            self.problem.apply_jvp(
+                transport_row_offsets,
+                transport_column_indices,
+                transport_values,
+                transport_value_tangent,
+                forcing,
+                forcing_tangent,
+                scattering_coefficient_tangent,
+                dense_scattering_value_tangent,
+                &state,
+                &state_tangent,
+                &mut mapped,
+                &mut mapped_tangent,
+                &mut incoming,
+                &mut incoming_tangent,
+            )?;
+            let damping = self.linearization_damping(iteration);
+            for index in 0..state.len() {
+                state[index] = (1.0 - damping) * state[index] + damping * mapped[index];
+                state_tangent[index] =
+                    (1.0 - damping) * state_tangent[index] + damping * mapped_tangent[index];
+            }
+        }
+        Ok(state_tangent)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn solve_vjp(
+        &self,
+        transport_row_offsets: &[i32],
+        transport_column_indices: &[i32],
+        transport_values: &[f64],
+        forcing: &[f64],
+        solution_cotangent: &[f64],
+    ) -> Result<FixedPointGradient, SolverError> {
+        self.validate_linearization_configuration()?;
+        if solution_cotangent.len() != self.solution.len() {
+            return Err(SolverError::InitialGuessSize);
+        }
+        let iterations = self.diagnostics.iterations;
+        let mut states = Vec::with_capacity(iterations);
+        let mut state = self.initial_state.clone();
+        let mut mapped = vec![0.0; self.solution.len()];
+        let mut incoming = vec![0.0; self.problem.incoming_size()];
+        for iteration in 0..iterations {
+            states.push(state.clone());
+            self.problem.apply(
+                transport_row_offsets,
+                transport_column_indices,
+                transport_values,
+                forcing,
+                &state,
+                &mut mapped,
+                &mut incoming,
+            )?;
+            let damping = self.linearization_damping(iteration);
+            for index in 0..state.len() {
+                state[index] = (1.0 - damping) * state[index] + damping * mapped[index];
+            }
+        }
+
+        let mut gradient = FixedPointGradient {
+            transport_values: vec![0.0; self.problem.transport_value_size()],
+            scattering_coefficients: vec![0.0; self.problem.scattering_coefficient_size()],
+            dense_scattering_values: vec![0.0; self.problem.dense_scattering_value_size()],
+            forcing: vec![0.0; self.problem.incoming_size()],
+        };
+        let mut state_cotangent = solution_cotangent.to_vec();
+        let mut mapped_cotangent = vec![0.0; self.solution.len()];
+        let mut previous_cotangent = vec![0.0; self.solution.len()];
+        let mut incoming_scratch = vec![0.0; self.problem.incoming_size()];
+        let mut incoming_cotangent = vec![0.0; self.problem.incoming_size()];
+        for iteration in (0..iterations).rev() {
+            let damping = self.linearization_damping(iteration);
+            for index in 0..state_cotangent.len() {
+                mapped_cotangent[index] = damping * state_cotangent[index];
+                previous_cotangent[index] = (1.0 - damping) * state_cotangent[index];
+            }
+            let mut operator_state_cotangent = vec![0.0; self.solution.len()];
+            self.problem.apply_vjp(
+                transport_row_offsets,
+                transport_column_indices,
+                transport_values,
+                forcing,
+                &states[iteration],
+                &mapped_cotangent,
+                &mut operator_state_cotangent,
+                &mut gradient.transport_values,
+                &mut gradient.scattering_coefficients,
+                &mut gradient.dense_scattering_values,
+                &mut gradient.forcing,
+                &mut incoming_scratch,
+                &mut incoming_cotangent,
+            )?;
+            for index in 0..state_cotangent.len() {
+                previous_cotangent[index] += operator_state_cotangent[index];
+            }
+            std::mem::swap(&mut state_cotangent, &mut previous_cotangent);
+        }
+        Ok(gradient)
+    }
+
+    fn validate_linearization_configuration(&self) -> Result<(), SolverError> {
+        if self.diagnostics.iterations == 0 {
+            return Err(SolverError::LinearizationBeforeSolve);
+        }
+        if self.config.anderson_depth != 0 {
+            return Err(SolverError::UnsupportedLinearizationConfiguration);
+        }
+        Ok(())
+    }
+
+    #[inline]
+    fn linearization_damping(&self, iteration: usize) -> f64 {
+        if self.diagnostics.converged && iteration + 1 == self.diagnostics.iterations {
+            1.0
+        } else {
+            self.config.damping
+        }
+    }
+
     fn record_history(&mut self) {
         let capacity = self.config.anderson_depth + 1;
         if self.state_history.len() == capacity {
@@ -250,6 +403,14 @@ impl SuccessiveOrdersSolver {
         self.state_history.push(self.solution.clone());
         self.residual_vector_history.push(self.residual.clone());
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FixedPointGradient {
+    pub transport_values: Vec<f64>,
+    pub scattering_coefficients: Vec<f64>,
+    pub dense_scattering_values: Vec<f64>,
+    pub forcing: Vec<f64>,
 }
 
 fn infinity_norm(values: &[f64]) -> f64 {

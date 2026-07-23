@@ -44,6 +44,12 @@ namespace sasktran2::hr {
             rust_boundary_scattering_values; /**< Row-major dense boundary
                                                 scattering blocks. */
 
+        Eigen::VectorXd rust_transport_value_tangent;
+        std::vector<double> rust_scattering_coefficient_tangent;
+        std::vector<double> rust_boundary_scattering_value_tangent;
+        Eigen::VectorXd rust_first_order_forcing_tangent;
+        std::vector<double> rust_solution_jvp;
+
         /** Wavelength-contiguous outgoing sources retained until LOS
          *  integration completes. */
         std::vector<double> rust_batch_outgoing_sources;
@@ -148,9 +154,11 @@ namespace sasktran2::hr {
         Eigen::VectorXi m_outer_starts;
         bool m_use_rust_solver;
         int m_wavelength_block_capacity = 1;
+        mutable std::vector<std::vector<Eigen::VectorXd>>
+            m_los_solution_cotangents;
 
 #ifdef SKTRAN_RUST_SUPPORT
-        std::vector<::rust::Box<
+        mutable std::vector<::rust::Box<
             sasktran2::rust::successive_orders::RustSuccessiveOrdersSolver>>
             m_rust_solvers;
 #endif
@@ -168,6 +176,18 @@ namespace sasktran2::hr {
         void iterate_to_solution(int wavelidx, int threadidx);
 #ifdef SKTRAN_RUST_SUPPORT
         void pack_rust_boundary_scattering_values(int threadidx);
+        void pack_rust_scattering_coefficient_jvp(
+            int wavelidx, int threadidx,
+            Eigen::Ref<const Eigen::VectorXd> native_tangent);
+        void pack_rust_boundary_scattering_jvp(
+            int wavelidx, int threadidx,
+            Eigen::Ref<const Eigen::VectorXd> native_tangent);
+        void accumulate_rust_scattering_coefficient_vjp(
+            int wavelidx, ::rust::Slice<const double> coefficient_gradient,
+            Eigen::Ref<Eigen::VectorXd> native_gradient) const;
+        void accumulate_rust_boundary_scattering_vjp(
+            int wavelidx, ::rust::Slice<const double> boundary_gradient,
+            Eigen::Ref<Eigen::VectorXd> native_gradient) const;
         void iterate_to_solution_rust(int threadidx);
 #endif
         void interpolate_sources(const Eigen::VectorXd& old_outgoing,
@@ -222,6 +242,15 @@ namespace sasktran2::hr {
             return 1;
         }
 
+        bool native_products_available() const {
+#ifdef SKTRAN_RUST_SUPPORT
+            return m_use_rust_solver && m_config != nullptr &&
+                   m_config->successive_orders_anderson_depth() == 0;
+#else
+            return false;
+#endif
+        }
+
         /** Triggers an internal calculation of the source term.  This method is
          * called at the beginning of each 'wavelength' calculation.
          *
@@ -229,6 +258,16 @@ namespace sasktran2::hr {
          */
         void calculate(const sasktran2::WavelengthBlock<>& block,
                        int threadidx) override;
+
+        void
+        prepare_jvp(int wavelidx, int wavel_threadidx,
+                    Eigen::Ref<const Eigen::VectorXd> native_tangent) override;
+
+        void prepare_vjp(int wavelidx, int wavel_threadidx) override;
+
+        void finalize_vjp(
+            int wavelidx, int wavel_threadidx,
+            Eigen::Ref<Eigen::VectorXd> native_gradient) const override;
 
         /** Calculates the integrated source term for a given layer.
          *
@@ -267,6 +306,36 @@ namespace sasktran2::hr {
             int wavel_threadidx, int threadidx,
             sasktran2::WavelengthBlockDual<NSTOKES>& source) const override;
 
+        void integrated_source_jvp(
+            int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+            int threadidx, const sasktran2::raytracing::TracedLayer& layer,
+            const sasktran2::raytracing::GridWeightStencilView&
+                entrance_weights,
+            const sasktran2::raytracing::GridWeightStencilView& exit_weights,
+            const sasktran2::WavelengthBlockODView& shell_od,
+            Eigen::Ref<const Eigen::VectorXd> native_tangent,
+            sasktran2::RadianceJVP<NSTOKES>& source) const override;
+
+        void end_of_ray_source_jvp(
+            int wavelidx, int losidx, int wavel_threadidx, int threadidx,
+            Eigen::Ref<const Eigen::VectorXd> native_tangent,
+            sasktran2::RadianceJVP<NSTOKES>& source) const override;
+
+        void integrated_source_vjp(
+            int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+            int threadidx, const sasktran2::raytracing::TracedLayer& layer,
+            const sasktran2::raytracing::GridWeightStencilView&
+                entrance_weights,
+            const sasktran2::raytracing::GridWeightStencilView& exit_weights,
+            const sasktran2::WavelengthBlockODView& shell_od,
+            const Eigen::Vector<double, NSTOKES>& cotangent,
+            Eigen::Ref<Eigen::VectorXd> native_gradient) const override;
+
+        void end_of_ray_source_vjp(
+            int wavelidx, int losidx, int wavel_threadidx, int threadidx,
+            const Eigen::Vector<double, NSTOKES>& cotangent,
+            Eigen::Ref<Eigen::VectorXd> native_gradient) const override;
+
         /**
          * @brief Not used for the HR source.
          *
@@ -279,5 +348,15 @@ namespace sasktran2::hr {
         void start_of_ray_source(
             const sasktran2::WavelengthBlock<>&, int, int, int,
             sasktran2::WavelengthBlockDual<NSTOKES>&) const override {}
+
+        void start_of_ray_source_jvp(
+            int, int, int, int, Eigen::Ref<const Eigen::VectorXd>,
+            sasktran2::RadianceJVP<NSTOKES>&) const override {}
+
+        void
+        start_of_ray_source_vjp(int, int, int, int,
+                                const Eigen::Vector<double, NSTOKES>&,
+                                Eigen::Vector<double, NSTOKES>&,
+                                Eigen::Ref<Eigen::VectorXd>) const override {}
     };
 } // namespace sasktran2::hr

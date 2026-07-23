@@ -79,6 +79,11 @@ impl PyDerivativeMappingView {
         }
     }
 
+    #[getter]
+    fn get_has_interpolator(&self) -> bool {
+        self.derivative_mapping.get_interpolator().is_some()
+    }
+
     #[setter]
     fn set_interpolator(&mut self, interpolator: PyReadonlyArray2<f64>) {
         let mut interpolator = interpolator.to_owned().as_array().to_owned();
@@ -131,6 +136,11 @@ impl PySurfaceDerivativeMappingView {
             Some(array) => unsafe { Ok(PyArray2::borrow_from_array(&array, this.into_any())) },
             None => Ok(Array2::zeros((0, 0)).into_pyarray(this.py())),
         }
+    }
+
+    #[getter]
+    fn get_has_interpolator(&self) -> bool {
+        self.derivative_mapping.get_interpolator().is_some()
     }
 
     #[setter]

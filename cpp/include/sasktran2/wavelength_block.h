@@ -368,12 +368,67 @@ namespace sasktran2 {
 
     class WavelengthBlockODView {
       public:
+        class DerivativeIterator {
+          public:
+            DerivativeIterator(
+                const Eigen::SparseMatrix<double, Eigen::RowMajor>& matrix,
+                int row)
+                : m_sparse(std::in_place, matrix, row) {}
+
+            DerivativeIterator(const int* indices, const double* values,
+                               std::size_t count)
+                : m_indices(indices), m_values(values), m_count(count) {}
+
+            explicit operator bool() const {
+                return m_sparse.has_value()
+                           ? static_cast<bool>(m_sparse.value())
+                           : m_position < m_count;
+            }
+
+            DerivativeIterator& operator++() {
+                if (m_sparse.has_value()) {
+                    ++m_sparse.value();
+                } else {
+                    ++m_position;
+                }
+                return *this;
+            }
+
+            int index() const {
+                return m_sparse.has_value() ? m_sparse->index()
+                                            : m_indices[m_position];
+            }
+
+            double value() const {
+                return m_sparse.has_value() ? m_sparse->value()
+                                            : m_values[m_position];
+            }
+
+          private:
+            std::optional<
+                Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator>
+                m_sparse;
+            const int* m_indices = nullptr;
+            const double* m_values = nullptr;
+            std::size_t m_count = 0;
+            std::size_t m_position = 0;
+        };
+
         WavelengthBlockODView(
             const double* od, const double* exp_minus_od, int wavelength_count,
             const Eigen::SparseMatrix<double, Eigen::RowMajor>& deriv_matrix,
             int row)
             : m_od_data(od), m_exp_minus_od_data(exp_minus_od),
-              m_count(wavelength_count), m_deriv_iter(deriv_matrix, row) {}
+              m_count(wavelength_count), m_deriv_matrix(&deriv_matrix),
+              m_deriv_row(row) {}
+
+        WavelengthBlockODView(const double* od, const double* exp_minus_od,
+                              int wavelength_count, const int* deriv_indices,
+                              const double* deriv_values,
+                              std::size_t deriv_count)
+            : m_od_data(od), m_exp_minus_od_data(exp_minus_od),
+              m_count(wavelength_count), m_deriv_indices(deriv_indices),
+              m_deriv_values(deriv_values), m_deriv_count(deriv_count) {}
 
         Eigen::Map<const Eigen::RowVectorXd> od() const {
             return {m_od_data, m_count};
@@ -388,7 +443,13 @@ namespace sasktran2 {
             return m_exp_minus_od_data[lane];
         }
 
-        auto derivative_iterator() const { return m_deriv_iter; }
+        DerivativeIterator derivative_iterator() const {
+            if (m_deriv_matrix != nullptr) {
+                return DerivativeIterator(*m_deriv_matrix, m_deriv_row);
+            }
+            return DerivativeIterator(m_deriv_indices, m_deriv_values,
+                                      m_deriv_count);
+        }
 
         int count() const { return m_count; }
 
@@ -396,7 +457,11 @@ namespace sasktran2 {
         const double* m_od_data = nullptr;
         const double* m_exp_minus_od_data = nullptr;
         int m_count = 0;
-        Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
-            m_deriv_iter;
+        const Eigen::SparseMatrix<double, Eigen::RowMajor>* m_deriv_matrix =
+            nullptr;
+        int m_deriv_row = 0;
+        const int* m_deriv_indices = nullptr;
+        const double* m_deriv_values = nullptr;
+        std::size_t m_deriv_count = 0;
     };
 } // namespace sasktran2

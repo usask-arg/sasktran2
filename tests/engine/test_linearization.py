@@ -639,3 +639,89 @@ def test_engine_linearize_requires_derivatives():
     engine, atmosphere = _raw_engine_scenario(calculate_derivatives=False)
     with pytest.raises(ValueError, match="calculate_derivatives=True"):
         engine.linearize(atmosphere)
+
+
+def _successive_orders_native_scenario(*, num_stokes: int = 1, anderson_depth: int = 0):
+    config = sk.Config()
+    config.num_stokes = num_stokes
+    config.num_streams = 8
+    config.num_singlescatter_moments = 16
+    config.single_scatter_source = sk.SingleScatterSource.Exact
+    config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrdersRust
+    config.num_successive_orders_incoming = 26
+    config.num_successive_orders_outgoing = 26
+    config.successive_orders_max_iterations = 3
+    config.successive_orders_relative_tolerance = 0.0
+    config.successive_orders_absolute_tolerance = 0.0
+    config.successive_orders_anderson_depth = anderson_depth
+    geometry = sk.Geometry1D(
+        0.6,
+        0.0,
+        6_372_000.0,
+        np.arange(0.0, 30_001.0, 5_000.0),
+        sk.InterpolationMethod.LinearInterpolation,
+        sk.GeometryType.Spherical,
+    )
+    viewing = sk.ViewingGeometry()
+    viewing.add_ray(sk.GroundViewingSolar(0.6, 0.2, 0.8, 100_000.0))
+    viewing.add_ray(sk.TangentAltitudeSolar(12_500.0, -0.3, 100_000.0, 0.6))
+    atmosphere = sk.test_util.scenarios.default_pure_scattering_atmosphere(
+        config, geometry, 0.82, albedo=0.3
+    )
+    return sk.Engine(config, geometry, viewing), atmosphere
+
+
+@pytest.mark.parametrize("num_stokes", [1, 3])
+def test_rust_successive_orders_native_products_match_fd_and_duality(num_stokes):
+    engine, atmosphere = _successive_orders_native_scenario(num_stokes=num_stokes)
+    linearization = engine.linearize(atmosphere)
+    assert linearization.backends == {
+        "jvp": sk.LinearizationBackend.Native,
+        "vjp": sk.LinearizationBackend.Native,
+    }
+    with pytest.raises(NotImplementedError, match="complete Jacobian"):
+        _ = linearization.jacobian
+
+    phase_name = "leg_coeff_2" if num_stokes == 1 else "leg_coeff_8"
+    names = ("extinction", "ssa", phase_name, "albedo")
+    tangent = linearization.tangent_template[list(names)]
+    tangent["extinction"].data[:] = atmosphere.storage.total_extinction[
+        :, 0
+    ] * np.linspace(0.04, 0.12, atmosphere.num_locations)
+    tangent["ssa"].data[:] = np.linspace(-0.025, 0.02, atmosphere.num_locations)
+    tangent[phase_name].data[:] = np.linspace(0.01, 0.035, atmosphere.num_locations)
+    tangent["albedo"].data[...] = 0.04
+
+    jvp = linearization.jvp(tangent)
+    cotangent = xr.ones_like(linearization.value)
+    cotangent.data[:] = np.linspace(0.3, 1.1, cotangent.size).reshape(cotangent.shape)
+    gradient = linearization.vjp(cotangent, parameters=names)
+    lhs = float((jvp * cotangent).sum())
+    rhs = sum(float((tangent[name] * gradient[name]).sum()) for name in names)
+    np.testing.assert_allclose(lhs, rhs, rtol=2.0e-10, atol=2.0e-12)
+
+    epsilon = 2.0e-5
+    radiances = []
+    for sign in (-1.0, 1.0):
+        perturbed_engine, perturbed = _successive_orders_native_scenario(
+            num_stokes=num_stokes
+        )
+        perturbed.storage.total_extinction[:, 0] += (
+            sign * epsilon * tangent["extinction"].values
+        )
+        perturbed.storage.ssa[:, 0] += sign * epsilon * tangent["ssa"].values
+        perturbed.leg_coeff.a1[2, :, 0] += sign * epsilon * tangent[phase_name].values
+        perturbed.surface.albedo[0] += sign * epsilon * tangent["albedo"].values.item()
+        radiances.append(perturbed_engine.calculate_radiance(perturbed).radiance.values)
+    finite_difference = (radiances[1] - radiances[0]) / (2.0 * epsilon)
+    np.testing.assert_allclose(jvp.values, finite_difference, rtol=2.0e-5, atol=2e-9)
+
+
+def test_rust_successive_orders_native_products_reject_anderson_acceleration():
+    engine, atmosphere = _successive_orders_native_scenario(anderson_depth=3)
+
+    with pytest.raises(
+        NotImplementedError,
+        match="does not support radiance JVP/VJP products",
+    ):
+        engine.linearize(atmosphere)

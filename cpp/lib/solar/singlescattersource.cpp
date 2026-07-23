@@ -103,7 +103,8 @@ namespace sasktran2::solartransmission {
     template <typename S, int NSTOKES>
     void SingleScatterSource<S, NSTOKES>::initialize_wavelength_blocks(
         int block_size) {
-        if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
+        if constexpr (!std::is_same_v<S, SolarTransmissionExact> &&
+                      !std::is_same_v<S, SolarTransmissionTable>) {
             throw std::logic_error(
                 "Solar transmission tables do not support wavelength "
                 "batching");
@@ -131,7 +132,8 @@ namespace sasktran2::solartransmission {
     template <int N>
     void SingleScatterSource<S, NSTOKES>::calculate_block(
         const sasktran2::WavelengthBlock<N>& batch, int threadidx) {
-        if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
+        if constexpr (!std::is_same_v<S, SolarTransmissionExact> &&
+                      !std::is_same_v<S, SolarTransmissionTable>) {
             throw std::logic_error(
                 "Solar transmission tables do not support wavelength "
                 "batching");
@@ -177,7 +179,8 @@ namespace sasktran2::solartransmission {
         const sasktran2::raytracing::GridWeightStencilView& weights,
         bool is_entrance, Eigen::Ref<const Eigen::VectorXd> native_tangent,
         sasktran2::RadianceJVP<NSTOKES>& result) const {
-        if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
+        if constexpr (!std::is_same_v<S, SolarTransmissionExact> &&
+                      !std::is_same_v<S, SolarTransmissionTable>) {
             throw std::logic_error(
                 "Native JVP requires exact solar transmission");
         } else {
@@ -205,7 +208,7 @@ namespace sasktran2::solartransmission {
                 m_solar_trans[wavel_threadidx](solar_index);
             double solar_od_jvp = 0.0;
             for (Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
-                     derivative(m_geometry_sparse, solar_index);
+                     derivative(m_native_solar_geometry_sparse, solar_index);
                  derivative; ++derivative) {
                 solar_od_jvp +=
                     derivative.value() * native_tangent(derivative.index());
@@ -237,7 +240,8 @@ namespace sasktran2::solartransmission {
         const sasktran2::raytracing::GridWeightStencilView& weights,
         bool is_entrance, const Eigen::Vector<double, NSTOKES>& cotangent,
         Eigen::Ref<Eigen::VectorXd> native_gradient) const {
-        if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
+        if constexpr (!std::is_same_v<S, SolarTransmissionExact> &&
+                      !std::is_same_v<S, SolarTransmissionTable>) {
             throw std::logic_error(
                 "Native VJP requires exact solar transmission");
         } else {
@@ -281,7 +285,7 @@ namespace sasktran2::solartransmission {
                                 weight.first) += weight.second * ssa_cotangent;
             }
             for (Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
-                     derivative(m_geometry_sparse, solar_index);
+                     derivative(m_native_solar_geometry_sparse, solar_index);
                  derivative; ++derivative) {
                 native_gradient(derivative.index()) -=
                     derivative.value() * solar_trans * solar_trans_cotangent;
@@ -299,7 +303,8 @@ namespace sasktran2::solartransmission {
         Eigen::Ref<const Eigen::VectorXd> native_tangent,
         sasktran2::RadianceJVP<NSTOKES>& source) const {
         (void)threadidx;
-        if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
+        if constexpr (!std::is_same_v<S, SolarTransmissionExact> &&
+                      !std::is_same_v<S, SolarTransmissionTable>) {
             throw std::logic_error(
                 "Native JVP requires exact solar transmission");
         } else {
@@ -322,7 +327,8 @@ namespace sasktran2::solartransmission {
             if (m_config->wf_precision() !=
                 sasktran2::Config::WeightingFunctionPrecision::limited) {
                 for (Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
-                         derivative(m_geometry_sparse, solar_index);
+                         derivative(m_native_solar_geometry_sparse,
+                                    solar_index);
                      derivative; ++derivative) {
                     solar_od_jvp +=
                         derivative.value() * native_tangent(derivative.index());
@@ -356,7 +362,8 @@ namespace sasktran2::solartransmission {
         const Eigen::Vector<double, NSTOKES>& cotangent,
         Eigen::Ref<Eigen::VectorXd> native_gradient) const {
         (void)threadidx;
-        if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
+        if constexpr (!std::is_same_v<S, SolarTransmissionExact> &&
+                      !std::is_same_v<S, SolarTransmissionTable>) {
             throw std::logic_error(
                 "Native VJP requires exact solar transmission");
         } else {
@@ -382,7 +389,8 @@ namespace sasktran2::solartransmission {
             if (m_config->wf_precision() !=
                 sasktran2::Config::WeightingFunctionPrecision::limited) {
                 for (Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
-                         derivative(m_geometry_sparse, solar_index);
+                         derivative(m_native_solar_geometry_sparse,
+                                    solar_index);
                      derivative; ++derivative) {
                     native_gradient(derivative.index()) -=
                         derivative.value() * solar_trans *
@@ -485,7 +493,8 @@ namespace sasktran2::solartransmission {
         const sasktran2::WavelengthBlock<N>& batch, int losidx,
         int wavel_threadidx, int threadidx,
         sasktran2::WavelengthBlockDual<NSTOKES>& source) const {
-        if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
+        if constexpr (!std::is_same_v<S, SolarTransmissionExact> &&
+                      !std::is_same_v<S, SolarTransmissionTable>) {
             throw std::logic_error(
                 "Solar transmission tables do not support wavelength "
                 "batching");
@@ -549,7 +558,8 @@ namespace sasktran2::solartransmission {
     template <typename S, int NSTOKES>
     void SingleScatterSource<S, NSTOKES>::append_end_of_ray_active_derivatives(
         int losidx, std::vector<int>& derivative_indices) const {
-        if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
+        if constexpr (!std::is_same_v<S, SolarTransmissionExact> &&
+                      !std::is_same_v<S, SolarTransmissionTable>) {
             return;
         }
 
@@ -643,6 +653,15 @@ namespace sasktran2::solartransmission {
             this->m_solar_transmission.generate_interpolation_matrix(
                 internal_viewing.traced_rays, m_geometry_sparse,
                 m_ground_hit_flag);
+        }
+
+        if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
+            m_native_solar_geometry_sparse = m_geometry_sparse;
+        }
+        if constexpr (std::is_same_v<S, SolarTransmissionTable>) {
+            Eigen::MatrixXd effective_geometry =
+                m_geometry_sparse * m_solar_transmission.geometry_matrix();
+            m_native_solar_geometry_sparse = effective_geometry.sparseView();
         }
 
         // We need some mapping between the layers inside each ray to our
@@ -1014,7 +1033,8 @@ namespace sasktran2::solartransmission {
         Eigen::Ref<const Eigen::VectorXd> native_tangent,
         sasktran2::RadianceJVP<NSTOKES>& source) const {
         (void)threadidx;
-        if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
+        if constexpr (!std::is_same_v<S, SolarTransmissionExact> &&
+                      !std::is_same_v<S, SolarTransmissionTable>) {
             throw std::logic_error(
                 "Native JVP requires exact solar transmission");
         } else {
@@ -1097,7 +1117,8 @@ namespace sasktran2::solartransmission {
         const Eigen::Vector<double, NSTOKES>& cotangent,
         Eigen::Ref<Eigen::VectorXd> native_gradient) const {
         (void)threadidx;
-        if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
+        if constexpr (!std::is_same_v<S, SolarTransmissionExact> &&
+                      !std::is_same_v<S, SolarTransmissionTable>) {
             throw std::logic_error(
                 "Native VJP requires exact solar transmission");
         } else {

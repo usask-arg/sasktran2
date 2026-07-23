@@ -623,6 +623,10 @@ void Sasktran2<NSTOKES>::calculate_jvp(
         }
         Eigen::VectorXd native_tangent(atmosphere.num_deriv());
         output.native_tangent(wavelength, native_tangent);
+        for (auto* source : m_los_source_terms) {
+            source->prepare_jvp(wavelength, wavelength_threadidx,
+                                native_tangent);
+        }
 #pragma omp parallel for num_threads(m_config.num_source_threads())            \
     schedule(dynamic)
         for (int ray = 0; ray < m_internal_viewing_geometry.num_rays(); ++ray) {
@@ -681,6 +685,9 @@ void Sasktran2<NSTOKES>::calculate_vjp(
         for (auto& source : m_source_terms) {
             source->calculate(block, wavelength_threadidx);
         }
+        for (auto* source : m_los_source_terms) {
+            source->prepare_vjp(wavelength, wavelength_threadidx);
+        }
 #pragma omp parallel for num_threads(m_config.num_source_threads())            \
     schedule(dynamic)
         for (int ray = 0; ray < m_internal_viewing_geometry.num_rays(); ++ray) {
@@ -701,6 +708,14 @@ void Sasktran2<NSTOKES>::calculate_vjp(
             output.accumulate_native_gradient(wavelength, ray_threadidx,
                                               native_gradient);
         }
+        auto& final_gradient = native_gradients[wavelength_threadidx];
+        final_gradient.setZero();
+        for (auto* source : m_los_source_terms) {
+            source->finalize_vjp(wavelength, wavelength_threadidx,
+                                 final_gradient);
+        }
+        output.accumulate_native_gradient(wavelength, wavelength_threadidx,
+                                          final_gradient);
     }
 }
 

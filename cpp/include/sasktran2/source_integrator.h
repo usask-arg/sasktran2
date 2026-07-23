@@ -213,6 +213,26 @@ namespace sasktran2 {
             const SInterpolator& source_interpolator,
             Eigen::VectorXd& accumulation_values);
 
+        /** Differentiates the compact transport values and first-order
+         * forcing assembled for one internal diffuse ray. */
+        void integrate_and_emplace_accumulation_jvp(
+            const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+            int wavelidx, int rayidx, int wavel_threadidx, int threadidx,
+            const SInterpolator& source_interpolator,
+            Eigen::Ref<const Eigen::VectorXd> native_tangent,
+            Eigen::Ref<Eigen::VectorXd> accumulation_value_tangent,
+            Eigen::Ref<Eigen::VectorXd> first_order_forcing_tangent) const;
+
+        /** Pulls compact transport/forcing cotangents for one internal
+         * diffuse ray back to native atmosphere parameters. */
+        void accumulate_accumulation_vjp(
+            const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+            int wavelidx, int rayidx, int wavel_threadidx, int threadidx,
+            const SInterpolator& source_interpolator,
+            Eigen::Ref<const Eigen::VectorXd> accumulation_value_gradient,
+            Eigen::Ref<const Eigen::VectorXd> first_order_forcing_gradient,
+            Eigen::Ref<Eigen::VectorXd> native_gradient) const;
+
         /** Calculates the Optical Depth for each ray */
         void integrate_optical_depth(Eigen::MatrixXd& optical_depth);
     };

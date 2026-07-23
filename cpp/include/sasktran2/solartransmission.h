@@ -647,6 +647,8 @@ namespace sasktran2::solartransmission {
 
         Eigen::MatrixXd m_geometry_matrix;
         Eigen::SparseMatrix<double, Eigen::RowMajor> m_geometry_sparse;
+        Eigen::SparseMatrix<double, Eigen::RowMajor>
+            m_native_solar_geometry_sparse;
         std::vector<bool> m_ground_hit_flag;
 
         std::vector<Eigen::VectorXd> m_solar_trans;
@@ -654,6 +656,7 @@ namespace sasktran2::solartransmission {
                                              Eigen::Dynamic, Eigen::RowMajor>;
         std::vector<RowMajorMatrix> m_solar_trans_batch;
         int m_wavelength_batch_capacity = 1;
+        bool m_table_native_products_enabled = false;
         std::vector<std::vector<int>> m_index_map;
 
         PhaseHandler<NSTOKES> m_phase_handler;
@@ -944,7 +947,13 @@ namespace sasktran2::solartransmission {
         bool supports_linearization(
             sasktran2::LinearizationMode mode) const override {
             return mode == sasktran2::LinearizationMode::Jacobian ||
-                   std::is_same_v<S, SolarTransmissionExact>;
+                   std::is_same_v<S, SolarTransmissionExact> ||
+                   (std::is_same_v<S, SolarTransmissionTable> &&
+                    m_table_native_products_enabled);
+        }
+
+        void enable_table_native_products() {
+            m_table_native_products_enabled = true;
         }
 
         void end_of_ray_source_jvp(

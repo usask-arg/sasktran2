@@ -569,9 +569,28 @@ namespace sasktran2::hr {
                 storage.rust_scattering_coefficients.resize(
                     coefficient_blocks * m_config->num_do_streams() *
                     coefficient_families);
+                storage.rust_scattering_coefficient_tangent.resize(
+                    storage.rust_scattering_coefficients.size());
                 storage.rust_boundary_scattering_values.resize(
                     scattering_value_offsets.back() -
                     scattering_value_offsets[coefficient_blocks]);
+                storage.rust_boundary_scattering_value_tangent.resize(
+                    storage.rust_boundary_scattering_values.size());
+                storage.rust_transport_value_tangent.resize(total_nnz);
+                storage.rust_first_order_forcing_tangent.resize(
+                    storage.m_firstorder_radiances.value.size());
+                storage.rust_solution_jvp.resize(
+                    storage.m_outgoing_sources.value.size());
+            }
+
+            m_los_solution_cotangents.resize(
+                m_config->num_wavelength_threads());
+            for (auto& wavelength_cotangents : m_los_solution_cotangents) {
+                wavelength_cotangents.resize(m_config->num_source_threads());
+                for (auto& cotangent : wavelength_cotangents) {
+                    cotangent.setZero(m_thread_storage.front()
+                                          .m_outgoing_sources.value.size());
+                }
             }
 
             m_rust_solvers.clear();
@@ -664,10 +683,14 @@ namespace sasktran2::hr {
 
         m_thread_storage.resize(m_config->num_wavelength_threads());
 
-        m_initial_owned_sources.emplace_back(
+        auto initial_single_scatter =
             std::make_unique<sasktran2::solartransmission::SingleScatterSource<
                 sasktran2::solartransmission::SolarTransmissionTable, NSTOKES>>(
-                m_geometry, m_raytracer));
+                m_geometry, m_raytracer);
+        if (m_use_rust_solver) {
+            initial_single_scatter->enable_table_native_products();
+        }
+        m_initial_owned_sources.emplace_back(std::move(initial_single_scatter));
 
         m_initial_sources.push_back(m_initial_owned_sources[0].get());
 
@@ -1096,6 +1119,191 @@ namespace sasktran2::hr {
     }
 
     template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::pack_rust_scattering_coefficient_jvp(
+        int wavelidx, int threadidx,
+        Eigen::Ref<const Eigen::VectorXd> native_tangent) {
+        auto& tangent =
+            m_thread_storage[threadidx].rust_scattering_coefficient_tangent;
+        const int num_coefficients = m_config->num_do_streams();
+        const int num_families = NSTOKES == 1 ? 1 : 4;
+        const int num_geometry = m_atmosphere->storage().ssa.rows();
+        for (int point = 0;
+             point < m_location_interpolator->num_interior_points(); ++point) {
+            for (int degree = 0; degree < num_coefficients; ++degree) {
+                for (int family = 0; family < num_families; ++family) {
+                    double value = 0.0;
+                    for (const auto& index_weight :
+                         m_diffuse_point_interpolation_weights[point]) {
+                        for (int group = 0;
+                             group <
+                             m_atmosphere->num_scattering_deriv_groups();
+                             ++group) {
+                            value +=
+                                index_weight.second *
+                                m_atmosphere->storage().d_leg_coeff(
+                                    degree * num_families + family,
+                                    index_weight.first, wavelidx, group) *
+                                native_tangent(
+                                    m_atmosphere->scat_deriv_start_index() +
+                                    group * num_geometry + index_weight.first);
+                        }
+                    }
+                    tangent[(point * num_coefficients + degree) * num_families +
+                            family] = value;
+                }
+            }
+        }
+    }
+
+    template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::pack_rust_boundary_scattering_jvp(
+        int wavelidx, int threadidx,
+        Eigen::Ref<const Eigen::VectorXd> native_tangent) {
+        auto& tangent =
+            m_thread_storage[threadidx].rust_boundary_scattering_value_tangent;
+        std::fill(tangent.begin(), tangent.end(), 0.0);
+        std::size_t value_offset = 0;
+        for (std::size_t point_index = static_cast<std::size_t>(
+                 m_location_interpolator->num_interior_points());
+             point_index < m_diffuse_points.size(); ++point_index) {
+            const auto& point = *m_diffuse_points[point_index];
+            const auto& spheres = point.sphere_pair();
+            const int rows = point.num_outgoing() * NSTOKES;
+            const int columns = point.num_incoming() * NSTOKES;
+            for (int row = 0; row < rows; ++row) {
+                for (int column = 0; column < columns; ++column) {
+                    if (row % NSTOKES == 0 && column % NSTOKES == 0) {
+                        const auto incoming =
+                            spheres.incoming_sphere().get_quad_position(
+                                column / NSTOKES);
+                        const auto outgoing =
+                            spheres.outgoing_sphere().get_quad_position(
+                                row / NSTOKES);
+                        const double mu_in =
+                            point.location().cos_zenith_angle(incoming);
+                        const double mu_out =
+                            point.location().cos_zenith_angle(outgoing);
+                        const auto vertical =
+                            point.location().position.normalized();
+                        const auto horiz_in =
+                            (incoming - mu_in * vertical).normalized();
+                        const auto horiz_out =
+                            (outgoing - mu_out * vertical).normalized();
+                        const double phi_diff =
+                            EIGEN_PI - std::acos(horiz_in.dot(horiz_out));
+                        double brdf_jvp = 0.0;
+                        for (int derivative = 0;
+                             derivative < m_atmosphere->surface().num_deriv();
+                             ++derivative) {
+                            brdf_jvp +=
+                                native_tangent(
+                                    m_atmosphere->surface_deriv_start_index() +
+                                    derivative) *
+                                m_atmosphere->surface().d_brdf(
+                                    wavelidx, mu_in, mu_out, phi_diff,
+                                    derivative)(0, 0);
+                        }
+                        tangent[value_offset] =
+                            4.0 * EIGEN_PI * brdf_jvp * mu_in *
+                            spheres.incoming_sphere().quadrature_weight(
+                                column / NSTOKES);
+                    }
+                    ++value_offset;
+                }
+            }
+        }
+    }
+
+    template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::accumulate_rust_scattering_coefficient_vjp(
+        int wavelidx, ::rust::Slice<const double> coefficient_gradient,
+        Eigen::Ref<Eigen::VectorXd> native_gradient) const {
+        const int num_coefficients = m_config->num_do_streams();
+        const int num_families = NSTOKES == 1 ? 1 : 4;
+        const int num_geometry = m_atmosphere->storage().ssa.rows();
+        for (int point = 0;
+             point < m_location_interpolator->num_interior_points(); ++point) {
+            for (int degree = 0; degree < num_coefficients; ++degree) {
+                for (int family = 0; family < num_families; ++family) {
+                    const double gradient = coefficient_gradient
+                        [(point * num_coefficients + degree) * num_families +
+                         family];
+                    for (const auto& index_weight :
+                         m_diffuse_point_interpolation_weights[point]) {
+                        for (int group = 0;
+                             group <
+                             m_atmosphere->num_scattering_deriv_groups();
+                             ++group) {
+                            native_gradient(
+                                m_atmosphere->scat_deriv_start_index() +
+                                group * num_geometry + index_weight.first) +=
+                                gradient * index_weight.second *
+                                m_atmosphere->storage().d_leg_coeff(
+                                    degree * num_families + family,
+                                    index_weight.first, wavelidx, group);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::accumulate_rust_boundary_scattering_vjp(
+        int wavelidx, ::rust::Slice<const double> boundary_gradient,
+        Eigen::Ref<Eigen::VectorXd> native_gradient) const {
+        std::size_t value_offset = 0;
+        for (std::size_t point_index = static_cast<std::size_t>(
+                 m_location_interpolator->num_interior_points());
+             point_index < m_diffuse_points.size(); ++point_index) {
+            const auto& point = *m_diffuse_points[point_index];
+            const auto& spheres = point.sphere_pair();
+            const int rows = point.num_outgoing() * NSTOKES;
+            const int columns = point.num_incoming() * NSTOKES;
+            for (int row = 0; row < rows; ++row) {
+                for (int column = 0; column < columns; ++column) {
+                    if (row % NSTOKES == 0 && column % NSTOKES == 0) {
+                        const auto incoming =
+                            spheres.incoming_sphere().get_quad_position(
+                                column / NSTOKES);
+                        const auto outgoing =
+                            spheres.outgoing_sphere().get_quad_position(
+                                row / NSTOKES);
+                        const double mu_in =
+                            point.location().cos_zenith_angle(incoming);
+                        const double mu_out =
+                            point.location().cos_zenith_angle(outgoing);
+                        const auto vertical =
+                            point.location().position.normalized();
+                        const auto horiz_in =
+                            (incoming - mu_in * vertical).normalized();
+                        const auto horiz_out =
+                            (outgoing - mu_out * vertical).normalized();
+                        const double phi_diff =
+                            EIGEN_PI - std::acos(horiz_in.dot(horiz_out));
+                        const double scale =
+                            boundary_gradient[value_offset] * 4.0 * EIGEN_PI *
+                            mu_in *
+                            spheres.incoming_sphere().quadrature_weight(
+                                column / NSTOKES);
+                        for (int derivative = 0;
+                             derivative < m_atmosphere->surface().num_deriv();
+                             ++derivative) {
+                            native_gradient(
+                                m_atmosphere->surface_deriv_start_index() +
+                                derivative) +=
+                                scale * m_atmosphere->surface().d_brdf(
+                                            wavelidx, mu_in, mu_out, phi_diff,
+                                            derivative)(0, 0);
+                        }
+                    }
+                    ++value_offset;
+                }
+            }
+        }
+    }
+
+    template <int NSTOKES>
     void DiffuseTable<NSTOKES>::iterate_to_solution_rust(int threadidx) {
         ZoneScopedN("Rust Successive Orders Solve");
         auto& storage = m_thread_storage[threadidx];
@@ -1322,6 +1530,153 @@ namespace sasktran2::hr {
     }
 
     template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::prepare_jvp(
+        int wavelidx, int wavel_threadidx,
+        Eigen::Ref<const Eigen::VectorXd> native_tangent) {
+#ifdef SKTRAN_RUST_SUPPORT
+        if (!native_products_available()) {
+            throw std::logic_error(
+                "Native successive-orders products require the Rust solver "
+                "with Anderson acceleration disabled");
+        }
+        auto& storage = m_thread_storage[wavel_threadidx];
+        storage.rust_transport_value_tangent.setZero();
+        storage.rust_first_order_forcing_tangent.setZero();
+        pack_rust_scattering_coefficient_jvp(wavelidx, wavel_threadidx,
+                                             native_tangent);
+        pack_rust_boundary_scattering_jvp(wavelidx, wavel_threadidx,
+                                          native_tangent);
+
+        const int num_threads = m_config->num_source_threads();
+#pragma omp parallel for num_threads(num_threads)
+        for (int rayidx = 0; rayidx < m_internal_viewing.traced_rays.size();
+             ++rayidx) {
+#ifdef SKTRAN_OPENMP_SUPPORT
+            const int source_threadidx =
+                num_threads == 1 ? 0 : omp_get_thread_num();
+#else
+            const int source_threadidx = 0;
+#endif
+            m_integrator.integrate_and_emplace_accumulation_jvp(
+                m_initial_sources, wavelidx, rayidx, wavel_threadidx,
+                source_threadidx + wavel_threadidx, m_diffuse_source_weights,
+                native_tangent, storage.rust_transport_value_tangent,
+                storage.rust_first_order_forcing_tangent);
+        }
+
+        auto& solver = m_rust_solvers[wavel_threadidx];
+        sasktran2::rust::successive_orders::linearize_coefficients_jvp(
+            *solver, as_rust_slice(m_outer_starts),
+            as_rust_slice(m_inner_indicies),
+            as_rust_slice(storage.accumulation_summed_values),
+            as_rust_slice(storage.rust_transport_value_tangent),
+            as_rust_slice(storage.rust_scattering_coefficient_tangent),
+            as_rust_slice(storage.rust_boundary_scattering_value_tangent),
+            as_rust_slice(storage.m_firstorder_radiances.value),
+            as_rust_slice(storage.rust_first_order_forcing_tangent));
+        const auto solution_jvp =
+            sasktran2::rust::successive_orders::solution_jvp(*solver);
+        if (solution_jvp.size() != storage.rust_solution_jvp.size()) {
+            throw std::runtime_error(
+                "Rust successive-orders JVP returned an invalid size");
+        }
+        std::copy(solution_jvp.begin(), solution_jvp.end(),
+                  storage.rust_solution_jvp.begin());
+#else
+        (void)wavelidx;
+        (void)wavel_threadidx;
+        (void)native_tangent;
+        throw std::logic_error("Rust support is disabled");
+#endif
+    }
+
+    template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::prepare_vjp(int wavelidx, int wavel_threadidx) {
+        (void)wavelidx;
+        (void)wavel_threadidx;
+        if (!native_products_available()) {
+            throw std::logic_error(
+                "Native successive-orders products require the Rust solver "
+                "with Anderson acceleration disabled");
+        }
+        for (auto& cotangent : m_los_solution_cotangents[wavel_threadidx]) {
+            cotangent.setZero();
+        }
+    }
+
+    template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::finalize_vjp(
+        int wavelidx, int wavel_threadidx,
+        Eigen::Ref<Eigen::VectorXd> native_gradient) const {
+#ifdef SKTRAN_RUST_SUPPORT
+        Eigen::VectorXd solution_cotangent = Eigen::VectorXd::Zero(
+            m_thread_storage[wavel_threadidx].m_outgoing_sources.value.size());
+        for (const auto& thread_cotangent :
+             m_los_solution_cotangents[wavel_threadidx]) {
+            solution_cotangent += thread_cotangent;
+        }
+
+        const auto& storage = m_thread_storage[wavel_threadidx];
+        auto& solver = m_rust_solvers[wavel_threadidx];
+        sasktran2::rust::successive_orders::linearize_coefficients_vjp(
+            *solver, as_rust_slice(m_outer_starts),
+            as_rust_slice(m_inner_indicies),
+            as_rust_slice(storage.accumulation_summed_values),
+            as_rust_slice(storage.m_firstorder_radiances.value),
+            as_rust_slice(solution_cotangent));
+
+        const auto transport_gradient =
+            sasktran2::rust::successive_orders::transport_value_gradient(
+                *solver);
+        const auto coefficient_gradient =
+            sasktran2::rust::successive_orders::scattering_coefficient_gradient(
+                *solver);
+        const auto boundary_gradient = sasktran2::rust::successive_orders::
+            boundary_scattering_value_gradient(*solver);
+        const auto forcing_gradient =
+            sasktran2::rust::successive_orders::first_order_forcing_gradient(
+                *solver);
+
+        accumulate_rust_scattering_coefficient_vjp(
+            wavelidx, coefficient_gradient, native_gradient);
+        accumulate_rust_boundary_scattering_vjp(wavelidx, boundary_gradient,
+                                                native_gradient);
+
+        const int num_threads = m_config->num_source_threads();
+        std::vector<Eigen::VectorXd> thread_gradients(num_threads);
+        for (auto& gradient : thread_gradients) {
+            gradient.setZero(native_gradient.size());
+        }
+#pragma omp parallel for num_threads(num_threads)
+        for (int rayidx = 0; rayidx < m_internal_viewing.traced_rays.size();
+             ++rayidx) {
+#ifdef SKTRAN_OPENMP_SUPPORT
+            const int source_threadidx =
+                num_threads == 1 ? 0 : omp_get_thread_num();
+#else
+            const int source_threadidx = 0;
+#endif
+            m_integrator.accumulate_accumulation_vjp(
+                m_initial_sources, wavelidx, rayidx, wavel_threadidx,
+                source_threadidx + wavel_threadidx, m_diffuse_source_weights,
+                Eigen::Map<const Eigen::VectorXd>(transport_gradient.data(),
+                                                  transport_gradient.size()),
+                Eigen::Map<const Eigen::VectorXd>(forcing_gradient.data(),
+                                                  forcing_gradient.size()),
+                thread_gradients[source_threadidx]);
+        }
+        for (const auto& gradient : thread_gradients) {
+            native_gradient += gradient;
+        }
+#else
+        (void)wavelidx;
+        (void)wavel_threadidx;
+        (void)native_gradient;
+        throw std::logic_error("Rust support is disabled");
+#endif
+    }
+
+    template <int NSTOKES>
     void DiffuseTable<NSTOKES>::integrated_source(
         const sasktran2::WavelengthBlock<>& block, int losidx, int layeridx,
         int wavel_threadidx, int threadidx,
@@ -1418,6 +1773,179 @@ namespace sasktran2::hr {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::integrated_source_jvp(
+        int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+        int threadidx, const sasktran2::raytracing::TracedLayer& layer,
+        const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
+        const sasktran2::raytracing::GridWeightStencilView& exit_weights,
+        const sasktran2::WavelengthBlockODView& shell_od,
+        Eigen::Ref<const Eigen::VectorXd> native_tangent,
+        sasktran2::RadianceJVP<NSTOKES>& source) const {
+        (void)threadidx;
+        (void)layer;
+        (void)entrance_weights;
+        (void)exit_weights;
+        const auto& storage = m_thread_storage[wavel_threadidx];
+        const auto& interpolator = m_los_source_weights[losidx];
+        const auto& layer_interpolator =
+            interpolator.interior_weights[layeridx];
+        double omega = 0.0;
+        double omega_jvp = 0.0;
+        for (std::size_t index = layer_interpolator.atmosphere_offset;
+             index < layer_interpolator.atmosphere_offset +
+                         layer_interpolator.atmosphere_count;
+             ++index) {
+            const int atmosphere_index = interpolator.atmosphere_indices[index];
+            const double weight = interpolator.atmosphere_weights[index];
+            omega += weight *
+                     m_atmosphere->storage().ssa(atmosphere_index, wavelidx);
+            omega_jvp +=
+                weight * native_tangent(m_atmosphere->ssa_deriv_start_index() +
+                                        atmosphere_index);
+        }
+        double shell_od_jvp = 0.0;
+        for (auto derivative = shell_od.derivative_iterator(); derivative;
+             ++derivative) {
+            shell_od_jvp +=
+                derivative.value() * native_tangent(derivative.index());
+        }
+        const double attenuation = shell_od.exp_minus_od(0);
+        const double factor = 1.0 - attenuation;
+        for (std::size_t index = layer_interpolator.source_offset;
+             index <
+             layer_interpolator.source_offset + layer_interpolator.source_count;
+             ++index) {
+            const int source_index = interpolator.source_indices[index];
+            const double weight = interpolator.source_weights[index];
+            for (int stokes = 0; stokes < NSTOKES; ++stokes) {
+                const std::size_t outgoing_index =
+                    static_cast<std::size_t>(source_index * NSTOKES + stokes);
+                const double outgoing =
+                    storage.m_outgoing_sources.value(outgoing_index);
+                const double outgoing_jvp =
+                    storage.rust_solution_jvp[outgoing_index];
+                source.value(stokes) += omega * factor * weight * outgoing;
+                source.jvp(stokes) +=
+                    weight *
+                    ((omega_jvp * factor + omega * attenuation * shell_od_jvp) *
+                         outgoing +
+                     omega * factor * outgoing_jvp);
+            }
+        }
+    }
+
+    template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::end_of_ray_source_jvp(
+        int wavelidx, int losidx, int wavel_threadidx, int threadidx,
+        Eigen::Ref<const Eigen::VectorXd> native_tangent,
+        sasktran2::RadianceJVP<NSTOKES>& source) const {
+        (void)wavelidx;
+        (void)threadidx;
+        (void)native_tangent;
+        const auto& storage = m_thread_storage[wavel_threadidx];
+        const auto& interpolator = m_los_source_weights[losidx];
+        for (std::size_t index = 0;
+             index < interpolator.ground_source_indices.size(); ++index) {
+            const int source_index = interpolator.ground_source_indices[index];
+            const double weight = interpolator.ground_source_weights[index];
+            for (int stokes = 0; stokes < NSTOKES; ++stokes) {
+                const std::size_t outgoing_index =
+                    static_cast<std::size_t>(source_index * NSTOKES + stokes);
+                source.value(stokes) +=
+                    weight * storage.m_outgoing_sources.value(outgoing_index);
+                source.jvp(stokes) +=
+                    weight * storage.rust_solution_jvp[outgoing_index];
+            }
+        }
+    }
+
+    template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::integrated_source_vjp(
+        int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+        int threadidx, const sasktran2::raytracing::TracedLayer& layer,
+        const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
+        const sasktran2::raytracing::GridWeightStencilView& exit_weights,
+        const sasktran2::WavelengthBlockODView& shell_od,
+        const Eigen::Vector<double, NSTOKES>& cotangent,
+        Eigen::Ref<Eigen::VectorXd> native_gradient) const {
+        (void)layer;
+        (void)entrance_weights;
+        (void)exit_weights;
+        const auto& storage = m_thread_storage[wavel_threadidx];
+        const auto& interpolator = m_los_source_weights[losidx];
+        const auto& layer_interpolator =
+            interpolator.interior_weights[layeridx];
+        double omega = 0.0;
+        for (std::size_t index = layer_interpolator.atmosphere_offset;
+             index < layer_interpolator.atmosphere_offset +
+                         layer_interpolator.atmosphere_count;
+             ++index) {
+            omega += interpolator.atmosphere_weights[index] *
+                     m_atmosphere->storage().ssa(
+                         interpolator.atmosphere_indices[index], wavelidx);
+        }
+        Eigen::Vector<double, NSTOKES> interpolated_outgoing =
+            Eigen::Vector<double, NSTOKES>::Zero();
+        const double factor = 1.0 - shell_od.exp_minus_od(0);
+        for (std::size_t index = layer_interpolator.source_offset;
+             index <
+             layer_interpolator.source_offset + layer_interpolator.source_count;
+             ++index) {
+            const int source_index = interpolator.source_indices[index];
+            const double weight = interpolator.source_weights[index];
+            for (int stokes = 0; stokes < NSTOKES; ++stokes) {
+                const std::size_t outgoing_index =
+                    static_cast<std::size_t>(source_index * NSTOKES + stokes);
+                const double outgoing =
+                    storage.m_outgoing_sources.value(outgoing_index);
+                interpolated_outgoing(stokes) += weight * outgoing;
+                m_los_solution_cotangents[wavel_threadidx]
+                                         [threadidx - wavel_threadidx](
+                                             outgoing_index) +=
+                    weight * omega * factor * cotangent(stokes);
+            }
+        }
+        const double amplitude_cotangent = cotangent.dot(interpolated_outgoing);
+        for (std::size_t index = layer_interpolator.atmosphere_offset;
+             index < layer_interpolator.atmosphere_offset +
+                         layer_interpolator.atmosphere_count;
+             ++index) {
+            native_gradient(m_atmosphere->ssa_deriv_start_index() +
+                            interpolator.atmosphere_indices[index]) +=
+                interpolator.atmosphere_weights[index] * factor *
+                amplitude_cotangent;
+        }
+        const double shell_od_cotangent =
+            omega * shell_od.exp_minus_od(0) * amplitude_cotangent;
+        for (auto derivative = shell_od.derivative_iterator(); derivative;
+             ++derivative) {
+            native_gradient(derivative.index()) +=
+                derivative.value() * shell_od_cotangent;
+        }
+    }
+
+    template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::end_of_ray_source_vjp(
+        int wavelidx, int losidx, int wavel_threadidx, int threadidx,
+        const Eigen::Vector<double, NSTOKES>& cotangent,
+        Eigen::Ref<Eigen::VectorXd> native_gradient) const {
+        (void)wavelidx;
+        (void)native_gradient;
+        const auto& interpolator = m_los_source_weights[losidx];
+        for (std::size_t index = 0;
+             index < interpolator.ground_source_indices.size(); ++index) {
+            const int source_index = interpolator.ground_source_indices[index];
+            const double weight = interpolator.ground_source_weights[index];
+            for (int stokes = 0; stokes < NSTOKES; ++stokes) {
+                m_los_solution_cotangents[wavel_threadidx]
+                                         [threadidx - wavel_threadidx](
+                                             source_index * NSTOKES + stokes) +=
+                    weight * cotangent(stokes);
             }
         }
     }

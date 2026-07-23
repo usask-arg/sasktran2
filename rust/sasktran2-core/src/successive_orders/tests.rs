@@ -51,6 +51,74 @@ fn fixed_iteration_mode_reports_maximum_iterations() {
 }
 
 #[test]
+fn fixed_point_jvp_and_vjp_match_finite_difference_and_duality() {
+    let config = SolverConfig {
+        max_iterations: 4,
+        relative_tolerance: 0.0,
+        absolute_tolerance: 0.0,
+        ..SolverConfig::default()
+    };
+    let multiplier = 0.42;
+    let forcing = 1.3;
+    let transport_tangent = [0.17];
+    let scattering_tangent = [-0.08];
+    let forcing_tangent = [0.23];
+    let mut solver = scalar_problem(config);
+    solve_scalar(&mut solver, multiplier, forcing);
+    let jvp = solver
+        .solve_jvp(
+            &[0, 1],
+            &[0],
+            &[multiplier],
+            &transport_tangent,
+            &[forcing],
+            &forcing_tangent,
+            &[],
+            &scattering_tangent,
+        )
+        .unwrap();
+
+    let epsilon = 1.0e-6;
+    let mut plus = scalar_problem(config);
+    plus.problem_mut()
+        .set_scattering_values(&[1.0 + epsilon * scattering_tangent[0]])
+        .unwrap();
+    let plus_value = solve_scalar(
+        &mut plus,
+        multiplier + epsilon * transport_tangent[0],
+        forcing + epsilon * forcing_tangent[0],
+    );
+    let mut minus = scalar_problem(config);
+    minus
+        .problem_mut()
+        .set_scattering_values(&[1.0 - epsilon * scattering_tangent[0]])
+        .unwrap();
+    let minus_value = solve_scalar(
+        &mut minus,
+        multiplier - epsilon * transport_tangent[0],
+        forcing - epsilon * forcing_tangent[0],
+    );
+    let numeric = (plus_value - minus_value) / (2.0 * epsilon);
+    assert!((jvp[0] - numeric).abs() < 2.0e-9, "{} != {numeric}", jvp[0]);
+
+    let solution_cotangent = [1.7];
+    let gradient = solver
+        .solve_vjp(
+            &[0, 1],
+            &[0],
+            &[multiplier],
+            &[forcing],
+            &solution_cotangent,
+        )
+        .unwrap();
+    let tangent_product = solution_cotangent[0] * jvp[0];
+    let gradient_product = gradient.transport_values[0] * transport_tangent[0]
+        + gradient.dense_scattering_values[0] * scattering_tangent[0]
+        + gradient.forcing[0] * forcing_tangent[0];
+    assert!((tangent_product - gradient_product).abs() < 2.0e-12);
+}
+
+#[test]
 fn anderson_accelerates_nearly_conservative_problem() {
     let base = SolverConfig {
         max_iterations: 200,
@@ -159,6 +227,38 @@ fn scalar_coefficient_scattering_matches_dense_legendre_kernel() {
             "{actual} != {expected}"
         );
     }
+
+    let input_tangent = [0.2, -0.1, 0.04, 0.3, -0.5, 0.7];
+    let coefficient_tangent = [0.03, -0.02, 0.01, 0.04];
+    let dense_tangent = [-0.06, 0.09];
+    let mut output_tangent = vec![0.0; output.len()];
+    scattering
+        .apply_jvp(
+            &input,
+            &input_tangent,
+            &coefficient_tangent,
+            &dense_tangent,
+            &mut output_tangent,
+        )
+        .unwrap();
+    let output_cotangent = [0.4, -0.7, 0.2, 0.9];
+    let mut input_cotangent = vec![0.0; input.len()];
+    let mut coefficient_gradient = vec![0.0; coefficients.len()];
+    let mut dense_gradient = vec![0.0; 2];
+    scattering
+        .apply_vjp(
+            &input,
+            &output_cotangent,
+            &mut input_cotangent,
+            &mut coefficient_gradient,
+            &mut dense_gradient,
+        )
+        .unwrap();
+    let forward_product = inner_product(&output_tangent, &output_cotangent);
+    let reverse_product = inner_product(&input_tangent, &input_cotangent)
+        + inner_product(&coefficient_tangent, &coefficient_gradient)
+        + inner_product(&dense_tangent, &dense_gradient);
+    assert!((forward_product - reverse_product).abs() < 3.0e-13);
 }
 
 #[test]
@@ -271,6 +371,40 @@ fn vector_coefficient_scattering_matches_dense_greek_kernel() {
             "{actual} != {expected}"
         );
     }
+
+    let input_tangent = [
+        0.2, -0.1, 0.04, -0.3, 0.08, 0.17, 0.14, -0.22, 0.09, 0.31, -0.07, 0.11,
+    ];
+    let coefficient_tangent = [
+        0.01, -0.03, 0.02, 0.04, -0.02, 0.05, -0.01, 0.03, 0.04, -0.02, 0.06, -0.01, 0.03, 0.02,
+        -0.04, 0.01, -0.05, 0.03, 0.02, -0.02,
+    ];
+    let mut output_tangent = vec![0.0; output.len()];
+    scattering
+        .apply_jvp(
+            &input,
+            &input_tangent,
+            &coefficient_tangent,
+            &[],
+            &mut output_tangent,
+        )
+        .unwrap();
+    let output_cotangent = [0.4, -0.7, 0.2, 0.9, -0.3, 0.5, -0.2, 0.6, 0.8];
+    let mut input_cotangent = vec![0.0; input.len()];
+    let mut coefficient_gradient = vec![0.0; coefficients.len()];
+    scattering
+        .apply_vjp(
+            &input,
+            &output_cotangent,
+            &mut input_cotangent,
+            &mut coefficient_gradient,
+            &mut [],
+        )
+        .unwrap();
+    let forward_product = inner_product(&output_tangent, &output_cotangent);
+    let reverse_product = inner_product(&input_tangent, &input_cotangent)
+        + inner_product(&coefficient_tangent, &coefficient_gradient);
+    assert!((forward_product - reverse_product).abs() < 2.0e-11);
 }
 
 fn polarized_greek_matrix(
@@ -357,6 +491,13 @@ fn dot(left: [f64; 3], right: [f64; 3]) -> f64 {
     left.iter()
         .zip(right)
         .map(|(left, right)| left * right)
+        .sum()
+}
+
+fn inner_product(left: &[f64], right: &[f64]) -> f64 {
+    left.iter()
+        .zip(right)
+        .map(|(&left, &right)| left * right)
         .sum()
 }
 

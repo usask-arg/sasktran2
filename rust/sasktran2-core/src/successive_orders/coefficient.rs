@@ -127,6 +127,44 @@ impl ScalarCoefficientBasis {
                 .sum();
         }
     }
+
+    #[allow(clippy::too_many_arguments)]
+    fn apply_vjp(
+        &self,
+        input: &[f64],
+        coefficients: &[f64],
+        output_cotangent: &[f64],
+        input_cotangent: &mut [f64],
+        coefficient_gradient: &mut [f64],
+        analyzed: &mut [f64],
+        moment_cotangent: &mut [f64],
+    ) {
+        debug_assert_eq!(input.len(), self.input_size);
+        debug_assert_eq!(coefficients.len(), self.num_coefficients);
+        debug_assert_eq!(output_cotangent.len(), self.output_size);
+        debug_assert_eq!(input_cotangent.len(), self.input_size);
+        debug_assert_eq!(coefficient_gradient.len(), self.num_coefficients);
+        for mode_index in 0..self.num_modes() {
+            let analysis_start = mode_index * self.input_size;
+            analyzed[mode_index] = self.analysis[analysis_start..analysis_start + self.input_size]
+                .iter()
+                .zip(input)
+                .map(|(&basis, &radiance)| basis * radiance)
+                .sum();
+            moment_cotangent[mode_index] = (0..self.output_size)
+                .map(|output_index| {
+                    self.synthesis[output_index * self.num_modes() + mode_index]
+                        * output_cotangent[output_index]
+                })
+                .sum();
+            let degree = self.mode_degrees[mode_index];
+            coefficient_gradient[degree] += analyzed[mode_index] * moment_cotangent[mode_index];
+            let scaled_cotangent = coefficients[degree] * moment_cotangent[mode_index];
+            for (input_index, result) in input_cotangent.iter_mut().enumerate() {
+                *result += self.analysis[analysis_start + input_index] * scaled_cotangent;
+            }
+        }
+    }
 }
 
 /// A block-diagonal scattering operator with coefficient-space atmospheric
@@ -287,6 +325,143 @@ impl ScalarCoefficientScattering {
                     .zip(&input[input_start..input_end])
                     .map(|(&value, &incoming)| value * incoming)
                     .sum();
+            }
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn apply_jvp(
+        &self,
+        input: &[f64],
+        input_tangent: &[f64],
+        coefficient_tangent: &[f64],
+        dense_value_tangent: &[f64],
+        output_tangent: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        if input.len() != self.input_size
+            || input_tangent.len() != self.input_size
+            || coefficient_tangent.len() != self.coefficients.len()
+            || dense_value_tangent.len() != self.dense_values.len()
+            || output_tangent.len() != self.output_size
+        {
+            return Err(OperatorError::DimensionMismatch);
+        }
+        let num_coefficients = self.basis.num_coefficients();
+        let mut moments = vec![0.0; self.basis.num_modes()];
+        let mut parameter_output = vec![0.0; self.basis.output_size()];
+        for block in 0..self.coefficient_blocks {
+            let input_start = self.input_offsets[block];
+            let input_end = self.input_offsets[block + 1];
+            let output_start = self.output_offsets[block];
+            let output_end = self.output_offsets[block + 1];
+            let coefficient_start = block * num_coefficients;
+            self.basis.apply(
+                &input_tangent[input_start..input_end],
+                &self.coefficients[coefficient_start..coefficient_start + num_coefficients],
+                &mut output_tangent[output_start..output_end],
+                &mut moments,
+            );
+            self.basis.apply(
+                &input[input_start..input_end],
+                &coefficient_tangent[coefficient_start..coefficient_start + num_coefficients],
+                &mut parameter_output,
+                &mut moments,
+            );
+            for (result, parameter) in output_tangent[output_start..output_end]
+                .iter_mut()
+                .zip(&parameter_output)
+            {
+                *result += parameter;
+            }
+        }
+        for block in self.coefficient_blocks..self.output_offsets.len() - 1 {
+            let dense_block = block - self.coefficient_blocks;
+            let input_start = self.input_offsets[block];
+            let input_end = self.input_offsets[block + 1];
+            let output_start = self.output_offsets[block];
+            let output_end = self.output_offsets[block + 1];
+            let columns = input_end - input_start;
+            let value_start = self.dense_value_offsets[dense_block];
+            for (local_row, result) in output_tangent[output_start..output_end]
+                .iter_mut()
+                .enumerate()
+            {
+                let row_start = value_start + local_row * columns;
+                *result = self.dense_values[row_start..row_start + columns]
+                    .iter()
+                    .zip(&input_tangent[input_start..input_end])
+                    .zip(&dense_value_tangent[row_start..row_start + columns])
+                    .zip(&input[input_start..input_end])
+                    .map(
+                        |(((&value, &incoming_tangent), &value_tangent), &incoming)| {
+                            value * incoming_tangent + value_tangent * incoming
+                        },
+                    )
+                    .sum();
+            }
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn apply_vjp(
+        &self,
+        input: &[f64],
+        output_cotangent: &[f64],
+        input_cotangent: &mut [f64],
+        coefficient_gradient: &mut [f64],
+        dense_value_gradient: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        if input.len() != self.input_size
+            || output_cotangent.len() != self.output_size
+            || input_cotangent.len() != self.input_size
+            || coefficient_gradient.len() != self.coefficients.len()
+            || dense_value_gradient.len() != self.dense_values.len()
+        {
+            return Err(OperatorError::DimensionMismatch);
+        }
+        input_cotangent.fill(0.0);
+        coefficient_gradient.fill(0.0);
+        dense_value_gradient.fill(0.0);
+        let num_coefficients = self.basis.num_coefficients();
+        let mut analyzed = vec![0.0; self.basis.num_modes()];
+        let mut moment_cotangent = vec![0.0; self.basis.num_modes()];
+        for block in 0..self.coefficient_blocks {
+            let input_start = self.input_offsets[block];
+            let input_end = self.input_offsets[block + 1];
+            let output_start = self.output_offsets[block];
+            let output_end = self.output_offsets[block + 1];
+            let coefficient_start = block * num_coefficients;
+            self.basis.apply_vjp(
+                &input[input_start..input_end],
+                &self.coefficients[coefficient_start..coefficient_start + num_coefficients],
+                &output_cotangent[output_start..output_end],
+                &mut input_cotangent[input_start..input_end],
+                &mut coefficient_gradient[coefficient_start..coefficient_start + num_coefficients],
+                &mut analyzed,
+                &mut moment_cotangent,
+            );
+        }
+        for block in self.coefficient_blocks..self.output_offsets.len() - 1 {
+            let dense_block = block - self.coefficient_blocks;
+            let input_start = self.input_offsets[block];
+            let input_end = self.input_offsets[block + 1];
+            let output_start = self.output_offsets[block];
+            let output_end = self.output_offsets[block + 1];
+            let columns = input_end - input_start;
+            let value_start = self.dense_value_offsets[dense_block];
+            for (local_row, &outgoing_cotangent) in output_cotangent[output_start..output_end]
+                .iter()
+                .enumerate()
+            {
+                let row_start = value_start + local_row * columns;
+                for local_column in 0..columns {
+                    input_cotangent[input_start + local_column] +=
+                        self.dense_values[row_start + local_column] * outgoing_cotangent;
+                    dense_value_gradient[row_start + local_column] +=
+                        input[input_start + local_column] * outgoing_cotangent;
+                }
             }
         }
         Ok(())
@@ -485,6 +660,123 @@ impl VectorCoefficientBasis {
             }
         }
     }
+
+    #[allow(clippy::too_many_arguments)]
+    fn apply_vjp(
+        &self,
+        input: &[f64],
+        coefficients: &[f64],
+        output_cotangent: &[f64],
+        input_cotangent: &mut [f64],
+        coefficient_gradient: &mut [f64],
+        analyzed: &mut [[Complex64; 3]],
+        moment_cotangent: &mut [[Complex64; 3]],
+    ) {
+        debug_assert_eq!(input.len(), self.input_size());
+        debug_assert_eq!(coefficients.len(), self.num_coefficients * 4);
+        debug_assert_eq!(output_cotangent.len(), self.output_size());
+        debug_assert_eq!(input_cotangent.len(), self.input_size());
+        debug_assert_eq!(coefficient_gradient.len(), coefficients.len());
+
+        for mode_index in 0..self.num_modes() {
+            let analysis_start = mode_index * self.input_directions;
+            let mut intensity = Complex64::new(0.0, 0.0);
+            let mut plus = Complex64::new(0.0, 0.0);
+            let mut minus = Complex64::new(0.0, 0.0);
+            for input_index in 0..self.input_directions {
+                let stokes_start = input_index * 3;
+                let q = input[stokes_start + 1];
+                let u = input[stokes_start + 2];
+                intensity += self.analysis[0][analysis_start + input_index] * input[stokes_start];
+                plus += self.analysis[1][analysis_start + input_index] * Complex64::new(q, u);
+                minus += self.analysis[2][analysis_start + input_index] * Complex64::new(q, -u);
+            }
+            analyzed[mode_index] = [intensity, plus, minus];
+
+            let mut outgoing_adjoint = [Complex64::new(0.0, 0.0); 3];
+            for output_index in 0..self.output_directions {
+                let stokes_start = output_index * 3;
+                let intensity_adjoint = Complex64::new(output_cotangent[stokes_start], 0.0);
+                let plus_adjoint = Complex64::new(
+                    0.5 * output_cotangent[stokes_start + 1],
+                    0.5 * output_cotangent[stokes_start + 2],
+                );
+                let minus_adjoint = Complex64::new(
+                    0.5 * output_cotangent[stokes_start + 1],
+                    -0.5 * output_cotangent[stokes_start + 2],
+                );
+                let synthesis_index = output_index * self.num_modes() + mode_index;
+                outgoing_adjoint[0] +=
+                    self.synthesis[0][synthesis_index].conj() * intensity_adjoint;
+                outgoing_adjoint[1] += self.synthesis[1][synthesis_index].conj() * plus_adjoint;
+                outgoing_adjoint[2] += self.synthesis[2][synthesis_index].conj() * minus_adjoint;
+            }
+            moment_cotangent[mode_index] = outgoing_adjoint;
+
+            let [intensity, plus, minus] = analyzed[mode_index];
+            let [intensity_adjoint, plus_adjoint, minus_adjoint] = outgoing_adjoint;
+            let coefficient_start = self.mode_degrees[mode_index] * 4;
+            coefficient_gradient[coefficient_start] += (intensity_adjoint.conj() * intensity).re;
+            coefficient_gradient[coefficient_start + 1] += 0.5
+                * ((plus_adjoint.conj() * (plus + minus)).re
+                    + (minus_adjoint.conj() * (plus + minus)).re);
+            coefficient_gradient[coefficient_start + 2] += 0.5
+                * ((plus_adjoint.conj() * (plus - minus)).re
+                    + (minus_adjoint.conj() * (minus - plus)).re);
+            coefficient_gradient[coefficient_start + 3] +=
+                (intensity_adjoint.conj() * (-0.5 * (plus + minus))).re
+                    + (plus_adjoint.conj() * -intensity).re
+                    + (minus_adjoint.conj() * -intensity).re;
+
+            let a1 = coefficients[coefficient_start];
+            let a2 = coefficients[coefficient_start + 1];
+            let a3 = coefficients[coefficient_start + 2];
+            let b1 = coefficients[coefficient_start + 3];
+            let analyzed_adjoint = [
+                a1 * intensity_adjoint - b1 * (plus_adjoint + minus_adjoint),
+                -0.5 * b1 * intensity_adjoint
+                    + 0.5 * ((a2 + a3) * plus_adjoint + (a2 - a3) * minus_adjoint),
+                -0.5 * b1 * intensity_adjoint
+                    + 0.5 * ((a2 - a3) * plus_adjoint + (a2 + a3) * minus_adjoint),
+            ];
+            for input_index in 0..self.input_directions {
+                let stokes_start = input_index * 3;
+                let intensity_basis = self.analysis[0][analysis_start + input_index];
+                let plus_basis = self.analysis[1][analysis_start + input_index];
+                let minus_basis = self.analysis[2][analysis_start + input_index];
+                input_cotangent[stokes_start] += (analyzed_adjoint[0].conj() * intensity_basis).re;
+                input_cotangent[stokes_start + 1] += (analyzed_adjoint[1].conj() * plus_basis).re
+                    + (analyzed_adjoint[2].conj() * minus_basis).re;
+                input_cotangent[stokes_start + 2] += (analyzed_adjoint[1].conj()
+                    * (Complex64::new(0.0, 1.0) * plus_basis))
+                    .re
+                    + (analyzed_adjoint[2].conj() * (Complex64::new(0.0, -1.0) * minus_basis)).re;
+            }
+        }
+
+        for correction in &self.legacy_frame_corrections {
+            let input_start = correction.input_index * 3;
+            let output_start = correction.output_index * 3;
+            for degree in 0..self.num_coefficients {
+                for family in 0..4 {
+                    let coefficient_index = degree * 4 + family;
+                    let matrix_start = coefficient_index * 9;
+                    for row in 0..3 {
+                        for column in 0..3 {
+                            let value = correction.values[matrix_start + row * 3 + column];
+                            input_cotangent[input_start + column] += coefficients
+                                [coefficient_index]
+                                * value
+                                * output_cotangent[output_start + row];
+                            coefficient_gradient[coefficient_index] += value
+                                * input[input_start + column]
+                                * output_cotangent[output_start + row];
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Polarized coefficient-space atmospheric blocks followed by optional dense
@@ -573,6 +865,16 @@ impl VectorCoefficientScattering {
         self.input_size
     }
 
+    #[inline]
+    pub fn coefficient_value_size(&self) -> usize {
+        self.coefficients.len()
+    }
+
+    #[inline]
+    pub fn dense_value_size(&self) -> usize {
+        self.dense_values.len()
+    }
+
     pub fn set_coefficients(&mut self, coefficients: &[f64]) -> Result<(), OperatorError> {
         if coefficients.len() != self.coefficients.len() {
             return Err(OperatorError::DimensionMismatch);
@@ -630,6 +932,144 @@ impl VectorCoefficientScattering {
                     .zip(&input[input_start..input_end])
                     .map(|(&value, &incoming)| value * incoming)
                     .sum();
+            }
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn apply_jvp(
+        &self,
+        input: &[f64],
+        input_tangent: &[f64],
+        coefficient_tangent: &[f64],
+        dense_value_tangent: &[f64],
+        output_tangent: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        if input.len() != self.input_size
+            || input_tangent.len() != self.input_size
+            || coefficient_tangent.len() != self.coefficients.len()
+            || dense_value_tangent.len() != self.dense_values.len()
+            || output_tangent.len() != self.output_size
+        {
+            return Err(OperatorError::DimensionMismatch);
+        }
+        let coefficient_stride = self.basis.num_coefficients() * 4;
+        let mut moments = vec![[Complex64::new(0.0, 0.0); 3]; self.basis.num_modes()];
+        let mut parameter_output = vec![0.0; self.basis.output_size()];
+        for block in 0..self.coefficient_blocks {
+            let input_start = self.input_offsets[block];
+            let input_end = self.input_offsets[block + 1];
+            let output_start = self.output_offsets[block];
+            let output_end = self.output_offsets[block + 1];
+            let coefficient_start = block * coefficient_stride;
+            self.basis.apply(
+                &input_tangent[input_start..input_end],
+                &self.coefficients[coefficient_start..coefficient_start + coefficient_stride],
+                &mut output_tangent[output_start..output_end],
+                &mut moments,
+            );
+            self.basis.apply(
+                &input[input_start..input_end],
+                &coefficient_tangent[coefficient_start..coefficient_start + coefficient_stride],
+                &mut parameter_output,
+                &mut moments,
+            );
+            for (result, parameter) in output_tangent[output_start..output_end]
+                .iter_mut()
+                .zip(&parameter_output)
+            {
+                *result += parameter;
+            }
+        }
+        for block in self.coefficient_blocks..self.output_offsets.len() - 1 {
+            let dense_block = block - self.coefficient_blocks;
+            let input_start = self.input_offsets[block];
+            let input_end = self.input_offsets[block + 1];
+            let output_start = self.output_offsets[block];
+            let output_end = self.output_offsets[block + 1];
+            let columns = input_end - input_start;
+            let value_start = self.dense_value_offsets[dense_block];
+            for (local_row, result) in output_tangent[output_start..output_end]
+                .iter_mut()
+                .enumerate()
+            {
+                let row_start = value_start + local_row * columns;
+                *result = self.dense_values[row_start..row_start + columns]
+                    .iter()
+                    .zip(&input_tangent[input_start..input_end])
+                    .zip(&dense_value_tangent[row_start..row_start + columns])
+                    .zip(&input[input_start..input_end])
+                    .map(
+                        |(((&value, &incoming_tangent), &value_tangent), &incoming)| {
+                            value * incoming_tangent + value_tangent * incoming
+                        },
+                    )
+                    .sum();
+            }
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn apply_vjp(
+        &self,
+        input: &[f64],
+        output_cotangent: &[f64],
+        input_cotangent: &mut [f64],
+        coefficient_gradient: &mut [f64],
+        dense_value_gradient: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        if input.len() != self.input_size
+            || output_cotangent.len() != self.output_size
+            || input_cotangent.len() != self.input_size
+            || coefficient_gradient.len() != self.coefficients.len()
+            || dense_value_gradient.len() != self.dense_values.len()
+        {
+            return Err(OperatorError::DimensionMismatch);
+        }
+        input_cotangent.fill(0.0);
+        coefficient_gradient.fill(0.0);
+        dense_value_gradient.fill(0.0);
+        let coefficient_stride = self.basis.num_coefficients() * 4;
+        let mut analyzed = vec![[Complex64::new(0.0, 0.0); 3]; self.basis.num_modes()];
+        let mut moment_cotangent = vec![[Complex64::new(0.0, 0.0); 3]; self.basis.num_modes()];
+        for block in 0..self.coefficient_blocks {
+            let input_start = self.input_offsets[block];
+            let input_end = self.input_offsets[block + 1];
+            let output_start = self.output_offsets[block];
+            let output_end = self.output_offsets[block + 1];
+            let coefficient_start = block * coefficient_stride;
+            self.basis.apply_vjp(
+                &input[input_start..input_end],
+                &self.coefficients[coefficient_start..coefficient_start + coefficient_stride],
+                &output_cotangent[output_start..output_end],
+                &mut input_cotangent[input_start..input_end],
+                &mut coefficient_gradient
+                    [coefficient_start..coefficient_start + coefficient_stride],
+                &mut analyzed,
+                &mut moment_cotangent,
+            );
+        }
+        for block in self.coefficient_blocks..self.output_offsets.len() - 1 {
+            let dense_block = block - self.coefficient_blocks;
+            let input_start = self.input_offsets[block];
+            let input_end = self.input_offsets[block + 1];
+            let output_start = self.output_offsets[block];
+            let output_end = self.output_offsets[block + 1];
+            let columns = input_end - input_start;
+            let value_start = self.dense_value_offsets[dense_block];
+            for (local_row, &outgoing_cotangent) in output_cotangent[output_start..output_end]
+                .iter()
+                .enumerate()
+            {
+                let row_start = value_start + local_row * columns;
+                for local_column in 0..columns {
+                    input_cotangent[input_start + local_column] +=
+                        self.dense_values[row_start + local_column] * outgoing_cotangent;
+                    dense_value_gradient[row_start + local_column] +=
+                        input[input_start + local_column] * outgoing_cotangent;
+                }
             }
         }
         Ok(())

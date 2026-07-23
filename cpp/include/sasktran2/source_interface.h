@@ -240,6 +240,18 @@ template <int NSTOKES> class SourceTermInterface {
         return mode == sasktran2::LinearizationMode::Jacobian;
     }
 
+    /** Prepares source-wide state used by all LOS JVP evaluations at one
+     * wavelength. The default is a no-op for sources whose products are local
+     * to a ray. */
+    virtual void prepare_jvp(int, int, Eigen::Ref<const Eigen::VectorXd>) {}
+
+    /** Clears source-wide cotangent accumulation before LOS VJP evaluation. */
+    virtual void prepare_vjp(int, int) {}
+
+    /** Finishes a source-wide VJP after all LOS cotangents have been
+     * accumulated. */
+    virtual void finalize_vjp(int, int, Eigen::Ref<Eigen::VectorXd>) const {}
+
     virtual void end_of_ray_source_jvp(int, int, int, int,
                                        Eigen::Ref<const Eigen::VectorXd>,
                                        sasktran2::RadianceJVP<NSTOKES>&) const {

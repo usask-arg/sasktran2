@@ -1,6 +1,6 @@
 use std::pin::Pin;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 use super::{
     BlockDiagonalMatrix, CsrMatrix, FixedPointProblem, SolverConfig, SuccessiveOrdersSolver,
@@ -105,7 +105,35 @@ pub mod ffi {
             initial_guess: &[f64],
         ) -> Result<()>;
 
+        #[allow(clippy::too_many_arguments)]
+        fn linearize_coefficients_jvp(
+            solver: Pin<&mut RustSuccessiveOrdersSolver>,
+            transport_row_offsets: &[i32],
+            transport_column_indices: &[i32],
+            transport_values: &[f64],
+            transport_value_tangent: &[f64],
+            scattering_coefficient_tangent: &[f64],
+            boundary_scattering_value_tangent: &[f64],
+            first_order_forcing: &[f64],
+            first_order_forcing_tangent: &[f64],
+        ) -> Result<()>;
+
+        #[allow(clippy::too_many_arguments)]
+        fn linearize_coefficients_vjp(
+            solver: Pin<&mut RustSuccessiveOrdersSolver>,
+            transport_row_offsets: &[i32],
+            transport_column_indices: &[i32],
+            transport_values: &[f64],
+            first_order_forcing: &[f64],
+            solution_cotangent: &[f64],
+        ) -> Result<()>;
+
         fn solution(solver: &RustSuccessiveOrdersSolver) -> &[f64];
+        fn solution_jvp(solver: &RustSuccessiveOrdersSolver) -> &[f64];
+        fn transport_value_gradient(solver: &RustSuccessiveOrdersSolver) -> &[f64];
+        fn scattering_coefficient_gradient(solver: &RustSuccessiveOrdersSolver) -> &[f64];
+        fn boundary_scattering_value_gradient(solver: &RustSuccessiveOrdersSolver) -> &[f64];
+        fn first_order_forcing_gradient(solver: &RustSuccessiveOrdersSolver) -> &[f64];
         fn residual_history(solver: &RustSuccessiveOrdersSolver) -> &[f64];
         fn iterations(solver: &RustSuccessiveOrdersSolver) -> usize;
         fn converged(solver: &RustSuccessiveOrdersSolver) -> bool;
@@ -116,6 +144,24 @@ pub mod ffi {
 
 pub struct RustSuccessiveOrdersSolver {
     solver: SuccessiveOrdersSolver,
+    solution_jvp: Vec<f64>,
+    transport_value_gradient: Vec<f64>,
+    scattering_coefficient_gradient: Vec<f64>,
+    boundary_scattering_value_gradient: Vec<f64>,
+    first_order_forcing_gradient: Vec<f64>,
+}
+
+impl RustSuccessiveOrdersSolver {
+    fn new(solver: SuccessiveOrdersSolver) -> Self {
+        Self {
+            solver,
+            solution_jvp: Vec::new(),
+            transport_value_gradient: Vec::new(),
+            scattering_coefficient_gradient: Vec::new(),
+            boundary_scattering_value_gradient: Vec::new(),
+            first_order_forcing_gradient: Vec::new(),
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -157,9 +203,9 @@ fn new_successive_orders_solver(
         anderson_depth,
         damping,
     };
-    Ok(Box::new(RustSuccessiveOrdersSolver {
-        solver: SuccessiveOrdersSolver::new(problem, config)?,
-    }))
+    Ok(Box::new(RustSuccessiveOrdersSolver::new(
+        SuccessiveOrdersSolver::new(problem, config)?,
+    )))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -209,9 +255,9 @@ fn new_scalar_coefficient_successive_orders_solver(
         anderson_depth,
         damping,
     };
-    Ok(Box::new(RustSuccessiveOrdersSolver {
-        solver: SuccessiveOrdersSolver::new(problem, config)?,
-    }))
+    Ok(Box::new(RustSuccessiveOrdersSolver::new(
+        SuccessiveOrdersSolver::new(problem, config)?,
+    )))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -261,9 +307,9 @@ fn new_vector_coefficient_successive_orders_solver(
         anderson_depth,
         damping,
     };
-    Ok(Box::new(RustSuccessiveOrdersSolver {
-        solver: SuccessiveOrdersSolver::new(problem, config)?,
-    }))
+    Ok(Box::new(RustSuccessiveOrdersSolver::new(
+        SuccessiveOrdersSolver::new(problem, config)?,
+    )))
 }
 
 fn solve(
@@ -348,6 +394,56 @@ fn solve_vector_coefficients(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
+fn linearize_coefficients_jvp(
+    mut solver: Pin<&mut RustSuccessiveOrdersSolver>,
+    transport_row_offsets: &[i32],
+    transport_column_indices: &[i32],
+    transport_values: &[f64],
+    transport_value_tangent: &[f64],
+    scattering_coefficient_tangent: &[f64],
+    boundary_scattering_value_tangent: &[f64],
+    first_order_forcing: &[f64],
+    first_order_forcing_tangent: &[f64],
+) -> Result<()> {
+    let this = solver.as_mut().get_mut();
+    this.solution_jvp = this.solver.solve_jvp(
+        transport_row_offsets,
+        transport_column_indices,
+        transport_values,
+        transport_value_tangent,
+        first_order_forcing,
+        first_order_forcing_tangent,
+        scattering_coefficient_tangent,
+        boundary_scattering_value_tangent,
+    )?;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn linearize_coefficients_vjp(
+    mut solver: Pin<&mut RustSuccessiveOrdersSolver>,
+    transport_row_offsets: &[i32],
+    transport_column_indices: &[i32],
+    transport_values: &[f64],
+    first_order_forcing: &[f64],
+    solution_cotangent: &[f64],
+) -> Result<()> {
+    let this = solver.as_mut().get_mut();
+    let gradient = this.solver.solve_vjp(
+        transport_row_offsets,
+        transport_column_indices,
+        transport_values,
+        first_order_forcing,
+        solution_cotangent,
+    )?;
+    this.transport_value_gradient = gradient.transport_values;
+    this.scattering_coefficient_gradient = gradient.scattering_coefficients;
+    this.boundary_scattering_value_gradient = gradient.dense_scattering_values;
+    this.first_order_forcing_gradient = gradient.forcing;
+    Ok(())
+}
+
 fn unpack_directions(values: &[f64]) -> Result<Vec<[f64; 3]>> {
     if !values.len().is_multiple_of(3) {
         return Err(anyhow!(
@@ -362,6 +458,26 @@ fn unpack_directions(values: &[f64]) -> Result<Vec<[f64; 3]>> {
 
 fn solution(solver: &RustSuccessiveOrdersSolver) -> &[f64] {
     solver.solver.solution()
+}
+
+fn solution_jvp(solver: &RustSuccessiveOrdersSolver) -> &[f64] {
+    &solver.solution_jvp
+}
+
+fn transport_value_gradient(solver: &RustSuccessiveOrdersSolver) -> &[f64] {
+    &solver.transport_value_gradient
+}
+
+fn scattering_coefficient_gradient(solver: &RustSuccessiveOrdersSolver) -> &[f64] {
+    &solver.scattering_coefficient_gradient
+}
+
+fn boundary_scattering_value_gradient(solver: &RustSuccessiveOrdersSolver) -> &[f64] {
+    &solver.boundary_scattering_value_gradient
+}
+
+fn first_order_forcing_gradient(solver: &RustSuccessiveOrdersSolver) -> &[f64] {
+    &solver.first_order_forcing_gradient
 }
 
 fn residual_history(solver: &RustSuccessiveOrdersSolver) -> &[f64] {
