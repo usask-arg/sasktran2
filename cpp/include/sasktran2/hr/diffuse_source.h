@@ -244,8 +244,7 @@ namespace sasktran2::hr {
 
         bool native_products_available() const {
 #ifdef SKTRAN_RUST_SUPPORT
-            return m_use_rust_solver && m_config != nullptr &&
-                   m_config->successive_orders_anderson_depth() == 0;
+            return m_use_rust_solver && m_config != nullptr;
 #else
             return false;
 #endif

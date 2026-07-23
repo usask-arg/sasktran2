@@ -77,6 +77,7 @@ pub enum SolverError {
     InitialGuessSize,
     LinearizationBeforeSolve,
     UnsupportedLinearizationConfiguration,
+    ImplicitLinearSolveDidNotConverge,
     NonFiniteIteration,
     Operator(OperatorError),
 }
@@ -94,8 +95,11 @@ impl Display for SolverError {
                 formatter.write_str("successive-orders must be solved before linearization")
             }
             Self::UnsupportedLinearizationConfiguration => formatter.write_str(
-                "native successive-orders products do not support Anderson acceleration",
+                "Anderson-accelerated successive-orders products require a converged primal solve",
             ),
+            Self::ImplicitLinearSolveDidNotConverge => {
+                formatter.write_str("implicit successive-orders derivative solve did not converge")
+            }
             Self::NonFiniteIteration => {
                 formatter.write_str("successive-orders iteration produced a non-finite value")
             }
@@ -265,6 +269,68 @@ impl SuccessiveOrdersSolver {
         dense_scattering_value_tangent: &[f64],
     ) -> Result<Vec<f64>, SolverError> {
         self.validate_linearization_configuration()?;
+        if !self.diagnostics.converged {
+            return self.solve_jvp_replay(
+                transport_row_offsets,
+                transport_column_indices,
+                transport_values,
+                transport_value_tangent,
+                forcing,
+                forcing_tangent,
+                scattering_coefficient_tangent,
+                dense_scattering_value_tangent,
+            );
+        }
+
+        let mut mapped = vec![0.0; self.solution.len()];
+        let mut right_hand_side = vec![0.0; self.solution.len()];
+        let zero_state_tangent = vec![0.0; self.solution.len()];
+        let mut incoming = vec![0.0; self.problem.incoming_size()];
+        let mut incoming_tangent = vec![0.0; self.problem.incoming_size()];
+        self.problem.apply_jvp(
+            transport_row_offsets,
+            transport_column_indices,
+            transport_values,
+            transport_value_tangent,
+            forcing,
+            forcing_tangent,
+            scattering_coefficient_tangent,
+            dense_scattering_value_tangent,
+            &self.solution,
+            &zero_state_tangent,
+            &mut mapped,
+            &mut right_hand_side,
+            &mut incoming,
+            &mut incoming_tangent,
+        )?;
+
+        let mut linear_incoming = vec![0.0; self.problem.incoming_size()];
+        solve_affine_fixed_point(&right_hand_side, self.config, |state, output| {
+            self.problem
+                .apply_linear(
+                    transport_row_offsets,
+                    transport_column_indices,
+                    transport_values,
+                    state,
+                    output,
+                    &mut linear_incoming,
+                )
+                .map_err(SolverError::from)
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn solve_jvp_replay(
+        &self,
+        transport_row_offsets: &[i32],
+        transport_column_indices: &[i32],
+        transport_values: &[f64],
+        transport_value_tangent: &[f64],
+        forcing: &[f64],
+        forcing_tangent: &[f64],
+        scattering_coefficient_tangent: &[f64],
+        dense_scattering_value_tangent: &[f64],
+    ) -> Result<Vec<f64>, SolverError> {
         let iterations = self.diagnostics.iterations;
         let mut state = self.initial_state.clone();
         let mut state_tangent = vec![0.0; self.solution.len()];
@@ -309,9 +375,70 @@ impl SuccessiveOrdersSolver {
         solution_cotangent: &[f64],
     ) -> Result<FixedPointGradient, SolverError> {
         self.validate_linearization_configuration()?;
+        self.problem.validate_iteration_data(
+            transport_row_offsets,
+            transport_column_indices,
+            transport_values,
+            forcing,
+        )?;
         if solution_cotangent.len() != self.solution.len() {
             return Err(SolverError::InitialGuessSize);
         }
+        if !self.diagnostics.converged {
+            return self.solve_vjp_replay(
+                transport_row_offsets,
+                transport_column_indices,
+                transport_values,
+                forcing,
+                solution_cotangent,
+            );
+        }
+
+        let mut linear_incoming = vec![0.0; self.problem.incoming_size()];
+        let adjoint =
+            solve_affine_fixed_point(solution_cotangent, self.config, |state, output| {
+                self.problem
+                    .apply_linear_transpose(
+                        transport_row_offsets,
+                        transport_column_indices,
+                        transport_values,
+                        state,
+                        output,
+                        &mut linear_incoming,
+                    )
+                    .map_err(SolverError::from)
+            })?;
+
+        let mut gradient = FixedPointGradient::zeros(&self.problem);
+        let mut state_cotangent = vec![0.0; self.solution.len()];
+        let mut incoming_scratch = vec![0.0; self.problem.incoming_size()];
+        let mut incoming_cotangent = vec![0.0; self.problem.incoming_size()];
+        self.problem.apply_vjp(
+            transport_row_offsets,
+            transport_column_indices,
+            transport_values,
+            forcing,
+            &self.solution,
+            &adjoint,
+            &mut state_cotangent,
+            &mut gradient.transport_values,
+            &mut gradient.scattering_coefficients,
+            &mut gradient.dense_scattering_values,
+            &mut gradient.forcing,
+            &mut incoming_scratch,
+            &mut incoming_cotangent,
+        )?;
+        Ok(gradient)
+    }
+
+    fn solve_vjp_replay(
+        &self,
+        transport_row_offsets: &[i32],
+        transport_column_indices: &[i32],
+        transport_values: &[f64],
+        forcing: &[f64],
+        solution_cotangent: &[f64],
+    ) -> Result<FixedPointGradient, SolverError> {
         let iterations = self.diagnostics.iterations;
         let mut states = Vec::with_capacity(iterations);
         let mut state = self.initial_state.clone();
@@ -334,12 +461,7 @@ impl SuccessiveOrdersSolver {
             }
         }
 
-        let mut gradient = FixedPointGradient {
-            transport_values: vec![0.0; self.problem.transport_value_size()],
-            scattering_coefficients: vec![0.0; self.problem.scattering_coefficient_size()],
-            dense_scattering_values: vec![0.0; self.problem.dense_scattering_value_size()],
-            forcing: vec![0.0; self.problem.incoming_size()],
-        };
+        let mut gradient = FixedPointGradient::zeros(&self.problem);
         let mut state_cotangent = solution_cotangent.to_vec();
         let mut mapped_cotangent = vec![0.0; self.solution.len()];
         let mut previous_cotangent = vec![0.0; self.solution.len()];
@@ -379,7 +501,7 @@ impl SuccessiveOrdersSolver {
         if self.diagnostics.iterations == 0 {
             return Err(SolverError::LinearizationBeforeSolve);
         }
-        if self.config.anderson_depth != 0 {
+        if !self.diagnostics.converged && self.config.anderson_depth != 0 {
             return Err(SolverError::UnsupportedLinearizationConfiguration);
         }
         Ok(())
@@ -411,6 +533,77 @@ pub struct FixedPointGradient {
     pub scattering_coefficients: Vec<f64>,
     pub dense_scattering_values: Vec<f64>,
     pub forcing: Vec<f64>,
+}
+
+impl FixedPointGradient {
+    fn zeros(problem: &FixedPointProblem) -> Self {
+        Self {
+            transport_values: vec![0.0; problem.transport_value_size()],
+            scattering_coefficients: vec![0.0; problem.scattering_coefficient_size()],
+            dense_scattering_values: vec![0.0; problem.dense_scattering_value_size()],
+            forcing: vec![0.0; problem.incoming_size()],
+        }
+    }
+}
+
+fn solve_affine_fixed_point<F>(
+    right_hand_side: &[f64],
+    config: SolverConfig,
+    mut apply_linear: F,
+) -> Result<Vec<f64>, SolverError>
+where
+    F: FnMut(&[f64], &mut [f64]) -> Result<(), SolverError>,
+{
+    let mut state = vec![0.0; right_hand_side.len()];
+    let mut mapped = vec![0.0; right_hand_side.len()];
+    let mut residual = vec![0.0; right_hand_side.len()];
+    let mut state_history = Vec::with_capacity(config.anderson_depth + 1);
+    let mut residual_history = Vec::with_capacity(config.anderson_depth + 1);
+
+    for _ in 0..config.max_iterations {
+        apply_linear(&state, &mut mapped)?;
+        for index in 0..state.len() {
+            mapped[index] += right_hand_side[index];
+            residual[index] = mapped[index] - state[index];
+        }
+        if mapped.iter().any(|value| !value.is_finite())
+            || residual.iter().any(|value| !value.is_finite())
+        {
+            return Err(SolverError::NonFiniteIteration);
+        }
+
+        let residual_norm = infinity_norm(&residual);
+        let scale = infinity_norm(&mapped).max(infinity_norm(&state));
+        let threshold = config.absolute_tolerance + config.relative_tolerance * scale;
+        if residual_norm <= threshold {
+            return Ok(mapped);
+        }
+
+        let accelerated = if config.anderson_depth > 0 {
+            let capacity = config.anderson_depth + 1;
+            if state_history.len() == capacity {
+                state_history.remove(0);
+                residual_history.remove(0);
+            }
+            state_history.push(state.clone());
+            residual_history.push(residual.clone());
+            state_history.len() >= 2
+                && anderson_update(
+                    &mut state,
+                    &mut mapped,
+                    &state_history,
+                    &residual_history,
+                    config.damping,
+                )
+        } else {
+            false
+        };
+        if !accelerated {
+            damped_update(&mut state, &residual, config.damping);
+        }
+    }
+
+    Err(SolverError::ImplicitLinearSolveDidNotConverge)
 }
 
 fn infinity_norm(values: &[f64]) -> f64 {

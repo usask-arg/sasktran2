@@ -253,6 +253,14 @@ impl ScatteringOperator {
         }
     }
 
+    pub fn apply_transpose(&self, input: &[f64], output: &mut [f64]) -> Result<(), OperatorError> {
+        match self {
+            Self::Dense(matrix) => matrix.apply_transpose(input, output),
+            Self::ScalarCoefficients(matrix) => matrix.apply_transpose(input, output),
+            Self::VectorCoefficients(matrix) => matrix.apply_transpose(input, output),
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn apply_jvp(
         &self,
@@ -430,6 +438,29 @@ impl BlockDiagonalMatrix {
                     .zip(&input[input_start..input_end])
                     .map(|(&value, &incoming)| value * incoming)
                     .sum();
+            }
+        }
+        Ok(())
+    }
+
+    pub fn apply_transpose(&self, input: &[f64], output: &mut [f64]) -> Result<(), OperatorError> {
+        if input.len() != self.output_size || output.len() != self.input_size {
+            return Err(OperatorError::DimensionMismatch);
+        }
+        output.fill(0.0);
+        for block in 0..self.output_offsets.len() - 1 {
+            let output_start = self.output_offsets[block];
+            let output_end = self.output_offsets[block + 1];
+            let input_start = self.input_offsets[block];
+            let input_end = self.input_offsets[block + 1];
+            let value_start = self.value_offsets[block];
+            let columns = input_end - input_start;
+            for (local_row, &input_value) in input[output_start..output_end].iter().enumerate() {
+                let row_start = value_start + local_row * columns;
+                for local_column in 0..columns {
+                    output[input_start + local_column] +=
+                        self.values[row_start + local_column] * input_value;
+                }
             }
         }
         Ok(())
@@ -617,6 +648,56 @@ impl FixedPointProblem {
             *incoming += forcing;
         }
         self.scattering.apply(incoming_scratch, output)
+    }
+
+    pub fn apply_linear(
+        &self,
+        transport_row_offsets: &[i32],
+        transport_column_indices: &[i32],
+        transport_values: &[f64],
+        state: &[f64],
+        output: &mut [f64],
+        incoming_scratch: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        if state.len() != self.state_size()
+            || output.len() != self.state_size()
+            || incoming_scratch.len() != self.incoming_size()
+        {
+            return Err(OperatorError::DimensionMismatch);
+        }
+        self.transport.apply(
+            transport_row_offsets,
+            transport_column_indices,
+            transport_values,
+            state,
+            incoming_scratch,
+        )?;
+        self.scattering.apply(incoming_scratch, output)
+    }
+
+    pub fn apply_linear_transpose(
+        &self,
+        transport_row_offsets: &[i32],
+        transport_column_indices: &[i32],
+        transport_values: &[f64],
+        state: &[f64],
+        output: &mut [f64],
+        incoming_scratch: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        if state.len() != self.state_size()
+            || output.len() != self.state_size()
+            || incoming_scratch.len() != self.incoming_size()
+        {
+            return Err(OperatorError::DimensionMismatch);
+        }
+        self.scattering.apply_transpose(state, incoming_scratch)?;
+        self.transport.apply_transpose(
+            transport_row_offsets,
+            transport_column_indices,
+            transport_values,
+            incoming_scratch,
+            output,
+        )
     }
 
     #[allow(clippy::too_many_arguments)]

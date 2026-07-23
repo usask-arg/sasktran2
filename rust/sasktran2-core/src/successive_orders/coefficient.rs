@@ -128,6 +128,26 @@ impl ScalarCoefficientBasis {
         }
     }
 
+    fn apply_transpose(&self, input: &[f64], coefficients: &[f64], output: &mut [f64]) {
+        debug_assert_eq!(input.len(), self.output_size);
+        debug_assert_eq!(coefficients.len(), self.num_coefficients);
+        debug_assert_eq!(output.len(), self.input_size);
+
+        for mode_index in 0..self.num_modes() {
+            let moment_cotangent = (0..self.output_size)
+                .map(|output_index| {
+                    self.synthesis[output_index * self.num_modes() + mode_index]
+                        * input[output_index]
+                })
+                .sum::<f64>()
+                * coefficients[self.mode_degrees[mode_index]];
+            let analysis_start = mode_index * self.input_size;
+            for (input_index, result) in output.iter_mut().enumerate() {
+                *result += self.analysis[analysis_start + input_index] * moment_cotangent;
+            }
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn apply_vjp(
         &self,
@@ -325,6 +345,43 @@ impl ScalarCoefficientScattering {
                     .zip(&input[input_start..input_end])
                     .map(|(&value, &incoming)| value * incoming)
                     .sum();
+            }
+        }
+        Ok(())
+    }
+
+    pub fn apply_transpose(&self, input: &[f64], output: &mut [f64]) -> Result<(), OperatorError> {
+        if input.len() != self.output_size || output.len() != self.input_size {
+            return Err(OperatorError::DimensionMismatch);
+        }
+        output.fill(0.0);
+        let num_coefficients = self.basis.num_coefficients();
+        for block in 0..self.coefficient_blocks {
+            let input_start = self.input_offsets[block];
+            let input_end = self.input_offsets[block + 1];
+            let output_start = self.output_offsets[block];
+            let output_end = self.output_offsets[block + 1];
+            let coefficient_start = block * num_coefficients;
+            self.basis.apply_transpose(
+                &input[output_start..output_end],
+                &self.coefficients[coefficient_start..coefficient_start + num_coefficients],
+                &mut output[input_start..input_end],
+            );
+        }
+        for block in self.coefficient_blocks..self.output_offsets.len() - 1 {
+            let dense_block = block - self.coefficient_blocks;
+            let input_start = self.input_offsets[block];
+            let input_end = self.input_offsets[block + 1];
+            let output_start = self.output_offsets[block];
+            let output_end = self.output_offsets[block + 1];
+            let columns = input_end - input_start;
+            let value_start = self.dense_value_offsets[dense_block];
+            for (local_row, &input_value) in input[output_start..output_end].iter().enumerate() {
+                let row_start = value_start + local_row * columns;
+                for local_column in 0..columns {
+                    output[input_start + local_column] +=
+                        self.dense_values[row_start + local_column] * input_value;
+                }
             }
         }
         Ok(())
@@ -661,6 +718,77 @@ impl VectorCoefficientBasis {
         }
     }
 
+    fn apply_transpose(&self, input: &[f64], coefficients: &[f64], output: &mut [f64]) {
+        debug_assert_eq!(input.len(), self.output_size());
+        debug_assert_eq!(coefficients.len(), self.num_coefficients * 4);
+        debug_assert_eq!(output.len(), self.input_size());
+
+        for mode_index in 0..self.num_modes() {
+            let mut outgoing_adjoint = [Complex64::new(0.0, 0.0); 3];
+            for output_index in 0..self.output_directions {
+                let stokes_start = output_index * 3;
+                let intensity_adjoint = Complex64::new(input[stokes_start], 0.0);
+                let plus_adjoint =
+                    Complex64::new(0.5 * input[stokes_start + 1], 0.5 * input[stokes_start + 2]);
+                let minus_adjoint = Complex64::new(
+                    0.5 * input[stokes_start + 1],
+                    -0.5 * input[stokes_start + 2],
+                );
+                let synthesis_index = output_index * self.num_modes() + mode_index;
+                outgoing_adjoint[0] +=
+                    self.synthesis[0][synthesis_index].conj() * intensity_adjoint;
+                outgoing_adjoint[1] += self.synthesis[1][synthesis_index].conj() * plus_adjoint;
+                outgoing_adjoint[2] += self.synthesis[2][synthesis_index].conj() * minus_adjoint;
+            }
+
+            let [intensity_adjoint, plus_adjoint, minus_adjoint] = outgoing_adjoint;
+            let coefficient_start = self.mode_degrees[mode_index] * 4;
+            let a1 = coefficients[coefficient_start];
+            let a2 = coefficients[coefficient_start + 1];
+            let a3 = coefficients[coefficient_start + 2];
+            let b1 = coefficients[coefficient_start + 3];
+            let analyzed_adjoint = [
+                a1 * intensity_adjoint - b1 * (plus_adjoint + minus_adjoint),
+                -0.5 * b1 * intensity_adjoint
+                    + 0.5 * ((a2 + a3) * plus_adjoint + (a2 - a3) * minus_adjoint),
+                -0.5 * b1 * intensity_adjoint
+                    + 0.5 * ((a2 - a3) * plus_adjoint + (a2 + a3) * minus_adjoint),
+            ];
+            let analysis_start = mode_index * self.input_directions;
+            for input_index in 0..self.input_directions {
+                let stokes_start = input_index * 3;
+                let intensity_basis = self.analysis[0][analysis_start + input_index];
+                let plus_basis = self.analysis[1][analysis_start + input_index];
+                let minus_basis = self.analysis[2][analysis_start + input_index];
+                output[stokes_start] += (analyzed_adjoint[0].conj() * intensity_basis).re;
+                output[stokes_start + 1] += (analyzed_adjoint[1].conj() * plus_basis).re
+                    + (analyzed_adjoint[2].conj() * minus_basis).re;
+                output[stokes_start + 2] += (analyzed_adjoint[1].conj()
+                    * (Complex64::new(0.0, 1.0) * plus_basis))
+                    .re
+                    + (analyzed_adjoint[2].conj() * (Complex64::new(0.0, -1.0) * minus_basis)).re;
+            }
+        }
+
+        for correction in &self.legacy_frame_corrections {
+            let input_start = correction.input_index * 3;
+            let output_start = correction.output_index * 3;
+            for degree in 0..self.num_coefficients {
+                for family in 0..4 {
+                    let coefficient_index = degree * 4 + family;
+                    let matrix_start = coefficient_index * 9;
+                    for row in 0..3 {
+                        for column in 0..3 {
+                            output[input_start + column] += coefficients[coefficient_index]
+                                * correction.values[matrix_start + row * 3 + column]
+                                * input[output_start + row];
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn apply_vjp(
         &self,
@@ -932,6 +1060,43 @@ impl VectorCoefficientScattering {
                     .zip(&input[input_start..input_end])
                     .map(|(&value, &incoming)| value * incoming)
                     .sum();
+            }
+        }
+        Ok(())
+    }
+
+    pub fn apply_transpose(&self, input: &[f64], output: &mut [f64]) -> Result<(), OperatorError> {
+        if input.len() != self.output_size || output.len() != self.input_size {
+            return Err(OperatorError::DimensionMismatch);
+        }
+        output.fill(0.0);
+        let coefficient_stride = self.basis.num_coefficients() * 4;
+        for block in 0..self.coefficient_blocks {
+            let input_start = self.input_offsets[block];
+            let input_end = self.input_offsets[block + 1];
+            let output_start = self.output_offsets[block];
+            let output_end = self.output_offsets[block + 1];
+            let coefficient_start = block * coefficient_stride;
+            self.basis.apply_transpose(
+                &input[output_start..output_end],
+                &self.coefficients[coefficient_start..coefficient_start + coefficient_stride],
+                &mut output[input_start..input_end],
+            );
+        }
+        for block in self.coefficient_blocks..self.output_offsets.len() - 1 {
+            let dense_block = block - self.coefficient_blocks;
+            let input_start = self.input_offsets[block];
+            let input_end = self.input_offsets[block + 1];
+            let output_start = self.output_offsets[block];
+            let output_end = self.output_offsets[block + 1];
+            let columns = input_end - input_start;
+            let value_start = self.dense_value_offsets[dense_block];
+            for (local_row, &input_value) in input[output_start..output_end].iter().enumerate() {
+                let row_start = value_start + local_row * columns;
+                for local_column in 0..columns {
+                    output[input_start + local_column] +=
+                        self.dense_values[row_start + local_column] * input_value;
+                }
             }
         }
         Ok(())

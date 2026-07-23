@@ -119,6 +119,57 @@ fn fixed_point_jvp_and_vjp_match_finite_difference_and_duality() {
 }
 
 #[test]
+fn implicit_products_match_converged_system_with_anderson() {
+    let config = SolverConfig {
+        max_iterations: 200,
+        relative_tolerance: 1.0e-12,
+        absolute_tolerance: 1.0e-14,
+        anderson_depth: 2,
+        ..SolverConfig::default()
+    };
+    let multiplier = 0.8;
+    let forcing = 2.0;
+    let transport_tangent = [0.17];
+    let scattering_tangent = [-0.08];
+    let forcing_tangent = [0.23];
+    let mut solver = scalar_problem(config);
+    let solution = solve_scalar(&mut solver, multiplier, forcing);
+    assert!(solver.diagnostics().converged);
+
+    let jvp = solver
+        .solve_jvp(
+            &[0, 1],
+            &[0],
+            &[multiplier],
+            &transport_tangent,
+            &[forcing],
+            &forcing_tangent,
+            &[],
+            &scattering_tangent,
+        )
+        .unwrap();
+    let right_hand_side =
+        scattering_tangent[0] * solution + forcing_tangent[0] + transport_tangent[0] * solution;
+    let expected_jvp = right_hand_side / (1.0 - multiplier);
+    assert!((jvp[0] - expected_jvp).abs() < 2.0e-10);
+
+    let solution_cotangent = [1.7];
+    let gradient = solver
+        .solve_vjp(
+            &[0, 1],
+            &[0],
+            &[multiplier],
+            &[forcing],
+            &solution_cotangent,
+        )
+        .unwrap();
+    let adjoint = solution_cotangent[0] / (1.0 - multiplier);
+    assert!((gradient.transport_values[0] - adjoint * solution).abs() < 2.0e-10);
+    assert!((gradient.dense_scattering_values[0] - adjoint * solution).abs() < 2.0e-10);
+    assert!((gradient.forcing[0] - adjoint).abs() < 2.0e-10);
+}
+
+#[test]
 fn anderson_accelerates_nearly_conservative_problem() {
     let base = SolverConfig {
         max_iterations: 200,
@@ -254,6 +305,13 @@ fn scalar_coefficient_scattering_matches_dense_legendre_kernel() {
             &mut dense_gradient,
         )
         .unwrap();
+    let mut transpose_input = vec![0.0; input.len()];
+    scattering
+        .apply_transpose(&output_cotangent, &mut transpose_input)
+        .unwrap();
+    for (transpose, vjp) in transpose_input.iter().zip(&input_cotangent) {
+        assert!((transpose - vjp).abs() < 2.0e-13);
+    }
     let forward_product = inner_product(&output_tangent, &output_cotangent);
     let reverse_product = inner_product(&input_tangent, &input_cotangent)
         + inner_product(&coefficient_tangent, &coefficient_gradient)
@@ -401,6 +459,13 @@ fn vector_coefficient_scattering_matches_dense_greek_kernel() {
             &mut [],
         )
         .unwrap();
+    let mut transpose_input = vec![0.0; input.len()];
+    scattering
+        .apply_transpose(&output_cotangent, &mut transpose_input)
+        .unwrap();
+    for (transpose, vjp) in transpose_input.iter().zip(&input_cotangent) {
+        assert!((transpose - vjp).abs() < 2.0e-12);
+    }
     let forward_product = inner_product(&output_tangent, &output_cotangent);
     let reverse_product = inner_product(&input_tangent, &input_cotangent)
         + inner_product(&coefficient_tangent, &coefficient_gradient);

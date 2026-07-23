@@ -1536,8 +1536,7 @@ namespace sasktran2::hr {
 #ifdef SKTRAN_RUST_SUPPORT
         if (!native_products_available()) {
             throw std::logic_error(
-                "Native successive-orders products require the Rust solver "
-                "with Anderson acceleration disabled");
+                "Native successive-orders products require the Rust solver");
         }
         auto& storage = m_thread_storage[wavel_threadidx];
         storage.rust_transport_value_tangent.setZero();
@@ -1596,8 +1595,7 @@ namespace sasktran2::hr {
         (void)wavel_threadidx;
         if (!native_products_available()) {
             throw std::logic_error(
-                "Native successive-orders products require the Rust solver "
-                "with Anderson acceleration disabled");
+                "Native successive-orders products require the Rust solver");
         }
         for (auto& cotangent : m_los_solution_cotangents[wavel_threadidx]) {
             cotangent.setZero();
