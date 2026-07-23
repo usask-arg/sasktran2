@@ -35,6 +35,8 @@ int sk_deriv_mapping_set_assign_name(DerivativeMapping* mapping,
                                      const char* name);
 int sk_deriv_mapping_set_log_radiance_space(DerivativeMapping* mapping,
                                             int log_radiance_space);
+int sk_deriv_mapping_get_log_radiance_space(DerivativeMapping* mapping,
+                                            int* log_radiance_space);
 int sk_deriv_mapping_is_scattering_derivative(DerivativeMapping* mapping,
                                               int* is_scattering_derivative);
 
