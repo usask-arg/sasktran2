@@ -39,39 +39,48 @@ namespace sasktran2::math {
         std::vector<std::pair<int, double>>& index_weights,
         int& num_interp) const {
         num_interp = 3;
-        // Set storage
         index_weights.resize(num_interp);
-
-        // Store distances in the weights at first to save memory, initialize to
-        // a large value
-        for (int i = 0; i < num_interp; ++i) {
-            index_weights[i].second = 9999;
+        if (!direction.allFinite()) {
+            // Preserve the established zenith-degenerate fallback. Relative
+            // azimuth is undefined for exactly vertical directions, and the
+            // historical search consequently returned index zero with equal
+            // weights.
+            for (auto& index_weight : index_weights) {
+                index_weight = {0, 1.0 / num_interp};
+            }
+            return;
         }
 
-        // TODO: other interpolation schemes?
+        std::array<int, 3> nearest_indices = {-1, -1, -1};
+        std::array<double, 3> nearest_distances = {
+            std::numeric_limits<double>::infinity(),
+            std::numeric_limits<double>::infinity(),
+            std::numeric_limits<double>::infinity()};
+
+        // Keep the three exact Euclidean nearest neighbours. Using scalar
+        // coordinates avoids constructing an Eigen temporary for every
+        // quadrature point; this is a hot geometry-setup path.
         for (int i = 0; i < m_weights.size(); ++i) {
-            double sqdist =
-                (m_xyz(Eigen::placeholders::all, i) - direction).squaredNorm();
-
-            // Insert sorted
+            const double dx = m_xyz(0, i) - direction.x();
+            const double dy = m_xyz(1, i) - direction.y();
+            const double dz = m_xyz(2, i) - direction.z();
+            double sqdist = dx * dx + dy * dy + dz * dz;
             for (int j = 0; j < num_interp; ++j) {
-                if (sqdist < index_weights[j].second) {
-                    // Have to bump every other weight upwards
-                    auto temp = index_weights[j];
-                    for (int k = j + 1; k < num_interp; ++k) {
-                        std::swap(temp, index_weights[k]);
+                if (sqdist < nearest_distances[j]) {
+                    for (int k = num_interp - 1; k > j; --k) {
+                        nearest_distances[k] = nearest_distances[k - 1];
+                        nearest_indices[k] = nearest_indices[k - 1];
                     }
-                    // Then assign it
-                    index_weights[j].first = i;
-                    index_weights[j].second = sqdist;
-
-                    sqdist = 99999;
+                    nearest_distances[j] = sqdist;
+                    nearest_indices[j] = i;
+                    break;
                 }
             }
         }
+        for (int i = 0; i < num_interp; ++i) {
+            index_weights[i] = {nearest_indices[i], nearest_distances[i]};
+        }
 
-        // Now we have the correct indices and all square distances, assign the
-        // interpolation weights Start by calculating the total inverse
         double total_distance = 0;
         for (int i = 0; i < num_interp; ++i) {
             // first check for a special case, if any of the distances are ~0 we

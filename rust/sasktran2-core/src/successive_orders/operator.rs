@@ -800,7 +800,8 @@ impl FixedPointProblem {
         if state.len() != self.state_size()
             || output_cotangent.len() != self.state_size()
             || state_cotangent.len() != self.state_size()
-            || transport_value_gradient.len() != self.transport.num_nonzero()
+            || (!transport_value_gradient.is_empty()
+                && transport_value_gradient.len() != self.transport.num_nonzero())
             || scattering_coefficient_gradient.len() != self.scattering.coefficient_value_size()
             || dense_scattering_value_gradient.len() != self.scattering.dense_value_size()
             || forcing_gradient.len() != self.incoming_size()
@@ -853,12 +854,14 @@ impl FixedPointProblem {
             incoming_cotangent_scratch,
             state_cotangent,
         )?;
-        for (row, &incoming_cotangent) in incoming_cotangent_scratch.iter().enumerate() {
-            let start = transport_row_offsets[row] as usize;
-            let end = transport_row_offsets[row + 1] as usize;
-            for index in start..end {
-                transport_value_gradient[index] +=
-                    incoming_cotangent * state[transport_column_indices[index] as usize];
+        if !transport_value_gradient.is_empty() {
+            for (row, &incoming_cotangent) in incoming_cotangent_scratch.iter().enumerate() {
+                let start = transport_row_offsets[row] as usize;
+                let end = transport_row_offsets[row + 1] as usize;
+                for index in start..end {
+                    transport_value_gradient[index] +=
+                        incoming_cotangent * state[transport_column_indices[index] as usize];
+                }
             }
         }
         Ok(())

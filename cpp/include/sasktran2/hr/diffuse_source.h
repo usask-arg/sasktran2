@@ -90,7 +90,14 @@ namespace sasktran2::hr {
         const sasktran2::raytracing::RayTracerBase&
             m_raytracer; /**< Raytracer used for the diffuse point incoming rays
                           */
-        const sasktran2::Geometry1D& m_geometry; /** Global geometry object */
+        const sasktran2::Geometry& m_geometry; /** Global geometry object */
+        const sasktran2::grids::AltitudeGrid&
+            m_altitude_grid; /** Vertical grid shared by supported geometries */
+        const sasktran2::Geometry1D* m_geometry_1d;
+        const sasktran2::Geometry2D* m_geometry_2d;
+#ifdef SKTRAN_RUST_SUPPORT
+        const sasktran2::raytracing::RustRayTracer2D* m_raytracer_2d;
+#endif
 
         std::unique_ptr<sasktran2::grids::SourceLocationInterpolator>
             m_location_interpolator; /** Interpolates location */
@@ -169,7 +176,7 @@ namespace sasktran2::hr {
         sasktran2::grids::AltitudeGrid generate_altitude_grid();
 
         void construct_diffuse_points();
-        void trace_incoming_rays();
+        std::vector<std::vector<int>> trace_incoming_rays();
         void generate_scattering_matrices(int wavelidx, int threadidx);
         void generate_accumulation_matrix(int wavelidx, int threadidx);
         void prepare_wavelength(int wavelidx, int threadidx);
@@ -195,8 +202,19 @@ namespace sasktran2::hr {
         void generate_source_interpolation_weights(
             const std::vector<sasktran2::raytracing::TracedRay>& rays,
             SInterpolator& interpolator) const;
+        void generate_source_interpolation_weights(
+            const sasktran2::raytracing::TracedRay& ray,
+            RaySourceInterpolationWeights<NSTOKES>& interpolator,
+            std::vector<std::pair<int, double>>& temp_location_storage,
+            std::vector<std::pair<int, double>>& temp_direction_storage,
+            std::vector<std::pair<int, double>>& temp_atmosphere_storage) const;
+        void compile_accumulation_row(
+            RaySourceInterpolationWeights<NSTOKES>& weights,
+            std::vector<int>& transport_columns,
+            std::vector<std::pair<int, std::uint16_t*>>& sorting_helper) const;
 
-        void construct_accumulation_sparsity();
+        void construct_accumulation_sparsity(
+            const std::vector<std::vector<int>>& transport_columns);
 
         Eigen::Vector3d
         rotate_unit_vector(const Eigen::Vector3d& vector,
@@ -207,6 +225,17 @@ namespace sasktran2::hr {
         DiffuseTable(const sasktran2::raytracing::RayTracerBase& ray_tracer,
                      const sasktran2::Geometry1D& geometry,
                      bool use_rust_solver = false);
+
+#ifdef SKTRAN_RUST_SUPPORT
+        DiffuseTable(const sasktran2::raytracing::RustRayTracer2D& ray_tracer,
+                     const sasktran2::Geometry2D& geometry,
+                     bool use_rust_solver = false);
+#endif
+
+        bool supports_geometry_dimension(int dimension) const override {
+            return dimension == 1 ||
+                   (dimension == 2 && m_geometry_2d != nullptr);
+        }
 
         /** Initializes the config inside the source term
          *

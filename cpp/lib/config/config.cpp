@@ -113,6 +113,12 @@ namespace sasktran2 {
             sasktran2::validation::throw_configuration_error();
         }
 
+        if (m_hr_num_incoming_points != -1 && m_hr_num_incoming_points < 2) {
+            spdlog::critical(
+                "num_successive_order_points must be -1 or at least 2");
+            sasktran2::validation::throw_configuration_error();
+        }
+
         if (m_multiple_scatter_source ==
             MultipleScatterSource::successive_orders_rust) {
             if (m_successive_orders_max_iterations < 1) {
@@ -140,6 +146,21 @@ namespace sasktran2 {
                 spdlog::critical(
                     "successive_orders_damping must be in the interval (0, "
                     "1]");
+                sasktran2::validation::throw_configuration_error();
+            }
+        }
+
+        for (std::size_t altitude_index = 0;
+             altitude_index < m_successive_orders_altitude_grid_m.size();
+             ++altitude_index) {
+            if (!std::isfinite(
+                    m_successive_orders_altitude_grid_m[altitude_index]) ||
+                (altitude_index > 0 &&
+                 m_successive_orders_altitude_grid_m[altitude_index] <=
+                     m_successive_orders_altitude_grid_m[altitude_index - 1])) {
+                spdlog::critical(
+                    "successive_orders_altitude_grid_m must contain finite, "
+                    "strictly increasing altitudes");
                 sasktran2::validation::throw_configuration_error();
             }
         }

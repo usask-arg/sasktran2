@@ -1,6 +1,7 @@
 #include "sasktran2/geometry.h"
 #include "sasktran2/viewinggeometry_internal.h"
 #include <algorithm>
+#include <cmath>
 #ifdef SKTRAN_OPENMP_SUPPORT
 #include <omp.h>
 #endif
@@ -39,10 +40,28 @@ namespace sasktran2::hr {
     DiffuseTable<NSTOKES>::DiffuseTable(
         const sasktran2::raytracing::RayTracerBase& ray_tracer,
         const sasktran2::Geometry1D& geometry, bool use_rust_solver)
-        : m_raytracer(ray_tracer), m_geometry(geometry), m_integrator(false),
+        : m_integrator(false), m_raytracer(ray_tracer), m_geometry(geometry),
+          m_altitude_grid(geometry.altitude_grid()), m_geometry_1d(&geometry),
+          m_geometry_2d(nullptr),
+#ifdef SKTRAN_RUST_SUPPORT
+          m_raytracer_2d(nullptr),
+#endif
           m_use_rust_solver(use_rust_solver) {
         m_integrator.set_on_demand_optical_depth(use_rust_solver);
     }
+
+#ifdef SKTRAN_RUST_SUPPORT
+    template <int NSTOKES>
+    DiffuseTable<NSTOKES>::DiffuseTable(
+        const sasktran2::raytracing::RustRayTracer2D& ray_tracer,
+        const sasktran2::Geometry2D& geometry, bool use_rust_solver)
+        : m_integrator(false), m_raytracer(ray_tracer), m_geometry(geometry),
+          m_altitude_grid(geometry.altitude_grid()), m_geometry_1d(nullptr),
+          m_geometry_2d(&geometry), m_raytracer_2d(&ray_tracer),
+          m_use_rust_solver(use_rust_solver) {
+        m_integrator.set_on_demand_optical_depth(use_rust_solver);
+    }
+#endif
 
     template <int NSTOKES>
     sasktran2::grids::Grid
@@ -71,20 +90,50 @@ namespace sasktran2::hr {
     template <int NSTOKES>
     sasktran2::grids::AltitudeGrid
     DiffuseTable<NSTOKES>::generate_altitude_grid() {
-        // TODO: Decouple altitude grid here from the global geometry grid ?
+        const auto& configured_grid =
+            m_config->successive_orders_altitude_grid_m();
+        Eigen::VectorXd alt_values;
+        auto spacing = sasktran2::grids::gridspacing::constant;
 
-        // Put diffuse points inbetween altitude levels
-        // TODO: why though? sources are usually calculated at the levels not
-        // inbetween
-        Eigen::VectorXd alt_values =
-            (m_geometry.altitude_grid().grid()(
-                 Eigen::seq(0, Eigen::placeholders::last - 1)) +
-             m_geometry.altitude_grid().grid()(
-                 Eigen::seq(1, Eigen::placeholders::last))) /
-            2.0;
+        if (configured_grid.empty()) {
+            // Preserve the historical default: one source point at the
+            // midpoint of each atmospheric layer.
+            alt_values = (m_altitude_grid.grid()(
+                              Eigen::seq(0, Eigen::placeholders::last - 1)) +
+                          m_altitude_grid.grid()(
+                              Eigen::seq(1, Eigen::placeholders::last))) /
+                         2.0;
+        } else {
+            const double minimum_altitude = m_altitude_grid.grid()[0];
+            const double maximum_altitude =
+                m_altitude_grid.grid()[m_altitude_grid.grid().size() - 1];
+            alt_values.resize(
+                static_cast<Eigen::Index>(configured_grid.size()));
+            for (std::size_t altitude_index = 0;
+                 altitude_index < configured_grid.size(); ++altitude_index) {
+                const double altitude = configured_grid[altitude_index];
+                if (!std::isfinite(altitude) ||
+                    (altitude_index > 0 &&
+                     altitude <= configured_grid[altitude_index - 1])) {
+                    throw std::invalid_argument(
+                        "successive_orders_altitude_grid_m must contain "
+                        "finite, "
+                        "strictly increasing altitudes");
+                }
+                if (altitude < minimum_altitude ||
+                    altitude > maximum_altitude) {
+                    throw std::invalid_argument(
+                        "successive_orders_altitude_grid_m must lie within the "
+                        "atmospheric altitude grid");
+                }
+                alt_values[static_cast<Eigen::Index>(altitude_index)] =
+                    altitude;
+            }
+            spacing = sasktran2::grids::gridspacing::automatic;
+        }
 
         return sasktran2::grids::AltitudeGrid(
-            std::move(alt_values), sasktran2::grids::gridspacing::constant,
+            std::move(alt_values), spacing,
             sasktran2::grids::outofbounds::extend,
             sasktran2::grids::interpolation::linear);
     }
@@ -156,6 +205,11 @@ namespace sasktran2::hr {
             int num_diffuse_in_profile =
                 (m_location_interpolator->num_interior_points()) /
                 m_config->num_do_sza();
+            if (num_inc_per_profile > num_diffuse_in_profile) {
+                throw std::invalid_argument(
+                    "num_successive_order_points cannot exceed the number of "
+                    "successive-orders source altitudes");
+            }
 
             for (int i = 0; i < m_config->num_do_sza(); ++i) {
                 // Start of the profile index
@@ -255,20 +309,33 @@ namespace sasktran2::hr {
         }
     }
 
-    template <int NSTOKES> void DiffuseTable<NSTOKES>::trace_incoming_rays() {
-        ZoneScopedN("Trace Incoming Rays");
+    template <int NSTOKES>
+    std::vector<std::vector<int>> DiffuseTable<NSTOKES>::trace_incoming_rays() {
+        ZoneScopedN("Trace and Compile Incoming Rays");
         int nthreads = m_config->num_threads();
 
         std::vector<sasktran2::viewinggeometry::ViewingRay> thread_viewing_ray;
         thread_viewing_ray.resize(nthreads);
+        std::vector<std::vector<std::pair<int, double>>>
+            thread_temp_location_storage(nthreads);
+        std::vector<std::vector<std::pair<int, double>>>
+            thread_temp_direction_storage(nthreads);
+        std::vector<std::vector<std::pair<int, double>>>
+            thread_temp_atmosphere_storage(nthreads);
+        std::vector<std::vector<std::pair<int, std::uint16_t*>>>
+            thread_sorting_helper(nthreads);
+        std::vector<std::vector<int>> transport_columns(
+            m_internal_viewing.traced_rays.size());
+        m_diffuse_source_weights.resize(m_internal_viewing.traced_rays.size());
 
 #pragma omp parallel for num_threads(nthreads)
         for (int i = 0; i < m_diffuse_points.size(); ++i) {
 #ifdef SKTRAN_OPENMP_SUPPORT
-            auto& viewing_ray = thread_viewing_ray[omp_get_thread_num()];
+            const int threadidx = omp_get_thread_num();
 #else
-            auto& viewing_ray = thread_viewing_ray[0];
+            const int threadidx = 0;
 #endif
+            auto& viewing_ray = thread_viewing_ray[threadidx];
             if (!m_diffuse_point_full_calculation[i]) {
                 continue;
             }
@@ -277,13 +344,27 @@ namespace sasktran2::hr {
                 viewing_ray.look_away =
                     m_diffuse_points[i]->incoming_direction(j);
 
-                m_raytracer.trace_ray(
-                    viewing_ray,
-                    m_internal_viewing
-                        .traced_rays[m_diffuse_incoming_index_map[i] + j],
-                    m_config->multiple_scatter_refraction());
+                const int rayidx = m_diffuse_incoming_index_map[i] + j;
+                auto& traced_ray = m_internal_viewing.traced_rays[rayidx];
+                m_raytracer.trace_ray(viewing_ray, traced_ray,
+                                      m_config->multiple_scatter_refraction());
+                generate_source_interpolation_weights(
+                    traced_ray, m_diffuse_source_weights[rayidx],
+                    thread_temp_location_storage[threadidx],
+                    thread_temp_direction_storage[threadidx],
+                    thread_temp_atmosphere_storage[threadidx]);
+                compile_accumulation_row(m_diffuse_source_weights[rayidx],
+                                         transport_columns[rayidx],
+                                         thread_sorting_helper[threadidx]);
+                if constexpr (NSTOKES == 1) {
+                    if (m_use_rust_solver && m_geometry_2d != nullptr) {
+                        m_integrator.compact_geometry_2d_ray(rayidx,
+                                                             traced_ray);
+                    }
+                }
             }
         }
+        return transport_columns;
     }
 
     template <int NSTOKES>
@@ -291,35 +372,83 @@ namespace sasktran2::hr {
         const sasktran2::viewinggeometry::InternalViewingGeometry&
             internal_viewing) {
         ZoneScopedN("Initialize HR Geometry");
-        // TODO: This is the 1D case, need to add separate logic for 2d/3d
-
-        // find the min/max SZA from the LOS rays and generate the cos_sza_grid
-        std::pair<double, double> min_max_cos_sza =
-            sasktran2::raytracing::min_max_cos_sza_of_all_rays(
-                internal_viewing.traced_rays);
-
-        // create the location interpolator
-        m_location_interpolator = std::make_unique<
-            sasktran2::grids::AltitudeSZASourceLocationInterpolator>(
-            generate_altitude_grid(),
-            generate_cos_sza_grid(min_max_cos_sza.first,
-                                  min_max_cos_sza.second));
+        if (m_geometry_2d != nullptr) {
+            Eigen::VectorXd horizontal_source_grid;
+            if (m_config->num_do_sza() > 1) {
+                horizontal_source_grid.setLinSpaced(
+                    m_config->num_do_sza(),
+                    m_geometry_2d->horizontal_angle_grid()[0],
+                    m_geometry_2d->horizontal_angle_grid()
+                        [m_geometry_2d->num_horizontal_locations() - 1]);
+            } else {
+                horizontal_source_grid.resize(1);
+                horizontal_source_grid[0] =
+                    0.5 * (m_geometry_2d->horizontal_angle_grid()[0] +
+                           m_geometry_2d->horizontal_angle_grid()
+                               [m_geometry_2d->num_horizontal_locations() - 1]);
+            }
+            m_location_interpolator = std::make_unique<
+                sasktran2::grids::AltitudeHorizontalSourceLocationInterpolator>(
+                generate_altitude_grid(), std::move(horizontal_source_grid),
+                *m_geometry_2d);
+        } else {
+            const std::pair<double, double> min_max_cos_sza =
+                sasktran2::raytracing::min_max_cos_sza_of_all_rays(
+                    internal_viewing.traced_rays);
+            m_location_interpolator = std::make_unique<
+                sasktran2::grids::AltitudeSZASourceLocationInterpolator>(
+                generate_altitude_grid(),
+                generate_cos_sza_grid(min_max_cos_sza.first,
+                                      min_max_cos_sza.second));
+        }
 
         // Construct the actual diffuse points
         construct_diffuse_points();
 
+        const bool use_incremental_compact_geometry =
+            m_use_rust_solver && m_geometry_2d != nullptr && NSTOKES == 1;
+        if (use_incremental_compact_geometry) {
+            m_integrator.begin_compact_geometry_2d(
+                m_internal_viewing.traced_rays, m_geometry);
+        }
+
         // Trace all of the incoming rays
-        trace_incoming_rays();
+        auto transport_columns = trace_incoming_rays();
 
         // Set up the integrator
-        m_integrator.initialize_geometry(m_internal_viewing.traced_rays,
-                                         this->m_geometry);
+        if (use_incremental_compact_geometry) {
+            m_integrator.finalize_compact_geometry_2d();
+        } else {
+            m_integrator.initialize_geometry(m_internal_viewing.traced_rays,
+                                             this->m_geometry);
+        }
         // And the initial sources
         // This is a little tricky, any source that is used for the incoming
         // rays needs to be initialized with the traced incoming rays
 
-        for (auto& source : m_initial_sources) {
-            source->initialize_geometry(m_internal_viewing);
+        if (use_incremental_compact_geometry) {
+            std::vector<std::uint32_t> layer_counts(
+                m_diffuse_source_weights.size());
+            for (std::size_t rayidx = 0;
+                 rayidx < m_diffuse_source_weights.size(); ++rayidx) {
+                layer_counts[rayidx] = static_cast<std::uint32_t>(
+                    m_diffuse_source_weights[rayidx].interior_weights.size());
+            }
+            auto* single_scatter =
+                dynamic_cast<sasktran2::solartransmission::SingleScatterSource<
+                    sasktran2::solartransmission::SolarTransmissionExact,
+                    NSTOKES>*>(m_initial_sources.front());
+            if (single_scatter == nullptr || m_initial_sources.size() != 1) {
+                throw std::logic_error(
+                    "Compact 2D successive orders requires one exact "
+                    "single-scatter source");
+            }
+            single_scatter->initialize_geometry_compact(m_internal_viewing,
+                                                        layer_counts);
+        } else {
+            for (auto& source : m_initial_sources) {
+                source->initialize_geometry(m_internal_viewing);
+            }
         }
 
         // But the DO Source should be initialized with the LOS rays
@@ -327,10 +456,8 @@ namespace sasktran2::hr {
             m_do_source->initialize_geometry(internal_viewing);
         }
 
-        generate_source_interpolation_weights(m_internal_viewing.traced_rays,
-                                              m_diffuse_source_weights);
-
-        construct_accumulation_sparsity();
+        construct_accumulation_sparsity(transport_columns);
+        std::vector<std::vector<int>>().swap(transport_columns);
 
         generate_source_interpolation_weights(internal_viewing.traced_rays,
                                               m_los_source_weights);
@@ -401,108 +528,46 @@ namespace sasktran2::hr {
     }
 
     template <int NSTOKES>
-    void DiffuseTable<NSTOKES>::construct_accumulation_sparsity() {
+    void DiffuseTable<NSTOKES>::construct_accumulation_sparsity(
+        const std::vector<std::vector<int>>& transport_columns) {
         ZoneScopedN("Construct Accumulation Sparsity");
-        // These are the length of the rows
-        m_outer_starts.resize(NSTOKES * m_diffuse_source_weights.size() + 1);
-        std::vector<Eigen::VectorXi> inner_indicies;
-
-        inner_indicies.resize(NSTOKES * m_diffuse_source_weights.size());
-
-        std::vector<std::pair<int, std::array<int, NSTOKES>*>> sorting_helper;
-
-        int total_nnz = 0;
-        // Construct the matrix NSTOKES rows at a time
-        for (int row = 0; row < m_diffuse_source_weights.size(); ++row) {
-            sorting_helper.clear();
-            auto& weights = m_diffuse_source_weights[row];
-
-            // Start by setting the index storage to be equal to the weight
-            // index
-            for (const auto& layer : weights.interior_weights) {
-                for (std::size_t index = layer.source_offset;
-                     index < layer.source_offset + layer.source_count;
-                     ++index) {
-                    sorting_helper.emplace_back(
-                        weights.source_indices[index],
-                        &weights.source_accumulation_indices[index]);
-                }
-            }
-            // And for the ground weights
-            for (std::size_t index = 0;
-                 index < weights.ground_source_indices.size(); ++index) {
-                sorting_helper.emplace_back(
-                    weights.ground_source_indices[index],
-                    &weights.ground_accumulation_indices[index]);
-            }
-
-            // Now we have to sort on the column indices
-            std::stable_sort(std::begin(sorting_helper),
-                             std::end(sorting_helper),
-                             [](const auto& left, const auto& right) {
-                                 return left.first < right.first;
-                             });
-
-            if (sorting_helper.size() == 0) {
-                // 0 Elements in this row, not sure what this means? Probably
-                // never actually happens
-                std::vector<int>().swap(weights.source_indices);
-                std::vector<int>().swap(weights.ground_source_indices);
-                continue;
-            }
-
-            // Now we have to do a first pass through the sorted list to find
-            // the number of unique elements (nnz)
-            int nnz = 1;
-            for (int i = 1; i < sorting_helper.size(); ++i) {
-                if (sorting_helper[i].first != sorting_helper[i - 1].first) {
-                    ++nnz;
-                }
-            }
-
-            // Go through our NSTOKES rows
-            for (int s = 0; s < NSTOKES; ++s) {
-                auto& inner = inner_indicies[row * NSTOKES + s];
-                inner.resize(nnz);
-
-                int inner_index = 0;
-                // Now go through the sorting helper and assign our indicies
-                for (int i = 0; i < sorting_helper.size(); ++i) {
-                    if (i > 0) {
-                        if (sorting_helper[i].first !=
-                            sorting_helper[i - 1].first) {
-                            ++inner_index;
-                        }
-                    }
-                    inner[inner_index] = sorting_helper[i].first * NSTOKES + s;
-
-                    (*sorting_helper[i].second)[s] = inner_index + total_nnz;
-                }
-                total_nnz += nnz;
-            }
-
-            // The output column is now represented by m_inner_indicies. Only
-            // each interpolation weight and its CSR value index are needed at
-            // wavelength time.
-            std::vector<int>().swap(weights.source_indices);
-            std::vector<int>().swap(weights.ground_source_indices);
+        if (transport_columns.size() != m_diffuse_source_weights.size()) {
+            throw std::invalid_argument(
+                "Successive-orders transport row count mismatch");
         }
 
-        // Now we have to copy our row inner indicies to the full matrix
+        std::uint64_t total_nnz_64 = 0;
+        for (const auto& columns : transport_columns) {
+            total_nnz_64 +=
+                static_cast<std::uint64_t>(columns.size()) * NSTOKES;
+        }
+        if (total_nnz_64 >
+            static_cast<std::uint64_t>(std::numeric_limits<int>::max())) {
+            throw std::length_error(
+                "Successive-orders transport storage exceeds Eigen index "
+                "range");
+        }
+        const int total_nnz = static_cast<int>(total_nnz_64);
         m_inner_indicies.resize(total_nnz);
-        int current_index = 0;
-        for (auto& index : inner_indicies) {
-            for (int i = 0; i < index.size(); ++i) {
-                m_inner_indicies[current_index] = index[i];
-                ++current_index;
-            }
-        }
-
-        // Lastly set the outerstarts vector
+        m_outer_starts.resize(NSTOKES * m_diffuse_source_weights.size() + 1);
         m_outer_starts(0) = 0;
-        for (int i = 0; i < inner_indicies.size(); ++i) {
-            m_outer_starts(i + 1) =
-                m_outer_starts(i) + inner_indicies[i].size();
+
+        int current_index = 0;
+        for (std::size_t row = 0; row < transport_columns.size(); ++row) {
+            auto& weights = m_diffuse_source_weights[row];
+            const auto& columns = transport_columns[row];
+            weights.accumulation_row_offset =
+                static_cast<std::uint32_t>(current_index);
+            weights.accumulation_row_nnz =
+                static_cast<std::uint32_t>(columns.size());
+
+            for (int stokes = 0; stokes < NSTOKES; ++stokes) {
+                for (const int column : columns) {
+                    m_inner_indicies(current_index++) =
+                        column * NSTOKES + stokes;
+                }
+                m_outer_starts(row * NSTOKES + stokes + 1) = current_index;
+            }
         }
 
         // Each traced ray writes a disjoint CSR row range, so all source
@@ -569,18 +634,9 @@ namespace sasktran2::hr {
                 storage.rust_scattering_coefficients.resize(
                     coefficient_blocks * m_config->num_do_streams() *
                     coefficient_families);
-                storage.rust_scattering_coefficient_tangent.resize(
-                    storage.rust_scattering_coefficients.size());
                 storage.rust_boundary_scattering_values.resize(
                     scattering_value_offsets.back() -
                     scattering_value_offsets[coefficient_blocks]);
-                storage.rust_boundary_scattering_value_tangent.resize(
-                    storage.rust_boundary_scattering_values.size());
-                storage.rust_transport_value_tangent.resize(total_nnz);
-                storage.rust_first_order_forcing_tangent.resize(
-                    storage.m_firstorder_radiances.value.size());
-                storage.rust_solution_jvp.resize(
-                    storage.m_outgoing_sources.value.size());
             }
 
             m_los_solution_cotangents.resize(
@@ -683,14 +739,29 @@ namespace sasktran2::hr {
 
         m_thread_storage.resize(m_config->num_wavelength_threads());
 
-        auto initial_single_scatter =
-            std::make_unique<sasktran2::solartransmission::SingleScatterSource<
-                sasktran2::solartransmission::SolarTransmissionTable, NSTOKES>>(
-                m_geometry, m_raytracer);
-        if (m_use_rust_solver) {
-            initial_single_scatter->enable_table_native_products();
+        if (m_geometry_1d != nullptr) {
+            auto initial_single_scatter = std::make_unique<
+                sasktran2::solartransmission::SingleScatterSource<
+                    sasktran2::solartransmission::SolarTransmissionTable,
+                    NSTOKES>>(*m_geometry_1d, m_raytracer);
+            if (m_use_rust_solver) {
+                initial_single_scatter->enable_table_native_products();
+            }
+            m_initial_owned_sources.emplace_back(
+                std::move(initial_single_scatter));
+#ifdef SKTRAN_RUST_SUPPORT
+        } else {
+            m_initial_owned_sources.emplace_back(
+                std::make_unique<
+                    sasktran2::solartransmission::SingleScatterSource<
+                        sasktran2::solartransmission::SolarTransmissionExact,
+                        NSTOKES>>(*m_geometry_2d, *m_raytracer_2d, true));
+#else
+        } else {
+            throw std::invalid_argument(
+                "Geometry2D successive orders requires Rust support");
+#endif
         }
-        m_initial_owned_sources.emplace_back(std::move(initial_single_scatter));
 
         m_initial_sources.push_back(m_initial_owned_sources[0].get());
 
@@ -698,7 +769,7 @@ namespace sasktran2::hr {
             m_initial_owned_sources.emplace_back(
                 std::make_unique<
                     sasktran2::DOSourceInterpolatedPostProcessing<NSTOKES, -1>>(
-                    m_geometry, m_raytracer, false));
+                    *m_geometry_1d, m_raytracer, false));
 
             m_do_source =
                 static_cast<DOSourceInterpolatedPostProcessing<NSTOKES, -1>*>(
@@ -729,180 +800,232 @@ namespace sasktran2::hr {
 
     template <int NSTOKES>
     void DiffuseTable<NSTOKES>::generate_source_interpolation_weights(
+        const sasktran2::raytracing::TracedRay& ray,
+        RaySourceInterpolationWeights<NSTOKES>& ray_interpolator,
+        std::vector<std::pair<int, double>>& temp_location_storage,
+        std::vector<std::pair<int, double>>& temp_direction_storage,
+        std::vector<std::pair<int, double>>& temp_atmosphere_storage) const {
+        int num_location, num_direction;
+        Eigen::Vector3d rotated_los;
+        sasktran2::Location temp_location;
+
+        ray_interpolator = {};
+        ray_interpolator.interior_weights.resize(ray.layers.size());
+        ray_interpolator.atmosphere_weights.reserve(ray.num_grid_weights());
+        ray_interpolator.source_indices.reserve(ray.layers.size() * 12);
+        ray_interpolator.source_weights.reserve(ray.layers.size() * 12);
+
+        for (int layeridx = 0; layeridx < ray.layers.size(); ++layeridx) {
+            const auto& layer = ray.layers[layeridx];
+            auto& layer_interpolator =
+                ray_interpolator.interior_weights[layeridx];
+
+            temp_location.position =
+                (layer.entrance.position + layer.exit.position) / 2.0;
+
+            m_geometry.assign_interpolation_weights(temp_location,
+                                                    temp_atmosphere_storage);
+            const auto atmosphere_nodes = ray.entrance_weights(layeridx);
+            layer_interpolator.atmosphere_offset = static_cast<std::uint32_t>(
+                ray_interpolator.atmosphere_weights.size());
+            layer_interpolator.atmosphere_count =
+                static_cast<std::uint32_t>(atmosphere_nodes.size());
+            for (std::size_t node = 0; node < atmosphere_nodes.size(); ++node) {
+                const int atmosphere_index = atmosphere_nodes[node].first;
+                double atmosphere_weight = 0.0;
+                for (const auto& index_weight : temp_atmosphere_storage) {
+                    if (index_weight.first == atmosphere_index) {
+                        atmosphere_weight = index_weight.second;
+                        break;
+                    }
+                }
+                ray_interpolator.atmosphere_weights.push_back(
+                    atmosphere_weight);
+            }
+
+            layer_interpolator.source_offset = static_cast<std::uint32_t>(
+                ray_interpolator.source_indices.size());
+
+            m_location_interpolator->interior_interpolation_weights(
+                m_geometry.coordinates(), temp_location, temp_location_storage,
+                num_location);
+            for (int locidx = 0; locidx < num_location; ++locidx) {
+                const auto& contributing_point =
+                    m_diffuse_points[temp_location_storage[locidx].first];
+
+                if (m_geometry.coordinates().geometry_type() ==
+                    sasktran2::geometrytype::spherical) {
+                    rotated_los = rotate_unit_vector(
+                        layer.average_look_away, temp_location.position,
+                        contributing_point->location().position);
+                } else {
+                    rotated_los = layer.average_look_away;
+                }
+
+                contributing_point->sphere_pair().outgoing_sphere().interpolate(
+                    rotated_los, temp_direction_storage, num_direction);
+
+                for (int diridx = 0; diridx < num_direction; ++diridx) {
+                    const int direction_index =
+                        temp_direction_storage[diridx].first;
+                    const int location_index =
+                        temp_location_storage[locidx].first;
+                    if (direction_index < 0 ||
+                        direction_index >= contributing_point->num_outgoing()) {
+                        throw std::runtime_error(
+                            "Unit-sphere interpolation returned an invalid "
+                            "direction index");
+                    }
+#ifdef SASKTRAN_DEBUG_ASSERTS
+                    if (m_diffuse_outgoing_index_map[location_index] +
+                            direction_index >
+                        m_diffuse_outgoing_index_map.back() +
+                            m_config->num_hr_outgoing()) {
+                        spdlog::error("BAD INDEX {} {}", location_index,
+                                      direction_index);
+                    }
+#endif
+
+                    ray_interpolator.source_indices.push_back(
+                        m_diffuse_outgoing_index_map[location_index] +
+                        direction_index);
+                    ray_interpolator.source_weights.push_back(
+                        temp_location_storage[locidx].second *
+                        temp_direction_storage[diridx].second);
+                }
+            }
+            layer_interpolator.source_count = static_cast<std::uint32_t>(
+                ray_interpolator.source_indices.size() -
+                layer_interpolator.source_offset);
+        }
+
+        ray_interpolator.ground_is_hit = ray.ground_is_hit;
+        if (ray_interpolator.ground_is_hit && !ray.layers.empty()) {
+            const auto& layer = ray.layers[0];
+
+            temp_location.position = layer.exit.position;
+
+            m_location_interpolator->ground_interpolation_weights(
+                m_geometry.coordinates(), temp_location, temp_location_storage,
+                num_location);
+
+            for (int locidx = 0; locidx < num_location; ++locidx) {
+                const auto& contributing_point =
+                    m_diffuse_points[temp_location_storage[locidx].first];
+
+                if (m_geometry.coordinates().geometry_type() ==
+                    sasktran2::geometrytype::spherical) {
+                    rotated_los = rotate_unit_vector(
+                        -1 * layer.average_look_away, temp_location.position,
+                        contributing_point->location().position);
+                } else {
+                    rotated_los = -1 * layer.average_look_away;
+                }
+
+                contributing_point->sphere_pair().outgoing_sphere().interpolate(
+                    rotated_los, temp_direction_storage, num_direction);
+
+                for (int diridx = 0; diridx < num_direction; ++diridx) {
+                    const int direction_index =
+                        temp_direction_storage[diridx].first;
+                    if (direction_index < 0 ||
+                        direction_index >= contributing_point->num_outgoing()) {
+                        throw std::runtime_error(
+                            "Ground unit-sphere interpolation returned an "
+                            "invalid direction index");
+                    }
+                    ray_interpolator.ground_source_indices.push_back(
+                        m_diffuse_outgoing_index_map
+                            [temp_location_storage[locidx].first] +
+                        direction_index);
+                    ray_interpolator.ground_source_weights.push_back(
+                        temp_location_storage[locidx].second *
+                        temp_direction_storage[diridx].second);
+                }
+            }
+        }
+    }
+
+    template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::generate_source_interpolation_weights(
         const std::vector<sasktran2::raytracing::TracedRay>& rays,
         SInterpolator& interpolator) const {
         ZoneScopedN("Generate Source Interpolation Weights");
         interpolator.resize(rays.size());
 
-        int nthreads = m_config->num_threads();
-
+        const int nthreads = m_config->num_threads();
         std::vector<std::vector<std::pair<int, double>>>
-            thread_temp_location_storage;
+            thread_temp_location_storage(nthreads);
         std::vector<std::vector<std::pair<int, double>>>
-            thread_temp_direction_storage;
+            thread_temp_direction_storage(nthreads);
         std::vector<std::vector<std::pair<int, double>>>
-            thread_temp_atmosphere_storage;
+            thread_temp_atmosphere_storage(nthreads);
 
-        thread_temp_location_storage.resize(nthreads);
-        thread_temp_direction_storage.resize(nthreads);
-        thread_temp_atmosphere_storage.resize(nthreads);
-
-        int num_location, num_direction;
-
-        Eigen::Vector3d rotated_los;
-
-        sasktran2::Location temp_location;
-
-#pragma omp parallel for num_threads(nthreads) private(                        \
-        num_location, num_direction, rotated_los, temp_location)
+#pragma omp parallel for num_threads(nthreads)
         for (int rayidx = 0; rayidx < rays.size(); ++rayidx) {
 #ifdef SKTRAN_OPENMP_SUPPORT
-            int threadidx = omp_get_thread_num();
+            const int threadidx = omp_get_thread_num();
 #else
-            int threadidx = 0;
+            const int threadidx = 0;
 #endif
-
-            auto& temp_location_storage =
-                thread_temp_location_storage[threadidx];
-            auto& temp_direction_storage =
-                thread_temp_direction_storage[threadidx];
-            auto& temp_atmosphere_storage =
-                thread_temp_atmosphere_storage[threadidx];
-
-            auto& ray_interpolator = interpolator[rayidx];
-            const auto& ray = rays[rayidx];
-
-            ray_interpolator = {};
-            ray_interpolator.interior_weights.resize(ray.layers.size());
-            ray_interpolator.atmosphere_indices.reserve(ray.layers.size() * 2);
-            ray_interpolator.atmosphere_weights.reserve(ray.layers.size() * 2);
-            ray_interpolator.source_indices.reserve(ray.layers.size() * 12);
-            ray_interpolator.source_weights.reserve(ray.layers.size() * 12);
-            ray_interpolator.source_accumulation_indices.reserve(
-                ray.layers.size() * 12);
-
-            for (int layeridx = 0; layeridx < ray.layers.size(); ++layeridx) {
-                const auto& layer = ray.layers[layeridx];
-                auto& layer_interpolator =
-                    ray_interpolator.interior_weights[layeridx];
-
-                temp_location.position =
-                    (layer.entrance.position + layer.exit.position) / 2.0;
-
-                m_geometry.assign_interpolation_weights(
-                    temp_location, temp_atmosphere_storage);
-                layer_interpolator.atmosphere_offset =
-                    static_cast<std::uint32_t>(
-                        ray_interpolator.atmosphere_indices.size());
-                layer_interpolator.atmosphere_count =
-                    static_cast<std::uint32_t>(temp_atmosphere_storage.size());
-                for (const auto& index_weight : temp_atmosphere_storage) {
-                    ray_interpolator.atmosphere_indices.push_back(
-                        index_weight.first);
-                    ray_interpolator.atmosphere_weights.push_back(
-                        index_weight.second);
-                }
-
-                layer_interpolator.source_offset = static_cast<std::uint32_t>(
-                    ray_interpolator.source_indices.size());
-
-                m_location_interpolator->interior_interpolation_weights(
-                    m_geometry.coordinates(), temp_location,
-                    temp_location_storage, num_location);
-                for (int locidx = 0; locidx < num_location; ++locidx) {
-                    const auto& contributing_point =
-                        m_diffuse_points[temp_location_storage[locidx].first];
-
-                    if (m_geometry.coordinates().geometry_type() ==
-                        sasktran2::geometrytype::spherical) {
-                        // Multiply by -1 to get the propagation direction? Or
-                        // not, I think the -1 is done in the interpolator
-                        rotated_los = rotate_unit_vector(
-                            layer.average_look_away, temp_location.position,
-                            contributing_point->location().position);
-                    } else {
-                        // Don't need to rotate in plane parallel geometry
-                        rotated_los = layer.average_look_away;
-                    }
-
-                    contributing_point->sphere_pair()
-                        .outgoing_sphere()
-                        .interpolate(rotated_los, temp_direction_storage,
-                                     num_direction);
-
-                    for (int diridx = 0; diridx < num_direction; ++diridx) {
-#ifdef SASKTRAN_DEBUG_ASSERTS
-                        if (m_diffuse_outgoing_index_map
-                                    [temp_location_storage[locidx].first] +
-                                temp_direction_storage[diridx].first >
-                            m_diffuse_outgoing_index_map.back() +
-                                m_config->num_hr_outgoing()) {
-                            spdlog::error("BAD INDEX {} {}",
-                                          temp_location_storage[locidx].first,
-                                          temp_direction_storage[diridx].first);
-                        }
-#endif
-
-                        ray_interpolator.source_indices.push_back(
-                            m_diffuse_outgoing_index_map
-                                [temp_location_storage[locidx].first] +
-                            temp_direction_storage[diridx].first);
-                        ray_interpolator.source_weights.push_back(
-                            temp_location_storage[locidx].second *
-                            temp_direction_storage[diridx].second);
-                        ray_interpolator.source_accumulation_indices.push_back(
-                            std::array<int, NSTOKES>{});
-                    }
-                }
-                layer_interpolator.source_count = static_cast<std::uint32_t>(
-                    ray_interpolator.source_indices.size() -
-                    layer_interpolator.source_offset);
-            }
-
-            ray_interpolator.ground_is_hit = ray.ground_is_hit;
-            if (ray_interpolator.ground_is_hit) {
-                const auto& layer = ray.layers[0];
-
-                temp_location.position = layer.exit.position;
-
-                m_location_interpolator->ground_interpolation_weights(
-                    m_geometry.coordinates(), temp_location,
-                    temp_location_storage, num_location);
-
-                for (int locidx = 0; locidx < num_location; ++locidx) {
-                    const auto& contributing_point =
-                        m_diffuse_points[temp_location_storage[locidx].first];
-
-                    if (m_geometry.coordinates().geometry_type() ==
-                        sasktran2::geometrytype::spherical) {
-                        // Multiply by -1 to get the propagation direction
-                        rotated_los = rotate_unit_vector(
-                            -1 * layer.average_look_away,
-                            temp_location.position,
-                            contributing_point->location().position);
-                    } else {
-                        rotated_los = -1 * layer.average_look_away;
-                    }
-
-                    contributing_point->sphere_pair()
-                        .outgoing_sphere()
-                        .interpolate(rotated_los, temp_direction_storage,
-                                     num_direction);
-
-                    for (int diridx = 0; diridx < num_direction; ++diridx) {
-                        ray_interpolator.ground_source_indices.push_back(
-                            m_diffuse_outgoing_index_map
-                                [temp_location_storage[locidx].first] +
-                            temp_direction_storage[diridx].first);
-                        ray_interpolator.ground_source_weights.push_back(
-                            temp_location_storage[locidx].second *
-                            temp_direction_storage[diridx].second);
-                        ray_interpolator.ground_accumulation_indices.push_back(
-                            std::array<int, NSTOKES>{});
-                    }
-                }
-            }
+            generate_source_interpolation_weights(
+                rays[rayidx], interpolator[rayidx],
+                thread_temp_location_storage[threadidx],
+                thread_temp_direction_storage[threadidx],
+                thread_temp_atmosphere_storage[threadidx]);
         }
+    }
+
+    template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::compile_accumulation_row(
+        RaySourceInterpolationWeights<NSTOKES>& weights,
+        std::vector<int>& transport_columns,
+        std::vector<std::pair<int, std::uint16_t*>>& sorting_helper) const {
+        weights.source_accumulation_inner_indices.resize(
+            weights.source_indices.size());
+        weights.ground_accumulation_inner_indices.resize(
+            weights.ground_source_indices.size());
+
+        sorting_helper.clear();
+        sorting_helper.reserve(weights.source_indices.size() +
+                               weights.ground_source_indices.size());
+        for (std::size_t index = 0; index < weights.source_indices.size();
+             ++index) {
+            sorting_helper.emplace_back(
+                weights.source_indices[index],
+                &weights.source_accumulation_inner_indices[index]);
+        }
+        for (std::size_t index = 0;
+             index < weights.ground_source_indices.size(); ++index) {
+            sorting_helper.emplace_back(
+                weights.ground_source_indices[index],
+                &weights.ground_accumulation_inner_indices[index]);
+        }
+        std::stable_sort(sorting_helper.begin(), sorting_helper.end(),
+                         [](const auto& left, const auto& right) {
+                             return left.first < right.first;
+                         });
+
+        transport_columns.clear();
+        transport_columns.reserve(sorting_helper.size());
+        int previous_column = -1;
+        for (auto& [column, inner_index] : sorting_helper) {
+            if (transport_columns.empty() || column != previous_column) {
+                if (transport_columns.size() >
+                    std::numeric_limits<std::uint16_t>::max()) {
+                    throw std::length_error(
+                        "Successive-orders transport row exceeds compact "
+                        "inner index range");
+                }
+                transport_columns.push_back(column);
+                previous_column = column;
+            }
+            *inner_index =
+                static_cast<std::uint16_t>(transport_columns.size() - 1);
+        }
+
+        std::vector<int>().swap(weights.source_indices);
+        std::vector<int>().swap(weights.ground_source_indices);
     }
 
     template <int NSTOKES>
@@ -1539,12 +1662,25 @@ namespace sasktran2::hr {
                 "Native successive-orders products require the Rust solver");
         }
         auto& storage = m_thread_storage[wavel_threadidx];
+        storage.rust_transport_value_tangent.resize(
+            storage.accumulation_summed_values.size());
+        storage.rust_scattering_coefficient_tangent.resize(
+            storage.rust_scattering_coefficients.size());
+        storage.rust_boundary_scattering_value_tangent.resize(
+            storage.rust_boundary_scattering_values.size());
+        storage.rust_first_order_forcing_tangent.resize(
+            storage.m_firstorder_radiances.value.size());
+        storage.rust_solution_jvp.resize(
+            storage.m_outgoing_sources.value.size());
         storage.rust_transport_value_tangent.setZero();
         storage.rust_first_order_forcing_tangent.setZero();
         pack_rust_scattering_coefficient_jvp(wavelidx, wavel_threadidx,
                                              native_tangent);
         pack_rust_boundary_scattering_jvp(wavelidx, wavel_threadidx,
                                           native_tangent);
+        for (auto* source : m_initial_sources) {
+            source->prepare_jvp(wavelidx, wavel_threadidx, native_tangent);
+        }
 
         const int num_threads = m_config->num_source_threads();
 #pragma omp parallel for num_threads(num_threads)
@@ -1597,6 +1733,9 @@ namespace sasktran2::hr {
             throw std::logic_error(
                 "Native successive-orders products require the Rust solver");
         }
+        for (auto* source : m_initial_sources) {
+            source->prepare_vjp(wavelidx, wavel_threadidx);
+        }
         for (auto& cotangent : m_los_solution_cotangents[wavel_threadidx]) {
             cotangent.setZero();
         }
@@ -1634,6 +1773,8 @@ namespace sasktran2::hr {
         const auto forcing_gradient =
             sasktran2::rust::successive_orders::first_order_forcing_gradient(
                 *solver);
+        const auto converged_solution =
+            sasktran2::rust::successive_orders::solution(*solver);
 
         accumulate_rust_scattering_coefficient_vjp(
             wavelidx, coefficient_gradient, native_gradient);
@@ -1659,12 +1800,18 @@ namespace sasktran2::hr {
                 source_threadidx + wavel_threadidx, m_diffuse_source_weights,
                 Eigen::Map<const Eigen::VectorXd>(transport_gradient.data(),
                                                   transport_gradient.size()),
+                Eigen::Map<const Eigen::VectorXd>(converged_solution.data(),
+                                                  converged_solution.size()),
+                m_inner_indicies,
                 Eigen::Map<const Eigen::VectorXd>(forcing_gradient.data(),
                                                   forcing_gradient.size()),
                 thread_gradients[source_threadidx]);
         }
         for (const auto& gradient : thread_gradients) {
             native_gradient += gradient;
+        }
+        for (const auto* source : m_initial_sources) {
+            source->finalize_vjp(wavelidx, wavel_threadidx, native_gradient);
         }
 #else
         (void)wavelidx;
@@ -1702,9 +1849,12 @@ namespace sasktran2::hr {
                  i < layer_interpolator.atmosphere_offset +
                          layer_interpolator.atmosphere_count;
                  ++i) {
-                omega += m_atmosphere->storage().ssa(
-                             ray_interpolator.atmosphere_indices[i], wavelidx) *
-                         ray_interpolator.atmosphere_weights[i];
+                const int atmosphere_index =
+                    entrance_weights[i - layer_interpolator.atmosphere_offset]
+                        .first;
+                omega +=
+                    m_atmosphere->storage().ssa(atmosphere_index, wavelidx) *
+                    ray_interpolator.atmosphere_weights[i];
             }
 
             const double source_factor = 1 - std::exp(-shell_od.od(lane));
@@ -1735,7 +1885,7 @@ namespace sasktran2::hr {
 
                     source.value(s) += omega * source_factor * source_value;
 
-                    if (m_atmosphere->num_deriv() > 0) {
+                    if (source.derivative_size() > 0) {
                         // Now we need dJ/dthickness.
                         for (auto it = shell_od.derivative_iterator(); it;
                              ++it) {
@@ -1751,10 +1901,14 @@ namespace sasktran2::hr {
                              layer_interpolator.atmosphere_offset +
                                  layer_interpolator.atmosphere_count;
                              ++atmosphere_index) {
+                            const int native_atmosphere_index =
+                                entrance_weights[atmosphere_index -
+                                                 layer_interpolator
+                                                     .atmosphere_offset]
+                                    .first;
                             source.deriv(s,
                                          m_atmosphere->ssa_deriv_start_index() +
-                                             ray_interpolator.atmosphere_indices
-                                                 [atmosphere_index]) +=
+                                             native_atmosphere_index) +=
                                 ray_interpolator
                                     .atmosphere_weights[atmosphere_index] *
                                 source_factor * source_value;
@@ -1786,7 +1940,6 @@ namespace sasktran2::hr {
         sasktran2::RadianceJVP<NSTOKES>& source) const {
         (void)threadidx;
         (void)layer;
-        (void)entrance_weights;
         (void)exit_weights;
         const auto& storage = m_thread_storage[wavel_threadidx];
         const auto& interpolator = m_los_source_weights[losidx];
@@ -1798,7 +1951,9 @@ namespace sasktran2::hr {
              index < layer_interpolator.atmosphere_offset +
                          layer_interpolator.atmosphere_count;
              ++index) {
-            const int atmosphere_index = interpolator.atmosphere_indices[index];
+            const int atmosphere_index =
+                entrance_weights[index - layer_interpolator.atmosphere_offset]
+                    .first;
             const double weight = interpolator.atmosphere_weights[index];
             omega += weight *
                      m_atmosphere->storage().ssa(atmosphere_index, wavelidx);
@@ -1872,7 +2027,6 @@ namespace sasktran2::hr {
         const Eigen::Vector<double, NSTOKES>& cotangent,
         Eigen::Ref<Eigen::VectorXd> native_gradient) const {
         (void)layer;
-        (void)entrance_weights;
         (void)exit_weights;
         const auto& storage = m_thread_storage[wavel_threadidx];
         const auto& interpolator = m_los_source_weights[losidx];
@@ -1883,9 +2037,11 @@ namespace sasktran2::hr {
              index < layer_interpolator.atmosphere_offset +
                          layer_interpolator.atmosphere_count;
              ++index) {
+            const int atmosphere_index =
+                entrance_weights[index - layer_interpolator.atmosphere_offset]
+                    .first;
             omega += interpolator.atmosphere_weights[index] *
-                     m_atmosphere->storage().ssa(
-                         interpolator.atmosphere_indices[index], wavelidx);
+                     m_atmosphere->storage().ssa(atmosphere_index, wavelidx);
         }
         Eigen::Vector<double, NSTOKES> interpolated_outgoing =
             Eigen::Vector<double, NSTOKES>::Zero();
@@ -1913,8 +2069,11 @@ namespace sasktran2::hr {
              index < layer_interpolator.atmosphere_offset +
                          layer_interpolator.atmosphere_count;
              ++index) {
+            const int atmosphere_index =
+                entrance_weights[index - layer_interpolator.atmosphere_offset]
+                    .first;
             native_gradient(m_atmosphere->ssa_deriv_start_index() +
-                            interpolator.atmosphere_indices[index]) +=
+                            atmosphere_index) +=
                 interpolator.atmosphere_weights[index] * factor *
                 amplitude_cotangent;
         }

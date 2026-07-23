@@ -374,6 +374,45 @@ impl SuccessiveOrdersSolver {
         forcing: &[f64],
         solution_cotangent: &[f64],
     ) -> Result<FixedPointGradient, SolverError> {
+        self.solve_vjp_impl(
+            transport_row_offsets,
+            transport_column_indices,
+            transport_values,
+            forcing,
+            solution_cotangent,
+            true,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn solve_vjp_compact(
+        &self,
+        transport_row_offsets: &[i32],
+        transport_column_indices: &[i32],
+        transport_values: &[f64],
+        forcing: &[f64],
+        solution_cotangent: &[f64],
+    ) -> Result<FixedPointGradient, SolverError> {
+        self.solve_vjp_impl(
+            transport_row_offsets,
+            transport_column_indices,
+            transport_values,
+            forcing,
+            solution_cotangent,
+            false,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn solve_vjp_impl(
+        &self,
+        transport_row_offsets: &[i32],
+        transport_column_indices: &[i32],
+        transport_values: &[f64],
+        forcing: &[f64],
+        solution_cotangent: &[f64],
+        materialize_transport_gradient: bool,
+    ) -> Result<FixedPointGradient, SolverError> {
         self.validate_linearization_configuration()?;
         self.problem.validate_iteration_data(
             transport_row_offsets,
@@ -409,7 +448,14 @@ impl SuccessiveOrdersSolver {
                     .map_err(SolverError::from)
             })?;
 
-        let mut gradient = FixedPointGradient::zeros(&self.problem);
+        let mut gradient = if materialize_transport_gradient {
+            FixedPointGradient::zeros(&self.problem)
+        } else {
+            // At convergence the transport-value VJP factorizes exactly as
+            // incoming_cotangent[row] * solution[column]. Keep that form
+            // compact for the geometry pullback.
+            FixedPointGradient::zeros_without_transport(&self.problem)
+        };
         let mut state_cotangent = vec![0.0; self.solution.len()];
         let mut incoming_scratch = vec![0.0; self.problem.incoming_size()];
         let mut incoming_cotangent = vec![0.0; self.problem.incoming_size()];
@@ -539,6 +585,15 @@ impl FixedPointGradient {
     fn zeros(problem: &FixedPointProblem) -> Self {
         Self {
             transport_values: vec![0.0; problem.transport_value_size()],
+            scattering_coefficients: vec![0.0; problem.scattering_coefficient_size()],
+            dense_scattering_values: vec![0.0; problem.dense_scattering_value_size()],
+            forcing: vec![0.0; problem.incoming_size()],
+        }
+    }
+
+    fn zeros_without_transport(problem: &FixedPointProblem) -> Self {
+        Self {
+            transport_values: Vec::new(),
             scattering_coefficients: vec![0.0; problem.scattering_coefficient_size()],
             dense_scattering_values: vec![0.0; problem.dense_scattering_value_size()],
             forcing: vec![0.0; problem.incoming_size()],

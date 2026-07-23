@@ -283,6 +283,19 @@ namespace sasktran2::raytracing {
                     layer.grid_weight_count};
         }
 
+        /** Transfers ownership of the compiled stencil buffers. Existing
+         *  stencil views are invalidated and the ray retains no compiled
+         *  weights. Layer offsets remain valid for the transferred buffers. */
+        void move_grid_weights_to(std::vector<int>& indices,
+                                  std::vector<double>& entrance_weights,
+                                  std::vector<double>& exit_weights,
+                                  std::vector<double>& od_weights) {
+            indices = std::move(grid_weight_indices);
+            entrance_weights = std::move(entrance_grid_weights);
+            exit_weights = std::move(exit_grid_weights);
+            od_weights = std::move(integrated_od_weights);
+        }
+
         /** Resets the storage for the TracedRay so it can be traced again
          */
         void reset() {
@@ -978,18 +991,19 @@ namespace sasktran2::raytracing {
         std::unique_ptr<RustRayTracerImpl> m_impl;
     };
 
-    /** Standalone Rust structured-2D ray tracer.
+    /** Rust structured-2D ray tracer.
      *
      * The refractive-index overload accepts one altitude-only profile for this
      * ray. Profiles are not stored on Geometry2D and may differ between calls.
      */
-    class RustRayTracer2D {
+    class RustRayTracer2D : public RayTracerBase {
       public:
         explicit RustRayTracer2D(const sasktran2::Geometry2D& geometry);
-        ~RustRayTracer2D();
+        ~RustRayTracer2D() override;
 
         void trace_ray(const sasktran2::viewinggeometry::ViewingRay& ray,
-                       TracedRay& tracedray) const;
+                       TracedRay& tracedray,
+                       bool include_refraction = false) const override;
 
         void trace_ray(const sasktran2::viewinggeometry::ViewingRay& ray,
                        const Eigen::VectorXd& refractive_index,

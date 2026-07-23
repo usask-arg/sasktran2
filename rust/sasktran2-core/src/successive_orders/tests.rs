@@ -167,6 +167,24 @@ fn implicit_products_match_converged_system_with_anderson() {
     assert!((gradient.transport_values[0] - adjoint * solution).abs() < 2.0e-10);
     assert!((gradient.dense_scattering_values[0] - adjoint * solution).abs() < 2.0e-10);
     assert!((gradient.forcing[0] - adjoint).abs() < 2.0e-10);
+
+    let compact_gradient = solver
+        .solve_vjp_compact(
+            &[0, 1],
+            &[0],
+            &[multiplier],
+            &[forcing],
+            &solution_cotangent,
+        )
+        .unwrap();
+    assert!(compact_gradient.transport_values.is_empty());
+    assert!(
+        (compact_gradient.forcing[0] * solution - gradient.transport_values[0]).abs() < 2.0e-10
+    );
+    assert_eq!(
+        compact_gradient.dense_scattering_values,
+        gradient.dense_scattering_values
+    );
 }
 
 #[test]

@@ -41,6 +41,46 @@ namespace sasktran2::solartransmission {
         m_geometry_entrance_to_internal.clear();
         m_geometry_exit_to_internal.clear();
 
+        if (m_scalar_on_demand) {
+            m_los_to_cos_scatter.assign(los_rays.size(), -1);
+            m_scatter_angles.reserve(los_rays.size());
+            for (std::size_t ray_index = 0; ray_index < los_rays.size();
+                 ++ray_index) {
+                const auto& ray = los_rays[ray_index];
+                if (ray.layers.empty()) {
+                    continue;
+                }
+                if (!ray.is_straight) {
+                    throw std::invalid_argument(
+                        "On-demand scalar phase evaluation requires straight "
+                        "rays");
+                }
+                double theta;
+                double C1;
+                double C2;
+                double S1;
+                double S2;
+                int negation;
+                math::stokes_scattering_factors(
+                    -m_geometry.coordinates().sun_unit(),
+                    -ray.layers[0].average_look_away, theta, C1, C2, S1, S2,
+                    negation);
+                m_los_to_cos_scatter[ray_index] = m_scatter_angles.size();
+                m_scatter_angles.push_back({theta});
+            }
+
+            m_wigner_d00.resize(m_config->num_singlescatter_moments(),
+                                m_scatter_angles.size());
+            auto d00 = sasktran2::math::WignerDCalculator(0, 0);
+            for (int index = 0; index < m_scatter_angles.size(); ++index) {
+                d00.vec_d_emplace(m_scatter_angles[index][0],
+                                  m_config->num_singlescatter_moments(),
+                                  &m_wigner_d00(0, index));
+            }
+            m_phase.resize(0, 0, 0);
+            return;
+        }
+
         int num_internal = 0;
         int num_scatter = 0;
         double theta, C1, C2, S1, S2;
@@ -202,6 +242,11 @@ namespace sasktran2::solartransmission {
         const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere) {
         m_atmosphere = &atmosphere;
 
+        if (m_scalar_on_demand) {
+            m_d_phase.resize(0, 0, 0, 0);
+            return;
+        }
+
         int numderiv = m_atmosphere->num_scattering_deriv_groups();
 
         if constexpr (NSTOKES == 1) {
@@ -215,6 +260,10 @@ namespace sasktran2::solartransmission {
 
     template <int NSTOKES>
     void PhaseHandler<NSTOKES>::calculate(int wavelidx, int threadidx) {
+        if (m_scalar_on_demand) {
+            m_current_wavelength.at(threadidx) = wavelidx;
+            return;
+        }
 
         // If we need to calculate the phase function, we do it
         if (m_config->singlescatter_phasemode() ==
@@ -302,6 +351,40 @@ namespace sasktran2::solartransmission {
             spdlog::error("Phase mode not implemented");
             throw std::runtime_error("Phase mode not implemented");
         }
+    }
+
+    template <int NSTOKES>
+    double PhaseHandler<NSTOKES>::scalar_phase_on_demand(int threadidx,
+                                                         int losidx,
+                                                         int atmosphere_index,
+                                                         int derivative) const {
+        if constexpr (NSTOKES != 1) {
+            return 0.0;
+        }
+        const int wavelength = m_current_wavelength.at(threadidx);
+        const int scatter_index = m_los_to_cos_scatter.at(losidx);
+        if (wavelength < 0 || scatter_index < 0) {
+            throw std::logic_error(
+                "On-demand scalar phase evaluated before initialization");
+        }
+
+        if (derivative < 0) {
+            const int max_order =
+                m_atmosphere->storage().max_order(atmosphere_index, wavelength);
+            return Eigen::Map<const Eigen::VectorXd>(
+                       &m_atmosphere->storage().leg_coeff(0, atmosphere_index,
+                                                          wavelength),
+                       max_order)
+                .dot(m_wigner_d00(Eigen::seq(0, max_order - 1), scatter_index));
+        }
+
+        const int max_order = m_atmosphere->storage().d_max_order[derivative](
+            atmosphere_index, wavelength);
+        return Eigen::Map<const Eigen::VectorXd>(
+                   &m_atmosphere->storage().d_leg_coeff(0, atmosphere_index,
+                                                        wavelength, derivative),
+                   max_order)
+            .dot(m_wigner_d00(Eigen::seq(0, max_order - 1), scatter_index));
     }
 
     template <int NSTOKES>
@@ -501,6 +584,38 @@ namespace sasktran2::solartransmission {
         const raytracing::GridWeightStencilView& index_weights,
         bool is_entrance, double source_amplitude, double derivative_scale,
         Target& target) const {
+        if (m_scalar_on_demand) {
+            double phase_result = 0.0;
+            for (std::size_t index = 0; index < index_weights.size(); ++index) {
+                const auto weight = index_weights[index];
+                if (weight.second == 0.0) {
+                    continue;
+                }
+                phase_result +=
+                    weight.second *
+                    scalar_phase_on_demand(threadidx, losidx, weight.first);
+            }
+            for (int derivative = 0;
+                 derivative < m_atmosphere->num_scattering_deriv_groups();
+                 ++derivative) {
+                const int derivative_start =
+                    m_atmosphere->scat_deriv_start_index() +
+                    derivative * m_geometry.size();
+                for (std::size_t index = 0; index < index_weights.size();
+                     ++index) {
+                    const auto weight = index_weights[index];
+                    if (weight.second == 0.0) {
+                        continue;
+                    }
+                    target.deriv(0, derivative_start + weight.first) +=
+                        derivative_scale * source_amplitude * weight.second *
+                        scalar_phase_on_demand(threadidx, losidx, weight.first,
+                                               derivative);
+                }
+            }
+            return Eigen::Vector<double, NSTOKES>::Constant(phase_result);
+        }
+
         const auto& internal_indices =
             is_entrance ? m_geometry_entrance_to_internal[losidx][layeridx]
                         : m_geometry_exit_to_internal[losidx][layeridx];
@@ -648,6 +763,19 @@ namespace sasktran2::solartransmission {
         int threadidx, int losidx, int layeridx,
         const raytracing::GridWeightStencilView& index_weights,
         bool is_entrance) const {
+        if (m_scalar_on_demand) {
+            double result = 0.0;
+            for (std::size_t index = 0; index < index_weights.size(); ++index) {
+                const auto weight = index_weights[index];
+                if (weight.second != 0.0) {
+                    result +=
+                        weight.second *
+                        scalar_phase_on_demand(threadidx, losidx, weight.first);
+                }
+            }
+            return Eigen::Vector<double, NSTOKES>::Constant(result);
+        }
+
         Eigen::Vector<double, NSTOKES> phase =
             Eigen::Vector<double, NSTOKES>::Zero();
         const auto& internal_indices =
@@ -694,6 +822,29 @@ namespace sasktran2::solartransmission {
         phase = scatter_value(threadidx, losidx, layeridx, index_weights,
                               is_entrance);
         phase_jvp.setZero();
+        if (m_scalar_on_demand) {
+            for (int derivative = 0;
+                 derivative < m_atmosphere->num_scattering_deriv_groups();
+                 ++derivative) {
+                const int derivative_start =
+                    m_atmosphere->scat_deriv_start_index() +
+                    derivative * m_geometry.size();
+                for (std::size_t index = 0; index < index_weights.size();
+                     ++index) {
+                    const auto weight = index_weights[index];
+                    if (weight.second == 0.0) {
+                        continue;
+                    }
+                    phase_jvp(0) +=
+                        weight.second *
+                        native_tangent(derivative_start + weight.first) *
+                        scalar_phase_on_demand(threadidx, losidx, weight.first,
+                                               derivative);
+                }
+            }
+            return;
+        }
+
         const auto& internal_indices =
             is_entrance ? m_geometry_entrance_to_internal[losidx][layeridx]
                         : m_geometry_exit_to_internal[losidx][layeridx];
@@ -735,6 +886,28 @@ namespace sasktran2::solartransmission {
         const raytracing::GridWeightStencilView& index_weights,
         bool is_entrance, const Eigen::Vector<double, NSTOKES>& phase_cotangent,
         Eigen::Ref<Eigen::VectorXd> native_gradient) const {
+        if (m_scalar_on_demand) {
+            for (int derivative = 0;
+                 derivative < m_atmosphere->num_scattering_deriv_groups();
+                 ++derivative) {
+                const int derivative_start =
+                    m_atmosphere->scat_deriv_start_index() +
+                    derivative * m_geometry.size();
+                for (std::size_t index = 0; index < index_weights.size();
+                     ++index) {
+                    const auto weight = index_weights[index];
+                    if (weight.second == 0.0) {
+                        continue;
+                    }
+                    native_gradient(derivative_start + weight.first) +=
+                        weight.second * phase_cotangent(0) *
+                        scalar_phase_on_demand(threadidx, losidx, weight.first,
+                                               derivative);
+                }
+            }
+            return;
+        }
+
         const auto& internal_indices =
             is_entrance ? m_geometry_entrance_to_internal[losidx][layeridx]
                         : m_geometry_exit_to_internal[losidx][layeridx];

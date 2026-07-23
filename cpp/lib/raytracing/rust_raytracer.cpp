@@ -307,8 +307,13 @@ namespace sasktran2::raytracing {
     }
 
     void RustRayTracer2D::trace_ray(
-        const sasktran2::viewinggeometry::ViewingRay& ray,
-        TracedRay& result) const {
+        const sasktran2::viewinggeometry::ViewingRay& ray, TracedRay& result,
+        bool include_refraction) const {
+        if (include_refraction) {
+            throw std::invalid_argument(
+                "Geometry2D diffuse-ray tracing does not yet accept a "
+                "refractive-index profile");
+        }
         trace_ray_impl(ray, nullptr, result);
     }
 

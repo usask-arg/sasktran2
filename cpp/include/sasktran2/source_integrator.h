@@ -19,16 +19,31 @@ namespace sasktran2 {
 
         // Structure-of-arrays storage avoids tuple padding and replaces two
         // heap allocations per traced layer with a few allocations per ray.
-        std::vector<int> atmosphere_indices;
         std::vector<double> atmosphere_weights;
         std::vector<int> source_indices;
         std::vector<double> source_weights;
-        std::vector<std::array<int, NSTOKES>> source_accumulation_indices;
+        std::vector<std::uint16_t> source_accumulation_inner_indices;
 
         std::vector<int> ground_source_indices;
         std::vector<double> ground_source_weights;
-        std::vector<std::array<int, NSTOKES>> ground_accumulation_indices;
+        std::vector<std::uint16_t> ground_accumulation_inner_indices;
+        std::uint32_t accumulation_row_offset = 0;
+        std::uint32_t accumulation_row_nnz = 0;
         bool ground_is_hit = false;
+
+        std::size_t source_accumulation_index(std::size_t source_index,
+                                              int stokes) const {
+            return static_cast<std::size_t>(accumulation_row_offset) +
+                   static_cast<std::size_t>(stokes) * accumulation_row_nnz +
+                   source_accumulation_inner_indices[source_index];
+        }
+
+        std::size_t ground_accumulation_index(std::size_t source_index,
+                                              int stokes) const {
+            return static_cast<std::size_t>(accumulation_row_offset) +
+                   static_cast<std::size_t>(stokes) * accumulation_row_nnz +
+                   ground_accumulation_inner_indices[source_index];
+        }
     };
 
     /** Class that integrates source terms along the ray.  Note that in
@@ -79,6 +94,29 @@ namespace sasktran2 {
         const std::vector<sasktran2::raytracing::TracedRay>* m_traced_rays =
             nullptr; /**< Reference to the rays we are integrating */
 
+        struct CompactLayer {
+            double layer_distance;
+            double od_quad_start;
+            double od_quad_end;
+            double od_quad_start_fraction;
+            double od_quad_end_fraction;
+            std::uint32_t grid_weight_offset;
+            std::uint8_t grid_weight_count;
+        };
+        struct CompactGridWeights {
+            std::vector<int> indices;
+            std::vector<double> entrance;
+            std::vector<double> exit;
+            std::vector<double> optical_depth;
+        };
+        struct CompactRay {
+            std::vector<CompactLayer> layers;
+            CompactGridWeights weights;
+        };
+        bool m_use_compact_geometry = false;
+        std::vector<CompactRay> m_compact_rays;
+        std::size_t m_compact_max_layers = 0;
+
         const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere =
             nullptr;
         int m_num_geometry_locations = 0;
@@ -86,6 +124,17 @@ namespace sasktran2 {
         bool m_use_sparse_derivative_tracking = false;
         std::vector<std::vector<std::vector<std::pair<int, int>>>>
             m_attenuation_active_derivative_ranges;
+
+        int integration_num_layers(int rayidx) const;
+        const sasktran2::raytracing::TracedLayer&
+        integration_layer(int rayidx, int layeridx,
+                          sasktran2::raytracing::TracedLayer& scratch) const;
+        sasktran2::raytracing::GridWeightStencilView
+        integration_entrance_weights(int rayidx, int layeridx) const;
+        sasktran2::raytracing::GridWeightStencilView
+        integration_exit_weights(int rayidx, int layeridx) const;
+        sasktran2::raytracing::GridWeightStencilView
+        integration_optical_depth_weights(int rayidx, int layeridx) const;
 
         template <int N>
         void integrate_block(
@@ -139,6 +188,20 @@ namespace sasktran2 {
         void initialize_geometry(
             const std::vector<sasktran2::raytracing::TracedRay>& traced_rays,
             const Geometry& geometry);
+
+        /** Starts incremental compact 2D geometry construction. */
+        void begin_compact_geometry_2d(
+            std::vector<sasktran2::raytracing::TracedRay>& traced_rays,
+            const Geometry& geometry);
+
+        /** Moves one freshly traced 2D ray into compact integration storage,
+         *  retaining only its first layer for end-of-ray source handling. */
+        void
+        compact_geometry_2d_ray(int rayidx,
+                                sasktran2::raytracing::TracedRay& traced_ray);
+
+        /** Completes incremental compact 2D geometry construction. */
+        void finalize_compact_geometry_2d();
 
         /** Initializes the atmosphere
          *
@@ -230,6 +293,8 @@ namespace sasktran2 {
             int wavelidx, int rayidx, int wavel_threadidx, int threadidx,
             const SInterpolator& source_interpolator,
             Eigen::Ref<const Eigen::VectorXd> accumulation_value_gradient,
+            Eigen::Ref<const Eigen::VectorXd> transport_solution,
+            Eigen::Ref<const Eigen::VectorXi> transport_column_indices,
             Eigen::Ref<const Eigen::VectorXd> first_order_forcing_gradient,
             Eigen::Ref<Eigen::VectorXd> native_gradient) const;
 

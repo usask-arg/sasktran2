@@ -1,6 +1,7 @@
 #pragma once
 
 #include <spdlog/spdlog.h>
+#include <vector>
 
 namespace sasktran2 {
 
@@ -373,10 +374,10 @@ namespace sasktran2 {
          */
         int num_do_sza() const { return m_ndosza; }
 
-        /** Sets the number of SZA's to use in the DO solution.  For plane
-         * parallel this should always be 1. For spherical mode typically 2 is
-         * sufficient for nadir applications, more may be necessary for limb
-         * viewing geometry.
+        /** Sets the number of source-location profiles. In 1D spherical
+         * geometry these are solar-zenith-angle profiles. For the Rust
+         * successive-orders source in Geometry2D they are uniformly spaced
+         * horizontal source profiles across the atmosphere grid.
          *
          * @param nsza
          */
@@ -493,6 +494,16 @@ namespace sasktran2 {
         }
         void set_successive_orders_damping(double damping) {
             m_successive_orders_damping = damping;
+        }
+
+        /** Explicit altitude grid, in metres, for successive-orders volume
+         * source points. An empty grid selects the default layer midpoints. */
+        const std::vector<double>& successive_orders_altitude_grid_m() const {
+            return m_successive_orders_altitude_grid_m;
+        }
+        void set_successive_orders_altitude_grid_m(
+            std::vector<double> altitude_grid_m) {
+            m_successive_orders_altitude_grid_m = std::move(altitude_grid_m);
         }
 
         /**
@@ -765,6 +776,7 @@ namespace sasktran2 {
         double m_successive_orders_absolute_tolerance;
         int m_successive_orders_anderson_depth;
         double m_successive_orders_damping;
+        std::vector<double> m_successive_orders_altitude_grid_m;
 
         bool m_apply_delta_scaling;
 

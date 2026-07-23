@@ -14,6 +14,7 @@ add_library(
   grids/grid.cpp
   grids/source_location_interpolator.cpp
   grids/altitude_sza_source_location_interpolator.cpp
+  grids/altitude_horizontal_source_location_interpolator.cpp
   dual/dual.cpp
   math/wigner.cpp
   atmosphere/atmosphere.cpp

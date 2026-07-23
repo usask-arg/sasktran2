@@ -430,7 +430,14 @@ fn linearize_coefficients_vjp(
     solution_cotangent: &[f64],
 ) -> Result<()> {
     let this = solver.as_mut().get_mut();
-    let gradient = this.solver.solve_vjp(
+    // A VJP is evaluated one wavelength at a time. Drop the previous
+    // wavelength's potentially very large transport gradient before the
+    // solver allocates its replacement.
+    this.transport_value_gradient = Vec::new();
+    this.scattering_coefficient_gradient = Vec::new();
+    this.boundary_scattering_value_gradient = Vec::new();
+    this.first_order_forcing_gradient = Vec::new();
+    let gradient = this.solver.solve_vjp_compact(
         transport_row_offsets,
         transport_column_indices,
         transport_values,

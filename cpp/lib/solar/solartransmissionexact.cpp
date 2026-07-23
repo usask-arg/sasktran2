@@ -152,5 +152,46 @@ namespace sasktran2::solartransmission {
         }
         od_matrix.setFromTriplets(triplets.begin(), triplets.end());
     }
+
+    void SolarTransmissionExact::generate_atmosphere_grid_geometry_matrix(
+        Eigen::SparseMatrix<double, Eigen::RowMajor>& od_matrix,
+        std::vector<bool>& ground_hit_flag) const {
+        const int numpoints = m_geometry_2d->size();
+        od_matrix.resize(numpoints, numpoints);
+        ground_hit_flag.assign(numpoints, false);
+
+        std::vector<Eigen::Triplet<double>> triplets;
+        triplets.reserve(static_cast<std::size_t>(numpoints) * 64);
+
+        sasktran2::viewinggeometry::ViewingRay ray_to_sun;
+        ray_to_sun.look_away = m_geometry.coordinates().sun_unit();
+        raytracing::TracedRay traced_ray;
+
+        for (int row = 0; row < numpoints; ++row) {
+            const auto [altitude_index, horizontal_index] =
+                m_geometry_2d->location_indices(row);
+            ray_to_sun.observer.position =
+                m_geometry_2d->grid_location(altitude_index, horizontal_index);
+
+            if (solar_ray_hits_ground(ray_to_sun.observer, *m_geometry_2d)) {
+                ground_hit_flag[row] = true;
+                continue;
+            }
+
+            m_raytracer_2d->trace_ray(ray_to_sun, traced_ray);
+            for (std::size_t layer_index = 0;
+                 layer_index < traced_ray.layers.size(); ++layer_index) {
+                const auto weights =
+                    traced_ray.optical_depth_weights(layer_index);
+                for (std::size_t index = 0; index < weights.size(); ++index) {
+                    const auto weight = weights[index];
+                    if (weight.second != 0.0) {
+                        triplets.emplace_back(row, weight.first, weight.second);
+                    }
+                }
+            }
+        }
+        od_matrix.setFromTriplets(triplets.begin(), triplets.end());
+    }
 #endif
 } // namespace sasktran2::solartransmission

@@ -10,17 +10,21 @@ namespace sasktran2::successive_orders {
      * A separate successive-orders source whose fixed-point operator and
      * convergence logic are implemented in Rust.
      *
-     * The first implementation deliberately reuses the established C++ 1-D
-     * diffuse-grid construction, traced-ray integration, and line-of-sight
-     * projection. This keeps the language boundary at immutable operator
-     * structure plus wavelength-dependent coefficients. The Rust operator
-     * types themselves do not assume a 1-D grid.
+     * C++ constructs the dimension-dependent diffuse grid, traces its rays,
+     * and projects the result to the line of sight. Rust owns the immutable
+     * fixed-point operator and wavelength-dependent solve. The Rust operator
+     * types do not assume an atmospheric dimensionality.
      */
     template <int NSTOKES>
     class RustSource final : public sasktran2::hr::DiffuseTable<NSTOKES> {
       public:
         RustSource(const sasktran2::raytracing::RayTracerBase& ray_tracer,
                    const sasktran2::Geometry1D& geometry)
+            : sasktran2::hr::DiffuseTable<NSTOKES>(ray_tracer, geometry, true) {
+        }
+
+        RustSource(const sasktran2::raytracing::RustRayTracer2D& ray_tracer,
+                   const sasktran2::Geometry2D& geometry)
             : sasktran2::hr::DiffuseTable<NSTOKES>(ray_tracer, geometry, true) {
         }
 
