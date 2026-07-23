@@ -2,6 +2,8 @@
 #include "sasktran2/config.h"
 #include "internal_types.h"
 #include <sasktran2.h>
+#include <algorithm>
+#include <cmath>
 
 extern "C" {
 Config* sk_config_create() { return new Config(); }
@@ -331,7 +333,7 @@ int sk_config_get_num_hr_full_incoming_points(Config* config, int* num_points) {
 }
 
 int sk_config_set_num_hr_full_incoming_points(Config* config, int num_points) {
-    if (config == nullptr) {
+    if (config == nullptr || (num_points != -1 && num_points < 2)) {
         return -1; // Error: null pointer
     }
     config->impl.set_num_hr_full_incoming_points(num_points);
@@ -437,6 +439,57 @@ int sk_config_set_successive_orders_damping(Config* config, double damping) {
         return -1;
     }
     config->impl.set_successive_orders_damping(damping);
+    return 0;
+}
+
+int sk_config_get_num_successive_orders_altitudes(Config* config,
+                                                  int* num_altitudes) {
+    if (config == nullptr || num_altitudes == nullptr) {
+        return -1;
+    }
+    *num_altitudes = static_cast<int>(
+        config->impl.successive_orders_altitude_grid_m().size());
+    return 0;
+}
+
+int sk_config_get_successive_orders_altitude_grid_m(Config* config,
+                                                    double* altitude_grid_m) {
+    if (config == nullptr) {
+        return -1;
+    }
+    const auto& configured_grid =
+        config->impl.successive_orders_altitude_grid_m();
+    if (!configured_grid.empty() && altitude_grid_m == nullptr) {
+        return -1;
+    }
+    if (!configured_grid.empty()) {
+        std::copy(configured_grid.begin(), configured_grid.end(),
+                  altitude_grid_m);
+    }
+    return 0;
+}
+
+int sk_config_set_successive_orders_altitude_grid_m(
+    Config* config, const double* altitude_grid_m, int num_altitudes) {
+    if (config == nullptr || num_altitudes < 0 ||
+        (num_altitudes > 0 && altitude_grid_m == nullptr)) {
+        return -1;
+    }
+    for (int altitude_index = 0; altitude_index < num_altitudes;
+         ++altitude_index) {
+        if (!std::isfinite(altitude_grid_m[altitude_index]) ||
+            (altitude_index > 0 && altitude_grid_m[altitude_index] <=
+                                       altitude_grid_m[altitude_index - 1])) {
+            return -2;
+        }
+    }
+    std::vector<double> configured_grid;
+    if (num_altitudes > 0) {
+        configured_grid.assign(altitude_grid_m,
+                               altitude_grid_m + num_altitudes);
+    }
+    config->impl.set_successive_orders_altitude_grid_m(
+        std::move(configured_grid));
     return 0;
 }
 

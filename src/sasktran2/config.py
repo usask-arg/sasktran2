@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import numpy as np
+
 from sasktran2._core_rust import (
     EmissionSource,
     FluxType,
@@ -407,6 +409,7 @@ class Config:
         The number of solar zenith angle discretizations to use when calculating the multiple scatter source.
         For the discrete ordinates source, this determines the number of independent discrete ordinates calculations to perform.
         In the successive orders of scattering source, this is directly the number of discretizations.
+        For Geometry2D it sets the number of uniformly spaced horizontal source profiles.
         Defaults to 1, indicating that the multiple scatter source is estimated only at the reference point.
         """
         return self._config.num_sza
@@ -417,6 +420,7 @@ class Config:
         The number of solar zenith angle discretizations to use when calculating the multiple scatter source.
         For the discrete ordinates source, this determines the number of independent discrete ordinates calculations to perform.
         In the successive orders of scattering source, this is directly the number of discretizations.
+        For Geometry2D it sets the number of uniformly spaced horizontal source profiles.
         Defaults to 1, indicating that the multiple scatter source is estimated only at the reference point.
         """
         self._config.num_sza = value
@@ -485,6 +489,43 @@ class Config:
     @successive_orders_damping.setter
     def successive_orders_damping(self, value: float):
         self._config.successive_orders_damping = value
+
+    @property
+    def successive_orders_altitude_grid_m(self) -> np.ndarray | None:
+        """Altitude grid for successive-orders volume sources, in metres.
+
+        By default this is ``None`` and one source altitude is placed at the
+        midpoint of every atmospheric layer. Set an explicit, finite,
+        strictly increasing one-dimensional array to decouple the source grid
+        from the atmospheric altitude grid. Values must lie within the
+        atmospheric altitude range. Ground boundary sources are represented
+        separately.
+        """
+        altitude_grid = self._config.successive_orders_altitude_grid_m
+        if altitude_grid is None:
+            return None
+        return np.asarray(altitude_grid, dtype=np.float64)
+
+    @successive_orders_altitude_grid_m.setter
+    def successive_orders_altitude_grid_m(self, value: np.ndarray | None):
+        if value is None:
+            self._config.successive_orders_altitude_grid_m = None
+            return
+
+        altitude_grid = np.asarray(value, dtype=np.float64)
+        if altitude_grid.ndim != 1:
+            msg = "successive_orders_altitude_grid_m must be one-dimensional"
+            raise ValueError(msg)
+        if altitude_grid.size == 0:
+            self._config.successive_orders_altitude_grid_m = None
+            return
+        if not np.all(np.isfinite(altitude_grid)):
+            msg = "successive_orders_altitude_grid_m must contain only finite values"
+            raise ValueError(msg)
+        if np.any(np.diff(altitude_grid) <= 0):
+            msg = "successive_orders_altitude_grid_m must be strictly increasing"
+            raise ValueError(msg)
+        self._config.successive_orders_altitude_grid_m = altitude_grid.tolist()
 
     @property
     def init_successive_orders_with_discrete_ordinates(self) -> bool:
@@ -556,20 +597,26 @@ class Config:
 
     @property
     def num_successive_order_points(self) -> int:
-        """
-        The number of incoming points to use in the successive orders calculation for each solar
-        zenith angle.  Must be equal to or less than the number of atmosphere altitude grid points.
-        Default is -1 which means to use every altitude grid point.
+        """Number of fully traced source altitudes in the legacy source.
+
+        This option applies only to
+        :attr:`~sasktran2.MultipleScatterSource.SuccessiveOrders`. It reduces
+        the number of altitude locations per source profile where incoming
+        radiances are explicitly traced; other locations are approximated.
+        It does not set the source altitude grid. Use
+        :attr:`successive_orders_altitude_grid_m` for that.
+
+        The default ``-1`` traces every source altitude. Otherwise the value
+        must be at least two and cannot exceed the number of source altitudes.
+        The Rust successive-orders source requires the default.
         """
         return self._config.num_successive_orders_points
 
     @num_successive_order_points.setter
     def num_successive_order_points(self, value: int):
-        """
-        The number of incoming points to use in the successive orders calculation for each solar
-        zenith angle.  Must be equal to or less than the number of atmosphere altitude grid points.
-        Default is -1 which means to use every altitude grid point.
-        """
+        if value != -1 and value < 2:
+            msg = "num_successive_order_points must be -1 or at least 2"
+            raise ValueError(msg)
         self._config.num_successive_orders_points = value
 
     @property

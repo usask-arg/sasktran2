@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import pytest
 import sasktran2 as sk
 
@@ -82,12 +83,18 @@ def test_config_multiple_instances():
 
 
 def test_num_successive_order_points_round_trip():
-    """The Python property maps to the pluralized native config field."""
     config = sk.Config()
+    assert config.num_successive_order_points == -1
 
     config.num_successive_order_points = 17
-
     assert config.num_successive_order_points == 17
+
+    config.num_successive_order_points = -1
+    assert config.num_successive_order_points == -1
+
+    for invalid in (-2, 0, 1):
+        with pytest.raises(ValueError, match="must be -1 or at least 2"):
+            config.num_successive_order_points = invalid
 
 
 def test_wavelength_batch_size_round_trip_and_validation():
@@ -119,3 +126,33 @@ def test_rust_successive_orders_config_round_trip():
     assert config.successive_orders_absolute_tolerance == 3.0e-13
     assert config.successive_orders_anderson_depth == 4
     assert config.successive_orders_damping == 0.85
+
+
+def test_successive_orders_altitude_grid_m_round_trip_and_validation():
+    config = sk.Config()
+    assert config.successive_orders_altitude_grid_m is None
+
+    expected = np.array([500.0, 2_500.0, 10_000.0])
+    config.successive_orders_altitude_grid_m = expected
+    np.testing.assert_array_equal(config.successive_orders_altitude_grid_m, expected)
+
+    returned = config.successive_orders_altitude_grid_m
+    returned[0] = -1.0
+    np.testing.assert_array_equal(config.successive_orders_altitude_grid_m, expected)
+
+    config.successive_orders_altitude_grid_m = np.array([4_000.0])
+    np.testing.assert_array_equal(
+        config.successive_orders_altitude_grid_m, np.array([4_000.0])
+    )
+
+    for invalid in (
+        np.array([[1_000.0, 2_000.0]]),
+        np.array([1_000.0, 1_000.0]),
+        np.array([2_000.0, 1_000.0]),
+        np.array([1_000.0, np.nan]),
+    ):
+        with pytest.raises(ValueError, match="successive_orders_altitude_grid_m"):
+            config.successive_orders_altitude_grid_m = invalid
+
+    config.successive_orders_altitude_grid_m = None
+    assert config.successive_orders_altitude_grid_m is None

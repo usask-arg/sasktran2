@@ -822,6 +822,60 @@ impl Config {
         }
     }
 
+    pub fn successive_orders_altitude_grid_m(&self) -> Result<Vec<f64>> {
+        let mut num_altitudes = 0i32;
+        let error_code = unsafe {
+            ffi::sk_config_get_num_successive_orders_altitudes(self.config, &mut num_altitudes)
+        };
+        if error_code != 0 || num_altitudes < 0 {
+            return Err(anyhow!(
+                "Error getting successive-orders altitude-grid size: error code {}",
+                error_code
+            ));
+        }
+
+        let mut altitude_grid = vec![0.0; num_altitudes as usize];
+        let error_code = unsafe {
+            ffi::sk_config_get_successive_orders_altitude_grid_m(
+                self.config,
+                altitude_grid.as_mut_ptr(),
+            )
+        };
+        if error_code == 0 {
+            Ok(altitude_grid)
+        } else {
+            Err(anyhow!(
+                "Error getting successive-orders altitude grid: error code {}",
+                error_code
+            ))
+        }
+    }
+
+    pub fn with_successive_orders_altitude_grid_m(
+        &mut self,
+        altitude_grid_m: &[f64],
+    ) -> Result<&mut Self> {
+        if altitude_grid_m.len() > i32::MAX as usize {
+            return Err(anyhow!(
+                "Successive-orders altitude grid contains too many points"
+            ));
+        }
+        let error_code = unsafe {
+            ffi::sk_config_set_successive_orders_altitude_grid_m(
+                self.config,
+                altitude_grid_m.as_ptr(),
+                altitude_grid_m.len() as i32,
+            )
+        };
+        if error_code == 0 {
+            Ok(self)
+        } else {
+            Err(anyhow!(
+                "Successive-orders altitude grid must be finite and strictly increasing"
+            ))
+        }
+    }
+
     pub fn init_successive_orders_with_discrete_ordinates(&self) -> Result<bool> {
         let mut init = 0i32;
         let error_code =
@@ -939,7 +993,7 @@ impl Config {
         }
     }
 
-    pub fn num_successive_orders_points(&self) -> Result<usize> {
+    pub fn num_successive_orders_points(&self) -> Result<i32> {
         let mut num_points = 0i32;
         let error_code =
             unsafe { ffi::sk_config_get_num_hr_full_incoming_points(self.config, &mut num_points) };
@@ -950,19 +1004,17 @@ impl Config {
                 error_code
             ))
         } else {
-            Ok(num_points as usize)
+            Ok(num_points)
         }
     }
 
-    pub fn with_num_successive_orders_points(&mut self, num_points: usize) -> Result<&mut Self> {
-        let error_code = unsafe {
-            ffi::sk_config_set_num_hr_full_incoming_points(self.config, num_points as i32)
-        };
+    pub fn with_num_successive_orders_points(&mut self, num_points: i32) -> Result<&mut Self> {
+        let error_code =
+            unsafe { ffi::sk_config_set_num_hr_full_incoming_points(self.config, num_points) };
 
         if error_code != 0 {
             Err(anyhow!(
-                "Error setting number of successive orders points: error code {}",
-                error_code
+                "Number of legacy successive-orders full-incoming points must be -1 or at least 2"
             ))
         } else {
             Ok(self)
@@ -1342,6 +1394,27 @@ mod tests {
 
         config.with_num_successive_orders_points(100).unwrap();
         assert_eq!(config.num_successive_orders_points().unwrap(), 100);
+
+        let source_altitudes = [500.0, 2_500.0, 10_000.0];
+        config
+            .with_successive_orders_altitude_grid_m(&source_altitudes)
+            .unwrap();
+        assert_eq!(
+            config.successive_orders_altitude_grid_m().unwrap(),
+            source_altitudes
+        );
+        config.with_successive_orders_altitude_grid_m(&[]).unwrap();
+        assert!(
+            config
+                .successive_orders_altitude_grid_m()
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            config
+                .with_successive_orders_altitude_grid_m(&[1_000.0, 500.0])
+                .is_err()
+        );
 
         config.with_num_singlescatter_moments(16).unwrap();
         assert_eq!(config.num_singlescatter_moments().unwrap(), 16);

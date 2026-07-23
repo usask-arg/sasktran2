@@ -573,6 +573,26 @@ impl PyConfig {
     }
 
     #[getter]
+    fn successive_orders_altitude_grid_m(&self) -> PyResult<Option<Vec<f64>>> {
+        let altitude_grid = self
+            .config
+            .successive_orders_altitude_grid_m()
+            .into_pyresult()?;
+        Ok((!altitude_grid.is_empty()).then_some(altitude_grid))
+    }
+
+    #[setter]
+    fn set_successive_orders_altitude_grid_m(
+        &mut self,
+        altitude_grid_m: Option<Vec<f64>>,
+    ) -> PyResult<()> {
+        self.config
+            .with_successive_orders_altitude_grid_m(altitude_grid_m.as_deref().unwrap_or_default())
+            .into_pyresult()?;
+        Ok(())
+    }
+
+    #[getter]
     fn init_successive_orders_with_discrete_ordinates(&self) -> PyResult<bool> {
         self.config
             .init_successive_orders_with_discrete_ordinates()
@@ -627,12 +647,12 @@ impl PyConfig {
     }
 
     #[getter]
-    fn get_num_successive_orders_points(&self) -> PyResult<usize> {
+    fn get_num_successive_orders_points(&self) -> PyResult<i32> {
         self.config.num_successive_orders_points().into_pyresult()
     }
 
     #[setter]
-    fn set_num_successive_orders_points(&mut self, num_points: usize) -> PyResult<()> {
+    fn set_num_successive_orders_points(&mut self, num_points: i32) -> PyResult<()> {
         self.config
             .with_num_successive_orders_points(num_points)
             .into_pyresult()?;

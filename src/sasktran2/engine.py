@@ -97,6 +97,22 @@ class Engine:
         viewing_geo : sk.ViewingGeometry
             Viewing geometry
         """
+        source_altitudes = config.successive_orders_altitude_grid_m
+        if source_altitudes is not None and config.multiple_scatter_source in (
+            sk.MultipleScatterSource.SuccessiveOrders,
+            sk.MultipleScatterSource.SuccessiveOrdersRust,
+        ):
+            atmosphere_altitudes = geometry.altitudes()
+            if (
+                source_altitudes[0] < atmosphere_altitudes[0]
+                or source_altitudes[-1] > atmosphere_altitudes[-1]
+            ):
+                msg = (
+                    "successive_orders_altitude_grid_m must lie within the "
+                    "atmospheric altitude grid"
+                )
+                raise ValueError(msg)
+
         if isinstance(geometry, sk.Geometry2D):
             if (
                 config.single_scatter_source
