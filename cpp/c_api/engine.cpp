@@ -78,7 +78,7 @@ struct Engine {
             }
             return -1; // Error: impl is null
         } catch (const std::exception& e) {
-            // Handle the exception, log it, etc.
+            spdlog::error("Error calculating radiance: {}", e.what());
             return -3; // Error: exception occurred
         }
     }

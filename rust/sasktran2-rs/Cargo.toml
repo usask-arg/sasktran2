@@ -19,5 +19,5 @@ rayon = "*"
 libc = "*"
 
 [features]
-nightly = ["simd"]
+nightly = ["simd", "sasktran2-core/nightly"]
 simd = []

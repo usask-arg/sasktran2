@@ -138,6 +138,9 @@ namespace sasktran2 {
          */
         enum class ThreadingModel { wavelength = 0, source = 1 };
 
+        /** Backend used by both solar and thermal two-stream sources. */
+        enum class TwoStreamBackend { cpp = 0, rust = 1 };
+
         /** Enum determining the level of input validation to perform
          *
          *     'strict' Performs all input validation checks
@@ -598,6 +601,14 @@ namespace sasktran2 {
             m_threading_model = model;
         }
 
+        TwoStreamBackend two_stream_backend() const {
+            return m_two_stream_backend;
+        }
+
+        void set_two_stream_backend(TwoStreamBackend backend) {
+            m_two_stream_backend = backend;
+        }
+
         /**
          *
          * @return Then number of points (per diffuse profile) that we calculate
@@ -727,6 +738,8 @@ namespace sasktran2 {
         StokesBasis m_stokes_basis;
 
         ThreadingModel m_threading_model;
+
+        TwoStreamBackend m_two_stream_backend;
 
         SingleScatterPhaseMode m_singlescatter_phasemode;
 

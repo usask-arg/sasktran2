@@ -62,6 +62,7 @@ add_library(
   sktran_disco/sktran_do_specs.cpp
   sktran_disco/sktran_do_surface.cpp
   sktran_disco/sktran_do_testing.cpp
+  sktran_disco/rust_twostream_source.cpp
   sktran_disco/sktran_do_types.cpp
   sktran_disco/sktran_do_postprocessing.cpp
   sktran_disco/source_term/do_source_legendrestorage.cpp

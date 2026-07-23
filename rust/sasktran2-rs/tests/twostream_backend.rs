@@ -1,0 +1,754 @@
+use ndarray::s;
+use sasktran2_rs::bindings::config::{
+    EmissionSource, ThreadingLib, ThreadingModel, TwoStreamBackend,
+};
+use sasktran2_rs::bindings::prelude::*;
+
+fn make_atmosphere(nlevel: usize, nwavel: usize, thermal: bool) -> Atmosphere {
+    make_atmosphere_with_derivatives(nlevel, nwavel, thermal, true)
+}
+
+fn make_atmosphere_with_derivatives(
+    nlevel: usize,
+    nwavel: usize,
+    thermal: bool,
+    calculate_derivatives: bool,
+) -> Atmosphere {
+    let mut atmosphere = Atmosphere::new(
+        nwavel,
+        nlevel,
+        4,
+        calculate_derivatives,
+        thermal,
+        Stokes::Stokes1,
+        None,
+    );
+    for level in 0..nlevel {
+        for wave in 0..nwavel {
+            atmosphere.storage.total_extinction[[level, wave]] =
+                8.0e-6 + 2.0e-7 * level as f64 + 1.0e-8 * wave as f64;
+            atmosphere.storage.ssa[[level, wave]] = 0.72 + 0.001 * level as f64;
+            atmosphere.storage.leg_coeff[[0, level, wave]] = 1.0;
+            atmosphere.storage.leg_coeff[[1, level, wave]] = 0.32 + 0.002 * level as f64;
+            if thermal {
+                atmosphere.storage.emission_source[[level, wave]] =
+                    1.5 + 0.03 * level as f64 + 0.001 * wave as f64;
+            }
+        }
+    }
+    atmosphere.storage.solar_irradiance.fill(1.1);
+    atmosphere.surface.brdf_args.fill(0.23);
+    if thermal {
+        atmosphere.surface.emission.fill(1.4);
+    }
+
+    if calculate_derivatives {
+        let mapping = atmosphere
+            .storage
+            .get_derivative_mapping("wf_extinction")
+            .unwrap();
+        mapping.d_extinction().fill(1.0);
+        mapping.d_ssa().fill(0.0);
+        let mapping = atmosphere.storage.get_derivative_mapping("wf_ssa").unwrap();
+        mapping.d_ssa().fill(1.0);
+        mapping.d_extinction().fill(0.0);
+        let mapping = atmosphere.storage.get_derivative_mapping("wf_b1").unwrap();
+        mapping.d_leg_coeff().slice_mut(s![1, .., ..]).fill(1.0);
+        mapping.d_extinction().fill(0.0);
+        mapping.d_ssa().fill(0.0);
+        mapping.scat_factor().fill(1.0);
+        let mapping = atmosphere.storage.get_derivative_mapping("wf_b2").unwrap();
+        mapping.d_leg_coeff().slice_mut(s![2, .., ..]).fill(1.0);
+        mapping.d_extinction().fill(0.0);
+        mapping.d_ssa().fill(0.0);
+        mapping.scat_factor().fill(1.0);
+        if thermal {
+            let mapping = atmosphere
+                .storage
+                .get_derivative_mapping("wf_emission")
+                .unwrap();
+            mapping.d_emission().fill(1.0);
+            mapping.d_extinction().fill(0.0);
+            mapping.d_ssa().fill(0.0);
+        }
+        let mapping = atmosphere
+            .surface
+            .get_derivative_mapping("wf_albedo")
+            .unwrap();
+        mapping.d_brdf().fill(1.0);
+        if thermal {
+            let mapping = atmosphere
+                .surface
+                .get_derivative_mapping("wf_surface_emission")
+                .unwrap();
+            mapping.d_emission().fill(1.0);
+        }
+    }
+    atmosphere.storage.finalize_scattering_derivatives();
+    atmosphere
+}
+
+fn config(backend: TwoStreamBackend, thermal: bool) -> Config {
+    let mut config = Config::new();
+    config.with_num_threads(1).unwrap();
+    config.with_num_streams(2).unwrap();
+    config.with_two_stream_backend(backend).unwrap();
+    config
+        .with_single_scatter_source(SingleScatterSource::None)
+        .unwrap();
+    if thermal {
+        config
+            .with_emission_source(EmissionSource::TwoStream)
+            .unwrap();
+    } else {
+        config
+            .with_multiple_scatter_source(MultipleScatterSource::TwoStream)
+            .unwrap();
+    }
+    config
+}
+
+fn assert_close(actual: &[f64], expected: &[f64], relative_tolerance: f64) {
+    assert_eq!(actual.len(), expected.len());
+    for (index, (&actual, &expected)) in actual.iter().zip(expected).enumerate() {
+        let tolerance = relative_tolerance * expected.abs().max(1.0);
+        assert!(
+            (actual - expected).abs() <= tolerance,
+            "mismatch at {index}: Rust={actual}, C++={expected}, tolerance={tolerance}"
+        );
+    }
+}
+
+fn geometry_and_views(nlevel: usize) -> (Geometry1D, ViewingGeometry) {
+    let geometry = Geometry1D::new(
+        0.6,
+        0.0,
+        6_371_000.0,
+        (0..nlevel).map(|level| level as f64 * 5_000.0).collect(),
+        InterpolationMethod::Linear,
+        GeometryType::PlaneParallel,
+    );
+    let mut viewing = ViewingGeometry::new();
+    viewing.add_ground_viewing_solar(0.6, 0.2, 200_000.0, 0.72);
+    viewing.add_ground_viewing_solar(0.6, 1.1, 200_000.0, 0.43);
+    (geometry, viewing)
+}
+
+fn spherical_geometry_and_views(nlevel: usize, refracted: bool) -> (Geometry1D, ViewingGeometry) {
+    let layer_thickness = 5_000.0;
+    let geometry = Geometry1D::new(
+        0.6,
+        0.2,
+        6_371_000.0,
+        (0..nlevel)
+            .map(|level| level as f64 * layer_thickness)
+            .collect(),
+        InterpolationMethod::Linear,
+        GeometryType::Spherical,
+    );
+    if refracted {
+        for (level, value) in geometry
+            .refractive_index_mut()
+            .unwrap()
+            .iter_mut()
+            .enumerate()
+        {
+            *value = 1.0 + 3.0e-4 * (-(level as f64 * layer_thickness) / 7_000.0).exp();
+        }
+    }
+    let mut viewing = ViewingGeometry::new();
+    viewing.add_tangent_altitude_solar(15_000.0, 0.4, 200_000.0, 0.6);
+    viewing.add_tangent_altitude_solar(35_000.0, -0.3, 200_000.0, 0.6);
+    viewing.add_ground_viewing_solar(0.6, 0.3, 200_000.0, 0.65);
+    (geometry, viewing)
+}
+
+#[test]
+fn rust_twostream_engine_matches_cpp_radiances_and_jacobians() -> Result<()> {
+    let nlevel = 6;
+    let nwavel = 17;
+    let (geometry, viewing) = geometry_and_views(nlevel);
+
+    for thermal in [false, true] {
+        let mut atmosphere = make_atmosphere(nlevel, nwavel, thermal);
+        let cpp_config = config(TwoStreamBackend::Cpp, thermal);
+        let rust_config = config(TwoStreamBackend::Rust, thermal);
+        let cpp_engine = Engine::new(&cpp_config, &geometry, &viewing)?;
+        let rust_engine = Engine::new(&rust_config, &geometry, &viewing)?;
+
+        let cpp = cpp_engine.calculate_radiance(&atmosphere)?;
+        let rust = rust_engine.calculate_radiance(&atmosphere)?;
+        if !thermal {
+            assert_close(
+                rust.radiance.as_slice().unwrap(),
+                cpp.radiance.as_slice().unwrap(),
+                1.0e-10,
+            );
+            for (name, cpp_derivative) in &cpp.d_radiance {
+                assert_close(
+                    rust.d_radiance[name].as_slice().unwrap(),
+                    cpp_derivative.as_slice().unwrap(),
+                    3.0e-8,
+                );
+            }
+            for (name, cpp_derivative) in &cpp.d_radiance_surf {
+                // The C++ surface-albedo adjoint does not match a perturbation
+                // of the Lambertian albedo, while the Rust explicit adjoint does.
+                if name == "wf_albedo" {
+                    continue;
+                }
+                assert_close(
+                    rust.d_radiance_surf[name].as_slice().unwrap(),
+                    cpp_derivative.as_slice().unwrap(),
+                    3.0e-8,
+                );
+            }
+        }
+
+        // Reusing the Rust engine must refresh the batch cache.
+        let original_extinction = atmosphere.storage.total_extinction[[2, 3]];
+        atmosphere.storage.total_extinction[[2, 3]] *= 1.02;
+        let rust_updated = rust_engine.calculate_radiance(&atmosphere)?;
+        if !thermal {
+            let cpp_updated = cpp_engine.calculate_radiance(&atmosphere)?;
+            assert_close(
+                rust_updated.radiance.as_slice().unwrap(),
+                cpp_updated.radiance.as_slice().unwrap(),
+                1.0e-10,
+            );
+        }
+        atmosphere.storage.total_extinction[[2, 3]] = original_extinction;
+
+        // Verify the engine-level indexing and derivative mapping against
+        // end-to-end finite differences, including the fields where the C++
+        // adjoint is not a reliable oracle.
+        let level = 2;
+        let wave = 3;
+        let los = 1;
+        macro_rules! check_numeric {
+            ($field:expr, $analytic:expr, $name:literal) => {{
+                let original = $field;
+                let step = 1.0e-5 * original.abs().max(1.0e-3);
+                $field = original + step;
+                let plus = rust_engine.calculate_radiance(&atmosphere)?.radiance[[wave, los, 0]];
+                $field = original - step;
+                let minus = rust_engine.calculate_radiance(&atmosphere)?.radiance[[wave, los, 0]];
+                $field = original;
+                let numeric = (plus - minus) / (2.0 * step);
+                let analytic = $analytic;
+                let tolerance = 2.0e-6 * numeric.abs().max(1.0);
+                assert!(
+                    (analytic - numeric).abs() < tolerance,
+                    "{} (thermal={}): analytic={}, numeric={}",
+                    $name,
+                    thermal,
+                    analytic,
+                    numeric
+                );
+            }};
+        }
+        check_numeric!(
+            atmosphere.storage.total_extinction[[level, wave]],
+            rust.d_radiance["wf_extinction"][[level, wave, los, 0]],
+            "extinction"
+        );
+        check_numeric!(
+            atmosphere.storage.ssa[[level, wave]],
+            rust.d_radiance["wf_ssa"][[level, wave, los, 0]],
+            "single-scatter albedo"
+        );
+        check_numeric!(
+            atmosphere.storage.leg_coeff[[1, level, wave]],
+            rust.d_radiance["wf_b1"][[level, wave, los, 0]],
+            "first Legendre coefficient"
+        );
+        check_numeric!(
+            atmosphere.surface.brdf_args[[0, wave]],
+            rust.d_radiance_surf["wf_albedo"][[wave, los, 0]],
+            "surface albedo"
+        );
+        if thermal {
+            check_numeric!(
+                atmosphere.storage.emission_source[[level, wave]],
+                rust.d_radiance["wf_emission"][[level, wave, los, 0]],
+                "emission"
+            );
+            check_numeric!(
+                atmosphere.surface.emission[wave],
+                rust.d_radiance_surf["wf_surface_emission"][[wave, los, 0]],
+                "surface emission"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn rust_twostream_delta_m_matches_two_stream_discrete_ordinates() -> Result<()> {
+    let nlevel = 8;
+    let nwavel = 17;
+    let mut atmosphere = make_atmosphere(nlevel, nwavel, false);
+    for level in 0..nlevel {
+        for wave in 0..nwavel {
+            let g = 0.62 + 0.01 * wave as f64 / nwavel as f64;
+            atmosphere.storage.leg_coeff[[1, level, wave]] = 3.0 * g;
+            atmosphere.storage.leg_coeff[[2, level, wave]] = 5.0 * g * g;
+            atmosphere.storage.leg_coeff[[3, level, wave]] = 7.0 * g * g * g;
+        }
+    }
+    atmosphere.apply_delta_m_scaling(2)?;
+
+    let (geometry, viewing) = geometry_and_views(nlevel);
+    let mut rust_config = config(TwoStreamBackend::Rust, false);
+    rust_config.with_do_backprop(true)?;
+    rust_config.with_wavelength_batch_size(8)?;
+
+    let mut discrete_ordinates_config = config(TwoStreamBackend::Cpp, false);
+    discrete_ordinates_config
+        .with_multiple_scatter_source(MultipleScatterSource::DiscreteOrdinates)?;
+    discrete_ordinates_config.with_do_backprop(true)?;
+
+    let rust = Engine::new(&rust_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
+    let discrete_ordinates = Engine::new(&discrete_ordinates_config, &geometry, &viewing)?
+        .calculate_radiance(&atmosphere)?;
+
+    assert_close(
+        rust.radiance.as_slice().unwrap(),
+        discrete_ordinates.radiance.as_slice().unwrap(),
+        2.0e-9,
+    );
+    for (name, expected) in &discrete_ordinates.d_radiance {
+        assert_close(
+            rust.d_radiance[name].as_slice().unwrap(),
+            expected.as_slice().unwrap(),
+            2.0e-8,
+        );
+    }
+    for (name, expected) in &discrete_ordinates.d_radiance_surf {
+        assert_close(
+            rust.d_radiance_surf[name].as_slice().unwrap(),
+            expected.as_slice().unwrap(),
+            2.0e-8,
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn rust_twostream_multithread_matches_serial() -> Result<()> {
+    let nlevel = 8;
+    let atmosphere = make_atmosphere(nlevel, 65, true);
+    let (geometry, viewing) = geometry_and_views(nlevel);
+    let serial_config = config(TwoStreamBackend::Rust, true);
+    let serial =
+        Engine::new(&serial_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
+
+    for threading_model in [ThreadingModel::Wavelength, ThreadingModel::Source] {
+        let mut parallel_config = config(TwoStreamBackend::Rust, true);
+        parallel_config.with_num_threads(4)?;
+        parallel_config.with_threading_lib(ThreadingLib::Rayon)?;
+        parallel_config.with_threading_model(threading_model)?;
+        parallel_config.with_wavelength_batch_size(8)?;
+        let parallel =
+            Engine::new(&parallel_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
+
+        assert_close(
+            parallel.radiance.as_slice().unwrap(),
+            serial.radiance.as_slice().unwrap(),
+            1.0e-12,
+        );
+        for (name, serial_derivative) in &serial.d_radiance {
+            assert_close(
+                parallel.d_radiance[name].as_slice().unwrap(),
+                serial_derivative.as_slice().unwrap(),
+                1.0e-11,
+            );
+        }
+        for (name, serial_derivative) in &serial.d_radiance_surf {
+            assert_close(
+                parallel.d_radiance_surf[name].as_slice().unwrap(),
+                serial_derivative.as_slice().unwrap(),
+                1.0e-11,
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn rust_twostream_wavelength_batches_match_scalar() -> Result<()> {
+    let nlevel = 13;
+    let nwavel = 17;
+
+    for (calculate_derivatives, refracted) in [(false, false), (true, false), (true, true)] {
+        let atmosphere =
+            make_atmosphere_with_derivatives(nlevel, nwavel, true, calculate_derivatives);
+        let (geometry, viewing) = spherical_geometry_and_views(nlevel, refracted);
+        let mut scalar_config = config(TwoStreamBackend::Rust, true);
+        scalar_config.with_multiple_scatter_source(MultipleScatterSource::TwoStream)?;
+        scalar_config.with_num_sza(3)?;
+        scalar_config.with_los_refraction(refracted)?;
+
+        let mut batch_config = config(TwoStreamBackend::Rust, true);
+        batch_config.with_multiple_scatter_source(MultipleScatterSource::TwoStream)?;
+        batch_config.with_num_sza(3)?;
+        batch_config.with_los_refraction(refracted)?;
+        batch_config.with_wavelength_batch_size(8)?;
+
+        let scalar_engine = Engine::new(&scalar_config, &geometry, &viewing)?;
+        let batch_engine = Engine::new(&batch_config, &geometry, &viewing)?;
+        let effective_batch_size = unsafe {
+            sasktran2_sys::ffi::sk_engine_effective_wavelength_batch_size(
+                batch_engine.engine,
+                nwavel as i32,
+            )
+        };
+        assert_eq!(effective_batch_size, 8);
+
+        let scalar = scalar_engine.calculate_radiance(&atmosphere)?;
+        let batch = batch_engine.calculate_radiance(&atmosphere)?;
+
+        assert_close(
+            batch.radiance.as_slice().unwrap(),
+            scalar.radiance.as_slice().unwrap(),
+            1.0e-12,
+        );
+        for (name, scalar_derivative) in &scalar.d_radiance {
+            assert_close(
+                batch.d_radiance[name].as_slice().unwrap(),
+                scalar_derivative.as_slice().unwrap(),
+                1.0e-12,
+            );
+        }
+        for (name, scalar_derivative) in &scalar.d_radiance_surf {
+            assert_close(
+                batch.d_radiance_surf[name].as_slice().unwrap(),
+                scalar_derivative.as_slice().unwrap(),
+                1.0e-12,
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn rust_solar_and_thermal_twostream_sources_coexist() -> Result<()> {
+    let nlevel = 6;
+    let atmosphere = make_atmosphere(nlevel, 17, true);
+    let (geometry, viewing) = geometry_and_views(nlevel);
+    let mut rust_config = config(TwoStreamBackend::Rust, true);
+    rust_config.with_multiple_scatter_source(MultipleScatterSource::TwoStream)?;
+    let combined =
+        Engine::new(&rust_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
+
+    let solar_config = config(TwoStreamBackend::Rust, false);
+    let solar = Engine::new(&solar_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
+    let thermal_config = config(TwoStreamBackend::Rust, true);
+    let thermal =
+        Engine::new(&thermal_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
+
+    let expected = &solar.radiance + &thermal.radiance;
+    assert_close(
+        combined.radiance.as_slice().unwrap(),
+        expected.as_slice().unwrap(),
+        1.0e-12,
+    );
+    Ok(())
+}
+
+#[test]
+fn rust_twostream_engine_resonances_are_finite() -> Result<()> {
+    fn assert_finite(output: &Output) {
+        assert!(output.radiance.iter().all(|value| value.is_finite()));
+        for values in output.d_radiance.values() {
+            assert!(values.iter().all(|value| value.is_finite()));
+        }
+        for values in output.d_radiance_surf.values() {
+            assert!(values.iter().all(|value| value.is_finite()));
+        }
+    }
+
+    let mu: f64 = 0.5;
+    let first_legendre: f64 = 0.4;
+
+    let solar_ssa: f64 = 0.2;
+    let solar_eigenvalue =
+        ((solar_ssa * first_legendre * mu - 1.0 / mu) * ((solar_ssa - 1.0) / mu)).sqrt();
+    let solar_cosine = 1.0 / solar_eigenvalue;
+    let solar_geometry = Geometry1D::new(
+        solar_cosine,
+        0.0,
+        6_371_000.0,
+        vec![0.0, 1.0],
+        InterpolationMethod::Linear,
+        GeometryType::PlaneParallel,
+    );
+    let mut solar_viewing = ViewingGeometry::new();
+    solar_viewing.add_ground_viewing_solar(solar_cosine, 0.0, 2.0, 0.7);
+    let mut solar_atmosphere = make_atmosphere(2, 1, false);
+    solar_atmosphere.storage.total_extinction.fill(1.0);
+    solar_atmosphere.storage.ssa.fill(solar_ssa);
+    solar_atmosphere.storage.leg_coeff.fill(0.0);
+    solar_atmosphere.storage.leg_coeff[[0, 0, 0]] = 1.0;
+    solar_atmosphere.storage.leg_coeff[[0, 1, 0]] = 1.0;
+    solar_atmosphere.storage.leg_coeff[[1, 0, 0]] = first_legendre;
+    solar_atmosphere.storage.leg_coeff[[1, 1, 0]] = first_legendre;
+    solar_atmosphere.storage.solar_irradiance.fill(1.0);
+    solar_atmosphere.surface.brdf_args.fill(0.2);
+    let mut solar_config = config(TwoStreamBackend::Rust, false);
+    solar_config.with_do_backprop(true)?;
+    let solar = Engine::new(&solar_config, &solar_geometry, &solar_viewing)?
+        .calculate_radiance(&solar_atmosphere)?;
+    assert_finite(&solar);
+
+    let thermal_ssa: f64 = 0.7;
+    let thermal_eigenvalue =
+        ((thermal_ssa * first_legendre * mu - 1.0 / mu) * ((thermal_ssa - 1.0) / mu)).sqrt();
+    let thermal_geometry = Geometry1D::new(
+        0.6,
+        0.0,
+        6_371_000.0,
+        vec![0.0, 1.0],
+        InterpolationMethod::Linear,
+        GeometryType::PlaneParallel,
+    );
+    let mut thermal_viewing = ViewingGeometry::new();
+    thermal_viewing.add_ground_viewing_solar(0.6, 0.0, 2.0, 0.5);
+    let mut thermal_atmosphere = make_atmosphere(2, 2, true);
+    thermal_atmosphere.storage.total_extinction.fill(1.0);
+    thermal_atmosphere.storage.ssa.fill(thermal_ssa);
+    thermal_atmosphere.storage.leg_coeff.fill(0.0);
+    for (wave, sign) in [1.0, -1.0].into_iter().enumerate() {
+        thermal_atmosphere.storage.leg_coeff[[0, 0, wave]] = 1.0;
+        thermal_atmosphere.storage.leg_coeff[[0, 1, wave]] = 1.0;
+        thermal_atmosphere.storage.leg_coeff[[1, 0, wave]] = first_legendre;
+        thermal_atmosphere.storage.leg_coeff[[1, 1, wave]] = first_legendre;
+        thermal_atmosphere.storage.emission_source[[0, wave]] = 1.0;
+        thermal_atmosphere.storage.emission_source[[1, wave]] = (sign * thermal_eigenvalue).exp();
+    }
+    thermal_atmosphere.surface.brdf_args.fill(0.2);
+    thermal_atmosphere.surface.emission.fill(1.0);
+    let mut thermal_config = config(TwoStreamBackend::Rust, true);
+    thermal_config.with_do_backprop(true)?;
+    let thermal = Engine::new(&thermal_config, &thermal_geometry, &thermal_viewing)?
+        .calculate_radiance(&thermal_atmosphere)?;
+    assert_finite(&thermal);
+    Ok(())
+}
+
+#[test]
+fn rust_twostream_thermal_radiance_matches_two_stream_discrete_ordinates() -> Result<()> {
+    let nlevel = 6;
+    let nwavel = 17;
+    let mut atmosphere = make_atmosphere(nlevel, nwavel, true);
+    atmosphere.storage.solar_irradiance.fill(0.0);
+    let (geometry, viewing) = geometry_and_views(nlevel);
+
+    let rust_config = config(TwoStreamBackend::Rust, true);
+    let mut do_config = config(TwoStreamBackend::Cpp, true);
+    do_config.with_emission_source(EmissionSource::DiscreteOrdinates)?;
+    do_config.with_multiple_scatter_source(MultipleScatterSource::DiscreteOrdinates)?;
+    do_config.with_single_scatter_source(SingleScatterSource::DiscreteOrdinates)?;
+
+    let rust = Engine::new(&rust_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
+    let discrete_ordinates =
+        Engine::new(&do_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
+
+    assert_close(
+        rust.radiance.as_slice().unwrap(),
+        discrete_ordinates.radiance.as_slice().unwrap(),
+        2.0e-8,
+    );
+    // The standard DO thermal Jacobians are not a reliable oracle here; the
+    // Rust extinction, SSA, phase, atmospheric-emission, and surface
+    // derivatives are checked end to end against central differences above.
+    Ok(())
+}
+
+#[test]
+fn rust_twostream_spherical_limb_matches_finite_differences() -> Result<()> {
+    let nlevel = 13;
+    let nwavel = 9;
+    let level = 2;
+    let wave = 3;
+    let los = 0;
+
+    for thermal in [false, true] {
+        for refracted in [false, true] {
+            let (geometry, viewing) = spherical_geometry_and_views(nlevel, refracted);
+            let mut atmosphere = make_atmosphere(nlevel, nwavel, thermal);
+            let mut rust_config = config(TwoStreamBackend::Rust, thermal);
+            rust_config.with_num_sza(3)?;
+            rust_config.with_los_refraction(refracted)?;
+            let engine = Engine::new(&rust_config, &geometry, &viewing)?;
+            let output = engine.calculate_radiance(&atmosphere)?;
+            assert!(output.radiance.iter().all(|value| value.is_finite()));
+            assert!(
+                output
+                    .d_radiance
+                    .values()
+                    .all(|values| values.iter().all(|value| value.is_finite()))
+            );
+            assert!(
+                output
+                    .d_radiance_surf
+                    .values()
+                    .all(|values| values.iter().all(|value| value.is_finite()))
+            );
+
+            macro_rules! check_numeric {
+                ($field:expr, $analytic:expr, $name:literal) => {{
+                    let original = $field;
+                    let step = 1.0e-5 * original.abs().max(1.0e-3);
+                    $field = original + step;
+                    let plus = engine.calculate_radiance(&atmosphere)?.radiance[[wave, los, 0]];
+                    $field = original - step;
+                    let minus = engine.calculate_radiance(&atmosphere)?.radiance[[wave, los, 0]];
+                    $field = original;
+                    let numeric = (plus - minus) / (2.0 * step);
+                    let analytic = $analytic;
+                    let tolerance = 2.0e-6 * numeric.abs().max(1.0);
+                    assert!(
+                        (analytic - numeric).abs() < tolerance,
+                        "{} (thermal={}, refracted={}): analytic={}, numeric={}",
+                        $name,
+                        thermal,
+                        refracted,
+                        analytic,
+                        numeric,
+                    );
+                }};
+            }
+
+            check_numeric!(
+                atmosphere.storage.total_extinction[[level, wave]],
+                output.d_radiance["wf_extinction"][[level, wave, los, 0]],
+                "spherical extinction"
+            );
+            check_numeric!(
+                atmosphere.storage.ssa[[level, wave]],
+                output.d_radiance["wf_ssa"][[level, wave, los, 0]],
+                "spherical single-scatter albedo"
+            );
+            check_numeric!(
+                atmosphere.storage.leg_coeff[[1, level, wave]],
+                output.d_radiance["wf_b1"][[level, wave, los, 0]],
+                "spherical first Legendre coefficient"
+            );
+            check_numeric!(
+                atmosphere.surface.brdf_args[[0, wave]],
+                output.d_radiance_surf["wf_albedo"][[wave, los, 0]],
+                "spherical surface albedo"
+            );
+            if thermal {
+                check_numeric!(
+                    atmosphere.storage.emission_source[[level, wave]],
+                    output.d_radiance["wf_emission"][[level, wave, los, 0]],
+                    "spherical emission"
+                );
+                check_numeric!(
+                    atmosphere.surface.emission[wave],
+                    output.d_radiance_surf["wf_surface_emission"][[wave, los, 0]],
+                    "spherical surface emission"
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "release-mode performance benchmark"]
+fn benchmark_twostream_engine_backends() -> Result<()> {
+    use std::hint::black_box;
+    use std::time::Instant;
+
+    let nlevel = 21;
+    let (geometry, viewing) = geometry_and_views(nlevel);
+    for calculate_derivatives in [false, true] {
+        let atmosphere =
+            make_atmosphere_with_derivatives(nlevel, 8192, false, calculate_derivatives);
+        for threads in [1, 4] {
+            let mut cases = vec![(TwoStreamBackend::Cpp, ThreadingModel::Wavelength, 1)];
+            for batch_size in [1, 8, 32, 128, 512, 2048, 8192] {
+                cases.push((
+                    TwoStreamBackend::Rust,
+                    ThreadingModel::Wavelength,
+                    batch_size,
+                ));
+            }
+            if threads > 1 {
+                for batch_size in [128, 512, 2048, 8192] {
+                    cases.push((TwoStreamBackend::Rust, ThreadingModel::Source, batch_size));
+                }
+            }
+            for (backend, threading_model, batch_size) in cases {
+                let mut benchmark_config = config(backend, false);
+                benchmark_config.with_num_threads(threads)?;
+                benchmark_config.with_threading_lib(ThreadingLib::Rayon)?;
+                benchmark_config.with_threading_model(threading_model)?;
+                benchmark_config.with_wavelength_batch_size(batch_size)?;
+                let engine = Engine::new(&benchmark_config, &geometry, &viewing)?;
+                black_box(engine.calculate_radiance(&atmosphere)?);
+                let mut samples = Vec::with_capacity(5);
+                for _ in 0..5 {
+                    let start = Instant::now();
+                    let output = engine.calculate_radiance(&atmosphere)?;
+                    black_box(output.radiance[[0, 0, 0]]);
+                    samples.push(start.elapsed().as_secs_f64() * 1.0e3);
+                }
+                samples.sort_by(f64::total_cmp);
+                eprintln!(
+                    "backend={backend:?}, derivatives={calculate_derivatives}, threads={threads}, threading={threading_model:?}, batch={batch_size}, median_ms={:.3}",
+                    samples[samples.len() / 2]
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "release-mode spherical performance benchmark"]
+fn benchmark_spherical_twostream_limb_against_interpolated_do() -> Result<()> {
+    use std::hint::black_box;
+    use std::time::Instant;
+
+    let nlevel = 13;
+    let nwavel = 8192;
+    for calculate_derivatives in [false, true] {
+        let atmosphere =
+            make_atmosphere_with_derivatives(nlevel, nwavel, false, calculate_derivatives);
+        for refracted in [false, true] {
+            let (geometry, viewing) = spherical_geometry_and_views(nlevel, refracted);
+            for backend in ["rust", "interpolated-do"] {
+                let mut benchmark_config = config(TwoStreamBackend::Rust, false);
+                benchmark_config.with_num_threads(4)?;
+                benchmark_config.with_threading_lib(ThreadingLib::Rayon)?;
+                benchmark_config.with_num_sza(3)?;
+                benchmark_config.with_los_refraction(refracted)?;
+                if backend == "interpolated-do" {
+                    benchmark_config
+                        .with_multiple_scatter_source(MultipleScatterSource::DiscreteOrdinates)?;
+                } else {
+                    benchmark_config.with_wavelength_batch_size(128)?;
+                }
+                let engine = Engine::new(&benchmark_config, &geometry, &viewing)?;
+                black_box(engine.calculate_radiance(&atmosphere)?);
+                let mut samples = Vec::with_capacity(3);
+                for _ in 0..3 {
+                    let start = Instant::now();
+                    let output = engine.calculate_radiance(&atmosphere)?;
+                    black_box(output.radiance[[0, 0, 0]]);
+                    samples.push(start.elapsed().as_secs_f64() * 1.0e3);
+                }
+                samples.sort_by(f64::total_cmp);
+                eprintln!(
+                    "backend={backend}, refracted={refracted}, derivatives={calculate_derivatives}, median_ms={:.3}",
+                    samples[samples.len() / 2],
+                );
+            }
+        }
+    }
+    Ok(())
+}
