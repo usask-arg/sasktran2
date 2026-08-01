@@ -128,6 +128,34 @@ def test_rust_successive_orders_config_round_trip():
     assert config.successive_orders_damping == 0.85
 
 
+def test_successive_orders_initialization_round_trip_and_legacy_alias():
+    config = sk.Config()
+
+    assert (
+        config.successive_orders_initialization
+        == sk.SuccessiveOrdersInitialization.NoInitialization
+    )
+    config.successive_orders_initialization = (
+        sk.SuccessiveOrdersInitialization.TwoStream
+    )
+    assert (
+        config.successive_orders_initialization
+        == sk.SuccessiveOrdersInitialization.TwoStream
+    )
+    assert not config.init_successive_orders_with_discrete_ordinates
+
+    config.init_successive_orders_with_discrete_ordinates = True
+    assert (
+        config.successive_orders_initialization
+        == sk.SuccessiveOrdersInitialization.DiscreteOrdinates
+    )
+    config.init_successive_orders_with_discrete_ordinates = False
+    assert (
+        config.successive_orders_initialization
+        == sk.SuccessiveOrdersInitialization.NoInitialization
+    )
+
+
 def test_successive_orders_altitude_grid_m_round_trip_and_validation():
     config = sk.Config()
     assert config.successive_orders_altitude_grid_m is None

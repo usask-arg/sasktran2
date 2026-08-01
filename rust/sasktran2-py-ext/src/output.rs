@@ -61,6 +61,40 @@ impl PyVjpOutput {
     }
 }
 
+#[pyclass(unsendable)]
+pub struct PyJacobianVjpOutput {
+    pub output: output::JacobianVjpOutput,
+}
+
+#[pymethods]
+impl PyJacobianVjpOutput {
+    #[getter]
+    fn get_radiance<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyArray3<f64>>> {
+        let array = &this.borrow().output.radiance;
+        unsafe { Ok(PyArray3::borrow_from_array(array, this.into_any())) }
+    }
+
+    #[getter]
+    fn get_derivative_jacobians<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyDict>> {
+        let result = PyDict::new(this.py());
+        for (name, jacobian) in &this.borrow().output.derivative_jacobians {
+            let array = unsafe { PyArray4::borrow_from_array(jacobian, this.clone().into_any()) };
+            result.set_item(name, array)?;
+        }
+        Ok(result)
+    }
+
+    #[getter]
+    fn get_surface_jacobians<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyDict>> {
+        let result = PyDict::new(this.py());
+        for (name, jacobian) in &this.borrow().output.surface_jacobians {
+            let array = unsafe { PyArray4::borrow_from_array(jacobian, this.clone().into_any()) };
+            result.set_item(name, array)?;
+        }
+        Ok(result)
+    }
+}
+
 impl PyOutput {
     pub fn new(
         num_wavel: usize,

@@ -16,6 +16,73 @@ pub struct View {
     pub relative_azimuth: f64,
 }
 
+/// Locations and directions where a solved two-stream column is sampled as a
+/// local diffuse source function.
+#[derive(Clone, Debug)]
+pub struct LocalSourceGeometry {
+    /// Top-down layer containing each sample.
+    pub layers: Vec<usize>,
+    /// Fractional optical distance from the top of the containing layer.
+    pub fractions_from_top: Vec<f64>,
+    /// Cosine of the radiance propagation direction with local vertical.
+    pub propagation_cosines: Vec<f64>,
+    /// Relative solar azimuth associated with each sampled direction.
+    pub relative_azimuths: Vec<f64>,
+}
+
+impl LocalSourceGeometry {
+    pub fn new(
+        layers: Vec<usize>,
+        fractions_from_top: Vec<f64>,
+        propagation_cosines: Vec<f64>,
+        relative_azimuths: Vec<f64>,
+    ) -> Result<Self, TwoStreamError> {
+        let result = Self {
+            layers,
+            fractions_from_top,
+            propagation_cosines,
+            relative_azimuths,
+        };
+        result.validate(usize::MAX)?;
+        Ok(result)
+    }
+
+    pub fn num_samples(&self) -> usize {
+        self.layers.len()
+    }
+
+    pub(crate) fn validate(&self, num_layers: usize) -> Result<(), TwoStreamError> {
+        let num_samples = self.layers.len();
+        if self.fractions_from_top.len() != num_samples
+            || self.propagation_cosines.len() != num_samples
+            || self.relative_azimuths.len() != num_samples
+        {
+            return Err(TwoStreamError::invalid(
+                "local two-stream source arrays have inconsistent shapes",
+            ));
+        }
+        if self.layers.iter().any(|&layer| layer >= num_layers)
+            || self
+                .fractions_from_top
+                .iter()
+                .any(|&fraction| !fraction.is_finite() || !(0.0..=1.0).contains(&fraction))
+            || self
+                .propagation_cosines
+                .iter()
+                .any(|&cosine| !cosine.is_finite() || !(-1.0..=1.0).contains(&cosine))
+            || self
+                .relative_azimuths
+                .iter()
+                .any(|value| !value.is_finite())
+        {
+            return Err(TwoStreamError::invalid(
+                "local two-stream source geometry contains an invalid value",
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// Wavelength-independent two-stream geometry.
 #[derive(Clone, Debug)]
 pub struct Geometry {

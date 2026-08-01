@@ -229,33 +229,98 @@ class Engine:
         }
 
         def load_jacobian() -> xr.Dataset:
-            if self._engine._linearization_backend(0) == 0:
+            if self._engine._linearization_backend(0) != 0:
+                result, _ = self._calculate_radiance(
+                    atmosphere, internal_atmosphere=native_atmosphere
+                )
+                jacobian: dict[str, xr.DataArray] = {}
+                for parameter, output_name in registry.output_names.items():
+                    block = result[output_name]
+                    if not registry.specs[parameter].parameter_dims:
+                        scalar_dims = tuple(
+                            dim for dim in block.dims if dim not in value.dims
+                        )
+                        for dim in scalar_dims:
+                            if block.sizes[dim] != 1:
+                                msg = (
+                                    f"Scalar parameter {parameter!r} has a "
+                                    f"non-scalar Jacobian dimension {dim!r}"
+                                )
+                                raise ValueError(msg)
+                            block = block.isel({dim: 0}, drop=True)
+                    if parameter in registry.log_parameters:
+                        block = block * result["radiance"]
+                    jacobian[parameter] = block
+                return xr.Dataset(jacobian)
+
+            if self._engine._linearization_backend(2) != 2:
                 msg = (
-                    "The configured engine supports native JVP/VJP products, "
-                    "but not materialization of the complete Jacobian"
+                    "The configured engine cannot materialize the complete "
+                    "radiance Jacobian"
                 )
                 raise NotImplementedError(msg)
-            result, _ = self._calculate_radiance(
-                atmosphere, internal_atmosphere=native_atmosphere
+
+            output = self._engine._calculate_jacobian_vjp(
+                native_atmosphere,
+                registry.volume_sizes,
+                registry.surface_sizes,
             )
             jacobian: dict[str, xr.DataArray] = {}
-            for parameter, output_name in registry.output_names.items():
-                block = result[output_name]
-                if not registry.specs[parameter].parameter_dims:
-                    scalar_dims = tuple(
-                        dim for dim in block.dims if dim not in value.dims
+
+            for parameter, spec in registry.specs.items():
+                internal_blocks = [
+                    np.asarray(output.derivative_jacobians[name])
+                    for name in registry.volume_names.get(parameter, ())
+                ]
+                internal_blocks.extend(
+                    np.asarray(output.surface_jacobians[name])
+                    for name in registry.surface_names.get(parameter, ())
+                )
+                if not internal_blocks:
+                    msg = f"No native Jacobian block exists for {parameter!r}"
+                    raise RuntimeError(msg)
+                if len(internal_blocks) == 1:
+                    # Keep the native allocation as the final xarray backing
+                    # store instead of doubling the dense Jacobian at peak.
+                    native_block = internal_blocks[0]
+                else:
+                    native_block = internal_blocks[0].copy()
+                    for internal_block in internal_blocks[1:]:
+                        native_block += internal_block
+
+                if spec.diagonal_dims:
+                    # A native spectral surface parameter is diagonal in
+                    # wavelength. Remove its redundant parameter wavelength
+                    # axis while retaining the output wavelength axis.
+                    block_values = np.diagonal(
+                        native_block, axis1=0, axis2=1
+                    ).transpose(2, 0, 1)
+                    jacobian[parameter] = xr.DataArray(
+                        block_values,
+                        dims=value.dims,
+                        coords=value.coords,
                     )
-                    for dim in scalar_dims:
-                        if block.sizes[dim] != 1:
-                            msg = (
-                                f"Scalar parameter {parameter!r} has a non-scalar "
-                                f"Jacobian dimension {dim!r}"
-                            )
-                            raise ValueError(msg)
-                        block = block.isel({dim: 0}, drop=True)
-                if parameter in registry.log_parameters:
-                    block = block * result["radiance"]
-                jacobian[parameter] = block
+                    continue
+
+                parameter_template = registry.tangent_template[parameter]
+                parameter_shape = parameter_template.shape
+                block_values = native_block.reshape((*parameter_shape, *value.shape))
+                dims = (*spec.parameter_dims, *value.dims)
+                coords = {
+                    dim: parameter_template.coords[dim]
+                    for dim in spec.parameter_dims
+                    if dim in parameter_template.coords
+                }
+                coords.update(
+                    {
+                        dim: value.coords[dim]
+                        for dim in value.dims
+                        if dim in value.coords and dim not in coords
+                    }
+                )
+                jacobian[parameter] = xr.DataArray(
+                    block_values, dims=dims, coords=coords
+                )
             return xr.Dataset(jacobian)
 
         def evaluate_jvp(tangent: xr.Dataset) -> xr.DataArray:

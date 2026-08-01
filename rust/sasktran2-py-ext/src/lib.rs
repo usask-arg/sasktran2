@@ -51,6 +51,7 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Configuration opbject
     m.add_class::<config::MultipleScatterSource>()?;
+    m.add_class::<config::SuccessiveOrdersInitialization>()?;
     m.add_class::<config::SingleScatterSource>()?;
     m.add_class::<config::SingleScatterSource>()?;
     m.add_class::<config::OccultationSource>()?;
@@ -80,6 +81,7 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<viewing_geometry::PyViewingGeometry>()?;
     m.add_class::<output::PyJvpOutput>()?;
     m.add_class::<output::PyVjpOutput>()?;
+    m.add_class::<output::PyJacobianVjpOutput>()?;
 
     // Engine
     m.add_class::<engine::PyEngine>()?;

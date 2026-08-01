@@ -3,8 +3,9 @@ use std::{pin::Pin, sync::Arc};
 use anyhow::{Result, anyhow};
 
 use super::{
-    AtmosphereBatch, AtmosphereJacobians, ExecutionPolicy, Geometry, RadianceBatch, SourceMode,
-    SphericalGeometry, SphericalRayGeometry, TwoStreamSolver, View, Workspace,
+    AtmosphereBatch, AtmosphereJacobians, ExecutionPolicy, Geometry, LocalSourceGeometry,
+    RadianceBatch, SourceMode, SphericalGeometry, SphericalRayGeometry, TwoStreamSolver, View,
+    Workspace,
 };
 
 #[cxx::bridge(namespace = "sasktran2::rust::twostream")]
@@ -20,10 +21,19 @@ pub mod ffi {
             source_mode: i32,
             num_threads: usize,
         ) -> Result<Box<RustTwoStreamSource>>;
+        fn clone_rust_twostream_source(source: &RustTwoStreamSource) -> Box<RustTwoStreamSource>;
 
         fn set_views(
             source: Pin<&mut RustTwoStreamSource>,
             viewing_cosines: &[f64],
+            relative_azimuths: &[f64],
+        ) -> Result<()>;
+
+        fn set_local_source_geometry(
+            source: Pin<&mut RustTwoStreamSource>,
+            layers: &[usize],
+            fractions_from_top: &[f64],
+            propagation_cosines: &[f64],
             relative_azimuths: &[f64],
         ) -> Result<()>;
 
@@ -68,6 +78,7 @@ pub mod ffi {
         ) -> Result<()>;
 
         fn radiance(source: &RustTwoStreamSource) -> &[f64];
+        fn clear_output(source: Pin<&mut RustTwoStreamSource>);
         fn extinction_jacobian(source: &RustTwoStreamSource) -> &[f64];
         fn ssa_jacobian(source: &RustTwoStreamSource) -> &[f64];
         fn b1_jacobian(source: &RustTwoStreamSource) -> &[f64];
@@ -78,18 +89,32 @@ pub mod ffi {
 }
 
 pub struct RustTwoStreamSource {
-    solver: TwoStreamSolver,
+    solver: Arc<TwoStreamSolver>,
     views: Vec<View>,
+    local_samples: Option<Arc<LocalSourceGeometry>>,
     spherical: Option<Arc<SphericalGeometry>>,
     atmosphere: AtmosphereBatch,
     workspace: Workspace,
-    pool: Option<rayon::ThreadPool>,
+    pool: Option<Arc<rayon::ThreadPool>>,
     radiance: Option<RadianceBatch>,
     jacobians: Option<AtmosphereJacobians>,
 }
 
 pub struct RustSphericalGeometry {
     geometry: Arc<SphericalGeometry>,
+}
+
+fn empty_atmosphere(mode: SourceMode) -> AtmosphereBatch {
+    AtmosphereBatch {
+        num_wavelengths: 0,
+        extinction: Vec::new(),
+        single_scatter_albedo: Vec::new(),
+        first_legendre: Vec::new(),
+        emission: (mode == SourceMode::Thermal).then(Vec::new),
+        surface_albedo: Vec::new(),
+        surface_emission: (mode == SourceMode::Thermal).then(Vec::new),
+        solar_irradiance: (mode == SourceMode::Solar).then(Vec::new),
+    }
 }
 
 fn new_rust_twostream_source(
@@ -110,11 +135,13 @@ fn new_rust_twostream_source(
         solar_cosine,
     );
     let use_rayon = num_threads > 1;
-    let solver = TwoStreamSolver::new(geometry, mode)?.with_execution_policy(if use_rayon {
-        ExecutionPolicy::Rayon
-    } else {
-        ExecutionPolicy::Serial
-    });
+    let solver = Arc::new(TwoStreamSolver::new(geometry, mode)?.with_execution_policy(
+        if use_rayon {
+            ExecutionPolicy::Rayon
+        } else {
+            ExecutionPolicy::Serial
+        },
+    ));
     let pool = use_rayon
         .then(|| {
             rayon::ThreadPoolBuilder::new()
@@ -122,26 +149,33 @@ fn new_rust_twostream_source(
                 .thread_name(|index| format!("sasktran2-twostream-{index}"))
                 .build()
         })
-        .transpose()?;
+        .transpose()?
+        .map(Arc::new);
     Ok(Box::new(RustTwoStreamSource {
         solver,
         views: Vec::new(),
+        local_samples: None,
         spherical: None,
-        atmosphere: AtmosphereBatch {
-            num_wavelengths: 0,
-            extinction: Vec::new(),
-            single_scatter_albedo: Vec::new(),
-            first_legendre: Vec::new(),
-            emission: (mode == SourceMode::Thermal).then(Vec::new),
-            surface_albedo: Vec::new(),
-            surface_emission: (mode == SourceMode::Thermal).then(Vec::new),
-            solar_irradiance: (mode == SourceMode::Solar).then(Vec::new),
-        },
+        atmosphere: empty_atmosphere(mode),
         workspace: Workspace::new(),
         pool,
         radiance: None,
         jacobians: None,
     }))
+}
+
+fn clone_rust_twostream_source(source: &RustTwoStreamSource) -> Box<RustTwoStreamSource> {
+    Box::new(RustTwoStreamSource {
+        solver: Arc::clone(&source.solver),
+        views: source.views.clone(),
+        local_samples: source.local_samples.as_ref().map(Arc::clone),
+        spherical: source.spherical.as_ref().map(Arc::clone),
+        atmosphere: empty_atmosphere(source.solver.source_mode()),
+        workspace: Workspace::new(),
+        pool: source.pool.as_ref().map(Arc::clone),
+        radiance: None,
+        jacobians: None,
+    })
 }
 
 fn set_views(
@@ -163,6 +197,29 @@ fn set_views(
         })
         .collect();
     source.spherical = None;
+    source.local_samples = None;
+    source.radiance = None;
+    source.jacobians = None;
+    Ok(())
+}
+
+fn set_local_source_geometry(
+    mut source: Pin<&mut RustTwoStreamSource>,
+    layers: &[usize],
+    fractions_from_top: &[f64],
+    propagation_cosines: &[f64],
+    relative_azimuths: &[f64],
+) -> Result<()> {
+    let samples = LocalSourceGeometry::new(
+        layers.to_vec(),
+        fractions_from_top.to_vec(),
+        propagation_cosines.to_vec(),
+        relative_azimuths.to_vec(),
+    )?;
+    samples.validate(source.solver.geometry().num_layers())?;
+    source.views.clear();
+    source.spherical = None;
+    source.local_samples = Some(Arc::new(samples));
     source.radiance = None;
     source.jacobians = None;
     Ok(())
@@ -231,6 +288,7 @@ fn set_spherical_geometry(
 ) {
     let this = source.as_mut().get_mut();
     this.views.clear();
+    this.local_samples = None;
     this.spherical = Some(Arc::clone(&geometry.geometry));
     this.radiance = None;
     this.jacobians = None;
@@ -335,19 +393,23 @@ fn solve(
 
     let solver = &this.solver;
     let views = &this.views;
+    let local_samples = this.local_samples.as_ref();
     let spherical = this.spherical.as_ref();
     let workspace = &mut this.workspace;
-    let mut solve = || match (spherical, calculate_jacobians) {
-        (Some(geometry), true) => solver
+    let mut solve = || match (local_samples, spherical, calculate_jacobians) {
+        (Some(samples), _, _) => solver
+            .solve_local_source_atmosphere(atmosphere, samples, workspace)
+            .map(|source| (source, None)),
+        (None, Some(geometry), true) => solver
             .solve_spherical_atmosphere_with_jacobians(atmosphere, geometry, workspace)
             .map(|(radiance, jacobians)| (radiance, Some(jacobians))),
-        (Some(geometry), false) => solver
+        (None, Some(geometry), false) => solver
             .solve_spherical_atmosphere(atmosphere, geometry, workspace)
             .map(|radiance| (radiance, None)),
-        (None, true) => solver
+        (None, None, true) => solver
             .solve_atmosphere_with_jacobians(atmosphere, views, workspace)
             .map(|(radiance, jacobians)| (radiance, Some(jacobians))),
-        (None, false) => solver
+        (None, None, false) => solver
             .solve_atmosphere(atmosphere, views, workspace)
             .map(|radiance| (radiance, None)),
     };
@@ -366,6 +428,11 @@ fn radiance(source: &RustTwoStreamSource) -> &[f64] {
         .radiance
         .as_ref()
         .map_or(&[], |radiance| radiance.values.as_slice())
+}
+
+fn clear_output(mut source: Pin<&mut RustTwoStreamSource>) {
+    source.radiance = None;
+    source.jacobians = None;
 }
 
 fn extinction_jacobian(source: &RustTwoStreamSource) -> &[f64] {

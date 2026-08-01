@@ -356,6 +356,27 @@ int sk_config_set_initialize_hr_with_do(Config* config, int initialize) {
     return 0; // Success
 }
 
+int sk_config_get_successive_orders_initialization(Config* config,
+                                                   int* initialization) {
+    if (config == nullptr || initialization == nullptr) {
+        return -1;
+    }
+    *initialization =
+        static_cast<int>(config->impl.successive_orders_initialization());
+    return 0;
+}
+
+int sk_config_set_successive_orders_initialization(Config* config,
+                                                   int initialization) {
+    if (config == nullptr || initialization < 0 || initialization > 2) {
+        return -1;
+    }
+    config->impl.set_successive_orders_initialization(
+        static_cast<sasktran2::Config::SuccessiveOrdersInitialization>(
+            initialization));
+    return 0;
+}
+
 int sk_config_get_successive_orders_max_iterations(Config* config,
                                                    int* max_iterations) {
     if (config == nullptr || max_iterations == nullptr) {

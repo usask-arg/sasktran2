@@ -309,6 +309,233 @@ namespace sasktran2::hr {
         }
     }
 
+#ifdef SKTRAN_RUST_SUPPORT
+    template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::initialize_twostream_initial_guess_geometry(
+        const sasktran2::viewinggeometry::InternalViewingGeometry&
+            internal_viewing) {
+        if (m_config->successive_orders_initialization() !=
+            sasktran2::Config::SuccessiveOrdersInitialization::twostream) {
+            return;
+        }
+        if (!m_use_rust_solver) {
+            throw std::invalid_argument(
+                "Two-stream successive-orders initialization requires the "
+                "Rust solver");
+        }
+        (void)internal_viewing;
+
+        const int num_profiles = m_location_interpolator->num_ground_points();
+        const int num_interior = m_location_interpolator->num_interior_points();
+        if (num_profiles < 1 || num_interior % num_profiles != 0) {
+            throw std::logic_error(
+                "Successive-orders source profiles have an invalid shape");
+        }
+        m_twostream_num_source_altitudes = num_interior / num_profiles;
+
+        const auto& atmospheric_altitudes = m_altitude_grid.grid();
+        const std::size_t num_levels =
+            static_cast<std::size_t>(atmospheric_altitudes.size());
+        const int num_layers = static_cast<int>(num_levels) - 1;
+        const auto geometry_type = m_geometry.coordinates().geometry_type();
+        const double earth_radius = m_geometry.coordinates().earth_radius();
+
+        m_twostream_atmosphere_weights.assign(
+            num_profiles,
+            std::vector<std::vector<std::pair<int, double>>>(num_levels));
+        m_twostream_initializers.clear();
+        m_twostream_initializers.resize(m_thread_storage.size());
+        if (m_twostream_initializers.empty()) {
+            throw std::logic_error(
+                "Two-stream initialization requires a wavelength worker");
+        }
+        for (auto& worker : m_twostream_initializers) {
+            worker.reserve(num_profiles);
+        }
+
+        for (int profile = 0; profile < num_profiles; ++profile) {
+            const int first_point = profile * m_twostream_num_source_altitudes;
+            const auto& profile_location =
+                m_diffuse_points[first_point]->location();
+            const double cos_sza =
+                m_geometry.coordinates()
+                    .solar_angles_at_location(profile_location.position)
+                    .first;
+
+            Eigen::VectorXd altitude_copy = atmospheric_altitudes;
+            sasktran2::Geometry1D column_geometry(
+                cos_sza, 0.0, earth_radius, std::move(altitude_copy),
+                sasktran2::grids::interpolation::linear, geometry_type);
+            if (m_geometry_1d != nullptr &&
+                m_geometry_1d->refractive_index().size() ==
+                    column_geometry.refractive_index().size()) {
+                column_geometry.refractive_index() =
+                    m_geometry_1d->refractive_index();
+            }
+
+            std::vector<double> layer_thickness(num_layers);
+            std::vector<double> chapman_factors(
+                static_cast<std::size_t>(num_layers) * num_layers);
+            for (int layer = 0; layer < num_layers; ++layer) {
+                layer_thickness[layer] =
+                    atmospheric_altitudes[num_layers - layer] -
+                    atmospheric_altitudes[num_layers - layer - 1];
+            }
+
+            if (geometry_type == sasktran2::geometrytype::planeparallel) {
+                const double factor = cos_sza > 0 ? 1.0 / cos_sza : -1.0;
+                for (int boundary = 0; boundary < num_layers; ++boundary) {
+                    for (int layer = 0; layer <= boundary; ++layer) {
+                        chapman_factors[boundary * num_layers + layer] = factor;
+                    }
+                }
+            } else {
+                sasktran2::raytracing::SphericalShellRayTracer solar_tracer(
+                    column_geometry);
+                sasktran2::viewinggeometry::ViewingRay solar_ray;
+                solar_ray.look_away = column_geometry.coordinates().sun_unit();
+                sasktran2::raytracing::TracedRay traced_solar_ray;
+                for (int boundary = 0; boundary < num_layers; ++boundary) {
+                    const double floor_altitude =
+                        atmospheric_altitudes[num_layers - boundary - 1];
+                    solar_ray.observer.position =
+                        column_geometry.coordinates().solar_coordinate_vector(
+                            cos_sza, 0.0, floor_altitude);
+                    solar_tracer.trace_ray(solar_ray, traced_solar_ray,
+                                           m_config->solar_refraction());
+                    if (traced_solar_ray.ground_is_hit) {
+                        std::fill(chapman_factors.begin() +
+                                      boundary * num_layers,
+                                  chapman_factors.begin() +
+                                      (boundary + 1) * num_layers,
+                                  -1.0);
+                        continue;
+                    }
+                    for (const auto& traced_layer : traced_solar_ray.layers) {
+                        const double average_altitude =
+                            0.5 * (traced_layer.entrance.radius() +
+                                   traced_layer.exit.radius()) -
+                            earth_radius;
+                        const double* upper = std::upper_bound(
+                            atmospheric_altitudes.data(),
+                            atmospheric_altitudes.data() + num_levels,
+                            average_altitude);
+                        int bottom_layer =
+                            upper == atmospheric_altitudes.data()
+                                ? 0
+                                : static_cast<int>(
+                                      upper - atmospheric_altitudes.data() - 1);
+                        bottom_layer =
+                            std::clamp(bottom_layer, 0, num_layers - 1);
+                        const int top_down_layer =
+                            num_layers - 1 - bottom_layer;
+                        chapman_factors[boundary * num_layers +
+                                        top_down_layer] +=
+                            traced_layer.layer_distance *
+                            traced_layer.curvature_factor /
+                            layer_thickness[top_down_layer];
+                    }
+                }
+            }
+
+            std::vector<std::size_t> sample_layers;
+            std::vector<double> sample_fractions;
+            std::vector<double> sample_cosines;
+            std::vector<double> sample_azimuths;
+            const int num_outgoing =
+                m_diffuse_points[first_point]->num_outgoing();
+            const std::size_t num_samples =
+                static_cast<std::size_t>(m_twostream_num_source_altitudes) *
+                num_outgoing;
+            sample_layers.reserve(num_samples);
+            sample_fractions.reserve(num_samples);
+            sample_cosines.reserve(num_samples);
+            sample_azimuths.reserve(num_samples);
+
+            for (int altitude_index = 0;
+                 altitude_index < m_twostream_num_source_altitudes;
+                 ++altitude_index) {
+                const auto& point =
+                    *m_diffuse_points[first_point + altitude_index];
+                const auto& location = point.location();
+                const double altitude =
+                    geometry_type == sasktran2::geometrytype::spherical
+                        ? location.radius() - earth_radius
+                        : location.position.z() - earth_radius;
+                const double* upper = std::upper_bound(
+                    atmospheric_altitudes.data(),
+                    atmospheric_altitudes.data() + num_levels, altitude);
+                int bottom_layer =
+                    upper == atmospheric_altitudes.data()
+                        ? 0
+                        : static_cast<int>(upper -
+                                           atmospheric_altitudes.data() - 1);
+                bottom_layer = std::clamp(bottom_layer, 0, num_layers - 1);
+                const double bottom = atmospheric_altitudes[bottom_layer];
+                const double top = atmospheric_altitudes[bottom_layer + 1];
+                const double fraction_from_top =
+                    std::clamp((top - altitude) / (top - bottom), 0.0, 1.0);
+                const Eigen::Vector3d local_up =
+                    geometry_type == sasktran2::geometrytype::spherical
+                        ? location.position.normalized()
+                        : Eigen::Vector3d(0, 0, 1);
+
+                for (int direction_index = 0;
+                     direction_index < point.num_outgoing();
+                     ++direction_index) {
+                    const Eigen::Vector3d direction =
+                        point.sphere_pair().outgoing_sphere().get_quad_position(
+                            direction_index);
+                    double sample_cos_sza;
+                    double relative_azimuth;
+                    sasktran2::raytracing::calculate_csz_saz(
+                        m_geometry.coordinates().sun_unit(), location,
+                        direction, sample_cos_sza, relative_azimuth,
+                        geometry_type);
+                    sample_layers.push_back(static_cast<std::size_t>(
+                        num_layers - 1 - bottom_layer));
+                    sample_fractions.push_back(fraction_from_top);
+                    sample_cosines.push_back(
+                        std::clamp(-direction.dot(local_up), -1.0, 1.0));
+                    sample_azimuths.push_back(relative_azimuth);
+                }
+            }
+
+            auto source = sasktran2::rust::twostream::new_rust_twostream_source(
+                as_rust_slice(layer_thickness), as_rust_slice(chapman_factors),
+                cos_sza, 0, 1);
+            sasktran2::rust::twostream::set_local_source_geometry(
+                *source, as_rust_slice(sample_layers),
+                as_rust_slice(sample_fractions), as_rust_slice(sample_cosines),
+                as_rust_slice(sample_azimuths));
+            m_twostream_initializers[0].push_back(std::move(source));
+            for (std::size_t worker = 1;
+                 worker < m_twostream_initializers.size(); ++worker) {
+                m_twostream_initializers[worker].push_back(
+                    sasktran2::rust::twostream::clone_rust_twostream_source(
+                        *m_twostream_initializers[0].back()));
+            }
+
+            const Eigen::Vector3d horizontal_unit =
+                profile_location.position.normalized();
+            for (std::size_t level = 0; level < num_levels; ++level) {
+                if (m_geometry_1d != nullptr) {
+                    m_twostream_atmosphere_weights[profile][level] = {
+                        {static_cast<int>(level), 1.0}};
+                } else {
+                    sasktran2::Location location;
+                    location.position =
+                        (earth_radius + atmospheric_altitudes[level]) *
+                        horizontal_unit;
+                    m_geometry.assign_interpolation_weights(
+                        location,
+                        m_twostream_atmosphere_weights[profile][level]);
+                }
+            }
+        }
+    }
+#endif
+
     template <int NSTOKES>
     std::vector<std::vector<int>> DiffuseTable<NSTOKES>::trace_incoming_rays() {
         ZoneScopedN("Trace and Compile Incoming Rays");
@@ -401,9 +628,12 @@ namespace sasktran2::hr {
                 generate_cos_sza_grid(min_max_cos_sza.first,
                                       min_max_cos_sza.second));
         }
-
         // Construct the actual diffuse points
         construct_diffuse_points();
+
+#ifdef SKTRAN_RUST_SUPPORT
+        initialize_twostream_initial_guess_geometry(internal_viewing);
+#endif
 
         const bool use_incremental_compact_geometry =
             m_use_rust_solver && m_geometry_2d != nullptr && NSTOKES == 1;
@@ -450,7 +680,6 @@ namespace sasktran2::hr {
                 source->initialize_geometry(m_internal_viewing);
             }
         }
-
         // But the DO Source should be initialized with the LOS rays
         if (m_config->initialize_hr_with_do()) {
             m_do_source->initialize_geometry(internal_viewing);
@@ -458,7 +687,6 @@ namespace sasktran2::hr {
 
         construct_accumulation_sparsity(transport_columns);
         std::vector<std::vector<int>>().swap(transport_columns);
-
         generate_source_interpolation_weights(internal_viewing.traced_rays,
                                               m_los_source_weights);
 
@@ -503,6 +731,16 @@ namespace sasktran2::hr {
     }
 
     template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::initialize_atmosphere_native(
+        const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere) {
+        m_atmosphere = &atmosphere;
+        m_integrator.initialize_atmosphere(atmosphere);
+        for (auto& source : m_initial_owned_sources) {
+            source->initialize_atmosphere_native(atmosphere);
+        }
+    }
+
+    template <int NSTOKES>
     void
     DiffuseTable<NSTOKES>::set_wavelength_block_capacity(int block_capacity) {
         if (block_capacity < 1 ||
@@ -525,6 +763,44 @@ namespace sasktran2::hr {
                 }
             }
         }
+    }
+
+    template <int NSTOKES>
+    void
+    DiffuseTable<NSTOKES>::begin_forward_state_capture(int num_wavelengths) {
+        if (!m_use_rust_solver || num_wavelengths < 1) {
+            return;
+        }
+        const bool compatible_existing_state =
+            m_forward_state_atmosphere == m_atmosphere &&
+            m_forward_state_atmosphere_revision == m_atmosphere->revision() &&
+            m_forward_states.size() ==
+                static_cast<std::size_t>(num_wavelengths);
+        if (!compatible_existing_state) {
+            m_forward_states.resize(static_cast<std::size_t>(num_wavelengths));
+            for (auto& state : m_forward_states) {
+                state.valid = false;
+            }
+        }
+        m_forward_state_atmosphere = m_atmosphere;
+        m_forward_state_atmosphere_revision = m_atmosphere->revision();
+        m_capture_forward_state = true;
+    }
+
+    template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::end_forward_state_capture() {
+        m_capture_forward_state = false;
+    }
+
+    template <int NSTOKES>
+    std::size_t DiffuseTable<NSTOKES>::retained_forward_state_bytes() const {
+        std::size_t bytes =
+            m_forward_states.capacity() * sizeof(DiffuseTableForwardState);
+        for (const auto& state : m_forward_states) {
+            bytes += state.first_order_forcing.capacity() * sizeof(double);
+            bytes += state.solution.capacity() * sizeof(double);
+        }
+        return bytes;
     }
 
     template <int NSTOKES>
@@ -725,6 +1001,7 @@ namespace sasktran2::hr {
     void
     DiffuseTable<NSTOKES>::initialize_config(const sasktran2::Config& config) {
         m_config = &config;
+        m_integrator.initialize_thread_storage(m_config->num_threads(), 1);
 
         if (m_use_rust_solver && m_config->num_hr_full_incoming_points() > 0) {
             throw std::invalid_argument(
@@ -738,6 +1015,11 @@ namespace sasktran2::hr {
         }
 
         m_thread_storage.resize(m_config->num_wavelength_threads());
+        m_deferred_jvp_transport_restore.assign(
+            m_config->num_wavelength_threads(), false);
+        m_last_nonconverged_vjp_warning_wavelength.assign(
+            m_config->num_wavelength_threads(), -1);
+        m_active_vjp_derivatives.resize(m_config->num_wavelength_threads());
 
         if (m_geometry_1d != nullptr) {
             auto initial_single_scatter = std::make_unique<
@@ -1122,7 +1404,7 @@ namespace sasktran2::hr {
         ZoneScopedN("Iterate to Solution");
 #ifdef SKTRAN_RUST_SUPPORT
         if (m_use_rust_solver) {
-            iterate_to_solution_rust(threadidx);
+            iterate_to_solution_rust(wavelidx, threadidx);
             return;
         }
 #endif
@@ -1225,6 +1507,167 @@ namespace sasktran2::hr {
 #ifdef SKTRAN_RUST_SUPPORT
     template <int NSTOKES>
     void
+    DiffuseTable<NSTOKES>::generate_twostream_initial_guess(int wavelidx,
+                                                            int threadidx) {
+        if (m_config->successive_orders_initialization() !=
+            sasktran2::Config::SuccessiveOrdersInitialization::twostream) {
+            return;
+        }
+        if (m_atmosphere == nullptr || threadidx < 0 ||
+            static_cast<std::size_t>(threadidx) >=
+                m_twostream_initializers.size()) {
+            throw std::logic_error(
+                "Two-stream successive-orders initializer is not ready");
+        }
+
+        auto& thread_storage = m_thread_storage[threadidx];
+        thread_storage.m_outgoing_sources.value.setZero();
+        const auto& atmosphere_storage = m_atmosphere->storage();
+        const std::size_t num_levels =
+            static_cast<std::size_t>(m_altitude_grid.grid().size());
+        const std::size_t coefficient_families = NSTOKES == 1 ? 1 : 4;
+        const std::size_t num_legendre =
+            static_cast<std::size_t>(
+                atmosphere_storage.leg_coeff.dimension(0)) /
+            coefficient_families;
+        if (num_legendre < 2) {
+            throw std::invalid_argument(
+                "Two-stream initialization requires at least two Legendre "
+                "moments");
+        }
+
+        auto& extinction = thread_storage.twostream_extinction;
+        auto& ssa = thread_storage.twostream_ssa;
+        auto& legendre = thread_storage.twostream_legendre;
+        auto& delta_m = thread_storage.twostream_delta_m;
+        auto& emission = thread_storage.twostream_emission;
+        auto& surface_albedo = thread_storage.twostream_surface_albedo;
+        extinction.resize(num_levels);
+        ssa.resize(num_levels);
+        legendre.resize(num_legendre * num_levels);
+        delta_m.resize(num_levels);
+        emission.resize(num_levels);
+        surface_albedo.resize(1);
+        surface_albedo[0] =
+            m_atmosphere->surface().brdf(wavelidx, 0, 0, 0)(0, 0) * EIGEN_PI;
+
+        const int num_profiles = m_location_interpolator->num_ground_points();
+        std::vector<double> scattering_legendre(num_legendre);
+        for (int profile = 0; profile < num_profiles; ++profile) {
+            for (std::size_t level = 0; level < num_levels; ++level) {
+                double local_extinction = 0;
+                double scattering_extinction = 0;
+                double local_emission = 0;
+                double scattering_delta_m = 0;
+                std::fill(scattering_legendre.begin(),
+                          scattering_legendre.end(), 0.0);
+                for (const auto& [location_index, weight] :
+                     m_twostream_atmosphere_weights[profile][level]) {
+                    const double node_extinction =
+                        atmosphere_storage.total_extinction(location_index,
+                                                            wavelidx);
+                    const double node_scattering =
+                        node_extinction *
+                        atmosphere_storage.ssa(location_index, wavelidx);
+                    local_extinction += weight * node_extinction;
+                    scattering_extinction += weight * node_scattering;
+                    scattering_delta_m +=
+                        weight * node_scattering *
+                        atmosphere_storage.f(location_index, wavelidx);
+                    local_emission +=
+                        weight * atmosphere_storage.emission_source(
+                                     location_index, wavelidx);
+                    for (std::size_t moment = 0; moment < num_legendre;
+                         ++moment) {
+                        scattering_legendre[moment] +=
+                            weight * node_scattering *
+                            atmosphere_storage.leg_coeff(
+                                moment * coefficient_families, location_index,
+                                wavelidx);
+                    }
+                }
+                extinction[level] = local_extinction;
+                ssa[level] = local_extinction > 0
+                                 ? scattering_extinction / local_extinction
+                                 : 0;
+                delta_m[level] =
+                    scattering_extinction > 0
+                        ? scattering_delta_m / scattering_extinction
+                        : 0;
+                emission[level] = local_emission;
+                for (std::size_t moment = 0; moment < num_legendre; ++moment) {
+                    legendre[level * num_legendre + moment] =
+                        scattering_extinction > 0
+                            ? scattering_legendre[moment] /
+                                  scattering_extinction
+                            : 0;
+                }
+            }
+
+            const std::array<double, 1> surface_emission = {
+                m_atmosphere->surface().emission()(wavelidx)};
+            const std::array<double, 1> solar_irradiance = {
+                atmosphere_storage.solar_irradiance(wavelidx)};
+            auto& source = m_twostream_initializers[threadidx][profile];
+            sasktran2::rust::twostream::solve(
+                *source, 1, num_levels, as_rust_slice(extinction),
+                as_rust_slice(ssa), as_rust_slice(legendre), num_legendre,
+                as_rust_slice(delta_m), as_rust_slice(emission),
+                as_rust_slice(surface_albedo),
+                ::rust::Slice<const double>(surface_emission.data(), 1),
+                ::rust::Slice<const double>(solar_irradiance.data(), 1), false);
+
+            {
+                const auto sampled_source =
+                    sasktran2::rust::twostream::radiance(*source);
+                const int first_point =
+                    profile * m_twostream_num_source_altitudes;
+                const int num_outgoing =
+                    m_diffuse_points[first_point]->num_outgoing();
+                const std::size_t num_volume_samples =
+                    static_cast<std::size_t>(m_twostream_num_source_altitudes) *
+                    num_outgoing;
+                if (sampled_source.size() != num_volume_samples + 1) {
+                    throw std::runtime_error(
+                        "Rust two-stream initializer returned an invalid "
+                        "source size");
+                }
+                std::size_t sample = 0;
+                for (int altitude_index = 0;
+                     altitude_index < m_twostream_num_source_altitudes;
+                     ++altitude_index) {
+                    const int point_index = first_point + altitude_index;
+                    for (int direction_index = 0;
+                         direction_index < num_outgoing; ++direction_index) {
+                        const int state_index =
+                            NSTOKES *
+                            (m_diffuse_outgoing_index_map[point_index] +
+                             direction_index);
+                        thread_storage.m_outgoing_sources.value(state_index) =
+                            sampled_source[sample++];
+                    }
+                }
+
+                const int ground_point =
+                    m_location_interpolator->num_interior_points() + profile;
+                const double ground_source = sampled_source[num_volume_samples];
+                for (int direction_index = 0;
+                     direction_index <
+                     m_diffuse_points[ground_point]->num_outgoing();
+                     ++direction_index) {
+                    const int state_index =
+                        NSTOKES * (m_diffuse_outgoing_index_map[ground_point] +
+                                   direction_index);
+                    thread_storage.m_outgoing_sources.value(state_index) =
+                        ground_source;
+                }
+            }
+            sasktran2::rust::twostream::clear_output(*source);
+        }
+    }
+
+    template <int NSTOKES>
+    void
     DiffuseTable<NSTOKES>::pack_rust_boundary_scattering_values(int threadidx) {
         auto& storage = m_thread_storage[threadidx];
         std::size_t value_offset = 0;
@@ -1250,6 +1693,22 @@ namespace sasktran2::hr {
         const int num_coefficients = m_config->num_do_streams();
         const int num_families = NSTOKES == 1 ? 1 : 4;
         const int num_geometry = m_atmosphere->storage().ssa.rows();
+        std::vector<int> active_groups;
+        active_groups.reserve(m_atmosphere->num_scattering_deriv_groups());
+        for (int group = 0; group < m_atmosphere->num_scattering_deriv_groups();
+             ++group) {
+            if (!native_tangent
+                     .segment(m_atmosphere->scat_deriv_start_index() +
+                                  group * num_geometry,
+                              num_geometry)
+                     .isZero(0.0)) {
+                active_groups.push_back(group);
+            }
+        }
+        if (active_groups.empty()) {
+            std::fill(tangent.begin(), tangent.end(), 0.0);
+            return;
+        }
         for (int point = 0;
              point < m_location_interpolator->num_interior_points(); ++point) {
             for (int degree = 0; degree < num_coefficients; ++degree) {
@@ -1257,10 +1716,7 @@ namespace sasktran2::hr {
                     double value = 0.0;
                     for (const auto& index_weight :
                          m_diffuse_point_interpolation_weights[point]) {
-                        for (int group = 0;
-                             group <
-                             m_atmosphere->num_scattering_deriv_groups();
-                             ++group) {
+                        for (const int group : active_groups) {
                             value +=
                                 index_weight.second *
                                 m_atmosphere->storage().d_leg_coeff(
@@ -1285,6 +1741,14 @@ namespace sasktran2::hr {
         auto& tangent =
             m_thread_storage[threadidx].rust_boundary_scattering_value_tangent;
         std::fill(tangent.begin(), tangent.end(), 0.0);
+        const int num_surface_derivatives = m_atmosphere->surface().num_deriv();
+        if (num_surface_derivatives == 0 ||
+            native_tangent
+                .segment(m_atmosphere->surface_deriv_start_index(),
+                         num_surface_derivatives)
+                .isZero(0.0)) {
+            return;
+        }
         std::size_t value_offset = 0;
         for (std::size_t point_index = static_cast<std::size_t>(
                  m_location_interpolator->num_interior_points());
@@ -1340,6 +1804,7 @@ namespace sasktran2::hr {
     template <int NSTOKES>
     void DiffuseTable<NSTOKES>::accumulate_rust_scattering_coefficient_vjp(
         int wavelidx, ::rust::Slice<const double> coefficient_gradient,
+        const std::vector<int>& active_scattering_groups,
         Eigen::Ref<Eigen::VectorXd> native_gradient) const {
         const int num_coefficients = m_config->num_do_streams();
         const int num_families = NSTOKES == 1 ? 1 : 4;
@@ -1353,10 +1818,7 @@ namespace sasktran2::hr {
                          family];
                     for (const auto& index_weight :
                          m_diffuse_point_interpolation_weights[point]) {
-                        for (int group = 0;
-                             group <
-                             m_atmosphere->num_scattering_deriv_groups();
-                             ++group) {
+                        for (const int group : active_scattering_groups) {
                             native_gradient(
                                 m_atmosphere->scat_deriv_start_index() +
                                 group * num_geometry + index_weight.first) +=
@@ -1427,13 +1889,22 @@ namespace sasktran2::hr {
     }
 
     template <int NSTOKES>
-    void DiffuseTable<NSTOKES>::iterate_to_solution_rust(int threadidx) {
+    void DiffuseTable<NSTOKES>::iterate_to_solution_rust(int wavelidx,
+                                                         int threadidx) {
         ZoneScopedN("Rust Successive Orders Solve");
         auto& storage = m_thread_storage[threadidx];
 
         pack_rust_boundary_scattering_values(threadidx);
 
         const std::vector<double> no_initial_guess;
+        generate_twostream_initial_guess(wavelidx, threadidx);
+        const bool use_twostream_initial_guess =
+            m_config->successive_orders_initialization() ==
+            sasktran2::Config::SuccessiveOrdersInitialization::twostream;
+        const auto initial_guess =
+            use_twostream_initial_guess
+                ? as_rust_slice(storage.m_outgoing_sources.value)
+                : as_rust_slice(no_initial_guess);
         auto& solver = m_rust_solvers[threadidx];
         if constexpr (NSTOKES == 1) {
             sasktran2::rust::successive_orders::solve_scalar_coefficients(
@@ -1443,7 +1914,7 @@ namespace sasktran2::hr {
                 as_rust_slice(storage.rust_scattering_coefficients),
                 as_rust_slice(storage.rust_boundary_scattering_values),
                 as_rust_slice(storage.m_firstorder_radiances.value),
-                as_rust_slice(no_initial_guess));
+                initial_guess);
         } else {
             sasktran2::rust::successive_orders::solve_vector_coefficients(
                 *solver, as_rust_slice(m_outer_starts),
@@ -1452,9 +1923,8 @@ namespace sasktran2::hr {
                 as_rust_slice(storage.rust_scattering_coefficients),
                 as_rust_slice(storage.rust_boundary_scattering_values),
                 as_rust_slice(storage.m_firstorder_radiances.value),
-                as_rust_slice(no_initial_guess));
+                initial_guess);
         }
-
         const auto solution =
             sasktran2::rust::successive_orders::solution(*solver);
         if (solution.size() !=
@@ -1483,6 +1953,46 @@ namespace sasktran2::hr {
                 sasktran2::rust::successive_orders::iterations(*solver),
                 sasktran2::rust::successive_orders::initial_residual(*solver),
                 sasktran2::rust::successive_orders::final_residual(*solver));
+        }
+    }
+
+    template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::capture_forward_state(int wavelidx,
+                                                      int threadidx) {
+        if (!m_capture_forward_state || wavelidx < 0 ||
+            static_cast<std::size_t>(wavelidx) >= m_forward_states.size()) {
+            return;
+        }
+        auto& state = m_forward_states[static_cast<std::size_t>(wavelidx)];
+        const auto& solver = m_rust_solvers[threadidx];
+        if (!sasktran2::rust::successive_orders::converged(*solver)) {
+            state.valid = false;
+            return;
+        }
+
+        const auto& storage = m_thread_storage[threadidx];
+        const auto& forcing = storage.m_firstorder_radiances.value;
+        state.first_order_forcing.assign(forcing.data(),
+                                         forcing.data() + forcing.size());
+        const auto solution =
+            sasktran2::rust::successive_orders::solution(*solver);
+        state.solution.assign(solution.begin(), solution.end());
+        state.valid = true;
+    }
+
+    template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::restore_transport_operator(int wavelidx,
+                                                           int threadidx) {
+        auto& storage = m_thread_storage[threadidx];
+        storage.accumulation_summed_values.setZero();
+
+        const int num_threads = m_config->num_source_threads();
+#pragma omp parallel for num_threads(num_threads)
+        for (int rayidx = 0; rayidx < m_internal_viewing.traced_rays.size();
+             ++rayidx) {
+            m_integrator.emplace_accumulation_transport(
+                wavelidx, rayidx, m_diffuse_source_weights,
+                storage.accumulation_summed_values);
         }
     }
 
@@ -1552,13 +2062,16 @@ namespace sasktran2::hr {
     }
 
     template <int NSTOKES>
-    void DiffuseTable<NSTOKES>::prepare_wavelength(int wavelidx,
-                                                   int threadidx) {
+    void DiffuseTable<NSTOKES>::prepare_wavelength(int wavelidx, int threadidx,
+                                                   bool value_only) {
         const sasktran2::WavelengthBlock<> scalar_block{wavelidx, 1};
         for (auto& source : m_initial_owned_sources) {
-            source->calculate(scalar_block, threadidx);
+            if (value_only) {
+                source->calculate_value(scalar_block, threadidx);
+            } else {
+                source->calculate(scalar_block, threadidx);
+            }
         }
-
         int nthreads = m_config->num_source_threads();
 
         if (m_config->num_hr_spherical_iterations() > 0) {
@@ -1608,7 +2121,6 @@ namespace sasktran2::hr {
             // Else, start with total first order incoming
             m_thread_storage[threadidx].m_incoming_radiances.value =
                 m_thread_storage[threadidx].m_firstorder_radiances.value;
-
             // Generate the scattering and accumulation matrices
             generate_scattering_matrices(wavelidx, threadidx);
             generate_accumulation_matrix(wavelidx, threadidx);
@@ -1619,6 +2131,7 @@ namespace sasktran2::hr {
     void
     DiffuseTable<NSTOKES>::calculate(const sasktran2::WavelengthBlock<>& block,
                                      int threadidx) {
+        m_deferred_jvp_transport_restore[threadidx] = false;
         if (block.count < 1 || block.count > maximum_wavelength_block_size() ||
             block.count > m_wavelength_block_capacity) {
             throw std::invalid_argument(
@@ -1631,6 +2144,7 @@ namespace sasktran2::hr {
             if (m_wavelength_block_capacity == 1) {
                 prepare_wavelength(block.start, threadidx);
                 iterate_to_solution(block.start, threadidx);
+                capture_forward_state(block.start, threadidx);
                 return;
             }
             const std::size_t state_size = static_cast<std::size_t>(
@@ -1638,6 +2152,7 @@ namespace sasktran2::hr {
             for (int lane = 0; lane < block.count; ++lane) {
                 prepare_wavelength(block.wavelength(lane), threadidx);
                 iterate_to_solution(block.wavelength(lane), threadidx);
+                capture_forward_state(block.wavelength(lane), threadidx);
                 for (std::size_t element = 0; element < state_size; ++element) {
                     storage.rust_batch_outgoing_sources
                         [element * m_wavelength_block_capacity + lane] =
@@ -1653,6 +2168,141 @@ namespace sasktran2::hr {
     }
 
     template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::calculate_value(
+        const sasktran2::WavelengthBlock<>& block, int threadidx) {
+        m_deferred_jvp_transport_restore[threadidx] = false;
+        if (block.count != 1) {
+            calculate(block, threadidx);
+            return;
+        }
+        prepare_wavelength(block.start, threadidx, true);
+        iterate_to_solution(block.start, threadidx);
+#ifdef SKTRAN_RUST_SUPPORT
+        if (m_use_rust_solver) {
+            capture_forward_state(block.start, threadidx);
+        }
+#endif
+    }
+
+    template <int NSTOKES>
+    bool DiffuseTable<NSTOKES>::restore_forward_state(int wavelidx,
+                                                      int threadidx) {
+#ifdef SKTRAN_RUST_SUPPORT
+        m_deferred_jvp_transport_restore[threadidx] = false;
+        if (!m_use_rust_solver || m_forward_state_atmosphere != m_atmosphere ||
+            m_forward_state_atmosphere_revision != m_atmosphere->revision() ||
+            wavelidx < 0 ||
+            static_cast<std::size_t>(wavelidx) >= m_forward_states.size() ||
+            !m_forward_states[static_cast<std::size_t>(wavelidx)].valid) {
+            return false;
+        }
+
+        const auto& state =
+            m_forward_states[static_cast<std::size_t>(wavelidx)];
+        auto& storage = m_thread_storage[threadidx];
+        if (state.first_order_forcing.size() !=
+                static_cast<std::size_t>(
+                    storage.m_firstorder_radiances.value.size()) ||
+            state.solution.size() !=
+                static_cast<std::size_t>(
+                    storage.m_outgoing_sources.value.size())) {
+            return false;
+        }
+
+        const sasktran2::WavelengthBlock<> scalar_block{wavelidx, 1};
+        for (auto& source : m_initial_owned_sources) {
+            source->calculate(scalar_block, threadidx);
+        }
+        restore_transport_operator(wavelidx, threadidx);
+        generate_scattering_matrices(wavelidx, threadidx);
+        pack_rust_boundary_scattering_values(threadidx);
+
+        std::copy(state.first_order_forcing.begin(),
+                  state.first_order_forcing.end(),
+                  storage.m_firstorder_radiances.value.data());
+        std::copy(state.solution.begin(), state.solution.end(),
+                  storage.m_outgoing_sources.value.data());
+        sasktran2::rust::successive_orders::restore_coefficient_solution(
+            *m_rust_solvers[threadidx],
+            as_rust_slice(storage.rust_scattering_coefficients),
+            as_rust_slice(storage.rust_boundary_scattering_values),
+            as_rust_slice(state.solution));
+        return true;
+#else
+        (void)wavelidx;
+        (void)threadidx;
+        return false;
+#endif
+    }
+
+    template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::prepare_forward_state_for_jvp(
+        int wavelidx, int threadidx,
+        Eigen::Ref<const Eigen::VectorXd> native_tangent) {
+        for (auto* source : m_initial_sources) {
+            source->prepare_forward_state_for_jvp(wavelidx, threadidx,
+                                                  native_tangent);
+        }
+    }
+
+    template <int NSTOKES>
+    bool DiffuseTable<NSTOKES>::restore_forward_state_for_jvp(
+        int wavelidx, int threadidx,
+        Eigen::Ref<const Eigen::VectorXd> native_tangent) {
+#ifdef SKTRAN_RUST_SUPPORT
+        m_deferred_jvp_transport_restore[threadidx] = false;
+        if (!m_use_rust_solver || m_forward_state_atmosphere != m_atmosphere ||
+            m_forward_state_atmosphere_revision != m_atmosphere->revision() ||
+            wavelidx < 0 ||
+            static_cast<std::size_t>(wavelidx) >= m_forward_states.size() ||
+            !m_forward_states[static_cast<std::size_t>(wavelidx)].valid) {
+            return false;
+        }
+
+        const auto& state =
+            m_forward_states[static_cast<std::size_t>(wavelidx)];
+        auto& storage = m_thread_storage[threadidx];
+        if (state.first_order_forcing.size() !=
+                static_cast<std::size_t>(
+                    storage.m_firstorder_radiances.value.size()) ||
+            state.solution.size() !=
+                static_cast<std::size_t>(
+                    storage.m_outgoing_sources.value.size())) {
+            return false;
+        }
+
+        const sasktran2::WavelengthBlock<> scalar_block{wavelidx, 1};
+        for (auto& source : m_initial_owned_sources) {
+            if (native_tangent.isZero(0.0)) {
+                source->calculate_value(scalar_block, threadidx);
+            } else {
+                source->calculate(scalar_block, threadidx);
+            }
+        }
+        std::copy(state.first_order_forcing.begin(),
+                  state.first_order_forcing.end(),
+                  storage.m_firstorder_radiances.value.data());
+        std::copy(state.solution.begin(), state.solution.end(),
+                  storage.m_outgoing_sources.value.data());
+
+        // A zero tangent needs only retained source values for LOS
+        // integration. For a nonzero tangent, scattering is inexpensive to
+        // restore here while transport reconstruction is fused with its JVP.
+        if (!native_tangent.isZero(0.0)) {
+            generate_scattering_matrices(wavelidx, threadidx);
+            pack_rust_boundary_scattering_values(threadidx);
+            m_deferred_jvp_transport_restore[threadidx] = true;
+        }
+        return true;
+#else
+        (void)wavelidx;
+        (void)threadidx;
+        (void)native_tangent;
+        return false;
+#endif
+    }
+
+    template <int NSTOKES>
     void DiffuseTable<NSTOKES>::prepare_jvp(
         int wavelidx, int wavel_threadidx,
         Eigen::Ref<const Eigen::VectorXd> native_tangent) {
@@ -1660,6 +2310,15 @@ namespace sasktran2::hr {
         if (!native_products_available()) {
             throw std::logic_error(
                 "Native successive-orders products require the Rust solver");
+        }
+        if (m_config->successive_orders_initialization() ==
+                sasktran2::Config::SuccessiveOrdersInitialization::twostream &&
+            m_config->successive_orders_relative_tolerance() == 0 &&
+            m_config->successive_orders_absolute_tolerance() == 0 &&
+            m_config->successive_orders_anderson_depth() == 0) {
+            throw std::logic_error(
+                "Fixed-iteration derivatives with a two-stream "
+                "successive-orders initial state are not yet supported");
         }
         auto& storage = m_thread_storage[wavel_threadidx];
         storage.rust_transport_value_tangent.resize(
@@ -1674,12 +2333,41 @@ namespace sasktran2::hr {
             storage.m_outgoing_sources.value.size());
         storage.rust_transport_value_tangent.setZero();
         storage.rust_first_order_forcing_tangent.setZero();
+        const bool restore_transport =
+            m_deferred_jvp_transport_restore[wavel_threadidx];
+        m_deferred_jvp_transport_restore[wavel_threadidx] = false;
+        if (native_tangent.isZero(0.0)) {
+            std::fill(storage.rust_solution_jvp.begin(),
+                      storage.rust_solution_jvp.end(), 0.0);
+            for (auto* source : m_initial_sources) {
+                source->prepare_jvp(wavelidx, wavel_threadidx, native_tangent);
+            }
+            return;
+        }
+        if (restore_transport) {
+            storage.accumulation_summed_values.setZero();
+        }
         pack_rust_scattering_coefficient_jvp(wavelidx, wavel_threadidx,
                                              native_tangent);
         pack_rust_boundary_scattering_jvp(wavelidx, wavel_threadidx,
                                           native_tangent);
         for (auto* source : m_initial_sources) {
             source->prepare_jvp(wavelidx, wavel_threadidx, native_tangent);
+        }
+        if (!sasktran2::rust::successive_orders::converged(
+                *m_rust_solvers[wavel_threadidx]) &&
+            m_config->successive_orders_anderson_depth() != 0) {
+            spdlog::warn(
+                "Calculating an approximate successive-orders JVP for "
+                "wavelength index {} because the primal did not converge "
+                "after {} iterations (residual {}). The result is based on "
+                "the current approximate solution and may not represent the "
+                "converged model.",
+                wavelidx,
+                sasktran2::rust::successive_orders::iterations(
+                    *m_rust_solvers[wavel_threadidx]),
+                sasktran2::rust::successive_orders::final_residual(
+                    *m_rust_solvers[wavel_threadidx]));
         }
 
         const int num_threads = m_config->num_source_threads();
@@ -1695,11 +2383,21 @@ namespace sasktran2::hr {
             m_integrator.integrate_and_emplace_accumulation_jvp(
                 m_initial_sources, wavelidx, rayidx, wavel_threadidx,
                 source_threadidx + wavel_threadidx, m_diffuse_source_weights,
-                native_tangent, storage.rust_transport_value_tangent,
+                native_tangent,
+                restore_transport ? &storage.accumulation_summed_values
+                                  : nullptr,
+                storage.rust_transport_value_tangent,
                 storage.rust_first_order_forcing_tangent);
         }
-
         auto& solver = m_rust_solvers[wavel_threadidx];
+        if (restore_transport) {
+            const auto& state =
+                m_forward_states[static_cast<std::size_t>(wavelidx)];
+            sasktran2::rust::successive_orders::restore_coefficient_solution(
+                *solver, as_rust_slice(storage.rust_scattering_coefficients),
+                as_rust_slice(storage.rust_boundary_scattering_values),
+                as_rust_slice(state.solution));
+        }
         sasktran2::rust::successive_orders::linearize_coefficients_jvp(
             *solver, as_rust_slice(m_outer_starts),
             as_rust_slice(m_inner_indicies),
@@ -1726,15 +2424,60 @@ namespace sasktran2::hr {
     }
 
     template <int NSTOKES>
-    void DiffuseTable<NSTOKES>::prepare_vjp(int wavelidx, int wavel_threadidx) {
-        (void)wavelidx;
-        (void)wavel_threadidx;
+    void DiffuseTable<NSTOKES>::prepare_vjp(
+        int wavelidx, int wavel_threadidx,
+        Eigen::Ref<const Eigen::VectorXi> active_derivatives) {
         if (!native_products_available()) {
             throw std::logic_error(
                 "Native successive-orders products require the Rust solver");
         }
+        if (m_config->successive_orders_initialization() ==
+                sasktran2::Config::SuccessiveOrdersInitialization::twostream &&
+            m_config->successive_orders_relative_tolerance() == 0 &&
+            m_config->successive_orders_absolute_tolerance() == 0 &&
+            m_config->successive_orders_anderson_depth() == 0) {
+            throw std::logic_error(
+                "Fixed-iteration derivatives with a two-stream "
+                "successive-orders initial state are not yet supported");
+        }
+        auto& activity = m_active_vjp_derivatives[wavel_threadidx];
+        activity = DiffuseTableDerivativeActivity{};
+        const int num_geometry =
+            static_cast<int>(m_atmosphere->storage().ssa.rows());
+        activity.extinction = active_derivatives.head(num_geometry).any();
+        activity.ssa =
+            active_derivatives
+                .segment(m_atmosphere->ssa_deriv_start_index(), num_geometry)
+                .any();
+        for (int group = 0; group < m_atmosphere->num_scattering_deriv_groups();
+             ++group) {
+            if (active_derivatives
+                    .segment(m_atmosphere->scat_deriv_start_index() +
+                                 group * num_geometry,
+                             num_geometry)
+                    .any()) {
+                activity.scattering_groups.push_back(group);
+            }
+        }
+        const int num_surface_derivatives = m_atmosphere->surface().num_deriv();
+        activity.surface =
+            num_surface_derivatives > 0 &&
+            active_derivatives
+                .segment(m_atmosphere->surface_deriv_start_index(),
+                         num_surface_derivatives)
+                .any();
+        if (m_atmosphere->include_emission_derivatives()) {
+            activity.emission =
+                active_derivatives
+                    .segment(m_atmosphere->emission_deriv_start_index(),
+                             num_geometry)
+                    .any();
+            activity.surface_emission =
+                active_derivatives(
+                    m_atmosphere->surface_emission_deriv_start_index()) != 0;
+        }
         for (auto* source : m_initial_sources) {
-            source->prepare_vjp(wavelidx, wavel_threadidx);
+            source->prepare_vjp(wavelidx, wavel_threadidx, active_derivatives);
         }
         for (auto& cotangent : m_los_solution_cotangents[wavel_threadidx]) {
             cotangent.setZero();
@@ -1752,16 +2495,30 @@ namespace sasktran2::hr {
              m_los_solution_cotangents[wavel_threadidx]) {
             solution_cotangent += thread_cotangent;
         }
-
         const auto& storage = m_thread_storage[wavel_threadidx];
         auto& solver = m_rust_solvers[wavel_threadidx];
+        if (!sasktran2::rust::successive_orders::converged(*solver) &&
+            m_config->successive_orders_anderson_depth() != 0 &&
+            m_last_nonconverged_vjp_warning_wavelength[wavel_threadidx] !=
+                wavelidx) {
+            spdlog::warn(
+                "Calculating an approximate successive-orders VJP for "
+                "wavelength index {} because the primal did not converge "
+                "after {} iterations (residual {}). The result is based on "
+                "the current approximate solution and may not represent the "
+                "converged model.",
+                wavelidx,
+                sasktran2::rust::successive_orders::iterations(*solver),
+                sasktran2::rust::successive_orders::final_residual(*solver));
+            m_last_nonconverged_vjp_warning_wavelength[wavel_threadidx] =
+                wavelidx;
+        }
         sasktran2::rust::successive_orders::linearize_coefficients_vjp(
             *solver, as_rust_slice(m_outer_starts),
             as_rust_slice(m_inner_indicies),
             as_rust_slice(storage.accumulation_summed_values),
             as_rust_slice(storage.m_firstorder_radiances.value),
             as_rust_slice(solution_cotangent));
-
         const auto transport_gradient =
             sasktran2::rust::successive_orders::transport_value_gradient(
                 *solver);
@@ -1776,11 +2533,16 @@ namespace sasktran2::hr {
         const auto converged_solution =
             sasktran2::rust::successive_orders::solution(*solver);
 
-        accumulate_rust_scattering_coefficient_vjp(
-            wavelidx, coefficient_gradient, native_gradient);
-        accumulate_rust_boundary_scattering_vjp(wavelidx, boundary_gradient,
-                                                native_gradient);
-
+        const auto& activity = m_active_vjp_derivatives[wavel_threadidx];
+        if (activity.scattering()) {
+            accumulate_rust_scattering_coefficient_vjp(
+                wavelidx, coefficient_gradient, activity.scattering_groups,
+                native_gradient);
+        }
+        if (activity.surface) {
+            accumulate_rust_boundary_scattering_vjp(wavelidx, boundary_gradient,
+                                                    native_gradient);
+        }
         const int num_threads = m_config->num_source_threads();
         std::vector<Eigen::VectorXd> thread_gradients(num_threads);
         for (auto& gradient : thread_gradients) {
@@ -1805,6 +2567,9 @@ namespace sasktran2::hr {
                 m_inner_indicies,
                 Eigen::Map<const Eigen::VectorXd>(forcing_gradient.data(),
                                                   forcing_gradient.size()),
+                activity.extinction, activity.ssa,
+                activity.extinction || activity.ssa || activity.scattering() ||
+                    activity.emission,
                 thread_gradients[source_threadidx]);
         }
         for (const auto& gradient : thread_gradients) {
@@ -1813,6 +2578,8 @@ namespace sasktran2::hr {
         for (const auto* source : m_initial_sources) {
             source->finalize_vjp(wavelidx, wavel_threadidx, native_gradient);
         }
+        m_active_vjp_derivatives[wavel_threadidx] =
+            DiffuseTableDerivativeActivity{};
 #else
         (void)wavelidx;
         (void)wavel_threadidx;
@@ -2025,6 +2792,7 @@ namespace sasktran2::hr {
         const sasktran2::raytracing::GridWeightStencilView& exit_weights,
         const sasktran2::WavelengthBlockODView& shell_od,
         const Eigen::Vector<double, NSTOKES>& cotangent,
+        Eigen::Ref<Eigen::Vector<double, NSTOKES>> source_value,
         Eigen::Ref<Eigen::VectorXd> native_gradient) const {
         (void)layer;
         (void)exit_weights;
@@ -2064,6 +2832,7 @@ namespace sasktran2::hr {
                     weight * omega * factor * cotangent(stokes);
             }
         }
+        source_value += omega * factor * interpolated_outgoing;
         const double amplitude_cotangent = cotangent.dot(interpolated_outgoing);
         for (std::size_t index = layer_interpolator.atmosphere_offset;
              index < layer_interpolator.atmosphere_offset +

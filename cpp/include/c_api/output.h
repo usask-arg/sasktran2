@@ -7,6 +7,7 @@ extern "C" {
 typedef struct OutputC OutputC;
 typedef struct OutputJVP OutputJVP;
 typedef struct OutputVJP OutputVJP;
+typedef struct OutputJacobianVJP OutputJacobianVJP;
 
 OutputC* sk_output_create(double* radiance, int nrad, int nstokes, double* flux,
                           int nflux);
@@ -49,6 +50,17 @@ int sk_output_vjp_assign_derivative_gradient(OutputVJP* output,
 int sk_output_vjp_assign_surface_gradient(OutputVJP* output, const char* name,
                                           double* gradient, int nparam);
 int sk_output_vjp_finalize(OutputVJP* output);
+
+OutputJacobianVJP* sk_output_jacobian_vjp_create(double* radiance, int nrad,
+                                                 int nstokes);
+void sk_output_jacobian_vjp_destroy(OutputJacobianVJP* output);
+int sk_output_jacobian_vjp_assign_derivative(OutputJacobianVJP* output,
+                                             const char* name, double* jacobian,
+                                             int nrad, int nstokes, int nparam);
+int sk_output_jacobian_vjp_assign_surface_derivative(OutputJacobianVJP* output,
+                                                     const char* name,
+                                                     double* jacobian, int nrad,
+                                                     int nstokes, int nparam);
 
 #ifdef __cplusplus
 }

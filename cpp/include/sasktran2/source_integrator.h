@@ -91,6 +91,15 @@ namespace sasktran2 {
                                   when the configured block capacity is one. */
         int m_wavelength_block_capacity = 1;
         mutable std::vector<Eigen::RowVectorXd> m_thread_attenuation{1};
+        struct AccumulationThreadScratch {
+            std::vector<double> shell_od_cotangent;
+            std::vector<double> current_od_cotangent;
+            Eigen::Vector<double, NSTOKES> layer_source;
+            sasktran2::WavelengthBlockDual<NSTOKES> primal_layer_source;
+            sasktran2::WavelengthBlockDual<NSTOKES> end_source;
+        };
+        mutable std::vector<AccumulationThreadScratch>
+            m_accumulation_thread_scratch{1};
         const std::vector<sasktran2::raytracing::TracedRay>* m_traced_rays =
             nullptr; /**< Reference to the rays we are integrating */
 
@@ -216,8 +225,13 @@ namespace sasktran2 {
         void initialize_thread_storage(int num_threads, int block_capacity) {
             m_wavelength_block_capacity = block_capacity;
             m_thread_attenuation.resize(num_threads);
+            m_accumulation_thread_scratch.resize(num_threads);
             for (auto& attenuation : m_thread_attenuation) {
                 attenuation.resize(block_capacity);
+            }
+            for (auto& scratch : m_accumulation_thread_scratch) {
+                scratch.primal_layer_source.resize(1, 0, true);
+                scratch.end_source.resize(1, 0, true);
             }
         }
 
@@ -246,6 +260,12 @@ namespace sasktran2 {
             int wavelength, int rayidx, int wavel_threadidx, int threadidx,
             Eigen::Ref<const Eigen::VectorXd> native_tangent) const;
 
+        void integrate_value(
+            Eigen::Vector<double, NSTOKES>& radiance,
+            const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+            int wavelength, int rayidx, int wavel_threadidx,
+            int threadidx) const;
+
         void integrate_vjp(
             Eigen::Vector<double, NSTOKES>& radiance,
             const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
@@ -271,10 +291,17 @@ namespace sasktran2 {
         void integrate_and_emplace_accumulation_triplets(
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
                 radiance,
-            std::vector<SourceTermInterface<NSTOKES>*> source_terms,
+            const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
             int wavelidx, int rayidx, int wavel_threadidx, int threadidx,
             const SInterpolator& source_interpolator,
             Eigen::VectorXd& accumulation_values);
+
+        /** Rebuilds only the compact transport operator for one diffuse ray.
+         * This omits source evaluation and radiance bookkeeping when restoring
+         * a converged forward checkpoint. */
+        void emplace_accumulation_transport(
+            int wavelidx, int rayidx, const SInterpolator& source_interpolator,
+            Eigen::Ref<Eigen::VectorXd> accumulation_values) const;
 
         /** Differentiates the compact transport values and first-order
          * forcing assembled for one internal diffuse ray. */
@@ -283,6 +310,7 @@ namespace sasktran2 {
             int wavelidx, int rayidx, int wavel_threadidx, int threadidx,
             const SInterpolator& source_interpolator,
             Eigen::Ref<const Eigen::VectorXd> native_tangent,
+            Eigen::VectorXd* accumulation_values,
             Eigen::Ref<Eigen::VectorXd> accumulation_value_tangent,
             Eigen::Ref<Eigen::VectorXd> first_order_forcing_tangent) const;
 
@@ -296,6 +324,8 @@ namespace sasktran2 {
             Eigen::Ref<const Eigen::VectorXd> transport_solution,
             Eigen::Ref<const Eigen::VectorXi> transport_column_indices,
             Eigen::Ref<const Eigen::VectorXd> first_order_forcing_gradient,
+            bool active_extinction, bool active_ssa,
+            bool active_interior_source_parameters,
             Eigen::Ref<Eigen::VectorXd> native_gradient) const;
 
         /** Calculates the Optical Depth for each ray */

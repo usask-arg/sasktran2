@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import sasktran2 as sk
+import xarray as xr
 
 
 def _setup_1d(
@@ -21,9 +22,14 @@ def _setup_1d(
     successive_orders_relative_tolerance: float = 0.0,
     successive_orders_absolute_tolerance: float = 0.0,
     successive_orders_anderson_depth: int = 0,
+    successive_orders_initialization: sk.SuccessiveOrdersInitialization = (
+        sk.SuccessiveOrdersInitialization.NoInitialization
+    ),
+    log_level: sk.LogLevel = sk.LogLevel.Warn,
 ):
     config = sk.Config()
     config.num_threads = num_threads
+    config.log_level = log_level
     config.num_stokes = num_stokes
     config.num_streams = 8
     config.num_singlescatter_moments = 16
@@ -63,6 +69,7 @@ def _setup_1d(
         )
         config.successive_orders_anderson_depth = successive_orders_anderson_depth
         config.successive_orders_damping = 1.0
+        config.successive_orders_initialization = successive_orders_initialization
         default_num_wavelengths = 2
     else:
         config.single_scatter_source = sk.SingleScatterSource.Exact
@@ -536,6 +543,32 @@ def test_rust_successive_orders_anderson_matches_converged_legacy():
     np.testing.assert_allclose(rust, legacy, rtol=2.0e-8, atol=1.0e-12)
 
 
+@pytest.mark.parametrize("num_stokes", [1, 3])
+def test_twostream_initialization_preserves_converged_solution(num_stokes):
+    common = {
+        "num_wavelengths": 2,
+        "num_threads": 2,
+        "successive_orders_iterations": 50,
+        "successive_orders_relative_tolerance": 1.0e-10,
+        "successive_orders_absolute_tolerance": 1.0e-13,
+        "successive_orders_anderson_depth": 3,
+    }
+    zero_engine, zero_atmosphere = _setup_1d(
+        "successive_orders_rust", num_stokes, False, **common
+    )
+    warm_engine, warm_atmosphere = _setup_1d(
+        "successive_orders_rust",
+        num_stokes,
+        False,
+        successive_orders_initialization=sk.SuccessiveOrdersInitialization.TwoStream,
+        **common,
+    )
+
+    zero = zero_engine.calculate_radiance(zero_atmosphere).radiance.values
+    warm = warm_engine.calculate_radiance(warm_atmosphere).radiance.values
+    np.testing.assert_allclose(warm, zero, rtol=3.0e-8, atol=2.0e-12)
+
+
 def test_rust_successive_orders_source_threading_matches_serial():
     serial_engine, serial_atmosphere = _setup_1d(
         "successive_orders_rust", 1, False, num_wavelengths=2
@@ -554,3 +587,78 @@ def test_rust_successive_orders_source_threading_matches_serial():
     threaded = threaded_engine.calculate_radiance(threaded_atmosphere).radiance.values
 
     np.testing.assert_allclose(threaded, serial, rtol=2.0e-12, atol=1.0e-14)
+
+
+@pytest.mark.parametrize("num_stokes", [1, 3])
+@pytest.mark.parametrize(
+    "initialization",
+    [
+        sk.SuccessiveOrdersInitialization.NoInitialization,
+        sk.SuccessiveOrdersInitialization.TwoStream,
+    ],
+)
+def test_rust_successive_orders_rayon_native_products_match_serial(
+    num_stokes, initialization
+):
+    common = {
+        "num_wavelengths": 5,
+        "successive_orders_iterations": 30,
+        "successive_orders_relative_tolerance": 1.0e-9,
+        "successive_orders_absolute_tolerance": 1.0e-12,
+        "successive_orders_anderson_depth": 3,
+        "successive_orders_initialization": initialization,
+    }
+    serial_engine, serial_atmosphere = _setup_1d(
+        "successive_orders_rust", num_stokes, True, **common
+    )
+    rayon_engine, rayon_atmosphere = _setup_1d(
+        "successive_orders_rust",
+        num_stokes,
+        True,
+        num_threads=3,
+        threading_lib=sk.ThreadingLib.Rayon,
+        threading_model=sk.ThreadingModel.Wavelength,
+        **common,
+    )
+
+    serial = serial_engine.linearize(serial_atmosphere)
+    rayon = rayon_engine.linearize(rayon_atmosphere)
+    xr.testing.assert_identical(rayon.value, serial.value)
+    assert (
+        rayon_engine._engine._retained_forward_state_bytes()
+        == serial_engine._engine._retained_forward_state_bytes()
+    )
+
+    phase_name = "leg_coeff_2" if num_stokes == 1 else "leg_coeff_8"
+    parameters = ("extinction", "ssa", phase_name, "albedo")
+    tangent = serial.tangent_template[list(parameters)]
+    tangent["extinction"].data[:] = np.linspace(
+        -1.0e-7, 2.0e-7, tangent["extinction"].size
+    )
+    tangent["ssa"].data[:] = np.linspace(-0.02, 0.03, tangent["ssa"].size)
+    tangent[phase_name].data[:] = 0.01
+    tangent["albedo"].data[:] = np.linspace(-0.015, 0.025, tangent["albedo"].size)
+    xr.testing.assert_allclose(rayon.jvp(tangent), serial.jvp(tangent))
+
+    cotangent = xr.ones_like(serial.value)
+    cotangent.data[:] = np.linspace(0.2, 1.0, cotangent.size).reshape(cotangent.shape)
+    serial_gradient = serial.vjp(cotangent, parameters=parameters)
+    rayon_gradient = rayon.vjp(cotangent, parameters=parameters)
+    for parameter in parameters:
+        xr.testing.assert_allclose(
+            rayon_gradient[parameter],
+            serial_gradient[parameter],
+            rtol=2.0e-12,
+            atol=2.0e-12,
+        )
+
+    if (
+        num_stokes == 1
+        and initialization == sk.SuccessiveOrdersInitialization.NoInitialization
+    ):
+        serial_jacobian = serial.jacobian
+        rayon_jacobian = rayon.jacobian
+        for parameter in serial_jacobian:
+            xr.testing.assert_identical(
+                rayon_jacobian[parameter], serial_jacobian[parameter]
+            )

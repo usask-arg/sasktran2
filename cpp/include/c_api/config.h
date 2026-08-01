@@ -72,6 +72,10 @@ int sk_config_get_num_hr_full_incoming_points(Config* config, int* num_points);
 int sk_config_set_num_hr_full_incoming_points(Config* config, int num_points);
 int sk_config_get_initialize_hr_with_do(Config* config, int* initialize);
 int sk_config_set_initialize_hr_with_do(Config* config, int initialize);
+int sk_config_get_successive_orders_initialization(Config* config,
+                                                   int* initialization);
+int sk_config_set_successive_orders_initialization(Config* config,
+                                                   int initialization);
 
 // Rust successive-orders solver configuration
 int sk_config_get_successive_orders_max_iterations(Config* config,

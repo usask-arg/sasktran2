@@ -157,6 +157,92 @@ impl Drop for VjpOutput {
     }
 }
 
+pub struct JacobianVjpOutput {
+    pub output: *mut ffi::OutputJacobianVJP,
+    pub radiance: Array3<f64>,
+    pub derivative_jacobians: HashMap<String, Array4<f64>>,
+    pub surface_jacobians: HashMap<String, Array4<f64>>,
+    num_wavel: usize,
+    num_los: usize,
+    num_stokes: usize,
+}
+
+impl JacobianVjpOutput {
+    pub fn new(num_wavel: usize, num_los: usize, num_stokes: usize) -> Self {
+        let mut radiance = Array3::<f64>::zeros((num_wavel, num_los, num_stokes));
+        let output = unsafe {
+            ffi::sk_output_jacobian_vjp_create(
+                radiance.as_mut_ptr(),
+                (num_wavel * num_los) as i32,
+                num_stokes as i32,
+            )
+        };
+        Self {
+            output,
+            radiance,
+            derivative_jacobians: HashMap::new(),
+            surface_jacobians: HashMap::new(),
+            num_wavel,
+            num_los,
+            num_stokes,
+        }
+    }
+
+    pub fn with_derivative_jacobian(&mut self, name: &str, size: usize) -> Result<(), String> {
+        self.derivative_jacobians.insert(
+            name.to_string(),
+            Array4::zeros((size, self.num_wavel, self.num_los, self.num_stokes)),
+        );
+        let jacobian = self.derivative_jacobians.get_mut(name).unwrap();
+        let name_c = CString::new(name).map_err(|err| err.to_string())?;
+        let result = unsafe {
+            ffi::sk_output_jacobian_vjp_assign_derivative(
+                self.output,
+                name_c.as_ptr(),
+                jacobian.as_mut_ptr(),
+                (self.num_wavel * self.num_los) as i32,
+                self.num_stokes as i32,
+                size as i32,
+            )
+        };
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(format!("Failed to register derivative Jacobian: {result}"))
+        }
+    }
+
+    pub fn with_surface_jacobian(&mut self, name: &str, size: usize) -> Result<(), String> {
+        self.surface_jacobians.insert(
+            name.to_string(),
+            Array4::zeros((size, self.num_wavel, self.num_los, self.num_stokes)),
+        );
+        let jacobian = self.surface_jacobians.get_mut(name).unwrap();
+        let name_c = CString::new(name).map_err(|err| err.to_string())?;
+        let result = unsafe {
+            ffi::sk_output_jacobian_vjp_assign_surface_derivative(
+                self.output,
+                name_c.as_ptr(),
+                jacobian.as_mut_ptr(),
+                (self.num_wavel * self.num_los) as i32,
+                self.num_stokes as i32,
+                size as i32,
+            )
+        };
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(format!("Failed to register surface Jacobian: {result}"))
+        }
+    }
+}
+
+impl Drop for JacobianVjpOutput {
+    fn drop(&mut self) {
+        unsafe { ffi::sk_output_jacobian_vjp_destroy(self.output) }
+    }
+}
+
 ///  Wrapper around the C++ Output object
 /// This is typically only constructed internally by the Engine, and then used by the user
 pub struct Output {

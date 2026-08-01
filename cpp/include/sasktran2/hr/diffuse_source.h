@@ -9,6 +9,7 @@
 
 #ifdef SKTRAN_RUST_SUPPORT
 #include "sasktran2-core/src/successive_orders/cxx.rs.h"
+#include "sasktran2-core/src/twostream/cxx.rs.h"
 #endif
 
 namespace sasktran2::hr {
@@ -53,6 +54,34 @@ namespace sasktran2::hr {
         /** Wavelength-contiguous outgoing sources retained until LOS
          *  integration completes. */
         std::vector<double> rust_batch_outgoing_sources;
+
+        /** One-profile scratch for a two-stream initial state. */
+        std::vector<double> twostream_extinction;
+        std::vector<double> twostream_ssa;
+        std::vector<double> twostream_legendre;
+        std::vector<double> twostream_delta_m;
+        std::vector<double> twostream_emission;
+        std::vector<double> twostream_surface_albedo;
+    };
+
+    /** Minimal state required to differentiate a converged fixed point. The
+     * wavelength-dependent sparse transport values are rebuilt rather than
+     * retained because they are much larger than these two vectors. */
+    struct DiffuseTableForwardState {
+        std::vector<double> first_order_forcing;
+        std::vector<double> solution;
+        bool valid = false;
+    };
+
+    struct DiffuseTableDerivativeActivity {
+        bool extinction = false;
+        bool ssa = false;
+        bool surface = false;
+        bool emission = false;
+        bool surface_emission = false;
+        std::vector<int> scattering_groups;
+
+        bool scattering() const { return !scattering_groups.empty(); }
     };
 
     /** An implementation of the successive orders of scattering technique.  We
@@ -97,6 +126,13 @@ namespace sasktran2::hr {
         const sasktran2::Geometry2D* m_geometry_2d;
 #ifdef SKTRAN_RUST_SUPPORT
         const sasktran2::raytracing::RustRayTracer2D* m_raytracer_2d;
+        std::vector<std::vector<
+            ::rust::Box<sasktran2::rust::twostream::RustTwoStreamSource>>>
+            m_twostream_initializers; /**< [wavelength worker][source profile]
+                                       */
+        std::vector<std::vector<std::vector<std::pair<int, double>>>>
+            m_twostream_atmosphere_weights; /**< [profile][level][weight] */
+        int m_twostream_num_source_altitudes = 0;
 #endif
 
         std::unique_ptr<sasktran2::grids::SourceLocationInterpolator>
@@ -163,6 +199,15 @@ namespace sasktran2::hr {
         int m_wavelength_block_capacity = 1;
         mutable std::vector<std::vector<Eigen::VectorXd>>
             m_los_solution_cotangents;
+        mutable std::vector<int> m_last_nonconverged_vjp_warning_wavelength;
+        mutable std::vector<DiffuseTableDerivativeActivity>
+            m_active_vjp_derivatives;
+        std::vector<DiffuseTableForwardState> m_forward_states;
+        const sasktran2::atmosphere::Atmosphere<NSTOKES>*
+            m_forward_state_atmosphere = nullptr;
+        std::uint64_t m_forward_state_atmosphere_revision = 0;
+        bool m_capture_forward_state = false;
+        std::vector<bool> m_deferred_jvp_transport_restore;
 
 #ifdef SKTRAN_RUST_SUPPORT
         mutable std::vector<::rust::Box<
@@ -179,9 +224,14 @@ namespace sasktran2::hr {
         std::vector<std::vector<int>> trace_incoming_rays();
         void generate_scattering_matrices(int wavelidx, int threadidx);
         void generate_accumulation_matrix(int wavelidx, int threadidx);
-        void prepare_wavelength(int wavelidx, int threadidx);
+        void prepare_wavelength(int wavelidx, int threadidx,
+                                bool value_only = false);
         void iterate_to_solution(int wavelidx, int threadidx);
 #ifdef SKTRAN_RUST_SUPPORT
+        void initialize_twostream_initial_guess_geometry(
+            const sasktran2::viewinggeometry::InternalViewingGeometry&
+                internal_viewing);
+        void generate_twostream_initial_guess(int wavelidx, int threadidx);
         void pack_rust_boundary_scattering_values(int threadidx);
         void pack_rust_scattering_coefficient_jvp(
             int wavelidx, int threadidx,
@@ -191,11 +241,14 @@ namespace sasktran2::hr {
             Eigen::Ref<const Eigen::VectorXd> native_tangent);
         void accumulate_rust_scattering_coefficient_vjp(
             int wavelidx, ::rust::Slice<const double> coefficient_gradient,
+            const std::vector<int>& active_scattering_groups,
             Eigen::Ref<Eigen::VectorXd> native_gradient) const;
         void accumulate_rust_boundary_scattering_vjp(
             int wavelidx, ::rust::Slice<const double> boundary_gradient,
             Eigen::Ref<Eigen::VectorXd> native_gradient) const;
-        void iterate_to_solution_rust(int threadidx);
+        void iterate_to_solution_rust(int wavelidx, int threadidx);
+        void capture_forward_state(int wavelidx, int threadidx);
+        void restore_transport_operator(int wavelidx, int threadidx);
 #endif
         void interpolate_sources(const Eigen::VectorXd& old_outgoing,
                                  sasktran2::Dual<double>& new_outgoing);
@@ -260,6 +313,10 @@ namespace sasktran2::hr {
         virtual void initialize_atmosphere(
             const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere);
 
+        void initialize_atmosphere_native(
+            const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere)
+            override;
+
         void set_wavelength_block_capacity(int block_capacity) override;
 
         int maximum_wavelength_block_size() const override {
@@ -287,11 +344,32 @@ namespace sasktran2::hr {
         void calculate(const sasktran2::WavelengthBlock<>& block,
                        int threadidx) override;
 
+        void calculate_value(const sasktran2::WavelengthBlock<>& block,
+                             int threadidx) override;
+
+        void begin_forward_state_capture(int num_wavelengths) override;
+
+        void end_forward_state_capture() override;
+
+        bool restore_forward_state(int wavelidx, int threadidx) override;
+
+        void prepare_forward_state_for_jvp(
+            int wavelidx, int threadidx,
+            Eigen::Ref<const Eigen::VectorXd> native_tangent) override;
+
+        bool restore_forward_state_for_jvp(
+            int wavelidx, int threadidx,
+            Eigen::Ref<const Eigen::VectorXd> native_tangent) override;
+
+        std::size_t retained_forward_state_bytes() const override;
+
         void
         prepare_jvp(int wavelidx, int wavel_threadidx,
                     Eigen::Ref<const Eigen::VectorXd> native_tangent) override;
 
-        void prepare_vjp(int wavelidx, int wavel_threadidx) override;
+        void prepare_vjp(
+            int wavelidx, int wavel_threadidx,
+            Eigen::Ref<const Eigen::VectorXi> active_derivatives) override;
 
         void finalize_vjp(
             int wavelidx, int wavel_threadidx,
@@ -357,6 +435,7 @@ namespace sasktran2::hr {
             const sasktran2::raytracing::GridWeightStencilView& exit_weights,
             const sasktran2::WavelengthBlockODView& shell_od,
             const Eigen::Vector<double, NSTOKES>& cotangent,
+            Eigen::Ref<Eigen::Vector<double, NSTOKES>> source_value,
             Eigen::Ref<Eigen::VectorXd> native_gradient) const override;
 
         void end_of_ray_source_vjp(

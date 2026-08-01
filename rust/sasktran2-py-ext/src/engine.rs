@@ -110,6 +110,10 @@ impl PyEngine {
         Ok(self.engine.linearization_backend(mode).into_pyresult()? as u8)
     }
 
+    fn _retained_forward_state_bytes(&self) -> PyResult<usize> {
+        self.engine.retained_forward_state_bytes().into_pyresult()
+    }
+
     fn _calculate_jvp(
         &self,
         py: Python,
@@ -151,6 +155,22 @@ impl PyEngine {
             )
             .into_pyresult()?;
         Py::new(py, crate::output::PyVjpOutput { output })
+    }
+
+    fn _calculate_jacobian_vjp(
+        &self,
+        py: Python,
+        atmosphere: PyRef<crate::atmosphere::PyAtmosphere>,
+        derivative_sizes: &Bound<PyDict>,
+        surface_sizes: &Bound<PyDict>,
+    ) -> PyResult<Py<crate::output::PyJacobianVjpOutput>> {
+        let derivative_sizes = size_dict(derivative_sizes)?;
+        let surface_sizes = size_dict(surface_sizes)?;
+        let output = self
+            .engine
+            .calculate_jacobian_vjp(&atmosphere.atmosphere, &derivative_sizes, &surface_sizes)
+            .into_pyresult()?;
+        Py::new(py, crate::output::PyJacobianVjpOutput { output })
     }
 }
 

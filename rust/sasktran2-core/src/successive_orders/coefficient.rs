@@ -1,4 +1,5 @@
 use crate::math::wigner::WignerDCalculator;
+use ndarray::{ArrayView2, ArrayViewMut2, linalg::general_mat_mul, s};
 use num::complex::Complex64;
 
 use super::OperatorError;
@@ -103,87 +104,170 @@ impl ScalarCoefficientBasis {
         self.mode_degrees.len()
     }
 
-    fn apply(&self, input: &[f64], coefficients: &[f64], output: &mut [f64], moments: &mut [f64]) {
-        debug_assert_eq!(input.len(), self.input_size);
-        debug_assert_eq!(coefficients.len(), self.num_coefficients);
-        debug_assert_eq!(output.len(), self.output_size);
-        debug_assert_eq!(moments.len(), self.num_modes());
-
-        for (mode_index, moment) in moments.iter_mut().enumerate() {
-            let row_start = mode_index * self.input_size;
-            *moment = self.analysis[row_start..row_start + self.input_size]
-                .iter()
-                .zip(input)
-                .map(|(&basis, &radiance)| basis * radiance)
-                .sum::<f64>()
-                * coefficients[self.mode_degrees[mode_index]];
+    fn apply_blocks(
+        &self,
+        input: &[f64],
+        coefficients: &[f64],
+        active_num_coefficients: usize,
+        output: &mut [f64],
+    ) {
+        let blocks = coefficients.len() / self.num_coefficients;
+        debug_assert_eq!(coefficients.len(), blocks * self.num_coefficients);
+        debug_assert_eq!(input.len(), blocks * self.input_size);
+        debug_assert_eq!(output.len(), blocks * self.output_size);
+        debug_assert!(active_num_coefficients <= self.num_coefficients);
+        if blocks == 0 {
+            return;
         }
-        for (output_index, result) in output.iter_mut().enumerate() {
-            let row_start = output_index * self.num_modes();
-            *result = self.synthesis[row_start..row_start + self.num_modes()]
-                .iter()
-                .zip(moments.iter())
-                .map(|(&basis, &moment)| basis * moment)
-                .sum();
+        let active_num_modes = active_num_coefficients * active_num_coefficients;
+        if active_num_modes == 0 {
+            output.fill(0.0);
+            return;
         }
-    }
 
-    fn apply_transpose(&self, input: &[f64], coefficients: &[f64], output: &mut [f64]) {
-        debug_assert_eq!(input.len(), self.output_size);
-        debug_assert_eq!(coefficients.len(), self.num_coefficients);
-        debug_assert_eq!(output.len(), self.input_size);
-
-        for mode_index in 0..self.num_modes() {
-            let moment_cotangent = (0..self.output_size)
-                .map(|output_index| {
-                    self.synthesis[output_index * self.num_modes() + mode_index]
-                        * input[output_index]
-                })
-                .sum::<f64>()
-                * coefficients[self.mode_degrees[mode_index]];
-            let analysis_start = mode_index * self.input_size;
-            for (input_index, result) in output.iter_mut().enumerate() {
-                *result += self.analysis[analysis_start + input_index] * moment_cotangent;
+        let input_rows = ArrayView2::from_shape((blocks, self.input_size), input)
+            .expect("validated scalar scattering input shape");
+        let analysis = ArrayView2::from_shape(
+            (active_num_modes, self.input_size),
+            &self.analysis[..active_num_modes * self.input_size],
+        )
+        .expect("validated scalar analysis shape");
+        let mut moments = vec![0.0; blocks * active_num_modes];
+        {
+            let mut moment_rows =
+                ArrayViewMut2::from_shape((blocks, active_num_modes), &mut moments)
+                    .expect("validated scalar moment shape");
+            general_mat_mul(1.0, &input_rows, &analysis.t(), 0.0, &mut moment_rows);
+        }
+        for block in 0..blocks {
+            for (mode, &degree) in self.mode_degrees[..active_num_modes].iter().enumerate() {
+                moments[block * active_num_modes + mode] *=
+                    coefficients[block * self.num_coefficients + degree];
             }
         }
+
+        let moment_rows = ArrayView2::from_shape((blocks, active_num_modes), &moments)
+            .expect("validated scalar moment shape");
+        let full_synthesis =
+            ArrayView2::from_shape((self.output_size, self.num_modes()), &self.synthesis)
+                .expect("validated scalar synthesis shape");
+        let synthesis = full_synthesis.slice(s![.., ..active_num_modes]);
+        let mut output_rows = ArrayViewMut2::from_shape((blocks, self.output_size), output)
+            .expect("validated scalar scattering output shape");
+        general_mat_mul(1.0, &moment_rows, &synthesis.t(), 0.0, &mut output_rows);
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn apply_vjp(
+    fn apply_blocks_transpose(
+        &self,
+        input: &[f64],
+        coefficients: &[f64],
+        active_num_coefficients: usize,
+        output: &mut [f64],
+        moment_cotangent: &mut [f64],
+    ) {
+        let blocks = coefficients.len() / self.num_coefficients;
+        debug_assert_eq!(coefficients.len(), blocks * self.num_coefficients);
+        debug_assert_eq!(input.len(), blocks * self.output_size);
+        debug_assert_eq!(output.len(), blocks * self.input_size);
+        debug_assert!(active_num_coefficients <= self.num_coefficients);
+        let active_num_modes = active_num_coefficients * active_num_coefficients;
+        debug_assert_eq!(moment_cotangent.len(), blocks * active_num_modes);
+        if blocks == 0 {
+            return;
+        }
+        if active_num_modes == 0 {
+            output.fill(0.0);
+            return;
+        }
+
+        let input_rows = ArrayView2::from_shape((blocks, self.output_size), input)
+            .expect("validated scalar transpose input shape");
+        let full_synthesis =
+            ArrayView2::from_shape((self.output_size, self.num_modes()), &self.synthesis)
+                .expect("validated scalar synthesis shape");
+        let synthesis = full_synthesis.slice(s![.., ..active_num_modes]);
+        {
+            let mut moment_rows =
+                ArrayViewMut2::from_shape((blocks, active_num_modes), &mut *moment_cotangent)
+                    .expect("validated scalar moment cotangent shape");
+            general_mat_mul(1.0, &input_rows, &synthesis, 0.0, &mut moment_rows);
+        }
+        for block in 0..blocks {
+            for (mode, &degree) in self.mode_degrees[..active_num_modes].iter().enumerate() {
+                moment_cotangent[block * active_num_modes + mode] *=
+                    coefficients[block * self.num_coefficients + degree];
+            }
+        }
+
+        let moment_rows = ArrayView2::from_shape((blocks, active_num_modes), &*moment_cotangent)
+            .expect("validated scalar moment cotangent shape");
+        let analysis = ArrayView2::from_shape(
+            (active_num_modes, self.input_size),
+            &self.analysis[..active_num_modes * self.input_size],
+        )
+        .expect("validated scalar analysis shape");
+        let mut output_rows = ArrayViewMut2::from_shape((blocks, self.input_size), output)
+            .expect("validated scalar transpose output shape");
+        general_mat_mul(1.0, &moment_rows, &analysis, 0.0, &mut output_rows);
+    }
+
+    fn apply_blocks_vjp(
         &self,
         input: &[f64],
         coefficients: &[f64],
         output_cotangent: &[f64],
         input_cotangent: &mut [f64],
         coefficient_gradient: &mut [f64],
-        analyzed: &mut [f64],
-        moment_cotangent: &mut [f64],
     ) {
-        debug_assert_eq!(input.len(), self.input_size);
-        debug_assert_eq!(coefficients.len(), self.num_coefficients);
-        debug_assert_eq!(output_cotangent.len(), self.output_size);
-        debug_assert_eq!(input_cotangent.len(), self.input_size);
-        debug_assert_eq!(coefficient_gradient.len(), self.num_coefficients);
-        for mode_index in 0..self.num_modes() {
-            let analysis_start = mode_index * self.input_size;
-            analyzed[mode_index] = self.analysis[analysis_start..analysis_start + self.input_size]
-                .iter()
-                .zip(input)
-                .map(|(&basis, &radiance)| basis * radiance)
-                .sum();
-            moment_cotangent[mode_index] = (0..self.output_size)
-                .map(|output_index| {
-                    self.synthesis[output_index * self.num_modes() + mode_index]
-                        * output_cotangent[output_index]
-                })
-                .sum();
-            let degree = self.mode_degrees[mode_index];
-            coefficient_gradient[degree] += analyzed[mode_index] * moment_cotangent[mode_index];
-            let scaled_cotangent = coefficients[degree] * moment_cotangent[mode_index];
-            for (input_index, result) in input_cotangent.iter_mut().enumerate() {
-                *result += self.analysis[analysis_start + input_index] * scaled_cotangent;
+        let blocks = coefficients.len() / self.num_coefficients;
+        debug_assert_eq!(coefficients.len(), blocks * self.num_coefficients);
+        debug_assert_eq!(input.len(), blocks * self.input_size);
+        debug_assert_eq!(output_cotangent.len(), blocks * self.output_size);
+        debug_assert_eq!(input_cotangent.len(), blocks * self.input_size);
+        debug_assert_eq!(coefficient_gradient.len(), blocks * self.num_coefficients);
+        if blocks == 0 {
+            return;
+        }
+
+        let input_rows = ArrayView2::from_shape((blocks, self.input_size), input)
+            .expect("validated scalar VJP input shape");
+        let output_rows = ArrayView2::from_shape((blocks, self.output_size), output_cotangent)
+            .expect("validated scalar VJP output shape");
+        let analysis = ArrayView2::from_shape((self.num_modes(), self.input_size), &self.analysis)
+            .expect("validated scalar analysis shape");
+        let synthesis =
+            ArrayView2::from_shape((self.output_size, self.num_modes()), &self.synthesis)
+                .expect("validated scalar synthesis shape");
+        let mut analyzed = vec![0.0; blocks * self.num_modes()];
+        let mut moment_cotangent = vec![0.0; blocks * self.num_modes()];
+        {
+            let mut analyzed_rows =
+                ArrayViewMut2::from_shape((blocks, self.num_modes()), &mut analyzed)
+                    .expect("validated scalar analyzed shape");
+            general_mat_mul(1.0, &input_rows, &analysis.t(), 0.0, &mut analyzed_rows);
+        }
+        {
+            let mut moment_rows =
+                ArrayViewMut2::from_shape((blocks, self.num_modes()), &mut moment_cotangent)
+                    .expect("validated scalar moment cotangent shape");
+            general_mat_mul(1.0, &output_rows, &synthesis, 0.0, &mut moment_rows);
+        }
+        for block in 0..blocks {
+            for (mode, &degree) in self.mode_degrees.iter().enumerate() {
+                let moment_index = block * self.num_modes() + mode;
+                coefficient_gradient[block * self.num_coefficients + degree] +=
+                    analyzed[moment_index] * moment_cotangent[moment_index];
+                moment_cotangent[moment_index] *=
+                    coefficients[block * self.num_coefficients + degree];
             }
         }
+
+        let moment_rows = ArrayView2::from_shape((blocks, self.num_modes()), &moment_cotangent)
+            .expect("validated scalar moment cotangent shape");
+        let mut input_cotangent_rows =
+            ArrayViewMut2::from_shape((blocks, self.input_size), input_cotangent)
+                .expect("validated scalar input cotangent shape");
+        general_mat_mul(1.0, &moment_rows, &analysis, 0.0, &mut input_cotangent_rows);
     }
 }
 
@@ -203,6 +287,7 @@ pub struct ScalarCoefficientScattering {
     coefficient_blocks: usize,
     basis: ScalarCoefficientBasis,
     coefficients: Vec<f64>,
+    active_num_coefficients: usize,
     dense_value_offsets: Vec<usize>,
     dense_values: Vec<f64>,
 }
@@ -263,6 +348,7 @@ impl ScalarCoefficientScattering {
             coefficient_blocks,
             basis,
             coefficients: vec![0.0; coefficient_size],
+            active_num_coefficients: 0,
             dense_value_offsets,
             dense_values: vec![0.0; dense_value_size],
         })
@@ -288,6 +374,11 @@ impl ScalarCoefficientScattering {
         self.dense_values.len()
     }
 
+    #[inline]
+    pub fn transpose_scratch_size(&self) -> usize {
+        self.coefficient_blocks * self.active_num_coefficients * self.active_num_coefficients
+    }
+
     pub fn set_coefficients(&mut self, coefficients: &[f64]) -> Result<(), OperatorError> {
         if coefficients.len() != self.coefficients.len() {
             return Err(OperatorError::DimensionMismatch);
@@ -295,6 +386,12 @@ impl ScalarCoefficientScattering {
         if coefficients.iter().any(|value| !value.is_finite()) {
             return Err(OperatorError::NonFiniteValue);
         }
+        self.active_num_coefficients = active_coefficient_degrees(
+            coefficients,
+            self.coefficient_blocks,
+            self.basis.num_coefficients(),
+            1,
+        );
         self.coefficients.copy_from_slice(coefficients);
         Ok(())
     }
@@ -314,21 +411,14 @@ impl ScalarCoefficientScattering {
         if input.len() != self.input_size || output.len() != self.output_size {
             return Err(OperatorError::DimensionMismatch);
         }
-        let num_coefficients = self.basis.num_coefficients();
-        let mut moments = vec![0.0; self.basis.num_modes()];
-        for block in 0..self.coefficient_blocks {
-            let input_start = self.input_offsets[block];
-            let input_end = self.input_offsets[block + 1];
-            let output_start = self.output_offsets[block];
-            let output_end = self.output_offsets[block + 1];
-            let coefficient_start = block * num_coefficients;
-            self.basis.apply(
-                &input[input_start..input_end],
-                &self.coefficients[coefficient_start..coefficient_start + num_coefficients],
-                &mut output[output_start..output_end],
-                &mut moments,
-            );
-        }
+        let coefficient_input_end = self.input_offsets[self.coefficient_blocks];
+        let coefficient_output_end = self.output_offsets[self.coefficient_blocks];
+        self.basis.apply_blocks(
+            &input[..coefficient_input_end],
+            &self.coefficients,
+            self.active_num_coefficients,
+            &mut output[..coefficient_output_end],
+        );
 
         for block in self.coefficient_blocks..self.output_offsets.len() - 1 {
             let dense_block = block - self.coefficient_blocks;
@@ -351,23 +441,32 @@ impl ScalarCoefficientScattering {
     }
 
     pub fn apply_transpose(&self, input: &[f64], output: &mut [f64]) -> Result<(), OperatorError> {
+        let mut scratch = vec![0.0; self.transpose_scratch_size()];
+        self.apply_transpose_with_scratch(input, output, &mut scratch)
+    }
+
+    pub fn apply_transpose_with_scratch(
+        &self,
+        input: &[f64],
+        output: &mut [f64],
+        scratch: &mut [f64],
+    ) -> Result<(), OperatorError> {
         if input.len() != self.output_size || output.len() != self.input_size {
             return Err(OperatorError::DimensionMismatch);
         }
-        output.fill(0.0);
-        let num_coefficients = self.basis.num_coefficients();
-        for block in 0..self.coefficient_blocks {
-            let input_start = self.input_offsets[block];
-            let input_end = self.input_offsets[block + 1];
-            let output_start = self.output_offsets[block];
-            let output_end = self.output_offsets[block + 1];
-            let coefficient_start = block * num_coefficients;
-            self.basis.apply_transpose(
-                &input[output_start..output_end],
-                &self.coefficients[coefficient_start..coefficient_start + num_coefficients],
-                &mut output[input_start..input_end],
-            );
+        if scratch.len() != self.transpose_scratch_size() {
+            return Err(OperatorError::DimensionMismatch);
         }
+        output.fill(0.0);
+        let coefficient_input_end = self.input_offsets[self.coefficient_blocks];
+        let coefficient_output_end = self.output_offsets[self.coefficient_blocks];
+        self.basis.apply_blocks_transpose(
+            &input[..coefficient_output_end],
+            &self.coefficients,
+            self.active_num_coefficients,
+            &mut output[..coefficient_input_end],
+            scratch,
+        );
         for block in self.coefficient_blocks..self.output_offsets.len() - 1 {
             let dense_block = block - self.coefficient_blocks;
             let input_start = self.input_offsets[block];
@@ -404,30 +503,31 @@ impl ScalarCoefficientScattering {
         {
             return Err(OperatorError::DimensionMismatch);
         }
-        let num_coefficients = self.basis.num_coefficients();
-        let mut moments = vec![0.0; self.basis.num_modes()];
-        let mut parameter_output = vec![0.0; self.basis.output_size()];
-        for block in 0..self.coefficient_blocks {
-            let input_start = self.input_offsets[block];
-            let input_end = self.input_offsets[block + 1];
-            let output_start = self.output_offsets[block];
-            let output_end = self.output_offsets[block + 1];
-            let coefficient_start = block * num_coefficients;
-            self.basis.apply(
-                &input_tangent[input_start..input_end],
-                &self.coefficients[coefficient_start..coefficient_start + num_coefficients],
-                &mut output_tangent[output_start..output_end],
-                &mut moments,
-            );
-            self.basis.apply(
-                &input[input_start..input_end],
-                &coefficient_tangent[coefficient_start..coefficient_start + num_coefficients],
+        let coefficient_input_end = self.input_offsets[self.coefficient_blocks];
+        let coefficient_output_end = self.output_offsets[self.coefficient_blocks];
+        self.basis.apply_blocks(
+            &input_tangent[..coefficient_input_end],
+            &self.coefficients,
+            self.active_num_coefficients,
+            &mut output_tangent[..coefficient_output_end],
+        );
+        let tangent_active_num_coefficients = active_coefficient_degrees(
+            coefficient_tangent,
+            self.coefficient_blocks,
+            self.basis.num_coefficients(),
+            1,
+        );
+        if tangent_active_num_coefficients != 0 {
+            let mut parameter_output = vec![0.0; coefficient_output_end];
+            self.basis.apply_blocks(
+                &input[..coefficient_input_end],
+                coefficient_tangent,
+                tangent_active_num_coefficients,
                 &mut parameter_output,
-                &mut moments,
             );
-            for (result, parameter) in output_tangent[output_start..output_end]
+            for (result, parameter) in output_tangent[..coefficient_output_end]
                 .iter_mut()
-                .zip(&parameter_output)
+                .zip(parameter_output)
             {
                 *result += parameter;
             }
@@ -481,25 +581,15 @@ impl ScalarCoefficientScattering {
         input_cotangent.fill(0.0);
         coefficient_gradient.fill(0.0);
         dense_value_gradient.fill(0.0);
-        let num_coefficients = self.basis.num_coefficients();
-        let mut analyzed = vec![0.0; self.basis.num_modes()];
-        let mut moment_cotangent = vec![0.0; self.basis.num_modes()];
-        for block in 0..self.coefficient_blocks {
-            let input_start = self.input_offsets[block];
-            let input_end = self.input_offsets[block + 1];
-            let output_start = self.output_offsets[block];
-            let output_end = self.output_offsets[block + 1];
-            let coefficient_start = block * num_coefficients;
-            self.basis.apply_vjp(
-                &input[input_start..input_end],
-                &self.coefficients[coefficient_start..coefficient_start + num_coefficients],
-                &output_cotangent[output_start..output_end],
-                &mut input_cotangent[input_start..input_end],
-                &mut coefficient_gradient[coefficient_start..coefficient_start + num_coefficients],
-                &mut analyzed,
-                &mut moment_cotangent,
-            );
-        }
+        let coefficient_input_end = self.input_offsets[self.coefficient_blocks];
+        let coefficient_output_end = self.output_offsets[self.coefficient_blocks];
+        self.basis.apply_blocks_vjp(
+            &input[..coefficient_input_end],
+            &self.coefficients,
+            &output_cotangent[..coefficient_output_end],
+            &mut input_cotangent[..coefficient_input_end],
+            coefficient_gradient,
+        );
         for block in self.coefficient_blocks..self.output_offsets.len() - 1 {
             let dense_block = block - self.coefficient_blocks;
             let input_start = self.input_offsets[block];
@@ -537,9 +627,27 @@ pub struct VectorCoefficientBasis {
     output_directions: usize,
     num_coefficients: usize,
     mode_degrees: Vec<usize>,
-    analysis: [Vec<Complex64>; 3],
-    synthesis: [Vec<Complex64>; 3],
+    analysis: [SplitComplexMatrix; 3],
+    synthesis: [SplitComplexMatrix; 3],
     legacy_frame_corrections: Vec<VectorKernelCorrection>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct SplitComplexMatrix {
+    real: Vec<f64>,
+    imaginary: Vec<f64>,
+}
+
+impl SplitComplexMatrix {
+    fn from_complex(values: Vec<Complex64>) -> Self {
+        let mut real = Vec::with_capacity(values.len());
+        let mut imaginary = Vec::with_capacity(values.len());
+        for value in values {
+            real.push(value.re);
+            imaginary.push(value.im);
+        }
+        Self { real, imaginary }
+    }
 }
 
 /// The legacy C++ Stokes-frame convention suppresses rotations when either
@@ -612,6 +720,8 @@ impl VectorCoefficientBasis {
             &analysis,
             &synthesis,
         );
+        let analysis = analysis.map(SplitComplexMatrix::from_complex);
+        let synthesis = synthesis.map(SplitComplexMatrix::from_complex);
 
         Ok(Self {
             input_directions: incoming_directions.len(),
@@ -644,144 +754,445 @@ impl VectorCoefficientBasis {
         self.mode_degrees.len()
     }
 
-    fn apply(
+    fn apply_blocks(
         &self,
         input: &[f64],
         coefficients: &[f64],
+        active_num_coefficients: usize,
         output: &mut [f64],
-        moments: &mut [[Complex64; 3]],
     ) {
-        debug_assert_eq!(input.len(), self.input_size());
-        debug_assert_eq!(coefficients.len(), self.num_coefficients * 4);
-        debug_assert_eq!(output.len(), self.output_size());
-        debug_assert_eq!(moments.len(), self.num_modes());
-
-        for (mode_index, moment) in moments.iter_mut().enumerate() {
-            let mut intensity = Complex64::new(0.0, 0.0);
-            let mut plus = Complex64::new(0.0, 0.0);
-            let mut minus = Complex64::new(0.0, 0.0);
-            let row_start = mode_index * self.input_directions;
-            for input_index in 0..self.input_directions {
-                let stokes_start = input_index * 3;
-                let q = input[stokes_start + 1];
-                let u = input[stokes_start + 2];
-                intensity += self.analysis[0][row_start + input_index] * input[stokes_start];
-                plus += self.analysis[1][row_start + input_index] * Complex64::new(q, u);
-                minus += self.analysis[2][row_start + input_index] * Complex64::new(q, -u);
-            }
-
-            let coefficient_start = self.mode_degrees[mode_index] * 4;
-            let a1 = coefficients[coefficient_start];
-            let a2 = coefficients[coefficient_start + 1];
-            let a3 = coefficients[coefficient_start + 2];
-            let b1 = coefficients[coefficient_start + 3];
-            *moment = mix_vector_moment(intensity, plus, minus, a1, a2, a3, b1);
+        let coefficient_stride = self.num_coefficients * 4;
+        let blocks = coefficients.len() / coefficient_stride;
+        debug_assert_eq!(coefficients.len(), blocks * coefficient_stride);
+        debug_assert_eq!(input.len(), blocks * self.input_size());
+        debug_assert_eq!(output.len(), blocks * self.output_size());
+        debug_assert!(active_num_coefficients <= self.num_coefficients);
+        if blocks == 0 {
+            return;
+        }
+        let active_num_modes = active_num_coefficients * active_num_coefficients;
+        if active_num_modes == 0 {
+            output.fill(0.0);
+            return;
         }
 
-        for output_index in 0..self.output_directions {
-            let mut intensity = Complex64::new(0.0, 0.0);
-            let mut plus = Complex64::new(0.0, 0.0);
-            let mut minus = Complex64::new(0.0, 0.0);
-            let row_start = output_index * self.num_modes();
-            for (mode_index, moment) in moments.iter().enumerate() {
-                intensity += self.synthesis[0][row_start + mode_index] * moment[0];
-                plus += self.synthesis[1][row_start + mode_index] * moment[1];
-                minus += self.synthesis[2][row_start + mode_index] * moment[2];
-            }
-            let stokes_start = output_index * 3;
-            output[stokes_start] = intensity.re;
-            output[stokes_start + 1] = 0.5 * (plus.re + minus.re);
-            output[stokes_start + 2] = 0.5 * (plus.im - minus.im);
+        let input_rows = ArrayView2::from_shape((blocks, self.input_size()), input)
+            .expect("validated vector scattering input shape");
+        let intensity_input = input_rows.slice(s![.., 0..;3]);
+        let block_modes = blocks * active_num_modes;
+        // [intensity real, intensity imaginary, plus real, plus imaginary,
+        //  minus real, minus imaginary], each stored as [block, mode].
+        let mut moments: [Vec<f64>; 6] = std::array::from_fn(|_| vec![0.0; block_modes]);
+
+        for (component, basis_values) in [
+            (0, &self.analysis[0].real),
+            (1, &self.analysis[0].imaginary),
+        ] {
+            let basis = ArrayView2::from_shape(
+                (active_num_modes, self.input_directions),
+                &basis_values[..active_num_modes * self.input_directions],
+            )
+            .expect("validated vector analysis shape");
+            let mut result =
+                ArrayViewMut2::from_shape((blocks, active_num_modes), &mut moments[component])
+                    .expect("validated vector moment shape");
+            general_mat_mul(1.0, &intensity_input, &basis.t(), 0.0, &mut result);
         }
 
-        for correction in &self.legacy_frame_corrections {
-            let input_start = correction.input_index * 3;
-            let output_start = correction.output_index * 3;
-            for degree in 0..self.num_coefficients {
-                for family in 0..4 {
-                    let coefficient = coefficients[degree * 4 + family];
-                    if coefficient == 0.0 {
-                        continue;
+        let mut qu_input = vec![0.0; 2 * blocks * self.input_directions];
+        for block in 0..blocks {
+            for direction in 0..self.input_directions {
+                let stokes = block * self.input_size() + direction * 3;
+                qu_input[block * self.input_directions + direction] = input[stokes + 1];
+                qu_input[(blocks + block) * self.input_directions + direction] = input[stokes + 2];
+            }
+        }
+        let qu_rows = ArrayView2::from_shape((2 * blocks, self.input_directions), &qu_input)
+            .expect("validated vector Q/U input shape");
+        let mut basis_real_products = vec![0.0; 2 * block_modes];
+        let mut basis_imaginary_products = vec![0.0; 2 * block_modes];
+        for channel in 1..3 {
+            let basis_real = ArrayView2::from_shape(
+                (active_num_modes, self.input_directions),
+                &self.analysis[channel].real[..active_num_modes * self.input_directions],
+            )
+            .expect("validated vector analysis real shape");
+            let basis_imaginary = ArrayView2::from_shape(
+                (active_num_modes, self.input_directions),
+                &self.analysis[channel].imaginary[..active_num_modes * self.input_directions],
+            )
+            .expect("validated vector analysis imaginary shape");
+            {
+                let mut products = ArrayViewMut2::from_shape(
+                    (2 * blocks, active_num_modes),
+                    &mut basis_real_products,
+                )
+                .expect("validated vector analysis product shape");
+                general_mat_mul(1.0, &qu_rows, &basis_real.t(), 0.0, &mut products);
+            }
+            {
+                let mut products = ArrayViewMut2::from_shape(
+                    (2 * blocks, active_num_modes),
+                    &mut basis_imaginary_products,
+                )
+                .expect("validated vector analysis product shape");
+                general_mat_mul(1.0, &qu_rows, &basis_imaginary.t(), 0.0, &mut products);
+            }
+            let component = channel * 2;
+            for index in 0..block_modes {
+                let q_real = basis_real_products[index];
+                let u_real = basis_real_products[block_modes + index];
+                let q_imaginary = basis_imaginary_products[index];
+                let u_imaginary = basis_imaginary_products[block_modes + index];
+                if channel == 1 {
+                    moments[component][index] = q_real - u_imaginary;
+                    moments[component + 1][index] = q_imaginary + u_real;
+                } else {
+                    moments[component][index] = q_real + u_imaginary;
+                    moments[component + 1][index] = q_imaginary - u_real;
+                }
+            }
+        }
+
+        for block in 0..blocks {
+            let coefficient_start = block * coefficient_stride;
+            for (mode, &degree) in self.mode_degrees[..active_num_modes].iter().enumerate() {
+                let index = block * active_num_modes + mode;
+                let degree_start = coefficient_start + degree * 4;
+                let mixed = mix_vector_moment(
+                    Complex64::new(moments[0][index], moments[1][index]),
+                    Complex64::new(moments[2][index], moments[3][index]),
+                    Complex64::new(moments[4][index], moments[5][index]),
+                    coefficients[degree_start],
+                    coefficients[degree_start + 1],
+                    coefficients[degree_start + 2],
+                    coefficients[degree_start + 3],
+                );
+                for channel in 0..3 {
+                    moments[channel * 2][index] = mixed[channel].re;
+                    moments[channel * 2 + 1][index] = mixed[channel].im;
+                }
+            }
+        }
+
+        let block_outputs = blocks * self.output_directions;
+        let mut stacked_moments = vec![0.0; 2 * block_modes];
+        let mut synthesis_real_products = vec![0.0; 2 * block_outputs];
+        let mut synthesis_imaginary_products = vec![0.0; 2 * block_outputs];
+        for channel in 0..3 {
+            stacked_moments[..block_modes].copy_from_slice(&moments[channel * 2]);
+            stacked_moments[block_modes..].copy_from_slice(&moments[channel * 2 + 1]);
+            let moment_rows =
+                ArrayView2::from_shape((2 * blocks, active_num_modes), &stacked_moments)
+                    .expect("validated stacked vector moment shape");
+            let full_synthesis_real = ArrayView2::from_shape(
+                (self.output_directions, self.num_modes()),
+                &self.synthesis[channel].real,
+            )
+            .expect("validated vector synthesis real shape");
+            let full_synthesis_imaginary = ArrayView2::from_shape(
+                (self.output_directions, self.num_modes()),
+                &self.synthesis[channel].imaginary,
+            )
+            .expect("validated vector synthesis imaginary shape");
+            let synthesis_real = full_synthesis_real.slice(s![.., ..active_num_modes]);
+            let synthesis_imaginary = full_synthesis_imaginary.slice(s![.., ..active_num_modes]);
+            {
+                let mut products = ArrayViewMut2::from_shape(
+                    (2 * blocks, self.output_directions),
+                    &mut synthesis_real_products,
+                )
+                .expect("validated vector synthesis product shape");
+                general_mat_mul(1.0, &moment_rows, &synthesis_real.t(), 0.0, &mut products);
+            }
+            {
+                let mut products = ArrayViewMut2::from_shape(
+                    (2 * blocks, self.output_directions),
+                    &mut synthesis_imaginary_products,
+                )
+                .expect("validated vector synthesis product shape");
+                general_mat_mul(
+                    1.0,
+                    &moment_rows,
+                    &synthesis_imaginary.t(),
+                    0.0,
+                    &mut products,
+                );
+            }
+            for index in 0..block_outputs {
+                let real = synthesis_real_products[index]
+                    - synthesis_imaginary_products[block_outputs + index];
+                let imaginary = synthesis_imaginary_products[index]
+                    + synthesis_real_products[block_outputs + index];
+                let block = index / self.output_directions;
+                let direction = index % self.output_directions;
+                let stokes = block * self.output_size() + direction * 3;
+                match channel {
+                    0 => output[stokes] = real,
+                    1 => {
+                        output[stokes + 1] = 0.5 * real;
+                        output[stokes + 2] = 0.5 * imaginary;
                     }
-                    let matrix_start = (degree * 4 + family) * 9;
-                    for row in 0..3 {
-                        output[output_start + row] += coefficient
-                            * correction.values
-                                [matrix_start + row * 3..matrix_start + (row + 1) * 3]
-                                .iter()
-                                .zip(&input[input_start..input_start + 3])
-                                .map(|(&value, &radiance)| value * radiance)
-                                .sum::<f64>();
+                    2 => {
+                        output[stokes + 1] += 0.5 * real;
+                        output[stokes + 2] -= 0.5 * imaginary;
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        }
+
+        for block in 0..blocks {
+            let block_input_start = block * self.input_size();
+            let block_output_start = block * self.output_size();
+            let coefficient_start = block * coefficient_stride;
+            for correction in &self.legacy_frame_corrections {
+                let input_start = block_input_start + correction.input_index * 3;
+                let output_start = block_output_start + correction.output_index * 3;
+                for degree in 0..active_num_coefficients {
+                    for family in 0..4 {
+                        let coefficient_index = coefficient_start + degree * 4 + family;
+                        let coefficient = coefficients[coefficient_index];
+                        if coefficient == 0.0 {
+                            continue;
+                        }
+                        let matrix_start = (degree * 4 + family) * 9;
+                        for row in 0..3 {
+                            output[output_start + row] += coefficient
+                                * correction.values
+                                    [matrix_start + row * 3..matrix_start + (row + 1) * 3]
+                                    .iter()
+                                    .zip(&input[input_start..input_start + 3])
+                                    .map(|(&value, &radiance)| value * radiance)
+                                    .sum::<f64>();
+                        }
                     }
                 }
             }
         }
     }
 
-    fn apply_transpose(&self, input: &[f64], coefficients: &[f64], output: &mut [f64]) {
-        debug_assert_eq!(input.len(), self.output_size());
-        debug_assert_eq!(coefficients.len(), self.num_coefficients * 4);
-        debug_assert_eq!(output.len(), self.input_size());
+    fn apply_blocks_transpose(
+        &self,
+        input: &[f64],
+        coefficients: &[f64],
+        active_num_coefficients: usize,
+        output: &mut [f64],
+    ) {
+        let coefficient_stride = self.num_coefficients * 4;
+        let blocks = coefficients.len() / coefficient_stride;
+        debug_assert_eq!(coefficients.len(), blocks * coefficient_stride);
+        debug_assert_eq!(input.len(), blocks * self.output_size());
+        debug_assert_eq!(output.len(), blocks * self.input_size());
+        debug_assert!(active_num_coefficients <= self.num_coefficients);
+        output.fill(0.0);
+        if blocks == 0 {
+            return;
+        }
+        let active_num_modes = active_num_coefficients * active_num_coefficients;
+        if active_num_modes == 0 {
+            return;
+        }
 
-        for mode_index in 0..self.num_modes() {
-            let mut outgoing_adjoint = [Complex64::new(0.0, 0.0); 3];
-            for output_index in 0..self.output_directions {
-                let stokes_start = output_index * 3;
-                let intensity_adjoint = Complex64::new(input[stokes_start], 0.0);
-                let plus_adjoint =
-                    Complex64::new(0.5 * input[stokes_start + 1], 0.5 * input[stokes_start + 2]);
-                let minus_adjoint = Complex64::new(
-                    0.5 * input[stokes_start + 1],
-                    -0.5 * input[stokes_start + 2],
-                );
-                let synthesis_index = output_index * self.num_modes() + mode_index;
-                outgoing_adjoint[0] +=
-                    self.synthesis[0][synthesis_index].conj() * intensity_adjoint;
-                outgoing_adjoint[1] += self.synthesis[1][synthesis_index].conj() * plus_adjoint;
-                outgoing_adjoint[2] += self.synthesis[2][synthesis_index].conj() * minus_adjoint;
+        let input_rows = ArrayView2::from_shape((blocks, self.output_size()), input)
+            .expect("validated vector transpose input shape");
+        let intensity_input = input_rows.slice(s![.., 0..;3]);
+        let block_modes = blocks * active_num_modes;
+        let mut moment_cotangent: [Vec<f64>; 6] = std::array::from_fn(|_| vec![0.0; block_modes]);
+
+        let full_synthesis_real = ArrayView2::from_shape(
+            (self.output_directions, self.num_modes()),
+            &self.synthesis[0].real,
+        )
+        .expect("validated vector synthesis real shape");
+        let full_synthesis_imaginary = ArrayView2::from_shape(
+            (self.output_directions, self.num_modes()),
+            &self.synthesis[0].imaginary,
+        )
+        .expect("validated vector synthesis imaginary shape");
+        let synthesis_real = full_synthesis_real.slice(s![.., ..active_num_modes]);
+        let synthesis_imaginary = full_synthesis_imaginary.slice(s![.., ..active_num_modes]);
+        {
+            let mut result =
+                ArrayViewMut2::from_shape((blocks, active_num_modes), &mut moment_cotangent[0])
+                    .expect("validated vector transpose moment shape");
+            general_mat_mul(1.0, &intensity_input, &synthesis_real, 0.0, &mut result);
+        }
+        {
+            let mut result =
+                ArrayViewMut2::from_shape((blocks, active_num_modes), &mut moment_cotangent[1])
+                    .expect("validated vector transpose moment shape");
+            general_mat_mul(
+                -1.0,
+                &intensity_input,
+                &synthesis_imaginary,
+                0.0,
+                &mut result,
+            );
+        }
+
+        let mut qu_input = vec![0.0; 2 * blocks * self.output_directions];
+        for block in 0..blocks {
+            for direction in 0..self.output_directions {
+                let stokes = block * self.output_size() + direction * 3;
+                qu_input[block * self.output_directions + direction] = input[stokes + 1];
+                qu_input[(blocks + block) * self.output_directions + direction] = input[stokes + 2];
             }
-
-            let [intensity_adjoint, plus_adjoint, minus_adjoint] = outgoing_adjoint;
-            let coefficient_start = self.mode_degrees[mode_index] * 4;
-            let a1 = coefficients[coefficient_start];
-            let a2 = coefficients[coefficient_start + 1];
-            let a3 = coefficients[coefficient_start + 2];
-            let b1 = coefficients[coefficient_start + 3];
-            let analyzed_adjoint = [
-                a1 * intensity_adjoint - b1 * (plus_adjoint + minus_adjoint),
-                -0.5 * b1 * intensity_adjoint
-                    + 0.5 * ((a2 + a3) * plus_adjoint + (a2 - a3) * minus_adjoint),
-                -0.5 * b1 * intensity_adjoint
-                    + 0.5 * ((a2 - a3) * plus_adjoint + (a2 + a3) * minus_adjoint),
-            ];
-            let analysis_start = mode_index * self.input_directions;
-            for input_index in 0..self.input_directions {
-                let stokes_start = input_index * 3;
-                let intensity_basis = self.analysis[0][analysis_start + input_index];
-                let plus_basis = self.analysis[1][analysis_start + input_index];
-                let minus_basis = self.analysis[2][analysis_start + input_index];
-                output[stokes_start] += (analyzed_adjoint[0].conj() * intensity_basis).re;
-                output[stokes_start + 1] += (analyzed_adjoint[1].conj() * plus_basis).re
-                    + (analyzed_adjoint[2].conj() * minus_basis).re;
-                output[stokes_start + 2] += (analyzed_adjoint[1].conj()
-                    * (Complex64::new(0.0, 1.0) * plus_basis))
-                    .re
-                    + (analyzed_adjoint[2].conj() * (Complex64::new(0.0, -1.0) * minus_basis)).re;
+        }
+        let qu_rows = ArrayView2::from_shape((2 * blocks, self.output_directions), &qu_input)
+            .expect("validated vector transpose Q/U shape");
+        let mut basis_real_products = vec![0.0; 2 * block_modes];
+        let mut basis_imaginary_products = vec![0.0; 2 * block_modes];
+        for channel in 1..3 {
+            let full_real = ArrayView2::from_shape(
+                (self.output_directions, self.num_modes()),
+                &self.synthesis[channel].real,
+            )
+            .expect("validated vector synthesis real shape");
+            let full_imaginary = ArrayView2::from_shape(
+                (self.output_directions, self.num_modes()),
+                &self.synthesis[channel].imaginary,
+            )
+            .expect("validated vector synthesis imaginary shape");
+            let basis_real = full_real.slice(s![.., ..active_num_modes]);
+            let basis_imaginary = full_imaginary.slice(s![.., ..active_num_modes]);
+            {
+                let mut products = ArrayViewMut2::from_shape(
+                    (2 * blocks, active_num_modes),
+                    &mut basis_real_products,
+                )
+                .expect("validated vector transpose synthesis product shape");
+                general_mat_mul(1.0, &qu_rows, &basis_real, 0.0, &mut products);
+            }
+            {
+                let mut products = ArrayViewMut2::from_shape(
+                    (2 * blocks, active_num_modes),
+                    &mut basis_imaginary_products,
+                )
+                .expect("validated vector transpose synthesis product shape");
+                general_mat_mul(1.0, &qu_rows, &basis_imaginary, 0.0, &mut products);
+            }
+            let component = channel * 2;
+            for index in 0..block_modes {
+                let q_real = basis_real_products[index];
+                let u_real = basis_real_products[block_modes + index];
+                let q_imaginary = basis_imaginary_products[index];
+                let u_imaginary = basis_imaginary_products[block_modes + index];
+                if channel == 1 {
+                    moment_cotangent[component][index] = 0.5 * (q_real + u_imaginary);
+                    moment_cotangent[component + 1][index] = 0.5 * (u_real - q_imaginary);
+                } else {
+                    moment_cotangent[component][index] = 0.5 * (q_real - u_imaginary);
+                    moment_cotangent[component + 1][index] = -0.5 * (u_real + q_imaginary);
+                }
             }
         }
 
-        for correction in &self.legacy_frame_corrections {
-            let input_start = correction.input_index * 3;
-            let output_start = correction.output_index * 3;
-            for degree in 0..self.num_coefficients {
-                for family in 0..4 {
-                    let coefficient_index = degree * 4 + family;
-                    let matrix_start = coefficient_index * 9;
-                    for row in 0..3 {
-                        for column in 0..3 {
-                            output[input_start + column] += coefficients[coefficient_index]
-                                * correction.values[matrix_start + row * 3 + column]
-                                * input[output_start + row];
+        for block in 0..blocks {
+            let coefficient_start = block * coefficient_stride;
+            for (mode, &degree) in self.mode_degrees[..active_num_modes].iter().enumerate() {
+                let index = block * active_num_modes + mode;
+                let degree_start = coefficient_start + degree * 4;
+                let intensity_adjoint =
+                    Complex64::new(moment_cotangent[0][index], moment_cotangent[1][index]);
+                let plus_adjoint =
+                    Complex64::new(moment_cotangent[2][index], moment_cotangent[3][index]);
+                let minus_adjoint =
+                    Complex64::new(moment_cotangent[4][index], moment_cotangent[5][index]);
+                let a1 = coefficients[degree_start];
+                let a2 = coefficients[degree_start + 1];
+                let a3 = coefficients[degree_start + 2];
+                let b1 = coefficients[degree_start + 3];
+                let analyzed_adjoint = [
+                    a1 * intensity_adjoint - b1 * (plus_adjoint + minus_adjoint),
+                    -0.5 * b1 * intensity_adjoint
+                        + 0.5 * ((a2 + a3) * plus_adjoint + (a2 - a3) * minus_adjoint),
+                    -0.5 * b1 * intensity_adjoint
+                        + 0.5 * ((a2 - a3) * plus_adjoint + (a2 + a3) * minus_adjoint),
+                ];
+                for channel in 0..3 {
+                    moment_cotangent[channel * 2][index] = analyzed_adjoint[channel].re;
+                    moment_cotangent[channel * 2 + 1][index] = analyzed_adjoint[channel].im;
+                }
+            }
+        }
+
+        let block_inputs = blocks * self.input_directions;
+        let mut stacked_moments = vec![0.0; 2 * block_modes];
+        let mut analysis_real_products = vec![0.0; 2 * block_inputs];
+        let mut analysis_imaginary_products = vec![0.0; 2 * block_inputs];
+        for channel in 0..3 {
+            stacked_moments[..block_modes].copy_from_slice(&moment_cotangent[channel * 2]);
+            stacked_moments[block_modes..].copy_from_slice(&moment_cotangent[channel * 2 + 1]);
+            let moment_rows =
+                ArrayView2::from_shape((2 * blocks, active_num_modes), &stacked_moments)
+                    .expect("validated vector transpose stacked moment shape");
+            let analysis_real = ArrayView2::from_shape(
+                (active_num_modes, self.input_directions),
+                &self.analysis[channel].real[..active_num_modes * self.input_directions],
+            )
+            .expect("validated vector analysis real shape");
+            let analysis_imaginary = ArrayView2::from_shape(
+                (active_num_modes, self.input_directions),
+                &self.analysis[channel].imaginary[..active_num_modes * self.input_directions],
+            )
+            .expect("validated vector analysis imaginary shape");
+            {
+                let mut products = ArrayViewMut2::from_shape(
+                    (2 * blocks, self.input_directions),
+                    &mut analysis_real_products,
+                )
+                .expect("validated vector transpose analysis product shape");
+                general_mat_mul(1.0, &moment_rows, &analysis_real, 0.0, &mut products);
+            }
+            {
+                let mut products = ArrayViewMut2::from_shape(
+                    (2 * blocks, self.input_directions),
+                    &mut analysis_imaginary_products,
+                )
+                .expect("validated vector transpose analysis product shape");
+                general_mat_mul(1.0, &moment_rows, &analysis_imaginary, 0.0, &mut products);
+            }
+            for index in 0..block_inputs {
+                let real_real = analysis_real_products[index];
+                let imaginary_real = analysis_real_products[block_inputs + index];
+                let real_imaginary = analysis_imaginary_products[index];
+                let imaginary_imaginary = analysis_imaginary_products[block_inputs + index];
+                let block = index / self.input_directions;
+                let direction = index % self.input_directions;
+                let stokes = block * self.input_size() + direction * 3;
+                match channel {
+                    0 => output[stokes] = real_real + imaginary_imaginary,
+                    1 => {
+                        output[stokes + 1] += real_real + imaginary_imaginary;
+                        output[stokes + 2] += imaginary_real - real_imaginary;
+                    }
+                    2 => {
+                        output[stokes + 1] += real_real + imaginary_imaginary;
+                        output[stokes + 2] += real_imaginary - imaginary_real;
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        }
+
+        for block in 0..blocks {
+            let block_input_start = block * self.input_size();
+            let block_output_start = block * self.output_size();
+            let coefficient_start = block * coefficient_stride;
+            for correction in &self.legacy_frame_corrections {
+                let input_start = block_input_start + correction.input_index * 3;
+                let output_start = block_output_start + correction.output_index * 3;
+                for degree in 0..active_num_coefficients {
+                    for family in 0..4 {
+                        let coefficient_index = coefficient_start + degree * 4 + family;
+                        let matrix_start = (degree * 4 + family) * 9;
+                        for row in 0..3 {
+                            for column in 0..3 {
+                                output[input_start + column] += coefficients[coefficient_index]
+                                    * correction.values[matrix_start + row * 3 + column]
+                                    * input[output_start + row];
+                            }
                         }
                     }
                 }
@@ -790,115 +1201,221 @@ impl VectorCoefficientBasis {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn apply_vjp(
+    fn apply_blocks_vjp(
         &self,
         input: &[f64],
         coefficients: &[f64],
+        active_num_coefficients: usize,
         output_cotangent: &[f64],
         input_cotangent: &mut [f64],
         coefficient_gradient: &mut [f64],
-        analyzed: &mut [[Complex64; 3]],
-        moment_cotangent: &mut [[Complex64; 3]],
     ) {
-        debug_assert_eq!(input.len(), self.input_size());
-        debug_assert_eq!(coefficients.len(), self.num_coefficients * 4);
-        debug_assert_eq!(output_cotangent.len(), self.output_size());
-        debug_assert_eq!(input_cotangent.len(), self.input_size());
+        let coefficient_stride = self.num_coefficients * 4;
+        let blocks = coefficients.len() / coefficient_stride;
+        debug_assert_eq!(coefficients.len(), blocks * coefficient_stride);
+        debug_assert_eq!(input.len(), blocks * self.input_size());
+        debug_assert_eq!(output_cotangent.len(), blocks * self.output_size());
+        debug_assert_eq!(input_cotangent.len(), blocks * self.input_size());
         debug_assert_eq!(coefficient_gradient.len(), coefficients.len());
+        if blocks == 0 {
+            return;
+        }
 
-        for mode_index in 0..self.num_modes() {
-            let analysis_start = mode_index * self.input_directions;
-            let mut intensity = Complex64::new(0.0, 0.0);
-            let mut plus = Complex64::new(0.0, 0.0);
-            let mut minus = Complex64::new(0.0, 0.0);
-            for input_index in 0..self.input_directions {
-                let stokes_start = input_index * 3;
-                let q = input[stokes_start + 1];
-                let u = input[stokes_start + 2];
-                intensity += self.analysis[0][analysis_start + input_index] * input[stokes_start];
-                plus += self.analysis[1][analysis_start + input_index] * Complex64::new(q, u);
-                minus += self.analysis[2][analysis_start + input_index] * Complex64::new(q, -u);
+        // The input cotangent depends only on active primal coefficients and
+        // can therefore use the truncated transpose kernel. Coefficient
+        // gradients, however, must retain every configured degree because a
+        // parameter perturbation may activate a zero primal coefficient.
+        self.apply_blocks_transpose(
+            output_cotangent,
+            coefficients,
+            active_num_coefficients,
+            input_cotangent,
+        );
+
+        let num_modes = self.num_modes();
+        let block_modes = blocks * num_modes;
+        let input_rows = ArrayView2::from_shape((blocks, self.input_size()), input)
+            .expect("validated vector VJP input shape");
+        let intensity_input = input_rows.slice(s![.., 0..;3]);
+        let mut analyzed: [Vec<f64>; 6] = std::array::from_fn(|_| vec![0.0; block_modes]);
+        for (component, basis_values) in [
+            (0, &self.analysis[0].real),
+            (1, &self.analysis[0].imaginary),
+        ] {
+            let basis = ArrayView2::from_shape((num_modes, self.input_directions), basis_values)
+                .expect("validated vector VJP analysis shape");
+            let mut result =
+                ArrayViewMut2::from_shape((blocks, num_modes), &mut analyzed[component])
+                    .expect("validated vector VJP analyzed shape");
+            general_mat_mul(1.0, &intensity_input, &basis.t(), 0.0, &mut result);
+        }
+        let mut qu_input = vec![0.0; 2 * blocks * self.input_directions];
+        for block in 0..blocks {
+            for direction in 0..self.input_directions {
+                let stokes = block * self.input_size() + direction * 3;
+                qu_input[block * self.input_directions + direction] = input[stokes + 1];
+                qu_input[(blocks + block) * self.input_directions + direction] = input[stokes + 2];
             }
-            analyzed[mode_index] = [intensity, plus, minus];
-
-            let mut outgoing_adjoint = [Complex64::new(0.0, 0.0); 3];
-            for output_index in 0..self.output_directions {
-                let stokes_start = output_index * 3;
-                let intensity_adjoint = Complex64::new(output_cotangent[stokes_start], 0.0);
-                let plus_adjoint = Complex64::new(
-                    0.5 * output_cotangent[stokes_start + 1],
-                    0.5 * output_cotangent[stokes_start + 2],
-                );
-                let minus_adjoint = Complex64::new(
-                    0.5 * output_cotangent[stokes_start + 1],
-                    -0.5 * output_cotangent[stokes_start + 2],
-                );
-                let synthesis_index = output_index * self.num_modes() + mode_index;
-                outgoing_adjoint[0] +=
-                    self.synthesis[0][synthesis_index].conj() * intensity_adjoint;
-                outgoing_adjoint[1] += self.synthesis[1][synthesis_index].conj() * plus_adjoint;
-                outgoing_adjoint[2] += self.synthesis[2][synthesis_index].conj() * minus_adjoint;
+        }
+        let qu_rows = ArrayView2::from_shape((2 * blocks, self.input_directions), &qu_input)
+            .expect("validated vector VJP Q/U shape");
+        let mut basis_real_products = vec![0.0; 2 * block_modes];
+        let mut basis_imaginary_products = vec![0.0; 2 * block_modes];
+        for channel in 1..3 {
+            let basis_real = ArrayView2::from_shape(
+                (num_modes, self.input_directions),
+                &self.analysis[channel].real,
+            )
+            .expect("validated vector VJP analysis real shape");
+            let basis_imaginary = ArrayView2::from_shape(
+                (num_modes, self.input_directions),
+                &self.analysis[channel].imaginary,
+            )
+            .expect("validated vector VJP analysis imaginary shape");
+            {
+                let mut products =
+                    ArrayViewMut2::from_shape((2 * blocks, num_modes), &mut basis_real_products)
+                        .expect("validated vector VJP analysis product shape");
+                general_mat_mul(1.0, &qu_rows, &basis_real.t(), 0.0, &mut products);
             }
-            moment_cotangent[mode_index] = outgoing_adjoint;
-
-            let [intensity, plus, minus] = analyzed[mode_index];
-            let [intensity_adjoint, plus_adjoint, minus_adjoint] = outgoing_adjoint;
-            let coefficient_start = self.mode_degrees[mode_index] * 4;
-            coefficient_gradient[coefficient_start] += (intensity_adjoint.conj() * intensity).re;
-            coefficient_gradient[coefficient_start + 1] += 0.5
-                * ((plus_adjoint.conj() * (plus + minus)).re
-                    + (minus_adjoint.conj() * (plus + minus)).re);
-            coefficient_gradient[coefficient_start + 2] += 0.5
-                * ((plus_adjoint.conj() * (plus - minus)).re
-                    + (minus_adjoint.conj() * (minus - plus)).re);
-            coefficient_gradient[coefficient_start + 3] +=
-                (intensity_adjoint.conj() * (-0.5 * (plus + minus))).re
-                    + (plus_adjoint.conj() * -intensity).re
-                    + (minus_adjoint.conj() * -intensity).re;
-
-            let a1 = coefficients[coefficient_start];
-            let a2 = coefficients[coefficient_start + 1];
-            let a3 = coefficients[coefficient_start + 2];
-            let b1 = coefficients[coefficient_start + 3];
-            let analyzed_adjoint = [
-                a1 * intensity_adjoint - b1 * (plus_adjoint + minus_adjoint),
-                -0.5 * b1 * intensity_adjoint
-                    + 0.5 * ((a2 + a3) * plus_adjoint + (a2 - a3) * minus_adjoint),
-                -0.5 * b1 * intensity_adjoint
-                    + 0.5 * ((a2 - a3) * plus_adjoint + (a2 + a3) * minus_adjoint),
-            ];
-            for input_index in 0..self.input_directions {
-                let stokes_start = input_index * 3;
-                let intensity_basis = self.analysis[0][analysis_start + input_index];
-                let plus_basis = self.analysis[1][analysis_start + input_index];
-                let minus_basis = self.analysis[2][analysis_start + input_index];
-                input_cotangent[stokes_start] += (analyzed_adjoint[0].conj() * intensity_basis).re;
-                input_cotangent[stokes_start + 1] += (analyzed_adjoint[1].conj() * plus_basis).re
-                    + (analyzed_adjoint[2].conj() * minus_basis).re;
-                input_cotangent[stokes_start + 2] += (analyzed_adjoint[1].conj()
-                    * (Complex64::new(0.0, 1.0) * plus_basis))
-                    .re
-                    + (analyzed_adjoint[2].conj() * (Complex64::new(0.0, -1.0) * minus_basis)).re;
+            {
+                let mut products = ArrayViewMut2::from_shape(
+                    (2 * blocks, num_modes),
+                    &mut basis_imaginary_products,
+                )
+                .expect("validated vector VJP analysis product shape");
+                general_mat_mul(1.0, &qu_rows, &basis_imaginary.t(), 0.0, &mut products);
+            }
+            let component = channel * 2;
+            for index in 0..block_modes {
+                let q_real = basis_real_products[index];
+                let u_real = basis_real_products[block_modes + index];
+                let q_imaginary = basis_imaginary_products[index];
+                let u_imaginary = basis_imaginary_products[block_modes + index];
+                if channel == 1 {
+                    analyzed[component][index] = q_real - u_imaginary;
+                    analyzed[component + 1][index] = q_imaginary + u_real;
+                } else {
+                    analyzed[component][index] = q_real + u_imaginary;
+                    analyzed[component + 1][index] = q_imaginary - u_real;
+                }
             }
         }
 
-        for correction in &self.legacy_frame_corrections {
-            let input_start = correction.input_index * 3;
-            let output_start = correction.output_index * 3;
-            for degree in 0..self.num_coefficients {
-                for family in 0..4 {
-                    let coefficient_index = degree * 4 + family;
-                    let matrix_start = coefficient_index * 9;
-                    for row in 0..3 {
-                        for column in 0..3 {
-                            let value = correction.values[matrix_start + row * 3 + column];
-                            input_cotangent[input_start + column] += coefficients
-                                [coefficient_index]
-                                * value
-                                * output_cotangent[output_start + row];
-                            coefficient_gradient[coefficient_index] += value
-                                * input[input_start + column]
-                                * output_cotangent[output_start + row];
+        let cotangent_rows = ArrayView2::from_shape((blocks, self.output_size()), output_cotangent)
+            .expect("validated vector VJP output cotangent shape");
+        let intensity_cotangent = cotangent_rows.slice(s![.., 0..;3]);
+        let mut moment_cotangent: [Vec<f64>; 6] = std::array::from_fn(|_| vec![0.0; block_modes]);
+        for (component, (scale, basis_values)) in [
+            (0, (1.0, &self.synthesis[0].real)),
+            (1, (-1.0, &self.synthesis[0].imaginary)),
+        ] {
+            let basis = ArrayView2::from_shape((self.output_directions, num_modes), basis_values)
+                .expect("validated vector VJP synthesis shape");
+            let mut result =
+                ArrayViewMut2::from_shape((blocks, num_modes), &mut moment_cotangent[component])
+                    .expect("validated vector VJP moment cotangent shape");
+            general_mat_mul(scale, &intensity_cotangent, &basis, 0.0, &mut result);
+        }
+        let mut qu_cotangent = vec![0.0; 2 * blocks * self.output_directions];
+        for block in 0..blocks {
+            for direction in 0..self.output_directions {
+                let stokes = block * self.output_size() + direction * 3;
+                qu_cotangent[block * self.output_directions + direction] =
+                    output_cotangent[stokes + 1];
+                qu_cotangent[(blocks + block) * self.output_directions + direction] =
+                    output_cotangent[stokes + 2];
+            }
+        }
+        let qu_rows = ArrayView2::from_shape((2 * blocks, self.output_directions), &qu_cotangent)
+            .expect("validated vector VJP Q/U cotangent shape");
+        for channel in 1..3 {
+            let basis_real = ArrayView2::from_shape(
+                (self.output_directions, num_modes),
+                &self.synthesis[channel].real,
+            )
+            .expect("validated vector VJP synthesis real shape");
+            let basis_imaginary = ArrayView2::from_shape(
+                (self.output_directions, num_modes),
+                &self.synthesis[channel].imaginary,
+            )
+            .expect("validated vector VJP synthesis imaginary shape");
+            {
+                let mut products =
+                    ArrayViewMut2::from_shape((2 * blocks, num_modes), &mut basis_real_products)
+                        .expect("validated vector VJP synthesis product shape");
+                general_mat_mul(1.0, &qu_rows, &basis_real, 0.0, &mut products);
+            }
+            {
+                let mut products = ArrayViewMut2::from_shape(
+                    (2 * blocks, num_modes),
+                    &mut basis_imaginary_products,
+                )
+                .expect("validated vector VJP synthesis product shape");
+                general_mat_mul(1.0, &qu_rows, &basis_imaginary, 0.0, &mut products);
+            }
+            let component = channel * 2;
+            for index in 0..block_modes {
+                let q_real = basis_real_products[index];
+                let u_real = basis_real_products[block_modes + index];
+                let q_imaginary = basis_imaginary_products[index];
+                let u_imaginary = basis_imaginary_products[block_modes + index];
+                if channel == 1 {
+                    moment_cotangent[component][index] = 0.5 * (q_real + u_imaginary);
+                    moment_cotangent[component + 1][index] = 0.5 * (u_real - q_imaginary);
+                } else {
+                    moment_cotangent[component][index] = 0.5 * (q_real - u_imaginary);
+                    moment_cotangent[component + 1][index] = -0.5 * (u_real + q_imaginary);
+                }
+            }
+        }
+
+        for block in 0..blocks {
+            let coefficient_start = block * coefficient_stride;
+            for (mode, &degree) in self.mode_degrees.iter().enumerate() {
+                let index = block * num_modes + mode;
+                let intensity = Complex64::new(analyzed[0][index], analyzed[1][index]);
+                let plus = Complex64::new(analyzed[2][index], analyzed[3][index]);
+                let minus = Complex64::new(analyzed[4][index], analyzed[5][index]);
+                let intensity_adjoint =
+                    Complex64::new(moment_cotangent[0][index], moment_cotangent[1][index]);
+                let plus_adjoint =
+                    Complex64::new(moment_cotangent[2][index], moment_cotangent[3][index]);
+                let minus_adjoint =
+                    Complex64::new(moment_cotangent[4][index], moment_cotangent[5][index]);
+                let gradient_start = coefficient_start + degree * 4;
+                coefficient_gradient[gradient_start] += (intensity_adjoint.conj() * intensity).re;
+                coefficient_gradient[gradient_start + 1] += 0.5
+                    * ((plus_adjoint.conj() * (plus + minus)).re
+                        + (minus_adjoint.conj() * (plus + minus)).re);
+                coefficient_gradient[gradient_start + 2] += 0.5
+                    * ((plus_adjoint.conj() * (plus - minus)).re
+                        + (minus_adjoint.conj() * (minus - plus)).re);
+                coefficient_gradient[gradient_start + 3] +=
+                    (intensity_adjoint.conj() * (-0.5 * (plus + minus))).re
+                        + (plus_adjoint.conj() * -intensity).re
+                        + (minus_adjoint.conj() * -intensity).re;
+            }
+        }
+
+        for block in 0..blocks {
+            let block_input_start = block * self.input_size();
+            let block_output_start = block * self.output_size();
+            let coefficient_start = block * coefficient_stride;
+            for correction in &self.legacy_frame_corrections {
+                let input_start = block_input_start + correction.input_index * 3;
+                let output_start = block_output_start + correction.output_index * 3;
+                for degree in 0..self.num_coefficients {
+                    for family in 0..4 {
+                        let local_coefficient = degree * 4 + family;
+                        let matrix_start = local_coefficient * 9;
+                        for row in 0..3 {
+                            for column in 0..3 {
+                                coefficient_gradient[coefficient_start + local_coefficient] +=
+                                    correction.values[matrix_start + row * 3 + column]
+                                        * input[input_start + column]
+                                        * output_cotangent[output_start + row];
+                            }
                         }
                     }
                 }
@@ -918,6 +1435,7 @@ pub struct VectorCoefficientScattering {
     coefficient_blocks: usize,
     basis: VectorCoefficientBasis,
     coefficients: Vec<f64>,
+    active_num_coefficients: usize,
     dense_value_offsets: Vec<usize>,
     dense_values: Vec<f64>,
 }
@@ -978,6 +1496,7 @@ impl VectorCoefficientScattering {
             coefficient_blocks,
             basis,
             coefficients: vec![0.0; coefficient_size],
+            active_num_coefficients: 0,
             dense_value_offsets,
             dense_values: vec![0.0; dense_value_size],
         })
@@ -1010,6 +1529,12 @@ impl VectorCoefficientScattering {
         if coefficients.iter().any(|value| !value.is_finite()) {
             return Err(OperatorError::NonFiniteValue);
         }
+        self.active_num_coefficients = active_coefficient_degrees(
+            coefficients,
+            self.coefficient_blocks,
+            self.basis.num_coefficients(),
+            4,
+        );
         self.coefficients.copy_from_slice(coefficients);
         Ok(())
     }
@@ -1029,21 +1554,14 @@ impl VectorCoefficientScattering {
         if input.len() != self.input_size || output.len() != self.output_size {
             return Err(OperatorError::DimensionMismatch);
         }
-        let coefficient_stride = self.basis.num_coefficients() * 4;
-        let mut moments = vec![[Complex64::new(0.0, 0.0); 3]; self.basis.num_modes()];
-        for block in 0..self.coefficient_blocks {
-            let input_start = self.input_offsets[block];
-            let input_end = self.input_offsets[block + 1];
-            let output_start = self.output_offsets[block];
-            let output_end = self.output_offsets[block + 1];
-            let coefficient_start = block * coefficient_stride;
-            self.basis.apply(
-                &input[input_start..input_end],
-                &self.coefficients[coefficient_start..coefficient_start + coefficient_stride],
-                &mut output[output_start..output_end],
-                &mut moments,
-            );
-        }
+        let coefficient_input_end = self.input_offsets[self.coefficient_blocks];
+        let coefficient_output_end = self.output_offsets[self.coefficient_blocks];
+        self.basis.apply_blocks(
+            &input[..coefficient_input_end],
+            &self.coefficients,
+            self.active_num_coefficients,
+            &mut output[..coefficient_output_end],
+        );
 
         for block in self.coefficient_blocks..self.output_offsets.len() - 1 {
             let dense_block = block - self.coefficient_blocks;
@@ -1070,19 +1588,14 @@ impl VectorCoefficientScattering {
             return Err(OperatorError::DimensionMismatch);
         }
         output.fill(0.0);
-        let coefficient_stride = self.basis.num_coefficients() * 4;
-        for block in 0..self.coefficient_blocks {
-            let input_start = self.input_offsets[block];
-            let input_end = self.input_offsets[block + 1];
-            let output_start = self.output_offsets[block];
-            let output_end = self.output_offsets[block + 1];
-            let coefficient_start = block * coefficient_stride;
-            self.basis.apply_transpose(
-                &input[output_start..output_end],
-                &self.coefficients[coefficient_start..coefficient_start + coefficient_stride],
-                &mut output[input_start..input_end],
-            );
-        }
+        let coefficient_input_end = self.input_offsets[self.coefficient_blocks];
+        let coefficient_output_end = self.output_offsets[self.coefficient_blocks];
+        self.basis.apply_blocks_transpose(
+            &input[..coefficient_output_end],
+            &self.coefficients,
+            self.active_num_coefficients,
+            &mut output[..coefficient_input_end],
+        );
         for block in self.coefficient_blocks..self.output_offsets.len() - 1 {
             let dense_block = block - self.coefficient_blocks;
             let input_start = self.input_offsets[block];
@@ -1119,30 +1632,31 @@ impl VectorCoefficientScattering {
         {
             return Err(OperatorError::DimensionMismatch);
         }
-        let coefficient_stride = self.basis.num_coefficients() * 4;
-        let mut moments = vec![[Complex64::new(0.0, 0.0); 3]; self.basis.num_modes()];
-        let mut parameter_output = vec![0.0; self.basis.output_size()];
-        for block in 0..self.coefficient_blocks {
-            let input_start = self.input_offsets[block];
-            let input_end = self.input_offsets[block + 1];
-            let output_start = self.output_offsets[block];
-            let output_end = self.output_offsets[block + 1];
-            let coefficient_start = block * coefficient_stride;
-            self.basis.apply(
-                &input_tangent[input_start..input_end],
-                &self.coefficients[coefficient_start..coefficient_start + coefficient_stride],
-                &mut output_tangent[output_start..output_end],
-                &mut moments,
-            );
-            self.basis.apply(
-                &input[input_start..input_end],
-                &coefficient_tangent[coefficient_start..coefficient_start + coefficient_stride],
+        let coefficient_input_end = self.input_offsets[self.coefficient_blocks];
+        let coefficient_output_end = self.output_offsets[self.coefficient_blocks];
+        self.basis.apply_blocks(
+            &input_tangent[..coefficient_input_end],
+            &self.coefficients,
+            self.active_num_coefficients,
+            &mut output_tangent[..coefficient_output_end],
+        );
+        let tangent_active_num_coefficients = active_coefficient_degrees(
+            coefficient_tangent,
+            self.coefficient_blocks,
+            self.basis.num_coefficients(),
+            4,
+        );
+        if tangent_active_num_coefficients != 0 {
+            let mut parameter_output = vec![0.0; coefficient_output_end];
+            self.basis.apply_blocks(
+                &input[..coefficient_input_end],
+                coefficient_tangent,
+                tangent_active_num_coefficients,
                 &mut parameter_output,
-                &mut moments,
             );
-            for (result, parameter) in output_tangent[output_start..output_end]
+            for (result, parameter) in output_tangent[..coefficient_output_end]
                 .iter_mut()
-                .zip(&parameter_output)
+                .zip(parameter_output)
             {
                 *result += parameter;
             }
@@ -1196,26 +1710,16 @@ impl VectorCoefficientScattering {
         input_cotangent.fill(0.0);
         coefficient_gradient.fill(0.0);
         dense_value_gradient.fill(0.0);
-        let coefficient_stride = self.basis.num_coefficients() * 4;
-        let mut analyzed = vec![[Complex64::new(0.0, 0.0); 3]; self.basis.num_modes()];
-        let mut moment_cotangent = vec![[Complex64::new(0.0, 0.0); 3]; self.basis.num_modes()];
-        for block in 0..self.coefficient_blocks {
-            let input_start = self.input_offsets[block];
-            let input_end = self.input_offsets[block + 1];
-            let output_start = self.output_offsets[block];
-            let output_end = self.output_offsets[block + 1];
-            let coefficient_start = block * coefficient_stride;
-            self.basis.apply_vjp(
-                &input[input_start..input_end],
-                &self.coefficients[coefficient_start..coefficient_start + coefficient_stride],
-                &output_cotangent[output_start..output_end],
-                &mut input_cotangent[input_start..input_end],
-                &mut coefficient_gradient
-                    [coefficient_start..coefficient_start + coefficient_stride],
-                &mut analyzed,
-                &mut moment_cotangent,
-            );
-        }
+        let coefficient_input_end = self.input_offsets[self.coefficient_blocks];
+        let coefficient_output_end = self.output_offsets[self.coefficient_blocks];
+        self.basis.apply_blocks_vjp(
+            &input[..coefficient_input_end],
+            &self.coefficients,
+            self.active_num_coefficients,
+            &output_cotangent[..coefficient_output_end],
+            &mut input_cotangent[..coefficient_input_end],
+            coefficient_gradient,
+        );
         for block in self.coefficient_blocks..self.output_offsets.len() - 1 {
             let dense_block = block - self.coefficient_blocks;
             let input_start = self.input_offsets[block];
@@ -1239,6 +1743,30 @@ impl VectorCoefficientScattering {
         }
         Ok(())
     }
+}
+
+fn active_coefficient_degrees(
+    coefficients: &[f64],
+    blocks: usize,
+    num_coefficients: usize,
+    coefficient_families: usize,
+) -> usize {
+    let block_stride = num_coefficients * coefficient_families;
+    debug_assert_eq!(coefficients.len(), blocks * block_stride);
+    let mut active = 0;
+    for block in coefficients.chunks_exact(block_stride) {
+        for degree in (active..num_coefficients).rev() {
+            let start = degree * coefficient_families;
+            if block[start..start + coefficient_families]
+                .iter()
+                .any(|&value| value != 0.0)
+            {
+                active = degree + 1;
+                break;
+            }
+        }
+    }
+    active
 }
 
 fn normalized_directions(directions: &[[f64; 3]]) -> Result<Vec<[f64; 3]>, OperatorError> {

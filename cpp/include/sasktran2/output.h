@@ -402,11 +402,62 @@ namespace sasktran2 {
             int wavelidx, int threadidx,
             Eigen::Ref<const Eigen::VectorXd> native_gradient);
 
+        /** Native derivative entries required by the requested gradients. */
+        Eigen::VectorXi native_derivative_mask() const;
+
         void assign_flux(
             const sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>&,
             int, int, int, int) override {}
 
         /** Reduces thread-local gradient accumulation into caller memory. */
         void finalize();
+    };
+
+    /** Output adapter that materializes a complete radiance Jacobian from
+     * exact native VJP rows.  The engine reuses the converged primal source
+     * state for every row at a wavelength, so the only retained large
+     * allocation is the caller-owned Jacobian itself. */
+    template <int NSTOKES> class OutputJacobianVJP : public Output<NSTOKES> {
+      private:
+        Eigen::Map<Eigen::VectorXd> m_radiance;
+        std::map<std::string, Eigen::Map<Eigen::MatrixXd>> m_derivatives;
+        std::map<std::string, Eigen::Map<Eigen::MatrixXd>>
+            m_surface_derivatives;
+        std::vector<Eigen::VectorXd> m_native_parameter_storage;
+
+        void resize();
+
+      public:
+        explicit OutputJacobianVJP(Eigen::Map<Eigen::VectorXd> radiance)
+            : m_radiance(radiance) {}
+
+        void set_derivative_jacobian_memory(
+            const std::string& name,
+            Eigen::Map<Eigen::MatrixXd> derivative_jacobian);
+
+        void set_surface_jacobian_memory(
+            const std::string& name,
+            Eigen::Map<Eigen::MatrixXd> derivative_jacobian);
+
+        void assign(const sasktran2::WavelengthBlock<>&,
+                    const sasktran2::WavelengthBlockDual<NSTOKES>&, int,
+                    int) override {}
+
+        Eigen::Vector<double, NSTOKES>
+        native_basis_cotangent(int losidx, int external_stokes) const;
+
+        void assign_native_value(int losidx, int wavelidx,
+                                 const Eigen::Vector<double, NSTOKES>& value);
+
+        void assign_native_gradient_row(
+            int losidx, int wavelidx, int external_stokes, int threadidx,
+            Eigen::Ref<const Eigen::VectorXd> native_gradient);
+
+        /** Native derivative entries required by the requested Jacobians. */
+        Eigen::VectorXi native_derivative_mask() const;
+
+        void assign_flux(
+            const sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>&,
+            int, int, int, int) override {}
     };
 } // namespace sasktran2

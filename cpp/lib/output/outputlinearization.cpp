@@ -2,6 +2,61 @@
 
 namespace sasktran2 {
     namespace {
+        template <int NSTOKES, typename VolumeGradients,
+                  typename SurfaceGradients>
+        Eigen::VectorXi requested_native_derivative_mask(
+            const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
+            const VolumeGradients& volume_gradients,
+            const SurfaceGradients& surface_gradients) {
+            Eigen::VectorXi active =
+                Eigen::VectorXi::Zero(atmosphere.num_deriv());
+            const int num_geometry =
+                static_cast<int>(atmosphere.storage().total_extinction.rows());
+            const auto mark = [&active](int start, int count) {
+                if (count > 0) {
+                    active.segment(start, count).setOnes();
+                }
+            };
+
+            for (const auto& [name, gradient] : volume_gradients) {
+                (void)gradient;
+                const auto& mapping =
+                    atmosphere.storage().derivative_mappings_const().at(name);
+                const auto& native_mapping = mapping.native_mapping();
+                if (native_mapping.d_extinction.has_value()) {
+                    mark(0, num_geometry);
+                }
+                if (native_mapping.d_ssa.has_value()) {
+                    mark(atmosphere.ssa_deriv_start_index(), num_geometry);
+                }
+                if (mapping.is_scattering_derivative()) {
+                    mark(atmosphere.scat_deriv_start_index() +
+                             mapping.get_scattering_index() * num_geometry,
+                         num_geometry);
+                }
+                if (native_mapping.d_emission.has_value() &&
+                    atmosphere.include_emission_derivatives()) {
+                    mark(atmosphere.emission_deriv_start_index(), num_geometry);
+                }
+            }
+
+            for (const auto& [name, gradient] : surface_gradients) {
+                (void)gradient;
+                const auto& mapping =
+                    atmosphere.surface().derivative_mappings().at(name);
+                const auto& native_mapping = mapping.native_surface_mapping();
+                if (native_mapping.d_brdf.has_value()) {
+                    mark(atmosphere.surface_deriv_start_index(),
+                         atmosphere.surface().num_deriv());
+                }
+                if (native_mapping.d_emission.has_value() &&
+                    atmosphere.include_emission_derivatives()) {
+                    mark(atmosphere.surface_emission_deriv_start_index(), 1);
+                }
+            }
+            return active;
+        }
+
         template <int NSTOKES, typename Radiance>
         void mapped_volume_derivatives(
             const Radiance& radiance,
@@ -481,6 +536,12 @@ namespace sasktran2 {
     }
 
     template <int NSTOKES>
+    Eigen::VectorXi OutputVJP<NSTOKES>::native_derivative_mask() const {
+        return requested_native_derivative_mask(
+            *this->m_atmosphere, m_derivative_gradients, m_surface_gradients);
+    }
+
+    template <int NSTOKES>
     template <typename Radiance>
     void OutputVJP<NSTOKES>::assign_lane(const Radiance& radiance, int losidx,
                                          int wavelidx, int threadidx) {
@@ -596,8 +657,208 @@ namespace sasktran2 {
         }
     }
 
+    template <int NSTOKES>
+    void OutputJacobianVJP<NSTOKES>::set_derivative_jacobian_memory(
+        const std::string& name,
+        Eigen::Map<Eigen::MatrixXd> derivative_jacobian) {
+        m_derivatives.insert(
+            {name, Eigen::Map<Eigen::MatrixXd>(nullptr, 0, 0)});
+        auto* target = &m_derivatives.at(name);
+        new (target) Eigen::Map<Eigen::MatrixXd>(derivative_jacobian.data(),
+                                                 derivative_jacobian.rows(),
+                                                 derivative_jacobian.cols());
+    }
+
+    template <int NSTOKES>
+    void OutputJacobianVJP<NSTOKES>::set_surface_jacobian_memory(
+        const std::string& name,
+        Eigen::Map<Eigen::MatrixXd> derivative_jacobian) {
+        m_surface_derivatives.insert(
+            {name, Eigen::Map<Eigen::MatrixXd>(nullptr, 0, 0)});
+        auto* target = &m_surface_derivatives.at(name);
+        new (target) Eigen::Map<Eigen::MatrixXd>(derivative_jacobian.data(),
+                                                 derivative_jacobian.rows(),
+                                                 derivative_jacobian.cols());
+    }
+
+    template <int NSTOKES> void OutputJacobianVJP<NSTOKES>::resize() {
+        const int output_size = NSTOKES * this->m_nlos * this->m_nwavel;
+        if (m_radiance.size() != output_size) {
+            throw std::invalid_argument(
+                "Jacobian radiance memory has incorrect size");
+        }
+        m_radiance.setZero();
+        for (auto& [name, derivative] : m_derivatives) {
+            if (derivative.rows() != output_size) {
+                throw std::invalid_argument(
+                    "Volume Jacobian memory has incorrect output size");
+            }
+            derivative.setZero();
+        }
+        for (auto& [name, derivative] : m_surface_derivatives) {
+            if (derivative.rows() != output_size) {
+                throw std::invalid_argument(
+                    "Surface Jacobian memory has incorrect output size");
+            }
+            derivative.setZero();
+        }
+        m_native_parameter_storage.resize(this->m_config->num_threads());
+        for (auto& native_parameter : m_native_parameter_storage) {
+            native_parameter.resize(this->m_ngeometry);
+        }
+    }
+
+    template <int NSTOKES>
+    Eigen::Vector<double, NSTOKES>
+    OutputJacobianVJP<NSTOKES>::native_basis_cotangent(
+        int losidx, int external_stokes) const {
+        if (losidx < 0 || losidx >= this->m_nlos || external_stokes < 0 ||
+            external_stokes >= NSTOKES) {
+            throw std::out_of_range("Invalid radiance Jacobian row");
+        }
+        Eigen::Vector<double, NSTOKES> cotangent =
+            Eigen::Vector<double, NSTOKES>::Zero();
+        cotangent(external_stokes) = 1.0;
+        double c = 1.0;
+        double s = 0.0;
+        if constexpr (NSTOKES >= 3) {
+            c = this->m_stokes_C[losidx];
+            s = this->m_stokes_S[losidx];
+        }
+        return transpose_rotate_stokes<NSTOKES>(cotangent, c, s);
+    }
+
+    template <int NSTOKES>
+    void OutputJacobianVJP<NSTOKES>::assign_native_value(
+        int losidx, int wavelidx, const Eigen::Vector<double, NSTOKES>& value) {
+        const int linear_index =
+            NSTOKES * this->m_nlos * wavelidx + NSTOKES * losidx;
+        double c = 1.0;
+        double s = 0.0;
+        if constexpr (NSTOKES >= 3) {
+            c = this->m_stokes_C[losidx];
+            s = this->m_stokes_S[losidx];
+        }
+        const auto rotated = rotate_stokes<NSTOKES>(value, c, s);
+        for (int stokes = 0; stokes < NSTOKES; ++stokes) {
+            m_radiance(linear_index + stokes) = rotated(stokes);
+        }
+    }
+
+    template <int NSTOKES>
+    void OutputJacobianVJP<NSTOKES>::assign_native_gradient_row(
+        int losidx, int wavelidx, int external_stokes, int threadidx,
+        Eigen::Ref<const Eigen::VectorXd> native_gradient) {
+        const int row = NSTOKES * this->m_nlos * wavelidx + NSTOKES * losidx +
+                        external_stokes;
+        const int num_geometry = this->m_ngeometry;
+        auto& native_parameter = m_native_parameter_storage.at(threadidx);
+
+        for (auto& [name, derivative] : m_derivatives) {
+            const auto& mapping =
+                this->m_atmosphere->storage().derivative_mappings_const().at(
+                    name);
+            const auto& native_mapping = mapping.native_mapping();
+            native_parameter.setZero();
+            if (native_mapping.d_extinction.has_value()) {
+                native_parameter.array() +=
+                    native_mapping.d_extinction.value().col(wavelidx).array() *
+                    native_gradient.head(num_geometry).array();
+            }
+            if (native_mapping.d_ssa.has_value()) {
+                native_parameter.array() +=
+                    native_mapping.d_ssa.value().col(wavelidx).array() *
+                    native_gradient
+                        .segment(this->m_atmosphere->ssa_deriv_start_index(),
+                                 num_geometry)
+                        .array();
+            }
+            if (mapping.is_scattering_derivative()) {
+                const int start = this->m_atmosphere->scat_deriv_start_index() +
+                                  mapping.get_scattering_index() * num_geometry;
+                native_parameter.array() +=
+                    native_mapping.scat_factor.value().col(wavelidx).array() *
+                    native_gradient.segment(start, num_geometry).array();
+            }
+            if (native_mapping.d_emission.has_value() &&
+                this->m_atmosphere->include_emission_derivatives()) {
+                native_parameter.array() +=
+                    native_mapping.d_emission.value().col(wavelidx).array() *
+                    native_gradient
+                        .segment(
+                            this->m_atmosphere->emission_deriv_start_index(),
+                            num_geometry)
+                        .array();
+            }
+
+            if (mapping.get_interpolator_const().has_value()) {
+                const auto& interpolator =
+                    mapping.get_interpolator_const().value();
+                if (derivative.cols() != interpolator.cols()) {
+                    throw std::invalid_argument(
+                        "Volume Jacobian parameter size is incorrect");
+                }
+                derivative.row(row).noalias() =
+                    native_parameter.transpose() * interpolator;
+            } else {
+                if (derivative.cols() != native_parameter.size()) {
+                    throw std::invalid_argument(
+                        "Native volume Jacobian parameter size is incorrect");
+                }
+                derivative.row(row) = native_parameter.transpose();
+            }
+        }
+
+        for (auto& [name, derivative] : m_surface_derivatives) {
+            const auto& mapping =
+                this->m_atmosphere->surface().derivative_mappings().at(name);
+            const auto& native_mapping = mapping.native_surface_mapping();
+            double native_parameter_gradient = 0.0;
+            if (native_mapping.d_brdf.has_value()) {
+                native_parameter_gradient +=
+                    native_mapping.d_brdf.value().row(wavelidx).dot(
+                        native_gradient.segment(
+                            this->m_atmosphere->surface_deriv_start_index(),
+                            this->m_atmosphere->surface().num_deriv()));
+            }
+            if (native_mapping.d_emission.has_value() &&
+                this->m_atmosphere->include_emission_derivatives()) {
+                native_parameter_gradient +=
+                    native_mapping.d_emission.value()(wavelidx, 0) *
+                    native_gradient(this->m_atmosphere
+                                        ->surface_emission_deriv_start_index());
+            }
+
+            if (mapping.get_interpolator_const().has_value()) {
+                const auto& interpolator =
+                    mapping.get_interpolator_const().value();
+                if (derivative.cols() != interpolator.cols()) {
+                    throw std::invalid_argument(
+                        "Surface Jacobian parameter size is incorrect");
+                }
+                derivative.row(row) =
+                    native_parameter_gradient * interpolator.row(wavelidx);
+            } else {
+                if (derivative.cols() != this->m_nwavel) {
+                    throw std::invalid_argument(
+                        "Native spectral surface Jacobian parameter size is "
+                        "incorrect");
+                }
+                derivative(row, wavelidx) = native_parameter_gradient;
+            }
+        }
+    }
+
+    template <int NSTOKES>
+    Eigen::VectorXi OutputJacobianVJP<NSTOKES>::native_derivative_mask() const {
+        return requested_native_derivative_mask(
+            *this->m_atmosphere, m_derivatives, m_surface_derivatives);
+    }
+
     template class OutputJVP<1>;
     template class OutputJVP<3>;
     template class OutputVJP<1>;
     template class OutputVJP<3>;
+    template class OutputJacobianVJP<1>;
+    template class OutputJacobianVJP<3>;
 } // namespace sasktran2

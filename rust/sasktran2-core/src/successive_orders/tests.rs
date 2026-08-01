@@ -16,6 +16,41 @@ fn solve_scalar(solver: &mut SuccessiveOrdersSolver, multiplier: f64, forcing: f
 }
 
 #[test]
+fn transport_transpose_and_fused_system_match_dense_values() {
+    let row_offsets = [0, 2, 3, 5];
+    let column_indices = [0, 2, 1, 0, 2];
+    let values = [1.0, 2.0, 3.0, 4.0, 5.0];
+    let transport = CsrMatrix::new(3, 3, &row_offsets, &column_indices).unwrap();
+
+    let transpose_input = [2.0, 3.0, 5.0];
+    let mut transpose_output = [0.0; 3];
+    transport
+        .apply_transpose(
+            &row_offsets,
+            &column_indices,
+            &values,
+            &transpose_input,
+            &mut transpose_output,
+        )
+        .unwrap();
+    assert_eq!(transpose_output, [22.0, 9.0, 29.0]);
+
+    let fixed_point_input = [10.0, 20.0, 30.0];
+    let mut system_output = [0.0; 3];
+    transport
+        .apply_transpose_system(
+            &row_offsets,
+            &column_indices,
+            &values,
+            &fixed_point_input,
+            &transpose_input,
+            &mut system_output,
+        )
+        .unwrap();
+    assert_eq!(system_output, [-12.0, 11.0, 1.0]);
+}
+
+#[test]
 fn picard_converges_to_geometric_series() {
     let config = SolverConfig {
         max_iterations: 200,
@@ -48,6 +83,58 @@ fn fixed_iteration_mode_reports_maximum_iterations() {
         solver.diagnostics().reason,
         ConvergenceReason::MaximumIterations
     );
+}
+
+#[test]
+fn nonconverged_anderson_returns_approximate_products() {
+    let config = SolverConfig {
+        max_iterations: 1,
+        relative_tolerance: 1.0e-12,
+        absolute_tolerance: 1.0e-14,
+        anderson_depth: 2,
+        ..SolverConfig::default()
+    };
+    let multiplier = 0.8;
+    let forcing = 2.0;
+    let transport_tangent = [0.17];
+    let scattering_tangent = [-0.08];
+    let forcing_tangent = [0.23];
+    let solution_cotangent = [1.7];
+    let mut solver = scalar_problem(config);
+    let solution = solve_scalar(&mut solver, multiplier, forcing);
+    assert!(!solver.diagnostics().converged);
+
+    let jvp = solver
+        .solve_jvp(
+            &[0, 1],
+            &[0],
+            &[multiplier],
+            &transport_tangent,
+            &[forcing],
+            &forcing_tangent,
+            &[],
+            &scattering_tangent,
+        )
+        .unwrap();
+    let incoming = multiplier * solution + forcing;
+    let expected_jvp =
+        transport_tangent[0] * solution + scattering_tangent[0] * incoming + forcing_tangent[0];
+    assert!((jvp[0] - expected_jvp).abs() < 2.0e-13);
+
+    let gradient = solver
+        .solve_vjp(
+            &[0, 1],
+            &[0],
+            &[multiplier],
+            &[forcing],
+            &solution_cotangent,
+        )
+        .unwrap();
+    assert!((gradient.transport_values[0] - solution_cotangent[0] * solution).abs() < 2.0e-13);
+    assert!(
+        (gradient.dense_scattering_values[0] - solution_cotangent[0] * incoming).abs() < 2.0e-13
+    );
+    assert!((gradient.forcing[0] - solution_cotangent[0]).abs() < 2.0e-13);
 }
 
 #[test]
@@ -188,6 +275,51 @@ fn implicit_products_match_converged_system_with_anderson() {
 }
 
 #[test]
+fn restored_converged_solution_preserves_implicit_vjp() {
+    let config = SolverConfig {
+        max_iterations: 200,
+        relative_tolerance: 1.0e-12,
+        absolute_tolerance: 1.0e-14,
+        anderson_depth: 2,
+        ..SolverConfig::default()
+    };
+    let multiplier = 0.8;
+    let forcing = 2.0;
+    let solution_cotangent = [1.7];
+    let mut solver = scalar_problem(config);
+    let solution = solve_scalar(&mut solver, multiplier, forcing);
+    let expected = solver
+        .solve_vjp_compact(
+            &[0, 1],
+            &[0],
+            &[multiplier],
+            &[forcing],
+            &solution_cotangent,
+        )
+        .unwrap();
+
+    solve_scalar(&mut solver, 0.2, 0.5);
+    solver.restore_converged_solution(&[solution]).unwrap();
+    let restored = solver
+        .solve_vjp_compact(
+            &[0, 1],
+            &[0],
+            &[multiplier],
+            &[forcing],
+            &solution_cotangent,
+        )
+        .unwrap();
+
+    assert!(solver.diagnostics().converged);
+    assert_eq!(restored.transport_values, expected.transport_values);
+    assert_eq!(
+        restored.dense_scattering_values,
+        expected.dense_scattering_values
+    );
+    assert_eq!(restored.forcing, expected.forcing);
+}
+
+#[test]
 fn anderson_accelerates_nearly_conservative_problem() {
     let base = SolverConfig {
         max_iterations: 200,
@@ -252,7 +384,9 @@ fn scalar_coefficient_scattering_matches_dense_legendre_kernel() {
         normalize([-0.5, 0.1, 0.8]),
         normalize([0.6, -0.3, 0.2]),
     ];
-    let coefficients = [1.0, 0.3, -0.07, 0.02];
+    // Keep exact trailing zeros to exercise active harmonic-rank truncation.
+    // The tangent below activates those degrees independently.
+    let coefficients = [1.0, 0.3, -0.07, 0.02, 0.0, 0.0];
     let basis = ScalarCoefficientBasis::from_directions(
         &incoming,
         &incoming_weights,
@@ -298,7 +432,7 @@ fn scalar_coefficient_scattering_matches_dense_legendre_kernel() {
     }
 
     let input_tangent = [0.2, -0.1, 0.04, 0.3, -0.5, 0.7];
-    let coefficient_tangent = [0.03, -0.02, 0.01, 0.04];
+    let coefficient_tangent = [0.03, -0.02, 0.01, 0.04, -0.015, 0.025];
     let dense_tangent = [-0.06, 0.09];
     let mut output_tangent = vec![0.0; output.len()];
     scattering
@@ -327,6 +461,16 @@ fn scalar_coefficient_scattering_matches_dense_legendre_kernel() {
     scattering
         .apply_transpose(&output_cotangent, &mut transpose_input)
         .unwrap();
+    let mut transpose_scratch = vec![0.0; scattering.transpose_scratch_size()];
+    let mut scratch_transpose_input = vec![0.0; input.len()];
+    scattering
+        .apply_transpose_with_scratch(
+            &output_cotangent,
+            &mut scratch_transpose_input,
+            &mut transpose_scratch,
+        )
+        .unwrap();
+    assert_eq!(scratch_transpose_input, transpose_input);
     for (transpose, vjp) in transpose_input.iter().zip(&input_cotangent) {
         assert!((transpose - vjp).abs() < 2.0e-13);
     }
@@ -350,7 +494,7 @@ fn vector_coefficient_scattering_matches_dense_greek_kernel() {
     let num_coefficients = 5;
     let coefficients = [
         1.0, 0.0, 0.0, 0.0, 0.21, -0.04, 0.03, 0.02, -0.13, 0.34, -0.08, 0.11, 0.07, -0.12, 0.19,
-        -0.05, -0.02, 0.06, -0.09, 0.04,
+        -0.05, 0.0, 0.0, 0.0, 0.0,
     ];
     let input = [
         2.0, -0.3, 0.2, 0.7, 0.1, -0.4, 1.2, -0.2, -0.1, 0.4, 0.3, 0.15,

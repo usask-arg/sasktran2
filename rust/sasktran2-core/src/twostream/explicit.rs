@@ -4,7 +4,8 @@ use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign};
 
 use super::{
     AtmosphereAdjoints, AtmosphereBatch, AtmosphereJacobians, ExecutionPolicy, Geometry,
-    LayerAdjoints, LayerInputs, RadianceBatch, SourceMode, SphericalGeometry, View,
+    LayerAdjoints, LayerInputs, LocalSourceGeometry, RadianceBatch, SourceMode, SphericalGeometry,
+    View,
 };
 
 pub(super) const LANES: usize = 8;
@@ -1140,6 +1141,30 @@ pub(super) fn solve_unprepared_atmosphere_forward_tile(
                 local_base,
                 radiance,
                 workspace,
+            ),
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn solve_unprepared_local_source_forward_tile(
+    geometry: &Geometry,
+    mode: SourceMode,
+    atmosphere: &AtmosphereBatch,
+    samples: &LocalSourceGeometry,
+    input_start: usize,
+    len: usize,
+    source: &mut OutputRows<'_>,
+    workspace: &mut ExplicitWorkspace,
+) {
+    for local_base in (0..len).step_by(LANES) {
+        let input_base = input_start + local_base;
+        match mode {
+            SourceMode::Solar => solve_local_source_forward_chunk::<true>(
+                geometry, atmosphere, samples, input_base, local_base, source, workspace,
+            ),
+            SourceMode::Thermal => solve_local_source_forward_chunk::<false>(
+                geometry, atmosphere, samples, input_base, local_base, source, workspace,
             ),
         }
     }
@@ -3121,6 +3146,39 @@ fn local_source<const SOLAR: bool>(
         source += w.thermal_b0[layer] * thermal * (1.0 - w.ssa[layer]);
     }
     source
+}
+
+fn solve_local_source_forward_chunk<const SOLAR: bool>(
+    geometry: &Geometry,
+    atmosphere: &AtmosphereBatch,
+    samples: &LocalSourceGeometry,
+    input_base: usize,
+    output_base: usize,
+    source: &mut OutputRows<'_>,
+    w: &mut ExplicitWorkspace,
+) {
+    let (albedo, thermal_surface) =
+        load_atmosphere_chunk_mode::<SOLAR>(geometry, atmosphere, input_base, w);
+    forward_layers::<SOLAR>(geometry, albedo, thermal_surface, w);
+    for sample in 0..samples.num_samples() {
+        source.write(
+            sample,
+            output_base,
+            local_source::<SOLAR>(
+                geometry,
+                samples.layers[sample],
+                samples.fractions_from_top[sample],
+                samples.propagation_cosines[sample],
+                samples.relative_azimuths[sample],
+                w,
+            ),
+        );
+    }
+    source.write(
+        samples.num_samples(),
+        output_base,
+        surface_source::<SOLAR>(geometry, albedo, thermal_surface, w),
+    );
 }
 
 #[allow(clippy::too_many_arguments)]

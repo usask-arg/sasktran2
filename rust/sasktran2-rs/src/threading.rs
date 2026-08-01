@@ -16,6 +16,12 @@ fn create_pool(num_threads: usize) -> Result<rayon::ThreadPool> {
 
 pub fn set_num_threads(num_threads: usize) -> Result<()> {
     let mut pool = THREADPOOL.lock().unwrap();
+    if pool
+        .as_ref()
+        .is_some_and(|existing| existing.current_num_threads() == num_threads)
+    {
+        return Ok(());
+    }
     *pool = Some(create_pool(num_threads)?.into());
     Ok(())
 }

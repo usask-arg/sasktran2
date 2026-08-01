@@ -35,7 +35,7 @@ impl std::error::Error for OperatorError {}
 ///
 /// The row offsets, column indices, and values remain owned by the caller and
 /// are borrowed for each solve. This keeps the C++/Rust integration from
-/// retaining a second, widened copy of the transport operator.
+/// retaining a second copy of the transport operator.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CsrMatrix {
     rows: usize,
@@ -123,12 +123,45 @@ impl CsrMatrix {
         if input.len() != self.rows || output.len() != self.columns {
             return Err(OperatorError::DimensionMismatch);
         }
+        debug_assert_eq!(row_offsets.len(), self.rows + 1);
+        debug_assert_eq!(column_indices.len(), self.num_nonzero);
+        debug_assert_eq!(values.len(), self.num_nonzero);
         output.fill(0.0);
         for (row, &incoming) in input.iter().enumerate() {
             let start = row_offsets[row] as usize;
             let end = row_offsets[row + 1] as usize;
             for index in start..end {
                 output[column_indices[index] as usize] += values[index] * incoming;
+            }
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn apply_transpose_system(
+        &self,
+        row_offsets: &[i32],
+        column_indices: &[i32],
+        values: &[f64],
+        fixed_point_input: &[f64],
+        transpose_input: &[f64],
+        output: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        if fixed_point_input.len() != self.columns
+            || transpose_input.len() != self.rows
+            || output.len() != self.columns
+        {
+            return Err(OperatorError::DimensionMismatch);
+        }
+        debug_assert_eq!(row_offsets.len(), self.rows + 1);
+        debug_assert_eq!(column_indices.len(), self.num_nonzero);
+        debug_assert_eq!(values.len(), self.num_nonzero);
+        output.copy_from_slice(fixed_point_input);
+        for (row, &incoming) in transpose_input.iter().enumerate() {
+            let start = row_offsets[row] as usize;
+            let end = row_offsets[row + 1] as usize;
+            for index in start..end {
+                output[column_indices[index] as usize] -= values[index] * incoming;
             }
         }
         Ok(())
@@ -189,7 +222,7 @@ pub struct BlockDiagonalMatrix {
 pub enum ScatteringOperator {
     Dense(BlockDiagonalMatrix),
     ScalarCoefficients(ScalarCoefficientScattering),
-    VectorCoefficients(VectorCoefficientScattering),
+    VectorCoefficients(Box<VectorCoefficientScattering>),
 }
 
 impl ScatteringOperator {
@@ -245,6 +278,14 @@ impl ScatteringOperator {
         }
     }
 
+    #[inline]
+    pub fn transpose_scratch_size(&self) -> usize {
+        match self {
+            Self::ScalarCoefficients(matrix) => matrix.transpose_scratch_size(),
+            Self::Dense(_) | Self::VectorCoefficients(_) => 0,
+        }
+    }
+
     pub fn apply(&self, input: &[f64], output: &mut [f64]) -> Result<(), OperatorError> {
         match self {
             Self::Dense(matrix) => matrix.apply(input, output),
@@ -254,9 +295,24 @@ impl ScatteringOperator {
     }
 
     pub fn apply_transpose(&self, input: &[f64], output: &mut [f64]) -> Result<(), OperatorError> {
+        let mut scratch = vec![0.0; self.transpose_scratch_size()];
+        self.apply_transpose_with_scratch(input, output, &mut scratch)
+    }
+
+    pub fn apply_transpose_with_scratch(
+        &self,
+        input: &[f64],
+        output: &mut [f64],
+        scratch: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        if scratch.len() != self.transpose_scratch_size() {
+            return Err(OperatorError::DimensionMismatch);
+        }
         match self {
             Self::Dense(matrix) => matrix.apply_transpose(input, output),
-            Self::ScalarCoefficients(matrix) => matrix.apply_transpose(input, output),
+            Self::ScalarCoefficients(matrix) => {
+                matrix.apply_transpose_with_scratch(input, output, scratch)
+            }
             Self::VectorCoefficients(matrix) => matrix.apply_transpose(input, output),
         }
     }
@@ -347,7 +403,7 @@ impl From<ScalarCoefficientScattering> for ScatteringOperator {
 
 impl From<VectorCoefficientScattering> for ScatteringOperator {
     fn from(value: VectorCoefficientScattering) -> Self {
-        Self::VectorCoefficients(value)
+        Self::VectorCoefficients(Box::new(value))
     }
 }
 
@@ -605,6 +661,11 @@ impl FixedPointProblem {
         self.scattering.dense_value_size()
     }
 
+    #[inline]
+    pub fn scattering_transpose_scratch_size(&self) -> usize {
+        self.scattering.transpose_scratch_size()
+    }
+
     pub fn validate_iteration_data(
         &self,
         transport_row_offsets: &[i32],
@@ -675,6 +736,7 @@ impl FixedPointProblem {
         self.scattering.apply(incoming_scratch, output)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn apply_linear_transpose(
         &self,
         transport_row_offsets: &[i32],
@@ -683,18 +745,57 @@ impl FixedPointProblem {
         state: &[f64],
         output: &mut [f64],
         incoming_scratch: &mut [f64],
+        scattering_scratch: &mut [f64],
     ) -> Result<(), OperatorError> {
         if state.len() != self.state_size()
             || output.len() != self.state_size()
             || incoming_scratch.len() != self.incoming_size()
+            || scattering_scratch.len() != self.scattering_transpose_scratch_size()
         {
             return Err(OperatorError::DimensionMismatch);
         }
-        self.scattering.apply_transpose(state, incoming_scratch)?;
+        self.scattering.apply_transpose_with_scratch(
+            state,
+            incoming_scratch,
+            scattering_scratch,
+        )?;
         self.transport.apply_transpose(
             transport_row_offsets,
             transport_column_indices,
             transport_values,
+            incoming_scratch,
+            output,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn apply_linear_system_transpose(
+        &self,
+        transport_row_offsets: &[i32],
+        transport_column_indices: &[i32],
+        transport_values: &[f64],
+        state: &[f64],
+        output: &mut [f64],
+        incoming_scratch: &mut [f64],
+        scattering_scratch: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        if state.len() != self.state_size()
+            || output.len() != self.state_size()
+            || incoming_scratch.len() != self.incoming_size()
+            || scattering_scratch.len() != self.scattering_transpose_scratch_size()
+        {
+            return Err(OperatorError::DimensionMismatch);
+        }
+        self.scattering.apply_transpose_with_scratch(
+            state,
+            incoming_scratch,
+            scattering_scratch,
+        )?;
+        self.transport.apply_transpose_system(
+            transport_row_offsets,
+            transport_column_indices,
+            transport_values,
+            state,
             incoming_scratch,
             output,
         )
@@ -765,6 +866,71 @@ impl FixedPointProblem {
                 transport_parameter_tangent[index] + forcing_tangent[index];
         }
         self.scattering.apply(incoming_scratch, output)?;
+        self.scattering.apply_jvp(
+            incoming_scratch,
+            incoming_tangent_scratch,
+            scattering_coefficient_tangent,
+            dense_scattering_value_tangent,
+            output_tangent,
+        )
+    }
+
+    /// Parameter-only tangent of `G(x) = S(b + Tx)` at a fixed state.
+    ///
+    /// Unlike `apply_jvp`, this omits the zero state-tangent transport and the
+    /// unused primal output when forming the right-hand side of an implicit
+    /// JVP solve.
+    #[allow(clippy::too_many_arguments)]
+    pub fn apply_parameter_jvp(
+        &self,
+        transport_row_offsets: &[i32],
+        transport_column_indices: &[i32],
+        transport_values: &[f64],
+        transport_value_tangent: &[f64],
+        forcing: &[f64],
+        forcing_tangent: &[f64],
+        scattering_coefficient_tangent: &[f64],
+        dense_scattering_value_tangent: &[f64],
+        state: &[f64],
+        output_tangent: &mut [f64],
+        incoming_scratch: &mut [f64],
+        incoming_tangent_scratch: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        self.validate_iteration_data(
+            transport_row_offsets,
+            transport_column_indices,
+            transport_values,
+            forcing,
+        )?;
+        if transport_value_tangent.len() != self.transport.num_nonzero()
+            || forcing_tangent.len() != self.incoming_size()
+            || scattering_coefficient_tangent.len() != self.scattering.coefficient_value_size()
+            || dense_scattering_value_tangent.len() != self.scattering.dense_value_size()
+            || state.len() != self.state_size()
+            || output_tangent.len() != self.state_size()
+            || incoming_scratch.len() != self.incoming_size()
+            || incoming_tangent_scratch.len() != self.incoming_size()
+        {
+            return Err(OperatorError::DimensionMismatch);
+        }
+        self.transport.apply(
+            transport_row_offsets,
+            transport_column_indices,
+            transport_values,
+            state,
+            incoming_scratch,
+        )?;
+        self.transport.apply_value_tangent(
+            transport_row_offsets,
+            transport_column_indices,
+            transport_value_tangent,
+            state,
+            incoming_tangent_scratch,
+        )?;
+        for index in 0..self.incoming_size() {
+            incoming_scratch[index] += forcing[index];
+            incoming_tangent_scratch[index] += forcing_tangent[index];
+        }
         self.scattering.apply_jvp(
             incoming_scratch,
             incoming_tangent_scratch,
@@ -860,6 +1026,75 @@ impl FixedPointProblem {
                 let end = transport_row_offsets[row + 1] as usize;
                 for index in start..end {
                     transport_value_gradient[index] +=
+                        incoming_cotangent * state[transport_column_indices[index] as usize];
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Parameter-only reverse derivative at a fixed state.
+    ///
+    /// The implicit adjoint has already propagated the state cotangent, so
+    /// this omits the otherwise unused `T^T` state pullback.
+    #[allow(clippy::too_many_arguments)]
+    pub fn apply_parameter_vjp(
+        &self,
+        transport_row_offsets: &[i32],
+        transport_column_indices: &[i32],
+        transport_values: &[f64],
+        forcing: &[f64],
+        state: &[f64],
+        output_cotangent: &[f64],
+        transport_value_gradient: &mut [f64],
+        scattering_coefficient_gradient: &mut [f64],
+        dense_scattering_value_gradient: &mut [f64],
+        forcing_gradient: &mut [f64],
+        incoming_scratch: &mut [f64],
+        incoming_cotangent_scratch: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        self.validate_iteration_data(
+            transport_row_offsets,
+            transport_column_indices,
+            transport_values,
+            forcing,
+        )?;
+        if state.len() != self.state_size()
+            || output_cotangent.len() != self.state_size()
+            || (!transport_value_gradient.is_empty()
+                && transport_value_gradient.len() != self.transport.num_nonzero())
+            || scattering_coefficient_gradient.len() != self.scattering.coefficient_value_size()
+            || dense_scattering_value_gradient.len() != self.scattering.dense_value_size()
+            || forcing_gradient.len() != self.incoming_size()
+            || incoming_scratch.len() != self.incoming_size()
+            || incoming_cotangent_scratch.len() != self.incoming_size()
+        {
+            return Err(OperatorError::DimensionMismatch);
+        }
+        self.transport.apply(
+            transport_row_offsets,
+            transport_column_indices,
+            transport_values,
+            state,
+            incoming_scratch,
+        )?;
+        for (incoming, forcing) in incoming_scratch.iter_mut().zip(forcing) {
+            *incoming += forcing;
+        }
+        self.scattering.apply_vjp(
+            incoming_scratch,
+            output_cotangent,
+            incoming_cotangent_scratch,
+            scattering_coefficient_gradient,
+            dense_scattering_value_gradient,
+        )?;
+        forcing_gradient.copy_from_slice(incoming_cotangent_scratch);
+        if !transport_value_gradient.is_empty() {
+            for (row, &incoming_cotangent) in incoming_cotangent_scratch.iter().enumerate() {
+                let start = transport_row_offsets[row] as usize;
+                let end = transport_row_offsets[row + 1] as usize;
+                for index in start..end {
+                    transport_value_gradient[index] =
                         incoming_cotangent * state[transport_column_indices[index] as usize];
                 }
             }

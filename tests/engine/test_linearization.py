@@ -642,7 +642,13 @@ def test_engine_linearize_requires_derivatives():
 
 
 def _successive_orders_native_scenario(
-    *, num_stokes: int = 1, anderson_depth: int = 0, converge: bool = False
+    *,
+    num_stokes: int = 1,
+    anderson_depth: int = 0,
+    converge: bool = False,
+    initialization: sk.SuccessiveOrdersInitialization = (
+        sk.SuccessiveOrdersInitialization.NoInitialization
+    ),
 ):
     config = sk.Config()
     config.num_stokes = num_stokes
@@ -656,6 +662,7 @@ def _successive_orders_native_scenario(
     config.successive_orders_relative_tolerance = 1.0e-10 if converge else 0.0
     config.successive_orders_absolute_tolerance = 1.0e-12 if converge else 0.0
     config.successive_orders_anderson_depth = anderson_depth
+    config.successive_orders_initialization = initialization
     geometry = sk.Geometry1D(
         0.6,
         0.0,
@@ -681,8 +688,6 @@ def test_rust_successive_orders_native_products_match_fd_and_duality(num_stokes)
         "jvp": sk.LinearizationBackend.Native,
         "vjp": sk.LinearizationBackend.Native,
     }
-    with pytest.raises(NotImplementedError, match="complete Jacobian"):
-        _ = linearization.jacobian
 
     phase_name = "leg_coeff_2" if num_stokes == 1 else "leg_coeff_8"
     names = ("extinction", "ssa", phase_name, "albedo")
@@ -702,6 +707,30 @@ def test_rust_successive_orders_native_products_match_fd_and_duality(num_stokes)
     rhs = sum(float((tangent[name] * gradient[name]).sum()) for name in names)
     np.testing.assert_allclose(lhs, rhs, rtol=2.0e-10, atol=2.0e-12)
 
+    jacobian = linearization.jacobian
+    jacobian_jvp = xr.zeros_like(linearization.value)
+    for name in names:
+        spec = linearization._backend.specs[name]
+        contribution = jacobian[name] * tangent[name]
+        contraction_dims = tuple(
+            dim for dim in spec.parameter_dims if dim not in spec.diagonal_dims
+        )
+        if contraction_dims:
+            contribution = contribution.sum(contraction_dims)
+        jacobian_jvp += contribution.transpose(*linearization.value.dims)
+        output_contraction_dims = tuple(
+            dim for dim in linearization.value.dims if dim not in spec.diagonal_dims
+        )
+        xr.testing.assert_allclose(
+            gradient[name],
+            (jacobian[name] * cotangent)
+            .sum(output_contraction_dims)
+            .transpose(*linearization.parameter_dims[name]),
+            rtol=2.0e-10,
+            atol=2.0e-12,
+        )
+    xr.testing.assert_allclose(jacobian_jvp, jvp, rtol=2.0e-10, atol=2.0e-12)
+
     epsilon = 2.0e-5
     radiances = []
     for sign in (-1.0, 1.0):
@@ -719,10 +748,38 @@ def test_rust_successive_orders_native_products_match_fd_and_duality(num_stokes)
     np.testing.assert_allclose(jvp.values, finite_difference, rtol=2.0e-5, atol=2e-9)
 
 
-@pytest.mark.parametrize("num_stokes", [1, 3])
-def test_rust_successive_orders_implicit_products_support_anderson(num_stokes):
+def test_rust_successive_orders_checkpoint_rejects_changed_atmosphere():
     engine, atmosphere = _successive_orders_native_scenario(
-        num_stokes=num_stokes, anderson_depth=3, converge=True
+        anderson_depth=3, converge=True
+    )
+    initial = engine.linearize(atmosphere)
+
+    atmosphere.storage.total_extinction[:] *= 0.8
+    atmosphere.mark_changed()
+    updated = engine.linearize(atmosphere)
+
+    assert float(np.abs(updated.value - initial.value).max()) > 0
+    tangent = updated.tangent_template[["extinction"]]
+    tangent["extinction"].data[:] = 1.0e-7
+    assert np.isfinite(updated.jvp(tangent)).all()
+
+
+@pytest.mark.parametrize("num_stokes", [1, 3])
+@pytest.mark.parametrize(
+    "initialization",
+    [
+        sk.SuccessiveOrdersInitialization.NoInitialization,
+        sk.SuccessiveOrdersInitialization.TwoStream,
+    ],
+)
+def test_rust_successive_orders_implicit_products_support_anderson(
+    num_stokes, initialization
+):
+    engine, atmosphere = _successive_orders_native_scenario(
+        num_stokes=num_stokes,
+        anderson_depth=3,
+        converge=True,
+        initialization=initialization,
     )
     linearization = engine.linearize(atmosphere)
     assert linearization.backends == {
@@ -748,12 +805,30 @@ def test_rust_successive_orders_implicit_products_support_anderson(num_stokes):
     rhs = sum(float((tangent[name] * gradient[name]).sum()) for name in names)
     np.testing.assert_allclose(lhs, rhs, rtol=2.0e-9, atol=2.0e-11)
 
+    jacobian = linearization.jacobian
+    for name in names:
+        spec = linearization._backend.specs[name]
+        output_contraction_dims = tuple(
+            dim for dim in linearization.value.dims if dim not in spec.diagonal_dims
+        )
+        xr.testing.assert_allclose(
+            gradient[name],
+            (jacobian[name] * cotangent)
+            .sum(output_contraction_dims)
+            .transpose(*spec.parameter_dims),
+            rtol=1.0e-6,
+            atol=2.0e-9,
+        )
+
     if num_stokes == 1:
         epsilon = 2.0e-5
         radiances = []
         for sign in (-1.0, 1.0):
             perturbed_engine, perturbed = _successive_orders_native_scenario(
-                num_stokes=num_stokes, anderson_depth=3, converge=True
+                num_stokes=num_stokes,
+                anderson_depth=3,
+                converge=True,
+                initialization=initialization,
             )
             perturbed.storage.total_extinction[:, 0] += (
                 sign * epsilon * tangent["extinction"].values
@@ -774,8 +849,47 @@ def test_rust_successive_orders_implicit_products_support_anderson(num_stokes):
         )
 
 
-def test_rust_successive_orders_anderson_products_require_convergence():
-    engine, atmosphere = _successive_orders_native_scenario(anderson_depth=3)
+def test_rust_successive_orders_forward_checkpoint_is_compact():
+    engine, atmosphere = _successive_orders_native_scenario(
+        anderson_depth=3, converge=True
+    )
+    assert engine._engine._retained_forward_state_bytes() == 0
 
-    with pytest.raises(RuntimeError, match="Failed to calculate JVP"):
-        engine.linearize(atmosphere)
+    engine.linearize(atmosphere)
+    retained_bytes = engine._engine._retained_forward_state_bytes()
+
+    assert retained_bytes > 0
+    assert retained_bytes < 1024**2
+
+
+@pytest.mark.parametrize(
+    "initialization",
+    [
+        sk.SuccessiveOrdersInitialization.NoInitialization,
+        sk.SuccessiveOrdersInitialization.TwoStream,
+    ],
+)
+def test_rust_successive_orders_nonconverged_anderson_returns_products(
+    initialization, capfd
+):
+    engine, atmosphere = _successive_orders_native_scenario(
+        anderson_depth=3, initialization=initialization
+    )
+    linearization = engine.linearize(atmosphere)
+    capfd.readouterr()
+
+    tangent = linearization.tangent_template[["extinction"]]
+    tangent["extinction"].data[:] = atmosphere.storage.total_extinction[
+        :, 0
+    ] * np.linspace(0.04, 0.12, atmosphere.num_locations)
+    jvp = linearization.jvp(tangent)
+    assert np.isfinite(jvp.values).all()
+    jvp_log = capfd.readouterr()
+    assert "approximate successive-orders JVP" in jvp_log.out + jvp_log.err
+
+    gradient = linearization.vjp(
+        xr.ones_like(linearization.value), parameters=("extinction", "ssa")
+    )
+    assert all(np.isfinite(gradient[name].values).all() for name in gradient)
+    vjp_log = capfd.readouterr()
+    assert "approximate successive-orders VJP" in vjp_log.out + vjp_log.err

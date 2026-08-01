@@ -128,6 +128,13 @@ pub mod ffi {
             solution_cotangent: &[f64],
         ) -> Result<()>;
 
+        fn restore_coefficient_solution(
+            solver: Pin<&mut RustSuccessiveOrdersSolver>,
+            scattering_coefficients: &[f64],
+            boundary_scattering_values: &[f64],
+            solution: &[f64],
+        ) -> Result<()>;
+
         fn solution(solver: &RustSuccessiveOrdersSolver) -> &[f64];
         fn solution_jvp(solver: &RustSuccessiveOrdersSolver) -> &[f64];
         fn transport_value_gradient(solver: &RustSuccessiveOrdersSolver) -> &[f64];
@@ -448,6 +455,23 @@ fn linearize_coefficients_vjp(
     this.scattering_coefficient_gradient = gradient.scattering_coefficients;
     this.boundary_scattering_value_gradient = gradient.dense_scattering_values;
     this.first_order_forcing_gradient = gradient.forcing;
+    Ok(())
+}
+
+fn restore_coefficient_solution(
+    mut solver: Pin<&mut RustSuccessiveOrdersSolver>,
+    scattering_coefficients: &[f64],
+    boundary_scattering_values: &[f64],
+    solution: &[f64],
+) -> Result<()> {
+    let this = solver.as_mut().get_mut();
+    this.solver
+        .problem_mut()
+        .set_scattering_coefficients(scattering_coefficients)?;
+    this.solver
+        .problem_mut()
+        .set_scattering_values(boundary_scattering_values)?;
+    this.solver.restore_converged_solution(solution)?;
     Ok(())
 }
 

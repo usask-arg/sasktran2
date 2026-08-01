@@ -14,6 +14,14 @@ pub enum MultipleScatterSource {
 
 #[pyclass(eq, eq_int)]
 #[derive(PartialEq, Clone)]
+pub enum SuccessiveOrdersInitialization {
+    NoInitialization,
+    DiscreteOrdinates,
+    TwoStream,
+}
+
+#[pyclass(eq, eq_int)]
+#[derive(PartialEq, Clone)]
 pub enum SingleScatterSource {
     NoSource,
     Exact,
@@ -588,6 +596,43 @@ impl PyConfig {
     ) -> PyResult<()> {
         self.config
             .with_successive_orders_altitude_grid_m(altitude_grid_m.as_deref().unwrap_or_default())
+            .into_pyresult()?;
+        Ok(())
+    }
+
+    #[getter]
+    fn successive_orders_initialization(&self) -> SuccessiveOrdersInitialization {
+        match self.config.successive_orders_initialization().unwrap() {
+            config::SuccessiveOrdersInitialization::None => {
+                SuccessiveOrdersInitialization::NoInitialization
+            }
+            config::SuccessiveOrdersInitialization::DiscreteOrdinates => {
+                SuccessiveOrdersInitialization::DiscreteOrdinates
+            }
+            config::SuccessiveOrdersInitialization::TwoStream => {
+                SuccessiveOrdersInitialization::TwoStream
+            }
+        }
+    }
+
+    #[setter]
+    fn set_successive_orders_initialization(
+        &mut self,
+        initialization: PyRef<'_, SuccessiveOrdersInitialization>,
+    ) -> PyResult<()> {
+        let initialization = match *initialization {
+            SuccessiveOrdersInitialization::NoInitialization => {
+                config::SuccessiveOrdersInitialization::None
+            }
+            SuccessiveOrdersInitialization::DiscreteOrdinates => {
+                config::SuccessiveOrdersInitialization::DiscreteOrdinates
+            }
+            SuccessiveOrdersInitialization::TwoStream => {
+                config::SuccessiveOrdersInitialization::TwoStream
+            }
+        };
+        self.config
+            .with_successive_orders_initialization(initialization)
             .into_pyresult()?;
         Ok(())
     }

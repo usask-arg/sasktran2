@@ -118,6 +118,16 @@ struct OutputVJP {
     int finalize();
 };
 
+struct OutputJacobianVJP {
+    std::unique_ptr<sasktran2::OutputInterface> impl;
+
+    OutputJacobianVJP(double* radiance, int nrad, int nstokes);
+    int assign_derivative(const char* name, double* jacobian, int nrad,
+                          int nstokes, int nparam);
+    int assign_surface_derivative(const char* name, double* jacobian, int nrad,
+                                  int nstokes, int nparam);
+};
+
 struct ViewingGeometry {
     sasktran2::viewinggeometry::ViewingGeometryContainer impl;
 

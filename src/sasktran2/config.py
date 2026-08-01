@@ -13,6 +13,7 @@ from sasktran2._core_rust import (
     SingleScatterSource,
     SpectralGridMode,
     StokesBasis,
+    SuccessiveOrdersInitialization,
     ThreadingLib,
     ThreadingModel,
     TwoStreamBackend,
@@ -526,6 +527,20 @@ class Config:
             msg = "successive_orders_altitude_grid_m must be strictly increasing"
             raise ValueError(msg)
         self._config.successive_orders_altitude_grid_m = altitude_grid.tolist()
+
+    @property
+    def successive_orders_initialization(self) -> SuccessiveOrdersInitialization:
+        """Initial diffuse source for the successive-orders solve.
+
+        ``NoInitialization`` starts from zero. ``TwoStream`` samples a cheap
+        local two-stream diffuse source while retaining the exact
+        single-scatter forcing, so a converged solve is unchanged.
+        """
+        return self._config.successive_orders_initialization
+
+    @successive_orders_initialization.setter
+    def successive_orders_initialization(self, value: SuccessiveOrdersInitialization):
+        self._config.successive_orders_initialization = value
 
     @property
     def init_successive_orders_with_discrete_ordinates(self) -> bool:

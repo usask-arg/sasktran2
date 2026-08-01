@@ -1,6 +1,6 @@
 use super::types::{
     AtmosphereAdjoints, AtmosphereBatch, AtmosphereJacobians, Geometry, LayerAdjoints, LayerInputs,
-    RadianceBatch, SourceMode, SphericalGeometry, TwoStreamError, View,
+    LocalSourceGeometry, RadianceBatch, SourceMode, SphericalGeometry, TwoStreamError, View,
 };
 
 const FOUR_PI: f64 = 4.0 * std::f64::consts::PI;
@@ -607,6 +607,74 @@ impl TwoStreamSolver {
                 },
             );
         Ok(radiance)
+    }
+
+    /// Evaluate the solved column as a local diffuse source function.
+    ///
+    /// The final row contains the diffuse surface source. Keeping it in the
+    /// same wavelength-contiguous batch lets the successive-orders source fill
+    /// its volume and boundary initial state without another output buffer.
+    pub fn solve_local_source_atmosphere(
+        &self,
+        atmosphere: &AtmosphereBatch,
+        samples: &LocalSourceGeometry,
+        workspace: &mut Workspace,
+    ) -> Result<RadianceBatch, TwoStreamError> {
+        validate_atmosphere(&self.geometry, self.mode, atmosphere)?;
+        samples.validate(self.geometry.num_layers())?;
+        let nw = atmosphere.num_wavelengths;
+        let num_rows = samples
+            .num_samples()
+            .checked_add(1)
+            .ok_or_else(|| TwoStreamError::invalid("local source allocation is too large"))?;
+        let value_count = num_rows
+            .checked_mul(nw)
+            .ok_or_else(|| TwoStreamError::invalid("local source allocation is too large"))?;
+        let mut source = RadianceBatch {
+            num_views: num_rows,
+            num_wavelengths: nw,
+            values: try_zeroed(value_count, "local source")?,
+        };
+        let ranges = wavelength_tile_ranges(self.execution, nw);
+        let output_tiles = super::explicit::split_radiance_outputs(&ranges, &mut source);
+
+        if ranges.len() == 1 {
+            let (start, len) = ranges[0];
+            let mut outputs = output_tiles;
+            super::explicit::solve_unprepared_local_source_forward_tile(
+                &self.geometry,
+                self.mode,
+                atmosphere,
+                samples,
+                start,
+                len,
+                &mut outputs[0],
+                &mut workspace.explicit,
+            );
+            drop(outputs);
+            return Ok(source);
+        }
+
+        use rayon::prelude::*;
+        ranges
+            .into_par_iter()
+            .zip(output_tiles.into_par_iter())
+            .for_each_init(
+                super::explicit::ExplicitWorkspace::default,
+                |local, ((start, len), mut output)| {
+                    super::explicit::solve_unprepared_local_source_forward_tile(
+                        &self.geometry,
+                        self.mode,
+                        atmosphere,
+                        samples,
+                        start,
+                        len,
+                        &mut output,
+                        local,
+                    );
+                },
+            );
+        Ok(source)
     }
 
     /// Fused atmospheric preparation, radiance, and one Jacobian per view.

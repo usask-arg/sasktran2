@@ -775,6 +775,18 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn sk_config_get_successive_orders_initialization(
+        config: *mut Config,
+        initialization: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_set_successive_orders_initialization(
+        config: *mut Config,
+        initialization: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn sk_config_get_successive_orders_max_iterations(
         config: *mut Config,
         max_iterations: *mut ::std::os::raw::c_int,
@@ -1019,6 +1031,11 @@ pub struct OutputJVP {
 pub struct OutputVJP {
     _unused: [u8; 0],
 }
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct OutputJacobianVJP {
+    _unused: [u8; 0],
+}
 unsafe extern "C" {
     pub fn sk_output_create(
         radiance: *mut f64,
@@ -1130,6 +1147,36 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn sk_output_vjp_finalize(output: *mut OutputVJP) -> ::std::os::raw::c_int;
 }
+unsafe extern "C" {
+    pub fn sk_output_jacobian_vjp_create(
+        radiance: *mut f64,
+        nrad: ::std::os::raw::c_int,
+        nstokes: ::std::os::raw::c_int,
+    ) -> *mut OutputJacobianVJP;
+}
+unsafe extern "C" {
+    pub fn sk_output_jacobian_vjp_destroy(output: *mut OutputJacobianVJP);
+}
+unsafe extern "C" {
+    pub fn sk_output_jacobian_vjp_assign_derivative(
+        output: *mut OutputJacobianVJP,
+        name: *const ::std::os::raw::c_char,
+        jacobian: *mut f64,
+        nrad: ::std::os::raw::c_int,
+        nstokes: ::std::os::raw::c_int,
+        nparam: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_output_jacobian_vjp_assign_surface_derivative(
+        output: *mut OutputJacobianVJP,
+        name: *const ::std::os::raw::c_char,
+        jacobian: *mut f64,
+        nrad: ::std::os::raw::c_int,
+        nstokes: ::std::os::raw::c_int,
+        nparam: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct Engine {
@@ -1164,6 +1211,12 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn sk_engine_retained_forward_state_bytes(
+        engine: *mut Engine,
+        bytes: *mut usize,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn sk_engine_supports_linearization(
         engine: *mut Engine,
         mode: ::std::os::raw::c_int,
@@ -1185,10 +1238,65 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn sk_engine_initialize_jvp(
+        engine: *mut Engine,
+        atmosphere: *mut Atmosphere,
+        output: *mut OutputJVP,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_engine_calculate_jvp_wavelength_thread(
+        engine: *mut Engine,
+        output: *mut OutputJVP,
+        wavelength: ::std::os::raw::c_int,
+        thread_idx: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_engine_finalize_jvp(engine: *mut Engine) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn sk_engine_calculate_vjp(
         engine: *mut Engine,
         atmosphere: *mut Atmosphere,
         output: *mut OutputVJP,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_engine_initialize_vjp(
+        engine: *mut Engine,
+        atmosphere: *mut Atmosphere,
+        output: *mut OutputVJP,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_engine_calculate_vjp_wavelength_thread(
+        engine: *mut Engine,
+        output: *mut OutputVJP,
+        wavelength: ::std::os::raw::c_int,
+        thread_idx: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_engine_calculate_jacobian_vjp(
+        engine: *mut Engine,
+        atmosphere: *mut Atmosphere,
+        output: *mut OutputJacobianVJP,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_engine_initialize_jacobian_vjp(
+        engine: *mut Engine,
+        atmosphere: *mut Atmosphere,
+        output: *mut OutputJacobianVJP,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_engine_calculate_jacobian_vjp_wavelength_thread(
+        engine: *mut Engine,
+        output: *mut OutputJacobianVJP,
+        wavelength: ::std::os::raw::c_int,
+        thread_idx: ::std::os::raw::c_int,
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {

@@ -58,6 +58,18 @@ namespace sasktran2 {
             successive_orders_rust = 4
         };
 
+        /** Initial state used by a successive-orders multiple-scatter solve.
+         *
+         * `none` starts from a zero diffuse source, `discrete_ordinates` uses
+         * the legacy DO source, and `twostream` uses the Rust two-stream local
+         * diffuse source while retaining the exact single-scatter forcing.
+         */
+        enum class SuccessiveOrdersInitialization {
+            none = 0,
+            discrete_ordinates = 1,
+            twostream = 2
+        };
+
         /** Enum that determines the accuracy of the weighting function solution
          * within the model.  The exact effect of each level is determined
          * primarily by the source functions included, however as a rough rule
@@ -506,6 +518,15 @@ namespace sasktran2 {
             m_successive_orders_altitude_grid_m = std::move(altitude_grid_m);
         }
 
+        SuccessiveOrdersInitialization
+        successive_orders_initialization() const {
+            return m_successive_orders_initialization;
+        }
+        void set_successive_orders_initialization(
+            SuccessiveOrdersInitialization initialization) {
+            m_successive_orders_initialization = initialization;
+        }
+
         /**
          *
          * @return The number of incoming points at each diffuse point in the HR
@@ -539,7 +560,8 @@ namespace sasktran2 {
          * @return  True if the HR source is to be initialized by the DO source
          */
         bool initialize_hr_with_do() const {
-            return m_initialize_hr_with_do_solution;
+            return m_successive_orders_initialization ==
+                   SuccessiveOrdersInitialization::discrete_ordinates;
         }
 
         /** Set to True if the HR source is to be intialized by the DO source
@@ -547,7 +569,13 @@ namespace sasktran2 {
          * @param init
          */
         void set_initialize_hr_with_do(bool init) {
-            m_initialize_hr_with_do_solution = init;
+            if (init) {
+                m_successive_orders_initialization =
+                    SuccessiveOrdersInitialization::discrete_ordinates;
+            } else if (initialize_hr_with_do()) {
+                m_successive_orders_initialization =
+                    SuccessiveOrdersInitialization::none;
+            }
         }
 
         /**
@@ -777,6 +805,7 @@ namespace sasktran2 {
         int m_successive_orders_anderson_depth;
         double m_successive_orders_damping;
         std::vector<double> m_successive_orders_altitude_grid_m;
+        SuccessiveOrdersInitialization m_successive_orders_initialization;
 
         bool m_apply_delta_scaling;
 
@@ -804,8 +833,6 @@ namespace sasktran2 {
         TwoStreamBackend m_two_stream_backend;
 
         SingleScatterPhaseMode m_singlescatter_phasemode;
-
-        bool m_initialize_hr_with_do_solution;
 
         // Diagnostic output control
         bool m_output_los_optical_depth;

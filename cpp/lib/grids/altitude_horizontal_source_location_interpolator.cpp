@@ -14,22 +14,21 @@ namespace sasktran2::grids {
                             interpolation::linear),
           m_ground_altitude(geometry.altitude_grid().grid()[0]) {}
 
-    int AltitudeHorizontalSourceLocationInterpolator::num_ground_points()
-        const {
+    int
+    AltitudeHorizontalSourceLocationInterpolator::num_ground_points() const {
         return static_cast<int>(m_horizontal_grid.grid().size());
     }
 
-    int AltitudeHorizontalSourceLocationInterpolator::num_interior_points()
-        const {
+    int
+    AltitudeHorizontalSourceLocationInterpolator::num_interior_points() const {
         return static_cast<int>(m_altitude_grid.grid().size()) *
                num_ground_points();
     }
 
     int AltitudeHorizontalSourceLocationInterpolator::interior_linear_index(
         int alt_index, int horizontal_index) const {
-        return alt_index +
-               horizontal_index *
-                   static_cast<int>(m_altitude_grid.grid().size());
+        return alt_index + horizontal_index *
+                               static_cast<int>(m_altitude_grid.grid().size());
     }
 
     int AltitudeHorizontalSourceLocationInterpolator::ground_linear_index(
@@ -37,16 +36,14 @@ namespace sasktran2::grids {
         return num_interior_points() + horizontal_index;
     }
 
-    Eigen::Vector3d
-    AltitudeHorizontalSourceLocationInterpolator::grid_location(
+    Eigen::Vector3d AltitudeHorizontalSourceLocationInterpolator::grid_location(
         const sasktran2::Coordinates&, int location_index) const {
         const int num_altitudes =
             static_cast<int>(m_altitude_grid.grid().size());
         const int alt_index = location_index % num_altitudes;
         const int horizontal_index = location_index / num_altitudes;
-        const double radius =
-            m_geometry.coordinates().earth_radius() +
-            m_altitude_grid.grid()[alt_index];
+        const double radius = m_geometry.coordinates().earth_radius() +
+                              m_altitude_grid.grid()[alt_index];
         return radius * m_geometry.coordinates().unit_vector_from_angles(
                             m_horizontal_grid.grid()[horizontal_index], 0.0);
     }
@@ -62,8 +59,7 @@ namespace sasktran2::grids {
 
     void AltitudeHorizontalSourceLocationInterpolator::
         interior_interpolation_weights(
-            const sasktran2::Coordinates&,
-            const sasktran2::Location& location,
+            const sasktran2::Coordinates&, const sasktran2::Location& location,
             std::vector<std::pair<int, double>>& weights, int& num_interp) {
         std::array<int, 2> alt_index;
         std::array<int, 2> horizontal_index;
@@ -94,12 +90,10 @@ namespace sasktran2::grids {
         }
     }
 
-    void AltitudeHorizontalSourceLocationInterpolator::
-        ground_interpolation_weights(
-            const sasktran2::Coordinates&,
-            const sasktran2::Location& location,
-            std::vector<std::pair<int, double>>& weights,
-            int& num_interp) const {
+    void
+    AltitudeHorizontalSourceLocationInterpolator::ground_interpolation_weights(
+        const sasktran2::Coordinates&, const sasktran2::Location& location,
+        std::vector<std::pair<int, double>>& weights, int& num_interp) const {
         std::array<int, 2> horizontal_index;
         std::array<double, 2> horizontal_weight;
         m_horizontal_grid.calculate_interpolation_weights(

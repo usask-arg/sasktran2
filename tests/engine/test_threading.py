@@ -73,17 +73,24 @@ def test_threading(threading_lib, threading_model):
 
 
 @pytest.mark.parametrize(
-    "threading_model",
-    [sk.ThreadingModel.Wavelength, sk.ThreadingModel.Source],
+    ("threading_lib", "threading_model"),
+    [
+        (sk.ThreadingLib.Rayon, sk.ThreadingModel.Wavelength),
+        (sk.ThreadingLib.OpenMP, sk.ThreadingModel.Wavelength),
+        (sk.ThreadingLib.OpenMP, sk.ThreadingModel.Source),
+    ],
 )
-def test_native_linearization_threading(threading_model):
-    if not build_info.openmp_support_enabled():
+def test_native_linearization_threading(threading_lib, threading_model):
+    if (
+        threading_lib == sk.ThreadingLib.OpenMP
+        and not build_info.openmp_support_enabled()
+    ):
         pytest.skip("OpenMP support is not enabled in this build of sasktran2.")
 
     config = sk.Config()
     config.single_scatter_source = sk.SingleScatterSource.Exact
     config.multiple_scatter_source = sk.MultipleScatterSource.NoSource
-    config.threading_lib = sk.ThreadingLib.OpenMP
+    config.threading_lib = threading_lib
     config.threading_model = threading_model
     geometry = sk.Geometry1D(
         0.6,
@@ -119,3 +126,34 @@ def test_native_linearization_threading(threading_model):
     np.testing.assert_allclose(
         threaded.vjp(cotangent)["pressure_pa"], serial_vjp, rtol=1e-12
     )
+
+
+def test_rayon_vjp_initializes_idle_worker_storage():
+    config = sk.Config()
+    config.single_scatter_source = sk.SingleScatterSource.Exact
+    config.multiple_scatter_source = sk.MultipleScatterSource.NoSource
+    config.threading_lib = sk.ThreadingLib.Rayon
+    config.threading_model = sk.ThreadingModel.Wavelength
+    config.num_threads = 4
+
+    geometry = sk.Geometry1D(
+        0.6,
+        0.0,
+        6_372_000.0,
+        np.arange(0.0, 30_001.0, 5_000.0),
+        sk.InterpolationMethod.LinearInterpolation,
+        sk.GeometryType.Spherical,
+    )
+    viewing = sk.ViewingGeometry()
+    viewing.add_ray(sk.GroundViewingSolar(0.6, 0.2, 0.8, 100_000.0))
+    atmosphere = sk.Atmosphere(geometry, config, wavelengths_nm=np.array([350.0]))
+    sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
+    atmosphere["rayleigh"] = sk.constituent.Rayleigh()
+
+    linearization = sk.Engine(config, geometry, viewing).linearize(atmosphere)
+    cotangent = linearization.value * 0 + 0.7
+    for _ in range(128):
+        gradient = linearization.vjp(cotangent, parameters=("pressure_pa",))[
+            "pressure_pa"
+        ]
+        assert np.isfinite(gradient).all()

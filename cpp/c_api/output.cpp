@@ -125,6 +125,54 @@ int OutputVJP::finalize() {
     return -2;
 }
 
+OutputJacobianVJP::OutputJacobianVJP(double* radiance, int nrad, int nstokes) {
+    Eigen::Map<Eigen::VectorXd> radiance_map(radiance, nrad * nstokes);
+    if (nstokes == 1) {
+        impl = std::make_unique<sasktran2::OutputJacobianVJP<1>>(radiance_map);
+    } else if (nstokes == 3) {
+        impl = std::make_unique<sasktran2::OutputJacobianVJP<3>>(radiance_map);
+    }
+}
+
+int OutputJacobianVJP::assign_derivative(const char* name, double* jacobian,
+                                         int nrad, int nstokes, int nparam) {
+    if (impl == nullptr || jacobian == nullptr || nparam < 0) {
+        return -1;
+    }
+    Eigen::Map<Eigen::MatrixXd> jacobian_map(jacobian, nrad * nstokes, nparam);
+    if (auto* output =
+            dynamic_cast<sasktran2::OutputJacobianVJP<1>*>(impl.get())) {
+        output->set_derivative_jacobian_memory(name, jacobian_map);
+        return 0;
+    }
+    if (auto* output =
+            dynamic_cast<sasktran2::OutputJacobianVJP<3>*>(impl.get())) {
+        output->set_derivative_jacobian_memory(name, jacobian_map);
+        return 0;
+    }
+    return -2;
+}
+
+int OutputJacobianVJP::assign_surface_derivative(const char* name,
+                                                 double* jacobian, int nrad,
+                                                 int nstokes, int nparam) {
+    if (impl == nullptr || jacobian == nullptr || nparam < 0) {
+        return -1;
+    }
+    Eigen::Map<Eigen::MatrixXd> jacobian_map(jacobian, nrad * nstokes, nparam);
+    if (auto* output =
+            dynamic_cast<sasktran2::OutputJacobianVJP<1>*>(impl.get())) {
+        output->set_surface_jacobian_memory(name, jacobian_map);
+        return 0;
+    }
+    if (auto* output =
+            dynamic_cast<sasktran2::OutputJacobianVJP<3>*>(impl.get())) {
+        output->set_surface_jacobian_memory(name, jacobian_map);
+        return 0;
+    }
+    return -2;
+}
+
 int OutputC::assign_derivative_memory(const char* name,
                                       double* derivative_mapping, int nrad,
                                       int nstokes, int nderiv) {
@@ -347,5 +395,32 @@ int sk_output_vjp_assign_surface_gradient(OutputVJP* output, const char* name,
 
 int sk_output_vjp_finalize(OutputVJP* output) {
     return output == nullptr ? -1 : output->finalize();
+}
+
+OutputJacobianVJP* sk_output_jacobian_vjp_create(double* radiance, int nrad,
+                                                 int nstokes) {
+    return new OutputJacobianVJP(radiance, nrad, nstokes);
+}
+
+void sk_output_jacobian_vjp_destroy(OutputJacobianVJP* output) {
+    delete output;
+}
+
+int sk_output_jacobian_vjp_assign_derivative(OutputJacobianVJP* output,
+                                             const char* name, double* jacobian,
+                                             int nrad, int nstokes,
+                                             int nparam) {
+    return output == nullptr ? -1
+                             : output->assign_derivative(name, jacobian, nrad,
+                                                         nstokes, nparam);
+}
+
+int sk_output_jacobian_vjp_assign_surface_derivative(OutputJacobianVJP* output,
+                                                     const char* name,
+                                                     double* jacobian, int nrad,
+                                                     int nstokes, int nparam) {
+    return output == nullptr ? -1
+                             : output->assign_surface_derivative(
+                                   name, jacobian, nrad, nstokes, nparam);
 }
 }

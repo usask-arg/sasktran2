@@ -328,6 +328,38 @@ fn batch_matches_independent_wavelengths() {
 }
 
 #[test]
+fn local_source_sampling_matches_serial_and_rayon_execution() {
+    let n = 4;
+    let nw = 17;
+    let samples = LocalSourceGeometry::new(
+        vec![0, 1, 2, 3],
+        vec![0.0, 0.35, 0.7, 1.0],
+        vec![-0.8, -0.25, 0.4, 0.9],
+        vec![0.0, 0.4, 1.2, -0.7],
+    )
+    .unwrap();
+
+    for mode in [SourceMode::Solar, SourceMode::Thermal] {
+        let atmosphere = atmosphere(n, nw, mode == SourceMode::Thermal);
+        let serial = TwoStreamSolver::new(geometry(n), mode)
+            .unwrap()
+            .with_execution_policy(ExecutionPolicy::Serial)
+            .solve_local_source_atmosphere(&atmosphere, &samples, &mut Workspace::new())
+            .unwrap();
+        let rayon = TwoStreamSolver::new(geometry(n), mode)
+            .unwrap()
+            .with_execution_policy(ExecutionPolicy::Rayon)
+            .solve_local_source_atmosphere(&atmosphere, &samples, &mut Workspace::new())
+            .unwrap();
+
+        assert_eq!(serial.num_views, samples.num_samples() + 1);
+        assert_eq!(serial.num_wavelengths, nw);
+        assert!(serial.values.iter().all(|value| value.is_finite()));
+        assert_wide_close(&serial.values, &rayon.values);
+    }
+}
+
+#[test]
 fn fused_vjp_returns_forward_radiance() {
     let n = 4;
     let nw = 5;

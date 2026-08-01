@@ -54,6 +54,8 @@ class SuccessiveOrdersProducts350:
 
     def setup(self, num_stokes, anderson_depth):
         engine, atmosphere = _scenario(num_stokes, anderson_depth=anderson_depth)
+        self.engine = engine
+        self.atmosphere = atmosphere
         self.linearization = engine.linearize(atmosphere)
 
         phase_name = "leg_coeff_2" if num_stokes == 1 else "leg_coeff_8"
@@ -71,3 +73,11 @@ class SuccessiveOrdersProducts350:
 
     def time_vjp(self, num_stokes, anderson_depth):  # noqa: ARG002
         self.linearization.vjp(self.cotangent, parameters=self.parameters)
+
+    def time_full_jacobian(self, num_stokes, anderson_depth):  # noqa: ARG002
+        # Construct a fresh local model because the Jacobian property is
+        # intentionally cached after its first materialization.
+        _ = self.engine.linearize(self.atmosphere).jacobian
+
+    def peakmem_full_jacobian(self, num_stokes, anderson_depth):  # noqa: ARG002
+        return self.engine.linearize(self.atmosphere).jacobian

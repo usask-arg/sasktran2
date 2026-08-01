@@ -67,17 +67,11 @@ mod thermal_profile_tests {
         assert_eq!(d_od, 0.0);
 
         let epsilon = 1.0e-6;
-        let numeric_top = (thermal_profile_slope(
-            emission + epsilon,
-            emission,
-            optical_depth,
-        ) - thermal_profile_slope(emission - epsilon, emission, optical_depth))
+        let numeric_top = (thermal_profile_slope(emission + epsilon, emission, optical_depth)
+            - thermal_profile_slope(emission - epsilon, emission, optical_depth))
             / (2.0 * epsilon);
-        let numeric_bottom = (thermal_profile_slope(
-            emission,
-            emission + epsilon,
-            optical_depth,
-        ) - thermal_profile_slope(emission, emission - epsilon, optical_depth))
+        let numeric_bottom = (thermal_profile_slope(emission, emission + epsilon, optical_depth)
+            - thermal_profile_slope(emission, emission - epsilon, optical_depth))
             / (2.0 * epsilon);
 
         assert!((d_top - numeric_top).abs() < 1.0e-10);
@@ -99,7 +93,8 @@ mod simd;
 pub use solver::{ExecutionPolicy, TwoStreamSolver, Workspace};
 pub use types::{
     AtmosphereAdjoints, AtmosphereBatch, AtmosphereJacobians, Geometry, LayerAdjoints, LayerInputs,
-    RadianceBatch, SourceMode, SphericalGeometry, SphericalRayGeometry, TwoStreamError, View,
+    LocalSourceGeometry, RadianceBatch, SourceMode, SphericalGeometry, SphericalRayGeometry,
+    TwoStreamError, View,
 };
 
 #[cfg(test)]

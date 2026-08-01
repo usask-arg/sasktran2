@@ -250,16 +250,42 @@ namespace sasktran2::solartransmission {
         int numderiv = m_atmosphere->num_scattering_deriv_groups();
 
         if constexpr (NSTOKES == 1) {
-            m_d_phase.resize(1, (int)m_internal_to_geometry.size(), numderiv,
+            m_d_phase.resize(numderiv, 1, (int)m_internal_to_geometry.size(),
                              m_config->num_wavelength_threads());
         } else {
-            m_d_phase.resize(2, (int)m_internal_to_geometry.size(), numderiv,
+            m_d_phase.resize(numderiv, 2, (int)m_internal_to_geometry.size(),
                              m_config->num_wavelength_threads());
         }
     }
 
     template <int NSTOKES>
     void PhaseHandler<NSTOKES>::calculate(int wavelidx, int threadidx) {
+        calculate_impl(wavelidx, threadidx, true);
+    }
+
+    template <int NSTOKES>
+    void PhaseHandler<NSTOKES>::calculate_jvp(
+        int wavelidx, int threadidx,
+        const std::vector<int>& active_derivative_groups) {
+        calculate_impl(wavelidx, threadidx, true, &active_derivative_groups);
+    }
+
+    template <int NSTOKES>
+    void PhaseHandler<NSTOKES>::calculate_vjp(
+        int wavelidx, int threadidx,
+        const std::vector<int>& active_derivative_groups) {
+        calculate_impl(wavelidx, threadidx, true, &active_derivative_groups);
+    }
+
+    template <int NSTOKES>
+    void PhaseHandler<NSTOKES>::calculate_value(int wavelidx, int threadidx) {
+        calculate_impl(wavelidx, threadidx, false);
+    }
+
+    template <int NSTOKES>
+    void PhaseHandler<NSTOKES>::calculate_impl(
+        int wavelidx, int threadidx, bool calculate_derivatives,
+        const std::vector<int>* active_derivative_groups) {
         if (m_scalar_on_demand) {
             m_current_wavelength.at(threadidx) = wavelidx;
             return;
@@ -270,7 +296,9 @@ namespace sasktran2::solartransmission {
             sasktran2::Config::SingleScatterPhaseMode::from_legendre) {
             // Set all elements with this threadidx to zero
             m_phase.chip(threadidx, 2).setZero();
-            m_d_phase.chip(threadidx, 3).setZero();
+            if (calculate_derivatives && active_derivative_groups == nullptr) {
+                m_d_phase.chip(threadidx, 3).setZero();
+            }
 
             Eigen::array<Eigen::Index, 3> dims = m_phase.dimensions();
             Eigen::array<Eigen::Index, 3> offsets = {0, 1, 0};
@@ -311,13 +339,14 @@ namespace sasktran2::solartransmission {
                             .dot(m_wigner_d02(Eigen::seq(0, max_order - 1),
                                               scat_index));
                 }
-                for (int d = 0; d < m_atmosphere->num_scattering_deriv_groups();
-                     ++d) {
-
+                if (!calculate_derivatives) {
+                    continue;
+                }
+                const auto calculate_derivative = [&](int d) {
                     int d_max_order = m_atmosphere->storage().d_max_order[d](
                         atmo_index, wavelidx);
                     if constexpr (NSTOKES == 1) {
-                        m_d_phase(0, i, d, threadidx) =
+                        m_d_phase(d, 0, i, threadidx) =
                             Eigen::Map<const Eigen::VectorXd>(
                                 &m_atmosphere->storage().d_leg_coeff(
                                     0, atmo_index, wavelidx, d),
@@ -326,7 +355,7 @@ namespace sasktran2::solartransmission {
                                     m_wigner_d00(Eigen::seq(0, d_max_order - 1),
                                                  scat_index));
                     } else {
-                        m_d_phase(0, i, d, threadidx) =
+                        m_d_phase(d, 0, i, threadidx) =
                             Eigen::Map<const Eigen::VectorXd, 0,
                                        Eigen::InnerStride<4>>(
                                 &m_atmosphere->storage().d_leg_coeff(
@@ -335,7 +364,7 @@ namespace sasktran2::solartransmission {
                                 .dot(
                                     m_wigner_d00(Eigen::seq(0, d_max_order - 1),
                                                  scat_index));
-                        m_d_phase(1, i, d, threadidx) =
+                        m_d_phase(d, 1, i, threadidx) =
                             Eigen::Map<const Eigen::VectorXd, 0,
                                        Eigen::InnerStride<4>>(
                                 &m_atmosphere->storage().d_leg_coeff(
@@ -344,6 +373,16 @@ namespace sasktran2::solartransmission {
                                 .dot(
                                     m_wigner_d02(Eigen::seq(0, d_max_order - 1),
                                                  scat_index));
+                    }
+                };
+                if (active_derivative_groups == nullptr) {
+                    for (int d = 0;
+                         d < m_atmosphere->num_scattering_deriv_groups(); ++d) {
+                        calculate_derivative(d);
+                    }
+                } else {
+                    for (const int d : *active_derivative_groups) {
+                        calculate_derivative(d);
                     }
                 }
             }
@@ -545,6 +584,12 @@ namespace sasktran2::solartransmission {
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>& source)
         const {
         const double source_amplitude = source.value(0);
+        if (source.derivative_size() == 0) {
+            source.value =
+                source_amplitude * scatter_value(threadidx, losidx, layeridx,
+                                                 index_weights, is_entrance);
+            return;
+        }
         const auto phase = scatter_and_accumulate_derivative(
             threadidx, losidx, layeridx, index_weights, is_entrance,
             source_amplitude, 1.0, source);
@@ -665,7 +710,7 @@ namespace sasktran2::solartransmission {
                         internal_indices[derivative_internal_offset++];
                     target.deriv(0, derivative_start + index_weight.first) +=
                         derivative_scale * source_amplitude *
-                        m_d_phase(0, internal_index, d, threadidx) *
+                        m_d_phase(d, 0, internal_index, threadidx) *
                         index_weight.second;
                 }
             }
@@ -726,16 +771,16 @@ namespace sasktran2::solartransmission {
                                       d * m_geometry.size() + geometry_index;
                     target.deriv(0, deriv_index) +=
                         derivative_scale * source_amplitude *
-                        m_d_phase(0, internal_index, d, threadidx) * weight;
+                        m_d_phase(d, 0, internal_index, threadidx) * weight;
 
                     target.deriv(1, deriv_index) +=
                         derivative_scale * source_amplitude *
-                        m_d_phase(1, internal_index, d, threadidx) * weight *
+                        m_d_phase(d, 1, internal_index, threadidx) * weight *
                         (-C2);
 
                     target.deriv(2, deriv_index) +=
                         derivative_scale * source_amplitude *
-                        m_d_phase(1, internal_index, d, threadidx) * weight *
+                        m_d_phase(d, 1, internal_index, threadidx) * weight *
                         (-S2);
                 };
 
@@ -817,15 +862,14 @@ namespace sasktran2::solartransmission {
         int threadidx, int losidx, int layeridx,
         const raytracing::GridWeightStencilView& index_weights,
         bool is_entrance, Eigen::Ref<const Eigen::VectorXd> native_tangent,
+        const std::vector<int>& active_derivative_groups,
         Eigen::Vector<double, NSTOKES>& phase,
         Eigen::Vector<double, NSTOKES>& phase_jvp) const {
         phase = scatter_value(threadidx, losidx, layeridx, index_weights,
                               is_entrance);
         phase_jvp.setZero();
         if (m_scalar_on_demand) {
-            for (int derivative = 0;
-                 derivative < m_atmosphere->num_scattering_deriv_groups();
-                 ++derivative) {
+            for (const int derivative : active_derivative_groups) {
                 const int derivative_start =
                     m_atmosphere->scat_deriv_start_index() +
                     derivative * m_geometry.size();
@@ -849,9 +893,7 @@ namespace sasktran2::solartransmission {
             is_entrance ? m_geometry_entrance_to_internal[losidx][layeridx]
                         : m_geometry_exit_to_internal[losidx][layeridx];
 
-        for (int derivative = 0;
-             derivative < m_atmosphere->num_scattering_deriv_groups();
-             ++derivative) {
+        for (const int derivative : active_derivative_groups) {
             int internal_offset = 0;
             const int derivative_start =
                 m_atmosphere->scat_deriv_start_index() +
@@ -865,14 +907,15 @@ namespace sasktran2::solartransmission {
                 const double direction =
                     native_tangent(derivative_start + weight.first) *
                     weight.second;
-                phase_jvp(0) += direction * m_d_phase(0, internal_index,
-                                                      derivative, threadidx);
+                phase_jvp(0) +=
+                    direction *
+                    m_d_phase(derivative, 0, internal_index, threadidx);
                 if constexpr (NSTOKES == 3) {
                     const auto& scatter_angle = m_scatter_angles
                         [m_internal_to_cos_scatter[internal_index]];
                     const double polarized =
                         direction *
-                        m_d_phase(1, internal_index, derivative, threadidx);
+                        m_d_phase(derivative, 1, internal_index, threadidx);
                     phase_jvp(1) -= scatter_angle[1] * polarized;
                     phase_jvp(2) -= scatter_angle[2] * polarized;
                 }
@@ -885,24 +928,39 @@ namespace sasktran2::solartransmission {
         int threadidx, int losidx, int layeridx,
         const raytracing::GridWeightStencilView& index_weights,
         bool is_entrance, const Eigen::Vector<double, NSTOKES>& phase_cotangent,
+        const std::vector<int>& active_derivative_groups,
         Eigen::Ref<Eigen::VectorXd> native_gradient) const {
         if (m_scalar_on_demand) {
-            for (int derivative = 0;
-                 derivative < m_atmosphere->num_scattering_deriv_groups();
-                 ++derivative) {
-                const int derivative_start =
-                    m_atmosphere->scat_deriv_start_index() +
-                    derivative * m_geometry.size();
-                for (std::size_t index = 0; index < index_weights.size();
-                     ++index) {
-                    const auto weight = index_weights[index];
-                    if (weight.second == 0.0) {
-                        continue;
-                    }
-                    native_gradient(derivative_start + weight.first) +=
-                        weight.second * phase_cotangent(0) *
-                        scalar_phase_on_demand(threadidx, losidx, weight.first,
-                                               derivative);
+            const int wavelength = m_current_wavelength[threadidx];
+            const int scatter_index = m_los_to_cos_scatter[losidx];
+            if (wavelength < 0 || scatter_index < 0) {
+                throw std::logic_error(
+                    "On-demand scalar phase evaluated before initialization");
+            }
+            const auto& storage = m_atmosphere->storage();
+            const int geometry_size = m_geometry.size();
+            const int derivative_base = m_atmosphere->scat_deriv_start_index();
+            const double* wigner = &m_wigner_d00(0, scatter_index);
+            for (std::size_t index = 0; index < index_weights.size(); ++index) {
+                const auto weight = index_weights[index];
+                if (weight.second == 0.0) {
+                    continue;
+                }
+                const double weighted_cotangent =
+                    weight.second * phase_cotangent(0);
+                for (const int derivative : active_derivative_groups) {
+                    const int max_order = storage.d_max_order[derivative](
+                        weight.first, wavelength);
+                    const double* coefficients = &storage.d_leg_coeff(
+                        0, weight.first, wavelength, derivative);
+                    const double phase_derivative =
+                        Eigen::Map<const Eigen::VectorXd>(coefficients,
+                                                          max_order)
+                            .dot(Eigen::Map<const Eigen::VectorXd>(wigner,
+                                                                   max_order));
+                    native_gradient(
+                        derivative_base + derivative * geometry_size +
+                        weight.first) += weighted_cotangent * phase_derivative;
                 }
             }
             return;
@@ -911,32 +969,39 @@ namespace sasktran2::solartransmission {
         const auto& internal_indices =
             is_entrance ? m_geometry_entrance_to_internal[losidx][layeridx]
                         : m_geometry_exit_to_internal[losidx][layeridx];
-        for (int derivative = 0;
-             derivative < m_atmosphere->num_scattering_deriv_groups();
-             ++derivative) {
-            int internal_offset = 0;
-            const int derivative_start =
-                m_atmosphere->scat_deriv_start_index() +
-                derivative * m_geometry.size();
-            for (std::size_t index = 0; index < index_weights.size(); ++index) {
-                const auto weight = index_weights[index];
-                if (weight.second == 0.0) {
-                    continue;
-                }
-                const int internal_index = internal_indices[internal_offset++];
+        int internal_offset = 0;
+        for (std::size_t index = 0; index < index_weights.size(); ++index) {
+            const auto weight = index_weights[index];
+            if (weight.second == 0.0) {
+                continue;
+            }
+            const int internal_index = internal_indices[internal_offset++];
+            double polarized_cotangent = 0.0;
+            if constexpr (NSTOKES == 3) {
+                const auto& scatter_angle =
+                    m_scatter_angles[m_internal_to_cos_scatter[internal_index]];
+                polarized_cotangent = -scatter_angle[1] * phase_cotangent(1) -
+                                      scatter_angle[2] * phase_cotangent(2);
+            }
+            const int geometry_index = weight.first;
+            const double weighted_scalar_cotangent =
+                weight.second * phase_cotangent(0);
+            const double weighted_polarized_cotangent =
+                weight.second * polarized_cotangent;
+            for (const int derivative : active_derivative_groups) {
+                const int derivative_start =
+                    m_atmosphere->scat_deriv_start_index() +
+                    derivative * m_geometry.size();
                 double derivative_value =
-                    phase_cotangent(0) *
-                    m_d_phase(0, internal_index, derivative, threadidx);
+                    weighted_scalar_cotangent *
+                    m_d_phase(derivative, 0, internal_index, threadidx);
                 if constexpr (NSTOKES == 3) {
-                    const auto& scatter_angle = m_scatter_angles
-                        [m_internal_to_cos_scatter[internal_index]];
                     derivative_value +=
-                        (-scatter_angle[1] * phase_cotangent(1) -
-                         scatter_angle[2] * phase_cotangent(2)) *
-                        m_d_phase(1, internal_index, derivative, threadidx);
+                        weighted_polarized_cotangent *
+                        m_d_phase(derivative, 1, internal_index, threadidx);
                 }
-                native_gradient(derivative_start + weight.first) +=
-                    weight.second * derivative_value;
+                native_gradient(derivative_start + geometry_index) +=
+                    derivative_value;
             }
         }
     }

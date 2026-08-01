@@ -16,8 +16,10 @@ namespace sasktran2 {
           m_successive_orders_relative_tolerance(1.0e-6),
           m_successive_orders_absolute_tolerance(1.0e-12),
           m_successive_orders_anderson_depth(3),
-          m_successive_orders_damping(1.0), m_do_forced_azimuth(-1),
-          m_do_backprop(false),
+          m_successive_orders_damping(1.0),
+          m_successive_orders_initialization(
+              SuccessiveOrdersInitialization::none),
+          m_do_forced_azimuth(-1), m_do_backprop(false),
           m_singlescatter_phasemode(SingleScatterPhaseMode::from_legendre),
           m_threading_model(ThreadingModel::wavelength),
 #ifdef SKTRAN_RUST_SUPPORT
@@ -25,7 +27,6 @@ namespace sasktran2 {
 #else
           m_two_stream_backend(TwoStreamBackend::cpp),
 #endif
-          m_initialize_hr_with_do_solution(false),
           m_output_los_optical_depth(false),
           m_input_validation_mode(InputValidationMode::strict),
           m_log_level(spdlog::level::warn) {
@@ -148,6 +149,19 @@ namespace sasktran2 {
                     "1]");
                 sasktran2::validation::throw_configuration_error();
             }
+            if (m_successive_orders_initialization ==
+                SuccessiveOrdersInitialization::discrete_ordinates) {
+                spdlog::critical(
+                    "successive_orders_initialization=discrete_ordinates is "
+                    "not supported by successive_orders_rust");
+                sasktran2::validation::throw_configuration_error();
+            }
+        } else if (m_successive_orders_initialization ==
+                   SuccessiveOrdersInitialization::twostream) {
+            spdlog::critical(
+                "successive_orders_initialization=twostream requires "
+                "multiple_scatter_source=successive_orders_rust");
+            sasktran2::validation::throw_configuration_error();
         }
 
         for (std::size_t altitude_index = 0;

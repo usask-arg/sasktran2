@@ -34,6 +34,7 @@ from ._core_rust import (
     SingleScatterSource,
     SpectralGridMode,
     StokesBasis,
+    SuccessiveOrdersInitialization,
     ThreadingLib,
     ThreadingModel,
     TwoStreamBackend,

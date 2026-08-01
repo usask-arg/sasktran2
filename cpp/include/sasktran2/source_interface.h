@@ -120,6 +120,13 @@ template <int NSTOKES> class SourceTermInterface {
     virtual void initialize_atmosphere(
         const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere){};
 
+    /** Initializes atmosphere state for matrix-free JVP/VJP products. Sources
+     *  may omit storage used only by the materialized-Jacobian path. */
+    virtual void initialize_atmosphere_native(
+        const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere) {
+        initialize_atmosphere(atmosphere);
+    }
+
     /** Sets the wavelength block capacity negotiated by the engine for the
      * current calculation. Sources may use this to size per-block storage. */
     virtual void set_wavelength_block_capacity(int block_capacity) {}
@@ -127,6 +134,48 @@ template <int NSTOKES> class SourceTermInterface {
     /** Triggers calculation for a contiguous block of wavelengths. */
     virtual void calculate(const sasktran2::WavelengthBlock<>& block,
                            int threadidx){};
+
+    /** Calculates only forward source values, omitting derivative state that
+     *  is unnecessary for a zero-tangent JVP. */
+    virtual void calculate_value(const sasktran2::WavelengthBlock<>& block,
+                                 int threadidx) {
+        calculate(block, threadidx);
+    }
+
+    /** Starts retaining compact forward state for later derivative products.
+     * Sources that do not implement checkpointing may ignore this hook. */
+    virtual void begin_forward_state_capture(int num_wavelengths) {}
+
+    /** Stops capturing new forward state while retaining completed
+     * checkpoints for later use. */
+    virtual void end_forward_state_capture() {}
+
+    /** Restores retained forward state for one wavelength. Returns false when
+     * no compatible checkpoint is available. */
+    virtual bool restore_forward_state(int wavelidx, int threadidx) {
+        return false;
+    }
+
+    /** Announces the tangent that will be used by an upcoming JVP before a
+     * source restores or recalculates its forward state. Sources with
+     * expensive derivative caches can use this to materialize only the active
+     * directional data. */
+    virtual void
+    prepare_forward_state_for_jvp(int, int, Eigen::Ref<const Eigen::VectorXd>) {
+    }
+
+    /** Restores retained state for a JVP. Sources may defer work that can be
+     * fused with prepare_jvp; the default restores the complete primal state.
+     */
+    virtual bool restore_forward_state_for_jvp(
+        int wavelidx, int threadidx,
+        Eigen::Ref<const Eigen::VectorXd> native_tangent) {
+        (void)native_tangent;
+        return restore_forward_state(wavelidx, threadidx);
+    }
+
+    /** Number of bytes retained by completed forward-state checkpoints. */
+    virtual std::size_t retained_forward_state_bytes() const { return 0; }
 
     /** Maximum number of wavelengths this source can process together. */
     virtual int maximum_wavelength_block_size() const { return 1; }
@@ -246,7 +295,9 @@ template <int NSTOKES> class SourceTermInterface {
     virtual void prepare_jvp(int, int, Eigen::Ref<const Eigen::VectorXd>) {}
 
     /** Clears source-wide cotangent accumulation before LOS VJP evaluation. */
-    virtual void prepare_vjp(int, int) {}
+    virtual void
+    prepare_vjp(int, int,
+                Eigen::Ref<const Eigen::VectorXi> active_derivatives) {}
 
     /** Finishes a source-wide VJP after all LOS cotangents have been
      * accumulated. */
@@ -295,6 +346,7 @@ template <int NSTOKES> class SourceTermInterface {
                           const sasktran2::raytracing::GridWeightStencilView&,
                           const sasktran2::WavelengthBlockODView&,
                           const Eigen::Vector<double, NSTOKES>&,
+                          Eigen::Ref<Eigen::Vector<double, NSTOKES>>,
                           Eigen::Ref<Eigen::VectorXd>) const {
         throw std::logic_error(
             "Native integrated source VJP is not implemented");

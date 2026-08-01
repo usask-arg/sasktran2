@@ -74,6 +74,9 @@ template <int NSTOKES> class Sasktran2 : public Sasktran2Interface {
     std::vector<sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>>
         m_thread_flux;
 
+    /** Worker-local native gradient scratch used by staged VJP evaluation. */
+    mutable std::vector<Eigen::VectorXd> m_native_linearization_gradients;
+
     /** Internal method to calculate all terms inside the engine that are only
      * geometry dependent
      */
@@ -144,10 +147,47 @@ template <int NSTOKES> class Sasktran2 : public Sasktran2Interface {
                   sasktran2::OutputJVP<NSTOKES>& output) const;
 
     void
+    initialize_jvp(const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
+                   sasktran2::OutputJVP<NSTOKES>& output) const;
+
+    void calculate_jvp_wavelength_thread(sasktran2::OutputJVP<NSTOKES>& output,
+                                         int wavelength, int thread_idx) const;
+
+    void finalize_jvp() const;
+
+    void
     calculate_vjp(const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
                   sasktran2::OutputVJP<NSTOKES>& output) const;
 
+    void
+    initialize_vjp(const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
+                   sasktran2::OutputVJP<NSTOKES>& output) const;
+
+    void calculate_vjp_wavelength_thread(sasktran2::OutputVJP<NSTOKES>& output,
+                                         int wavelength, int thread_idx) const;
+
+    void calculate_jacobian_vjp(
+        const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
+        sasktran2::OutputJacobianVJP<NSTOKES>& output) const;
+
+    void initialize_jacobian_vjp(
+        const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
+        sasktran2::OutputJacobianVJP<NSTOKES>& output) const;
+
+    void calculate_jacobian_vjp_wavelength_thread(
+        sasktran2::OutputJacobianVJP<NSTOKES>& output, int wavelength,
+        int thread_idx) const;
+
     int effective_wavelength_batch_size(int num_wavelengths) const;
+
+    /** Bytes retained by compact source checkpoints for derivative reuse. */
+    std::size_t retained_forward_state_bytes() const {
+        std::size_t bytes = 0;
+        for (const auto& source : m_source_terms) {
+            bytes += source->retained_forward_state_bytes();
+        }
+        return bytes;
+    }
 
     /** Reports whether the complete line-of-sight model supports a native
      * derivative execution mode. */

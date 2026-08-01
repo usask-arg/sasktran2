@@ -363,6 +363,53 @@ namespace sasktran2 {
     }
 
     template <int NSTOKES>
+    void SourceIntegrator<NSTOKES>::integrate_value(
+        Eigen::Vector<double, NSTOKES>& radiance,
+        const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+        int wavelength, int rayidx, int wavel_threadidx, int threadidx) const {
+        if (m_wavelength_block_capacity != 1 || m_scalar_shell_od.empty()) {
+            throw std::logic_error(
+                "Native value integration requires scalar source-integrator "
+                "storage");
+        }
+        const auto& ray = (*m_traced_rays)[rayidx];
+        const auto& od_matrix = m_traced_ray_od_matrix[rayidx];
+        const sasktran2::WavelengthBlock<1> block{wavelength, 1};
+        sasktran2::WavelengthBlockDual<NSTOKES> state;
+        state.resize(1, 0, true);
+        for (const auto* source : source_terms) {
+            source->end_of_ray_source(block.dynamic(), rayidx, wavel_threadidx,
+                                      threadidx, state);
+        }
+
+        for (int layeridx = 0; layeridx < ray.layers.size(); ++layeridx) {
+            const double od = m_scalar_shell_od[rayidx](layeridx, wavelength);
+            const double attenuation = std::exp(-od);
+            const sasktran2::WavelengthBlockODView shell_od(
+                &od, &attenuation, 1, od_matrix, layeridx);
+            state.value.col(0) *= attenuation;
+
+            const auto& layer = ray.layers[layeridx];
+            const auto entrance_weights = ray.entrance_weights(layeridx);
+            const auto exit_weights = ray.exit_weights(layeridx);
+            for (const auto* source : source_terms) {
+                if (source->has_interior_source()) {
+                    source->dispatch_integrated_source(
+                        block, rayidx, layeridx, wavel_threadidx, threadidx,
+                        layer, entrance_weights, exit_weights, shell_od, state,
+                        SourceTermInterface<
+                            NSTOKES>::IntegrationDirection::backward);
+                }
+            }
+        }
+        for (const auto* source : source_terms) {
+            source->start_of_ray_source(block.dynamic(), rayidx,
+                                        wavel_threadidx, threadidx, state);
+        }
+        radiance = state.value.col(0);
+    }
+
+    template <int NSTOKES>
     void SourceIntegrator<NSTOKES>::integrate_jvp(
         sasktran2::RadianceJVP<NSTOKES>& radiance,
         const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
@@ -485,12 +532,15 @@ namespace sasktran2 {
             const auto& layer = ray.layers[layeridx];
             const auto entrance_weights = ray.entrance_weights(layeridx);
             const auto exit_weights = ray.exit_weights(layeridx);
+            Eigen::Vector<double, NSTOKES> unused_source_value =
+                Eigen::Vector<double, NSTOKES>::Zero();
             for (const auto* source : source_terms) {
                 if (source->has_interior_source()) {
                     source->integrated_source_vjp(
                         wavelength, rayidx, layeridx, wavel_threadidx,
                         threadidx, layer, entrance_weights, exit_weights,
-                        shell_od, state_cotangent, native_gradient);
+                        shell_od, state_cotangent, unused_source_value,
+                        native_gradient);
                 }
             }
 
@@ -710,8 +760,8 @@ namespace sasktran2 {
     void SourceIntegrator<NSTOKES>::integrate_and_emplace_accumulation_triplets(
         sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
             radiance,
-        std::vector<SourceTermInterface<NSTOKES>*> source_terms, int wavelidx,
-        int rayidx, int wavel_threadidx, int threadidx,
+        const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+        int wavelidx, int rayidx, int wavel_threadidx, int threadidx,
         const SInterpolator& source_interpolator,
         Eigen::VectorXd& accumulation_values) {
         ZoneScopedN("Integrate and Emplace Accumulation Triplets");
@@ -722,10 +772,10 @@ namespace sasktran2 {
         // If we don't have to calculate derivatives then it is faster to
         // iterate over the ray backwards, i.e., from the observer to the end of
         // the atmosphere
-        sasktran2::WavelengthBlockDual<NSTOKES> layer_source;
-        layer_source.resize(1, 0);
+        auto& layer_source =
+            m_accumulation_thread_scratch.at(threadidx).primal_layer_source;
 
-        double current_od = 0;
+        double current_attenuation = 1.0;
         for (int j = num_layers - 1; j >= 0; --j) {
             sasktran2::raytracing::TracedLayer layer_scratch;
             const auto& layer = integration_layer(rayidx, j, layer_scratch);
@@ -757,7 +807,7 @@ namespace sasktran2 {
                 &shell_od, &shell_attenuation, 1, derivative_matrix, j);
             const auto& layer_interpolator = interpolator.interior_weights[j];
             // Calculate and add the layer source to the radiance
-            double atten_factor = std::exp(-current_od);
+            const double atten_factor = current_attenuation;
 
             // Calculate all of the layer sources
             layer_source.set_zero(1);
@@ -775,14 +825,12 @@ namespace sasktran2 {
 
             // Assign the accumulation weights
             double omega = 0;
-            const auto atmosphere_nodes =
-                integration_entrance_weights(rayidx, j);
             for (std::size_t i = layer_interpolator.atmosphere_offset;
                  i < layer_interpolator.atmosphere_offset +
                          layer_interpolator.atmosphere_count;
                  ++i) {
                 const auto node =
-                    atmosphere_nodes[i - layer_interpolator.atmosphere_offset];
+                    entrance_weights[i - layer_interpolator.atmosphere_offset];
                 omega += m_atmosphere->storage().ssa(node.first, wavelidx) *
                          interpolator.atmosphere_weights[i];
             }
@@ -800,7 +848,7 @@ namespace sasktran2 {
                 }
             }
 
-            current_od += shell_od;
+            current_attenuation *= shell_attenuation;
         }
 
         // Add source at the end of the ray
@@ -811,7 +859,7 @@ namespace sasktran2 {
                                       threadidx, layer_source);
         }
 
-        radiance.value += layer_source.value.col(0) * std::exp(-1 * current_od);
+        radiance.value += layer_source.value.col(0) * current_attenuation;
 
         // Add ground interpolation triplets
         if (ray.ground_is_hit) {
@@ -820,7 +868,76 @@ namespace sasktran2 {
                 for (int s = 0; s < NSTOKES; ++s) {
                     accumulation_values(interpolator.ground_accumulation_index(
                         i, s)) += interpolator.ground_source_weights[i] *
-                                  std::exp(-1 * current_od);
+                                  current_attenuation;
+                }
+            }
+        }
+    }
+
+    template <int NSTOKES>
+    void SourceIntegrator<NSTOKES>::emplace_accumulation_transport(
+        int wavelidx, int rayidx, const SInterpolator& source_interpolator,
+        Eigen::Ref<Eigen::VectorXd> accumulation_values) const {
+        const auto& ray = (*m_traced_rays)[rayidx];
+        const auto& interpolator = source_interpolator[rayidx];
+        const int num_layers = integration_num_layers(rayidx);
+
+        double current_attenuation = 1.0;
+        for (int layeridx = num_layers - 1; layeridx >= 0; --layeridx) {
+            double shell_od = 0.0;
+            if (m_on_demand_optical_depth) {
+                const auto optical_depth_weights =
+                    integration_optical_depth_weights(rayidx, layeridx);
+                for (std::size_t index = 0;
+                     index < optical_depth_weights.size(); ++index) {
+                    const auto index_weight = optical_depth_weights[index];
+                    shell_od += index_weight.second *
+                                m_atmosphere->storage().total_extinction(
+                                    index_weight.first, wavelidx);
+                }
+            } else {
+                shell_od = m_scalar_shell_od[rayidx](layeridx, wavelidx);
+            }
+            const double shell_attenuation = std::exp(-shell_od);
+            const auto entrance_weights =
+                integration_entrance_weights(rayidx, layeridx);
+            const auto& layer_interpolator =
+                interpolator.interior_weights[layeridx];
+
+            double omega = 0.0;
+            for (std::size_t index = layer_interpolator.atmosphere_offset;
+                 index < layer_interpolator.atmosphere_offset +
+                             layer_interpolator.atmosphere_count;
+                 ++index) {
+                const auto node =
+                    entrance_weights[index -
+                                     layer_interpolator.atmosphere_offset];
+                omega += m_atmosphere->storage().ssa(node.first, wavelidx) *
+                         interpolator.atmosphere_weights[index];
+            }
+            const double source_factor =
+                omega * (1.0 - shell_attenuation) * current_attenuation;
+            for (std::size_t index = layer_interpolator.source_offset;
+                 index < layer_interpolator.source_offset +
+                             layer_interpolator.source_count;
+                 ++index) {
+                for (int stokes = 0; stokes < NSTOKES; ++stokes) {
+                    accumulation_values(interpolator.source_accumulation_index(
+                        index, stokes)) +=
+                        interpolator.source_weights[index] * source_factor;
+                }
+            }
+            current_attenuation *= shell_attenuation;
+        }
+
+        if (ray.ground_is_hit) {
+            for (std::size_t index = 0;
+                 index < interpolator.ground_source_weights.size(); ++index) {
+                for (int stokes = 0; stokes < NSTOKES; ++stokes) {
+                    accumulation_values(interpolator.ground_accumulation_index(
+                        index, stokes)) +=
+                        interpolator.ground_source_weights[index] *
+                        current_attenuation;
                 }
             }
         }
@@ -832,28 +949,56 @@ namespace sasktran2 {
         int wavelidx, int rayidx, int wavel_threadidx, int threadidx,
         const SInterpolator& source_interpolator,
         Eigen::Ref<const Eigen::VectorXd> native_tangent,
+        Eigen::VectorXd* accumulation_values,
         Eigen::Ref<Eigen::VectorXd> accumulation_value_tangent,
         Eigen::Ref<Eigen::VectorXd> first_order_forcing_tangent) const {
         const auto& ray = (*m_traced_rays)[rayidx];
         const auto& interpolator = source_interpolator[rayidx];
-        double current_od = 0.0;
+        double current_attenuation = 1.0;
         double current_od_jvp = 0.0;
         const int num_layers = integration_num_layers(rayidx);
+        const int num_geometry =
+            static_cast<int>(m_atmosphere->storage().ssa.rows());
+        const bool active_extinction =
+            !native_tangent.head(num_geometry).isZero(0.0);
+        const bool active_ssa =
+            !native_tangent
+                 .segment(m_atmosphere->ssa_deriv_start_index(), num_geometry)
+                 .isZero(0.0);
+        const int interior_derivative_count =
+            m_atmosphere->surface_deriv_start_index() -
+            m_atmosphere->scat_deriv_start_index();
+        const bool active_scattering_or_emission =
+            interior_derivative_count > 0 &&
+            !native_tangent
+                 .segment(m_atmosphere->scat_deriv_start_index(),
+                          interior_derivative_count)
+                 .isZero(0.0);
+        const bool active_interior_source =
+            active_extinction || active_ssa || active_scattering_or_emission;
+        const bool active_transport_tangent = active_extinction || active_ssa;
 
         for (int layeridx = num_layers - 1; layeridx >= 0; --layeridx) {
             const auto od_weights =
                 integration_optical_depth_weights(rayidx, layeridx);
-            double shell_od = 0.0;
+            double shell_od =
+                m_on_demand_optical_depth
+                    ? 0.0
+                    : m_scalar_shell_od[rayidx](layeridx, wavelidx);
             double shell_od_jvp = 0.0;
             for (std::size_t index = 0; index < od_weights.size(); ++index) {
                 const auto weight = od_weights[index];
-                shell_od +=
-                    weight.second * m_atmosphere->storage().total_extinction(
-                                        weight.first, wavelidx);
-                shell_od_jvp += weight.second * native_tangent(weight.first);
+                if (m_on_demand_optical_depth) {
+                    shell_od += weight.second *
+                                m_atmosphere->storage().total_extinction(
+                                    weight.first, wavelidx);
+                }
+                if (active_extinction) {
+                    shell_od_jvp +=
+                        weight.second * native_tangent(weight.first);
+                }
             }
             const double shell_attenuation = std::exp(-shell_od);
-            const double current_attenuation = std::exp(-current_od);
             const sasktran2::WavelengthBlockODView block_shell_od(
                 &shell_od, &shell_attenuation, 1, od_weights.indices_data(),
                 od_weights.weights_data(), od_weights.size());
@@ -867,63 +1012,83 @@ namespace sasktran2 {
                 integration_entrance_weights(rayidx, layeridx);
             const auto exit_weights =
                 integration_exit_weights(rayidx, layeridx);
-            for (const auto* source : source_terms) {
-                if (source->has_interior_source()) {
-                    source->integrated_source_jvp(
-                        wavelidx, rayidx, layeridx, wavel_threadidx, threadidx,
-                        layer, entrance_weights, exit_weights, block_shell_od,
-                        native_tangent, layer_source);
+            if (active_interior_source) {
+                for (const auto* source : source_terms) {
+                    if (source->has_interior_source()) {
+                        source->integrated_source_jvp(
+                            wavelidx, rayidx, layeridx, wavel_threadidx,
+                            threadidx, layer, entrance_weights, exit_weights,
+                            block_shell_od, native_tangent, layer_source);
+                    }
                 }
             }
 
-            for (int stokes = 0; stokes < NSTOKES; ++stokes) {
-                first_order_forcing_tangent(rayidx * NSTOKES + stokes) +=
-                    current_attenuation *
-                    (layer_source.jvp(stokes) -
-                     current_od_jvp * layer_source.value(stokes));
+            if (active_interior_source) {
+                for (int stokes = 0; stokes < NSTOKES; ++stokes) {
+                    first_order_forcing_tangent(rayidx * NSTOKES + stokes) +=
+                        current_attenuation *
+                        (layer_source.jvp(stokes) -
+                         current_od_jvp * layer_source.value(stokes));
+                }
             }
 
             const auto& layer_interpolator =
                 interpolator.interior_weights[layeridx];
-            const auto atmosphere_nodes =
-                integration_entrance_weights(rayidx, layeridx);
             double omega = 0.0;
             double omega_jvp = 0.0;
-            for (std::size_t index = layer_interpolator.atmosphere_offset;
-                 index < layer_interpolator.atmosphere_offset +
-                             layer_interpolator.atmosphere_count;
-                 ++index) {
-                const int atmosphere_index =
-                    atmosphere_nodes[index -
-                                     layer_interpolator.atmosphere_offset]
-                        .first;
-                const double weight = interpolator.atmosphere_weights[index];
-                omega +=
-                    m_atmosphere->storage().ssa(atmosphere_index, wavelidx) *
-                    weight;
-                omega_jvp +=
-                    native_tangent(m_atmosphere->ssa_deriv_start_index() +
-                                   atmosphere_index) *
-                    weight;
+            if (active_transport_tangent || accumulation_values != nullptr) {
+                for (std::size_t index = layer_interpolator.atmosphere_offset;
+                     index < layer_interpolator.atmosphere_offset +
+                                 layer_interpolator.atmosphere_count;
+                     ++index) {
+                    const int atmosphere_index =
+                        entrance_weights[index -
+                                         layer_interpolator.atmosphere_offset]
+                            .first;
+                    const double weight =
+                        interpolator.atmosphere_weights[index];
+                    omega += m_atmosphere->storage().ssa(atmosphere_index,
+                                                         wavelidx) *
+                             weight;
+                    if (active_ssa) {
+                        omega_jvp += native_tangent(
+                                         m_atmosphere->ssa_deriv_start_index() +
+                                         atmosphere_index) *
+                                     weight;
+                    }
+                }
             }
             const double source_factor_jvp =
-                current_attenuation *
-                (omega_jvp * (1.0 - shell_attenuation) +
-                 omega * shell_attenuation * shell_od_jvp -
-                 omega * (1.0 - shell_attenuation) * current_od_jvp);
+                active_transport_tangent
+                    ? current_attenuation *
+                          (omega_jvp * (1.0 - shell_attenuation) +
+                           omega * shell_attenuation * shell_od_jvp -
+                           omega * (1.0 - shell_attenuation) * current_od_jvp)
+                    : 0.0;
+            const double source_factor =
+                current_attenuation * omega * (1.0 - shell_attenuation);
             for (std::size_t index = layer_interpolator.source_offset;
                  index < layer_interpolator.source_offset +
                              layer_interpolator.source_count;
                  ++index) {
                 for (int stokes = 0; stokes < NSTOKES; ++stokes) {
-                    accumulation_value_tangent(
-                        interpolator.source_accumulation_index(index,
-                                                               stokes)) +=
-                        interpolator.source_weights[index] * source_factor_jvp;
+                    const int accumulation_index =
+                        interpolator.source_accumulation_index(index, stokes);
+                    if (active_transport_tangent) {
+                        accumulation_value_tangent(accumulation_index) +=
+                            interpolator.source_weights[index] *
+                            source_factor_jvp;
+                    }
+                    if (accumulation_values != nullptr) {
+                        (*accumulation_values)(accumulation_index) +=
+                            interpolator.source_weights[index] * source_factor;
+                    }
                 }
             }
-            current_od += shell_od;
-            current_od_jvp += shell_od_jvp;
+            current_attenuation *= shell_attenuation;
+            if (active_extinction) {
+                current_od_jvp += shell_od_jvp;
+            }
         }
 
         sasktran2::RadianceJVP<NSTOKES> end_source;
@@ -933,23 +1098,28 @@ namespace sasktran2 {
                                           threadidx, native_tangent,
                                           end_source);
         }
-        const double end_attenuation = std::exp(-current_od);
+        const double end_attenuation = current_attenuation;
         for (int stokes = 0; stokes < NSTOKES; ++stokes) {
             first_order_forcing_tangent(rayidx * NSTOKES + stokes) +=
                 end_attenuation * (end_source.jvp(stokes) -
                                    current_od_jvp * end_source.value(stokes));
         }
 
-        if (ray.ground_is_hit) {
+        if (active_extinction && ray.ground_is_hit) {
             const double ground_factor_jvp = -end_attenuation * current_od_jvp;
             for (std::size_t index = 0;
                  index < interpolator.ground_source_weights.size(); ++index) {
                 for (int stokes = 0; stokes < NSTOKES; ++stokes) {
-                    accumulation_value_tangent(
-                        interpolator.ground_accumulation_index(index,
-                                                               stokes)) +=
+                    const int accumulation_index =
+                        interpolator.ground_accumulation_index(index, stokes);
+                    accumulation_value_tangent(accumulation_index) +=
                         interpolator.ground_source_weights[index] *
                         ground_factor_jvp;
+                    if (accumulation_values != nullptr) {
+                        (*accumulation_values)(accumulation_index) +=
+                            interpolator.ground_source_weights[index] *
+                            end_attenuation;
+                    }
                 }
             }
         }
@@ -964,6 +1134,8 @@ namespace sasktran2 {
         Eigen::Ref<const Eigen::VectorXd> transport_solution,
         Eigen::Ref<const Eigen::VectorXi> transport_column_indices,
         Eigen::Ref<const Eigen::VectorXd> first_order_forcing_gradient,
+        bool active_extinction, bool active_ssa,
+        bool active_interior_source_parameters,
         Eigen::Ref<Eigen::VectorXd> native_gradient) const {
         const auto& ray = (*m_traced_rays)[rayidx];
         const auto& interpolator = source_interpolator[rayidx];
@@ -971,30 +1143,47 @@ namespace sasktran2 {
             first_order_forcing_gradient.template segment<NSTOKES>(rayidx *
                                                                    NSTOKES);
         const int num_layers = integration_num_layers(rayidx);
-        std::vector<double> shell_od_cotangent(num_layers, 0.0);
-        std::vector<double> current_od_cotangent(num_layers, 0.0);
-        double current_od = 0.0;
+        auto& scratch = m_accumulation_thread_scratch.at(threadidx);
+        if (active_extinction) {
+            scratch.shell_od_cotangent.resize(num_layers);
+            scratch.current_od_cotangent.resize(num_layers);
+            std::fill(scratch.shell_od_cotangent.begin(),
+                      scratch.shell_od_cotangent.end(), 0.0);
+            std::fill(scratch.current_od_cotangent.begin(),
+                      scratch.current_od_cotangent.end(), 0.0);
+        }
+        auto& shell_od_cotangent = scratch.shell_od_cotangent;
+        auto& current_od_cotangent = scratch.current_od_cotangent;
+        auto& layer_source = scratch.layer_source;
+        auto& end_source = scratch.end_source;
+        double current_attenuation = 1.0;
+        const bool gradient_from_transport =
+            accumulation_value_gradient.size() == 0;
+        const int ssa_deriv_start = m_atmosphere->ssa_deriv_start_index();
 
         for (int traversal = 0; traversal < num_layers; ++traversal) {
             const int layeridx = num_layers - 1 - traversal;
             const auto od_weights =
                 integration_optical_depth_weights(rayidx, layeridx);
-            double shell_od = 0.0;
-            for (std::size_t index = 0; index < od_weights.size(); ++index) {
-                const auto weight = od_weights[index];
-                shell_od +=
-                    weight.second * m_atmosphere->storage().total_extinction(
-                                        weight.first, wavelidx);
+            double shell_od =
+                m_on_demand_optical_depth
+                    ? 0.0
+                    : m_scalar_shell_od[rayidx](layeridx, wavelidx);
+            if (m_on_demand_optical_depth) {
+                for (std::size_t index = 0; index < od_weights.size();
+                     ++index) {
+                    const auto weight = od_weights[index];
+                    shell_od += weight.second *
+                                m_atmosphere->storage().total_extinction(
+                                    weight.first, wavelidx);
+                }
             }
             const double shell_attenuation = std::exp(-shell_od);
-            const double current_attenuation = std::exp(-current_od);
             const sasktran2::WavelengthBlockODView block_shell_od(
                 &shell_od, &shell_attenuation, 1, od_weights.indices_data(),
                 od_weights.weights_data(), od_weights.size());
 
-            sasktran2::WavelengthBlockDual<NSTOKES> layer_source;
-            layer_source.resize(1, 0, true);
-            const sasktran2::WavelengthBlock<> block{wavelidx, 1};
+            layer_source.setZero();
             sasktran2::raytracing::TracedLayer layer_scratch;
             const auto& layer =
                 integration_layer(rayidx, layeridx, layer_scratch);
@@ -1002,106 +1191,112 @@ namespace sasktran2 {
                 integration_entrance_weights(rayidx, layeridx);
             const auto exit_weights =
                 integration_exit_weights(rayidx, layeridx);
-            for (const auto* source : source_terms) {
-                if (source->has_interior_source()) {
-                    source->integrated_source(
-                        block, rayidx, layeridx, wavel_threadidx, threadidx,
-                        layer, entrance_weights, exit_weights, block_shell_od,
-                        layer_source,
-                        SourceTermInterface<
-                            NSTOKES>::IntegrationDirection::forward);
-                    source->integrated_source_vjp(
-                        wavelidx, rayidx, layeridx, wavel_threadidx, threadidx,
-                        layer, entrance_weights, exit_weights, block_shell_od,
-                        current_attenuation * forcing_cotangent,
-                        native_gradient);
+            if (active_interior_source_parameters) {
+                for (const auto* source : source_terms) {
+                    if (source->has_interior_source()) {
+                        source->integrated_source_vjp(
+                            wavelidx, rayidx, layeridx, wavel_threadidx,
+                            threadidx, layer, entrance_weights, exit_weights,
+                            block_shell_od,
+                            current_attenuation * forcing_cotangent,
+                            layer_source, native_gradient);
+                    }
                 }
             }
-            current_od_cotangent[traversal] -=
-                current_attenuation *
-                forcing_cotangent.dot(layer_source.value.col(0));
+            if (active_extinction) {
+                current_od_cotangent[traversal] -=
+                    current_attenuation * forcing_cotangent.dot(layer_source);
+            }
 
-            const auto& layer_interpolator =
-                interpolator.interior_weights[layeridx];
-            const auto atmosphere_nodes =
-                integration_entrance_weights(rayidx, layeridx);
-            double omega = 0.0;
-            for (std::size_t index = layer_interpolator.atmosphere_offset;
-                 index < layer_interpolator.atmosphere_offset +
-                             layer_interpolator.atmosphere_count;
-                 ++index) {
-                omega +=
-                    interpolator.atmosphere_weights[index] *
-                    m_atmosphere->storage().ssa(
-                        atmosphere_nodes[index -
-                                         layer_interpolator.atmosphere_offset]
-                            .first,
-                        wavelidx);
-            }
-            double source_factor_cotangent = 0.0;
-            for (std::size_t index = layer_interpolator.source_offset;
-                 index < layer_interpolator.source_offset +
-                             layer_interpolator.source_count;
-                 ++index) {
-                for (int stokes = 0; stokes < NSTOKES; ++stokes) {
-                    source_factor_cotangent +=
-                        interpolator.source_weights[index] *
-                        (accumulation_value_gradient.size() == 0
-                             ? forcing_cotangent(stokes) *
-                                   transport_solution(transport_column_indices(
-                                       interpolator.source_accumulation_index(
-                                           index, stokes)))
-                             : accumulation_value_gradient(
-                                   interpolator.source_accumulation_index(
-                                       index, stokes)));
+            if (active_extinction || active_ssa) {
+                const auto& layer_interpolator =
+                    interpolator.interior_weights[layeridx];
+                double omega = 0.0;
+                for (std::size_t index = layer_interpolator.atmosphere_offset;
+                     index < layer_interpolator.atmosphere_offset +
+                                 layer_interpolator.atmosphere_count;
+                     ++index) {
+                    omega +=
+                        interpolator.atmosphere_weights[index] *
+                        m_atmosphere->storage().ssa(
+                            entrance_weights[index - layer_interpolator
+                                                         .atmosphere_offset]
+                                .first,
+                            wavelidx);
                 }
-            }
-            const double omega_cotangent = source_factor_cotangent *
-                                           (1.0 - shell_attenuation) *
-                                           current_attenuation;
-            for (std::size_t index = layer_interpolator.atmosphere_offset;
-                 index < layer_interpolator.atmosphere_offset +
-                             layer_interpolator.atmosphere_count;
-                 ++index) {
-                const int atmosphere_index =
-                    atmosphere_nodes[index -
-                                     layer_interpolator.atmosphere_offset]
-                        .first;
-                native_gradient(m_atmosphere->ssa_deriv_start_index() +
-                                atmosphere_index) +=
-                    interpolator.atmosphere_weights[index] * omega_cotangent;
-            }
-            shell_od_cotangent[traversal] += source_factor_cotangent * omega *
-                                             shell_attenuation *
-                                             current_attenuation;
-            current_od_cotangent[traversal] -= source_factor_cotangent * omega *
+                double source_factor_cotangent = 0.0;
+                for (std::size_t index = layer_interpolator.source_offset;
+                     index < layer_interpolator.source_offset +
+                                 layer_interpolator.source_count;
+                     ++index) {
+                    for (int stokes = 0; stokes < NSTOKES; ++stokes) {
+                        source_factor_cotangent +=
+                            interpolator.source_weights[index] *
+                            (gradient_from_transport
+                                 ? forcing_cotangent(stokes) *
+                                       transport_solution(
+                                           transport_column_indices(
+                                               interpolator
+                                                   .source_accumulation_index(
+                                                       index, stokes)))
+                                 : accumulation_value_gradient(
+                                       interpolator.source_accumulation_index(
+                                           index, stokes)));
+                    }
+                }
+                const double omega_cotangent = source_factor_cotangent *
                                                (1.0 - shell_attenuation) *
                                                current_attenuation;
-            current_od += shell_od;
+                if (active_ssa) {
+                    for (std::size_t index =
+                             layer_interpolator.atmosphere_offset;
+                         index < layer_interpolator.atmosphere_offset +
+                                     layer_interpolator.atmosphere_count;
+                         ++index) {
+                        const int atmosphere_index =
+                            entrance_weights[index - layer_interpolator
+                                                         .atmosphere_offset]
+                                .first;
+                        native_gradient(ssa_deriv_start + atmosphere_index) +=
+                            interpolator.atmosphere_weights[index] *
+                            omega_cotangent;
+                    }
+                }
+                if (active_extinction) {
+                    shell_od_cotangent[traversal] += source_factor_cotangent *
+                                                     omega * shell_attenuation *
+                                                     current_attenuation;
+                    current_od_cotangent[traversal] -=
+                        source_factor_cotangent * omega *
+                        (1.0 - shell_attenuation) * current_attenuation;
+                }
+            }
+            current_attenuation *= shell_attenuation;
         }
 
-        sasktran2::WavelengthBlockDual<NSTOKES> end_source;
-        end_source.resize(1, 0, true);
+        end_source.value.setZero();
         const sasktran2::WavelengthBlock<> end_block{wavelidx, 1};
         for (const auto* source : source_terms) {
             source->end_of_ray_source(end_block, rayidx, wavel_threadidx,
                                       threadidx, end_source);
             source->end_of_ray_source_vjp(
                 wavelidx, rayidx, wavel_threadidx, threadidx,
-                std::exp(-current_od) * forcing_cotangent, native_gradient);
+                current_attenuation * forcing_cotangent, native_gradient);
         }
         double trailing_current_od_cotangent =
-            -std::exp(-current_od) *
-            forcing_cotangent.dot(end_source.value.col(0));
+            active_extinction
+                ? -current_attenuation *
+                      forcing_cotangent.dot(end_source.value.col(0))
+                : 0.0;
 
-        if (ray.ground_is_hit) {
+        if (active_extinction && ray.ground_is_hit) {
             double ground_factor_cotangent = 0.0;
             for (std::size_t index = 0;
                  index < interpolator.ground_source_weights.size(); ++index) {
                 for (int stokes = 0; stokes < NSTOKES; ++stokes) {
                     ground_factor_cotangent +=
                         interpolator.ground_source_weights[index] *
-                        (accumulation_value_gradient.size() == 0
+                        (gradient_from_transport
                              ? forcing_cotangent(stokes) *
                                    transport_solution(transport_column_indices(
                                        interpolator.ground_accumulation_index(
@@ -1112,19 +1307,23 @@ namespace sasktran2 {
                 }
             }
             trailing_current_od_cotangent -=
-                ground_factor_cotangent * std::exp(-current_od);
+                ground_factor_cotangent * current_attenuation;
         }
 
-        for (int traversal = num_layers - 1; traversal >= 0; --traversal) {
-            shell_od_cotangent[traversal] += trailing_current_od_cotangent;
-            trailing_current_od_cotangent += current_od_cotangent[traversal];
-            const int layeridx = num_layers - 1 - traversal;
-            const auto od_weights =
-                integration_optical_depth_weights(rayidx, layeridx);
-            for (std::size_t index = 0; index < od_weights.size(); ++index) {
-                const auto weight = od_weights[index];
-                native_gradient(weight.first) +=
-                    weight.second * shell_od_cotangent[traversal];
+        if (active_extinction) {
+            for (int traversal = num_layers - 1; traversal >= 0; --traversal) {
+                shell_od_cotangent[traversal] += trailing_current_od_cotangent;
+                trailing_current_od_cotangent +=
+                    current_od_cotangent[traversal];
+                const int layeridx = num_layers - 1 - traversal;
+                const auto od_weights =
+                    integration_optical_depth_weights(rayidx, layeridx);
+                for (std::size_t index = 0; index < od_weights.size();
+                     ++index) {
+                    const auto weight = od_weights[index];
+                    native_gradient(weight.first) +=
+                        weight.second * shell_od_cotangent[traversal];
+                }
             }
         }
     }

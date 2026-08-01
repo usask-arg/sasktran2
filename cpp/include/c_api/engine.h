@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stddef.h>
 #include "output.h"
 #ifdef __cplusplus
 extern "C" {
@@ -13,6 +14,7 @@ typedef struct ViewingGeometry ViewingGeometry;
 typedef struct OutputC OutputC;
 typedef struct OutputJVP OutputJVP;
 typedef struct OutputVJP OutputVJP;
+typedef struct OutputJacobianVJP OutputJacobianVJP;
 
 Engine* sk_engine_create(Config* engine, Geometry1D* geometry,
                          ViewingGeometry* viewing_geometry);
@@ -24,12 +26,28 @@ int sk_engine_calculate_radiance(Engine* engine, Atmosphere* atmosphere,
                                  OutputC* output, int only_initialize);
 int sk_engine_effective_wavelength_batch_size(Engine* engine,
                                               int num_wavelengths);
+int sk_engine_retained_forward_state_bytes(Engine* engine, size_t* bytes);
 int sk_engine_supports_linearization(Engine* engine, int mode, int* supported);
 int sk_engine_linearization_backend(Engine* engine, int mode, int* backend);
 int sk_engine_calculate_jvp(Engine* engine, Atmosphere* atmosphere,
                             OutputJVP* output);
+int sk_engine_initialize_jvp(Engine* engine, Atmosphere* atmosphere,
+                             OutputJVP* output);
+int sk_engine_calculate_jvp_wavelength_thread(Engine* engine, OutputJVP* output,
+                                              int wavelength, int thread_idx);
+int sk_engine_finalize_jvp(Engine* engine);
 int sk_engine_calculate_vjp(Engine* engine, Atmosphere* atmosphere,
                             OutputVJP* output);
+int sk_engine_initialize_vjp(Engine* engine, Atmosphere* atmosphere,
+                             OutputVJP* output);
+int sk_engine_calculate_vjp_wavelength_thread(Engine* engine, OutputVJP* output,
+                                              int wavelength, int thread_idx);
+int sk_engine_calculate_jacobian_vjp(Engine* engine, Atmosphere* atmosphere,
+                                     OutputJacobianVJP* output);
+int sk_engine_initialize_jacobian_vjp(Engine* engine, Atmosphere* atmosphere,
+                                      OutputJacobianVJP* output);
+int sk_engine_calculate_jacobian_vjp_wavelength_thread(
+    Engine* engine, OutputJacobianVJP* output, int wavelength, int thread_idx);
 int sk_engine_calculate_radiance_block_thread(Engine* engine, OutputC* output,
                                               int wavelength_start,
                                               int wavelength_count,

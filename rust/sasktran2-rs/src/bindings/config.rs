@@ -14,6 +14,14 @@ pub enum MultipleScatterSource {
 
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SuccessiveOrdersInitialization {
+    None = 0,
+    DiscreteOrdinates = 1,
+    TwoStream = 2,
+}
+
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SingleScatterSource {
     Exact = 0,
     SolarTable = 1,
@@ -876,6 +884,37 @@ impl Config {
         }
     }
 
+    pub fn successive_orders_initialization(&self) -> Result<SuccessiveOrdersInitialization> {
+        let mut value = 0i32;
+        let error_code =
+            unsafe { ffi::sk_config_get_successive_orders_initialization(self.config, &mut value) };
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting successive-orders initialization: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(unsafe { std::mem::transmute::<i32, SuccessiveOrdersInitialization>(value) })
+        }
+    }
+
+    pub fn with_successive_orders_initialization(
+        &mut self,
+        initialization: SuccessiveOrdersInitialization,
+    ) -> Result<&mut Self> {
+        let error_code = unsafe {
+            ffi::sk_config_set_successive_orders_initialization(self.config, initialization as i32)
+        };
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting successive-orders initialization: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
     pub fn init_successive_orders_with_discrete_ordinates(&self) -> Result<bool> {
         let mut init = 0i32;
         let error_code =
@@ -1318,6 +1357,8 @@ mod tests {
             .with_successive_orders_anderson_depth(4)
             .unwrap()
             .with_successive_orders_damping(0.85)
+            .unwrap()
+            .with_successive_orders_initialization(SuccessiveOrdersInitialization::TwoStream)
             .unwrap();
         assert_eq!(
             config.multiple_scatter_source().unwrap(),
@@ -1334,6 +1375,10 @@ mod tests {
         );
         assert_eq!(config.successive_orders_anderson_depth().unwrap(), 4);
         assert_eq!(config.successive_orders_damping().unwrap(), 0.85);
+        assert_eq!(
+            config.successive_orders_initialization().unwrap(),
+            SuccessiveOrdersInitialization::TwoStream
+        );
 
         config
             .with_single_scatter_source(SingleScatterSource::SolarTable)
