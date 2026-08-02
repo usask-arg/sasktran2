@@ -12,6 +12,7 @@ mod coefficient;
 mod cxx;
 mod geometry;
 mod operator;
+mod ray_transport;
 mod solver;
 
 pub use coefficient::{
@@ -22,6 +23,7 @@ pub use geometry::{CompressedStencils, SourceNode};
 pub use operator::{
     BlockDiagonalMatrix, CsrMatrix, FixedPointProblem, OperatorError, ScatteringOperator,
 };
+pub use ray_transport::ScalarRayTransport;
 pub use solver::{
     ConvergenceReason, SolverConfig, SolverDiagnostics, SolverError, SuccessiveOrdersSolver,
 };

@@ -7,6 +7,29 @@
 
 namespace sasktran2 {
 
+    /** Geometry-only scalar transport stencils packed for one-time transfer
+     *  to the Rust successive-orders implementation. */
+    struct ScalarRayTransportGeometry {
+        std::vector<std::uint32_t> ray_layer_offsets;
+        std::vector<std::uint32_t> layer_atmosphere_offsets;
+        std::vector<std::uint32_t> atmosphere_indices;
+        std::vector<double> optical_depth_weights;
+        std::vector<double> albedo_weights;
+        std::vector<double> entrance_weights;
+        std::vector<double> exit_weights;
+        std::vector<double> layer_distance;
+        std::vector<double> layer_start_fraction;
+        std::vector<double> layer_end_fraction;
+        std::vector<double> ray_scattering_cosine;
+        std::vector<std::uint32_t> ray_transport_value_offsets;
+        std::vector<std::uint32_t> layer_source_offsets;
+        std::vector<std::uint16_t> source_value_inner_indices;
+        std::vector<double> source_weights;
+        std::vector<std::uint32_t> ray_ground_offsets;
+        std::vector<std::uint16_t> ground_value_inner_indices;
+        std::vector<double> ground_weights;
+    };
+
     template <int NSTOKES> struct RaySourceInterpolationWeights {
         struct Layer {
             std::uint32_t atmosphere_offset = 0;
@@ -123,6 +146,7 @@ namespace sasktran2 {
             CompactGridWeights weights;
         };
         bool m_use_compact_geometry = false;
+        bool m_interior_geometry_released = false;
         std::vector<CompactRay> m_compact_rays;
         std::size_t m_compact_max_layers = 0;
 
@@ -212,6 +236,11 @@ namespace sasktran2 {
         /** Completes incremental compact 2D geometry construction. */
         void finalize_compact_geometry_2d();
 
+        /** Releases layer geometry after it has been transferred to an
+         * external transport implementation. End-of-ray source helpers and
+         * atmosphere initialization remain available. */
+        void release_interior_geometry();
+
         /** Initializes the atmosphere
          *
          * @param atmo
@@ -295,6 +324,48 @@ namespace sasktran2 {
             int wavelidx, int rayidx, int wavel_threadidx, int threadidx,
             const SInterpolator& source_interpolator,
             Eigen::VectorXd& accumulation_values);
+
+        /** Compiles traced scalar geometry and source interpolation into flat
+         *  wavelength-independent Rust transport stencils. */
+        ScalarRayTransportGeometry
+        pack_scalar_transport_geometry(const SInterpolator& source_interpolator,
+                                       const Eigen::Vector3d& sun_unit) const;
+
+        /** Evaluates only the exact first-order source using optical depth and
+         *  attenuation already assembled by Rust. */
+        void integrate_first_order_precomputed(
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+                radiance,
+            const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+            int wavelidx, int rayidx, int wavel_threadidx, int threadidx,
+            std::uint32_t flat_layer_offset,
+            const std::vector<double>& layer_optical_depth,
+            const std::vector<double>& layer_attenuation,
+            const std::vector<double>& layer_prefix_attenuation,
+            double ray_end_attenuation);
+
+        /** Evaluates only the source at the far end of a ray. Atmospheric
+         *  layer forcing may then be assembled entirely by Rust. */
+        void integrate_end_of_ray_precomputed(
+            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
+                radiance,
+            const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+            int wavelidx, int rayidx, int wavel_threadidx, int threadidx,
+            double ray_end_attenuation);
+
+        void integrate_end_of_ray_jvp_precomputed(
+            const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+            int wavelidx, int rayidx, int wavel_threadidx, int threadidx,
+            Eigen::Ref<const Eigen::VectorXd> native_tangent,
+            double ray_end_attenuation, double ray_end_attenuation_tangent,
+            Eigen::Ref<Eigen::VectorXd> first_order_forcing_tangent) const;
+
+        double accumulate_end_of_ray_vjp_precomputed(
+            const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+            int wavelidx, int rayidx, int wavel_threadidx, int threadidx,
+            const Eigen::Vector<double, NSTOKES>& forcing_cotangent,
+            double ray_end_attenuation,
+            Eigen::Ref<Eigen::VectorXd> native_gradient) const;
 
         /** Rebuilds only the compact transport operator for one diffuse ray.
          * This omits source evaluation and radiance bookkeeping when restoring

@@ -56,7 +56,9 @@ namespace sasktran2::solartransmission {
         bool native_products) {
         // Store the atmosphere for later
         m_atmosphere = &atmosphere;
-        this->m_phase_handler.initialize_atmosphere(atmosphere);
+        if (!m_delegate_scalar_interior_source) {
+            this->m_phase_handler.initialize_atmosphere(atmosphere);
+        }
 
         if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
             if (!native_products && atmosphere.num_deriv() > 0 &&
@@ -75,7 +77,9 @@ namespace sasktran2::solartransmission {
                 m_batch_source_cache.shrink_to_fit();
                 m_batch_integration_cache.clear();
                 m_batch_integration_cache.shrink_to_fit();
-                m_phase_handler.clear_wavelength_blocks();
+                if (!m_delegate_scalar_interior_source) {
+                    m_phase_handler.clear_wavelength_blocks();
+                }
             }
         }
 
@@ -94,7 +98,9 @@ namespace sasktran2::solartransmission {
         m_config = &config;
 
         this->m_solar_transmission.initialize_config(config);
-        this->m_phase_handler.initialize_config(config);
+        if (!m_delegate_scalar_interior_source) {
+            this->m_phase_handler.initialize_config(config);
+        }
 
         // Set up storage for each thread
         // m_solar_trans.resize(config.num_threads());
@@ -433,20 +439,22 @@ namespace sasktran2::solartransmission {
     void SingleScatterSource<S, NSTOKES>::calculate_single(
         int wavelidx, int threadidx, bool calculate_derivatives) {
         ZoneScopedN("Single Scatter Source Calculation");
-        if (calculate_derivatives) {
-            if (m_vjp_prepared[threadidx]) {
-                m_phase_handler.calculate_vjp(
-                    wavelidx, threadidx,
-                    m_active_vjp_derivatives[threadidx].scattering_groups);
-            } else if (m_jvp_prepared[threadidx]) {
-                m_phase_handler.calculate_jvp(
-                    wavelidx, threadidx,
-                    m_active_jvp_derivatives[threadidx].scattering_groups);
+        if (!m_delegate_scalar_interior_source) {
+            if (calculate_derivatives) {
+                if (m_vjp_prepared[threadidx]) {
+                    m_phase_handler.calculate_vjp(
+                        wavelidx, threadidx,
+                        m_active_vjp_derivatives[threadidx].scattering_groups);
+                } else if (m_jvp_prepared[threadidx]) {
+                    m_phase_handler.calculate_jvp(
+                        wavelidx, threadidx,
+                        m_active_jvp_derivatives[threadidx].scattering_groups);
+                } else {
+                    m_phase_handler.calculate(wavelidx, threadidx);
+                }
             } else {
-                m_phase_handler.calculate(wavelidx, threadidx);
+                m_phase_handler.calculate_value(wavelidx, threadidx);
             }
-        } else {
-            m_phase_handler.calculate_value(wavelidx, threadidx);
         }
         m_jvp_prepared[threadidx] = 0;
 
@@ -511,7 +519,9 @@ namespace sasktran2::solartransmission {
             for (auto& thread_cache : m_batch_integration_cache) {
                 thread_cache.resize(block_size);
             }
-            m_phase_handler.initialize_wavelength_blocks(block_size);
+            if (!m_delegate_scalar_interior_source) {
+                m_phase_handler.initialize_wavelength_blocks(block_size);
+            }
         }
     }
 
@@ -532,7 +542,9 @@ namespace sasktran2::solartransmission {
                     "capacity");
             }
 
-            m_phase_handler.calculate_block(batch, threadidx);
+            if (!m_delegate_scalar_interior_source) {
+                m_phase_handler.calculate_block(batch, threadidx);
+            }
             auto solar_trans =
                 wavelength_left_cols(m_solar_trans_batch[threadidx], batch);
             const auto extinction = wavelength_middle_cols(
@@ -996,6 +1008,9 @@ namespace sasktran2::solartransmission {
     template <typename S, int NSTOKES>
     void SingleScatterSource<S, NSTOKES>::append_interior_active_derivatives(
         int losidx, int layeridx, std::vector<int>& derivative_indices) const {
+        if (m_delegate_scalar_interior_source) {
+            return;
+        }
         if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
             return;
         }
@@ -1073,17 +1088,22 @@ namespace sasktran2::solartransmission {
         m_index_map.resize(internal_viewing.traced_rays.size());
         int c = 0;
         for (int i = 0; i < internal_viewing.traced_rays.size(); ++i) {
-            m_index_map[i].resize(
-                internal_viewing.traced_rays[i].layers.size());
-
-            for (int j = 0; j < m_index_map[i].size(); ++j) {
-                m_index_map[i][j] = c;
-                ++c;
+            const int num_layers =
+                static_cast<int>(internal_viewing.traced_rays[i].layers.size());
+            if (m_delegate_scalar_interior_source) {
+                m_index_map[i].assign(num_layers == 0 ? 0 : 1, c);
+                c += num_layers;
+            } else {
+                m_index_map[i].resize(num_layers);
+                for (int j = 0; j < num_layers; ++j) {
+                    m_index_map[i][j] = c;
+                    ++c;
+                }
             }
             // Final exit layer
             ++c;
         }
-        {
+        if (!m_delegate_scalar_interior_source) {
             ZoneScopedN("Single Scatter Source Phase Geometry");
             this->m_phase_handler.initialize_geometry(
                 internal_viewing.traced_rays, m_index_map);
@@ -1136,15 +1156,23 @@ namespace sasktran2::solartransmission {
             int source_index = 0;
             for (std::size_t rayidx = 0; rayidx < layer_counts.size();
                  ++rayidx) {
-                m_index_map[rayidx].resize(layer_counts[rayidx]);
-                for (std::uint32_t layeridx = 0;
-                     layeridx < layer_counts[rayidx]; ++layeridx) {
-                    m_index_map[rayidx][layeridx] = source_index++;
+                if (m_delegate_scalar_interior_source) {
+                    m_index_map[rayidx].assign(
+                        layer_counts[rayidx] == 0 ? 0 : 1, source_index);
+                    source_index += static_cast<int>(layer_counts[rayidx]);
+                } else {
+                    m_index_map[rayidx].resize(layer_counts[rayidx]);
+                    for (std::uint32_t layeridx = 0;
+                         layeridx < layer_counts[rayidx]; ++layeridx) {
+                        m_index_map[rayidx][layeridx] = source_index++;
+                    }
                 }
                 ++source_index;
             }
-            m_phase_handler.initialize_geometry(internal_viewing.traced_rays,
-                                                m_index_map);
+            if (!m_delegate_scalar_interior_source) {
+                m_phase_handler.initialize_geometry(
+                    internal_viewing.traced_rays, m_index_map);
+            }
 
             m_los_ground_is_hit.resize(internal_viewing.traced_rays.size());
             m_los_end_layers.resize(internal_viewing.traced_rays.size());

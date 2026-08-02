@@ -706,6 +706,7 @@ namespace sasktran2::solartransmission {
         bool m_table_native_products_enabled = false;
         bool m_interpolate_solar_on_atmosphere_grid = false;
         bool m_use_lower_interpolation = false;
+        bool m_delegate_scalar_interior_source = false;
         std::vector<std::vector<int>> m_index_map;
 
         PhaseHandler<NSTOKES> m_phase_handler;
@@ -1142,6 +1143,62 @@ namespace sasktran2::solartransmission {
 
         void enable_table_native_products() {
             m_table_native_products_enabled = true;
+        }
+
+        /** The scalar Rust successive-orders transport evaluates all
+         * atmospheric single-scatter endpoints itself. Keep this source only
+         * for solar-path transmission and the end-of-ray ground term. */
+        void delegate_scalar_interior_source() {
+            if constexpr (NSTOKES != 1) {
+                throw std::logic_error(
+                    "Delegated scalar interior source requires NSTOKES == 1");
+            }
+            m_delegate_scalar_interior_source = true;
+        }
+
+        /** Exposes the wavelength-local scalar solar transmission to the Rust
+         *  successive-orders forcing kernel. The source retains ownership. */
+        const Eigen::VectorXd&
+        scalar_solar_transmission(int wavel_threadidx) const {
+            if constexpr (NSTOKES != 1) {
+                throw std::logic_error(
+                    "Scalar solar transmission requires NSTOKES == 1");
+            }
+            return m_solar_trans.at(wavel_threadidx);
+        }
+
+        const Eigen::VectorXd&
+        scalar_solar_transmission_jvp(int wavel_threadidx) const {
+            if constexpr (NSTOKES != 1) {
+                throw std::logic_error(
+                    "Scalar solar-transmission JVP requires NSTOKES == 1");
+            }
+            return m_solar_trans_jvp.at(wavel_threadidx);
+        }
+
+        bool solar_transmission_on_atmosphere_grid() const {
+            return m_interpolate_solar_on_atmosphere_grid;
+        }
+
+        void accumulate_scalar_solar_transmission_vjp(
+            int wavel_threadidx, int source_threadidx,
+            Eigen::Ref<const Eigen::VectorXd> cotangent) const {
+            if constexpr (NSTOKES != 1) {
+                throw std::logic_error(
+                    "Scalar solar-transmission VJP requires NSTOKES == 1");
+            }
+            if (!m_active_vjp_derivatives.at(wavel_threadidx).extinction) {
+                return;
+            }
+            const int target_thread =
+                m_interpolate_solar_on_atmosphere_grid ? source_threadidx : 0;
+            auto& target =
+                m_solar_trans_cotangent.at(wavel_threadidx).at(target_thread);
+            if (target.size() != cotangent.size()) {
+                throw std::invalid_argument(
+                    "Scalar solar-transmission cotangent size mismatch");
+            }
+            target += cotangent;
         }
 
         void

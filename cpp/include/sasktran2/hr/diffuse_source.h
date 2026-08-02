@@ -51,6 +51,20 @@ namespace sasktran2::hr {
         Eigen::VectorXd rust_first_order_forcing_tangent;
         std::vector<double> rust_solution_jvp;
 
+        /** Per-wavelength scalar attenuation scratch produced together with
+         *  the transport values in Rust and consumed by the exact source. */
+        std::vector<double> rust_layer_optical_depth;
+        std::vector<double> rust_layer_attenuation;
+        std::vector<double> rust_layer_prefix_attenuation;
+        std::vector<double> rust_ray_end_attenuation;
+        std::vector<double> rust_ray_end_attenuation_tangent;
+        std::vector<double> rust_single_scatter_legendre_tangent;
+        mutable std::vector<double> rust_ray_end_attenuation_cotangent;
+        mutable std::vector<double> rust_single_scatter_extinction_gradient;
+        mutable std::vector<double> rust_single_scatter_albedo_gradient;
+        mutable std::vector<double> rust_single_scatter_legendre_gradient;
+        mutable std::vector<double> rust_single_scatter_solar_gradient;
+
         /** Wavelength-contiguous outgoing sources retained until LOS
          *  integration completes. */
         std::vector<double> rust_batch_outgoing_sources;
@@ -74,6 +88,7 @@ namespace sasktran2::hr {
     };
 
     struct DiffuseTableDerivativeActivity {
+        bool prepared = false;
         bool extinction = false;
         bool ssa = false;
         bool surface = false;
@@ -213,6 +228,10 @@ namespace sasktran2::hr {
         mutable std::vector<::rust::Box<
             sasktran2::rust::successive_orders::RustSuccessiveOrdersSolver>>
             m_rust_solvers;
+        std::vector<::rust::Box<
+            sasktran2::rust::successive_orders::RustScalarRayTransport>>
+            m_rust_scalar_transports;
+        std::vector<std::uint32_t> m_rust_transport_ray_layer_offsets;
 #endif
 
       private:
@@ -247,6 +266,18 @@ namespace sasktran2::hr {
             int wavelidx, ::rust::Slice<const double> boundary_gradient,
             Eigen::Ref<Eigen::VectorXd> native_gradient) const;
         void iterate_to_solution_rust(int wavelidx, int threadidx);
+        void assemble_rust_scalar_transport(int wavelidx, int threadidx,
+                                            bool assemble_first_order = false);
+        void assemble_rust_scalar_transport_jvp(
+            int wavelidx, int threadidx,
+            Eigen::Ref<const Eigen::VectorXd> native_tangent);
+        void accumulate_rust_scalar_transport_vjp(
+            int wavelidx, int threadidx,
+            ::rust::Slice<const double> transport_gradient,
+            ::rust::Slice<const double> solution,
+            ::rust::Slice<const double> forcing_gradient,
+            Eigen::Ref<Eigen::VectorXd> native_gradient) const;
+        void release_cpp_scalar_transport_geometry();
         void capture_forward_state(int wavelidx, int threadidx);
         void restore_transport_operator(int wavelidx, int threadidx);
 #endif

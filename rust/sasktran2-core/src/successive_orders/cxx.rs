@@ -3,7 +3,8 @@ use std::pin::Pin;
 use anyhow::{Result, anyhow};
 
 use super::{
-    BlockDiagonalMatrix, CsrMatrix, FixedPointProblem, SolverConfig, SuccessiveOrdersSolver,
+    BlockDiagonalMatrix, CsrMatrix, FixedPointProblem, ScalarRayTransport, SolverConfig,
+    SuccessiveOrdersSolver,
 };
 use super::{
     ScalarCoefficientBasis, ScalarCoefficientScattering, VectorCoefficientBasis,
@@ -13,7 +14,109 @@ use super::{
 #[cxx::bridge(namespace = "sasktran2::rust::successive_orders")]
 pub mod ffi {
     extern "Rust" {
+        type RustScalarRayTransport;
         type RustSuccessiveOrdersSolver;
+
+        #[allow(clippy::too_many_arguments)]
+        fn new_scalar_ray_transport(
+            ray_layer_offsets: &[u32],
+            layer_atmosphere_offsets: &[u32],
+            atmosphere_indices: &[u32],
+            optical_depth_weights: &[f64],
+            albedo_weights: &[f64],
+            entrance_weights: &[f64],
+            exit_weights: &[f64],
+            layer_distance: &[f64],
+            layer_start_fraction: &[f64],
+            layer_end_fraction: &[f64],
+            ray_scattering_cosine: &[f64],
+            num_phase_moments: usize,
+            solar_transmission_on_atmosphere_grid: bool,
+            layer_source_offsets: &[u32],
+            ray_transport_value_offsets: &[u32],
+            source_value_inner_indices: &[u16],
+            source_weights: &[f64],
+            ray_ground_offsets: &[u32],
+            ground_value_inner_indices: &[u16],
+            ground_weights: &[f64],
+        ) -> Result<Box<RustScalarRayTransport>>;
+
+        #[allow(clippy::too_many_arguments)]
+        fn assemble_scalar_ray_transport(
+            transport: &RustScalarRayTransport,
+            extinction: &[f64],
+            single_scatter_albedo: &[f64],
+            transport_values: &mut [f64],
+            layer_optical_depth: &mut [f64],
+            layer_attenuation: &mut [f64],
+            layer_prefix_attenuation: &mut [f64],
+            ray_end_attenuation: &mut [f64],
+        ) -> Result<()>;
+
+        #[allow(clippy::too_many_arguments)]
+        fn assemble_scalar_ray_transport_with_first_order(
+            transport: &RustScalarRayTransport,
+            extinction: &[f64],
+            single_scatter_albedo: &[f64],
+            legendre_coefficients: &[f64],
+            maximum_order: &[i32],
+            solar_transmission: &[f64],
+            transport_values: &mut [f64],
+            first_order_radiance: &mut [f64],
+            layer_optical_depth: &mut [f64],
+            layer_attenuation: &mut [f64],
+            layer_prefix_attenuation: &mut [f64],
+            ray_end_attenuation: &mut [f64],
+        ) -> Result<()>;
+
+        #[allow(clippy::too_many_arguments)]
+        fn assemble_scalar_ray_transport_jvp(
+            transport: &RustScalarRayTransport,
+            extinction: &[f64],
+            single_scatter_albedo: &[f64],
+            legendre_coefficients: &[f64],
+            maximum_order: &[i32],
+            solar_transmission: &[f64],
+            extinction_tangent: &[f64],
+            single_scatter_albedo_tangent: &[f64],
+            legendre_coefficient_tangent: &[f64],
+            solar_transmission_tangent: &[f64],
+            transport_values: &mut [f64],
+            transport_value_tangent: &mut [f64],
+            first_order_radiance_tangent: &mut [f64],
+            ray_end_attenuation: &mut [f64],
+            ray_end_attenuation_tangent: &mut [f64],
+        ) -> Result<()>;
+
+        #[allow(clippy::too_many_arguments)]
+        fn assemble_scalar_ray_transport_vjp(
+            transport: &RustScalarRayTransport,
+            extinction: &[f64],
+            single_scatter_albedo: &[f64],
+            legendre_coefficients: &[f64],
+            maximum_order: &[i32],
+            solar_transmission: &[f64],
+            transport_value_gradient: &[f64],
+            transport_column_indices: &[i32],
+            solution: &[f64],
+            first_order_radiance_gradient: &[f64],
+            ray_end_attenuation_cotangent: &[f64],
+            layer_optical_depth: &[f64],
+            layer_attenuation: &[f64],
+            layer_prefix_attenuation: &[f64],
+            extinction_gradient: &mut [f64],
+            single_scatter_albedo_gradient: &mut [f64],
+            legendre_coefficient_gradient: &mut [f64],
+            solar_transmission_gradient: &mut [f64],
+        ) -> Result<()>;
+
+        fn scalar_ray_transport_num_rays(transport: &RustScalarRayTransport) -> usize;
+        fn scalar_ray_transport_num_layers(transport: &RustScalarRayTransport) -> usize;
+        fn scalar_ray_transport_num_atmosphere_weights(transport: &RustScalarRayTransport)
+        -> usize;
+        fn scalar_ray_transport_num_source_weights(transport: &RustScalarRayTransport) -> usize;
+        fn scalar_ray_transport_num_ground_weights(transport: &RustScalarRayTransport) -> usize;
+        fn scalar_ray_transport_storage_bytes(transport: &RustScalarRayTransport) -> usize;
 
         #[allow(clippy::too_many_arguments)]
         fn new_successive_orders_solver(
@@ -147,6 +250,213 @@ pub mod ffi {
         fn initial_residual(solver: &RustSuccessiveOrdersSolver) -> f64;
         fn final_residual(solver: &RustSuccessiveOrdersSolver) -> f64;
     }
+}
+
+pub struct RustScalarRayTransport {
+    transport: ScalarRayTransport,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn new_scalar_ray_transport(
+    ray_layer_offsets: &[u32],
+    layer_atmosphere_offsets: &[u32],
+    atmosphere_indices: &[u32],
+    optical_depth_weights: &[f64],
+    albedo_weights: &[f64],
+    entrance_weights: &[f64],
+    exit_weights: &[f64],
+    layer_distance: &[f64],
+    layer_start_fraction: &[f64],
+    layer_end_fraction: &[f64],
+    ray_scattering_cosine: &[f64],
+    num_phase_moments: usize,
+    solar_transmission_on_atmosphere_grid: bool,
+    layer_source_offsets: &[u32],
+    ray_transport_value_offsets: &[u32],
+    source_value_inner_indices: &[u16],
+    source_weights: &[f64],
+    ray_ground_offsets: &[u32],
+    ground_value_inner_indices: &[u16],
+    ground_weights: &[f64],
+) -> Result<Box<RustScalarRayTransport>> {
+    Ok(Box::new(RustScalarRayTransport {
+        transport: ScalarRayTransport::new(
+            ray_layer_offsets,
+            layer_atmosphere_offsets,
+            atmosphere_indices,
+            optical_depth_weights,
+            albedo_weights,
+            entrance_weights,
+            exit_weights,
+            layer_distance,
+            layer_start_fraction,
+            layer_end_fraction,
+            ray_scattering_cosine,
+            num_phase_moments,
+            solar_transmission_on_atmosphere_grid,
+            layer_source_offsets,
+            ray_transport_value_offsets,
+            source_value_inner_indices,
+            source_weights,
+            ray_ground_offsets,
+            ground_value_inner_indices,
+            ground_weights,
+        )?,
+    }))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn assemble_scalar_ray_transport_with_first_order(
+    transport: &RustScalarRayTransport,
+    extinction: &[f64],
+    single_scatter_albedo: &[f64],
+    legendre_coefficients: &[f64],
+    maximum_order: &[i32],
+    solar_transmission: &[f64],
+    transport_values: &mut [f64],
+    first_order_radiance: &mut [f64],
+    layer_optical_depth: &mut [f64],
+    layer_attenuation: &mut [f64],
+    layer_prefix_attenuation: &mut [f64],
+    ray_end_attenuation: &mut [f64],
+) -> Result<()> {
+    transport.transport.assemble_with_first_order(
+        extinction,
+        single_scatter_albedo,
+        legendre_coefficients,
+        maximum_order,
+        solar_transmission,
+        transport_values,
+        first_order_radiance,
+        layer_optical_depth,
+        layer_attenuation,
+        layer_prefix_attenuation,
+        ray_end_attenuation,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn assemble_scalar_ray_transport_jvp(
+    transport: &RustScalarRayTransport,
+    extinction: &[f64],
+    single_scatter_albedo: &[f64],
+    legendre_coefficients: &[f64],
+    maximum_order: &[i32],
+    solar_transmission: &[f64],
+    extinction_tangent: &[f64],
+    single_scatter_albedo_tangent: &[f64],
+    legendre_coefficient_tangent: &[f64],
+    solar_transmission_tangent: &[f64],
+    transport_values: &mut [f64],
+    transport_value_tangent: &mut [f64],
+    first_order_radiance_tangent: &mut [f64],
+    ray_end_attenuation: &mut [f64],
+    ray_end_attenuation_tangent: &mut [f64],
+) -> Result<()> {
+    transport.transport.assemble_jvp_with_first_order(
+        extinction,
+        single_scatter_albedo,
+        legendre_coefficients,
+        maximum_order,
+        solar_transmission,
+        extinction_tangent,
+        single_scatter_albedo_tangent,
+        legendre_coefficient_tangent,
+        solar_transmission_tangent,
+        transport_values,
+        transport_value_tangent,
+        first_order_radiance_tangent,
+        ray_end_attenuation,
+        ray_end_attenuation_tangent,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn assemble_scalar_ray_transport_vjp(
+    transport: &RustScalarRayTransport,
+    extinction: &[f64],
+    single_scatter_albedo: &[f64],
+    legendre_coefficients: &[f64],
+    maximum_order: &[i32],
+    solar_transmission: &[f64],
+    transport_value_gradient: &[f64],
+    transport_column_indices: &[i32],
+    solution: &[f64],
+    first_order_radiance_gradient: &[f64],
+    ray_end_attenuation_cotangent: &[f64],
+    layer_optical_depth: &[f64],
+    layer_attenuation: &[f64],
+    layer_prefix_attenuation: &[f64],
+    extinction_gradient: &mut [f64],
+    single_scatter_albedo_gradient: &mut [f64],
+    legendre_coefficient_gradient: &mut [f64],
+    solar_transmission_gradient: &mut [f64],
+) -> Result<()> {
+    transport.transport.assemble_vjp_with_first_order(
+        extinction,
+        single_scatter_albedo,
+        legendre_coefficients,
+        maximum_order,
+        solar_transmission,
+        transport_value_gradient,
+        transport_column_indices,
+        solution,
+        first_order_radiance_gradient,
+        ray_end_attenuation_cotangent,
+        layer_optical_depth,
+        layer_attenuation,
+        layer_prefix_attenuation,
+        extinction_gradient,
+        single_scatter_albedo_gradient,
+        legendre_coefficient_gradient,
+        solar_transmission_gradient,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn assemble_scalar_ray_transport(
+    transport: &RustScalarRayTransport,
+    extinction: &[f64],
+    single_scatter_albedo: &[f64],
+    transport_values: &mut [f64],
+    layer_optical_depth: &mut [f64],
+    layer_attenuation: &mut [f64],
+    layer_prefix_attenuation: &mut [f64],
+    ray_end_attenuation: &mut [f64],
+) -> Result<()> {
+    transport.transport.assemble(
+        extinction,
+        single_scatter_albedo,
+        transport_values,
+        layer_optical_depth,
+        layer_attenuation,
+        layer_prefix_attenuation,
+        ray_end_attenuation,
+    )
+}
+
+fn scalar_ray_transport_num_rays(transport: &RustScalarRayTransport) -> usize {
+    transport.transport.num_rays()
+}
+
+fn scalar_ray_transport_num_layers(transport: &RustScalarRayTransport) -> usize {
+    transport.transport.num_layers()
+}
+
+fn scalar_ray_transport_num_atmosphere_weights(transport: &RustScalarRayTransport) -> usize {
+    transport.transport.num_atmosphere_weights()
+}
+
+fn scalar_ray_transport_num_source_weights(transport: &RustScalarRayTransport) -> usize {
+    transport.transport.num_source_weights()
+}
+
+fn scalar_ray_transport_num_ground_weights(transport: &RustScalarRayTransport) -> usize {
+    transport.transport.num_ground_weights()
+}
+
+fn scalar_ray_transport_storage_bytes(transport: &RustScalarRayTransport) -> usize {
+    transport.transport.storage_bytes()
 }
 
 pub struct RustSuccessiveOrdersSolver {
