@@ -58,7 +58,10 @@ impl EndpointStencilKey {
 pub struct ScalarRayTransport {
     ray_layer_offsets: Vec<u32>,
     layer_atmosphere_offsets: Vec<u32>,
+    num_layers: usize,
+    uniform_atmosphere_stencil_width: u8,
     atmosphere_indices: Vec<u32>,
+    compact_atmosphere_indices: Vec<u16>,
     optical_depth_weights: Vec<f64>,
     albedo_weights: Vec<f64>,
     layer_exit_endpoint_indices: Vec<u32>,
@@ -68,8 +71,8 @@ pub struct ScalarRayTransport {
     endpoint_atmosphere_offsets: Vec<u32>,
     endpoint_atmosphere_indices: Vec<u32>,
     endpoint_weights: Vec<f64>,
-    layer_distance: Vec<f64>,
-    layer_start_fraction: Vec<f64>,
+    layer_start_distance: Vec<f64>,
+    layer_end_distance: Vec<f64>,
     phase_geometry_ray_offsets: Vec<u32>,
     phase_geometry_ray_indices: Vec<u32>,
     phase_geometry_endpoint_offsets: Vec<u32>,
@@ -82,7 +85,8 @@ pub struct ScalarRayTransport {
     phase_u_factor: Vec<f64>,
     num_phase_moments: usize,
     solar_transmission_on_atmosphere_grid: bool,
-    layer_source_offsets: Vec<u32>,
+    ray_source_offsets: Vec<u32>,
+    layer_source_widths: Vec<u8>,
     ray_transport_value_offsets: Vec<u32>,
     ray_transport_row_nnz: Vec<u32>,
     num_stokes: usize,
@@ -240,6 +244,17 @@ impl ScalarRayTransport {
             );
         }
 
+        let uniform_atmosphere_stencil_width = layer_atmosphere_offsets
+            .windows(2)
+            .next()
+            .map(|offsets| offsets[1] - offsets[0])
+            .filter(|&width| {
+                matches!(width, 2 | 4)
+                    && layer_atmosphere_offsets
+                        .windows(2)
+                        .all(|offsets| offsets[1] - offsets[0] == width)
+            })
+            .unwrap_or(0) as u8;
         let required_atmosphere_len = atmosphere_indices
             .iter()
             .copied()
@@ -455,10 +470,40 @@ impl ScalarRayTransport {
             }
         }
 
+        let (atmosphere_indices, compact_atmosphere_indices) =
+            if required_atmosphere_len <= u16::MAX as usize + 1 {
+                (
+                    Vec::new(),
+                    atmosphere_indices
+                        .iter()
+                        .map(|&index| u16::try_from(index))
+                        .collect::<std::result::Result<Vec<_>, _>>()?,
+                )
+            } else {
+                (atmosphere_indices.to_vec(), Vec::new())
+            };
+        let layer_source_widths = layer_source_offsets
+            .windows(2)
+            .map(|offsets| {
+                u8::try_from(offsets[1] - offsets[0])
+                    .map_err(|_| anyhow!("layer source stencil exceeds packed 8-bit width"))
+            })
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let ray_source_offsets = ray_layer_offsets
+            .iter()
+            .map(|&layer_offset| layer_source_offsets[layer_offset as usize])
+            .collect();
         Ok(Self {
             ray_layer_offsets: ray_layer_offsets.to_vec(),
-            layer_atmosphere_offsets: layer_atmosphere_offsets.to_vec(),
-            atmosphere_indices: atmosphere_indices.to_vec(),
+            layer_atmosphere_offsets: if uniform_atmosphere_stencil_width == 0 {
+                layer_atmosphere_offsets.to_vec()
+            } else {
+                Vec::new()
+            },
+            num_layers,
+            uniform_atmosphere_stencil_width,
+            atmosphere_indices,
+            compact_atmosphere_indices,
             optical_depth_weights: optical_depth_weights.to_vec(),
             albedo_weights: albedo_weights.to_vec(),
             layer_exit_endpoint_indices,
@@ -468,8 +513,16 @@ impl ScalarRayTransport {
             endpoint_atmosphere_offsets,
             endpoint_atmosphere_indices,
             endpoint_weights,
-            layer_distance: layer_distance.to_vec(),
-            layer_start_fraction: layer_start_fraction.to_vec(),
+            layer_start_distance: layer_distance
+                .iter()
+                .zip(layer_start_fraction)
+                .map(|(&distance, &fraction)| distance * fraction)
+                .collect(),
+            layer_end_distance: layer_distance
+                .iter()
+                .zip(layer_end_fraction)
+                .map(|(&distance, &fraction)| distance * fraction)
+                .collect(),
             phase_geometry_ray_offsets,
             phase_geometry_ray_indices,
             phase_geometry_endpoint_offsets,
@@ -482,7 +535,8 @@ impl ScalarRayTransport {
             phase_u_factor,
             num_phase_moments,
             solar_transmission_on_atmosphere_grid,
-            layer_source_offsets: layer_source_offsets.to_vec(),
+            ray_source_offsets,
+            layer_source_widths,
             ray_transport_value_offsets: ray_transport_value_offsets.to_vec(),
             ray_transport_row_nnz,
             num_stokes: 1,
@@ -518,10 +572,8 @@ impl ScalarRayTransport {
         let mut required_transport_len = 0;
         for (ray_index, &ray_row_nnz) in ray_transport_row_nnz.iter().enumerate() {
             let row_nnz = ray_row_nnz as usize;
-            let layer_start = self.ray_layer_offsets[ray_index] as usize;
-            let layer_end = self.ray_layer_offsets[ray_index + 1] as usize;
-            let source_start = self.layer_source_offsets[layer_start] as usize;
-            let source_end = self.layer_source_offsets[layer_end] as usize;
+            let source_start = self.ray_source_offsets[ray_index] as usize;
+            let source_end = self.ray_source_offsets[ray_index + 1] as usize;
             let ground_start = self.ray_ground_offsets[ray_index] as usize;
             let ground_end = self.ray_ground_offsets[ray_index + 1] as usize;
             if self.source_value_inner_indices[source_start..source_end]
@@ -565,7 +617,7 @@ impl ScalarRayTransport {
     }
 
     pub fn num_layers(&self) -> usize {
-        self.layer_atmosphere_offsets.len() - 1
+        self.num_layers
     }
 
     /// Number of CSR values required by this packed transport geometry.
@@ -579,7 +631,7 @@ impl ScalarRayTransport {
     }
 
     pub fn num_atmosphere_weights(&self) -> usize {
-        self.atmosphere_indices.len()
+        self.optical_depth_weights.len()
     }
 
     pub fn num_source_weights(&self) -> usize {
@@ -624,6 +676,7 @@ impl ScalarRayTransport {
         self.ray_layer_offsets.capacity() * size_of::<u32>()
             + self.layer_atmosphere_offsets.capacity() * size_of::<u32>()
             + self.atmosphere_indices.capacity() * size_of::<u32>()
+            + self.compact_atmosphere_indices.capacity() * size_of::<u16>()
             + self.optical_depth_weights.capacity() * size_of::<f64>()
             + self.albedo_weights.capacity() * size_of::<f64>()
             + self.layer_exit_endpoint_indices.capacity() * size_of::<u32>()
@@ -633,8 +686,8 @@ impl ScalarRayTransport {
             + self.endpoint_atmosphere_offsets.capacity() * size_of::<u32>()
             + self.endpoint_atmosphere_indices.capacity() * size_of::<u32>()
             + self.endpoint_weights.capacity() * size_of::<f64>()
-            + self.layer_distance.capacity() * size_of::<f64>()
-            + self.layer_start_fraction.capacity() * size_of::<f64>()
+            + self.layer_start_distance.capacity() * size_of::<f64>()
+            + self.layer_end_distance.capacity() * size_of::<f64>()
             + self.phase_geometry_ray_offsets.capacity() * size_of::<u32>()
             + self.phase_geometry_ray_indices.capacity() * size_of::<u32>()
             + self.phase_geometry_endpoint_offsets.capacity() * size_of::<u32>()
@@ -644,7 +697,8 @@ impl ScalarRayTransport {
             + self.ray_polarized_phase_basis.capacity() * size_of::<f64>()
             + self.phase_q_factor.capacity() * size_of::<f64>()
             + self.phase_u_factor.capacity() * size_of::<f64>()
-            + self.layer_source_offsets.capacity() * size_of::<u32>()
+            + self.ray_source_offsets.capacity() * size_of::<u32>()
+            + self.layer_source_widths.capacity() * size_of::<u8>()
             + self.ray_transport_value_offsets.capacity() * size_of::<u32>()
             + self.ray_transport_row_nnz.capacity() * size_of::<u32>()
             + self.source_value_inner_indices.capacity() * size_of::<u16>()
@@ -734,26 +788,21 @@ impl ScalarRayTransport {
             let transport_offset = self.ray_transport_value_offsets[ray_index] as usize;
             let mut current_attenuation = 1.0;
             let mut current_attenuation_tangent = 0.0;
+            let mut source_end = self.ray_source_offsets[ray_index + 1] as usize;
 
             for layer_index in (layer_start..layer_end).rev() {
-                let atmosphere_start = self.layer_atmosphere_offsets[layer_index] as usize;
-                let atmosphere_end = self.layer_atmosphere_offsets[layer_index + 1] as usize;
-                let mut optical_depth = 0.0;
-                let mut optical_depth_tangent = 0.0;
-                let mut albedo = 0.0;
-                let mut albedo_tangent = 0.0;
-                for stencil_index in atmosphere_start..atmosphere_end {
-                    let atmosphere_index = self.atmosphere_indices[stencil_index] as usize;
-                    optical_depth +=
-                        self.optical_depth_weights[stencil_index] * extinction[atmosphere_index];
-                    optical_depth_tangent += self.optical_depth_weights[stencil_index]
-                        * extinction_tangent[atmosphere_index];
-                    albedo += self.albedo_weights[stencil_index]
-                        * single_scatter_albedo[atmosphere_index];
-                    albedo_tangent += self.albedo_weights[stencil_index]
-                        * single_scatter_albedo_tangent[atmosphere_index];
-                }
-                let attenuation = (-optical_depth).exp();
+                let medium = self.layer_medium_jvp(
+                    layer_index,
+                    extinction,
+                    single_scatter_albedo,
+                    extinction_tangent,
+                    single_scatter_albedo_tangent,
+                );
+                let optical_depth = medium.optical_depth;
+                let optical_depth_tangent = medium.optical_depth_tangent;
+                let albedo = medium.albedo;
+                let albedo_tangent = medium.albedo_tangent;
+                let attenuation = attenuation_from_optical_depth(optical_depth);
                 let attenuation_tangent = -attenuation * optical_depth_tangent;
                 layer_optical_depth[layer_index] = optical_depth;
                 layer_attenuation[layer_index] = attenuation;
@@ -765,29 +814,34 @@ impl ScalarRayTransport {
                     albedo_tangent * (1.0 - attenuation) * current_attenuation
                         - albedo * attenuation_tangent * current_attenuation
                         + albedo * (1.0 - attenuation) * current_attenuation_tangent;
-                let source_start = self.layer_source_offsets[layer_index] as usize;
-                let source_end = self.layer_source_offsets[layer_index + 1] as usize;
+                let source_start = source_end - self.layer_source_widths[layer_index] as usize;
+                let (source_indices, source_weights) =
+                    self.source_stencil(source_start, source_end);
+                source_end = source_start;
                 if self.num_stokes == 1 {
-                    for source_index in source_start..source_end {
-                        let value_index = transport_offset
-                            + self.source_value_inner_indices[source_index] as usize;
-                        let weight = self.source_weights[source_index];
-                        add_packed_value(transport_values, value_index, weight * source_factor);
-                        add_packed_value(
+                    for (&inner_index, &weight) in source_indices.iter().zip(source_weights) {
+                        let value_index = transport_offset + inner_index as usize;
+                        multiply_add_packed_value(
+                            transport_values,
+                            value_index,
+                            weight,
+                            source_factor,
+                        );
+                        multiply_add_packed_value(
                             transport_value_tangent,
                             value_index,
-                            weight * source_factor_tangent,
+                            weight,
+                            source_factor_tangent,
                         );
                     }
                 } else {
-                    for source_index in source_start..source_end {
-                        let weight = self.source_weights[source_index];
+                    for (&inner_index, &weight) in source_indices.iter().zip(source_weights) {
                         for stokes in 0..self.num_stokes {
                             let value_index = self.transport_value_index(
                                 ray_index,
                                 transport_offset,
                                 stokes,
-                                self.source_value_inner_indices[source_index],
+                                inner_index,
                             );
                             transport_values[value_index] += weight * source_factor;
                             transport_value_tangent[value_index] += weight * source_factor_tangent;
@@ -800,29 +854,31 @@ impl ScalarRayTransport {
                 current_attenuation *= attenuation;
             }
 
-            let ground_start = self.ray_ground_offsets[ray_index] as usize;
-            let ground_end = self.ray_ground_offsets[ray_index + 1] as usize;
+            let (ground_indices, ground_weights) = self.ray_ground_stencil(ray_index);
             if self.num_stokes == 1 {
-                for ground_index in ground_start..ground_end {
-                    let value_index =
-                        transport_offset + self.ground_value_inner_indices[ground_index] as usize;
-                    let weight = self.ground_weights[ground_index];
-                    add_packed_value(transport_values, value_index, weight * current_attenuation);
-                    add_packed_value(
+                for (&inner_index, &weight) in ground_indices.iter().zip(ground_weights) {
+                    let value_index = transport_offset + inner_index as usize;
+                    multiply_add_packed_value(
+                        transport_values,
+                        value_index,
+                        weight,
+                        current_attenuation,
+                    );
+                    multiply_add_packed_value(
                         transport_value_tangent,
                         value_index,
-                        weight * current_attenuation_tangent,
+                        weight,
+                        current_attenuation_tangent,
                     );
                 }
             } else {
-                for ground_index in ground_start..ground_end {
-                    let weight = self.ground_weights[ground_index];
+                for (&inner_index, &weight) in ground_indices.iter().zip(ground_weights) {
                     for stokes in 0..self.num_stokes {
                         let value_index = self.transport_value_index(
                             ray_index,
                             transport_offset,
                             stokes,
-                            self.ground_value_inner_indices[ground_index],
+                            inner_index,
                         );
                         transport_values[value_index] += weight * current_attenuation;
                         transport_value_tangent[value_index] +=
@@ -879,104 +935,126 @@ impl ScalarRayTransport {
 
         extinction_gradient.fill(0.0);
         single_scatter_albedo_gradient.fill(0.0);
+        let max_ray_transport_values = self
+            .ray_transport_row_nnz
+            .iter()
+            .copied()
+            .max()
+            .unwrap_or(0) as usize
+            * self.num_stokes;
+        let mut compact_ray_value_cotangent = if compact_transport_gradient {
+            vec![0.0; max_ray_transport_values]
+        } else {
+            Vec::new()
+        };
         for ray_index in 0..self.num_rays() {
             let layer_start = self.ray_layer_offsets[ray_index] as usize;
             let layer_end = self.ray_layer_offsets[ray_index + 1] as usize;
             let transport_offset = self.ray_transport_value_offsets[ray_index] as usize;
             let mut current_attenuation_cotangent = 0.0;
-
-            let ground_start = self.ray_ground_offsets[ray_index] as usize;
-            let ground_end = self.ray_ground_offsets[ray_index + 1] as usize;
-            if self.num_stokes == 1 {
-                let forcing_cotangent = first_order_radiance_gradient[ray_index];
-                for ground_index in ground_start..ground_end {
-                    let value_index =
-                        transport_offset + self.ground_value_inner_indices[ground_index] as usize;
-                    let value_cotangent = if compact_transport_gradient {
-                        forcing_cotangent
+            let mut source_start = self.ray_source_offsets[ray_index] as usize;
+            let row_nnz = self.ray_transport_row_nnz[ray_index] as usize;
+            let compact_value_cotangent = if compact_transport_gradient {
+                let value_count = row_nnz * self.num_stokes;
+                for stokes in 0..self.num_stokes {
+                    let row_start = transport_offset + stokes * row_nnz;
+                    let scratch_start = stokes * row_nnz;
+                    let row_cotangent =
+                        first_order_radiance_gradient[ray_index * self.num_stokes + stokes];
+                    for inner_index in 0..row_nnz {
+                        let value_index = row_start + inner_index;
+                        compact_ray_value_cotangent[scratch_start + inner_index] = row_cotangent
                             * packed_value(
                                 solution,
                                 packed_column(transport_column_indices, value_index),
-                            )
-                    } else {
-                        packed_value(transport_value_gradient, value_index)
-                    };
-                    current_attenuation_cotangent +=
-                        self.ground_weights[ground_index] * value_cotangent;
+                            );
+                    }
+                }
+                &compact_ray_value_cotangent[..value_count]
+            } else {
+                &[]
+            };
+
+            let (ground_indices, ground_weights) = self.ray_ground_stencil(ray_index);
+            if self.num_stokes == 1 {
+                if compact_transport_gradient {
+                    for (&inner_index, &weight) in ground_indices.iter().zip(ground_weights) {
+                        current_attenuation_cotangent +=
+                            weight * packed_value(compact_value_cotangent, inner_index as usize);
+                    }
+                } else {
+                    for (&inner_index, &weight) in ground_indices.iter().zip(ground_weights) {
+                        let value_index = transport_offset + inner_index as usize;
+                        current_attenuation_cotangent +=
+                            weight * packed_value(transport_value_gradient, value_index);
+                    }
                 }
             } else {
-                for ground_index in ground_start..ground_end {
+                for (&inner_index, &weight) in ground_indices.iter().zip(ground_weights) {
                     let mut value_cotangent = 0.0;
                     for stokes in 0..self.num_stokes {
                         let value_index = self.transport_value_index(
                             ray_index,
                             transport_offset,
                             stokes,
-                            self.ground_value_inner_indices[ground_index],
+                            inner_index,
                         );
                         value_cotangent += if compact_transport_gradient {
-                            first_order_radiance_gradient[ray_index * self.num_stokes + stokes]
-                                * solution[transport_column_indices[value_index] as usize]
+                            packed_value(
+                                compact_value_cotangent,
+                                stokes * row_nnz + inner_index as usize,
+                            )
                         } else {
                             transport_value_gradient[value_index]
                         };
                     }
-                    current_attenuation_cotangent +=
-                        self.ground_weights[ground_index] * value_cotangent;
+                    current_attenuation_cotangent += weight * value_cotangent;
                 }
             }
 
             for layer_index in layer_start..layer_end {
                 let attenuation = layer_attenuation[layer_index];
                 let current_attenuation = layer_prefix_attenuation[layer_index];
-                let atmosphere_start = self.layer_atmosphere_offsets[layer_index] as usize;
-                let atmosphere_end = self.layer_atmosphere_offsets[layer_index + 1] as usize;
-                let mut albedo = 0.0;
-                for stencil_index in atmosphere_start..atmosphere_end {
-                    let atmosphere_index = self.atmosphere_indices[stencil_index] as usize;
-                    albedo += self.albedo_weights[stencil_index]
-                        * single_scatter_albedo[atmosphere_index];
-                }
+                let albedo = self.layer_albedo(layer_index, single_scatter_albedo);
 
                 let mut source_factor_cotangent = 0.0;
-                let source_start = self.layer_source_offsets[layer_index] as usize;
-                let source_end = self.layer_source_offsets[layer_index + 1] as usize;
+                let source_end = source_start + self.layer_source_widths[layer_index] as usize;
+                let (source_indices, source_weights) =
+                    self.source_stencil(source_start, source_end);
+                source_start = source_end;
                 if self.num_stokes == 1 {
-                    let forcing_cotangent = first_order_radiance_gradient[ray_index];
-                    for source_index in source_start..source_end {
-                        let value_index = transport_offset
-                            + self.source_value_inner_indices[source_index] as usize;
-                        let value_cotangent = if compact_transport_gradient {
-                            forcing_cotangent
-                                * packed_value(
-                                    solution,
-                                    packed_column(transport_column_indices, value_index),
-                                )
-                        } else {
-                            packed_value(transport_value_gradient, value_index)
-                        };
-                        source_factor_cotangent +=
-                            self.source_weights[source_index] * value_cotangent;
+                    if compact_transport_gradient {
+                        for (&inner_index, &weight) in source_indices.iter().zip(source_weights) {
+                            source_factor_cotangent += weight
+                                * packed_value(compact_value_cotangent, inner_index as usize);
+                        }
+                    } else {
+                        for (&inner_index, &weight) in source_indices.iter().zip(source_weights) {
+                            let value_index = transport_offset + inner_index as usize;
+                            source_factor_cotangent +=
+                                weight * packed_value(transport_value_gradient, value_index);
+                        }
                     }
                 } else {
-                    for source_index in source_start..source_end {
+                    for (&inner_index, &weight) in source_indices.iter().zip(source_weights) {
                         let mut value_cotangent = 0.0;
                         for stokes in 0..self.num_stokes {
                             let value_index = self.transport_value_index(
                                 ray_index,
                                 transport_offset,
                                 stokes,
-                                self.source_value_inner_indices[source_index],
+                                inner_index,
                             );
                             value_cotangent += if compact_transport_gradient {
-                                first_order_radiance_gradient[ray_index * self.num_stokes + stokes]
-                                    * solution[transport_column_indices[value_index] as usize]
+                                packed_value(
+                                    compact_value_cotangent,
+                                    stokes * row_nnz + inner_index as usize,
+                                )
                             } else {
                                 transport_value_gradient[value_index]
                             };
                         }
-                        source_factor_cotangent +=
-                            self.source_weights[source_index] * value_cotangent;
+                        source_factor_cotangent += weight * value_cotangent;
                     }
                 }
 
@@ -989,13 +1067,13 @@ impl ScalarRayTransport {
                 attenuation_cotangent += current_attenuation_cotangent * current_attenuation;
                 let optical_depth_cotangent = -attenuation * attenuation_cotangent;
 
-                for stencil_index in atmosphere_start..atmosphere_end {
-                    let atmosphere_index = self.atmosphere_indices[stencil_index] as usize;
-                    extinction_gradient[atmosphere_index] +=
-                        self.optical_depth_weights[stencil_index] * optical_depth_cotangent;
-                    single_scatter_albedo_gradient[atmosphere_index] +=
-                        self.albedo_weights[stencil_index] * albedo_cotangent;
-                }
+                self.accumulate_layer_medium_vjp(
+                    layer_index,
+                    optical_depth_cotangent,
+                    albedo_cotangent,
+                    extinction_gradient,
+                    single_scatter_albedo_gradient,
+                );
                 current_attenuation_cotangent = prefix_cotangent;
             }
         }
@@ -1244,56 +1322,69 @@ impl ScalarRayTransport {
                 let mut current_attenuation = 1.0;
                 let mut current_attenuation_tangent = 0.0;
                 let mut ray_first_order_tangent = [0.0; 3];
-                let mut shared_endpoint_source = None;
+                let mut source_end = self.ray_source_offsets[ray_index + 1] as usize;
+                let mut shared_endpoint_source = if layer_start < layer_end {
+                    self.endpoint_source_jvp(
+                        ray_index,
+                        layer_end - 1,
+                        true,
+                        &forcing,
+                        &endpoint_medium,
+                        &endpoint_scattering_values,
+                        &endpoint_scattering_value_tangent,
+                    )
+                } else {
+                    EndpointValueTangent::default()
+                };
 
                 for layer_index in (layer_start..layer_end).rev() {
-                    let atmosphere_start = self.layer_atmosphere_offsets[layer_index] as usize;
-                    let atmosphere_end = self.layer_atmosphere_offsets[layer_index + 1] as usize;
-                    let mut optical_depth = 0.0;
-                    let mut optical_depth_tangent = 0.0;
-                    let mut albedo = 0.0;
-                    let mut albedo_tangent = 0.0;
-                    for stencil_index in atmosphere_start..atmosphere_end {
-                        let atmosphere_index = self.atmosphere_indices[stencil_index] as usize;
-                        let optical_depth_weight = self.optical_depth_weights[stencil_index];
-                        let albedo_weight = self.albedo_weights[stencil_index];
-                        optical_depth += optical_depth_weight * extinction[atmosphere_index];
-                        optical_depth_tangent +=
-                            optical_depth_weight * extinction_tangent[atmosphere_index];
-                        albedo += albedo_weight * single_scatter_albedo[atmosphere_index];
-                        albedo_tangent +=
-                            albedo_weight * single_scatter_albedo_tangent[atmosphere_index];
-                    }
-                    let attenuation = (-optical_depth).exp();
+                    let medium = self.layer_medium_jvp(
+                        layer_index,
+                        extinction,
+                        single_scatter_albedo,
+                        extinction_tangent,
+                        single_scatter_albedo_tangent,
+                    );
+                    let optical_depth = medium.optical_depth;
+                    let optical_depth_tangent = medium.optical_depth_tangent;
+                    let albedo = medium.albedo;
+                    let albedo_tangent = medium.albedo_tangent;
+                    let (attenuation, integration_factor, integration_factor_derivative) =
+                        attenuation_source_factor_and_derivative(optical_depth);
                     let attenuation_tangent = -attenuation * optical_depth_tangent;
                     let source_factor = albedo * (1.0 - attenuation) * current_attenuation;
                     let source_factor_tangent =
                         albedo_tangent * (1.0 - attenuation) * current_attenuation
                             - albedo * attenuation_tangent * current_attenuation
                             + albedo * (1.0 - attenuation) * current_attenuation_tangent;
-                    let source_start = self.layer_source_offsets[layer_index] as usize;
-                    let source_end = self.layer_source_offsets[layer_index + 1] as usize;
+                    let source_start = source_end - self.layer_source_widths[layer_index] as usize;
+                    let (source_indices, source_weights) =
+                        self.source_stencil(source_start, source_end);
+                    source_end = source_start;
                     if self.num_stokes == 1 {
-                        for source_index in source_start..source_end {
-                            let value_index = transport_offset
-                                + self.source_value_inner_indices[source_index] as usize;
-                            let weight = self.source_weights[source_index];
-                            add_packed_value(transport_values, value_index, weight * source_factor);
-                            add_packed_value(
+                        for (&inner_index, &weight) in source_indices.iter().zip(source_weights) {
+                            let value_index = transport_offset + inner_index as usize;
+                            multiply_add_packed_value(
+                                transport_values,
+                                value_index,
+                                weight,
+                                source_factor,
+                            );
+                            multiply_add_packed_value(
                                 transport_value_tangent,
                                 value_index,
-                                weight * source_factor_tangent,
+                                weight,
+                                source_factor_tangent,
                             );
                         }
                     } else {
-                        for source_index in source_start..source_end {
-                            let weight = self.source_weights[source_index];
+                        for (&inner_index, &weight) in source_indices.iter().zip(source_weights) {
                             for stokes in 0..self.num_stokes {
                                 let value_index = self.transport_value_index(
                                     ray_index,
                                     transport_offset,
                                     stokes,
-                                    self.source_value_inner_indices[source_index],
+                                    inner_index,
                                 );
                                 transport_values[value_index] += weight * source_factor;
                                 transport_value_tangent[value_index] +=
@@ -1302,17 +1393,7 @@ impl ScalarRayTransport {
                         }
                     }
 
-                    let start_source = shared_endpoint_source.unwrap_or_else(|| {
-                        self.endpoint_source_jvp(
-                            ray_index,
-                            layer_index,
-                            true,
-                            &forcing,
-                            &endpoint_medium,
-                            &endpoint_scattering_values,
-                            &endpoint_scattering_value_tangent,
-                        )
-                    });
+                    let start_source = shared_endpoint_source;
                     let end_source = self.endpoint_source_jvp(
                         ray_index,
                         layer_index,
@@ -1322,86 +1403,72 @@ impl ScalarRayTransport {
                         &endpoint_scattering_values,
                         &endpoint_scattering_value_tangent,
                     );
-                    if self.layer_distance[layer_index] >= 1.0e-4 {
-                        let (integration_factor, integration_factor_derivative) =
-                            constant_source_factor_and_derivative(optical_depth, attenuation);
+                    let start_distance = self.layer_start_distance[layer_index];
+                    let end_distance = self.layer_end_distance[layer_index];
+                    if start_distance + end_distance >= 1.0e-4 {
                         let integration_factor_tangent =
                             integration_factor_derivative * optical_depth_tangent;
-                        let distance = self.layer_distance[layer_index];
                         if self.num_stokes == 1 {
-                            let endpoint_quadrature = start_source.value[0]
-                                * self.layer_start_fraction[layer_index]
-                                + end_source.value[0]
-                                    * (1.0 - self.layer_start_fraction[layer_index]);
-                            let endpoint_quadrature_tangent = start_source.tangent[0]
-                                * self.layer_start_fraction[layer_index]
-                                + end_source.tangent[0]
-                                    * (1.0 - self.layer_start_fraction[layer_index]);
-                            ray_first_order_tangent[0] += distance
-                                * (current_attenuation_tangent
-                                    * integration_factor
-                                    * endpoint_quadrature
+                            let weighted_source = start_source.value[0] * start_distance
+                                + end_source.value[0] * end_distance;
+                            let weighted_source_tangent = start_source.tangent[0] * start_distance
+                                + end_source.tangent[0] * end_distance;
+                            ray_first_order_tangent[0] +=
+                                current_attenuation_tangent * integration_factor * weighted_source
                                     + current_attenuation
-                                        * (integration_factor_tangent * endpoint_quadrature
-                                            + integration_factor * endpoint_quadrature_tangent));
+                                        * (integration_factor_tangent * weighted_source
+                                            + integration_factor * weighted_source_tangent);
                         } else {
                             for (stokes, ray_tangent) in ray_first_order_tangent[..self.num_stokes]
                                 .iter_mut()
                                 .enumerate()
                             {
-                                let endpoint_quadrature = start_source.value[stokes]
-                                    * self.layer_start_fraction[layer_index]
-                                    + end_source.value[stokes]
-                                        * (1.0 - self.layer_start_fraction[layer_index]);
-                                let endpoint_quadrature_tangent = start_source.tangent[stokes]
-                                    * self.layer_start_fraction[layer_index]
-                                    + end_source.tangent[stokes]
-                                        * (1.0 - self.layer_start_fraction[layer_index]);
-                                *ray_tangent += distance
-                                    * (current_attenuation_tangent
-                                        * integration_factor
-                                        * endpoint_quadrature
-                                        + current_attenuation
-                                            * (integration_factor_tangent * endpoint_quadrature
-                                                + integration_factor
-                                                    * endpoint_quadrature_tangent));
+                                let weighted_source = start_source.value[stokes] * start_distance
+                                    + end_source.value[stokes] * end_distance;
+                                let weighted_source_tangent = start_source.tangent[stokes]
+                                    * start_distance
+                                    + end_source.tangent[stokes] * end_distance;
+                                *ray_tangent += current_attenuation_tangent
+                                    * integration_factor
+                                    * weighted_source
+                                    + current_attenuation
+                                        * (integration_factor_tangent * weighted_source
+                                            + integration_factor * weighted_source_tangent);
                             }
                         }
                     }
-                    shared_endpoint_source = Some(end_source);
+                    shared_endpoint_source = end_source;
 
                     current_attenuation_tangent = current_attenuation_tangent * attenuation
                         + current_attenuation * attenuation_tangent;
                     current_attenuation *= attenuation;
                 }
 
-                let ground_start = self.ray_ground_offsets[ray_index] as usize;
-                let ground_end = self.ray_ground_offsets[ray_index + 1] as usize;
+                let (ground_indices, ground_weights) = self.ray_ground_stencil(ray_index);
                 if self.num_stokes == 1 {
-                    for ground_index in ground_start..ground_end {
-                        let value_index = transport_offset
-                            + self.ground_value_inner_indices[ground_index] as usize;
-                        let weight = self.ground_weights[ground_index];
-                        add_packed_value(
+                    for (&inner_index, &weight) in ground_indices.iter().zip(ground_weights) {
+                        let value_index = transport_offset + inner_index as usize;
+                        multiply_add_packed_value(
                             transport_values,
                             value_index,
-                            weight * current_attenuation,
+                            weight,
+                            current_attenuation,
                         );
-                        add_packed_value(
+                        multiply_add_packed_value(
                             transport_value_tangent,
                             value_index,
-                            weight * current_attenuation_tangent,
+                            weight,
+                            current_attenuation_tangent,
                         );
                     }
                 } else {
-                    for ground_index in ground_start..ground_end {
-                        let weight = self.ground_weights[ground_index];
+                    for (&inner_index, &weight) in ground_indices.iter().zip(ground_weights) {
                         for stokes in 0..self.num_stokes {
                             let value_index = self.transport_value_index(
                                 ray_index,
                                 transport_offset,
                                 stokes,
-                                self.ground_value_inner_indices[ground_index],
+                                inner_index,
                             );
                             transport_values[value_index] += weight * current_attenuation;
                             transport_value_tangent[value_index] +=
@@ -1569,6 +1636,18 @@ impl ScalarRayTransport {
         let mut phase_values = vec![0.0; phase_value_size];
         let mut phase_value_gradient = vec![0.0; phase_value_size];
         let mut endpoint_phase_values = vec![0.0; phase_endpoint_value_size];
+        let max_ray_transport_values = self
+            .ray_transport_row_nnz
+            .iter()
+            .copied()
+            .max()
+            .unwrap_or(0) as usize
+            * self.num_stokes;
+        let mut compact_ray_value_cotangent = if compact_transport_gradient {
+            vec![0.0; max_ray_transport_values]
+        } else {
+            Vec::new()
+        };
         for phase_geometry in 0..self.num_phase_geometries() {
             let grouped_phase_geometry =
                 self.uses_grouped_phase_geometry(phase_geometry, maximum_order.len());
@@ -1603,6 +1682,7 @@ impl ScalarRayTransport {
                 let forcing_start = ray_index * self.num_stokes;
                 let mut forcing_cotangent = [0.0; 3];
                 let mut current_attenuation_cotangent = ray_end_attenuation_cotangent[ray_index];
+                let mut source_start = self.ray_source_offsets[ray_index] as usize;
                 let first_order_active = if self.num_stokes == 1 {
                     let forcing_value_cotangent = first_order_radiance_gradient[forcing_start];
                     forcing_cotangent[0] = forcing_value_cotangent;
@@ -1628,46 +1708,73 @@ impl ScalarRayTransport {
                         .iter()
                         .any(|value| *value != 0.0)
                 };
-                let mut shared_endpoint = None;
-                let mut shared_endpoint_cotangent = [0.0; 3];
-
-                let ground_start = self.ray_ground_offsets[ray_index] as usize;
-                let ground_end = self.ray_ground_offsets[ray_index + 1] as usize;
-                if self.num_stokes == 1 {
-                    for ground_index in ground_start..ground_end {
-                        let value_index = transport_offset
-                            + self.ground_value_inner_indices[ground_index] as usize;
-                        let value_gradient = if compact_transport_gradient {
-                            forcing_cotangent[0]
+                let row_nnz = self.ray_transport_row_nnz[ray_index] as usize;
+                let compact_value_cotangent = if compact_transport_gradient {
+                    let value_count = row_nnz * self.num_stokes;
+                    for (stokes, &row_cotangent) in
+                        forcing_cotangent[..self.num_stokes].iter().enumerate()
+                    {
+                        let row_start = transport_offset + stokes * row_nnz;
+                        let scratch_start = stokes * row_nnz;
+                        for inner_index in 0..row_nnz {
+                            let value_index = row_start + inner_index;
+                            compact_ray_value_cotangent[scratch_start + inner_index] = row_cotangent
                                 * packed_value(
                                     solution,
                                     packed_column(transport_column_indices, value_index),
-                                )
-                        } else {
-                            packed_value(transport_value_gradient, value_index)
-                        };
-                        current_attenuation_cotangent +=
-                            self.ground_weights[ground_index] * value_gradient;
+                                );
+                        }
+                    }
+                    &compact_ray_value_cotangent[..value_count]
+                } else {
+                    &[]
+                };
+                let mut shared_endpoint = if first_order_active && layer_start < layer_end {
+                    self.endpoint_primal(
+                        ray_index,
+                        layer_start,
+                        false,
+                        &forcing,
+                        &endpoint_medium,
+                        &endpoint_phase_values,
+                    )
+                } else {
+                    [0.0; 3]
+                };
+                let mut shared_endpoint_cotangent = [0.0; 3];
+
+                let (ground_indices, ground_weights) = self.ray_ground_stencil(ray_index);
+                if self.num_stokes == 1 {
+                    if compact_transport_gradient {
+                        for (&inner_index, &weight) in ground_indices.iter().zip(ground_weights) {
+                            current_attenuation_cotangent += weight
+                                * packed_value(compact_value_cotangent, inner_index as usize);
+                        }
+                    } else {
+                        for (&inner_index, &weight) in ground_indices.iter().zip(ground_weights) {
+                            let value_index = transport_offset + inner_index as usize;
+                            current_attenuation_cotangent +=
+                                weight * packed_value(transport_value_gradient, value_index);
+                        }
                     }
                 } else {
-                    for ground_index in ground_start..ground_end {
-                        for (stokes, &forcing_value_cotangent) in
-                            forcing_cotangent[..self.num_stokes].iter().enumerate()
-                        {
+                    for (&inner_index, &weight) in ground_indices.iter().zip(ground_weights) {
+                        for stokes in 0..self.num_stokes {
                             let value_index = self.transport_value_index(
                                 ray_index,
                                 transport_offset,
                                 stokes,
-                                self.ground_value_inner_indices[ground_index],
+                                inner_index,
                             );
                             let value_gradient = if compact_transport_gradient {
-                                forcing_value_cotangent
-                                    * solution[transport_column_indices[value_index] as usize]
+                                packed_value(
+                                    compact_value_cotangent,
+                                    stokes * row_nnz + inner_index as usize,
+                                )
                             } else {
                                 transport_value_gradient[value_index]
                             };
-                            current_attenuation_cotangent +=
-                                self.ground_weights[ground_index] * value_gradient;
+                            current_attenuation_cotangent += weight * value_gradient;
                         }
                     }
                 }
@@ -1677,54 +1784,46 @@ impl ScalarRayTransport {
                     let optical_depth = layer_optical_depth[layer_index];
                     let attenuation = layer_attenuation[layer_index];
                     let current_attenuation = layer_prefix_attenuation[layer_index];
-                    let atmosphere_start = self.layer_atmosphere_offsets[layer_index] as usize;
-                    let atmosphere_end = self.layer_atmosphere_offsets[layer_index + 1] as usize;
-
-                    let mut albedo = 0.0;
-                    for stencil_index in atmosphere_start..atmosphere_end {
-                        let atmosphere_index = self.atmosphere_indices[stencil_index] as usize;
-                        let albedo_weight = self.albedo_weights[stencil_index];
-                        albedo += albedo_weight * single_scatter_albedo[atmosphere_index];
-                    }
+                    let albedo = self.layer_albedo(layer_index, single_scatter_albedo);
 
                     let mut source_factor_cotangent = 0.0;
-                    let source_start = self.layer_source_offsets[layer_index] as usize;
-                    let source_end = self.layer_source_offsets[layer_index + 1] as usize;
+                    let source_end = source_start + self.layer_source_widths[layer_index] as usize;
+                    let (source_indices, source_weights) =
+                        self.source_stencil(source_start, source_end);
+                    source_start = source_end;
                     if self.num_stokes == 1 {
-                        for source_index in source_start..source_end {
-                            let value_index = transport_offset
-                                + self.source_value_inner_indices[source_index] as usize;
-                            let value_gradient = if compact_transport_gradient {
-                                forcing_cotangent[0]
-                                    * packed_value(
-                                        solution,
-                                        packed_column(transport_column_indices, value_index),
-                                    )
-                            } else {
-                                packed_value(transport_value_gradient, value_index)
-                            };
-                            source_factor_cotangent +=
-                                self.source_weights[source_index] * value_gradient;
+                        if compact_transport_gradient {
+                            for (&inner_index, &weight) in source_indices.iter().zip(source_weights)
+                            {
+                                source_factor_cotangent += weight
+                                    * packed_value(compact_value_cotangent, inner_index as usize);
+                            }
+                        } else {
+                            for (&inner_index, &weight) in source_indices.iter().zip(source_weights)
+                            {
+                                let value_index = transport_offset + inner_index as usize;
+                                source_factor_cotangent +=
+                                    weight * packed_value(transport_value_gradient, value_index);
+                            }
                         }
                     } else {
-                        for source_index in source_start..source_end {
-                            for (stokes, &forcing_value_cotangent) in
-                                forcing_cotangent[..self.num_stokes].iter().enumerate()
-                            {
+                        for (&inner_index, &weight) in source_indices.iter().zip(source_weights) {
+                            for stokes in 0..self.num_stokes {
                                 let value_index = self.transport_value_index(
                                     ray_index,
                                     transport_offset,
                                     stokes,
-                                    self.source_value_inner_indices[source_index],
+                                    inner_index,
                                 );
                                 let value_gradient = if compact_transport_gradient {
-                                    forcing_value_cotangent
-                                        * solution[transport_column_indices[value_index] as usize]
+                                    packed_value(
+                                        compact_value_cotangent,
+                                        stokes * row_nnz + inner_index as usize,
+                                    )
                                 } else {
                                     transport_value_gradient[value_index]
                                 };
-                                source_factor_cotangent +=
-                                    self.source_weights[source_index] * value_gradient;
+                                source_factor_cotangent += weight * value_gradient;
                             }
                         }
                     }
@@ -1741,16 +1840,7 @@ impl ScalarRayTransport {
                         // endpoint once: start(i) is end(i + 1). Reverse the same
                         // graph, accumulating the carried start cotangent into the
                         // next layer's end before visiting that endpoint once.
-                        let end_endpoint = shared_endpoint.unwrap_or_else(|| {
-                            self.endpoint_primal(
-                                ray_index,
-                                layer_index,
-                                false,
-                                &forcing,
-                                &endpoint_medium,
-                                &endpoint_phase_values,
-                            )
-                        });
+                        let end_endpoint = shared_endpoint;
                         let start_endpoint = if layer_index + 1 < layer_end {
                             self.endpoint_primal(
                                 ray_index,
@@ -1773,54 +1863,39 @@ impl ScalarRayTransport {
                         let mut start_cotangent = [0.0; 3];
                         let mut end_cotangent = shared_endpoint_cotangent;
 
-                        if self.layer_distance[layer_index] >= 1.0e-4 {
+                        let start_distance = self.layer_start_distance[layer_index];
+                        let end_distance = self.layer_end_distance[layer_index];
+                        if start_distance + end_distance >= 1.0e-4 {
                             let (integration_factor, integration_factor_derivative) =
                                 constant_source_factor_and_derivative(optical_depth, attenuation);
-                            let distance = self.layer_distance[layer_index];
                             let forcing_endpoint_dot = if self.num_stokes == 1 {
                                 forcing_cotangent[0]
-                                    * (start_endpoint[0] * self.layer_start_fraction[layer_index]
-                                        + end_endpoint[0]
-                                            * (1.0 - self.layer_start_fraction[layer_index]))
+                                    * (start_endpoint[0] * start_distance
+                                        + end_endpoint[0] * end_distance)
                             } else {
-                                let mut endpoint_quadrature = [0.0; 3];
-                                for (stokes, endpoint_value) in endpoint_quadrature
-                                    [..self.num_stokes]
-                                    .iter_mut()
-                                    .enumerate()
+                                let mut weighted_source = [0.0; 3];
+                                for (stokes, source_value) in
+                                    weighted_source[..self.num_stokes].iter_mut().enumerate()
                                 {
-                                    *endpoint_value = start_endpoint[stokes]
-                                        * self.layer_start_fraction[layer_index]
-                                        + end_endpoint[stokes]
-                                            * (1.0 - self.layer_start_fraction[layer_index]);
+                                    *source_value = start_endpoint[stokes] * start_distance
+                                        + end_endpoint[stokes] * end_distance;
                                 }
-                                dot_stokes(
-                                    &forcing_cotangent,
-                                    &endpoint_quadrature,
-                                    self.num_stokes,
-                                )
+                                dot_stokes(&forcing_cotangent, &weighted_source, self.num_stokes)
                             };
-                            prefix_cotangent +=
-                                forcing_endpoint_dot * integration_factor * distance;
+                            prefix_cotangent += forcing_endpoint_dot * integration_factor;
                             optical_depth_cotangent += forcing_endpoint_dot
                                 * current_attenuation
-                                * distance
                                 * integration_factor_derivative;
-                            let quadrature_scale =
-                                current_attenuation * integration_factor * distance;
+                            let quadrature_scale = current_attenuation * integration_factor;
                             if self.num_stokes == 1 {
                                 let cotangent = forcing_cotangent[0] * quadrature_scale;
-                                start_cotangent[0] =
-                                    cotangent * self.layer_start_fraction[layer_index];
-                                end_cotangent[0] +=
-                                    cotangent * (1.0 - self.layer_start_fraction[layer_index]);
+                                start_cotangent[0] = cotangent * start_distance;
+                                end_cotangent[0] += cotangent * end_distance;
                             } else {
                                 for stokes in 0..self.num_stokes {
                                     let cotangent = forcing_cotangent[stokes] * quadrature_scale;
-                                    start_cotangent[stokes] =
-                                        cotangent * self.layer_start_fraction[layer_index];
-                                    end_cotangent[stokes] +=
-                                        cotangent * (1.0 - self.layer_start_fraction[layer_index]);
+                                    start_cotangent[stokes] = cotangent * start_distance;
+                                    end_cotangent[stokes] += cotangent * end_distance;
                                 }
                             }
                         }
@@ -1836,7 +1911,7 @@ impl ScalarRayTransport {
                             &mut endpoint_source_cotangent,
                             solar_transmission_gradient,
                         );
-                        shared_endpoint = Some(start_endpoint);
+                        shared_endpoint = start_endpoint;
                         shared_endpoint_cotangent = start_cotangent;
                     }
 
@@ -1846,15 +1921,13 @@ impl ScalarRayTransport {
                     // attenuation = exp(-optical_depth).
                     optical_depth_cotangent -= attenuation * attenuation_cotangent;
 
-                    for stencil_index in atmosphere_start..atmosphere_end {
-                        let atmosphere_index = self.atmosphere_indices[stencil_index] as usize;
-                        let optical_depth_weight = self.optical_depth_weights[stencil_index];
-                        let albedo_weight = self.albedo_weights[stencil_index];
-                        extinction_gradient[atmosphere_index] +=
-                            optical_depth_weight * optical_depth_cotangent;
-                        single_scatter_albedo_gradient[atmosphere_index] +=
-                            albedo_weight * albedo_cotangent;
-                    }
+                    self.accumulate_layer_medium_vjp(
+                        layer_index,
+                        optical_depth_cotangent,
+                        albedo_cotangent,
+                        extinction_gradient,
+                        single_scatter_albedo_gradient,
+                    );
                     current_attenuation_cotangent = prefix_cotangent;
                 }
                 if first_order_active && layer_start < layer_end {
@@ -2047,7 +2120,7 @@ impl ScalarRayTransport {
                     &mut endpoint_scattering_values,
                 );
                 for &ray_index in self.phase_geometry_rays(phase_geometry) {
-                    self.assemble_ray(
+                    self.assemble_ray::<true>(
                         ray_index as usize,
                         extinction,
                         single_scatter_albedo,
@@ -2056,16 +2129,23 @@ impl ScalarRayTransport {
                         layer_attenuation,
                         layer_prefix_attenuation,
                         ray_end_attenuation,
-                        Some((&forcing, &endpoint_scattering_values)),
+                        &forcing,
+                        &endpoint_scattering_values,
                         &endpoint_medium,
                         radiance,
                     );
                 }
             }
         } else {
+            let no_first_order = FirstOrderInputs {
+                legendre_coefficients: &[],
+                maximum_order: &[],
+                solar_transmission: &[],
+                end_of_ray_source: &[],
+            };
             let mut no_first_order_radiance = [];
             for ray_index in 0..self.num_rays() {
-                self.assemble_ray(
+                self.assemble_ray::<false>(
                     ray_index,
                     extinction,
                     single_scatter_albedo,
@@ -2074,7 +2154,8 @@ impl ScalarRayTransport {
                     layer_attenuation,
                     layer_prefix_attenuation,
                     ray_end_attenuation,
-                    None,
+                    &no_first_order,
+                    &[],
                     &[],
                     &mut no_first_order_radiance,
                 );
@@ -2083,7 +2164,7 @@ impl ScalarRayTransport {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn assemble_ray(
+    fn assemble_ray<const FIRST_ORDER: bool>(
         &self,
         ray_index: usize,
         extinction: &[f64],
@@ -2093,7 +2174,8 @@ impl ScalarRayTransport {
         layer_attenuation: &mut [f64],
         layer_prefix_attenuation: &mut [f64],
         ray_end_attenuation: &mut [f64],
-        first_order: Option<(&FirstOrderInputs<'_>, &[f64])>,
+        forcing: &FirstOrderInputs<'_>,
+        endpoint_scattering_values: &[f64],
         endpoint_medium: &[EndpointMedium],
         first_order_radiance: &mut [f64],
     ) {
@@ -2103,23 +2185,30 @@ impl ScalarRayTransport {
         let transport_offset = self.ray_transport_value_offsets[ray_index] as usize;
         let mut current_attenuation = 1.0;
         let mut ray_first_order = [0.0; 3];
-        let mut shared_endpoint_source = None;
+        let mut source_end = self.ray_source_offsets[ray_index + 1] as usize;
+        let mut shared_endpoint_source = if FIRST_ORDER && layer_start < layer_end {
+            self.endpoint_source(
+                ray_index,
+                layer_end - 1,
+                true,
+                forcing,
+                endpoint_medium,
+                endpoint_scattering_values,
+            )
+        } else {
+            [0.0; 3]
+        };
 
         for layer_index in (layer_start..layer_end).rev() {
-            let atmosphere_start = self.layer_atmosphere_offsets[layer_index] as usize;
-            let atmosphere_end = self.layer_atmosphere_offsets[layer_index + 1] as usize;
+            let medium = self.layer_medium(layer_index, extinction, single_scatter_albedo);
+            let optical_depth = medium.optical_depth;
+            let albedo = medium.albedo;
 
-            let mut optical_depth = 0.0;
-            let mut albedo = 0.0;
-            for stencil_index in atmosphere_start..atmosphere_end {
-                let atmosphere_index = self.atmosphere_indices[stencil_index] as usize;
-                let optical_depth_weight = self.optical_depth_weights[stencil_index];
-                let albedo_weight = self.albedo_weights[stencil_index];
-                optical_depth += optical_depth_weight * extinction[atmosphere_index];
-                albedo += albedo_weight * single_scatter_albedo[atmosphere_index];
-            }
-
-            let attenuation = (-optical_depth).exp();
+            let (attenuation, integration_factor) = if FIRST_ORDER {
+                attenuation_and_constant_source_factor(optical_depth)
+            } else {
+                (attenuation_from_optical_depth(optical_depth), 0.0)
+            };
             if retain_layer_scratch {
                 layer_optical_depth[layer_index] = optical_depth;
                 layer_attenuation[layer_index] = attenuation;
@@ -2127,47 +2216,33 @@ impl ScalarRayTransport {
             }
 
             let source_factor = albedo * (1.0 - attenuation) * current_attenuation;
-            let source_start = self.layer_source_offsets[layer_index] as usize;
-            let source_end = self.layer_source_offsets[layer_index + 1] as usize;
+            let source_start = source_end - self.layer_source_widths[layer_index] as usize;
+            let (source_indices, source_weights) = self.source_stencil(source_start, source_end);
+            source_end = source_start;
             if self.num_stokes == 1 {
-                for source_index in source_start..source_end {
-                    let value_index =
-                        transport_offset + self.source_value_inner_indices[source_index] as usize;
-                    add_packed_value(
-                        transport_values,
-                        value_index,
-                        self.source_weights[source_index] * source_factor,
-                    );
+                for (&inner_index, &weight) in source_indices.iter().zip(source_weights) {
+                    let value_index = transport_offset + inner_index as usize;
+                    multiply_add_packed_value(transport_values, value_index, weight, source_factor);
                 }
             } else {
-                for source_index in source_start..source_end {
+                for (&inner_index, &weight) in source_indices.iter().zip(source_weights) {
                     for stokes in 0..self.num_stokes {
                         let value_index = self.transport_value_index(
                             ray_index,
                             transport_offset,
                             stokes,
-                            self.source_value_inner_indices[source_index],
+                            inner_index,
                         );
-                        transport_values[value_index] +=
-                            self.source_weights[source_index] * source_factor;
+                        transport_values[value_index] += weight * source_factor;
                     }
                 }
             }
 
-            if let Some((forcing, endpoint_scattering_values)) = first_order {
+            if FIRST_ORDER {
                 // Consecutive straight-ray layers share a boundary. In
                 // observer-to-far-end traversal, the previous exit is the next
                 // entrance, so only one new endpoint is evaluated per layer.
-                let start_source = shared_endpoint_source.unwrap_or_else(|| {
-                    self.endpoint_source(
-                        ray_index,
-                        layer_index,
-                        true,
-                        forcing,
-                        endpoint_medium,
-                        endpoint_scattering_values,
-                    )
-                });
+                let start_source = shared_endpoint_source;
                 let end_source = self.endpoint_source(
                     ray_index,
                     layer_index,
@@ -2176,57 +2251,53 @@ impl ScalarRayTransport {
                     endpoint_medium,
                     endpoint_scattering_values,
                 );
-                if self.layer_distance[layer_index] >= 1.0e-4 {
-                    let integration_factor = constant_source_factor(optical_depth, attenuation);
-                    let scale =
-                        current_attenuation * integration_factor * self.layer_distance[layer_index];
+                let start_distance = self.layer_start_distance[layer_index];
+                let end_distance = self.layer_end_distance[layer_index];
+                if start_distance + end_distance >= 1.0e-4 {
+                    let scale = current_attenuation * integration_factor;
                     if self.num_stokes == 1 {
                         ray_first_order[0] += scale
-                            * (start_source[0] * self.layer_start_fraction[layer_index]
-                                + end_source[0] * (1.0 - self.layer_start_fraction[layer_index]));
+                            * (start_source[0] * start_distance + end_source[0] * end_distance);
                     } else {
                         for stokes in 0..self.num_stokes {
                             ray_first_order[stokes] += scale
-                                * (start_source[stokes] * self.layer_start_fraction[layer_index]
-                                    + end_source[stokes]
-                                        * (1.0 - self.layer_start_fraction[layer_index]));
+                                * (start_source[stokes] * start_distance
+                                    + end_source[stokes] * end_distance);
                         }
                     }
                 }
-                shared_endpoint_source = Some(end_source);
+                shared_endpoint_source = end_source;
             }
 
             current_attenuation *= attenuation;
         }
 
-        let ground_start = self.ray_ground_offsets[ray_index] as usize;
-        let ground_end = self.ray_ground_offsets[ray_index + 1] as usize;
+        let (ground_indices, ground_weights) = self.ray_ground_stencil(ray_index);
         if self.num_stokes == 1 {
-            for ground_index in ground_start..ground_end {
-                let value_index =
-                    transport_offset + self.ground_value_inner_indices[ground_index] as usize;
-                add_packed_value(
+            for (&inner_index, &weight) in ground_indices.iter().zip(ground_weights) {
+                let value_index = transport_offset + inner_index as usize;
+                multiply_add_packed_value(
                     transport_values,
                     value_index,
-                    self.ground_weights[ground_index] * current_attenuation,
+                    weight,
+                    current_attenuation,
                 );
             }
         } else {
-            for ground_index in ground_start..ground_end {
+            for (&inner_index, &weight) in ground_indices.iter().zip(ground_weights) {
                 for stokes in 0..self.num_stokes {
                     let value_index = self.transport_value_index(
                         ray_index,
                         transport_offset,
                         stokes,
-                        self.ground_value_inner_indices[ground_index],
+                        inner_index,
                     );
-                    transport_values[value_index] +=
-                        self.ground_weights[ground_index] * current_attenuation;
+                    transport_values[value_index] += weight * current_attenuation;
                 }
             }
         }
         ray_end_attenuation[ray_index] = current_attenuation;
-        if let Some((forcing, _)) = first_order {
+        if FIRST_ORDER {
             let forcing_start = ray_index * self.num_stokes;
             if self.num_stokes == 1 {
                 ray_first_order[0] +=
@@ -2260,8 +2331,8 @@ impl ScalarRayTransport {
                 && !self.ray_terminal_phase_endpoint_slots.is_empty())
             || self.endpoint_atmosphere_offsets.len() != self.num_unique_endpoint_stencils() + 1
             || self.endpoint_atmosphere_indices.len() != self.endpoint_weights.len()
-            || self.layer_distance.len() != self.num_layers()
-            || self.layer_start_fraction.len() != self.num_layers()
+            || self.layer_start_distance.len() != self.num_layers()
+            || self.layer_end_distance.len() != self.num_layers()
             || self.phase_geometry_ray_indices.len() != self.num_rays()
             || self.phase_geometry_endpoint_offsets.len() != self.num_phase_geometries() + 1
             || self
@@ -2520,6 +2591,296 @@ impl ScalarRayTransport {
         transport_offset
             + stokes * self.ray_transport_row_nnz[ray_index] as usize
             + inner_index as usize
+    }
+
+    #[inline(always)]
+    fn source_stencil(&self, start: usize, end: usize) -> (&[u16], &[f64]) {
+        debug_assert!(end <= self.source_value_inner_indices.len());
+        debug_assert!(end <= self.source_weights.len());
+        // SAFETY: constructor validation proves both source arrays end at the
+        // final source offset and that the offsets are monotonic.
+        unsafe {
+            (
+                self.source_value_inner_indices.get_unchecked(start..end),
+                self.source_weights.get_unchecked(start..end),
+            )
+        }
+    }
+
+    #[inline(always)]
+    fn ray_ground_stencil(&self, ray_index: usize) -> (&[u16], &[f64]) {
+        let start = self.ray_ground_offsets[ray_index] as usize;
+        let end = self.ray_ground_offsets[ray_index + 1] as usize;
+        debug_assert!(end <= self.ground_value_inner_indices.len());
+        debug_assert!(end <= self.ground_weights.len());
+        // SAFETY: constructor validation proves both ground arrays end at the
+        // final ground offset and that the offsets are monotonic.
+        unsafe {
+            (
+                self.ground_value_inner_indices.get_unchecked(start..end),
+                self.ground_weights.get_unchecked(start..end),
+            )
+        }
+    }
+
+    #[inline(always)]
+    fn atmosphere_index(&self, stencil_index: usize) -> usize {
+        if self.compact_atmosphere_indices.is_empty() {
+            self.atmosphere_indices[stencil_index] as usize
+        } else {
+            self.compact_atmosphere_indices[stencil_index] as usize
+        }
+    }
+
+    #[inline(always)]
+    unsafe fn atmosphere_index_unchecked(&self, stencil_index: usize) -> usize {
+        if self.compact_atmosphere_indices.is_empty() {
+            // SAFETY: callers validate the stencil index against the packed
+            // atmosphere weight arrays constructed with this index array.
+            unsafe { *self.atmosphere_indices.get_unchecked(stencil_index) as usize }
+        } else {
+            // SAFETY: same invariant as the u32 path above.
+            unsafe { *self.compact_atmosphere_indices.get_unchecked(stencil_index) as usize }
+        }
+    }
+
+    #[inline(always)]
+    fn layer_medium(
+        &self,
+        layer_index: usize,
+        extinction: &[f64],
+        single_scatter_albedo: &[f64],
+    ) -> LayerMedium {
+        match self.uniform_atmosphere_stencil_width {
+            2 => unsafe {
+                self.layer_medium_fixed::<2>(layer_index, extinction, single_scatter_albedo)
+            },
+            4 => unsafe {
+                self.layer_medium_fixed::<4>(layer_index, extinction, single_scatter_albedo)
+            },
+            _ => {
+                let start = self.layer_atmosphere_offsets[layer_index] as usize;
+                let end = self.layer_atmosphere_offsets[layer_index + 1] as usize;
+                let mut medium = LayerMedium::default();
+                for stencil_index in start..end {
+                    let atmosphere_index = self.atmosphere_index(stencil_index);
+                    medium.optical_depth +=
+                        self.optical_depth_weights[stencil_index] * extinction[atmosphere_index];
+                    medium.albedo += self.albedo_weights[stencil_index]
+                        * single_scatter_albedo[atmosphere_index];
+                }
+                medium
+            }
+        }
+    }
+
+    #[inline(always)]
+    unsafe fn layer_medium_fixed<const WIDTH: usize>(
+        &self,
+        layer_index: usize,
+        extinction: &[f64],
+        single_scatter_albedo: &[f64],
+    ) -> LayerMedium {
+        let start = layer_index * WIDTH;
+        let mut medium = LayerMedium::default();
+        for offset in 0..WIDTH {
+            let stencil_index = start + offset;
+            // SAFETY: construction verifies a uniform WIDTH-entry stencil for
+            // every layer and all public entry points validate atmosphere sizes.
+            unsafe {
+                let atmosphere_index = self.atmosphere_index_unchecked(stencil_index);
+                medium.optical_depth += self.optical_depth_weights.get_unchecked(stencil_index)
+                    * extinction.get_unchecked(atmosphere_index);
+                medium.albedo += self.albedo_weights.get_unchecked(stencil_index)
+                    * single_scatter_albedo.get_unchecked(atmosphere_index);
+            }
+        }
+        medium
+    }
+
+    #[inline(always)]
+    fn layer_medium_jvp(
+        &self,
+        layer_index: usize,
+        extinction: &[f64],
+        single_scatter_albedo: &[f64],
+        extinction_tangent: &[f64],
+        single_scatter_albedo_tangent: &[f64],
+    ) -> LayerMediumJvp {
+        match self.uniform_atmosphere_stencil_width {
+            2 => unsafe {
+                self.layer_medium_jvp_fixed::<2>(
+                    layer_index,
+                    extinction,
+                    single_scatter_albedo,
+                    extinction_tangent,
+                    single_scatter_albedo_tangent,
+                )
+            },
+            4 => unsafe {
+                self.layer_medium_jvp_fixed::<4>(
+                    layer_index,
+                    extinction,
+                    single_scatter_albedo,
+                    extinction_tangent,
+                    single_scatter_albedo_tangent,
+                )
+            },
+            _ => {
+                let start = self.layer_atmosphere_offsets[layer_index] as usize;
+                let end = self.layer_atmosphere_offsets[layer_index + 1] as usize;
+                let mut medium = LayerMediumJvp::default();
+                for stencil_index in start..end {
+                    let atmosphere_index = self.atmosphere_index(stencil_index);
+                    let optical_depth_weight = self.optical_depth_weights[stencil_index];
+                    let albedo_weight = self.albedo_weights[stencil_index];
+                    medium.optical_depth += optical_depth_weight * extinction[atmosphere_index];
+                    medium.optical_depth_tangent +=
+                        optical_depth_weight * extinction_tangent[atmosphere_index];
+                    medium.albedo += albedo_weight * single_scatter_albedo[atmosphere_index];
+                    medium.albedo_tangent +=
+                        albedo_weight * single_scatter_albedo_tangent[atmosphere_index];
+                }
+                medium
+            }
+        }
+    }
+
+    #[inline(always)]
+    unsafe fn layer_medium_jvp_fixed<const WIDTH: usize>(
+        &self,
+        layer_index: usize,
+        extinction: &[f64],
+        single_scatter_albedo: &[f64],
+        extinction_tangent: &[f64],
+        single_scatter_albedo_tangent: &[f64],
+    ) -> LayerMediumJvp {
+        let start = layer_index * WIDTH;
+        let mut medium = LayerMediumJvp::default();
+        for offset in 0..WIDTH {
+            let stencil_index = start + offset;
+            // SAFETY: see `layer_medium_fixed`.
+            unsafe {
+                let atmosphere_index = self.atmosphere_index_unchecked(stencil_index);
+                let optical_depth_weight = *self.optical_depth_weights.get_unchecked(stencil_index);
+                let albedo_weight = *self.albedo_weights.get_unchecked(stencil_index);
+                medium.optical_depth +=
+                    optical_depth_weight * extinction.get_unchecked(atmosphere_index);
+                medium.optical_depth_tangent +=
+                    optical_depth_weight * extinction_tangent.get_unchecked(atmosphere_index);
+                medium.albedo +=
+                    albedo_weight * single_scatter_albedo.get_unchecked(atmosphere_index);
+                medium.albedo_tangent +=
+                    albedo_weight * single_scatter_albedo_tangent.get_unchecked(atmosphere_index);
+            }
+        }
+        medium
+    }
+
+    #[inline(always)]
+    fn layer_albedo(&self, layer_index: usize, single_scatter_albedo: &[f64]) -> f64 {
+        match self.uniform_atmosphere_stencil_width {
+            2 => unsafe { self.layer_albedo_fixed::<2>(layer_index, single_scatter_albedo) },
+            4 => unsafe { self.layer_albedo_fixed::<4>(layer_index, single_scatter_albedo) },
+            _ => {
+                let start = self.layer_atmosphere_offsets[layer_index] as usize;
+                let end = self.layer_atmosphere_offsets[layer_index + 1] as usize;
+                let mut albedo = 0.0;
+                for stencil_index in start..end {
+                    let atmosphere_index = self.atmosphere_index(stencil_index);
+                    albedo += self.albedo_weights[stencil_index]
+                        * single_scatter_albedo[atmosphere_index];
+                }
+                albedo
+            }
+        }
+    }
+
+    #[inline(always)]
+    unsafe fn layer_albedo_fixed<const WIDTH: usize>(
+        &self,
+        layer_index: usize,
+        single_scatter_albedo: &[f64],
+    ) -> f64 {
+        let start = layer_index * WIDTH;
+        let mut albedo = 0.0;
+        for offset in 0..WIDTH {
+            let stencil_index = start + offset;
+            // SAFETY: see `layer_medium_fixed`.
+            unsafe {
+                let atmosphere_index = self.atmosphere_index_unchecked(stencil_index);
+                albedo += self.albedo_weights.get_unchecked(stencil_index)
+                    * single_scatter_albedo.get_unchecked(atmosphere_index);
+            }
+        }
+        albedo
+    }
+
+    #[inline(always)]
+    fn accumulate_layer_medium_vjp(
+        &self,
+        layer_index: usize,
+        optical_depth_cotangent: f64,
+        albedo_cotangent: f64,
+        extinction_gradient: &mut [f64],
+        single_scatter_albedo_gradient: &mut [f64],
+    ) {
+        match self.uniform_atmosphere_stencil_width {
+            2 => unsafe {
+                self.accumulate_layer_medium_vjp_fixed::<2>(
+                    layer_index,
+                    optical_depth_cotangent,
+                    albedo_cotangent,
+                    extinction_gradient,
+                    single_scatter_albedo_gradient,
+                );
+            },
+            4 => unsafe {
+                self.accumulate_layer_medium_vjp_fixed::<4>(
+                    layer_index,
+                    optical_depth_cotangent,
+                    albedo_cotangent,
+                    extinction_gradient,
+                    single_scatter_albedo_gradient,
+                );
+            },
+            _ => {
+                let start = self.layer_atmosphere_offsets[layer_index] as usize;
+                let end = self.layer_atmosphere_offsets[layer_index + 1] as usize;
+                for stencil_index in start..end {
+                    let atmosphere_index = self.atmosphere_index(stencil_index);
+                    extinction_gradient[atmosphere_index] +=
+                        self.optical_depth_weights[stencil_index] * optical_depth_cotangent;
+                    single_scatter_albedo_gradient[atmosphere_index] +=
+                        self.albedo_weights[stencil_index] * albedo_cotangent;
+                }
+            }
+        }
+    }
+
+    #[inline(always)]
+    unsafe fn accumulate_layer_medium_vjp_fixed<const WIDTH: usize>(
+        &self,
+        layer_index: usize,
+        optical_depth_cotangent: f64,
+        albedo_cotangent: f64,
+        extinction_gradient: &mut [f64],
+        single_scatter_albedo_gradient: &mut [f64],
+    ) {
+        let start = layer_index * WIDTH;
+        for offset in 0..WIDTH {
+            let stencil_index = start + offset;
+            // SAFETY: see `layer_medium_fixed`; gradient arrays are validated
+            // against the same required atmosphere length.
+            unsafe {
+                let atmosphere_index = self.atmosphere_index_unchecked(stencil_index);
+                *extinction_gradient.get_unchecked_mut(atmosphere_index) +=
+                    self.optical_depth_weights.get_unchecked(stencil_index)
+                        * optical_depth_cotangent;
+                *single_scatter_albedo_gradient.get_unchecked_mut(atmosphere_index) +=
+                    self.albedo_weights.get_unchecked(stencil_index) * albedo_cotangent;
+            }
+        }
     }
 
     #[cfg(test)]
@@ -3068,6 +3429,20 @@ struct FirstOrderJvpInputs<'a> {
 }
 
 #[derive(Clone, Copy, Default)]
+struct LayerMedium {
+    optical_depth: f64,
+    albedo: f64,
+}
+
+#[derive(Clone, Copy, Default)]
+struct LayerMediumJvp {
+    optical_depth: f64,
+    optical_depth_tangent: f64,
+    albedo: f64,
+    albedo_tangent: f64,
+}
+
+#[derive(Clone, Copy, Default)]
 struct EndpointMedium {
     extinction: f64,
     albedo: f64,
@@ -3103,13 +3478,14 @@ fn dot_stokes(left: &[f64; 3], right: &[f64; 3], num_stokes: usize) -> f64 {
 }
 
 #[inline(always)]
-fn add_packed_value(values: &mut [f64], index: usize, increment: f64) {
+fn multiply_add_packed_value(values: &mut [f64], index: usize, left: f64, right: f64) {
     debug_assert!(index < values.len());
     // SAFETY: every public assembly entry point checks the buffer against
     // `required_transport_len`, which is the maximum packed index compiled
     // into this immutable geometry.
     unsafe {
-        *values.get_unchecked_mut(index) += increment;
+        let value = values.get_unchecked_mut(index);
+        *value = left.mul_add(right, *value);
     }
 }
 
@@ -3146,27 +3522,77 @@ fn append_legendre_basis(cosine: f64, count: usize, output: &mut Vec<f64>) {
     }
 }
 
-fn constant_source_factor(optical_depth: f64, attenuation: f64) -> f64 {
-    if optical_depth.abs() < 1.0e-4 {
-        let optical_depth_squared = optical_depth * optical_depth;
-        let optical_depth_cubed = optical_depth_squared * optical_depth;
-        let optical_depth_fourth = optical_depth_squared * optical_depth_squared;
-        return 1.0 - optical_depth / 2.0 + optical_depth_squared / 6.0
-            - optical_depth_cubed / 24.0
-            + optical_depth_fourth / 120.0;
+const SERIES_OPTICAL_DEPTH_LIMIT: f64 = 1.0e-2;
+
+#[inline(always)]
+fn attenuation_from_optical_depth(optical_depth: f64) -> f64 {
+    if optical_depth.abs() < SERIES_OPTICAL_DEPTH_LIMIT {
+        // Sixth-order Taylor series. At the branch boundary the first
+        // omitted term is below 2e-18.
+        return 1.0
+            + optical_depth
+                * (-1.0
+                    + optical_depth
+                        * (0.5
+                            + optical_depth
+                                * (-1.0 / 6.0
+                                    + optical_depth
+                                        * (1.0 / 24.0
+                                            + optical_depth
+                                                * (-1.0 / 120.0 + optical_depth / 720.0)))));
     }
-    (1.0 - attenuation) / optical_depth
+    (-optical_depth).exp()
 }
 
+#[inline(always)]
+fn attenuation_and_constant_source_factor(optical_depth: f64) -> (f64, f64) {
+    if optical_depth.abs() < SERIES_OPTICAL_DEPTH_LIMIT {
+        let attenuation = attenuation_from_optical_depth(optical_depth);
+        let value = 1.0
+            + optical_depth
+                * (-0.5
+                    + optical_depth
+                        * (1.0 / 6.0
+                            + optical_depth
+                                * (-1.0 / 24.0
+                                    + optical_depth
+                                        * (1.0 / 120.0
+                                            + optical_depth
+                                                * (-1.0 / 720.0 + optical_depth / 5040.0)))));
+        return (attenuation, value);
+    }
+    let attenuation = (-optical_depth).exp();
+    (attenuation, (1.0 - attenuation) / optical_depth)
+}
+
+#[inline(always)]
+fn attenuation_source_factor_and_derivative(optical_depth: f64) -> (f64, f64, f64) {
+    if optical_depth.abs() < SERIES_OPTICAL_DEPTH_LIMIT {
+        let (attenuation, value) = attenuation_and_constant_source_factor(optical_depth);
+        let derivative = -0.5
+            + optical_depth
+                * (1.0 / 3.0
+                    + optical_depth
+                        * (-1.0 / 8.0
+                            + optical_depth
+                                * (1.0 / 30.0
+                                    + optical_depth * (-1.0 / 144.0 + optical_depth / 840.0))));
+        return (attenuation, value, derivative);
+    }
+    let attenuation = (-optical_depth).exp();
+    let inverse_optical_depth = 1.0 / optical_depth;
+    let value = (1.0 - attenuation) * inverse_optical_depth;
+    (
+        attenuation,
+        value,
+        inverse_optical_depth - value * (1.0 + inverse_optical_depth),
+    )
+}
+
+#[inline(always)]
 fn constant_source_factor_and_derivative(optical_depth: f64, attenuation: f64) -> (f64, f64) {
-    if optical_depth.abs() < 1.0e-4 {
-        let optical_depth_squared = optical_depth * optical_depth;
-        let optical_depth_cubed = optical_depth_squared * optical_depth;
-        let value = 1.0 - optical_depth / 2.0 + optical_depth_squared / 6.0
-            - optical_depth_cubed / 24.0
-            + optical_depth_squared * optical_depth_squared / 120.0;
-        let derivative =
-            -0.5 + optical_depth / 3.0 - optical_depth_squared / 8.0 + optical_depth_cubed / 30.0;
+    if optical_depth.abs() < SERIES_OPTICAL_DEPTH_LIMIT {
+        let (_, value, derivative) = attenuation_source_factor_and_derivative(optical_depth);
         return (value, derivative);
     }
     let inverse_optical_depth = 1.0 / optical_depth;
