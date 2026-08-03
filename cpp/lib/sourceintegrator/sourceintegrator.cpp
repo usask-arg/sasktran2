@@ -1,5 +1,6 @@
 
 #include "sasktran2/source_interface.h"
+#include <sasktran2/math/scattering.h>
 #include <sasktran2/source_integrator.h>
 
 namespace sasktran2 {
@@ -623,22 +624,32 @@ namespace sasktran2 {
                                       threadidx, radiance);
         }
 
-        if (!have_to_integrate) {
-            return;
-        }
-
-        if constexpr (N == 1) {
-            if (m_wavelength_block_capacity == 1) {
+        if (have_to_integrate) {
+            if constexpr (N == 1) {
+                if (m_wavelength_block_capacity == 1) {
+                    integrate_ray(radiance, source_terms,
+                                  (*m_traced_rays)[rayidx],
+                                  m_traced_ray_od_matrix[rayidx],
+                                  m_scalar_shell_od[rayidx], block, rayidx,
+                                  wavel_threadidx, threadidx);
+                } else {
+                    integrate_ray(
+                        radiance, source_terms, (*m_traced_rays)[rayidx],
+                        m_traced_ray_od_matrix[rayidx], m_shell_od[rayidx],
+                        block, rayidx, wavel_threadidx, threadidx);
+                }
+            } else {
                 integrate_ray(radiance, source_terms, (*m_traced_rays)[rayidx],
                               m_traced_ray_od_matrix[rayidx],
-                              m_scalar_shell_od[rayidx], block, rayidx,
+                              m_shell_od[rayidx], block, rayidx,
                               wavel_threadidx, threadidx);
-                return;
             }
         }
-        integrate_ray(radiance, source_terms, (*m_traced_rays)[rayidx],
-                      m_traced_ray_od_matrix[rayidx], m_shell_od[rayidx], block,
-                      rayidx, wavel_threadidx, threadidx);
+
+        for (const auto* source : source_terms) {
+            source->start_of_ray_source(dynamic_block, rayidx, wavel_threadidx,
+                                        threadidx, radiance);
+        }
     }
 
     template <int NSTOKES>
@@ -780,181 +791,201 @@ namespace sasktran2 {
     }
 
     template <int NSTOKES>
-    ScalarRayTransportGeometry
-    SourceIntegrator<NSTOKES>::pack_scalar_transport_geometry(
+    RayTransportGeometry SourceIntegrator<NSTOKES>::pack_ray_transport_geometry(
         const SInterpolator& source_interpolator,
-        const Eigen::Vector3d& sun_unit) const {
-        if constexpr (NSTOKES != 1) {
-            throw std::logic_error(
-                "Rust scalar transport geometry requires NSTOKES == 1");
-        } else {
-            if (m_traced_rays == nullptr ||
-                source_interpolator.size() != m_traced_rays->size()) {
-                throw std::invalid_argument(
-                    "Scalar transport geometry ray count mismatch");
-            }
-
-            const auto as_u32 = [](std::size_t value, const char* description) {
-                if (value > std::numeric_limits<std::uint32_t>::max()) {
-                    throw std::length_error(std::string(description) +
-                                            " exceeds 32-bit packed storage");
-                }
-                return static_cast<std::uint32_t>(value);
-            };
-
-            ScalarRayTransportGeometry geometry;
-            geometry.ray_layer_offsets.reserve(source_interpolator.size() + 1);
-            geometry.ray_ground_offsets.reserve(source_interpolator.size() + 1);
-            geometry.ray_transport_value_offsets.reserve(
-                source_interpolator.size());
-            geometry.ray_layer_offsets.push_back(0);
-            geometry.layer_atmosphere_offsets.push_back(0);
-            geometry.layer_source_offsets.push_back(0);
-            geometry.ray_ground_offsets.push_back(0);
-
-            std::size_t total_layers = 0;
-            std::size_t total_atmosphere_weights = 0;
-            std::size_t total_source_weights = 0;
-            std::size_t total_ground_weights = 0;
-            for (std::size_t rayidx = 0; rayidx < source_interpolator.size();
-                 ++rayidx) {
-                total_layers +=
-                    integration_num_layers(static_cast<int>(rayidx));
-                total_atmosphere_weights +=
-                    source_interpolator[rayidx].atmosphere_weights.size();
-                total_source_weights +=
-                    source_interpolator[rayidx].source_weights.size();
-                total_ground_weights +=
-                    source_interpolator[rayidx].ground_source_weights.size();
-            }
-            geometry.layer_atmosphere_offsets.reserve(total_layers + 1);
-            geometry.layer_source_offsets.reserve(total_layers + 1);
-            geometry.atmosphere_indices.reserve(total_atmosphere_weights);
-            geometry.optical_depth_weights.reserve(total_atmosphere_weights);
-            geometry.albedo_weights.reserve(total_atmosphere_weights);
-            geometry.entrance_weights.reserve(total_atmosphere_weights);
-            geometry.exit_weights.reserve(total_atmosphere_weights);
-            geometry.layer_distance.reserve(total_layers);
-            geometry.layer_start_fraction.reserve(total_layers);
-            geometry.layer_end_fraction.reserve(total_layers);
-            geometry.ray_scattering_cosine.reserve(source_interpolator.size());
-            geometry.source_value_inner_indices.reserve(total_source_weights);
-            geometry.source_weights.reserve(total_source_weights);
-            geometry.ground_value_inner_indices.reserve(total_ground_weights);
-            geometry.ground_weights.reserve(total_ground_weights);
-
-            for (std::size_t rayidx = 0; rayidx < source_interpolator.size();
-                 ++rayidx) {
-                const auto& interpolator = source_interpolator[rayidx];
-                geometry.ray_transport_value_offsets.push_back(
-                    interpolator.accumulation_row_offset);
-                const auto& ray = (*m_traced_rays)[rayidx];
-                if (!ray.is_straight) {
-                    throw std::invalid_argument(
-                        "Rust scalar first-order forcing requires straight "
-                        "rays");
-                }
-                geometry.ray_scattering_cosine.push_back(
-                    ray.layers.empty()
-                        ? 1.0
-                        : std::clamp(sun_unit.dot(
-                                         ray.layers.front().average_look_away),
-                                     -1.0, 1.0));
-                const int num_layers =
-                    integration_num_layers(static_cast<int>(rayidx));
-                if (interpolator.interior_weights.size() !=
-                    static_cast<std::size_t>(num_layers)) {
-                    throw std::invalid_argument(
-                        "Scalar transport layer interpolation mismatch");
-                }
-
-                for (int layeridx = 0; layeridx < num_layers; ++layeridx) {
-                    const auto entrance_weights = integration_entrance_weights(
-                        static_cast<int>(rayidx), layeridx);
-                    const auto exit_weights = integration_exit_weights(
-                        static_cast<int>(rayidx), layeridx);
-                    const auto optical_depth_weights =
-                        integration_optical_depth_weights(
-                            static_cast<int>(rayidx), layeridx);
-                    const auto& layer_interpolator =
-                        interpolator.interior_weights[layeridx];
-                    if (entrance_weights.size() != exit_weights.size() ||
-                        entrance_weights.size() !=
-                            optical_depth_weights.size() ||
-                        layer_interpolator.atmosphere_count !=
-                            entrance_weights.size()) {
-                        throw std::invalid_argument(
-                            "Scalar transport atmosphere stencil mismatch");
-                    }
-
-                    for (std::size_t index = 0; index < entrance_weights.size();
-                         ++index) {
-                        const auto entrance = entrance_weights[index];
-                        const auto optical_depth = optical_depth_weights[index];
-                        if (entrance.first != optical_depth.first ||
-                            entrance.first < 0) {
-                            throw std::invalid_argument(
-                                "Scalar transport atmospheric indices do not "
-                                "match");
-                        }
-                        geometry.atmosphere_indices.push_back(
-                            as_u32(static_cast<std::size_t>(entrance.first),
-                                   "Atmosphere index"));
-                        geometry.optical_depth_weights.push_back(
-                            optical_depth.second);
-                        geometry.albedo_weights.push_back(
-                            interpolator.atmosphere_weights
-                                [layer_interpolator.atmosphere_offset + index]);
-                        geometry.entrance_weights.push_back(entrance.second);
-                        geometry.exit_weights.push_back(
-                            exit_weights[index].second);
-                    }
-                    geometry.layer_atmosphere_offsets.push_back(
-                        as_u32(geometry.atmosphere_indices.size(),
-                               "Atmosphere stencil offset"));
-
-                    sasktran2::raytracing::TracedLayer layer_scratch;
-                    const auto& layer = integration_layer(
-                        static_cast<int>(rayidx), layeridx, layer_scratch);
-                    geometry.layer_distance.push_back(layer.layer_distance);
-                    geometry.layer_start_fraction.push_back(
-                        layer.od_quad_start_fraction);
-                    geometry.layer_end_fraction.push_back(
-                        layer.od_quad_end_fraction);
-
-                    const std::size_t source_end =
-                        static_cast<std::size_t>(
-                            layer_interpolator.source_offset) +
-                        layer_interpolator.source_count;
-                    for (std::size_t index = layer_interpolator.source_offset;
-                         index < source_end; ++index) {
-                        geometry.source_value_inner_indices.push_back(
-                            interpolator
-                                .source_accumulation_inner_indices[index]);
-                        geometry.source_weights.push_back(
-                            interpolator.source_weights[index]);
-                    }
-                    geometry.layer_source_offsets.push_back(
-                        as_u32(geometry.source_value_inner_indices.size(),
-                               "Source stencil offset"));
-                }
-                geometry.ray_layer_offsets.push_back(as_u32(
-                    geometry.layer_source_offsets.size() - 1, "Layer offset"));
-
-                for (std::size_t index = 0;
-                     index < interpolator.ground_source_weights.size();
-                     ++index) {
-                    geometry.ground_value_inner_indices.push_back(
-                        interpolator.ground_accumulation_inner_indices[index]);
-                    geometry.ground_weights.push_back(
-                        interpolator.ground_source_weights[index]);
-                }
-                geometry.ray_ground_offsets.push_back(
-                    as_u32(geometry.ground_value_inner_indices.size(),
-                           "Ground stencil offset"));
-            }
-            return geometry;
+        const Geometry& model_geometry) const {
+        if (m_traced_rays == nullptr ||
+            source_interpolator.size() != m_traced_rays->size()) {
+            throw std::invalid_argument(
+                "Rust transport geometry ray count mismatch");
         }
+
+        const auto as_u32 = [](std::size_t value, const char* description) {
+            if (value > std::numeric_limits<std::uint32_t>::max()) {
+                throw std::length_error(std::string(description) +
+                                        " exceeds 32-bit packed storage");
+            }
+            return static_cast<std::uint32_t>(value);
+        };
+
+        RayTransportGeometry geometry;
+        geometry.ray_layer_offsets.reserve(source_interpolator.size() + 1);
+        geometry.ray_ground_offsets.reserve(source_interpolator.size() + 1);
+        geometry.ray_transport_value_offsets.reserve(
+            source_interpolator.size());
+        geometry.ray_transport_row_nnz.reserve(source_interpolator.size());
+        geometry.ray_layer_offsets.push_back(0);
+        geometry.layer_atmosphere_offsets.push_back(0);
+        geometry.layer_source_offsets.push_back(0);
+        geometry.ray_ground_offsets.push_back(0);
+
+        std::size_t total_layers = 0;
+        std::size_t total_atmosphere_weights = 0;
+        std::size_t total_source_weights = 0;
+        std::size_t total_ground_weights = 0;
+        for (std::size_t rayidx = 0; rayidx < source_interpolator.size();
+             ++rayidx) {
+            total_layers += integration_num_layers(static_cast<int>(rayidx));
+            total_atmosphere_weights +=
+                source_interpolator[rayidx].atmosphere_weights.size();
+            total_source_weights +=
+                source_interpolator[rayidx].source_weights.size();
+            total_ground_weights +=
+                source_interpolator[rayidx].ground_source_weights.size();
+        }
+        geometry.layer_atmosphere_offsets.reserve(total_layers + 1);
+        geometry.layer_source_offsets.reserve(total_layers + 1);
+        geometry.atmosphere_indices.reserve(total_atmosphere_weights);
+        geometry.optical_depth_weights.reserve(total_atmosphere_weights);
+        geometry.albedo_weights.reserve(total_atmosphere_weights);
+        geometry.entrance_weights.reserve(total_atmosphere_weights);
+        geometry.exit_weights.reserve(total_atmosphere_weights);
+        geometry.layer_distance.reserve(total_layers);
+        geometry.layer_start_fraction.reserve(total_layers);
+        geometry.layer_end_fraction.reserve(total_layers);
+        geometry.ray_scattering_cosine.reserve(source_interpolator.size());
+        geometry.ray_phase_q_factor.reserve(source_interpolator.size());
+        geometry.ray_phase_u_factor.reserve(source_interpolator.size());
+        geometry.source_value_inner_indices.reserve(total_source_weights);
+        geometry.source_weights.reserve(total_source_weights);
+        geometry.ground_value_inner_indices.reserve(total_ground_weights);
+        geometry.ground_weights.reserve(total_ground_weights);
+
+        for (std::size_t rayidx = 0; rayidx < source_interpolator.size();
+             ++rayidx) {
+            const auto& interpolator = source_interpolator[rayidx];
+            geometry.ray_transport_value_offsets.push_back(
+                interpolator.accumulation_row_offset);
+            geometry.ray_transport_row_nnz.push_back(
+                interpolator.accumulation_row_nnz);
+            const auto& ray = (*m_traced_rays)[rayidx];
+            if (!ray.is_straight) {
+                throw std::invalid_argument(
+                    "Rust first-order forcing requires straight rays");
+            }
+            if (ray.layers.empty()) {
+                geometry.ray_scattering_cosine.push_back(1.0);
+                if constexpr (NSTOKES == 3) {
+                    geometry.ray_phase_q_factor.push_back(0.0);
+                    geometry.ray_phase_u_factor.push_back(0.0);
+                }
+            } else {
+                const auto& look_away = ray.layers.front().average_look_away;
+                double theta;
+                double C1;
+                double C2;
+                double S1;
+                double S2;
+                int negation;
+                sasktran2::math::stokes_scattering_factors(
+                    -model_geometry.coordinates().sun_unit(), -look_away, theta,
+                    C1, C2, S1, S2, negation);
+                geometry.ray_scattering_cosine.push_back(std::cos(theta));
+                if constexpr (NSTOKES == 3) {
+                    const auto observer_rotation =
+                        model_geometry.coordinates()
+                            .stokes_standard_to_observer_z(
+                                look_away,
+                                ray.observer_and_look.observer.position);
+                    geometry.ray_phase_q_factor.push_back(
+                        C2 * observer_rotation.first -
+                        S2 * observer_rotation.second);
+                    geometry.ray_phase_u_factor.push_back(
+                        C2 * observer_rotation.second +
+                        S2 * observer_rotation.first);
+                } else {
+                    static_assert(NSTOKES == 1);
+                }
+            }
+            const int num_layers =
+                integration_num_layers(static_cast<int>(rayidx));
+            if (interpolator.interior_weights.size() !=
+                static_cast<std::size_t>(num_layers)) {
+                throw std::invalid_argument(
+                    "Rust transport layer interpolation mismatch");
+            }
+
+            for (int layeridx = 0; layeridx < num_layers; ++layeridx) {
+                const auto entrance_weights = integration_entrance_weights(
+                    static_cast<int>(rayidx), layeridx);
+                const auto exit_weights = integration_exit_weights(
+                    static_cast<int>(rayidx), layeridx);
+                const auto optical_depth_weights =
+                    integration_optical_depth_weights(static_cast<int>(rayidx),
+                                                      layeridx);
+                const auto& layer_interpolator =
+                    interpolator.interior_weights[layeridx];
+                if (entrance_weights.size() != exit_weights.size() ||
+                    entrance_weights.size() != optical_depth_weights.size() ||
+                    layer_interpolator.atmosphere_count !=
+                        entrance_weights.size()) {
+                    throw std::invalid_argument(
+                        "Rust transport atmosphere stencil mismatch");
+                }
+
+                for (std::size_t index = 0; index < entrance_weights.size();
+                     ++index) {
+                    const auto entrance = entrance_weights[index];
+                    const auto optical_depth = optical_depth_weights[index];
+                    if (entrance.first != optical_depth.first ||
+                        entrance.first < 0) {
+                        throw std::invalid_argument(
+                            "Rust transport atmospheric indices do not "
+                            "match");
+                    }
+                    geometry.atmosphere_indices.push_back(
+                        as_u32(static_cast<std::size_t>(entrance.first),
+                               "Atmosphere index"));
+                    geometry.optical_depth_weights.push_back(
+                        optical_depth.second);
+                    geometry.albedo_weights.push_back(
+                        interpolator.atmosphere_weights
+                            [layer_interpolator.atmosphere_offset + index]);
+                    geometry.entrance_weights.push_back(entrance.second);
+                    geometry.exit_weights.push_back(exit_weights[index].second);
+                }
+                geometry.layer_atmosphere_offsets.push_back(
+                    as_u32(geometry.atmosphere_indices.size(),
+                           "Atmosphere stencil offset"));
+
+                sasktran2::raytracing::TracedLayer layer_scratch;
+                const auto& layer = integration_layer(static_cast<int>(rayidx),
+                                                      layeridx, layer_scratch);
+                geometry.layer_distance.push_back(layer.layer_distance);
+                geometry.layer_start_fraction.push_back(
+                    layer.od_quad_start_fraction);
+                geometry.layer_end_fraction.push_back(
+                    layer.od_quad_end_fraction);
+
+                const std::size_t source_end =
+                    static_cast<std::size_t>(layer_interpolator.source_offset) +
+                    layer_interpolator.source_count;
+                for (std::size_t index = layer_interpolator.source_offset;
+                     index < source_end; ++index) {
+                    geometry.source_value_inner_indices.push_back(
+                        interpolator.source_accumulation_inner_indices[index]);
+                    geometry.source_weights.push_back(
+                        interpolator.source_weights[index]);
+                }
+                geometry.layer_source_offsets.push_back(
+                    as_u32(geometry.source_value_inner_indices.size(),
+                           "Source stencil offset"));
+            }
+            geometry.ray_layer_offsets.push_back(as_u32(
+                geometry.layer_source_offsets.size() - 1, "Layer offset"));
+
+            for (std::size_t index = 0;
+                 index < interpolator.ground_source_weights.size(); ++index) {
+                geometry.ground_value_inner_indices.push_back(
+                    interpolator.ground_accumulation_inner_indices[index]);
+                geometry.ground_weights.push_back(
+                    interpolator.ground_source_weights[index]);
+            }
+            geometry.ray_ground_offsets.push_back(
+                as_u32(geometry.ground_value_inner_indices.size(),
+                       "Ground stencil offset"));
+        }
+        return geometry;
     }
 
     template <int NSTOKES>
@@ -1019,66 +1050,6 @@ namespace sasktran2 {
                                       layer_source);
         }
         radiance.value += layer_source.value.col(0) * ray_end_attenuation;
-    }
-
-    template <int NSTOKES>
-    void SourceIntegrator<NSTOKES>::integrate_end_of_ray_precomputed(
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-            radiance,
-        const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
-        int wavelidx, int rayidx, int wavel_threadidx, int threadidx,
-        double ray_end_attenuation) {
-        auto& end_source =
-            m_accumulation_thread_scratch.at(threadidx).primal_layer_source;
-        end_source.set_zero(1);
-        const sasktran2::WavelengthBlock<> block{wavelidx, 1};
-        for (const auto* source : source_terms) {
-            source->end_of_ray_source(block, rayidx, wavel_threadidx, threadidx,
-                                      end_source);
-        }
-        radiance.value += end_source.value.col(0) * ray_end_attenuation;
-    }
-
-    template <int NSTOKES>
-    void SourceIntegrator<NSTOKES>::integrate_end_of_ray_jvp_precomputed(
-        const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
-        int wavelidx, int rayidx, int wavel_threadidx, int threadidx,
-        Eigen::Ref<const Eigen::VectorXd> native_tangent,
-        double ray_end_attenuation, double ray_end_attenuation_tangent,
-        Eigen::Ref<Eigen::VectorXd> first_order_forcing_tangent) const {
-        sasktran2::RadianceJVP<NSTOKES> end_source;
-        end_source.set_zero();
-        for (const auto* source : source_terms) {
-            source->end_of_ray_source_jvp(wavelidx, rayidx, wavel_threadidx,
-                                          threadidx, native_tangent,
-                                          end_source);
-        }
-        for (int stokes = 0; stokes < NSTOKES; ++stokes) {
-            first_order_forcing_tangent(rayidx * NSTOKES + stokes) +=
-                ray_end_attenuation * end_source.jvp(stokes) +
-                ray_end_attenuation_tangent * end_source.value(stokes);
-        }
-    }
-
-    template <int NSTOKES>
-    double SourceIntegrator<NSTOKES>::accumulate_end_of_ray_vjp_precomputed(
-        const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
-        int wavelidx, int rayidx, int wavel_threadidx, int threadidx,
-        const Eigen::Vector<double, NSTOKES>& forcing_cotangent,
-        double ray_end_attenuation,
-        Eigen::Ref<Eigen::VectorXd> native_gradient) const {
-        auto& end_source =
-            m_accumulation_thread_scratch.at(threadidx).end_source;
-        end_source.value.setZero();
-        const sasktran2::WavelengthBlock<> block{wavelidx, 1};
-        for (const auto* source : source_terms) {
-            source->end_of_ray_source(block, rayidx, wavel_threadidx, threadidx,
-                                      end_source);
-            source->end_of_ray_source_vjp(
-                wavelidx, rayidx, wavel_threadidx, threadidx,
-                ray_end_attenuation * forcing_cotangent, native_gradient);
-        }
-        return forcing_cotangent.dot(end_source.value.col(0));
     }
 
     template <int NSTOKES>
@@ -1461,9 +1432,14 @@ namespace sasktran2 {
         Eigen::Ref<const Eigen::VectorXd> first_order_forcing_gradient,
         bool active_extinction, bool active_ssa,
         bool active_interior_source_parameters,
+        bool active_transport_parameters,
         Eigen::Ref<Eigen::VectorXd> native_gradient) const {
         const auto& ray = (*m_traced_rays)[rayidx];
-        const auto& interpolator = source_interpolator[rayidx];
+        if (active_transport_parameters &&
+            source_interpolator.size() != m_traced_rays->size()) {
+            throw std::invalid_argument(
+                "Transport VJP source interpolation ray count mismatch");
+        }
         const Eigen::Vector<double, NSTOKES> forcing_cotangent =
             first_order_forcing_gradient.template segment<NSTOKES>(rayidx *
                                                                    NSTOKES);
@@ -1533,7 +1509,9 @@ namespace sasktran2 {
                     current_attenuation * forcing_cotangent.dot(layer_source);
             }
 
-            if (active_extinction || active_ssa) {
+            if (active_transport_parameters &&
+                (active_extinction || active_ssa)) {
+                const auto& interpolator = source_interpolator[rayidx];
                 const auto& layer_interpolator =
                     interpolator.interior_weights[layeridx];
                 double omega = 0.0;
@@ -1614,7 +1592,9 @@ namespace sasktran2 {
                       forcing_cotangent.dot(end_source.value.col(0))
                 : 0.0;
 
-        if (active_extinction && ray.ground_is_hit) {
+        if (active_transport_parameters && active_extinction &&
+            ray.ground_is_hit) {
+            const auto& interpolator = source_interpolator[rayidx];
             double ground_factor_cotangent = 0.0;
             for (std::size_t index = 0;
                  index < interpolator.ground_source_weights.size(); ++index) {

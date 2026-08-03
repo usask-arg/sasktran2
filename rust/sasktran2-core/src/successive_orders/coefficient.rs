@@ -1438,6 +1438,7 @@ pub struct VectorCoefficientScattering {
     active_num_coefficients: usize,
     dense_value_offsets: Vec<usize>,
     dense_values: Vec<f64>,
+    intensity_only_dense: bool,
 }
 
 impl VectorCoefficientScattering {
@@ -1446,6 +1447,42 @@ impl VectorCoefficientScattering {
         input_offsets: Vec<usize>,
         coefficient_blocks: usize,
         basis: VectorCoefficientBasis,
+    ) -> Result<Self, OperatorError> {
+        Self::new_with_dense_layout(
+            output_offsets,
+            input_offsets,
+            coefficient_blocks,
+            basis,
+            false,
+        )
+    }
+
+    /// Constructs polarized atmospheric scattering followed by surface blocks
+    /// that couple only Stokes I to Stokes I. SASKTRAN's current surface
+    /// scattering implementation has exactly this structure, so retaining one
+    /// scalar value per angular pair avoids storing and multiplying eight
+    /// structural zeros for every boundary entry.
+    pub fn new_with_intensity_only_dense(
+        output_offsets: Vec<usize>,
+        input_offsets: Vec<usize>,
+        coefficient_blocks: usize,
+        basis: VectorCoefficientBasis,
+    ) -> Result<Self, OperatorError> {
+        Self::new_with_dense_layout(
+            output_offsets,
+            input_offsets,
+            coefficient_blocks,
+            basis,
+            true,
+        )
+    }
+
+    fn new_with_dense_layout(
+        output_offsets: Vec<usize>,
+        input_offsets: Vec<usize>,
+        coefficient_blocks: usize,
+        basis: VectorCoefficientBasis,
+        intensity_only_dense: bool,
     ) -> Result<Self, OperatorError> {
         if output_offsets.len() < 2
             || output_offsets.len() != input_offsets.len()
@@ -1472,13 +1509,23 @@ impl VectorCoefficientScattering {
         for block in coefficient_blocks..num_blocks {
             let rows = output_offsets[block + 1] - output_offsets[block];
             let columns = input_offsets[block + 1] - input_offsets[block];
+            if intensity_only_dense && (!rows.is_multiple_of(3) || !columns.is_multiple_of(3)) {
+                return Err(OperatorError::DimensionMismatch);
+            }
+            let stored_rows = if intensity_only_dense { rows / 3 } else { rows };
+            let stored_columns = if intensity_only_dense {
+                columns / 3
+            } else {
+                columns
+            };
             dense_value_offsets.push(
                 dense_value_offsets
                     .last()
                     .copied()
                     .unwrap()
                     .checked_add(
-                        rows.checked_mul(columns)
+                        stored_rows
+                            .checked_mul(stored_columns)
                             .ok_or(OperatorError::DimensionMismatch)?,
                     )
                     .ok_or(OperatorError::DimensionMismatch)?,
@@ -1499,6 +1546,7 @@ impl VectorCoefficientScattering {
             active_num_coefficients: 0,
             dense_value_offsets,
             dense_values: vec![0.0; dense_value_size],
+            intensity_only_dense,
         })
     }
 
@@ -1571,6 +1619,20 @@ impl VectorCoefficientScattering {
             let output_end = self.output_offsets[block + 1];
             let columns = input_end - input_start;
             let value_start = self.dense_value_offsets[dense_block];
+            if self.intensity_only_dense {
+                output[output_start..output_end].fill(0.0);
+                let angular_columns = columns / 3;
+                for local_row in 0..(output_end - output_start) / 3 {
+                    let row_start = value_start + local_row * angular_columns;
+                    output[output_start + local_row * 3] = self.dense_values
+                        [row_start..row_start + angular_columns]
+                        .iter()
+                        .zip(input[input_start..input_end].iter().step_by(3))
+                        .map(|(&value, &incoming)| value * incoming)
+                        .sum();
+                }
+                continue;
+            }
             for (local_row, result) in output[output_start..output_end].iter_mut().enumerate() {
                 let row_start = value_start + local_row * columns;
                 *result = self.dense_values[row_start..row_start + columns]
@@ -1604,6 +1666,18 @@ impl VectorCoefficientScattering {
             let output_end = self.output_offsets[block + 1];
             let columns = input_end - input_start;
             let value_start = self.dense_value_offsets[dense_block];
+            if self.intensity_only_dense {
+                let angular_columns = columns / 3;
+                for local_row in 0..(output_end - output_start) / 3 {
+                    let input_value = input[output_start + local_row * 3];
+                    let row_start = value_start + local_row * angular_columns;
+                    for local_column in 0..angular_columns {
+                        output[input_start + local_column * 3] +=
+                            self.dense_values[row_start + local_column] * input_value;
+                    }
+                }
+                continue;
+            }
             for (local_row, &input_value) in input[output_start..output_end].iter().enumerate() {
                 let row_start = value_start + local_row * columns;
                 for local_column in 0..columns {
@@ -1669,6 +1743,26 @@ impl VectorCoefficientScattering {
             let output_end = self.output_offsets[block + 1];
             let columns = input_end - input_start;
             let value_start = self.dense_value_offsets[dense_block];
+            if self.intensity_only_dense {
+                output_tangent[output_start..output_end].fill(0.0);
+                let angular_columns = columns / 3;
+                for local_row in 0..(output_end - output_start) / 3 {
+                    let row_start = value_start + local_row * angular_columns;
+                    output_tangent[output_start + local_row * 3] = self.dense_values
+                        [row_start..row_start + angular_columns]
+                        .iter()
+                        .zip(input_tangent[input_start..input_end].iter().step_by(3))
+                        .zip(&dense_value_tangent[row_start..row_start + angular_columns])
+                        .zip(input[input_start..input_end].iter().step_by(3))
+                        .map(
+                            |(((&value, &incoming_tangent), &value_tangent), &incoming)| {
+                                value * incoming_tangent + value_tangent * incoming
+                            },
+                        )
+                        .sum();
+                }
+                continue;
+            }
             for (local_row, result) in output_tangent[output_start..output_end]
                 .iter_mut()
                 .enumerate()
@@ -1728,6 +1822,20 @@ impl VectorCoefficientScattering {
             let output_end = self.output_offsets[block + 1];
             let columns = input_end - input_start;
             let value_start = self.dense_value_offsets[dense_block];
+            if self.intensity_only_dense {
+                let angular_columns = columns / 3;
+                for local_row in 0..(output_end - output_start) / 3 {
+                    let outgoing_cotangent = output_cotangent[output_start + local_row * 3];
+                    let row_start = value_start + local_row * angular_columns;
+                    for local_column in 0..angular_columns {
+                        input_cotangent[input_start + local_column * 3] +=
+                            self.dense_values[row_start + local_column] * outgoing_cotangent;
+                        dense_value_gradient[row_start + local_column] +=
+                            input[input_start + local_column * 3] * outgoing_cotangent;
+                    }
+                }
+                continue;
+            }
             for (local_row, &outgoing_cotangent) in output_cotangent[output_start..output_end]
                 .iter()
                 .enumerate()

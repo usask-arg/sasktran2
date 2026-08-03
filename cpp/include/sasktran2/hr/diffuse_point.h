@@ -45,6 +45,13 @@ namespace sasktran2::hr {
             const sasktran2::Location& loc, int wavelidx,
             double* phase_storage_location) const;
 
+        /** Calculates the currently supported intensity-only surface block in
+         *  compact row-major [outgoing, incoming] layout. */
+        void calculate_ground_scattering_values(
+            const sasktran2::atmosphere::Surface<NSTOKES>& surface,
+            const sasktran2::Location& loc, int wavelidx,
+            double* value_storage_location) const;
+
         const sasktran2::math::UnitSphere& incoming_sphere() const {
             return *m_incoming_sphere;
         }

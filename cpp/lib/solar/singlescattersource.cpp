@@ -8,9 +8,30 @@
 #include <sasktran2/atmosphere/atmosphere.h>
 #include <sasktran2/math/trig.h>
 #include <cmath>
+#include <limits>
 
 namespace {
     constexpr double DENSE_GEOMETRY_THRESHOLD = 0.25;
+
+#ifdef SKTRAN_RUST_SUPPORT
+    template <typename T>
+    ::rust::Slice<const T> as_rust_slice(const std::vector<T>& values) {
+        return {values.data(), values.size()};
+    }
+
+    template <typename T>
+    ::rust::Slice<T> as_rust_mut_slice(std::vector<T>& values) {
+        return {values.data(), values.size()};
+    }
+
+    ::rust::Slice<const double> as_rust_slice(const Eigen::VectorXd& values) {
+        return {values.data(), static_cast<std::size_t>(values.size())};
+    }
+
+    ::rust::Slice<double> as_rust_mut_slice(Eigen::VectorXd& values) {
+        return {values.data(), static_cast<std::size_t>(values.size())};
+    }
+#endif
 
     struct ConstantSourceFactor {
         double value;
@@ -56,7 +77,7 @@ namespace sasktran2::solartransmission {
         bool native_products) {
         // Store the atmosphere for later
         m_atmosphere = &atmosphere;
-        if (!m_delegate_scalar_interior_source) {
+        if (!m_delegate_interior_source) {
             this->m_phase_handler.initialize_atmosphere(atmosphere);
         }
 
@@ -77,7 +98,7 @@ namespace sasktran2::solartransmission {
                 m_batch_source_cache.shrink_to_fit();
                 m_batch_integration_cache.clear();
                 m_batch_integration_cache.shrink_to_fit();
-                if (!m_delegate_scalar_interior_source) {
+                if (!m_delegate_interior_source) {
                     m_phase_handler.clear_wavelength_blocks();
                 }
             }
@@ -98,7 +119,7 @@ namespace sasktran2::solartransmission {
         m_config = &config;
 
         this->m_solar_transmission.initialize_config(config);
-        if (!m_delegate_scalar_interior_source) {
+        if (!m_delegate_interior_source) {
             this->m_phase_handler.initialize_config(config);
         }
 
@@ -120,6 +141,185 @@ namespace sasktran2::solartransmission {
             wavelength_storage.resize(config.num_threads());
         }
     }
+
+#ifdef SKTRAN_RUST_SUPPORT
+    template <typename S, int NSTOKES>
+    void SingleScatterSource<
+        S, NSTOKES>::initialize_rust_solar_transmission_operator() {
+        if constexpr ((!std::is_same_v<S, SolarTransmissionExact> &&
+                       !std::is_same_v<S, SolarTransmissionTable>)) {
+            return;
+        } else {
+            if (!m_delegate_interior_source) {
+                return;
+            }
+
+            std::size_t path_rows = 0;
+            std::size_t path_columns = 0;
+            std::vector<double> dense_path_values;
+            std::vector<std::uint32_t> path_row_offsets;
+            std::vector<std::uint32_t> path_column_indices;
+            std::vector<double> sparse_path_values;
+            std::size_t interpolation_rows = 0;
+            std::size_t interpolation_columns = 0;
+            std::vector<std::uint32_t> interpolation_row_offsets;
+            std::vector<std::uint32_t> interpolation_column_indices;
+            std::vector<double> interpolation_values;
+
+            const auto pack_dense = [](const Eigen::MatrixXd& matrix,
+                                       std::vector<double>& values) {
+                values.resize(static_cast<std::size_t>(matrix.rows()) *
+                              static_cast<std::size_t>(matrix.cols()));
+                for (Eigen::Index row = 0; row < matrix.rows(); ++row) {
+                    for (Eigen::Index column = 0; column < matrix.cols();
+                         ++column) {
+                        values[static_cast<std::size_t>(row * matrix.cols() +
+                                                        column)] =
+                            matrix(row, column);
+                    }
+                }
+            };
+            const auto pack_sparse =
+                [](Eigen::SparseMatrix<double, Eigen::RowMajor>& matrix,
+                   std::vector<std::uint32_t>& offsets,
+                   std::vector<std::uint32_t>& indices,
+                   std::vector<double>& values) {
+                    matrix.makeCompressed();
+                    if (matrix.nonZeros() >
+                            static_cast<Eigen::Index>(
+                                std::numeric_limits<std::uint32_t>::max()) ||
+                        matrix.cols() >
+                            static_cast<Eigen::Index>(
+                                std::numeric_limits<std::uint32_t>::max())) {
+                        throw std::length_error(
+                            "Solar transmission geometry exceeds packed Rust "
+                            "index range");
+                    }
+                    offsets.resize(static_cast<std::size_t>(matrix.rows()) + 1);
+                    for (Eigen::Index row = 0; row <= matrix.rows(); ++row) {
+                        offsets[static_cast<std::size_t>(row)] =
+                            static_cast<std::uint32_t>(
+                                matrix.outerIndexPtr()[row]);
+                    }
+                    indices.resize(static_cast<std::size_t>(matrix.nonZeros()));
+                    values.resize(static_cast<std::size_t>(matrix.nonZeros()));
+                    for (Eigen::Index index = 0; index < matrix.nonZeros();
+                         ++index) {
+                        indices[static_cast<std::size_t>(index)] =
+                            static_cast<std::uint32_t>(
+                                matrix.innerIndexPtr()[index]);
+                        values[static_cast<std::size_t>(index)] =
+                            matrix.valuePtr()[index];
+                    }
+                };
+
+            if constexpr (std::is_same_v<S, SolarTransmissionTable>) {
+                const auto& path_matrix =
+                    m_solar_transmission.geometry_matrix();
+                path_rows = static_cast<std::size_t>(path_matrix.rows());
+                path_columns = static_cast<std::size_t>(path_matrix.cols());
+                pack_dense(path_matrix, dense_path_values);
+
+                interpolation_rows =
+                    static_cast<std::size_t>(m_geometry_sparse.rows());
+                interpolation_columns =
+                    static_cast<std::size_t>(m_geometry_sparse.cols());
+                pack_sparse(m_geometry_sparse, interpolation_row_offsets,
+                            interpolation_column_indices, interpolation_values);
+            } else {
+                path_rows = static_cast<std::size_t>(m_geometry_sparse.rows());
+                path_columns =
+                    static_cast<std::size_t>(m_geometry_sparse.cols());
+                const bool use_dense =
+                    m_geometry_matrix.size() > 0 &&
+                    double(m_geometry_sparse.nonZeros()) /
+                            double(m_geometry_matrix.size()) >
+                        DENSE_GEOMETRY_THRESHOLD;
+                if (use_dense) {
+                    path_rows =
+                        static_cast<std::size_t>(m_geometry_matrix.rows());
+                    path_columns =
+                        static_cast<std::size_t>(m_geometry_matrix.cols());
+                    pack_dense(m_geometry_matrix, dense_path_values);
+                } else {
+                    pack_sparse(m_geometry_sparse, path_row_offsets,
+                                path_column_indices, sparse_path_values);
+                }
+            }
+
+            std::vector<std::uint8_t> ground_hit(m_ground_hit_flag.size());
+            for (std::size_t index = 0; index < ground_hit.size(); ++index) {
+                ground_hit[index] = m_ground_hit_flag[index] ? 1 : 0;
+            }
+            m_rust_solar_transmission_operators.clear();
+            m_rust_solar_transmission_operators.push_back(
+                sasktran2::rust::successive_orders::
+                    new_solar_transmission_operator(
+                        path_rows, path_columns,
+                        as_rust_slice(dense_path_values),
+                        as_rust_slice(path_row_offsets),
+                        as_rust_slice(path_column_indices),
+                        as_rust_slice(sparse_path_values), interpolation_rows,
+                        interpolation_columns,
+                        as_rust_slice(interpolation_row_offsets),
+                        as_rust_slice(interpolation_column_indices),
+                        as_rust_slice(interpolation_values),
+                        as_rust_slice(ground_hit)));
+            const auto& rust_operator =
+                *m_rust_solar_transmission_operators.front();
+            const std::size_t output_size = sasktran2::rust::successive_orders::
+                solar_transmission_output_size(rust_operator);
+            if (sasktran2::rust::successive_orders::
+                        solar_transmission_input_size(rust_operator) !=
+                    static_cast<std::size_t>(m_geometry.size()) ||
+                output_size != m_ground_hit_flag.size()) {
+                throw std::logic_error(
+                    "Packed Rust solar transmission dimensions do not match "
+                    "the source geometry");
+            }
+            const std::size_t vjp_scratch_size =
+                sasktran2::rust::successive_orders::
+                    solar_transmission_scratch_size(rust_operator);
+            const std::size_t forward_scratch_size =
+                sasktran2::rust::successive_orders::
+                    solar_transmission_forward_scratch_size(rust_operator);
+            m_rust_solar_scratch.resize(m_config->num_wavelength_threads());
+            for (auto& scratch : m_rust_solar_scratch) {
+                scratch.resize(forward_scratch_size);
+            }
+            for (auto& transmission : m_solar_trans) {
+                transmission.resize(static_cast<Eigen::Index>(output_size));
+            }
+            for (auto& tangent : m_solar_trans_jvp) {
+                tangent.resize(static_cast<Eigen::Index>(output_size));
+            }
+            spdlog::debug(
+                "Packed Rust successive-orders solar transmission: {}x{} "
+                "path, {} outputs, {:.3f} MiB immutable + {:.3f} MiB "
+                "forward scratch + up to {:.3f} MiB lazy VJP scratch",
+                path_rows, path_columns, output_size,
+                static_cast<double>(
+                    sasktran2::rust::successive_orders::
+                        solar_transmission_storage_bytes(rust_operator)) /
+                    (1024.0 * 1024.0),
+                static_cast<double>(forward_scratch_size *
+                                    m_rust_solar_scratch.size() *
+                                    sizeof(double)) /
+                    (1024.0 * 1024.0),
+                static_cast<double>(vjp_scratch_size *
+                                    m_rust_solar_scratch.size() *
+                                    sizeof(double)) /
+                    (1024.0 * 1024.0));
+
+            m_geometry_matrix.resize(0, 0);
+            Eigen::SparseMatrix<double, Eigen::RowMajor>().swap(
+                m_geometry_sparse);
+            if constexpr (std::is_same_v<S, SolarTransmissionTable>) {
+                m_solar_transmission.release_geometry_matrix();
+            }
+        }
+    }
+#endif
 
     template <typename S, int NSTOKES>
     typename SingleScatterSource<S, NSTOKES>::EndpointValueCache
@@ -166,7 +366,12 @@ namespace sasktran2::solartransmission {
         const sasktran2::raytracing::GridWeightStencilView& weights,
         bool is_entrance, const Eigen::Vector<double, NSTOKES>& cotangent,
         Eigen::Ref<Eigen::VectorXd> native_gradient) const {
-        const auto& activity = m_active_vjp_derivatives[wavel_threadidx];
+        if (!weights.empty() && (weights.indices_data() == nullptr ||
+                                 weights.weights_data() == nullptr)) {
+            throw std::logic_error(
+                "Single-scatter VJP received an invalid grid-weight view");
+        }
+        const auto& activity = m_active_vjp_derivatives.at(wavel_threadidx);
         const double scale = 1.0 / (EIGEN_PI * 4);
         const double amplitude = endpoint.extinction * endpoint.ssa *
                                  endpoint.solar_transmission * scale;
@@ -214,7 +419,7 @@ namespace sasktran2::solartransmission {
     template <typename S, int NSTOKES>
     void SingleScatterSource<S, NSTOKES>::flush_pending_endpoint_vjp(
         int threadidx, Eigen::Ref<Eigen::VectorXd> native_gradient) const {
-        auto& pending = m_pending_endpoint_vjp[threadidx];
+        auto& pending = m_pending_endpoint_vjp.at(threadidx);
         if (!pending.valid) {
             return;
         }
@@ -319,6 +524,19 @@ namespace sasktran2::solartransmission {
         }
         const auto extinction_tangent =
             native_tangent.head(static_cast<Eigen::Index>(m_geometry.size()));
+#ifdef SKTRAN_RUST_SUPPORT
+        if (!m_rust_solar_transmission_operators.empty()) {
+            sasktran2::rust::successive_orders::
+                calculate_solar_transmission_jvp(
+                    *m_rust_solar_transmission_operators.front(),
+                    {extinction_tangent.data(),
+                     static_cast<std::size_t>(extinction_tangent.size())},
+                    as_rust_slice(m_solar_trans[wavel_threadidx]),
+                    as_rust_mut_slice(solar_jvp),
+                    as_rust_mut_slice(m_rust_solar_scratch[wavel_threadidx]));
+            return;
+        }
+#endif
         if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
             if (!m_interpolate_solar_on_atmosphere_grid &&
                 m_geometry_matrix.size() > 0 &&
@@ -374,13 +592,29 @@ namespace sasktran2::solartransmission {
         if (!activity.extinction) {
             return;
         }
+#ifdef SKTRAN_RUST_SUPPORT
+        if (!m_rust_solar_transmission_operators.empty()) {
+            m_rust_solar_scratch[wavel_threadidx].resize(
+                sasktran2::rust::successive_orders::
+                    solar_transmission_scratch_size(
+                        *m_rust_solar_transmission_operators.front()));
+        }
+#endif
         if (!m_interpolate_solar_on_atmosphere_grid) {
-            m_solar_trans_cotangent[wavel_threadidx][0].setZero(
-                m_geometry_sparse.rows());
+            // A Rayon wavelength may be assigned to a worker that has not
+            // previously evaluated a forward wavelength.  Its transmission
+            // vector is therefore still empty at this point because the
+            // forward calculation follows prepare_vjp().  Size reverse
+            // storage from immutable geometry instead of worker-local forward
+            // state so every worker is safe on its first VJP.
+            m_solar_trans_cotangent.at(wavel_threadidx)
+                .at(0)
+                .setZero(static_cast<Eigen::Index>(m_ground_hit_flag.size()));
             return;
         }
-        for (auto& cotangent : m_solar_trans_cotangent[wavel_threadidx]) {
-            cotangent.setZero(m_geometry.size());
+        for (auto& cotangent : m_solar_trans_cotangent.at(wavel_threadidx)) {
+            cotangent.setZero(
+                static_cast<Eigen::Index>(m_ground_hit_flag.size()));
         }
     }
 
@@ -396,6 +630,39 @@ namespace sasktran2::solartransmission {
             m_vjp_prepared[wavel_threadidx] = 0;
             return;
         }
+#ifdef SKTRAN_RUST_SUPPORT
+        if (!m_rust_solar_transmission_operators.empty()) {
+            Eigen::VectorXd combined_cotangent;
+            const Eigen::VectorXd* solar_cotangent = nullptr;
+            if (!m_interpolate_solar_on_atmosphere_grid) {
+                solar_cotangent = &m_solar_trans_cotangent[wavel_threadidx][0];
+            } else {
+                combined_cotangent.setZero(
+                    m_solar_trans[wavel_threadidx].size());
+                for (const auto& thread_cotangent :
+                     m_solar_trans_cotangent[wavel_threadidx]) {
+                    combined_cotangent += thread_cotangent;
+                }
+                solar_cotangent = &combined_cotangent;
+            }
+            sasktran2::rust::successive_orders::
+                accumulate_solar_transmission_vjp(
+                    *m_rust_solar_transmission_operators.front(),
+                    as_rust_slice(m_solar_trans[wavel_threadidx]),
+                    as_rust_slice(*solar_cotangent),
+                    {native_gradient.data(),
+                     static_cast<std::size_t>(m_geometry.size())},
+                    as_rust_mut_slice(m_rust_solar_scratch[wavel_threadidx]));
+            m_rust_solar_scratch[wavel_threadidx].resize(
+                sasktran2::rust::successive_orders::
+                    solar_transmission_forward_scratch_size(
+                        *m_rust_solar_transmission_operators.front()));
+            m_active_vjp_derivatives[wavel_threadidx] =
+                NativeDerivativeActivity{};
+            m_vjp_prepared[wavel_threadidx] = 0;
+            return;
+        }
+#endif
         if (!m_interpolate_solar_on_atmosphere_grid) {
             auto& solar_cotangent = m_solar_trans_cotangent[wavel_threadidx][0];
             solar_cotangent.array() *= -m_solar_trans[wavel_threadidx].array();
@@ -439,7 +706,7 @@ namespace sasktran2::solartransmission {
     void SingleScatterSource<S, NSTOKES>::calculate_single(
         int wavelidx, int threadidx, bool calculate_derivatives) {
         ZoneScopedN("Single Scatter Source Calculation");
-        if (!m_delegate_scalar_interior_source) {
+        if (!m_delegate_interior_source) {
             if (calculate_derivatives) {
                 if (m_vjp_prepared[threadidx]) {
                     m_phase_handler.calculate_vjp(
@@ -457,6 +724,23 @@ namespace sasktran2::solartransmission {
             }
         }
         m_jvp_prepared[threadidx] = 0;
+
+#ifdef SKTRAN_RUST_SUPPORT
+        if (!m_rust_solar_transmission_operators.empty()) {
+            const auto& extinction = m_atmosphere->storage().total_extinction;
+            const std::size_t num_geometry =
+                static_cast<std::size_t>(extinction.rows());
+            sasktran2::rust::successive_orders::calculate_solar_transmission(
+                *m_rust_solar_transmission_operators.front(),
+                {extinction.data() +
+                     static_cast<std::size_t>(wavelidx) * num_geometry,
+                 num_geometry},
+                m_atmosphere->storage().solar_irradiance(wavelidx),
+                as_rust_mut_slice(m_solar_trans[threadidx]),
+                as_rust_mut_slice(m_rust_solar_scratch[threadidx]));
+            return;
+        }
+#endif
 
         // Calculate the solar transmission at each cell
         if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
@@ -506,8 +790,17 @@ namespace sasktran2::solartransmission {
         } else {
             m_wavelength_batch_capacity = block_size;
             m_solar_trans_batch.resize(m_config->num_wavelength_threads());
+            Eigen::Index num_solar_locations = m_geometry_sparse.rows();
+#ifdef SKTRAN_RUST_SUPPORT
+            if (!m_rust_solar_transmission_operators.empty()) {
+                num_solar_locations = static_cast<Eigen::Index>(
+                    sasktran2::rust::successive_orders::
+                        solar_transmission_output_size(
+                            *m_rust_solar_transmission_operators.front()));
+            }
+#endif
             for (auto& storage : m_solar_trans_batch) {
-                storage.resize(m_geometry_sparse.rows(), block_size);
+                storage.resize(num_solar_locations, block_size);
             }
             m_batch_source_cache.resize(m_config->num_threads());
             m_batch_integration_cache.resize(m_config->num_threads());
@@ -519,7 +812,7 @@ namespace sasktran2::solartransmission {
             for (auto& thread_cache : m_batch_integration_cache) {
                 thread_cache.resize(block_size);
             }
-            if (!m_delegate_scalar_interior_source) {
+            if (!m_delegate_interior_source) {
                 m_phase_handler.initialize_wavelength_blocks(block_size);
             }
         }
@@ -542,9 +835,34 @@ namespace sasktran2::solartransmission {
                     "capacity");
             }
 
-            if (!m_delegate_scalar_interior_source) {
+            if (!m_delegate_interior_source) {
                 m_phase_handler.calculate_block(batch, threadidx);
             }
+#ifdef SKTRAN_RUST_SUPPORT
+            if (!m_rust_solar_transmission_operators.empty()) {
+                auto solar_trans =
+                    wavelength_left_cols(m_solar_trans_batch[threadidx], batch);
+                const auto& extinction =
+                    m_atmosphere->storage().total_extinction;
+                const std::size_t num_geometry =
+                    static_cast<std::size_t>(extinction.rows());
+                for (int lane = 0; lane < batch.count; ++lane) {
+                    const int wavelidx = batch.wavelength(lane);
+                    sasktran2::rust::successive_orders::
+                        calculate_solar_transmission(
+                            *m_rust_solar_transmission_operators.front(),
+                            {extinction.data() +
+                                 static_cast<std::size_t>(wavelidx) *
+                                     num_geometry,
+                             num_geometry},
+                            m_atmosphere->storage().solar_irradiance(wavelidx),
+                            as_rust_mut_slice(m_solar_trans[threadidx]),
+                            as_rust_mut_slice(m_rust_solar_scratch[threadidx]));
+                    solar_trans.col(lane) = m_solar_trans[threadidx];
+                }
+                return;
+            }
+#endif
             auto solar_trans =
                 wavelength_left_cols(m_solar_trans_batch[threadidx], batch);
             const auto extinction = wavelength_middle_cols(
@@ -679,7 +997,7 @@ namespace sasktran2::solartransmission {
                 return endpoint.source;
             }
 
-            auto& pending = m_pending_endpoint_vjp[threadidx];
+            auto& pending = m_pending_endpoint_vjp.at(threadidx);
             if (pending.valid && pending.wavelidx == wavelidx &&
                 pending.losidx == losidx &&
                 pending.solar_index == solar_index) {
@@ -727,8 +1045,7 @@ namespace sasktran2::solartransmission {
                 first_layer.average_look_away);
             const double phi_diff = first_layer.saz_exit;
             const int solar_index = m_index_map[losidx][0];
-            const auto ground_weights =
-                (*m_traced_rays)[losidx].exit_weights(0);
+            const auto ground_weights = end_of_ray_weights(losidx);
             const double solar_trans = solar_transmission_value(
                 wavel_threadidx, solar_index, ground_weights);
             double solar_trans_jvp = 0.0;
@@ -788,8 +1105,7 @@ namespace sasktran2::solartransmission {
                 first_layer.average_look_away);
             const double phi_diff = first_layer.saz_exit;
             const int solar_index = m_index_map[losidx][0];
-            const auto ground_weights =
-                (*m_traced_rays)[losidx].exit_weights(0);
+            const auto ground_weights = end_of_ray_weights(losidx);
             const double solar_trans = solar_transmission_value(
                 wavel_threadidx, solar_index, ground_weights);
             const auto brdf =
@@ -847,8 +1163,7 @@ namespace sasktran2::solartransmission {
                 m_atmosphere->surface().brdf(wavelidx, mu_in, mu_out, phi_diff);
 
             int exit_index = m_index_map[losidx][0];
-            const auto ground_weights =
-                (*m_traced_rays)[losidx].exit_weights(0);
+            const auto ground_weights = end_of_ray_weights(losidx);
             double solar_trans = solar_transmission_value(
                 wavel_threadidx, exit_index, ground_weights);
 
@@ -926,8 +1241,7 @@ namespace sasktran2::solartransmission {
                 first_layer.average_look_away);
             const double phi_diff = first_layer.saz_exit;
             const int exit_index = m_index_map[losidx][0];
-            const auto ground_weights =
-                (*m_traced_rays)[losidx].exit_weights(0);
+            const auto ground_weights = end_of_ray_weights(losidx);
             const auto solar_trans = solar_transmission_block(
                 wavel_threadidx, exit_index, ground_weights, batch);
 
@@ -1008,7 +1322,7 @@ namespace sasktran2::solartransmission {
     template <typename S, int NSTOKES>
     void SingleScatterSource<S, NSTOKES>::append_interior_active_derivatives(
         int losidx, int layeridx, std::vector<int>& derivative_indices) const {
-        if (m_delegate_scalar_interior_source) {
+        if (m_delegate_interior_source) {
             return;
         }
         if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
@@ -1036,6 +1350,37 @@ namespace sasktran2::solartransmission {
                                   start_active->begin(), start_active->end());
         derivative_indices.insert(derivative_indices.end(), end_active->begin(),
                                   end_active->end());
+    }
+
+    template <typename S, int NSTOKES>
+    void SingleScatterSource<S, NSTOKES>::pack_end_of_ray_geometry(
+        const sasktran2::viewinggeometry::InternalViewingGeometry&
+            internal_viewing) {
+        m_los_ground_is_hit.resize(internal_viewing.traced_rays.size());
+        m_los_end_layers.resize(internal_viewing.traced_rays.size());
+        m_los_ground_weight_offsets.clear();
+        m_los_ground_weight_indices.clear();
+        m_los_ground_weights.clear();
+        m_los_ground_weight_offsets.reserve(
+            internal_viewing.traced_rays.size() + 1);
+        m_los_ground_weight_offsets.push_back(0);
+        for (std::size_t ray_index = 0;
+             ray_index < internal_viewing.traced_rays.size(); ++ray_index) {
+            const auto& ray = internal_viewing.traced_rays[ray_index];
+            m_los_ground_is_hit[ray_index] = ray.ground_is_hit;
+            if (ray.ground_is_hit && !ray.layers.empty()) {
+                m_los_end_layers[ray_index] = ray.layers.front();
+                const auto weights = ray.exit_weights(0);
+                m_los_ground_weight_indices.insert(
+                    m_los_ground_weight_indices.end(), weights.indices_data(),
+                    weights.indices_data() + weights.size());
+                m_los_ground_weights.insert(
+                    m_los_ground_weights.end(), weights.weights_data(),
+                    weights.weights_data() + weights.size());
+            }
+            m_los_ground_weight_offsets.push_back(
+                m_los_ground_weight_indices.size());
+        }
     }
 
     template <typename S, int NSTOKES>
@@ -1082,6 +1427,9 @@ namespace sasktran2::solartransmission {
                 internal_viewing.traced_rays, m_geometry_sparse,
                 m_ground_hit_flag);
         }
+#ifdef SKTRAN_RUST_SUPPORT
+        initialize_rust_solar_transmission_operator();
+#endif
 
         // We need some mapping between the layers inside each ray to our
         // calculated solar transmission
@@ -1090,7 +1438,7 @@ namespace sasktran2::solartransmission {
         for (int i = 0; i < internal_viewing.traced_rays.size(); ++i) {
             const int num_layers =
                 static_cast<int>(internal_viewing.traced_rays[i].layers.size());
-            if (m_delegate_scalar_interior_source) {
+            if (m_delegate_interior_source) {
                 m_index_map[i].assign(num_layers == 0 ? 0 : 1, c);
                 c += num_layers;
             } else {
@@ -1103,22 +1451,13 @@ namespace sasktran2::solartransmission {
             // Final exit layer
             ++c;
         }
-        if (!m_delegate_scalar_interior_source) {
+        if (!m_delegate_interior_source) {
             ZoneScopedN("Single Scatter Source Phase Geometry");
             this->m_phase_handler.initialize_geometry(
                 internal_viewing.traced_rays, m_index_map);
         }
 
-        m_los_ground_is_hit.resize(internal_viewing.traced_rays.size());
-        m_los_end_layers.resize(internal_viewing.traced_rays.size());
-        for (std::size_t ray_index = 0;
-             ray_index < internal_viewing.traced_rays.size(); ++ray_index) {
-            const auto& ray = internal_viewing.traced_rays[ray_index];
-            m_los_ground_is_hit[ray_index] = ray.ground_is_hit;
-            if (!ray.layers.empty()) {
-                m_los_end_layers[ray_index] = ray.layers.front();
-            }
-        }
+        pack_end_of_ray_geometry(internal_viewing);
     }
 
     template <typename S, int NSTOKES>
@@ -1126,11 +1465,9 @@ namespace sasktran2::solartransmission {
         const sasktran2::viewinggeometry::InternalViewingGeometry&
             internal_viewing,
         const std::vector<std::uint32_t>& layer_counts) {
-        if constexpr (!std::is_same_v<S, SolarTransmissionExact> ||
-                      NSTOKES != 1) {
+        if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
             throw std::logic_error(
-                "Compact single-scatter geometry requires the scalar exact "
-                "source");
+                "Compact single-scatter geometry requires the exact source");
         } else {
             if (m_geometry_2d == nullptr ||
                 !m_interpolate_solar_on_atmosphere_grid ||
@@ -1151,12 +1488,15 @@ namespace sasktran2::solartransmission {
                 "Compact Geometry2D exact solar transmission requires Rust "
                 "support");
 #endif
+#ifdef SKTRAN_RUST_SUPPORT
+            initialize_rust_solar_transmission_operator();
+#endif
 
             m_index_map.resize(layer_counts.size());
             int source_index = 0;
             for (std::size_t rayidx = 0; rayidx < layer_counts.size();
                  ++rayidx) {
-                if (m_delegate_scalar_interior_source) {
+                if (m_delegate_interior_source) {
                     m_index_map[rayidx].assign(
                         layer_counts[rayidx] == 0 ? 0 : 1, source_index);
                     source_index += static_cast<int>(layer_counts[rayidx]);
@@ -1169,21 +1509,12 @@ namespace sasktran2::solartransmission {
                 }
                 ++source_index;
             }
-            if (!m_delegate_scalar_interior_source) {
+            if (!m_delegate_interior_source) {
                 m_phase_handler.initialize_geometry(
                     internal_viewing.traced_rays, m_index_map);
             }
 
-            m_los_ground_is_hit.resize(internal_viewing.traced_rays.size());
-            m_los_end_layers.resize(internal_viewing.traced_rays.size());
-            for (std::size_t rayidx = 0;
-                 rayidx < internal_viewing.traced_rays.size(); ++rayidx) {
-                const auto& ray = internal_viewing.traced_rays[rayidx];
-                m_los_ground_is_hit[rayidx] = ray.ground_is_hit;
-                if (!ray.layers.empty()) {
-                    m_los_end_layers[rayidx] = ray.layers.front();
-                }
-            }
+            pack_end_of_ray_geometry(internal_viewing);
         }
     }
 

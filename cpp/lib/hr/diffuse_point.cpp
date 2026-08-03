@@ -304,6 +304,40 @@ namespace sasktran2::hr {
     }
 
     template <int NSTOKES>
+    void
+    IncomingOutgoingSpherePair<NSTOKES>::calculate_ground_scattering_values(
+        const sasktran2::atmosphere::Surface<NSTOKES>& surface,
+        const sasktran2::Location& loc, int wavelidx,
+        double* value_storage_location) const {
+        const auto vertical = loc.position.normalized();
+        const int num_incoming = m_incoming_sphere->num_points();
+        const int num_outgoing = m_outgoing_sphere->num_points();
+        for (int outgoing_index = 0; outgoing_index < num_outgoing;
+             ++outgoing_index) {
+            const auto outgoing =
+                m_outgoing_sphere->get_quad_position(outgoing_index);
+            const double mu_out = loc.cos_zenith_angle(outgoing);
+            const auto horiz_out = (outgoing - mu_out * vertical).normalized();
+            for (int incoming_index = 0; incoming_index < num_incoming;
+                 ++incoming_index) {
+                const auto incoming =
+                    m_incoming_sphere->get_quad_position(incoming_index);
+                const double mu_in = loc.cos_zenith_angle(incoming);
+                const auto horiz_in =
+                    (incoming - mu_in * vertical).normalized();
+                const double phi_diff =
+                    EIGEN_PI - std::acos(horiz_in.dot(horiz_out));
+                const auto brdf =
+                    surface.brdf(wavelidx, mu_in, mu_out, phi_diff);
+                value_storage_location[outgoing_index * num_incoming +
+                                       incoming_index] =
+                    4 * EIGEN_PI * brdf(0, 0) * mu_in *
+                    m_incoming_sphere->quadrature_weight(incoming_index);
+            }
+        }
+    }
+
+    template <int NSTOKES>
     DiffusePoint<NSTOKES>::DiffusePoint(
         const IncomingOutgoingSpherePair<NSTOKES>& spheres,
         const sasktran2::Location& location)

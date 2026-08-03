@@ -8,6 +8,9 @@
 #include <sasktran2/config.h>
 #include <sasktran2/dual.h>
 #include <array>
+#ifdef SKTRAN_RUST_SUPPORT
+#include "sasktran2-core/src/successive_orders/cxx.rs.h"
+#endif
 
 namespace sasktran2::solartransmission {
     /** Generates one row of what is known as the geometry matrix.  The optical
@@ -126,6 +129,8 @@ namespace sasktran2::solartransmission {
         const Eigen::MatrixXd& geometry_matrix() const {
             return m_geometry_matrix;
         }
+
+        void release_geometry_matrix() { m_geometry_matrix.resize(0, 0); }
     };
 
     /**
@@ -706,7 +711,13 @@ namespace sasktran2::solartransmission {
         bool m_table_native_products_enabled = false;
         bool m_interpolate_solar_on_atmosphere_grid = false;
         bool m_use_lower_interpolation = false;
-        bool m_delegate_scalar_interior_source = false;
+        bool m_delegate_interior_source = false;
+#ifdef SKTRAN_RUST_SUPPORT
+        std::vector<::rust::Box<
+            sasktran2::rust::successive_orders::RustSolarTransmissionOperator>>
+            m_rust_solar_transmission_operators;
+        mutable std::vector<std::vector<double>> m_rust_solar_scratch;
+#endif
         std::vector<std::vector<int>> m_index_map;
 
         PhaseHandler<NSTOKES> m_phase_handler;
@@ -822,6 +833,21 @@ namespace sasktran2::solartransmission {
 
         std::vector<bool> m_los_ground_is_hit;
         std::vector<sasktran2::raytracing::LayerGeometry> m_los_end_layers;
+        std::vector<std::size_t> m_los_ground_weight_offsets;
+        std::vector<int> m_los_ground_weight_indices;
+        std::vector<double> m_los_ground_weights;
+
+        void pack_end_of_ray_geometry(
+            const sasktran2::viewinggeometry::InternalViewingGeometry&
+                internal_viewing);
+
+        sasktran2::raytracing::GridWeightStencilView
+        end_of_ray_weights(int losidx) const {
+            const std::size_t start = m_los_ground_weight_offsets.at(losidx);
+            const std::size_t end = m_los_ground_weight_offsets.at(losidx + 1);
+            return {m_los_ground_weight_indices.data() + start,
+                    m_los_ground_weights.data() + start, end - start};
+        }
 
         void initialize_active_derivative_indices();
         EndpointValueCache endpoint_value(
@@ -839,6 +865,9 @@ namespace sasktran2::solartransmission {
             int threadidx, Eigen::Ref<Eigen::VectorXd> native_gradient) const;
         void set_jvp_activity(int wavel_threadidx,
                               Eigen::Ref<const Eigen::VectorXd> native_tangent);
+#ifdef SKTRAN_RUST_SUPPORT
+        void initialize_rust_solar_transmission_operator();
+#endif
 
         void initialize_fixed_dispatch() {
             if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
@@ -1145,34 +1174,19 @@ namespace sasktran2::solartransmission {
             m_table_native_products_enabled = true;
         }
 
-        /** The scalar Rust successive-orders transport evaluates all
+        /** The Rust successive-orders transport evaluates all
          * atmospheric single-scatter endpoints itself. Keep this source only
          * for solar-path transmission and the end-of-ray ground term. */
-        void delegate_scalar_interior_source() {
-            if constexpr (NSTOKES != 1) {
-                throw std::logic_error(
-                    "Delegated scalar interior source requires NSTOKES == 1");
-            }
-            m_delegate_scalar_interior_source = true;
-        }
+        void delegate_interior_source() { m_delegate_interior_source = true; }
 
-        /** Exposes the wavelength-local scalar solar transmission to the Rust
+        /** Exposes the wavelength-local solar transmission to the Rust
          *  successive-orders forcing kernel. The source retains ownership. */
-        const Eigen::VectorXd&
-        scalar_solar_transmission(int wavel_threadidx) const {
-            if constexpr (NSTOKES != 1) {
-                throw std::logic_error(
-                    "Scalar solar transmission requires NSTOKES == 1");
-            }
+        const Eigen::VectorXd& solar_transmission(int wavel_threadidx) const {
             return m_solar_trans.at(wavel_threadidx);
         }
 
         const Eigen::VectorXd&
-        scalar_solar_transmission_jvp(int wavel_threadidx) const {
-            if constexpr (NSTOKES != 1) {
-                throw std::logic_error(
-                    "Scalar solar-transmission JVP requires NSTOKES == 1");
-            }
+        solar_transmission_jvp(int wavel_threadidx) const {
             return m_solar_trans_jvp.at(wavel_threadidx);
         }
 
@@ -1180,13 +1194,9 @@ namespace sasktran2::solartransmission {
             return m_interpolate_solar_on_atmosphere_grid;
         }
 
-        void accumulate_scalar_solar_transmission_vjp(
+        void accumulate_solar_transmission_vjp(
             int wavel_threadidx, int source_threadidx,
             Eigen::Ref<const Eigen::VectorXd> cotangent) const {
-            if constexpr (NSTOKES != 1) {
-                throw std::logic_error(
-                    "Scalar solar-transmission VJP requires NSTOKES == 1");
-            }
             if (!m_active_vjp_derivatives.at(wavel_threadidx).extinction) {
                 return;
             }
@@ -1196,7 +1206,7 @@ namespace sasktran2::solartransmission {
                 m_solar_trans_cotangent.at(wavel_threadidx).at(target_thread);
             if (target.size() != cotangent.size()) {
                 throw std::invalid_argument(
-                    "Scalar solar-transmission cotangent size mismatch");
+                    "Solar-transmission cotangent size mismatch");
             }
             target += cotangent;
         }

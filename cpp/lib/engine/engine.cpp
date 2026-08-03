@@ -1009,11 +1009,6 @@ void Sasktran2<NSTOKES>::calculate_radiance_block_thread(
         m_source_integrator->integrate(radiance, m_los_source_terms, batch,
                                        ray_index, thread_idx, ray_threadidx);
 
-        for (const auto* source : m_los_source_terms) {
-            source->start_of_ray_source(batch, ray_index, thread_idx,
-                                        ray_threadidx, radiance);
-        }
-
         output.assign(batch, radiance, ray_index, ray_threadidx);
     }
 

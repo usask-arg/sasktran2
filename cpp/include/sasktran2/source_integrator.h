@@ -7,9 +7,9 @@
 
 namespace sasktran2 {
 
-    /** Geometry-only scalar transport stencils packed for one-time transfer
-     *  to the Rust successive-orders implementation. */
-    struct ScalarRayTransportGeometry {
+    /** Geometry-only transport stencils packed for one-time transfer to the
+     *  Rust successive-orders implementation. */
+    struct RayTransportGeometry {
         std::vector<std::uint32_t> ray_layer_offsets;
         std::vector<std::uint32_t> layer_atmosphere_offsets;
         std::vector<std::uint32_t> atmosphere_indices;
@@ -21,7 +21,10 @@ namespace sasktran2 {
         std::vector<double> layer_start_fraction;
         std::vector<double> layer_end_fraction;
         std::vector<double> ray_scattering_cosine;
+        std::vector<double> ray_phase_q_factor;
+        std::vector<double> ray_phase_u_factor;
         std::vector<std::uint32_t> ray_transport_value_offsets;
+        std::vector<std::uint32_t> ray_transport_row_nnz;
         std::vector<std::uint32_t> layer_source_offsets;
         std::vector<std::uint16_t> source_value_inner_indices;
         std::vector<double> source_weights;
@@ -325,11 +328,11 @@ namespace sasktran2 {
             const SInterpolator& source_interpolator,
             Eigen::VectorXd& accumulation_values);
 
-        /** Compiles traced scalar geometry and source interpolation into flat
+        /** Compiles traced geometry and source interpolation into flat,
          *  wavelength-independent Rust transport stencils. */
-        ScalarRayTransportGeometry
-        pack_scalar_transport_geometry(const SInterpolator& source_interpolator,
-                                       const Eigen::Vector3d& sun_unit) const;
+        RayTransportGeometry
+        pack_ray_transport_geometry(const SInterpolator& source_interpolator,
+                                    const Geometry& geometry) const;
 
         /** Evaluates only the exact first-order source using optical depth and
          *  attenuation already assembled by Rust. */
@@ -343,29 +346,6 @@ namespace sasktran2 {
             const std::vector<double>& layer_attenuation,
             const std::vector<double>& layer_prefix_attenuation,
             double ray_end_attenuation);
-
-        /** Evaluates only the source at the far end of a ray. Atmospheric
-         *  layer forcing may then be assembled entirely by Rust. */
-        void integrate_end_of_ray_precomputed(
-            sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                radiance,
-            const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
-            int wavelidx, int rayidx, int wavel_threadidx, int threadidx,
-            double ray_end_attenuation);
-
-        void integrate_end_of_ray_jvp_precomputed(
-            const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
-            int wavelidx, int rayidx, int wavel_threadidx, int threadidx,
-            Eigen::Ref<const Eigen::VectorXd> native_tangent,
-            double ray_end_attenuation, double ray_end_attenuation_tangent,
-            Eigen::Ref<Eigen::VectorXd> first_order_forcing_tangent) const;
-
-        double accumulate_end_of_ray_vjp_precomputed(
-            const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
-            int wavelidx, int rayidx, int wavel_threadidx, int threadidx,
-            const Eigen::Vector<double, NSTOKES>& forcing_cotangent,
-            double ray_end_attenuation,
-            Eigen::Ref<Eigen::VectorXd> native_gradient) const;
 
         /** Rebuilds only the compact transport operator for one diffuse ray.
          * This omits source evaluation and radiance bookkeeping when restoring
@@ -397,6 +377,7 @@ namespace sasktran2 {
             Eigen::Ref<const Eigen::VectorXd> first_order_forcing_gradient,
             bool active_extinction, bool active_ssa,
             bool active_interior_source_parameters,
+            bool active_transport_parameters,
             Eigen::Ref<Eigen::VectorXd> native_gradient) const;
 
         /** Calculates the Optical Depth for each ray */

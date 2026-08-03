@@ -490,18 +490,21 @@ def test_rust_successive_orders_matches_legacy_fixed_iterations(num_stokes):
 
 
 @pytest.mark.parametrize("num_stokes", [1, 3])
-def test_rust_successive_orders_wavelength_batch_matches_scalar(num_stokes):
+@pytest.mark.parametrize("calculate_derivatives", [False, True])
+def test_rust_successive_orders_wavelength_batch_matches_scalar(
+    num_stokes, calculate_derivatives
+):
     scalar_engine, scalar_atmosphere = _setup_1d(
         "successive_orders_rust",
         num_stokes,
-        False,
+        calculate_derivatives,
         num_wavelengths=5,
         wavelength_batch_size=1,
     )
     batch_engine, batch_atmosphere = _setup_1d(
         "successive_orders_rust",
         num_stokes,
-        False,
+        calculate_derivatives,
         num_wavelengths=5,
         wavelength_batch_size=4,
     )
@@ -509,11 +512,12 @@ def test_rust_successive_orders_wavelength_batch_matches_scalar(num_stokes):
     scalar = scalar_engine.calculate_radiance(scalar_atmosphere)
     batch = batch_engine.calculate_radiance(batch_atmosphere)
 
+    rtol = 5.0e-12 if calculate_derivatives else 2.0e-12
     for variable in scalar.data_vars:
         np.testing.assert_allclose(
             batch[variable].values,
             scalar[variable].values,
-            rtol=2.0e-12,
+            rtol=rtol,
             atol=1.0e-14,
         )
 

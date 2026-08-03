@@ -288,6 +288,8 @@ namespace sasktran2::hr {
             }
             start_outgoing_idx += m_diffuse_points[i]->num_outgoing();
         }
+        m_num_outgoing_values =
+            static_cast<std::size_t>(start_outgoing_idx) * NSTOKES;
 
         m_internal_viewing.traced_rays.resize(start_incoming_idx);
 
@@ -305,11 +307,7 @@ namespace sasktran2::hr {
 
             storage.point_scattering_matrices.resize(m_diffuse_points.size());
             for (int i = 0; i < m_diffuse_points.size(); ++i) {
-                const bool coefficient_space_atmosphere =
-                    m_use_rust_solver &&
-                    i < m_location_interpolator->num_interior_points();
-                if (m_diffuse_point_full_calculation[i] &&
-                    !coefficient_space_atmosphere) {
+                if (m_diffuse_point_full_calculation[i] && !m_use_rust_solver) {
                     storage.point_scattering_matrices[i].resize(
                         m_diffuse_points[i]->num_outgoing() * NSTOKES,
                         m_diffuse_points[i]->num_incoming() * NSTOKES);
@@ -592,11 +590,11 @@ namespace sasktran2::hr {
                 compile_accumulation_row(m_diffuse_source_weights[rayidx],
                                          transport_columns[rayidx],
                                          thread_sorting_helper[threadidx]);
-                if constexpr (NSTOKES == 1) {
-                    if (m_use_rust_solver && m_geometry_2d != nullptr) {
-                        m_integrator.compact_geometry_2d_ray(rayidx,
-                                                             traced_ray);
-                    }
+                if (m_use_rust_solver && m_geometry_2d != nullptr &&
+                    (NSTOKES == 1 ||
+                     m_altitude_grid.interpolation_method() !=
+                         sasktran2::grids::interpolation::lower)) {
+                    m_integrator.compact_geometry_2d_ray(rayidx, traced_ray);
                 }
             }
         }
@@ -645,7 +643,9 @@ namespace sasktran2::hr {
 #endif
 
         const bool use_incremental_compact_geometry =
-            m_use_rust_solver && m_geometry_2d != nullptr && NSTOKES == 1;
+            m_use_rust_solver && m_geometry_2d != nullptr &&
+            (NSTOKES == 1 || m_altitude_grid.interpolation_method() !=
+                                 sasktran2::grids::interpolation::lower);
         if (use_incremental_compact_geometry) {
             m_integrator.begin_compact_geometry_2d(
                 m_internal_viewing.traced_rays, m_geometry);
@@ -697,10 +697,15 @@ namespace sasktran2::hr {
         construct_accumulation_sparsity(transport_columns);
         std::vector<std::vector<int>>().swap(transport_columns);
 #ifdef SKTRAN_RUST_SUPPORT
-        release_cpp_scalar_transport_geometry();
+        release_cpp_transport_geometry();
 #endif
         generate_source_interpolation_weights(internal_viewing.traced_rays,
                                               m_los_source_weights);
+#ifdef SKTRAN_RUST_SUPPORT
+        if (m_use_rust_solver) {
+            initialize_rust_source_interpolator(internal_viewing);
+        }
+#endif
 
         if (m_config->initialize_hr_with_do()) {
             // Have to create a vector of all locations and directions
@@ -769,9 +774,7 @@ namespace sasktran2::hr {
                         storage.rust_batch_outgoing_sources);
                 } else {
                     storage.rust_batch_outgoing_sources.resize(
-                        static_cast<std::size_t>(
-                            storage.m_outgoing_sources.value.size()) *
-                        block_capacity);
+                        m_num_outgoing_values * block_capacity);
                 }
             }
         }
@@ -858,90 +861,185 @@ namespace sasktran2::hr {
             }
         }
 
-        // Each traced ray writes a disjoint CSR row range, so all source
-        // threads can populate one shared values vector without atomics or a
-        // reduction buffer.
+        // The legacy and lower-interpolation paths assemble into C++ storage.
+        // The normal Rust path owns its wavelength-local CSR values inside the
+        // per-thread solver and only retains the shared sparsity pattern here.
+        const bool retain_cpp_transport_values =
+            !m_use_rust_solver || m_altitude_grid.interpolation_method() ==
+                                      sasktran2::grids::interpolation::lower;
         for (auto& storage : m_thread_storage) {
-            storage.accumulation_summed_values.resize(total_nnz);
+            if (retain_cpp_transport_values) {
+                storage.accumulation_summed_values.resize(total_nnz);
+            } else {
+                storage.accumulation_summed_values.resize(0);
+            }
         }
 
 #ifdef SKTRAN_RUST_SUPPORT
         if (m_use_rust_solver) {
-            if constexpr (NSTOKES == 1) {
-                auto packed_geometry =
-                    m_integrator.pack_scalar_transport_geometry(
-                        m_diffuse_source_weights,
-                        m_geometry.coordinates().sun_unit());
-                m_rust_scalar_transports.clear();
-                m_rust_scalar_transports.push_back(
+            const bool rust_owned_transport =
+                m_altitude_grid.interpolation_method() !=
+                sasktran2::grids::interpolation::lower;
+            m_rust_transport_sparsity.clear();
+            if (rust_owned_transport) {
+                m_rust_transport_sparsity.push_back(
+                    sasktran2::rust::successive_orders::new_transport_sparsity(
+                        static_cast<std::size_t>(m_outer_starts.size() - 1),
+                        m_num_outgoing_values, as_rust_slice(m_outer_starts),
+                        as_rust_slice(m_inner_indicies)));
+                spdlog::debug(
+                    "Packed Rust successive-orders transport sparsity: {} "
+                    "rows, {} values, {:.3f} MiB shared across wavelength "
+                    "workers",
+                    m_outer_starts.size() - 1, m_inner_indicies.size(),
+                    static_cast<double>(
+                        sasktran2::rust::successive_orders::
+                            transport_sparsity_storage_bytes(
+                                *m_rust_transport_sparsity.front())) /
+                        (1024.0 * 1024.0));
+            }
+            std::vector<std::uint32_t> scattering_point_offsets = {0};
+            std::vector<std::uint32_t> scattering_atmosphere_indices;
+            std::vector<double> scattering_interpolation_weights;
+            const int num_interior_points =
+                m_location_interpolator->num_interior_points();
+            scattering_point_offsets.reserve(
+                static_cast<std::size_t>(num_interior_points) + 1);
+            for (int point = 0; point < num_interior_points; ++point) {
+                for (const auto& [atmosphere_index, weight] :
+                     m_diffuse_point_interpolation_weights[point]) {
+                    if (atmosphere_index < 0) {
+                        throw std::logic_error(
+                            "Negative atmosphere index in successive-orders "
+                            "scattering interpolation");
+                    }
+                    scattering_atmosphere_indices.push_back(
+                        static_cast<std::uint32_t>(atmosphere_index));
+                    scattering_interpolation_weights.push_back(weight);
+                }
+                if (scattering_atmosphere_indices.size() >
+                    std::numeric_limits<std::uint32_t>::max()) {
+                    throw std::length_error(
+                        "Successive-orders scattering interpolation exceeds "
+                        "the packed offset range");
+                }
+                scattering_point_offsets.push_back(static_cast<std::uint32_t>(
+                    scattering_atmosphere_indices.size()));
+            }
+            const std::size_t coefficient_families = NSTOKES == 1 ? 1 : 4;
+            const std::size_t output_coefficients =
+                static_cast<std::size_t>(m_config->num_do_streams()) *
+                coefficient_families;
+            m_rust_scattering_interpolators.clear();
+            m_rust_scattering_interpolators.push_back(
+                sasktran2::rust::successive_orders::
+                    new_scattering_coefficient_interpolator(
+                        as_rust_slice(scattering_point_offsets),
+                        as_rust_slice(scattering_atmosphere_indices),
+                        as_rust_slice(scattering_interpolation_weights),
+                        static_cast<std::size_t>(m_geometry.size()),
+                        output_coefficients));
+            spdlog::debug(
+                "Packed Rust successive-orders scattering interpolation: {} "
+                "points, {} weights, {:.3f} MiB immutable",
+                num_interior_points,
+                sasktran2::rust::successive_orders::
+                    scattering_coefficient_interpolator_num_weights(
+                        *m_rust_scattering_interpolators.front()),
+                static_cast<double>(
                     sasktran2::rust::successive_orders::
-                        new_scalar_ray_transport(
-                            as_rust_slice(packed_geometry.ray_layer_offsets),
-                            as_rust_slice(
-                                packed_geometry.layer_atmosphere_offsets),
-                            as_rust_slice(packed_geometry.atmosphere_indices),
-                            as_rust_slice(
-                                packed_geometry.optical_depth_weights),
-                            as_rust_slice(packed_geometry.albedo_weights),
-                            as_rust_slice(packed_geometry.entrance_weights),
-                            as_rust_slice(packed_geometry.exit_weights),
-                            as_rust_slice(packed_geometry.layer_distance),
-                            as_rust_slice(packed_geometry.layer_start_fraction),
-                            as_rust_slice(packed_geometry.layer_end_fraction),
-                            as_rust_slice(
-                                packed_geometry.ray_scattering_cosine),
-                            static_cast<std::size_t>(
-                                m_config->num_singlescatter_moments()),
-                            m_geometry_2d != nullptr,
-                            as_rust_slice(packed_geometry.layer_source_offsets),
-                            as_rust_slice(
-                                packed_geometry.ray_transport_value_offsets),
-                            as_rust_slice(
-                                packed_geometry.source_value_inner_indices),
-                            as_rust_slice(packed_geometry.source_weights),
-                            as_rust_slice(packed_geometry.ray_ground_offsets),
-                            as_rust_slice(
-                                packed_geometry.ground_value_inner_indices),
-                            as_rust_slice(packed_geometry.ground_weights)));
+                        scattering_coefficient_interpolator_storage_bytes(
+                            *m_rust_scattering_interpolators.front())) /
+                    (1024.0 * 1024.0));
+            for (int point = 0; point < num_interior_points; ++point) {
+                std::vector<std::pair<int, double>>().swap(
+                    m_diffuse_point_interpolation_weights[point]);
+            }
+
+            {
+                auto packed_geometry = m_integrator.pack_ray_transport_geometry(
+                    m_diffuse_source_weights, m_geometry);
+                m_rust_ray_transports.clear();
+                m_rust_ray_transports.push_back(
+                    sasktran2::rust::successive_orders::new_ray_transport(
+                        as_rust_slice(packed_geometry.ray_layer_offsets),
+                        as_rust_slice(packed_geometry.layer_atmosphere_offsets),
+                        as_rust_slice(packed_geometry.atmosphere_indices),
+                        as_rust_slice(packed_geometry.optical_depth_weights),
+                        as_rust_slice(packed_geometry.albedo_weights),
+                        as_rust_slice(packed_geometry.entrance_weights),
+                        as_rust_slice(packed_geometry.exit_weights),
+                        as_rust_slice(packed_geometry.layer_distance),
+                        as_rust_slice(packed_geometry.layer_start_fraction),
+                        as_rust_slice(packed_geometry.layer_end_fraction),
+                        as_rust_slice(packed_geometry.ray_scattering_cosine),
+                        as_rust_slice(packed_geometry.ray_phase_q_factor),
+                        as_rust_slice(packed_geometry.ray_phase_u_factor),
+                        static_cast<std::size_t>(
+                            m_config->num_singlescatter_moments()),
+                        m_geometry_2d != nullptr,
+                        as_rust_slice(packed_geometry.layer_source_offsets),
+                        as_rust_slice(
+                            packed_geometry.ray_transport_value_offsets),
+                        as_rust_slice(packed_geometry.ray_transport_row_nnz),
+                        static_cast<std::size_t>(NSTOKES),
+                        as_rust_slice(
+                            packed_geometry.source_value_inner_indices),
+                        as_rust_slice(packed_geometry.source_weights),
+                        as_rust_slice(packed_geometry.ray_ground_offsets),
+                        as_rust_slice(
+                            packed_geometry.ground_value_inner_indices),
+                        as_rust_slice(packed_geometry.ground_weights)));
 
                 m_rust_transport_ray_layer_offsets =
                     std::move(packed_geometry.ray_layer_offsets);
                 const std::size_t num_layers = sasktran2::rust::
-                    successive_orders::scalar_ray_transport_num_layers(
-                        *m_rust_scalar_transports.front());
-                const std::size_t num_rays = sasktran2::rust::
-                    successive_orders::scalar_ray_transport_num_rays(
-                        *m_rust_scalar_transports.front());
+                    successive_orders::ray_transport_num_layers(
+                        *m_rust_ray_transports.front());
+                const std::size_t num_rays =
+                    sasktran2::rust::successive_orders::ray_transport_num_rays(
+                        *m_rust_ray_transports.front());
                 const std::size_t geometry_bytes = sasktran2::rust::
-                    successive_orders::scalar_ray_transport_storage_bytes(
-                        *m_rust_scalar_transports.front());
-                const std::size_t atmosphere_weights =
-                    sasktran2::rust::successive_orders::
-                        scalar_ray_transport_num_atmosphere_weights(
-                            *m_rust_scalar_transports.front());
+                    successive_orders::ray_transport_storage_bytes(
+                        *m_rust_ray_transports.front());
+                const std::size_t atmosphere_weights = sasktran2::rust::
+                    successive_orders::ray_transport_num_atmosphere_weights(
+                        *m_rust_ray_transports.front());
                 const std::size_t source_weights = sasktran2::rust::
-                    successive_orders::scalar_ray_transport_num_source_weights(
-                        *m_rust_scalar_transports.front());
+                    successive_orders::ray_transport_num_source_weights(
+                        *m_rust_ray_transports.front());
                 const std::size_t ground_weights = sasktran2::rust::
-                    successive_orders::scalar_ray_transport_num_ground_weights(
-                        *m_rust_scalar_transports.front());
+                    successive_orders::ray_transport_num_ground_weights(
+                        *m_rust_ray_transports.front());
+                const std::size_t phase_geometries = sasktran2::rust::
+                    successive_orders::ray_transport_num_phase_geometries(
+                        *m_rust_ray_transports.front());
+                const std::size_t grouped_phase_geometries =
+                    sasktran2::rust::successive_orders::
+                        ray_transport_num_grouped_phase_geometries(
+                            *m_rust_ray_transports.front(), m_geometry.size());
                 spdlog::debug(
-                    "Packed scalar Rust successive-orders geometry: {} rays, "
-                    "{} layers, {} atmosphere and {}+{} transport weights, "
+                    "Packed {}-Stokes Rust successive-orders geometry: {} "
+                    "rays, "
+                    "{} phase geometries ({} grouped, {} direct), {} layers, "
+                    "{} atmosphere and {}+{} transport weights, "
                     "{:.3f} MiB immutable + up to {:.3f} MiB lazy VJP "
                     "attenuation scratch across {} wavelength workers",
-                    num_rays, num_layers, atmosphere_weights, source_weights,
-                    ground_weights,
+                    NSTOKES, num_rays, phase_geometries,
+                    grouped_phase_geometries,
+                    phase_geometries - grouped_phase_geometries, num_layers,
+                    atmosphere_weights, source_weights, ground_weights,
                     static_cast<double>(geometry_bytes) / (1024.0 * 1024.0),
-                    static_cast<double>(m_thread_storage.size() *
-                                        (3 * num_layers + 3 * num_rays) *
-                                        sizeof(double)) /
+                    static_cast<double>(
+                        m_thread_storage.size() *
+                        ((NSTOKES == 1 ? 3 : 4) * num_layers + 3 * num_rays) *
+                        sizeof(double)) /
                         (1024.0 * 1024.0),
                     m_thread_storage.size());
                 if (num_rays != m_diffuse_source_weights.size() ||
                     m_rust_transport_ray_layer_offsets.size() != num_rays + 1) {
                     throw std::logic_error(
-                        "Rust scalar transport geometry size mismatch");
+                        "Rust transport geometry size mismatch");
                 }
                 for (auto& storage : m_thread_storage) {
                     if (m_altitude_grid.interpolation_method() ==
@@ -950,21 +1048,30 @@ namespace sasktran2::hr {
                         storage.rust_layer_attenuation.resize(num_layers);
                         storage.rust_layer_prefix_attenuation.resize(
                             num_layers);
+                        storage.rust_ray_end_attenuation.resize(num_rays);
                     }
-                    storage.rust_ray_end_attenuation.resize(num_rays);
-                    storage.rust_ray_end_attenuation_tangent.resize(num_rays);
-                    storage.rust_ray_end_attenuation_cotangent.resize(num_rays);
+                    storage.rust_end_of_ray_source.resize(num_rays * NSTOKES);
+                    storage.rust_end_of_ray_source_tangent.resize(num_rays *
+                                                                  NSTOKES);
+                    storage.rust_end_of_ray_source_gradient.resize(num_rays *
+                                                                   NSTOKES);
                 }
             }
 
             std::vector<std::size_t> scattering_output_offsets = {0};
             std::vector<std::size_t> scattering_input_offsets = {0};
-            std::vector<std::size_t> scattering_value_offsets = {0};
             scattering_output_offsets.reserve(m_diffuse_points.size() + 1);
             scattering_input_offsets.reserve(m_diffuse_points.size() + 1);
-            scattering_value_offsets.reserve(m_diffuse_points.size() + 1);
+            const std::size_t coefficient_blocks =
+                static_cast<std::size_t>(num_interior_points);
+            m_rust_boundary_scattering_offsets.clear();
+            m_rust_boundary_scattering_offsets.reserve(m_diffuse_points.size() -
+                                                       coefficient_blocks + 1);
+            m_rust_boundary_scattering_offsets.push_back(0);
 
-            for (const auto& point : m_diffuse_points) {
+            for (std::size_t point_index = 0;
+                 point_index < m_diffuse_points.size(); ++point_index) {
+                const auto& point = m_diffuse_points[point_index];
                 const std::size_t output_size =
                     static_cast<std::size_t>(point->num_outgoing() * NSTOKES);
                 const std::size_t input_size =
@@ -973,12 +1080,14 @@ namespace sasktran2::hr {
                     scattering_output_offsets.back() + output_size);
                 scattering_input_offsets.push_back(
                     scattering_input_offsets.back() + input_size);
-                scattering_value_offsets.push_back(
-                    scattering_value_offsets.back() + output_size * input_size);
+                if (point_index >= coefficient_blocks) {
+                    m_rust_boundary_scattering_offsets.push_back(
+                        m_rust_boundary_scattering_offsets.back() +
+                        static_cast<std::size_t>(point->num_outgoing()) *
+                            point->num_incoming());
+                }
             }
 
-            const std::size_t coefficient_blocks = static_cast<std::size_t>(
-                m_location_interpolator->num_interior_points());
             std::vector<double> incoming_directions;
             std::vector<double> incoming_weights;
             std::vector<double> outgoing_directions;
@@ -1008,13 +1117,12 @@ namespace sasktran2::hr {
             }
 
             for (auto& storage : m_thread_storage) {
-                const std::size_t coefficient_families = NSTOKES == 1 ? 1 : 4;
-                storage.rust_scattering_coefficients.resize(
-                    coefficient_blocks * m_config->num_do_streams() *
-                    coefficient_families);
-                storage.rust_boundary_scattering_values.resize(
-                    scattering_value_offsets.back() -
-                    scattering_value_offsets[coefficient_blocks]);
+                if (rust_owned_transport) {
+                    storage.rust_boundary_scattering_values.resize(0);
+                } else {
+                    storage.rust_boundary_scattering_values.resize(
+                        m_rust_boundary_scattering_offsets.back());
+                }
             }
 
             m_los_solution_cotangents.resize(
@@ -1022,8 +1130,8 @@ namespace sasktran2::hr {
             for (auto& wavelength_cotangents : m_los_solution_cotangents) {
                 wavelength_cotangents.resize(m_config->num_source_threads());
                 for (auto& cotangent : wavelength_cotangents) {
-                    cotangent.setZero(m_thread_storage.front()
-                                          .m_outgoing_sources.value.size());
+                    cotangent.setZero(
+                        static_cast<Eigen::Index>(m_num_outgoing_values));
                 }
             }
 
@@ -1032,68 +1140,142 @@ namespace sasktran2::hr {
             for (std::size_t thread = 0; thread < m_thread_storage.size();
                  ++thread) {
                 if constexpr (NSTOKES == 1) {
-                    m_rust_solvers.push_back(
-                        sasktran2::rust::successive_orders::
-                            new_scalar_coefficient_successive_orders_solver(
-                                static_cast<std::size_t>(
-                                    m_thread_storage[thread]
-                                        .m_incoming_radiances.value.size()),
-                                static_cast<std::size_t>(
-                                    m_thread_storage[thread]
-                                        .m_outgoing_sources.value.size()),
-                                as_rust_slice(m_outer_starts),
-                                as_rust_slice(m_inner_indicies),
-                                as_rust_slice(scattering_output_offsets),
-                                as_rust_slice(scattering_input_offsets),
-                                coefficient_blocks,
-                                static_cast<std::size_t>(
-                                    m_config->num_do_streams()),
-                                as_rust_slice(incoming_directions),
-                                as_rust_slice(incoming_weights),
-                                as_rust_slice(outgoing_directions),
-                                static_cast<std::size_t>(
+                    if (rust_owned_transport) {
+                        m_rust_solvers.push_back(
+                            sasktran2::rust::successive_orders::
+                                new_scalar_coefficient_successive_orders_solver_with_sparsity(
+                                    *m_rust_transport_sparsity.front(),
+                                    as_rust_slice(scattering_output_offsets),
+                                    as_rust_slice(scattering_input_offsets),
+                                    coefficient_blocks,
+                                    static_cast<std::size_t>(
+                                        m_config->num_do_streams()),
+                                    as_rust_slice(incoming_directions),
+                                    as_rust_slice(incoming_weights),
+                                    as_rust_slice(outgoing_directions),
+                                    static_cast<std::size_t>(
+                                        m_config
+                                            ->successive_orders_max_iterations()),
                                     m_config
-                                        ->successive_orders_max_iterations()),
-                                m_config
-                                    ->successive_orders_relative_tolerance(),
-                                m_config
-                                    ->successive_orders_absolute_tolerance(),
-                                static_cast<std::size_t>(
+                                        ->successive_orders_relative_tolerance(),
                                     m_config
-                                        ->successive_orders_anderson_depth()),
-                                m_config->successive_orders_damping()));
+                                        ->successive_orders_absolute_tolerance(),
+                                    static_cast<std::size_t>(
+                                        m_config
+                                            ->successive_orders_anderson_depth()),
+                                    m_config->successive_orders_damping()));
+                    } else {
+                        m_rust_solvers.push_back(
+                            sasktran2::rust::successive_orders::
+                                new_scalar_coefficient_successive_orders_solver(
+                                    static_cast<std::size_t>(
+                                        m_thread_storage[thread]
+                                            .m_incoming_radiances.value.size()),
+                                    m_num_outgoing_values,
+                                    as_rust_slice(m_outer_starts),
+                                    as_rust_slice(m_inner_indicies),
+                                    as_rust_slice(scattering_output_offsets),
+                                    as_rust_slice(scattering_input_offsets),
+                                    coefficient_blocks,
+                                    static_cast<std::size_t>(
+                                        m_config->num_do_streams()),
+                                    as_rust_slice(incoming_directions),
+                                    as_rust_slice(incoming_weights),
+                                    as_rust_slice(outgoing_directions),
+                                    static_cast<std::size_t>(
+                                        m_config
+                                            ->successive_orders_max_iterations()),
+                                    m_config
+                                        ->successive_orders_relative_tolerance(),
+                                    m_config
+                                        ->successive_orders_absolute_tolerance(),
+                                    static_cast<std::size_t>(
+                                        m_config
+                                            ->successive_orders_anderson_depth()),
+                                    m_config->successive_orders_damping()));
+                    }
                 } else {
-                    m_rust_solvers.push_back(
-                        sasktran2::rust::successive_orders::
-                            new_vector_coefficient_successive_orders_solver(
-                                static_cast<std::size_t>(
-                                    m_thread_storage[thread]
-                                        .m_incoming_radiances.value.size()),
-                                static_cast<std::size_t>(
-                                    m_thread_storage[thread]
-                                        .m_outgoing_sources.value.size()),
-                                as_rust_slice(m_outer_starts),
-                                as_rust_slice(m_inner_indicies),
-                                as_rust_slice(scattering_output_offsets),
-                                as_rust_slice(scattering_input_offsets),
-                                coefficient_blocks,
-                                static_cast<std::size_t>(
-                                    m_config->num_do_streams()),
-                                as_rust_slice(incoming_directions),
-                                as_rust_slice(incoming_weights),
-                                as_rust_slice(outgoing_directions),
-                                static_cast<std::size_t>(
+                    if (rust_owned_transport) {
+                        m_rust_solvers.push_back(
+                            sasktran2::rust::successive_orders::
+                                new_vector_coefficient_successive_orders_solver_with_sparsity(
+                                    *m_rust_transport_sparsity.front(),
+                                    as_rust_slice(scattering_output_offsets),
+                                    as_rust_slice(scattering_input_offsets),
+                                    coefficient_blocks,
+                                    static_cast<std::size_t>(
+                                        m_config->num_do_streams()),
+                                    as_rust_slice(incoming_directions),
+                                    as_rust_slice(incoming_weights),
+                                    as_rust_slice(outgoing_directions),
+                                    static_cast<std::size_t>(
+                                        m_config
+                                            ->successive_orders_max_iterations()),
                                     m_config
-                                        ->successive_orders_max_iterations()),
-                                m_config
-                                    ->successive_orders_relative_tolerance(),
-                                m_config
-                                    ->successive_orders_absolute_tolerance(),
-                                static_cast<std::size_t>(
+                                        ->successive_orders_relative_tolerance(),
                                     m_config
-                                        ->successive_orders_anderson_depth()),
-                                m_config->successive_orders_damping()));
+                                        ->successive_orders_absolute_tolerance(),
+                                    static_cast<std::size_t>(
+                                        m_config
+                                            ->successive_orders_anderson_depth()),
+                                    m_config->successive_orders_damping()));
+                    } else {
+                        m_rust_solvers.push_back(
+                            sasktran2::rust::successive_orders::
+                                new_vector_coefficient_successive_orders_solver(
+                                    static_cast<std::size_t>(
+                                        m_thread_storage[thread]
+                                            .m_incoming_radiances.value.size()),
+                                    m_num_outgoing_values,
+                                    as_rust_slice(m_outer_starts),
+                                    as_rust_slice(m_inner_indicies),
+                                    as_rust_slice(scattering_output_offsets),
+                                    as_rust_slice(scattering_input_offsets),
+                                    coefficient_blocks,
+                                    static_cast<std::size_t>(
+                                        m_config->num_do_streams()),
+                                    as_rust_slice(incoming_directions),
+                                    as_rust_slice(incoming_weights),
+                                    as_rust_slice(outgoing_directions),
+                                    static_cast<std::size_t>(
+                                        m_config
+                                            ->successive_orders_max_iterations()),
+                                    m_config
+                                        ->successive_orders_relative_tolerance(),
+                                    m_config
+                                        ->successive_orders_absolute_tolerance(),
+                                    static_cast<std::size_t>(
+                                        m_config
+                                            ->successive_orders_anderson_depth()),
+                                    m_config->successive_orders_damping()));
+                    }
                 }
+            }
+            if (rust_owned_transport) {
+                m_outer_starts.resize(0);
+                m_inner_indicies.resize(0);
+                for (auto& storage : m_thread_storage) {
+                    storage.m_incoming_radiances.resize(0, 0, false);
+                    storage.m_firstorder_radiances.resize(0, 0, false);
+                    storage.rust_boundary_scattering_values.resize(0);
+                    storage.rust_boundary_scattering_value_tangent.clear();
+                    storage.rust_first_order_forcing_tangent.resize(0);
+                }
+            }
+            if (m_config->successive_orders_initialization() !=
+                sasktran2::Config::SuccessiveOrdersInitialization::twostream) {
+                for (auto& storage : m_thread_storage) {
+                    storage.m_outgoing_sources.resize(0, 0, false);
+                }
+                spdlog::debug(
+                    "Released {:.3f} MiB of redundant C++ "
+                    "successive-orders solution storage across {} wavelength "
+                    "workers",
+                    static_cast<double>(m_num_outgoing_values *
+                                        m_thread_storage.size() *
+                                        sizeof(double)) /
+                        (1024.0 * 1024.0),
+                    m_thread_storage.size());
             }
         }
 #endif
@@ -1149,35 +1331,30 @@ namespace sasktran2::hr {
 
         m_initial_sources.push_back(m_initial_owned_sources[0].get());
 
-        if constexpr (NSTOKES == 1) {
-            if (m_use_rust_solver &&
-                m_altitude_grid.interpolation_method() !=
-                    sasktran2::grids::interpolation::lower) {
-                if (m_geometry_1d != nullptr) {
-                    auto* source = dynamic_cast<
-                        sasktran2::solartransmission::SingleScatterSource<
-                            sasktran2::solartransmission::
-                                SolarTransmissionTable,
-                            1>*>(m_initial_sources.front());
-                    if (source == nullptr) {
-                        throw std::logic_error(
-                            "Scalar Rust source requires table solar "
-                            "transmission in Geometry1D");
-                    }
-                    source->delegate_scalar_interior_source();
-                } else {
-                    auto* source = dynamic_cast<
-                        sasktran2::solartransmission::SingleScatterSource<
-                            sasktran2::solartransmission::
-                                SolarTransmissionExact,
-                            1>*>(m_initial_sources.front());
-                    if (source == nullptr) {
-                        throw std::logic_error(
-                            "Scalar Rust source requires exact solar "
-                            "transmission in Geometry2D");
-                    }
-                    source->delegate_scalar_interior_source();
+        if (m_use_rust_solver && m_altitude_grid.interpolation_method() !=
+                                     sasktran2::grids::interpolation::lower) {
+            if (m_geometry_1d != nullptr) {
+                auto* source = dynamic_cast<
+                    sasktran2::solartransmission::SingleScatterSource<
+                        sasktran2::solartransmission::SolarTransmissionTable,
+                        NSTOKES>*>(m_initial_sources.front());
+                if (source == nullptr) {
+                    throw std::logic_error(
+                        "Rust source requires table solar transmission in "
+                        "Geometry1D");
                 }
+                source->delegate_interior_source();
+            } else {
+                auto* source = dynamic_cast<
+                    sasktran2::solartransmission::SingleScatterSource<
+                        sasktran2::solartransmission::SolarTransmissionExact,
+                        NSTOKES>*>(m_initial_sources.front());
+                if (source == nullptr) {
+                    throw std::logic_error(
+                        "Rust source requires exact solar transmission in "
+                        "Geometry2D");
+                }
+                source->delegate_interior_source();
             }
         }
 
@@ -1199,63 +1376,28 @@ namespace sasktran2::hr {
 
 #ifdef SKTRAN_RUST_SUPPORT
     template <int NSTOKES>
-    void DiffuseTable<NSTOKES>::release_cpp_scalar_transport_geometry() {
-        if constexpr (NSTOKES != 1) {
+    void DiffuseTable<NSTOKES>::release_cpp_transport_geometry() {
+        if (m_rust_ray_transports.empty()) {
             return;
-        } else {
-            if (m_rust_scalar_transports.empty() ||
-                m_altitude_grid.interpolation_method() ==
-                    sasktran2::grids::interpolation::lower) {
-                return;
-            }
+        }
+        if (m_altitude_grid.interpolation_method() ==
+            sasktran2::grids::interpolation::lower) {
+            return;
+        }
+        SInterpolator().swap(m_diffuse_source_weights);
 
-            SInterpolator().swap(m_diffuse_source_weights);
-            std::vector<std::uint32_t>().swap(
-                m_rust_transport_ray_layer_offsets);
-            m_integrator.release_interior_geometry();
+        std::vector<std::uint32_t>().swap(m_rust_transport_ray_layer_offsets);
+        m_integrator.release_interior_geometry();
 
-            // The private C++ single-scatter source still owns the solar-path
-            // operator and needs only the first layer for a possible ground
-            // endpoint. Rust owns every atmospheric layer after packing.
-            if (m_geometry_1d != nullptr) {
-                for (auto& ray : m_internal_viewing.traced_rays) {
-                    std::vector<int> first_indices;
-                    std::vector<double> first_entrance;
-                    std::vector<double> first_exit;
-                    std::vector<double> first_optical_depth;
-                    if (!ray.layers.empty()) {
-                        const auto entrance = ray.entrance_weights(0);
-                        const auto exit = ray.exit_weights(0);
-                        const auto optical_depth = ray.optical_depth_weights(0);
-                        first_indices.assign(entrance.indices_data(),
-                                             entrance.indices_data() +
-                                                 entrance.size());
-                        first_entrance.assign(entrance.weights_data(),
-                                              entrance.weights_data() +
-                                                  entrance.size());
-                        first_exit.assign(exit.weights_data(),
-                                          exit.weights_data() + exit.size());
-                        first_optical_depth.assign(
-                            optical_depth.weights_data(),
-                            optical_depth.weights_data() +
-                                optical_depth.size());
-                    }
-
-                    sasktran2::raytracing::TracedRay retained;
-                    retained.observer_and_look = ray.observer_and_look;
-                    retained.is_straight = ray.is_straight;
-                    retained.ground_is_hit = ray.ground_is_hit;
-                    retained.tangent_radius = ray.tangent_radius;
-                    if (!ray.layers.empty()) {
-                        retained.layers.push_back(ray.layers.front());
-                        retained.set_layer_weights(
-                            0, first_indices.data(), first_entrance.data(),
-                            first_exit.data(), first_optical_depth.data(),
-                            first_indices.size());
-                    }
-                    ray = std::move(retained);
-                }
-            }
+        // The single-scatter source has already packed its compact ground
+        // geometry. Rust owns every atmospheric transport layer after packing.
+        for (auto& ray : m_internal_viewing.traced_rays) {
+            sasktran2::raytracing::TracedRay retained;
+            retained.observer_and_look = ray.observer_and_look;
+            retained.is_straight = ray.is_straight;
+            retained.ground_is_hit = ray.ground_is_hit;
+            retained.tangent_radius = ray.tangent_radius;
+            ray = std::move(retained);
         }
     }
 #endif
@@ -1455,6 +1597,195 @@ namespace sasktran2::hr {
         }
     }
 
+#ifdef SKTRAN_RUST_SUPPORT
+    template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::initialize_rust_source_interpolator(
+        const sasktran2::viewinggeometry::InternalViewingGeometry&
+            internal_viewing) {
+        ZoneScopedN("Pack Rust LOS Source Interpolator");
+        if (internal_viewing.traced_rays.size() !=
+            m_los_source_weights.size()) {
+            throw std::logic_error(
+                "LOS source interpolation ray count mismatch");
+        }
+        if (m_thread_storage.empty()) {
+            throw std::logic_error(
+                "LOS source interpolation requires thread storage");
+        }
+
+        const auto checked_u32 = [](std::size_t value,
+                                    const char* description) {
+            if (value > std::numeric_limits<std::uint32_t>::max()) {
+                throw std::length_error(std::string(description) +
+                                        " exceeds the packed offset range");
+            }
+            return static_cast<std::uint32_t>(value);
+        };
+        const auto checked_index = [&](int value, const char* description) {
+            if (value < 0) {
+                throw std::logic_error(std::string("Negative ") + description +
+                                       " in LOS source interpolation");
+            }
+            return checked_u32(static_cast<std::size_t>(value), description);
+        };
+
+        std::size_t num_layers = 0;
+        std::size_t num_atmosphere_weights = 0;
+        std::size_t num_source_weights = 0;
+        std::size_t num_ground_weights = 0;
+        for (const auto& ray : m_los_source_weights) {
+            num_layers += ray.interior_weights.size();
+            num_atmosphere_weights += ray.atmosphere_weights.size();
+            num_source_weights += ray.source_indices.size();
+            num_ground_weights += ray.ground_source_indices.size();
+        }
+
+        std::vector<std::uint32_t> ray_layer_offsets;
+        std::vector<std::uint32_t> layer_atmosphere_offsets;
+        std::vector<std::uint32_t> atmosphere_indices;
+        std::vector<double> atmosphere_weights;
+        std::vector<double> optical_depth_weights;
+        std::vector<std::uint32_t> layer_source_offsets;
+        std::vector<std::uint32_t> source_indices;
+        std::vector<double> source_weights;
+        std::vector<std::uint32_t> ray_ground_offsets;
+        std::vector<std::uint32_t> ground_source_indices;
+        std::vector<double> ground_source_weights;
+
+        ray_layer_offsets.reserve(m_los_source_weights.size() + 1);
+        layer_atmosphere_offsets.reserve(num_layers + 1);
+        atmosphere_indices.reserve(num_atmosphere_weights);
+        atmosphere_weights.reserve(num_atmosphere_weights);
+        optical_depth_weights.reserve(num_atmosphere_weights);
+        layer_source_offsets.reserve(num_layers + 1);
+        source_indices.reserve(num_source_weights);
+        source_weights.reserve(num_source_weights);
+        ray_ground_offsets.reserve(m_los_source_weights.size() + 1);
+        ground_source_indices.reserve(num_ground_weights);
+        ground_source_weights.reserve(num_ground_weights);
+        ray_layer_offsets.push_back(0);
+        layer_atmosphere_offsets.push_back(0);
+        layer_source_offsets.push_back(0);
+        ray_ground_offsets.push_back(0);
+
+        for (std::size_t ray_index = 0; ray_index < m_los_source_weights.size();
+             ++ray_index) {
+            const auto& ray_interpolator = m_los_source_weights[ray_index];
+            const auto& traced_ray = internal_viewing.traced_rays[ray_index];
+            if (ray_interpolator.interior_weights.size() !=
+                traced_ray.layers.size()) {
+                throw std::logic_error(
+                    "LOS source interpolation layer count mismatch");
+            }
+
+            for (std::size_t layer_index = 0;
+                 layer_index < ray_interpolator.interior_weights.size();
+                 ++layer_index) {
+                const auto& layer =
+                    ray_interpolator.interior_weights[layer_index];
+                const auto entrance_weights =
+                    traced_ray.entrance_weights(layer_index);
+                const auto layer_optical_depth_weights =
+                    traced_ray.optical_depth_weights(layer_index);
+                if (entrance_weights.size() != layer.atmosphere_count) {
+                    throw std::logic_error(
+                        "LOS source atmosphere interpolation size mismatch");
+                }
+                if (layer_optical_depth_weights.size() !=
+                    entrance_weights.size()) {
+                    throw std::logic_error(
+                        "LOS source optical-depth interpolation size "
+                        "mismatch");
+                }
+
+                for (std::size_t index = 0; index < layer.atmosphere_count;
+                     ++index) {
+                    if (layer_optical_depth_weights[index].first !=
+                        entrance_weights[index].first) {
+                        throw std::logic_error(
+                            "LOS source optical-depth atmosphere index "
+                            "mismatch");
+                    }
+                    atmosphere_indices.push_back(checked_index(
+                        entrance_weights[index].first, "atmosphere index"));
+                    atmosphere_weights.push_back(
+                        ray_interpolator
+                            .atmosphere_weights[layer.atmosphere_offset +
+                                                index]);
+                    optical_depth_weights.push_back(
+                        layer_optical_depth_weights[index].second);
+                }
+                layer_atmosphere_offsets.push_back(checked_u32(
+                    atmosphere_indices.size(), "atmosphere weight count"));
+
+                for (std::size_t index = 0; index < layer.source_count;
+                     ++index) {
+                    const std::size_t packed_index =
+                        layer.source_offset + index;
+                    source_indices.push_back(checked_index(
+                        ray_interpolator.source_indices[packed_index],
+                        "source index"));
+                    source_weights.push_back(
+                        ray_interpolator.source_weights[packed_index]);
+                }
+                layer_source_offsets.push_back(
+                    checked_u32(source_indices.size(), "source weight count"));
+            }
+            ray_layer_offsets.push_back(checked_u32(
+                layer_source_offsets.size() - 1, "LOS source layer count"));
+
+            for (std::size_t index = 0;
+                 index < ray_interpolator.ground_source_indices.size();
+                 ++index) {
+                ground_source_indices.push_back(
+                    checked_index(ray_interpolator.ground_source_indices[index],
+                                  "ground source index"));
+                ground_source_weights.push_back(
+                    ray_interpolator.ground_source_weights[index]);
+            }
+            ray_ground_offsets.push_back(checked_u32(
+                ground_source_indices.size(), "ground source weight count"));
+        }
+
+        const auto solution_size = m_num_outgoing_values;
+        if (solution_size == 0 || solution_size % NSTOKES != 0) {
+            throw std::logic_error(
+                "LOS source interpolation solution size mismatch");
+        }
+        m_rust_source_interpolators.clear();
+        m_rust_source_interpolators.push_back(
+            sasktran2::rust::successive_orders::new_source_interpolator(
+                as_rust_slice(ray_layer_offsets),
+                as_rust_slice(layer_atmosphere_offsets),
+                as_rust_slice(atmosphere_indices),
+                as_rust_slice(atmosphere_weights),
+                as_rust_slice(optical_depth_weights),
+                as_rust_slice(layer_source_offsets),
+                as_rust_slice(source_indices), as_rust_slice(source_weights),
+                as_rust_slice(ray_ground_offsets),
+                as_rust_slice(ground_source_indices),
+                as_rust_slice(ground_source_weights), m_geometry.size(),
+                solution_size / NSTOKES, NSTOKES));
+
+        spdlog::debug(
+            "Packed Rust successive-orders LOS source interpolation: {} "
+            "rays, {} layers, {:.3f} MiB immutable",
+            sasktran2::rust::successive_orders::source_interpolator_num_rays(
+                *m_rust_source_interpolators.front()),
+            sasktran2::rust::successive_orders::source_interpolator_num_layers(
+                *m_rust_source_interpolators.front()),
+            static_cast<double>(sasktran2::rust::successive_orders::
+                                    source_interpolator_storage_bytes(
+                                        *m_rust_source_interpolators.front())) /
+                (1024.0 * 1024.0));
+
+        // The Rust source integrates the complete LOS through its whole-ray
+        // callbacks. Rust therefore owns the only LOS interpolation topology
+        // required by this source after packing.
+        SInterpolator().swap(m_los_source_weights);
+    }
+#endif
+
     template <int NSTOKES>
     void DiffuseTable<NSTOKES>::compile_accumulation_row(
         RaySourceInterpolationWeights<NSTOKES>& weights,
@@ -1513,81 +1844,107 @@ namespace sasktran2::hr {
         ZoneScopedN("Generate Scattering Matrices");
         auto& storage = m_thread_storage[threadidx];
 
+#ifdef SKTRAN_RUST_SUPPORT
+        if (m_use_rust_solver) {
+            if (m_rust_scattering_interpolators.empty()) {
+                throw std::logic_error(
+                    "Rust scattering interpolator is not initialized");
+            }
+            const auto& coefficients = m_atmosphere->storage().leg_coeff;
+            const std::size_t coefficient_stride =
+                static_cast<std::size_t>(coefficients.dimension(0));
+            const std::size_t num_geometry =
+                static_cast<std::size_t>(coefficients.dimension(1));
+            if (wavelidx < 0 || wavelidx >= coefficients.dimension(2)) {
+                throw std::out_of_range(
+                    "Successive-orders scattering wavelength is out of range");
+            }
+            const std::size_t wavelength_size =
+                coefficient_stride * num_geometry;
+            const double* wavelength_coefficients =
+                coefficients.data() +
+                static_cast<std::size_t>(wavelidx) * wavelength_size;
+            sasktran2::rust::successive_orders::
+                set_scattering_coefficients_from_atmosphere(
+                    *m_rust_solvers[threadidx],
+                    *m_rust_scattering_interpolators.front(),
+                    {wavelength_coefficients, wavelength_size},
+                    coefficient_stride);
+            const bool rust_owned_transport =
+                m_altitude_grid.interpolation_method() !=
+                sasktran2::grids::interpolation::lower;
+            auto boundary_values =
+                rust_owned_transport
+                    ? sasktran2::rust::successive_orders::
+                          boundary_scattering_values_mut(
+                              *m_rust_solvers[threadidx])
+                    : as_rust_mut_slice(
+                          storage.rust_boundary_scattering_values);
+            if (boundary_values.size() !=
+                m_rust_boundary_scattering_offsets.back()) {
+                throw std::logic_error(
+                    "Rust boundary scattering storage size mismatch");
+            }
+            std::fill(boundary_values.begin(), boundary_values.end(), 0.0);
+
 #pragma omp parallel for num_threads(m_config->num_source_threads())           \
     schedule(dynamic)
-        for (int i = 0; i < m_location_interpolator->num_interior_points();
-             ++i) {
-            if (!m_diffuse_point_full_calculation[i]) {
-                continue;
-            }
-
-            const auto& point = m_diffuse_points[i];
-
-            if (m_use_rust_solver) {
-                if constexpr (NSTOKES == 1) {
-                    for (int degree = 0; degree < m_config->num_do_streams();
-                         ++degree) {
-                        double coefficient = 0.0;
-                        for (const auto& index_weight :
-                             m_diffuse_point_interpolation_weights[i]) {
-                            coefficient +=
-                                index_weight.second *
-                                m_atmosphere->storage().leg_coeff(
-                                    degree, index_weight.first, wavelidx);
-                        }
-                        storage.rust_scattering_coefficients
-                            [i * m_config->num_do_streams() + degree] =
-                            coefficient;
-                    }
-                } else {
-                    for (int degree = 0; degree < m_config->num_do_streams();
-                         ++degree) {
-                        for (int family = 0; family < 4; ++family) {
-                            double coefficient = 0.0;
-                            for (const auto& index_weight :
-                                 m_diffuse_point_interpolation_weights[i]) {
-                                coefficient +=
-                                    index_weight.second *
-                                    m_atmosphere->storage().leg_coeff(
-                                        degree * 4 + family, index_weight.first,
-                                        wavelidx);
-                            }
-                            storage.rust_scattering_coefficients
-                                [(i * m_config->num_do_streams() + degree) * 4 +
-                                 family] = coefficient;
-                        }
-                    }
+            for (int ground_index = 0;
+                 ground_index < m_location_interpolator->num_ground_points();
+                 ++ground_index) {
+                const std::size_t point_index = static_cast<std::size_t>(
+                    m_location_interpolator->num_interior_points() +
+                    ground_index);
+                if (!m_diffuse_point_full_calculation[point_index]) {
+                    continue;
                 }
-                continue;
+                const auto& point = m_diffuse_points[point_index];
+                point->sphere_pair().calculate_ground_scattering_values(
+                    m_atmosphere->surface(), point->location(), wavelidx,
+                    boundary_values.data() +
+                        m_rust_boundary_scattering_offsets[ground_index]);
             }
+        } else
+#endif
+        {
+#pragma omp parallel for num_threads(m_config->num_source_threads())           \
+    schedule(dynamic)
+            for (int i = 0; i < m_location_interpolator->num_interior_points();
+                 ++i) {
+                if (!m_diffuse_point_full_calculation[i]) {
+                    continue;
+                }
 
-            point->sphere_pair().calculate_scattering_matrix(
-                m_atmosphere->storage(), wavelidx,
-                m_diffuse_point_interpolation_weights[i],
-                storage.point_scattering_matrices[i].data());
-        }
+                const auto& point = m_diffuse_points[i];
+                point->sphere_pair().calculate_scattering_matrix(
+                    m_atmosphere->storage(), wavelidx,
+                    m_diffuse_point_interpolation_weights[i],
+                    storage.point_scattering_matrices[i].data());
+            }
 
 #pragma omp parallel for num_threads(m_config->num_source_threads())           \
     schedule(dynamic)
-        for (int i = 0; i < m_location_interpolator->num_ground_points(); ++i) {
-            if (!m_diffuse_point_full_calculation
-                    [i + m_location_interpolator->num_interior_points()]) {
-                continue;
+            for (int i = 0; i < m_location_interpolator->num_ground_points();
+                 ++i) {
+                if (!m_diffuse_point_full_calculation
+                        [i + m_location_interpolator->num_interior_points()]) {
+                    continue;
+                }
+
+                const auto& point =
+                    m_diffuse_points[i + m_location_interpolator
+                                             ->num_interior_points()];
+
+                point->sphere_pair().calculate_ground_scattering_matrix(
+                    m_atmosphere->surface(),
+                    m_diffuse_point_interpolation_weights
+                        [i + m_location_interpolator->num_interior_points()],
+                    point->location(), wavelidx,
+                    storage
+                        .point_scattering_matrices
+                            [i + m_location_interpolator->num_interior_points()]
+                        .data());
             }
-
-            const auto& point =
-                m_diffuse_points[i + m_location_interpolator
-                                         ->num_interior_points()];
-
-            point->sphere_pair().calculate_ground_scattering_matrix(
-                m_atmosphere->surface(),
-                m_diffuse_point_interpolation_weights
-                    [i + m_location_interpolator->num_interior_points()],
-                point->location(), wavelidx,
-                storage
-                    .point_scattering_matrices[i + m_location_interpolator
-                                                       ->num_interior_points()]
-                    .data());
         }
     }
 
@@ -1864,79 +2221,59 @@ namespace sasktran2::hr {
     }
 
     template <int NSTOKES>
-    void
-    DiffuseTable<NSTOKES>::pack_rust_boundary_scattering_values(int threadidx) {
-        auto& storage = m_thread_storage[threadidx];
-        std::size_t value_offset = 0;
-        for (std::size_t point_index = static_cast<std::size_t>(
-                 m_location_interpolator->num_interior_points());
-             point_index < m_diffuse_points.size(); ++point_index) {
-            const auto& matrix = storage.point_scattering_matrices[point_index];
-            for (int row = 0; row < matrix.rows(); ++row) {
-                for (int column = 0; column < matrix.cols(); ++column) {
-                    storage.rust_boundary_scattering_values[value_offset++] =
-                        matrix(row, column);
-                }
-            }
-        }
-    }
-
-    template <int NSTOKES>
     void DiffuseTable<NSTOKES>::pack_rust_scattering_coefficient_jvp(
         int wavelidx, int threadidx,
         Eigen::Ref<const Eigen::VectorXd> native_tangent) {
-        auto& tangent =
-            m_thread_storage[threadidx].rust_scattering_coefficient_tangent;
-        const int num_coefficients = m_config->num_do_streams();
-        const int num_families = NSTOKES == 1 ? 1 : 4;
-        const int num_geometry = m_atmosphere->storage().ssa.rows();
-        std::vector<int> active_groups;
-        active_groups.reserve(m_atmosphere->num_scattering_deriv_groups());
-        for (int group = 0; group < m_atmosphere->num_scattering_deriv_groups();
-             ++group) {
-            if (!native_tangent
-                     .segment(m_atmosphere->scat_deriv_start_index() +
-                                  group * num_geometry,
-                              num_geometry)
-                     .isZero(0.0)) {
-                active_groups.push_back(group);
-            }
+        if (m_rust_scattering_interpolators.empty()) {
+            throw std::logic_error(
+                "Rust scattering interpolator is not initialized");
         }
-        if (active_groups.empty()) {
-            std::fill(tangent.begin(), tangent.end(), 0.0);
-            return;
+        const auto& derivatives = m_atmosphere->storage().d_leg_coeff;
+        const std::size_t coefficient_stride =
+            static_cast<std::size_t>(derivatives.dimension(0));
+        const std::size_t num_geometry =
+            static_cast<std::size_t>(derivatives.dimension(1));
+        const std::size_t num_wavelengths =
+            static_cast<std::size_t>(derivatives.dimension(2));
+        const std::size_t num_groups =
+            static_cast<std::size_t>(derivatives.dimension(3));
+        if (wavelidx < 0 ||
+            static_cast<std::size_t>(wavelidx) >= num_wavelengths) {
+            throw std::out_of_range(
+                "Successive-orders scattering JVP wavelength is out of range");
         }
-        for (int point = 0;
-             point < m_location_interpolator->num_interior_points(); ++point) {
-            for (int degree = 0; degree < num_coefficients; ++degree) {
-                for (int family = 0; family < num_families; ++family) {
-                    double value = 0.0;
-                    for (const auto& index_weight :
-                         m_diffuse_point_interpolation_weights[point]) {
-                        for (const int group : active_groups) {
-                            value +=
-                                index_weight.second *
-                                m_atmosphere->storage().d_leg_coeff(
-                                    degree * num_families + family,
-                                    index_weight.first, wavelidx, group) *
-                                native_tangent(
-                                    m_atmosphere->scat_deriv_start_index() +
-                                    group * num_geometry + index_weight.first);
-                        }
-                    }
-                    tangent[(point * num_coefficients + degree) * num_families +
-                            family] = value;
-                }
-            }
-        }
+        const std::size_t tangent_size = num_geometry * num_groups;
+        const double* scattering_tangent =
+            native_tangent.data() + m_atmosphere->scat_deriv_start_index();
+        sasktran2::rust::successive_orders::
+            set_scattering_coefficient_jvp_from_atmosphere(
+                *m_rust_solvers[threadidx],
+                *m_rust_scattering_interpolators.front(),
+                {derivatives.data(),
+                 static_cast<std::size_t>(derivatives.size())},
+                coefficient_stride, num_wavelengths,
+                static_cast<std::size_t>(wavelidx),
+                {scattering_tangent, tangent_size});
     }
 
     template <int NSTOKES>
     void DiffuseTable<NSTOKES>::pack_rust_boundary_scattering_jvp(
         int wavelidx, int threadidx,
         Eigen::Ref<const Eigen::VectorXd> native_tangent) {
-        auto& tangent =
-            m_thread_storage[threadidx].rust_boundary_scattering_value_tangent;
+        const bool rust_owned_transport =
+            m_altitude_grid.interpolation_method() !=
+            sasktran2::grids::interpolation::lower;
+        auto tangent = rust_owned_transport
+                           ? sasktran2::rust::successive_orders::
+                                 boundary_scattering_value_tangent_mut(
+                                     *m_rust_solvers[threadidx])
+                           : as_rust_mut_slice(
+                                 m_thread_storage[threadidx]
+                                     .rust_boundary_scattering_value_tangent);
+        if (tangent.size() != m_rust_boundary_scattering_offsets.back()) {
+            throw std::logic_error(
+                "Rust boundary scattering tangent size mismatch");
+        }
         std::fill(tangent.begin(), tangent.end(), 0.0);
         const int num_surface_derivatives = m_atmosphere->surface().num_deriv();
         if (num_surface_derivatives == 0 ||
@@ -1952,47 +2289,42 @@ namespace sasktran2::hr {
              point_index < m_diffuse_points.size(); ++point_index) {
             const auto& point = *m_diffuse_points[point_index];
             const auto& spheres = point.sphere_pair();
-            const int rows = point.num_outgoing() * NSTOKES;
-            const int columns = point.num_incoming() * NSTOKES;
-            for (int row = 0; row < rows; ++row) {
-                for (int column = 0; column < columns; ++column) {
-                    if (row % NSTOKES == 0 && column % NSTOKES == 0) {
-                        const auto incoming =
-                            spheres.incoming_sphere().get_quad_position(
-                                column / NSTOKES);
-                        const auto outgoing =
-                            spheres.outgoing_sphere().get_quad_position(
-                                row / NSTOKES);
-                        const double mu_in =
-                            point.location().cos_zenith_angle(incoming);
-                        const double mu_out =
-                            point.location().cos_zenith_angle(outgoing);
-                        const auto vertical =
-                            point.location().position.normalized();
-                        const auto horiz_in =
-                            (incoming - mu_in * vertical).normalized();
-                        const auto horiz_out =
-                            (outgoing - mu_out * vertical).normalized();
-                        const double phi_diff =
-                            EIGEN_PI - std::acos(horiz_in.dot(horiz_out));
-                        double brdf_jvp = 0.0;
-                        for (int derivative = 0;
-                             derivative < m_atmosphere->surface().num_deriv();
-                             ++derivative) {
-                            brdf_jvp +=
-                                native_tangent(
-                                    m_atmosphere->surface_deriv_start_index() +
-                                    derivative) *
-                                m_atmosphere->surface().d_brdf(
-                                    wavelidx, mu_in, mu_out, phi_diff,
-                                    derivative)(0, 0);
-                        }
-                        tangent[value_offset] =
-                            4.0 * EIGEN_PI * brdf_jvp * mu_in *
-                            spheres.incoming_sphere().quadrature_weight(
-                                column / NSTOKES);
+            const auto vertical = point.location().position.normalized();
+            for (int outgoing_index = 0; outgoing_index < point.num_outgoing();
+                 ++outgoing_index) {
+                const auto outgoing =
+                    spheres.outgoing_sphere().get_quad_position(outgoing_index);
+                const double mu_out =
+                    point.location().cos_zenith_angle(outgoing);
+                const auto horiz_out =
+                    (outgoing - mu_out * vertical).normalized();
+                for (int incoming_index = 0;
+                     incoming_index < point.num_incoming(); ++incoming_index) {
+                    const auto incoming =
+                        spheres.incoming_sphere().get_quad_position(
+                            incoming_index);
+                    const double mu_in =
+                        point.location().cos_zenith_angle(incoming);
+                    const auto horiz_in =
+                        (incoming - mu_in * vertical).normalized();
+                    const double phi_diff =
+                        EIGEN_PI - std::acos(horiz_in.dot(horiz_out));
+                    double brdf_jvp = 0.0;
+                    for (int derivative = 0;
+                         derivative < m_atmosphere->surface().num_deriv();
+                         ++derivative) {
+                        brdf_jvp +=
+                            native_tangent(
+                                m_atmosphere->surface_deriv_start_index() +
+                                derivative) *
+                            m_atmosphere->surface().d_brdf(wavelidx, mu_in,
+                                                           mu_out, phi_diff,
+                                                           derivative)(0, 0);
                     }
-                    ++value_offset;
+                    tangent[value_offset++] =
+                        4.0 * EIGEN_PI * brdf_jvp * mu_in *
+                        spheres.incoming_sphere().quadrature_weight(
+                            incoming_index);
                 }
             }
         }
@@ -2000,34 +2332,42 @@ namespace sasktran2::hr {
 
     template <int NSTOKES>
     void DiffuseTable<NSTOKES>::accumulate_rust_scattering_coefficient_vjp(
-        int wavelidx, ::rust::Slice<const double> coefficient_gradient,
+        int wavelidx, int threadidx,
         const std::vector<int>& active_scattering_groups,
         Eigen::Ref<Eigen::VectorXd> native_gradient) const {
-        const int num_coefficients = m_config->num_do_streams();
-        const int num_families = NSTOKES == 1 ? 1 : 4;
-        const int num_geometry = m_atmosphere->storage().ssa.rows();
-        for (int point = 0;
-             point < m_location_interpolator->num_interior_points(); ++point) {
-            for (int degree = 0; degree < num_coefficients; ++degree) {
-                for (int family = 0; family < num_families; ++family) {
-                    const double gradient = coefficient_gradient
-                        [(point * num_coefficients + degree) * num_families +
-                         family];
-                    for (const auto& index_weight :
-                         m_diffuse_point_interpolation_weights[point]) {
-                        for (const int group : active_scattering_groups) {
-                            native_gradient(
-                                m_atmosphere->scat_deriv_start_index() +
-                                group * num_geometry + index_weight.first) +=
-                                gradient * index_weight.second *
-                                m_atmosphere->storage().d_leg_coeff(
-                                    degree * num_families + family,
-                                    index_weight.first, wavelidx, group);
-                        }
-                    }
-                }
-            }
+        if (m_rust_scattering_interpolators.empty()) {
+            throw std::logic_error(
+                "Rust scattering interpolator is not initialized");
         }
+        static_assert(sizeof(int) == sizeof(std::int32_t));
+        const auto& derivatives = m_atmosphere->storage().d_leg_coeff;
+        const std::size_t coefficient_stride =
+            static_cast<std::size_t>(derivatives.dimension(0));
+        const std::size_t num_geometry =
+            static_cast<std::size_t>(derivatives.dimension(1));
+        const std::size_t num_wavelengths =
+            static_cast<std::size_t>(derivatives.dimension(2));
+        const std::size_t num_groups =
+            static_cast<std::size_t>(derivatives.dimension(3));
+        if (wavelidx < 0 ||
+            static_cast<std::size_t>(wavelidx) >= num_wavelengths) {
+            throw std::out_of_range(
+                "Successive-orders scattering VJP wavelength is out of range");
+        }
+        double* scattering_gradient =
+            native_gradient.data() + m_atmosphere->scat_deriv_start_index();
+        sasktran2::rust::successive_orders::
+            accumulate_solver_scattering_coefficient_vjp(
+                *m_rust_solvers[threadidx],
+                *m_rust_scattering_interpolators.front(),
+                {derivatives.data(),
+                 static_cast<std::size_t>(derivatives.size())},
+                coefficient_stride, num_wavelengths,
+                static_cast<std::size_t>(wavelidx),
+                {reinterpret_cast<const std::int32_t*>(
+                     active_scattering_groups.data()),
+                 active_scattering_groups.size()},
+                {scattering_gradient, num_geometry * num_groups});
     }
 
     template <int NSTOKES>
@@ -2040,46 +2380,41 @@ namespace sasktran2::hr {
              point_index < m_diffuse_points.size(); ++point_index) {
             const auto& point = *m_diffuse_points[point_index];
             const auto& spheres = point.sphere_pair();
-            const int rows = point.num_outgoing() * NSTOKES;
-            const int columns = point.num_incoming() * NSTOKES;
-            for (int row = 0; row < rows; ++row) {
-                for (int column = 0; column < columns; ++column) {
-                    if (row % NSTOKES == 0 && column % NSTOKES == 0) {
-                        const auto incoming =
-                            spheres.incoming_sphere().get_quad_position(
-                                column / NSTOKES);
-                        const auto outgoing =
-                            spheres.outgoing_sphere().get_quad_position(
-                                row / NSTOKES);
-                        const double mu_in =
-                            point.location().cos_zenith_angle(incoming);
-                        const double mu_out =
-                            point.location().cos_zenith_angle(outgoing);
-                        const auto vertical =
-                            point.location().position.normalized();
-                        const auto horiz_in =
-                            (incoming - mu_in * vertical).normalized();
-                        const auto horiz_out =
-                            (outgoing - mu_out * vertical).normalized();
-                        const double phi_diff =
-                            EIGEN_PI - std::acos(horiz_in.dot(horiz_out));
-                        const double scale =
-                            boundary_gradient[value_offset] * 4.0 * EIGEN_PI *
-                            mu_in *
-                            spheres.incoming_sphere().quadrature_weight(
-                                column / NSTOKES);
-                        for (int derivative = 0;
-                             derivative < m_atmosphere->surface().num_deriv();
-                             ++derivative) {
-                            native_gradient(
-                                m_atmosphere->surface_deriv_start_index() +
-                                derivative) +=
-                                scale * m_atmosphere->surface().d_brdf(
-                                            wavelidx, mu_in, mu_out, phi_diff,
-                                            derivative)(0, 0);
-                        }
+            const auto vertical = point.location().position.normalized();
+            for (int outgoing_index = 0; outgoing_index < point.num_outgoing();
+                 ++outgoing_index) {
+                const auto outgoing =
+                    spheres.outgoing_sphere().get_quad_position(outgoing_index);
+                const double mu_out =
+                    point.location().cos_zenith_angle(outgoing);
+                const auto horiz_out =
+                    (outgoing - mu_out * vertical).normalized();
+                for (int incoming_index = 0;
+                     incoming_index < point.num_incoming(); ++incoming_index) {
+                    const auto incoming =
+                        spheres.incoming_sphere().get_quad_position(
+                            incoming_index);
+                    const double mu_in =
+                        point.location().cos_zenith_angle(incoming);
+                    const auto horiz_in =
+                        (incoming - mu_in * vertical).normalized();
+                    const double phi_diff =
+                        EIGEN_PI - std::acos(horiz_in.dot(horiz_out));
+                    const double scale =
+                        boundary_gradient[value_offset++] * 4.0 * EIGEN_PI *
+                        mu_in *
+                        spheres.incoming_sphere().quadrature_weight(
+                            incoming_index);
+                    for (int derivative = 0;
+                         derivative < m_atmosphere->surface().num_deriv();
+                         ++derivative) {
+                        native_gradient(
+                            m_atmosphere->surface_deriv_start_index() +
+                            derivative) +=
+                            scale * m_atmosphere->surface().d_brdf(
+                                        wavelidx, mu_in, mu_out, phi_diff,
+                                        derivative)(0, 0);
                     }
-                    ++value_offset;
                 }
             }
         }
@@ -2091,8 +2426,6 @@ namespace sasktran2::hr {
         ZoneScopedN("Rust Successive Orders Solve");
         auto& storage = m_thread_storage[threadidx];
 
-        pack_rust_boundary_scattering_values(threadidx);
-
         const std::vector<double> no_initial_guess;
         generate_twostream_initial_guess(wavelidx, threadidx);
         const bool use_twostream_initial_guess =
@@ -2103,12 +2436,17 @@ namespace sasktran2::hr {
                 ? as_rust_slice(storage.m_outgoing_sources.value)
                 : as_rust_slice(no_initial_guess);
         auto& solver = m_rust_solvers[threadidx];
-        if constexpr (NSTOKES == 1) {
+        const bool rust_owned_transport =
+            m_altitude_grid.interpolation_method() !=
+            sasktran2::grids::interpolation::lower;
+        if (rust_owned_transport) {
+            sasktran2::rust::successive_orders::solve_coefficients_assembled(
+                *solver, initial_guess);
+        } else if constexpr (NSTOKES == 1) {
             sasktran2::rust::successive_orders::solve_scalar_coefficients(
                 *solver, as_rust_slice(m_outer_starts),
                 as_rust_slice(m_inner_indicies),
                 as_rust_slice(storage.accumulation_summed_values),
-                as_rust_slice(storage.rust_scattering_coefficients),
                 as_rust_slice(storage.rust_boundary_scattering_values),
                 as_rust_slice(storage.m_firstorder_radiances.value),
                 initial_guess);
@@ -2117,21 +2455,17 @@ namespace sasktran2::hr {
                 *solver, as_rust_slice(m_outer_starts),
                 as_rust_slice(m_inner_indicies),
                 as_rust_slice(storage.accumulation_summed_values),
-                as_rust_slice(storage.rust_scattering_coefficients),
                 as_rust_slice(storage.rust_boundary_scattering_values),
                 as_rust_slice(storage.m_firstorder_radiances.value),
                 initial_guess);
         }
         const auto solution =
             sasktran2::rust::successive_orders::solution(*solver);
-        if (solution.size() !=
-            static_cast<std::size_t>(storage.m_outgoing_sources.value.size())) {
+        if (solution.size() != m_num_outgoing_values) {
             throw std::runtime_error(
                 "Rust successive-orders solver returned an invalid solution "
                 "size");
         }
-        std::copy(solution.begin(), solution.end(),
-                  storage.m_outgoing_sources.value.data());
 
         const bool tolerance_requested =
             m_config->successive_orders_relative_tolerance() > 0 ||
@@ -2168,9 +2502,17 @@ namespace sasktran2::hr {
         }
 
         const auto& storage = m_thread_storage[threadidx];
-        const auto& forcing = storage.m_firstorder_radiances.value;
-        state.first_order_forcing.assign(forcing.data(),
-                                         forcing.data() + forcing.size());
+        if (m_altitude_grid.interpolation_method() !=
+            sasktran2::grids::interpolation::lower) {
+            const auto forcing =
+                sasktran2::rust::successive_orders::first_order_forcing(
+                    *solver);
+            state.first_order_forcing.assign(forcing.begin(), forcing.end());
+        } else {
+            const auto& forcing = storage.m_firstorder_radiances.value;
+            state.first_order_forcing.assign(forcing.data(),
+                                             forcing.data() + forcing.size());
+        }
         const auto solution =
             sasktran2::rust::successive_orders::solution(*solver);
         state.solution.assign(solution.begin(), solution.end());
@@ -2178,403 +2520,442 @@ namespace sasktran2::hr {
     }
 
     template <int NSTOKES>
-    void DiffuseTable<NSTOKES>::assemble_rust_scalar_transport(
-        int wavelidx, int threadidx, bool assemble_first_order) {
-        if constexpr (NSTOKES != 1) {
-            throw std::logic_error(
-                "Rust scalar transport assembly requires NSTOKES == 1");
-        } else {
-            if (m_rust_scalar_transports.empty() || m_atmosphere == nullptr) {
-                throw std::logic_error(
-                    "Rust scalar transport geometry is not initialized");
+    void
+    DiffuseTable<NSTOKES>::pack_rust_end_of_ray_source(int wavelidx,
+                                                       int threadidx) const {
+        auto& packed = m_thread_storage[threadidx].rust_end_of_ray_source;
+        const int num_rays =
+            static_cast<int>(m_internal_viewing.traced_rays.size());
+        if (packed.size() != static_cast<std::size_t>(num_rays * NSTOKES)) {
+            throw std::logic_error("Rust end-of-ray source size mismatch");
+        }
+        const int num_threads = m_config->num_source_threads();
+        std::vector<sasktran2::WavelengthBlockDual<NSTOKES>> scratch(
+            num_threads);
+        for (auto& source_value : scratch) {
+            source_value.resize(1, 0, true);
+        }
+        const sasktran2::WavelengthBlock<> block{wavelidx, 1};
+#pragma omp parallel for num_threads(num_threads)
+        for (int rayidx = 0; rayidx < num_rays; ++rayidx) {
+#ifdef SKTRAN_OPENMP_SUPPORT
+            const int source_threadidx =
+                num_threads == 1 ? 0 : omp_get_thread_num();
+#else
+            const int source_threadidx = 0;
+#endif
+            auto& source_value = scratch[source_threadidx];
+            source_value.set_zero(1);
+            for (const auto* source : m_initial_sources) {
+                source->end_of_ray_source(block, rayidx, threadidx,
+                                          source_threadidx + threadidx,
+                                          source_value);
             }
-            auto& storage = m_thread_storage[threadidx];
-            const auto& atmosphere_storage = m_atmosphere->storage();
-            const std::size_t num_geometry = static_cast<std::size_t>(
-                atmosphere_storage.total_extinction.rows());
-            const ::rust::Slice<const double> extinction(
-                atmosphere_storage.total_extinction.col(wavelidx).data(),
-                num_geometry);
-            const ::rust::Slice<const double> single_scatter_albedo(
-                atmosphere_storage.ssa.col(wavelidx).data(), num_geometry);
-
-            if (!assemble_first_order) {
-                const std::size_t num_layers = sasktran2::rust::
-                    successive_orders::scalar_ray_transport_num_layers(
-                        *m_rust_scalar_transports.front());
-                storage.rust_layer_optical_depth.resize(num_layers);
-                storage.rust_layer_attenuation.resize(num_layers);
-                storage.rust_layer_prefix_attenuation.resize(num_layers);
-                sasktran2::rust::successive_orders::
-                    assemble_scalar_ray_transport(
-                        *m_rust_scalar_transports.front(), extinction,
-                        single_scatter_albedo,
-                        as_rust_mut_slice(storage.accumulation_summed_values),
-                        as_rust_mut_slice(storage.rust_layer_optical_depth),
-                        as_rust_mut_slice(storage.rust_layer_attenuation),
-                        as_rust_mut_slice(
-                            storage.rust_layer_prefix_attenuation),
-                        as_rust_mut_slice(storage.rust_ray_end_attenuation));
-                return;
+            for (int stokes = 0; stokes < NSTOKES; ++stokes) {
+                packed[rayidx * NSTOKES + stokes] =
+                    source_value.value(stokes, 0);
             }
-
-            const bool retain_layer_scratch =
-                m_active_vjp_derivatives[threadidx].prepared;
-            if (retain_layer_scratch) {
-                const std::size_t num_layers = sasktran2::rust::
-                    successive_orders::scalar_ray_transport_num_layers(
-                        *m_rust_scalar_transports.front());
-                storage.rust_layer_optical_depth.resize(num_layers);
-                storage.rust_layer_attenuation.resize(num_layers);
-                storage.rust_layer_prefix_attenuation.resize(num_layers);
-            } else {
-                // The primal solve never consumes layerwise attenuation after
-                // assembly. Native VJP requests this scratch explicitly.
-                storage.rust_layer_optical_depth.clear();
-                storage.rust_layer_attenuation.clear();
-                storage.rust_layer_prefix_attenuation.clear();
-            }
-
-            const Eigen::VectorXd* solar_transmission = nullptr;
-            if (m_geometry_1d != nullptr) {
-                const auto* single_scatter = dynamic_cast<
-                    sasktran2::solartransmission::SingleScatterSource<
-                        sasktran2::solartransmission::SolarTransmissionTable,
-                        1>*>(m_initial_sources.front());
-                if (single_scatter != nullptr) {
-                    solar_transmission =
-                        &single_scatter->scalar_solar_transmission(threadidx);
-                }
-            } else {
-                const auto* single_scatter = dynamic_cast<
-                    sasktran2::solartransmission::SingleScatterSource<
-                        sasktran2::solartransmission::SolarTransmissionExact,
-                        1>*>(m_initial_sources.front());
-                if (single_scatter != nullptr) {
-                    solar_transmission =
-                        &single_scatter->scalar_solar_transmission(threadidx);
-                }
-            }
-            if (solar_transmission == nullptr ||
-                m_initial_sources.size() != 1) {
-                throw std::logic_error(
-                    "Rust scalar first-order forcing requires one scalar "
-                    "single-scatter source");
-            }
-
-            const std::size_t num_phase_moments = static_cast<std::size_t>(
-                atmosphere_storage.leg_coeff.dimension(0));
-            if (num_phase_moments !=
-                static_cast<std::size_t>(
-                    m_config->num_singlescatter_moments())) {
-                throw std::logic_error(
-                    "Rust scalar phase storage size mismatch");
-            }
-            const ::rust::Slice<const double> legendre_coefficients(
-                &atmosphere_storage.leg_coeff(0, 0, wavelidx),
-                num_geometry * num_phase_moments);
-            static_assert(sizeof(int) == sizeof(std::int32_t));
-            const ::rust::Slice<const std::int32_t> maximum_order(
-                reinterpret_cast<const std::int32_t*>(
-                    atmosphere_storage.max_order.col(wavelidx).data()),
-                num_geometry);
-
-            sasktran2::rust::successive_orders::
-                assemble_scalar_ray_transport_with_first_order(
-                    *m_rust_scalar_transports.front(), extinction,
-                    single_scatter_albedo, legendre_coefficients, maximum_order,
-                    as_rust_slice(*solar_transmission),
-                    as_rust_mut_slice(storage.accumulation_summed_values),
-                    as_rust_mut_slice(storage.m_firstorder_radiances.value),
-                    as_rust_mut_slice(storage.rust_layer_optical_depth),
-                    as_rust_mut_slice(storage.rust_layer_attenuation),
-                    as_rust_mut_slice(storage.rust_layer_prefix_attenuation),
-                    as_rust_mut_slice(storage.rust_ray_end_attenuation));
         }
     }
 
     template <int NSTOKES>
-    void DiffuseTable<NSTOKES>::assemble_rust_scalar_transport_jvp(
+    void DiffuseTable<NSTOKES>::pack_rust_end_of_ray_source_jvp(
         int wavelidx, int threadidx,
         Eigen::Ref<const Eigen::VectorXd> native_tangent) {
-        if constexpr (NSTOKES != 1) {
-            throw std::logic_error(
-                "Rust scalar transport JVP requires NSTOKES == 1");
-        } else {
-            if (m_rust_scalar_transports.empty() || m_atmosphere == nullptr) {
-                throw std::logic_error(
-                    "Rust scalar transport geometry is not initialized");
+        auto& storage = m_thread_storage[threadidx];
+        const int num_rays =
+            static_cast<int>(m_internal_viewing.traced_rays.size());
+        const int num_threads = m_config->num_source_threads();
+        std::vector<sasktran2::RadianceJVP<NSTOKES>> scratch(num_threads);
+#pragma omp parallel for num_threads(num_threads)
+        for (int rayidx = 0; rayidx < num_rays; ++rayidx) {
+#ifdef SKTRAN_OPENMP_SUPPORT
+            const int source_threadidx =
+                num_threads == 1 ? 0 : omp_get_thread_num();
+#else
+            const int source_threadidx = 0;
+#endif
+            auto& source_value = scratch[source_threadidx];
+            source_value.set_zero();
+            for (const auto* source : m_initial_sources) {
+                source->end_of_ray_source_jvp(wavelidx, rayidx, threadidx,
+                                              source_threadidx + threadidx,
+                                              native_tangent, source_value);
             }
-            auto& output = m_thread_storage[threadidx];
-            const auto& atmosphere = m_atmosphere->storage();
-            const std::size_t num_geometry =
-                static_cast<std::size_t>(atmosphere.total_extinction.rows());
-            const std::size_t num_phase_moments =
-                static_cast<std::size_t>(atmosphere.leg_coeff.dimension(0));
-            const ::rust::Slice<const double> extinction(
-                atmosphere.total_extinction.col(wavelidx).data(), num_geometry);
-            const ::rust::Slice<const double> single_scatter_albedo(
-                atmosphere.ssa.col(wavelidx).data(), num_geometry);
-            const ::rust::Slice<const double> legendre_coefficients(
-                &atmosphere.leg_coeff(0, 0, wavelidx),
-                num_geometry * num_phase_moments);
-            static_assert(sizeof(int) == sizeof(std::int32_t));
-            const ::rust::Slice<const std::int32_t> maximum_order(
-                reinterpret_cast<const std::int32_t*>(
-                    atmosphere.max_order.col(wavelidx).data()),
-                num_geometry);
-
-            const Eigen::VectorXd* solar_transmission = nullptr;
-            const Eigen::VectorXd* solar_transmission_jvp = nullptr;
-            if (m_geometry_1d != nullptr) {
-                const auto* single_scatter = dynamic_cast<
-                    sasktran2::solartransmission::SingleScatterSource<
-                        sasktran2::solartransmission::SolarTransmissionTable,
-                        1>*>(m_initial_sources.front());
-                if (single_scatter != nullptr) {
-                    solar_transmission =
-                        &single_scatter->scalar_solar_transmission(threadidx);
-                    solar_transmission_jvp =
-                        &single_scatter->scalar_solar_transmission_jvp(
-                            threadidx);
-                }
-            } else {
-                const auto* single_scatter = dynamic_cast<
-                    sasktran2::solartransmission::SingleScatterSource<
-                        sasktran2::solartransmission::SolarTransmissionExact,
-                        1>*>(m_initial_sources.front());
-                if (single_scatter != nullptr) {
-                    solar_transmission =
-                        &single_scatter->scalar_solar_transmission(threadidx);
-                    solar_transmission_jvp =
-                        &single_scatter->scalar_solar_transmission_jvp(
-                            threadidx);
-                }
+            for (int stokes = 0; stokes < NSTOKES; ++stokes) {
+                storage.rust_end_of_ray_source[rayidx * NSTOKES + stokes] =
+                    source_value.value(stokes);
+                storage
+                    .rust_end_of_ray_source_tangent[rayidx * NSTOKES + stokes] =
+                    source_value.jvp(stokes);
             }
-            if (solar_transmission == nullptr ||
-                solar_transmission_jvp == nullptr) {
-                throw std::logic_error(
-                    "Rust scalar JVP requires a scalar single-scatter "
-                    "source");
-            }
-
-            auto& legendre_tangent =
-                output.rust_single_scatter_legendre_tangent;
-            legendre_tangent.assign(num_geometry * num_phase_moments, 0.0);
-            for (int group = 0;
-                 group < m_atmosphere->num_scattering_deriv_groups(); ++group) {
-                const int tangent_offset =
-                    m_atmosphere->scat_deriv_start_index() +
-                    group * static_cast<int>(num_geometry);
-                for (std::size_t location = 0; location < num_geometry;
-                     ++location) {
-                    const double tangent = native_tangent(
-                        tangent_offset + static_cast<int>(location));
-                    if (tangent == 0.0) {
-                        continue;
-                    }
-                    const int maximum_derivative_order =
-                        atmosphere.d_max_order[group](location, wavelidx);
-                    for (int degree = 0; degree < maximum_derivative_order;
-                         ++degree) {
-                        legendre_tangent[location * num_phase_moments +
-                                         degree] +=
-                            atmosphere.d_leg_coeff(degree, location, wavelidx,
-                                                   group) *
-                            tangent;
-                    }
-                }
-            }
-
-            const ::rust::Slice<const double> extinction_tangent(
-                native_tangent.data(), num_geometry);
-            const ::rust::Slice<const double> albedo_tangent(
-                native_tangent.data() + m_atmosphere->ssa_deriv_start_index(),
-                num_geometry);
-            sasktran2::rust::successive_orders::
-                assemble_scalar_ray_transport_jvp(
-                    *m_rust_scalar_transports.front(), extinction,
-                    single_scatter_albedo, legendre_coefficients, maximum_order,
-                    as_rust_slice(*solar_transmission), extinction_tangent,
-                    albedo_tangent, as_rust_slice(legendre_tangent),
-                    as_rust_slice(*solar_transmission_jvp),
-                    as_rust_mut_slice(output.accumulation_summed_values),
-                    as_rust_mut_slice(output.rust_transport_value_tangent),
-                    as_rust_mut_slice(output.rust_first_order_forcing_tangent),
-                    as_rust_mut_slice(output.rust_ray_end_attenuation),
-                    as_rust_mut_slice(output.rust_ray_end_attenuation_tangent));
         }
     }
 
     template <int NSTOKES>
-    void DiffuseTable<NSTOKES>::accumulate_rust_scalar_transport_vjp(
+    void DiffuseTable<NSTOKES>::accumulate_rust_end_of_ray_source_vjp(
         int wavelidx, int threadidx,
-        ::rust::Slice<const double> transport_gradient,
-        ::rust::Slice<const double> solution,
-        ::rust::Slice<const double> forcing_gradient,
         Eigen::Ref<Eigen::VectorXd> native_gradient) const {
-        if constexpr (NSTOKES != 1) {
-            throw std::logic_error(
-                "Rust scalar transport VJP requires NSTOKES == 1");
-        } else {
-            const auto& output = m_thread_storage[threadidx];
-            const auto& activity = m_active_vjp_derivatives[threadidx];
-            const int num_threads = m_config->num_source_threads();
-            std::vector<Eigen::VectorXd> thread_gradients(num_threads);
-            for (auto& gradient : thread_gradients) {
-                gradient.setZero(native_gradient.size());
-            }
-            output.rust_ray_end_attenuation_cotangent.assign(
-                output.rust_ray_end_attenuation.size(), 0.0);
-
+        const auto& packed_gradient =
+            m_thread_storage[threadidx].rust_end_of_ray_source_gradient;
+        const int num_rays =
+            static_cast<int>(m_internal_viewing.traced_rays.size());
+        const int num_threads = m_config->num_source_threads();
+        std::vector<Eigen::VectorXd> thread_gradients(num_threads);
+        for (auto& gradient : thread_gradients) {
+            gradient.setZero(native_gradient.size());
+        }
 #pragma omp parallel for num_threads(num_threads)
-            for (int rayidx = 0; rayidx < m_internal_viewing.traced_rays.size();
-                 ++rayidx) {
+        for (int rayidx = 0; rayidx < num_rays; ++rayidx) {
 #ifdef SKTRAN_OPENMP_SUPPORT
-                const int source_threadidx =
-                    num_threads == 1 ? 0 : omp_get_thread_num();
+            const int source_threadidx =
+                num_threads == 1 ? 0 : omp_get_thread_num();
 #else
-                const int source_threadidx = 0;
+            const int source_threadidx = 0;
 #endif
-                Eigen::Vector<double, 1> ray_forcing_cotangent;
-                ray_forcing_cotangent(0) = forcing_gradient[rayidx];
-                output.rust_ray_end_attenuation_cotangent[rayidx] =
-                    m_integrator.accumulate_end_of_ray_vjp_precomputed(
-                        m_initial_sources, wavelidx, rayidx, threadidx,
-                        source_threadidx + threadidx, ray_forcing_cotangent,
-                        output.rust_ray_end_attenuation[rayidx],
-                        thread_gradients[source_threadidx]);
+            Eigen::Vector<double, NSTOKES> cotangent;
+            for (int stokes = 0; stokes < NSTOKES; ++stokes) {
+                cotangent(stokes) = packed_gradient[rayidx * NSTOKES + stokes];
             }
-            for (const auto& gradient : thread_gradients) {
-                native_gradient += gradient;
+            for (const auto* source : m_initial_sources) {
+                source->end_of_ray_source_vjp(
+                    wavelidx, rayidx, threadidx, source_threadidx + threadidx,
+                    cotangent, thread_gradients[source_threadidx]);
             }
+        }
+        for (const auto& gradient : thread_gradients) {
+            native_gradient += gradient;
+        }
+    }
 
-            const auto& atmosphere = m_atmosphere->storage();
-            const std::size_t num_geometry =
-                static_cast<std::size_t>(atmosphere.total_extinction.rows());
-            const std::size_t num_phase_moments =
-                static_cast<std::size_t>(atmosphere.leg_coeff.dimension(0));
-            const Eigen::VectorXd* solar_transmission = nullptr;
-            const sasktran2::solartransmission::SingleScatterSource<
-                sasktran2::solartransmission::SolarTransmissionTable, 1>*
-                table_source = nullptr;
-            const sasktran2::solartransmission::SingleScatterSource<
-                sasktran2::solartransmission::SolarTransmissionExact, 1>*
-                exact_source = nullptr;
-            if (m_geometry_1d != nullptr) {
-                table_source = dynamic_cast<
-                    const sasktran2::solartransmission::SingleScatterSource<
-                        sasktran2::solartransmission::SolarTransmissionTable,
-                        1>*>(m_initial_sources.front());
-                if (table_source != nullptr) {
-                    solar_transmission =
-                        &table_source->scalar_solar_transmission(threadidx);
-                }
-            } else {
-                exact_source = dynamic_cast<
-                    const sasktran2::solartransmission::SingleScatterSource<
-                        sasktran2::solartransmission::SolarTransmissionExact,
-                        1>*>(m_initial_sources.front());
-                if (exact_source != nullptr) {
-                    solar_transmission =
-                        &exact_source->scalar_solar_transmission(threadidx);
-                }
-            }
-            if (solar_transmission == nullptr) {
-                throw std::logic_error(
-                    "Rust scalar VJP requires a scalar single-scatter "
-                    "source");
-            }
+    template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::assemble_rust_ray_transport(
+        int wavelidx, int threadidx, bool assemble_first_order) {
+        if (m_rust_ray_transports.empty() || m_atmosphere == nullptr) {
+            throw std::logic_error(
+                "Rust transport geometry is not initialized");
+        }
+        auto& storage = m_thread_storage[threadidx];
+        const auto& atmosphere_storage = m_atmosphere->storage();
+        const std::size_t num_geometry = static_cast<std::size_t>(
+            atmosphere_storage.total_extinction.rows());
+        const ::rust::Slice<const double> extinction(
+            atmosphere_storage.total_extinction.col(wavelidx).data(),
+            num_geometry);
+        const ::rust::Slice<const double> single_scatter_albedo(
+            atmosphere_storage.ssa.col(wavelidx).data(), num_geometry);
+        const bool rust_owned_transport =
+            m_altitude_grid.interpolation_method() !=
+            sasktran2::grids::interpolation::lower;
+        const bool retain_layer_scratch =
+            m_active_vjp_derivatives[threadidx].prepared;
 
-            output.rust_single_scatter_extinction_gradient.resize(num_geometry);
-            output.rust_single_scatter_albedo_gradient.resize(num_geometry);
-            output.rust_single_scatter_legendre_gradient.resize(
-                num_geometry * num_phase_moments);
-            output.rust_single_scatter_solar_gradient.resize(
-                solar_transmission->size());
-            const ::rust::Slice<const double> extinction(
-                atmosphere.total_extinction.col(wavelidx).data(), num_geometry);
-            const ::rust::Slice<const double> single_scatter_albedo(
-                atmosphere.ssa.col(wavelidx).data(), num_geometry);
-            const ::rust::Slice<const double> legendre_coefficients(
-                &atmosphere.leg_coeff(0, 0, wavelidx),
-                num_geometry * num_phase_moments);
-            static_assert(sizeof(int) == sizeof(std::int32_t));
-            const ::rust::Slice<const std::int32_t> maximum_order(
-                reinterpret_cast<const std::int32_t*>(
-                    atmosphere.max_order.col(wavelidx).data()),
-                num_geometry);
-            sasktran2::rust::successive_orders::
-                assemble_scalar_ray_transport_vjp(
-                    *m_rust_scalar_transports.front(), extinction,
-                    single_scatter_albedo, legendre_coefficients, maximum_order,
-                    as_rust_slice(*solar_transmission), transport_gradient,
-                    ::rust::Slice<const std::int32_t>(
-                        reinterpret_cast<const std::int32_t*>(
-                            m_inner_indicies.data()),
-                        m_inner_indicies.size()),
-                    solution, forcing_gradient,
-                    as_rust_slice(output.rust_ray_end_attenuation_cotangent),
-                    as_rust_slice(output.rust_layer_optical_depth),
-                    as_rust_slice(output.rust_layer_attenuation),
-                    as_rust_slice(output.rust_layer_prefix_attenuation),
-                    as_rust_mut_slice(
-                        output.rust_single_scatter_extinction_gradient),
-                    as_rust_mut_slice(
-                        output.rust_single_scatter_albedo_gradient),
-                    as_rust_mut_slice(
-                        output.rust_single_scatter_legendre_gradient),
-                    as_rust_mut_slice(
-                        output.rust_single_scatter_solar_gradient));
+        if (!assemble_first_order) {
+            if (rust_owned_transport) {
+                sasktran2::rust::successive_orders::
+                    assemble_solver_ray_transport(
+                        *m_rust_ray_transports.front(),
+                        *m_rust_solvers[threadidx], extinction,
+                        single_scatter_albedo, retain_layer_scratch);
+                return;
+            }
+            const std::size_t num_layers =
+                sasktran2::rust::successive_orders::ray_transport_num_layers(
+                    *m_rust_ray_transports.front());
+            storage.rust_layer_optical_depth.resize(num_layers);
+            storage.rust_layer_attenuation.resize(num_layers);
+            storage.rust_layer_prefix_attenuation.resize(num_layers);
+            sasktran2::rust::successive_orders::assemble_ray_transport(
+                *m_rust_ray_transports.front(), extinction,
+                single_scatter_albedo,
+                as_rust_mut_slice(storage.accumulation_summed_values),
+                as_rust_mut_slice(storage.rust_layer_optical_depth),
+                as_rust_mut_slice(storage.rust_layer_attenuation),
+                as_rust_mut_slice(storage.rust_layer_prefix_attenuation),
+                as_rust_mut_slice(storage.rust_ray_end_attenuation));
+            return;
+        }
+        if (!rust_owned_transport) {
+            throw std::logic_error(
+                "Fused first-order transport requires Rust-owned storage");
+        }
 
-            if (activity.extinction) {
-                for (std::size_t location = 0; location < num_geometry;
-                     ++location) {
-                    native_gradient(location) +=
-                        output
-                            .rust_single_scatter_extinction_gradient[location];
-                }
+        const Eigen::VectorXd* solar_transmission = nullptr;
+        if (m_geometry_1d != nullptr) {
+            const auto* single_scatter =
+                dynamic_cast<sasktran2::solartransmission::SingleScatterSource<
+                    sasktran2::solartransmission::SolarTransmissionTable,
+                    NSTOKES>*>(m_initial_sources.front());
+            if (single_scatter != nullptr) {
+                solar_transmission =
+                    &single_scatter->solar_transmission(threadidx);
             }
-            if (activity.ssa) {
-                for (std::size_t location = 0; location < num_geometry;
-                     ++location) {
-                    native_gradient(m_atmosphere->ssa_deriv_start_index() +
-                                    static_cast<int>(location)) +=
-                        output.rust_single_scatter_albedo_gradient[location];
-                }
+        } else {
+            const auto* single_scatter =
+                dynamic_cast<sasktran2::solartransmission::SingleScatterSource<
+                    sasktran2::solartransmission::SolarTransmissionExact,
+                    NSTOKES>*>(m_initial_sources.front());
+            if (single_scatter != nullptr) {
+                solar_transmission =
+                    &single_scatter->solar_transmission(threadidx);
             }
-            for (const int group : activity.scattering_groups) {
-                const int gradient_offset =
-                    m_atmosphere->scat_deriv_start_index() +
-                    group * static_cast<int>(num_geometry);
-                for (std::size_t location = 0; location < num_geometry;
-                     ++location) {
-                    double gradient = 0.0;
-                    const int maximum_derivative_order =
-                        atmosphere.d_max_order[group](location, wavelidx);
-                    for (int degree = 0; degree < maximum_derivative_order;
-                         ++degree) {
-                        gradient +=
-                            output.rust_single_scatter_legendre_gradient
-                                [location * num_phase_moments + degree] *
-                            atmosphere.d_leg_coeff(degree, location, wavelidx,
-                                                   group);
-                    }
-                    native_gradient(gradient_offset +
-                                    static_cast<int>(location)) += gradient;
-                }
-            }
+        }
+        if (solar_transmission == nullptr || m_initial_sources.size() != 1) {
+            throw std::logic_error(
+                "Rust first-order forcing requires one single-scatter source");
+        }
 
-            const Eigen::Map<const Eigen::VectorXd> solar_gradient(
-                output.rust_single_scatter_solar_gradient.data(),
-                output.rust_single_scatter_solar_gradient.size());
+        const std::size_t coefficient_families = NSTOKES == 1 ? 1 : 4;
+        const std::size_t num_phase_moments =
+            static_cast<std::size_t>(atmosphere_storage.max_stored_legendre());
+        if (num_phase_moments !=
+            static_cast<std::size_t>(m_config->num_singlescatter_moments())) {
+            throw std::logic_error("Rust phase storage size mismatch");
+        }
+        const ::rust::Slice<const double> legendre_coefficients(
+            &atmosphere_storage.leg_coeff(0, 0, wavelidx),
+            num_geometry * num_phase_moments * coefficient_families);
+        static_assert(sizeof(int) == sizeof(std::int32_t));
+        const ::rust::Slice<const std::int32_t> maximum_order(
+            reinterpret_cast<const std::int32_t*>(
+                atmosphere_storage.max_order.col(wavelidx).data()),
+            num_geometry);
+        pack_rust_end_of_ray_source(wavelidx, threadidx);
+
+        sasktran2::rust::successive_orders::
+            assemble_solver_ray_transport_with_first_order(
+                *m_rust_ray_transports.front(), *m_rust_solvers[threadidx],
+                extinction, single_scatter_albedo, legendre_coefficients,
+                maximum_order, as_rust_slice(*solar_transmission),
+                as_rust_slice(storage.rust_end_of_ray_source),
+                retain_layer_scratch);
+    }
+
+    template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::assemble_rust_ray_transport_jvp(
+        int wavelidx, int threadidx,
+        Eigen::Ref<const Eigen::VectorXd> native_tangent) {
+        if (m_rust_ray_transports.empty() || m_atmosphere == nullptr) {
+            throw std::logic_error(
+                "Rust transport geometry is not initialized");
+        }
+        auto& output = m_thread_storage[threadidx];
+        const auto& atmosphere = m_atmosphere->storage();
+        const std::size_t num_geometry =
+            static_cast<std::size_t>(atmosphere.total_extinction.rows());
+        const std::size_t coefficient_families = NSTOKES == 1 ? 1 : 4;
+        const std::size_t num_phase_moments =
+            static_cast<std::size_t>(atmosphere.max_stored_legendre());
+        const std::size_t num_phase_values =
+            num_geometry * num_phase_moments * coefficient_families;
+        const ::rust::Slice<const double> extinction(
+            atmosphere.total_extinction.col(wavelidx).data(), num_geometry);
+        const ::rust::Slice<const double> single_scatter_albedo(
+            atmosphere.ssa.col(wavelidx).data(), num_geometry);
+        const ::rust::Slice<const double> legendre_coefficients(
+            &atmosphere.leg_coeff(0, 0, wavelidx), num_phase_values);
+        static_assert(sizeof(int) == sizeof(std::int32_t));
+        const ::rust::Slice<const std::int32_t> maximum_order(
+            reinterpret_cast<const std::int32_t*>(
+                atmosphere.max_order.col(wavelidx).data()),
+            num_geometry);
+
+        const Eigen::VectorXd* solar_transmission = nullptr;
+        const Eigen::VectorXd* solar_transmission_jvp = nullptr;
+        if (m_geometry_1d != nullptr) {
+            const auto* single_scatter =
+                dynamic_cast<sasktran2::solartransmission::SingleScatterSource<
+                    sasktran2::solartransmission::SolarTransmissionTable,
+                    NSTOKES>*>(m_initial_sources.front());
+            if (single_scatter != nullptr) {
+                solar_transmission =
+                    &single_scatter->solar_transmission(threadidx);
+                solar_transmission_jvp =
+                    &single_scatter->solar_transmission_jvp(threadidx);
+            }
+        } else {
+            const auto* single_scatter =
+                dynamic_cast<sasktran2::solartransmission::SingleScatterSource<
+                    sasktran2::solartransmission::SolarTransmissionExact,
+                    NSTOKES>*>(m_initial_sources.front());
+            if (single_scatter != nullptr) {
+                solar_transmission =
+                    &single_scatter->solar_transmission(threadidx);
+                solar_transmission_jvp =
+                    &single_scatter->solar_transmission_jvp(threadidx);
+            }
+        }
+        if (solar_transmission == nullptr ||
+            solar_transmission_jvp == nullptr) {
+            throw std::logic_error(
+                "Rust first-order JVP requires a single-scatter source");
+        }
+
+        auto& legendre_tangent = output.rust_single_scatter_legendre_tangent;
+        legendre_tangent.resize(num_phase_values);
+        const auto& coefficient_derivatives = atmosphere.d_leg_coeff;
+        const std::size_t coefficient_stride =
+            static_cast<std::size_t>(coefficient_derivatives.dimension(0));
+        const std::size_t num_wavelengths =
+            static_cast<std::size_t>(coefficient_derivatives.dimension(2));
+        const std::size_t num_derivative_groups =
+            static_cast<std::size_t>(coefficient_derivatives.dimension(3));
+        const double* scattering_tangent =
+            native_tangent.data() + m_atmosphere->scat_deriv_start_index();
+        sasktran2::rust::successive_orders::
+            calculate_atmospheric_coefficient_jvp(
+                {coefficient_derivatives.data(),
+                 static_cast<std::size_t>(coefficient_derivatives.size())},
+                coefficient_stride, num_geometry, num_wavelengths,
+                static_cast<std::size_t>(wavelidx),
+                {scattering_tangent, num_geometry * num_derivative_groups},
+                as_rust_mut_slice(legendre_tangent));
+
+        const ::rust::Slice<const double> extinction_tangent(
+            native_tangent.data(), num_geometry);
+        const ::rust::Slice<const double> albedo_tangent(
+            native_tangent.data() + m_atmosphere->ssa_deriv_start_index(),
+            num_geometry);
+        pack_rust_end_of_ray_source_jvp(wavelidx, threadidx, native_tangent);
+        sasktran2::rust::successive_orders::
+            assemble_solver_ray_transport_with_first_order_jvp(
+                *m_rust_ray_transports.front(), *m_rust_solvers[threadidx],
+                extinction, single_scatter_albedo, legendre_coefficients,
+                maximum_order, as_rust_slice(*solar_transmission),
+                extinction_tangent, albedo_tangent,
+                as_rust_slice(legendre_tangent),
+                as_rust_slice(*solar_transmission_jvp),
+                as_rust_slice(output.rust_end_of_ray_source),
+                as_rust_slice(output.rust_end_of_ray_source_tangent));
+    }
+
+    template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::accumulate_rust_transport_vjp_with_first_order(
+        int wavelidx, int threadidx,
+        Eigen::Ref<Eigen::VectorXd> native_gradient) const {
+        const auto& output = m_thread_storage[threadidx];
+        const auto& activity = m_active_vjp_derivatives[threadidx];
+        pack_rust_end_of_ray_source(wavelidx, threadidx);
+
+        const auto& atmosphere = m_atmosphere->storage();
+        const std::size_t num_geometry =
+            static_cast<std::size_t>(atmosphere.total_extinction.rows());
+        const std::size_t coefficient_families = NSTOKES == 1 ? 1 : 4;
+        const std::size_t num_phase_moments =
+            static_cast<std::size_t>(atmosphere.max_stored_legendre());
+        const std::size_t num_phase_values =
+            num_geometry * num_phase_moments * coefficient_families;
+        const Eigen::VectorXd* solar_transmission = nullptr;
+        const sasktran2::solartransmission::SingleScatterSource<
+            sasktran2::solartransmission::SolarTransmissionTable, NSTOKES>*
+            table_source = nullptr;
+        const sasktran2::solartransmission::SingleScatterSource<
+            sasktran2::solartransmission::SolarTransmissionExact, NSTOKES>*
+            exact_source = nullptr;
+        if (m_geometry_1d != nullptr) {
+            table_source = dynamic_cast<
+                const sasktran2::solartransmission::SingleScatterSource<
+                    sasktran2::solartransmission::SolarTransmissionTable,
+                    NSTOKES>*>(m_initial_sources.front());
             if (table_source != nullptr) {
-                table_source->accumulate_scalar_solar_transmission_vjp(
-                    threadidx, 0, solar_gradient);
-            } else {
-                exact_source->accumulate_scalar_solar_transmission_vjp(
-                    threadidx, 0, solar_gradient);
+                solar_transmission =
+                    &table_source->solar_transmission(threadidx);
             }
+        } else {
+            exact_source = dynamic_cast<
+                const sasktran2::solartransmission::SingleScatterSource<
+                    sasktran2::solartransmission::SolarTransmissionExact,
+                    NSTOKES>*>(m_initial_sources.front());
+            if (exact_source != nullptr) {
+                solar_transmission =
+                    &exact_source->solar_transmission(threadidx);
+            }
+        }
+        if (solar_transmission == nullptr) {
+            throw std::logic_error(
+                "Rust first-order VJP requires a single-scatter source");
+        }
+
+        output.rust_single_scatter_extinction_gradient.resize(num_geometry);
+        output.rust_single_scatter_albedo_gradient.resize(num_geometry);
+        output.rust_single_scatter_legendre_gradient.resize(num_phase_values);
+        output.rust_single_scatter_solar_gradient.resize(
+            solar_transmission->size());
+        const ::rust::Slice<const double> extinction(
+            atmosphere.total_extinction.col(wavelidx).data(), num_geometry);
+        const ::rust::Slice<const double> single_scatter_albedo(
+            atmosphere.ssa.col(wavelidx).data(), num_geometry);
+        const ::rust::Slice<const double> legendre_coefficients(
+            &atmosphere.leg_coeff(0, 0, wavelidx), num_phase_values);
+        static_assert(sizeof(int) == sizeof(std::int32_t));
+        const ::rust::Slice<const std::int32_t> maximum_order(
+            reinterpret_cast<const std::int32_t*>(
+                atmosphere.max_order.col(wavelidx).data()),
+            num_geometry);
+        sasktran2::rust::successive_orders::
+            assemble_solver_ray_transport_with_first_order_vjp(
+                *m_rust_ray_transports.front(), *m_rust_solvers[threadidx],
+                extinction, single_scatter_albedo, legendre_coefficients,
+                maximum_order, as_rust_slice(*solar_transmission),
+                as_rust_slice(output.rust_end_of_ray_source),
+                as_rust_mut_slice(
+                    output.rust_single_scatter_extinction_gradient),
+                as_rust_mut_slice(output.rust_single_scatter_albedo_gradient),
+                as_rust_mut_slice(output.rust_single_scatter_legendre_gradient),
+                as_rust_mut_slice(output.rust_single_scatter_solar_gradient),
+                as_rust_mut_slice(output.rust_end_of_ray_source_gradient));
+
+        accumulate_rust_end_of_ray_source_vjp(wavelidx, threadidx,
+                                              native_gradient);
+
+        if (activity.extinction) {
+            for (std::size_t location = 0; location < num_geometry;
+                 ++location) {
+                native_gradient(location) +=
+                    output.rust_single_scatter_extinction_gradient[location];
+            }
+        }
+        if (activity.ssa) {
+            for (std::size_t location = 0; location < num_geometry;
+                 ++location) {
+                native_gradient(m_atmosphere->ssa_deriv_start_index() +
+                                static_cast<int>(location)) +=
+                    output.rust_single_scatter_albedo_gradient[location];
+            }
+        }
+        if (!activity.scattering_groups.empty()) {
+            const auto& coefficient_derivatives = atmosphere.d_leg_coeff;
+            const std::size_t coefficient_stride =
+                static_cast<std::size_t>(coefficient_derivatives.dimension(0));
+            const std::size_t num_wavelengths =
+                static_cast<std::size_t>(coefficient_derivatives.dimension(2));
+            const std::size_t num_derivative_groups =
+                static_cast<std::size_t>(coefficient_derivatives.dimension(3));
+            static_assert(sizeof(int) == sizeof(std::int32_t));
+            sasktran2::rust::successive_orders::
+                accumulate_atmospheric_coefficient_gradient(
+                    as_rust_slice(output.rust_single_scatter_legendre_gradient),
+                    {coefficient_derivatives.data(),
+                     static_cast<std::size_t>(coefficient_derivatives.size())},
+                    coefficient_stride, num_geometry, num_wavelengths,
+                    static_cast<std::size_t>(wavelidx),
+                    {reinterpret_cast<const std::int32_t*>(
+                         activity.scattering_groups.data()),
+                     activity.scattering_groups.size()},
+                    {native_gradient.data() +
+                         m_atmosphere->scat_deriv_start_index(),
+                     num_geometry * num_derivative_groups});
+        }
+
+        const Eigen::Map<const Eigen::VectorXd> solar_gradient(
+            output.rust_single_scatter_solar_gradient.data(),
+            output.rust_single_scatter_solar_gradient.size());
+        if (table_source != nullptr) {
+            table_source->accumulate_solar_transmission_vjp(threadidx, 0,
+                                                            solar_gradient);
+        } else {
+            exact_source->accumulate_solar_transmission_vjp(threadidx, 0,
+                                                            solar_gradient);
         }
     }
 
@@ -2582,11 +2963,9 @@ namespace sasktran2::hr {
     void DiffuseTable<NSTOKES>::restore_transport_operator(int wavelidx,
                                                            int threadidx) {
         auto& storage = m_thread_storage[threadidx];
-        if constexpr (NSTOKES == 1) {
-            if (!m_rust_scalar_transports.empty()) {
-                assemble_rust_scalar_transport(wavelidx, threadidx);
-                return;
-            }
+        if (!m_rust_ray_transports.empty()) {
+            assemble_rust_ray_transport(wavelidx, threadidx);
+            return;
         }
 
         storage.accumulation_summed_values.setZero();
@@ -2684,62 +3063,52 @@ namespace sasktran2::hr {
                 sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>>
                 temp_result;
             temp_result.resize(nthreads);
+            bool cpp_first_order_required = true;
 
             m_thread_storage[threadidx].accumulation_summed_values.setZero();
 
 #ifdef SKTRAN_RUST_SUPPORT
-            bool rust_scalar_transport_assembled = false;
-            bool rust_scalar_first_order_assembled = false;
-            if constexpr (NSTOKES == 1) {
-                if (m_use_rust_solver && !m_rust_scalar_transports.empty()) {
-                    rust_scalar_first_order_assembled =
-                        m_altitude_grid.interpolation_method() !=
-                        sasktran2::grids::interpolation::lower;
-                    assemble_rust_scalar_transport(
-                        wavelidx, threadidx, rust_scalar_first_order_assembled);
-                    rust_scalar_transport_assembled = true;
-                }
+            bool rust_transport_assembled = false;
+            bool rust_first_order_assembled = false;
+            if (m_use_rust_solver && !m_rust_ray_transports.empty()) {
+                rust_first_order_assembled =
+                    m_altitude_grid.interpolation_method() !=
+                    sasktran2::grids::interpolation::lower;
+                assemble_rust_ray_transport(wavelidx, threadidx,
+                                            rust_first_order_assembled);
+                rust_transport_assembled = true;
+                cpp_first_order_required = !rust_first_order_assembled;
             }
 #endif
 
+            if (cpp_first_order_required) {
 #pragma omp parallel for num_threads(nthreads)
-            for (int rayidx = 0; rayidx < m_internal_viewing.traced_rays.size();
-                 ++rayidx) {
-                int ray_threadidx;
-
-                if (nthreads == 1) {
-                    ray_threadidx = 0;
-                } else {
+                for (int rayidx = 0;
+                     rayidx < m_internal_viewing.traced_rays.size(); ++rayidx) {
+                    int ray_threadidx;
+                    if (nthreads == 1) {
+                        ray_threadidx = 0;
+                    } else {
 #ifdef SKTRAN_OPENMP_SUPPORT
-                    ray_threadidx = omp_get_thread_num();
+                        ray_threadidx = omp_get_thread_num();
 #else
-                    ray_threadidx = 0;
+                        ray_threadidx = 0;
 #endif
-                }
+                    }
 
-                temp_result[ray_threadidx].value.setZero();
-
-                if constexpr (NSTOKES == 1) {
+                    temp_result[ray_threadidx].value.setZero();
 #ifdef SKTRAN_RUST_SUPPORT
-                    if (rust_scalar_transport_assembled) {
+                    if (rust_transport_assembled) {
                         const auto& storage = m_thread_storage[threadidx];
-                        if (rust_scalar_first_order_assembled) {
-                            m_integrator.integrate_end_of_ray_precomputed(
-                                temp_result[ray_threadidx], m_initial_sources,
-                                wavelidx, rayidx, threadidx,
-                                ray_threadidx + threadidx,
-                                storage.rust_ray_end_attenuation[rayidx]);
-                        } else {
-                            m_integrator.integrate_first_order_precomputed(
-                                temp_result[ray_threadidx], m_initial_sources,
-                                wavelidx, rayidx, threadidx,
-                                ray_threadidx + threadidx,
-                                m_rust_transport_ray_layer_offsets[rayidx],
-                                storage.rust_layer_optical_depth,
-                                storage.rust_layer_attenuation,
-                                storage.rust_layer_prefix_attenuation,
-                                storage.rust_ray_end_attenuation[rayidx]);
-                        }
+                        m_integrator.integrate_first_order_precomputed(
+                            temp_result[ray_threadidx], m_initial_sources,
+                            wavelidx, rayidx, threadidx,
+                            ray_threadidx + threadidx,
+                            m_rust_transport_ray_layer_offsets[rayidx],
+                            storage.rust_layer_optical_depth,
+                            storage.rust_layer_attenuation,
+                            storage.rust_layer_prefix_attenuation,
+                            storage.rust_ray_end_attenuation[rayidx]);
                     } else
 #endif
                     {
@@ -2752,41 +3121,31 @@ namespace sasktran2::hr {
                                 m_thread_storage[threadidx]
                                     .accumulation_summed_values);
                     }
-                } else {
-                    m_integrator.integrate_and_emplace_accumulation_triplets(
-                        temp_result[ray_threadidx], m_initial_sources, wavelidx,
-                        rayidx, threadidx, ray_threadidx + threadidx,
-                        m_diffuse_source_weights,
-                        m_thread_storage[threadidx].accumulation_summed_values);
-                }
 
-                auto first_order_segment =
-                    m_thread_storage[threadidx].m_firstorder_radiances.value(
-                        Eigen::seq(rayidx * NSTOKES,
-                                   rayidx * NSTOKES + NSTOKES - 1));
-#ifdef SKTRAN_RUST_SUPPORT
-                if constexpr (NSTOKES == 1) {
-                    if (rust_scalar_first_order_assembled) {
-                        first_order_segment += temp_result[ray_threadidx].value;
-                    } else {
-                        first_order_segment = temp_result[ray_threadidx].value;
-                    }
-                } else
-#endif
-                {
+                    auto first_order_segment =
+                        m_thread_storage[threadidx]
+                            .m_firstorder_radiances.value(
+                                Eigen::seq(rayidx * NSTOKES,
+                                           rayidx * NSTOKES + NSTOKES - 1));
                     first_order_segment = temp_result[ray_threadidx].value;
-                }
 
 #ifdef SASKTRAN_DEBUG_ASSERTS
-                if (temp_result.value.hasNaN()) {
-                    spdlog::error("Incoming Ray: {} has NaN", rayidx);
-                }
+                    if (temp_result[ray_threadidx].value.hasNaN()) {
+                        spdlog::error("Incoming Ray: {} has NaN", rayidx);
+                    }
 #endif
+                }
             }
 
-            // Else, start with total first order incoming
-            m_thread_storage[threadidx].m_incoming_radiances.value =
-                m_thread_storage[threadidx].m_firstorder_radiances.value;
+            // The Rust-owned path consumes first-order forcing directly. The
+            // legacy path still stages it in the incoming-radiance buffer.
+#ifdef SKTRAN_RUST_SUPPORT
+            if (!rust_first_order_assembled)
+#endif
+            {
+                m_thread_storage[threadidx].m_incoming_radiances.value =
+                    m_thread_storage[threadidx].m_firstorder_radiances.value;
+            }
             // Generate the scattering and accumulation matrices
             generate_scattering_matrices(wavelidx, threadidx);
             generate_accumulation_matrix(wavelidx, threadidx);
@@ -2813,16 +3172,23 @@ namespace sasktran2::hr {
                 capture_forward_state(block.start, threadidx);
                 return;
             }
-            const std::size_t state_size = static_cast<std::size_t>(
-                storage.m_outgoing_sources.value.size());
+            const std::size_t state_size = m_num_outgoing_values;
             for (int lane = 0; lane < block.count; ++lane) {
                 prepare_wavelength(block.wavelength(lane), threadidx);
                 iterate_to_solution(block.wavelength(lane), threadidx);
                 capture_forward_state(block.wavelength(lane), threadidx);
+                const auto solution =
+                    sasktran2::rust::successive_orders::solution(
+                        *m_rust_solvers[threadidx]);
+                if (solution.size() != state_size) {
+                    throw std::logic_error(
+                        "Rust batched successive-orders solution size "
+                        "mismatch");
+                }
                 for (std::size_t element = 0; element < state_size; ++element) {
                     storage.rust_batch_outgoing_sources
                         [element * m_wavelength_block_capacity + lane] =
-                        storage.m_outgoing_sources.value[element];
+                        solution[element];
                 }
             }
             return;
@@ -2866,12 +3232,16 @@ namespace sasktran2::hr {
         const auto& state =
             m_forward_states[static_cast<std::size_t>(wavelidx)];
         auto& storage = m_thread_storage[threadidx];
-        if (state.first_order_forcing.size() !=
-                static_cast<std::size_t>(
-                    storage.m_firstorder_radiances.value.size()) ||
-            state.solution.size() !=
-                static_cast<std::size_t>(
-                    storage.m_outgoing_sources.value.size())) {
+        const bool rust_owned_transport =
+            m_altitude_grid.interpolation_method() !=
+            sasktran2::grids::interpolation::lower;
+        const std::size_t expected_forcing_size =
+            rust_owned_transport
+                ? m_internal_viewing.traced_rays.size() * NSTOKES
+                : static_cast<std::size_t>(
+                      storage.m_firstorder_radiances.value.size());
+        if (state.first_order_forcing.size() != expected_forcing_size ||
+            state.solution.size() != m_num_outgoing_values) {
             return false;
         }
 
@@ -2881,18 +3251,24 @@ namespace sasktran2::hr {
         }
         restore_transport_operator(wavelidx, threadidx);
         generate_scattering_matrices(wavelidx, threadidx);
-        pack_rust_boundary_scattering_values(threadidx);
 
-        std::copy(state.first_order_forcing.begin(),
-                  state.first_order_forcing.end(),
-                  storage.m_firstorder_radiances.value.data());
-        std::copy(state.solution.begin(), state.solution.end(),
-                  storage.m_outgoing_sources.value.data());
-        sasktran2::rust::successive_orders::restore_coefficient_solution(
-            *m_rust_solvers[threadidx],
-            as_rust_slice(storage.rust_scattering_coefficients),
-            as_rust_slice(storage.rust_boundary_scattering_values),
-            as_rust_slice(state.solution));
+        if (!rust_owned_transport) {
+            std::copy(state.first_order_forcing.begin(),
+                      state.first_order_forcing.end(),
+                      storage.m_firstorder_radiances.value.data());
+        }
+        if (rust_owned_transport) {
+            sasktran2::rust::successive_orders::
+                restore_coefficient_solution_assembled(
+                    *m_rust_solvers[threadidx],
+                    as_rust_slice(state.first_order_forcing),
+                    as_rust_slice(state.solution));
+        } else {
+            sasktran2::rust::successive_orders::restore_coefficient_solution(
+                *m_rust_solvers[threadidx],
+                as_rust_slice(storage.rust_boundary_scattering_values),
+                as_rust_slice(state.solution));
+        }
         return true;
 #else
         (void)wavelidx;
@@ -2928,12 +3304,16 @@ namespace sasktran2::hr {
         const auto& state =
             m_forward_states[static_cast<std::size_t>(wavelidx)];
         auto& storage = m_thread_storage[threadidx];
-        if (state.first_order_forcing.size() !=
-                static_cast<std::size_t>(
-                    storage.m_firstorder_radiances.value.size()) ||
-            state.solution.size() !=
-                static_cast<std::size_t>(
-                    storage.m_outgoing_sources.value.size())) {
+        const bool rust_owned_transport =
+            m_altitude_grid.interpolation_method() !=
+            sasktran2::grids::interpolation::lower;
+        const std::size_t expected_forcing_size =
+            rust_owned_transport
+                ? m_internal_viewing.traced_rays.size() * NSTOKES
+                : static_cast<std::size_t>(
+                      storage.m_firstorder_radiances.value.size());
+        if (state.first_order_forcing.size() != expected_forcing_size ||
+            state.solution.size() != m_num_outgoing_values) {
             return false;
         }
 
@@ -2945,18 +3325,19 @@ namespace sasktran2::hr {
                 source->calculate(scalar_block, threadidx);
             }
         }
-        std::copy(state.first_order_forcing.begin(),
-                  state.first_order_forcing.end(),
-                  storage.m_firstorder_radiances.value.data());
-        std::copy(state.solution.begin(), state.solution.end(),
-                  storage.m_outgoing_sources.value.data());
+        if (!rust_owned_transport) {
+            std::copy(state.first_order_forcing.begin(),
+                      state.first_order_forcing.end(),
+                      storage.m_firstorder_radiances.value.data());
+        }
+        sasktran2::rust::successive_orders::restore_solution_only(
+            *m_rust_solvers[threadidx], as_rust_slice(state.solution));
 
         // A zero tangent needs only retained source values for LOS
         // integration. For a nonzero tangent, scattering is inexpensive to
         // restore here while transport reconstruction is fused with its JVP.
         if (!native_tangent.isZero(0.0)) {
             generate_scattering_matrices(wavelidx, threadidx);
-            pack_rust_boundary_scattering_values(threadidx);
             m_deferred_jvp_transport_restore[threadidx] = true;
         }
         return true;
@@ -2987,24 +3368,32 @@ namespace sasktran2::hr {
                 "successive-orders initial state are not yet supported");
         }
         auto& storage = m_thread_storage[wavel_threadidx];
-        storage.rust_transport_value_tangent.resize(
-            storage.accumulation_summed_values.size());
-        storage.rust_scattering_coefficient_tangent.resize(
-            storage.rust_scattering_coefficients.size());
+        const bool rust_owned_transport =
+            !m_rust_ray_transports.empty() &&
+            m_altitude_grid.interpolation_method() !=
+                sasktran2::grids::interpolation::lower;
+        if (rust_owned_transport) {
+            storage.rust_transport_value_tangent.resize(0);
+        } else {
+            storage.rust_transport_value_tangent.resize(
+                storage.accumulation_summed_values.size());
+        }
         storage.rust_boundary_scattering_value_tangent.resize(
             storage.rust_boundary_scattering_values.size());
-        storage.rust_first_order_forcing_tangent.resize(
-            storage.m_firstorder_radiances.value.size());
-        storage.rust_solution_jvp.resize(
-            storage.m_outgoing_sources.value.size());
+        if (rust_owned_transport) {
+            storage.rust_first_order_forcing_tangent.resize(0);
+        } else {
+            storage.rust_first_order_forcing_tangent.resize(
+                storage.m_firstorder_radiances.value.size());
+        }
         storage.rust_transport_value_tangent.setZero();
         storage.rust_first_order_forcing_tangent.setZero();
         const bool restore_transport =
             m_deferred_jvp_transport_restore[wavel_threadidx];
         m_deferred_jvp_transport_restore[wavel_threadidx] = false;
         if (native_tangent.isZero(0.0)) {
-            std::fill(storage.rust_solution_jvp.begin(),
-                      storage.rust_solution_jvp.end(), 0.0);
+            sasktran2::rust::successive_orders::clear_solution_jvp(
+                *m_rust_solvers[wavel_threadidx]);
             for (auto* source : m_initial_sources) {
                 source->prepare_jvp(wavelidx, wavel_threadidx, native_tangent);
             }
@@ -3036,45 +3425,20 @@ namespace sasktran2::hr {
                     *m_rust_solvers[wavel_threadidx]));
         }
 
-        const int num_threads = m_config->num_source_threads();
-        bool rust_scalar_jvp = false;
-        if constexpr (NSTOKES == 1) {
-            rust_scalar_jvp = !m_rust_scalar_transports.empty() &&
-                              m_altitude_grid.interpolation_method() !=
-                                  sasktran2::grids::interpolation::lower;
-            if (rust_scalar_jvp) {
-                assemble_rust_scalar_transport_jvp(wavelidx, wavel_threadidx,
-                                                   native_tangent);
-            }
-        }
+        if (rust_owned_transport) {
+            assemble_rust_ray_transport_jvp(wavelidx, wavel_threadidx,
+                                            native_tangent);
+        } else {
+            const int num_threads = m_config->num_source_threads();
 #pragma omp parallel for num_threads(num_threads)
-        for (int rayidx = 0; rayidx < m_internal_viewing.traced_rays.size();
-             ++rayidx) {
+            for (int rayidx = 0; rayidx < m_internal_viewing.traced_rays.size();
+                 ++rayidx) {
 #ifdef SKTRAN_OPENMP_SUPPORT
-            const int source_threadidx =
-                num_threads == 1 ? 0 : omp_get_thread_num();
+                const int source_threadidx =
+                    num_threads == 1 ? 0 : omp_get_thread_num();
 #else
-            const int source_threadidx = 0;
+                const int source_threadidx = 0;
 #endif
-            if constexpr (NSTOKES == 1) {
-                if (rust_scalar_jvp) {
-                    m_integrator.integrate_end_of_ray_jvp_precomputed(
-                        m_initial_sources, wavelidx, rayidx, wavel_threadidx,
-                        source_threadidx + wavel_threadidx, native_tangent,
-                        storage.rust_ray_end_attenuation[rayidx],
-                        storage.rust_ray_end_attenuation_tangent[rayidx],
-                        storage.rust_first_order_forcing_tangent);
-                } else {
-                    m_integrator.integrate_and_emplace_accumulation_jvp(
-                        m_initial_sources, wavelidx, rayidx, wavel_threadidx,
-                        source_threadidx + wavel_threadidx,
-                        m_diffuse_source_weights, native_tangent,
-                        restore_transport ? &storage.accumulation_summed_values
-                                          : nullptr,
-                        storage.rust_transport_value_tangent,
-                        storage.rust_first_order_forcing_tangent);
-                }
-            } else {
                 m_integrator.integrate_and_emplace_accumulation_jvp(
                     m_initial_sources, wavelidx, rayidx, wavel_threadidx,
                     source_threadidx + wavel_threadidx,
@@ -3089,28 +3453,38 @@ namespace sasktran2::hr {
         if (restore_transport) {
             const auto& state =
                 m_forward_states[static_cast<std::size_t>(wavelidx)];
-            sasktran2::rust::successive_orders::restore_coefficient_solution(
-                *solver, as_rust_slice(storage.rust_scattering_coefficients),
-                as_rust_slice(storage.rust_boundary_scattering_values),
-                as_rust_slice(state.solution));
+            if (rust_owned_transport) {
+                sasktran2::rust::successive_orders::
+                    restore_coefficient_solution_assembled(
+                        *solver, as_rust_slice(state.first_order_forcing),
+                        as_rust_slice(state.solution));
+            } else {
+                sasktran2::rust::successive_orders::
+                    restore_coefficient_solution(
+                        *solver,
+                        as_rust_slice(storage.rust_boundary_scattering_values),
+                        as_rust_slice(state.solution));
+            }
         }
-        sasktran2::rust::successive_orders::linearize_coefficients_jvp(
-            *solver, as_rust_slice(m_outer_starts),
-            as_rust_slice(m_inner_indicies),
-            as_rust_slice(storage.accumulation_summed_values),
-            as_rust_slice(storage.rust_transport_value_tangent),
-            as_rust_slice(storage.rust_scattering_coefficient_tangent),
-            as_rust_slice(storage.rust_boundary_scattering_value_tangent),
-            as_rust_slice(storage.m_firstorder_radiances.value),
-            as_rust_slice(storage.rust_first_order_forcing_tangent));
+        if (rust_owned_transport) {
+            sasktran2::rust::successive_orders::
+                linearize_coefficients_jvp_assembled(*solver);
+        } else {
+            sasktran2::rust::successive_orders::linearize_coefficients_jvp(
+                *solver, as_rust_slice(m_outer_starts),
+                as_rust_slice(m_inner_indicies),
+                as_rust_slice(storage.accumulation_summed_values),
+                as_rust_slice(storage.rust_transport_value_tangent),
+                as_rust_slice(storage.rust_boundary_scattering_value_tangent),
+                as_rust_slice(storage.m_firstorder_radiances.value),
+                as_rust_slice(storage.rust_first_order_forcing_tangent));
+        }
         const auto solution_jvp =
             sasktran2::rust::successive_orders::solution_jvp(*solver);
-        if (solution_jvp.size() != storage.rust_solution_jvp.size()) {
+        if (solution_jvp.size() != m_num_outgoing_values) {
             throw std::runtime_error(
                 "Rust successive-orders JVP returned an invalid size");
         }
-        std::copy(solution_jvp.begin(), solution_jvp.end(),
-                  storage.rust_solution_jvp.begin());
 #else
         (void)wavelidx;
         (void)wavel_threadidx;
@@ -3187,7 +3561,7 @@ namespace sasktran2::hr {
         Eigen::Ref<Eigen::VectorXd> native_gradient) const {
 #ifdef SKTRAN_RUST_SUPPORT
         Eigen::VectorXd solution_cotangent = Eigen::VectorXd::Zero(
-            m_thread_storage[wavel_threadidx].m_outgoing_sources.value.size());
+            static_cast<Eigen::Index>(m_num_outgoing_values));
         for (const auto& thread_cotangent :
              m_los_solution_cotangents[wavel_threadidx]) {
             solution_cotangent += thread_cotangent;
@@ -3210,17 +3584,24 @@ namespace sasktran2::hr {
             m_last_nonconverged_vjp_warning_wavelength[wavel_threadidx] =
                 wavelidx;
         }
-        sasktran2::rust::successive_orders::linearize_coefficients_vjp(
-            *solver, as_rust_slice(m_outer_starts),
-            as_rust_slice(m_inner_indicies),
-            as_rust_slice(storage.accumulation_summed_values),
-            as_rust_slice(storage.m_firstorder_radiances.value),
-            as_rust_slice(solution_cotangent));
+        const bool rust_owned_transport =
+            !m_rust_ray_transports.empty() &&
+            m_altitude_grid.interpolation_method() !=
+                sasktran2::grids::interpolation::lower;
+        if (rust_owned_transport) {
+            sasktran2::rust::successive_orders::
+                linearize_coefficients_vjp_assembled(
+                    *solver, as_rust_slice(solution_cotangent));
+        } else {
+            sasktran2::rust::successive_orders::linearize_coefficients_vjp(
+                *solver, as_rust_slice(m_outer_starts),
+                as_rust_slice(m_inner_indicies),
+                as_rust_slice(storage.accumulation_summed_values),
+                as_rust_slice(storage.m_firstorder_radiances.value),
+                as_rust_slice(solution_cotangent));
+        }
         const auto transport_gradient =
             sasktran2::rust::successive_orders::transport_value_gradient(
-                *solver);
-        const auto coefficient_gradient =
-            sasktran2::rust::successive_orders::scattering_coefficient_gradient(
                 *solver);
         const auto boundary_gradient = sasktran2::rust::successive_orders::
             boundary_scattering_value_gradient(*solver);
@@ -3233,25 +3614,17 @@ namespace sasktran2::hr {
         const auto& activity = m_active_vjp_derivatives[wavel_threadidx];
         if (activity.scattering()) {
             accumulate_rust_scattering_coefficient_vjp(
-                wavelidx, coefficient_gradient, activity.scattering_groups,
+                wavelidx, wavel_threadidx, activity.scattering_groups,
                 native_gradient);
         }
         if (activity.surface) {
             accumulate_rust_boundary_scattering_vjp(wavelidx, boundary_gradient,
                                                     native_gradient);
         }
-        bool rust_scalar_vjp = false;
-        if constexpr (NSTOKES == 1) {
-            rust_scalar_vjp = !m_rust_scalar_transports.empty() &&
-                              m_altitude_grid.interpolation_method() !=
-                                  sasktran2::grids::interpolation::lower;
-            if (rust_scalar_vjp) {
-                accumulate_rust_scalar_transport_vjp(
-                    wavelidx, wavel_threadidx, transport_gradient,
-                    converged_solution, forcing_gradient, native_gradient);
-            }
-        }
-        if (!rust_scalar_vjp) {
+        if (rust_owned_transport) {
+            accumulate_rust_transport_vjp_with_first_order(
+                wavelidx, wavel_threadidx, native_gradient);
+        } else {
             const int num_threads = m_config->num_source_threads();
             std::vector<Eigen::VectorXd> thread_gradients(num_threads);
             for (auto& gradient : thread_gradients) {
@@ -3280,7 +3653,7 @@ namespace sasktran2::hr {
                     activity.extinction, activity.ssa,
                     activity.extinction || activity.ssa ||
                         activity.scattering() || activity.emission,
-                    thread_gradients[source_threadidx]);
+                    true, thread_gradients[source_threadidx]);
             }
             for (const auto& gradient : thread_gradients) {
                 native_gradient += gradient;
@@ -3311,6 +3684,14 @@ namespace sasktran2::hr {
         typename SourceTermInterface<NSTOKES>::IntegrationDirection direction)
         const {
         auto& storage = m_thread_storage[wavel_threadidx];
+
+#ifdef SKTRAN_RUST_SUPPORT
+        if (m_use_rust_solver) {
+            throw std::logic_error(
+                "Rust successive-orders LOS integration must use the "
+                "whole-ray callback");
+        }
+#endif
 
         const auto& ray_interpolator = m_los_source_weights[losidx];
         const auto& layer_interpolator =
@@ -3420,6 +3801,13 @@ namespace sasktran2::hr {
         (void)layer;
         (void)exit_weights;
         const auto& storage = m_thread_storage[wavel_threadidx];
+#ifdef SKTRAN_RUST_SUPPORT
+        if (m_use_rust_solver) {
+            throw std::logic_error(
+                "Rust successive-orders LOS JVP must use the whole-ray "
+                "callback");
+        }
+#endif
         const auto& interpolator = m_los_source_weights[losidx];
         const auto& layer_interpolator =
             interpolator.interior_weights[layeridx];
@@ -3479,6 +3867,11 @@ namespace sasktran2::hr {
         (void)threadidx;
         (void)native_tangent;
         const auto& storage = m_thread_storage[wavel_threadidx];
+#ifdef SKTRAN_RUST_SUPPORT
+        if (m_use_rust_solver) {
+            return;
+        }
+#endif
         const auto& interpolator = m_los_source_weights[losidx];
         for (std::size_t index = 0;
              index < interpolator.ground_source_indices.size(); ++index) {
@@ -3508,6 +3901,13 @@ namespace sasktran2::hr {
         (void)layer;
         (void)exit_weights;
         const auto& storage = m_thread_storage[wavel_threadidx];
+#ifdef SKTRAN_RUST_SUPPORT
+        if (m_use_rust_solver) {
+            throw std::logic_error(
+                "Rust successive-orders LOS VJP must use the whole-ray "
+                "callback");
+        }
+#endif
         const auto& interpolator = m_los_source_weights[losidx];
         const auto& layer_interpolator =
             interpolator.interior_weights[layeridx];
@@ -3573,6 +3973,11 @@ namespace sasktran2::hr {
         Eigen::Ref<Eigen::VectorXd> native_gradient) const {
         (void)wavelidx;
         (void)native_gradient;
+#ifdef SKTRAN_RUST_SUPPORT
+        if (m_use_rust_solver) {
+            return;
+        }
+#endif
         const auto& interpolator = m_los_source_weights[losidx];
         for (std::size_t index = 0;
              index < interpolator.ground_source_indices.size(); ++index) {
@@ -3592,8 +3997,15 @@ namespace sasktran2::hr {
         const sasktran2::WavelengthBlock<>& block, int losidx,
         int wavel_threadidx, int threadidx,
         sasktran2::WavelengthBlockDual<NSTOKES>& block_source) const {
-        const auto& interpolator = m_los_source_weights[losidx];
         auto& storage = m_thread_storage[wavel_threadidx];
+
+#ifdef SKTRAN_RUST_SUPPORT
+        if (m_use_rust_solver) {
+            return;
+        }
+#endif
+
+        const auto& interpolator = m_los_source_weights[losidx];
 
         for (int lane = 0; lane < block.count; ++lane) {
             sasktran2::WavelengthBlockLaneDualView<NSTOKES> source(block_source,
@@ -3631,6 +4043,155 @@ namespace sasktran2::hr {
                 }
             }
         }
+    }
+
+    template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::start_of_ray_source(
+        const sasktran2::WavelengthBlock<>& block, int losidx,
+        int wavel_threadidx, int threadidx,
+        sasktran2::WavelengthBlockDual<NSTOKES>& block_source) const {
+        (void)threadidx;
+#ifdef SKTRAN_RUST_SUPPORT
+        if (m_use_rust_solver) {
+            if (m_rust_source_interpolators.empty()) {
+                throw std::logic_error(
+                    "Rust LOS source interpolator is not initialized");
+            }
+            const auto& atmosphere = m_atmosphere->storage();
+            const std::size_t num_atmosphere_points =
+                static_cast<std::size_t>(atmosphere.total_extinction.rows());
+            const std::size_t atmosphere_values =
+                num_atmosphere_points * static_cast<std::size_t>(block.count);
+            const bool batched = m_wavelength_block_capacity > 1;
+            const auto solution =
+                batched ? as_rust_slice(m_thread_storage[wavel_threadidx]
+                                            .rust_batch_outgoing_sources)
+                        : sasktran2::rust::successive_orders::solution(
+                              *m_rust_solvers[wavel_threadidx]);
+            const std::size_t solution_stride =
+                batched ? static_cast<std::size_t>(m_wavelength_block_capacity)
+                        : 1;
+            auto output = ::rust::Slice<double>{
+                block_source.value.data(),
+                static_cast<std::size_t>(block_source.value.size())};
+            const auto extinction = ::rust::Slice<const double>{
+                atmosphere.total_extinction.col(block.start).data(),
+                atmosphere_values};
+            const auto single_scatter_albedo = ::rust::Slice<const double>{
+                atmosphere.ssa.col(block.start).data(), atmosphere_values};
+
+            if (block_source.derivative_size() == 0) {
+                sasktran2::rust::successive_orders::accumulate_source_ray_value(
+                    *m_rust_source_interpolators.front(), losidx, extinction,
+                    single_scatter_albedo, block.count, solution,
+                    solution_stride, output, block_source.block_capacity());
+            } else {
+                sasktran2::rust::successive_orders::
+                    accumulate_source_ray_jacobian(
+                        *m_rust_source_interpolators.front(), losidx,
+                        extinction, single_scatter_albedo, block.count,
+                        solution, solution_stride, output,
+                        block_source.block_capacity(),
+                        {block_source.deriv.data(),
+                         static_cast<std::size_t>(block_source.deriv.size())},
+                        block_source.derivative_size(),
+                        block_source.block_capacity(),
+                        m_atmosphere->ssa_deriv_start_index());
+            }
+            return;
+        }
+#else
+        (void)block;
+        (void)losidx;
+        (void)wavel_threadidx;
+        (void)block_source;
+#endif
+    }
+
+    template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::start_of_ray_source_jvp(
+        int wavelidx, int losidx, int wavel_threadidx, int threadidx,
+        Eigen::Ref<const Eigen::VectorXd> native_tangent,
+        sasktran2::RadianceJVP<NSTOKES>& source) const {
+        (void)threadidx;
+#ifdef SKTRAN_RUST_SUPPORT
+        if (m_use_rust_solver) {
+            if (m_rust_source_interpolators.empty()) {
+                throw std::logic_error(
+                    "Rust LOS source interpolator is not initialized");
+            }
+            const auto& atmosphere = m_atmosphere->storage();
+            const std::size_t num_atmosphere_points =
+                static_cast<std::size_t>(atmosphere.total_extinction.rows());
+            const std::size_t ssa_derivative_start =
+                static_cast<std::size_t>(m_atmosphere->ssa_deriv_start_index());
+            sasktran2::rust::successive_orders::accumulate_source_ray_jvp(
+                *m_rust_source_interpolators.front(), losidx,
+                {atmosphere.total_extinction.col(wavelidx).data(),
+                 num_atmosphere_points},
+                {atmosphere.ssa.col(wavelidx).data(), num_atmosphere_points},
+                {native_tangent.data(), num_atmosphere_points},
+                {native_tangent.data() + ssa_derivative_start,
+                 num_atmosphere_points},
+                sasktran2::rust::successive_orders::solution(
+                    *m_rust_solvers[wavel_threadidx]),
+                sasktran2::rust::successive_orders::solution_jvp(
+                    *m_rust_solvers[wavel_threadidx]),
+                {source.value.data(), NSTOKES}, {source.jvp.data(), NSTOKES});
+            return;
+        }
+#else
+        (void)wavelidx;
+        (void)losidx;
+        (void)wavel_threadidx;
+        (void)native_tangent;
+        (void)source;
+#endif
+    }
+
+    template <int NSTOKES>
+    void DiffuseTable<NSTOKES>::start_of_ray_source_vjp(
+        int wavelidx, int losidx, int wavel_threadidx, int threadidx,
+        const Eigen::Vector<double, NSTOKES>& value_before,
+        Eigen::Vector<double, NSTOKES>& cotangent,
+        Eigen::Ref<Eigen::VectorXd> native_gradient) const {
+        (void)value_before;
+#ifdef SKTRAN_RUST_SUPPORT
+        if (m_use_rust_solver) {
+            if (m_rust_source_interpolators.empty()) {
+                throw std::logic_error(
+                    "Rust LOS source interpolator is not initialized");
+            }
+            const auto& atmosphere = m_atmosphere->storage();
+            const std::size_t num_atmosphere_points =
+                static_cast<std::size_t>(atmosphere.total_extinction.rows());
+            const std::size_t ssa_derivative_start =
+                static_cast<std::size_t>(m_atmosphere->ssa_deriv_start_index());
+            auto& solution_cotangent =
+                m_los_solution_cotangents[wavel_threadidx]
+                                         [threadidx - wavel_threadidx];
+            sasktran2::rust::successive_orders::accumulate_source_ray_vjp(
+                *m_rust_source_interpolators.front(), losidx,
+                {atmosphere.total_extinction.col(wavelidx).data(),
+                 num_atmosphere_points},
+                {atmosphere.ssa.col(wavelidx).data(), num_atmosphere_points},
+                sasktran2::rust::successive_orders::solution(
+                    *m_rust_solvers[wavel_threadidx]),
+                {cotangent.data(), NSTOKES},
+                as_rust_mut_slice(solution_cotangent),
+                {native_gradient.data() + ssa_derivative_start,
+                 num_atmosphere_points},
+                {native_gradient.data(), num_atmosphere_points});
+            return;
+        }
+#else
+        (void)wavelidx;
+        (void)losidx;
+        (void)wavel_threadidx;
+        (void)threadidx;
+        (void)cotangent;
+        (void)native_gradient;
+#endif
     }
 
     template class DiffuseTable<1>;

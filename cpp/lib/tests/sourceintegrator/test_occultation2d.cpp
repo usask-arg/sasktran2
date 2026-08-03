@@ -211,6 +211,7 @@ TEST_CASE("SourceIntegrator differentiates start-of-ray source transforms",
     class NativeTransformSource : public InteriorTestSource {
       public:
         bool has_interior_source() const override { return false; }
+        bool requires_integration() const override { return false; }
 
         bool
         supports_linearization(sasktran2::LinearizationMode) const override {
@@ -273,6 +274,12 @@ TEST_CASE("SourceIntegrator differentiates start-of-ray source transforms",
 
     NativeTransformSource source;
     std::vector<SourceTermInterface<1>*> sources = {&source};
+    sasktran2::WavelengthBlockDual<1> block_value;
+    block_value.resize(1, atmosphere.num_deriv(), true);
+    integrator.integrate(block_value, sources,
+                         sasktran2::WavelengthBlock<>{0, 1}, 0, 0, 0);
+    REQUIRE(block_value.value(0, 0) == Catch::Approx(10.0));
+
     Eigen::VectorXd tangent = Eigen::VectorXd::Zero(atmosphere.num_deriv());
     tangent[0] = 5.0;
     tangent[1] = 7.0;

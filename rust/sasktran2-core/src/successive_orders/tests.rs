@@ -634,6 +634,76 @@ fn vector_coefficient_scattering_matches_dense_greek_kernel() {
     assert!((forward_product - reverse_product).abs() < 2.0e-11);
 }
 
+#[test]
+fn vector_intensity_boundary_is_compact_and_products_are_dual() {
+    let basis =
+        VectorCoefficientBasis::from_directions(&[[0.0, 0.0, 1.0]], &[1.0], &[[0.0, 0.0, 1.0]], 1)
+            .unwrap();
+    let mut scattering = VectorCoefficientScattering::new_with_intensity_only_dense(
+        vec![0, 6],
+        vec![0, 6],
+        0,
+        basis,
+    )
+    .unwrap();
+    assert_eq!(scattering.dense_value_size(), 4);
+    scattering.set_dense_values(&[0.2, 0.3, 0.4, 0.5]).unwrap();
+
+    let input = [1.0, 7.0, -3.0, 2.0, -5.0, 4.0];
+    let input_tangent = [-0.3, 9.0, 2.0, 0.6, -8.0, 1.0];
+    let value_tangent = [0.01, -0.02, 0.03, 0.04];
+    let output_cotangent = [0.7, 11.0, -13.0, -0.2, 17.0, 19.0];
+
+    let mut output = [0.0; 6];
+    scattering.apply(&input, &mut output).unwrap();
+    assert_eq!(output, [0.8, 0.0, 0.0, 1.4, 0.0, 0.0]);
+
+    let mut output_tangent = [0.0; 6];
+    scattering
+        .apply_jvp(
+            &input,
+            &input_tangent,
+            &[],
+            &value_tangent,
+            &mut output_tangent,
+        )
+        .unwrap();
+    assert_eq!(output_tangent[1..3], [0.0, 0.0]);
+    assert_eq!(output_tangent[4..6], [0.0, 0.0]);
+
+    let mut input_cotangent = [0.0; 6];
+    let mut coefficient_gradient = [];
+    let mut value_gradient = [0.0; 4];
+    scattering
+        .apply_vjp(
+            &input,
+            &output_cotangent,
+            &mut input_cotangent,
+            &mut coefficient_gradient,
+            &mut value_gradient,
+        )
+        .unwrap();
+    assert_eq!(input_cotangent[1..3], [0.0, 0.0]);
+    assert_eq!(input_cotangent[4..6], [0.0, 0.0]);
+
+    let jvp_dot = output_tangent
+        .iter()
+        .zip(output_cotangent)
+        .map(|(left, right)| left * right)
+        .sum::<f64>();
+    let vjp_dot = input_tangent
+        .iter()
+        .zip(input_cotangent)
+        .map(|(left, right)| left * right)
+        .sum::<f64>()
+        + value_tangent
+            .iter()
+            .zip(value_gradient)
+            .map(|(left, right)| left * right)
+            .sum::<f64>();
+    assert!((jvp_dot - vjp_dot).abs() < 1.0e-14);
+}
+
 fn polarized_greek_matrix(
     incoming: [f64; 3],
     outgoing: [f64; 3],
