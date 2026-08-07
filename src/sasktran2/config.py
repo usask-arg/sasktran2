@@ -290,8 +290,9 @@ class Config:
             signal
 
         `sasktran2.MultipleScatterSource.SuccessiveOrdersRust`
-            The experimental Rust successive-orders implementation is used. It currently supports
-            1-D radiances without weighting functions or flux observers.
+            The Rust successive-orders implementation is used. It supports 1-D and structured 2-D
+            radiances with native JVP, VJP, and full-Jacobian products. Flux observers are not yet
+            supported.
 
         """
         return self._config.multiple_scatter_source
@@ -427,6 +428,21 @@ class Config:
         self._config.num_sza = value
 
     @property
+    def num_successive_orders_source_profiles(self) -> int:
+        """Number of horizontal/SZA source profiles for successive orders.
+
+        For ``SuccessiveOrdersRust``, this controls the number of SZA profiles
+        in ``Geometry1D`` and uniformly spaced horizontal profiles in
+        ``Geometry2D``. It is a source-specific name for the value historically
+        exposed as :attr:`num_sza`.
+        """
+        return self._config.num_sza
+
+    @num_successive_orders_source_profiles.setter
+    def num_successive_orders_source_profiles(self, value: int):
+        self._config.num_sza = value
+
+    @property
     def num_successive_orders_iterations(self) -> int:
         """
         The number of iterations to perform when using the successive orders of scattering multiple scatter
@@ -493,7 +509,7 @@ class Config:
 
     @property
     def successive_orders_altitude_grid_m(self) -> np.ndarray | None:
-        """Altitude grid for successive-orders volume sources, in metres.
+        """Altitude grid for ``SuccessiveOrdersRust`` volume sources, in metres.
 
         By default this is ``None`` and one source altitude is placed at the
         midpoint of every atmospheric layer. Set an explicit, finite,
@@ -501,6 +517,8 @@ class Config:
         from the atmospheric altitude grid. Values must lie within the
         atmospheric altitude range. Ground boundary sources are represented
         separately.
+
+        This option is not used by the legacy ``SuccessiveOrders`` source.
         """
         altitude_grid = self._config.successive_orders_altitude_grid_m
         if altitude_grid is None:

@@ -38,10 +38,39 @@ The Rust source uses C++-supplied traced geometry and supports both
 - A materialized Jacobian can be large; use JVP or VJP products when the
   complete matrix is not required.
 
+## Current Support Boundaries
+
+`SuccessiveOrdersRust` requires linear atmospheric altitude interpolation and
+returns radiances only; flux observers are not supported. In `Geometry2D`,
+diffuse rays must be straight, so `multiple_scatter_refraction` is not
+available. In `Geometry1D`, line-of-sight refraction remains supported because
+those rays are traced by the C++ engine and passed to the Rust source. The
+current `Geometry2D` engine does not yet accept line-of-sight refractive-index
+profiles. Delta-M scaling is rejected until its multiple-scattering phase
+correction is implemented.
+
+Scalar and three-Stokes atmospheric transport are supported. The current
+polarized ground-boundary kernel uses only the intensity component of the
+surface reflection matrix, so fully polarized BRDF coupling is not yet
+implemented.
+
+Native derivative products require every active line-of-sight source to expose
+a common JVP or VJP backend. Standard and volume-rate emission sources and the
+occultation source currently expose only the traditional Jacobian backend.
+Combining any of them with `SuccessiveOrdersRust` therefore supports primal
+radiances, but not JVP, VJP, or full-Jacobian calculations.
+
+In scalar mode, `wavelength_batch_size=4` enables the packed four-wavelength
+primal, JVP, and VJP kernels. Three-Stokes calculations and incomplete tail
+blocks use the scalar wavelength path. The engine may also choose scalar
+wavelength partitioning when a packed block would leave configured wavelength
+workers idle.
+
 ## Source Location Grid
 
-By default, one volume-source altitude is placed at the midpoint of every
-atmospheric layer. The source grid can instead be specified independently:
+For `SuccessiveOrdersRust`, one volume-source altitude is placed at the
+midpoint of every atmospheric layer by default. Its source grid can instead be
+specified independently:
 
 ```{code-cell}
 import numpy as np
@@ -54,7 +83,8 @@ config.successive_orders_altitude_grid_m = np.array(
 The values are in metres and must be finite, strictly increasing, and inside
 the atmospheric altitude range. Irregular spacing and a single source
 altitude are supported. Setting the option to `None` restores the layer
-midpoints. Ground boundary sources are represented separately.
+midpoints. Ground boundary sources are represented separately. This option is
+not used by the legacy `SuccessiveOrders` source.
 
 Using fewer source altitudes reduces the number of traced diffuse rays and
 the transport state, often substantially reducing setup time, iteration time,
@@ -62,9 +92,10 @@ and memory. It also coarsens the vertical representation of the multiple
 scatter source, so the grid should be refined until the required radiance
 accuracy is reached.
 
-In `Geometry2D`, {py:attr}`sasktran2.Config.num_sza` sets the number of
-horizontal source profiles. It is independent of the number of atmospheric
-horizontal grid points.
+{py:attr}`sasktran2.Config.num_successive_orders_source_profiles` sets the
+number of SZA profiles in `Geometry1D` and horizontal source profiles in
+`Geometry2D`. It is independent of the number of atmospheric horizontal grid
+points. {py:attr}`sasktran2.Config.num_sza` remains an alias for compatibility.
 
 {py:attr}`sasktran2.Config.num_successive_order_points` is a different,
 legacy-only option. It subsamples the locations where incoming radiances are
@@ -111,8 +142,15 @@ they would also require differentiating the initial state.
 
 The Rust source provides native JVP and VJP calculations. In converged mode,
 the products are calculated from the converged fixed-point system, so Anderson
-acceleration can still be used for the primal solution. Fixed-iteration mode
-differentiates the configured iterations.
+acceleration can still be used for the primal solution. A nonconverged Picard
+solve differentiates the configured iterations exactly. A nonconverged
+Anderson solve instead returns an approximate implicit product at the final
+iterate and emits a warning.
+
+When derivatives are enabled, `Engine.calculate_radiance` materializes its
+weighting functions through the native VJP backend. This keeps its results
+consistent with `Engine.linearize(...).jacobian`; applications that do not need
+the complete matrix should use JVP or VJP products directly.
 
 With `threading_lib=Rayon` and wavelength threading selected, the primal,
 native JVP, native VJP, and full-Jacobian calculations distribute independent
@@ -145,6 +183,7 @@ linearization.
 .. autosummary::
 
   sasktran2.Config.multiple_scatter_source
+  sasktran2.Config.num_successive_orders_source_profiles
   sasktran2.Config.num_sza
   sasktran2.Config.successive_orders_altitude_grid_m
   sasktran2.Config.num_successive_orders_incoming

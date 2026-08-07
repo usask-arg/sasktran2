@@ -25,6 +25,7 @@ def _setup_1d(
     successive_orders_initialization: sk.SuccessiveOrdersInitialization = (
         sk.SuccessiveOrdersInitialization.NoInitialization
     ),
+    delta_m_scaling: bool = False,
     log_level: sk.LogLevel = sk.LogLevel.Warn,
 ):
     config = sk.Config()
@@ -35,6 +36,7 @@ def _setup_1d(
     config.num_singlescatter_moments = 16
     config.num_sza = 2
     config.output_los_optical_depth = True
+    config.delta_m_scaling = delta_m_scaling
     config.wavelength_batch_size = wavelength_batch_size
     config.emission_source = emission_source
     config.occultation_source = occultation_source
@@ -130,6 +132,43 @@ def _setup_1d(
         atmosphere.surface.emission[:] = np.linspace(1.0e-4, 7.0e-4, num_wavelengths)
 
     return sk.Engine(config, geometry, viewing_geometry), atmosphere
+
+
+def test_rust_successive_orders_rejects_delta_m_scaling():
+    with pytest.raises(NotImplementedError, match="delta-M scaling"):
+        _setup_1d("successive_orders_rust", 1, False, delta_m_scaling=True)
+
+
+def test_rust_successive_orders_calculate_radiance_uses_complete_jacobian():
+    settings = {
+        "num_wavelengths": 1,
+        "successive_orders_iterations": 30,
+        "successive_orders_relative_tolerance": 1.0e-9,
+        "successive_orders_absolute_tolerance": 1.0e-12,
+        "successive_orders_anderson_depth": 3,
+    }
+    engine, atmosphere = _setup_1d("successive_orders_rust", 1, True, **settings)
+    with pytest.raises(RuntimeError, match="Failed to calculate radiance"):
+        engine._engine.calculate_radiance(atmosphere.internal_object())
+
+    result = engine.calculate_radiance(atmosphere)
+    linearization = engine.linearize(atmosphere)
+    registry = engine._linearization_registry(atmosphere)
+
+    xr.testing.assert_allclose(result["radiance"], linearization.value)
+    for parameter, output_name in registry.output_names.items():
+        expected = linearization.jacobian[parameter]
+        if parameter in registry.log_parameters:
+            expected = expected / linearization.value
+        xr.testing.assert_allclose(result[output_name], expected)
+
+    reference_engine, reference_atmosphere = _setup_1d(
+        "successive_orders_rust", 1, False, **settings
+    )
+    reference = reference_engine.calculate_radiance(reference_atmosphere)
+    xr.testing.assert_allclose(
+        result["los_optical_depth"], reference["los_optical_depth"]
+    )
 
 
 @pytest.mark.parametrize(
@@ -666,3 +705,61 @@ def test_rust_successive_orders_rayon_native_products_match_serial(
             xr.testing.assert_identical(
                 rayon_jacobian[parameter], serial_jacobian[parameter]
             )
+
+
+def test_rust_successive_orders_simd_native_products_match_scalar_with_tail():
+    common = {
+        "num_wavelengths": 5,
+        "successive_orders_iterations": 50,
+        "successive_orders_relative_tolerance": 1.0e-10,
+        "successive_orders_absolute_tolerance": 1.0e-12,
+        "successive_orders_anderson_depth": 3,
+    }
+    scalar_engine, scalar_atmosphere = _setup_1d(
+        "successive_orders_rust",
+        1,
+        True,
+        wavelength_batch_size=1,
+        **common,
+    )
+    simd_engine, simd_atmosphere = _setup_1d(
+        "successive_orders_rust",
+        1,
+        True,
+        wavelength_batch_size=4,
+        **common,
+    )
+    scalar = scalar_engine.linearize(scalar_atmosphere)
+    simd = simd_engine.linearize(simd_atmosphere)
+    xr.testing.assert_allclose(simd.value, scalar.value, rtol=3.0e-12, atol=2.0e-14)
+
+    parameters = ("extinction", "ssa", "leg_coeff_2", "albedo")
+    tangent = scalar.tangent_template[list(parameters)]
+    tangent["extinction"].data[:] = np.linspace(
+        -1.0e-7, 2.0e-7, tangent["extinction"].size
+    )
+    tangent["ssa"].data[:] = np.linspace(-0.02, 0.03, tangent["ssa"].size)
+    tangent["leg_coeff_2"].data[:] = 0.01
+    tangent["albedo"].data[:] = np.linspace(-0.015, 0.025, tangent["albedo"].size)
+    xr.testing.assert_allclose(
+        simd.jvp(tangent), scalar.jvp(tangent), rtol=2.0e-9, atol=2.0e-12
+    )
+    zero_tangent = scalar.tangent_template[list(parameters)]
+    xr.testing.assert_allclose(
+        simd.jvp(zero_tangent),
+        scalar.jvp(zero_tangent),
+        rtol=0.0,
+        atol=0.0,
+    )
+
+    cotangent = xr.ones_like(scalar.value)
+    cotangent.data[:] = np.linspace(0.2, 1.0, cotangent.size).reshape(cotangent.shape)
+    scalar_gradient = scalar.vjp(cotangent, parameters=parameters)
+    simd_gradient = simd.vjp(cotangent, parameters=parameters)
+    for parameter in parameters:
+        xr.testing.assert_allclose(
+            simd_gradient[parameter],
+            scalar_gradient[parameter],
+            rtol=3.0e-9,
+            atol=3.0e-12,
+        )

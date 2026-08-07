@@ -1177,6 +1177,12 @@ unsafe extern "C" {
         nparam: ::std::os::raw::c_int,
     ) -> ::std::os::raw::c_int;
 }
+unsafe extern "C" {
+    pub fn sk_output_jacobian_vjp_get_los_optical_depth(
+        output: *mut OutputJacobianVJP,
+        od: *mut *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct Engine {
@@ -1253,6 +1259,15 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn sk_engine_calculate_jvp_block_thread(
+        engine: *mut Engine,
+        output: *mut OutputJVP,
+        wavelength_start: ::std::os::raw::c_int,
+        wavelength_count: ::std::os::raw::c_int,
+        thread_idx: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn sk_engine_finalize_jvp(engine: *mut Engine) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
@@ -1274,6 +1289,15 @@ unsafe extern "C" {
         engine: *mut Engine,
         output: *mut OutputVJP,
         wavelength: ::std::os::raw::c_int,
+        thread_idx: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_engine_calculate_vjp_block_thread(
+        engine: *mut Engine,
+        output: *mut OutputVJP,
+        wavelength_start: ::std::os::raw::c_int,
+        wavelength_count: ::std::os::raw::c_int,
         thread_idx: ::std::os::raw::c_int,
     ) -> ::std::os::raw::c_int;
 }

@@ -14,6 +14,7 @@ mod geometry;
 mod operator;
 mod ray_transport;
 mod scattering_interpolation;
+mod simd;
 mod solar_transmission;
 mod solver;
 mod source_interpolation;

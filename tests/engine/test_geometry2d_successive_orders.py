@@ -27,13 +27,17 @@ def successive_orders_config(num_stokes: int) -> sk.Config:
     return config
 
 
-def geometry1d() -> sk.Geometry1D:
+def geometry1d(
+    interpolation_method: sk.InterpolationMethod = (
+        sk.InterpolationMethod.LinearInterpolation
+    ),
+) -> sk.Geometry1D:
     return sk.Geometry1D(
         cos_sza=0.6,
         solar_azimuth=0.2,
         earth_radius_m=EARTH_RADIUS_M,
         altitude_grid_m=ALTITUDES_M,
-        interpolation_method=sk.InterpolationMethod.LinearInterpolation,
+        interpolation_method=interpolation_method,
         geometry_type=sk.GeometryType.Spherical,
     )
 
@@ -69,20 +73,23 @@ def homogeneous_atmosphere(
     config: sk.Config,
     *,
     calculate_derivatives: bool = False,
+    wavelengths_nm: np.ndarray | None = None,
 ) -> sk.Atmosphere:
+    if wavelengths_nm is None:
+        wavelengths_nm = WAVELENGTHS_NM
     atmosphere = sk.Atmosphere(
         geometry,
         config,
-        wavelengths_nm=WAVELENGTHS_NM,
+        wavelengths_nm=wavelengths_nm,
         calculate_derivatives=calculate_derivatives,
     )
     altitude_factor = np.exp(-ALTITUDES_M / 7_500.0)[:, np.newaxis]
-    spectral_factor = np.array([[0.8, 1.2]])
+    spectral_factor = np.linspace(0.8, 1.2, wavelengths_nm.size)[np.newaxis, :]
     extinction = (2.4e-5 * altitude_factor + 1.0e-9) * spectral_factor
     ssa = (
         0.91
         + 0.025 * np.exp(-ALTITUDES_M / 18_000.0)[:, np.newaxis]
-        - np.array([[0.0, 0.01]])
+        - np.linspace(0.0, 0.01, wavelengths_nm.size)[np.newaxis, :]
     )
     if isinstance(geometry, sk.Geometry2D):
         extinction = np.tile(extinction, (geometry.shape[0], 1))
@@ -100,6 +107,91 @@ def homogeneous_atmosphere(
     # 1D SZA and 2D horizontal surface-source grids.
     atmosphere.surface.albedo[:] = 0.0
     return atmosphere
+
+
+def test_scalar_2d_wavelength_batch_matches_independent_wavelengths():
+    wavelengths_nm = np.linspace(500.0, 750.0, 5)
+    scalar_config = successive_orders_config(1)
+    batch_config = successive_orders_config(1)
+    batch_config.wavelength_batch_size = 4
+    scalar_geometry = geometry2d()
+    batch_geometry = geometry2d()
+
+    scalar = sk.Engine(
+        scalar_config, scalar_geometry, viewing_geometry()
+    ).calculate_radiance(
+        homogeneous_atmosphere(
+            scalar_geometry,
+            scalar_config,
+            wavelengths_nm=wavelengths_nm,
+        )
+    )
+    batch = sk.Engine(
+        batch_config, batch_geometry, viewing_geometry()
+    ).calculate_radiance(
+        homogeneous_atmosphere(
+            batch_geometry,
+            batch_config,
+            wavelengths_nm=wavelengths_nm,
+        )
+    )
+
+    xr.testing.assert_allclose(batch, scalar, rtol=3.0e-12, atol=2.0e-14)
+
+
+def test_scalar_2d_simd_native_products_match_independent_wavelengths():
+    wavelengths_nm = np.linspace(500.0, 750.0, 5)
+    scalar_config = successive_orders_config(1)
+    batch_config = successive_orders_config(1)
+    for config in (scalar_config, batch_config):
+        config.successive_orders_max_iterations = 50
+        config.successive_orders_relative_tolerance = 1.0e-10
+        config.successive_orders_absolute_tolerance = 1.0e-12
+        config.successive_orders_anderson_depth = 3
+    batch_config.wavelength_batch_size = 4
+    scalar_geometry = geometry2d()
+    batch_geometry = geometry2d()
+    scalar = sk.Engine(scalar_config, scalar_geometry, viewing_geometry()).linearize(
+        homogeneous_atmosphere(
+            scalar_geometry,
+            scalar_config,
+            calculate_derivatives=True,
+            wavelengths_nm=wavelengths_nm,
+        )
+    )
+    batch = sk.Engine(batch_config, batch_geometry, viewing_geometry()).linearize(
+        homogeneous_atmosphere(
+            batch_geometry,
+            batch_config,
+            calculate_derivatives=True,
+            wavelengths_nm=wavelengths_nm,
+        )
+    )
+    xr.testing.assert_allclose(batch.value, scalar.value, rtol=3.0e-12, atol=2.0e-14)
+
+    parameters = ("extinction", "ssa")
+    tangent = scalar.tangent_template[list(parameters)]
+    tangent["extinction"].data[:] = np.linspace(
+        -2.0e-7, 3.0e-7, tangent["extinction"].size
+    ).reshape(tangent["extinction"].shape)
+    tangent["ssa"].data[:] = np.linspace(-0.02, 0.03, tangent["ssa"].size).reshape(
+        tangent["ssa"].shape
+    )
+    xr.testing.assert_allclose(
+        batch.jvp(tangent), scalar.jvp(tangent), rtol=3.0e-9, atol=2.0e-11
+    )
+
+    cotangent = xr.ones_like(scalar.value)
+    cotangent.data[:] = np.linspace(0.4, 1.0, cotangent.size).reshape(cotangent.shape)
+    scalar_gradient = scalar.vjp(cotangent, parameters=parameters)
+    batch_gradient = batch.vjp(cotangent, parameters=parameters)
+    for parameter in parameters:
+        xr.testing.assert_allclose(
+            batch_gradient[parameter],
+            scalar_gradient[parameter],
+            rtol=3.0e-9,
+            atol=2.0e-11,
+        )
 
 
 @pytest.mark.parametrize("num_stokes", [1, 3])
@@ -212,6 +304,28 @@ def test_explicit_successive_orders_altitudes_must_be_inside_atmosphere():
         sk.Engine(config, geometry2d(), viewing_geometry())
 
 
+def test_explicit_successive_orders_altitudes_are_rust_source_only():
+    config = successive_orders_config(1)
+    config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
+    config.successive_orders_altitude_grid_m = np.array([5_000.0, 15_000.0])
+
+    with pytest.raises(
+        ValueError, match="successive_orders_altitude_grid_m.*only supported"
+    ):
+        sk.Engine(config, geometry1d(), viewing_geometry())
+
+
+def test_rust_successive_orders_rejects_lower_altitude_interpolation():
+    config = successive_orders_config(1)
+
+    with pytest.raises(RuntimeError, match="Failed to create Engine"):
+        sk.Engine(
+            config,
+            geometry1d(sk.InterpolationMethod.LowerInterpolation),
+            viewing_geometry(),
+        )
+
+
 def test_native_products_resolve_horizontal_atmosphere_nodes():
     config = successive_orders_config(1)
     config.successive_orders_max_iterations = 50
@@ -283,6 +397,16 @@ def test_native_products_resolve_horizontal_atmosphere_nodes():
             atol=2.0e-9,
         )
 
+    expected_value = linearization.value.copy()
+    regular = engine.calculate_radiance(atmosphere)
+    registry = engine._linearization_registry(atmosphere)
+    xr.testing.assert_allclose(regular["radiance"], expected_value)
+    for parameter, output_name in registry.output_names.items():
+        expected = jacobian[parameter]
+        if parameter in registry.log_parameters:
+            expected = expected / expected_value
+        xr.testing.assert_allclose(regular[output_name], expected)
+
     epsilon = 2.0e-5
     perturbed_radiances = []
     for sign in (-1.0, 1.0):
@@ -307,6 +431,60 @@ def test_native_products_resolve_horizontal_atmosphere_nodes():
         rtol=1.0e-4,
         atol=0.0,
     )
+
+
+def test_polarized_2d_native_products_match_fd_and_duality():
+    config = successive_orders_config(3)
+    config.successive_orders_max_iterations = 50
+    config.successive_orders_relative_tolerance = 1.0e-10
+    config.successive_orders_absolute_tolerance = 1.0e-12
+    config.successive_orders_anderson_depth = 3
+    geometry = geometry2d()
+    viewing = viewing_geometry()
+    atmosphere = homogeneous_atmosphere(
+        geometry,
+        config,
+        calculate_derivatives=True,
+    )
+    engine = sk.Engine(config, geometry, viewing)
+    linearization = engine.linearize(atmosphere)
+
+    parameters = ("extinction", "ssa", "leg_coeff_8")
+    tangent = linearization.tangent_template[list(parameters)]
+    tangent["extinction"].data[:] = np.linspace(
+        -2.0e-7, 3.0e-7, tangent["extinction"].size
+    ).reshape(tangent["extinction"].shape)
+    tangent["ssa"].data[:] = np.linspace(-0.02, 0.03, tangent["ssa"].size).reshape(
+        tangent["ssa"].shape
+    )
+    tangent["leg_coeff_8"].data[:] = 0.01
+    jvp = linearization.jvp(tangent)
+
+    cotangent = xr.ones_like(linearization.value)
+    cotangent.data[:] = np.linspace(0.4, 1.0, cotangent.size).reshape(cotangent.shape)
+    gradient = linearization.vjp(cotangent, parameters=parameters)
+    lhs = float((jvp * cotangent).sum())
+    rhs = sum(float((tangent[name] * gradient[name]).sum()) for name in parameters)
+    np.testing.assert_allclose(lhs, rhs, rtol=2.0e-9, atol=2.0e-11)
+
+    epsilon = 2.0e-5
+    perturbed_radiances = []
+    for sign in (-1.0, 1.0):
+        perturbed = homogeneous_atmosphere(geometry, config)
+        perturbed.storage.total_extinction[:] += (
+            sign * epsilon * tangent["extinction"].values.reshape(-1, 1)
+        )
+        perturbed.storage.ssa[:] += (
+            sign * epsilon * tangent["ssa"].values.reshape(-1, 1)
+        )
+        perturbed.leg_coeff.a1[2, :, :] += (
+            sign * epsilon * tangent["leg_coeff_8"].values.reshape(-1, 1)
+        )
+        perturbed_radiances.append(engine.calculate_radiance(perturbed).radiance)
+    finite_difference = (perturbed_radiances[1] - perturbed_radiances[0]) / (
+        2.0 * epsilon
+    )
+    xr.testing.assert_allclose(jvp, finite_difference, rtol=2.0e-8, atol=2.0e-11)
 
 
 def test_rayon_native_products_match_serial_in_2d():
@@ -360,6 +538,34 @@ def test_rayon_native_products_match_serial_in_2d():
             rtol=2.0e-12,
             atol=2.0e-12,
         )
+
+
+@pytest.mark.parametrize(
+    ("config_name", "source"),
+    [
+        ("occultation_source", sk.OccultationSource.Standard),
+        ("emission_source", sk.EmissionSource.Standard),
+        ("emission_source", sk.EmissionSource.VolumeEmissionRate),
+    ],
+)
+def test_mixed_sources_report_unavailable_successive_orders_products(
+    config_name, source
+):
+    config = successive_orders_config(1)
+    setattr(config, config_name, source)
+    geometry = geometry2d()
+    atmosphere = homogeneous_atmosphere(
+        geometry,
+        config,
+        calculate_derivatives=True,
+    )
+    engine = sk.Engine(config, geometry, viewing_geometry())
+
+    with pytest.raises(
+        NotImplementedError,
+        match="does not support radiance JVP/VJP products",
+    ):
+        engine.linearize(atmosphere)
 
 
 def test_geometry2d_rejects_diffuse_refraction():

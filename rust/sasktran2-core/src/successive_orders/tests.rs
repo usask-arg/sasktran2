@@ -86,6 +86,309 @@ fn fixed_iteration_mode_reports_maximum_iterations() {
 }
 
 #[test]
+fn scalar_coefficient_batch4_matches_independent_wavelength_solves() {
+    let config = SolverConfig {
+        max_iterations: 100,
+        relative_tolerance: 1.0e-12,
+        absolute_tolerance: 1.0e-14,
+        anderson_depth: 3,
+        damping: 1.0,
+    };
+    let transport = CsrMatrix::new(1, 1, &[0, 1], &[0]).unwrap();
+    let basis =
+        ScalarCoefficientBasis::from_directions(&[[0.0, 0.0, 1.0]], &[1.0], &[[0.0, 0.0, 1.0]], 1)
+            .unwrap();
+    let scattering = ScalarCoefficientScattering::new(vec![0, 1], vec![0, 1], 1, basis).unwrap();
+    let problem = FixedPointProblem::new(transport, scattering).unwrap();
+    let solver = SuccessiveOrdersSolver::new(problem, config).unwrap();
+
+    let transport_values = [0.12, 0.25, 0.4, 0.63];
+    let coefficients = [0.82, 0.71, 0.66, 0.53];
+    let forcing = [0.7, 1.1, 1.4, 2.0];
+    let result = solver
+        .solve_batch4(
+            &[0, 1],
+            &[0],
+            &transport_values,
+            &coefficients,
+            &[],
+            &forcing,
+            None,
+        )
+        .unwrap();
+    for lane in 0..super::simd::batch::LANES {
+        let expected = coefficients[lane] * forcing[lane]
+            / (1.0 - coefficients[lane] * transport_values[lane]);
+        assert!((result.solution[lane] - expected).abs() < 2.0e-12);
+        assert!(result.diagnostics[lane].converged);
+    }
+}
+
+#[test]
+fn scalar_coefficient_batch4_jvp_and_vjp_match_analytic_products() {
+    let config = SolverConfig {
+        max_iterations: 100,
+        relative_tolerance: 1.0e-12,
+        absolute_tolerance: 1.0e-14,
+        anderson_depth: 3,
+        damping: 1.0,
+    };
+    let transport = CsrMatrix::new(1, 1, &[0, 1], &[0]).unwrap();
+    let basis =
+        ScalarCoefficientBasis::from_directions(&[[0.0, 0.0, 1.0]], &[1.0], &[[0.0, 0.0, 1.0]], 1)
+            .unwrap();
+    let scattering = ScalarCoefficientScattering::new(vec![0, 1], vec![0, 1], 1, basis).unwrap();
+    let problem = FixedPointProblem::new(transport, scattering).unwrap();
+    let mut solver = SuccessiveOrdersSolver::new(problem, config).unwrap();
+
+    let transport_values = [0.12, 0.25, 0.4, 0.63];
+    let coefficients = [0.82, 0.71, 0.66, 0.53];
+    let forcing = [0.7, 1.1, 1.4, 2.0];
+    let transport_tangent = [0.03, -0.04, 0.05, -0.02];
+    let coefficient_tangent = [-0.02, 0.01, 0.04, -0.03];
+    let forcing_tangent = [0.08, -0.06, 0.03, 0.11];
+    let solution_cotangent = [1.2, -0.7, 0.4, 1.6];
+    let primal = solver
+        .solve_batch4(
+            &[0, 1],
+            &[0],
+            &transport_values,
+            &coefficients,
+            &[],
+            &forcing,
+            None,
+        )
+        .unwrap();
+    let jvp = solver
+        .solve_jvp_batch4(
+            &[0, 1],
+            &[0],
+            &transport_values,
+            &transport_tangent,
+            &coefficients,
+            &coefficient_tangent,
+            &[],
+            &[],
+            &forcing,
+            &forcing_tangent,
+            &primal.solution,
+        )
+        .unwrap();
+    let gradient = solver
+        .solve_vjp_batch4(
+            &[0, 1],
+            &[0],
+            &transport_values,
+            &coefficients,
+            &[],
+            &forcing,
+            &primal.solution,
+            &solution_cotangent,
+        )
+        .unwrap();
+
+    for lane in 0..super::simd::batch::LANES {
+        let denominator = 1.0 - coefficients[lane] * transport_values[lane];
+        let incoming = transport_values[lane] * primal.solution[lane] + forcing[lane];
+        let right_hand_side = coefficient_tangent[lane] * incoming
+            + coefficients[lane]
+                * (transport_tangent[lane] * primal.solution[lane] + forcing_tangent[lane]);
+        let expected_jvp = right_hand_side / denominator;
+        assert!((jvp[lane] - expected_jvp).abs() < 3.0e-11);
+
+        let adjoint = solution_cotangent[lane] / denominator;
+        let expected_coefficient_gradient = incoming * adjoint;
+        let expected_forcing_gradient = coefficients[lane] * adjoint;
+        assert!(
+            (gradient.scattering_coefficients[lane] - expected_coefficient_gradient).abs()
+                < 3.0e-11
+        );
+        assert!((gradient.forcing[lane] - expected_forcing_gradient).abs() < 3.0e-11);
+        let tangent_dot = coefficient_tangent[lane] * gradient.scattering_coefficients[lane]
+            + forcing_tangent[lane] * gradient.forcing[lane]
+            + transport_tangent[lane] * gradient.forcing[lane] * primal.solution[lane];
+        assert!((solution_cotangent[lane] * jvp[lane] - tangent_dot).abs() < 5.0e-11);
+    }
+}
+
+#[test]
+fn scalar_coefficient_batch4_multiple_blocks_match_scalar_application() {
+    let incoming_directions = [[0.0, 0.0, 1.0], [0.8, 0.0, 0.6], [-0.6, 0.0, 0.8]];
+    let incoming_weights = [0.2, 0.3, 0.5];
+    let outgoing_directions = [[0.0, 0.0, -1.0], [0.6, 0.0, 0.8]];
+    let basis = ScalarCoefficientBasis::from_directions(
+        &incoming_directions,
+        &incoming_weights,
+        &outgoing_directions,
+        3,
+    )
+    .unwrap();
+    let matrix =
+        ScalarCoefficientScattering::new(vec![0, 2, 4, 6, 8], vec![0, 3, 6, 9, 12], 3, basis)
+            .unwrap();
+    let coefficient_size = matrix.coefficient_value_size();
+    let dense_size = matrix.dense_value_size();
+    let input_size = matrix.input_size();
+    let output_size = matrix.output_size();
+    let mut packed_coefficients = vec![0.0; coefficient_size * super::simd::batch::LANES];
+    let mut packed_dense = vec![0.0; dense_size * super::simd::batch::LANES];
+    let mut packed_input = vec![0.0; input_size * super::simd::batch::LANES];
+    for element in 0..coefficient_size {
+        for lane in 0..super::simd::batch::LANES {
+            packed_coefficients[element * super::simd::batch::LANES + lane] =
+                0.04 * (element + 1) as f64 + 0.015 * lane as f64;
+        }
+    }
+    for element in 0..dense_size {
+        for lane in 0..super::simd::batch::LANES {
+            packed_dense[element * super::simd::batch::LANES + lane] =
+                0.02 * (element + 1) as f64 - 0.01 * lane as f64;
+        }
+    }
+    for element in 0..input_size {
+        for lane in 0..super::simd::batch::LANES {
+            packed_input[element * super::simd::batch::LANES + lane] =
+                0.1 * (element + 1) as f64 + 0.03 * lane as f64;
+        }
+    }
+    let active = matrix
+        .batch4_active_num_coefficients(&packed_coefficients)
+        .unwrap();
+    let mut scratch = vec![0.0; matrix.batch4_scratch_size(active)];
+    let mut packed_output = vec![0.0; output_size * super::simd::batch::LANES];
+    matrix
+        .apply_batch4(
+            &packed_input,
+            &packed_coefficients,
+            &packed_dense,
+            active,
+            &mut packed_output,
+            &mut scratch,
+        )
+        .unwrap();
+
+    for lane in 0..super::simd::batch::LANES {
+        let coefficients: Vec<_> = (0..coefficient_size)
+            .map(|element| packed_coefficients[element * super::simd::batch::LANES + lane])
+            .collect();
+        let dense: Vec<_> = (0..dense_size)
+            .map(|element| packed_dense[element * super::simd::batch::LANES + lane])
+            .collect();
+        let input: Vec<_> = (0..input_size)
+            .map(|element| packed_input[element * super::simd::batch::LANES + lane])
+            .collect();
+        let mut scalar = matrix.clone();
+        scalar.set_coefficients(&coefficients).unwrap();
+        scalar.set_dense_values(&dense).unwrap();
+        let mut expected = vec![0.0; output_size];
+        scalar.apply(&input, &mut expected).unwrap();
+        for element in 0..output_size {
+            assert!(
+                (packed_output[element * super::simd::batch::LANES + lane] - expected[element])
+                    .abs()
+                    < 2.0e-13
+            );
+        }
+    }
+}
+
+#[test]
+fn scalar_coefficient_batch4_multistate_solve_matches_scalar_solves() {
+    let config = SolverConfig {
+        max_iterations: 100,
+        relative_tolerance: 1.0e-12,
+        absolute_tolerance: 1.0e-14,
+        anderson_depth: 3,
+        damping: 1.0,
+    };
+    let incoming_directions = [[0.0, 0.0, 1.0], [0.8, 0.0, 0.6], [-0.6, 0.0, 0.8]];
+    let incoming_weights = [0.2, 0.3, 0.5];
+    let outgoing_directions = [[0.0, 0.0, -1.0], [0.6, 0.0, 0.8]];
+    let basis = ScalarCoefficientBasis::from_directions(
+        &incoming_directions,
+        &incoming_weights,
+        &outgoing_directions,
+        3,
+    )
+    .unwrap();
+    let scattering =
+        ScalarCoefficientScattering::new(vec![0, 2, 4, 6], vec![0, 3, 6, 9], 3, basis).unwrap();
+    let row_offsets: Vec<i32> = (0..=9).map(|row| 2 * row).collect();
+    let column_indices: Vec<i32> = (0..9).flat_map(|row| [row % 6, (row + 2) % 6]).collect();
+    let transport = CsrMatrix::new(9, 6, &row_offsets, &column_indices).unwrap();
+    let problem = FixedPointProblem::new(transport, scattering).unwrap();
+    let packed_solver = SuccessiveOrdersSolver::new(problem.clone(), config).unwrap();
+    let transport_size = column_indices.len();
+    let coefficient_size = 9;
+    let forcing_size = 9;
+    let mut packed_transport = vec![0.0; transport_size * super::simd::batch::LANES];
+    let mut packed_coefficients = vec![0.0; coefficient_size * super::simd::batch::LANES];
+    let mut packed_forcing = vec![0.0; forcing_size * super::simd::batch::LANES];
+    for element in 0..transport_size {
+        for lane in 0..super::simd::batch::LANES {
+            packed_transport[element * super::simd::batch::LANES + lane] =
+                0.015 * (1 + element % 4) as f64 * (1.0 + 0.05 * lane as f64);
+        }
+    }
+    for block in 0..3 {
+        for degree in 0..3 {
+            for lane in 0..super::simd::batch::LANES {
+                packed_coefficients[(block * 3 + degree) * super::simd::batch::LANES + lane] =
+                    [0.75, 0.18, 0.07][degree] * (1.0 - 0.04 * lane as f64 + 0.01 * block as f64);
+            }
+        }
+    }
+    for element in 0..forcing_size {
+        for lane in 0..super::simd::batch::LANES {
+            packed_forcing[element * super::simd::batch::LANES + lane] =
+                0.1 + 0.02 * element as f64 + 0.03 * lane as f64;
+        }
+    }
+    let packed = packed_solver
+        .solve_batch4(
+            &row_offsets,
+            &column_indices,
+            &packed_transport,
+            &packed_coefficients,
+            &[],
+            &packed_forcing,
+            None,
+        )
+        .unwrap();
+    for lane in 0..super::simd::batch::LANES {
+        let transport_values: Vec<_> = (0..transport_size)
+            .map(|element| packed_transport[element * super::simd::batch::LANES + lane])
+            .collect();
+        let coefficients: Vec<_> = (0..coefficient_size)
+            .map(|element| packed_coefficients[element * super::simd::batch::LANES + lane])
+            .collect();
+        let forcing: Vec<_> = (0..forcing_size)
+            .map(|element| packed_forcing[element * super::simd::batch::LANES + lane])
+            .collect();
+        let mut scalar_solver = SuccessiveOrdersSolver::new(problem.clone(), config).unwrap();
+        scalar_solver
+            .problem_mut()
+            .set_scattering_coefficients(&coefficients)
+            .unwrap();
+        let expected = scalar_solver
+            .solve(
+                &row_offsets,
+                &column_indices,
+                &transport_values,
+                &forcing,
+                None,
+            )
+            .unwrap();
+        for (element, expected) in expected.iter().enumerate() {
+            assert!(
+                (packed.solution[element * super::simd::batch::LANES + lane] - expected).abs()
+                    < 5.0e-11
+            );
+        }
+    }
+}
+
+#[test]
 fn nonconverged_anderson_returns_approximate_products() {
     let config = SolverConfig {
         max_iterations: 1,

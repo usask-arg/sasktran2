@@ -7,6 +7,7 @@
 #include <sasktran2/dual.h>
 #include <sasktran2/config.h>
 #include <sasktran2/atmosphere/atmosphere.h>
+#include <sasktran2/wavelength_block_linearization.h>
 
 namespace sasktran2 {
     template <int NSTOKES> class SourceIntegrator;
@@ -39,6 +40,12 @@ namespace sasktran2 {
  */
 template <int NSTOKES> class SourceTermInterface {
   public:
+    /** Returns the optional wavelength-block product capability. */
+    virtual sasktran2::WavelengthBlockLinearizationInterface*
+    wavelength_block_linearization() {
+        return nullptr;
+    }
+
     // Enum determinig the direction the source integration happens
     // Knowing the direction of integration when calculating the source can
     // enable some optimization. This is essentially a contract from the user to

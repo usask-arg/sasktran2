@@ -7,9 +7,9 @@ use sasktran2_rs::bindings::config;
 pub enum MultipleScatterSource {
     DiscreteOrdinates,
     SuccessiveOrders,
-    SuccessiveOrdersRust,
     TwoStream,
     NoSource,
+    SuccessiveOrdersRust,
 }
 
 #[pyclass(eq, eq_int)]

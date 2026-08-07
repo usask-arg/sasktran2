@@ -615,7 +615,7 @@ namespace sasktran2::solartransmission {
         int threadidx, int losidx, int layeridx,
         const raytracing::GridWeightStencilView& index_weights,
         bool is_entrance, double source_amplitude, double derivative_scale,
-        sasktran2::WavelengthBlockLaneDualView<NSTOKES, 1>& target) const {
+        sasktran2::WavelengthBlockLaneDualView<NSTOKES>& target) const {
         return scatter_and_accumulate_derivative_impl(
             threadidx, losidx, layeridx, index_weights, is_entrance,
             source_amplitude, derivative_scale, target);

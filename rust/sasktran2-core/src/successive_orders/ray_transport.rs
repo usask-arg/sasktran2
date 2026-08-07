@@ -11,6 +11,8 @@ use anyhow::{Result, anyhow, bail};
 
 use crate::math::wigner::WignerDCalculator;
 
+use super::simd::batch::{Batch4, LANES, interleave_wavelength_major};
+
 #[derive(Debug, Hash, PartialEq, Eq)]
 enum EndpointStencilKey {
     Inline {
@@ -742,6 +744,48 @@ impl ScalarRayTransport {
         Ok(())
     }
 
+    /// Reconstructs only the attenuation state needed by the compact VJP.
+    /// The packed adjoint already owns the transport-value cotangent, so
+    /// rebuilding the full transport matrix and first-order forcing here is
+    /// redundant.
+    pub fn assemble_vjp_attenuation(
+        &self,
+        extinction: &[f64],
+        single_scatter_albedo: &[f64],
+        layer_optical_depth: &mut [f64],
+        layer_attenuation: &mut [f64],
+        layer_prefix_attenuation: &mut [f64],
+        ray_end_attenuation: &mut [f64],
+    ) -> Result<()> {
+        if extinction.len() < self.required_atmosphere_len
+            || single_scatter_albedo.len() != extinction.len()
+            || layer_optical_depth.len() != self.num_layers()
+            || layer_attenuation.len() != self.num_layers()
+            || layer_prefix_attenuation.len() != self.num_layers()
+            || ray_end_attenuation.len() != self.num_rays()
+        {
+            bail!("VJP attenuation arrays have inconsistent lengths");
+        }
+
+        for (ray_index, ray_end_attenuation) in ray_end_attenuation.iter_mut().enumerate() {
+            let layer_start = self.ray_layer_offsets[ray_index] as usize;
+            let layer_end = self.ray_layer_offsets[ray_index + 1] as usize;
+            let mut current_attenuation = 1.0;
+            for layer_index in (layer_start..layer_end).rev() {
+                let optical_depth = self
+                    .layer_medium(layer_index, extinction, single_scatter_albedo)
+                    .optical_depth;
+                let attenuation = attenuation_from_optical_depth(optical_depth);
+                layer_optical_depth[layer_index] = optical_depth;
+                layer_attenuation[layer_index] = attenuation;
+                layer_prefix_attenuation[layer_index] = current_attenuation;
+                current_attenuation *= attenuation;
+            }
+            *ray_end_attenuation = current_attenuation;
+        }
+        Ok(())
+    }
+
     /// Assembles the transport operator and its directional derivative for
     /// any Stokes dimension. Layer attenuation scratch is retained for the
     /// C++ polarized first-order source during the staged migration.
@@ -1178,6 +1222,312 @@ impl ScalarRayTransport {
         Ok(())
     }
 
+    /// Fuses scalar transport and first-order forcing assembly for four
+    /// wavelengths. Atmosphere and phase arrays arrive wavelength-major from
+    /// Eigen tensors; solar/end-source arrays and outputs are element-major
+    /// with four contiguous wavelength lanes.
+    #[allow(clippy::too_many_arguments)]
+    pub fn assemble_batch4_with_first_order_scalar(
+        &self,
+        extinction: &[f64],
+        single_scatter_albedo: &[f64],
+        legendre_coefficients: &[f64],
+        maximum_order: &[i32],
+        solar_transmission: &[f64],
+        end_of_ray_source: &[f64],
+        transport_values: &mut [f64],
+        first_order_radiance: &mut [f64],
+    ) -> Result<()> {
+        self.validate_first_order()?;
+        if self.num_stokes != 1
+            || !extinction.len().is_multiple_of(LANES)
+            || single_scatter_albedo.len() != extinction.len()
+            || maximum_order.len() != extinction.len()
+        {
+            bail!("four-wavelength transport requires scalar interleaved inputs");
+        }
+        let num_atmosphere_points = extinction.len() / LANES;
+        if num_atmosphere_points < self.required_atmosphere_len {
+            bail!("four-wavelength transport atmosphere is too small");
+        }
+        let coefficients_per_lane = num_atmosphere_points
+            .checked_mul(self.num_phase_moments)
+            .ok_or_else(|| anyhow!("four-wavelength phase coefficient size overflow"))?;
+        if legendre_coefficients.len() != coefficients_per_lane * LANES
+            || maximum_order.iter().any(|&order| {
+                order < 1
+                    || usize::try_from(order).map_or(true, |value| value > self.num_phase_moments)
+            })
+        {
+            bail!("four-wavelength transport phase arrays are inconsistent");
+        }
+        let required_solar_transmission = if self.solar_transmission_on_atmosphere_grid {
+            self.required_atmosphere_len
+        } else {
+            self.num_layers() + self.num_rays()
+        };
+        if solar_transmission.len() < required_solar_transmission * LANES
+            || end_of_ray_source.len() != self.num_rays() * LANES
+            || transport_values.len() != self.required_transport_len * LANES
+            || first_order_radiance.len() != self.num_rays() * LANES
+        {
+            bail!("four-wavelength transport buffers have inconsistent lengths");
+        }
+
+        // Eigen supplies wavelength-major atmosphere tensors. Pack their
+        // small atmospheric dimension once so every layer stencil can use
+        // contiguous SIMD loads rather than four scalar gathers.
+        let mut interleaved_medium = vec![0.0; extinction.len() * 2];
+        let (interleaved_extinction, interleaved_albedo) =
+            interleaved_medium.split_at_mut(extinction.len());
+        interleave_wavelength_major(extinction, num_atmosphere_points, interleaved_extinction);
+        interleave_wavelength_major(
+            single_scatter_albedo,
+            num_atmosphere_points,
+            interleaved_albedo,
+        );
+        let mut interleaved_coefficients = vec![0.0; legendre_coefficients.len()];
+        interleave_wavelength_major(
+            legendre_coefficients,
+            coefficients_per_lane,
+            &mut interleaved_coefficients,
+        );
+        let mut interleaved_maximum_order = vec![0; maximum_order.len()];
+        for atmosphere_index in 0..num_atmosphere_points {
+            for lane in 0..LANES {
+                interleaved_maximum_order[atmosphere_index * LANES + lane] =
+                    maximum_order[lane * num_atmosphere_points + atmosphere_index];
+            }
+        }
+
+        transport_values.fill(0.0);
+        first_order_radiance.fill(0.0);
+        let endpoint_medium = self.interpolate_endpoint_medium_batch4(
+            interleaved_extinction,
+            interleaved_albedo,
+            solar_transmission,
+        );
+        let grouped_phase = self.uses_grouped_phase_evaluation(num_atmosphere_points);
+        let mut phase_values = vec![
+            0.0;
+            if grouped_phase {
+                num_atmosphere_points * LANES
+            } else {
+                0
+            }
+        ];
+        let mut endpoint_scattering_values = vec![0.0; self.phase_endpoint_cache_size * LANES];
+        for phase_geometry in 0..self.num_phase_geometries() {
+            let grouped_phase_geometry =
+                self.uses_grouped_phase_geometry(phase_geometry, num_atmosphere_points);
+            if grouped_phase_geometry {
+                self.fill_phase_values_batch4(
+                    phase_geometry,
+                    &interleaved_coefficients,
+                    &interleaved_maximum_order,
+                    num_atmosphere_points,
+                    &mut phase_values,
+                );
+            }
+            self.fill_endpoint_scattering_values_batch4(
+                phase_geometry,
+                &interleaved_coefficients,
+                &interleaved_maximum_order,
+                if grouped_phase_geometry {
+                    phase_values.as_slice()
+                } else {
+                    &[]
+                },
+                &endpoint_medium,
+                &mut endpoint_scattering_values,
+            );
+            for &ray_index in self.phase_geometry_rays(phase_geometry) {
+                self.assemble_ray_batch4_scalar(
+                    ray_index as usize,
+                    interleaved_extinction,
+                    interleaved_albedo,
+                    solar_transmission,
+                    end_of_ray_source,
+                    &endpoint_medium,
+                    &endpoint_scattering_values,
+                    transport_values,
+                    first_order_radiance,
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// Directional derivative of the scalar four-wavelength transport and
+    /// first-order forcing. Primal atmosphere arrays retain Eigen's
+    /// wavelength-major layout; tangent, solar, end-source, and output arrays
+    /// are element-major with four contiguous wavelength lanes.
+    #[allow(clippy::too_many_arguments)]
+    pub fn assemble_batch4_jvp_with_first_order_scalar(
+        &self,
+        extinction: &[f64],
+        single_scatter_albedo: &[f64],
+        legendre_coefficients: &[f64],
+        maximum_order: &[i32],
+        solar_transmission: &[f64],
+        extinction_tangent: &[f64],
+        single_scatter_albedo_tangent: &[f64],
+        legendre_coefficient_tangent: &[f64],
+        solar_transmission_tangent: &[f64],
+        end_of_ray_source: &[f64],
+        end_of_ray_source_tangent: &[f64],
+        transport_values: &mut [f64],
+        transport_value_tangent: &mut [f64],
+        first_order_radiance_tangent: &mut [f64],
+    ) -> Result<()> {
+        self.validate_first_order()?;
+        if self.num_stokes != 1
+            || !extinction.len().is_multiple_of(LANES)
+            || single_scatter_albedo.len() != extinction.len()
+            || maximum_order.len() != extinction.len()
+            || extinction_tangent.len() != extinction.len()
+            || single_scatter_albedo_tangent.len() != extinction.len()
+        {
+            bail!("four-wavelength transport JVP atmosphere arrays are inconsistent");
+        }
+        let num_atmosphere_points = extinction.len() / LANES;
+        if num_atmosphere_points < self.required_atmosphere_len {
+            bail!("four-wavelength transport JVP atmosphere is too small");
+        }
+        let coefficients_per_lane = num_atmosphere_points
+            .checked_mul(self.num_phase_moments)
+            .ok_or_else(|| anyhow!("four-wavelength phase coefficient size overflow"))?;
+        if legendre_coefficients.len() != coefficients_per_lane * LANES
+            || legendre_coefficient_tangent.len() != legendre_coefficients.len()
+            || maximum_order.iter().any(|&order| {
+                order < 1
+                    || usize::try_from(order).map_or(true, |value| value > self.num_phase_moments)
+            })
+        {
+            bail!("four-wavelength transport JVP phase arrays are inconsistent");
+        }
+        let required_solar_transmission = if self.solar_transmission_on_atmosphere_grid {
+            self.required_atmosphere_len
+        } else {
+            self.num_layers() + self.num_rays()
+        };
+        if solar_transmission.len() < required_solar_transmission * LANES
+            || solar_transmission_tangent.len() != solar_transmission.len()
+            || end_of_ray_source.len() != self.num_rays() * LANES
+            || end_of_ray_source_tangent.len() != end_of_ray_source.len()
+            || transport_values.len() != self.required_transport_len * LANES
+            || transport_value_tangent.len() != transport_values.len()
+            || first_order_radiance_tangent.len() != self.num_rays() * LANES
+        {
+            bail!("four-wavelength transport JVP buffers have inconsistent lengths");
+        }
+
+        let mut interleaved_medium = vec![0.0; extinction.len() * 2];
+        let (interleaved_extinction, interleaved_albedo) =
+            interleaved_medium.split_at_mut(extinction.len());
+        interleave_wavelength_major(extinction, num_atmosphere_points, interleaved_extinction);
+        interleave_wavelength_major(
+            single_scatter_albedo,
+            num_atmosphere_points,
+            interleaved_albedo,
+        );
+        let mut interleaved_coefficients = vec![0.0; legendre_coefficients.len()];
+        interleave_wavelength_major(
+            legendre_coefficients,
+            coefficients_per_lane,
+            &mut interleaved_coefficients,
+        );
+        let mut interleaved_maximum_order = vec![0; maximum_order.len()];
+        for atmosphere_index in 0..num_atmosphere_points {
+            for lane in 0..LANES {
+                interleaved_maximum_order[atmosphere_index * LANES + lane] =
+                    maximum_order[lane * num_atmosphere_points + atmosphere_index];
+            }
+        }
+
+        transport_values.fill(0.0);
+        transport_value_tangent.fill(0.0);
+        first_order_radiance_tangent.fill(0.0);
+        let endpoint_medium = self.interpolate_endpoint_medium_jvp_batch4(
+            interleaved_extinction,
+            interleaved_albedo,
+            solar_transmission,
+            extinction_tangent,
+            single_scatter_albedo_tangent,
+            solar_transmission_tangent,
+        );
+        let grouped_phase = self.uses_grouped_phase_evaluation(num_atmosphere_points);
+        let phase_value_size = if grouped_phase {
+            num_atmosphere_points * LANES
+        } else {
+            0
+        };
+        let mut phase_values = vec![0.0; phase_value_size];
+        let mut phase_value_tangent = vec![0.0; phase_value_size];
+        let endpoint_value_size = self.phase_endpoint_cache_size * LANES;
+        let mut endpoint_scattering_values = vec![0.0; endpoint_value_size];
+        let mut endpoint_scattering_value_tangent = vec![0.0; endpoint_value_size];
+        for phase_geometry in 0..self.num_phase_geometries() {
+            let grouped_phase_geometry =
+                self.uses_grouped_phase_geometry(phase_geometry, num_atmosphere_points);
+            if grouped_phase_geometry {
+                self.fill_phase_values_batch4(
+                    phase_geometry,
+                    &interleaved_coefficients,
+                    &interleaved_maximum_order,
+                    num_atmosphere_points,
+                    &mut phase_values,
+                );
+                self.fill_phase_values_batch4(
+                    phase_geometry,
+                    legendre_coefficient_tangent,
+                    &interleaved_maximum_order,
+                    num_atmosphere_points,
+                    &mut phase_value_tangent,
+                );
+            }
+            self.fill_endpoint_scattering_values_jvp_batch4(
+                phase_geometry,
+                &interleaved_coefficients,
+                legendre_coefficient_tangent,
+                &interleaved_maximum_order,
+                if grouped_phase_geometry {
+                    phase_values.as_slice()
+                } else {
+                    &[]
+                },
+                if grouped_phase_geometry {
+                    phase_value_tangent.as_slice()
+                } else {
+                    &[]
+                },
+                &endpoint_medium,
+                &mut endpoint_scattering_values,
+                &mut endpoint_scattering_value_tangent,
+            );
+            for &ray_index in self.phase_geometry_rays(phase_geometry) {
+                self.assemble_ray_jvp_batch4_scalar(
+                    ray_index as usize,
+                    interleaved_extinction,
+                    interleaved_albedo,
+                    extinction_tangent,
+                    single_scatter_albedo_tangent,
+                    solar_transmission,
+                    solar_transmission_tangent,
+                    end_of_ray_source,
+                    end_of_ray_source_tangent,
+                    &endpoint_medium,
+                    &endpoint_scattering_values,
+                    &endpoint_scattering_value_tangent,
+                    transport_values,
+                    transport_value_tangent,
+                    first_order_radiance_tangent,
+                );
+            }
+        }
+        Ok(())
+    }
+
     /// Directional derivative of the fused transport and atmospheric
     /// first-order forcing. All output buffers are overwritten and no
     /// wavelength-sized allocation is performed.
@@ -1496,6 +1846,415 @@ impl ScalarRayTransport {
                     .copy_from_slice(&ray_first_order_tangent[..self.num_stokes]);
                 ray_end_attenuation[ray_index] = current_attenuation;
                 ray_end_attenuation_tangent[ray_index] = current_attenuation_tangent;
+            }
+        }
+        Ok(())
+    }
+
+    /// Reverse product for four scalar wavelengths. The converged solution and
+    /// forcing cotangent use the native element-major SIMD layout. Atmosphere
+    /// and phase inputs retain Eigen's wavelength-major layout; all returned
+    /// gradients are element-major so a lane can be selected without a
+    /// wavelength-sized transpose.
+    #[allow(clippy::too_many_arguments)]
+    pub fn assemble_batch4_vjp_with_first_order_scalar(
+        &self,
+        extinction: &[f64],
+        single_scatter_albedo: &[f64],
+        legendre_coefficients: &[f64],
+        maximum_order: &[i32],
+        solar_transmission: &[f64],
+        transport_column_indices: &[i32],
+        solution: &[f64],
+        first_order_radiance_gradient: &[f64],
+        end_of_ray_source: &[f64],
+        extinction_gradient: &mut [f64],
+        single_scatter_albedo_gradient: &mut [f64],
+        legendre_coefficient_gradient: &mut [f64],
+        solar_transmission_gradient: &mut [f64],
+        end_of_ray_source_gradient: &mut [f64],
+    ) -> Result<()> {
+        self.validate_first_order()?;
+        if self.num_stokes != 1
+            || !extinction.len().is_multiple_of(LANES)
+            || single_scatter_albedo.len() != extinction.len()
+            || maximum_order.len() != extinction.len()
+        {
+            bail!("four-wavelength transport VJP atmosphere arrays are inconsistent");
+        }
+        let num_atmosphere_points = extinction.len() / LANES;
+        if num_atmosphere_points < self.required_atmosphere_len {
+            bail!("four-wavelength transport VJP atmosphere is too small");
+        }
+        let coefficients_per_lane = num_atmosphere_points
+            .checked_mul(self.num_phase_moments)
+            .ok_or_else(|| anyhow!("four-wavelength phase coefficient size overflow"))?;
+        if legendre_coefficients.len() != coefficients_per_lane * LANES
+            || maximum_order.iter().any(|&order| {
+                order < 1
+                    || usize::try_from(order).map_or(true, |value| value > self.num_phase_moments)
+            })
+        {
+            bail!("four-wavelength transport VJP phase arrays are inconsistent");
+        }
+        let required_solar_transmission = if self.solar_transmission_on_atmosphere_grid {
+            self.required_atmosphere_len
+        } else {
+            self.num_layers() + self.num_rays()
+        };
+        let state_size = solution.len() / LANES;
+        if !solution.len().is_multiple_of(LANES)
+            || transport_column_indices.len() < self.required_transport_len
+            || transport_column_indices[..self.required_transport_len]
+                .iter()
+                .any(|&column| column < 0 || column as usize >= state_size)
+            || solar_transmission.len() < required_solar_transmission * LANES
+            || first_order_radiance_gradient.len() != self.num_rays() * LANES
+            || end_of_ray_source.len() != self.num_rays() * LANES
+        {
+            bail!("four-wavelength transport VJP primal buffers are inconsistent");
+        }
+        if extinction_gradient.len() != extinction.len()
+            || single_scatter_albedo_gradient.len() != extinction.len()
+            || legendre_coefficient_gradient.len() != legendre_coefficients.len()
+            || solar_transmission_gradient.len() != solar_transmission.len()
+            || end_of_ray_source_gradient.len() != end_of_ray_source.len()
+        {
+            bail!("four-wavelength transport VJP gradient buffers are inconsistent");
+        }
+
+        let mut interleaved_medium = vec![0.0; extinction.len() * 2];
+        let (interleaved_extinction, interleaved_albedo) =
+            interleaved_medium.split_at_mut(extinction.len());
+        interleave_wavelength_major(extinction, num_atmosphere_points, interleaved_extinction);
+        interleave_wavelength_major(
+            single_scatter_albedo,
+            num_atmosphere_points,
+            interleaved_albedo,
+        );
+        let mut interleaved_coefficients = vec![0.0; legendre_coefficients.len()];
+        interleave_wavelength_major(
+            legendre_coefficients,
+            coefficients_per_lane,
+            &mut interleaved_coefficients,
+        );
+        let mut interleaved_maximum_order = vec![0; maximum_order.len()];
+        for atmosphere_index in 0..num_atmosphere_points {
+            for lane in 0..LANES {
+                interleaved_maximum_order[atmosphere_index * LANES + lane] =
+                    maximum_order[lane * num_atmosphere_points + atmosphere_index];
+            }
+        }
+
+        extinction_gradient.fill(0.0);
+        single_scatter_albedo_gradient.fill(0.0);
+        legendre_coefficient_gradient.fill(0.0);
+        solar_transmission_gradient.fill(0.0);
+        end_of_ray_source_gradient.fill(0.0);
+
+        let endpoint_medium = self.interpolate_endpoint_medium_batch4(
+            interleaved_extinction,
+            interleaved_albedo,
+            solar_transmission,
+        );
+        let num_endpoints = self.num_unique_endpoint_stencils();
+        let mut endpoint_extinction_gradient = vec![0.0; num_endpoints * LANES];
+        let mut endpoint_albedo_gradient = vec![0.0; num_endpoints * LANES];
+        let mut endpoint_solar_gradient = if self.solar_transmission_on_atmosphere_grid {
+            vec![0.0; num_endpoints * LANES]
+        } else {
+            Vec::new()
+        };
+        let endpoint_value_size = self.phase_endpoint_cache_size * LANES;
+        let mut endpoint_phase_values = vec![0.0; endpoint_value_size];
+        let mut endpoint_phase_gradient = vec![0.0; endpoint_value_size];
+        let mut endpoint_weighted_source_cotangent = vec![0.0; endpoint_value_size];
+        let mut endpoint_source_cotangent = if self.solar_transmission_on_atmosphere_grid {
+            vec![0.0; endpoint_value_size]
+        } else {
+            Vec::new()
+        };
+        let grouped_phase = self.uses_grouped_phase_evaluation(num_atmosphere_points);
+        let phase_value_size = if grouped_phase {
+            num_atmosphere_points * LANES
+        } else {
+            0
+        };
+        let mut phase_values = vec![0.0; phase_value_size];
+        let mut phase_value_gradient = vec![0.0; phase_value_size];
+        let zero = Batch4::splat(0.0);
+        let one = Batch4::splat(1.0);
+
+        for phase_geometry in 0..self.num_phase_geometries() {
+            let grouped_phase_geometry =
+                self.uses_grouped_phase_geometry(phase_geometry, num_atmosphere_points);
+            if grouped_phase_geometry {
+                self.fill_phase_values_batch4(
+                    phase_geometry,
+                    &interleaved_coefficients,
+                    &interleaved_maximum_order,
+                    num_atmosphere_points,
+                    &mut phase_values,
+                );
+            }
+            phase_value_gradient.fill(0.0);
+            endpoint_phase_gradient.fill(0.0);
+            endpoint_weighted_source_cotangent.fill(0.0);
+            endpoint_source_cotangent.fill(0.0);
+            self.fill_endpoint_phase_cache_batch4(
+                phase_geometry,
+                &interleaved_coefficients,
+                &interleaved_maximum_order,
+                if grouped_phase_geometry {
+                    &phase_values
+                } else {
+                    &[]
+                },
+                &mut endpoint_phase_values,
+            );
+
+            for &ray_index in self.phase_geometry_rays(phase_geometry) {
+                let ray_index = ray_index as usize;
+                let layer_start = self.ray_layer_offsets[ray_index] as usize;
+                let layer_end = self.ray_layer_offsets[ray_index + 1] as usize;
+                let transport_offset = self.ray_transport_value_offsets[ray_index] as usize;
+                let forcing_cotangent = Batch4::load(first_order_radiance_gradient, ray_index);
+
+                // Reconstruct the total optical depth without retaining four
+                // wavelength copies of every layer's attenuation. The second
+                // pass below evaluates each layer's local medium while walking
+                // the reverse graph.
+                let mut total_optical_depth = zero;
+                for layer_index in layer_start..layer_end {
+                    total_optical_depth = total_optical_depth
+                        + self
+                            .layer_medium_batch4(
+                                layer_index,
+                                interleaved_extinction,
+                                interleaved_albedo,
+                            )
+                            .optical_depth;
+                }
+                let ray_end_attenuation = (-total_optical_depth).exp();
+                (ray_end_attenuation * forcing_cotangent)
+                    .store(end_of_ray_source_gradient, ray_index);
+                let mut current_attenuation_cotangent =
+                    forcing_cotangent * Batch4::load(end_of_ray_source, ray_index);
+
+                let (ground_indices, ground_weights) = self.ray_ground_stencil(ray_index);
+                for (&inner_index, &weight) in ground_indices.iter().zip(ground_weights) {
+                    let value_index = transport_offset + inner_index as usize;
+                    let column = transport_column_indices[value_index] as usize;
+                    current_attenuation_cotangent = current_attenuation_cotangent
+                        + Batch4::splat(weight)
+                            * forcing_cotangent
+                            * Batch4::load(solution, column);
+                }
+
+                let mut remaining_optical_depth = total_optical_depth;
+                let mut source_start = self.ray_source_offsets[ray_index] as usize;
+                let mut shared_endpoint = if layer_start < layer_end {
+                    self.endpoint_primal_batch4(
+                        ray_index,
+                        layer_start,
+                        false,
+                        solar_transmission,
+                        &endpoint_medium,
+                        &endpoint_phase_values,
+                    )
+                } else {
+                    zero
+                };
+                let mut shared_endpoint_cotangent = zero;
+
+                // Reverse the observer-to-far-end forward traversal.
+                for layer_index in layer_start..layer_end {
+                    let medium = self.layer_medium_batch4(
+                        layer_index,
+                        interleaved_extinction,
+                        interleaved_albedo,
+                    );
+                    let (attenuation, integration_factor, integration_factor_derivative) =
+                        attenuation_source_factor_and_derivative_batch4(medium.optical_depth);
+                    remaining_optical_depth = remaining_optical_depth - medium.optical_depth;
+                    let current_attenuation = (-remaining_optical_depth).exp();
+
+                    let source_end = source_start + self.layer_source_widths[layer_index] as usize;
+                    let (source_indices, source_weights) =
+                        self.source_stencil(source_start, source_end);
+                    source_start = source_end;
+                    let mut source_factor_cotangent = zero;
+                    for (&inner_index, &weight) in source_indices.iter().zip(source_weights) {
+                        let value_index = transport_offset + inner_index as usize;
+                        let column = transport_column_indices[value_index] as usize;
+                        source_factor_cotangent = source_factor_cotangent
+                            + Batch4::splat(weight)
+                                * forcing_cotangent
+                                * Batch4::load(solution, column);
+                    }
+
+                    let albedo_cotangent =
+                        source_factor_cotangent * (one - attenuation) * current_attenuation;
+                    let mut attenuation_cotangent =
+                        -source_factor_cotangent * medium.albedo * current_attenuation;
+                    let mut prefix_cotangent =
+                        source_factor_cotangent * medium.albedo * (one - attenuation);
+                    let mut optical_depth_cotangent = zero;
+
+                    let end_endpoint = shared_endpoint;
+                    let start_endpoint = if layer_index + 1 < layer_end {
+                        self.endpoint_primal_batch4(
+                            ray_index,
+                            layer_index + 1,
+                            false,
+                            solar_transmission,
+                            &endpoint_medium,
+                            &endpoint_phase_values,
+                        )
+                    } else {
+                        self.endpoint_primal_batch4(
+                            ray_index,
+                            layer_index,
+                            true,
+                            solar_transmission,
+                            &endpoint_medium,
+                            &endpoint_phase_values,
+                        )
+                    };
+                    let mut end_cotangent = shared_endpoint_cotangent;
+                    let mut start_cotangent = zero;
+                    let start_distance = self.layer_start_distance[layer_index];
+                    let end_distance = self.layer_end_distance[layer_index];
+                    if start_distance + end_distance >= 1.0e-4 {
+                        let weighted_endpoint = start_endpoint * Batch4::splat(start_distance)
+                            + end_endpoint * Batch4::splat(end_distance);
+                        let forcing_endpoint_dot = forcing_cotangent * weighted_endpoint;
+                        prefix_cotangent =
+                            prefix_cotangent + forcing_endpoint_dot * integration_factor;
+                        optical_depth_cotangent = optical_depth_cotangent
+                            + forcing_endpoint_dot
+                                * current_attenuation
+                                * integration_factor_derivative;
+                        let endpoint_cotangent =
+                            forcing_cotangent * current_attenuation * integration_factor;
+                        start_cotangent = endpoint_cotangent * Batch4::splat(start_distance);
+                        end_cotangent =
+                            end_cotangent + endpoint_cotangent * Batch4::splat(end_distance);
+                    }
+                    self.accumulate_endpoint_source_cotangent_batch4(
+                        ray_index,
+                        layer_index,
+                        false,
+                        end_cotangent,
+                        solar_transmission,
+                        &endpoint_medium,
+                        &endpoint_phase_values,
+                        &mut endpoint_weighted_source_cotangent,
+                        &mut endpoint_source_cotangent,
+                        solar_transmission_gradient,
+                    );
+                    shared_endpoint = start_endpoint;
+                    shared_endpoint_cotangent = start_cotangent;
+
+                    prefix_cotangent =
+                        prefix_cotangent + current_attenuation_cotangent * attenuation;
+                    attenuation_cotangent =
+                        attenuation_cotangent + current_attenuation_cotangent * current_attenuation;
+                    optical_depth_cotangent =
+                        optical_depth_cotangent - attenuation * attenuation_cotangent;
+                    self.accumulate_layer_medium_vjp_batch4(
+                        layer_index,
+                        optical_depth_cotangent,
+                        albedo_cotangent,
+                        extinction_gradient,
+                        single_scatter_albedo_gradient,
+                    );
+                    current_attenuation_cotangent = prefix_cotangent;
+                }
+                if layer_start < layer_end {
+                    self.accumulate_endpoint_source_cotangent_batch4(
+                        ray_index,
+                        layer_end - 1,
+                        true,
+                        shared_endpoint_cotangent,
+                        solar_transmission,
+                        &endpoint_medium,
+                        &endpoint_phase_values,
+                        &mut endpoint_weighted_source_cotangent,
+                        &mut endpoint_source_cotangent,
+                        solar_transmission_gradient,
+                    );
+                }
+            }
+
+            self.finish_endpoint_source_vjp_batch4(
+                phase_geometry,
+                &interleaved_maximum_order,
+                &endpoint_medium,
+                &endpoint_phase_values,
+                &endpoint_weighted_source_cotangent,
+                &endpoint_source_cotangent,
+                &mut endpoint_extinction_gradient,
+                &mut endpoint_albedo_gradient,
+                if grouped_phase_geometry {
+                    &mut endpoint_phase_gradient
+                } else {
+                    &mut []
+                },
+                &mut endpoint_solar_gradient,
+                legendre_coefficient_gradient,
+            );
+            if grouped_phase_geometry {
+                for (endpoint_slot, &endpoint_index) in self
+                    .phase_geometry_endpoints(phase_geometry)
+                    .iter()
+                    .enumerate()
+                {
+                    let endpoint_index = endpoint_index as usize;
+                    let (atmosphere_indices, weights) =
+                        self.endpoint_stencil_by_index(endpoint_index);
+                    let endpoint_slot =
+                        self.phase_endpoint_cache_slot(endpoint_slot, endpoint_index);
+                    let endpoint_cotangent = Batch4::load(&endpoint_phase_gradient, endpoint_slot);
+                    for (&atmosphere_index, &weight) in atmosphere_indices.iter().zip(weights) {
+                        let atmosphere_index = atmosphere_index as usize;
+                        (Batch4::load(&phase_value_gradient, atmosphere_index)
+                            + Batch4::splat(weight) * endpoint_cotangent)
+                            .store(&mut phase_value_gradient, atmosphere_index);
+                    }
+                }
+                self.accumulate_phase_values_vjp_batch4(
+                    phase_geometry,
+                    &interleaved_maximum_order,
+                    &phase_value_gradient,
+                    legendre_coefficient_gradient,
+                );
+            }
+        }
+
+        for endpoint_index in 0..num_endpoints {
+            let endpoint_extinction = Batch4::load(&endpoint_extinction_gradient, endpoint_index);
+            let endpoint_albedo = Batch4::load(&endpoint_albedo_gradient, endpoint_index);
+            let endpoint_solar = if self.solar_transmission_on_atmosphere_grid {
+                Batch4::load(&endpoint_solar_gradient, endpoint_index)
+            } else {
+                zero
+            };
+            let (atmosphere_indices, weights) = self.endpoint_stencil_by_index(endpoint_index);
+            for (&atmosphere_index, &weight) in atmosphere_indices.iter().zip(weights) {
+                let atmosphere_index = atmosphere_index as usize;
+                let weight = Batch4::splat(weight);
+                (Batch4::load(extinction_gradient, atmosphere_index)
+                    + weight * endpoint_extinction)
+                    .store(extinction_gradient, atmosphere_index);
+                (Batch4::load(single_scatter_albedo_gradient, atmosphere_index)
+                    + weight * endpoint_albedo)
+                    .store(single_scatter_albedo_gradient, atmosphere_index);
+                if self.solar_transmission_on_atmosphere_grid {
+                    (Batch4::load(solar_transmission_gradient, atmosphere_index)
+                        + weight * endpoint_solar)
+                        .store(solar_transmission_gradient, atmosphere_index);
+                }
             }
         }
         Ok(())
@@ -2515,6 +3274,123 @@ impl ScalarRayTransport {
         }
     }
 
+    fn phase_value_batch4(
+        &self,
+        phase_geometry: usize,
+        atmosphere_index: usize,
+        legendre_coefficients: &[f64],
+        maximum_order: &[i32],
+    ) -> Batch4 {
+        let basis_start = phase_geometry * self.num_phase_moments;
+        let intensity_basis =
+            &self.ray_phase_basis[basis_start..basis_start + self.num_phase_moments];
+        let orders: [usize; LANES] =
+            std::array::from_fn(|lane| maximum_order[atmosphere_index * LANES + lane] as usize);
+        let coefficient_start = atmosphere_index * self.num_phase_moments;
+        let mut phase = Batch4::splat(0.0);
+        for (degree, &basis) in intensity_basis
+            .iter()
+            .enumerate()
+            .take(orders.iter().copied().max().unwrap_or(0))
+        {
+            let mut coefficient =
+                Batch4::load(legendre_coefficients, coefficient_start + degree).to_array();
+            for lane in 0..LANES {
+                if degree >= orders[lane] {
+                    coefficient[lane] = 0.0;
+                }
+            }
+            phase = phase + Batch4::from_array(coefficient) * Batch4::splat(basis);
+        }
+        phase
+    }
+
+    fn fill_phase_values_batch4(
+        &self,
+        phase_geometry: usize,
+        legendre_coefficients: &[f64],
+        maximum_order: &[i32],
+        num_atmosphere_points: usize,
+        phase_values: &mut [f64],
+    ) {
+        debug_assert_eq!(phase_values.len(), num_atmosphere_points * LANES);
+        for atmosphere_index in 0..num_atmosphere_points {
+            self.phase_value_batch4(
+                phase_geometry,
+                atmosphere_index,
+                legendre_coefficients,
+                maximum_order,
+            )
+            .store(phase_values, atmosphere_index);
+        }
+    }
+
+    fn accumulate_endpoint_phase_vjp_direct_batch4(
+        &self,
+        phase_geometry: usize,
+        atmosphere_index: usize,
+        weight: f64,
+        maximum_order: &[i32],
+        phase_cotangent: Batch4,
+        legendre_coefficient_gradient: &mut [f64],
+    ) {
+        let basis_start = phase_geometry * self.num_phase_moments;
+        let intensity_basis =
+            &self.ray_phase_basis[basis_start..basis_start + self.num_phase_moments];
+        let orders: [usize; LANES] =
+            std::array::from_fn(|lane| maximum_order[atmosphere_index * LANES + lane] as usize);
+        let coefficient_start = atmosphere_index * self.num_phase_moments;
+        let weighted_cotangent = Batch4::splat(weight) * phase_cotangent;
+        for (degree, &basis) in intensity_basis
+            .iter()
+            .enumerate()
+            .take(orders.iter().copied().max().unwrap_or(0))
+        {
+            let active = std::array::from_fn(|lane| degree < orders[lane]);
+            let contribution = Batch4::select(
+                active,
+                weighted_cotangent * Batch4::splat(basis),
+                Batch4::splat(0.0),
+            );
+            let coefficient_index = coefficient_start + degree;
+            (Batch4::load(legendre_coefficient_gradient, coefficient_index) + contribution)
+                .store(legendre_coefficient_gradient, coefficient_index);
+        }
+    }
+
+    fn accumulate_phase_values_vjp_batch4(
+        &self,
+        phase_geometry: usize,
+        maximum_order: &[i32],
+        phase_value_gradient: &[f64],
+        legendre_coefficient_gradient: &mut [f64],
+    ) {
+        let basis_start = phase_geometry * self.num_phase_moments;
+        let intensity_basis =
+            &self.ray_phase_basis[basis_start..basis_start + self.num_phase_moments];
+        for atmosphere_index in 0..maximum_order.len() / LANES {
+            let orders: [usize; LANES] =
+                std::array::from_fn(|lane| maximum_order[atmosphere_index * LANES + lane] as usize);
+            let coefficient_start = atmosphere_index * self.num_phase_moments;
+            let phase_cotangent = Batch4::load(phase_value_gradient, atmosphere_index);
+            for (degree, &basis) in intensity_basis
+                .iter()
+                .enumerate()
+                .take(orders.iter().copied().max().unwrap_or(0))
+            {
+                let active = std::array::from_fn(|lane| degree < orders[lane]);
+                let contribution = Batch4::select(
+                    active,
+                    phase_cotangent * Batch4::splat(basis),
+                    Batch4::splat(0.0),
+                );
+                let coefficient_index = coefficient_start + degree;
+                (Batch4::load(legendre_coefficient_gradient, coefficient_index) + contribution)
+                    .store(legendre_coefficient_gradient, coefficient_index);
+            }
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn fill_phase_values_jvp(
         &self,
@@ -2977,6 +3853,172 @@ impl ScalarRayTransport {
         result
     }
 
+    fn interpolate_endpoint_medium_batch4(
+        &self,
+        extinction: &[f64],
+        single_scatter_albedo: &[f64],
+        solar_transmission: &[f64],
+    ) -> Vec<EndpointMediumBatch4> {
+        let mut result = vec![EndpointMediumBatch4::default(); self.num_unique_endpoint_stencils()];
+        for (endpoint_index, medium) in result.iter_mut().enumerate() {
+            let (atmosphere_indices, weights) = self.endpoint_stencil_by_index(endpoint_index);
+            for (&atmosphere_index, &weight) in atmosphere_indices.iter().zip(weights) {
+                let atmosphere_index = atmosphere_index as usize;
+                let weight = Batch4::splat(weight);
+                medium.extinction =
+                    medium.extinction + weight * Batch4::load(extinction, atmosphere_index);
+                medium.albedo =
+                    medium.albedo + weight * Batch4::load(single_scatter_albedo, atmosphere_index);
+                if self.solar_transmission_on_atmosphere_grid {
+                    medium.solar_transmission = medium.solar_transmission
+                        + weight * Batch4::load(solar_transmission, atmosphere_index);
+                }
+            }
+        }
+        result
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn interpolate_endpoint_medium_jvp_batch4(
+        &self,
+        extinction: &[f64],
+        single_scatter_albedo: &[f64],
+        solar_transmission: &[f64],
+        extinction_tangent: &[f64],
+        single_scatter_albedo_tangent: &[f64],
+        solar_transmission_tangent: &[f64],
+    ) -> Vec<EndpointMediumJvpBatch4> {
+        let mut result =
+            vec![EndpointMediumJvpBatch4::default(); self.num_unique_endpoint_stencils()];
+        for (endpoint_index, medium) in result.iter_mut().enumerate() {
+            let (atmosphere_indices, weights) = self.endpoint_stencil_by_index(endpoint_index);
+            for (&atmosphere_index, &weight) in atmosphere_indices.iter().zip(weights) {
+                let atmosphere_index = atmosphere_index as usize;
+                let weight = Batch4::splat(weight);
+                medium.extinction.value =
+                    medium.extinction.value + weight * Batch4::load(extinction, atmosphere_index);
+                medium.extinction.tangent = medium.extinction.tangent
+                    + weight * Batch4::load(extinction_tangent, atmosphere_index);
+                medium.albedo.value = medium.albedo.value
+                    + weight * Batch4::load(single_scatter_albedo, atmosphere_index);
+                medium.albedo.tangent = medium.albedo.tangent
+                    + weight * Batch4::load(single_scatter_albedo_tangent, atmosphere_index);
+                if self.solar_transmission_on_atmosphere_grid {
+                    medium.solar_transmission.value = medium.solar_transmission.value
+                        + weight * Batch4::load(solar_transmission, atmosphere_index);
+                    medium.solar_transmission.tangent = medium.solar_transmission.tangent
+                        + weight * Batch4::load(solar_transmission_tangent, atmosphere_index);
+                }
+            }
+        }
+        result
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn endpoint_phase_batch4(
+        &self,
+        phase_geometry: usize,
+        endpoint_index: usize,
+        legendre_coefficients: &[f64],
+        maximum_order: &[i32],
+        phase_values: &[f64],
+    ) -> Batch4 {
+        let (atmosphere_indices, weights) = self.endpoint_stencil_by_index(endpoint_index);
+        let mut phase = Batch4::splat(0.0);
+        for (&atmosphere_index, &weight) in atmosphere_indices.iter().zip(weights) {
+            let atmosphere_index = atmosphere_index as usize;
+            let point_phase = if phase_values.is_empty() {
+                self.phase_value_batch4(
+                    phase_geometry,
+                    atmosphere_index,
+                    legendre_coefficients,
+                    maximum_order,
+                )
+            } else {
+                Batch4::load(phase_values, atmosphere_index)
+            };
+            phase = phase + Batch4::splat(weight) * point_phase;
+        }
+        phase
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn fill_endpoint_scattering_values_batch4(
+        &self,
+        phase_geometry: usize,
+        legendre_coefficients: &[f64],
+        maximum_order: &[i32],
+        phase_values: &[f64],
+        endpoint_medium: &[EndpointMediumBatch4],
+        endpoint_scattering_values: &mut [f64],
+    ) {
+        let inverse_sphere = Batch4::splat(1.0 / (4.0 * std::f64::consts::PI));
+        for (endpoint_slot, &endpoint_index) in self
+            .phase_geometry_endpoints(phase_geometry)
+            .iter()
+            .enumerate()
+        {
+            let endpoint_index = endpoint_index as usize;
+            let phase = self.endpoint_phase_batch4(
+                phase_geometry,
+                endpoint_index,
+                legendre_coefficients,
+                maximum_order,
+                phase_values,
+            );
+            let medium = endpoint_medium[endpoint_index];
+            let output = self.phase_endpoint_cache_slot(endpoint_slot, endpoint_index);
+            (medium.extinction * medium.albedo * inverse_sphere * phase)
+                .store(endpoint_scattering_values, output);
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn fill_endpoint_scattering_values_jvp_batch4(
+        &self,
+        phase_geometry: usize,
+        legendre_coefficients: &[f64],
+        legendre_coefficient_tangent: &[f64],
+        maximum_order: &[i32],
+        phase_values: &[f64],
+        phase_value_tangent: &[f64],
+        endpoint_medium: &[EndpointMediumJvpBatch4],
+        endpoint_scattering_values: &mut [f64],
+        endpoint_scattering_value_tangent: &mut [f64],
+    ) {
+        let inverse_sphere = Batch4::splat(1.0 / (4.0 * std::f64::consts::PI));
+        for (endpoint_slot, &endpoint_index) in self
+            .phase_geometry_endpoints(phase_geometry)
+            .iter()
+            .enumerate()
+        {
+            let endpoint_index = endpoint_index as usize;
+            let phase = self.endpoint_phase_batch4(
+                phase_geometry,
+                endpoint_index,
+                legendre_coefficients,
+                maximum_order,
+                phase_values,
+            );
+            let phase_tangent = self.endpoint_phase_batch4(
+                phase_geometry,
+                endpoint_index,
+                legendre_coefficient_tangent,
+                maximum_order,
+                phase_value_tangent,
+            );
+            let medium = endpoint_medium[endpoint_index];
+            let output = self.phase_endpoint_cache_slot(endpoint_slot, endpoint_index);
+            let scattering = medium.extinction.value * medium.albedo.value * inverse_sphere * phase;
+            let scattering_tangent = inverse_sphere
+                * (medium.extinction.tangent * medium.albedo.value * phase
+                    + medium.extinction.value * medium.albedo.tangent * phase
+                    + medium.extinction.value * medium.albedo.value * phase_tangent);
+            scattering.store(endpoint_scattering_values, output);
+            scattering_tangent.store(endpoint_scattering_value_tangent, output);
+        }
+    }
+
     fn endpoint_phase_by_index(
         &self,
         phase_geometry: usize,
@@ -3103,6 +4145,34 @@ impl ScalarRayTransport {
         }
     }
 
+    fn fill_endpoint_phase_cache_batch4(
+        &self,
+        phase_geometry: usize,
+        legendre_coefficients: &[f64],
+        maximum_order: &[i32],
+        phase_values: &[f64],
+        endpoint_phase_values: &mut [f64],
+    ) {
+        for (endpoint_slot, &endpoint_index) in self
+            .phase_geometry_endpoints(phase_geometry)
+            .iter()
+            .enumerate()
+        {
+            let endpoint_index = endpoint_index as usize;
+            let phase = self.endpoint_phase_batch4(
+                phase_geometry,
+                endpoint_index,
+                legendre_coefficients,
+                maximum_order,
+                phase_values,
+            );
+            phase.store(
+                endpoint_phase_values,
+                self.phase_endpoint_cache_slot(endpoint_slot, endpoint_index),
+            );
+        }
+    }
+
     fn fill_endpoint_phase_cache(
         &self,
         phase_geometry: usize,
@@ -3158,6 +4228,487 @@ impl ScalarRayTransport {
             }
         }
         result
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn endpoint_source_batch4(
+        &self,
+        ray_index: usize,
+        layer_index: usize,
+        entrance: bool,
+        solar_transmission: &[f64],
+        endpoint_medium: &[EndpointMediumBatch4],
+        endpoint_scattering_values: &[f64],
+    ) -> Batch4 {
+        let (endpoint_index, endpoint_slot) =
+            self.endpoint_location(ray_index, layer_index, entrance);
+        let solar_transmission = if self.solar_transmission_on_atmosphere_grid {
+            endpoint_medium[endpoint_index].solar_transmission
+        } else {
+            let exit_solar_index = layer_index + ray_index;
+            Batch4::load(solar_transmission, exit_solar_index + usize::from(entrance))
+        };
+        Batch4::load(endpoint_scattering_values, endpoint_slot) * solar_transmission
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn endpoint_source_jvp_batch4(
+        &self,
+        ray_index: usize,
+        layer_index: usize,
+        entrance: bool,
+        solar_transmission: &[f64],
+        solar_transmission_tangent: &[f64],
+        endpoint_medium: &[EndpointMediumJvpBatch4],
+        endpoint_scattering_values: &[f64],
+        endpoint_scattering_value_tangent: &[f64],
+    ) -> ValueTangentBatch4 {
+        let (endpoint_index, endpoint_slot) =
+            self.endpoint_location(ray_index, layer_index, entrance);
+        let solar = if self.solar_transmission_on_atmosphere_grid {
+            endpoint_medium[endpoint_index].solar_transmission
+        } else {
+            let exit_solar_index = layer_index + ray_index;
+            let solar_index = exit_solar_index + usize::from(entrance);
+            ValueTangentBatch4 {
+                value: Batch4::load(solar_transmission, solar_index),
+                tangent: Batch4::load(solar_transmission_tangent, solar_index),
+            }
+        };
+        let scattering = Batch4::load(endpoint_scattering_values, endpoint_slot);
+        let scattering_tangent = Batch4::load(endpoint_scattering_value_tangent, endpoint_slot);
+        ValueTangentBatch4 {
+            value: scattering * solar.value,
+            tangent: scattering_tangent * solar.value + scattering * solar.tangent,
+        }
+    }
+
+    fn endpoint_primal_batch4(
+        &self,
+        ray_index: usize,
+        layer_index: usize,
+        entrance: bool,
+        solar_transmission: &[f64],
+        endpoint_medium: &[EndpointMediumBatch4],
+        endpoint_phase_values: &[f64],
+    ) -> Batch4 {
+        let (endpoint_index, endpoint_slot) =
+            self.endpoint_location(ray_index, layer_index, entrance);
+        let medium = endpoint_medium[endpoint_index];
+        let endpoint_solar = if self.solar_transmission_on_atmosphere_grid {
+            medium.solar_transmission
+        } else {
+            let exit_solar_index = layer_index + ray_index;
+            Batch4::load(solar_transmission, exit_solar_index + usize::from(entrance))
+        };
+        medium.extinction
+            * medium.albedo
+            * endpoint_solar
+            * Batch4::splat(1.0 / (4.0 * std::f64::consts::PI))
+            * Batch4::load(endpoint_phase_values, endpoint_slot)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn accumulate_endpoint_source_cotangent_batch4(
+        &self,
+        ray_index: usize,
+        layer_index: usize,
+        entrance: bool,
+        source_cotangent: Batch4,
+        solar_transmission: &[f64],
+        endpoint_medium: &[EndpointMediumBatch4],
+        endpoint_phase_values: &[f64],
+        endpoint_weighted_source_cotangent: &mut [f64],
+        endpoint_source_cotangent: &mut [f64],
+        solar_transmission_gradient: &mut [f64],
+    ) {
+        let (endpoint_index, endpoint_slot) =
+            self.endpoint_location(ray_index, layer_index, entrance);
+        let endpoint_solar = if self.solar_transmission_on_atmosphere_grid {
+            endpoint_medium[endpoint_index].solar_transmission
+        } else {
+            let exit_solar_index = layer_index + ray_index;
+            Batch4::load(solar_transmission, exit_solar_index + usize::from(entrance))
+        };
+        (Batch4::load(endpoint_weighted_source_cotangent, endpoint_slot)
+            + source_cotangent * endpoint_solar)
+            .store(endpoint_weighted_source_cotangent, endpoint_slot);
+        if self.solar_transmission_on_atmosphere_grid {
+            (Batch4::load(endpoint_source_cotangent, endpoint_slot) + source_cotangent)
+                .store(endpoint_source_cotangent, endpoint_slot);
+        } else {
+            let medium = endpoint_medium[endpoint_index];
+            let solar_cotangent = source_cotangent
+                * Batch4::load(endpoint_phase_values, endpoint_slot)
+                * medium.extinction
+                * medium.albedo
+                * Batch4::splat(1.0 / (4.0 * std::f64::consts::PI));
+            let solar_index = layer_index + ray_index + usize::from(entrance);
+            (Batch4::load(solar_transmission_gradient, solar_index) + solar_cotangent)
+                .store(solar_transmission_gradient, solar_index);
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn finish_endpoint_source_vjp_batch4(
+        &self,
+        phase_geometry: usize,
+        maximum_order: &[i32],
+        endpoint_medium: &[EndpointMediumBatch4],
+        endpoint_phase_values: &[f64],
+        endpoint_weighted_source_cotangent: &[f64],
+        endpoint_source_cotangent: &[f64],
+        endpoint_extinction_gradient: &mut [f64],
+        endpoint_albedo_gradient: &mut [f64],
+        endpoint_phase_gradient: &mut [f64],
+        endpoint_solar_gradient: &mut [f64],
+        legendre_coefficient_gradient: &mut [f64],
+    ) {
+        let inverse_sphere = Batch4::splat(1.0 / (4.0 * std::f64::consts::PI));
+        for (endpoint_slot, &endpoint_index) in self
+            .phase_geometry_endpoints(phase_geometry)
+            .iter()
+            .enumerate()
+        {
+            let endpoint_index = endpoint_index as usize;
+            let endpoint_slot = self.phase_endpoint_cache_slot(endpoint_slot, endpoint_index);
+            let weighted_cotangent =
+                Batch4::load(endpoint_weighted_source_cotangent, endpoint_slot);
+            let phase = Batch4::load(endpoint_phase_values, endpoint_slot);
+            let amplitude_cotangent = weighted_cotangent * phase;
+            let medium = endpoint_medium[endpoint_index];
+            (Batch4::load(endpoint_extinction_gradient, endpoint_index)
+                + amplitude_cotangent * medium.albedo * inverse_sphere)
+                .store(endpoint_extinction_gradient, endpoint_index);
+            (Batch4::load(endpoint_albedo_gradient, endpoint_index)
+                + amplitude_cotangent * medium.extinction * inverse_sphere)
+                .store(endpoint_albedo_gradient, endpoint_index);
+            let phase_scale = medium.extinction * medium.albedo * inverse_sphere;
+            let phase_cotangent = weighted_cotangent * phase_scale;
+            if endpoint_phase_gradient.is_empty() {
+                let (atmosphere_indices, weights) = self.endpoint_stencil_by_index(endpoint_index);
+                for (&atmosphere_index, &weight) in atmosphere_indices.iter().zip(weights) {
+                    self.accumulate_endpoint_phase_vjp_direct_batch4(
+                        phase_geometry,
+                        atmosphere_index as usize,
+                        weight,
+                        maximum_order,
+                        phase_cotangent,
+                        legendre_coefficient_gradient,
+                    );
+                }
+            } else {
+                (Batch4::load(endpoint_phase_gradient, endpoint_slot) + phase_cotangent)
+                    .store(endpoint_phase_gradient, endpoint_slot);
+            }
+            if self.solar_transmission_on_atmosphere_grid {
+                let solar_cotangent =
+                    Batch4::load(endpoint_source_cotangent, endpoint_slot) * phase * phase_scale;
+                (Batch4::load(endpoint_solar_gradient, endpoint_index) + solar_cotangent)
+                    .store(endpoint_solar_gradient, endpoint_index);
+            }
+        }
+    }
+
+    fn layer_medium_batch4(
+        &self,
+        layer_index: usize,
+        extinction: &[f64],
+        single_scatter_albedo: &[f64],
+    ) -> LayerMediumBatch4 {
+        let (start, end) = if self.uniform_atmosphere_stencil_width == 0 {
+            (
+                self.layer_atmosphere_offsets[layer_index] as usize,
+                self.layer_atmosphere_offsets[layer_index + 1] as usize,
+            )
+        } else {
+            let start = layer_index * self.uniform_atmosphere_stencil_width as usize;
+            (
+                start,
+                start + self.uniform_atmosphere_stencil_width as usize,
+            )
+        };
+        let mut medium = LayerMediumBatch4::default();
+        for stencil_index in start..end {
+            let atmosphere_index = self.atmosphere_index(stencil_index);
+            medium.optical_depth = medium.optical_depth
+                + Batch4::splat(self.optical_depth_weights[stencil_index])
+                    * Batch4::load(extinction, atmosphere_index);
+            medium.albedo = medium.albedo
+                + Batch4::splat(self.albedo_weights[stencil_index])
+                    * Batch4::load(single_scatter_albedo, atmosphere_index);
+        }
+        medium
+    }
+
+    fn layer_medium_jvp_batch4(
+        &self,
+        layer_index: usize,
+        extinction: &[f64],
+        single_scatter_albedo: &[f64],
+        extinction_tangent: &[f64],
+        single_scatter_albedo_tangent: &[f64],
+    ) -> LayerMediumJvpBatch4 {
+        let (start, end) = if self.uniform_atmosphere_stencil_width == 0 {
+            (
+                self.layer_atmosphere_offsets[layer_index] as usize,
+                self.layer_atmosphere_offsets[layer_index + 1] as usize,
+            )
+        } else {
+            let start = layer_index * self.uniform_atmosphere_stencil_width as usize;
+            (
+                start,
+                start + self.uniform_atmosphere_stencil_width as usize,
+            )
+        };
+        let mut medium = LayerMediumJvpBatch4::default();
+        for stencil_index in start..end {
+            let atmosphere_index = self.atmosphere_index(stencil_index);
+            let optical_depth_weight = Batch4::splat(self.optical_depth_weights[stencil_index]);
+            let albedo_weight = Batch4::splat(self.albedo_weights[stencil_index]);
+            medium.optical_depth.value = medium.optical_depth.value
+                + optical_depth_weight * Batch4::load(extinction, atmosphere_index);
+            medium.optical_depth.tangent = medium.optical_depth.tangent
+                + optical_depth_weight * Batch4::load(extinction_tangent, atmosphere_index);
+            medium.albedo.value = medium.albedo.value
+                + albedo_weight * Batch4::load(single_scatter_albedo, atmosphere_index);
+            medium.albedo.tangent = medium.albedo.tangent
+                + albedo_weight * Batch4::load(single_scatter_albedo_tangent, atmosphere_index);
+        }
+        medium
+    }
+
+    fn accumulate_layer_medium_vjp_batch4(
+        &self,
+        layer_index: usize,
+        optical_depth_cotangent: Batch4,
+        albedo_cotangent: Batch4,
+        extinction_gradient: &mut [f64],
+        single_scatter_albedo_gradient: &mut [f64],
+    ) {
+        let (start, end) = if self.uniform_atmosphere_stencil_width == 0 {
+            (
+                self.layer_atmosphere_offsets[layer_index] as usize,
+                self.layer_atmosphere_offsets[layer_index + 1] as usize,
+            )
+        } else {
+            let start = layer_index * self.uniform_atmosphere_stencil_width as usize;
+            (
+                start,
+                start + self.uniform_atmosphere_stencil_width as usize,
+            )
+        };
+        for stencil_index in start..end {
+            let atmosphere_index = self.atmosphere_index(stencil_index);
+            (Batch4::load(extinction_gradient, atmosphere_index)
+                + Batch4::splat(self.optical_depth_weights[stencil_index])
+                    * optical_depth_cotangent)
+                .store(extinction_gradient, atmosphere_index);
+            (Batch4::load(single_scatter_albedo_gradient, atmosphere_index)
+                + Batch4::splat(self.albedo_weights[stencil_index]) * albedo_cotangent)
+                .store(single_scatter_albedo_gradient, atmosphere_index);
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn assemble_ray_batch4_scalar(
+        &self,
+        ray_index: usize,
+        extinction: &[f64],
+        single_scatter_albedo: &[f64],
+        solar_transmission: &[f64],
+        end_of_ray_source: &[f64],
+        endpoint_medium: &[EndpointMediumBatch4],
+        endpoint_scattering_values: &[f64],
+        transport_values: &mut [f64],
+        first_order_radiance: &mut [f64],
+    ) {
+        let layer_start = self.ray_layer_offsets[ray_index] as usize;
+        let layer_end = self.ray_layer_offsets[ray_index + 1] as usize;
+        let transport_offset = self.ray_transport_value_offsets[ray_index] as usize;
+        let mut current_attenuation = Batch4::splat(1.0);
+        let mut ray_first_order = Batch4::splat(0.0);
+        let mut source_end = self.ray_source_offsets[ray_index + 1] as usize;
+        let mut shared_endpoint_source = if layer_start < layer_end {
+            self.endpoint_source_batch4(
+                ray_index,
+                layer_end - 1,
+                true,
+                solar_transmission,
+                endpoint_medium,
+                endpoint_scattering_values,
+            )
+        } else {
+            Batch4::splat(0.0)
+        };
+
+        for layer_index in (layer_start..layer_end).rev() {
+            let medium = self.layer_medium_batch4(layer_index, extinction, single_scatter_albedo);
+            let (attenuation, integration_factor) =
+                attenuation_and_constant_source_factor_batch4(medium.optical_depth);
+            let source_factor =
+                medium.albedo * (Batch4::splat(1.0) - attenuation) * current_attenuation;
+            let source_start = source_end - self.layer_source_widths[layer_index] as usize;
+            let (source_indices, source_weights) = self.source_stencil(source_start, source_end);
+            source_end = source_start;
+            for (&inner_index, &weight) in source_indices.iter().zip(source_weights) {
+                let value_index = transport_offset + inner_index as usize;
+                let value = Batch4::load(transport_values, value_index)
+                    + Batch4::splat(weight) * source_factor;
+                value.store(transport_values, value_index);
+            }
+
+            let start_source = shared_endpoint_source;
+            let end_source = self.endpoint_source_batch4(
+                ray_index,
+                layer_index,
+                false,
+                solar_transmission,
+                endpoint_medium,
+                endpoint_scattering_values,
+            );
+            let start_distance = self.layer_start_distance[layer_index];
+            let end_distance = self.layer_end_distance[layer_index];
+            if start_distance + end_distance >= 1.0e-4 {
+                ray_first_order = ray_first_order
+                    + current_attenuation
+                        * integration_factor
+                        * (start_source * Batch4::splat(start_distance)
+                            + end_source * Batch4::splat(end_distance));
+            }
+            shared_endpoint_source = end_source;
+            current_attenuation = current_attenuation * attenuation;
+        }
+
+        let (ground_indices, ground_weights) = self.ray_ground_stencil(ray_index);
+        for (&inner_index, &weight) in ground_indices.iter().zip(ground_weights) {
+            let value_index = transport_offset + inner_index as usize;
+            let value = Batch4::load(transport_values, value_index)
+                + Batch4::splat(weight) * current_attenuation;
+            value.store(transport_values, value_index);
+        }
+        ray_first_order =
+            ray_first_order + current_attenuation * Batch4::load(end_of_ray_source, ray_index);
+        ray_first_order.store(first_order_radiance, ray_index);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn assemble_ray_jvp_batch4_scalar(
+        &self,
+        ray_index: usize,
+        extinction: &[f64],
+        single_scatter_albedo: &[f64],
+        extinction_tangent: &[f64],
+        single_scatter_albedo_tangent: &[f64],
+        solar_transmission: &[f64],
+        solar_transmission_tangent: &[f64],
+        end_of_ray_source: &[f64],
+        end_of_ray_source_tangent: &[f64],
+        endpoint_medium: &[EndpointMediumJvpBatch4],
+        endpoint_scattering_values: &[f64],
+        endpoint_scattering_value_tangent: &[f64],
+        transport_values: &mut [f64],
+        transport_value_tangent: &mut [f64],
+        first_order_radiance_tangent: &mut [f64],
+    ) {
+        let layer_start = self.ray_layer_offsets[ray_index] as usize;
+        let layer_end = self.ray_layer_offsets[ray_index + 1] as usize;
+        let transport_offset = self.ray_transport_value_offsets[ray_index] as usize;
+        let one = Batch4::splat(1.0);
+        let mut current_attenuation = one;
+        let mut current_attenuation_tangent = Batch4::splat(0.0);
+        let mut ray_first_order_tangent = Batch4::splat(0.0);
+        let mut source_end = self.ray_source_offsets[ray_index + 1] as usize;
+        let mut shared_endpoint_source = if layer_start < layer_end {
+            self.endpoint_source_jvp_batch4(
+                ray_index,
+                layer_end - 1,
+                true,
+                solar_transmission,
+                solar_transmission_tangent,
+                endpoint_medium,
+                endpoint_scattering_values,
+                endpoint_scattering_value_tangent,
+            )
+        } else {
+            ValueTangentBatch4::default()
+        };
+
+        for layer_index in (layer_start..layer_end).rev() {
+            let medium = self.layer_medium_jvp_batch4(
+                layer_index,
+                extinction,
+                single_scatter_albedo,
+                extinction_tangent,
+                single_scatter_albedo_tangent,
+            );
+            let (attenuation, integration_factor, integration_factor_derivative) =
+                attenuation_source_factor_and_derivative_batch4(medium.optical_depth.value);
+            let attenuation_tangent = -attenuation * medium.optical_depth.tangent;
+            let source_factor = medium.albedo.value * (one - attenuation) * current_attenuation;
+            let source_factor_tangent =
+                medium.albedo.tangent * (one - attenuation) * current_attenuation
+                    - medium.albedo.value * attenuation_tangent * current_attenuation
+                    + medium.albedo.value * (one - attenuation) * current_attenuation_tangent;
+            let source_start = source_end - self.layer_source_widths[layer_index] as usize;
+            let (source_indices, source_weights) = self.source_stencil(source_start, source_end);
+            source_end = source_start;
+            for (&inner_index, &weight) in source_indices.iter().zip(source_weights) {
+                let value_index = transport_offset + inner_index as usize;
+                let weight = Batch4::splat(weight);
+                (Batch4::load(transport_values, value_index) + weight * source_factor)
+                    .store(transport_values, value_index);
+                (Batch4::load(transport_value_tangent, value_index)
+                    + weight * source_factor_tangent)
+                    .store(transport_value_tangent, value_index);
+            }
+
+            let start_source = shared_endpoint_source;
+            let end_source = self.endpoint_source_jvp_batch4(
+                ray_index,
+                layer_index,
+                false,
+                solar_transmission,
+                solar_transmission_tangent,
+                endpoint_medium,
+                endpoint_scattering_values,
+                endpoint_scattering_value_tangent,
+            );
+            let start_distance = self.layer_start_distance[layer_index];
+            let end_distance = self.layer_end_distance[layer_index];
+            if start_distance + end_distance >= 1.0e-4 {
+                let weighted_source = start_source.value * Batch4::splat(start_distance)
+                    + end_source.value * Batch4::splat(end_distance);
+                let weighted_source_tangent = start_source.tangent * Batch4::splat(start_distance)
+                    + end_source.tangent * Batch4::splat(end_distance);
+                let integration_factor_tangent =
+                    integration_factor_derivative * medium.optical_depth.tangent;
+                ray_first_order_tangent = ray_first_order_tangent
+                    + current_attenuation_tangent * integration_factor * weighted_source
+                    + current_attenuation
+                        * (integration_factor_tangent * weighted_source
+                            + integration_factor * weighted_source_tangent);
+            }
+            shared_endpoint_source = end_source;
+            current_attenuation_tangent = current_attenuation_tangent * attenuation
+                + current_attenuation * attenuation_tangent;
+            current_attenuation = current_attenuation * attenuation;
+        }
+
+        let (ground_indices, ground_weights) = self.ray_ground_stencil(ray_index);
+        for (&inner_index, &weight) in ground_indices.iter().zip(ground_weights) {
+            let value_index = transport_offset + inner_index as usize;
+            let weight = Batch4::splat(weight);
+            (Batch4::load(transport_values, value_index) + weight * current_attenuation)
+                .store(transport_values, value_index);
+            (Batch4::load(transport_value_tangent, value_index)
+                + weight * current_attenuation_tangent)
+                .store(transport_value_tangent, value_index);
+        }
+        ray_first_order_tangent = ray_first_order_tangent
+            + current_attenuation_tangent * Batch4::load(end_of_ray_source, ray_index)
+            + current_attenuation * Batch4::load(end_of_ray_source_tangent, ray_index);
+        ray_first_order_tangent.store(first_order_radiance_tangent, ray_index);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -3434,6 +4985,42 @@ struct LayerMedium {
     albedo: f64,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct LayerMediumBatch4 {
+    optical_depth: Batch4,
+    albedo: Batch4,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ValueTangentBatch4 {
+    value: Batch4,
+    tangent: Batch4,
+}
+
+impl Default for ValueTangentBatch4 {
+    fn default() -> Self {
+        Self {
+            value: Batch4::splat(0.0),
+            tangent: Batch4::splat(0.0),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct LayerMediumJvpBatch4 {
+    optical_depth: ValueTangentBatch4,
+    albedo: ValueTangentBatch4,
+}
+
+impl Default for LayerMediumBatch4 {
+    fn default() -> Self {
+        Self {
+            optical_depth: Batch4::splat(0.0),
+            albedo: Batch4::splat(0.0),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Default)]
 struct LayerMediumJvp {
     optical_depth: f64,
@@ -3447,6 +5034,30 @@ struct EndpointMedium {
     extinction: f64,
     albedo: f64,
     solar_transmission: f64,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct EndpointMediumBatch4 {
+    extinction: Batch4,
+    albedo: Batch4,
+    solar_transmission: Batch4,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct EndpointMediumJvpBatch4 {
+    extinction: ValueTangentBatch4,
+    albedo: ValueTangentBatch4,
+    solar_transmission: ValueTangentBatch4,
+}
+
+impl Default for EndpointMediumBatch4 {
+    fn default() -> Self {
+        Self {
+            extinction: Batch4::splat(0.0),
+            albedo: Batch4::splat(0.0),
+            solar_transmission: Batch4::splat(0.0),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Default)]
@@ -3566,6 +5177,78 @@ fn attenuation_and_constant_source_factor(optical_depth: f64) -> (f64, f64) {
 }
 
 #[inline(always)]
+fn attenuation_and_constant_source_factor_batch4(optical_depth: Batch4) -> (Batch4, Batch4) {
+    let one = Batch4::splat(1.0);
+    let series_attenuation = one
+        + optical_depth
+            * (Batch4::splat(-1.0)
+                + optical_depth
+                    * (Batch4::splat(0.5)
+                        + optical_depth
+                            * (Batch4::splat(-1.0 / 6.0)
+                                + optical_depth
+                                    * (Batch4::splat(1.0 / 24.0)
+                                        + optical_depth
+                                            * (Batch4::splat(-1.0 / 120.0)
+                                                + optical_depth * Batch4::splat(1.0 / 720.0))))));
+    let series_factor = one
+        + optical_depth
+            * (Batch4::splat(-0.5)
+                + optical_depth
+                    * (Batch4::splat(1.0 / 6.0)
+                        + optical_depth
+                            * (Batch4::splat(-1.0 / 24.0)
+                                + optical_depth
+                                    * (Batch4::splat(1.0 / 120.0)
+                                        + optical_depth
+                                            * (Batch4::splat(-1.0 / 720.0)
+                                                + optical_depth * Batch4::splat(1.0 / 5040.0))))));
+    let exponential_attenuation = (-optical_depth).exp();
+    let exponential_factor = (one - exponential_attenuation) / optical_depth;
+    (
+        Batch4::select_abs_lt(
+            optical_depth,
+            SERIES_OPTICAL_DEPTH_LIMIT,
+            series_attenuation,
+            exponential_attenuation,
+        ),
+        Batch4::select_abs_lt(
+            optical_depth,
+            SERIES_OPTICAL_DEPTH_LIMIT,
+            series_factor,
+            exponential_factor,
+        ),
+    )
+}
+
+#[inline(always)]
+fn attenuation_source_factor_and_derivative_batch4(
+    optical_depth: Batch4,
+) -> (Batch4, Batch4, Batch4) {
+    let (attenuation, value) = attenuation_and_constant_source_factor_batch4(optical_depth);
+    let series_derivative = Batch4::splat(-0.5)
+        + optical_depth
+            * (Batch4::splat(1.0 / 3.0)
+                + optical_depth
+                    * (Batch4::splat(-1.0 / 8.0)
+                        + optical_depth
+                            * (Batch4::splat(1.0 / 30.0)
+                                + optical_depth
+                                    * (Batch4::splat(-1.0 / 144.0)
+                                        + optical_depth * Batch4::splat(1.0 / 840.0)))));
+    let inverse_optical_depth = Batch4::splat(1.0) / optical_depth;
+    let exponential_derivative =
+        inverse_optical_depth - value * (Batch4::splat(1.0) + inverse_optical_depth);
+    let derivative = Batch4::select_abs_lt(
+        optical_depth,
+        SERIES_OPTICAL_DEPTH_LIMIT,
+        series_derivative,
+        exponential_derivative,
+    );
+    (attenuation, value, derivative)
+}
+
+#[inline(always)]
 fn attenuation_source_factor_and_derivative(optical_depth: f64) -> (f64, f64, f64) {
     if optical_depth.abs() < SERIES_OPTICAL_DEPTH_LIMIT {
         let (attenuation, value) = attenuation_and_constant_source_factor(optical_depth);
@@ -3649,6 +5332,7 @@ fn checked_last(offsets: &[u32]) -> Result<usize> {
 #[cfg(test)]
 mod tests {
     use super::ScalarRayTransport;
+    use crate::successive_orders::simd::batch::LANES;
 
     fn geometry() -> ScalarRayTransport {
         // Ray zero has layers 0 and 1; ray one has layer 2.  Layers are stored
@@ -3872,6 +5556,25 @@ mod tests {
                 &mut end,
             )
             .unwrap();
+
+        let mut vjp_optical_depth = [0.0; 3];
+        let mut vjp_attenuation = [0.0; 3];
+        let mut vjp_prefix = [0.0; 3];
+        let mut vjp_end = [0.0; 2];
+        geometry
+            .assemble_vjp_attenuation(
+                &extinction,
+                &albedo,
+                &mut vjp_optical_depth,
+                &mut vjp_attenuation,
+                &mut vjp_prefix,
+                &mut vjp_end,
+            )
+            .unwrap();
+        assert_eq!(vjp_optical_depth, optical_depth);
+        assert_eq!(vjp_attenuation, attenuation);
+        assert_eq!(vjp_prefix, prefix);
+        assert_eq!(vjp_end, end);
 
         let od0: f64 = 0.2 * 2.0;
         let od1: f64 = 0.1 * 2.0 + 0.3 * 0.5;
@@ -4581,5 +6284,335 @@ mod tests {
                 .sum::<f64>()
             + end_of_ray_source_gradient[0] * end_of_ray_source_tangent[0];
         assert!((input_dot - output_dot).abs() < 1.0e-13);
+    }
+
+    #[test]
+    fn batch4_first_order_assembly_matches_scalar_wavelengths() {
+        let geometry = geometry();
+        let extinction_lanes = [[0.8, 1.1], [0.9, 1.0], [1.2, 0.7], [0.6, 1.4]];
+        let albedo_lanes = [[0.3, 0.7], [0.4, 0.6], [0.5, 0.8], [0.2, 0.9]];
+        let coefficient_lanes = [
+            [1.0, 0.2, 0.05, 1.0, -0.1, 0.03],
+            [1.0, 0.1, 0.02, 1.0, 0.3, -0.04],
+            [1.0, -0.2, 0.08, 1.0, 0.15, 0.01],
+            [1.0, 0.4, -0.03, 1.0, -0.25, 0.07],
+        ];
+        let maximum_order_lanes = [[3, 2], [2, 3], [1, 3], [3, 1]];
+        let solar_lanes = [
+            [0.91, 0.87, 0.82, 0.76, 0.70],
+            [0.93, 0.89, 0.84, 0.78, 0.72],
+            [0.88, 0.83, 0.79, 0.74, 0.68],
+            [0.95, 0.90, 0.86, 0.80, 0.75],
+        ];
+        let end_source_lanes = [[0.01, 0.02], [0.03, 0.04], [0.05, 0.06], [0.07, 0.08]];
+
+        let extinction: Vec<_> = extinction_lanes.into_iter().flatten().collect();
+        let albedo: Vec<_> = albedo_lanes.into_iter().flatten().collect();
+        let coefficients: Vec<_> = coefficient_lanes.into_iter().flatten().collect();
+        let maximum_order: Vec<_> = maximum_order_lanes.into_iter().flatten().collect();
+        let mut solar = vec![0.0; solar_lanes[0].len() * LANES];
+        let mut end_source = vec![0.0; end_source_lanes[0].len() * LANES];
+        for lane in 0..LANES {
+            for (element, &value) in solar_lanes[lane].iter().enumerate() {
+                solar[element * LANES + lane] = value;
+            }
+            for (element, &value) in end_source_lanes[lane].iter().enumerate() {
+                end_source[element * LANES + lane] = value;
+            }
+        }
+
+        let mut expected_transport = vec![0.0; geometry.transport_value_size() * LANES];
+        let mut expected_first_order = vec![0.0; geometry.num_rays() * LANES];
+        for lane in 0..LANES {
+            let mut lane_transport = vec![0.0; geometry.transport_value_size()];
+            let mut lane_first_order = vec![0.0; geometry.num_rays()];
+            let mut optical_depth = vec![0.0; geometry.num_layers()];
+            let mut attenuation = vec![0.0; geometry.num_layers()];
+            let mut prefix = vec![0.0; geometry.num_layers()];
+            let mut ray_end = vec![0.0; geometry.num_rays()];
+            geometry
+                .assemble_with_first_order(
+                    &extinction_lanes[lane],
+                    &albedo_lanes[lane],
+                    &coefficient_lanes[lane],
+                    &maximum_order_lanes[lane],
+                    &solar_lanes[lane],
+                    &end_source_lanes[lane],
+                    &mut lane_transport,
+                    &mut lane_first_order,
+                    &mut optical_depth,
+                    &mut attenuation,
+                    &mut prefix,
+                    &mut ray_end,
+                )
+                .unwrap();
+            for (element, &value) in lane_transport.iter().enumerate() {
+                expected_transport[element * LANES + lane] = value;
+            }
+            for (element, &value) in lane_first_order.iter().enumerate() {
+                expected_first_order[element * LANES + lane] = value;
+            }
+        }
+
+        let mut transport = vec![0.0; expected_transport.len()];
+        let mut first_order = vec![0.0; expected_first_order.len()];
+        geometry
+            .assemble_batch4_with_first_order_scalar(
+                &extinction,
+                &albedo,
+                &coefficients,
+                &maximum_order,
+                &solar,
+                &end_source,
+                &mut transport,
+                &mut first_order,
+            )
+            .unwrap();
+
+        for (actual, expected) in transport.iter().zip(expected_transport) {
+            assert!((actual - expected).abs() <= 5.0e-13 * expected.abs().max(1.0));
+        }
+        for (actual, expected) in first_order.iter().zip(expected_first_order) {
+            assert!((actual - expected).abs() <= 5.0e-13 * expected.abs().max(1.0));
+        }
+
+        let extinction_tangent_lanes = [[0.02, -0.01], [-0.03, 0.04], [0.01, 0.05], [-0.02, -0.04]];
+        let albedo_tangent_lanes = [[-0.01, 0.02], [0.03, -0.02], [0.02, 0.01], [-0.04, 0.03]];
+        let coefficient_tangent_lanes = [
+            [0.01, -0.02, 0.03, -0.01, 0.02, -0.03],
+            [-0.02, 0.01, 0.02, 0.03, -0.01, 0.02],
+            [0.03, -0.01, -0.02, 0.01, 0.04, -0.01],
+            [-0.01, 0.03, 0.01, -0.02, 0.02, 0.04],
+        ];
+        let solar_tangent_lanes = [
+            [0.01, -0.02, 0.03, -0.01, 0.02],
+            [-0.02, 0.01, 0.02, 0.03, -0.01],
+            [0.03, -0.01, -0.02, 0.01, 0.04],
+            [-0.01, 0.03, 0.01, -0.02, 0.02],
+        ];
+        let end_tangent_lanes = [[0.01, -0.02], [-0.03, 0.04], [0.02, 0.01], [-0.01, -0.03]];
+        let mut extinction_tangent = vec![0.0; extinction.len()];
+        let mut albedo_tangent = vec![0.0; albedo.len()];
+        let mut coefficient_tangent = vec![0.0; coefficients.len()];
+        let mut solar_tangent = vec![0.0; solar.len()];
+        let mut end_tangent = vec![0.0; end_source.len()];
+        for lane in 0..LANES {
+            for element in 0..extinction_lanes[lane].len() {
+                extinction_tangent[element * LANES + lane] =
+                    extinction_tangent_lanes[lane][element];
+                albedo_tangent[element * LANES + lane] = albedo_tangent_lanes[lane][element];
+            }
+            for element in 0..coefficient_lanes[lane].len() {
+                coefficient_tangent[element * LANES + lane] =
+                    coefficient_tangent_lanes[lane][element];
+            }
+            for element in 0..solar_lanes[lane].len() {
+                solar_tangent[element * LANES + lane] = solar_tangent_lanes[lane][element];
+            }
+            for element in 0..end_source_lanes[lane].len() {
+                end_tangent[element * LANES + lane] = end_tangent_lanes[lane][element];
+            }
+        }
+
+        let mut expected_transport_tangent = vec![0.0; transport.len()];
+        let mut expected_first_order_tangent = vec![0.0; first_order.len()];
+        for lane in 0..LANES {
+            let mut lane_transport = vec![0.0; geometry.transport_value_size()];
+            let mut lane_transport_tangent = vec![0.0; geometry.transport_value_size()];
+            let mut lane_first_order_tangent = vec![0.0; geometry.num_rays()];
+            let mut ray_end = vec![0.0; geometry.num_rays()];
+            let mut ray_end_tangent = vec![0.0; geometry.num_rays()];
+            geometry
+                .assemble_jvp_with_first_order(
+                    &extinction_lanes[lane],
+                    &albedo_lanes[lane],
+                    &coefficient_lanes[lane],
+                    &maximum_order_lanes[lane],
+                    &solar_lanes[lane],
+                    &extinction_tangent_lanes[lane],
+                    &albedo_tangent_lanes[lane],
+                    &coefficient_tangent_lanes[lane],
+                    &solar_tangent_lanes[lane],
+                    &end_source_lanes[lane],
+                    &end_tangent_lanes[lane],
+                    &mut lane_transport,
+                    &mut lane_transport_tangent,
+                    &mut lane_first_order_tangent,
+                    &mut ray_end,
+                    &mut ray_end_tangent,
+                )
+                .unwrap();
+            for (element, &value) in lane_transport_tangent.iter().enumerate() {
+                expected_transport_tangent[element * LANES + lane] = value;
+            }
+            for (element, &value) in lane_first_order_tangent.iter().enumerate() {
+                expected_first_order_tangent[element * LANES + lane] = value;
+            }
+        }
+
+        let mut batch_transport = vec![0.0; transport.len()];
+        let mut batch_transport_tangent = vec![0.0; transport.len()];
+        let mut batch_first_order_tangent = vec![0.0; first_order.len()];
+        geometry
+            .assemble_batch4_jvp_with_first_order_scalar(
+                &extinction,
+                &albedo,
+                &coefficients,
+                &maximum_order,
+                &solar,
+                &extinction_tangent,
+                &albedo_tangent,
+                &coefficient_tangent,
+                &solar_tangent,
+                &end_source,
+                &end_tangent,
+                &mut batch_transport,
+                &mut batch_transport_tangent,
+                &mut batch_first_order_tangent,
+            )
+            .unwrap();
+        for (actual, expected) in batch_transport_tangent
+            .iter()
+            .zip(expected_transport_tangent)
+        {
+            assert!((actual - expected).abs() <= 5.0e-13 * expected.abs().max(1.0));
+        }
+        for (actual, expected) in batch_first_order_tangent
+            .iter()
+            .zip(expected_first_order_tangent)
+        {
+            assert!((actual - expected).abs() <= 5.0e-13 * expected.abs().max(1.0));
+        }
+
+        let transport_columns: Vec<i32> = (0..geometry.transport_value_size())
+            .map(|value| (value % 4) as i32)
+            .collect();
+        let solution_lanes = [
+            [0.2, -0.1, 0.4, 0.7],
+            [0.3, -0.2, 0.5, 0.6],
+            [0.1, 0.4, -0.3, 0.8],
+            [-0.2, 0.6, 0.3, 0.5],
+        ];
+        let forcing_cotangent_lanes = [[0.7, -0.4], [-0.2, 0.9], [0.5, 0.3], [-0.6, -0.1]];
+        let mut solution = vec![0.0; solution_lanes[0].len() * LANES];
+        let mut forcing_cotangent = vec![0.0; geometry.num_rays() * LANES];
+        let mut expected_extinction_gradient = vec![0.0; extinction.len()];
+        let mut expected_albedo_gradient = vec![0.0; albedo.len()];
+        let mut expected_coefficient_gradient = vec![0.0; coefficients.len()];
+        let mut expected_solar_gradient = vec![0.0; solar.len()];
+        let mut expected_end_gradient = vec![0.0; end_source.len()];
+        for lane in 0..LANES {
+            for (element, &value) in solution_lanes[lane].iter().enumerate() {
+                solution[element * LANES + lane] = value;
+            }
+            for (element, &value) in forcing_cotangent_lanes[lane].iter().enumerate() {
+                forcing_cotangent[element * LANES + lane] = value;
+            }
+
+            let mut lane_transport = vec![0.0; geometry.transport_value_size()];
+            let mut lane_first_order = vec![0.0; geometry.num_rays()];
+            let mut optical_depth = vec![0.0; geometry.num_layers()];
+            let mut attenuation = vec![0.0; geometry.num_layers()];
+            let mut prefix = vec![0.0; geometry.num_layers()];
+            let mut ray_end = vec![0.0; geometry.num_rays()];
+            geometry
+                .assemble_with_first_order(
+                    &extinction_lanes[lane],
+                    &albedo_lanes[lane],
+                    &coefficient_lanes[lane],
+                    &maximum_order_lanes[lane],
+                    &solar_lanes[lane],
+                    &end_source_lanes[lane],
+                    &mut lane_transport,
+                    &mut lane_first_order,
+                    &mut optical_depth,
+                    &mut attenuation,
+                    &mut prefix,
+                    &mut ray_end,
+                )
+                .unwrap();
+            let mut lane_extinction_gradient = vec![0.0; extinction_lanes[lane].len()];
+            let mut lane_albedo_gradient = vec![0.0; albedo_lanes[lane].len()];
+            let mut lane_coefficient_gradient = vec![0.0; coefficient_lanes[lane].len()];
+            let mut lane_solar_gradient = vec![0.0; solar_lanes[lane].len()];
+            let mut lane_end_gradient = vec![0.0; end_source_lanes[lane].len()];
+            geometry
+                .assemble_vjp_with_first_order(
+                    &extinction_lanes[lane],
+                    &albedo_lanes[lane],
+                    &coefficient_lanes[lane],
+                    &maximum_order_lanes[lane],
+                    &solar_lanes[lane],
+                    &[],
+                    &transport_columns,
+                    &solution_lanes[lane],
+                    &forcing_cotangent_lanes[lane],
+                    &ray_end,
+                    &vec![0.0; geometry.num_rays()],
+                    &end_source_lanes[lane],
+                    &optical_depth,
+                    &attenuation,
+                    &prefix,
+                    &mut lane_extinction_gradient,
+                    &mut lane_albedo_gradient,
+                    &mut lane_coefficient_gradient,
+                    &mut lane_solar_gradient,
+                    &mut lane_end_gradient,
+                )
+                .unwrap();
+            for (element, &value) in lane_extinction_gradient.iter().enumerate() {
+                expected_extinction_gradient[element * LANES + lane] = value;
+            }
+            for (element, &value) in lane_albedo_gradient.iter().enumerate() {
+                expected_albedo_gradient[element * LANES + lane] = value;
+            }
+            for (element, &value) in lane_coefficient_gradient.iter().enumerate() {
+                expected_coefficient_gradient[element * LANES + lane] = value;
+            }
+            for (element, &value) in lane_solar_gradient.iter().enumerate() {
+                expected_solar_gradient[element * LANES + lane] = value;
+            }
+            for (element, &value) in lane_end_gradient.iter().enumerate() {
+                expected_end_gradient[element * LANES + lane] = value;
+            }
+        }
+
+        let mut extinction_gradient = vec![0.0; extinction.len()];
+        let mut albedo_gradient = vec![0.0; albedo.len()];
+        let mut coefficient_gradient = vec![0.0; coefficients.len()];
+        let mut solar_gradient = vec![0.0; solar.len()];
+        let mut end_gradient = vec![0.0; end_source.len()];
+        geometry
+            .assemble_batch4_vjp_with_first_order_scalar(
+                &extinction,
+                &albedo,
+                &coefficients,
+                &maximum_order,
+                &solar,
+                &transport_columns,
+                &solution,
+                &forcing_cotangent,
+                &end_source,
+                &mut extinction_gradient,
+                &mut albedo_gradient,
+                &mut coefficient_gradient,
+                &mut solar_gradient,
+                &mut end_gradient,
+            )
+            .unwrap();
+        for (actual, expected) in extinction_gradient
+            .iter()
+            .zip(expected_extinction_gradient)
+            .chain(albedo_gradient.iter().zip(expected_albedo_gradient))
+            .chain(
+                coefficient_gradient
+                    .iter()
+                    .zip(expected_coefficient_gradient),
+            )
+            .chain(solar_gradient.iter().zip(expected_solar_gradient))
+            .chain(end_gradient.iter().zip(expected_end_gradient))
+        {
+            assert!((actual - expected).abs() <= 2.0e-12 * expected.abs().max(1.0));
+        }
     }
 }

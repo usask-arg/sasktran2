@@ -153,6 +153,10 @@ template <int NSTOKES> class Sasktran2 : public Sasktran2Interface {
     void calculate_jvp_wavelength_thread(sasktran2::OutputJVP<NSTOKES>& output,
                                          int wavelength, int thread_idx) const;
 
+    void calculate_jvp_block_thread(sasktran2::OutputJVP<NSTOKES>& output,
+                                    const sasktran2::WavelengthBlock<>& block,
+                                    int thread_idx) const;
+
     void finalize_jvp() const;
 
     void
@@ -165,6 +169,10 @@ template <int NSTOKES> class Sasktran2 : public Sasktran2Interface {
 
     void calculate_vjp_wavelength_thread(sasktran2::OutputVJP<NSTOKES>& output,
                                          int wavelength, int thread_idx) const;
+
+    void calculate_vjp_block_thread(sasktran2::OutputVJP<NSTOKES>& output,
+                                    const sasktran2::WavelengthBlock<>& block,
+                                    int thread_idx) const;
 
     void calculate_jacobian_vjp(
         const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,

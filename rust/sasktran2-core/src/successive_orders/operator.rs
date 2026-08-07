@@ -1,6 +1,9 @@
 use std::fmt::{Display, Formatter};
 
-use super::{ScalarCoefficientScattering, VectorCoefficientScattering};
+use super::{
+    ScalarCoefficientScattering, VectorCoefficientScattering,
+    simd::batch::{Batch4, LANES},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OperatorError {
@@ -112,6 +115,35 @@ impl CsrMatrix {
         Ok(())
     }
 
+    pub(crate) fn apply_batch4(
+        &self,
+        row_offsets: &[i32],
+        column_indices: &[i32],
+        values: &[f64],
+        input: &[f64],
+        output: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        if row_offsets.len() != self.rows + 1
+            || column_indices.len() != self.num_nonzero
+            || values.len() != self.num_nonzero * LANES
+            || input.len() != self.columns * LANES
+            || output.len() != self.rows * LANES
+        {
+            return Err(OperatorError::DimensionMismatch);
+        }
+        for row in 0..self.rows {
+            let start = row_offsets[row] as usize;
+            let end = row_offsets[row + 1] as usize;
+            let mut result = Batch4::splat(0.0);
+            for (index, &column) in column_indices.iter().enumerate().take(end).skip(start) {
+                result =
+                    result + Batch4::load(values, index) * Batch4::load(input, column as usize);
+            }
+            result.store(output, row);
+        }
+        Ok(())
+    }
+
     pub fn apply_transpose(
         &self,
         row_offsets: &[i32],
@@ -132,6 +164,65 @@ impl CsrMatrix {
             let end = row_offsets[row + 1] as usize;
             for index in start..end {
                 output[column_indices[index] as usize] += values[index] * incoming;
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn apply_transpose_batch4(
+        &self,
+        row_offsets: &[i32],
+        column_indices: &[i32],
+        values: &[f64],
+        input: &[f64],
+        output: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        if row_offsets.len() != self.rows + 1
+            || column_indices.len() != self.num_nonzero
+            || values.len() != self.num_nonzero * LANES
+            || input.len() != self.rows * LANES
+            || output.len() != self.columns * LANES
+        {
+            return Err(OperatorError::DimensionMismatch);
+        }
+        output.fill(0.0);
+        for row in 0..self.rows {
+            let incoming = Batch4::load(input, row);
+            let start = row_offsets[row] as usize;
+            let end = row_offsets[row + 1] as usize;
+            for (index, &column) in column_indices.iter().enumerate().take(end).skip(start) {
+                let column = column as usize;
+                let updated = Batch4::load(output, column) + Batch4::load(values, index) * incoming;
+                updated.store(output, column);
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn apply_transpose_system_batch4(
+        &self,
+        row_offsets: &[i32],
+        column_indices: &[i32],
+        values: &[f64],
+        fixed_point_input: &[f64],
+        transpose_input: &[f64],
+        output: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        if fixed_point_input.len() != self.columns * LANES
+            || transpose_input.len() != self.rows * LANES
+            || output.len() != self.columns * LANES
+        {
+            return Err(OperatorError::DimensionMismatch);
+        }
+        output.copy_from_slice(fixed_point_input);
+        for row in 0..self.rows {
+            let incoming = Batch4::load(transpose_input, row);
+            let start = row_offsets[row] as usize;
+            let end = row_offsets[row + 1] as usize;
+            for (index, &column) in column_indices.iter().enumerate().take(end).skip(start) {
+                let column = column as usize;
+                let updated = Batch4::load(output, column) - Batch4::load(values, index) * incoming;
+                updated.store(output, column);
             }
         }
         Ok(())
@@ -294,6 +385,50 @@ impl ScatteringOperator {
         }
     }
 
+    pub(crate) fn batch4_active_num_coefficients(
+        &self,
+        coefficients: &[f64],
+    ) -> Result<usize, OperatorError> {
+        match self {
+            Self::ScalarCoefficients(matrix) => matrix.batch4_active_num_coefficients(coefficients),
+            Self::Dense(_) | Self::VectorCoefficients(_) => Err(OperatorError::UnsupportedOperator),
+        }
+    }
+
+    pub(crate) fn batch4_scratch_size(
+        &self,
+        active_num_coefficients: usize,
+    ) -> Result<usize, OperatorError> {
+        match self {
+            Self::ScalarCoefficients(matrix) => {
+                Ok(matrix.batch4_scratch_size(active_num_coefficients))
+            }
+            Self::Dense(_) | Self::VectorCoefficients(_) => Err(OperatorError::UnsupportedOperator),
+        }
+    }
+
+    pub(crate) fn apply_batch4(
+        &self,
+        input: &[f64],
+        coefficients: &[f64],
+        dense_values: &[f64],
+        active_num_coefficients: usize,
+        output: &mut [f64],
+        scratch: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        match self {
+            Self::ScalarCoefficients(matrix) => matrix.apply_batch4(
+                input,
+                coefficients,
+                dense_values,
+                active_num_coefficients,
+                output,
+                scratch,
+            ),
+            Self::Dense(_) | Self::VectorCoefficients(_) => Err(OperatorError::UnsupportedOperator),
+        }
+    }
+
     pub fn apply_transpose(&self, input: &[f64], output: &mut [f64]) -> Result<(), OperatorError> {
         let mut scratch = vec![0.0; self.transpose_scratch_size()];
         self.apply_transpose_with_scratch(input, output, &mut scratch)
@@ -314,6 +449,28 @@ impl ScatteringOperator {
                 matrix.apply_transpose_with_scratch(input, output, scratch)
             }
             Self::VectorCoefficients(matrix) => matrix.apply_transpose(input, output),
+        }
+    }
+
+    pub(crate) fn apply_transpose_batch4(
+        &self,
+        input: &[f64],
+        coefficients: &[f64],
+        dense_values: &[f64],
+        active_num_coefficients: usize,
+        output: &mut [f64],
+        scratch: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        match self {
+            Self::ScalarCoefficients(matrix) => matrix.apply_transpose_batch4(
+                input,
+                coefficients,
+                dense_values,
+                active_num_coefficients,
+                output,
+                scratch,
+            ),
+            Self::Dense(_) | Self::VectorCoefficients(_) => Err(OperatorError::UnsupportedOperator),
         }
     }
 
@@ -685,6 +842,191 @@ impl FixedPointProblem {
             return Err(OperatorError::NonFiniteValue);
         }
         Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn validate_batch4_data(
+        &self,
+        transport_row_offsets: &[i32],
+        transport_column_indices: &[i32],
+        transport_values: &[f64],
+        scattering_coefficients: &[f64],
+        dense_scattering_values: &[f64],
+        forcing: &[f64],
+    ) -> Result<usize, OperatorError> {
+        validate_csr_structure(
+            self.transport.rows,
+            self.transport.columns,
+            transport_row_offsets,
+            transport_column_indices,
+        )?;
+        if transport_column_indices.len() != self.transport.num_nonzero
+            || transport_values.len() != self.transport.num_nonzero * LANES
+            || dense_scattering_values.len() != self.scattering.dense_value_size() * LANES
+            || forcing.len() != self.transport.rows() * LANES
+            || transport_values.iter().any(|value| !value.is_finite())
+            || dense_scattering_values
+                .iter()
+                .any(|value| !value.is_finite())
+            || forcing.iter().any(|value| !value.is_finite())
+        {
+            return Err(OperatorError::DimensionMismatch);
+        }
+        self.scattering
+            .batch4_active_num_coefficients(scattering_coefficients)
+    }
+
+    pub(crate) fn batch4_scattering_scratch_size(
+        &self,
+        active_num_coefficients: usize,
+    ) -> Result<usize, OperatorError> {
+        self.scattering.batch4_scratch_size(active_num_coefficients)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn apply_batch4(
+        &self,
+        transport_row_offsets: &[i32],
+        transport_column_indices: &[i32],
+        transport_values: &[f64],
+        scattering_coefficients: &[f64],
+        dense_scattering_values: &[f64],
+        forcing: &[f64],
+        active_num_coefficients: usize,
+        state: &[f64],
+        output: &mut [f64],
+        incoming_scratch: &mut [f64],
+        scattering_scratch: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        self.transport.apply_batch4(
+            transport_row_offsets,
+            transport_column_indices,
+            transport_values,
+            state,
+            incoming_scratch,
+        )?;
+        for element in 0..self.incoming_size() {
+            (Batch4::load(incoming_scratch, element) + Batch4::load(forcing, element))
+                .store(incoming_scratch, element);
+        }
+        self.scattering.apply_batch4(
+            incoming_scratch,
+            scattering_coefficients,
+            dense_scattering_values,
+            active_num_coefficients,
+            output,
+            scattering_scratch,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn apply_linear_system_batch4(
+        &self,
+        transport_row_offsets: &[i32],
+        transport_column_indices: &[i32],
+        transport_values: &[f64],
+        scattering_coefficients: &[f64],
+        dense_scattering_values: &[f64],
+        active_num_coefficients: usize,
+        state: &[f64],
+        output: &mut [f64],
+        incoming_scratch: &mut [f64],
+        scattering_scratch: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        self.transport.apply_batch4(
+            transport_row_offsets,
+            transport_column_indices,
+            transport_values,
+            state,
+            incoming_scratch,
+        )?;
+        self.scattering.apply_batch4(
+            incoming_scratch,
+            scattering_coefficients,
+            dense_scattering_values,
+            active_num_coefficients,
+            output,
+            scattering_scratch,
+        )?;
+        for element in 0..self.state_size() {
+            (Batch4::load(state, element) - Batch4::load(output, element)).store(output, element);
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn apply_linear_system_transpose_batch4(
+        &self,
+        transport_row_offsets: &[i32],
+        transport_column_indices: &[i32],
+        transport_values: &[f64],
+        scattering_coefficients: &[f64],
+        dense_scattering_values: &[f64],
+        active_num_coefficients: usize,
+        state: &[f64],
+        output: &mut [f64],
+        incoming_scratch: &mut [f64],
+        scattering_scratch: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        if state.len() != self.state_size() * LANES
+            || output.len() != self.state_size() * LANES
+            || incoming_scratch.len() != self.incoming_size() * LANES
+        {
+            return Err(OperatorError::DimensionMismatch);
+        }
+        self.scattering.apply_transpose_batch4(
+            state,
+            scattering_coefficients,
+            dense_scattering_values,
+            active_num_coefficients,
+            incoming_scratch,
+            scattering_scratch,
+        )?;
+        self.transport.apply_transpose_system_batch4(
+            transport_row_offsets,
+            transport_column_indices,
+            transport_values,
+            state,
+            incoming_scratch,
+            output,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn apply_linear_transpose_batch4(
+        &self,
+        transport_row_offsets: &[i32],
+        transport_column_indices: &[i32],
+        transport_values: &[f64],
+        scattering_coefficients: &[f64],
+        dense_scattering_values: &[f64],
+        active_num_coefficients: usize,
+        state: &[f64],
+        output: &mut [f64],
+        incoming_scratch: &mut [f64],
+        scattering_scratch: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        if state.len() != self.state_size() * LANES
+            || output.len() != self.state_size() * LANES
+            || incoming_scratch.len() != self.incoming_size() * LANES
+        {
+            return Err(OperatorError::DimensionMismatch);
+        }
+        self.scattering.apply_transpose_batch4(
+            state,
+            scattering_coefficients,
+            dense_scattering_values,
+            active_num_coefficients,
+            incoming_scratch,
+            scattering_scratch,
+        )?;
+        self.transport.apply_transpose_batch4(
+            transport_row_offsets,
+            transport_column_indices,
+            transport_values,
+            incoming_scratch,
+            output,
+        )
     }
 
     #[allow(clippy::too_many_arguments)]

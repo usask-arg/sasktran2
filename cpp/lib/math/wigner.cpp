@@ -1,5 +1,7 @@
 #include "sasktran2/math/wigner.h"
+#ifdef SKTRAN_RUST_SUPPORT
 #include "sasktran2-core/src/math/wigner.rs.h"
+#endif
 
 namespace sasktran2::math {
 

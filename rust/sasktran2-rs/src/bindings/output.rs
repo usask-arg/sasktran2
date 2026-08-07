@@ -235,6 +235,23 @@ impl JacobianVjpOutput {
             Err(format!("Failed to register surface Jacobian: {result}"))
         }
     }
+
+    pub fn los_optical_depth(&self) -> Result<Array2<f64>, String> {
+        let mut internal: *mut f64 = std::ptr::null_mut();
+        let result = unsafe {
+            ffi::sk_output_jacobian_vjp_get_los_optical_depth(self.output, &mut internal)
+        };
+        if result != 0 || internal.is_null() {
+            return Err(format!(
+                "Failed to retrieve VJP Jacobian LOS optical depth: {result}"
+            ));
+        }
+        let internal_view =
+            unsafe { ArrayView2::from_shape_ptr((self.num_wavel, self.num_los).f(), internal) };
+        let mut output = Array2::<f64>::zeros((self.num_wavel, self.num_los));
+        output.assign(&internal_view);
+        Ok(output)
+    }
 }
 
 impl Drop for JacobianVjpOutput {

@@ -5,6 +5,7 @@
 #include "sasktran2/source_interface.h"
 #include "sktran_disco/twostream/meta.h"
 #ifdef SKTRAN_RUST_SUPPORT
+#include <sasktran2/successive_orders/source.h>
 #include "sktran_disco/twostream/rust_source.h"
 #endif
 #include <memory>
@@ -538,6 +539,14 @@ void Sasktran2<NSTOKES>::calculate_radiance(
 
     validate_input_atmosphere(atmosphere);
 
+    if (atmosphere.num_deriv() > 0 &&
+        !supports_linearization(sasktran2::LinearizationMode::Jacobian)) {
+        throw std::logic_error(
+            "The configured sources do not implement the traditional dense "
+            "Jacobian used by calculate_radiance; use the native JVP, VJP, or "
+            "VJP-based Jacobian interface");
+    }
+
     const_cast<sasktran2::atmosphere::AtmosphereGridStorageFull<NSTOKES>&>(
         atmosphere.storage())
         .determine_maximum_order();
@@ -622,9 +631,11 @@ void Sasktran2<NSTOKES>::initialize_jvp(
         atmosphere.storage())
         .determine_maximum_order();
 
+    const int wavelength_batch_size =
+        effective_wavelength_batch_size(atmosphere.num_wavel());
     m_source_integrator->initialize_thread_storage(m_config.num_threads(), 1);
     for (auto& source : m_source_terms) {
-        source->set_wavelength_block_capacity(1);
+        source->set_wavelength_block_capacity(wavelength_batch_size);
         source->initialize_atmosphere_native(atmosphere);
     }
     m_source_integrator->initialize_atmosphere(atmosphere);
@@ -715,6 +726,125 @@ void Sasktran2<NSTOKES>::calculate_jvp_wavelength_thread(
 }
 
 template <int NSTOKES>
+void Sasktran2<NSTOKES>::calculate_jvp_block_thread(
+    sasktran2::OutputJVP<NSTOKES>& output,
+    const sasktran2::WavelengthBlock<>& block, int wavelength_threadidx) const {
+    if (block.count != 4) {
+        for (int lane = 0; lane < block.count; ++lane) {
+            calculate_jvp_wavelength_thread(output, block.wavelength(lane),
+                                            wavelength_threadidx);
+        }
+        return;
+    }
+    if (block.start < 0 || block.end() > output.num_wavel() ||
+        wavelength_threadidx < 0 ||
+        wavelength_threadidx >= m_config.num_wavelength_threads()) {
+        throw std::invalid_argument("Invalid wavelength block for native JVP");
+    }
+
+    std::vector<Eigen::VectorXd> native_tangents(block.count);
+    for (int lane = 0; lane < block.count; ++lane) {
+        native_tangents[lane].resize(output.num_deriv());
+        output.native_tangent(block.wavelength(lane), native_tangents[lane]);
+    }
+    for (auto& source : m_source_terms) {
+        auto* block_source = source->wavelength_block_linearization();
+        if (block_source == nullptr ||
+            !block_source->restore_forward_state_block(block,
+                                                       wavelength_threadidx)) {
+            source->calculate(block, wavelength_threadidx);
+        }
+    }
+
+    std::vector<bool> batch_prepared(m_los_source_terms.size(), false);
+    for (std::size_t source_index = 0; source_index < m_los_source_terms.size();
+         ++source_index) {
+        auto* block_source =
+            m_los_source_terms[source_index]->wavelength_block_linearization();
+        batch_prepared[source_index] =
+            block_source != nullptr &&
+            block_source->prepare_jvp_block(block, wavelength_threadidx,
+                                            native_tangents);
+    }
+    const auto is_batch_prepared = [&](const auto* source) -> bool {
+        for (std::size_t source_index = 0;
+             source_index < m_los_source_terms.size(); ++source_index) {
+            if (m_los_source_terms[source_index] == source) {
+                return static_cast<bool>(batch_prepared[source_index]);
+            }
+        }
+        return false;
+    };
+
+    for (int lane = 0; lane < block.count; ++lane) {
+        const int wavelength = block.wavelength(lane);
+        const auto& native_tangent = native_tangents[lane];
+        const sasktran2::WavelengthBlock<> scalar_block{wavelength, 1};
+        for (auto& source : m_source_terms) {
+            if (is_batch_prepared(source.get())) {
+                source->wavelength_block_linearization()->select_jvp_block_lane(
+                    lane, wavelength_threadidx);
+                continue;
+            }
+            source->prepare_forward_state_for_jvp(
+                wavelength, wavelength_threadidx, native_tangent);
+            if (!source->restore_forward_state_for_jvp(
+                    wavelength, wavelength_threadidx, native_tangent)) {
+                if (native_tangent.isZero(0.0)) {
+                    source->calculate_value(scalar_block, wavelength_threadidx);
+                } else {
+                    source->calculate(scalar_block, wavelength_threadidx);
+                }
+            }
+        }
+        for (std::size_t source_index = 0;
+             source_index < m_los_source_terms.size(); ++source_index) {
+            if (!batch_prepared[source_index]) {
+                m_los_source_terms[source_index]->prepare_jvp(
+                    wavelength, wavelength_threadidx, native_tangent);
+            }
+        }
+
+        if (native_tangent.isZero(0.0)) {
+#pragma omp parallel for num_threads(m_config.num_source_threads())            \
+    schedule(dynamic)
+            for (int ray = 0; ray < m_internal_viewing_geometry.num_rays();
+                 ++ray) {
+#ifdef SKTRAN_OPENMP_SUPPORT
+                const int ray_threadidx =
+                    omp_get_thread_num() + wavelength_threadidx;
+#else
+                const int ray_threadidx = wavelength_threadidx;
+#endif
+                Eigen::Vector<double, NSTOKES> radiance;
+                m_source_integrator->integrate_value(
+                    radiance, m_los_source_terms, wavelength, ray,
+                    wavelength_threadidx, ray_threadidx);
+                output.assign_native(ray, wavelength, radiance,
+                                     Eigen::Vector<double, NSTOKES>::Zero());
+            }
+            continue;
+        }
+
+#pragma omp parallel for num_threads(m_config.num_source_threads())            \
+    schedule(dynamic)
+        for (int ray = 0; ray < m_internal_viewing_geometry.num_rays(); ++ray) {
+#ifdef SKTRAN_OPENMP_SUPPORT
+            const int ray_threadidx =
+                omp_get_thread_num() + wavelength_threadidx;
+#else
+            const int ray_threadidx = wavelength_threadidx;
+#endif
+            sasktran2::RadianceJVP<NSTOKES> radiance;
+            m_source_integrator->integrate_jvp(
+                radiance, m_los_source_terms, wavelength, ray,
+                wavelength_threadidx, ray_threadidx, native_tangent);
+            output.assign_native(ray, wavelength, radiance.value, radiance.jvp);
+        }
+    }
+}
+
+template <int NSTOKES>
 void Sasktran2<NSTOKES>::calculate_jvp(
     const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
     sasktran2::OutputJVP<NSTOKES>& output) const {
@@ -730,16 +860,23 @@ void Sasktran2<NSTOKES>::calculate_jvp(
     } capture_guard{m_source_terms};
 
     const int num_wavelength_threads = m_config.num_wavelength_threads();
+    const int wavelength_batch_size =
+        effective_wavelength_batch_size(atmosphere.num_wavel());
+    const int num_blocks =
+        (atmosphere.num_wavel() + wavelength_batch_size - 1) /
+        wavelength_batch_size;
 #pragma omp parallel for num_threads(num_wavelength_threads)
-    for (int wavelength = 0; wavelength < atmosphere.num_wavel();
-         ++wavelength) {
+    for (int block_index = 0; block_index < num_blocks; ++block_index) {
 #ifdef SKTRAN_OPENMP_SUPPORT
         const int wavelength_threadidx = omp_get_thread_num();
 #else
         const int wavelength_threadidx = 0;
 #endif
-        calculate_jvp_wavelength_thread(output, wavelength,
-                                        wavelength_threadidx);
+        const int start = block_index * wavelength_batch_size;
+        const sasktran2::WavelengthBlock<> block{
+            start,
+            std::min(wavelength_batch_size, atmosphere.num_wavel() - start)};
+        calculate_jvp_block_thread(output, block, wavelength_threadidx);
     }
 }
 
@@ -756,9 +893,11 @@ void Sasktran2<NSTOKES>::initialize_vjp(
         atmosphere.storage())
         .determine_maximum_order();
 
+    const int wavelength_batch_size =
+        effective_wavelength_batch_size(atmosphere.num_wavel());
     m_source_integrator->initialize_thread_storage(m_config.num_threads(), 1);
     for (auto& source : m_source_terms) {
-        source->set_wavelength_block_capacity(1);
+        source->set_wavelength_block_capacity(wavelength_batch_size);
         source->initialize_atmosphere_native(atmosphere);
     }
     m_source_integrator->initialize_atmosphere(atmosphere);
@@ -824,21 +963,158 @@ void Sasktran2<NSTOKES>::calculate_vjp_wavelength_thread(
 }
 
 template <int NSTOKES>
+void Sasktran2<NSTOKES>::calculate_vjp_block_thread(
+    sasktran2::OutputVJP<NSTOKES>& output,
+    const sasktran2::WavelengthBlock<>& block, int wavelength_threadidx) const {
+    if (block.count != 4) {
+        for (int lane = 0; lane < block.count; ++lane) {
+            calculate_vjp_wavelength_thread(output, block.wavelength(lane),
+                                            wavelength_threadidx);
+        }
+        return;
+    }
+    if (block.start < 0 || block.end() > output.num_wavel() ||
+        wavelength_threadidx < 0 ||
+        wavelength_threadidx >= m_config.num_wavelength_threads()) {
+        throw std::invalid_argument("Invalid wavelength block for native VJP");
+    }
+
+    for (auto& source : m_source_terms) {
+        auto* block_source = source->wavelength_block_linearization();
+        if (block_source == nullptr ||
+            !block_source->restore_forward_state_block(block,
+                                                       wavelength_threadidx)) {
+            source->calculate(block, wavelength_threadidx);
+        }
+    }
+    const Eigen::VectorXi active_derivatives = output.native_derivative_mask();
+    std::vector<bool> batch_prepared(m_los_source_terms.size(), false);
+    for (std::size_t source_index = 0; source_index < m_los_source_terms.size();
+         ++source_index) {
+        auto* block_source =
+            m_los_source_terms[source_index]->wavelength_block_linearization();
+        batch_prepared[source_index] =
+            block_source != nullptr &&
+            block_source->begin_vjp_block(block, wavelength_threadidx,
+                                          active_derivatives);
+    }
+    const auto is_batch_prepared = [&](const auto* source) -> bool {
+        for (std::size_t source_index = 0;
+             source_index < m_los_source_terms.size(); ++source_index) {
+            if (m_los_source_terms[source_index] == source) {
+                return static_cast<bool>(batch_prepared[source_index]);
+            }
+        }
+        return false;
+    };
+    std::vector<Eigen::VectorXd> batch_gradients(block.count);
+    for (auto& gradient : batch_gradients) {
+        gradient.setZero(output.num_deriv());
+    }
+
+    for (int lane = 0; lane < block.count; ++lane) {
+        const int wavelength = block.wavelength(lane);
+        const sasktran2::WavelengthBlock<> scalar_block{wavelength, 1};
+        for (std::size_t source_index = 0;
+             source_index < m_los_source_terms.size(); ++source_index) {
+            if (batch_prepared[source_index]) {
+                m_los_source_terms[source_index]
+                    ->wavelength_block_linearization()
+                    ->select_vjp_block_lane(lane, wavelength_threadidx);
+            } else {
+                m_los_source_terms[source_index]->prepare_vjp(
+                    wavelength, wavelength_threadidx, active_derivatives);
+            }
+        }
+        for (auto& source : m_source_terms) {
+            if (is_batch_prepared(source.get())) {
+                continue;
+            }
+            if (!source->restore_forward_state(wavelength,
+                                               wavelength_threadidx)) {
+                source->calculate(scalar_block, wavelength_threadidx);
+            }
+        }
+
+#pragma omp parallel for num_threads(m_config.num_source_threads())            \
+    schedule(dynamic)
+        for (int ray = 0; ray < m_internal_viewing_geometry.num_rays(); ++ray) {
+#ifdef SKTRAN_OPENMP_SUPPORT
+            const int ray_threadidx =
+                omp_get_thread_num() + wavelength_threadidx;
+#else
+            const int ray_threadidx = wavelength_threadidx;
+#endif
+            auto& native_gradient =
+                m_native_linearization_gradients[ray_threadidx];
+            native_gradient.setZero();
+            Eigen::Vector<double, NSTOKES> radiance;
+            m_source_integrator->integrate_vjp(
+                radiance, m_los_source_terms, wavelength, ray,
+                wavelength_threadidx, ray_threadidx,
+                output.native_cotangent(ray, wavelength), native_gradient);
+            output.assign_native_value(ray, wavelength, radiance);
+            output.accumulate_native_gradient(wavelength, ray_threadidx,
+                                              native_gradient);
+        }
+
+        auto& final_gradient =
+            m_native_linearization_gradients[wavelength_threadidx];
+        final_gradient.setZero();
+        for (std::size_t source_index = 0;
+             source_index < m_los_source_terms.size(); ++source_index) {
+            if (batch_prepared[source_index]) {
+                m_los_source_terms[source_index]
+                    ->wavelength_block_linearization()
+                    ->stage_vjp_block_lane(lane, wavelength_threadidx);
+            } else {
+                m_los_source_terms[source_index]->finalize_vjp(
+                    wavelength, wavelength_threadidx, final_gradient);
+            }
+        }
+        output.accumulate_native_gradient(wavelength, wavelength_threadidx,
+                                          final_gradient);
+    }
+
+    for (std::size_t source_index = 0; source_index < m_los_source_terms.size();
+         ++source_index) {
+        if (batch_prepared[source_index]) {
+            m_los_source_terms[source_index]
+                ->wavelength_block_linearization()
+                ->finalize_vjp_block(block, wavelength_threadidx,
+                                     batch_gradients);
+        }
+    }
+    for (int lane = 0; lane < block.count; ++lane) {
+        output.accumulate_native_gradient(block.wavelength(lane),
+                                          wavelength_threadidx,
+                                          batch_gradients[lane]);
+    }
+}
+
+template <int NSTOKES>
 void Sasktran2<NSTOKES>::calculate_vjp(
     const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
     sasktran2::OutputVJP<NSTOKES>& output) const {
     initialize_vjp(atmosphere, output);
     const int num_wavelength_threads = m_config.num_wavelength_threads();
+    const int wavelength_batch_size =
+        effective_wavelength_batch_size(atmosphere.num_wavel());
+    const int num_blocks =
+        (atmosphere.num_wavel() + wavelength_batch_size - 1) /
+        wavelength_batch_size;
 #pragma omp parallel for num_threads(num_wavelength_threads)
-    for (int wavelength = 0; wavelength < atmosphere.num_wavel();
-         ++wavelength) {
+    for (int block_index = 0; block_index < num_blocks; ++block_index) {
 #ifdef SKTRAN_OPENMP_SUPPORT
         const int wavelength_threadidx = omp_get_thread_num();
 #else
         const int wavelength_threadidx = 0;
 #endif
-        calculate_vjp_wavelength_thread(output, wavelength,
-                                        wavelength_threadidx);
+        const int start = block_index * wavelength_batch_size;
+        const sasktran2::WavelengthBlock<> block{
+            start,
+            std::min(wavelength_batch_size, atmosphere.num_wavel() - start)};
+        calculate_vjp_block_thread(output, block, wavelength_threadidx);
     }
 }
 
@@ -869,6 +1145,10 @@ void Sasktran2<NSTOKES>::initialize_jacobian_vjp(
     output.set_wavelength_block_capacity(1);
     output.initialize(m_config, *m_geometry, m_internal_viewing_geometry,
                       atmosphere);
+    if (m_config.output_los_optical_depth()) {
+        m_source_integrator->integrate_optical_depth(
+            output.los_optical_depth());
+    }
 
     m_native_linearization_gradients.resize(m_config.num_threads());
     for (auto& native_gradient : m_native_linearization_gradients) {
@@ -963,6 +1243,13 @@ int Sasktran2<NSTOKES>::effective_wavelength_batch_size(
                 "Source reported an invalid maximum wavelength block size");
         }
         block_size = std::min(block_size, source_block_size);
+    }
+    if (block_size > 1 &&
+        num_wavelengths < block_size * m_config.num_wavelength_threads()) {
+        // One SIMD block would strand the remaining wavelength workers and
+        // force all source/integrator storage to its wider layout. The scalar
+        // partition is faster for this small-loop case.
+        block_size = 1;
     }
     if (block_size < requested_block_size) {
         spdlog::debug(

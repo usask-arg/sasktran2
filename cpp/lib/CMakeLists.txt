@@ -4,6 +4,19 @@ target_include_directories(
   INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
             $<INSTALL_INTERFACE:include>)
 
+set(SASKTRAN2_SUCCESSIVE_ORDERS_SOURCES)
+if(ENABLE_RUST_COMPONENTS)
+  list(
+    APPEND
+    SASKTRAN2_SUCCESSIVE_ORDERS_SOURCES
+    successive_orders/adapter.cpp
+    successive_orders/geometry.cpp
+    successive_orders/location_interpolator.cpp
+    successive_orders/solar_transmission.cpp
+    successive_orders/source.cpp
+    successive_orders/transport_geometry.cpp)
+endif()
+
 # Add sub libraries
 add_library(
   sasktran2
@@ -14,7 +27,6 @@ add_library(
   grids/grid.cpp
   grids/source_location_interpolator.cpp
   grids/altitude_sza_source_location_interpolator.cpp
-  grids/altitude_horizontal_source_location_interpolator.cpp
   dual/dual.cpp
   math/wigner.cpp
   atmosphere/atmosphere.cpp
@@ -50,6 +62,7 @@ add_library(
   engine/engine.cpp
   hr/diffuse_point.cpp
   hr/diffuse_table.cpp
+  ${SASKTRAN2_SUCCESSIVE_ORDERS_SOURCES}
   derivative_mapping/derivative_mapping.cpp
   sktran_disco/sktran_do.cpp
   sktran_disco/sktran_do_geometrylayerarray.cpp

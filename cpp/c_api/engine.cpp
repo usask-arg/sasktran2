@@ -308,7 +308,8 @@ int sk_engine_calculate_vjp(Engine* engine, Atmosphere* atmosphere,
             result = output->finalize();
         }
         return result;
-    } catch (const std::exception&) {
+    } catch (const std::exception& e) {
+        spdlog::error("Error calculating native VJP: {}", e.what());
         return -3;
     }
 }
@@ -405,6 +406,37 @@ int sk_engine_calculate_jvp_wavelength_thread(Engine* engine, OutputJVP* output,
     }
 }
 
+int sk_engine_calculate_jvp_block_thread(Engine* engine, OutputJVP* output,
+                                         int wavelength_start,
+                                         int wavelength_count, int thread_idx) {
+    if (engine == nullptr || !engine->impl || output == nullptr ||
+        wavelength_start < 0 || wavelength_count < 1 || thread_idx < 0) {
+        return -1;
+    }
+    try {
+        const sasktran2::WavelengthBlock block{wavelength_start,
+                                               wavelength_count};
+        if (engine->_config->impl.num_stokes() == 1) {
+            auto* impl = dynamic_cast<Sasktran2<1>*>(engine->impl.get());
+            impl->calculate_jvp_block_thread(
+                *static_cast<sasktran2::OutputJVP<1>*>(output->impl.get()),
+                block, thread_idx);
+            return 0;
+        }
+        if (engine->_config->impl.num_stokes() == 3) {
+            auto* impl = dynamic_cast<Sasktran2<3>*>(engine->impl.get());
+            impl->calculate_jvp_block_thread(
+                *static_cast<sasktran2::OutputJVP<3>*>(output->impl.get()),
+                block, thread_idx);
+            return 0;
+        }
+        return -2;
+    } catch (const std::exception& e) {
+        spdlog::error("Error calculating native JVP block: {}", e.what());
+        return -3;
+    }
+}
+
 int sk_engine_finalize_jvp(Engine* engine) {
     if (engine == nullptr || !engine->impl) {
         return -1;
@@ -478,6 +510,37 @@ int sk_engine_calculate_vjp_wavelength_thread(Engine* engine, OutputVJP* output,
         return -2;
     } catch (const std::exception& e) {
         spdlog::error("Error calculating native VJP wavelength: {}", e.what());
+        return -3;
+    }
+}
+
+int sk_engine_calculate_vjp_block_thread(Engine* engine, OutputVJP* output,
+                                         int wavelength_start,
+                                         int wavelength_count, int thread_idx) {
+    if (engine == nullptr || !engine->impl || output == nullptr ||
+        wavelength_start < 0 || wavelength_count < 1 || thread_idx < 0) {
+        return -1;
+    }
+    try {
+        const sasktran2::WavelengthBlock block{wavelength_start,
+                                               wavelength_count};
+        if (engine->_config->impl.num_stokes() == 1) {
+            auto* impl = dynamic_cast<Sasktran2<1>*>(engine->impl.get());
+            impl->calculate_vjp_block_thread(
+                *static_cast<sasktran2::OutputVJP<1>*>(output->impl.get()),
+                block, thread_idx);
+            return 0;
+        }
+        if (engine->_config->impl.num_stokes() == 3) {
+            auto* impl = dynamic_cast<Sasktran2<3>*>(engine->impl.get());
+            impl->calculate_vjp_block_thread(
+                *static_cast<sasktran2::OutputVJP<3>*>(output->impl.get()),
+                block, thread_idx);
+            return 0;
+        }
+        return -2;
+    } catch (const std::exception& e) {
+        spdlog::error("Error calculating native VJP block: {}", e.what());
         return -3;
     }
 }

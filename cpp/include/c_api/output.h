@@ -61,6 +61,8 @@ int sk_output_jacobian_vjp_assign_surface_derivative(OutputJacobianVJP* output,
                                                      const char* name,
                                                      double* jacobian, int nrad,
                                                      int nstokes, int nparam);
+int sk_output_jacobian_vjp_get_los_optical_depth(OutputJacobianVJP* output,
+                                                 double** od);
 
 #ifdef __cplusplus
 }

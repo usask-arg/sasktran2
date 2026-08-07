@@ -3,14 +3,14 @@
 #include "sasktran2/atmosphere/grid_storage.h"
 #include "sasktran2/geometry.h"
 #include <sasktran2/source_interface.h>
+#include <sasktran2/solar_transmission_operator.h>
 #include <sasktran2/raytracing.h>
 #include <sasktran2/atmosphere/atmosphere.h>
 #include <sasktran2/config.h>
 #include <sasktran2/dual.h>
 #include <array>
-#ifdef SKTRAN_RUST_SUPPORT
-#include "sasktran2-core/src/successive_orders/cxx.rs.h"
-#endif
+#include <memory>
+#include <utility>
 
 namespace sasktran2::solartransmission {
     /** Generates one row of what is known as the geometry matrix.  The optical
@@ -303,7 +303,7 @@ namespace sasktran2::solartransmission {
             int threadidx, int losidx, int layeridx,
             const raytracing::GridWeightStencilView& index_weights,
             bool is_entrance, double source_amplitude, double derivative_scale,
-            sasktran2::WavelengthBlockLaneDualView<NSTOKES, 1>& target) const;
+            sasktran2::WavelengthBlockLaneDualView<NSTOKES>& target) const;
 
         template <int N>
         void scatter_and_accumulate_derivative_block(
@@ -681,7 +681,9 @@ namespace sasktran2::solartransmission {
     }
 
     template <typename S, int NSTOKES>
-    class SingleScatterSource : public SourceTermInterface<NSTOKES> {
+    class SingleScatterSource
+        : public SourceTermInterface<NSTOKES>,
+          public sasktran2::WavelengthBlockLinearizationInterface {
       private:
         S m_solar_transmission;
         const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere;
@@ -694,6 +696,10 @@ namespace sasktran2::solartransmission {
         using RowMajorMatrix = Eigen::Matrix<double, Eigen::Dynamic,
                                              Eigen::Dynamic, Eigen::RowMajor>;
         std::vector<RowMajorMatrix> m_solar_trans_batch;
+        // JVP transmission tangent and VJP transmission cotangent share this
+        // four-lane allocation because products are evaluated sequentially.
+        std::vector<RowMajorMatrix> m_solar_trans_product_batch;
+        std::vector<RowMajorMatrix> m_solar_extinction_product_batch;
         std::vector<Eigen::VectorXd> m_solar_trans_jvp;
         mutable std::vector<std::vector<Eigen::VectorXd>>
             m_solar_trans_cotangent;
@@ -712,12 +718,11 @@ namespace sasktran2::solartransmission {
         bool m_interpolate_solar_on_atmosphere_grid = false;
         bool m_use_lower_interpolation = false;
         bool m_delegate_interior_source = false;
-#ifdef SKTRAN_RUST_SUPPORT
-        std::vector<::rust::Box<
-            sasktran2::rust::successive_orders::RustSolarTransmissionOperator>>
-            m_rust_solar_transmission_operators;
-        mutable std::vector<std::vector<double>> m_rust_solar_scratch;
-#endif
+        std::shared_ptr<
+            sasktran2::solartransmission::detail::SolarTransmissionOperator>
+            m_delegated_solar_transmission;
+        sasktran2::solartransmission::detail::SolarTransmissionOperatorFactory
+            m_delegated_solar_transmission_factory;
         std::vector<std::vector<int>> m_index_map;
 
         PhaseHandler<NSTOKES> m_phase_handler;
@@ -865,9 +870,7 @@ namespace sasktran2::solartransmission {
             int threadidx, Eigen::Ref<Eigen::VectorXd> native_gradient) const;
         void set_jvp_activity(int wavel_threadidx,
                               Eigen::Ref<const Eigen::VectorXd> native_tangent);
-#ifdef SKTRAN_RUST_SUPPORT
-        void initialize_rust_solar_transmission_operator();
-#endif
+        void initialize_delegated_solar_transmission();
 
         void initialize_fixed_dispatch() {
             if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
@@ -885,7 +888,7 @@ namespace sasktran2::solartransmission {
                 entrance_weights,
             const sasktran2::raytracing::GridWeightStencilView& exit_weights,
             const sasktran2::WavelengthBlockODView& shell_od,
-            sasktran2::WavelengthBlockLaneDualView<NSTOKES, 1>& source,
+            sasktran2::WavelengthBlockLaneDualView<NSTOKES>& source,
             typename SourceTermInterface<NSTOKES>::IntegrationDirection
                 direction) const;
 
@@ -904,6 +907,11 @@ namespace sasktran2::solartransmission {
             Eigen::Ref<Eigen::VectorXd> native_gradient) const;
 
       public:
+        sasktran2::WavelengthBlockLinearizationInterface*
+        wavelength_block_linearization() override {
+            return this;
+        }
+
         SingleScatterSource(
             const Geometry1D& geometry,
             const sasktran2::raytracing::RayTracerBase& raytracer)
@@ -1013,15 +1021,20 @@ namespace sasktran2::solartransmission {
                         if constexpr (std::decay_t<
                                           decltype(fixed_block)>::static_size ==
                                       1) {
-                            if (m_wavelength_batch_capacity == 1) {
-                                calculate_single(fixed_block.start, threadidx);
-                            } else {
-                                calculate_block(fixed_block, threadidx);
-                            }
+                            calculate_single(fixed_block.start, threadidx);
                         } else {
                             calculate_block(fixed_block, threadidx);
                         }
                     });
+            } else if constexpr (std::is_same_v<S, SolarTransmissionTable>) {
+                if (m_delegate_interior_source && block.count > 1) {
+                    sasktran2::dispatch_wavelength_block(
+                        block, [&](const auto& fixed_block) {
+                            calculate_block(fixed_block, threadidx);
+                        });
+                } else {
+                    calculate_single(block.start, threadidx);
+                }
             } else {
                 calculate_single(block.start, threadidx);
             }
@@ -1034,6 +1047,23 @@ namespace sasktran2::solartransmission {
                 return;
             }
             calculate_single(block.start, threadidx, false);
+        }
+
+        bool select_calculated_block_lane(int lane, int threadidx) override {
+            if (lane < 0 || lane >= m_wavelength_batch_capacity ||
+                threadidx < 0 ||
+                static_cast<std::size_t>(threadidx) >=
+                    m_solar_trans_batch.size()) {
+                return false;
+            }
+            const auto& batch = m_solar_trans_batch[threadidx];
+            if (batch.cols() <= lane ||
+                batch.rows() != m_solar_trans[threadidx].size()) {
+                return false;
+            }
+            m_solar_trans[threadidx] = batch.col(lane);
+            m_jvp_prepared[threadidx] = 0;
+            return true;
         }
 
         /** Calculates the integrated source term for a given layer.
@@ -1053,7 +1083,7 @@ namespace sasktran2::solartransmission {
                 entrance_weights,
             const sasktran2::raytracing::GridWeightStencilView& exit_weights,
             const sasktran2::WavelengthBlockODView& shell_od,
-            sasktran2::WavelengthBlockLaneDualView<NSTOKES, 1>& source,
+            sasktran2::WavelengthBlockLaneDualView<NSTOKES>& source,
             typename SourceTermInterface<
                 NSTOKES>::IntegrationDirection direction =
                 SourceTermInterface<NSTOKES>::IntegrationDirection::none) const;
@@ -1085,15 +1115,13 @@ namespace sasktran2::solartransmission {
             typename SourceTermInterface<NSTOKES>::IntegrationDirection
                 direction) const {
             if constexpr (N == 1) {
-                if (m_wavelength_batch_capacity == 1) {
-                    sasktran2::WavelengthBlockLaneDualView<NSTOKES, 1>
-                        source_lane(source, 0);
-                    integrated_source_single(block.start, losidx, layeridx,
-                                             wavel_threadidx, threadidx, layer,
-                                             entrance_weights, exit_weights,
-                                             shell_od, source_lane, direction);
-                    return;
-                }
+                sasktran2::WavelengthBlockLaneDualView<NSTOKES> source_lane(
+                    source, 0);
+                integrated_source_single(block.start, losidx, layeridx,
+                                         wavel_threadidx, threadidx, layer,
+                                         entrance_weights, exit_weights,
+                                         shell_od, source_lane, direction);
+                return;
             }
             integrated_source_block(block, losidx, layeridx, wavel_threadidx,
                                     threadidx, layer, entrance_weights,
@@ -1143,7 +1171,7 @@ namespace sasktran2::solartransmission {
                             shell_od, source, direction);
                     });
             } else {
-                sasktran2::WavelengthBlockLaneDualView<NSTOKES, 1> source_lane(
+                sasktran2::WavelengthBlockLaneDualView<NSTOKES> source_lane(
                     source, 0);
                 integrated_source_single(block.start, losidx, layeridx,
                                          wavel_threadidx, threadidx, layer,
@@ -1174,16 +1202,70 @@ namespace sasktran2::solartransmission {
             m_table_native_products_enabled = true;
         }
 
-        /** The Rust successive-orders transport evaluates all
-         * atmospheric single-scatter endpoints itself. Keep this source only
-         * for solar-path transmission and the end-of-ray ground term. */
-        void delegate_interior_source() { m_delegate_interior_source = true; }
+        /** Delegate atmospheric endpoint evaluation to an external source.
+         * Keep this source only for solar-path transmission and the
+         * end-of-ray ground term. */
+        void
+        delegate_interior_source(sasktran2::solartransmission::detail::
+                                     SolarTransmissionOperatorFactory factory) {
+            if (!factory) {
+                throw std::invalid_argument(
+                    "Delegated single scattering requires a solar "
+                    "transmission factory");
+            }
+            m_delegate_interior_source = true;
+            m_delegated_solar_transmission_factory = std::move(factory);
+        }
 
-        /** Exposes the wavelength-local solar transmission to the Rust
-         *  successive-orders forcing kernel. The source retains ownership. */
+        /** Expose wavelength-local solar transmission to a delegated source.
+         * The single-scatter source retains ownership. */
         const Eigen::VectorXd& solar_transmission(int wavel_threadidx) const {
             return m_solar_trans.at(wavel_threadidx);
         }
+
+        /** Element-major wavelength-block transmission for delegated batch
+         * assembly. */
+        const double* solar_transmission_batch_data(int wavel_threadidx) const {
+            return m_solar_trans_batch.at(wavel_threadidx).data();
+        }
+
+        std::size_t solar_transmission_batch_size(int wavel_threadidx) const {
+            return static_cast<std::size_t>(
+                m_solar_trans_batch.at(wavel_threadidx).size());
+        }
+
+        void calculate_solar_transmission_jvp_batch4(
+            int wavel_threadidx,
+            const std::vector<Eigen::VectorXd>& native_tangents);
+
+        void select_solar_transmission_jvp_batch4_lane(
+            int lane, int wavel_threadidx,
+            Eigen::Ref<const Eigen::VectorXd> native_tangent);
+
+        double* solar_transmission_product_batch_data(int wavel_threadidx) {
+            return m_solar_trans_product_batch.at(wavel_threadidx).data();
+        }
+
+        const double*
+        solar_transmission_product_batch_data(int wavel_threadidx) const {
+            return m_solar_trans_product_batch.at(wavel_threadidx).data();
+        }
+
+        std::size_t
+        solar_transmission_product_batch_size(int wavel_threadidx) const {
+            return static_cast<std::size_t>(
+                m_solar_trans_product_batch.at(wavel_threadidx).size());
+        }
+
+        void select_solar_transmission_vjp_batch4_lane(int lane,
+                                                       int wavel_threadidx);
+
+        void stage_solar_transmission_vjp_batch4_lane(int lane,
+                                                      int wavel_threadidx);
+
+        void finalize_solar_transmission_vjp_batch4(
+            int wavel_threadidx,
+            std::vector<Eigen::VectorXd>& native_gradients);
 
         const Eigen::VectorXd&
         solar_transmission_jvp(int wavel_threadidx) const {
@@ -1277,7 +1359,7 @@ namespace sasktran2::solartransmission {
       private:
         void end_of_ray_source_single(
             int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-            sasktran2::WavelengthBlockLaneDualView<NSTOKES, 1>& source) const;
+            sasktran2::WavelengthBlockLaneDualView<NSTOKES>& source) const;
 
         template <int N>
         void end_of_ray_source_block(
@@ -1296,26 +1378,34 @@ namespace sasktran2::solartransmission {
                         if constexpr (std::decay_t<
                                           decltype(fixed_block)>::static_size ==
                                       1) {
-                            if (m_wavelength_batch_capacity == 1) {
-                                sasktran2::WavelengthBlockLaneDualView<NSTOKES,
-                                                                       1>
-                                    source_lane(source, 0);
-                                end_of_ray_source_single(
-                                    fixed_block.start, losidx, wavel_threadidx,
-                                    threadidx, source_lane);
-                            } else {
-                                end_of_ray_source_block(fixed_block, losidx,
-                                                        wavel_threadidx,
-                                                        threadidx, source);
-                            }
+                            sasktran2::WavelengthBlockLaneDualView<NSTOKES>
+                                source_lane(source, 0);
+                            end_of_ray_source_single(fixed_block.start, losidx,
+                                                     wavel_threadidx, threadidx,
+                                                     source_lane);
                         } else {
                             end_of_ray_source_block(fixed_block, losidx,
                                                     wavel_threadidx, threadidx,
                                                     source);
                         }
                     });
+            } else if constexpr (std::is_same_v<S, SolarTransmissionTable>) {
+                if (m_delegate_interior_source && block.count > 1) {
+                    sasktran2::dispatch_wavelength_block(
+                        block, [&](const auto& fixed_block) {
+                            end_of_ray_source_block(fixed_block, losidx,
+                                                    wavel_threadidx, threadidx,
+                                                    source);
+                        });
+                } else {
+                    sasktran2::WavelengthBlockLaneDualView<NSTOKES> source_lane(
+                        source, 0);
+                    end_of_ray_source_single(block.start, losidx,
+                                             wavel_threadidx, threadidx,
+                                             source_lane);
+                }
             } else {
-                sasktran2::WavelengthBlockLaneDualView<NSTOKES, 1> source_lane(
+                sasktran2::WavelengthBlockLaneDualView<NSTOKES> source_lane(
                     source, 0);
                 end_of_ray_source_single(block.start, losidx, wavel_threadidx,
                                          threadidx, source_lane);

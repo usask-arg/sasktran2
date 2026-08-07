@@ -1,6 +1,8 @@
 #include "sktran_disco/sktran_do.h"
 #include "sktran_disco/sktran_do_quadrature.h"
+#ifdef SKTRAN_RUST_SUPPORT
 #include "sasktran2-core/src/math/gaussquad.rs.h"
+#endif
 
 void sasktran_disco::getStreamsAndWeights(uint num_streams,
                                           VectorDim1<double>& angles,

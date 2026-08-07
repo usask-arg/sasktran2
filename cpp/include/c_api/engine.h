@@ -35,6 +35,9 @@ int sk_engine_initialize_jvp(Engine* engine, Atmosphere* atmosphere,
                              OutputJVP* output);
 int sk_engine_calculate_jvp_wavelength_thread(Engine* engine, OutputJVP* output,
                                               int wavelength, int thread_idx);
+int sk_engine_calculate_jvp_block_thread(Engine* engine, OutputJVP* output,
+                                         int wavelength_start,
+                                         int wavelength_count, int thread_idx);
 int sk_engine_finalize_jvp(Engine* engine);
 int sk_engine_calculate_vjp(Engine* engine, Atmosphere* atmosphere,
                             OutputVJP* output);
@@ -42,6 +45,9 @@ int sk_engine_initialize_vjp(Engine* engine, Atmosphere* atmosphere,
                              OutputVJP* output);
 int sk_engine_calculate_vjp_wavelength_thread(Engine* engine, OutputVJP* output,
                                               int wavelength, int thread_idx);
+int sk_engine_calculate_vjp_block_thread(Engine* engine, OutputVJP* output,
+                                         int wavelength_start,
+                                         int wavelength_count, int thread_idx);
 int sk_engine_calculate_jacobian_vjp(Engine* engine, Atmosphere* atmosphere,
                                      OutputJacobianVJP* output);
 int sk_engine_initialize_jacobian_vjp(Engine* engine, Atmosphere* atmosphere,

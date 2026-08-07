@@ -1,6 +1,11 @@
 use std::fmt::{Display, Formatter};
 
-use super::{FixedPointProblem, OperatorError};
+use super::{
+    FixedPointProblem, OperatorError,
+    simd::batch::{
+        Batch4, LANES, dot_product as batch_dot_product, infinity_norm as batch_infinity_norm,
+    },
+};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SolverConfig {
@@ -259,6 +264,20 @@ pub struct SuccessiveOrdersSolver {
     diagnostics: SolverDiagnostics,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct BatchSolveResult {
+    pub(crate) solution: Vec<f64>,
+    pub(crate) diagnostics: [SolverDiagnostics; LANES],
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct BatchFixedPointGradient {
+    pub(crate) scattering_coefficients: Vec<f64>,
+    #[cfg_attr(test, allow(dead_code))]
+    pub(crate) dense_scattering_values: Vec<f64>,
+    pub(crate) forcing: Vec<f64>,
+}
+
 impl SuccessiveOrdersSolver {
     pub fn new(problem: FixedPointProblem, config: SolverConfig) -> Result<Self, SolverError> {
         let config = config.validate()?;
@@ -423,6 +442,533 @@ impl SuccessiveOrdersSolver {
 
         self.diagnostics.reason = ConvergenceReason::MaximumIterations;
         Ok(&self.solution)
+    }
+
+    /// Solves four independent scalar wavelength systems in lockstep. The
+    /// immutable transport sparsity and angular scattering basis are shared;
+    /// every wavelength-dependent array is interleaved with four contiguous
+    /// lanes. A caller should fall back to the scalar solver if this bounded
+    /// Krylov path reports a breakdown.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn solve_batch4(
+        &self,
+        transport_row_offsets: &[i32],
+        transport_column_indices: &[i32],
+        transport_values: &[f64],
+        scattering_coefficients: &[f64],
+        dense_scattering_values: &[f64],
+        forcing: &[f64],
+        initial_guess: Option<&[f64]>,
+    ) -> Result<BatchSolveResult, SolverError> {
+        if self.config.anderson_depth == 0
+            || self.config.max_iterations < 2
+            || (self.config.relative_tolerance == 0.0 && self.config.absolute_tolerance == 0.0)
+        {
+            return Err(SolverError::ImplicitLinearSolveDidNotConverge);
+        }
+        let active_num_coefficients = self.problem.validate_batch4_data(
+            transport_row_offsets,
+            transport_column_indices,
+            transport_values,
+            scattering_coefficients,
+            dense_scattering_values,
+            forcing,
+        )?;
+        let state_size = self.problem.state_size();
+        let packed_state_size = state_size * LANES;
+        if initial_guess.is_some_and(|values| values.len() != packed_state_size) {
+            return Err(SolverError::InitialGuessSize);
+        }
+
+        let mut solution = initial_guess
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| vec![0.0; packed_state_size]);
+        if solution.iter().any(|value| !value.is_finite()) {
+            return Err(SolverError::NonFiniteIteration);
+        }
+        let mut mapped = vec![0.0; packed_state_size];
+        let mut residual = vec![0.0; packed_state_size];
+        let mut incoming = vec![0.0; self.problem.incoming_size() * LANES];
+        let mut scattering_scratch = vec![
+            0.0;
+            self.problem.batch4_scattering_scratch_size(
+                active_num_coefficients
+            )?
+        ];
+        self.problem.apply_batch4(
+            transport_row_offsets,
+            transport_column_indices,
+            transport_values,
+            scattering_coefficients,
+            dense_scattering_values,
+            forcing,
+            active_num_coefficients,
+            &solution,
+            &mut mapped,
+            &mut incoming,
+            &mut scattering_scratch,
+        )?;
+        for element in 0..state_size {
+            (Batch4::load(&mapped, element) - Batch4::load(&solution, element))
+                .store(&mut residual, element);
+        }
+        if mapped.iter().any(|value| !value.is_finite())
+            || residual.iter().any(|value| !value.is_finite())
+        {
+            return Err(SolverError::NonFiniteIteration);
+        }
+
+        let initial_residual_norm = batch_infinity_norm(&residual);
+        let initial_scale = batch_infinity_norm(&mapped);
+        let solution_scale = batch_infinity_norm(&solution);
+        let initial_threshold: [f64; LANES] = std::array::from_fn(|lane| {
+            self.config.absolute_tolerance
+                + self.config.relative_tolerance * initial_scale[lane].max(solution_scale[lane])
+        });
+        let mut active =
+            std::array::from_fn(|lane| initial_residual_norm[lane] > initial_threshold[lane]);
+        for (lane, &is_active) in active.iter().enumerate() {
+            if !is_active {
+                copy_batch_lane(&mapped, &mut solution, lane);
+            }
+        }
+        let mut residual_history: [Vec<f64>; LANES] =
+            std::array::from_fn(|lane| vec![initial_residual_norm[lane]]);
+        if !active.iter().any(|&value| value) {
+            return Ok(completed_batch_result(
+                solution,
+                initial_residual_norm,
+                residual_history,
+            ));
+        }
+        zero_inactive_lanes(&mut residual, active);
+
+        let shadow_residual = residual.clone();
+        let mut direction = vec![0.0; packed_state_size];
+        let mut direction_image = vec![0.0; packed_state_size];
+        let mut intermediate_residual = vec![0.0; packed_state_size];
+        let mut intermediate_image = vec![0.0; packed_state_size];
+        let mut previous_rho = Batch4::splat(1.0);
+        let mut alpha = Batch4::splat(1.0);
+        let mut omega = Batch4::splat(1.0);
+
+        for iteration in 0..self.config.max_iterations {
+            let rho = batch_dot_product(&shadow_residual, &residual);
+            validate_batch_divisor(rho, active)?;
+            if iteration == 0 {
+                direction.copy_from_slice(&residual);
+            } else {
+                validate_batch_divisor(previous_rho, active)?;
+                validate_batch_divisor(omega, active)?;
+                let beta = safe_batch_divide(rho, previous_rho, active)
+                    * safe_batch_divide(alpha, omega, active);
+                for element in 0..state_size {
+                    let value = Batch4::load(&residual, element)
+                        + beta
+                            * (Batch4::load(&direction, element)
+                                - omega * Batch4::load(&direction_image, element));
+                    Batch4::select(active, value, Batch4::splat(0.0))
+                        .store(&mut direction, element);
+                }
+            }
+
+            self.problem.apply_linear_system_batch4(
+                transport_row_offsets,
+                transport_column_indices,
+                transport_values,
+                scattering_coefficients,
+                dense_scattering_values,
+                active_num_coefficients,
+                &direction,
+                &mut direction_image,
+                &mut incoming,
+                &mut scattering_scratch,
+            )?;
+            let alpha_denominator = batch_dot_product(&shadow_residual, &direction_image);
+            validate_batch_divisor(alpha_denominator, active)?;
+            alpha = safe_batch_divide(rho, alpha_denominator, active);
+            for element in 0..state_size {
+                (Batch4::load(&residual, element)
+                    - alpha * Batch4::load(&direction_image, element))
+                .store(&mut intermediate_residual, element);
+            }
+
+            let intermediate_norm = batch_infinity_norm(&intermediate_residual);
+            let solution_norm = batch_infinity_norm(&solution);
+            let threshold: [f64; LANES] = std::array::from_fn(|lane| {
+                self.config.absolute_tolerance
+                    + self.config.relative_tolerance
+                        * initial_residual_norm[lane].max(solution_norm[lane])
+            });
+            let intermediate_converged = std::array::from_fn(|lane| {
+                active[lane] && intermediate_norm[lane] <= threshold[lane]
+            });
+            if intermediate_converged.iter().any(|&value| value) {
+                for element in 0..state_size {
+                    let candidate = Batch4::load(&solution, element)
+                        + alpha * Batch4::load(&direction, element);
+                    Batch4::select(
+                        intermediate_converged,
+                        candidate,
+                        Batch4::load(&solution, element),
+                    )
+                    .store(&mut solution, element);
+                }
+                for lane in 0..LANES {
+                    if intermediate_converged[lane] {
+                        residual_history[lane].push(intermediate_norm[lane]);
+                        active[lane] = false;
+                    }
+                }
+                if !active.iter().any(|&value| value) {
+                    break;
+                }
+            }
+            zero_inactive_lanes(&mut intermediate_residual, active);
+
+            self.problem.apply_linear_system_batch4(
+                transport_row_offsets,
+                transport_column_indices,
+                transport_values,
+                scattering_coefficients,
+                dense_scattering_values,
+                active_num_coefficients,
+                &intermediate_residual,
+                &mut intermediate_image,
+                &mut incoming,
+                &mut scattering_scratch,
+            )?;
+            let omega_denominator = batch_dot_product(&intermediate_image, &intermediate_image);
+            validate_batch_positive_divisor(omega_denominator, active)?;
+            omega = safe_batch_divide(
+                batch_dot_product(&intermediate_image, &intermediate_residual),
+                omega_denominator,
+                active,
+            );
+            validate_batch_divisor(omega, active)?;
+            for element in 0..state_size {
+                let updated_solution = Batch4::load(&solution, element)
+                    + alpha * Batch4::load(&direction, element)
+                    + omega * Batch4::load(&intermediate_residual, element);
+                let updated_residual = Batch4::load(&intermediate_residual, element)
+                    - omega * Batch4::load(&intermediate_image, element);
+                Batch4::select(active, updated_solution, Batch4::load(&solution, element))
+                    .store(&mut solution, element);
+                Batch4::select(active, updated_residual, Batch4::splat(0.0))
+                    .store(&mut residual, element);
+            }
+            if solution.iter().any(|value| !value.is_finite())
+                || residual.iter().any(|value| !value.is_finite())
+            {
+                return Err(SolverError::NonFiniteIteration);
+            }
+            let residual_norm = batch_infinity_norm(&residual);
+            let solution_norm = batch_infinity_norm(&solution);
+            for lane in 0..LANES {
+                if !active[lane] {
+                    continue;
+                }
+                residual_history[lane].push(residual_norm[lane]);
+                let threshold = self.config.absolute_tolerance
+                    + self.config.relative_tolerance
+                        * initial_residual_norm[lane].max(solution_norm[lane]);
+                if residual_norm[lane] <= threshold {
+                    active[lane] = false;
+                }
+            }
+            if !active.iter().any(|&value| value) {
+                break;
+            }
+            previous_rho = rho;
+        }
+        if active.iter().any(|&value| value) {
+            return Err(SolverError::ImplicitLinearSolveDidNotConverge);
+        }
+
+        // Match the scalar path: accept a recurrence solution only after an
+        // explicit affine-map residual check, and retain the mapped value.
+        self.problem.apply_batch4(
+            transport_row_offsets,
+            transport_column_indices,
+            transport_values,
+            scattering_coefficients,
+            dense_scattering_values,
+            forcing,
+            active_num_coefficients,
+            &solution,
+            &mut mapped,
+            &mut incoming,
+            &mut scattering_scratch,
+        )?;
+        for element in 0..state_size {
+            (Batch4::load(&mapped, element) - Batch4::load(&solution, element))
+                .store(&mut residual, element);
+        }
+        let final_residual = batch_infinity_norm(&residual);
+        let mapped_norm = batch_infinity_norm(&mapped);
+        let solution_norm = batch_infinity_norm(&solution);
+        for lane in 0..LANES {
+            let threshold = self.config.absolute_tolerance
+                + self.config.relative_tolerance * mapped_norm[lane].max(solution_norm[lane]);
+            if !final_residual[lane].is_finite() || final_residual[lane] > threshold {
+                return Err(SolverError::ImplicitLinearSolveDidNotConverge);
+            }
+            residual_history[lane].push(final_residual[lane]);
+        }
+        Ok(completed_batch_result(
+            mapped,
+            initial_residual_norm,
+            residual_history,
+        ))
+    }
+
+    /// Applies four independent implicit JVP systems in lockstep. Parameter
+    /// tangents are assembled one lane at a time because they originate in
+    /// the engine's native derivative layout; the repeated Krylov operator,
+    /// which dominates the coefficient solve, remains fully packed.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn solve_jvp_batch4(
+        &mut self,
+        transport_row_offsets: &[i32],
+        transport_column_indices: &[i32],
+        transport_values: &[f64],
+        transport_value_tangent: &[f64],
+        scattering_coefficients: &[f64],
+        scattering_coefficient_tangent: &[f64],
+        dense_scattering_values: &[f64],
+        dense_scattering_value_tangent: &[f64],
+        forcing: &[f64],
+        forcing_tangent: &[f64],
+        solution: &[f64],
+    ) -> Result<Vec<f64>, SolverError> {
+        let active_num_coefficients = self.problem.validate_batch4_data(
+            transport_row_offsets,
+            transport_column_indices,
+            transport_values,
+            scattering_coefficients,
+            dense_scattering_values,
+            forcing,
+        )?;
+        if transport_value_tangent.len() != self.problem.transport_value_size() * LANES
+            || scattering_coefficient_tangent.len()
+                != self.problem.scattering_coefficient_size() * LANES
+            || dense_scattering_value_tangent.len()
+                != self.problem.dense_scattering_value_size() * LANES
+            || forcing_tangent.len() != self.problem.incoming_size() * LANES
+            || solution.len() != self.problem.state_size() * LANES
+        {
+            return Err(SolverError::Operator(OperatorError::DimensionMismatch));
+        }
+
+        let transport_size = self.problem.transport_value_size();
+        let coefficient_size = self.problem.scattering_coefficient_size();
+        let dense_size = self.problem.dense_scattering_value_size();
+        let forcing_size = self.problem.incoming_size();
+        let state_size = self.problem.state_size();
+        let mut lane_transport = vec![0.0; transport_size];
+        let mut lane_transport_tangent = vec![0.0; transport_size];
+        let mut lane_coefficients = vec![0.0; coefficient_size];
+        let mut lane_coefficient_tangent = vec![0.0; coefficient_size];
+        let mut lane_dense = vec![0.0; dense_size];
+        let mut lane_dense_tangent = vec![0.0; dense_size];
+        let mut lane_forcing = vec![0.0; forcing_size];
+        let mut lane_forcing_tangent = vec![0.0; forcing_size];
+        let mut lane_solution = vec![0.0; state_size];
+        let mut lane_right_hand_side = vec![0.0; state_size];
+        let mut incoming = vec![0.0; forcing_size];
+        let mut incoming_tangent = vec![0.0; forcing_size];
+        let mut right_hand_side = vec![0.0; state_size * LANES];
+        for lane in 0..LANES {
+            extract_batch_lane(transport_values, lane, &mut lane_transport);
+            extract_batch_lane(transport_value_tangent, lane, &mut lane_transport_tangent);
+            extract_batch_lane(scattering_coefficients, lane, &mut lane_coefficients);
+            extract_batch_lane(
+                scattering_coefficient_tangent,
+                lane,
+                &mut lane_coefficient_tangent,
+            );
+            extract_batch_lane(dense_scattering_values, lane, &mut lane_dense);
+            extract_batch_lane(
+                dense_scattering_value_tangent,
+                lane,
+                &mut lane_dense_tangent,
+            );
+            extract_batch_lane(forcing, lane, &mut lane_forcing);
+            extract_batch_lane(forcing_tangent, lane, &mut lane_forcing_tangent);
+            extract_batch_lane(solution, lane, &mut lane_solution);
+            self.problem
+                .set_scattering_coefficients(&lane_coefficients)?;
+            self.problem.set_scattering_values(&lane_dense)?;
+            self.problem.apply_parameter_jvp(
+                transport_row_offsets,
+                transport_column_indices,
+                &lane_transport,
+                &lane_transport_tangent,
+                &lane_forcing,
+                &lane_forcing_tangent,
+                &lane_coefficient_tangent,
+                &lane_dense_tangent,
+                &lane_solution,
+                &mut lane_right_hand_side,
+                &mut incoming,
+                &mut incoming_tangent,
+            )?;
+            interleave_batch_lane(&lane_right_hand_side, lane, &mut right_hand_side);
+        }
+
+        let mut packed_incoming = vec![0.0; forcing_size * LANES];
+        let mut scattering_scratch = vec![
+            0.0;
+            self.problem.batch4_scattering_scratch_size(
+                active_num_coefficients
+            )?
+        ];
+        let problem = &self.problem;
+        let config = self.config;
+        solve_bicgstab_batch4(&right_hand_side, config, |input, output| {
+            problem.apply_linear_system_batch4(
+                transport_row_offsets,
+                transport_column_indices,
+                transport_values,
+                scattering_coefficients,
+                dense_scattering_values,
+                active_num_coefficients,
+                input,
+                output,
+                &mut packed_incoming,
+                &mut scattering_scratch,
+            )?;
+            Ok(())
+        })
+    }
+
+    /// Applies four independent converged fixed-point adjoints in lockstep.
+    /// The compact gradient intentionally omits transport values; the ray
+    /// geometry pullback reconstructs those factors from the packed solution
+    /// and forcing cotangent, matching the scalar VJP path.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn solve_vjp_batch4(
+        &mut self,
+        transport_row_offsets: &[i32],
+        transport_column_indices: &[i32],
+        transport_values: &[f64],
+        scattering_coefficients: &[f64],
+        dense_scattering_values: &[f64],
+        forcing: &[f64],
+        solution: &[f64],
+        solution_cotangent: &[f64],
+    ) -> Result<BatchFixedPointGradient, SolverError> {
+        let active_num_coefficients = self.problem.validate_batch4_data(
+            transport_row_offsets,
+            transport_column_indices,
+            transport_values,
+            scattering_coefficients,
+            dense_scattering_values,
+            forcing,
+        )?;
+        if solution.len() != self.problem.state_size() * LANES
+            || solution_cotangent.len() != self.problem.state_size() * LANES
+        {
+            return Err(SolverError::Operator(OperatorError::DimensionMismatch));
+        }
+        let mut packed_incoming = vec![0.0; self.problem.incoming_size() * LANES];
+        let mut scattering_scratch = vec![
+            0.0;
+            self.problem.batch4_scattering_scratch_size(
+                active_num_coefficients
+            )?
+        ];
+        let problem = &self.problem;
+        let config = self.config;
+        let bicgstab_result = solve_bicgstab_batch4(solution_cotangent, config, |input, output| {
+            problem.apply_linear_system_transpose_batch4(
+                transport_row_offsets,
+                transport_column_indices,
+                transport_values,
+                scattering_coefficients,
+                dense_scattering_values,
+                active_num_coefficients,
+                input,
+                output,
+                &mut packed_incoming,
+                &mut scattering_scratch,
+            )?;
+            Ok(())
+        });
+        let adjoint = match bicgstab_result {
+            Ok(adjoint) => adjoint,
+            Err(SolverError::ImplicitLinearSolveDidNotConverge) => {
+                solve_affine_fixed_point_batch4(solution_cotangent, config, |input, output| {
+                    problem.apply_linear_transpose_batch4(
+                        transport_row_offsets,
+                        transport_column_indices,
+                        transport_values,
+                        scattering_coefficients,
+                        dense_scattering_values,
+                        active_num_coefficients,
+                        input,
+                        output,
+                        &mut packed_incoming,
+                        &mut scattering_scratch,
+                    )?;
+                    Ok(())
+                })?
+            }
+            Err(error) => return Err(error),
+        };
+
+        let transport_size = self.problem.transport_value_size();
+        let coefficient_size = self.problem.scattering_coefficient_size();
+        let dense_size = self.problem.dense_scattering_value_size();
+        let forcing_size = self.problem.incoming_size();
+        let state_size = self.problem.state_size();
+        let mut lane_transport = vec![0.0; transport_size];
+        let mut lane_coefficients = vec![0.0; coefficient_size];
+        let mut lane_dense = vec![0.0; dense_size];
+        let mut lane_forcing = vec![0.0; forcing_size];
+        let mut lane_solution = vec![0.0; state_size];
+        let mut lane_adjoint = vec![0.0; state_size];
+        let mut coefficient_gradient = vec![0.0; coefficient_size * LANES];
+        let mut dense_gradient = vec![0.0; dense_size * LANES];
+        let mut forcing_gradient = vec![0.0; forcing_size * LANES];
+        let mut lane_coefficient_gradient = vec![0.0; coefficient_size];
+        let mut lane_dense_gradient = vec![0.0; dense_size];
+        let mut lane_forcing_gradient = vec![0.0; forcing_size];
+        let mut incoming = vec![0.0; forcing_size];
+        let mut incoming_cotangent = vec![0.0; forcing_size];
+        for lane in 0..LANES {
+            extract_batch_lane(transport_values, lane, &mut lane_transport);
+            extract_batch_lane(scattering_coefficients, lane, &mut lane_coefficients);
+            extract_batch_lane(dense_scattering_values, lane, &mut lane_dense);
+            extract_batch_lane(forcing, lane, &mut lane_forcing);
+            extract_batch_lane(solution, lane, &mut lane_solution);
+            extract_batch_lane(&adjoint, lane, &mut lane_adjoint);
+            self.problem
+                .set_scattering_coefficients(&lane_coefficients)?;
+            self.problem.set_scattering_values(&lane_dense)?;
+            self.problem.apply_parameter_vjp(
+                transport_row_offsets,
+                transport_column_indices,
+                &lane_transport,
+                &lane_forcing,
+                &lane_solution,
+                &lane_adjoint,
+                &mut [],
+                &mut lane_coefficient_gradient,
+                &mut lane_dense_gradient,
+                &mut lane_forcing_gradient,
+                &mut incoming,
+                &mut incoming_cotangent,
+            )?;
+            interleave_batch_lane(&lane_coefficient_gradient, lane, &mut coefficient_gradient);
+            interleave_batch_lane(&lane_dense_gradient, lane, &mut dense_gradient);
+            interleave_batch_lane(&lane_forcing_gradient, lane, &mut forcing_gradient);
+        }
+        Ok(BatchFixedPointGradient {
+            scattering_coefficients: coefficient_gradient,
+            dense_scattering_values: dense_gradient,
+            forcing: forcing_gradient,
+        })
     }
 
     fn try_solve_krylov(
@@ -866,6 +1412,292 @@ impl SuccessiveOrdersSolver {
             self.config.damping
         }
     }
+}
+
+fn completed_batch_result(
+    solution: Vec<f64>,
+    initial_residual: [f64; LANES],
+    residual_history: [Vec<f64>; LANES],
+) -> BatchSolveResult {
+    let diagnostics = std::array::from_fn(|lane| SolverDiagnostics {
+        iterations: residual_history[lane].len(),
+        converged: true,
+        reason: ConvergenceReason::Tolerance,
+        initial_residual: initial_residual[lane],
+        final_residual: residual_history[lane].last().copied().unwrap_or(0.0),
+        residual_history: residual_history[lane].clone(),
+    });
+    BatchSolveResult {
+        solution,
+        diagnostics,
+    }
+}
+
+#[inline]
+fn copy_batch_lane(source: &[f64], target: &mut [f64], lane: usize) {
+    debug_assert_eq!(source.len(), target.len());
+    for element in 0..source.len() / LANES {
+        target[element * LANES + lane] = source[element * LANES + lane];
+    }
+}
+
+#[inline]
+fn extract_batch_lane(source: &[f64], lane: usize, target: &mut [f64]) {
+    debug_assert!(lane < LANES);
+    debug_assert_eq!(source.len(), target.len() * LANES);
+    for (element, value) in target.iter_mut().enumerate() {
+        *value = source[element * LANES + lane];
+    }
+}
+
+#[inline]
+fn interleave_batch_lane(source: &[f64], lane: usize, target: &mut [f64]) {
+    debug_assert!(lane < LANES);
+    debug_assert_eq!(target.len(), source.len() * LANES);
+    for (element, &value) in source.iter().enumerate() {
+        target[element * LANES + lane] = value;
+    }
+}
+
+#[inline]
+fn zero_inactive_lanes(values: &mut [f64], active: [bool; LANES]) {
+    for element in 0..values.len() / LANES {
+        Batch4::select(active, Batch4::load(values, element), Batch4::splat(0.0))
+            .store(values, element);
+    }
+}
+
+#[inline]
+fn safe_batch_divide(numerator: Batch4, denominator: Batch4, active: [bool; LANES]) -> Batch4 {
+    let numerator = Batch4::select(active, numerator, Batch4::splat(0.0));
+    let denominator = Batch4::select(active, denominator, Batch4::splat(1.0));
+    numerator / denominator
+}
+
+fn validate_batch_divisor(value: Batch4, active: [bool; LANES]) -> Result<(), SolverError> {
+    if value
+        .to_array()
+        .into_iter()
+        .zip(active)
+        .any(|(value, active)| active && (!value.is_finite() || value.abs() < 1.0e-30))
+    {
+        return Err(SolverError::ImplicitLinearSolveDidNotConverge);
+    }
+    Ok(())
+}
+
+fn validate_batch_positive_divisor(
+    value: Batch4,
+    active: [bool; LANES],
+) -> Result<(), SolverError> {
+    if value
+        .to_array()
+        .into_iter()
+        .zip(active)
+        .any(|(value, active)| active && (!value.is_finite() || value < 1.0e-30))
+    {
+        return Err(SolverError::ImplicitLinearSolveDidNotConverge);
+    }
+    Ok(())
+}
+
+/// Bounded-memory BiCGSTAB for four interleaved linear systems. Lanes stop
+/// independently; completed lanes are masked out without changing the packed
+/// storage layout used by the operator kernels.
+fn solve_bicgstab_batch4<F>(
+    right_hand_side: &[f64],
+    config: SolverConfig,
+    mut apply_system: F,
+) -> Result<Vec<f64>, SolverError>
+where
+    F: FnMut(&[f64], &mut [f64]) -> Result<(), SolverError>,
+{
+    if !right_hand_side.len().is_multiple_of(LANES) {
+        return Err(SolverError::Operator(OperatorError::DimensionMismatch));
+    }
+    let state_size = right_hand_side.len() / LANES;
+    let mut solution = vec![0.0; right_hand_side.len()];
+    let mut residual = right_hand_side.to_vec();
+    if residual.iter().any(|value| !value.is_finite()) {
+        return Err(SolverError::NonFiniteIteration);
+    }
+    let initial_residual_norm = batch_infinity_norm(&residual);
+    let mut active = std::array::from_fn(|lane| {
+        initial_residual_norm[lane]
+            > config.absolute_tolerance + config.relative_tolerance * initial_residual_norm[lane]
+    });
+    if !active.iter().any(|&value| value) {
+        return Ok(solution);
+    }
+    zero_inactive_lanes(&mut residual, active);
+
+    let shadow_residual = residual.clone();
+    let mut direction = vec![0.0; right_hand_side.len()];
+    let mut direction_image = vec![0.0; right_hand_side.len()];
+    let mut intermediate_residual = vec![0.0; right_hand_side.len()];
+    let mut intermediate_image = vec![0.0; right_hand_side.len()];
+    let mut previous_rho = Batch4::splat(1.0);
+    let mut alpha = Batch4::splat(1.0);
+    let mut omega = Batch4::splat(1.0);
+
+    for iteration in 0..config.max_iterations {
+        let rho = batch_dot_product(&shadow_residual, &residual);
+        validate_batch_divisor(rho, active)?;
+        if iteration == 0 {
+            direction.copy_from_slice(&residual);
+        } else {
+            validate_batch_divisor(previous_rho, active)?;
+            validate_batch_divisor(omega, active)?;
+            let beta = safe_batch_divide(rho, previous_rho, active)
+                * safe_batch_divide(alpha, omega, active);
+            for element in 0..state_size {
+                let value = Batch4::load(&residual, element)
+                    + beta
+                        * (Batch4::load(&direction, element)
+                            - omega * Batch4::load(&direction_image, element));
+                Batch4::select(active, value, Batch4::splat(0.0)).store(&mut direction, element);
+            }
+        }
+
+        apply_system(&direction, &mut direction_image)?;
+        let alpha_denominator = batch_dot_product(&shadow_residual, &direction_image);
+        validate_batch_divisor(alpha_denominator, active)?;
+        alpha = safe_batch_divide(rho, alpha_denominator, active);
+        for element in 0..state_size {
+            (Batch4::load(&residual, element) - alpha * Batch4::load(&direction_image, element))
+                .store(&mut intermediate_residual, element);
+        }
+
+        let intermediate_norm = batch_infinity_norm(&intermediate_residual);
+        let solution_norm = batch_infinity_norm(&solution);
+        let intermediate_converged = std::array::from_fn(|lane| {
+            active[lane]
+                && intermediate_norm[lane]
+                    <= config.absolute_tolerance
+                        + config.relative_tolerance
+                            * initial_residual_norm[lane].max(solution_norm[lane])
+        });
+        if intermediate_converged.iter().any(|&value| value) {
+            for element in 0..state_size {
+                let candidate =
+                    Batch4::load(&solution, element) + alpha * Batch4::load(&direction, element);
+                Batch4::select(
+                    intermediate_converged,
+                    candidate,
+                    Batch4::load(&solution, element),
+                )
+                .store(&mut solution, element);
+            }
+            for lane in 0..LANES {
+                active[lane] &= !intermediate_converged[lane];
+            }
+            if !active.iter().any(|&value| value) {
+                return Ok(solution);
+            }
+        }
+        zero_inactive_lanes(&mut intermediate_residual, active);
+
+        apply_system(&intermediate_residual, &mut intermediate_image)?;
+        let omega_denominator = batch_dot_product(&intermediate_image, &intermediate_image);
+        validate_batch_positive_divisor(omega_denominator, active)?;
+        omega = safe_batch_divide(
+            batch_dot_product(&intermediate_image, &intermediate_residual),
+            omega_denominator,
+            active,
+        );
+        validate_batch_divisor(omega, active)?;
+        for element in 0..state_size {
+            let updated_solution = Batch4::load(&solution, element)
+                + alpha * Batch4::load(&direction, element)
+                + omega * Batch4::load(&intermediate_residual, element);
+            let updated_residual = Batch4::load(&intermediate_residual, element)
+                - omega * Batch4::load(&intermediate_image, element);
+            Batch4::select(active, updated_solution, Batch4::load(&solution, element))
+                .store(&mut solution, element);
+            Batch4::select(active, updated_residual, Batch4::splat(0.0))
+                .store(&mut residual, element);
+        }
+        if solution.iter().any(|value| !value.is_finite())
+            || residual.iter().any(|value| !value.is_finite())
+        {
+            return Err(SolverError::NonFiniteIteration);
+        }
+        let residual_norm = batch_infinity_norm(&residual);
+        let solution_norm = batch_infinity_norm(&solution);
+        for lane in 0..LANES {
+            if active[lane]
+                && residual_norm[lane]
+                    <= config.absolute_tolerance
+                        + config.relative_tolerance
+                            * initial_residual_norm[lane].max(solution_norm[lane])
+            {
+                active[lane] = false;
+            }
+        }
+        if !active.iter().any(|&value| value) {
+            return Ok(solution);
+        }
+        previous_rho = rho;
+    }
+    Err(SolverError::ImplicitLinearSolveDidNotConverge)
+}
+
+fn solve_affine_fixed_point_batch4<F>(
+    right_hand_side: &[f64],
+    config: SolverConfig,
+    mut apply_linear: F,
+) -> Result<Vec<f64>, SolverError>
+where
+    F: FnMut(&[f64], &mut [f64]) -> Result<(), SolverError>,
+{
+    if !right_hand_side.len().is_multiple_of(LANES) {
+        return Err(SolverError::Operator(OperatorError::DimensionMismatch));
+    }
+    let state_size = right_hand_side.len() / LANES;
+    let mut state = vec![0.0; right_hand_side.len()];
+    let mut mapped = vec![0.0; right_hand_side.len()];
+    let mut residual = vec![0.0; right_hand_side.len()];
+    let right_hand_side_norm = batch_infinity_norm(right_hand_side);
+    let mut active = std::array::from_fn(|lane| {
+        right_hand_side_norm[lane]
+            > config.absolute_tolerance + config.relative_tolerance * right_hand_side_norm[lane]
+    });
+    if !active.iter().any(|&value| value) {
+        return Ok(state);
+    }
+
+    for _ in 0..config.max_iterations {
+        apply_linear(&state, &mut mapped)?;
+        for element in 0..state_size {
+            let candidate = Batch4::load(&mapped, element) + Batch4::load(right_hand_side, element);
+            (candidate - Batch4::load(&state, element)).store(&mut residual, element);
+            let updated = Batch4::load(&state, element)
+                + Batch4::splat(config.damping) * Batch4::load(&residual, element);
+            Batch4::select(active, updated, Batch4::load(&state, element))
+                .store(&mut state, element);
+        }
+        if state.iter().any(|value| !value.is_finite())
+            || residual.iter().any(|value| !value.is_finite())
+        {
+            return Err(SolverError::NonFiniteIteration);
+        }
+        let residual_norm = batch_infinity_norm(&residual);
+        let mapped_norm = batch_infinity_norm(&mapped);
+        let state_norm = batch_infinity_norm(&state);
+        for lane in 0..LANES {
+            if active[lane]
+                && residual_norm[lane]
+                    <= config.absolute_tolerance
+                        + config.relative_tolerance * mapped_norm[lane].max(state_norm[lane])
+            {
+                active[lane] = false;
+            }
+        }
+        if !active.iter().any(|&value| value) {
+            return Ok(state);
+        }
+    }
+    Err(SolverError::ImplicitLinearSolveDidNotConverge)
 }
 
 #[derive(Debug, Clone, PartialEq)]

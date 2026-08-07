@@ -60,6 +60,14 @@ namespace sasktran2 {
             sasktran2::validation::throw_configuration_error();
         }
 #endif
+        if (!m_successive_orders_altitude_grid_m.empty() &&
+            m_multiple_scatter_source !=
+                MultipleScatterSource::successive_orders_rust) {
+            spdlog::critical(
+                "successive_orders_altitude_grid_m is only supported by "
+                "multiple_scatter_source=successive_orders_rust");
+            sasktran2::validation::throw_configuration_error();
+        }
         if (input_validation_mode() == InputValidationMode::disabled) {
             return;
         }

@@ -2,7 +2,7 @@ use crate::threading;
 
 use super::atmosphere::Atmosphere;
 use super::common::openmp_support_enabled;
-use super::config::{Config, ThreadingLib};
+use super::config::{Config, MultipleScatterSource, ThreadingLib};
 use super::geometry::{Geometry1D, Geometry2D};
 use super::output::{JacobianVjpOutput, JvpOutput, Output, VjpOutput};
 use super::prelude::*;
@@ -135,6 +135,32 @@ fn safe_calc_jvp_wavelength_thread(
     }
 }
 
+fn safe_calc_jvp_block_thread(
+    engine: &SafeFFIEngine,
+    output: &SafeFFIJvpOutput,
+    wavelength_start: i32,
+    wavelength_count: i32,
+    thread_idx: i32,
+) -> Result<()> {
+    let result = unsafe {
+        ffi::sk_engine_calculate_jvp_block_thread(
+            engine.0,
+            output.0,
+            wavelength_start,
+            wavelength_count,
+            thread_idx,
+        )
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!(
+            "Failed to calculate JVP wavelength block: {}",
+            result
+        ))
+    }
+}
+
 fn safe_calc_vjp_wavelength_thread(
     engine: &SafeFFIEngine,
     output: &SafeFFIVjpOutput,
@@ -149,6 +175,32 @@ fn safe_calc_vjp_wavelength_thread(
     } else {
         Err(anyhow::anyhow!(
             "Failed to calculate VJP wavelength: {}",
+            result
+        ))
+    }
+}
+
+fn safe_calc_vjp_block_thread(
+    engine: &SafeFFIEngine,
+    output: &SafeFFIVjpOutput,
+    wavelength_start: i32,
+    wavelength_count: i32,
+    thread_idx: i32,
+) -> Result<()> {
+    let result = unsafe {
+        ffi::sk_engine_calculate_vjp_block_thread(
+            engine.0,
+            output.0,
+            wavelength_start,
+            wavelength_count,
+            thread_idx,
+        )
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!(
+            "Failed to calculate VJP wavelength block: {}",
             result
         ))
     }
@@ -173,6 +225,32 @@ fn safe_calc_jacobian_vjp_wavelength_thread(
             result
         ))
     }
+}
+
+fn successive_orders_wavelength_work_items(
+    num_wavel: usize,
+    batch_size: usize,
+    num_threads: usize,
+) -> Vec<(usize, usize)> {
+    let full_batches = if num_wavel >= batch_size * num_threads {
+        num_wavel / batch_size
+    } else {
+        0
+    };
+    let mut work_items = Vec::with_capacity(full_batches + num_wavel - full_batches * batch_size);
+    let mut tail_wavelength = full_batches * batch_size;
+    for batch_index in 0..full_batches {
+        work_items.push((batch_index * batch_size, batch_size));
+        if tail_wavelength < num_wavel {
+            work_items.push((tail_wavelength, 1));
+            tail_wavelength += 1;
+        }
+    }
+    while tail_wavelength < num_wavel {
+        work_items.push((tail_wavelength, 1));
+        tail_wavelength += 1;
+    }
+    work_items
 }
 
 impl<'a> Engine<'a> {
@@ -377,10 +455,47 @@ impl<'a> Engine<'a> {
 
             if batch_size > 1 {
                 let batch_size = batch_size as usize;
-                let num_batches = num_wavel.div_ceil(batch_size);
-                rayon_for_each_worker(num_batches, num_threads, |batch_index, thread_idx| {
-                    let wavelength_start = batch_index * batch_size;
-                    let wavelength_count = (num_wavel - wavelength_start).min(batch_size);
+                // A single packed successive-orders block would leave the
+                // other Rayon wavelength workers idle. Keep the scalar
+                // partition for that small case; once there is at least one
+                // full block per worker, schedule a partial tail as scalar
+                // work items so it can balance against the packed blocks.
+                let successive_orders = self.config.multiple_scatter_source()?
+                    == MultipleScatterSource::SuccessiveOrdersRust;
+                let work_items: Vec<(usize, usize)> = if successive_orders {
+                    let full_batches = if num_wavel >= batch_size * num_threads {
+                        num_wavel / batch_size
+                    } else {
+                        0
+                    };
+                    let mut work_items =
+                        Vec::with_capacity(full_batches + num_wavel - full_batches * batch_size);
+                    let mut tail_wavelength = full_batches * batch_size;
+                    for batch_index in 0..full_batches {
+                        work_items.push((batch_index * batch_size, batch_size));
+                        if tail_wavelength < num_wavel {
+                            work_items.push((tail_wavelength, 1));
+                            tail_wavelength += 1;
+                        }
+                    }
+                    while tail_wavelength < num_wavel {
+                        work_items.push((tail_wavelength, 1));
+                        tail_wavelength += 1;
+                    }
+                    work_items
+                } else {
+                    (0..num_wavel.div_ceil(batch_size))
+                        .map(|batch_index| {
+                            let wavelength_start = batch_index * batch_size;
+                            (
+                                wavelength_start,
+                                (num_wavel - wavelength_start).min(batch_size),
+                            )
+                        })
+                        .collect()
+                };
+                rayon_for_each_worker(work_items.len(), num_threads, |work_index, thread_idx| {
+                    let (wavelength_start, wavelength_count) = work_items[work_index];
                     safe_calc_block_thread(
                         &safe_engine,
                         &safe_output,
@@ -451,18 +566,45 @@ impl<'a> Engine<'a> {
 
             let safe_engine = SafeFFIEngine(self.engine);
             let safe_output = SafeFFIJvpOutput(output.output);
-            let worker_result = rayon_for_each_worker(
-                atmosphere.num_wavel(),
-                num_threads,
-                |wavelength, thread_idx| {
+            let num_wavel = atmosphere.num_wavel();
+            let batch_size = unsafe {
+                ffi::sk_engine_effective_wavelength_batch_size(self.engine, num_wavel as i32)
+            };
+            if batch_size < 1 {
+                return Err(anyhow::anyhow!(
+                    "Failed to determine JVP wavelength batch size: {}",
+                    batch_size
+                ));
+            }
+            let worker_result = if batch_size > 1
+                && self.config.multiple_scatter_source()?
+                    == MultipleScatterSource::SuccessiveOrdersRust
+            {
+                let work_items = successive_orders_wavelength_work_items(
+                    num_wavel,
+                    batch_size as usize,
+                    num_threads,
+                );
+                rayon_for_each_worker(work_items.len(), num_threads, |work_index, thread_idx| {
+                    let (wavelength_start, wavelength_count) = work_items[work_index];
+                    safe_calc_jvp_block_thread(
+                        &safe_engine,
+                        &safe_output,
+                        wavelength_start as i32,
+                        wavelength_count as i32,
+                        thread_idx,
+                    )
+                })
+            } else {
+                rayon_for_each_worker(num_wavel, num_threads, |wavelength, thread_idx| {
                     safe_calc_jvp_wavelength_thread(
                         &safe_engine,
                         &safe_output,
                         wavelength as i32,
                         thread_idx,
                     )
-                },
-            );
+                })
+            };
             let finalize_result = unsafe { ffi::sk_engine_finalize_jvp(self.engine) };
             worker_result?;
             if finalize_result != 0 {
@@ -530,18 +672,45 @@ impl<'a> Engine<'a> {
 
             let safe_engine = SafeFFIEngine(self.engine);
             let safe_output = SafeFFIVjpOutput(output.output);
-            rayon_for_each_worker(
-                atmosphere.num_wavel(),
-                num_threads,
-                |wavelength, thread_idx| {
+            let num_wavel = atmosphere.num_wavel();
+            let batch_size = unsafe {
+                ffi::sk_engine_effective_wavelength_batch_size(self.engine, num_wavel as i32)
+            };
+            if batch_size < 1 {
+                return Err(anyhow::anyhow!(
+                    "Failed to determine VJP wavelength batch size: {}",
+                    batch_size
+                ));
+            }
+            if batch_size > 1
+                && self.config.multiple_scatter_source()?
+                    == MultipleScatterSource::SuccessiveOrdersRust
+            {
+                let work_items = successive_orders_wavelength_work_items(
+                    num_wavel,
+                    batch_size as usize,
+                    num_threads,
+                );
+                rayon_for_each_worker(work_items.len(), num_threads, |work_index, thread_idx| {
+                    let (wavelength_start, wavelength_count) = work_items[work_index];
+                    safe_calc_vjp_block_thread(
+                        &safe_engine,
+                        &safe_output,
+                        wavelength_start as i32,
+                        wavelength_count as i32,
+                        thread_idx,
+                    )
+                })?;
+            } else {
+                rayon_for_each_worker(num_wavel, num_threads, |wavelength, thread_idx| {
                     safe_calc_vjp_wavelength_thread(
                         &safe_engine,
                         &safe_output,
                         wavelength as i32,
                         thread_idx,
                     )
-                },
-            )?;
+                })?;
+            }
             let finalize_result = unsafe { ffi::sk_output_vjp_finalize(output.output) };
             if finalize_result != 0 {
                 return Err(anyhow::anyhow!(

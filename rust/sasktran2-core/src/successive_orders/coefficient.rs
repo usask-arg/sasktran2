@@ -2,7 +2,10 @@ use crate::math::wigner::WignerDCalculator;
 use ndarray::{ArrayView2, ArrayViewMut2, linalg::general_mat_mul, s};
 use num::complex::Complex64;
 
-use super::OperatorError;
+use super::{
+    OperatorError,
+    simd::batch::{Batch4, LANES},
+};
 
 /// Analysis and synthesis matrices for a scalar real spherical-harmonic
 /// expansion.
@@ -157,6 +160,98 @@ impl ScalarCoefficientBasis {
         general_mat_mul(1.0, &moment_rows, &synthesis.t(), 0.0, &mut output_rows);
     }
 
+    /// Applies all scalar atmospheric scattering blocks to four interleaved
+    /// wavelengths. Angular basis values are shared; radiances and phase
+    /// coefficients occupy the SIMD lanes.
+    fn apply_blocks_batch4(
+        &self,
+        input: &[f64],
+        coefficients: &[f64],
+        blocks: usize,
+        active_num_coefficients: usize,
+        output: &mut [f64],
+        moments: &mut [f64],
+    ) {
+        debug_assert_eq!(input.len(), blocks * self.input_size * LANES);
+        debug_assert_eq!(coefficients.len(), blocks * self.num_coefficients * LANES);
+        debug_assert_eq!(output.len(), blocks * self.output_size * LANES);
+        debug_assert!(active_num_coefficients <= self.num_coefficients);
+        let active_num_modes = active_num_coefficients * active_num_coefficients;
+        let packed_input_size = blocks * LANES * self.input_size;
+        let packed_moment_size = blocks * LANES * active_num_modes;
+        let packed_output_size = blocks * LANES * self.output_size;
+        debug_assert_eq!(
+            moments.len(),
+            packed_input_size + packed_moment_size + packed_output_size
+        );
+        if active_num_modes == 0 {
+            output.fill(0.0);
+            return;
+        }
+
+        let (input_rows_storage, remainder) = moments.split_at_mut(packed_input_size);
+        let (moment_rows_storage, output_rows_storage) = remainder.split_at_mut(packed_moment_size);
+        for block in 0..blocks {
+            for lane in 0..LANES {
+                let packed_row = block * LANES + lane;
+                for input_index in 0..self.input_size {
+                    input_rows_storage[packed_row * self.input_size + input_index] =
+                        input[(block * self.input_size + input_index) * LANES + lane];
+                }
+            }
+        }
+        let input_rows =
+            ArrayView2::from_shape((blocks * LANES, self.input_size), &*input_rows_storage)
+                .expect("validated SIMD scattering input shape");
+        let analysis = ArrayView2::from_shape(
+            (active_num_modes, self.input_size),
+            &self.analysis[..active_num_modes * self.input_size],
+        )
+        .expect("validated SIMD scattering analysis shape");
+        {
+            let mut moment_rows = ArrayViewMut2::from_shape(
+                (blocks * LANES, active_num_modes),
+                &mut *moment_rows_storage,
+            )
+            .expect("validated SIMD scattering moment shape");
+            general_mat_mul(1.0, &input_rows, &analysis.t(), 0.0, &mut moment_rows);
+        }
+
+        for block in 0..blocks {
+            for lane in 0..LANES {
+                let packed_row = block * LANES + lane;
+                for (mode, &degree) in self.mode_degrees[..active_num_modes].iter().enumerate() {
+                    moment_rows_storage[packed_row * active_num_modes + mode] *=
+                        coefficients[(block * self.num_coefficients + degree) * LANES + lane];
+                }
+            }
+        }
+        let moment_rows =
+            ArrayView2::from_shape((blocks * LANES, active_num_modes), &*moment_rows_storage)
+                .expect("validated SIMD scattering moment shape");
+        let full_synthesis =
+            ArrayView2::from_shape((self.output_size, self.num_modes()), &self.synthesis)
+                .expect("validated SIMD scattering synthesis shape");
+        let synthesis = full_synthesis.slice(s![.., ..active_num_modes]);
+        {
+            let mut output_rows = ArrayViewMut2::from_shape(
+                (blocks * LANES, self.output_size),
+                &mut *output_rows_storage,
+            )
+            .expect("validated SIMD scattering output shape");
+            general_mat_mul(1.0, &moment_rows, &synthesis.t(), 0.0, &mut output_rows);
+        }
+        for block in 0..blocks {
+            for lane in 0..LANES {
+                let packed_row = block * LANES + lane;
+                for output_index in 0..self.output_size {
+                    output[(block * self.output_size + output_index) * LANES + lane] =
+                        output_rows_storage[packed_row * self.output_size + output_index];
+                }
+            }
+        }
+    }
+
     fn apply_blocks_transpose(
         &self,
         input: &[f64],
@@ -209,6 +304,100 @@ impl ScalarCoefficientBasis {
         let mut output_rows = ArrayViewMut2::from_shape((blocks, self.input_size), output)
             .expect("validated scalar transpose output shape");
         general_mat_mul(1.0, &moment_rows, &analysis, 0.0, &mut output_rows);
+    }
+
+    /// Applies the transpose of all scalar atmospheric scattering blocks to
+    /// four interleaved wavelengths. This mirrors `apply_blocks_batch4`: the
+    /// angular basis multiplication is issued as one matrix multiplication
+    /// over `(block, wavelength)` rows, while wavelength-dependent phase
+    /// coefficients remain contiguous SIMD lanes.
+    fn apply_blocks_transpose_batch4(
+        &self,
+        input: &[f64],
+        coefficients: &[f64],
+        blocks: usize,
+        active_num_coefficients: usize,
+        output: &mut [f64],
+        scratch: &mut [f64],
+    ) {
+        debug_assert_eq!(input.len(), blocks * self.output_size * LANES);
+        debug_assert_eq!(coefficients.len(), blocks * self.num_coefficients * LANES);
+        debug_assert_eq!(output.len(), blocks * self.input_size * LANES);
+        debug_assert!(active_num_coefficients <= self.num_coefficients);
+        let active_num_modes = active_num_coefficients * active_num_coefficients;
+        let packed_input_size = blocks * LANES * self.output_size;
+        let packed_moment_size = blocks * LANES * active_num_modes;
+        let packed_output_size = blocks * LANES * self.input_size;
+        debug_assert_eq!(
+            scratch.len(),
+            packed_input_size + packed_moment_size + packed_output_size
+        );
+        if active_num_modes == 0 {
+            output.fill(0.0);
+            return;
+        }
+
+        let (input_rows_storage, remainder) = scratch.split_at_mut(packed_input_size);
+        let (moment_rows_storage, output_rows_storage) = remainder.split_at_mut(packed_moment_size);
+        for block in 0..blocks {
+            for lane in 0..LANES {
+                let packed_row = block * LANES + lane;
+                for output_index in 0..self.output_size {
+                    input_rows_storage[packed_row * self.output_size + output_index] =
+                        input[(block * self.output_size + output_index) * LANES + lane];
+                }
+            }
+        }
+        let input_rows =
+            ArrayView2::from_shape((blocks * LANES, self.output_size), &*input_rows_storage)
+                .expect("validated SIMD transpose input shape");
+        let full_synthesis =
+            ArrayView2::from_shape((self.output_size, self.num_modes()), &self.synthesis)
+                .expect("validated scalar synthesis shape");
+        let synthesis = full_synthesis.slice(s![.., ..active_num_modes]);
+        {
+            let mut moment_rows = ArrayViewMut2::from_shape(
+                (blocks * LANES, active_num_modes),
+                &mut *moment_rows_storage,
+            )
+            .expect("validated SIMD transpose moment shape");
+            general_mat_mul(1.0, &input_rows, &synthesis, 0.0, &mut moment_rows);
+        }
+
+        for block in 0..blocks {
+            for lane in 0..LANES {
+                let packed_row = block * LANES + lane;
+                for (mode, &degree) in self.mode_degrees[..active_num_modes].iter().enumerate() {
+                    moment_rows_storage[packed_row * active_num_modes + mode] *=
+                        coefficients[(block * self.num_coefficients + degree) * LANES + lane];
+                }
+            }
+        }
+        let moment_rows =
+            ArrayView2::from_shape((blocks * LANES, active_num_modes), &*moment_rows_storage)
+                .expect("validated SIMD transpose moment shape");
+        let analysis = ArrayView2::from_shape(
+            (active_num_modes, self.input_size),
+            &self.analysis[..active_num_modes * self.input_size],
+        )
+        .expect("validated scalar analysis shape");
+        {
+            let mut output_rows = ArrayViewMut2::from_shape(
+                (blocks * LANES, self.input_size),
+                &mut *output_rows_storage,
+            )
+            .expect("validated SIMD transpose output shape");
+            general_mat_mul(1.0, &moment_rows, &analysis, 0.0, &mut output_rows);
+        }
+        for block in 0..blocks {
+            for lane in 0..LANES {
+                let packed_row = block * LANES + lane;
+                for input_index in 0..self.input_size {
+                    output[(block * self.input_size + input_index) * LANES + lane] =
+                        output_rows_storage[packed_row * self.input_size + input_index];
+                }
+            }
+        }
     }
 
     fn apply_blocks_vjp(
@@ -407,6 +596,90 @@ impl ScalarCoefficientScattering {
         Ok(())
     }
 
+    pub(crate) fn batch4_active_num_coefficients(
+        &self,
+        coefficients: &[f64],
+    ) -> Result<usize, OperatorError> {
+        if coefficients.len() != self.coefficients.len() * LANES {
+            return Err(OperatorError::DimensionMismatch);
+        }
+        if coefficients.iter().any(|value| !value.is_finite()) {
+            return Err(OperatorError::NonFiniteValue);
+        }
+        let mut active = 0;
+        for block in 0..self.coefficient_blocks {
+            for degree in (active..self.basis.num_coefficients()).rev() {
+                let element = block * self.basis.num_coefficients() + degree;
+                if coefficients[element * LANES..(element + 1) * LANES]
+                    .iter()
+                    .any(|&value| value != 0.0)
+                {
+                    active = degree + 1;
+                    break;
+                }
+            }
+        }
+        Ok(active)
+    }
+
+    pub(crate) fn batch4_scratch_size(&self, active_num_coefficients: usize) -> usize {
+        let active_num_modes = active_num_coefficients * active_num_coefficients;
+        self.coefficient_blocks
+            * LANES
+            * (self.basis.input_size() + active_num_modes + self.basis.output_size())
+    }
+
+    pub(crate) fn apply_batch4(
+        &self,
+        input: &[f64],
+        coefficients: &[f64],
+        dense_values: &[f64],
+        active_num_coefficients: usize,
+        output: &mut [f64],
+        scratch: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        if input.len() != self.input_size * LANES
+            || coefficients.len() != self.coefficients.len() * LANES
+            || dense_values.len() != self.dense_values.len() * LANES
+            || output.len() != self.output_size * LANES
+            || scratch.len() != self.batch4_scratch_size(active_num_coefficients)
+            || active_num_coefficients > self.basis.num_coefficients()
+        {
+            return Err(OperatorError::DimensionMismatch);
+        }
+        let coefficient_input_end = self.input_offsets[self.coefficient_blocks];
+        let coefficient_output_end = self.output_offsets[self.coefficient_blocks];
+        self.basis.apply_blocks_batch4(
+            &input[..coefficient_input_end * LANES],
+            coefficients,
+            self.coefficient_blocks,
+            active_num_coefficients,
+            &mut output[..coefficient_output_end * LANES],
+            scratch,
+        );
+
+        for block in self.coefficient_blocks..self.output_offsets.len() - 1 {
+            let dense_block = block - self.coefficient_blocks;
+            let input_start = self.input_offsets[block];
+            let input_end = self.input_offsets[block + 1];
+            let output_start = self.output_offsets[block];
+            let output_end = self.output_offsets[block + 1];
+            let columns = input_end - input_start;
+            let value_start = self.dense_value_offsets[dense_block];
+            for local_row in 0..output_end - output_start {
+                let row_start = value_start + local_row * columns;
+                let mut result = Batch4::splat(0.0);
+                for local_column in 0..columns {
+                    result = result
+                        + Batch4::load(dense_values, row_start + local_column)
+                            * Batch4::load(input, input_start + local_column);
+                }
+                result.store(output, output_start + local_row);
+            }
+        }
+        Ok(())
+    }
+
     pub fn apply(&self, input: &[f64], output: &mut [f64]) -> Result<(), OperatorError> {
         if input.len() != self.input_size || output.len() != self.output_size {
             return Err(OperatorError::DimensionMismatch);
@@ -480,6 +753,57 @@ impl ScalarCoefficientScattering {
                 for local_column in 0..columns {
                     output[input_start + local_column] +=
                         self.dense_values[row_start + local_column] * input_value;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn apply_transpose_batch4(
+        &self,
+        input: &[f64],
+        coefficients: &[f64],
+        dense_values: &[f64],
+        active_num_coefficients: usize,
+        output: &mut [f64],
+        scratch: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        if input.len() != self.output_size * LANES
+            || coefficients.len() != self.coefficients.len() * LANES
+            || dense_values.len() != self.dense_values.len() * LANES
+            || output.len() != self.input_size * LANES
+            || scratch.len() != self.batch4_scratch_size(active_num_coefficients)
+            || active_num_coefficients > self.basis.num_coefficients()
+        {
+            return Err(OperatorError::DimensionMismatch);
+        }
+        output.fill(0.0);
+        let coefficient_input_end = self.input_offsets[self.coefficient_blocks];
+        let coefficient_output_end = self.output_offsets[self.coefficient_blocks];
+        self.basis.apply_blocks_transpose_batch4(
+            &input[..coefficient_output_end * LANES],
+            coefficients,
+            self.coefficient_blocks,
+            active_num_coefficients,
+            &mut output[..coefficient_input_end * LANES],
+            scratch,
+        );
+        for block in self.coefficient_blocks..self.output_offsets.len() - 1 {
+            let dense_block = block - self.coefficient_blocks;
+            let input_start = self.input_offsets[block];
+            let input_end = self.input_offsets[block + 1];
+            let output_start = self.output_offsets[block];
+            let output_end = self.output_offsets[block + 1];
+            let columns = input_end - input_start;
+            let value_start = self.dense_value_offsets[dense_block];
+            for local_row in 0..output_end - output_start {
+                let row_start = value_start + local_row * columns;
+                let outgoing_cotangent = Batch4::load(input, output_start + local_row);
+                for local_column in 0..columns {
+                    let input_index = input_start + local_column;
+                    let updated = Batch4::load(output, input_index)
+                        + Batch4::load(dense_values, row_start + local_column) * outgoing_cotangent;
+                    updated.store(output, input_index);
                 }
             }
         }

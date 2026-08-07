@@ -3,9 +3,13 @@ use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
 
+use super::simd::{
+    Workspace as SimdWorkspace,
+    batch::{LANES, extract_lane, interleave_lane},
+};
 use super::{
     BlockDiagonalMatrix, CsrMatrix, FixedPointProblem, ScalarRayTransport, SolverConfig,
-    SuccessiveOrdersSolver,
+    SolverDiagnostics, SolverError, SuccessiveOrdersSolver,
 };
 
 use super::{
@@ -82,6 +86,13 @@ pub mod ffi {
             retain_layer_scratch: bool,
         ) -> Result<()>;
 
+        fn prepare_solver_ray_transport_vjp_attenuation(
+            transport: &RustRayTransport,
+            solver: Pin<&mut RustSuccessiveOrdersSolver>,
+            extinction: &[f64],
+            single_scatter_albedo: &[f64],
+        ) -> Result<()>;
+
         #[allow(clippy::too_many_arguments)]
         fn assemble_solver_ray_transport_with_first_order(
             transport: &RustRayTransport,
@@ -93,6 +104,18 @@ pub mod ffi {
             solar_transmission: &[f64],
             end_of_ray_source: &[f64],
             retain_layer_scratch: bool,
+        ) -> Result<()>;
+
+        #[allow(clippy::too_many_arguments)]
+        fn assemble_solver_ray_transport_with_first_order_batch4(
+            transport: &RustRayTransport,
+            solver: Pin<&mut RustSuccessiveOrdersSolver>,
+            extinction: &[f64],
+            single_scatter_albedo: &[f64],
+            legendre_coefficients: &[f64],
+            maximum_order: &[i32],
+            solar_transmission: &[f64],
+            end_of_ray_source: &[f64],
         ) -> Result<()>;
 
         #[allow(clippy::too_many_arguments)]
@@ -113,6 +136,31 @@ pub mod ffi {
         ) -> Result<()>;
 
         #[allow(clippy::too_many_arguments)]
+        fn stage_solver_ray_transport_jvp_batch4_lane(
+            solver: Pin<&mut RustSuccessiveOrdersSolver>,
+            lane: usize,
+            zero_tangent: bool,
+            extinction_tangent: &[f64],
+            single_scatter_albedo_tangent: &[f64],
+            legendre_coefficient_tangent: &[f64],
+            end_of_ray_source: &[f64],
+            end_of_ray_source_tangent: &[f64],
+            first_order_forcing: &[f64],
+        ) -> Result<()>;
+
+        #[allow(clippy::too_many_arguments)]
+        fn assemble_solver_ray_transport_with_first_order_jvp_batch4(
+            transport: &RustRayTransport,
+            solver: Pin<&mut RustSuccessiveOrdersSolver>,
+            extinction: &[f64],
+            single_scatter_albedo: &[f64],
+            legendre_coefficients: &[f64],
+            maximum_order: &[i32],
+            solar_transmission: &[f64],
+            solar_transmission_tangent: &[f64],
+        ) -> Result<()>;
+
+        #[allow(clippy::too_many_arguments)]
         fn assemble_solver_ray_transport_with_first_order_vjp(
             transport: &RustRayTransport,
             solver: Pin<&mut RustSuccessiveOrdersSolver>,
@@ -126,6 +174,29 @@ pub mod ffi {
             single_scatter_albedo_gradient: &mut [f64],
             legendre_coefficient_gradient: &mut [f64],
             solar_transmission_gradient: &mut [f64],
+            end_of_ray_source_gradient: &mut [f64],
+        ) -> Result<()>;
+
+        #[allow(clippy::too_many_arguments)]
+        fn assemble_solver_ray_transport_with_first_order_vjp_batch4(
+            transport: &RustRayTransport,
+            solver: Pin<&mut RustSuccessiveOrdersSolver>,
+            extinction: &[f64],
+            single_scatter_albedo: &[f64],
+            legendre_coefficients: &[f64],
+            maximum_order: &[i32],
+            solar_transmission: &[f64],
+            end_of_ray_source: &[f64],
+            solar_transmission_gradient: &mut [f64],
+        ) -> Result<()>;
+
+        #[allow(clippy::too_many_arguments)]
+        fn select_solver_ray_transport_vjp_batch4_lane(
+            solver: Pin<&mut RustSuccessiveOrdersSolver>,
+            lane: usize,
+            extinction_gradient: &mut [f64],
+            single_scatter_albedo_gradient: &mut [f64],
+            legendre_coefficient_gradient: &mut [f64],
             end_of_ray_source_gradient: &mut [f64],
         ) -> Result<()>;
 
@@ -203,7 +274,23 @@ pub mod ffi {
             scratch: &mut [f64],
         ) -> Result<()>;
 
+        fn calculate_solar_transmission_batch4(
+            solar_operator: &RustSolarTransmissionOperator,
+            extinction: &[f64],
+            solar_irradiance: &[f64],
+            transmission: &mut [f64],
+            scratch: &mut [f64],
+        ) -> Result<()>;
+
         fn calculate_solar_transmission_jvp(
+            solar_operator: &RustSolarTransmissionOperator,
+            extinction_tangent: &[f64],
+            transmission: &[f64],
+            transmission_tangent: &mut [f64],
+            scratch: &mut [f64],
+        ) -> Result<()>;
+
+        fn calculate_solar_transmission_jvp_batch4(
             solar_operator: &RustSolarTransmissionOperator,
             extinction_tangent: &[f64],
             transmission: &[f64],
@@ -215,6 +302,14 @@ pub mod ffi {
             solar_operator: &RustSolarTransmissionOperator,
             transmission: &[f64],
             transmission_cotangent: &[f64],
+            extinction_gradient: &mut [f64],
+            scratch: &mut [f64],
+        ) -> Result<()>;
+
+        fn accumulate_solar_transmission_vjp_batch4(
+            solar_operator: &RustSolarTransmissionOperator,
+            transmission: &[f64],
+            transmission_cotangent: &mut [f64],
             extinction_gradient: &mut [f64],
             scratch: &mut [f64],
         ) -> Result<()>;
@@ -316,7 +411,18 @@ pub mod ffi {
             atmosphere_coefficient_stride: usize,
         ) -> Result<()>;
 
+        fn set_scattering_coefficients_from_atmosphere_batch4(
+            solver: Pin<&mut RustSuccessiveOrdersSolver>,
+            interpolator: &RustScatteringCoefficientInterpolator,
+            atmosphere_coefficients: &[f64],
+            atmosphere_coefficient_stride: usize,
+        ) -> Result<()>;
+
         fn boundary_scattering_values_mut(
+            solver: Pin<&mut RustSuccessiveOrdersSolver>,
+        ) -> &mut [f64];
+
+        fn batch4_boundary_scattering_values_mut(
             solver: Pin<&mut RustSuccessiveOrdersSolver>,
         ) -> &mut [f64];
 
@@ -472,6 +578,65 @@ pub mod ffi {
         fn solve_coefficients_assembled(
             solver: Pin<&mut RustSuccessiveOrdersSolver>,
             initial_guess: &[f64],
+        ) -> Result<()>;
+
+        fn begin_coefficients_batch4(solver: Pin<&mut RustSuccessiveOrdersSolver>) -> Result<()>;
+
+        fn stage_coefficients_batch4_lane(
+            solver: Pin<&mut RustSuccessiveOrdersSolver>,
+            lane: usize,
+            initial_guess: &[f64],
+        ) -> Result<()>;
+
+        fn solve_coefficients_batch4(solver: Pin<&mut RustSuccessiveOrdersSolver>) -> Result<()>;
+        fn restore_coefficients_batch4_solution(
+            solver: Pin<&mut RustSuccessiveOrdersSolver>,
+            solution: &[f64],
+        ) -> Result<()>;
+        fn select_coefficients_batch4_lane(
+            solver: Pin<&mut RustSuccessiveOrdersSolver>,
+            lane: usize,
+        ) -> Result<()>;
+
+        fn batch4_solution(solver: &RustSuccessiveOrdersSolver) -> &[f64];
+        fn batch4_first_order_forcing(solver: &RustSuccessiveOrdersSolver) -> &[f64];
+        fn batch4_converged(solver: &RustSuccessiveOrdersSolver, lane: usize) -> bool;
+        fn batch4_iterations(solver: &RustSuccessiveOrdersSolver, lane: usize) -> usize;
+        fn batch4_initial_residual(solver: &RustSuccessiveOrdersSolver, lane: usize) -> f64;
+        fn batch4_final_residual(solver: &RustSuccessiveOrdersSolver, lane: usize) -> f64;
+        fn batch4_workspace_bytes(solver: &RustSuccessiveOrdersSolver) -> usize;
+
+        fn begin_linearize_coefficients_jvp_batch4(
+            solver: Pin<&mut RustSuccessiveOrdersSolver>,
+        ) -> Result<()>;
+        fn stage_linearize_coefficients_jvp_batch4_lane(
+            solver: Pin<&mut RustSuccessiveOrdersSolver>,
+            lane: usize,
+            zero_tangent: bool,
+            first_order_forcing: &[f64],
+        ) -> Result<()>;
+        fn linearize_coefficients_jvp_batch4(
+            solver: Pin<&mut RustSuccessiveOrdersSolver>,
+        ) -> Result<()>;
+        fn select_linearize_coefficients_jvp_batch4_lane(
+            solver: Pin<&mut RustSuccessiveOrdersSolver>,
+            lane: usize,
+        ) -> Result<()>;
+
+        fn begin_linearize_coefficients_vjp_batch4(
+            solver: Pin<&mut RustSuccessiveOrdersSolver>,
+        ) -> Result<()>;
+        fn stage_linearize_coefficients_vjp_batch4_lane(
+            solver: Pin<&mut RustSuccessiveOrdersSolver>,
+            lane: usize,
+            solution_cotangent: &[f64],
+        ) -> Result<()>;
+        fn linearize_coefficients_vjp_batch4(
+            solver: Pin<&mut RustSuccessiveOrdersSolver>,
+        ) -> Result<()>;
+        fn select_linearize_coefficients_vjp_batch4_lane(
+            solver: Pin<&mut RustSuccessiveOrdersSolver>,
+            lane: usize,
         ) -> Result<()>;
 
         #[allow(clippy::too_many_arguments)]
@@ -658,6 +823,31 @@ fn assemble_solver_ray_transport(
     )
 }
 
+fn prepare_solver_ray_transport_vjp_attenuation(
+    transport: &RustRayTransport,
+    mut solver: Pin<&mut RustSuccessiveOrdersSolver>,
+    extinction: &[f64],
+    single_scatter_albedo: &[f64],
+) -> Result<()> {
+    let this = solver.as_mut().get_mut();
+    this.layer_optical_depth
+        .resize(transport.transport.num_layers(), 0.0);
+    this.layer_attenuation
+        .resize(transport.transport.num_layers(), 0.0);
+    this.layer_prefix_attenuation
+        .resize(transport.transport.num_layers(), 0.0);
+    this.ray_end_attenuation
+        .resize(transport.transport.num_rays(), 0.0);
+    transport.transport.assemble_vjp_attenuation(
+        extinction,
+        single_scatter_albedo,
+        &mut this.layer_optical_depth,
+        &mut this.layer_attenuation,
+        &mut this.layer_prefix_attenuation,
+        &mut this.ray_end_attenuation,
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 fn assemble_solver_ray_transport_with_first_order(
     transport: &RustRayTransport,
@@ -690,6 +880,52 @@ fn assemble_solver_ray_transport_with_first_order(
         &mut this.layer_prefix_attenuation,
         &mut this.ray_end_attenuation,
     )?;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn assemble_solver_ray_transport_with_first_order_batch4(
+    transport: &RustRayTransport,
+    mut solver: Pin<&mut RustSuccessiveOrdersSolver>,
+    extinction: &[f64],
+    single_scatter_albedo: &[f64],
+    legendre_coefficients: &[f64],
+    maximum_order: &[i32],
+    solar_transmission: &[f64],
+    end_of_ray_source: &[f64],
+) -> Result<()> {
+    let this = solver.as_mut().get_mut();
+    if this.transport_row_offsets.is_none() || this.transport_column_indices.is_none() {
+        return Err(anyhow!(
+            "wavelength SIMD requires Rust-owned transport sparsity"
+        ));
+    }
+    this.simd
+        .batch4_transport_values
+        .resize(transport.transport.transport_value_size() * LANES, 0.0);
+    this.simd
+        .batch4_first_order_forcing
+        .resize(transport.transport.num_rays() * LANES, 0.0);
+    this.simd
+        .batch4_solution
+        .resize(this.solver.solution().len() * LANES, 0.0);
+    this.simd.batch4_initial_guess.clear();
+    this.simd.batch4_has_initial_guess = false;
+    this.simd.batch4_staged_lanes = LANES;
+    this.simd.batch4_diagnostics = std::array::from_fn(|_| SolverDiagnostics::default());
+    transport
+        .transport
+        .assemble_batch4_with_first_order_scalar(
+            extinction,
+            single_scatter_albedo,
+            legendre_coefficients,
+            maximum_order,
+            solar_transmission,
+            end_of_ray_source,
+            &mut this.simd.batch4_transport_values,
+            &mut this.simd.batch4_first_order_forcing,
+        )
+        .map_err(|error| anyhow!("assembling four-wavelength ray transport: {error}"))?;
     Ok(())
 }
 
@@ -741,6 +977,164 @@ fn assemble_solver_ray_transport_with_first_order_jvp(
 }
 
 #[allow(clippy::too_many_arguments)]
+fn stage_solver_ray_transport_jvp_batch4_lane(
+    mut solver: Pin<&mut RustSuccessiveOrdersSolver>,
+    lane: usize,
+    zero_tangent: bool,
+    extinction_tangent: &[f64],
+    single_scatter_albedo_tangent: &[f64],
+    legendre_coefficient_tangent: &[f64],
+    end_of_ray_source: &[f64],
+    end_of_ray_source_tangent: &[f64],
+    first_order_forcing: &[f64],
+) -> Result<()> {
+    let this = solver.as_mut().get_mut();
+    if lane >= LANES || lane != this.simd.batch4_jvp_staged_lanes {
+        return Err(anyhow!(
+            "four-wavelength transport JVP lanes must be staged in order"
+        ));
+    }
+    if extinction_tangent.len() != single_scatter_albedo_tangent.len()
+        || end_of_ray_source_tangent.len() != end_of_ray_source.len()
+        || first_order_forcing.len() * LANES != this.simd.batch4_first_order_forcing.len()
+    {
+        return Err(anyhow!(
+            "four-wavelength transport JVP lane arrays have inconsistent dimensions"
+        ));
+    }
+    if lane == 0 {
+        this.simd
+            .batch4_extinction_tangent
+            .resize(extinction_tangent.len() * LANES, 0.0);
+        this.simd
+            .batch4_single_scatter_albedo_tangent
+            .resize(single_scatter_albedo_tangent.len() * LANES, 0.0);
+        this.simd
+            .batch4_legendre_coefficient_tangent
+            .resize(legendre_coefficient_tangent.len() * LANES, 0.0);
+        this.simd
+            .batch4_end_of_ray_source
+            .resize(end_of_ray_source.len() * LANES, 0.0);
+        this.simd
+            .batch4_end_of_ray_source_tangent
+            .resize(end_of_ray_source_tangent.len() * LANES, 0.0);
+    }
+    if this.simd.batch4_extinction_tangent.len() != extinction_tangent.len() * LANES
+        || this.simd.batch4_single_scatter_albedo_tangent.len()
+            != single_scatter_albedo_tangent.len() * LANES
+        || this.simd.batch4_legendre_coefficient_tangent.len()
+            != legendre_coefficient_tangent.len() * LANES
+        || this.simd.batch4_end_of_ray_source.len() != end_of_ray_source.len() * LANES
+        || this.simd.batch4_end_of_ray_source_tangent.len()
+            != end_of_ray_source_tangent.len() * LANES
+    {
+        return Err(anyhow!(
+            "four-wavelength transport JVP lane sizes changed within a block"
+        ));
+    }
+
+    interleave_lane(
+        extinction_tangent,
+        lane,
+        &mut this.simd.batch4_extinction_tangent,
+    );
+    interleave_lane(
+        single_scatter_albedo_tangent,
+        lane,
+        &mut this.simd.batch4_single_scatter_albedo_tangent,
+    );
+    interleave_lane(
+        legendre_coefficient_tangent,
+        lane,
+        &mut this.simd.batch4_legendre_coefficient_tangent,
+    );
+    interleave_lane(
+        end_of_ray_source,
+        lane,
+        &mut this.simd.batch4_end_of_ray_source,
+    );
+    interleave_lane(
+        end_of_ray_source_tangent,
+        lane,
+        &mut this.simd.batch4_end_of_ray_source_tangent,
+    );
+    interleave_lane(
+        first_order_forcing,
+        lane,
+        &mut this.simd.batch4_first_order_forcing,
+    );
+    if zero_tangent {
+        for target in [
+            &mut this.simd.batch4_scattering_coefficient_tangent,
+            &mut this.simd.batch4_boundary_scattering_value_tangent,
+        ] {
+            for element in 0..target.len() / LANES {
+                target[element * LANES + lane] = 0.0;
+            }
+        }
+    } else {
+        if this.scattering_coefficient_tangent.len() * LANES
+            != this.simd.batch4_scattering_coefficient_tangent.len()
+            || this.boundary_scattering_value_tangent.len() * LANES
+                != this.simd.batch4_boundary_scattering_value_tangent.len()
+        {
+            return Err(anyhow!(
+                "four-wavelength scattering JVP storage has inconsistent dimensions"
+            ));
+        }
+        interleave_lane(
+            &this.scattering_coefficient_tangent,
+            lane,
+            &mut this.simd.batch4_scattering_coefficient_tangent,
+        );
+        interleave_lane(
+            &this.boundary_scattering_value_tangent,
+            lane,
+            &mut this.simd.batch4_boundary_scattering_value_tangent,
+        );
+    }
+    this.simd.batch4_jvp_staged_lanes += 1;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn assemble_solver_ray_transport_with_first_order_jvp_batch4(
+    transport: &RustRayTransport,
+    mut solver: Pin<&mut RustSuccessiveOrdersSolver>,
+    extinction: &[f64],
+    single_scatter_albedo: &[f64],
+    legendre_coefficients: &[f64],
+    maximum_order: &[i32],
+    solar_transmission: &[f64],
+    solar_transmission_tangent: &[f64],
+) -> Result<()> {
+    let this = solver.as_mut().get_mut();
+    if this.simd.batch4_jvp_staged_lanes != LANES {
+        return Err(anyhow!("four-wavelength transport JVP batch is incomplete"));
+    }
+    transport
+        .transport
+        .assemble_batch4_jvp_with_first_order_scalar(
+            extinction,
+            single_scatter_albedo,
+            legendre_coefficients,
+            maximum_order,
+            solar_transmission,
+            &this.simd.batch4_extinction_tangent,
+            &this.simd.batch4_single_scatter_albedo_tangent,
+            &this.simd.batch4_legendre_coefficient_tangent,
+            solar_transmission_tangent,
+            &this.simd.batch4_end_of_ray_source,
+            &this.simd.batch4_end_of_ray_source_tangent,
+            &mut this.simd.batch4_transport_values,
+            &mut this.simd.batch4_transport_value_tangent,
+            &mut this.simd.batch4_first_order_forcing_tangent,
+        )
+        .map_err(|error| anyhow!("assembling four-wavelength transport JVP: {error}"))?;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
 fn assemble_solver_ray_transport_with_first_order_vjp(
     transport: &RustRayTransport,
     mut solver: Pin<&mut RustSuccessiveOrdersSolver>,
@@ -787,6 +1181,108 @@ fn assemble_solver_ray_transport_with_first_order_vjp(
 }
 
 #[allow(clippy::too_many_arguments)]
+fn assemble_solver_ray_transport_with_first_order_vjp_batch4(
+    transport: &RustRayTransport,
+    mut solver: Pin<&mut RustSuccessiveOrdersSolver>,
+    extinction: &[f64],
+    single_scatter_albedo: &[f64],
+    legendre_coefficients: &[f64],
+    maximum_order: &[i32],
+    solar_transmission: &[f64],
+    end_of_ray_source: &[f64],
+    solar_transmission_gradient: &mut [f64],
+) -> Result<()> {
+    let this = solver.as_mut().get_mut();
+    if this.simd.batch4_vjp_staged_lanes != LANES {
+        return Err(anyhow!(
+            "four-wavelength transport VJP requires a completed packed implicit VJP"
+        ));
+    }
+    let transport_column_indices = this
+        .transport_column_indices
+        .as_ref()
+        .ok_or_else(|| anyhow!("four-wavelength transport VJP requires Rust-owned sparsity"))?;
+    this.simd
+        .batch4_extinction_gradient
+        .resize(extinction.len(), 0.0);
+    this.simd
+        .batch4_single_scatter_albedo_gradient
+        .resize(single_scatter_albedo.len(), 0.0);
+    this.simd
+        .batch4_legendre_coefficient_gradient
+        .resize(legendre_coefficients.len(), 0.0);
+    this.simd
+        .batch4_end_of_ray_source_gradient
+        .resize(end_of_ray_source.len(), 0.0);
+    transport
+        .transport
+        .assemble_batch4_vjp_with_first_order_scalar(
+            extinction,
+            single_scatter_albedo,
+            legendre_coefficients,
+            maximum_order,
+            solar_transmission,
+            transport_column_indices,
+            &this.simd.batch4_solution,
+            &this.simd.batch4_first_order_forcing_gradient,
+            end_of_ray_source,
+            &mut this.simd.batch4_extinction_gradient,
+            &mut this.simd.batch4_single_scatter_albedo_gradient,
+            &mut this.simd.batch4_legendre_coefficient_gradient,
+            solar_transmission_gradient,
+            &mut this.simd.batch4_end_of_ray_source_gradient,
+        )
+        .map_err(|error| anyhow!("assembling four-wavelength transport VJP: {error}"))?;
+    this.simd.batch4_ray_vjp_ready = true;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn select_solver_ray_transport_vjp_batch4_lane(
+    mut solver: Pin<&mut RustSuccessiveOrdersSolver>,
+    lane: usize,
+    extinction_gradient: &mut [f64],
+    single_scatter_albedo_gradient: &mut [f64],
+    legendre_coefficient_gradient: &mut [f64],
+    end_of_ray_source_gradient: &mut [f64],
+) -> Result<()> {
+    let this = solver.as_mut().get_mut();
+    if lane >= LANES
+        || !this.simd.batch4_ray_vjp_ready
+        || this.simd.batch4_extinction_gradient.len() != extinction_gradient.len() * LANES
+        || this.simd.batch4_single_scatter_albedo_gradient.len()
+            != single_scatter_albedo_gradient.len() * LANES
+        || this.simd.batch4_legendre_coefficient_gradient.len()
+            != legendre_coefficient_gradient.len() * LANES
+        || this.simd.batch4_end_of_ray_source_gradient.len()
+            != end_of_ray_source_gradient.len() * LANES
+    {
+        return Err(anyhow!("invalid four-wavelength transport VJP lane"));
+    }
+    extract_lane(
+        &this.simd.batch4_extinction_gradient,
+        lane,
+        extinction_gradient,
+    );
+    extract_lane(
+        &this.simd.batch4_single_scatter_albedo_gradient,
+        lane,
+        single_scatter_albedo_gradient,
+    );
+    extract_lane(
+        &this.simd.batch4_legendre_coefficient_gradient,
+        lane,
+        legendre_coefficient_gradient,
+    );
+    extract_lane(
+        &this.simd.batch4_end_of_ray_source_gradient,
+        lane,
+        end_of_ray_source_gradient,
+    );
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
 fn assemble_ray_transport(
     transport: &RustRayTransport,
     extinction: &[f64],
@@ -805,7 +1301,8 @@ fn assemble_ray_transport(
         layer_attenuation,
         layer_prefix_attenuation,
         ray_end_attenuation,
-    )
+    )?;
+    Ok(())
 }
 
 fn ray_transport_num_rays(transport: &RustRayTransport) -> usize {
@@ -967,6 +1464,22 @@ fn calculate_solar_transmission(
     Ok(())
 }
 
+fn calculate_solar_transmission_batch4(
+    solar_operator: &RustSolarTransmissionOperator,
+    extinction: &[f64],
+    solar_irradiance: &[f64],
+    transmission: &mut [f64],
+    scratch: &mut [f64],
+) -> Result<()> {
+    solar_operator.operator.calculate_batch4(
+        extinction,
+        solar_irradiance,
+        transmission,
+        scratch,
+    )?;
+    Ok(())
+}
+
 fn calculate_solar_transmission_jvp(
     solar_operator: &RustSolarTransmissionOperator,
     extinction_tangent: &[f64],
@@ -983,6 +1496,22 @@ fn calculate_solar_transmission_jvp(
     Ok(())
 }
 
+fn calculate_solar_transmission_jvp_batch4(
+    solar_operator: &RustSolarTransmissionOperator,
+    extinction_tangent: &[f64],
+    transmission: &[f64],
+    transmission_tangent: &mut [f64],
+    scratch: &mut [f64],
+) -> Result<()> {
+    solar_operator.operator.calculate_jvp_batch4(
+        extinction_tangent,
+        transmission,
+        transmission_tangent,
+        scratch,
+    )?;
+    Ok(())
+}
+
 fn accumulate_solar_transmission_vjp(
     solar_operator: &RustSolarTransmissionOperator,
     transmission: &[f64],
@@ -991,6 +1520,22 @@ fn accumulate_solar_transmission_vjp(
     scratch: &mut [f64],
 ) -> Result<()> {
     solar_operator.operator.accumulate_vjp(
+        transmission,
+        transmission_cotangent,
+        extinction_gradient,
+        scratch,
+    )?;
+    Ok(())
+}
+
+fn accumulate_solar_transmission_vjp_batch4(
+    solar_operator: &RustSolarTransmissionOperator,
+    transmission: &[f64],
+    transmission_cotangent: &mut [f64],
+    extinction_gradient: &mut [f64],
+    scratch: &mut [f64],
+) -> Result<()> {
+    solar_operator.operator.accumulate_vjp_batch4(
         transmission,
         transmission_cotangent,
         extinction_gradient,
@@ -1203,6 +1748,7 @@ pub struct RustSuccessiveOrdersSolver {
     scattering_coefficient_gradient: Vec<f64>,
     boundary_scattering_value_gradient: Vec<f64>,
     first_order_forcing_gradient: Vec<f64>,
+    simd: SimdWorkspace,
 }
 
 impl RustSuccessiveOrdersSolver {
@@ -1230,6 +1776,7 @@ impl RustSuccessiveOrdersSolver {
             scattering_coefficient_gradient: Vec::new(),
             boundary_scattering_value_gradient: Vec::new(),
             first_order_forcing_gradient: Vec::new(),
+            simd: SimdWorkspace::default(),
         }
     }
 
@@ -1299,8 +1846,43 @@ fn set_scattering_coefficients_from_atmosphere(
     Ok(())
 }
 
+fn set_scattering_coefficients_from_atmosphere_batch4(
+    mut solver: Pin<&mut RustSuccessiveOrdersSolver>,
+    interpolator: &RustScatteringCoefficientInterpolator,
+    atmosphere_coefficients: &[f64],
+    atmosphere_coefficient_stride: usize,
+) -> Result<()> {
+    let this = solver.as_mut().get_mut();
+    let coefficient_size = this.solver.problem_mut().scattering_coefficient_size();
+    this.simd
+        .batch4_scattering_coefficients
+        .resize(coefficient_size * LANES, 0.0);
+    interpolator
+        .interpolator
+        .interpolate_batch4(
+            atmosphere_coefficients,
+            atmosphere_coefficient_stride,
+            &mut this.simd.batch4_scattering_coefficients,
+        )
+        .map_err(|error| {
+            anyhow!("interpolating four-wavelength scattering coefficients: {error}")
+        })?;
+    Ok(())
+}
+
 fn boundary_scattering_values_mut(solver: Pin<&mut RustSuccessiveOrdersSolver>) -> &mut [f64] {
     &mut solver.get_mut().boundary_scattering_values
+}
+
+fn batch4_boundary_scattering_values_mut(
+    solver: Pin<&mut RustSuccessiveOrdersSolver>,
+) -> &mut [f64] {
+    let this = solver.get_mut();
+    this.simd
+        .batch4_boundary_scattering_values
+        .resize(this.boundary_scattering_values.len() * LANES, 0.0);
+    this.simd.batch4_boundary_scattering_values.fill(0.0);
+    &mut this.simd.batch4_boundary_scattering_values
 }
 
 fn boundary_scattering_value_tangent_mut(
@@ -1676,6 +2258,793 @@ fn solve_coefficients_assembled(
         &this.first_order_forcing,
         initial_guess,
     )?;
+    Ok(())
+}
+
+fn begin_coefficients_batch4(mut solver: Pin<&mut RustSuccessiveOrdersSolver>) -> Result<()> {
+    let this = solver.as_mut().get_mut();
+    if this.transport_row_offsets.is_none() || this.transport_column_indices.is_none() {
+        return Err(anyhow!(
+            "wavelength SIMD requires Rust-owned transport sparsity"
+        ));
+    }
+    this.simd.batch4_staged_lanes = 0;
+    this.simd.batch4_has_initial_guess = false;
+    this.simd.batch4_diagnostics = std::array::from_fn(|_| SolverDiagnostics::default());
+    Ok(())
+}
+
+fn stage_coefficients_batch4_lane(
+    mut solver: Pin<&mut RustSuccessiveOrdersSolver>,
+    lane: usize,
+    initial_guess: &[f64],
+) -> Result<()> {
+    let this = solver.as_mut().get_mut();
+    if lane >= LANES || lane != this.simd.batch4_staged_lanes {
+        return Err(anyhow!(
+            "successive-orders SIMD lanes must be staged in order"
+        ));
+    }
+    if lane == 0 {
+        this.simd
+            .batch4_transport_values
+            .resize(this.transport_values.len() * LANES, 0.0);
+        this.simd
+            .batch4_scattering_coefficients
+            .resize(this.scattering_coefficients.len() * LANES, 0.0);
+        this.simd
+            .batch4_boundary_scattering_values
+            .resize(this.boundary_scattering_values.len() * LANES, 0.0);
+        this.simd
+            .batch4_first_order_forcing
+            .resize(this.first_order_forcing.len() * LANES, 0.0);
+        this.simd
+            .batch4_solution
+            .resize(this.solver.solution().len() * LANES, 0.0);
+        this.simd.batch4_has_initial_guess = !initial_guess.is_empty();
+        if this.simd.batch4_has_initial_guess {
+            if initial_guess.len() != this.solver.solution().len() {
+                return Err(anyhow!(
+                    "successive-orders SIMD initial guess has the wrong size"
+                ));
+            }
+            this.simd
+                .batch4_initial_guess
+                .resize(initial_guess.len() * LANES, 0.0);
+        } else {
+            this.simd.batch4_initial_guess.clear();
+        }
+    } else if this.simd.batch4_transport_values.len() != this.transport_values.len() * LANES
+        || this.simd.batch4_scattering_coefficients.len()
+            != this.scattering_coefficients.len() * LANES
+        || this.simd.batch4_boundary_scattering_values.len()
+            != this.boundary_scattering_values.len() * LANES
+        || this.simd.batch4_first_order_forcing.len() != this.first_order_forcing.len() * LANES
+        || this.simd.batch4_has_initial_guess == initial_guess.is_empty()
+    {
+        return Err(anyhow!(
+            "successive-orders SIMD wavelength storage changed between lanes"
+        ));
+    }
+    if this.simd.batch4_has_initial_guess && initial_guess.len() != this.solver.solution().len() {
+        return Err(anyhow!(
+            "successive-orders SIMD initial guess has the wrong size"
+        ));
+    }
+
+    interleave_lane(
+        &this.transport_values,
+        lane,
+        &mut this.simd.batch4_transport_values,
+    );
+    interleave_lane(
+        &this.scattering_coefficients,
+        lane,
+        &mut this.simd.batch4_scattering_coefficients,
+    );
+    interleave_lane(
+        &this.boundary_scattering_values,
+        lane,
+        &mut this.simd.batch4_boundary_scattering_values,
+    );
+    interleave_lane(
+        &this.first_order_forcing,
+        lane,
+        &mut this.simd.batch4_first_order_forcing,
+    );
+    if this.simd.batch4_has_initial_guess {
+        interleave_lane(initial_guess, lane, &mut this.simd.batch4_initial_guess);
+    }
+    this.simd.batch4_staged_lanes += 1;
+    Ok(())
+}
+
+fn solve_coefficients_batch4(mut solver: Pin<&mut RustSuccessiveOrdersSolver>) -> Result<()> {
+    let this = solver.as_mut().get_mut();
+    if this.simd.batch4_staged_lanes != LANES {
+        return Err(anyhow!("successive-orders SIMD batch is incomplete"));
+    }
+    let problem = this.solver.problem_mut();
+    let expected_transport = problem.transport_value_size() * LANES;
+    let expected_scattering = problem.scattering_coefficient_size() * LANES;
+    let expected_boundary = problem.dense_scattering_value_size() * LANES;
+    let expected_forcing = problem.incoming_size() * LANES;
+    if this.simd.batch4_transport_values.len() != expected_transport
+        || this.simd.batch4_scattering_coefficients.len() != expected_scattering
+        || this.simd.batch4_boundary_scattering_values.len() != expected_boundary
+        || this.simd.batch4_first_order_forcing.len() != expected_forcing
+    {
+        return Err(anyhow!(
+            "successive-orders SIMD buffer sizes are transport {}/{}, scattering {}/{}, boundary {}/{}, forcing {}/{}",
+            this.simd.batch4_transport_values.len(),
+            expected_transport,
+            this.simd.batch4_scattering_coefficients.len(),
+            expected_scattering,
+            this.simd.batch4_boundary_scattering_values.len(),
+            expected_boundary,
+            this.simd.batch4_first_order_forcing.len(),
+            expected_forcing,
+        ));
+    }
+    for (name, values) in [
+        ("transport", this.simd.batch4_transport_values.as_slice()),
+        (
+            "scattering",
+            this.simd.batch4_scattering_coefficients.as_slice(),
+        ),
+        (
+            "boundary",
+            this.simd.batch4_boundary_scattering_values.as_slice(),
+        ),
+        ("forcing", this.simd.batch4_first_order_forcing.as_slice()),
+    ] {
+        if let Some((index, value)) = values
+            .iter()
+            .copied()
+            .enumerate()
+            .find(|(_, value)| !value.is_finite())
+        {
+            return Err(anyhow!(
+                "successive-orders SIMD {name} value {index} is non-finite ({value})"
+            ));
+        }
+    }
+    let (transport_row_offsets, transport_column_indices) = this.transport_sparsity()?;
+    let initial_guess = this
+        .simd
+        .batch4_has_initial_guess
+        .then_some(this.simd.batch4_initial_guess.as_slice());
+    let packed_result = this.solver.solve_batch4(
+        &transport_row_offsets,
+        &transport_column_indices,
+        &this.simd.batch4_transport_values,
+        &this.simd.batch4_scattering_coefficients,
+        &this.simd.batch4_boundary_scattering_values,
+        &this.simd.batch4_first_order_forcing,
+        initial_guess,
+    );
+    match packed_result {
+        Ok(result) => {
+            this.simd.batch4_solution = result.solution;
+            this.simd.batch4_diagnostics = result.diagnostics;
+        }
+        Err(SolverError::ImplicitLinearSolveDidNotConverge)
+        | Err(SolverError::Operator(super::OperatorError::UnsupportedOperator)) => {
+            // Preserve the established convergence and Anderson behavior for
+            // uncommon breakdowns and non-SIMD solver configurations.
+            let mut transport_values = vec![0.0; this.simd.batch4_transport_values.len() / LANES];
+            let mut scattering_coefficients =
+                vec![0.0; this.simd.batch4_scattering_coefficients.len() / LANES];
+            let mut boundary_values =
+                vec![0.0; this.simd.batch4_boundary_scattering_values.len() / LANES];
+            let mut forcing = vec![0.0; this.simd.batch4_first_order_forcing.len() / LANES];
+            let mut initial = vec![0.0; this.solver.solution().len()];
+            for lane in 0..LANES {
+                extract_lane(
+                    &this.simd.batch4_transport_values,
+                    lane,
+                    &mut transport_values,
+                );
+                extract_lane(
+                    &this.simd.batch4_scattering_coefficients,
+                    lane,
+                    &mut scattering_coefficients,
+                );
+                extract_lane(
+                    &this.simd.batch4_boundary_scattering_values,
+                    lane,
+                    &mut boundary_values,
+                );
+                extract_lane(&this.simd.batch4_first_order_forcing, lane, &mut forcing);
+                this.solver
+                    .problem_mut()
+                    .set_scattering_coefficients(&scattering_coefficients)?;
+                this.solver
+                    .problem_mut()
+                    .set_scattering_values(&boundary_values)?;
+                let initial_guess = if this.simd.batch4_has_initial_guess {
+                    extract_lane(&this.simd.batch4_initial_guess, lane, &mut initial);
+                    Some(initial.as_slice())
+                } else {
+                    None
+                };
+                this.solver.solve(
+                    &transport_row_offsets,
+                    &transport_column_indices,
+                    &transport_values,
+                    &forcing,
+                    initial_guess,
+                )?;
+                interleave_lane(this.solver.solution(), lane, &mut this.simd.batch4_solution);
+                this.simd.batch4_diagnostics[lane] = this.solver.diagnostics().clone();
+            }
+        }
+        Err(error) => return Err(anyhow!("four-wavelength solve failed: {error}")),
+    }
+    Ok(())
+}
+
+fn restore_coefficients_batch4_solution(
+    mut solver: Pin<&mut RustSuccessiveOrdersSolver>,
+    solution: &[f64],
+) -> Result<()> {
+    let this = solver.as_mut().get_mut();
+    let expected = this.solver.solution().len() * LANES;
+    if solution.len() != expected {
+        return Err(anyhow!(
+            "restored four-wavelength solution has size {}; expected {expected}",
+            solution.len()
+        ));
+    }
+    if solution.iter().any(|value| !value.is_finite()) {
+        return Err(anyhow!(
+            "restored four-wavelength solution contains a non-finite value"
+        ));
+    }
+    this.simd.batch4_solution.clear();
+    this.simd.batch4_solution.extend_from_slice(solution);
+    this.simd.batch4_staged_lanes = LANES;
+    for diagnostics in &mut this.simd.batch4_diagnostics {
+        *diagnostics = SolverDiagnostics {
+            iterations: 0,
+            converged: true,
+            reason: super::ConvergenceReason::Tolerance,
+            initial_residual: f64::NAN,
+            final_residual: f64::NAN,
+            residual_history: Vec::new(),
+        };
+    }
+    Ok(())
+}
+
+fn batch4_solution(solver: &RustSuccessiveOrdersSolver) -> &[f64] {
+    &solver.simd.batch4_solution
+}
+
+fn select_coefficients_batch4_lane(
+    mut solver: Pin<&mut RustSuccessiveOrdersSolver>,
+    lane: usize,
+) -> Result<()> {
+    let this = solver.as_mut().get_mut();
+    if lane >= LANES || this.simd.batch4_staged_lanes != LANES {
+        return Err(anyhow!("invalid four-wavelength primal lane"));
+    }
+    this.simd
+        .batch4_lane_solution
+        .resize(this.solver.solution().len(), 0.0);
+    extract_lane(
+        &this.simd.batch4_solution,
+        lane,
+        &mut this.simd.batch4_lane_solution,
+    );
+    this.solver
+        .restore_converged_solution(&this.simd.batch4_lane_solution)?;
+    Ok(())
+}
+
+fn batch4_first_order_forcing(solver: &RustSuccessiveOrdersSolver) -> &[f64] {
+    &solver.simd.batch4_first_order_forcing
+}
+
+fn batch4_diagnostics(
+    solver: &RustSuccessiveOrdersSolver,
+    lane: usize,
+) -> Option<&SolverDiagnostics> {
+    (lane < LANES && solver.simd.batch4_staged_lanes == LANES)
+        .then(|| &solver.simd.batch4_diagnostics[lane])
+}
+
+fn batch4_converged(solver: &RustSuccessiveOrdersSolver, lane: usize) -> bool {
+    batch4_diagnostics(solver, lane).is_some_and(|diagnostics| diagnostics.converged)
+}
+
+fn batch4_iterations(solver: &RustSuccessiveOrdersSolver, lane: usize) -> usize {
+    batch4_diagnostics(solver, lane).map_or(0, |diagnostics| diagnostics.iterations)
+}
+
+fn batch4_initial_residual(solver: &RustSuccessiveOrdersSolver, lane: usize) -> f64 {
+    batch4_diagnostics(solver, lane).map_or(f64::NAN, |diagnostics| diagnostics.initial_residual)
+}
+
+fn batch4_final_residual(solver: &RustSuccessiveOrdersSolver, lane: usize) -> f64 {
+    batch4_diagnostics(solver, lane).map_or(f64::NAN, |diagnostics| diagnostics.final_residual)
+}
+
+fn batch4_workspace_bytes(solver: &RustSuccessiveOrdersSolver) -> usize {
+    (solver.simd.batch4_transport_values.capacity()
+        + solver.simd.batch4_scattering_coefficients.capacity()
+        + solver.simd.batch4_boundary_scattering_values.capacity()
+        + solver.simd.batch4_first_order_forcing.capacity()
+        + solver.simd.batch4_initial_guess.capacity()
+        + solver.simd.batch4_solution.capacity()
+        + solver.simd.batch4_transport_value_tangent.capacity()
+        + solver.simd.batch4_scattering_coefficient_tangent.capacity()
+        + solver
+            .simd
+            .batch4_boundary_scattering_value_tangent
+            .capacity()
+        + solver.simd.batch4_first_order_forcing_tangent.capacity()
+        + solver.simd.batch4_solution_jvp.capacity()
+        + solver.simd.batch4_extinction_tangent.capacity()
+        + solver.simd.batch4_single_scatter_albedo_tangent.capacity()
+        + solver.simd.batch4_legendre_coefficient_tangent.capacity()
+        + solver.simd.batch4_end_of_ray_source.capacity()
+        + solver.simd.batch4_end_of_ray_source_tangent.capacity()
+        + solver.simd.batch4_solution_cotangent.capacity()
+        + solver
+            .simd
+            .batch4_scattering_coefficient_gradient
+            .capacity()
+        + solver
+            .simd
+            .batch4_boundary_scattering_value_gradient
+            .capacity()
+        + solver.simd.batch4_first_order_forcing_gradient.capacity()
+        + solver.simd.batch4_extinction_gradient.capacity()
+        + solver.simd.batch4_single_scatter_albedo_gradient.capacity()
+        + solver.simd.batch4_legendre_coefficient_gradient.capacity()
+        + solver.simd.batch4_end_of_ray_source_gradient.capacity()
+        + solver.simd.batch4_lane_solution.capacity())
+        * size_of::<f64>()
+}
+
+fn begin_linearize_coefficients_jvp_batch4(
+    mut solver: Pin<&mut RustSuccessiveOrdersSolver>,
+) -> Result<()> {
+    let this = solver.as_mut().get_mut();
+    if this.simd.batch4_staged_lanes != LANES
+        || this.simd.batch4_solution.len() != this.solver.solution().len() * LANES
+    {
+        return Err(anyhow!(
+            "four-wavelength JVP requires a completed packed primal solve"
+        ));
+    }
+    if this
+        .simd
+        .batch4_diagnostics
+        .iter()
+        .any(|state| !state.converged)
+    {
+        return Err(anyhow!(
+            "four-wavelength JVP requires converged packed primal lanes"
+        ));
+    }
+    this.simd
+        .batch4_transport_value_tangent
+        .resize(this.simd.batch4_transport_values.len(), 0.0);
+    this.simd
+        .batch4_scattering_coefficient_tangent
+        .resize(this.simd.batch4_scattering_coefficients.len(), 0.0);
+    this.simd
+        .batch4_boundary_scattering_value_tangent
+        .resize(this.simd.batch4_boundary_scattering_values.len(), 0.0);
+    this.simd
+        .batch4_first_order_forcing_tangent
+        .resize(this.simd.batch4_first_order_forcing.len(), 0.0);
+    this.simd
+        .batch4_solution_jvp
+        .resize(this.simd.batch4_solution.len(), 0.0);
+    this.simd.batch4_jvp_staged_lanes = 0;
+    Ok(())
+}
+
+fn stage_linearize_coefficients_jvp_batch4_lane(
+    mut solver: Pin<&mut RustSuccessiveOrdersSolver>,
+    lane: usize,
+    zero_tangent: bool,
+    first_order_forcing: &[f64],
+) -> Result<()> {
+    let this = solver.as_mut().get_mut();
+    if lane >= LANES || lane != this.simd.batch4_jvp_staged_lanes {
+        return Err(anyhow!("four-wavelength JVP lanes must be staged in order"));
+    }
+    let expected_transport = this.simd.batch4_transport_values.len() / LANES;
+    let expected_scattering = this.simd.batch4_scattering_coefficients.len() / LANES;
+    let expected_boundary = this.simd.batch4_boundary_scattering_values.len() / LANES;
+    let expected_forcing = this.simd.batch4_first_order_forcing.len() / LANES;
+    if this.transport_values.len() != expected_transport
+        || first_order_forcing.len() != expected_forcing
+    {
+        return Err(anyhow!(
+            "four-wavelength JVP primal transport storage has inconsistent dimensions"
+        ));
+    }
+    interleave_lane(
+        &this.transport_values,
+        lane,
+        &mut this.simd.batch4_transport_values,
+    );
+    interleave_lane(
+        first_order_forcing,
+        lane,
+        &mut this.simd.batch4_first_order_forcing,
+    );
+    if zero_tangent {
+        for target in [
+            &mut this.simd.batch4_transport_value_tangent,
+            &mut this.simd.batch4_scattering_coefficient_tangent,
+            &mut this.simd.batch4_boundary_scattering_value_tangent,
+            &mut this.simd.batch4_first_order_forcing_tangent,
+        ] {
+            for element in 0..target.len() / LANES {
+                target[element * LANES + lane] = 0.0;
+            }
+        }
+    } else {
+        if this.transport_value_tangent.len() != expected_transport
+            || this.scattering_coefficient_tangent.len() != expected_scattering
+            || this.boundary_scattering_value_tangent.len() != expected_boundary
+            || this.first_order_forcing_tangent.len() != expected_forcing
+        {
+            return Err(anyhow!(
+                "four-wavelength JVP tangent storage has inconsistent dimensions"
+            ));
+        }
+        interleave_lane(
+            &this.transport_value_tangent,
+            lane,
+            &mut this.simd.batch4_transport_value_tangent,
+        );
+        interleave_lane(
+            &this.scattering_coefficient_tangent,
+            lane,
+            &mut this.simd.batch4_scattering_coefficient_tangent,
+        );
+        interleave_lane(
+            &this.boundary_scattering_value_tangent,
+            lane,
+            &mut this.simd.batch4_boundary_scattering_value_tangent,
+        );
+        interleave_lane(
+            &this.first_order_forcing_tangent,
+            lane,
+            &mut this.simd.batch4_first_order_forcing_tangent,
+        );
+    }
+    this.simd.batch4_jvp_staged_lanes += 1;
+    Ok(())
+}
+
+fn linearize_coefficients_jvp_batch4(
+    mut solver: Pin<&mut RustSuccessiveOrdersSolver>,
+) -> Result<()> {
+    let this = solver.as_mut().get_mut();
+    if this.simd.batch4_jvp_staged_lanes != LANES {
+        return Err(anyhow!("four-wavelength JVP batch is incomplete"));
+    }
+    let (transport_row_offsets, transport_column_indices) = this.transport_sparsity()?;
+    match this.solver.solve_jvp_batch4(
+        &transport_row_offsets,
+        &transport_column_indices,
+        &this.simd.batch4_transport_values,
+        &this.simd.batch4_transport_value_tangent,
+        &this.simd.batch4_scattering_coefficients,
+        &this.simd.batch4_scattering_coefficient_tangent,
+        &this.simd.batch4_boundary_scattering_values,
+        &this.simd.batch4_boundary_scattering_value_tangent,
+        &this.simd.batch4_first_order_forcing,
+        &this.simd.batch4_first_order_forcing_tangent,
+        &this.simd.batch4_solution,
+    ) {
+        Ok(solution_jvp) => this.simd.batch4_solution_jvp = solution_jvp,
+        Err(SolverError::ImplicitLinearSolveDidNotConverge)
+        | Err(SolverError::Operator(super::OperatorError::UnsupportedOperator)) => {
+            let state_size = this.solver.solution().len();
+            this.simd.batch4_lane_solution.resize(state_size, 0.0);
+            let mut transport = vec![0.0; this.simd.batch4_transport_values.len() / LANES];
+            let mut transport_tangent =
+                vec![0.0; this.simd.batch4_transport_value_tangent.len() / LANES];
+            let mut coefficients =
+                vec![0.0; this.simd.batch4_scattering_coefficients.len() / LANES];
+            let mut coefficient_tangent =
+                vec![0.0; this.simd.batch4_scattering_coefficient_tangent.len() / LANES];
+            let mut boundary = vec![0.0; this.simd.batch4_boundary_scattering_values.len() / LANES];
+            let mut boundary_tangent =
+                vec![0.0; this.simd.batch4_boundary_scattering_value_tangent.len() / LANES];
+            let mut forcing = vec![0.0; this.simd.batch4_first_order_forcing.len() / LANES];
+            let mut forcing_tangent =
+                vec![0.0; this.simd.batch4_first_order_forcing_tangent.len() / LANES];
+            for lane in 0..LANES {
+                extract_lane(&this.simd.batch4_transport_values, lane, &mut transport);
+                extract_lane(
+                    &this.simd.batch4_transport_value_tangent,
+                    lane,
+                    &mut transport_tangent,
+                );
+                extract_lane(
+                    &this.simd.batch4_scattering_coefficients,
+                    lane,
+                    &mut coefficients,
+                );
+                extract_lane(
+                    &this.simd.batch4_scattering_coefficient_tangent,
+                    lane,
+                    &mut coefficient_tangent,
+                );
+                extract_lane(
+                    &this.simd.batch4_boundary_scattering_values,
+                    lane,
+                    &mut boundary,
+                );
+                extract_lane(
+                    &this.simd.batch4_boundary_scattering_value_tangent,
+                    lane,
+                    &mut boundary_tangent,
+                );
+                extract_lane(&this.simd.batch4_first_order_forcing, lane, &mut forcing);
+                extract_lane(
+                    &this.simd.batch4_first_order_forcing_tangent,
+                    lane,
+                    &mut forcing_tangent,
+                );
+                extract_lane(
+                    &this.simd.batch4_solution,
+                    lane,
+                    &mut this.simd.batch4_lane_solution,
+                );
+                this.solver
+                    .problem_mut()
+                    .set_scattering_coefficients(&coefficients)?;
+                this.solver.problem_mut().set_scattering_values(&boundary)?;
+                this.solver
+                    .restore_converged_solution(&this.simd.batch4_lane_solution)?;
+                let lane_jvp = this.solver.solve_jvp(
+                    &transport_row_offsets,
+                    &transport_column_indices,
+                    &transport,
+                    &transport_tangent,
+                    &forcing,
+                    &forcing_tangent,
+                    &coefficient_tangent,
+                    &boundary_tangent,
+                )?;
+                interleave_lane(&lane_jvp, lane, &mut this.simd.batch4_solution_jvp);
+            }
+        }
+        Err(error) => return Err(anyhow!("four-wavelength JVP solve failed: {error}")),
+    }
+    Ok(())
+}
+
+fn select_linearize_coefficients_jvp_batch4_lane(
+    mut solver: Pin<&mut RustSuccessiveOrdersSolver>,
+    lane: usize,
+) -> Result<()> {
+    let this = solver.as_mut().get_mut();
+    if lane >= LANES || this.simd.batch4_jvp_staged_lanes != LANES {
+        return Err(anyhow!("invalid four-wavelength JVP lane"));
+    }
+    this.simd
+        .batch4_lane_solution
+        .resize(this.solver.solution().len(), 0.0);
+    extract_lane(
+        &this.simd.batch4_solution,
+        lane,
+        &mut this.simd.batch4_lane_solution,
+    );
+    this.solver
+        .restore_converged_solution(&this.simd.batch4_lane_solution)?;
+    this.solution_jvp.resize(this.solver.solution().len(), 0.0);
+    extract_lane(&this.simd.batch4_solution_jvp, lane, &mut this.solution_jvp);
+    Ok(())
+}
+
+fn begin_linearize_coefficients_vjp_batch4(
+    mut solver: Pin<&mut RustSuccessiveOrdersSolver>,
+) -> Result<()> {
+    let this = solver.as_mut().get_mut();
+    if this.simd.batch4_staged_lanes != LANES
+        || this.simd.batch4_solution.len() != this.solver.solution().len() * LANES
+    {
+        return Err(anyhow!(
+            "four-wavelength VJP requires a completed packed primal solve"
+        ));
+    }
+    if this
+        .simd
+        .batch4_diagnostics
+        .iter()
+        .any(|state| !state.converged)
+    {
+        return Err(anyhow!(
+            "four-wavelength VJP requires converged packed primal lanes"
+        ));
+    }
+    this.simd
+        .batch4_solution_cotangent
+        .resize(this.simd.batch4_solution.len(), 0.0);
+    this.simd
+        .batch4_scattering_coefficient_gradient
+        .resize(this.simd.batch4_scattering_coefficients.len(), 0.0);
+    this.simd
+        .batch4_boundary_scattering_value_gradient
+        .resize(this.simd.batch4_boundary_scattering_values.len(), 0.0);
+    this.simd
+        .batch4_first_order_forcing_gradient
+        .resize(this.simd.batch4_first_order_forcing.len(), 0.0);
+    this.simd.batch4_vjp_staged_lanes = 0;
+    this.simd.batch4_ray_vjp_ready = false;
+    Ok(())
+}
+
+fn stage_linearize_coefficients_vjp_batch4_lane(
+    mut solver: Pin<&mut RustSuccessiveOrdersSolver>,
+    lane: usize,
+    solution_cotangent: &[f64],
+) -> Result<()> {
+    let this = solver.as_mut().get_mut();
+    if lane >= LANES
+        || lane != this.simd.batch4_vjp_staged_lanes
+        || solution_cotangent.len() != this.solver.solution().len()
+    {
+        return Err(anyhow!("invalid four-wavelength VJP lane"));
+    }
+    interleave_lane(
+        solution_cotangent,
+        lane,
+        &mut this.simd.batch4_solution_cotangent,
+    );
+    this.simd.batch4_vjp_staged_lanes += 1;
+    Ok(())
+}
+
+fn linearize_coefficients_vjp_batch4(
+    mut solver: Pin<&mut RustSuccessiveOrdersSolver>,
+) -> Result<()> {
+    let this = solver.as_mut().get_mut();
+    if this.simd.batch4_vjp_staged_lanes != LANES {
+        return Err(anyhow!("four-wavelength VJP batch is incomplete"));
+    }
+    let (transport_row_offsets, transport_column_indices) = this.transport_sparsity()?;
+    match this.solver.solve_vjp_batch4(
+        &transport_row_offsets,
+        &transport_column_indices,
+        &this.simd.batch4_transport_values,
+        &this.simd.batch4_scattering_coefficients,
+        &this.simd.batch4_boundary_scattering_values,
+        &this.simd.batch4_first_order_forcing,
+        &this.simd.batch4_solution,
+        &this.simd.batch4_solution_cotangent,
+    ) {
+        Ok(gradient) => {
+            this.simd.batch4_scattering_coefficient_gradient = gradient.scattering_coefficients;
+            this.simd.batch4_boundary_scattering_value_gradient = gradient.dense_scattering_values;
+            this.simd.batch4_first_order_forcing_gradient = gradient.forcing;
+        }
+        Err(SolverError::ImplicitLinearSolveDidNotConverge)
+        | Err(SolverError::Operator(super::OperatorError::UnsupportedOperator)) => {
+            let state_size = this.solver.solution().len();
+            this.simd.batch4_lane_solution.resize(state_size, 0.0);
+            let mut solution_cotangent = vec![0.0; state_size];
+            let mut transport = vec![0.0; this.simd.batch4_transport_values.len() / LANES];
+            let mut coefficients =
+                vec![0.0; this.simd.batch4_scattering_coefficients.len() / LANES];
+            let mut boundary = vec![0.0; this.simd.batch4_boundary_scattering_values.len() / LANES];
+            let mut forcing = vec![0.0; this.simd.batch4_first_order_forcing.len() / LANES];
+            for lane in 0..LANES {
+                extract_lane(&this.simd.batch4_transport_values, lane, &mut transport);
+                extract_lane(
+                    &this.simd.batch4_scattering_coefficients,
+                    lane,
+                    &mut coefficients,
+                );
+                extract_lane(
+                    &this.simd.batch4_boundary_scattering_values,
+                    lane,
+                    &mut boundary,
+                );
+                extract_lane(&this.simd.batch4_first_order_forcing, lane, &mut forcing);
+                extract_lane(
+                    &this.simd.batch4_solution,
+                    lane,
+                    &mut this.simd.batch4_lane_solution,
+                );
+                extract_lane(
+                    &this.simd.batch4_solution_cotangent,
+                    lane,
+                    &mut solution_cotangent,
+                );
+                this.solver
+                    .problem_mut()
+                    .set_scattering_coefficients(&coefficients)?;
+                this.solver.problem_mut().set_scattering_values(&boundary)?;
+                this.solver
+                    .restore_converged_solution(&this.simd.batch4_lane_solution)?;
+                let gradient = this.solver.solve_vjp_compact(
+                    &transport_row_offsets,
+                    &transport_column_indices,
+                    &transport,
+                    &forcing,
+                    &solution_cotangent,
+                )?;
+                interleave_lane(
+                    &gradient.scattering_coefficients,
+                    lane,
+                    &mut this.simd.batch4_scattering_coefficient_gradient,
+                );
+                interleave_lane(
+                    &gradient.dense_scattering_values,
+                    lane,
+                    &mut this.simd.batch4_boundary_scattering_value_gradient,
+                );
+                interleave_lane(
+                    &gradient.forcing,
+                    lane,
+                    &mut this.simd.batch4_first_order_forcing_gradient,
+                );
+            }
+        }
+        Err(error) => return Err(anyhow!("four-wavelength VJP solve failed: {error}")),
+    }
+    Ok(())
+}
+
+fn select_linearize_coefficients_vjp_batch4_lane(
+    mut solver: Pin<&mut RustSuccessiveOrdersSolver>,
+    lane: usize,
+) -> Result<()> {
+    let this = solver.as_mut().get_mut();
+    if lane >= LANES || this.simd.batch4_vjp_staged_lanes != LANES {
+        return Err(anyhow!("invalid four-wavelength VJP lane"));
+    }
+    this.simd
+        .batch4_lane_solution
+        .resize(this.solver.solution().len(), 0.0);
+    extract_lane(
+        &this.simd.batch4_solution,
+        lane,
+        &mut this.simd.batch4_lane_solution,
+    );
+    this.solver
+        .restore_converged_solution(&this.simd.batch4_lane_solution)?;
+    this.transport_value_gradient.clear();
+    this.scattering_coefficient_gradient.resize(
+        this.simd.batch4_scattering_coefficient_gradient.len() / LANES,
+        0.0,
+    );
+    this.boundary_scattering_value_gradient.resize(
+        this.simd.batch4_boundary_scattering_value_gradient.len() / LANES,
+        0.0,
+    );
+    this.first_order_forcing_gradient.resize(
+        this.simd.batch4_first_order_forcing_gradient.len() / LANES,
+        0.0,
+    );
+    extract_lane(
+        &this.simd.batch4_scattering_coefficient_gradient,
+        lane,
+        &mut this.scattering_coefficient_gradient,
+    );
+    extract_lane(
+        &this.simd.batch4_boundary_scattering_value_gradient,
+        lane,
+        &mut this.boundary_scattering_value_gradient,
+    );
+    extract_lane(
+        &this.simd.batch4_first_order_forcing_gradient,
+        lane,
+        &mut this.first_order_forcing_gradient,
+    );
     Ok(())
 }
 

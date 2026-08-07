@@ -82,6 +82,14 @@ def test_config_multiple_instances():
     assert config2.log_level == sk.LogLevel.Error
 
 
+def test_multiple_scatter_source_preserves_public_integer_values():
+    assert sk.MultipleScatterSource.DiscreteOrdinates == 0
+    assert sk.MultipleScatterSource.SuccessiveOrders == 1
+    assert sk.MultipleScatterSource.TwoStream == 2
+    assert sk.MultipleScatterSource.NoSource == 3
+    assert sk.MultipleScatterSource.SuccessiveOrdersRust == 4
+
+
 def test_num_successive_order_points_round_trip():
     config = sk.Config()
     assert config.num_successive_order_points == -1
@@ -159,7 +167,6 @@ def test_successive_orders_initialization_round_trip_and_legacy_alias():
 def test_successive_orders_altitude_grid_m_round_trip_and_validation():
     config = sk.Config()
     assert config.successive_orders_altitude_grid_m is None
-
     expected = np.array([500.0, 2_500.0, 10_000.0])
     config.successive_orders_altitude_grid_m = expected
     np.testing.assert_array_equal(config.successive_orders_altitude_grid_m, expected)
@@ -184,3 +191,13 @@ def test_successive_orders_altitude_grid_m_round_trip_and_validation():
 
     config.successive_orders_altitude_grid_m = None
     assert config.successive_orders_altitude_grid_m is None
+
+
+def test_successive_orders_source_profiles_aliases_num_sza():
+    config = sk.Config()
+    config.num_successive_orders_source_profiles = 7
+    assert config.num_successive_orders_source_profiles == 7
+    assert config.num_sza == 7
+
+    config.num_sza = 3
+    assert config.num_successive_orders_source_profiles == 3

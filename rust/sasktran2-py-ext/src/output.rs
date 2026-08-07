@@ -1,4 +1,5 @@
 use numpy::{PyArray1, PyArray2, PyArray3, PyArray4};
+use pyo3::exceptions::PyRuntimeError;
 use pyo3::{prelude::*, types::PyDict};
 use sasktran2_rs::bindings::output;
 
@@ -92,6 +93,16 @@ impl PyJacobianVjpOutput {
             result.set_item(name, array)?;
         }
         Ok(result)
+    }
+
+    #[getter]
+    fn get_los_optical_depth<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyArray2<f64>>> {
+        let array = this
+            .borrow()
+            .output
+            .los_optical_depth()
+            .map_err(PyRuntimeError::new_err)?;
+        Ok(PyArray2::from_array(this.py(), &array))
     }
 }
 

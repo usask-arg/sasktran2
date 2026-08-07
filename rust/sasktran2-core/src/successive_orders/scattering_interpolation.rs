@@ -1,4 +1,5 @@
 use super::OperatorError;
+use super::simd::batch::{Batch4, LANES};
 
 /// Contracts the atmospheric phase-coefficient derivative tensor with a
 /// derivative-group tangent at one wavelength.
@@ -251,6 +252,50 @@ impl ScatteringCoefficientInterpolator {
         Ok(())
     }
 
+    /// Interpolates four wavelength-major atmospheric coefficient tensors
+    /// into element-major, four-lane scattering coefficients.
+    pub fn interpolate_batch4(
+        &self,
+        atmosphere_coefficients: &[f64],
+        atmosphere_coefficient_stride: usize,
+        output: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        self.validate_coefficient_stride(atmosphere_coefficient_stride)?;
+        let lane_stride = atmosphere_coefficient_stride
+            .checked_mul(self.num_atmosphere_points)
+            .ok_or(OperatorError::DimensionMismatch)?;
+        if atmosphere_coefficients.len() != lane_stride * LANES
+            || output.len() != self.output_size() * LANES
+        {
+            return Err(OperatorError::DimensionMismatch);
+        }
+
+        output.fill(0.0);
+        for point in 0..self.num_points() {
+            let stencil_start = self.point_offsets[point] as usize;
+            let stencil_end = self.point_offsets[point + 1] as usize;
+            let output_start = point * self.num_output_coefficients;
+            for (&atmosphere_index, &weight) in self.atmosphere_indices[stencil_start..stencil_end]
+                .iter()
+                .zip(&self.weights[stencil_start..stencil_end])
+            {
+                let input_start = atmosphere_index as usize * atmosphere_coefficient_stride;
+                for coefficient in 0..self.num_output_coefficients {
+                    let output_element = output_start + coefficient;
+                    let value = Batch4::load(output, output_element)
+                        + Batch4::splat(weight)
+                            * Batch4::gather(
+                                atmosphere_coefficients,
+                                input_start + coefficient,
+                                lane_stride,
+                            );
+                    value.store(output, output_element);
+                }
+            }
+        }
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn interpolate_jvp(
         &self,
@@ -425,7 +470,7 @@ impl ScatteringCoefficientInterpolator {
 #[cfg(test)]
 mod tests {
     use super::{
-        ScatteringCoefficientInterpolator, accumulate_atmospheric_coefficient_vjp,
+        LANES, ScatteringCoefficientInterpolator, accumulate_atmospheric_coefficient_vjp,
         atmospheric_coefficient_jvp,
     };
 
@@ -449,6 +494,32 @@ mod tests {
             .interpolate(&atmosphere, 3, &mut output)
             .unwrap();
         assert_eq!(output, [2.5, 3.5, 4.0, 5.0]);
+    }
+
+    #[test]
+    fn batch4_interpolation_matches_scalar_wavelengths() {
+        let interpolator = interpolator();
+        let lanes = [
+            [1.0, 2.0, 99.0, 3.0, 4.0, 99.0, 5.0, 6.0, 99.0],
+            [2.0, 4.0, 98.0, 6.0, 8.0, 98.0, 10.0, 12.0, 98.0],
+            [-1.0, 3.0, 97.0, 2.0, 5.0, 97.0, 7.0, 11.0, 97.0],
+            [0.5, 1.5, 96.0, 2.5, 3.5, 96.0, 4.5, 5.5, 96.0],
+        ];
+        let atmosphere: Vec<_> = lanes.into_iter().flatten().collect();
+        let mut output = [0.0; 16];
+        interpolator
+            .interpolate_batch4(&atmosphere, 3, &mut output)
+            .unwrap();
+
+        for lane in 0..LANES {
+            let mut expected = [0.0; 4];
+            interpolator
+                .interpolate(&lanes[lane], 3, &mut expected)
+                .unwrap();
+            for (element, expected) in expected.into_iter().enumerate() {
+                assert_eq!(output[element * LANES + lane], expected);
+            }
+        }
     }
 
     #[test]

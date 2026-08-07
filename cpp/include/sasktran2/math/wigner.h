@@ -1,7 +1,9 @@
 #pragma once
 
 #include <sasktran2/internal_common.h>
+#ifdef SKTRAN_RUST_SUPPORT
 #include "sasktran2-core/src/math/wigner.rs.h"
+#endif
 
 namespace sasktran2::math {
 
@@ -175,5 +177,6 @@ namespace sasktran2::math {
                 out_array[l] = d(theta, l);
             }
         };
+    };
 #endif
 } // namespace sasktran2::math

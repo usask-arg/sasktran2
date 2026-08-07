@@ -64,6 +64,32 @@ jobs:
           cd cpp/build/lib
           ctest --verbose
 
+  test-cpp-no-rust-ubuntu:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: install apt dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y zlib1g-dev gfortran libopenblas-dev liblapacke-dev catch2 libeigen3-dev
+
+      - name: build without Rust components
+        shell: bash -el {0}
+        run: |
+          cmake -S cpp -B cpp/build-no-rust -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DENABLE_RUST_COMPONENTS=OFF
+          cmake --build cpp/build-no-rust --config Release --target sasktran2_tests -j 2
+
+      - name: test no-Rust interfaces
+        shell: bash -el {0}
+        run: |
+          ./cpp/build-no-rust/lib/tests/sasktran2_tests "[output],[linearization]"
+
   test-rust-ubuntu:
     runs-on: ubuntu-latest
 

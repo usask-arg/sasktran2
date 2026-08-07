@@ -1,17 +1,19 @@
 #include <sasktran2/geometry.h>
-#include <sasktran2/grids.h>
+#include "location_interpolator.h"
 
-namespace sasktran2::grids {
+namespace sasktran2::successive_orders {
     AltitudeHorizontalSourceLocationInterpolator::
         AltitudeHorizontalSourceLocationInterpolator(
-            AltitudeGrid&& altitude_grid,
+            sasktran2::grids::AltitudeGrid&& altitude_grid,
             Eigen::VectorXd&& horizontal_angle_grid,
             const sasktran2::Geometry2D& geometry)
-        : SourceLocationInterpolator(std::move(altitude_grid)),
+        : sasktran2::grids::SourceLocationInterpolator(
+              std::move(altitude_grid)),
           m_geometry(geometry),
           m_horizontal_grid(std::move(horizontal_angle_grid),
-                            gridspacing::automatic, outofbounds::extend,
-                            interpolation::linear),
+                            sasktran2::grids::gridspacing::automatic,
+                            sasktran2::grids::outofbounds::extend,
+                            sasktran2::grids::interpolation::linear),
           m_ground_altitude(geometry.altitude_grid().grid()[0]) {}
 
     int
@@ -109,4 +111,4 @@ namespace sasktran2::grids {
                 horizontal_weight[horizontal]};
         }
     }
-} // namespace sasktran2::grids
+} // namespace sasktran2::successive_orders

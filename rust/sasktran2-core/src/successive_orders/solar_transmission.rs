@@ -1,4 +1,7 @@
-use super::OperatorError;
+use super::{
+    OperatorError,
+    simd::batch::{Batch4, LANES, interleave_wavelength_major},
+};
 
 #[derive(Debug, Clone, PartialEq)]
 struct OwnedCsrMatrix {
@@ -61,6 +64,29 @@ impl OwnedCsrMatrix {
         Ok(())
     }
 
+    fn apply_batch4_interleaved(
+        &self,
+        input: &[f64],
+        output: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        if input.len() != self.columns * LANES || output.len() != self.rows * LANES {
+            return Err(OperatorError::DimensionMismatch);
+        }
+        for row in 0..self.rows {
+            let start = self.row_offsets[row] as usize;
+            let end = self.row_offsets[row + 1] as usize;
+            let mut result = Batch4::splat(0.0);
+            for (&column, &value) in self.column_indices[start..end]
+                .iter()
+                .zip(&self.values[start..end])
+            {
+                result = result + Batch4::splat(value) * Batch4::load(input, column as usize);
+            }
+            result.store(output, row);
+        }
+        Ok(())
+    }
+
     fn apply_transpose_add(&self, input: &[f64], output: &mut [f64]) -> Result<(), OperatorError> {
         if input.len() != self.rows || output.len() != self.columns {
             return Err(OperatorError::DimensionMismatch);
@@ -73,6 +99,30 @@ impl OwnedCsrMatrix {
                 .zip(&self.values[start..end])
             {
                 output[column as usize] += value * row_value;
+            }
+        }
+        Ok(())
+    }
+
+    fn apply_transpose_add_batch4_interleaved(
+        &self,
+        input: &[f64],
+        output: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        if input.len() != self.rows * LANES || output.len() != self.columns * LANES {
+            return Err(OperatorError::DimensionMismatch);
+        }
+        for row in 0..self.rows {
+            let row_value = Batch4::load(input, row);
+            let start = self.row_offsets[row] as usize;
+            let end = self.row_offsets[row + 1] as usize;
+            for (&column, &value) in self.column_indices[start..end]
+                .iter()
+                .zip(&self.values[start..end])
+            {
+                let column = column as usize;
+                (Batch4::load(output, column) + Batch4::splat(value) * row_value)
+                    .store(output, column);
             }
         }
         Ok(())
@@ -134,6 +184,36 @@ impl SolarPathMatrix {
         }
     }
 
+    fn apply_batch4_interleaved(
+        &self,
+        input: &[f64],
+        output: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        match self {
+            Self::Dense {
+                rows,
+                columns,
+                values,
+            } => {
+                if input.len() != columns * LANES || output.len() != rows * LANES {
+                    return Err(OperatorError::DimensionMismatch);
+                }
+                for row in 0..*rows {
+                    let row_start = row * columns;
+                    let mut result = Batch4::splat(0.0);
+                    for (column, &value) in
+                        values[row_start..row_start + columns].iter().enumerate()
+                    {
+                        result = result + Batch4::splat(value) * Batch4::load(input, column);
+                    }
+                    result.store(output, row);
+                }
+                Ok(())
+            }
+            Self::Sparse(matrix) => matrix.apply_batch4_interleaved(input, output),
+        }
+    }
+
     fn apply_transpose_add(&self, input: &[f64], output: &mut [f64]) -> Result<(), OperatorError> {
         match self {
             Self::Dense {
@@ -156,6 +236,36 @@ impl SolarPathMatrix {
                 Ok(())
             }
             Self::Sparse(matrix) => matrix.apply_transpose_add(input, output),
+        }
+    }
+
+    fn apply_transpose_add_batch4_interleaved(
+        &self,
+        input: &[f64],
+        output: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        match self {
+            Self::Dense {
+                rows,
+                columns,
+                values,
+            } => {
+                if input.len() != rows * LANES || output.len() != columns * LANES {
+                    return Err(OperatorError::DimensionMismatch);
+                }
+                for row in 0..*rows {
+                    let row_value = Batch4::load(input, row);
+                    let row_start = row * columns;
+                    for (column, &value) in
+                        values[row_start..row_start + columns].iter().enumerate()
+                    {
+                        (Batch4::load(output, column) + Batch4::splat(value) * row_value)
+                            .store(output, column);
+                    }
+                }
+                Ok(())
+            }
+            Self::Sparse(matrix) => matrix.apply_transpose_add_batch4_interleaved(input, output),
         }
     }
 
@@ -310,6 +420,44 @@ impl SolarTransmissionOperator {
         Ok(())
     }
 
+    pub fn calculate_batch4(
+        &self,
+        extinction: &[f64],
+        solar_irradiance: &[f64],
+        transmission: &mut [f64],
+        scratch: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        if extinction.len() != self.input_size() * LANES
+            || solar_irradiance.len() != LANES
+            || transmission.len() != self.output_size() * LANES
+            || scratch.len() < self.forward_scratch_size() * LANES
+        {
+            return Err(OperatorError::DimensionMismatch);
+        }
+        let mut interleaved_extinction = vec![0.0; extinction.len()];
+        interleave_wavelength_major(extinction, self.input_size(), &mut interleaved_extinction);
+        if let Some(interpolation) = &self.interpolation {
+            let path_size = self.path.rows() * LANES;
+            let path_optical_depth = &mut scratch[..path_size];
+            self.path
+                .apply_batch4_interleaved(&interleaved_extinction, path_optical_depth)?;
+            interpolation.apply_batch4_interleaved(path_optical_depth, transmission)?;
+        } else {
+            self.path
+                .apply_batch4_interleaved(&interleaved_extinction, transmission)?;
+        }
+        let irradiance = Batch4::from_array(solar_irradiance.try_into().unwrap());
+        for (element, &ground_hit) in self.ground_hit.iter().enumerate() {
+            let value = if ground_hit == 0 {
+                (-Batch4::load(transmission, element)).exp() * irradiance
+            } else {
+                Batch4::splat(0.0)
+            };
+            value.store(transmission, element);
+        }
+        Ok(())
+    }
+
     pub fn calculate_jvp(
         &self,
         extinction_tangent: &[f64],
@@ -332,6 +480,44 @@ impl SolarTransmissionOperator {
             } else {
                 0.0
             };
+        }
+        Ok(())
+    }
+
+    /// Calculates four wavelength JVPs together. All arrays use an
+    /// element-major layout with four contiguous wavelength lanes.
+    pub fn calculate_jvp_batch4(
+        &self,
+        extinction_tangent: &[f64],
+        transmission: &[f64],
+        transmission_tangent: &mut [f64],
+        scratch: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        if extinction_tangent.len() != self.input_size() * LANES
+            || transmission.len() != self.output_size() * LANES
+            || transmission_tangent.len() != transmission.len()
+            || scratch.len() < self.forward_scratch_size() * LANES
+        {
+            return Err(OperatorError::DimensionMismatch);
+        }
+        if let Some(interpolation) = &self.interpolation {
+            let path_size = self.path.rows() * LANES;
+            let path_optical_depth_tangent = &mut scratch[..path_size];
+            self.path
+                .apply_batch4_interleaved(extinction_tangent, path_optical_depth_tangent)?;
+            interpolation
+                .apply_batch4_interleaved(path_optical_depth_tangent, transmission_tangent)?;
+        } else {
+            self.path
+                .apply_batch4_interleaved(extinction_tangent, transmission_tangent)?;
+        }
+        for (element, &ground_hit) in self.ground_hit.iter().enumerate() {
+            let tangent = if ground_hit == 0 {
+                -Batch4::load(transmission, element) * Batch4::load(transmission_tangent, element)
+            } else {
+                Batch4::splat(0.0)
+            };
+            tangent.store(transmission_tangent, element);
         }
         Ok(())
     }
@@ -376,6 +562,48 @@ impl SolarTransmissionOperator {
         Ok(())
     }
 
+    /// Accumulates four wavelength VJPs together. The transmission
+    /// cotangent is consumed in place so the caller can reuse its large JVP
+    /// product buffer instead of retaining another four-lane allocation.
+    pub fn accumulate_vjp_batch4(
+        &self,
+        transmission: &[f64],
+        transmission_cotangent: &mut [f64],
+        extinction_gradient: &mut [f64],
+        scratch: &mut [f64],
+    ) -> Result<(), OperatorError> {
+        if transmission.len() != self.output_size() * LANES
+            || transmission_cotangent.len() != transmission.len()
+            || extinction_gradient.len() != self.input_size() * LANES
+            || scratch.len() < self.forward_scratch_size() * LANES
+        {
+            return Err(OperatorError::DimensionMismatch);
+        }
+        for (element, &ground_hit) in self.ground_hit.iter().enumerate() {
+            let cotangent = if ground_hit == 0 {
+                -Batch4::load(transmission, element) * Batch4::load(transmission_cotangent, element)
+            } else {
+                Batch4::splat(0.0)
+            };
+            cotangent.store(transmission_cotangent, element);
+        }
+        extinction_gradient.fill(0.0);
+        if let Some(interpolation) = &self.interpolation {
+            let path_cotangent = &mut scratch[..self.path.rows() * LANES];
+            path_cotangent.fill(0.0);
+            interpolation
+                .apply_transpose_add_batch4_interleaved(transmission_cotangent, path_cotangent)?;
+            self.path
+                .apply_transpose_add_batch4_interleaved(path_cotangent, extinction_gradient)?;
+        } else {
+            self.path.apply_transpose_add_batch4_interleaved(
+                transmission_cotangent,
+                extinction_gradient,
+            )?;
+        }
+        Ok(())
+    }
+
     fn validate_runtime(
         &self,
         extinction: &[f64],
@@ -409,7 +637,7 @@ impl SolarTransmissionOperator {
 
 #[cfg(test)]
 mod tests {
-    use super::SolarTransmissionOperator;
+    use super::{LANES, SolarTransmissionOperator};
 
     fn chained_operator() -> SolarTransmissionOperator {
         SolarTransmissionOperator::new(
@@ -445,6 +673,38 @@ mod tests {
         ];
         for (&actual, expected) in transmission.iter().zip(expected) {
             assert!((actual - expected).abs() < 1.0e-14);
+        }
+    }
+
+    #[test]
+    fn batch4_primal_matches_scalar_wavelengths() {
+        let operator = chained_operator();
+        let extinction_lanes = [[0.1, 0.2], [0.2, 0.1], [0.3, 0.4], [0.05, 0.15]];
+        let irradiance = [2.0, 1.5, 3.0, 0.75];
+        let extinction: Vec<_> = extinction_lanes.into_iter().flatten().collect();
+        let mut transmission = vec![0.0; operator.output_size() * LANES];
+        let mut scratch = vec![0.0; operator.forward_scratch_size() * LANES];
+        operator
+            .calculate_batch4(&extinction, &irradiance, &mut transmission, &mut scratch)
+            .unwrap();
+
+        for lane in 0..LANES {
+            let mut expected = vec![0.0; operator.output_size()];
+            let mut scalar_scratch = vec![0.0; operator.forward_scratch_size()];
+            operator
+                .calculate(
+                    &extinction_lanes[lane],
+                    irradiance[lane],
+                    &mut expected,
+                    &mut scalar_scratch,
+                )
+                .unwrap();
+            for (element, expected) in expected.into_iter().enumerate() {
+                assert!(
+                    (transmission[element * LANES + lane] - expected).abs()
+                        <= 5.0e-14 * expected.abs().max(1.0)
+                );
+            }
         }
     }
 
@@ -487,6 +747,100 @@ mod tests {
             .map(|(&left, right)| left * right)
             .sum::<f64>();
         assert!((forward_dot - reverse_dot).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn batch4_products_match_scalar_wavelengths() {
+        let operator = chained_operator();
+        let extinction_lanes = [[0.1, 0.2], [0.2, 0.1], [0.3, 0.4], [0.05, 0.15]];
+        let tangent_lanes = [[0.4, -0.3], [-0.2, 0.1], [0.3, 0.2], [-0.1, -0.4]];
+        let irradiance = [2.0, 1.5, 3.0, 0.75];
+        let extinction: Vec<_> = extinction_lanes.into_iter().flatten().collect();
+        let mut interleaved_tangent = vec![0.0; operator.input_size() * LANES];
+        for element in 0..operator.input_size() {
+            for lane in 0..LANES {
+                interleaved_tangent[element * LANES + lane] = tangent_lanes[lane][element];
+            }
+        }
+        let mut transmission = vec![0.0; operator.output_size() * LANES];
+        let mut scratch = vec![0.0; operator.forward_scratch_size() * LANES];
+        operator
+            .calculate_batch4(&extinction, &irradiance, &mut transmission, &mut scratch)
+            .unwrap();
+        let mut transmission_tangent = vec![0.0; transmission.len()];
+        operator
+            .calculate_jvp_batch4(
+                &interleaved_tangent,
+                &transmission,
+                &mut transmission_tangent,
+                &mut scratch,
+            )
+            .unwrap();
+
+        let cotangent_lanes = [
+            [0.7, -0.2, 3.0],
+            [-0.1, 0.5, 0.8],
+            [0.3, 0.2, -0.7],
+            [0.9, -0.4, 0.1],
+        ];
+        let mut transmission_cotangent = vec![0.0; transmission.len()];
+        for element in 0..operator.output_size() {
+            for lane in 0..LANES {
+                transmission_cotangent[element * LANES + lane] = cotangent_lanes[lane][element];
+            }
+        }
+        let mut extinction_gradient = vec![0.0; operator.input_size() * LANES];
+        operator
+            .accumulate_vjp_batch4(
+                &transmission,
+                &mut transmission_cotangent,
+                &mut extinction_gradient,
+                &mut scratch,
+            )
+            .unwrap();
+
+        for lane in 0..LANES {
+            let mut scalar_transmission = vec![0.0; operator.output_size()];
+            let mut scalar_scratch = vec![0.0; operator.scratch_size()];
+            operator
+                .calculate(
+                    &extinction_lanes[lane],
+                    irradiance[lane],
+                    &mut scalar_transmission,
+                    &mut scalar_scratch,
+                )
+                .unwrap();
+            let mut scalar_tangent = vec![0.0; operator.output_size()];
+            operator
+                .calculate_jvp(
+                    &tangent_lanes[lane],
+                    &scalar_transmission,
+                    &mut scalar_tangent,
+                    &mut scalar_scratch,
+                )
+                .unwrap();
+            let mut scalar_gradient = vec![0.0; operator.input_size()];
+            operator
+                .accumulate_vjp(
+                    &scalar_transmission,
+                    &cotangent_lanes[lane],
+                    &mut scalar_gradient,
+                    &mut scalar_scratch,
+                )
+                .unwrap();
+            for (element, &expected) in scalar_tangent.iter().enumerate() {
+                assert!(
+                    (transmission_tangent[element * LANES + lane] - expected).abs()
+                        <= 5.0e-14 * expected.abs().max(1.0)
+                );
+            }
+            for (element, &expected) in scalar_gradient.iter().enumerate() {
+                assert!(
+                    (extinction_gradient[element * LANES + lane] - expected).abs()
+                        <= 5.0e-14 * expected.abs().max(1.0)
+                );
+            }
+        }
     }
 
     #[test]

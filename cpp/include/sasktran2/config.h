@@ -44,8 +44,9 @@ namespace sasktran2 {
          *  'hr' Uses a successive orders of scattering method to calculate the
          * multiple scatter source.
          *
-         *  'successive_orders_rust' Uses the experimental Rust fixed-point
-         * successive-orders solver with C++ traced geometry.
+         *  'successive_orders_rust' Uses the Rust fixed-point
+         * successive-orders solver with C++ traced geometry. It supports 1D
+         * and structured 2D radiances with native JVP and VJP products.
          *
          *  'none' Removes the multiple scatter source from the calculation.
          *

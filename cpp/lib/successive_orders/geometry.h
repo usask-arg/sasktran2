@@ -5,7 +5,7 @@
 #include <sasktran2/atmosphere/atmosphere.h>
 #include <sasktran2/atmosphere/grid_storage.h>
 
-namespace sasktran2::hr {
+namespace sasktran2::successive_orders {
     template <int NSTOKES> class IncomingOutgoingSpherePair {
       private:
         std::unique_ptr<const sasktran2::math::UnitSphere> m_incoming_sphere;
@@ -29,7 +29,8 @@ namespace sasktran2::hr {
             std::unique_ptr<const sasktran2::math::UnitSphere>&&
                 incoming_sphere,
             std::unique_ptr<const sasktran2::math::UnitSphere>&&
-                outgoing_sphere);
+                outgoing_sphere,
+            bool configure_scattering_geometry = true);
 
         void calculate_scattering_matrix(
             const sasktran2::atmosphere::AtmosphereGridStorageFull<NSTOKES>&
@@ -43,6 +44,13 @@ namespace sasktran2::hr {
             const std::vector<std::pair<int, double>>& index_weights,
             const sasktran2::Location& loc, int wavelidx,
             double* phase_storage_location) const;
+
+        /** Calculates the currently supported intensity-only surface block in
+         *  compact row-major [outgoing, incoming] layout. */
+        void calculate_ground_scattering_values(
+            const sasktran2::atmosphere::Surface<NSTOKES>& surface,
+            const sasktran2::Location& loc, int wavelidx,
+            double* value_storage_location) const;
 
         const sasktran2::math::UnitSphere& incoming_sphere() const {
             return *m_incoming_sphere;
@@ -83,4 +91,4 @@ namespace sasktran2::hr {
 
     template <int NSTOKES>
     class DiffuseGroundPoint : public DiffusePoint<NSTOKES> {};
-} // namespace sasktran2::hr
+} // namespace sasktran2::successive_orders

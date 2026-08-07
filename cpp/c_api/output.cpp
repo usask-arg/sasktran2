@@ -423,4 +423,22 @@ int sk_output_jacobian_vjp_assign_surface_derivative(OutputJacobianVJP* output,
                              : output->assign_surface_derivative(
                                    name, jacobian, nrad, nstokes, nparam);
 }
+
+int sk_output_jacobian_vjp_get_los_optical_depth(OutputJacobianVJP* output,
+                                                 double** od) {
+    if (output == nullptr || output->impl == nullptr || od == nullptr) {
+        return -1;
+    }
+    if (auto* impl = dynamic_cast<sasktran2::OutputJacobianVJP<1>*>(
+            output->impl.get())) {
+        *od = impl->los_optical_depth().data();
+        return 0;
+    }
+    if (auto* impl = dynamic_cast<sasktran2::OutputJacobianVJP<3>*>(
+            output->impl.get())) {
+        *od = impl->los_optical_depth().data();
+        return 0;
+    }
+    return -2;
+}
 }
