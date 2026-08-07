@@ -681,7 +681,18 @@ def test_rust_successive_orders_rayon_native_products_match_serial(
     tangent["ssa"].data[:] = np.linspace(-0.02, 0.03, tangent["ssa"].size)
     tangent[phase_name].data[:] = 0.01
     tangent["albedo"].data[:] = np.linspace(-0.015, 0.025, tangent["albedo"].size)
-    xr.testing.assert_allclose(rayon.jvp(tangent), serial.jvp(tangent))
+    rayon_jvp = rayon.jvp(tangent)
+    xr.testing.assert_allclose(rayon_jvp, serial.jvp(tangent))
+
+    if (
+        num_stokes == 3
+        and initialization == sk.SuccessiveOrdersInitialization.NoInitialization
+    ):
+        # Rayon wavelengths update per-worker replay flags concurrently. Keep
+        # exercising the same checkpoint so packed flag storage cannot make a
+        # neighbouring worker intermittently skip its transport restore.
+        for _ in range(128):
+            xr.testing.assert_identical(rayon.jvp(tangent), rayon_jvp)
 
     cotangent = xr.ones_like(serial.value)
     cotangent.data[:] = np.linspace(0.2, 1.0, cotangent.size).reshape(cotangent.shape)

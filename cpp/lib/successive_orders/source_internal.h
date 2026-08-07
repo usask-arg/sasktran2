@@ -7,6 +7,8 @@
 #include <sasktran2/internal_common.h>
 #include <sasktran2/source_interface.h>
 
+#include <cstdint>
+
 #ifdef SKTRAN_RUST_SUPPORT
 #include "sasktran2-core/src/successive_orders/cxx.rs.h"
 #include "sasktran2-core/src/twostream/cxx.rs.h"
@@ -175,8 +177,11 @@ namespace sasktran2::successive_orders {
             m_forward_state_atmosphere = nullptr;
         std::uint64_t m_forward_state_atmosphere_revision = 0;
         bool m_capture_forward_state = false;
-        std::vector<bool> m_deferred_jvp_transport_restore;
-        std::vector<bool> m_batch_jvp_zero_tangent;
+        // These flags are written independently by concurrent wavelength
+        // workers. Do not use std::vector<bool>: its packed-bit proxy makes
+        // writes to different worker indices race on the same storage word.
+        std::vector<std::uint8_t> m_deferred_jvp_transport_restore;
+        std::vector<std::uint8_t> m_batch_jvp_zero_tangent;
 
 #ifdef SKTRAN_RUST_SUPPORT
         mutable std::vector<::rust::Box<
