@@ -75,3 +75,191 @@ TEST_CASE("Batched native C++ outputs match scalar assignment",
             .at("constituent")
             .isApprox(scalar_mapped.derivatives().at("constituent"), 1e-12));
 }
+
+TEST_CASE("Native product outputs validate registered parameter sizes",
+          "[sasktran2][output][linearization]") {
+    constexpr int nwavel = 2;
+    sasktran2::Coordinates coordinates(0.6, 0.2, 6372000,
+                                       sasktran2::geometrytype::spherical);
+    Eigen::VectorXd altitude_values(3);
+    altitude_values << 0.0, 10000.0, 20000.0;
+    sasktran2::grids::AltitudeGrid altitude_grid(
+        std::move(altitude_values), sasktran2::grids::gridspacing::constant,
+        sasktran2::grids::outofbounds::extend,
+        sasktran2::grids::interpolation::linear);
+    sasktran2::Geometry1D geometry(std::move(coordinates),
+                                   std::move(altitude_grid));
+    sasktran2::Config config;
+    sasktran2::viewinggeometry::InternalViewingGeometry viewing;
+    sasktran2::atmosphere::Atmosphere<1> atmosphere(nwavel, geometry, config,
+                                                    true);
+    atmosphere.storage()
+        .get_derivative_mapping("volume")
+        .allocate_extinction_derivatives();
+    atmosphere.surface()
+        .get_derivative_mapping("surface")
+        .allocate_brdf_derivatives();
+
+    SECTION("JVP volume tangent") {
+        Eigen::VectorXd radiance(0);
+        Eigen::VectorXd directional(0);
+        Eigen::Map<Eigen::VectorXd> radiance_map(radiance.data(), 0);
+        Eigen::Map<Eigen::VectorXd> directional_map(directional.data(), 0);
+        sasktran2::OutputJVP<1> output(radiance_map, directional_map);
+        const Eigen::VectorXd tangent =
+            Eigen::VectorXd::Zero(geometry.size() - 1);
+        output.set_derivative_tangent("volume", tangent);
+        REQUIRE_THROWS_AS(
+            output.initialize(config, geometry, viewing, atmosphere),
+            std::invalid_argument);
+    }
+
+    SECTION("JVP surface tangent") {
+        Eigen::VectorXd radiance(0);
+        Eigen::VectorXd directional(0);
+        Eigen::Map<Eigen::VectorXd> radiance_map(radiance.data(), 0);
+        Eigen::Map<Eigen::VectorXd> directional_map(directional.data(), 0);
+        sasktran2::OutputJVP<1> output(radiance_map, directional_map);
+        const Eigen::VectorXd tangent = Eigen::VectorXd::Zero(nwavel - 1);
+        output.set_surface_tangent("surface", tangent);
+        REQUIRE_THROWS_AS(
+            output.initialize(config, geometry, viewing, atmosphere),
+            std::invalid_argument);
+    }
+
+    SECTION("unknown JVP mapping") {
+        Eigen::VectorXd radiance(0);
+        Eigen::VectorXd directional(0);
+        Eigen::Map<Eigen::VectorXd> radiance_map(radiance.data(), 0);
+        Eigen::Map<Eigen::VectorXd> directional_map(directional.data(), 0);
+        sasktran2::OutputJVP<1> output(radiance_map, directional_map);
+        const Eigen::VectorXd tangent = Eigen::VectorXd::Zero(geometry.size());
+        output.set_derivative_tangent("unknown", tangent);
+        REQUIRE_THROWS_AS(
+            output.initialize(config, geometry, viewing, atmosphere),
+            std::invalid_argument);
+    }
+
+    SECTION("VJP volume gradient") {
+        Eigen::VectorXd radiance(0);
+        Eigen::VectorXd cotangent(0);
+        Eigen::VectorXd gradient = Eigen::VectorXd::Zero(geometry.size() - 1);
+        Eigen::Map<Eigen::VectorXd> radiance_map(radiance.data(), 0);
+        Eigen::Map<const Eigen::VectorXd> cotangent_map(cotangent.data(), 0);
+        Eigen::Map<Eigen::VectorXd> gradient_map(gradient.data(),
+                                                 gradient.size());
+        sasktran2::OutputVJP<1> output(radiance_map, cotangent_map);
+        output.set_derivative_gradient_memory("volume", gradient_map);
+        REQUIRE_THROWS_AS(
+            output.initialize(config, geometry, viewing, atmosphere),
+            std::invalid_argument);
+    }
+
+    SECTION("VJP surface gradient") {
+        Eigen::VectorXd radiance(0);
+        Eigen::VectorXd cotangent(0);
+        Eigen::VectorXd gradient = Eigen::VectorXd::Zero(nwavel - 1);
+        Eigen::Map<Eigen::VectorXd> radiance_map(radiance.data(), 0);
+        Eigen::Map<const Eigen::VectorXd> cotangent_map(cotangent.data(), 0);
+        Eigen::Map<Eigen::VectorXd> gradient_map(gradient.data(),
+                                                 gradient.size());
+        sasktran2::OutputVJP<1> output(radiance_map, cotangent_map);
+        output.set_surface_gradient_memory("surface", gradient_map);
+        REQUIRE_THROWS_AS(
+            output.initialize(config, geometry, viewing, atmosphere),
+            std::invalid_argument);
+    }
+
+    SECTION("JVP radiance buffer extent") {
+        sasktran2::viewinggeometry::InternalViewingGeometry one_ray_viewing;
+        one_ray_viewing.traced_rays.emplace_back();
+        Eigen::VectorXd radiance = Eigen::VectorXd::Zero(nwavel - 1);
+        Eigen::VectorXd directional = Eigen::VectorXd::Zero(nwavel);
+        Eigen::Map<Eigen::VectorXd> radiance_map(radiance.data(),
+                                                 radiance.size());
+        Eigen::Map<Eigen::VectorXd> directional_map(directional.data(),
+                                                    directional.size());
+        sasktran2::OutputJVP<1> output(radiance_map, directional_map);
+        REQUIRE_THROWS_AS(
+            output.initialize(config, geometry, one_ray_viewing, atmosphere),
+            std::invalid_argument);
+    }
+
+    SECTION("JVP product buffer extent") {
+        sasktran2::viewinggeometry::InternalViewingGeometry one_ray_viewing;
+        one_ray_viewing.traced_rays.emplace_back();
+        Eigen::VectorXd radiance = Eigen::VectorXd::Zero(nwavel);
+        Eigen::VectorXd directional = Eigen::VectorXd::Zero(nwavel - 1);
+        Eigen::Map<Eigen::VectorXd> radiance_map(radiance.data(),
+                                                 radiance.size());
+        Eigen::Map<Eigen::VectorXd> directional_map(directional.data(),
+                                                    directional.size());
+        sasktran2::OutputJVP<1> output(radiance_map, directional_map);
+        REQUIRE_THROWS_AS(
+            output.initialize(config, geometry, one_ray_viewing, atmosphere),
+            std::invalid_argument);
+    }
+
+    SECTION("VJP radiance buffer extent") {
+        sasktran2::viewinggeometry::InternalViewingGeometry one_ray_viewing;
+        one_ray_viewing.traced_rays.emplace_back();
+        Eigen::VectorXd radiance = Eigen::VectorXd::Zero(nwavel - 1);
+        Eigen::VectorXd cotangent = Eigen::VectorXd::Zero(nwavel);
+        Eigen::Map<Eigen::VectorXd> radiance_map(radiance.data(),
+                                                 radiance.size());
+        Eigen::Map<const Eigen::VectorXd> cotangent_map(cotangent.data(),
+                                                        cotangent.size());
+        sasktran2::OutputVJP<1> output(radiance_map, cotangent_map);
+        REQUIRE_THROWS_AS(
+            output.initialize(config, geometry, one_ray_viewing, atmosphere),
+            std::invalid_argument);
+    }
+
+    SECTION("VJP cotangent buffer extent") {
+        sasktran2::viewinggeometry::InternalViewingGeometry one_ray_viewing;
+        one_ray_viewing.traced_rays.emplace_back();
+        Eigen::VectorXd radiance = Eigen::VectorXd::Zero(nwavel);
+        Eigen::VectorXd cotangent = Eigen::VectorXd::Zero(nwavel - 1);
+        Eigen::Map<Eigen::VectorXd> radiance_map(radiance.data(),
+                                                 radiance.size());
+        Eigen::Map<const Eigen::VectorXd> cotangent_map(cotangent.data(),
+                                                        cotangent.size());
+        sasktran2::OutputVJP<1> output(radiance_map, cotangent_map);
+        REQUIRE_THROWS_AS(
+            output.initialize(config, geometry, one_ray_viewing, atmosphere),
+            std::invalid_argument);
+    }
+}
+
+TEST_CASE("Native product outputs reject derivative-free atmospheres",
+          "[sasktran2][output][linearization]") {
+    sasktran2::Coordinates coordinates(0.6, 0.2, 6372000,
+                                       sasktran2::geometrytype::spherical);
+    Eigen::VectorXd altitude_values(3);
+    altitude_values << 0.0, 10000.0, 20000.0;
+    sasktran2::grids::AltitudeGrid altitude_grid(
+        std::move(altitude_values), sasktran2::grids::gridspacing::constant,
+        sasktran2::grids::outofbounds::extend,
+        sasktran2::grids::interpolation::linear);
+    sasktran2::Geometry1D geometry(std::move(coordinates),
+                                   std::move(altitude_grid));
+    sasktran2::Config config;
+    sasktran2::viewinggeometry::InternalViewingGeometry viewing;
+    sasktran2::atmosphere::Atmosphere<1> atmosphere(1, geometry, config, false);
+
+    Eigen::VectorXd radiance(0);
+    Eigen::VectorXd product(0);
+    Eigen::Map<Eigen::VectorXd> radiance_map(radiance.data(), 0);
+    Eigen::Map<Eigen::VectorXd> product_map(product.data(), 0);
+    Eigen::Map<const Eigen::VectorXd> cotangent_map(product.data(), 0);
+
+    sasktran2::OutputJVP<1> jvp_output(radiance_map, product_map);
+    REQUIRE_THROWS_AS(
+        jvp_output.initialize(config, geometry, viewing, atmosphere),
+        std::invalid_argument);
+
+    sasktran2::OutputVJP<1> vjp_output(radiance_map, cotangent_map);
+    REQUIRE_THROWS_AS(
+        vjp_output.initialize(config, geometry, viewing, atmosphere),
+        std::invalid_argument);
+}

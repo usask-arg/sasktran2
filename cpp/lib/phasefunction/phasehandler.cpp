@@ -317,6 +317,10 @@ namespace sasktran2::solartransmission {
 
         m_phase_batch.resize(m_config->num_wavelength_threads());
         m_d_phase_batch.resize(m_config->num_wavelength_threads());
+        m_active_wavelength_block_start.assign(
+            m_config->num_wavelength_threads(), 0);
+        m_active_wavelength_block_count.assign(
+            m_config->num_wavelength_threads(), 0);
         for (int threadidx = 0; threadidx < m_config->num_wavelength_threads();
              ++threadidx) {
             m_phase_batch[threadidx].resize(num_phase_components * num_internal,
@@ -339,6 +343,8 @@ namespace sasktran2::solartransmission {
             throw std::invalid_argument(
                 "Wavelength batch exceeds phase storage capacity");
         }
+        m_active_wavelength_block_start[threadidx] = batch.start;
+        m_active_wavelength_block_count[threadidx] = batch.count;
 
         auto& phase = m_phase_batch[threadidx];
         auto& d_phase = m_d_phase_batch[threadidx];
@@ -645,7 +651,7 @@ namespace sasktran2::solartransmission {
 
     template <int NSTOKES>
     Eigen::Vector<double, NSTOKES> PhaseHandler<NSTOKES>::scatter_value(
-        int threadidx, int losidx, int layeridx,
+        int threadidx, int losidx, int layeridx, int wavelidx,
         const raytracing::GridWeightStencilView& index_weights,
         bool is_entrance) const {
         Eigen::Vector<double, NSTOKES> phase =
@@ -654,13 +660,32 @@ namespace sasktran2::solartransmission {
             is_entrance ? m_geometry_entrance_to_internal[losidx][layeridx]
                         : m_geometry_exit_to_internal[losidx][layeridx];
 
+        const int batch_lane =
+            m_wavelength_batch_capacity > 1
+                ? wavelidx - m_active_wavelength_block_start.at(threadidx)
+                : 0;
+        if (m_wavelength_batch_capacity > 1 &&
+            (batch_lane < 0 ||
+             batch_lane >= m_active_wavelength_block_count.at(threadidx))) {
+            throw std::out_of_range(
+                "Phase wavelength is outside the active block");
+        }
+        const int num_internal =
+            static_cast<int>(m_internal_to_geometry.size());
+        const auto phase_value = [&](int component, int internal_index) {
+            if (m_wavelength_batch_capacity > 1) {
+                return m_phase_batch[threadidx](
+                    component * num_internal + internal_index, batch_lane);
+            }
+            return m_phase(component, internal_index, threadidx);
+        };
         const auto accumulate_phase = [&](int internal_index, double weight) {
-            phase(0) += m_phase(0, internal_index, threadidx) * weight;
+            phase(0) += phase_value(0, internal_index) * weight;
             if constexpr (NSTOKES == 3) {
                 const auto& scatter_angle =
                     m_scatter_angles[m_internal_to_cos_scatter[internal_index]];
                 const double polarized =
-                    m_phase(1, internal_index, threadidx) * weight;
+                    phase_value(1, internal_index) * weight;
                 phase(1) -= scatter_angle[1] * polarized;
                 phase(2) -= scatter_angle[2] * polarized;
             }
@@ -686,17 +711,42 @@ namespace sasktran2::solartransmission {
 
     template <int NSTOKES>
     void PhaseHandler<NSTOKES>::scatter_jvp(
-        int threadidx, int losidx, int layeridx,
+        int threadidx, int losidx, int layeridx, int wavelidx,
         const raytracing::GridWeightStencilView& index_weights,
         bool is_entrance, Eigen::Ref<const Eigen::VectorXd> native_tangent,
         Eigen::Vector<double, NSTOKES>& phase,
         Eigen::Vector<double, NSTOKES>& phase_jvp) const {
-        phase = scatter_value(threadidx, losidx, layeridx, index_weights,
-                              is_entrance);
+        phase = scatter_value(threadidx, losidx, layeridx, wavelidx,
+                              index_weights, is_entrance);
         phase_jvp.setZero();
         const auto& internal_indices =
             is_entrance ? m_geometry_entrance_to_internal[losidx][layeridx]
                         : m_geometry_exit_to_internal[losidx][layeridx];
+
+        const int batch_lane =
+            m_wavelength_batch_capacity > 1
+                ? wavelidx - m_active_wavelength_block_start.at(threadidx)
+                : 0;
+        if (m_wavelength_batch_capacity > 1 &&
+            (batch_lane < 0 ||
+             batch_lane >= m_active_wavelength_block_count.at(threadidx))) {
+            throw std::out_of_range(
+                "Phase wavelength is outside the active block");
+        }
+        const int num_internal =
+            static_cast<int>(m_internal_to_geometry.size());
+        const int num_phase_components = NSTOKES == 1 ? 1 : 2;
+        const auto derivative_value = [&](int derivative, int component,
+                                          int internal_index) {
+            if (m_wavelength_batch_capacity > 1) {
+                const int row =
+                    (derivative * num_phase_components + component) *
+                        num_internal +
+                    internal_index;
+                return m_d_phase_batch[threadidx](row, batch_lane);
+            }
+            return m_d_phase(component, internal_index, derivative, threadidx);
+        };
 
         for (int derivative = 0;
              derivative < m_atmosphere->num_scattering_deriv_groups();
@@ -714,14 +764,14 @@ namespace sasktran2::solartransmission {
                 const double direction =
                     native_tangent(derivative_start + weight.first) *
                     weight.second;
-                phase_jvp(0) += direction * m_d_phase(0, internal_index,
-                                                      derivative, threadidx);
+                phase_jvp(0) +=
+                    direction * derivative_value(derivative, 0, internal_index);
                 if constexpr (NSTOKES == 3) {
                     const auto& scatter_angle = m_scatter_angles
                         [m_internal_to_cos_scatter[internal_index]];
                     const double polarized =
                         direction *
-                        m_d_phase(1, internal_index, derivative, threadidx);
+                        derivative_value(derivative, 1, internal_index);
                     phase_jvp(1) -= scatter_angle[1] * polarized;
                     phase_jvp(2) -= scatter_angle[2] * polarized;
                 }
@@ -731,13 +781,37 @@ namespace sasktran2::solartransmission {
 
     template <int NSTOKES>
     void PhaseHandler<NSTOKES>::scatter_vjp(
-        int threadidx, int losidx, int layeridx,
+        int threadidx, int losidx, int layeridx, int wavelidx,
         const raytracing::GridWeightStencilView& index_weights,
         bool is_entrance, const Eigen::Vector<double, NSTOKES>& phase_cotangent,
         Eigen::Ref<Eigen::VectorXd> native_gradient) const {
         const auto& internal_indices =
             is_entrance ? m_geometry_entrance_to_internal[losidx][layeridx]
                         : m_geometry_exit_to_internal[losidx][layeridx];
+        const int batch_lane =
+            m_wavelength_batch_capacity > 1
+                ? wavelidx - m_active_wavelength_block_start.at(threadidx)
+                : 0;
+        if (m_wavelength_batch_capacity > 1 &&
+            (batch_lane < 0 ||
+             batch_lane >= m_active_wavelength_block_count.at(threadidx))) {
+            throw std::out_of_range(
+                "Phase wavelength is outside the active block");
+        }
+        const int num_internal =
+            static_cast<int>(m_internal_to_geometry.size());
+        const int num_phase_components = NSTOKES == 1 ? 1 : 2;
+        const auto derivative_phase = [&](int derivative, int component,
+                                          int internal_index) {
+            if (m_wavelength_batch_capacity > 1) {
+                const int row =
+                    (derivative * num_phase_components + component) *
+                        num_internal +
+                    internal_index;
+                return m_d_phase_batch[threadidx](row, batch_lane);
+            }
+            return m_d_phase(component, internal_index, derivative, threadidx);
+        };
         for (int derivative = 0;
              derivative < m_atmosphere->num_scattering_deriv_groups();
              ++derivative) {
@@ -753,14 +827,14 @@ namespace sasktran2::solartransmission {
                 const int internal_index = internal_indices[internal_offset++];
                 double derivative_value =
                     phase_cotangent(0) *
-                    m_d_phase(0, internal_index, derivative, threadidx);
+                    derivative_phase(derivative, 0, internal_index);
                 if constexpr (NSTOKES == 3) {
                     const auto& scatter_angle = m_scatter_angles
                         [m_internal_to_cos_scatter[internal_index]];
                     derivative_value +=
                         (-scatter_angle[1] * phase_cotangent(1) -
                          scatter_angle[2] * phase_cotangent(2)) *
-                        m_d_phase(1, internal_index, derivative, threadidx);
+                        derivative_phase(derivative, 1, internal_index);
                 }
                 native_gradient(derivative_start + weight.first) +=
                     weight.second * derivative_value;

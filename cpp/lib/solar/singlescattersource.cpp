@@ -51,6 +51,10 @@ namespace sasktran2::solartransmission {
         // Set up storage for each thread
         // m_solar_trans.resize(config.num_threads());
         m_solar_trans.resize(config.num_wavelength_threads());
+        m_active_wavelength_block_start.assign(config.num_wavelength_threads(),
+                                               0);
+        m_active_wavelength_block_count.assign(config.num_wavelength_threads(),
+                                               0);
 
         m_start_source_cache.resize(config.num_threads());
         m_end_source_cache.resize(config.num_threads());
@@ -60,6 +64,8 @@ namespace sasktran2::solartransmission {
     void SingleScatterSource<S, NSTOKES>::calculate_single(int wavelidx,
                                                            int threadidx) {
         ZoneScopedN("Single Scatter Source Calculation");
+        m_active_wavelength_block_start[threadidx] = wavelidx;
+        m_active_wavelength_block_count[threadidx] = 1;
         // Don't have to do anything here
         m_phase_handler.calculate(wavelidx, threadidx);
 
@@ -142,6 +148,8 @@ namespace sasktran2::solartransmission {
                     "Wavelength batch exceeds single scatter storage "
                     "capacity");
             }
+            m_active_wavelength_block_start[threadidx] = batch.start;
+            m_active_wavelength_block_count[threadidx] = batch.count;
 
             m_phase_handler.calculate_block(batch, threadidx);
             auto solar_trans =
@@ -168,6 +176,21 @@ namespace sasktran2::solartransmission {
                 }
             }
         }
+    }
+
+    template <typename S, int NSTOKES>
+    double SingleScatterSource<S, NSTOKES>::solar_transmission_value(
+        int wavelidx, int threadidx, int solar_index) const {
+        if (m_wavelength_batch_capacity == 1) {
+            return m_solar_trans.at(threadidx)(solar_index);
+        }
+        const int lane =
+            wavelidx - m_active_wavelength_block_start.at(threadidx);
+        if (lane < 0 || lane >= m_active_wavelength_block_count.at(threadidx)) {
+            throw std::out_of_range(
+                "Single-scatter wavelength is outside the active block");
+        }
+        return m_solar_trans_batch.at(threadidx)(solar_index, lane);
     }
 
     template <typename S, int NSTOKES>
@@ -201,8 +224,8 @@ namespace sasktran2::solartransmission {
                     weight.second;
             }
 
-            const double solar_trans =
-                m_solar_trans[wavel_threadidx](solar_index);
+            const double solar_trans = solar_transmission_value(
+                wavelidx, wavel_threadidx, solar_index);
             double solar_od_jvp = 0.0;
             for (Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
                      derivative(m_geometry_sparse, solar_index);
@@ -215,8 +238,8 @@ namespace sasktran2::solartransmission {
             Eigen::Vector<double, NSTOKES> phase;
             Eigen::Vector<double, NSTOKES> phase_jvp;
             m_phase_handler.scatter_jvp(wavel_threadidx, losidx, layeridx,
-                                        weights, is_entrance, native_tangent,
-                                        phase, phase_jvp);
+                                        wavelidx, weights, is_entrance,
+                                        native_tangent, phase, phase_jvp);
 
             const double scale = 1.0 / (EIGEN_PI * 4);
             const double amplitude = extinction * ssa * solar_trans * scale;
@@ -254,11 +277,11 @@ namespace sasktran2::solartransmission {
                 ssa += storage.ssa(weight.first, wavelidx) * weight.second;
             }
 
-            const double solar_trans =
-                m_solar_trans[wavel_threadidx](solar_index);
+            const double solar_trans = solar_transmission_value(
+                wavelidx, wavel_threadidx, solar_index);
             const Eigen::Vector<double, NSTOKES> phase =
                 m_phase_handler.scatter_value(wavel_threadidx, losidx, layeridx,
-                                              weights, is_entrance);
+                                              wavelidx, weights, is_entrance);
 
             const double scale = 1.0 / (EIGEN_PI * 4);
             const double amplitude = extinction * ssa * solar_trans * scale;
@@ -287,7 +310,7 @@ namespace sasktran2::solartransmission {
                     derivative.value() * solar_trans * solar_trans_cotangent;
             }
             m_phase_handler.scatter_vjp(wavel_threadidx, losidx, layeridx,
-                                        weights, is_entrance,
+                                        wavelidx, weights, is_entrance,
                                         amplitude * cotangent, native_gradient);
             return amplitude * phase;
         }
@@ -316,8 +339,8 @@ namespace sasktran2::solartransmission {
                 first_layer.average_look_away);
             const double phi_diff = first_layer.saz_exit;
             const int solar_index = m_index_map[losidx][0];
-            const double solar_trans =
-                m_solar_trans[wavel_threadidx](solar_index);
+            const double solar_trans = solar_transmission_value(
+                wavelidx, wavel_threadidx, solar_index);
             double solar_od_jvp = 0.0;
             if (m_config->wf_precision() !=
                 sasktran2::Config::WeightingFunctionPrecision::limited) {
@@ -353,7 +376,8 @@ namespace sasktran2::solartransmission {
     template <typename S, int NSTOKES>
     void SingleScatterSource<S, NSTOKES>::end_of_ray_source_vjp(
         int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-        const Eigen::Vector<double, NSTOKES>& cotangent,
+        const Eigen::Vector<double, NSTOKES>&,
+        Eigen::Vector<double, NSTOKES>& cotangent,
         Eigen::Ref<Eigen::VectorXd> native_gradient) const {
         (void)threadidx;
         if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
@@ -373,8 +397,8 @@ namespace sasktran2::solartransmission {
                 first_layer.average_look_away);
             const double phi_diff = first_layer.saz_exit;
             const int solar_index = m_index_map[losidx][0];
-            const double solar_trans =
-                m_solar_trans[wavel_threadidx](solar_index);
+            const double solar_trans = solar_transmission_value(
+                wavelidx, wavel_threadidx, solar_index);
             const auto brdf =
                 m_atmosphere->surface().brdf(wavelidx, mu_in, mu_out, phi_diff);
             const double solar_trans_cotangent =
@@ -1094,7 +1118,8 @@ namespace sasktran2::solartransmission {
         const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
         const sasktran2::raytracing::GridWeightStencilView& exit_weights,
         const sasktran2::WavelengthBlockODView& shell_od,
-        const Eigen::Vector<double, NSTOKES>& cotangent,
+        const Eigen::Vector<double, NSTOKES>&,
+        Eigen::Vector<double, NSTOKES>& cotangent,
         Eigen::Ref<Eigen::VectorXd> native_gradient) const {
         (void)threadidx;
         if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {

@@ -72,19 +72,20 @@ def test_threading(threading_lib, threading_model):
     )
 
 
-@pytest.mark.parametrize(
-    "threading_model",
-    [sk.ThreadingModel.Wavelength, sk.ThreadingModel.Source],
-)
-def test_native_linearization_threading(threading_model):
-    if not build_info.openmp_support_enabled():
+@pytest.mark.parametrize(("threading_lib", "threading_model"), testdata)
+def test_native_linearization_threading(threading_lib, threading_model):
+    if (
+        not build_info.openmp_support_enabled()
+        and threading_lib == sk.ThreadingLib.OpenMP
+    ):
         pytest.skip("OpenMP support is not enabled in this build of sasktran2.")
 
     config = sk.Config()
     config.single_scatter_source = sk.SingleScatterSource.Exact
     config.multiple_scatter_source = sk.MultipleScatterSource.NoSource
-    config.threading_lib = sk.ThreadingLib.OpenMP
+    config.threading_lib = threading_lib
     config.threading_model = threading_model
+    config.wavelength_batch_size = 3
     geometry = sk.Geometry1D(
         0.6,
         0.0,
@@ -97,7 +98,9 @@ def test_native_linearization_threading(threading_model):
     for cos_viewing_zenith in [0.5, 0.65, 0.8, 0.95]:
         viewing.add_ray(sk.GroundViewingSolar(0.6, 0.2, cos_viewing_zenith, 100_000.0))
     atmosphere = sk.Atmosphere(
-        geometry, config, wavelengths_nm=np.array([300.0, 350.0, 400.0])
+        geometry,
+        config,
+        wavelengths_nm=np.array([300.0, 325.0, 350.0, 375.0, 400.0]),
     )
     sk.climatology.us76.add_us76_standard_atmosphere(atmosphere)
     atmosphere["rayleigh"] = sk.constituent.Rayleigh()
