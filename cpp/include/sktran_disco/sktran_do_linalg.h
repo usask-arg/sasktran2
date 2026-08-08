@@ -190,9 +190,13 @@ namespace sasktran_disco {
                             double* right_hand_side,
                             lapack_int right_hand_side_leading_dimension);
 
-        /** Use the unblocked factorization where it outperforms blocked LU. */
-        bool use_unblocked_band_factorization(lapack_int lower_bandwidth,
-                                              lapack_int upper_bandwidth);
+        /** Solve a general-band system with the configured LAPACK backend. */
+        int dgbsv_configured(lapack_int n, lapack_int lower_bandwidth,
+                             lapack_int upper_bandwidth,
+                             lapack_int right_hand_sides, double* matrix,
+                             lapack_int leading_dimension, lapack_int* pivots,
+                             double* right_hand_side,
+                             lapack_int right_hand_side_leading_dimension);
 
     } // namespace la
 

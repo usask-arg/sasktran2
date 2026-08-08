@@ -8,6 +8,7 @@ target_include_directories(
 add_library(
   sasktran2
   config/config.cpp
+  config/runtime_backend_tuner.cpp
   unitsphere/lebedev_autogen.cpp
   unitsphere/lebedev.cpp
   unitsphere/unitsphere_ground.cpp

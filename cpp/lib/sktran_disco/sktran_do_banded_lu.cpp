@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdlib>
 #include <limits>
 
 namespace sasktran_disco::la {
@@ -162,20 +161,23 @@ namespace sasktran_disco::la {
         return info;
     }
 
-    bool use_unblocked_band_factorization(lapack_int lower_bandwidth,
-                                          lapack_int upper_bandwidth) {
-#if defined(SKTRAN_USE_ACCELERATE) || defined(SKTRAN_USE_MKL)
-        // Keep vendor-tuned implementations until this crossover has been
-        // measured for them independently.
-        return false;
+    int dgbsv_configured(lapack_int n, lapack_int lower_bandwidth,
+                         lapack_int upper_bandwidth,
+                         lapack_int right_hand_sides, double* matrix,
+                         lapack_int leading_dimension, lapack_int* pivots,
+                         double* right_hand_side,
+                         lapack_int right_hand_side_leading_dimension) {
+#if defined(SKTRAN_USE_ACCELERATE) || defined(SKTRAN_NO_LAPACKE)
+        lapack_int info;
+        dgbsv_(&n, &lower_bandwidth, &upper_bandwidth, &right_hand_sides,
+               matrix, &leading_dimension, pivots, right_hand_side,
+               &right_hand_side_leading_dimension, &info);
+        return info;
 #else
-        static const bool disabled =
-            std::getenv("SASKTRAN2_DISABLE_DO_UNBLOCKED_BAND_LU") != nullptr;
-        // Production DO bandwidths advance in steps of three. Benchmarks show
-        // the custom unblocked loop wins through 29, while the configured
-        // LAPACK's blocked path catches up at the next bandwidth (32).
-        return !disabled && lower_bandwidth == upper_bandwidth &&
-               lower_bandwidth > 2 && lower_bandwidth < 32;
+        return LAPACKE_dgbsv(LAPACK_COL_MAJOR, n, lower_bandwidth,
+                             upper_bandwidth, right_hand_sides, matrix,
+                             leading_dimension, pivots, right_hand_side,
+                             right_hand_side_leading_dimension);
 #endif
     }
 } // namespace sasktran_disco::la

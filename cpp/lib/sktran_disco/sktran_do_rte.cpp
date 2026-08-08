@@ -12,7 +12,8 @@ sasktran_disco::RTESolver<NSTOKES, CNSTR>::RTESolver(
     const PersistentConfiguration<NSTOKES, CNSTR>& config,
     OpticalLayerArray<NSTOKES, CNSTR>& layers)
     : RTESProperties<NSTOKES>(config), m_layers(layers),
-      m_cache(config.pool().thread_data().rte_cache()) {
+      m_cache(config.pool().thread_data().rte_cache()),
+      m_banded_lu_backend(config.banded_lu_backend()) {
     // Initialize tracker for which orders have been solved
     m_is_solved.resize(this->M_NSTR, false);
 
@@ -1669,22 +1670,17 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveBVP(AEOrder m) {
             N, 1, mat.data(), b.data(), N, m_cache.bvp_pd_alpha,
             m_cache.bvp_pd_beta, m_cache.bvp_pd_z, m_cache.bvp_pd_gamma,
             m_cache.bvp_pd_mu, false);
-    } else if (la::use_unblocked_band_factorization(NCD, NCD)) {
+    } else if (m_banded_lu_backend ==
+               sasktran2::detail::BandedLUBackend::unblocked) {
         ZoneScopedN("BVP Solve unblocked dgbtf2");
         errorcode = la::dgbsv_unblocked(N, NCD, NCD, 1, mat.data(), LDA,
                                         ipiv.data(), b.data(), N);
     } else {
-#if defined(SKTRAN_USE_ACCELERATE) || defined(SKTRAN_NO_LAPACKE)
-        lapack_int one = 1;
         {
-            ZoneScopedN("BVP Solve dgbsv_");
-            dgbsv_(&N, &NCD, &NCD, &one, mat.data(), &LDA, ipiv.data(),
-                   b.data(), &N, &errorcode);
+            ZoneScopedN("BVP Solve configured LAPACK");
+            errorcode = la::dgbsv_configured(N, NCD, NCD, 1, mat.data(), LDA,
+                                             ipiv.data(), b.data(), N);
         }
-#else
-        errorcode = LAPACKE_dgbsv(LAPACK_COL_MAJOR, N, NCD, NCD, 1, mat.data(),
-                                  LDA, ipiv.data(), b.data(), N);
-#endif
     }
 
     // We we failed then return immediately

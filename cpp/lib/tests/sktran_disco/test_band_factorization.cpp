@@ -1,4 +1,5 @@
 #include <sasktran2/test_helper.h>
+#include <sasktran2/runtime_backend_tuner.h>
 
 #include <sktran_disco/sktran_do.h>
 
@@ -68,20 +69,11 @@ namespace {
 
     int solve_with_configured_lapack(BandSystem& system,
                                      std::vector<lapack_int>& pivots) {
-#if defined(SKTRAN_USE_ACCELERATE) || defined(SKTRAN_NO_LAPACKE)
-        lapack_int info;
-        dgbsv_(&system.size, &system.bandwidth, &system.bandwidth,
-               &system.right_hand_sides, system.matrix.data(),
-               &system.leading_dimension, pivots.data(),
-               system.right_hand_side.data(), &system.size, &info);
-        return info;
-#else
-        return LAPACKE_dgbsv(LAPACK_COL_MAJOR, system.size, system.bandwidth,
-                             system.bandwidth, system.right_hand_sides,
-                             system.matrix.data(), system.leading_dimension,
-                             pivots.data(), system.right_hand_side.data(),
-                             system.size);
-#endif
+        return sasktran_disco::la::dgbsv_configured(
+            system.size, system.bandwidth, system.bandwidth,
+            system.right_hand_sides, system.matrix.data(),
+            system.leading_dimension, pivots.data(),
+            system.right_hand_side.data(), system.size);
     }
 
     void benchmark_band_solve(lapack_int size, lapack_int bandwidth) {
@@ -110,6 +102,20 @@ namespace {
                     system.leading_dimension, pivots[run].data(),
                     system.right_hand_side.data(), system.size);
             });
+        };
+    }
+
+    void benchmark_runtime_selection(int num_stokes, int num_streams,
+                                     int num_layers) {
+        BENCHMARK("construction-time backend selection") {
+            sasktran2::Config config;
+            config.set_num_stokes(num_stokes);
+            config.set_num_do_streams(num_streams);
+            config.set_multiple_scatter_source(
+                sasktran2::Config::MultipleScatterSource::discrete_ordinates);
+            sasktran2::detail::RuntimeBackendTuner::resolve(config, num_layers);
+            return sasktran2::detail::RuntimeBackendTuner::
+                resolved_banded_lu_backend(config);
         };
     }
 } // namespace
@@ -177,18 +183,31 @@ TEST_CASE("Unblocked band factorization reports singular pivots",
                 pivots.data()) == 1);
 }
 
-TEST_CASE("Unblocked band factorization dispatches for narrow DO systems",
+TEST_CASE("Runtime band factorization policy prefers LAPACK for close results",
           "[sktran_do][band_factorization]") {
-    REQUIRE_FALSE(sasktran_disco::la::use_unblocked_band_factorization(2, 2));
-#if defined(SKTRAN_USE_ACCELERATE) || defined(SKTRAN_USE_MKL)
-    REQUIRE_FALSE(sasktran_disco::la::use_unblocked_band_factorization(5, 5));
-    REQUIRE_FALSE(sasktran_disco::la::use_unblocked_band_factorization(29, 29));
-#else
-    REQUIRE(sasktran_disco::la::use_unblocked_band_factorization(5, 5));
-    REQUIRE(sasktran_disco::la::use_unblocked_band_factorization(29, 29));
-#endif
-    REQUIRE_FALSE(sasktran_disco::la::use_unblocked_band_factorization(32, 32));
-    REQUIRE_FALSE(sasktran_disco::la::use_unblocked_band_factorization(11, 12));
+    using Backend = sasktran2::detail::BandedLUBackend;
+    using Tuner = sasktran2::detail::RuntimeBackendTuner;
+
+    REQUIRE(Tuner::select_banded_lu_backend(100.0, 80.0) == Backend::unblocked);
+    REQUIRE(Tuner::select_banded_lu_backend(100.0, 90.0) == Backend::lapack);
+    REQUIRE(Tuner::select_banded_lu_backend(100.0, 95.0) == Backend::lapack);
+    REQUIRE(Tuner::select_banded_lu_backend(100.0, 105.0) == Backend::lapack);
+    REQUIRE(Tuner::select_banded_lu_backend(0.0, 1.0) == Backend::lapack);
+}
+
+TEST_CASE("Runtime band factorization tuner resolves a supported backend",
+          "[sktran_do][band_factorization]") {
+    sasktran2::Config config;
+    config.set_num_do_streams(8);
+    config.set_multiple_scatter_source(
+        sasktran2::Config::MultipleScatterSource::discrete_ordinates);
+    sasktran2::detail::RuntimeBackendTuner::resolve(config, 20);
+
+    const auto backend =
+        sasktran2::detail::RuntimeBackendTuner::resolved_banded_lu_backend(
+            config);
+    REQUIRE((backend == sasktran2::detail::BandedLUBackend::lapack ||
+             backend == sasktran2::detail::BandedLUBackend::unblocked));
 }
 
 TEST_CASE("Band solve performance", "[.benchmark][band_solve]") {
@@ -215,4 +234,20 @@ TEST_CASE("Band solve performance", "[.benchmark][band_solve]") {
     SECTION("bandwidth 26, 100 layers") { benchmark_band_solve(18 * 100, 26); }
     SECTION("bandwidth 29, 100 layers") { benchmark_band_solve(20 * 100, 29); }
     SECTION("bandwidth 32, 100 layers") { benchmark_band_solve(22 * 100, 32); }
+}
+
+TEST_CASE("Runtime backend selection overhead",
+          "[.benchmark][band_backend_selection]") {
+    SECTION("scalar 4 streams, 20 layers") {
+        benchmark_runtime_selection(1, 4, 20);
+    }
+    SECTION("scalar 8 streams, 100 layers") {
+        benchmark_runtime_selection(1, 8, 100);
+    }
+    SECTION("scalar 16 streams, 100 layers") {
+        benchmark_runtime_selection(1, 16, 100);
+    }
+    SECTION("IQU 4 streams, 100 layers") {
+        benchmark_runtime_selection(3, 4, 100);
+    }
 }
