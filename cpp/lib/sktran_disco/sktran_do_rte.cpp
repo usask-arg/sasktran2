@@ -962,6 +962,11 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
     Gminus_bottom.deriv.setZero();
     Gminus_top.deriv.setZero();
 
+    if (Qplus.value.isZero(0) && Qminus.value.isZero(0) &&
+        Qplus.deriv.isZero(0) && Qminus.deriv.isZero(0)) {
+        return;
+    }
+
     // Normalization constant
     LayerDual<double> norm(numLayerDeriv, p, layerStart);
 
