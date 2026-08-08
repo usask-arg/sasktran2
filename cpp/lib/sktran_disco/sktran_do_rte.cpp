@@ -475,7 +475,10 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveHomogeneous(
             }
         } else {
             eigvalsq = es.eigenvalues().real();
-            MX_plus = es.eigenvectors().real();
+            MX_plus = es.pseudoEigenvectors();
+            for (SolutionIndex j = 0; j < N * NSTOKES; ++j) {
+                MX_plus.col(j).normalize();
+            }
             reigval_imag.setZero();
         }
     } else {
