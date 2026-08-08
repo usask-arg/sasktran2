@@ -3,7 +3,6 @@
 #include "sktran_disco/sktran_do_opticallayer.h"
 #include "sktran_disco/sktran_do_rte.h"
 #include "sktran_disco/sktran_do_types.h"
-#include <sasktran2/math/real_eigensolver.h>
 #include "sktran_disco/sktran_do_lpproduct.h"
 #include <spdlog/spdlog.h>
 #include <thread>
@@ -432,7 +431,8 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveHomogeneous(
     if (SASKTRAN_DISCO_USE_EIGEN_EIGENSOLVER || CNSTR != -1) {
         // Eigen::SelfAdjointEigenSolver<Matrix> es(eigmtx_destroyable);
         ZoneScopedN("EigenSolver");
-        Eigen::RealEigenSolver<Matrix> es(eigmtx_destroyable);
+        auto& es = m_cache.h_eigensolver;
+        es.compute(eigmtx_destroyable);
 
         auto eigeninfo = es.info();
         if (eigeninfo != Eigen::Success) {
