@@ -171,6 +171,29 @@ namespace sasktran_disco {
                                 Eigen::MatrixXd& z, Eigen::VectorXd& gamma,
                                 Eigen::VectorXd& mu, bool transpose);
 
+        /**
+         * Factor a general-band matrix in LAPACK column-major storage using
+         * the unblocked DGBTF2 algorithm.
+         */
+        int dgbtf2_unblocked(lapack_int n, lapack_int lower_bandwidth,
+                             lapack_int upper_bandwidth, double* matrix,
+                             lapack_int leading_dimension, lapack_int* pivots);
+
+        /**
+         * Factor with dgbtf2_unblocked and solve with the configured LAPACK
+         * dgbtrs implementation.
+         */
+        int dgbsv_unblocked(lapack_int n, lapack_int lower_bandwidth,
+                            lapack_int upper_bandwidth,
+                            lapack_int right_hand_sides, double* matrix,
+                            lapack_int leading_dimension, lapack_int* pivots,
+                            double* right_hand_side,
+                            lapack_int right_hand_side_leading_dimension);
+
+        /** Use the unblocked factorization where it outperforms blocked LU. */
+        bool use_unblocked_band_factorization(lapack_int lower_bandwidth,
+                                              lapack_int upper_bandwidth);
+
     } // namespace la
 
     /**

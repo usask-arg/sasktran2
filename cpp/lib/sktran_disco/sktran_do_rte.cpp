@@ -1689,6 +1689,10 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveBVP(AEOrder m) {
             N, 1, mat.data(), b.data(), N, m_cache.bvp_pd_alpha,
             m_cache.bvp_pd_beta, m_cache.bvp_pd_z, m_cache.bvp_pd_gamma,
             m_cache.bvp_pd_mu, false);
+    } else if (la::use_unblocked_band_factorization(NCD, NCD)) {
+        ZoneScopedN("BVP Solve unblocked dgbtf2");
+        errorcode = la::dgbsv_unblocked(N, NCD, NCD, 1, mat.data(), LDA,
+                                        ipiv.data(), b.data(), N);
     } else {
 #if defined(SKTRAN_USE_ACCELERATE) || defined(SKTRAN_NO_LAPACKE)
         lapack_int one = 1;

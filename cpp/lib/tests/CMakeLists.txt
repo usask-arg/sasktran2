@@ -22,6 +22,7 @@ add_executable(
   engine/wf/test_wf_vector.cpp
   engine/hr/test_hr_basic.cpp
   sktran_disco/test_util.cpp
+  sktran_disco/test_band_factorization.cpp
   sktran_disco/tests_lowlevel.cpp
   sktran_disco/legacy/test_scalar.cpp
   sktran_disco/legacy/test_vector.cpp
