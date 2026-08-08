@@ -663,8 +663,9 @@ void sasktran_disco::RTESolver<1, 2>::solveParticularGreen(
     Cplus.value = 0.0;
     Cminus.value = 0.0;
 
-    double exp_thickness_eigval = exp(-thickness.value * eigval.value(0));
-    double exp_thickness_secant = exp(-thickness.value * average_secant.value);
+    const double exp_thickness_eigval = exp(-thickness.value * eigval.value(0));
+    const double exp_thickness_secant =
+        exp(-thickness.value * average_secant.value);
 
     // If average secant is close to eigval then we evaluate Cplus or Cminus
     // with a taylor series expansion instead
@@ -679,8 +680,7 @@ void sasktran_disco::RTESolver<1, 2>::solveParticularGreen(
                 (average_secant.value - eigval.value(0));
 
             m_cache.m_secant_to_Cplus(p, p) =
-                (transmission.value * thickness.value *
-                     exp(-1.0 * thickness.value * average_secant.value) -
+                (transmission.value * thickness.value * exp_thickness_secant -
                  Cplus.value) /
                 (average_secant.value - eigval.value(0));
 
@@ -694,7 +694,7 @@ void sasktran_disco::RTESolver<1, 2>::solveParticularGreen(
                 Cplus.deriv.noalias() +=
                     average_secant.deriv *
                     (transmission.value * thickness.value *
-                         exp(-1.0 * thickness.value * average_secant.value) -
+                         exp_thickness_secant -
                      Cplus.value) /
                     (average_secant.value - eigval.value(0));
             }
@@ -705,8 +705,7 @@ void sasktran_disco::RTESolver<1, 2>::solveParticularGreen(
                 (average_secant.value - eigval.value(0)) * transmission.deriv;
             Cplus.deriv.noalias() +=
                 average_secant.deriv *
-                (transmission.value * thickness.value *
-                     exp(-1.0 * thickness.value * average_secant.value) -
+                (transmission.value * thickness.value * exp_thickness_secant -
                  Cplus.value) /
                 (average_secant.value - eigval.value(0));
         }
@@ -724,54 +723,47 @@ void sasktran_disco::RTESolver<1, 2>::solveParticularGreen(
         }
     } else {
         // Second order taylor expansion of Cplus
-        Cplus.value = transmission.value *
-                      exp(-1.0 * thickness.value * eigval.value(0)) *
+        Cplus.value = transmission.value * exp_thickness_eigval *
                       thickness.value *
                       (1 - thickness.value / 2 *
                                (average_secant.value - eigval.value(0)));
 
         if (this->M_BACKPROP_BVP && SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
             m_cache.m_trans_to_Cplus(p, p) =
-                exp(-1.0 * thickness.value * eigval.value(0)) *
-                thickness.value *
+                exp_thickness_eigval * thickness.value *
                 (1 - thickness.value / 2 *
                          (average_secant.value - eigval.value(0)));
 
             m_cache.m_secant_to_Cplus(p, p) =
                 -1.0 * thickness.value / 2.0 * thickness.value *
-                transmission.value *
-                exp(-1.0 * thickness.value * eigval.value(0));
+                transmission.value * exp_thickness_eigval;
 
             if (p != this->M_NLYR - 1) {
                 Cplus.deriv.setZero();
             } else {
 
                 Cplus.deriv.noalias() =
-                    exp(-1.0 * thickness.value * eigval.value(0)) *
-                    thickness.value *
+                    exp_thickness_eigval * thickness.value *
                     (1 - thickness.value / 2 *
                              (average_secant.value - eigval.value(0))) *
                     transmission.deriv;
                 ;
                 Cplus.deriv.noalias() +=
                     -1.0 * average_secant.deriv * thickness.value / 2.0 *
-                    thickness.value * transmission.value *
-                    exp(-1.0 * thickness.value * eigval.value(0));
+                    thickness.value * transmission.value * exp_thickness_eigval;
             }
 
         } else {
 
             Cplus.deriv.noalias() =
-                exp(-1.0 * thickness.value * eigval.value(0)) *
-                thickness.value *
+                exp_thickness_eigval * thickness.value *
                 (1 - thickness.value / 2 *
                          (average_secant.value - eigval.value(0))) *
                 transmission.deriv;
             ;
-            Cplus.deriv.noalias() +=
-                -1.0 * average_secant.deriv * thickness.value / 2.0 *
-                thickness.value * transmission.value *
-                exp(-1.0 * thickness.value * eigval.value(0));
+            Cplus.deriv.noalias() += -1.0 * average_secant.deriv *
+                                     thickness.value / 2.0 * thickness.value *
+                                     transmission.value * exp_thickness_eigval;
         }
 
         for (uint k = 0; k < numLayerDeriv; ++k) {
@@ -779,12 +771,10 @@ void sasktran_disco::RTESolver<1, 2>::solveParticularGreen(
                 eigval.deriv(k, 0) * Cplus.value * -1.0 * thickness.value;
             Cplus.deriv(k + layerStart) +=
                 eigval.deriv(k, 0) * thickness.value / 2.0 * thickness.value *
-                transmission.value *
-                exp(-1.0 * thickness.value * eigval.value(0));
+                transmission.value * exp_thickness_eigval;
 
             Cplus.deriv(k + layerStart) +=
-                thickness.deriv(k) * transmission.value *
-                exp(-1.0 * thickness.value * eigval.value(0)) *
+                thickness.deriv(k) * transmission.value * exp_thickness_eigval *
                 (1 -
                  thickness.value * (average_secant.value - eigval.value(0)));
             Cplus.deriv(k + layerStart) +=
@@ -974,6 +964,9 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
     auto& Cplus = m_cache.p_Cplus;
     auto& Cminus = m_cache.p_Cminus;
 
+    const double exp_thickness_secant =
+        exp(-thickness.value * average_secant.value);
+
     // For each homogeneous solution, add it's contribution in
     for (SolutionIndex i = 0; i < N * NSTOKES; ++i) {
         uint h_start = i * N * NSTOKES;
@@ -1038,13 +1031,14 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
         Cplus.value = 0.0;
         Cminus.value = 0.0;
         const auto& eigval = solution.value.dual_eigval();
+        const double exp_thickness_eigval =
+            exp(-thickness.value * eigval.value(i));
         // If average secant is close to eigval then we evaluate Cplus or Cminus
         // with a taylor series expansion instead
         if (abs(average_secant.value - eigval.value(i)) >
             SKTRAN_DO_GREENS_EPS) {
             Cplus.value = transmission.value *
-                          (exp(-thickness.value * eigval.value(i)) -
-                           exp(-thickness.value * average_secant.value)) /
+                          (exp_thickness_eigval - exp_thickness_secant) /
                           (average_secant.value - eigval.value(i));
 
             // If we are doing backprop, then we don't need the derivatives,
@@ -1052,13 +1046,12 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
             // calculation for the ground source
             if (this->M_BACKPROP_BVP && SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
                 m_cache.m_trans_to_Cplus(p * N * NSTOKES + i, p) =
-                    (exp(-thickness.value * eigval.value(i)) -
-                     exp(-thickness.value * average_secant.value)) /
+                    (exp_thickness_eigval - exp_thickness_secant) /
                     (average_secant.value - eigval.value(i));
 
                 m_cache.m_secant_to_Cplus(p * N * NSTOKES + i, p) =
                     (transmission.value * thickness.value *
-                         exp(-1.0 * thickness.value * average_secant.value) -
+                         exp_thickness_secant -
                      Cplus.value) /
                     (average_secant.value - eigval.value(i));
 
@@ -1066,28 +1059,25 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
                     Cplus.deriv.setZero();
                 } else {
                     Cplus.deriv.noalias() =
-                        (exp(-thickness.value * eigval.value(i)) -
-                         exp(-thickness.value * average_secant.value)) /
+                        (exp_thickness_eigval - exp_thickness_secant) /
                         (average_secant.value - eigval.value(i)) *
                         transmission.deriv;
                     Cplus.deriv.noalias() +=
                         average_secant.deriv *
                         (transmission.value * thickness.value *
-                             exp(-1.0 * thickness.value *
-                                 average_secant.value) -
+                             exp_thickness_secant -
                          Cplus.value) /
                         (average_secant.value - eigval.value(i));
                 }
             } else {
                 Cplus.deriv.noalias() =
-                    (exp(-thickness.value * eigval.value(i)) -
-                     exp(-thickness.value * average_secant.value)) /
+                    (exp_thickness_eigval - exp_thickness_secant) /
                     (average_secant.value - eigval.value(i)) *
                     transmission.deriv;
                 Cplus.deriv.noalias() +=
                     average_secant.deriv *
                     (transmission.value * thickness.value *
-                         exp(-1.0 * thickness.value * average_secant.value) -
+                         exp_thickness_secant -
                      Cplus.value) /
                     (average_secant.value - eigval.value(i));
             }
@@ -1096,43 +1086,36 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
                 Cplus.deriv(k + layerStart) +=
                     eigval.deriv(k, i) /
                     (average_secant.value - eigval.value(i)) *
-                    (Cplus.value -
-                     transmission.value * thickness.value *
-                         exp(-1.0 * thickness.value * eigval.value(i)));
+                    (Cplus.value - transmission.value * thickness.value *
+                                       exp_thickness_eigval);
                 Cplus.deriv(k + layerStart) -=
                     thickness.deriv(k) * transmission.value /
                     (average_secant.value - eigval.value(i)) *
-                    (eigval.value(i) *
-                         exp(-1.0 * thickness.value * eigval.value(i)) -
-                     average_secant.value *
-                         exp(-1.0 * thickness.value * average_secant.value));
+                    (eigval.value(i) * exp_thickness_eigval -
+                     average_secant.value * exp_thickness_secant);
             }
         } else {
             // Second order taylor expansion of Cplus
-            Cplus.value = transmission.value *
-                          exp(-1.0 * thickness.value * eigval.value(i)) *
+            Cplus.value = transmission.value * exp_thickness_eigval *
                           thickness.value *
                           (1 - thickness.value / 2 *
                                    (average_secant.value - eigval.value(i)));
 
             if (this->M_BACKPROP_BVP && SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
                 m_cache.m_trans_to_Cplus(p * N * NSTOKES + i, p) =
-                    exp(-1.0 * thickness.value * eigval.value(i)) *
-                    thickness.value *
+                    exp_thickness_eigval * thickness.value *
                     (1 - thickness.value / 2 *
                              (average_secant.value - eigval.value(i)));
 
                 m_cache.m_secant_to_Cplus(p * N * NSTOKES + i, p) =
                     -1.0 * thickness.value / 2.0 * thickness.value *
-                    transmission.value *
-                    exp(-1.0 * thickness.value * eigval.value(i));
+                    transmission.value * exp_thickness_eigval;
 
                 if (p != this->M_NLYR - 1) {
                     Cplus.deriv.setZero();
                 } else {
                     Cplus.deriv.noalias() =
-                        exp(-1.0 * thickness.value * eigval.value(i)) *
-                        thickness.value *
+                        exp_thickness_eigval * thickness.value *
                         (1 - thickness.value / 2 *
                                  (average_secant.value - eigval.value(i))) *
                         transmission.deriv;
@@ -1140,20 +1123,18 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
                     Cplus.deriv.noalias() +=
                         -1.0 * average_secant.deriv * thickness.value / 2.0 *
                         thickness.value * transmission.value *
-                        exp(-1.0 * thickness.value * eigval.value(i));
+                        exp_thickness_eigval;
                 }
             } else {
                 Cplus.deriv.noalias() =
-                    exp(-1.0 * thickness.value * eigval.value(i)) *
-                    thickness.value *
+                    exp_thickness_eigval * thickness.value *
                     (1 - thickness.value / 2 *
                              (average_secant.value - eigval.value(i))) *
                     transmission.deriv;
                 ;
                 Cplus.deriv.noalias() +=
                     -1.0 * average_secant.deriv * thickness.value / 2.0 *
-                    thickness.value * transmission.value *
-                    exp(-1.0 * thickness.value * eigval.value(i));
+                    thickness.value * transmission.value * exp_thickness_eigval;
             }
 
             for (uint k = 0; k < numLayerDeriv; ++k) {
@@ -1161,12 +1142,11 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
                     eigval.deriv(k, i) * Cplus.value * -1.0 * thickness.value;
                 Cplus.deriv(k + layerStart) +=
                     eigval.deriv(k, i) * thickness.value / 2.0 *
-                    thickness.value * transmission.value *
-                    exp(-1.0 * thickness.value * eigval.value(i));
+                    thickness.value * transmission.value * exp_thickness_eigval;
 
                 Cplus.deriv(k + layerStart) +=
                     thickness.deriv(k) * transmission.value *
-                    exp(-1.0 * thickness.value * eigval.value(i)) *
+                    exp_thickness_eigval *
                     (1 - thickness.value *
                              (average_secant.value - eigval.value(i)));
                 Cplus.deriv(k + layerStart) +=
@@ -1177,36 +1157,34 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
         if (abs(average_secant.value + eigval.value(i)) >
             SKTRAN_DO_GREENS_EPS) {
 
+            const double exp_thickness_eigval_plus_secant = exp(
+                -thickness.value * (average_secant.value + eigval.value(i)));
+
             Cminus.value = transmission.value *
-                           (1 - exp(-thickness.value * average_secant.value) *
-                                    exp(-thickness.value * eigval.value(i))) /
+                           (1 - exp_thickness_secant * exp_thickness_eigval) /
                            (average_secant.value + eigval.value(i));
 
             if (this->M_BACKPROP_BVP && SASKTRAN_DISCO_ENABLE_FULL_BACKPROP) {
                 m_cache.m_trans_to_Cminus(p * N * NSTOKES + i, p) =
-                    (1 - exp(-thickness.value * average_secant.value) *
-                             exp(-thickness.value * eigval.value(i))) /
+                    (1 - exp_thickness_secant * exp_thickness_eigval) /
                     (average_secant.value + eigval.value(i));
                 m_cache.m_secant_to_Cminus(p * N * NSTOKES + i, p) =
                     (1 / (average_secant.value + eigval.value(i))) *
                     (transmission.value * thickness.value *
-                         exp(-thickness.value *
-                             (average_secant.value + eigval.value(i))) -
+                         exp_thickness_eigval_plus_secant -
                      Cminus.value);
 
                 Cminus.deriv.setZero();
             } else {
                 Cminus.deriv.noalias() =
-                    (1 - exp(-thickness.value * average_secant.value) *
-                             exp(-thickness.value * eigval.value(i))) /
+                    (1 - exp_thickness_secant * exp_thickness_eigval) /
                     (average_secant.value + eigval.value(i)) *
                     transmission.deriv;
                 Cminus.deriv.noalias() +=
                     average_secant.deriv /
                     (average_secant.value + eigval.value(i)) *
                     (transmission.value * thickness.value *
-                         exp(-thickness.value *
-                             (average_secant.value + eigval.value(i))) -
+                         exp_thickness_eigval_plus_secant -
                      Cminus.value);
             }
 
@@ -1215,13 +1193,11 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreen(
                     eigval.deriv(k, i) /
                     (average_secant.value + eigval.value(i)) *
                     (transmission.value * thickness.value *
-                         exp(-thickness.value *
-                             (average_secant.value + eigval.value(i))) -
+                         exp_thickness_eigval_plus_secant -
                      Cminus.value);
                 Cminus.deriv(k + layerStart) +=
                     thickness.deriv(k) * transmission.value *
-                    exp(-1 * thickness.value *
-                        (average_secant.value + eigval.value(i)));
+                    exp_thickness_eigval_plus_secant;
             }
         } else {
             // Second order taylor expansion of CMinus
@@ -1406,6 +1382,8 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreenThermal(
     auto& Cplus = m_cache.p_Cplus_thermal[p];
     auto& Cminus = m_cache.p_Cminus_thermal[p];
 
+    const double exp_thickness_b1 = exp(-thickness.value * b1.value);
+
     // For each homogeneous solution, add it's contribution in
     for (SolutionIndex i = 0; i < N * NSTOKES; ++i) {
         uint h_start = i * N * NSTOKES;
@@ -1473,64 +1451,55 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreenThermal(
         Cplus.value = 0.0;
         Cminus.value = 0.0;
         const auto& eigval = solution.value.dual_eigval();
+        const double exp_thickness_eigval =
+            exp(-thickness.value * eigval.value(i));
         // If b1 is close to eigval then we evaluate Cplus or Cminus
         // with a taylor series expansion instead
         if (abs(b1.value - eigval.value(i)) > SKTRAN_DO_GREENS_EPS) {
-            Cplus.value = b0.value *
-                          (exp(-thickness.value * eigval.value(i)) -
-                           exp(-thickness.value * b1.value)) /
+            Cplus.value = b0.value * (exp_thickness_eigval - exp_thickness_b1) /
                           (b1.value - eigval.value(i));
 
-            Cplus.deriv.noalias() = (exp(-thickness.value * eigval.value(i)) -
-                                     exp(-thickness.value * b1.value)) /
+            Cplus.deriv.noalias() = (exp_thickness_eigval - exp_thickness_b1) /
                                     (b1.value - eigval.value(i)) * b0.deriv;
             Cplus.deriv.noalias() +=
                 b1.deriv *
-                (b0.value * thickness.value *
-                     exp(-1.0 * thickness.value * b1.value) -
-                 Cplus.value) /
+                (b0.value * thickness.value * exp_thickness_b1 - Cplus.value) /
                 (b1.value - eigval.value(i));
 
             for (uint k = 0; k < numLayerDeriv; ++k) {
-                Cplus.deriv(k) +=
-                    eigval.deriv(k, i) / (b1.value - eigval.value(i)) *
-                    (Cplus.value -
-                     b0.value * thickness.value *
-                         exp(-1.0 * thickness.value * eigval.value(i)));
-                Cplus.deriv(k) -=
-                    thickness.deriv(k) * b0.value /
-                    (b1.value - eigval.value(i)) *
-                    (eigval.value(i) *
-                         exp(-1.0 * thickness.value * eigval.value(i)) -
-                     b1.value * exp(-1.0 * thickness.value * b1.value));
+                Cplus.deriv(k) += eigval.deriv(k, i) /
+                                  (b1.value - eigval.value(i)) *
+                                  (Cplus.value - b0.value * thickness.value *
+                                                     exp_thickness_eigval);
+                Cplus.deriv(k) -= thickness.deriv(k) * b0.value /
+                                  (b1.value - eigval.value(i)) *
+                                  (eigval.value(i) * exp_thickness_eigval -
+                                   b1.value * exp_thickness_b1);
             }
         } else {
             // Second order taylor expansion of Cplus
             Cplus.value =
-                b0.value * exp(-1.0 * thickness.value * eigval.value(i)) *
-                thickness.value *
+                b0.value * exp_thickness_eigval * thickness.value *
                 (1 - thickness.value / 2 * (b1.value - eigval.value(i)));
 
             Cplus.deriv.noalias() =
-                exp(-1.0 * thickness.value * eigval.value(i)) *
-                thickness.value *
+                exp_thickness_eigval * thickness.value *
                 (1 - thickness.value / 2 * (b1.value - eigval.value(i))) *
                 b0.deriv;
             ;
-            Cplus.deriv.noalias() +=
-                -1.0 * b1.deriv * thickness.value / 2.0 * thickness.value *
-                b0.value * exp(-1.0 * thickness.value * eigval.value(i));
+            Cplus.deriv.noalias() += -1.0 * b1.deriv * thickness.value / 2.0 *
+                                     thickness.value * b0.value *
+                                     exp_thickness_eigval;
 
             for (uint k = 0; k < numLayerDeriv; ++k) {
                 Cplus.deriv(k) +=
                     eigval.deriv(k, i) * Cplus.value * -1.0 * thickness.value;
                 Cplus.deriv(k) += eigval.deriv(k, i) * thickness.value / 2.0 *
                                   thickness.value * b0.value *
-                                  exp(-1.0 * thickness.value * eigval.value(i));
+                                  exp_thickness_eigval;
 
                 Cplus.deriv(k) +=
-                    thickness.deriv(k) * b0.value *
-                    exp(-1.0 * thickness.value * eigval.value(i)) *
+                    thickness.deriv(k) * b0.value * exp_thickness_eigval *
                     (1 - thickness.value * (b1.value - eigval.value(i)));
                 Cplus.deriv(k) +=
                     -1.0 * eigval.value(i) * Cplus.value * thickness.deriv(k);
@@ -1539,30 +1508,28 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::solveParticularGreenThermal(
 
         if (abs(b1.value + eigval.value(i)) > SKTRAN_DO_GREENS_EPS) {
 
+            const double exp_thickness_b1_plus_eigval =
+                exp(-thickness.value * (b1.value + eigval.value(i)));
+
             Cminus.value = b0.value *
-                           (1 - exp(-thickness.value * b1.value) *
-                                    exp(-thickness.value * eigval.value(i))) /
+                           (1 - exp_thickness_b1 * exp_thickness_eigval) /
                            (b1.value + eigval.value(i));
 
             Cminus.deriv.noalias() =
-                (1 - exp(-thickness.value * b1.value) *
-                         exp(-thickness.value * eigval.value(i))) /
+                (1 - exp_thickness_b1 * exp_thickness_eigval) /
                 (b1.value + eigval.value(i)) * b0.deriv;
             Cminus.deriv.noalias() +=
                 b1.deriv / (b1.value + eigval.value(i)) *
-                (b0.value * thickness.value *
-                     exp(-thickness.value * (b1.value + eigval.value(i))) -
+                (b0.value * thickness.value * exp_thickness_b1_plus_eigval -
                  Cminus.value);
 
             for (uint k = 0; k < numLayerDeriv; ++k) {
                 Cminus.deriv(k) +=
                     eigval.deriv(k, i) / (b1.value + eigval.value(i)) *
-                    (b0.value * thickness.value *
-                         exp(-thickness.value * (b1.value + eigval.value(i))) -
+                    (b0.value * thickness.value * exp_thickness_b1_plus_eigval -
                      Cminus.value);
-                Cminus.deriv(k) +=
-                    thickness.deriv(k) * b0.value *
-                    exp(-1 * thickness.value * (b1.value + eigval.value(i)));
+                Cminus.deriv(k) += thickness.deriv(k) * b0.value *
+                                   exp_thickness_b1_plus_eigval;
             }
         } else {
             // Second order taylor expansion of CMinus
