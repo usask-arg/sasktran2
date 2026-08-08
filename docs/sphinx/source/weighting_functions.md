@@ -114,6 +114,12 @@ propagation for every call. Iterative solvers may therefore prefer a native
 product backend, or explicitly materialize the Jacobian once when only a
 streaming backend is available.
 
+Native JVP and VJP execution currently uses the C++ product driver. It uses
+OpenMP when that support is available, even when `ThreadingLib.Rayon` is
+selected; builds without OpenMP execute native products serially. Rayon-native
+product scheduling can be added independently without changing the
+`Linearization` interface.
+
 Accessing `linearization.jacobian` materializes and caches one labeled block per
 semantic parameter (for example, `ozone_vmr` rather than `wf_ozone_vmr`). The
 `tangent_template` property describes the shape, dimensions, and coordinates of

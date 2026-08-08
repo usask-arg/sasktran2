@@ -50,6 +50,18 @@ namespace sasktran2 {
 
         using RowMajorMatrix = Eigen::Matrix<double, Eigen::Dynamic,
                                              Eigen::Dynamic, Eigen::RowMajor>;
+        using StokesBlock =
+            Eigen::Matrix<double, NSTOKES, Eigen::Dynamic, Eigen::RowMajor>;
+        struct VJPThreadStorage {
+            sasktran2::WavelengthBlockDual<NSTOKES> state;
+            StokesBlock cotangent;
+            Eigen::RowVectorXd od_cotangent;
+            RowMajorMatrix values_before_end;
+            RowMajorMatrix values_before_layer;
+            RowMajorMatrix values_before_interior;
+            RowMajorMatrix attenuation;
+            RowMajorMatrix values_before_start;
+        };
         std::vector<RowMajorMatrix>
             m_shell_od; /**< Optical depth for every ray, layer, and
                            wavelength. */
@@ -58,6 +70,7 @@ namespace sasktran2 {
                                   when the configured block capacity is one. */
         int m_wavelength_block_capacity = 1;
         mutable std::vector<Eigen::RowVectorXd> m_thread_attenuation{1};
+        mutable std::vector<VJPThreadStorage> m_vjp_thread_storage;
         const std::vector<sasktran2::raytracing::TracedRay>* m_traced_rays =
             nullptr; /**< Reference to the rays we are integrating */
 
@@ -85,6 +98,12 @@ namespace sasktran2 {
             const ShellODMatrix& shell_od,
             const sasktran2::WavelengthBlock<N>& batch, int rayidx,
             int wavel_threadidx, int threadidx) const;
+
+        /** Validates source/block integration requirements and returns true
+         * when at least one source requires line-of-sight layer marching. */
+        bool validate_sources_for_block(
+            const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+            int block_size) const;
 
       public:
         /**
@@ -133,6 +152,34 @@ namespace sasktran2 {
             }
         }
 
+        /** Allocates the reverse-mode tape once per engine thread. */
+        void initialize_vjp_storage(int num_threads, int num_sources) {
+            std::size_t max_layers = 0;
+            if (m_traced_rays != nullptr) {
+                for (const auto& ray : *m_traced_rays) {
+                    max_layers = std::max(max_layers, ray.layers.size());
+                }
+            }
+            m_vjp_thread_storage.resize(num_threads);
+            for (auto& storage : m_vjp_thread_storage) {
+                storage.state.resize(m_wavelength_block_capacity, 0, true);
+                storage.cotangent.resize(NSTOKES, m_wavelength_block_capacity);
+                storage.od_cotangent.resize(m_wavelength_block_capacity);
+                storage.values_before_end.resize(num_sources * NSTOKES,
+                                                 m_wavelength_block_capacity);
+                storage.values_before_layer.resize(
+                    static_cast<int>(max_layers) * NSTOKES,
+                    m_wavelength_block_capacity);
+                storage.values_before_interior.resize(
+                    static_cast<int>(max_layers) * num_sources * NSTOKES,
+                    m_wavelength_block_capacity);
+                storage.attenuation.resize(static_cast<int>(max_layers),
+                                           m_wavelength_block_capacity);
+                storage.values_before_start.resize(num_sources * NSTOKES,
+                                                   m_wavelength_block_capacity);
+            }
+        }
+
         /** Precomputes the cumulative derivative columns that can be nonzero
          * before each layer attenuation. This is enabled only when every
          * active source can report its derivative sparsity exactly. */
@@ -170,6 +217,15 @@ namespace sasktran2 {
             int wavelength, int rayidx, int wavel_threadidx, int threadidx,
             const Eigen::Vector<double, NSTOKES>& cotangent,
             Eigen::Ref<Eigen::VectorXd> native_gradient) const;
+
+        /** Integrates a wavelength block and adds its reverse-mode native
+         * gradients to `native_gradient`. */
+        void integrate_vjp_block(
+            StokesBlock& radiance,
+            const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+            const sasktran2::WavelengthBlock<>& block, int rayidx,
+            int wavel_threadidx, int threadidx, const StokesBlock& cotangent,
+            Eigen::MatrixXd& native_gradient) const;
 
         /** Integrates the source terms and stores the result in radiance
          *

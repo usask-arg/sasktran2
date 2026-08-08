@@ -340,21 +340,30 @@ template <int NSTOKES> class SourceTermInterface {
             "Native start-of-ray source JVP is not implemented");
     }
 
+    /** Pulls a cotangent through a source contribution evaluated at the end of
+     * the ray. `value_before` is the radiance immediately before this source
+     * was applied. Implementations add parameter gradients to
+     * `native_gradient` and replace `cotangent` with the cotangent of
+     * `value_before`. */
     virtual void end_of_ray_source_vjp(int, int, int, int,
                                        const Eigen::Vector<double, NSTOKES>&,
+                                       Eigen::Vector<double, NSTOKES>&,
                                        Eigen::Ref<Eigen::VectorXd>) const {
         throw std::logic_error("Native source VJP is not implemented");
     }
 
-    virtual void
-    integrated_source_vjp(int, int, int, int, int,
-                          const sasktran2::raytracing::TracedLayer&,
-                          const sasktran2::raytracing::GridWeightStencilView&,
-                          const sasktran2::raytracing::GridWeightStencilView&,
-                          const sasktran2::WavelengthBlockODView&,
-                          const Eigen::Vector<double, NSTOKES>&,
-                          Eigen::Ref<Eigen::Vector<double, NSTOKES>>,
-                          Eigen::Ref<Eigen::VectorXd>) const {
+    /** Pulls a cotangent through a source contribution evaluated within a
+     * traced layer. `value_before` is the attenuated radiance immediately
+     * before this source was applied. Implementations add parameter gradients
+     * to `native_gradient` and replace `cotangent` with the cotangent of
+     * `value_before`. */
+    virtual void integrated_source_vjp(
+        int, int, int, int, int, const sasktran2::raytracing::TracedLayer&,
+        const sasktran2::raytracing::GridWeightStencilView&,
+        const sasktran2::raytracing::GridWeightStencilView&,
+        const sasktran2::WavelengthBlockODView&,
+        const Eigen::Vector<double, NSTOKES>&, Eigen::Vector<double, NSTOKES>&,
+        Eigen::Ref<Eigen::VectorXd>) const {
         throw std::logic_error(
             "Native integrated source VJP is not implemented");
     }

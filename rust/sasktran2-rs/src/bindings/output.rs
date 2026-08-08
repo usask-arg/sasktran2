@@ -12,21 +12,41 @@ pub struct JvpOutput {
 
 impl JvpOutput {
     pub fn new(num_wavel: usize, num_los: usize, num_stokes: usize) -> Self {
+        Self::try_new(num_wavel, num_los, num_stokes).expect("Failed to create native JVP output")
+    }
+
+    pub fn try_new(num_wavel: usize, num_los: usize, num_stokes: usize) -> Result<Self, String> {
+        let num_radiance = num_wavel
+            .checked_mul(num_los)
+            .ok_or_else(|| "JVP output dimensions overflow usize".to_string())?;
+        let num_values = num_radiance
+            .checked_mul(num_stokes)
+            .ok_or_else(|| "JVP output dimensions overflow usize".to_string())?;
+        i32::try_from(num_values)
+            .map_err(|_| "JVP output size exceeds the C API limit".to_string())?;
+        let num_radiance_c = i32::try_from(num_radiance)
+            .map_err(|_| "JVP output dimensions exceed the C API limit".to_string())?;
+        let num_stokes_c = i32::try_from(num_stokes)
+            .map_err(|_| "JVP Stokes dimension exceeds the C API limit".to_string())?;
+
         let mut radiance = Array3::<f64>::zeros((num_wavel, num_los, num_stokes));
         let mut jvp = Array3::<f64>::zeros((num_wavel, num_los, num_stokes));
         let output = unsafe {
             ffi::sk_output_jvp_create(
                 radiance.as_mut_ptr(),
                 jvp.as_mut_ptr(),
-                (num_wavel * num_los) as i32,
-                num_stokes as i32,
+                num_radiance_c,
+                num_stokes_c,
             )
         };
-        Self {
+        if output.is_null() {
+            return Err("Failed to create native JVP output".to_string());
+        }
+        Ok(Self {
             output,
             radiance,
             jvp,
-        }
+        })
     }
 
     pub fn with_derivative_tangent(
@@ -35,12 +55,17 @@ impl JvpOutput {
         tangent: &Array1<f64>,
     ) -> Result<(), String> {
         let name = CString::new(name).map_err(|err| err.to_string())?;
+        let nparam = i32::try_from(tangent.len())
+            .map_err(|_| "JVP tangent size exceeds the C API limit".to_string())?;
+        // The C API accepts a pointer to a dense vector and has no stride
+        // argument. Keep the temporary alive until C++ has copied the tangent.
+        let tangent = tangent.as_standard_layout();
         let result = unsafe {
             ffi::sk_output_jvp_assign_derivative_tangent(
                 self.output,
                 name.as_ptr(),
                 tangent.as_ptr(),
-                tangent.len() as i32,
+                nparam,
             )
         };
         if result == 0 {
@@ -56,12 +81,15 @@ impl JvpOutput {
         tangent: &Array1<f64>,
     ) -> Result<(), String> {
         let name = CString::new(name).map_err(|err| err.to_string())?;
+        let nparam = i32::try_from(tangent.len())
+            .map_err(|_| "Surface JVP tangent size exceeds the C API limit".to_string())?;
+        let tangent = tangent.as_standard_layout();
         let result = unsafe {
             ffi::sk_output_jvp_assign_surface_tangent(
                 self.output,
                 name.as_ptr(),
                 tangent.as_ptr(),
-                tangent.len() as i32,
+                nparam,
             )
         };
         if result == 0 {
@@ -88,29 +116,52 @@ pub struct VjpOutput {
 
 impl VjpOutput {
     pub fn new(cotangent: &Array3<f64>) -> Self {
-        // The C++ output holds a non-owning map for the duration of its
-        // lifetime, so keep an owned cotangent alongside it.
-        let cotangent = cotangent.to_owned();
+        Self::try_new(cotangent).expect("Failed to create native VJP output")
+    }
+
+    pub fn try_new(cotangent: &Array3<f64>) -> Result<Self, String> {
         let (num_wavel, num_los, num_stokes) = cotangent.dim();
+        let num_radiance = num_wavel
+            .checked_mul(num_los)
+            .ok_or_else(|| "VJP output dimensions overflow usize".to_string())?;
+        let num_values = num_radiance
+            .checked_mul(num_stokes)
+            .ok_or_else(|| "VJP output dimensions overflow usize".to_string())?;
+        i32::try_from(num_values)
+            .map_err(|_| "VJP output size exceeds the C API limit".to_string())?;
+        let num_radiance_c = i32::try_from(num_radiance)
+            .map_err(|_| "VJP output dimensions exceed the C API limit".to_string())?;
+        let num_stokes_c = i32::try_from(num_stokes)
+            .map_err(|_| "VJP Stokes dimension exceeds the C API limit".to_string())?;
+
+        // The C++ output holds a non-owning map for the duration of its
+        // lifetime and assumes standard ndarray order, so normalize the
+        // layout and keep the owned cotangent alongside it.
+        let cotangent = cotangent.as_standard_layout().into_owned();
         let mut radiance = Array3::<f64>::zeros(cotangent.raw_dim());
         let output = unsafe {
             ffi::sk_output_vjp_create(
                 radiance.as_mut_ptr(),
                 cotangent.as_ptr(),
-                (num_wavel * num_los) as i32,
-                num_stokes as i32,
+                num_radiance_c,
+                num_stokes_c,
             )
         };
-        Self {
+        if output.is_null() {
+            return Err("Failed to create native VJP output".to_string());
+        }
+        Ok(Self {
             output,
             radiance,
             derivative_gradients: HashMap::new(),
             surface_gradients: HashMap::new(),
             _cotangent: cotangent,
-        }
+        })
     }
 
     pub fn with_derivative_gradient(&mut self, name: &str, size: usize) -> Result<(), String> {
+        let size_c = i32::try_from(size)
+            .map_err(|_| "VJP gradient size exceeds the C API limit".to_string())?;
         self.derivative_gradients
             .insert(name.to_string(), Array1::zeros(size));
         let gradient = self.derivative_gradients.get_mut(name).unwrap();
@@ -120,7 +171,7 @@ impl VjpOutput {
                 self.output,
                 name_c.as_ptr(),
                 gradient.as_mut_ptr(),
-                size as i32,
+                size_c,
             )
         };
         if result == 0 {
@@ -131,6 +182,8 @@ impl VjpOutput {
     }
 
     pub fn with_surface_gradient(&mut self, name: &str, size: usize) -> Result<(), String> {
+        let size_c = i32::try_from(size)
+            .map_err(|_| "Surface VJP gradient size exceeds the C API limit".to_string())?;
         self.surface_gradients
             .insert(name.to_string(), Array1::zeros(size));
         let gradient = self.surface_gradients.get_mut(name).unwrap();
@@ -140,7 +193,7 @@ impl VjpOutput {
                 self.output,
                 name_c.as_ptr(),
                 gradient.as_mut_ptr(),
-                size as i32,
+                size_c,
             )
         };
         if result == 0 {
@@ -489,5 +542,87 @@ mod tests {
     fn test_output_dimensions() {
         let output = Output::new(5, 8, 0, 2, 2);
         assert_eq!(output.radiance.shape(), &[5, 8, 2]);
+    }
+
+    #[test]
+    fn native_product_output_constructors_reject_invalid_descriptors() {
+        let mut radiance = [0.0];
+        let mut product = [0.0];
+
+        unsafe {
+            assert!(
+                ffi::sk_output_jvp_create(std::ptr::null_mut(), product.as_mut_ptr(), 1, 1,)
+                    .is_null()
+            );
+            assert!(
+                ffi::sk_output_jvp_create(radiance.as_mut_ptr(), product.as_mut_ptr(), -1, 1,)
+                    .is_null()
+            );
+            assert!(
+                ffi::sk_output_jvp_create(radiance.as_mut_ptr(), product.as_mut_ptr(), 1, 2,)
+                    .is_null()
+            );
+            assert!(
+                ffi::sk_output_vjp_create(radiance.as_mut_ptr(), product.as_ptr(), i32::MAX, 3,)
+                    .is_null()
+            );
+        }
+
+        assert!(JvpOutput::try_new(1, 1, 2).is_err());
+        assert!(JvpOutput::try_new(i32::MAX as usize, 1, 3).is_err());
+        assert!(VjpOutput::try_new(&Array3::zeros((1, 1, 2))).is_err());
+    }
+
+    #[test]
+    fn native_product_registration_rejects_null_inputs() {
+        let mut radiance = [0.0];
+        let mut product = [0.0];
+        let name = CString::new("parameter").unwrap();
+
+        unsafe {
+            let jvp = ffi::sk_output_jvp_create(radiance.as_mut_ptr(), product.as_mut_ptr(), 1, 1);
+            assert!(!jvp.is_null());
+            assert_eq!(
+                ffi::sk_output_jvp_assign_derivative_tangent(
+                    jvp,
+                    std::ptr::null(),
+                    product.as_ptr(),
+                    1,
+                ),
+                -1
+            );
+            assert_eq!(
+                ffi::sk_output_jvp_assign_derivative_tangent(
+                    jvp,
+                    name.as_ptr(),
+                    std::ptr::null(),
+                    1,
+                ),
+                -1
+            );
+            ffi::sk_output_jvp_destroy(jvp);
+
+            let vjp = ffi::sk_output_vjp_create(radiance.as_mut_ptr(), product.as_ptr(), 1, 1);
+            assert!(!vjp.is_null());
+            assert_eq!(
+                ffi::sk_output_vjp_assign_derivative_gradient(
+                    vjp,
+                    std::ptr::null(),
+                    product.as_mut_ptr(),
+                    1,
+                ),
+                -1
+            );
+            assert_eq!(
+                ffi::sk_output_vjp_assign_derivative_gradient(
+                    vjp,
+                    name.as_ptr(),
+                    std::ptr::null_mut(),
+                    1,
+                ),
+                -1
+            );
+            ffi::sk_output_vjp_destroy(vjp);
+        }
     }
 }

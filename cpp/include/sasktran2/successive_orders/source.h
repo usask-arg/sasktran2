@@ -143,12 +143,13 @@ namespace sasktran2::successive_orders {
                 entrance_weights,
             const sasktran2::raytracing::GridWeightStencilView& exit_weights,
             const sasktran2::WavelengthBlockODView& shell_od,
-            const Eigen::Vector<double, NSTOKES>& cotangent,
-            Eigen::Ref<Eigen::Vector<double, NSTOKES>> source_value,
+            const Eigen::Vector<double, NSTOKES>& value_before,
+            Eigen::Vector<double, NSTOKES>& cotangent,
             Eigen::Ref<Eigen::VectorXd> native_gradient) const override;
         void end_of_ray_source_vjp(
             int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-            const Eigen::Vector<double, NSTOKES>& cotangent,
+            const Eigen::Vector<double, NSTOKES>& value_before,
+            Eigen::Vector<double, NSTOKES>& cotangent,
             Eigen::Ref<Eigen::VectorXd> native_gradient) const override;
         void start_of_ray_source_vjp(
             int wavelidx, int losidx, int wavel_threadidx, int threadidx,

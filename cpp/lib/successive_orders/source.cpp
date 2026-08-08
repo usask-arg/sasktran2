@@ -2409,10 +2409,26 @@ namespace sasktran2::successive_orders {
             for (int stokes = 0; stokes < NSTOKES; ++stokes) {
                 cotangent(stokes) = packed_gradient[rayidx * NSTOKES + stokes];
             }
-            for (const auto* source : m_initial_sources) {
-                source->end_of_ray_source_vjp(
+            const sasktran2::WavelengthBlock<> block{wavelidx, 1};
+            sasktran2::WavelengthBlockDual<NSTOKES> state;
+            state.resize(1, 0, true);
+            state.set_zero(1);
+            std::vector<Eigen::Vector<double, NSTOKES>> values_before(
+                m_initial_sources.size());
+            for (std::size_t source_index = 0;
+                 source_index < m_initial_sources.size(); ++source_index) {
+                values_before[source_index] = state.value.col(0);
+                m_initial_sources[source_index]->end_of_ray_source(
+                    block, rayidx, threadidx, source_threadidx + threadidx,
+                    state);
+            }
+            for (int source_index =
+                     static_cast<int>(m_initial_sources.size()) - 1;
+                 source_index >= 0; --source_index) {
+                m_initial_sources[source_index]->end_of_ray_source_vjp(
                     wavelidx, rayidx, threadidx, source_threadidx + threadidx,
-                    cotangent, thread_gradients[source_threadidx]);
+                    values_before[source_index], cotangent,
+                    thread_gradients[source_threadidx]);
             }
         }
         for (const auto& gradient : thread_gradients) {
@@ -4112,8 +4128,8 @@ namespace sasktran2::successive_orders {
         const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
         const sasktran2::raytracing::GridWeightStencilView& exit_weights,
         const sasktran2::WavelengthBlockODView& shell_od,
-        const Eigen::Vector<double, NSTOKES>& cotangent,
-        Eigen::Ref<Eigen::Vector<double, NSTOKES>> source_value,
+        const Eigen::Vector<double, NSTOKES>& value_before,
+        Eigen::Vector<double, NSTOKES>& cotangent,
         Eigen::Ref<Eigen::VectorXd> native_gradient) const {
         (void)wavelidx;
         (void)losidx;
@@ -4124,8 +4140,8 @@ namespace sasktran2::successive_orders {
         (void)entrance_weights;
         (void)exit_weights;
         (void)shell_od;
+        (void)value_before;
         (void)cotangent;
-        (void)source_value;
         (void)native_gradient;
         throw std::logic_error(
             "Rust successive-orders LOS VJP must use the whole-ray callback");
@@ -4134,12 +4150,14 @@ namespace sasktran2::successive_orders {
     template <int NSTOKES>
     void SourceImpl<NSTOKES>::end_of_ray_source_vjp(
         int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-        const Eigen::Vector<double, NSTOKES>& cotangent,
+        const Eigen::Vector<double, NSTOKES>& value_before,
+        Eigen::Vector<double, NSTOKES>& cotangent,
         Eigen::Ref<Eigen::VectorXd> native_gradient) const {
         (void)wavelidx;
         (void)losidx;
         (void)wavel_threadidx;
         (void)threadidx;
+        (void)value_before;
         (void)cotangent;
         (void)native_gradient;
     }

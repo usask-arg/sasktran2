@@ -267,22 +267,24 @@ namespace sasktran2::successive_orders {
         const sasktran2::raytracing::GridWeightStencilView& entrance_weights,
         const sasktran2::raytracing::GridWeightStencilView& exit_weights,
         const sasktran2::WavelengthBlockODView& shell_od,
-        const Eigen::Vector<double, NSTOKES>& cotangent,
-        Eigen::Ref<Eigen::Vector<double, NSTOKES>> source_value,
+        const Eigen::Vector<double, NSTOKES>& value_before,
+        Eigen::Vector<double, NSTOKES>& cotangent,
         Eigen::Ref<Eigen::VectorXd> native_gradient) const {
         m_impl->integrated_source_vjp(wavelidx, losidx, layeridx,
                                       wavel_threadidx, threadidx, layer,
                                       entrance_weights, exit_weights, shell_od,
-                                      cotangent, source_value, native_gradient);
+                                      value_before, cotangent, native_gradient);
     }
 
     template <int NSTOKES>
     void RustSource<NSTOKES>::end_of_ray_source_vjp(
         int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-        const Eigen::Vector<double, NSTOKES>& cotangent,
+        const Eigen::Vector<double, NSTOKES>& value_before,
+        Eigen::Vector<double, NSTOKES>& cotangent,
         Eigen::Ref<Eigen::VectorXd> native_gradient) const {
         m_impl->end_of_ray_source_vjp(wavelidx, losidx, wavel_threadidx,
-                                      threadidx, cotangent, native_gradient);
+                                      threadidx, value_before, cotangent,
+                                      native_gradient);
     }
 
     template <int NSTOKES>

@@ -206,10 +206,178 @@ TEST_CASE("SourceIntegrator reports native linearization capabilities",
         sasktran2::LinearizationMode::Jacobian, unsupported_sources));
 }
 
-TEST_CASE("SourceIntegrator differentiates start-of-ray source transforms",
+TEST_CASE("SourceIntegrator reverses every source transform",
           "[sourceintegrator][linearization]") {
     class NativeTransformSource : public InteriorTestSource {
+      private:
+        int m_derivative_start;
+        double m_end_factor;
+        double m_interior_factor;
+        double m_start_factor;
+        double m_end_offset;
+        double m_interior_offset;
+        double m_start_offset;
+
       public:
+        NativeTransformSource(int derivative_start, double end_factor,
+                              double interior_factor, double start_factor,
+                              double end_offset, double interior_offset,
+                              double start_offset)
+            : m_derivative_start(derivative_start), m_end_factor(end_factor),
+              m_interior_factor(interior_factor), m_start_factor(start_factor),
+              m_end_offset(end_offset), m_interior_offset(interior_offset),
+              m_start_offset(start_offset) {}
+
+        bool
+        supports_linearization(sasktran2::LinearizationMode) const override {
+            return true;
+        }
+
+        bool supports_geometry_dimension(int) const override { return true; }
+
+        void end_of_ray_source(
+            const sasktran2::WavelengthBlock<>&, int, int, int,
+            sasktran2::WavelengthBlockDual<1>& source) const override {
+            source.value(0, 0) =
+                m_end_factor * source.value(0, 0) + m_end_offset;
+        }
+
+        void end_of_ray_source_jvp(
+            int, int, int, int,
+            Eigen::Ref<const Eigen::VectorXd> native_tangent,
+            sasktran2::RadianceJVP<1>& source) const override {
+            source.value[0] = m_end_factor * source.value[0] + m_end_offset;
+            source.jvp[0] = m_end_factor * source.jvp[0] +
+                            native_tangent[m_derivative_start];
+        }
+
+        void end_of_ray_source_vjp(
+            int, int, int, int, const Eigen::Vector<double, 1>&,
+            Eigen::Vector<double, 1>& cotangent,
+            Eigen::Ref<Eigen::VectorXd> native_gradient) const override {
+            native_gradient[m_derivative_start] += cotangent[0];
+            cotangent *= m_end_factor;
+        }
+
+        void
+        integrated_source(const sasktran2::WavelengthBlock<>&, int, int, int,
+                          int, const sasktran2::raytracing::TracedLayer&,
+                          const sasktran2::raytracing::GridWeightStencilView&,
+                          const sasktran2::raytracing::GridWeightStencilView&,
+                          const sasktran2::WavelengthBlockODView&,
+                          sasktran2::WavelengthBlockDual<1>& source,
+                          IntegrationDirection) const override {
+            source.value(0, 0) =
+                m_interior_factor * source.value(0, 0) + m_interior_offset;
+        }
+
+        void integrated_source_jvp(
+            int, int, int, int, int, const sasktran2::raytracing::TracedLayer&,
+            const sasktran2::raytracing::GridWeightStencilView&,
+            const sasktran2::raytracing::GridWeightStencilView&,
+            const sasktran2::WavelengthBlockODView&,
+            Eigen::Ref<const Eigen::VectorXd> native_tangent,
+            sasktran2::RadianceJVP<1>& source) const override {
+            const double value_before = source.value[0];
+            source.value[0] =
+                m_interior_factor * value_before + m_interior_offset;
+            source.jvp[0] =
+                m_interior_factor * source.jvp[0] +
+                native_tangent[m_derivative_start + 1] * value_before;
+        }
+
+        void integrated_source_vjp(
+            int, int, int, int, int, const sasktran2::raytracing::TracedLayer&,
+            const sasktran2::raytracing::GridWeightStencilView&,
+            const sasktran2::raytracing::GridWeightStencilView&,
+            const sasktran2::WavelengthBlockODView&,
+            const Eigen::Vector<double, 1>& value_before,
+            Eigen::Vector<double, 1>& cotangent,
+            Eigen::Ref<Eigen::VectorXd> native_gradient) const override {
+            native_gradient[m_derivative_start + 1] +=
+                cotangent[0] * value_before[0];
+            cotangent *= m_interior_factor;
+        }
+
+        void start_of_ray_source(
+            const sasktran2::WavelengthBlock<>&, int, int, int,
+            sasktran2::WavelengthBlockDual<1>& source) const override {
+            source.value(0, 0) =
+                m_start_factor * source.value(0, 0) + m_start_offset;
+        }
+
+        void start_of_ray_source_jvp(
+            int, int, int, int,
+            Eigen::Ref<const Eigen::VectorXd> native_tangent,
+            sasktran2::RadianceJVP<1>& source) const override {
+            const double value_before = source.value[0];
+            source.value[0] = m_start_factor * value_before + m_start_offset;
+            source.jvp[0] =
+                m_start_factor * source.jvp[0] +
+                native_tangent[m_derivative_start + 2] * value_before;
+        }
+
+        void start_of_ray_source_vjp(
+            int, int, int, int, const Eigen::Vector<double, 1>& value_before,
+            Eigen::Vector<double, 1>& cotangent,
+            Eigen::Ref<Eigen::VectorXd> native_gradient) const override {
+            native_gradient[m_derivative_start + 2] +=
+                cotangent[0] * value_before[0];
+            cotangent *= m_start_factor;
+        }
+    };
+
+    const auto geometry = geometry2d();
+    sasktran2::Config config;
+    sasktran2::atmosphere::Atmosphere<1> atmosphere(1, geometry, config, true);
+    atmosphere.storage().total_extinction.setZero();
+    std::vector<sasktran2::raytracing::TracedRay> rays(1);
+    add_layer(rays[0], geometry, 0, 0, {1.0, 1.0, 1.0, 1.0});
+    sasktran2::SourceIntegrator<1> integrator(true);
+    integrator.initialize_geometry(rays, geometry);
+    integrator.initialize_thread_storage(1, 1);
+    integrator.initialize_vjp_storage(1, 2);
+    integrator.initialize_atmosphere(atmosphere);
+
+    const int source_a_derivative = atmosphere.ssa_deriv_start_index();
+    const int source_b_derivative = source_a_derivative + 3;
+    NativeTransformSource source_a(source_a_derivative, 2.0, 3.0, 5.0, 2.0, 4.0,
+                                   6.0);
+    NativeTransformSource source_b(source_b_derivative, 7.0, 11.0, 13.0, 17.0,
+                                   19.0, 23.0);
+    std::vector<SourceTermInterface<1>*> sources = {&source_a, &source_b};
+    Eigen::VectorXd tangent = Eigen::VectorXd::Zero(atmosphere.num_deriv());
+    tangent.segment<3>(source_a_derivative) << 2.0, 3.0, 5.0;
+    tangent.segment<3>(source_b_derivative) << 7.0, 11.0, 13.0;
+    sasktran2::RadianceJVP<1> jvp;
+    integrator.integrate_jvp(jvp, sources, 0, 0, 0, 0, tangent);
+    REQUIRE(jvp.value[0] == Catch::Approx(70691.0));
+    REQUIRE(jvp.jvp[0] == Catch::Approx(322153.0));
+
+    Eigen::VectorXd gradient = Eigen::VectorXd::Zero(atmosphere.num_deriv());
+    Eigen::Vector<double, 1> value;
+    integrator.integrate_vjp(value, sources, 0, 0, 0, 0,
+                             Eigen::Vector<double, 1>::Ones(), gradient);
+    REQUIRE(value[0] == Catch::Approx(70691.0));
+    REQUIRE(gradient[source_a_derivative] == Catch::Approx(15015.0));
+    REQUIRE(gradient[source_a_derivative + 1] == Catch::Approx(22165.0));
+    REQUIRE(gradient[source_a_derivative + 2] == Catch::Approx(14118.0));
+    REQUIRE(gradient[source_b_derivative] == Catch::Approx(2145.0));
+    REQUIRE(gradient[source_b_derivative + 1] == Catch::Approx(6305.0));
+    REQUIRE(gradient[source_b_derivative + 2] == Catch::Approx(5436.0));
+    REQUIRE(tangent.dot(gradient) == Catch::Approx(jvp.jvp[0]));
+}
+
+TEST_CASE("Native products skip LOS layers for direct sources",
+          "[sourceintegrator][linearization]") {
+    class NativeDirectSource : public InteriorTestSource {
+      private:
+        int m_derivative_start;
+
+      public:
+        explicit NativeDirectSource(int derivative_start)
+            : m_derivative_start(derivative_start) {}
+
         bool has_interior_source() const override { return false; }
         bool requires_integration() const override { return false; }
 
@@ -221,21 +389,23 @@ TEST_CASE("SourceIntegrator differentiates start-of-ray source transforms",
         void end_of_ray_source(
             const sasktran2::WavelengthBlock<>&, int, int, int,
             sasktran2::WavelengthBlockDual<1>& source) const override {
-            source.value(0, 0) += 2.0;
+            source.value(0, 0) = 2.0;
         }
 
         void end_of_ray_source_jvp(
             int, int, int, int,
             Eigen::Ref<const Eigen::VectorXd> native_tangent,
             sasktran2::RadianceJVP<1>& source) const override {
-            source.value[0] += 2.0;
-            source.jvp[0] += native_tangent[0];
+            source.value[0] = 2.0;
+            source.jvp[0] = native_tangent[m_derivative_start];
         }
 
         void end_of_ray_source_vjp(
-            int, int, int, int, const Eigen::Vector<double, 1>& cotangent,
+            int, int, int, int, const Eigen::Vector<double, 1>&,
+            Eigen::Vector<double, 1>& cotangent,
             Eigen::Ref<Eigen::VectorXd> native_gradient) const override {
-            native_gradient[0] += cotangent[0];
+            native_gradient[m_derivative_start] += cotangent[0];
+            cotangent.setZero();
         }
 
         void start_of_ray_source(
@@ -251,14 +421,16 @@ TEST_CASE("SourceIntegrator differentiates start-of-ray source transforms",
             const double value_before = source.value[0];
             source.value[0] = 3.0 * value_before + 4.0;
             source.jvp[0] =
-                3.0 * source.jvp[0] + native_tangent[1] * value_before;
+                3.0 * source.jvp[0] +
+                native_tangent[m_derivative_start + 1] * value_before;
         }
 
         void start_of_ray_source_vjp(
             int, int, int, int, const Eigen::Vector<double, 1>& value_before,
             Eigen::Vector<double, 1>& cotangent,
             Eigen::Ref<Eigen::VectorXd> native_gradient) const override {
-            native_gradient[1] += cotangent[0] * value_before[0];
+            native_gradient[m_derivative_start + 1] +=
+                cotangent[0] * value_before[0];
             cotangent *= 3.0;
         }
     };
@@ -266,13 +438,17 @@ TEST_CASE("SourceIntegrator differentiates start-of-ray source transforms",
     const auto geometry = geometry2d();
     sasktran2::Config config;
     sasktran2::atmosphere::Atmosphere<1> atmosphere(1, geometry, config, true);
+    atmosphere.storage().total_extinction.setConstant(0.25);
     std::vector<sasktran2::raytracing::TracedRay> rays(1);
+    add_layer(rays[0], geometry, 0, 0, {1.0, 1.0, 1.0, 1.0});
+
     sasktran2::SourceIntegrator<1> integrator(true);
     integrator.initialize_geometry(rays, geometry);
     integrator.initialize_thread_storage(1, 1);
+    integrator.initialize_vjp_storage(1, 1);
     integrator.initialize_atmosphere(atmosphere);
 
-    NativeTransformSource source;
+    NativeDirectSource source(0);
     std::vector<SourceTermInterface<1>*> sources = {&source};
     sasktran2::WavelengthBlockDual<1> block_value;
     block_value.resize(1, atmosphere.num_deriv(), true);
@@ -283,6 +459,7 @@ TEST_CASE("SourceIntegrator differentiates start-of-ray source transforms",
     Eigen::VectorXd tangent = Eigen::VectorXd::Zero(atmosphere.num_deriv());
     tangent[0] = 5.0;
     tangent[1] = 7.0;
+
     sasktran2::RadianceJVP<1> jvp;
     integrator.integrate_jvp(jvp, sources, 0, 0, 0, 0, tangent);
     REQUIRE(jvp.value[0] == Catch::Approx(10.0));
@@ -295,6 +472,7 @@ TEST_CASE("SourceIntegrator differentiates start-of-ray source transforms",
     REQUIRE(value[0] == Catch::Approx(10.0));
     REQUIRE(gradient[0] == Catch::Approx(3.0));
     REQUIRE(gradient[1] == Catch::Approx(2.0));
+    REQUIRE(tangent.dot(gradient) == Catch::Approx(jvp.jvp[0]));
 }
 
 TEST_CASE("SourceIntegrator applies 2D occultation transmission and native "

@@ -622,11 +622,21 @@ template <int NSTOKES>
 void Sasktran2<NSTOKES>::initialize_jvp(
     const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
     sasktran2::OutputJVP<NSTOKES>& output) const {
+#ifdef SKTRAN_OPENMP_SUPPORT
+    omp_set_num_threads(m_config.num_threads());
+    Eigen::setNbThreads(m_config.num_source_threads());
+#endif
+
     if (!supports_linearization(sasktran2::LinearizationMode::JVP)) {
         throw std::logic_error(
             "The configured sources do not implement a native JVP");
     }
     validate_input_atmosphere(atmosphere);
+    if (atmosphere.num_deriv() == 0) {
+        throw std::invalid_argument(
+            "JVP calculation requires an atmosphere constructed with "
+            "calculate_derivatives=true");
+    }
     const_cast<sasktran2::atmosphere::AtmosphereGridStorageFull<NSTOKES>&>(
         atmosphere.storage())
         .determine_maximum_order();
@@ -639,7 +649,7 @@ void Sasktran2<NSTOKES>::initialize_jvp(
         source->initialize_atmosphere_native(atmosphere);
     }
     m_source_integrator->initialize_atmosphere(atmosphere);
-    output.set_wavelength_block_capacity(1);
+    output.set_wavelength_block_capacity(wavelength_batch_size);
     output.initialize(m_config, *m_geometry, m_internal_viewing_geometry,
                       atmosphere);
     for (auto& source : m_source_terms) {
@@ -884,24 +894,37 @@ template <int NSTOKES>
 void Sasktran2<NSTOKES>::initialize_vjp(
     const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
     sasktran2::OutputVJP<NSTOKES>& output) const {
+#ifdef SKTRAN_OPENMP_SUPPORT
+    omp_set_num_threads(m_config.num_threads());
+    Eigen::setNbThreads(m_config.num_source_threads());
+#endif
+
     if (!supports_linearization(sasktran2::LinearizationMode::VJP)) {
         throw std::logic_error(
             "The configured sources do not implement a native VJP");
     }
     validate_input_atmosphere(atmosphere);
+    if (atmosphere.num_deriv() == 0) {
+        throw std::invalid_argument(
+            "VJP calculation requires an atmosphere constructed with "
+            "calculate_derivatives=true");
+    }
     const_cast<sasktran2::atmosphere::AtmosphereGridStorageFull<NSTOKES>&>(
         atmosphere.storage())
         .determine_maximum_order();
 
     const int wavelength_batch_size =
         effective_wavelength_batch_size(atmosphere.num_wavel());
-    m_source_integrator->initialize_thread_storage(m_config.num_threads(), 1);
+    m_source_integrator->initialize_thread_storage(m_config.num_threads(),
+                                                   wavelength_batch_size);
+    m_source_integrator->initialize_vjp_storage(
+        m_config.num_threads(), static_cast<int>(m_los_source_terms.size()));
     for (auto& source : m_source_terms) {
         source->set_wavelength_block_capacity(wavelength_batch_size);
         source->initialize_atmosphere_native(atmosphere);
     }
     m_source_integrator->initialize_atmosphere(atmosphere);
-    output.set_wavelength_block_capacity(1);
+    output.set_wavelength_block_capacity(wavelength_batch_size);
     output.initialize(m_config, *m_geometry, m_internal_viewing_geometry,
                       atmosphere);
 
@@ -1137,6 +1160,8 @@ void Sasktran2<NSTOKES>::initialize_jacobian_vjp(
         .determine_maximum_order();
 
     m_source_integrator->initialize_thread_storage(m_config.num_threads(), 1);
+    m_source_integrator->initialize_vjp_storage(
+        m_config.num_threads(), static_cast<int>(m_los_source_terms.size()));
     for (auto& source : m_source_terms) {
         source->set_wavelength_block_capacity(1);
         source->initialize_atmosphere_native(atmosphere);

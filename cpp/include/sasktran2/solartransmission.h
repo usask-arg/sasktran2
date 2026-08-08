@@ -191,6 +191,8 @@ namespace sasktran2::solartransmission {
         std::vector<RowMajorMatrix> m_phase_batch;
         std::vector<RowMajorMatrix> m_d_phase_batch;
         int m_wavelength_batch_capacity = 0;
+        std::vector<int> m_active_wavelength_block_start;
+        std::vector<int> m_active_wavelength_block_count;
 
         std::vector<std::vector<std::vector<int>>>
             m_geometry_entrance_to_internal; /** Mapping from layer entrances to
@@ -320,7 +322,7 @@ namespace sasktran2::solartransmission {
             Eigen::Matrix<double, NSTOKES, Eigen::Dynamic, Eigen::RowMajor>&
                 phase_result) const;
 
-        void scatter_jvp(int threadidx, int losidx, int layeridx,
+        void scatter_jvp(int threadidx, int losidx, int layeridx, int wavelidx,
                          const raytracing::GridWeightStencilView& index_weights,
                          bool is_entrance,
                          Eigen::Ref<const Eigen::VectorXd> native_tangent,
@@ -329,11 +331,11 @@ namespace sasktran2::solartransmission {
                          Eigen::Vector<double, NSTOKES>& phase_jvp) const;
 
         Eigen::Vector<double, NSTOKES>
-        scatter_value(int threadidx, int losidx, int layeridx,
+        scatter_value(int threadidx, int losidx, int layeridx, int wavelidx,
                       const raytracing::GridWeightStencilView& index_weights,
                       bool is_entrance) const;
 
-        void scatter_vjp(int threadidx, int losidx, int layeridx,
+        void scatter_vjp(int threadidx, int losidx, int layeridx, int wavelidx,
                          const raytracing::GridWeightStencilView& index_weights,
                          bool is_entrance,
                          const Eigen::Vector<double, NSTOKES>& phase_cotangent,
@@ -424,9 +426,10 @@ namespace sasktran2::solartransmission {
 
         const double source_amplitude = k * ssa * solar_trans / (EIGEN_PI * 4);
         if (!calculate_derivatives) {
-            source.value = source_amplitude * phase_handler.scatter_value(
-                                                  threadidx, losidx, layeridx,
-                                                  index_weights, is_entrance);
+            source.value =
+                source_amplitude * phase_handler.scatter_value(
+                                       threadidx, losidx, layeridx, wavelidx,
+                                       index_weights, is_entrance);
             return;
         }
         const bool use_zero_safe_derivative_path = k == 0.0 || ssa == 0.0;
@@ -723,6 +726,8 @@ namespace sasktran2::solartransmission {
             m_delegated_solar_transmission;
         sasktran2::solartransmission::detail::SolarTransmissionOperatorFactory
             m_delegated_solar_transmission_factory;
+        std::vector<int> m_active_wavelength_block_start;
+        std::vector<int> m_active_wavelength_block_count;
         std::vector<std::vector<int>> m_index_map;
 
         PhaseHandler<NSTOKES> m_phase_handler;
@@ -781,16 +786,34 @@ namespace sasktran2::solartransmission {
         const sasktran2::Config* m_config;
 
         double solar_transmission_value(
-            int wavel_threadidx, int solar_index,
+            int wavelidx, int wavel_threadidx, int solar_index,
             const sasktran2::raytracing::GridWeightStencilView& weights) const {
+            const bool use_batch =
+                m_wavelength_batch_capacity > 1 &&
+                m_active_wavelength_block_count.at(wavel_threadidx) > 0;
+            const int lane =
+                use_batch
+                    ? wavelidx -
+                          m_active_wavelength_block_start.at(wavel_threadidx)
+                    : 0;
+            if (use_batch &&
+                (lane < 0 ||
+                 lane >= m_active_wavelength_block_count.at(wavel_threadidx))) {
+                throw std::out_of_range(
+                    "Single-scatter wavelength is outside the active block");
+            }
+            const auto transmission = [&](int index) {
+                return use_batch ? m_solar_trans_batch.at(wavel_threadidx)(
+                                       index, lane)
+                                 : m_solar_trans.at(wavel_threadidx)(index);
+            };
             if (!m_interpolate_solar_on_atmosphere_grid) {
-                return m_solar_trans[wavel_threadidx](solar_index);
+                return transmission(solar_index);
             }
             double result = 0.0;
             for (std::size_t index = 0; index < weights.size(); ++index) {
                 const auto weight = weights[index];
-                result += weight.second *
-                          m_solar_trans[wavel_threadidx](weight.first);
+                result += weight.second * transmission(weight.first);
             }
             return result;
         }
@@ -905,6 +928,9 @@ namespace sasktran2::solartransmission {
             const sasktran2::raytracing::GridWeightStencilView& weights,
             bool is_entrance, const Eigen::Vector<double, NSTOKES>& cotangent,
             Eigen::Ref<Eigen::VectorXd> native_gradient) const;
+
+        double solar_transmission_value(int wavelidx, int threadidx,
+                                        int solar_index) const;
 
       public:
         sasktran2::WavelengthBlockLinearizationInterface*
@@ -1324,9 +1350,13 @@ namespace sasktran2::solartransmission {
             Eigen::Ref<const Eigen::VectorXd> native_tangent,
             sasktran2::RadianceJVP<NSTOKES>& source) const override;
 
+        /** Native exact single scattering is additive at the end of the ray
+         * and within each layer, so these implementations leave the mutable
+         * cotangent unchanged. */
         void end_of_ray_source_vjp(
             int wavelidx, int losidx, int wavel_threadidx, int threadidx,
-            const Eigen::Vector<double, NSTOKES>& cotangent,
+            const Eigen::Vector<double, NSTOKES>& value_before,
+            Eigen::Vector<double, NSTOKES>& cotangent,
             Eigen::Ref<Eigen::VectorXd> native_gradient) const override;
 
         void integrated_source_vjp(
@@ -1336,8 +1366,8 @@ namespace sasktran2::solartransmission {
                 entrance_weights,
             const sasktran2::raytracing::GridWeightStencilView& exit_weights,
             const sasktran2::WavelengthBlockODView& shell_od,
-            const Eigen::Vector<double, NSTOKES>& cotangent,
-            Eigen::Ref<Eigen::Vector<double, NSTOKES>> source_value,
+            const Eigen::Vector<double, NSTOKES>& value_before,
+            Eigen::Vector<double, NSTOKES>& cotangent,
             Eigen::Ref<Eigen::VectorXd> native_gradient) const override;
 
         void append_end_of_ray_active_derivatives(

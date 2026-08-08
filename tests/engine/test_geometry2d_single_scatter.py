@@ -464,14 +464,16 @@ def test_native_2d_extinction_ssa_and_phase_derivatives_match_finite_difference(
 
 def test_native_2d_exact_single_scatter_jvp_vjp_match_jacobian():
     config = single_scatter_config()
+    config.wavelength_batch_size = 3
     geometry = geometry2d(np.array([-0.6, 0.0, 0.6]))
+    wavelengths = np.linspace(500.0, 700.0, 5)
     atmosphere = sk.Atmosphere(
         geometry,
         config,
-        wavelengths_nm=np.array([500.0, 650.0]),
+        wavelengths_nm=wavelengths,
     )
     location_factor = np.arange(np.prod(geometry.shape)).reshape(geometry.shape)
-    spectral_factor = np.array([1.0, 1.15])
+    spectral_factor = np.linspace(0.9, 1.2, wavelengths.size)
     atmosphere.storage.total_extinction[:] = (
         1.0e-6 + 0.12e-6 * location_factor.ravel()[:, np.newaxis]
     ) * spectral_factor

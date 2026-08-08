@@ -155,10 +155,126 @@ namespace sasktran2 {
             }
             return result;
         }
+
+        template <int NSTOKES, typename ParameterMap>
+        void validate_volume_parameter_sizes(
+            const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
+            const ParameterMap& parameters, const std::string& quantity) {
+            const auto& mappings =
+                atmosphere.storage().derivative_mappings_const();
+            const int num_geometry =
+                atmosphere.storage().total_extinction.rows();
+            for (const auto& [name, parameter] : parameters) {
+                const auto mapping = mappings.find(name);
+                if (mapping == mappings.end()) {
+                    throw std::invalid_argument(
+                        "Unknown volume derivative mapping '" + name + "'");
+                }
+
+                int expected_size = num_geometry;
+                if (mapping->second.get_interpolator_const().has_value()) {
+                    const auto& interpolator =
+                        mapping->second.get_interpolator_const().value();
+                    if (interpolator.rows() != num_geometry) {
+                        throw std::invalid_argument(
+                            "Volume derivative mapping '" + name +
+                            "' has an interpolator with " +
+                            std::to_string(interpolator.rows()) +
+                            " rows; expected " + std::to_string(num_geometry));
+                    }
+                    expected_size = interpolator.cols();
+                }
+                if (parameter.size() != expected_size) {
+                    throw std::invalid_argument(
+                        "Volume " + quantity + " for mapping '" + name +
+                        "' has size " + std::to_string(parameter.size()) +
+                        "; expected " + std::to_string(expected_size));
+                }
+            }
+        }
+
+        template <int NSTOKES, typename ParameterMap>
+        void validate_surface_parameter_sizes(
+            const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
+            const ParameterMap& parameters, const std::string& quantity) {
+            const auto& mappings = atmosphere.surface().derivative_mappings();
+            const int num_wavelengths = atmosphere.num_wavel();
+            for (const auto& [name, parameter] : parameters) {
+                const auto mapping = mappings.find(name);
+                if (mapping == mappings.end()) {
+                    throw std::invalid_argument(
+                        "Unknown surface derivative mapping '" + name + "'");
+                }
+
+                int expected_size = num_wavelengths;
+                if (mapping->second.get_interpolator_const().has_value()) {
+                    const auto& interpolator =
+                        mapping->second.get_interpolator_const().value();
+                    if (interpolator.rows() != num_wavelengths) {
+                        throw std::invalid_argument(
+                            "Surface derivative mapping '" + name +
+                            "' has an interpolator with " +
+                            std::to_string(interpolator.rows()) +
+                            " rows; expected " +
+                            std::to_string(num_wavelengths));
+                    }
+                    expected_size = interpolator.cols();
+                }
+                if (parameter.size() != expected_size) {
+                    throw std::invalid_argument(
+                        "Surface " + quantity + " for mapping '" + name +
+                        "' has size " + std::to_string(parameter.size()) +
+                        "; expected " + std::to_string(expected_size));
+                }
+            }
+        }
+
+        template <typename Vector>
+        void validate_product_output_buffer(const Vector& buffer,
+                                            Eigen::Index expected_size,
+                                            const std::string& quantity) {
+            if (buffer.size() != expected_size ||
+                (expected_size > 0 && buffer.data() == nullptr)) {
+                throw std::invalid_argument(quantity + " buffer has size " +
+                                            std::to_string(buffer.size()) +
+                                            "; expected " +
+                                            std::to_string(expected_size));
+            }
+        }
     } // namespace
 
     template <int NSTOKES> void OutputJVP<NSTOKES>::resize() {
+        const Eigen::Index expected_size =
+            static_cast<Eigen::Index>(NSTOKES) *
+            static_cast<Eigen::Index>(this->m_nlos) *
+            static_cast<Eigen::Index>(this->m_nwavel);
+        validate_product_output_buffer(m_radiance, expected_size,
+                                       "JVP radiance");
+        validate_product_output_buffer(m_jvp, expected_size, "JVP product");
+        if (this->m_atmosphere->num_deriv() == 0) {
+            throw std::invalid_argument(
+                "JVP calculation requires an atmosphere constructed with "
+                "calculate_derivatives=true");
+        }
+        validate_volume_parameter_sizes(*this->m_atmosphere,
+                                        m_derivative_tangents, "JVP tangent");
+        validate_surface_parameter_sizes(*this->m_atmosphere,
+                                         m_surface_tangents, "JVP tangent");
+
         m_jvp.setZero();
+        m_native_parameter_tangents.clear();
+        for (const auto& [name, parameter_tangent] : m_derivative_tangents) {
+            const auto& mapping =
+                this->m_atmosphere->storage().derivative_mappings_const().at(
+                    name);
+            if (mapping.get_interpolator_const().has_value()) {
+                m_native_parameter_tangents[name] =
+                    mapping.get_interpolator_const().value() *
+                    parameter_tangent;
+            } else {
+                m_native_parameter_tangents[name] = parameter_tangent;
+            }
+        }
         m_native_thread_storage.resize(this->m_config->num_threads());
         m_mapped_thread_storage.resize(this->m_config->num_threads());
         int max_output = 1;
@@ -172,21 +288,20 @@ namespace sasktran2 {
     }
 
     template <int NSTOKES>
-    void OutputJVP<NSTOKES>::native_tangent(int wavelidx,
-                                            Eigen::VectorXd& tangent) const {
-        tangent.setZero(this->m_atmosphere->num_deriv());
+    void OutputJVP<NSTOKES>::native_tangent(
+        int wavelidx, Eigen::Ref<Eigen::VectorXd> tangent) const {
+        if (tangent.size() != this->m_atmosphere->num_deriv()) {
+            throw std::invalid_argument(
+                "Native JVP tangent has incorrect size");
+        }
+        tangent.setZero();
         const int num_geometry = this->m_ngeometry;
-        for (const auto& [name, parameter_tangent] : m_derivative_tangents) {
+        for (const auto& [name, unused] : m_derivative_tangents) {
+            (void)unused;
             const auto& mapping =
                 this->m_atmosphere->storage().derivative_mappings_const().at(
                     name);
-            Eigen::VectorXd native_parameter;
-            if (mapping.get_interpolator_const().has_value()) {
-                native_parameter = mapping.get_interpolator_const().value() *
-                                   parameter_tangent;
-            } else {
-                native_parameter = parameter_tangent;
-            }
+            const auto& native_parameter = m_native_parameter_tangents.at(name);
             const auto& native_mapping = mapping.native_mapping();
             if (native_mapping.d_extinction.has_value()) {
                 tangent.head(num_geometry).array() +=
@@ -393,10 +508,30 @@ namespace sasktran2 {
     }
 
     template <int NSTOKES> void OutputVJP<NSTOKES>::resize() {
+        const Eigen::Index expected_size =
+            static_cast<Eigen::Index>(NSTOKES) *
+            static_cast<Eigen::Index>(this->m_nlos) *
+            static_cast<Eigen::Index>(this->m_nwavel);
+        validate_product_output_buffer(m_radiance, expected_size,
+                                       "VJP radiance");
+        validate_product_output_buffer(m_cotangent, expected_size,
+                                       "VJP cotangent");
+        if (this->m_atmosphere->num_deriv() == 0) {
+            throw std::invalid_argument(
+                "VJP calculation requires an atmosphere constructed with "
+                "calculate_derivatives=true");
+        }
+        validate_volume_parameter_sizes(*this->m_atmosphere,
+                                        m_derivative_gradients, "VJP gradient");
+        validate_surface_parameter_sizes(*this->m_atmosphere,
+                                         m_surface_gradients, "VJP gradient");
+
         const int num_threads = this->m_config->num_threads();
         m_native_thread_storage.resize(num_threads);
         m_thread_derivative_gradients.resize(num_threads);
         m_thread_surface_gradients.resize(num_threads);
+        m_native_parameter_thread_storage.resize(num_threads);
+        m_surface_parameter_thread_storage.resize(num_threads);
         for (auto& [name, gradient] : m_derivative_gradients) {
             gradient.setZero();
         }
@@ -405,6 +540,10 @@ namespace sasktran2 {
         }
         for (int thread = 0; thread < num_threads; ++thread) {
             m_native_thread_storage[thread].resize(NSTOKES, this->m_ngeometry);
+            m_native_parameter_thread_storage[thread].resize(
+                this->m_ngeometry, this->m_wavelength_block_capacity);
+            m_surface_parameter_thread_storage[thread].resize(
+                this->m_wavelength_block_capacity);
             for (const auto& [name, gradient] : m_derivative_gradients) {
                 m_thread_derivative_gradients[thread][name] =
                     Eigen::VectorXd::Zero(gradient.size());
@@ -455,8 +594,28 @@ namespace sasktran2 {
     void OutputVJP<NSTOKES>::accumulate_native_gradient(
         int wavelidx, int threadidx,
         Eigen::Ref<const Eigen::VectorXd> native_gradient) {
+        Eigen::MatrixXd gradient_block(native_gradient.size(), 1);
+        gradient_block.col(0) = native_gradient;
+        accumulate_native_gradient(sasktran2::WavelengthBlock<>{wavelidx, 1},
+                                   threadidx, gradient_block);
+    }
+
+    template <int NSTOKES>
+    void OutputVJP<NSTOKES>::accumulate_native_gradient(
+        const sasktran2::WavelengthBlock<>& block, int threadidx,
+        const Eigen::MatrixXd& native_gradient) {
+        if (threadidx < 0 ||
+            threadidx >= m_native_parameter_thread_storage.size() ||
+            block.count < 1 ||
+            block.count > this->m_wavelength_block_capacity ||
+            native_gradient.rows() != this->m_atmosphere->num_deriv() ||
+            native_gradient.cols() < block.count) {
+            throw std::invalid_argument(
+                "Invalid native VJP gradient wavelength block");
+        }
         const int num_geometry = this->m_ngeometry;
-        Eigen::VectorXd native_parameter(num_geometry);
+        auto native_parameter =
+            m_native_parameter_thread_storage[threadidx].leftCols(block.count);
         for (const auto& [name, gradient] : m_derivative_gradients) {
             const auto& mapping =
                 this->m_atmosphere->storage().derivative_mappings_const().at(
@@ -465,41 +624,50 @@ namespace sasktran2 {
             native_parameter.setZero();
             if (native_mapping.d_extinction.has_value()) {
                 native_parameter.array() +=
-                    native_mapping.d_extinction.value().col(wavelidx).array() *
-                    native_gradient.head(num_geometry).array();
+                    native_mapping.d_extinction.value()
+                        .middleCols(block.start, block.count)
+                        .array() *
+                    native_gradient.block(0, 0, num_geometry, block.count)
+                        .array();
             }
             if (native_mapping.d_ssa.has_value()) {
                 native_parameter.array() +=
-                    native_mapping.d_ssa.value().col(wavelidx).array() *
+                    native_mapping.d_ssa.value()
+                        .middleCols(block.start, block.count)
+                        .array() *
                     native_gradient
-                        .segment(this->m_atmosphere->ssa_deriv_start_index(),
-                                 num_geometry)
+                        .block(this->m_atmosphere->ssa_deriv_start_index(), 0,
+                               num_geometry, block.count)
                         .array();
             }
             if (mapping.is_scattering_derivative()) {
                 const int start = this->m_atmosphere->scat_deriv_start_index() +
                                   mapping.get_scattering_index() * num_geometry;
                 native_parameter.array() +=
-                    native_mapping.scat_factor.value().col(wavelidx).array() *
-                    native_gradient.segment(start, num_geometry).array();
+                    native_mapping.scat_factor.value()
+                        .middleCols(block.start, block.count)
+                        .array() *
+                    native_gradient.block(start, 0, num_geometry, block.count)
+                        .array();
             }
             if (native_mapping.d_emission.has_value() &&
                 this->m_atmosphere->include_emission_derivatives()) {
                 native_parameter.array() +=
-                    native_mapping.d_emission.value().col(wavelidx).array() *
+                    native_mapping.d_emission.value()
+                        .middleCols(block.start, block.count)
+                        .array() *
                     native_gradient
-                        .segment(
-                            this->m_atmosphere->emission_deriv_start_index(),
-                            num_geometry)
+                        .block(this->m_atmosphere->emission_deriv_start_index(),
+                               0, num_geometry, block.count)
                         .array();
             }
             auto& target = m_thread_derivative_gradients[threadidx].at(name);
             if (mapping.get_interpolator_const().has_value()) {
                 target.noalias() +=
                     mapping.get_interpolator_const().value().transpose() *
-                    native_parameter;
+                    native_parameter.rowwise().sum();
             } else {
-                target += native_parameter;
+                target += native_parameter.rowwise().sum();
             }
         }
 
@@ -507,30 +675,43 @@ namespace sasktran2 {
             const auto& mapping =
                 this->m_atmosphere->surface().derivative_mappings().at(name);
             const auto& native_mapping = mapping.native_surface_mapping();
-            double native_parameter_gradient = 0.0;
+            auto native_parameter_gradient =
+                m_surface_parameter_thread_storage[threadidx].head(block.count);
+            native_parameter_gradient.setZero();
             if (native_mapping.d_brdf.has_value()) {
-                native_parameter_gradient +=
-                    native_mapping.d_brdf.value().row(wavelidx).dot(
-                        native_gradient.segment(
-                            this->m_atmosphere->surface_deriv_start_index(),
-                            this->m_atmosphere->surface().num_deriv()));
+                const int num_surface_derivatives =
+                    this->m_atmosphere->surface().num_deriv();
+                for (int lane = 0; lane < block.count; ++lane) {
+                    native_parameter_gradient(lane) +=
+                        native_mapping.d_brdf.value()
+                            .row(block.wavelength(lane))
+                            .dot(native_gradient.col(lane).segment(
+                                this->m_atmosphere->surface_deriv_start_index(),
+                                num_surface_derivatives));
+                }
             }
             if (native_mapping.d_emission.has_value() &&
                 this->m_atmosphere->include_emission_derivatives()) {
-                native_parameter_gradient +=
-                    native_mapping.d_emission.value()(wavelidx, 0) *
-                    native_gradient(this->m_atmosphere
-                                        ->surface_emission_deriv_start_index());
+                for (int lane = 0; lane < block.count; ++lane) {
+                    native_parameter_gradient(lane) +=
+                        native_mapping.d_emission.value()(
+                            block.wavelength(lane), 0) *
+                        native_gradient(
+                            this->m_atmosphere
+                                ->surface_emission_deriv_start_index(),
+                            lane);
+                }
             }
             auto& target = m_thread_surface_gradients[threadidx].at(name);
             if (mapping.get_interpolator_const().has_value()) {
                 target.noalias() += mapping.get_interpolator_const()
                                         .value()
-                                        .row(wavelidx)
+                                        .middleRows(block.start, block.count)
                                         .transpose() *
                                     native_parameter_gradient;
             } else {
-                target(wavelidx) += native_parameter_gradient;
+                target.segment(block.start, block.count) +=
+                    native_parameter_gradient.transpose();
             }
         }
     }

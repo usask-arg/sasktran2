@@ -2,7 +2,23 @@
 #include "sasktran2/config.h"
 #include "internal_types.h"
 #include <cstdio>
+#include <limits>
 #include <sasktran2.h>
+#include <stdexcept>
+
+namespace {
+    bool valid_product_output_memory(const double* radiance,
+                                     const double* product, int nrad,
+                                     int nstokes) {
+        if (nrad < 0 || (nstokes != 1 && nstokes != 3)) {
+            return false;
+        }
+        if (nrad > std::numeric_limits<int>::max() / nstokes) {
+            return false;
+        }
+        return nrad == 0 || (radiance != nullptr && product != nullptr);
+    }
+} // namespace
 
 OutputC::OutputC(double* radiance, int nrad, int nstokes, double* flux,
                  int nflux) {
@@ -20,6 +36,9 @@ OutputC::OutputC(double* radiance, int nrad, int nstokes, double* flux,
 }
 
 OutputJVP::OutputJVP(double* radiance, double* jvp, int nrad, int nstokes) {
+    if (!valid_product_output_memory(radiance, jvp, nrad, nstokes)) {
+        throw std::invalid_argument("Invalid JVP output memory");
+    }
     Eigen::Map<Eigen::VectorXd> radiance_map(radiance, nrad * nstokes);
     Eigen::Map<Eigen::VectorXd> jvp_map(jvp, nrad * nstokes);
     if (nstokes == 1) {
@@ -31,7 +50,8 @@ OutputJVP::OutputJVP(double* radiance, double* jvp, int nrad, int nstokes) {
 
 int OutputJVP::assign_derivative_tangent(const char* name,
                                          const double* tangent, int nparam) {
-    if (impl == nullptr || tangent == nullptr || nparam < 0) {
+    if (impl == nullptr || name == nullptr || nparam < 0 ||
+        (nparam > 0 && tangent == nullptr)) {
         return -1;
     }
     Eigen::Map<const Eigen::VectorXd> tangent_map(tangent, nparam);
@@ -48,7 +68,8 @@ int OutputJVP::assign_derivative_tangent(const char* name,
 
 int OutputJVP::assign_surface_tangent(const char* name, const double* tangent,
                                       int nparam) {
-    if (impl == nullptr || tangent == nullptr || nparam < 0) {
+    if (impl == nullptr || name == nullptr || nparam < 0 ||
+        (nparam > 0 && tangent == nullptr)) {
         return -1;
     }
     Eigen::Map<const Eigen::VectorXd> tangent_map(tangent, nparam);
@@ -65,6 +86,9 @@ int OutputJVP::assign_surface_tangent(const char* name, const double* tangent,
 
 OutputVJP::OutputVJP(double* radiance, const double* cotangent, int nrad,
                      int nstokes) {
+    if (!valid_product_output_memory(radiance, cotangent, nrad, nstokes)) {
+        throw std::invalid_argument("Invalid VJP output memory");
+    }
     Eigen::Map<Eigen::VectorXd> radiance_map(radiance, nrad * nstokes);
     Eigen::Map<const Eigen::VectorXd> cotangent_map(cotangent, nrad * nstokes);
     if (nstokes == 1) {
@@ -78,7 +102,8 @@ OutputVJP::OutputVJP(double* radiance, const double* cotangent, int nrad,
 
 int OutputVJP::assign_derivative_gradient(const char* name, double* gradient,
                                           int nparam) {
-    if (impl == nullptr || gradient == nullptr || nparam < 0) {
+    if (impl == nullptr || name == nullptr || nparam < 0 ||
+        (nparam > 0 && gradient == nullptr)) {
         return -1;
     }
     Eigen::Map<Eigen::VectorXd> gradient_map(gradient, nparam);
@@ -95,7 +120,8 @@ int OutputVJP::assign_derivative_gradient(const char* name, double* gradient,
 
 int OutputVJP::assign_surface_gradient(const char* name, double* gradient,
                                        int nparam) {
-    if (impl == nullptr || gradient == nullptr || nparam < 0) {
+    if (impl == nullptr || name == nullptr || nparam < 0 ||
+        (nparam > 0 && gradient == nullptr)) {
         return -1;
     }
     Eigen::Map<Eigen::VectorXd> gradient_map(gradient, nparam);
@@ -352,28 +378,46 @@ int sk_output_get_los_optical_depth(OutputC* output, double** od) {
 
 OutputJVP* sk_output_jvp_create(double* radiance, double* jvp, int nrad,
                                 int nstokes) {
-    return new OutputJVP(radiance, jvp, nrad, nstokes);
+    try {
+        return new OutputJVP(radiance, jvp, nrad, nstokes);
+    } catch (...) {
+        return nullptr;
+    }
 }
 
 void sk_output_jvp_destroy(OutputJVP* output) { delete output; }
 
 int sk_output_jvp_assign_derivative_tangent(OutputJVP* output, const char* name,
                                             const double* tangent, int nparam) {
-    return output == nullptr
-               ? -1
-               : output->assign_derivative_tangent(name, tangent, nparam);
+    if (output == nullptr) {
+        return -1;
+    }
+    try {
+        return output->assign_derivative_tangent(name, tangent, nparam);
+    } catch (...) {
+        return -3;
+    }
 }
 
 int sk_output_jvp_assign_surface_tangent(OutputJVP* output, const char* name,
                                          const double* tangent, int nparam) {
-    return output == nullptr
-               ? -1
-               : output->assign_surface_tangent(name, tangent, nparam);
+    if (output == nullptr) {
+        return -1;
+    }
+    try {
+        return output->assign_surface_tangent(name, tangent, nparam);
+    } catch (...) {
+        return -3;
+    }
 }
 
 OutputVJP* sk_output_vjp_create(double* radiance, const double* cotangent,
                                 int nrad, int nstokes) {
-    return new OutputVJP(radiance, cotangent, nrad, nstokes);
+    try {
+        return new OutputVJP(radiance, cotangent, nrad, nstokes);
+    } catch (...) {
+        return nullptr;
+    }
 }
 
 void sk_output_vjp_destroy(OutputVJP* output) { delete output; }
@@ -381,20 +425,37 @@ void sk_output_vjp_destroy(OutputVJP* output) { delete output; }
 int sk_output_vjp_assign_derivative_gradient(OutputVJP* output,
                                              const char* name, double* gradient,
                                              int nparam) {
-    return output == nullptr
-               ? -1
-               : output->assign_derivative_gradient(name, gradient, nparam);
+    if (output == nullptr) {
+        return -1;
+    }
+    try {
+        return output->assign_derivative_gradient(name, gradient, nparam);
+    } catch (...) {
+        return -3;
+    }
 }
 
 int sk_output_vjp_assign_surface_gradient(OutputVJP* output, const char* name,
                                           double* gradient, int nparam) {
-    return output == nullptr
-               ? -1
-               : output->assign_surface_gradient(name, gradient, nparam);
+    if (output == nullptr) {
+        return -1;
+    }
+    try {
+        return output->assign_surface_gradient(name, gradient, nparam);
+    } catch (...) {
+        return -3;
+    }
 }
 
 int sk_output_vjp_finalize(OutputVJP* output) {
-    return output == nullptr ? -1 : output->finalize();
+    if (output == nullptr) {
+        return -1;
+    }
+    try {
+        return output->finalize();
+    } catch (...) {
+        return -3;
+    }
 }
 
 OutputJacobianVJP* sk_output_jacobian_vjp_create(double* radiance, int nrad,
