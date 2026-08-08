@@ -56,8 +56,8 @@ namespace {
                         0.5;
                     double value = 0.03 * random_value;
                     if (row == column) {
-                        value += 2.5 +
-                                 0.001 * static_cast<double>(column % 101);
+                        value +=
+                            2.5 + 0.001 * static_cast<double>(column % 101);
                     }
                     // Exercise the row-interchange path periodically, as the
                     // physical BVP is not guaranteed to be diagonal dominant.
@@ -68,8 +68,7 @@ namespace {
                             value = 3.0;
                         }
                     }
-                    const lapack_int band_row =
-                        diagonal_row + row - column;
+                    const lapack_int band_row = diagonal_row + row - column;
                     matrix[column * leading_dimension + band_row] = value;
                 }
             }
@@ -135,8 +134,7 @@ namespace {
             const double scale =
                 std::max(1.0, std::abs(lapack_solution[index]));
             if (std::abs(system.right_hand_side[index] -
-                         lapack_solution[index]) >
-                1.0e-11 * scale) {
+                         lapack_solution[index]) > 1.0e-11 * scale) {
                 return {};
             }
         }
@@ -156,7 +154,7 @@ namespace {
         unblocked_times.push_back(unblocked_time);
 
         const double slower_time = std::max(lapack_time, unblocked_time);
-        const int sample_count = slower_time < 2.0e5  ? 7
+        const int sample_count = slower_time < 2.0e5   ? 7
                                  : slower_time < 2.0e6 ? 5
                                  : slower_time < 1.0e7 ? 3
                                                        : 1;
@@ -164,15 +162,13 @@ namespace {
             int lapack_info;
             int unblocked_info;
             if (sample % 2 == 0) {
-                lapack_info =
-                    timed_solve(system, Backend::lapack, lapack_time);
+                lapack_info = timed_solve(system, Backend::lapack, lapack_time);
                 unblocked_info =
                     timed_solve(system, Backend::unblocked, unblocked_time);
             } else {
                 unblocked_info =
                     timed_solve(system, Backend::unblocked, unblocked_time);
-                lapack_info =
-                    timed_solve(system, Backend::lapack, lapack_time);
+                lapack_info = timed_solve(system, Backend::lapack, lapack_time);
             }
             if (lapack_info != 0 || unblocked_info != 0) {
                 return {};
@@ -237,10 +233,9 @@ namespace sasktran2::detail {
             return;
         }
 
-        const auto size = static_cast<long long>(num_streams) * num_stokes *
-                          num_layers;
-        const auto bandwidth =
-            3LL * num_streams * num_stokes / 2LL - 1LL;
+        const auto size =
+            static_cast<long long>(num_streams) * num_stokes * num_layers;
+        const auto bandwidth = 3LL * num_streams * num_stokes / 2LL - 1LL;
         if (size <= 0 || bandwidth <= 2 ||
             size > std::numeric_limits<lapack_int>::max() ||
             bandwidth > std::numeric_limits<lapack_int>::max()) {
@@ -248,15 +243,14 @@ namespace sasktran2::detail {
         }
 
         try {
-            const auto result = benchmark_band_solvers(
-                static_cast<lapack_int>(size),
-                static_cast<lapack_int>(bandwidth));
+            const auto result =
+                benchmark_band_solvers(static_cast<lapack_int>(size),
+                                       static_cast<lapack_int>(bandwidth));
             if (!result.valid) {
                 return;
             }
-            config.m_runtime_backends.do_banded_lu =
-                select_banded_lu_backend(result.lapack_nanoseconds,
-                                         result.unblocked_nanoseconds);
+            config.m_runtime_backends.do_banded_lu = select_banded_lu_backend(
+                result.lapack_nanoseconds, result.unblocked_nanoseconds);
             spdlog::debug(
                 "DISCO band LU autotune (N={}, bandwidth={}): LAPACK {:.1f} "
                 "us, unblocked {:.1f} us; selected {}",

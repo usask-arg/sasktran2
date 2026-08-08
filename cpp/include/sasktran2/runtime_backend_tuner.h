@@ -20,8 +20,7 @@ namespace sasktran2::detail {
 
         /** Inspect a resolved value in tests and diagnostic tooling without
          * exposing mutable backend policy on Config. */
-        static BandedLUBackend
-        resolved_banded_lu_backend(const Config& config);
+        static BandedLUBackend resolved_banded_lu_backend(const Config& config);
     };
 
 } // namespace sasktran2::detail
