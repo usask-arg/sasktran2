@@ -18,8 +18,7 @@ namespace sasktran_disco::la {
         if (upper_bandwidth < 0) {
             return -3;
         }
-        if (leading_dimension <
-            2 * lower_bandwidth + upper_bandwidth + 1) {
+        if (leading_dimension < 2 * lower_bandwidth + upper_bandwidth + 1) {
             return -5;
         }
         if (n == 0) {
@@ -121,10 +120,9 @@ namespace sasktran_disco::la {
     }
 
     int dgbsv_unblocked(lapack_int n, lapack_int lower_bandwidth,
-                        lapack_int upper_bandwidth,
-                        lapack_int right_hand_sides, double* matrix,
-                        lapack_int leading_dimension, lapack_int* pivots,
-                        double* right_hand_side,
+                        lapack_int upper_bandwidth, lapack_int right_hand_sides,
+                        double* matrix, lapack_int leading_dimension,
+                        lapack_int* pivots, double* right_hand_side,
                         lapack_int right_hand_side_leading_dimension) {
         if (n < 0) {
             return -1;
@@ -138,16 +136,14 @@ namespace sasktran_disco::la {
         if (right_hand_sides < 0) {
             return -4;
         }
-        if (leading_dimension <
-            2 * lower_bandwidth + upper_bandwidth + 1) {
+        if (leading_dimension < 2 * lower_bandwidth + upper_bandwidth + 1) {
             return -6;
         }
         if (right_hand_side_leading_dimension < std::max<lapack_int>(1, n)) {
             return -9;
         }
-        lapack_int info =
-            dgbtf2_unblocked(n, lower_bandwidth, upper_bandwidth, matrix,
-                             leading_dimension, pivots);
+        lapack_int info = dgbtf2_unblocked(n, lower_bandwidth, upper_bandwidth,
+                                           matrix, leading_dimension, pivots);
         if (info != 0 || n == 0 || right_hand_sides == 0) {
             return info;
         }
@@ -158,10 +154,10 @@ namespace sasktran_disco::la {
                 &right_hand_sides, matrix, &leading_dimension, pivots,
                 right_hand_side, &right_hand_side_leading_dimension, &info);
 #else
-        info = LAPACKE_dgbtrs(
-            LAPACK_COL_MAJOR, 'N', n, lower_bandwidth, upper_bandwidth,
-            right_hand_sides, matrix, leading_dimension, pivots,
-            right_hand_side, right_hand_side_leading_dimension);
+        info = LAPACKE_dgbtrs(LAPACK_COL_MAJOR, 'N', n, lower_bandwidth,
+                              upper_bandwidth, right_hand_sides, matrix,
+                              leading_dimension, pivots, right_hand_side,
+                              right_hand_side_leading_dimension);
 #endif
         return info;
     }
