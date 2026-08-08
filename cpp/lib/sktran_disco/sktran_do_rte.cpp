@@ -245,7 +245,12 @@ void sasktran_disco::RTESolver<NSTOKES, CNSTR>::linearizeHomogeneous(
             rhs(N * NSTOKES, i) = 0.0;                // Orthogonality
         }
         MatrixHRHS& d_X_d_k = m_cache.h_d_X_d_k[layer.index()];
-        if (NSTOKES == 1) {
+        if (rhs.isZero(0)) {
+            // A homogeneous derivative system with an exactly zero RHS has
+            // the exactly zero solution. This is common once the azimuth order
+            // exceeds the active scattering moments.
+            d_X_d_k.setZero();
+        } else if (NSTOKES == 1) {
             m_cache.h_partiallu.compute(lhs);
             d_X_d_k.noalias() = m_cache.h_partiallu.solve(rhs);
         } else {
