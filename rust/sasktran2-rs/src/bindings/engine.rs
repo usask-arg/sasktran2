@@ -330,11 +330,12 @@ impl<'a> Engine<'a> {
         surface_tangents: &HashMap<String, Array1<f64>>,
     ) -> Result<JvpOutput> {
         crate::threading::set_num_threads(self.config.num_threads()?)?;
-        let mut output = JvpOutput::new(
+        let mut output = JvpOutput::try_new(
             atmosphere.num_wavel(),
             self.viewing_geometry.num_rays()?,
             self.config.num_stokes()?,
-        );
+        )
+        .map_err(anyhow::Error::msg)?;
         for (name, tangent) in derivative_tangents {
             output
                 .with_derivative_tangent(name, tangent)
@@ -374,7 +375,7 @@ impl<'a> Engine<'a> {
                 expected
             ));
         }
-        let mut output = VjpOutput::new(cotangent);
+        let mut output = VjpOutput::try_new(cotangent).map_err(anyhow::Error::msg)?;
         for (name, size) in derivative_sizes {
             output
                 .with_derivative_gradient(name, *size)
@@ -412,6 +413,7 @@ mod tests {
     use super::super::geometry::InterpolationMethod;
 
     use super::*;
+    use ndarray::ShapeBuilder;
 
     #[test]
     fn test_engine() {
@@ -468,6 +470,241 @@ mod tests {
                 .linearization_backend(LinearizationMode::Vjp)
                 .unwrap(),
             LinearizationBackend::Native
+        );
+    }
+
+    #[test]
+    fn test_native_products_reject_derivative_free_atmosphere() {
+        let config = Config::new();
+        let geometry = Geometry1D::new(
+            0.5,
+            0.0,
+            6_371_000.0,
+            vec![0.0, 10_000.0, 20_000.0],
+            InterpolationMethod::Linear,
+            GeometryType::Spherical,
+        );
+        let mut viewing_geometry = ViewingGeometry::new();
+        viewing_geometry.add_ground_viewing_solar(0.5, 0.0, 100_000.0, 0.5);
+        let engine = Engine::new(&config, &geometry, &viewing_geometry).unwrap();
+        let atmosphere = Atmosphere::new(1, 3, 3, false, false, Stokes::Stokes1, None);
+
+        let derivative_tangents: HashMap<String, Array1<f64>> = HashMap::new();
+        let surface_tangents: HashMap<String, Array1<f64>> = HashMap::new();
+        assert!(
+            engine
+                .calculate_jvp(&atmosphere, &derivative_tangents, &surface_tangents)
+                .is_err()
+        );
+
+        let cotangent = Array3::zeros((1, 1, 1));
+        let derivative_sizes: HashMap<String, usize> = HashMap::new();
+        let surface_sizes: HashMap<String, usize> = HashMap::new();
+        assert!(
+            engine
+                .calculate_vjp(&atmosphere, &cotangent, &derivative_sizes, &surface_sizes)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_native_products_reject_incorrect_parameter_size() {
+        let config = Config::new();
+        let geometry = Geometry1D::new(
+            0.5,
+            0.0,
+            6_371_000.0,
+            vec![0.0, 10_000.0, 20_000.0],
+            InterpolationMethod::Linear,
+            GeometryType::Spherical,
+        );
+        let mut viewing_geometry = ViewingGeometry::new();
+        viewing_geometry.add_ground_viewing_solar(0.5, 0.0, 100_000.0, 0.5);
+        let engine = Engine::new(&config, &geometry, &viewing_geometry).unwrap();
+        let mut atmosphere = Atmosphere::new(
+            1,
+            3,
+            config.num_singlescatter_moments().unwrap(),
+            true,
+            false,
+            Stokes::Stokes1,
+            None,
+        );
+        atmosphere.storage.total_extinction.fill(1e-5);
+        atmosphere.storage.ssa.fill(0.9);
+        for location in 0..atmosphere.num_location() {
+            atmosphere.storage.leg_coeff[[0, location, 0]] = 1.0;
+        }
+        atmosphere
+            .storage
+            .get_derivative_mapping("volume")
+            .unwrap()
+            .d_extinction()
+            .fill(1.0);
+
+        let derivative_tangents = HashMap::from([(
+            "volume".to_string(),
+            Array1::zeros(atmosphere.num_location() - 1),
+        )]);
+        let surface_tangents: HashMap<String, Array1<f64>> = HashMap::new();
+        assert!(
+            engine
+                .calculate_jvp(&atmosphere, &derivative_tangents, &surface_tangents)
+                .is_err()
+        );
+
+        let cotangent = Array3::ones((1, 1, 1));
+        let derivative_sizes =
+            HashMap::from([("volume".to_string(), atmosphere.num_location() - 1)]);
+        let surface_sizes: HashMap<String, usize> = HashMap::new();
+        assert!(
+            engine
+                .calculate_vjp(&atmosphere, &cotangent, &derivative_sizes, &surface_sizes)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_native_products_accept_nonstandard_ndarray_layouts() {
+        let config = Config::new();
+        let geometry = Geometry1D::new(
+            0.5,
+            0.0,
+            6_371_000.0,
+            vec![0.0, 10_000.0, 20_000.0],
+            InterpolationMethod::Linear,
+            GeometryType::Spherical,
+        );
+        let mut viewing_geometry = ViewingGeometry::new();
+        viewing_geometry.add_ground_viewing_solar(0.5, 0.1, 100_000.0, 0.5);
+        viewing_geometry.add_tangent_altitude_solar(5_000.0, -0.2, 100_000.0, 0.5);
+        let engine = Engine::new(&config, &geometry, &viewing_geometry).unwrap();
+        let mut atmosphere = Atmosphere::new(
+            2,
+            3,
+            config.num_singlescatter_moments().unwrap(),
+            true,
+            false,
+            Stokes::Stokes1,
+            None,
+        );
+        atmosphere.storage.total_extinction.fill(1e-5);
+        atmosphere.storage.ssa.fill(0.9);
+        for wavelength in 0..atmosphere.num_wavel() {
+            for location in 0..atmosphere.num_location() {
+                atmosphere.storage.leg_coeff[[0, location, wavelength]] = 1.0;
+            }
+        }
+        let mapping = atmosphere.storage.get_derivative_mapping("volume").unwrap();
+        for ((location, wavelength), value) in mapping.d_extinction().indexed_iter_mut() {
+            *value = 0.5 + location as f64 + 0.25 * wavelength as f64;
+        }
+
+        let standard_tangent = ndarray::array![1.0, 2.0, 4.0];
+        let strided_tangent = ndarray::array![4.0, 2.0, 1.0].slice_move(ndarray::s![..;-1]);
+        assert_eq!(standard_tangent, strided_tangent);
+        assert!(!strided_tangent.is_standard_layout());
+
+        let no_surface_tangents: HashMap<String, Array1<f64>> = HashMap::new();
+        let standard_jvp = engine
+            .calculate_jvp(
+                &atmosphere,
+                &HashMap::from([("volume".to_string(), standard_tangent)]),
+                &no_surface_tangents,
+            )
+            .unwrap();
+        let strided_jvp = engine
+            .calculate_jvp(
+                &atmosphere,
+                &HashMap::from([("volume".to_string(), strided_tangent)]),
+                &no_surface_tangents,
+            )
+            .unwrap();
+        assert!(standard_jvp.jvp.iter().any(|value| value.abs() > 1e-15));
+        for (standard, strided) in standard_jvp.jvp.iter().zip(strided_jvp.jvp.iter()) {
+            assert!((standard - strided).abs() <= 1e-12 * (1.0 + standard.abs()));
+        }
+
+        let standard_cotangent = Array3::from_shape_fn((2, 2, 1), |(wavelength, los, _)| {
+            1.0 + 2.0 * wavelength as f64 + 0.5 * los as f64
+        });
+        let mut fortran_cotangent = Array3::zeros((2, 2, 1).f());
+        for ((wavelength, los, stokes), value) in fortran_cotangent.indexed_iter_mut() {
+            *value = standard_cotangent[[wavelength, los, stokes]];
+        }
+        assert_eq!(standard_cotangent, fortran_cotangent);
+        assert!(!fortran_cotangent.is_standard_layout());
+
+        let derivative_sizes = HashMap::from([("volume".to_string(), 3)]);
+        let no_surface_sizes: HashMap<String, usize> = HashMap::new();
+        let standard_vjp = engine
+            .calculate_vjp(
+                &atmosphere,
+                &standard_cotangent,
+                &derivative_sizes,
+                &no_surface_sizes,
+            )
+            .unwrap();
+        let fortran_vjp = engine
+            .calculate_vjp(
+                &atmosphere,
+                &fortran_cotangent,
+                &derivative_sizes,
+                &no_surface_sizes,
+            )
+            .unwrap();
+        let standard_gradient = &standard_vjp.derivative_gradients["volume"];
+        let fortran_gradient = &fortran_vjp.derivative_gradients["volume"];
+        assert!(standard_gradient.iter().any(|value| value.abs() > 1e-15));
+        for (standard, fortran) in standard_gradient.iter().zip(fortran_gradient.iter()) {
+            assert!((standard - fortran).abs() <= 1e-12 * (1.0 + standard.abs()));
+        }
+    }
+
+    #[test]
+    fn test_native_product_engine_rejects_stokes_mismatches() {
+        let config = Config::new();
+        let geometry = Geometry1D::new(
+            0.5,
+            0.0,
+            6_371_000.0,
+            vec![0.0, 10_000.0, 20_000.0],
+            InterpolationMethod::Linear,
+            GeometryType::Spherical,
+        );
+        let mut viewing_geometry = ViewingGeometry::new();
+        viewing_geometry.add_ground_viewing_solar(0.5, 0.0, 100_000.0, 0.5);
+        let engine = Engine::new(&config, &geometry, &viewing_geometry).unwrap();
+        let atmosphere = Atmosphere::new(1, 3, 3, true, false, Stokes::Stokes1, None);
+
+        let jvp = JvpOutput::try_new(1, 1, 3).unwrap();
+        assert_eq!(
+            unsafe {
+                ffi::sk_engine_calculate_jvp(engine.engine, atmosphere.atmosphere, jvp.output)
+            },
+            -2
+        );
+
+        let cotangent = Array3::ones((1, 1, 3));
+        let vjp = VjpOutput::try_new(&cotangent).unwrap();
+        assert_eq!(
+            unsafe {
+                ffi::sk_engine_calculate_vjp(engine.engine, atmosphere.atmosphere, vjp.output)
+            },
+            -2
+        );
+
+        let atmosphere_stokes3 = Atmosphere::new(1, 3, 3, true, false, Stokes::Stokes3, None);
+        let jvp_stokes1 = JvpOutput::try_new(1, 1, 1).unwrap();
+        assert_eq!(
+            unsafe {
+                ffi::sk_engine_calculate_jvp(
+                    engine.engine,
+                    atmosphere_stokes3.atmosphere,
+                    jvp_stokes1.output,
+                )
+            },
+            -2
         );
     }
 
