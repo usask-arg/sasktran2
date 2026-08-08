@@ -4,6 +4,159 @@ use std::ffi::CString;
 use ndarray::*;
 use sasktran2_sys::ffi;
 
+pub struct JvpOutput {
+    pub output: *mut ffi::OutputJVP,
+    pub radiance: Array3<f64>,
+    pub jvp: Array3<f64>,
+}
+
+impl JvpOutput {
+    pub fn new(num_wavel: usize, num_los: usize, num_stokes: usize) -> Self {
+        let mut radiance = Array3::<f64>::zeros((num_wavel, num_los, num_stokes));
+        let mut jvp = Array3::<f64>::zeros((num_wavel, num_los, num_stokes));
+        let output = unsafe {
+            ffi::sk_output_jvp_create(
+                radiance.as_mut_ptr(),
+                jvp.as_mut_ptr(),
+                (num_wavel * num_los) as i32,
+                num_stokes as i32,
+            )
+        };
+        Self {
+            output,
+            radiance,
+            jvp,
+        }
+    }
+
+    pub fn with_derivative_tangent(
+        &mut self,
+        name: &str,
+        tangent: &Array1<f64>,
+    ) -> Result<(), String> {
+        let name = CString::new(name).map_err(|err| err.to_string())?;
+        let result = unsafe {
+            ffi::sk_output_jvp_assign_derivative_tangent(
+                self.output,
+                name.as_ptr(),
+                tangent.as_ptr(),
+                tangent.len() as i32,
+            )
+        };
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(format!("Failed to register JVP tangent: {result}"))
+        }
+    }
+
+    pub fn with_surface_tangent(
+        &mut self,
+        name: &str,
+        tangent: &Array1<f64>,
+    ) -> Result<(), String> {
+        let name = CString::new(name).map_err(|err| err.to_string())?;
+        let result = unsafe {
+            ffi::sk_output_jvp_assign_surface_tangent(
+                self.output,
+                name.as_ptr(),
+                tangent.as_ptr(),
+                tangent.len() as i32,
+            )
+        };
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(format!("Failed to register surface JVP tangent: {result}"))
+        }
+    }
+}
+
+impl Drop for JvpOutput {
+    fn drop(&mut self) {
+        unsafe { ffi::sk_output_jvp_destroy(self.output) }
+    }
+}
+
+pub struct VjpOutput {
+    pub output: *mut ffi::OutputVJP,
+    pub radiance: Array3<f64>,
+    pub derivative_gradients: HashMap<String, Array1<f64>>,
+    pub surface_gradients: HashMap<String, Array1<f64>>,
+    _cotangent: Array3<f64>,
+}
+
+impl VjpOutput {
+    pub fn new(cotangent: &Array3<f64>) -> Self {
+        // The C++ output holds a non-owning map for the duration of its
+        // lifetime, so keep an owned cotangent alongside it.
+        let cotangent = cotangent.to_owned();
+        let (num_wavel, num_los, num_stokes) = cotangent.dim();
+        let mut radiance = Array3::<f64>::zeros(cotangent.raw_dim());
+        let output = unsafe {
+            ffi::sk_output_vjp_create(
+                radiance.as_mut_ptr(),
+                cotangent.as_ptr(),
+                (num_wavel * num_los) as i32,
+                num_stokes as i32,
+            )
+        };
+        Self {
+            output,
+            radiance,
+            derivative_gradients: HashMap::new(),
+            surface_gradients: HashMap::new(),
+            _cotangent: cotangent,
+        }
+    }
+
+    pub fn with_derivative_gradient(&mut self, name: &str, size: usize) -> Result<(), String> {
+        self.derivative_gradients
+            .insert(name.to_string(), Array1::zeros(size));
+        let gradient = self.derivative_gradients.get_mut(name).unwrap();
+        let name_c = CString::new(name).map_err(|err| err.to_string())?;
+        let result = unsafe {
+            ffi::sk_output_vjp_assign_derivative_gradient(
+                self.output,
+                name_c.as_ptr(),
+                gradient.as_mut_ptr(),
+                size as i32,
+            )
+        };
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(format!("Failed to register VJP gradient: {result}"))
+        }
+    }
+
+    pub fn with_surface_gradient(&mut self, name: &str, size: usize) -> Result<(), String> {
+        self.surface_gradients
+            .insert(name.to_string(), Array1::zeros(size));
+        let gradient = self.surface_gradients.get_mut(name).unwrap();
+        let name_c = CString::new(name).map_err(|err| err.to_string())?;
+        let result = unsafe {
+            ffi::sk_output_vjp_assign_surface_gradient(
+                self.output,
+                name_c.as_ptr(),
+                gradient.as_mut_ptr(),
+                size as i32,
+            )
+        };
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(format!("Failed to register surface VJP gradient: {result}"))
+        }
+    }
+}
+
+impl Drop for VjpOutput {
+    fn drop(&mut self) {
+        unsafe { ffi::sk_output_vjp_destroy(self.output) }
+    }
+}
+
 ///  Wrapper around the C++ Output object
 /// This is typically only constructed internally by the Engine, and then used by the user
 pub struct Output {

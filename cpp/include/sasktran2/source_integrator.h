@@ -3,6 +3,7 @@
 #include <sasktran2/internal_common.h>
 #include <sasktran2/raytracing.h>
 #include <sasktran2/source_interface.h>
+#include <algorithm>
 
 namespace sasktran2 {
 
@@ -137,6 +138,22 @@ namespace sasktran2 {
          * active source can report its derivative sparsity exactly. */
         void initialize_derivative_sparsity(
             const std::vector<SourceTermInterface<NSTOKES>*>& source_terms);
+
+        /** Returns true when the integrator and every active source implement
+         * the requested native derivative execution mode. */
+        bool
+        supports_linearization(sasktran2::LinearizationMode mode,
+                               const std::vector<SourceTermInterface<NSTOKES>*>&
+                                   source_terms) const {
+            if (mode != sasktran2::LinearizationMode::Jacobian) {
+                return false;
+            }
+            return std::all_of(
+                source_terms.begin(), source_terms.end(),
+                [mode](const SourceTermInterface<NSTOKES>* source) {
+                    return source->supports_linearization(mode);
+                });
+        }
 
         /** Integrates the source terms and stores the result in radiance
          *

@@ -131,6 +131,15 @@ impl PyAtmosphere {
             .into_pyresult()?;
         Ok(())
     }
+
+    fn mark_changed(&self) -> PyResult<()> {
+        self.atmosphere.mark_changed().into_pyresult()
+    }
+
+    #[getter]
+    fn revision(&self) -> PyResult<u64> {
+        self.atmosphere.revision().into_pyresult()
+    }
 }
 
 #[pymethods]
@@ -182,9 +191,9 @@ impl PyAtmosphereStorageView {
     }
 
     fn derivative_mapping_names(&self) -> PyResult<Vec<String>> {
-        self.storage.derivative_mapping_names().map_err(|err| {
-            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(err)
-        })
+        self.storage
+            .derivative_mapping_names()
+            .map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)
     }
 
     fn normalize_by_extinctions(&mut self) -> PyResult<()> {
@@ -242,6 +251,12 @@ impl PyAtmosphereSurfaceView {
         };
 
         Python::attach(|py| Py::new(py, mapping_view))
+    }
+
+    fn derivative_mapping_names(&self) -> PyResult<Vec<String>> {
+        self.surface
+            .derivative_mapping_names()
+            .map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)
     }
 
     fn set_zero(&mut self) -> PyResult<()> {

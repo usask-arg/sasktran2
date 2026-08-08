@@ -149,6 +149,11 @@ void sk_atmosphere_destroy(Atmosphere* atmosphere);
 
 int sk_atmosphere_apply_delta_m_scaling(Atmosphere* atmosphere, int order);
 
+int sk_atmosphere_mark_changed(Atmosphere* atmosphere);
+
+int sk_atmosphere_get_revision(Atmosphere* atmosphere,
+                               unsigned long long* revision);
+
 // ---------------------
 // SURFACE METHODS
 // ---------------------

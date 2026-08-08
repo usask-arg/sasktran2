@@ -4,6 +4,19 @@
 
 #include <sasktran2.h>
 
+TEST_CASE("Atmosphere native revision is monotonic",
+          "[sasktran2][atmosphere]") {
+    sasktran2::atmosphere::AtmosphereGridStorageFull<1> storage(2, 3, 4);
+    sasktran2::atmosphere::Surface<1> surface(2);
+    sasktran2::atmosphere::Atmosphere<1> atmosphere(std::move(storage),
+                                                    std::move(surface), true);
+
+    REQUIRE(atmosphere.revision() == 0);
+    atmosphere.mark_changed();
+    atmosphere.mark_changed();
+    REQUIRE(atmosphere.revision() == 2);
+}
+
 TEST_CASE("Validate Surface BRDF WF's in Single Scatter/DO",
           "[sasktran2][engine]") {
 #ifdef USE_OMP

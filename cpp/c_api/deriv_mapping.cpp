@@ -135,6 +135,16 @@ int sk_deriv_mapping_set_log_radiance_space(DerivativeMapping* mapping,
     return 0;
 }
 
+int sk_deriv_mapping_get_log_radiance_space(DerivativeMapping* mapping,
+                                            int* log_radiance_space) {
+    if (mapping == nullptr || mapping->impl == nullptr ||
+        log_radiance_space == nullptr) {
+        return -1;
+    }
+    *log_radiance_space = mapping->impl->log_radiance_space() ? 1 : 0;
+    return 0;
+}
+
 int sk_deriv_mapping_is_scattering_derivative(DerivativeMapping* mapping,
                                               int* is_scattering_derivative) {
     if (mapping == nullptr) {

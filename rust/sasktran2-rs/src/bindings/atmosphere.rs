@@ -78,6 +78,23 @@ impl Atmosphere {
         Ok(())
     }
 
+    pub fn mark_changed(&self) -> Result<()> {
+        let result = unsafe { ffi::sk_atmosphere_mark_changed(self.atmosphere) };
+        if result != 0 {
+            return Err(anyhow!("Error marking atmosphere changed: {}", result));
+        }
+        Ok(())
+    }
+
+    pub fn revision(&self) -> Result<u64> {
+        let mut revision = 0u64;
+        let result = unsafe { ffi::sk_atmosphere_get_revision(self.atmosphere, &mut revision) };
+        if result != 0 {
+            return Err(anyhow!("Error getting atmosphere revision: {}", result));
+        }
+        Ok(revision)
+    }
+
     /// Number of stokes parameters
     pub fn num_stokes(&self) -> usize {
         self.nstokes
@@ -116,6 +133,9 @@ mod tests {
 
         // check that atmosphere storage is not null
         assert!(!atmosphere.atmosphere.is_null());
+        assert_eq!(atmosphere.revision().unwrap(), 0);
+        atmosphere.mark_changed().unwrap();
+        assert_eq!(atmosphere.revision().unwrap(), 1);
     }
 
     #[test]
