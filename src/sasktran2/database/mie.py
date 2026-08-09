@@ -59,7 +59,8 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScattererRust):
         num_threads: int, optional
             The number of threads to use for the calculation, by default 1. Only current works in the sasktran2_cpp backend
         kwargs
-            Additional arguments to pass to the particle size distribution, these should match the psize_distribution.args() method
+            Additional arguments to pass to the particle size distribution and/or refractive index.
+            These should match combined set of args from psize_distribution.args() and refractive_index.args
         """
 
         class NumpyEncoder(json.JSONEncoder):
@@ -94,6 +95,7 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScattererRust):
 
         self._psize_args = psize_distribution.args()
         self._psize_dist = psize_distribution
+        self._refractive_index_args = refractive_index.args
         self._refractive_index = refractive_index
         self._wavelengths_nm = wavelengths_nm
         self._backend = backend
@@ -102,9 +104,13 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScattererRust):
         self._num_size_quadrature = num_size_quadrature
 
         for arg in kwargs:
-            if arg not in self._psize_args:
-                msg = f"Invalid argument {arg} for particle size distribution"
+            if arg not in self._psize_args and arg not in self._refractive_args:
+                msg = f"Invalid argument {arg} for particle size distribution and refractive index"
                 raise ValueError(msg)
+
+        if len(self._refractive_index_args) > 0 and self._backend != "sasktran2_cpp":
+            msg = "Refractive index arguments only supported with sasktran2_cpp backend"
+            raise NotImplementedError(msg)
 
         self._kwargs = kwargs
 
@@ -307,28 +313,71 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScattererRust):
         """
         Generates the data file from sasktran2 using the cpp integration option rather than python
         """
-        refractive = self._refractive_index.refractive_index_fn
 
-        prob_dists = []
-        for vals in product(*self._kwargs.values()):
-            psize_args = dict(zip(self._kwargs.keys(), vals, strict=True))
+        ridx_keys = [
+            key
+            for key in self._kwargs
+            if key in self._refractive_index_args and key not in self._psize_args
+        ]
+        shared_keys = [
+            key
+            for key in self._kwargs
+            if key in self._refractive_index_args and key in self._psize_args
+        ]
+        psize_keys = [
+            key
+            for key in self._kwargs
+            if key not in self._refractive_index_args and key in self._psize_args
+        ]
 
-            prob_dists.append(self._psize_dist.distribution(**psize_args))
+        # keep track of coordinates for unstacking
+        multi_index_names = ridx_keys + shared_keys + psize_keys
+        multi_index_tuples = []
 
-        ds = integrate_mie_cpp(
-            prob_dists,
-            refractive,
-            self._wavelengths_nm,
-            num_quad=31,
-            maxintquantile=0.99999,
-            num_coeffs=self._max_legendre_moments,
-            num_threads=self._num_threads,
-        )
+        # iterate through refractive index args
+        concat = []
+        for ridx_vals in product(
+            *[self._kwargs[key] for key in ridx_keys + shared_keys]
+        ):
+            ridx_args = dict(zip(ridx_keys + shared_keys, ridx_vals, strict=True))
+
+            def refractive(wl, ridx_args=ridx_args):
+                return self._refractive_index.refractive_index(wl, **ridx_args)
+
+            # collect psize distributions
+            shared_args = {
+                key: val for key, val in ridx_args.items() if key in shared_keys
+            }
+            prob_dists = []
+            for psize_vals in product(*[self._kwargs[key] for key in psize_keys]):
+                psize_args = dict(zip(psize_keys, psize_vals, strict=True))
+                prob_dists.append(
+                    self._psize_dist.distribution(**psize_args, **shared_args)
+                )
+                multi_index_tuples.append(tuple(ridx_vals + psize_vals))
+
+            ds = integrate_mie_cpp(
+                prob_dists,
+                refractive,
+                self._wavelengths_nm,
+                num_quad=31,
+                maxintquantile=0.99999,
+                num_coeffs=self._max_legendre_moments,
+                num_threads=self._num_threads,
+            )
+
+            concat.append(ds)
+
+        try:
+            ds = xr.concat(concat, dim="distribution", join="exact")
+        except xr.AlignmentError:
+            for ds in concat:
+                ds.coords["cos_angle"] = ds.cos_angle.expand_dims(dim="distribution")
+            ds = xr.concat(concat, dim="distribution", join="exact")
 
         if len(self._kwargs) > 1:
-            multi = pd.MultiIndex.from_product(
-                [self._kwargs[k] for k in self._kwargs],
-                names=list(self._kwargs.keys()),
+            multi = pd.MultiIndex.from_tuples(
+                multi_index_tuples, names=multi_index_names
             )
 
             ds = ds.assign_coords(

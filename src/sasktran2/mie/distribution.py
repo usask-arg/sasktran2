@@ -555,7 +555,6 @@ def integrate_mie_cpp(
     )
     for i, wavel in enumerate(wavelengths):
         refrac_index = np.cdouble(refrac_index_fn(wavel))
-
         size_param = 2 * np.pi * x / wavel
 
         integrator.integrate(
