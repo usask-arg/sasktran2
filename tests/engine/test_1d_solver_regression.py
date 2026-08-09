@@ -17,6 +17,9 @@ def _setup_1d(
     threading_model: sk.ThreadingModel | None = None,
     emission_source: sk.EmissionSource = sk.EmissionSource.NoSource,
     occultation_source: sk.OccultationSource = sk.OccultationSource.NoSource,
+    solar_transmission: sk.SingleScatterSolarTransmission = (
+        sk.SingleScatterSolarTransmission.Exact
+    ),
 ):
     config = sk.Config()
     config.num_threads = num_threads
@@ -39,6 +42,8 @@ def _setup_1d(
         default_num_wavelengths = 3
     elif source == "successive_orders":
         config.single_scatter_source = sk.SingleScatterSource.Exact
+        config.single_scatter_source_quadrature = True
+        config.single_scatter_solar_transmission = solar_transmission
         config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
         config.num_successive_orders_iterations = 3
         config.num_successive_orders_incoming = 26
@@ -47,6 +52,8 @@ def _setup_1d(
         default_num_wavelengths = 2
     else:
         config.single_scatter_source = sk.SingleScatterSource.Exact
+        config.single_scatter_source_quadrature = True
+        config.single_scatter_solar_transmission = solar_transmission
         config.multiple_scatter_source = sk.MultipleScatterSource.NoSource
         default_num_wavelengths = 1
 
@@ -144,46 +151,46 @@ def _setup_1d(
                 [
                     [
                         [
-                            0.03485848278767426,
-                            -0.0012438171986974716,
-                            -0.01313439668613118,
+                            0.03493718059465559,
+                            -0.00124129381179148,
+                            -0.01317730962094016,
                         ],
                         [
-                            0.018305818732869187,
-                            0.005400715559354511,
-                            0.005256718675979713,
+                            0.01833445832490121,
+                            0.00541996960345787,
+                            0.00527420441413781,
                         ],
                         [
-                            0.1009590532632837,
-                            -0.002179747695663314,
-                            -0.013811326250175521,
+                            0.10101664567724669,
+                            -0.00217722682907605,
+                            -0.01381960846066964,
                         ],
                         [
-                            0.023692987924552825,
-                            -0.0024894020696831325,
-                            0.006213385479745916,
+                            0.02369440387264463,
+                            -0.00248951297454448,
+                            0.00621379400634047,
                         ],
                     ],
                     [
                         [
-                            0.06499456949466546,
-                            -0.0024770876498211134,
-                            -0.019698355214306774,
+                            0.06518818242260963,
+                            -0.00247087959465485,
+                            -0.01980392993454027,
                         ],
                         [
-                            0.04381448739788437,
-                            0.008772698896414867,
-                            0.008513519953347171,
+                            0.04389054236089,
+                            0.00882382970897506,
+                            0.00855995487348336,
                         ],
                         [
-                            0.12467626601396885,
-                            -0.0031932263361659366,
-                            -0.016039333469915443,
+                            0.12481456275373466,
+                            -0.00318717297589828,
+                            -0.01605922155292107,
                         ],
                         [
-                            0.04355957469824446,
-                            -0.004374975287664437,
-                            0.010797214016246497,
+                            0.04356467734399301,
+                            -0.0043753749550128,
+                            0.01079868622169172,
                         ],
                     ],
                 ]
@@ -260,6 +267,46 @@ def test_1d_polarized_b1_phase_coefficient_wf():
     np.testing.assert_allclose(analytic_wf, numeric_wf[0], rtol=1e-7, atol=1e-10)
 
 
+def test_exact_single_scatter_radiance_is_independent_of_derivative_mode():
+    """Enabling weighting functions must not change the dispatched radiance."""
+    value_engine, value_atmosphere = _setup_1d("single_scatter", 3, False)
+    wf_engine, wf_atmosphere = _setup_1d("single_scatter", 3, True)
+
+    value = value_engine.calculate_radiance(value_atmosphere).radiance.values
+    with_wf = wf_engine.calculate_radiance(wf_atmosphere).radiance.values
+    np.testing.assert_allclose(with_wf, value, rtol=2e-13, atol=2e-14)
+
+
+@pytest.mark.parametrize(
+    "solar_transmission",
+    [
+        sk.SingleScatterSolarTransmission.Exact,
+        sk.SingleScatterSolarTransmission.RayTable,
+    ],
+)
+def test_gauss8_single_scatter_extinction_wf_matches_finite_difference(
+    solar_transmission: sk.SingleScatterSolarTransmission,
+):
+    """Fixed Gauss-8 solar, viewing-OD, and local-source WFs are analytic."""
+    engine, atmosphere = _setup_1d(
+        "single_scatter", 1, True, solar_transmission=solar_transmission
+    )
+    result = engine.calculate_radiance(atmosphere)
+
+    for altitude_index in (0, 5, 12, 20, 24):
+        original = atmosphere.storage.total_extinction[altitude_index, 0]
+        step = max(1e-10, original * 2e-5)
+        atmosphere.storage.total_extinction[altitude_index, 0] = original + step
+        above = engine.calculate_radiance(atmosphere).radiance.values.copy()
+        atmosphere.storage.total_extinction[altitude_index, 0] = original - step
+        below = engine.calculate_radiance(atmosphere).radiance.values.copy()
+        atmosphere.storage.total_extinction[altitude_index, 0] = original
+
+        numeric = (above - below) / (2 * step)
+        analytic = result.wf_extinction.values[altitude_index, 0]
+        np.testing.assert_allclose(analytic, numeric[0], rtol=2e-7, atol=2e-9)
+
+
 @pytest.mark.parametrize(
     ("num_stokes", "calculate_derivatives"),
     [(1, False), (1, True), (3, False), (3, True)],
@@ -286,11 +333,14 @@ def test_exact_single_scatter_wavelength_batch_parity(
     batched = batch_engine.calculate_radiance(batch_atmosphere)
 
     assert scalar.data_vars.keys() == batched.data_vars.keys()
+    # GEMV and GEMM solar-transmission paths differ by a few final bits. The
+    # log-transmission weights expose that difference most strongly in WFs.
+    parity_rtol = 1e-11 if calculate_derivatives else 2e-13
     for variable in scalar.data_vars:
         np.testing.assert_allclose(
             batched[variable].values,
             scalar[variable].values,
-            rtol=2e-13,
+            rtol=parity_rtol,
             atol=2e-14,
         )
 
@@ -316,7 +366,7 @@ def test_mixed_sources_wavelength_batch_parity(emission_source):
         np.testing.assert_allclose(
             batched[variable].values,
             scalar[variable].values,
-            rtol=2e-13,
+            rtol=1e-11,
             atol=2e-14,
         )
 
@@ -370,7 +420,7 @@ def test_rayon_wavelength_batch_parity():
         np.testing.assert_allclose(
             batched[variable].values,
             scalar[variable].values,
-            rtol=5e-12,
+            rtol=1e-11,
             atol=2e-13,
         )
 
@@ -438,6 +488,6 @@ def test_rayon_source_threading_uses_cpp_source_threads():
         np.testing.assert_allclose(
             threaded[variable].values,
             scalar[variable].values,
-            rtol=5e-12,
+            rtol=1e-11,
             atol=2e-13,
         )

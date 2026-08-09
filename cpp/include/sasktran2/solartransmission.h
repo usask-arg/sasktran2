@@ -59,9 +59,93 @@ namespace sasktran2::solartransmission {
 #endif
     };
 
+    /** Geometry-only table of parallel solar rays for a spherical atmosphere.
+     *
+     * Rays are indexed by a fixed impact-parameter grid and traced once from
+     * the sun-facing top of atmosphere when first referenced while building
+     * the cell-query table.  A query at an arbitrary location interpolates in
+     * impact parameter and evaluates the partial shell between the nearest
+     * stored boundary and the query point with the same analytic quadrature
+     * used by the spherical ray tracer.  Source integration only evaluates
+     * the resulting stencils; it never traces an interior solar ray.
+     */
+    class SolarTransmissionRayTable {
+      public:
+        static constexpr std::size_t MAX_PARTIAL_WEIGHTS = 4;
+
+        struct PartialODStencil {
+            std::array<int, MAX_PARTIAL_WEIGHTS> index{};
+            std::array<double, MAX_PARTIAL_WEIGHTS> weight{};
+            std::size_t count = 0;
+        };
+
+        struct RaySample {
+            int ray_index = -1;
+            int boundary_index = -1;
+            double interpolation_weight = 0.0;
+            PartialODStencil partial;
+        };
+
+        struct Query {
+            std::array<RaySample, 2> samples{};
+            std::size_t count = 0;
+            bool shadowed = false;
+        };
+
+      private:
+        const Geometry1D& m_geometry;
+        const sasktran2::raytracing::RayTracerBase& m_raytracer;
+        std::vector<double> m_impact_parameters;
+        std::vector<sasktran2::raytracing::TracedRay> m_rays;
+        std::vector<int> m_cumulative_row_offsets;
+        Eigen::Vector3d m_sun_unit;
+        Eigen::Vector3d m_perpendicular_unit;
+        double m_ground_radius = 0.0;
+        double m_top_radius = 0.0;
+        int m_num_cumulative_rows = 0;
+
+        struct SingleRayQuery {
+            RaySample sample;
+            bool valid = false;
+            bool shadowed = false;
+        };
+
+        void ensure_ray(int ray_index);
+        SingleRayQuery query_ray(int ray_index, double ray_coordinate) const;
+
+      public:
+        SolarTransmissionRayTable(
+            const Geometry1D& geometry,
+            const sasktran2::raytracing::RayTracerBase& raytracer)
+            : m_geometry(geometry), m_raytracer(raytracer) {}
+
+        void initialize();
+
+        Query query(const sasktran2::Location& location);
+
+        int num_cumulative_rows() const { return m_num_cumulative_rows; }
+
+        int cumulative_row(int ray_index, int boundary_index) const {
+            return m_cumulative_row_offsets.at(ray_index) + boundary_index;
+        }
+
+        bool ray_is_initialized(int ray_index) const {
+            return m_cumulative_row_offsets.at(ray_index) >= 0;
+        }
+
+        const std::vector<sasktran2::raytracing::TracedRay>& rays() const {
+            return m_rays;
+        }
+    };
+
     class SolarTransmissionExact : public SolarTransmissionBase {
       private:
       public:
+        struct Query {
+            sasktran2::raytracing::TracedRay ray;
+            bool shadowed = false;
+        };
+
         SolarTransmissionExact(
             const Geometry1D& geometry,
             const sasktran2::raytracing::RayTracerBase& raytracer)
@@ -75,8 +159,11 @@ namespace sasktran2::solartransmission {
 
         void generate_geometry_matrix(
             const std::vector<sasktran2::raytracing::TracedRay>& rays,
-            Eigen::MatrixXd& od_matrix,
-            std::vector<bool>& ground_hit_flag) const;
+            Eigen::MatrixXd& od_matrix, std::vector<bool>& ground_hit_flag,
+            const std::vector<bool>* required_rows = nullptr) const;
+
+        /** Trace a solar path from an arbitrary source-integration point. */
+        Query query(const sasktran2::Location& location) const;
 
 #ifdef SKTRAN_RUST_SUPPORT
         SolarTransmissionExact(
@@ -188,9 +275,13 @@ namespace sasktran2::solartransmission {
                                                 internal,
                                                 [los][layer][interp_index] */
         std::vector<std::vector<std::vector<int>>>
-            m_geometry_exit_to_internal;         /** Mapping from layer exits to
-                                                    internal, [los][layer][interp_index]
-                                                  */
+            m_geometry_exit_to_internal; /** Mapping from layer exits to
+                                            internal, [los][layer][interp_index]
+                                          */
+        /** For straight rays, maps an atmospheric grid point directly to the
+         * cached phase entry for that LOS. This lets fixed interior
+         * quadrature nodes reuse the endpoint phase cache. */
+        std::vector<std::vector<int>> m_geometry_to_internal;
         std::vector<int> m_internal_to_geometry; /** Maps the internal index
                                                       to the geometry index */
         std::vector<int>
@@ -265,13 +356,15 @@ namespace sasktran2::solartransmission {
             const raytracing::GridWeightStencilView& index_weights,
             bool is_entrance, double source_amplitude, double derivative_scale,
             sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-                target) const;
+                target,
+            bool use_geometry_lookup = false) const;
 
         Eigen::Vector<double, NSTOKES> scatter_and_accumulate_derivative(
             int threadidx, int losidx, int layeridx,
             const raytracing::GridWeightStencilView& index_weights,
             bool is_entrance, double source_amplitude, double derivative_scale,
-            sasktran2::WavelengthBlockLaneDualView<NSTOKES, 1>& target) const;
+            sasktran2::WavelengthBlockLaneDualView<NSTOKES, 1>& target,
+            bool use_geometry_lookup = false) const;
 
         template <int N>
         void scatter_and_accumulate_derivative_block(
@@ -286,7 +379,8 @@ namespace sasktran2::solartransmission {
                 derivative_scale,
             sasktran2::WavelengthBlockDual<NSTOKES>& target,
             Eigen::Matrix<double, NSTOKES, Eigen::Dynamic, Eigen::RowMajor>&
-                phase_result) const;
+                phase_result,
+            bool use_geometry_lookup = false) const;
 
       private:
         template <typename Target>
@@ -294,7 +388,7 @@ namespace sasktran2::solartransmission {
             int threadidx, int losidx, int layeridx,
             const raytracing::GridWeightStencilView& index_weights,
             bool is_entrance, double source_amplitude, double derivative_scale,
-            Target& target) const;
+            Target& target, bool use_geometry_lookup) const;
 
         void initialize_geometry_impl(
             const std::vector<sasktran2::raytracing::TracedRay>& los_rays,
@@ -463,6 +557,10 @@ namespace sasktran2::solartransmission {
         const Eigen::Vector<double, NSTOKES> endpoint_source =
             source_amplitude * phase;
 
+        if (target.deriv.size() == 0) {
+            return endpoint_source;
+        }
+
         for (auto it = solar_trans_iter; it; ++it) {
             target.deriv.col(it.index()) -=
                 derivative_scale * it.value() * endpoint_source;
@@ -482,6 +580,52 @@ namespace sasktran2::solartransmission {
         }
 
         return endpoint_source;
+    }
+
+    /** Evaluate q = omega*P/(4*pi) at one cell location.
+     *
+     * Extinction and both attenuation factors are deliberately excluded so
+     * fixed quadrature can sample each factor independently. `derivative_scale`
+     * accumulates the exact SSA and phase-matrix derivatives of the node
+     * contribution into `target`.
+     */
+    template <int NSTOKES, typename Target>
+    inline Eigen::Vector<double, NSTOKES> accumulate_exact_scattering_parameter(
+        const PhaseHandler<NSTOKES>& phase_handler, int threadidx, int losidx,
+        int layeridx, int wavelidx,
+        const raytracing::GridWeightStencilView& index_weights,
+        bool is_entrance, const atmosphere::Atmosphere<NSTOKES>& atmosphere,
+        double derivative_scale, Target& target,
+        bool use_geometry_lookup = false) {
+        const auto& storage = atmosphere.storage();
+        double ssa = 0.0;
+        for (std::size_t index = 0; index < index_weights.size(); ++index) {
+            const auto weight = index_weights[index];
+            if (weight.second != 0.0) {
+                ssa += storage.ssa(weight.first, wavelidx) * weight.second;
+            }
+        }
+
+        const double amplitude = ssa / (EIGEN_PI * 4);
+        const Eigen::Vector<double, NSTOKES> phase =
+            phase_handler.scatter_and_accumulate_derivative(
+                threadidx, losidx, layeridx, index_weights, is_entrance,
+                amplitude, derivative_scale, target, use_geometry_lookup);
+        const Eigen::Vector<double, NSTOKES> parameter = amplitude * phase;
+
+        if (target.deriv.size() == 0 || derivative_scale == 0.0) {
+            return parameter;
+        }
+        for (std::size_t index = 0; index < index_weights.size(); ++index) {
+            const auto weight = index_weights[index];
+            if (weight.second == 0.0) {
+                continue;
+            }
+            target.deriv.col(atmosphere.ssa_deriv_start_index() +
+                             weight.first) +=
+                derivative_scale * weight.second * phase / (EIGEN_PI * 4);
+        }
+        return parameter;
     }
 
     template <int NSTOKES> struct ExactScatteringBlockScratch {
@@ -621,6 +765,61 @@ namespace sasktran2::solartransmission {
         }
     }
 
+    /** Batched q = omega*P/(4*pi) location evaluation. */
+    template <int NSTOKES, int N>
+    inline void accumulate_exact_scattering_parameter_block(
+        const PhaseHandler<NSTOKES>& phase_handler, int threadidx, int losidx,
+        int layeridx, const sasktran2::WavelengthBlock<N>& batch,
+        const raytracing::GridWeightStencilView& index_weights,
+        bool is_entrance, const atmosphere::Atmosphere<NSTOKES>& atmosphere,
+        const Eigen::Ref<const Eigen::Matrix<double, 1, N, Eigen::RowMajor>>&
+            derivative_scale,
+        sasktran2::WavelengthBlockDual<NSTOKES>& target,
+        ExactScatteringBlockScratch<NSTOKES>& scratch,
+        bool use_geometry_lookup = false) {
+        const auto& storage = atmosphere.storage();
+        auto ssa = wavelength_head(scratch.ssa, batch);
+        ssa.setZero();
+        for (std::size_t index = 0; index < index_weights.size(); ++index) {
+            const auto weight = index_weights[index];
+            if (weight.second == 0.0) {
+                continue;
+            }
+            for (int lane = 0; lane < batch.count; ++lane) {
+                ssa(lane) += storage.ssa(weight.first, batch.wavelength(lane)) *
+                             weight.second;
+            }
+        }
+
+        auto amplitude = wavelength_head(scratch.source_amplitude, batch);
+        amplitude.array() = ssa.array() / (EIGEN_PI * 4);
+        phase_handler.template scatter_and_accumulate_derivative_block<N>(
+            threadidx, losidx, layeridx, index_weights, is_entrance, batch,
+            amplitude, derivative_scale, target, scratch.phase,
+            use_geometry_lookup);
+        auto phase = wavelength_left_cols(scratch.phase, batch);
+        auto endpoint_parameter =
+            wavelength_left_cols(scratch.endpoint_source, batch);
+        endpoint_parameter = phase;
+        endpoint_parameter.array().rowwise() *= amplitude.array();
+
+        if (target.derivative_size() == 0) {
+            return;
+        }
+        for (std::size_t index = 0; index < index_weights.size(); ++index) {
+            const auto weight = index_weights[index];
+            if (weight.second == 0.0) {
+                continue;
+            }
+            auto ssa_derivative = target.derivative(
+                atmosphere.ssa_deriv_start_index() + weight.first, batch);
+            auto factor = wavelength_head(scratch.ssa_factor, batch);
+            factor.array() =
+                weight.second * derivative_scale.array() / (EIGEN_PI * 4);
+            ssa_derivative.array() += phase.array().rowwise() * factor.array();
+        }
+    }
+
     template <typename S, int NSTOKES>
     class SingleScatterSource : public SourceTermInterface<NSTOKES> {
       private:
@@ -632,11 +831,35 @@ namespace sasktran2::solartransmission {
         std::vector<bool> m_ground_hit_flag;
 
         std::vector<Eigen::VectorXd> m_solar_trans;
+        std::vector<Eigen::VectorXd> m_solar_ray_cumulative_od;
         using RowMajorMatrix = Eigen::Matrix<double, Eigen::Dynamic,
                                              Eigen::Dynamic, Eigen::RowMajor>;
         std::vector<RowMajorMatrix> m_solar_trans_batch;
+        std::vector<RowMajorMatrix> m_solar_ray_cumulative_od_batch;
         int m_wavelength_batch_capacity = 1;
         std::vector<std::vector<int>> m_index_map;
+
+        static constexpr std::size_t GAUSS_ORDER = 8;
+        const sasktran2::raytracing::RayTracerBase* m_raytracer_1d = nullptr;
+        std::unique_ptr<SolarTransmissionRayTable> m_solar_ray_table;
+        struct GaussNodeGeometry {
+            std::size_t solar_query_index = 0;
+            SolarTransmissionRayTable::PartialODStencil viewing_od;
+            SolarTransmissionRayTable::PartialODStencil
+                atmospheric_interpolation;
+            bool valid = false;
+
+            raytracing::GridWeightStencilView interpolation_weights() const {
+                return {atmospheric_interpolation.index.data(),
+                        atmospheric_interpolation.weight.data(),
+                        atmospheric_interpolation.count};
+            }
+        };
+        std::vector<SolarTransmissionExact::Query> m_exact_solar_queries;
+        std::vector<SolarTransmissionRayTable::Query> m_table_solar_queries;
+        std::vector<std::vector<std::array<GaussNodeGeometry, GAUSS_ORDER>>>
+            m_cell_gauss_nodes;
+        bool m_requires_endpoint_solar_transmission = true;
 
         PhaseHandler<NSTOKES> m_phase_handler;
 
@@ -690,12 +913,18 @@ namespace sasktran2::solartransmission {
             typename SourceTermInterface<NSTOKES>::IntegrationDirection
                 direction) const;
 
+        bool integrated_source_gauss8_single(
+            int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+            const sasktran2::raytracing::TracedLayer& layer,
+            sasktran2::WavelengthBlockLaneDualView<NSTOKES, 1>& source) const;
+
       public:
         SingleScatterSource(
             const Geometry1D& geometry,
             const sasktran2::raytracing::RayTracerBase& raytracer)
             : m_solar_transmission(geometry, raytracer), m_geometry(geometry),
-              m_geometry_1d(&geometry), m_phase_handler(geometry) {
+              m_geometry_1d(&geometry), m_raytracer_1d(&raytracer),
+              m_phase_handler(geometry) {
             initialize_fixed_dispatch();
         };
 
@@ -819,6 +1048,13 @@ namespace sasktran2::solartransmission {
             typename SourceTermInterface<
                 NSTOKES>::IntegrationDirection direction =
                 SourceTermInterface<NSTOKES>::IntegrationDirection::none) const;
+
+        template <int N>
+        bool integrated_source_gauss8_block(
+            const sasktran2::WavelengthBlock<N>& batch, int losidx,
+            int layeridx, int wavel_threadidx, int threadidx,
+            const sasktran2::raytracing::TracedLayer& layer,
+            sasktran2::WavelengthBlockDual<NSTOKES>& source) const;
 
         template <int N>
         void integrated_source_typed(

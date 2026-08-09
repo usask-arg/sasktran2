@@ -1,6 +1,5 @@
 #include "sasktran2/grids.h"
 #include "sasktran2/raytracing.h"
-#include "sasktran2/source_algorithms.h"
 #include "sasktran2/source_interface.h"
 #include <sasktran2/solartransmission.h>
 #include <sasktran2/dual.h>
@@ -11,7 +10,163 @@
 
 namespace {
     constexpr double DENSE_GEOMETRY_THRESHOLD = 0.25;
-}
+    constexpr std::array<double, 8> GAUSS_NODES = {
+        0.0198550717512318842, 0.101666761293186631, 0.237233795041835508,
+        0.408282678752175110,  0.591717321247824890, 0.762766204958164492,
+        0.898333238706813369,  0.980144928248768116};
+    constexpr std::array<double, 8> GAUSS_WEIGHTS = {
+        0.0506142681451881296, 0.111190517226687235, 0.156853322938943644,
+        0.181341891689180991,  0.181341891689180991, 0.156853322938943644,
+        0.111190517226687235,  0.0506142681451881296};
+
+    template <typename Storage>
+    double solar_ray_query_od(
+        const sasktran2::solartransmission::SolarTransmissionRayTable& table,
+        const sasktran2::solartransmission::SolarTransmissionRayTable::Query&
+            query,
+        const Eigen::VectorXd& cumulative_od, const Storage& storage,
+        int wavelength) {
+        if (query.shadowed) {
+            return std::numeric_limits<double>::infinity();
+        }
+        double result = 0.0;
+        for (std::size_t sample_index = 0; sample_index < query.count;
+             ++sample_index) {
+            const auto& sample = query.samples[sample_index];
+            double sample_od = cumulative_od[table.cumulative_row(
+                sample.ray_index, sample.boundary_index)];
+            for (std::size_t index = 0; index < sample.partial.count; ++index) {
+                sample_od += sample.partial.weight[index] *
+                             storage.total_extinction(
+                                 sample.partial.index[index], wavelength);
+            }
+            result += sample.interpolation_weight * sample_od;
+        }
+        return result;
+    }
+
+    template <int N, typename Storage>
+    double solar_ray_query_od(
+        const sasktran2::solartransmission::SolarTransmissionRayTable& table,
+        const sasktran2::solartransmission::SolarTransmissionRayTable::Query&
+            query,
+        const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic,
+                            Eigen::RowMajor>& cumulative_od,
+        const Storage& storage, const sasktran2::WavelengthBlock<N>& batch,
+        int lane) {
+        if (query.shadowed) {
+            return std::numeric_limits<double>::infinity();
+        }
+        double result = 0.0;
+        for (std::size_t sample_index = 0; sample_index < query.count;
+             ++sample_index) {
+            const auto& sample = query.samples[sample_index];
+            double sample_od = cumulative_od(
+                table.cumulative_row(sample.ray_index, sample.boundary_index),
+                lane);
+            for (std::size_t index = 0; index < sample.partial.count; ++index) {
+                sample_od +=
+                    sample.partial.weight[index] *
+                    storage.total_extinction(sample.partial.index[index],
+                                             batch.wavelength(lane));
+            }
+            result += sample.interpolation_weight * sample_od;
+        }
+        return result;
+    }
+
+    template <typename Function>
+    void for_each_solar_ray_query_weight(
+        const sasktran2::solartransmission::SolarTransmissionRayTable& table,
+        const sasktran2::solartransmission::SolarTransmissionRayTable::Query&
+            query,
+        Function&& function) {
+        if (query.shadowed) {
+            return;
+        }
+        for (std::size_t sample_index = 0; sample_index < query.count;
+             ++sample_index) {
+            const auto& sample = query.samples[sample_index];
+            const auto& ray = table.rays()[sample.ray_index];
+            for (int layer_index = sample.boundary_index;
+                 layer_index < ray.layers.size(); ++layer_index) {
+                const auto weights = ray.optical_depth_weights(layer_index);
+                for (std::size_t index = 0; index < weights.size(); ++index) {
+                    const auto weight = weights[index];
+                    function(weight.first,
+                             sample.interpolation_weight * weight.second);
+                }
+            }
+            for (std::size_t index = 0; index < sample.partial.count; ++index) {
+                function(sample.partial.index[index],
+                         sample.interpolation_weight *
+                             sample.partial.weight[index]);
+            }
+        }
+    }
+
+    template <typename Storage>
+    double solar_ray_query_od(
+        const sasktran2::solartransmission::SolarTransmissionExact::Query&
+            query,
+        const Storage& storage, int wavelength) {
+        if (query.shadowed) {
+            return std::numeric_limits<double>::infinity();
+        }
+        double result = 0.0;
+        for (std::size_t layer_index = 0; layer_index < query.ray.layers.size();
+             ++layer_index) {
+            const auto weights = query.ray.optical_depth_weights(layer_index);
+            for (std::size_t index = 0; index < weights.size(); ++index) {
+                const auto weight = weights[index];
+                result += weight.second *
+                          storage.total_extinction(weight.first, wavelength);
+            }
+        }
+        return result;
+    }
+
+    template <typename Function>
+    void for_each_solar_ray_query_weight(
+        const sasktran2::solartransmission::SolarTransmissionExact::Query&
+            query,
+        Function&& function) {
+        if (query.shadowed) {
+            return;
+        }
+        for (std::size_t layer_index = 0; layer_index < query.ray.layers.size();
+             ++layer_index) {
+            const auto weights = query.ray.optical_depth_weights(layer_index);
+            for (std::size_t index = 0; index < weights.size(); ++index) {
+                const auto weight = weights[index];
+                function(weight.first, weight.second);
+            }
+        }
+    }
+
+    template <typename Storage>
+    double stencil_od(const sasktran2::solartransmission::
+                          SolarTransmissionRayTable::PartialODStencil& stencil,
+                      const Storage& storage, int wavelength) {
+        double result = 0.0;
+        for (std::size_t index = 0; index < stencil.count; ++index) {
+            result +=
+                stencil.weight[index] *
+                storage.total_extinction(stencil.index[index], wavelength);
+        }
+        return result;
+    }
+
+    template <typename Function>
+    void for_each_stencil_weight(
+        const sasktran2::solartransmission::SolarTransmissionRayTable::
+            PartialODStencil& stencil,
+        Function&& function) {
+        for (std::size_t index = 0; index < stencil.count; ++index) {
+            function(stencil.index[index], stencil.weight[index]);
+        }
+    }
+} // namespace
 
 namespace sasktran2::solartransmission {
     template <typename S, int NSTOKES>
@@ -51,6 +206,7 @@ namespace sasktran2::solartransmission {
         // Set up storage for each thread
         // m_solar_trans.resize(config.num_threads());
         m_solar_trans.resize(config.num_wavelength_threads());
+        m_solar_ray_cumulative_od.resize(config.num_wavelength_threads());
 
         m_start_source_cache.resize(config.num_threads());
         m_end_source_cache.resize(config.num_threads());
@@ -65,21 +221,63 @@ namespace sasktran2::solartransmission {
 
         // Calculate the solar transmission at each cell
         if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
-            // Faster to use the dense matrix if most of the elements are
-            // nonzero
-            if (m_geometry_matrix.size() > 0 &&
-                double(m_geometry_sparse.nonZeros()) /
-                        double(m_geometry_matrix.size()) >
-                    DENSE_GEOMETRY_THRESHOLD) {
-                m_solar_trans[threadidx].noalias() =
-                    m_geometry_matrix *
-                    m_atmosphere->storage().total_extinction(
-                        Eigen::placeholders::all, wavelidx);
-            } else {
-                m_solar_trans[threadidx].noalias() =
-                    m_geometry_sparse *
-                    m_atmosphere->storage().total_extinction(
-                        Eigen::placeholders::all, wavelidx);
+            if (m_requires_endpoint_solar_transmission) {
+                auto& solar_trans = m_solar_trans[threadidx];
+                // Faster to use the dense matrix if most of the elements are
+                // nonzero
+                if (m_geometry_matrix.size() > 0 &&
+                    double(m_geometry_sparse.nonZeros()) /
+                            double(m_geometry_matrix.size()) >
+                        DENSE_GEOMETRY_THRESHOLD) {
+                    solar_trans.noalias() =
+                        m_geometry_matrix *
+                        m_atmosphere->storage().total_extinction(
+                            Eigen::placeholders::all, wavelidx);
+                } else {
+                    solar_trans.noalias() =
+                        m_geometry_sparse *
+                        m_atmosphere->storage().total_extinction(
+                            Eigen::placeholders::all, wavelidx);
+                }
+                solar_trans =
+                    (-solar_trans.array()).exp().matrix() *
+                    m_atmosphere->storage().solar_irradiance(wavelidx);
+            }
+
+            if (m_config->single_scatter_source_quadrature() &&
+                m_solar_ray_table != nullptr) {
+                auto& cumulative = m_solar_ray_cumulative_od[threadidx];
+                cumulative.resize(m_solar_ray_table->num_cumulative_rows());
+                for (int ray_index = 0;
+                     ray_index < m_solar_ray_table->rays().size();
+                     ++ray_index) {
+                    if (!m_solar_ray_table->ray_is_initialized(ray_index)) {
+                        continue;
+                    }
+                    const auto& ray = m_solar_ray_table->rays()[ray_index];
+                    const int layer_count = static_cast<int>(ray.layers.size());
+                    cumulative[m_solar_ray_table->cumulative_row(
+                        ray_index, layer_count)] = 0.0;
+                    for (int layer_index = layer_count - 1; layer_index >= 0;
+                         --layer_index) {
+                        double layer_od = 0.0;
+                        const auto weights =
+                            ray.optical_depth_weights(layer_index);
+                        for (std::size_t index = 0; index < weights.size();
+                             ++index) {
+                            const auto weight = weights[index];
+                            layer_od +=
+                                weight.second *
+                                m_atmosphere->storage().total_extinction(
+                                    weight.first, wavelidx);
+                        }
+                        cumulative[m_solar_ray_table->cumulative_row(
+                            ray_index, layer_index)] =
+                            cumulative[m_solar_ray_table->cumulative_row(
+                                ray_index, layer_index + 1)] +
+                            layer_od;
+                    }
+                }
             }
         }
 
@@ -90,12 +288,20 @@ namespace sasktran2::solartransmission {
                                          Eigen::placeholders::all, wavelidx));
         }
 
-        m_solar_trans[threadidx] =
-            exp(-m_solar_trans[threadidx].array()) *
-            m_atmosphere->storage().solar_irradiance(wavelidx);
+        if constexpr (std::is_same_v<S, SolarTransmissionTable>) {
+            m_solar_trans[threadidx] =
+                exp(-m_solar_trans[threadidx].array()) *
+                m_atmosphere->storage().solar_irradiance(wavelidx);
+        }
         for (int i = 0; i < m_ground_hit_flag.size(); ++i) {
             if (m_ground_hit_flag[i]) {
-                m_solar_trans[threadidx][i] = 0;
+                if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
+                    if (m_requires_endpoint_solar_transmission) {
+                        m_solar_trans[threadidx][i] = 0;
+                    }
+                } else {
+                    m_solar_trans[threadidx][i] = 0;
+                }
             }
         }
     }
@@ -110,8 +316,18 @@ namespace sasktran2::solartransmission {
         } else {
             m_wavelength_batch_capacity = block_size;
             m_solar_trans_batch.resize(m_config->num_wavelength_threads());
-            for (auto& storage : m_solar_trans_batch) {
-                storage.resize(m_geometry_sparse.rows(), block_size);
+            m_solar_ray_cumulative_od_batch.resize(
+                m_config->num_wavelength_threads());
+            for (int thread = 0; thread < m_config->num_wavelength_threads();
+                 ++thread) {
+                m_solar_trans_batch[thread].resize(m_geometry_sparse.rows(),
+                                                   block_size);
+                const int table_rows =
+                    m_solar_ray_table == nullptr
+                        ? 0
+                        : m_solar_ray_table->num_cumulative_rows();
+                m_solar_ray_cumulative_od_batch[thread].resize(table_rows,
+                                                               block_size);
             }
             m_batch_source_cache.resize(m_config->num_threads());
             m_batch_integration_cache.resize(m_config->num_threads());
@@ -148,23 +364,63 @@ namespace sasktran2::solartransmission {
                 wavelength_left_cols(m_solar_trans_batch[threadidx], batch);
             const auto extinction = wavelength_middle_cols(
                 m_atmosphere->storage().total_extinction, batch);
-            if (m_geometry_matrix.size() > 0 &&
-                double(m_geometry_sparse.nonZeros()) /
-                        double(m_geometry_matrix.size()) >
-                    DENSE_GEOMETRY_THRESHOLD) {
-                solar_trans.noalias() = m_geometry_matrix * extinction;
-            } else {
-                solar_trans.noalias() = m_geometry_sparse * extinction;
+            if (m_requires_endpoint_solar_transmission) {
+                if (m_geometry_matrix.size() > 0 &&
+                    double(m_geometry_sparse.nonZeros()) /
+                            double(m_geometry_matrix.size()) >
+                        DENSE_GEOMETRY_THRESHOLD) {
+                    solar_trans.noalias() = m_geometry_matrix * extinction;
+                } else {
+                    solar_trans.noalias() = m_geometry_sparse * extinction;
+                }
+                solar_trans = (-solar_trans.array()).exp().matrix();
+                for (int lane = 0; lane < batch.count; ++lane) {
+                    solar_trans.col(lane) *=
+                        m_atmosphere->storage().solar_irradiance(
+                            batch.wavelength(lane));
+                }
+                for (int row = 0; row < m_ground_hit_flag.size(); ++row) {
+                    if (m_ground_hit_flag[row]) {
+                        solar_trans.row(row).setZero();
+                    }
+                }
             }
-            solar_trans = (-solar_trans.array()).exp().matrix();
-            for (int lane = 0; lane < batch.count; ++lane) {
-                solar_trans.col(lane) *=
-                    m_atmosphere->storage().solar_irradiance(
-                        batch.wavelength(lane));
-            }
-            for (int row = 0; row < m_ground_hit_flag.size(); ++row) {
-                if (m_ground_hit_flag[row]) {
-                    solar_trans.row(row).setZero();
+
+            if (m_config->single_scatter_source_quadrature() &&
+                m_solar_ray_table != nullptr) {
+                auto table_od = wavelength_left_cols(
+                    m_solar_ray_cumulative_od_batch[threadidx], batch);
+                for (int ray_index = 0;
+                     ray_index < m_solar_ray_table->rays().size();
+                     ++ray_index) {
+                    if (!m_solar_ray_table->ray_is_initialized(ray_index)) {
+                        continue;
+                    }
+                    const auto& ray = m_solar_ray_table->rays()[ray_index];
+                    const int layer_count = static_cast<int>(ray.layers.size());
+                    table_od
+                        .row(m_solar_ray_table->cumulative_row(ray_index,
+                                                               layer_count))
+                        .setZero();
+                    for (int layer_index = layer_count - 1; layer_index >= 0;
+                         --layer_index) {
+                        const int row = m_solar_ray_table->cumulative_row(
+                            ray_index, layer_index);
+                        table_od.row(row) = table_od.row(row + 1);
+                        const auto weights =
+                            ray.optical_depth_weights(layer_index);
+                        for (std::size_t index = 0; index < weights.size();
+                             ++index) {
+                            const auto weight = weights[index];
+                            table_od.row(row).array() +=
+                                weight.second *
+                                wavelength_middle_cols(
+                                    m_atmosphere->storage()
+                                        .total_extinction.row(weight.first),
+                                    batch)
+                                    .array();
+                        }
+                    }
                 }
             }
         }
@@ -372,6 +628,42 @@ namespace sasktran2::solartransmission {
                                   start_active->begin(), start_active->end());
         derivative_indices.insert(derivative_indices.end(), end_active->begin(),
                                   end_active->end());
+        if (m_config->single_scatter_source_quadrature() &&
+            losidx < m_cell_gauss_nodes.size() &&
+            layeridx < m_cell_gauss_nodes[losidx].size()) {
+            const bool use_ray_table =
+                m_config->single_scatter_solar_transmission() ==
+                sasktran2::Config::SingleScatterSolarTransmission::ray_table;
+            for (const auto& node : m_cell_gauss_nodes[losidx][layeridx]) {
+                const auto append_solar_derivative = [&](int derivative_index,
+                                                         double) {
+                    derivative_indices.push_back(derivative_index);
+                };
+                if (use_ray_table) {
+                    const auto& query =
+                        m_table_solar_queries[node.solar_query_index];
+                    for_each_solar_ray_query_weight(*m_solar_ray_table, query,
+                                                    append_solar_derivative);
+                } else {
+                    const auto& query =
+                        m_exact_solar_queries[node.solar_query_index];
+                    for_each_solar_ray_query_weight(query,
+                                                    append_solar_derivative);
+                }
+                for_each_stencil_weight(
+                    node.viewing_od, [&](int derivative_index, double) {
+                        derivative_indices.push_back(derivative_index);
+                    });
+                for_each_stencil_weight(
+                    node.atmospheric_interpolation,
+                    [&](int derivative_index, double) {
+                        derivative_indices.push_back(derivative_index);
+                        derivative_indices.push_back(
+                            m_atmosphere->ssa_deriv_start_index() +
+                            derivative_index);
+                    });
+            }
+        }
     }
 
     template <typename S, int NSTOKES>
@@ -384,17 +676,207 @@ namespace sasktran2::solartransmission {
             internal_viewing.traced_rays);
 
         if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
+            if (m_config->single_scatter_source_quadrature() &&
+                m_geometry_1d != nullptr &&
+                m_geometry.coordinates().geometry_type() ==
+                    sasktran2::geometrytype::spherical) {
+                const bool use_ray_table =
+                    m_config->single_scatter_solar_transmission() ==
+                    sasktran2::Config::SingleScatterSolarTransmission::
+                        ray_table;
+                if (use_ray_table) {
+                    ZoneScopedN("Single Scatter Source Solar Ray Table");
+                    m_solar_ray_table =
+                        std::make_unique<SolarTransmissionRayTable>(
+                            *m_geometry_1d, *m_raytracer_1d);
+                    m_solar_ray_table->initialize();
+                } else {
+                    m_solar_ray_table.reset();
+                }
+                std::size_t num_gauss_queries = 0;
+                for (const auto& ray : internal_viewing.traced_rays) {
+                    if (ray.is_straight) {
+                        num_gauss_queries += ray.layers.size() * GAUSS_ORDER;
+                    }
+                }
+                m_exact_solar_queries.clear();
+                m_table_solar_queries.clear();
+                if (use_ray_table) {
+                    m_table_solar_queries.reserve(num_gauss_queries);
+                } else {
+                    m_exact_solar_queries.reserve(num_gauss_queries);
+                }
+                m_cell_gauss_nodes.clear();
+                m_cell_gauss_nodes.resize(internal_viewing.traced_rays.size());
+                for (int ray_index = 0;
+                     ray_index < internal_viewing.traced_rays.size();
+                     ++ray_index) {
+                    const auto& ray = internal_viewing.traced_rays[ray_index];
+                    m_cell_gauss_nodes[ray_index].resize(ray.layers.size());
+                    if (!ray.is_straight) {
+                        continue;
+                    }
+                    for (int layer_index = 0; layer_index < ray.layers.size();
+                         ++layer_index) {
+                        const auto& layer = ray.layers[layer_index];
+                        auto& cell_nodes =
+                            m_cell_gauss_nodes[ray_index][layer_index];
+                        for (std::size_t node_index = 0;
+                             node_index < GAUSS_ORDER; ++node_index) {
+                            const double x = GAUSS_NODES[node_index];
+                            auto& node = cell_nodes[node_index];
+                            sasktran2::Location location;
+                            location.position =
+                                (1.0 - x) * layer.entrance.position +
+                                x * layer.exit.position;
+                            bool solar_query_valid;
+                            if (use_ray_table) {
+                                node.solar_query_index =
+                                    m_table_solar_queries.size();
+                                m_table_solar_queries.push_back(
+                                    m_solar_ray_table->query(location));
+                                const auto& query =
+                                    m_table_solar_queries.back();
+                                solar_query_valid =
+                                    query.shadowed || query.count > 0;
+                            } else {
+                                node.solar_query_index =
+                                    m_exact_solar_queries.size();
+                                m_exact_solar_queries.push_back(
+                                    m_solar_transmission.query(location));
+                                const auto& query =
+                                    m_exact_solar_queries.back();
+                                solar_query_valid =
+                                    query.shadowed || !query.ray.layers.empty();
+                            }
+
+                            // Viewing attenuation from the cell entrance to
+                            // this fixed geometric node uses the same analytic
+                            // spherical-shell OD formula as the ray tracer.
+                            sasktran2::raytracing::TracedRay partial_ray;
+                            partial_ray.layers.resize(1);
+                            auto& partial = partial_ray.layers.front();
+                            partial.entrance = layer.entrance;
+                            partial.exit = location;
+                            partial.r_entrance = partial.entrance.radius();
+                            partial.r_exit = partial.exit.radius();
+                            partial.layer_distance = x * layer.layer_distance;
+                            partial.curvature_factor = layer.curvature_factor;
+                            partial.type =
+                                sasktran2::raytracing::LayerType::partial;
+                            sasktran2::raytracing::add_od_quadrature(
+                                partial,
+                                m_geometry.coordinates().geometry_type(),
+                                m_geometry_1d->altitude_grid()
+                                    .interpolation_method());
+                            std::vector<std::pair<int, double>> workspace;
+                            sasktran2::raytracing::add_interpolation_weights(
+                                partial_ray, 0, *m_geometry_1d, workspace);
+                            const auto partial_weights =
+                                partial_ray.optical_depth_weights(0);
+                            if (partial_weights.size() >
+                                SolarTransmissionRayTable::
+                                    MAX_PARTIAL_WEIGHTS) {
+                                throw std::runtime_error(
+                                    "Viewing Gauss-node OD stencil exceeds "
+                                    "fixed capacity");
+                            }
+                            node.viewing_od.count = partial_weights.size();
+                            for (std::size_t index = 0;
+                                 index < partial_weights.size(); ++index) {
+                                const auto weight = partial_weights[index];
+                                node.viewing_od.index[index] = weight.first;
+                                node.viewing_od.weight[index] = weight.second;
+                            }
+
+                            workspace.clear();
+                            m_geometry_1d->assign_interpolation_weights(
+                                location, workspace);
+                            if (workspace.size() > SolarTransmissionRayTable::
+                                                       MAX_PARTIAL_WEIGHTS) {
+                                throw std::runtime_error(
+                                    "Gauss-node atmospheric interpolation "
+                                    "exceeds fixed capacity");
+                            }
+                            node.atmospheric_interpolation.count =
+                                workspace.size();
+                            for (std::size_t index = 0;
+                                 index < workspace.size(); ++index) {
+                                node.atmospheric_interpolation.index[index] =
+                                    workspace[index].first;
+                                node.atmospheric_interpolation.weight[index] =
+                                    workspace[index].second;
+                            }
+                            node.valid =
+                                node.viewing_od.count > 0 &&
+                                node.atmospheric_interpolation.count > 0 &&
+                                solar_query_valid;
+                        }
+                    }
+                }
+            } else {
+                m_cell_gauss_nodes.clear();
+                m_exact_solar_queries.clear();
+                m_table_solar_queries.clear();
+                m_solar_ray_table.reset();
+            }
+
             {
                 ZoneScopedN("Single Scatter Source Exact Geometry Matrix");
                 if (m_geometry_2d == nullptr) {
-                    // The 1D solar geometry is usually dense.
+                    std::size_t num_endpoint_rows = 0;
+                    for (const auto& ray : internal_viewing.traced_rays) {
+                        num_endpoint_rows += ray.layers.size() + 1;
+                    }
+                    std::vector<bool> required_rows(num_endpoint_rows, false);
+                    std::size_t row_offset = 0;
+                    for (std::size_t ray_index = 0;
+                         ray_index < internal_viewing.traced_rays.size();
+                         ++ray_index) {
+                        const auto& ray =
+                            internal_viewing.traced_rays[ray_index];
+                        bool requires_constant_integration =
+                            ray_index >= m_cell_gauss_nodes.size() ||
+                            !ray.is_straight;
+                        if (!requires_constant_integration) {
+                            for (const auto& nodes :
+                                 m_cell_gauss_nodes[ray_index]) {
+                                for (const auto& node : nodes) {
+                                    if (!node.valid) {
+                                        requires_constant_integration = true;
+                                        break;
+                                    }
+                                }
+                                if (requires_constant_integration) {
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (requires_constant_integration) {
+                            std::fill(required_rows.begin() + row_offset,
+                                      required_rows.begin() + row_offset +
+                                          ray.layers.size() + 1,
+                                      true);
+                        } else if (ray.ground_is_hit && !ray.layers.empty()) {
+                            // The surface source needs only the ground-facing
+                            // endpoint; its interior cells use Gauss nodes.
+                            required_rows[row_offset] = true;
+                        }
+                        row_offset += ray.layers.size() + 1;
+                    }
+                    m_requires_endpoint_solar_transmission =
+                        std::any_of(required_rows.begin(), required_rows.end(),
+                                    [](bool required) { return required; });
                     this->m_solar_transmission.generate_geometry_matrix(
                         internal_viewing.traced_rays, m_geometry_matrix,
-                        m_ground_hit_flag);
+                        m_ground_hit_flag, &required_rows);
                     m_geometry_sparse = m_geometry_matrix.sparseView();
                 } else {
 #ifdef SKTRAN_RUST_SUPPORT
-                    // Higher-dimensional solar paths remain sparse.
+                    // Fixed viewing-cell quadrature is not yet implemented in
+                    // 2D, so all endpoint solar paths remain necessary.
+                    m_requires_endpoint_solar_transmission = true;
                     m_geometry_matrix.resize(0, 0);
                     m_solar_transmission.generate_geometry_matrix(
                         internal_viewing.traced_rays, m_geometry_sparse,
@@ -752,6 +1234,116 @@ namespace sasktran2::solartransmission {
     }
 
     template <typename S, int NSTOKES>
+    bool SingleScatterSource<S, NSTOKES>::integrated_source_gauss8_single(
+        int wavelidx, int losidx, int layeridx, int wavel_threadidx,
+        const sasktran2::raytracing::TracedLayer& layer,
+        sasktran2::WavelengthBlockLaneDualView<NSTOKES, 1>& source) const {
+        if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
+            return false;
+        } else {
+            if (!m_config->single_scatter_source_quadrature() ||
+                losidx >= m_cell_gauss_nodes.size() ||
+                layeridx >= m_cell_gauss_nodes[losidx].size()) {
+                return false;
+            }
+            const bool use_ray_table =
+                m_config->single_scatter_solar_transmission() ==
+                sasktran2::Config::SingleScatterSolarTransmission::ray_table;
+            if (use_ray_table && m_solar_ray_table == nullptr) {
+                return false;
+            }
+            const auto& storage = m_atmosphere->storage();
+            const double irradiance = storage.solar_irradiance(wavelidx);
+            const auto& nodes = m_cell_gauss_nodes[losidx][layeridx];
+            for (std::size_t node_index = 0; node_index < GAUSS_ORDER;
+                 ++node_index) {
+                const auto& node = nodes[node_index];
+                if (!node.valid) {
+                    return false;
+                }
+                const bool solar_shadowed =
+                    use_ray_table
+                        ? m_table_solar_queries[node.solar_query_index].shadowed
+                        : m_exact_solar_queries[node.solar_query_index]
+                              .shadowed;
+                if (solar_shadowed) {
+                    continue;
+                }
+
+                const double solar_od =
+                    use_ray_table
+                        ? solar_ray_query_od(
+                              *m_solar_ray_table,
+                              m_table_solar_queries[node.solar_query_index],
+                              m_solar_ray_cumulative_od[wavel_threadidx],
+                              storage, wavelidx)
+                        : solar_ray_query_od(
+                              m_exact_solar_queries[node.solar_query_index],
+                              storage, wavelidx);
+                const double viewing_od =
+                    stencil_od(node.viewing_od, storage, wavelidx);
+                if (!std::isfinite(solar_od) || !std::isfinite(viewing_od)) {
+                    continue;
+                }
+                const double transmission = std::exp(-(solar_od + viewing_od));
+                const auto interpolation = node.interpolation_weights();
+                double extinction = 0.0;
+                for (std::size_t index = 0; index < interpolation.size();
+                     ++index) {
+                    const auto weight = interpolation[index];
+                    extinction += weight.second * storage.total_extinction(
+                                                      weight.first, wavelidx);
+                }
+                const double geometric_scale = layer.layer_distance *
+                                               GAUSS_WEIGHTS[node_index] *
+                                               irradiance;
+                const double q_derivative_scale =
+                    geometric_scale * extinction * transmission;
+                const auto q = accumulate_exact_scattering_parameter(
+                    m_phase_handler, wavel_threadidx, losidx, layeridx,
+                    wavelidx, interpolation, true, *m_atmosphere,
+                    q_derivative_scale, source, true);
+                const auto node_value = q_derivative_scale * q;
+                source.value += node_value;
+
+                if (source.derivative_size() == 0) {
+                    continue;
+                }
+                const auto local_extinction_derivative =
+                    geometric_scale * transmission * q;
+                for (std::size_t index = 0; index < interpolation.size();
+                     ++index) {
+                    const auto weight = interpolation[index];
+                    source.deriv.col(weight.first) +=
+                        weight.second * local_extinction_derivative;
+                }
+                for_each_stencil_weight(
+                    node.viewing_od,
+                    [&](int derivative_index, double derivative_weight) {
+                        source.deriv.col(derivative_index) -=
+                            derivative_weight * node_value;
+                    });
+                const auto accumulate_solar_derivative =
+                    [&](int derivative_index, double derivative_weight) {
+                        source.deriv.col(derivative_index) -=
+                            derivative_weight * node_value;
+                    };
+                if (use_ray_table) {
+                    for_each_solar_ray_query_weight(
+                        *m_solar_ray_table,
+                        m_table_solar_queries[node.solar_query_index],
+                        accumulate_solar_derivative);
+                } else {
+                    for_each_solar_ray_query_weight(
+                        m_exact_solar_queries[node.solar_query_index],
+                        accumulate_solar_derivative);
+                }
+            }
+            return true;
+        }
+    }
+
+    template <typename S, int NSTOKES>
     void SingleScatterSource<S, NSTOKES>::integrated_source_single(
         int wavelidx, int losidx, int layeridx, int wavel_threadidx,
         int threadidx, const sasktran2::raytracing::TracedLayer& layer,
@@ -767,9 +1359,149 @@ namespace sasktran2::solartransmission {
             return;
         }
 
+        if (integrated_source_gauss8_single(wavelidx, losidx, layeridx,
+                                            wavel_threadidx, layer, source)) {
+            return;
+        }
+
         integrated_source_constant(wavelidx, losidx, layeridx, wavel_threadidx,
                                    threadidx, layer, entrance_weights,
                                    exit_weights, shell_od, source, direction);
+    }
+
+    template <typename S, int NSTOKES>
+    template <int N>
+    bool SingleScatterSource<S, NSTOKES>::integrated_source_gauss8_block(
+        const sasktran2::WavelengthBlock<N>& batch, int losidx, int layeridx,
+        int wavel_threadidx, int threadidx,
+        const sasktran2::raytracing::TracedLayer& layer,
+        sasktran2::WavelengthBlockDual<NSTOKES>& source) const {
+        if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
+            return false;
+        } else {
+            if (!m_config->single_scatter_source_quadrature() ||
+                losidx >= m_cell_gauss_nodes.size() ||
+                layeridx >= m_cell_gauss_nodes[losidx].size()) {
+                return false;
+            }
+            const bool use_ray_table =
+                m_config->single_scatter_solar_transmission() ==
+                sasktran2::Config::SingleScatterSolarTransmission::ray_table;
+            if (use_ray_table && m_solar_ray_table == nullptr) {
+                return false;
+            }
+
+            const auto& nodes = m_cell_gauss_nodes[losidx][layeridx];
+            for (const auto& node : nodes) {
+                if (!node.valid) {
+                    return false;
+                }
+            }
+
+            const auto& storage = m_atmosphere->storage();
+            auto& integration_cache = m_batch_integration_cache[threadidx];
+            auto q_derivative_scale = wavelength_head(
+                integration_cache.start_derivative_scale, batch);
+            auto local_extinction_scale =
+                wavelength_head(integration_cache.end_derivative_scale, batch);
+            auto node_value =
+                wavelength_left_cols(integration_cache.integrated_value, batch);
+            auto& q_cache = m_batch_source_cache[threadidx][0];
+            for (std::size_t node_index = 0; node_index < GAUSS_ORDER;
+                 ++node_index) {
+                const auto& node = nodes[node_index];
+                const auto interpolation = node.interpolation_weights();
+                const bool solar_shadowed =
+                    use_ray_table
+                        ? m_table_solar_queries[node.solar_query_index].shadowed
+                        : m_exact_solar_queries[node.solar_query_index]
+                              .shadowed;
+                for (int lane = 0; lane < batch.count; ++lane) {
+                    if (solar_shadowed) {
+                        q_derivative_scale(lane) = 0.0;
+                        local_extinction_scale(lane) = 0.0;
+                        continue;
+                    }
+                    const int wavelength = batch.wavelength(lane);
+                    const double solar_od =
+                        use_ray_table
+                            ? solar_ray_query_od(
+                                  *m_solar_ray_table,
+                                  m_table_solar_queries[node.solar_query_index],
+                                  m_solar_ray_cumulative_od_batch
+                                      [wavel_threadidx],
+                                  storage, batch, lane)
+                            : solar_ray_query_od(
+                                  m_exact_solar_queries[node.solar_query_index],
+                                  storage, wavelength);
+                    const double viewing_od =
+                        stencil_od(node.viewing_od, storage, wavelength);
+                    const double transmission =
+                        std::isfinite(solar_od) && std::isfinite(viewing_od)
+                            ? std::exp(-(solar_od + viewing_od))
+                            : 0.0;
+                    double extinction = 0.0;
+                    for (std::size_t index = 0; index < interpolation.size();
+                         ++index) {
+                        const auto weight = interpolation[index];
+                        extinction +=
+                            weight.second *
+                            storage.total_extinction(weight.first, wavelength);
+                    }
+                    const double geometric_scale =
+                        layer.layer_distance * GAUSS_WEIGHTS[node_index] *
+                        storage.solar_irradiance(wavelength);
+                    local_extinction_scale(lane) =
+                        geometric_scale * transmission;
+                    q_derivative_scale(lane) =
+                        local_extinction_scale(lane) * extinction;
+                }
+
+                accumulate_exact_scattering_parameter_block<NSTOKES, N>(
+                    m_phase_handler, wavel_threadidx, losidx, layeridx, batch,
+                    interpolation, true, *m_atmosphere, q_derivative_scale,
+                    source, q_cache, true);
+                const auto q =
+                    wavelength_left_cols(q_cache.endpoint_source, batch);
+                node_value = q;
+                node_value.array().rowwise() *= q_derivative_scale.array();
+                wavelength_left_cols(source.value, batch) += node_value;
+
+                if (source.derivative_size() == 0) {
+                    continue;
+                }
+                for (std::size_t index = 0; index < interpolation.size();
+                     ++index) {
+                    const auto weight = interpolation[index];
+                    auto target = source.derivative(weight.first, batch);
+                    target.array() +=
+                        weight.second *
+                        (q.array().rowwise() * local_extinction_scale.array());
+                }
+                for_each_stencil_weight(
+                    node.viewing_od,
+                    [&](int derivative_index, double derivative_weight) {
+                        source.derivative(derivative_index, batch).array() -=
+                            derivative_weight * node_value.array();
+                    });
+                const auto accumulate_solar_derivative =
+                    [&](int derivative_index, double derivative_weight) {
+                        source.derivative(derivative_index, batch).array() -=
+                            derivative_weight * node_value.array();
+                    };
+                if (use_ray_table) {
+                    for_each_solar_ray_query_weight(
+                        *m_solar_ray_table,
+                        m_table_solar_queries[node.solar_query_index],
+                        accumulate_solar_derivative);
+                } else {
+                    for_each_solar_ray_query_weight(
+                        m_exact_solar_queries[node.solar_query_index],
+                        accumulate_solar_derivative);
+                }
+            }
+            return true;
+        }
     }
 
     template <typename S, int NSTOKES>
@@ -791,6 +1523,12 @@ namespace sasktran2::solartransmission {
         } else {
             (void)direction;
             if (layer.layer_distance < MINIMUM_SHELL_SIZE_M) {
+                return;
+            }
+
+            if (integrated_source_gauss8_block(batch, losidx, layeridx,
+                                               wavel_threadidx, threadidx,
+                                               layer, source)) {
                 return;
             }
 

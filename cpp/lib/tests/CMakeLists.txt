@@ -17,6 +17,8 @@ add_executable(
   raytracing/test_rust_raytracer2d.cpp
   sourceintegrator/test_occultation2d.cpp
   sourceintegrator/test_singlescatter2d.cpp
+  sourceintegrator/test_solar_ray_table.cpp
+  sourceintegrator/test_source_algorithms.cpp
   engine/test_engine_basic.cpp
   engine/wf/test_wf_singlescatter_scalar.cpp
   engine/wf/test_wf_vector.cpp

@@ -31,6 +31,7 @@ from ._core_rust import (
     LogLevel,
     MultipleScatterSource,
     OccultationSource,
+    SingleScatterSolarTransmission,
     SingleScatterSource,
     SpectralGridMode,
     StokesBasis,

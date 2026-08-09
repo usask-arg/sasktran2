@@ -22,6 +22,13 @@ int sk_config_get_single_scatter_source(Config* config,
                                         int* single_scatter_source);
 int sk_config_set_single_scatter_source(Config* config,
                                         int single_scatter_source);
+int sk_config_get_single_scatter_source_quadrature(Config* config,
+                                                   int* enabled);
+int sk_config_set_single_scatter_source_quadrature(Config* config, int enabled);
+int sk_config_get_single_scatter_solar_transmission(Config* config,
+                                                    int* transmission);
+int sk_config_set_single_scatter_solar_transmission(Config* config,
+                                                    int transmission);
 
 int sk_config_get_num_streams(Config* config, int* num_streams);
 int sk_config_set_num_streams(Config* config, int num_streams);

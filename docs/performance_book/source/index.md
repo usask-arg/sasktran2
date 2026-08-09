@@ -60,4 +60,6 @@ internal_validation/layering
 :maxdepth: 4
 :caption: Performance Testing
 
+internal_validation/source_integration_harness
+
 ```

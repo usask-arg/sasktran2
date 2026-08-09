@@ -30,9 +30,38 @@ namespace {
 } // namespace
 
 namespace sasktran2::solartransmission {
+    SolarTransmissionExact::Query
+    SolarTransmissionExact::query(const sasktran2::Location& location) const {
+        Query result;
+        sasktran2::viewinggeometry::ViewingRay ray_to_sun;
+        ray_to_sun.observer = location;
+        ray_to_sun.look_away = m_geometry.coordinates().sun_unit();
+
+        if (m_geometry_1d != nullptr) {
+            m_raytracer->trace_ray(ray_to_sun, result.ray, false);
+            result.shadowed = result.ray.ground_is_hit;
+            return result;
+        }
+
+#ifdef SKTRAN_RUST_SUPPORT
+        if (m_geometry_2d != nullptr) {
+            if (solar_ray_hits_ground(location, *m_geometry_2d)) {
+                result.shadowed = true;
+            } else {
+                m_raytracer_2d->trace_ray(ray_to_sun, result.ray);
+            }
+            return result;
+        }
+#endif
+
+        throw std::logic_error(
+            "Exact solar transmission has no compatible ray tracer");
+    }
+
     void SolarTransmissionExact::generate_geometry_matrix(
         const std::vector<sasktran2::raytracing::TracedRay>& rays,
-        Eigen::MatrixXd& od_matrix, std::vector<bool>& ground_hit_flag) const {
+        Eigen::MatrixXd& od_matrix, std::vector<bool>& ground_hit_flag,
+        const std::vector<bool>* required_rows) const {
         // First calculate the number of points we need to create the matrix for
         // We calculate solar transmission at the boundaries of layers, so it is
         // nlayer+1 for each ray
@@ -47,7 +76,12 @@ namespace sasktran2::solartransmission {
 
         // Have to handle rays that hit the ground separately since they have no
         // solar transmission
-        ground_hit_flag.resize(numpoints, false);
+        ground_hit_flag.assign(numpoints, false);
+        if (required_rows != nullptr &&
+            required_rows->size() != static_cast<std::size_t>(numpoints)) {
+            throw std::invalid_argument(
+                "Solar geometry row mask has an invalid size");
+        }
 
         sasktran2::viewinggeometry::ViewingRay ray_to_sun;
 
@@ -63,9 +97,24 @@ namespace sasktran2::solartransmission {
 
                 if (j == 0) {
                     // End layer at TOA, need to use layer exit
-                    ray_to_sun.observer = layer.exit;
+                    if (required_rows == nullptr || required_rows->at(row)) {
+                        ray_to_sun.observer = layer.exit;
 
-                    // Always don't use refraction for this
+                        // Always don't use refraction for this
+                        m_raytracer->trace_ray(ray_to_sun, traced_ray, false);
+
+                        if (!traced_ray.ground_is_hit) {
+                            assign_dense_matrix_column(row, traced_ray,
+                                                       od_matrix);
+                        } else {
+                            ground_hit_flag[row] = true;
+                        }
+                    }
+                    ++row;
+                }
+
+                if (required_rows == nullptr || required_rows->at(row)) {
+                    ray_to_sun.observer = layer.entrance;
                     m_raytracer->trace_ray(ray_to_sun, traced_ray, false);
 
                     if (!traced_ray.ground_is_hit) {
@@ -73,16 +122,6 @@ namespace sasktran2::solartransmission {
                     } else {
                         ground_hit_flag[row] = true;
                     }
-                    ++row;
-                }
-
-                ray_to_sun.observer = layer.entrance;
-                m_raytracer->trace_ray(ray_to_sun, traced_ray, false);
-
-                if (!traced_ray.ground_is_hit) {
-                    assign_dense_matrix_column(row, traced_ray, od_matrix);
-                } else {
-                    ground_hit_flag[row] = true;
                 }
 
                 ++row;
