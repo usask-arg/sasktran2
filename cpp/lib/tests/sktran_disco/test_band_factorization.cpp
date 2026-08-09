@@ -5,9 +5,52 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace {
+    bool set_environment_variable(
+        const std::string& name,
+        const std::optional<std::string>& value = std::nullopt) {
+#if defined(_WIN32)
+        return ::_putenv_s(name.c_str(), value ? value->c_str() : "") == 0;
+#else
+        return value ? ::setenv(name.c_str(), value->c_str(), 1) == 0
+                     : ::unsetenv(name.c_str()) == 0;
+#endif
+    }
+
+    class ScopedEnvironmentVariable {
+      public:
+        ScopedEnvironmentVariable(std::string name,
+                                  std::optional<std::string> value)
+            : m_name(std::move(name)) {
+            if (const char* original = std::getenv(m_name.c_str());
+                original != nullptr) {
+                m_original = original;
+            }
+            if (!set_environment_variable(m_name, value)) {
+                throw std::runtime_error("Failed to set environment variable");
+            }
+        }
+
+        ~ScopedEnvironmentVariable() {
+            (void)set_environment_variable(m_name, m_original);
+        }
+
+        ScopedEnvironmentVariable(const ScopedEnvironmentVariable&) = delete;
+        ScopedEnvironmentVariable&
+        operator=(const ScopedEnvironmentVariable&) = delete;
+
+      private:
+        std::string m_name;
+        std::optional<std::string> m_original;
+    };
+
     struct BandSystem {
         lapack_int size;
         lapack_int bandwidth;
@@ -195,19 +238,51 @@ TEST_CASE("Runtime band factorization policy prefers LAPACK for close results",
     REQUIRE(Tuner::select_banded_lu_backend(0.0, 1.0) == Backend::lapack);
 }
 
-TEST_CASE("Runtime band factorization tuner resolves a supported backend",
+TEST_CASE("Runtime band factorization tuner covers every DISCO source path",
           "[sktran_do][band_factorization]") {
-    sasktran2::Config config;
-    config.set_num_do_streams(8);
-    config.set_multiple_scatter_source(
-        sasktran2::Config::MultipleScatterSource::discrete_ordinates);
-    sasktran2::detail::RuntimeBackendTuner::resolve(config, 20);
+    using Backend = sasktran2::detail::BandedLUBackend;
+    using Source = sasktran2::Config::MultipleScatterSource;
+    using Tuner = sasktran2::detail::RuntimeBackendTuner;
 
-    const auto backend =
-        sasktran2::detail::RuntimeBackendTuner::resolved_banded_lu_backend(
-            config);
-    REQUIRE((backend == sasktran2::detail::BandedLUBackend::lapack ||
-             backend == sasktran2::detail::BandedLUBackend::unblocked));
+    const ScopedEnvironmentVariable enable_unblocked(
+        "SASKTRAN2_DISABLE_DO_UNBLOCKED_BAND_LU", std::nullopt);
+    const ScopedEnvironmentVariable force_unblocked(
+        "SASKTRAN2_DO_BANDED_LU_BACKEND", std::string("unblocked"));
+
+    SECTION("direct scalar two-stream source honors the explicit override") {
+        sasktran2::Config config;
+        config.set_num_stokes(1);
+        config.set_num_do_streams(2);
+        config.set_multiple_scatter_source(Source::discrete_ordinates);
+
+        Tuner::resolve(config, 20);
+
+        REQUIRE(Tuner::resolved_banded_lu_backend(config) ==
+                Backend::unblocked);
+    }
+
+    SECTION("HR initialized with discrete ordinates is tuned") {
+        sasktran2::Config config;
+        config.set_num_do_streams(8);
+        config.set_multiple_scatter_source(Source::hr);
+        config.set_initialize_hr_with_do(true);
+
+        Tuner::resolve(config, 20);
+
+        REQUIRE(Tuner::resolved_banded_lu_backend(config) ==
+                Backend::unblocked);
+    }
+
+    SECTION("HR without discrete-ordinates initialization is not tuned") {
+        sasktran2::Config config;
+        config.set_num_do_streams(8);
+        config.set_multiple_scatter_source(Source::hr);
+        config.set_initialize_hr_with_do(false);
+
+        Tuner::resolve(config, 20);
+
+        REQUIRE(Tuner::resolved_banded_lu_backend(config) == Backend::lapack);
+    }
 }
 
 TEST_CASE("Band solve performance", "[.benchmark][band_solve]") {

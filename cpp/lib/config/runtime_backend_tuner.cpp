@@ -205,9 +205,13 @@ namespace sasktran2::detail {
 
     void RuntimeBackendTuner::resolve(Config& config, int num_layers) {
         config.m_runtime_backends.do_banded_lu = Backend::lapack;
-        if (config.multiple_scatter_source() !=
+        const auto multiple_scatter_source = config.multiple_scatter_source();
+        const bool uses_discrete_ordinates =
+            multiple_scatter_source ==
                 Config::MultipleScatterSource::discrete_ordinates ||
-            num_layers <= 0) {
+            (multiple_scatter_source == Config::MultipleScatterSource::hr &&
+             config.initialize_hr_with_do());
+        if (!uses_discrete_ordinates || num_layers <= 0) {
             return;
         }
 
@@ -221,15 +225,17 @@ namespace sasktran2::detail {
         if (environment_requests(override_backend, "lapack")) {
             return;
         }
+        if (environment_requests(override_backend, "unblocked")) {
+            config.m_runtime_backends.do_banded_lu = Backend::unblocked;
+            return;
+        }
 
         const int num_stokes = config.num_stokes();
         const int num_streams = config.num_do_streams();
-        // The scalar two-stream case uses its dedicated pentadiagonal solver.
+        // Automatic tuning is unnecessary for the common scalar two-stream
+        // path, which uses its dedicated pentadiagonal solver. The explicit
+        // override above remains available to exercise generic paths.
         if (num_stokes == 1 && num_streams == 2) {
-            return;
-        }
-        if (environment_requests(override_backend, "unblocked")) {
-            config.m_runtime_backends.do_banded_lu = Backend::unblocked;
             return;
         }
 
