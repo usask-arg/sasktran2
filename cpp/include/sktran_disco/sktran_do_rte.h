@@ -354,6 +354,8 @@ namespace sasktran_disco {
         // Cached memory so we don't have to realloc for every layer/azimuth
         // direction
         RTEMemoryCache<NSTOKES, CNSTR>& m_cache;
+
+        const sasktran2::detail::BandedLUBackend m_banded_lu_backend;
     };
 
 } // namespace sasktran_disco

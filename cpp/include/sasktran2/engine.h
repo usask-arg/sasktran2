@@ -31,7 +31,7 @@ class Sasktran2Interface {
  */
 template <int NSTOKES> class Sasktran2 : public Sasktran2Interface {
   private:
-    const sasktran2::Config& m_config; /**< Internal reference to the config */
+    sasktran2::Config m_config; /**< Engine-owned configuration snapshot */
     const sasktran2::viewinggeometry::ViewingGeometryContainer&
         m_viewing_geometry; /**< Internal reference to the viewing geometry */
     const sasktran2::Geometry*

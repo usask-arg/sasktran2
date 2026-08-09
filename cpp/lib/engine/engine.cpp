@@ -2,6 +2,7 @@
 #include "sasktran2/do_source.h"
 #include "sasktran2/geometry.h"
 #include "sasktran2/raytracing.h"
+#include "sasktran2/runtime_backend_tuner.h"
 #include "sasktran2/source_interface.h"
 #include "sktran_disco/twostream/meta.h"
 #ifdef SKTRAN_RUST_SUPPORT
@@ -52,6 +53,11 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::initialize() {
 
     m_config.validate_config_geometry(
         m_geometry->coordinates().geometry_type());
+    if (m_geometry_1d != nullptr) {
+        sasktran2::detail::RuntimeBackendTuner::resolve(
+            m_config,
+            static_cast<int>(m_geometry_1d->altitude_grid().grid().size()) - 1);
+    }
     construct_raytracer();
     construct_integrator();
     construct_source_terms();

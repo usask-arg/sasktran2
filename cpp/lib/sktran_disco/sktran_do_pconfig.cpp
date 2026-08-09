@@ -29,6 +29,7 @@ void sasktran_disco::PersistentConfiguration<NSTOKES, CNSTR>::configure(
 
     const_cast<bool&>(this->M_SS_ONLY) = false;
     const_cast<bool&>(this->M_BACKPROP_BVP) = config.do_backprop();
+    m_banded_lu_backend = config.do_banded_lu_backend();
 
     m_lp_csz_storage.resize(
         this->M_NSTR,
