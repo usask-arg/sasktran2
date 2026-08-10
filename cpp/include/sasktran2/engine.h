@@ -139,6 +139,14 @@ template <int NSTOKES> class Sasktran2 : public Sasktran2Interface {
         const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
         sasktran2::Output<NSTOKES>& output, bool only_initialize = false) const;
 
+    void
+    calculate_jvp(const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
+                  sasktran2::OutputJVP<NSTOKES>& output) const;
+
+    void
+    calculate_vjp(const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
+                  sasktran2::OutputVJP<NSTOKES>& output) const;
+
     int effective_wavelength_batch_size(int num_wavelengths) const;
 
     /** Reports whether the complete line-of-sight model supports a native

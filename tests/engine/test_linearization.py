@@ -238,7 +238,11 @@ def test_engine_products_reject_complex_inputs():
         lin.vjp(xr.ones_like(lin.value).astype(np.complex128))
 
 
-def _raw_engine_scenario(*, calculate_derivatives: bool = True):
+def _raw_engine_scenario(
+    *,
+    calculate_derivatives: bool = True,
+    interpolation: sk.InterpolationMethod = sk.InterpolationMethod.LinearInterpolation,
+):
     config = sk.Config()
     config.single_scatter_source = sk.SingleScatterSource.Exact
     geometry = sk.Geometry1D(
@@ -246,7 +250,7 @@ def _raw_engine_scenario(*, calculate_derivatives: bool = True):
         0.0,
         6_372_000.0,
         np.arange(0.0, 30_001.0, 5_000.0),
-        sk.InterpolationMethod.LinearInterpolation,
+        interpolation,
         sk.GeometryType.Spherical,
     )
     viewing = sk.ViewingGeometry()
@@ -295,14 +299,14 @@ def test_engine_linearize_matches_weighting_function_output():
     lin = engine.linearize(atmosphere)
 
     assert engine._engine._supports_linearization(0)
-    assert not engine._engine._supports_linearization(1)
-    assert not engine._engine._supports_linearization(2)
+    assert engine._engine._supports_linearization(1)
+    assert engine._engine._supports_linearization(2)
     assert engine._engine._linearization_backend(0) == 2
-    assert engine._engine._linearization_backend(1) == 1
-    assert engine._engine._linearization_backend(2) == 1
+    assert engine._engine._linearization_backend(1) == 2
+    assert engine._engine._linearization_backend(2) == 2
     assert lin.backends == {
-        "jvp": sk.LinearizationBackend.StreamingJacobian,
-        "vjp": sk.LinearizationBackend.StreamingJacobian,
+        "jvp": sk.LinearizationBackend.Native,
+        "vjp": sk.LinearizationBackend.Native,
     }
     xr.testing.assert_allclose(lin.value, expected["radiance"])
     xr.testing.assert_allclose(lin.jacobian["extinction"], expected["wf_extinction"])
@@ -320,7 +324,7 @@ def test_engine_linearize_matches_weighting_function_output():
         sk.constituent.LambertianSurface([0.2, 0.3, 0.4]),
     ],
 )
-def test_streaming_products_cover_surface_parameterizations(surface):
+def test_native_products_cover_surface_parameterizations(surface):
     engine, atmosphere = _constituent_engine_scenario(surface)
     lin = engine.linearize(atmosphere)
     name = "surface_albedo"
@@ -350,7 +354,7 @@ def test_constant_surface_parameter_has_scalar_domain():
     assert lin.jacobian["surface_albedo"].dims == lin.value.dims
 
 
-def test_streaming_products_apply_polarized_output_rotation():
+def test_native_products_apply_polarized_output_rotation():
     engine, atmosphere = _constituent_engine_scenario(
         sk.constituent.LambertianSurface([0.2, 0.3, 0.4]), num_stokes=3
     )
@@ -383,7 +387,7 @@ def test_constituent_rebuild_invalidates_linearization():
         lin.jvp(lin.tangent_template[["surface_albedo"]])
 
 
-def test_assign_name_parameter_mapping_streams_products():
+def test_native_products_apply_assign_name_parameter_mapping():
     engine, atmosphere = _constituent_engine_scenario(
         sk.constituent.LambertianSurface(0.3)
     )
@@ -487,7 +491,7 @@ def test_log_radiance_mapping_is_converted_for_linearization():
     )
 
 
-def test_engine_streaming_products_match_materialized_jacobian():
+def test_engine_native_products_match_materialized_jacobian():
     engine, atmosphere = _raw_engine_scenario()
     lin = engine.linearize(atmosphere)
 
@@ -562,7 +566,32 @@ def test_distinct_atmosphere_linearisations_coexist_on_one_engine():
     xr.testing.assert_allclose(gradient_a["surface_albedo"], expected_gradient_a)
 
 
-def test_streaming_products_do_not_materialize_jacobian():
+def test_native_products_match_lower_interpolation_jacobian():
+    engine, atmosphere = _raw_engine_scenario(
+        interpolation=sk.InterpolationMethod.LowerInterpolation
+    )
+    expected = engine.calculate_radiance(atmosphere)
+    lin = engine.linearize(atmosphere)
+    xr.testing.assert_allclose(lin.value, expected["radiance"])
+
+    tangent = lin.tangent_template[["extinction", "ssa"]]
+    tangent["extinction"].data[:] = np.linspace(0.2, 0.8, 7)
+    tangent["ssa"].data[:] = np.linspace(-0.3, 0.1, 7)
+    expected_jvp = (lin.jacobian["extinction"] * tangent["extinction"]).sum(
+        "altitude"
+    ) + (lin.jacobian["ssa"] * tangent["ssa"]).sum("altitude")
+    xr.testing.assert_allclose(lin.jvp(tangent), expected_jvp)
+
+    cotangent = xr.ones_like(lin.value) * 1.7
+    gradient = lin.vjp(cotangent)
+    for name in tangent:
+        xr.testing.assert_allclose(
+            gradient[name],
+            (lin.jacobian[name] * cotangent).sum(lin.value.dims),
+        )
+
+
+def test_native_products_do_not_materialize_jacobian():
     engine, atmosphere = _raw_engine_scenario()
     lin = engine.linearize(atmosphere)
     assert lin._backend._jacobian is None

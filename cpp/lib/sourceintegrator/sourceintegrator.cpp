@@ -158,32 +158,17 @@ namespace sasktran2 {
     }
 
     template <int NSTOKES>
-    void SourceIntegrator<NSTOKES>::integrate(
-        sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
+    bool SourceIntegrator<NSTOKES>::validate_sources_for_block(
         const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
-        const sasktran2::WavelengthBlock<>& block, int rayidx,
-        int wavel_threadidx, int threadidx) {
-        dispatch_wavelength_block(block, [&](const auto& fixed_block) {
-            integrate_block(radiance, source_terms, fixed_block, rayidx,
-                            wavel_threadidx, threadidx);
-        });
-    }
-
-    template <int NSTOKES>
-    template <int N>
-    void SourceIntegrator<NSTOKES>::integrate_block(
-        sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
-        const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
-        const sasktran2::WavelengthBlock<N>& block, int rayidx,
-        int wavel_threadidx, int threadidx) const {
-        if (block.count < 1 || block.count > radiance.block_capacity()) {
+        int block_size) const {
+        if (block_size < 1) {
             throw std::invalid_argument(
-                "Wavelength block does not fit the radiance storage");
+                "Source integration wavelength block must be positive");
         }
 
         bool have_to_integrate = false;
         for (const auto* source : source_terms) {
-            if (source->maximum_wavelength_block_size() < block.count) {
+            if (source->maximum_wavelength_block_size() < block_size) {
                 throw std::invalid_argument(
                     "Source does not support the requested wavelength block "
                     "size");
@@ -199,6 +184,297 @@ namespace sasktran2 {
                 }
             }
         }
+        return have_to_integrate;
+    }
+
+    template <int NSTOKES>
+    void SourceIntegrator<NSTOKES>::integrate(
+        sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
+        const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+        const sasktran2::WavelengthBlock<>& block, int rayidx,
+        int wavel_threadidx, int threadidx) {
+        dispatch_wavelength_block(block, [&](const auto& fixed_block) {
+            integrate_block(radiance, source_terms, fixed_block, rayidx,
+                            wavel_threadidx, threadidx);
+        });
+    }
+
+    template <int NSTOKES>
+    void SourceIntegrator<NSTOKES>::integrate_jvp(
+        sasktran2::RadianceJVP<NSTOKES>& radiance,
+        const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+        int wavelength, int rayidx, int wavel_threadidx, int threadidx,
+        Eigen::Ref<const Eigen::VectorXd> native_tangent) const {
+        const bool have_to_integrate =
+            validate_sources_for_block(source_terms, 1);
+        radiance.set_zero();
+        for (const auto* source : source_terms) {
+            source->end_of_ray_source_jvp(wavelength, rayidx, wavel_threadidx,
+                                          threadidx, native_tangent, radiance);
+        }
+
+        if (have_to_integrate) {
+            const auto& ray = (*m_traced_rays)[rayidx];
+            const auto& od_matrix = m_traced_ray_od_matrix[rayidx];
+            for (int layeridx = 0; layeridx < ray.layers.size(); ++layeridx) {
+                const double od =
+                    m_wavelength_block_capacity == 1
+                        ? m_scalar_shell_od[rayidx](layeridx, wavelength)
+                        : m_shell_od[rayidx](layeridx, wavelength);
+                const double attenuation = std::exp(-od);
+                const sasktran2::WavelengthBlockODView shell_od(
+                    &od, &attenuation, 1, od_matrix, layeridx);
+                double od_jvp = 0.0;
+                for (auto derivative = shell_od.derivative_iterator();
+                     derivative; ++derivative) {
+                    od_jvp +=
+                        derivative.value() * native_tangent(derivative.index());
+                }
+                radiance.jvp =
+                    attenuation * (radiance.jvp - od_jvp * radiance.value);
+                radiance.value *= attenuation;
+
+                const auto& layer = ray.layers[layeridx];
+                const auto entrance_weights = ray.entrance_weights(layeridx);
+                const auto exit_weights = ray.exit_weights(layeridx);
+                for (const auto* source : source_terms) {
+                    if (source->has_interior_source()) {
+                        source->integrated_source_jvp(
+                            wavelength, rayidx, layeridx, wavel_threadidx,
+                            threadidx, layer, entrance_weights, exit_weights,
+                            shell_od, native_tangent, radiance);
+                    }
+                }
+            }
+        }
+        for (const auto* source : source_terms) {
+            source->start_of_ray_source_jvp(wavelength, rayidx, wavel_threadidx,
+                                            threadidx, native_tangent,
+                                            radiance);
+        }
+    }
+
+    template <int NSTOKES>
+    void SourceIntegrator<NSTOKES>::integrate_vjp(
+        Eigen::Vector<double, NSTOKES>& radiance,
+        const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+        int wavelength, int rayidx, int wavel_threadidx, int threadidx,
+        const Eigen::Vector<double, NSTOKES>& cotangent,
+        Eigen::Ref<Eigen::VectorXd> native_gradient) const {
+        StokesBlock radiance_block(NSTOKES, 1);
+        StokesBlock cotangent_block(NSTOKES, 1);
+        Eigen::MatrixXd gradient_block =
+            Eigen::MatrixXd::Zero(native_gradient.size(), 1);
+        cotangent_block.col(0) = cotangent;
+        integrate_vjp_block(radiance_block, source_terms,
+                            sasktran2::WavelengthBlock<>{wavelength, 1}, rayidx,
+                            wavel_threadidx, threadidx, cotangent_block,
+                            gradient_block);
+        radiance = radiance_block.col(0);
+        native_gradient += gradient_block.col(0);
+    }
+
+    template <int NSTOKES>
+    void SourceIntegrator<NSTOKES>::integrate_vjp_block(
+        StokesBlock& radiance,
+        const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+        const sasktran2::WavelengthBlock<>& block, int rayidx,
+        int wavel_threadidx, int threadidx, const StokesBlock& cotangent,
+        Eigen::MatrixXd& native_gradient) const {
+        if (threadidx < 0 || threadidx >= m_vjp_thread_storage.size()) {
+            throw std::invalid_argument(
+                "VJP thread scratch is not initialized");
+        }
+        if (block.count < 1 || block.count > m_wavelength_block_capacity ||
+            radiance.cols() < block.count || cotangent.cols() < block.count ||
+            native_gradient.cols() < block.count) {
+            throw std::invalid_argument("Invalid native VJP wavelength block");
+        }
+        const bool have_to_integrate =
+            validate_sources_for_block(source_terms, block.count);
+
+        const auto& ray = (*m_traced_rays)[rayidx];
+        const auto& od_matrix = m_traced_ray_od_matrix[rayidx];
+        auto& scratch = m_vjp_thread_storage[threadidx];
+        auto& state = scratch.state;
+        const int num_sources = static_cast<int>(source_terms.size());
+        if (scratch.values_before_end.rows() < num_sources * NSTOKES ||
+            scratch.values_before_start.rows() < num_sources * NSTOKES ||
+            (have_to_integrate &&
+             scratch.values_before_interior.rows() <
+                 static_cast<int>(ray.layers.size()) * num_sources * NSTOKES)) {
+            throw std::invalid_argument(
+                "VJP source tape is not initialized for the active sources");
+        }
+        state.set_zero(block.count);
+        for (int source_index = 0; source_index < num_sources; ++source_index) {
+            scratch.values_before_end.block(source_index * NSTOKES, 0, NSTOKES,
+                                            block.count) =
+                state.value.leftCols(block.count);
+            source_terms[source_index]->end_of_ray_source(
+                block, rayidx, wavel_threadidx, threadidx, state);
+        }
+
+        if (have_to_integrate) {
+            for (int layeridx = 0; layeridx < ray.layers.size(); ++layeridx) {
+                scratch.values_before_layer.block(layeridx * NSTOKES, 0,
+                                                  NSTOKES, block.count) =
+                    state.value.leftCols(block.count);
+                const double* od =
+                    m_wavelength_block_capacity == 1
+                        ? &m_scalar_shell_od[rayidx](layeridx, block.start)
+                        : &m_shell_od[rayidx](layeridx, block.start);
+                auto attenuation =
+                    scratch.attenuation.row(layeridx).head(block.count);
+                attenuation.array() =
+                    -Eigen::Map<const Eigen::RowVectorXd>(od, block.count)
+                         .array();
+                attenuation = attenuation.array().exp();
+                const sasktran2::WavelengthBlockODView shell_od(
+                    od, attenuation.data(), block.count, od_matrix, layeridx);
+                state.value.leftCols(block.count).array().rowwise() *=
+                    attenuation.array();
+
+                const auto& layer = ray.layers[layeridx];
+                const auto entrance_weights = ray.entrance_weights(layeridx);
+                const auto exit_weights = ray.exit_weights(layeridx);
+                for (int source_index = 0; source_index < num_sources;
+                     ++source_index) {
+                    const auto* source = source_terms[source_index];
+                    if (source->has_interior_source()) {
+                        const int tape_row =
+                            (layeridx * num_sources + source_index) * NSTOKES;
+                        scratch.values_before_interior.block(
+                            tape_row, 0, NSTOKES, block.count) =
+                            state.value.leftCols(block.count);
+                        source->dispatch_integrated_source(
+                            block, rayidx, layeridx, wavel_threadidx, threadidx,
+                            layer, entrance_weights, exit_weights, shell_od,
+                            state,
+                            SourceTermInterface<
+                                NSTOKES>::IntegrationDirection::backward);
+                    }
+                }
+            }
+        }
+
+        for (int source_index = 0; source_index < num_sources; ++source_index) {
+            scratch.values_before_start.block(source_index * NSTOKES, 0,
+                                              NSTOKES, block.count) =
+                state.value.leftCols(block.count);
+            source_terms[source_index]->start_of_ray_source(
+                block, rayidx, wavel_threadidx, threadidx, state);
+        }
+        radiance.leftCols(block.count) = state.value.leftCols(block.count);
+
+        auto state_cotangent = scratch.cotangent.leftCols(block.count);
+        state_cotangent = cotangent.leftCols(block.count);
+        for (int source_index = num_sources - 1; source_index >= 0;
+             --source_index) {
+            for (int lane = 0; lane < block.count; ++lane) {
+                const Eigen::Vector<double, NSTOKES> value_before =
+                    scratch.values_before_start.block(source_index * NSTOKES,
+                                                      lane, NSTOKES, 1);
+                Eigen::Vector<double, NSTOKES> lane_cotangent =
+                    state_cotangent.col(lane);
+                auto lane_gradient = native_gradient.col(lane);
+                source_terms[source_index]->start_of_ray_source_vjp(
+                    block.wavelength(lane), rayidx, wavel_threadidx, threadidx,
+                    value_before, lane_cotangent, lane_gradient);
+                state_cotangent.col(lane) = lane_cotangent;
+            }
+        }
+        if (have_to_integrate) {
+            for (int layeridx = static_cast<int>(ray.layers.size()) - 1;
+                 layeridx >= 0; --layeridx) {
+                const double* od =
+                    m_wavelength_block_capacity == 1
+                        ? &m_scalar_shell_od[rayidx](layeridx, block.start)
+                        : &m_shell_od[rayidx](layeridx, block.start);
+                const double* attenuation = &scratch.attenuation(layeridx, 0);
+                const auto& layer = ray.layers[layeridx];
+                const auto entrance_weights = ray.entrance_weights(layeridx);
+                const auto exit_weights = ray.exit_weights(layeridx);
+                for (int source_index = num_sources - 1; source_index >= 0;
+                     --source_index) {
+                    const auto* source = source_terms[source_index];
+                    if (!source->has_interior_source()) {
+                        continue;
+                    }
+                    const int tape_row =
+                        (layeridx * num_sources + source_index) * NSTOKES;
+                    for (int lane = 0; lane < block.count; ++lane) {
+                        const sasktran2::WavelengthBlockODView shell_od(
+                            od + lane, attenuation + lane, 1, od_matrix,
+                            layeridx);
+                        const Eigen::Vector<double, NSTOKES> value_before =
+                            scratch.values_before_interior.block(tape_row, lane,
+                                                                 NSTOKES, 1);
+                        Eigen::Vector<double, NSTOKES> lane_cotangent =
+                            state_cotangent.col(lane);
+                        auto lane_gradient = native_gradient.col(lane);
+                        source->integrated_source_vjp(
+                            block.wavelength(lane), rayidx, layeridx,
+                            wavel_threadidx, threadidx, layer, entrance_weights,
+                            exit_weights, shell_od, value_before,
+                            lane_cotangent, lane_gradient);
+                        state_cotangent.col(lane) = lane_cotangent;
+                    }
+                }
+
+                const auto value_before = scratch.values_before_layer.block(
+                    layeridx * NSTOKES, 0, NSTOKES, block.count);
+                auto od_cotangent = scratch.od_cotangent.head(block.count);
+                od_cotangent.array() =
+                    -scratch.attenuation.row(layeridx)
+                         .head(block.count)
+                         .array() *
+                    (state_cotangent.array() * value_before.array())
+                        .colwise()
+                        .sum();
+                for (Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
+                         derivative(od_matrix, layeridx);
+                     derivative; ++derivative) {
+                    native_gradient.row(derivative.index())
+                        .head(block.count)
+                        .array() += derivative.value() * od_cotangent.array();
+                }
+                state_cotangent.array().rowwise() *=
+                    scratch.attenuation.row(layeridx).head(block.count).array();
+            }
+        }
+
+        for (int source_index = num_sources - 1; source_index >= 0;
+             --source_index) {
+            for (int lane = 0; lane < block.count; ++lane) {
+                const Eigen::Vector<double, NSTOKES> value_before =
+                    scratch.values_before_end.block(source_index * NSTOKES,
+                                                    lane, NSTOKES, 1);
+                Eigen::Vector<double, NSTOKES> lane_cotangent =
+                    state_cotangent.col(lane);
+                auto lane_gradient = native_gradient.col(lane);
+                source_terms[source_index]->end_of_ray_source_vjp(
+                    block.wavelength(lane), rayidx, wavel_threadidx, threadidx,
+                    value_before, lane_cotangent, lane_gradient);
+                state_cotangent.col(lane) = lane_cotangent;
+            }
+        }
+    }
+
+    template <int NSTOKES>
+    template <int N>
+    void SourceIntegrator<NSTOKES>::integrate_block(
+        sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
+        const std::vector<SourceTermInterface<NSTOKES>*>& source_terms,
+        const sasktran2::WavelengthBlock<N>& block, int rayidx,
+        int wavel_threadidx, int threadidx) const {
+        if (block.count < 1 || block.count > radiance.block_capacity()) {
+            throw std::invalid_argument(
+                "Wavelength block does not fit the radiance storage");
+        }
+
+        const bool have_to_integrate =
+            validate_sources_for_block(source_terms, block.count);
 
         const auto dynamic_block = block.dynamic();
         for (const auto* source : source_terms) {

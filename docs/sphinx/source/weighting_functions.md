@@ -98,8 +98,13 @@ The same derivatives are available as a local linear model of the radiance:
     )
 
 The `linearization.value` property is the radiance at the linearization point.
-JVP and VJP operations contract the native derivative rows as they are produced,
-so they do not allocate the complete mapped Jacobian.
+JVP and VJP operations use the most specialized backend supported by every
+active line-of-sight source. The exact single-scatter source propagates a
+direction or cotangent directly through its source and line-of-sight
+integration, applying the existing constituent derivative mappings only at the
+atmosphere boundary. Source combinations without a specialized product backend
+contract native Jacobian rows as they are produced. Neither path allocates the
+complete mapped Jacobian.
 
 The read-only `linearization.backends` mapping reports whether each product
 uses a `LinearizationBackend.Native`, `StreamingJacobian`, or
@@ -108,6 +113,12 @@ allocating the complete mapped Jacobian, but repeats the full derivative
 propagation for every call. Iterative solvers may therefore prefer a native
 product backend, or explicitly materialize the Jacobian once when only a
 streaming backend is available.
+
+Native JVP and VJP execution currently uses the C++ product driver. It uses
+OpenMP when that support is available, even when `ThreadingLib.Rayon` is
+selected; builds without OpenMP execute native products serially. Rayon-native
+product scheduling can be added independently without changing the
+`Linearization` interface.
 
 Accessing `linearization.jacobian` materializes and caches one labeled block per
 semantic parameter (for example, `ozone_vmr` rather than `wf_ozone_vmr`). The

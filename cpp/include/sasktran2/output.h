@@ -315,6 +315,7 @@ namespace sasktran2 {
         Eigen::Map<Eigen::VectorXd> m_jvp;
         std::map<std::string, Eigen::VectorXd> m_derivative_tangents;
         std::map<std::string, Eigen::VectorXd> m_surface_tangents;
+        std::map<std::string, Eigen::VectorXd> m_native_parameter_tangents;
         std::vector<Eigen::MatrixXd> m_native_thread_storage;
         std::vector<Eigen::MatrixXd> m_mapped_thread_storage;
 
@@ -343,6 +344,13 @@ namespace sasktran2 {
                     const sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
                     int losidx, int threadidx) override;
 
+        void native_tangent(int wavelidx,
+                            Eigen::Ref<Eigen::VectorXd> tangent) const;
+
+        void assign_native(int losidx, int wavelidx,
+                           const Eigen::Vector<double, NSTOKES>& value,
+                           const Eigen::Vector<double, NSTOKES>& jvp);
+
         void assign_flux(
             const sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>&,
             int, int, int, int) override {}
@@ -362,6 +370,8 @@ namespace sasktran2 {
         std::vector<std::map<std::string, Eigen::VectorXd>>
             m_thread_surface_gradients;
         std::vector<Eigen::MatrixXd> m_native_thread_storage;
+        std::vector<Eigen::MatrixXd> m_native_parameter_thread_storage;
+        std::vector<Eigen::RowVectorXd> m_surface_parameter_thread_storage;
 
         void resize();
 
@@ -385,6 +395,23 @@ namespace sasktran2 {
         void assign(const sasktran2::WavelengthBlock<>& block,
                     const sasktran2::WavelengthBlockDual<NSTOKES>& radiance,
                     int losidx, int threadidx) override;
+
+        Eigen::Vector<double, NSTOKES> native_cotangent(int losidx,
+                                                        int wavelidx) const;
+
+        void assign_native_value(int losidx, int wavelidx,
+                                 const Eigen::Vector<double, NSTOKES>& value);
+
+        void accumulate_native_gradient(
+            int wavelidx, int threadidx,
+            Eigen::Ref<const Eigen::VectorXd> native_gradient);
+
+        /** Applies constituent mappings once to a native gradient already
+         * reduced across every LOS in the wavelength block. */
+        void
+        accumulate_native_gradient(const sasktran2::WavelengthBlock<>& block,
+                                   int threadidx,
+                                   const Eigen::MatrixXd& native_gradient);
 
         void assign_flux(
             const sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>&,
