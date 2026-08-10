@@ -21,6 +21,7 @@ endif()
 add_library(
   sasktran2
   config/config.cpp
+  config/runtime_backend_tuner.cpp
   unitsphere/lebedev_autogen.cpp
   unitsphere/lebedev.cpp
   unitsphere/unitsphere_ground.cpp
@@ -67,6 +68,7 @@ add_library(
   sktran_disco/sktran_do.cpp
   sktran_disco/sktran_do_geometrylayerarray.cpp
   sktran_disco/sktran_do_layerarray.cpp
+  sktran_disco/sktran_do_banded_lu.cpp
   sktran_disco/sktran_do_opticallayer.cpp
   sktran_disco/sktran_do_pconfig.cpp
   sktran_disco/sktran_do_pentadiagonal.cpp

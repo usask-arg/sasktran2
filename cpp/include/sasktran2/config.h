@@ -3,7 +3,16 @@
 #include <spdlog/spdlog.h>
 #include <vector>
 
+namespace sasktran_disco {
+    template <int NSTOKES, int CNSTR> class PersistentConfiguration;
+}
+
 namespace sasktran2 {
+
+    namespace detail {
+        enum class BandedLUBackend { lapack = 0, unblocked = 1 };
+        class RuntimeBackendTuner;
+    } // namespace detail
 
     /** User Configuration object for the SASKTRAN2 model, all values have
      * default options.
@@ -779,6 +788,19 @@ namespace sasktran2 {
         void validate_config_geometry(int geotype) const;
 
       private:
+        friend class detail::RuntimeBackendTuner;
+        template <int NSTOKES, int CNSTR>
+        friend class ::sasktran_disco::PersistentConfiguration;
+
+        struct RuntimeBackends {
+            detail::BandedLUBackend do_banded_lu =
+                detail::BandedLUBackend::lapack;
+        };
+
+        detail::BandedLUBackend do_banded_lu_backend() const {
+            return m_runtime_backends.do_banded_lu;
+        }
+
         // TODO: Refactor these into individual source configs?
 
         int m_nthreads;
@@ -832,6 +854,8 @@ namespace sasktran2 {
         ThreadingModel m_threading_model;
 
         TwoStreamBackend m_two_stream_backend;
+
+        RuntimeBackends m_runtime_backends;
 
         SingleScatterPhaseMode m_singlescatter_phasemode;
 

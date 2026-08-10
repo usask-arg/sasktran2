@@ -58,7 +58,7 @@ TEST_CASE("2StreamBenchmark", "[sktran_do][lowlevel][benchmark]") {
     };
 }
 */
-TEST_CASE("8StreamBenchmark", "[sktran_do][lowlevel][benchmark]") {
+TEST_CASE("8StreamBenchmark", "[.benchmark][sktran_do][lowlevel][do_full]") {
 #ifdef USE_OMP
     omp_set_num_threads(1);
 #endif
@@ -68,7 +68,7 @@ TEST_CASE("8StreamBenchmark", "[sktran_do][lowlevel][benchmark]") {
 
     int nlyr = 20;
     int nwavel = 40;
-    int nstr = 2;
+    int nstr = 8;
 
     Eigen::VectorXd grid_values(nlyr + 1);
     for (int i = 0; i < nlyr + 1; ++i) {
@@ -119,6 +119,8 @@ TEST_CASE("8StreamBenchmark", "[sktran_do][lowlevel][benchmark]") {
     Sasktran2<1> engine(config, &geo, viewing_geometry);
 
     sasktran2::OutputIdealDense<1> output;
-    engine.calculate_radiance(atmo, output);
+    BENCHMARK("8-stream scalar, 20 layers, 40 wavelengths") {
+        engine.calculate_radiance(atmo, output);
+    };
 }
 #endif

@@ -75,6 +75,11 @@ namespace sasktran_disco {
          */
         inline bool backprop_bvp() const { return this->M_BACKPROP_BVP; }
 
+        /** Resolved backend for the general-band BVP factorization. */
+        inline sasktran2::detail::BandedLUBackend banded_lu_backend() const {
+            return m_banded_lu_backend;
+        }
+
         /**
          * @brief True if we are in single scatter only debug mode
          *
@@ -133,6 +138,9 @@ namespace sasktran_disco {
 
         mutable MemoryPool<NSTOKES, CNSTR> m_pool;
         int m_poolindex;
+
+        sasktran2::detail::BandedLUBackend m_banded_lu_backend =
+            sasktran2::detail::BandedLUBackend::lapack;
 
         /**
          * @brief Legendre polynomials for the cosine of the solar zenith angle

@@ -1,4 +1,5 @@
 #pragma once
+#include <sasktran2/math/real_eigensolver.h>
 #include "sktran_disco/sktran_do.h"
 #include "sktran_disco/sktran_do_surface.h"
 
@@ -148,6 +149,7 @@ namespace sasktran_disco {
         MatrixHLHS h_lhs;
         std::vector<MatrixHRHS> h_rhs;
 
+        Eigen::RealEigenSolver<Matrix> h_eigensolver;
         Eigen::PartialPivLU<MatrixHLHS> h_partiallu;
         Eigen::FullPivLU<MatrixHLHS> h_fullpivlu;
 
