@@ -141,7 +141,7 @@ def test_pressure_wf():
 
         radiance = sk.test_util.wf.numeric_wf(
             atmosphere.pressure_pa,
-            0.01,
+            0.02,
             engine,
             atmosphere,
             "wf_pressure_pa",

@@ -15,11 +15,10 @@ anyhow = "*"
 cxx = "1.0"
 gauss-quad = "0.2.4"
 rayon = "*"
-wide = { version = "0.7.33", optional = true }
 
 [features]
 nightly = ["simd"]
-simd = ["dep:wide"]
+simd = []
 
 [lib]
 crate-type = ["staticlib", "rlib"]
