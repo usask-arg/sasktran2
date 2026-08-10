@@ -44,6 +44,7 @@ config.single_scatter_source = sk.SingleScatterSource.NoSource
 ## Additonal Notes
 
  - All available single scatter sources are perfectly linearized, capable of producing weighting functions to machine precision
+ - The exact source has native JVP and VJP implementations; the table source currently uses the Jacobian-row contraction backend
  - All single scatter sources support polarized calculations (`nstokes=3`)
 
 ## Relevant Configuration Options
