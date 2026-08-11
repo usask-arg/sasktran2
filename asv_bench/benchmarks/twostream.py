@@ -8,17 +8,20 @@ from . import parameterized
 nwav = 1000
 
 
-@parameterized(["nlyr", "calc_deriv"], ([2, 20, 100], [False, True]))
+@parameterized(
+    ["nlyr", "calc_deriv"],
+    ([2, 20, 100], [False, True]),
+)
 class TwoStreamNadirPlaneParallel:
     def setup(self, nlyr, calc_deriv):
         cos_sza = 0.5
 
         config = sk.Config()
-        config.multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
-        config.single_scatter_source = sk.SingleScatterSource.DiscreteOrdinates
-
+        config.multiple_scatter_source = sk.MultipleScatterSource.TwoStream
+        config.single_scatter_source = sk.SingleScatterSource.NoSource
+        config.wavelength_batch_size = 128
+        config.num_threads = 1
         config.num_streams = 2
-        config.num_singlescatter_moments = 4
         config.num_stokes = 1
 
         model_geometry = sk.Geometry1D(
@@ -39,13 +42,13 @@ class TwoStreamNadirPlaneParallel:
             model_geometry, config, calculate_derivatives=calc_deriv, numwavel=nwav
         )
 
-        self._atmosphere.storage.total_extinction[:] = 0.5 / 1.0
-        self._atmosphere.storage.ssa[:] = 1
+        self._atmosphere.storage.total_extinction[:] = 5.0e-5
+        self._atmosphere.storage.ssa[:] = 0.9
 
         self._atmosphere.leg_coeff.a1[0, :, :] = 1
-        self._atmosphere.leg_coeff.a1[2, :, :] = 0.5
+        self._atmosphere.leg_coeff.a1[1, :, :] = 0.5
 
-        self._atmosphere.surface.albedo[:] = 0.0
+        self._atmosphere.surface.albedo[:] = 0.2
 
         self._engine = sk.Engine(config, model_geometry, viewing_geo)
 

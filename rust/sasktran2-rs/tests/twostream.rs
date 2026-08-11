@@ -1,7 +1,5 @@
 use ndarray::s;
-use sasktran2_rs::bindings::config::{
-    EmissionSource, ThreadingLib, ThreadingModel, TwoStreamBackend,
-};
+use sasktran2_rs::bindings::config::{EmissionSource, ThreadingLib, ThreadingModel};
 use sasktran2_rs::bindings::prelude::*;
 
 fn make_atmosphere(nlevel: usize, nwavel: usize, thermal: bool) -> Atmosphere {
@@ -88,11 +86,10 @@ fn make_atmosphere_with_derivatives(
     atmosphere
 }
 
-fn config(backend: TwoStreamBackend, thermal: bool) -> Config {
+fn config(thermal: bool) -> Config {
     let mut config = Config::new();
     config.with_num_threads(1).unwrap();
     config.with_num_streams(2).unwrap();
-    config.with_two_stream_backend(backend).unwrap();
     config
         .with_single_scatter_source(SingleScatterSource::None)
         .unwrap();
@@ -114,7 +111,7 @@ fn assert_close(actual: &[f64], expected: &[f64], relative_tolerance: f64) {
         let tolerance = relative_tolerance * expected.abs().max(1.0);
         assert!(
             (actual - expected).abs() <= tolerance,
-            "mismatch at {index}: Rust={actual}, C++={expected}, tolerance={tolerance}"
+            "mismatch at {index}: actual={actual}, expected={expected}, tolerance={tolerance}"
         );
     }
 }
@@ -164,60 +161,17 @@ fn spherical_geometry_and_views(nlevel: usize, refracted: bool) -> (Geometry1D, 
 }
 
 #[test]
-fn rust_twostream_engine_matches_cpp_radiances_and_jacobians() -> Result<()> {
+fn twostream_plane_jacobians_match_finite_differences() -> Result<()> {
     let nlevel = 6;
     let nwavel = 17;
     let (geometry, viewing) = geometry_and_views(nlevel);
 
     for thermal in [false, true] {
         let mut atmosphere = make_atmosphere(nlevel, nwavel, thermal);
-        let cpp_config = config(TwoStreamBackend::Cpp, thermal);
-        let rust_config = config(TwoStreamBackend::Rust, thermal);
-        let cpp_engine = Engine::new(&cpp_config, &geometry, &viewing)?;
-        let rust_engine = Engine::new(&rust_config, &geometry, &viewing)?;
-
-        let cpp = cpp_engine.calculate_radiance(&atmosphere)?;
-        let rust = rust_engine.calculate_radiance(&atmosphere)?;
-        if !thermal {
-            assert_close(
-                rust.radiance.as_slice().unwrap(),
-                cpp.radiance.as_slice().unwrap(),
-                1.0e-10,
-            );
-            for (name, cpp_derivative) in &cpp.d_radiance {
-                assert_close(
-                    rust.d_radiance[name].as_slice().unwrap(),
-                    cpp_derivative.as_slice().unwrap(),
-                    3.0e-8,
-                );
-            }
-            for (name, cpp_derivative) in &cpp.d_radiance_surf {
-                // The C++ surface-albedo adjoint does not match a perturbation
-                // of the Lambertian albedo, while the Rust explicit adjoint does.
-                if name == "wf_albedo" {
-                    continue;
-                }
-                assert_close(
-                    rust.d_radiance_surf[name].as_slice().unwrap(),
-                    cpp_derivative.as_slice().unwrap(),
-                    3.0e-8,
-                );
-            }
-        }
-
-        // Reusing the Rust engine must refresh the batch cache.
-        let original_extinction = atmosphere.storage.total_extinction[[2, 3]];
-        atmosphere.storage.total_extinction[[2, 3]] *= 1.02;
-        let rust_updated = rust_engine.calculate_radiance(&atmosphere)?;
-        if !thermal {
-            let cpp_updated = cpp_engine.calculate_radiance(&atmosphere)?;
-            assert_close(
-                rust_updated.radiance.as_slice().unwrap(),
-                cpp_updated.radiance.as_slice().unwrap(),
-                1.0e-10,
-            );
-        }
-        atmosphere.storage.total_extinction[[2, 3]] = original_extinction;
+        let mut twostream_config = config(thermal);
+        twostream_config.with_wavelength_batch_size(8)?;
+        let engine = Engine::new(&twostream_config, &geometry, &viewing)?;
+        let output = engine.calculate_radiance(&atmosphere)?;
 
         // Verify the engine-level indexing and derivative mapping against
         // end-to-end finite differences, including the fields where the C++
@@ -230,9 +184,9 @@ fn rust_twostream_engine_matches_cpp_radiances_and_jacobians() -> Result<()> {
                 let original = $field;
                 let step = 1.0e-5 * original.abs().max(1.0e-3);
                 $field = original + step;
-                let plus = rust_engine.calculate_radiance(&atmosphere)?.radiance[[wave, los, 0]];
+                let plus = engine.calculate_radiance(&atmosphere)?.radiance[[wave, los, 0]];
                 $field = original - step;
-                let minus = rust_engine.calculate_radiance(&atmosphere)?.radiance[[wave, los, 0]];
+                let minus = engine.calculate_radiance(&atmosphere)?.radiance[[wave, los, 0]];
                 $field = original;
                 let numeric = (plus - minus) / (2.0 * step);
                 let analytic = $analytic;
@@ -249,33 +203,33 @@ fn rust_twostream_engine_matches_cpp_radiances_and_jacobians() -> Result<()> {
         }
         check_numeric!(
             atmosphere.storage.total_extinction[[level, wave]],
-            rust.d_radiance["wf_extinction"][[level, wave, los, 0]],
+            output.d_radiance["wf_extinction"][[level, wave, los, 0]],
             "extinction"
         );
         check_numeric!(
             atmosphere.storage.ssa[[level, wave]],
-            rust.d_radiance["wf_ssa"][[level, wave, los, 0]],
+            output.d_radiance["wf_ssa"][[level, wave, los, 0]],
             "single-scatter albedo"
         );
         check_numeric!(
             atmosphere.storage.leg_coeff[[1, level, wave]],
-            rust.d_radiance["wf_b1"][[level, wave, los, 0]],
+            output.d_radiance["wf_b1"][[level, wave, los, 0]],
             "first Legendre coefficient"
         );
         check_numeric!(
             atmosphere.surface.brdf_args[[0, wave]],
-            rust.d_radiance_surf["wf_albedo"][[wave, los, 0]],
+            output.d_radiance_surf["wf_albedo"][[wave, los, 0]],
             "surface albedo"
         );
         if thermal {
             check_numeric!(
                 atmosphere.storage.emission_source[[level, wave]],
-                rust.d_radiance["wf_emission"][[level, wave, los, 0]],
+                output.d_radiance["wf_emission"][[level, wave, los, 0]],
                 "emission"
             );
             check_numeric!(
                 atmosphere.surface.emission[wave],
-                rust.d_radiance_surf["wf_surface_emission"][[wave, los, 0]],
+                output.d_radiance_surf["wf_surface_emission"][[wave, los, 0]],
                 "surface emission"
             );
         }
@@ -284,7 +238,7 @@ fn rust_twostream_engine_matches_cpp_radiances_and_jacobians() -> Result<()> {
 }
 
 #[test]
-fn rust_twostream_delta_m_matches_two_stream_discrete_ordinates() -> Result<()> {
+fn twostream_delta_m_matches_two_stream_discrete_ordinates() -> Result<()> {
     let nlevel = 8;
     let nwavel = 17;
     let mut atmosphere = make_atmosphere(nlevel, nwavel, false);
@@ -299,34 +253,35 @@ fn rust_twostream_delta_m_matches_two_stream_discrete_ordinates() -> Result<()> 
     atmosphere.apply_delta_m_scaling(2)?;
 
     let (geometry, viewing) = geometry_and_views(nlevel);
-    let mut rust_config = config(TwoStreamBackend::Rust, false);
-    rust_config.with_do_backprop(true)?;
-    rust_config.with_wavelength_batch_size(8)?;
+    let mut twostream_config = config(false);
+    twostream_config.with_do_backprop(true)?;
+    twostream_config.with_wavelength_batch_size(8)?;
 
-    let mut discrete_ordinates_config = config(TwoStreamBackend::Cpp, false);
+    let mut discrete_ordinates_config = config(false);
     discrete_ordinates_config
         .with_multiple_scatter_source(MultipleScatterSource::DiscreteOrdinates)?;
     discrete_ordinates_config.with_do_backprop(true)?;
 
-    let rust = Engine::new(&rust_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
+    let twostream =
+        Engine::new(&twostream_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
     let discrete_ordinates = Engine::new(&discrete_ordinates_config, &geometry, &viewing)?
         .calculate_radiance(&atmosphere)?;
 
     assert_close(
-        rust.radiance.as_slice().unwrap(),
+        twostream.radiance.as_slice().unwrap(),
         discrete_ordinates.radiance.as_slice().unwrap(),
         2.0e-9,
     );
     for (name, expected) in &discrete_ordinates.d_radiance {
         assert_close(
-            rust.d_radiance[name].as_slice().unwrap(),
+            twostream.d_radiance[name].as_slice().unwrap(),
             expected.as_slice().unwrap(),
             2.0e-8,
         );
     }
     for (name, expected) in &discrete_ordinates.d_radiance_surf {
         assert_close(
-            rust.d_radiance_surf[name].as_slice().unwrap(),
+            twostream.d_radiance_surf[name].as_slice().unwrap(),
             expected.as_slice().unwrap(),
             2.0e-8,
         );
@@ -335,16 +290,16 @@ fn rust_twostream_delta_m_matches_two_stream_discrete_ordinates() -> Result<()> 
 }
 
 #[test]
-fn rust_twostream_multithread_matches_serial() -> Result<()> {
+fn twostream_multithread_matches_serial() -> Result<()> {
     let nlevel = 8;
     let atmosphere = make_atmosphere(nlevel, 65, true);
     let (geometry, viewing) = geometry_and_views(nlevel);
-    let serial_config = config(TwoStreamBackend::Rust, true);
+    let serial_config = config(true);
     let serial =
         Engine::new(&serial_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
 
     for threading_model in [ThreadingModel::Wavelength, ThreadingModel::Source] {
-        let mut parallel_config = config(TwoStreamBackend::Rust, true);
+        let mut parallel_config = config(true);
         parallel_config.with_num_threads(4)?;
         parallel_config.with_threading_lib(ThreadingLib::Rayon)?;
         parallel_config.with_threading_model(threading_model)?;
@@ -376,7 +331,7 @@ fn rust_twostream_multithread_matches_serial() -> Result<()> {
 }
 
 #[test]
-fn rust_twostream_wavelength_batches_match_scalar() -> Result<()> {
+fn twostream_wavelength_batches_match_scalar() -> Result<()> {
     let nlevel = 13;
     let nwavel = 17;
 
@@ -384,12 +339,12 @@ fn rust_twostream_wavelength_batches_match_scalar() -> Result<()> {
         let atmosphere =
             make_atmosphere_with_derivatives(nlevel, nwavel, true, calculate_derivatives);
         let (geometry, viewing) = spherical_geometry_and_views(nlevel, refracted);
-        let mut scalar_config = config(TwoStreamBackend::Rust, true);
+        let mut scalar_config = config(true);
         scalar_config.with_multiple_scatter_source(MultipleScatterSource::TwoStream)?;
         scalar_config.with_num_sza(3)?;
         scalar_config.with_los_refraction(refracted)?;
 
-        let mut batch_config = config(TwoStreamBackend::Rust, true);
+        let mut batch_config = config(true);
         batch_config.with_multiple_scatter_source(MultipleScatterSource::TwoStream)?;
         batch_config.with_num_sza(3)?;
         batch_config.with_los_refraction(refracted)?;
@@ -432,18 +387,18 @@ fn rust_twostream_wavelength_batches_match_scalar() -> Result<()> {
 }
 
 #[test]
-fn rust_solar_and_thermal_twostream_sources_coexist() -> Result<()> {
+fn solar_and_thermal_twostream_sources_coexist() -> Result<()> {
     let nlevel = 6;
     let atmosphere = make_atmosphere(nlevel, 17, true);
     let (geometry, viewing) = geometry_and_views(nlevel);
-    let mut rust_config = config(TwoStreamBackend::Rust, true);
-    rust_config.with_multiple_scatter_source(MultipleScatterSource::TwoStream)?;
+    let mut combined_config = config(true);
+    combined_config.with_multiple_scatter_source(MultipleScatterSource::TwoStream)?;
     let combined =
-        Engine::new(&rust_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
+        Engine::new(&combined_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
 
-    let solar_config = config(TwoStreamBackend::Rust, false);
+    let solar_config = config(false);
     let solar = Engine::new(&solar_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
-    let thermal_config = config(TwoStreamBackend::Rust, true);
+    let thermal_config = config(true);
     let thermal =
         Engine::new(&thermal_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
 
@@ -457,7 +412,7 @@ fn rust_solar_and_thermal_twostream_sources_coexist() -> Result<()> {
 }
 
 #[test]
-fn rust_twostream_engine_resonances_are_finite() -> Result<()> {
+fn twostream_engine_resonances_are_finite() -> Result<()> {
     fn assert_finite(output: &Output) {
         assert!(output.radiance.iter().all(|value| value.is_finite()));
         for values in output.d_radiance.values() {
@@ -495,7 +450,7 @@ fn rust_twostream_engine_resonances_are_finite() -> Result<()> {
     solar_atmosphere.storage.leg_coeff[[1, 1, 0]] = first_legendre;
     solar_atmosphere.storage.solar_irradiance.fill(1.0);
     solar_atmosphere.surface.brdf_args.fill(0.2);
-    let mut solar_config = config(TwoStreamBackend::Rust, false);
+    let mut solar_config = config(false);
     solar_config.with_do_backprop(true)?;
     let solar = Engine::new(&solar_config, &solar_geometry, &solar_viewing)?
         .calculate_radiance(&solar_atmosphere)?;
@@ -528,7 +483,7 @@ fn rust_twostream_engine_resonances_are_finite() -> Result<()> {
     }
     thermal_atmosphere.surface.brdf_args.fill(0.2);
     thermal_atmosphere.surface.emission.fill(1.0);
-    let mut thermal_config = config(TwoStreamBackend::Rust, true);
+    let mut thermal_config = config(true);
     thermal_config.with_do_backprop(true)?;
     let thermal = Engine::new(&thermal_config, &thermal_geometry, &thermal_viewing)?
         .calculate_radiance(&thermal_atmosphere)?;
@@ -537,36 +492,37 @@ fn rust_twostream_engine_resonances_are_finite() -> Result<()> {
 }
 
 #[test]
-fn rust_twostream_thermal_radiance_matches_two_stream_discrete_ordinates() -> Result<()> {
+fn twostream_thermal_radiance_matches_two_stream_discrete_ordinates() -> Result<()> {
     let nlevel = 6;
     let nwavel = 17;
     let mut atmosphere = make_atmosphere(nlevel, nwavel, true);
     atmosphere.storage.solar_irradiance.fill(0.0);
     let (geometry, viewing) = geometry_and_views(nlevel);
 
-    let rust_config = config(TwoStreamBackend::Rust, true);
-    let mut do_config = config(TwoStreamBackend::Cpp, true);
+    let twostream_config = config(true);
+    let mut do_config = config(true);
     do_config.with_emission_source(EmissionSource::DiscreteOrdinates)?;
     do_config.with_multiple_scatter_source(MultipleScatterSource::DiscreteOrdinates)?;
     do_config.with_single_scatter_source(SingleScatterSource::DiscreteOrdinates)?;
 
-    let rust = Engine::new(&rust_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
+    let twostream =
+        Engine::new(&twostream_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
     let discrete_ordinates =
         Engine::new(&do_config, &geometry, &viewing)?.calculate_radiance(&atmosphere)?;
 
     assert_close(
-        rust.radiance.as_slice().unwrap(),
+        twostream.radiance.as_slice().unwrap(),
         discrete_ordinates.radiance.as_slice().unwrap(),
         2.0e-8,
     );
     // The standard DO thermal Jacobians are not a reliable oracle here; the
-    // Rust extinction, SSA, phase, atmospheric-emission, and surface
-    // derivatives are checked end to end against central differences above.
+    // Extinction, SSA, phase, atmospheric-emission, and surface derivatives
+    // are checked end to end against central differences above.
     Ok(())
 }
 
 #[test]
-fn rust_twostream_spherical_limb_matches_finite_differences() -> Result<()> {
+fn twostream_spherical_limb_matches_finite_differences() -> Result<()> {
     let nlevel = 13;
     let nwavel = 9;
     let level = 2;
@@ -577,10 +533,10 @@ fn rust_twostream_spherical_limb_matches_finite_differences() -> Result<()> {
         for refracted in [false, true] {
             let (geometry, viewing) = spherical_geometry_and_views(nlevel, refracted);
             let mut atmosphere = make_atmosphere(nlevel, nwavel, thermal);
-            let mut rust_config = config(TwoStreamBackend::Rust, thermal);
-            rust_config.with_num_sza(3)?;
-            rust_config.with_los_refraction(refracted)?;
-            let engine = Engine::new(&rust_config, &geometry, &viewing)?;
+            let mut twostream_config = config(thermal);
+            twostream_config.with_num_sza(3)?;
+            twostream_config.with_los_refraction(refracted)?;
+            let engine = Engine::new(&twostream_config, &geometry, &viewing)?;
             let output = engine.calculate_radiance(&atmosphere)?;
             assert!(output.radiance.iter().all(|value| value.is_finite()));
             assert!(
@@ -658,8 +614,52 @@ fn rust_twostream_spherical_limb_matches_finite_differences() -> Result<()> {
 }
 
 #[test]
+fn twostream_spherical_thin_layer_jacobian_matches_finite_difference() -> Result<()> {
+    let nlevel = 13;
+    let nwavel = 9;
+    let wave = 3;
+    let level = nlevel - 1;
+    let los = 0;
+    let (geometry, viewing) = spherical_geometry_and_views(nlevel, false);
+    let mut twostream_config = config(false);
+    twostream_config.with_num_sza(3)?;
+    let engine = Engine::new(&twostream_config, &geometry, &viewing)?;
+    for upper_extinction in [0.0, 1.0e-8] {
+        let mut atmosphere = make_atmosphere(nlevel, nwavel, false);
+        atmosphere
+            .storage
+            .total_extinction
+            .slice_mut(s![nlevel - 2.., ..])
+            .fill(upper_extinction);
+        let output = engine.calculate_radiance(&atmosphere)?;
+        assert!(output.radiance.iter().all(|value| value.is_finite()));
+        assert!(output
+            .d_radiance
+            .values()
+            .all(|values| values.iter().all(|value| value.is_finite())));
+
+        if upper_extinction > 0.0 {
+            let analytic = output.d_radiance["wf_extinction"][[level, wave, los, 0]];
+            let original = atmosphere.storage.total_extinction[[level, wave]];
+            let step = 1.0e-10;
+            atmosphere.storage.total_extinction[[level, wave]] = original + step;
+            let plus = engine.calculate_radiance(&atmosphere)?.radiance[[wave, los, 0]];
+            atmosphere.storage.total_extinction[[level, wave]] = original - step;
+            let minus = engine.calculate_radiance(&atmosphere)?.radiance[[wave, los, 0]];
+            let numeric = (plus - minus) / (2.0 * step);
+            let tolerance = 2.0e-6 * numeric.abs().max(1.0);
+            assert!(
+                (analytic - numeric).abs() < tolerance,
+                "thin-layer spherical extinction: analytic={analytic}, numeric={numeric}"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
 #[ignore = "release-mode performance benchmark"]
-fn benchmark_twostream_engine_backends() -> Result<()> {
+fn benchmark_twostream_engine() -> Result<()> {
     use std::hint::black_box;
     use std::time::Instant;
 
@@ -669,21 +669,17 @@ fn benchmark_twostream_engine_backends() -> Result<()> {
         let atmosphere =
             make_atmosphere_with_derivatives(nlevel, 8192, false, calculate_derivatives);
         for threads in [1, 4] {
-            let mut cases = vec![(TwoStreamBackend::Cpp, ThreadingModel::Wavelength, 1)];
+            let mut cases = Vec::new();
             for batch_size in [1, 8, 32, 128, 512, 2048, 8192] {
-                cases.push((
-                    TwoStreamBackend::Rust,
-                    ThreadingModel::Wavelength,
-                    batch_size,
-                ));
+                cases.push((ThreadingModel::Wavelength, batch_size));
             }
             if threads > 1 {
                 for batch_size in [128, 512, 2048, 8192] {
-                    cases.push((TwoStreamBackend::Rust, ThreadingModel::Source, batch_size));
+                    cases.push((ThreadingModel::Source, batch_size));
                 }
             }
-            for (backend, threading_model, batch_size) in cases {
-                let mut benchmark_config = config(backend, false);
+            for (threading_model, batch_size) in cases {
+                let mut benchmark_config = config(false);
                 benchmark_config.with_num_threads(threads)?;
                 benchmark_config.with_threading_lib(ThreadingLib::Rayon)?;
                 benchmark_config.with_threading_model(threading_model)?;
@@ -699,7 +695,7 @@ fn benchmark_twostream_engine_backends() -> Result<()> {
                 }
                 samples.sort_by(f64::total_cmp);
                 eprintln!(
-                    "backend={backend:?}, derivatives={calculate_derivatives}, threads={threads}, threading={threading_model:?}, batch={batch_size}, median_ms={:.3}",
+                    "derivatives={calculate_derivatives}, threads={threads}, threading={threading_model:?}, batch={batch_size}, median_ms={:.3}",
                     samples[samples.len() / 2]
                 );
             }
@@ -721,13 +717,13 @@ fn benchmark_spherical_twostream_limb_against_interpolated_do() -> Result<()> {
             make_atmosphere_with_derivatives(nlevel, nwavel, false, calculate_derivatives);
         for refracted in [false, true] {
             let (geometry, viewing) = spherical_geometry_and_views(nlevel, refracted);
-            for backend in ["rust", "interpolated-do"] {
-                let mut benchmark_config = config(TwoStreamBackend::Rust, false);
+            for solver in ["twostream", "interpolated-do"] {
+                let mut benchmark_config = config(false);
                 benchmark_config.with_num_threads(4)?;
                 benchmark_config.with_threading_lib(ThreadingLib::Rayon)?;
                 benchmark_config.with_num_sza(3)?;
                 benchmark_config.with_los_refraction(refracted)?;
-                if backend == "interpolated-do" {
+                if solver == "interpolated-do" {
                     benchmark_config
                         .with_multiple_scatter_source(MultipleScatterSource::DiscreteOrdinates)?;
                 } else {
@@ -744,7 +740,7 @@ fn benchmark_spherical_twostream_limb_against_interpolated_do() -> Result<()> {
                 }
                 samples.sort_by(f64::total_cmp);
                 eprintln!(
-                    "backend={backend}, refracted={refracted}, derivatives={calculate_derivatives}, median_ms={:.3}",
+                    "solver={solver}, refracted={refracted}, derivatives={calculate_derivatives}, median_ms={:.3}",
                     samples[samples.len() / 2],
                 );
             }

@@ -4,10 +4,8 @@
 #include "sasktran2/raytracing.h"
 #include "sasktran2/runtime_backend_tuner.h"
 #include "sasktran2/source_interface.h"
+#include "sktran_disco/twostream/cpp_source.h"
 #include "sktran_disco/twostream/meta.h"
-#ifdef SKTRAN_RUST_SUPPORT
-#include "sktran_disco/twostream/rust_source.h"
-#endif
 #include <memory>
 #include <sasktran2.h>
 #include <sasktran2/validation/validation.h>
@@ -205,21 +203,10 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
     if (m_config.emission_source() ==
         sasktran2::Config::EmissionSource::twostream) {
         if constexpr (NSTOKES == 1) {
-#ifdef SKTRAN_RUST_SUPPORT
-            if (m_config.two_stream_backend() ==
-                sasktran2::Config::TwoStreamBackend::rust) {
-                m_source_terms.emplace_back(
-                    std::make_unique<RustTwoStreamSourceAdapter<
-                        sasktran2::twostream::SourceType::ONLY_THERMAL>>(
-                        *m_geometry_1d));
-            } else
-#endif
-            {
-                m_source_terms.emplace_back(
-                    std::make_unique<TwoStreamSource<
-                        1, sasktran2::twostream::SourceType::ONLY_THERMAL>>(
-                        *m_geometry_1d));
-            }
+            m_source_terms.emplace_back(
+                std::make_unique<CppTwoStreamSourceAdapter<
+                    sasktran2::twostream::SourceType::ONLY_THERMAL>>(
+                    *m_geometry_1d));
 
             m_los_source_terms.push_back(
                 m_source_terms[m_source_terms.size() - 1].get());
@@ -329,21 +316,10 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
     } else if (m_config.multiple_scatter_source() ==
                sasktran2::Config::MultipleScatterSource::twostream) {
         if constexpr (NSTOKES == 1) {
-#ifdef SKTRAN_RUST_SUPPORT
-            if (m_config.two_stream_backend() ==
-                sasktran2::Config::TwoStreamBackend::rust) {
-                m_source_terms.emplace_back(
-                    std::make_unique<RustTwoStreamSourceAdapter<
-                        sasktran2::twostream::SourceType::ONLY_SOLAR>>(
-                        *m_geometry_1d));
-            } else
-#endif
-            {
-                m_source_terms.emplace_back(
-                    std::make_unique<TwoStreamSource<
-                        NSTOKES, sasktran2::twostream::SourceType::ONLY_SOLAR>>(
-                        *m_geometry_1d));
-            }
+            m_source_terms.emplace_back(
+                std::make_unique<CppTwoStreamSourceAdapter<
+                    sasktran2::twostream::SourceType::ONLY_SOLAR>>(
+                    *m_geometry_1d));
             m_los_source_terms.push_back(
                 m_source_terms[m_source_terms.size() - 1].get());
         } else {

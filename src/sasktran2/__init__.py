@@ -36,7 +36,6 @@ from ._core_rust import (
     StokesBasis,
     ThreadingLib,
     ThreadingModel,
-    TwoStreamBackend,
 )
 from .atmosphere import Atmosphere
 from .config import Config

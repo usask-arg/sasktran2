@@ -5,7 +5,12 @@ import pytest
 import sasktran2 as sk
 
 
-def _config(*, solar: bool, thermal: bool, refracted: bool = False) -> sk.Config:
+def _config(
+    *,
+    solar: bool,
+    thermal: bool,
+    refracted: bool = False,
+) -> sk.Config:
     config = sk.Config()
     config.num_threads = 1
     config.num_streams = 2
@@ -21,7 +26,6 @@ def _config(*, solar: bool, thermal: bool, refracted: bool = False) -> sk.Config
     config.emission_source = (
         sk.EmissionSource.TwoStream if thermal else sk.EmissionSource.NoSource
     )
-    config.two_stream_backend = sk.TwoStreamBackend.Rust
     return config
 
 
@@ -66,10 +70,12 @@ def _case(config: sk.Config):
     return geometry, viewing, atmosphere
 
 
-def test_rust_spherical_solar_is_close_to_two_stream_interpolated_do():
-    rust_config = _config(solar=True, thermal=False)
-    geometry, viewing, atmosphere = _case(rust_config)
-    rust = sk.Engine(rust_config, geometry, viewing).calculate_radiance(atmosphere)
+def test_spherical_solar_is_close_to_two_stream_interpolated_do():
+    twostream_config = _config(solar=True, thermal=False)
+    geometry, viewing, atmosphere = _case(twostream_config)
+    twostream = sk.Engine(twostream_config, geometry, viewing).calculate_radiance(
+        atmosphere
+    )
 
     do_config = _config(solar=True, thermal=False)
     do_config.multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
@@ -79,12 +85,15 @@ def test_rust_spherical_solar_is_close_to_two_stream_interpolated_do():
     ).calculate_radiance(do_atmosphere)
 
     np.testing.assert_allclose(
-        rust["radiance"], discrete_ordinates["radiance"], rtol=2.0e-2, atol=1.0e-12
+        twostream["radiance"],
+        discrete_ordinates["radiance"],
+        rtol=2.0e-2,
+        atol=1.0e-12,
     )
 
 
-def test_rust_twostream_delta_m_matches_two_stream_discrete_ordinates():
-    def calculate(multiple_scatter_source, backend):
+def test_twostream_delta_m_matches_two_stream_discrete_ordinates():
+    def calculate(multiple_scatter_source):
         config = sk.Config()
         config.num_threads = 1
         config.num_streams = 2
@@ -93,7 +102,6 @@ def test_rust_twostream_delta_m_matches_two_stream_discrete_ordinates():
         config.delta_m_scaling = True
         config.single_scatter_source = sk.SingleScatterSource.NoSource
         config.multiple_scatter_source = multiple_scatter_source
-        config.two_stream_backend = backend
         config.wavelength_batch_size = 4
 
         altitude_grid = np.arange(0.0, 40_001.0, 5_000.0)
@@ -131,19 +139,13 @@ def test_rust_twostream_delta_m_matches_two_stream_discrete_ordinates():
 
         return sk.Engine(config, geometry, viewing).calculate_radiance(atmosphere)
 
-    rust = calculate(
-        sk.MultipleScatterSource.TwoStream,
-        sk.TwoStreamBackend.Rust,
-    )
-    discrete_ordinates = calculate(
-        sk.MultipleScatterSource.DiscreteOrdinates,
-        sk.TwoStreamBackend.Cpp,
-    )
+    twostream = calculate(sk.MultipleScatterSource.TwoStream)
+    discrete_ordinates = calculate(sk.MultipleScatterSource.DiscreteOrdinates)
 
-    assert rust.data_vars.keys() == discrete_ordinates.data_vars.keys()
-    for name in rust.data_vars:
+    assert twostream.data_vars.keys() == discrete_ordinates.data_vars.keys()
+    for name in twostream.data_vars:
         np.testing.assert_allclose(
-            rust[name],
+            twostream[name],
             discrete_ordinates[name],
             rtol=2.0e-8,
             atol=2.0e-12,
@@ -151,7 +153,7 @@ def test_rust_twostream_delta_m_matches_two_stream_discrete_ordinates():
         )
 
 
-def test_rust_spherical_thermal_and_combined_refracted_sources_are_finite():
+def test_spherical_thermal_and_combined_refracted_sources_are_finite():
     separate = []
     for solar, thermal in [(True, False), (False, True)]:
         config = _config(solar=solar, thermal=thermal, refracted=True)
@@ -169,8 +171,40 @@ def test_rust_spherical_thermal_and_combined_refracted_sources_are_finite():
     )
 
 
+def test_twostream_wavelength_batches_match_scalar():
+    scalar_config = _config(
+        solar=True,
+        thermal=True,
+        refracted=True,
+    )
+    scalar_config.wavelength_batch_size = 1
+    geometry, viewing, atmosphere = _case(scalar_config)
+    scalar = sk.Engine(scalar_config, geometry, viewing).calculate_radiance(atmosphere)
+
+    batch_config = _config(
+        solar=True,
+        thermal=True,
+        refracted=True,
+    )
+    batch_config.wavelength_batch_size = 8
+    batch_geometry, batch_viewing, batch_atmosphere = _case(batch_config)
+    batch = sk.Engine(batch_config, batch_geometry, batch_viewing).calculate_radiance(
+        batch_atmosphere
+    )
+
+    assert batch.data_vars.keys() == scalar.data_vars.keys()
+    for name in scalar.data_vars:
+        np.testing.assert_allclose(
+            batch[name],
+            scalar[name],
+            rtol=1.0e-12,
+            atol=1.0e-13,
+            err_msg=f"C++ wavelength batching changed {name}",
+        )
+
+
 @pytest.mark.parametrize("refracted", [False, True])
-def test_rust_spherical_multithread_matches_serial(refracted: bool):
+def test_spherical_multithread_matches_serial(refracted: bool):
     serial_config = _config(solar=True, thermal=True, refracted=refracted)
     geometry, viewing, atmosphere = _case(serial_config)
     serial = sk.Engine(serial_config, geometry, viewing).calculate_radiance(atmosphere)

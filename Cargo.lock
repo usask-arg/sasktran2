@@ -844,7 +844,6 @@ dependencies = [
  "num",
  "rayon",
  "version_check",
- "wide",
 ]
 
 [[package]]
