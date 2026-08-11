@@ -566,58 +566,69 @@ namespace {
         return result;
     }
 
-    std::tuple<Wide, Wide, Wide> exp_difference_adjoint(const Wide& a,
-                                                        const Wide& b,
-                                                        const Wide& thickness,
-                                                        const Wide& seed) {
-        Wide da;
-        Wide db;
-        Wide dt;
-        for (int lane = 0; lane < LANES; ++lane) {
-            const StableValue result =
-                exp_difference(a[lane], b[lane], thickness[lane]);
-            da[lane] = seed[lane] * result.da;
-            db[lane] = seed[lane] * result.db;
-            dt[lane] = seed[lane] * result.dt;
-        }
-        return {da, db, dt};
-    }
-
-    bool exp_difference_ratio_nonresonant(const Wide& a, const Wide& b,
-                                          const Wide& thickness) {
-        for (int lane = 0; lane < LANES; ++lane) {
-            if (std::abs((b[lane] - a[lane]) * thickness[lane]) <= 1.0e-5) {
-                return false;
-            }
-        }
-        return true;
-    }
-
     Wide exp_difference_ratio(const Wide& exp_a, const Wide& exp_b,
                               const Wide& a, const Wide& b,
                               const Wide& thickness) {
-        if (exp_difference_ratio_nonresonant(a, b, thickness)) {
-            return (exp_a - exp_b) / (b - a);
+        Wide delta = b - a;
+        std::array<bool, LANES> use_stable_limit{};
+        bool any_stable_limit = false;
+        for (int lane = 0; lane < LANES; ++lane) {
+            use_stable_limit[lane] =
+                std::abs(delta[lane] * thickness[lane]) <= 1.0e-5;
+            any_stable_limit |= use_stable_limit[lane];
+            if (use_stable_limit[lane]) {
+                delta[lane] = 1.0;
+            }
         }
-        return stable_exp_difference(a, b, thickness);
+        if (!any_stable_limit) {
+            return (exp_a - exp_b) / delta;
+        }
+        Wide result = (exp_a - exp_b) / delta;
+        for (int lane = 0; lane < LANES; ++lane) {
+            if (use_stable_limit[lane]) {
+                result[lane] =
+                    exp_difference(a[lane], b[lane], thickness[lane]).value;
+            }
+        }
+        return result;
     }
 
     std::tuple<Wide, Wide, Wide>
     exp_difference_ratio_adjoint(const Wide& exp_a, const Wide& exp_b,
                                  const Wide& a, const Wide& b,
                                  const Wide& thickness, const Wide& seed) {
-        if (!exp_difference_ratio_nonresonant(a, b, thickness)) {
-            return exp_difference_adjoint(a, b, thickness, seed);
+        Wide delta = b - a;
+        std::array<bool, LANES> use_stable_limit{};
+        bool any_stable_limit = false;
+        for (int lane = 0; lane < LANES; ++lane) {
+            use_stable_limit[lane] =
+                std::abs(delta[lane] * thickness[lane]) <= 1.0e-5;
+            any_stable_limit |= use_stable_limit[lane];
+            if (use_stable_limit[lane]) {
+                delta[lane] = 1.0;
+            }
         }
-        const Wide delta = b - a;
         const Wide numerator = exp_a - exp_b;
         const Wide inverse_delta = 1.0 / delta;
         const Wide inverse_delta_squared = inverse_delta.square();
-        return {seed * (-thickness * exp_a * delta + numerator) *
-                    inverse_delta_squared,
-                seed * (thickness * exp_b * delta - numerator) *
-                    inverse_delta_squared,
-                seed * (-a * exp_a + b * exp_b) * inverse_delta};
+        Wide da = seed * (-thickness * exp_a * delta + numerator) *
+                  inverse_delta_squared;
+        Wide db = seed * (thickness * exp_b * delta - numerator) *
+                  inverse_delta_squared;
+        Wide dt = seed * (-a * exp_a + b * exp_b) * inverse_delta;
+        if (!any_stable_limit) {
+            return {da, db, dt};
+        }
+        for (int lane = 0; lane < LANES; ++lane) {
+            if (use_stable_limit[lane]) {
+                const StableValue result =
+                    exp_difference(a[lane], b[lane], thickness[lane]);
+                da[lane] = seed[lane] * result.da;
+                db[lane] = seed[lane] * result.db;
+                dt[lane] = seed[lane] * result.dt;
+            }
+        }
+        return {da, db, dt};
     }
 
     std::tuple<Wide, Wide, Wide>
@@ -741,10 +752,6 @@ namespace {
     template <bool Solar>
     void map_explicit_to_levels(const ColumnGeometry& geometry,
                                 ExplicitWorkspace& workspace);
-
-    template <bool Solar>
-    bool explicit_column_nonresonant(const ColumnGeometry& geometry,
-                                     const ExplicitWorkspace& workspace);
 
     template <bool Solar>
     Wide explicit_local_source(const ColumnGeometry& geometry, int layer,
@@ -1118,16 +1125,6 @@ struct CppTwoStreamSourceAdapter<SOURCE_TYPE>::Impl {
             }
             forward_explicit_layers<Solar>(column_geometry, albedo,
                                            thermal_surface, column);
-        }
-
-        if (jacobians) {
-            for (std::size_t index = 0; index < spherical->columns.size();
-                 ++index) {
-                if (!explicit_column_nonresonant<Solar>(
-                        spherical->columns[index], workspace.columns[index])) {
-                    return false;
-                }
-            }
         }
 
         const auto sza_interpolation = [this](double cosine) {
@@ -1843,20 +1840,6 @@ namespace {
         }
     }
 
-    bool column_source_nonresonant(const Wide& rate, const Wide& eigenvalue,
-                                   const Wide& optical_depth) {
-        for (int lane = 0; lane < LANES; ++lane) {
-            const double thickness = optical_depth[lane];
-            if (std::abs((rate[lane] - eigenvalue[lane]) * thickness) <=
-                    1.0e-5 ||
-                std::abs((rate[lane] + eigenvalue[lane]) * thickness) <=
-                    1.0e-5) {
-                return false;
-            }
-        }
-        return true;
-    }
-
     bool plane_source_nonresonant(const Wide& rate, const Wide& eigenvalue,
                                   const Wide& optical_depth,
                                   double inverse_view) {
@@ -2111,19 +2094,12 @@ namespace {
                 const Wide rate = Solar ? w.secant[layer] : w.thermal_b1[layer];
                 const Wide amplitude =
                     Solar ? w.transmission[layer] : w.thermal_b0[layer];
-                Wide cp_ratio;
-                Wide cm_ratio;
-                if (column_source_nonresonant(rate, h.k[layer], w.od[layer])) {
-                    cp_ratio = (h.omega[layer] - p.exponential[layer]) /
-                               (rate - h.k[layer]);
-                    cm_ratio = (1.0 - h.omega[layer] * p.exponential[layer]) /
-                               (rate + h.k[layer]);
-                } else {
-                    cp_ratio =
-                        stable_exp_difference(h.k[layer], rate, w.od[layer]);
-                    cm_ratio = stable_exp_difference(
-                        Wide::Zero(), rate + h.k[layer], w.od[layer]);
-                }
+                const Wide cp_ratio =
+                    exp_difference_ratio(h.omega[layer], p.exponential[layer],
+                                         h.k[layer], rate, w.od[layer]);
+                const Wide cm_ratio = exp_difference_ratio(
+                    Wide::Ones(), h.omega[layer] * p.exponential[layer],
+                    Wide::Zero(), rate + h.k[layer], w.od[layer]);
                 p.cp[layer] = amplitude * cp_ratio;
                 p.cm[layer] = amplitude * cm_ratio;
                 if constexpr (Solar) {
@@ -2146,29 +2122,9 @@ namespace {
     }
 
     template <bool Solar>
-    bool explicit_column_nonresonant(const ColumnGeometry& geometry,
-                                     const ExplicitWorkspace& w) {
-        const int n = static_cast<int>(geometry.layer_thickness.size());
-        constexpr int naz = Solar ? 2 : 1;
-        for (int layer = 0; layer < n; ++layer) {
-            const Wide& rate = Solar ? w.secant[layer] : w.thermal_b1[layer];
-            for (int az = 0; az < naz; ++az) {
-                if (!column_source_nonresonant(rate, w.homogeneous[az].k[layer],
-                                               w.od[layer])) {
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
-
-    template <bool Solar>
     bool explicit_packet_nonresonant(const ColumnGeometry& geometry,
                                      const std::vector<ViewGeometry>& views,
                                      const ExplicitWorkspace& w) {
-        if (!explicit_column_nonresonant<Solar>(geometry, w)) {
-            return false;
-        }
         const int n = static_cast<int>(geometry.layer_thickness.size());
         constexpr int naz = Solar ? 2 : 1;
         for (int layer = 0; layer < n; ++layer) {
@@ -3072,49 +3028,34 @@ namespace {
                     Solar ? w.secant[layer] : w.thermal_b1[layer];
                 const Wide& amplitude =
                     Solar ? w.transmission[layer] : w.thermal_b0[layer];
-                const Wide cp_denominator = rate - h.k[layer];
-                const Wide inverse_cp = 1.0 / cp_denominator;
-                const Wide cp_numerator = h.omega[layer] - p.exponential[layer];
+                const Wide cp_ratio =
+                    exp_difference_ratio(h.omega[layer], p.exponential[layer],
+                                         h.k[layer], rate, w.od[layer]);
+                const Wide cm_ratio = exp_difference_ratio(
+                    Wide::Ones(), h.omega[layer] * p.exponential[layer],
+                    Wide::Zero(), rate + h.k[layer], w.od[layer]);
                 if constexpr (Solar) {
-                    w.d_transmission[layer] += d_cp * cp_numerator * inverse_cp;
+                    w.d_transmission[layer] +=
+                        d_cp * cp_ratio + d_cm * cm_ratio;
                 } else {
-                    w.d_thermal_b0[layer] += d_cp * cp_numerator * inverse_cp;
+                    w.d_thermal_b0[layer] += d_cp * cp_ratio + d_cm * cm_ratio;
                 }
-                const Wide d_cp_numerator = d_cp * amplitude * inverse_cp;
-                const Wide d_cp_denominator = -d_cp * p.cp[layer] * inverse_cp;
-                d_omega += d_cp_numerator;
-                Wide d_exponential = -d_cp_numerator;
+                const auto [d_cp_k, d_cp_rate, d_cp_od] =
+                    exp_difference_ratio_adjoint(
+                        h.omega[layer], p.exponential[layer], h.k[layer], rate,
+                        w.od[layer], d_cp * amplitude);
+                const auto cm_adjoint = exp_difference_ratio_adjoint(
+                    Wide::Ones(), h.omega[layer] * p.exponential[layer],
+                    Wide::Zero(), rate + h.k[layer], w.od[layer],
+                    d_cm * amplitude);
+                const Wide& d_cm_rate = std::get<1>(cm_adjoint);
+                d_k += d_cp_k + d_cm_rate;
                 if constexpr (Solar) {
-                    w.d_secant[layer] += d_cp_denominator;
+                    w.d_secant[layer] += d_cp_rate + d_cm_rate;
                 } else {
-                    w.d_thermal_b1[layer] += d_cp_denominator;
+                    w.d_thermal_b1[layer] += d_cp_rate + d_cm_rate;
                 }
-                d_k -= d_cp_denominator;
-
-                const Wide cm_denominator = rate + h.k[layer];
-                const Wide inverse_cm = 1.0 / cm_denominator;
-                const Wide cm_numerator =
-                    1.0 - h.omega[layer] * p.exponential[layer];
-                if constexpr (Solar) {
-                    w.d_transmission[layer] += d_cm * cm_numerator * inverse_cm;
-                } else {
-                    w.d_thermal_b0[layer] += d_cm * cm_numerator * inverse_cm;
-                }
-                const Wide d_cm_numerator = d_cm * amplitude * inverse_cm;
-                const Wide d_cm_denominator = -d_cm * p.cm[layer] * inverse_cm;
-                d_omega -= d_cm_numerator * p.exponential[layer];
-                d_exponential -= d_cm_numerator * h.omega[layer];
-                if constexpr (Solar) {
-                    w.d_secant[layer] += d_cm_denominator;
-                    w.d_secant[layer] -=
-                        d_exponential * p.exponential[layer] * w.od[layer];
-                } else {
-                    w.d_thermal_b1[layer] += d_cm_denominator;
-                    w.d_thermal_b1[layer] -=
-                        d_exponential * p.exponential[layer] * w.od[layer];
-                }
-                d_k += d_cm_denominator;
-                w.d_od[layer] -= d_exponential * p.exponential[layer] * rate;
+                w.d_od[layer] += d_cp_od + std::get<2>(cm_adjoint);
 
                 d_xp += d_norm * 2.0 * mu * h.xp[layer];
                 d_xm -= d_norm * 2.0 * mu * h.xm[layer];

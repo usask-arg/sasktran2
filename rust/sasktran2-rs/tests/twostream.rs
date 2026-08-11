@@ -614,6 +614,50 @@ fn twostream_spherical_limb_matches_finite_differences() -> Result<()> {
 }
 
 #[test]
+fn twostream_spherical_thin_layer_jacobian_matches_finite_difference() -> Result<()> {
+    let nlevel = 13;
+    let nwavel = 9;
+    let wave = 3;
+    let level = nlevel - 1;
+    let los = 0;
+    let (geometry, viewing) = spherical_geometry_and_views(nlevel, false);
+    let mut twostream_config = config(false);
+    twostream_config.with_num_sza(3)?;
+    let engine = Engine::new(&twostream_config, &geometry, &viewing)?;
+    for upper_extinction in [0.0, 1.0e-8] {
+        let mut atmosphere = make_atmosphere(nlevel, nwavel, false);
+        atmosphere
+            .storage
+            .total_extinction
+            .slice_mut(s![nlevel - 2.., ..])
+            .fill(upper_extinction);
+        let output = engine.calculate_radiance(&atmosphere)?;
+        assert!(output.radiance.iter().all(|value| value.is_finite()));
+        assert!(output
+            .d_radiance
+            .values()
+            .all(|values| values.iter().all(|value| value.is_finite())));
+
+        if upper_extinction > 0.0 {
+            let analytic = output.d_radiance["wf_extinction"][[level, wave, los, 0]];
+            let original = atmosphere.storage.total_extinction[[level, wave]];
+            let step = 1.0e-10;
+            atmosphere.storage.total_extinction[[level, wave]] = original + step;
+            let plus = engine.calculate_radiance(&atmosphere)?.radiance[[wave, los, 0]];
+            atmosphere.storage.total_extinction[[level, wave]] = original - step;
+            let minus = engine.calculate_radiance(&atmosphere)?.radiance[[wave, los, 0]];
+            let numeric = (plus - minus) / (2.0 * step);
+            let tolerance = 2.0e-6 * numeric.abs().max(1.0);
+            assert!(
+                (analytic - numeric).abs() < tolerance,
+                "thin-layer spherical extinction: analytic={analytic}, numeric={numeric}"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
 #[ignore = "release-mode performance benchmark"]
 fn benchmark_twostream_engine() -> Result<()> {
     use std::hint::black_box;
