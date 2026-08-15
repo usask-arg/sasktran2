@@ -14,6 +14,8 @@ namespace sasktran2 {
         const Geometry& geometry) {
         m_use_sparse_derivative_tracking = false;
         m_attenuation_active_derivative_ranges.clear();
+        m_atmosphere = nullptr;
+        m_has_atmosphere_revision = false;
 
         // Construct the optical depth matrices.
         // This is the matrix so that matrix @ extinction = layer od, one matrix
@@ -34,14 +36,26 @@ namespace sasktran2 {
     template <int NSTOKES>
     void SourceIntegrator<NSTOKES>::initialize_atmosphere(
         const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmo) {
-        m_use_sparse_derivative_tracking = false;
-        m_attenuation_active_derivative_ranges.clear();
-
         if (atmo.storage().total_extinction.rows() !=
             m_num_geometry_locations) {
             throw std::invalid_argument(
                 "Atmosphere extinction size does not match ray geometry");
         }
+        m_calculate_derivatives = m_derivatives_enabled && atmo.num_deriv() > 0;
+
+        // Revision zero is the legacy directly-mutable C++ mode. Rebuild in
+        // that mode because storage changes cannot be observed. Once a caller
+        // uses mark_changed(), revision-aware reuse is safe and intentional.
+        if (atmo.revision() != 0 && m_atmosphere == &atmo &&
+            m_has_atmosphere_revision &&
+            m_atmosphere_instance_id == atmo.instance_id() &&
+            m_atmosphere_revision == atmo.revision() &&
+            m_atmosphere_block_capacity == m_wavelength_block_capacity) {
+            return;
+        }
+
+        m_use_sparse_derivative_tracking = false;
+        m_attenuation_active_derivative_ranges.clear();
         if (m_wavelength_block_capacity == 1) {
             m_scalar_shell_od.resize(m_traced_ray_od_matrix.size());
             m_shell_od.clear();
@@ -72,11 +86,14 @@ namespace sasktran2 {
         }
 
         m_atmosphere = &atmo;
+        m_atmosphere_instance_id = atmo.instance_id();
+        m_atmosphere_revision = atmo.revision();
+        m_atmosphere_block_capacity = m_wavelength_block_capacity;
+        m_has_atmosphere_revision = true;
 
         // This object may be reused with derivative-free and derivative-enabled
         // atmospheres. Do not let a derivative-free call permanently disable
         // attenuation derivatives for later calculations.
-        m_calculate_derivatives = m_derivatives_enabled && atmo.num_deriv() > 0;
     }
 
     template <int NSTOKES>

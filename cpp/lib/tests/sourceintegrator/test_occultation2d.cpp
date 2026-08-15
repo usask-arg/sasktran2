@@ -2,7 +2,9 @@
 
 #include <sasktran2.h>
 #include <sasktran2/solartransmission.h>
+#include <cstdint>
 #include <numeric>
+#include <optional>
 
 namespace {
     constexpr double earth_radius = 10.0;
@@ -643,6 +645,81 @@ TEST_CASE("2D occultation transmission handles extreme OD and validates "
         REQUIRE_THROWS_AS(integrator.initialize_atmosphere(mismatched),
                           std::invalid_argument);
     }
+}
+
+TEST_CASE("SourceIntegrator atmosphere cache tracks revisions and lifetimes",
+          "[sourceintegrator][cache]") {
+    const auto geometry = geometry2d();
+    sasktran2::Config config;
+    std::vector<sasktran2::raytracing::TracedRay> rays(1);
+    add_layer(rays[0], geometry, 0, 0, {1.0, 2.0, 3.0, 4.0});
+
+    sasktran2::SourceIntegrator<1> integrator(false);
+    integrator.initialize_geometry(rays, geometry);
+    sasktran2::solartransmission::OccultationSource<1> source;
+    initialize_source_geometry(source, rays);
+    std::vector<SourceTermInterface<1>*> sources = {&source};
+
+    const auto integrate_transmission = [&]() {
+        sasktran2::Dual<double, sasktran2::dualstorage::dense, 1> transmission(
+            1, 0, true);
+        integrate_scalar(integrator, transmission, sources, 0, 0, 0, 0);
+        return transmission.value[0];
+    };
+
+    using Atmosphere = sasktran2::atmosphere::Atmosphere<1>;
+    std::optional<Atmosphere> atmosphere;
+    atmosphere.emplace(1, geometry, config, false);
+    const auto first_address = reinterpret_cast<std::uintptr_t>(&*atmosphere);
+    const auto first_instance_id = atmosphere->instance_id();
+
+    // Revision zero remains compatible with directly-mutated C++ storage: it
+    // must rebuild every time because no change notification is available.
+    atmosphere->storage().total_extinction.setConstant(0.01);
+    integrator.initialize_atmosphere(*atmosphere);
+    REQUIRE(integrate_transmission() ==
+            Catch::Approx(std::exp(-0.1)).epsilon(1e-13));
+    atmosphere->storage().total_extinction.setConstant(0.02);
+    integrator.initialize_atmosphere(*atmosphere);
+    REQUIRE(integrate_transmission() ==
+            Catch::Approx(std::exp(-0.2)).epsilon(1e-13));
+
+    // Once mark_changed() establishes a revision, an unchanged revision is
+    // reusable. Direct storage mutation then requires another mark_changed().
+    atmosphere->mark_changed();
+    integrator.initialize_atmosphere(*atmosphere);
+    atmosphere->storage().total_extinction.setConstant(0.03);
+    integrator.initialize_atmosphere(*atmosphere);
+    REQUIRE(integrate_transmission() ==
+            Catch::Approx(std::exp(-0.2)).epsilon(1e-13));
+
+    // Reconstructing an atmosphere in the same optional storage produces the
+    // same address and revision, but it is a distinct lifetime and must not
+    // reuse the previous optical-depth cache.
+    atmosphere.reset();
+    atmosphere.emplace(1, geometry, config, false);
+    REQUIRE(reinterpret_cast<std::uintptr_t>(&*atmosphere) == first_address);
+    REQUIRE(atmosphere->instance_id() != first_instance_id);
+    atmosphere->storage().total_extinction.setConstant(0.04);
+    atmosphere->mark_changed();
+    integrator.initialize_atmosphere(*atmosphere);
+    REQUIRE(integrate_transmission() ==
+            Catch::Approx(std::exp(-0.4)).epsilon(1e-13));
+
+    // Changing either storage shape or ray geometry invalidates the cache even
+    // when the atmosphere itself is unchanged.
+    integrator.initialize_thread_storage(1, 2);
+    integrator.initialize_atmosphere(*atmosphere);
+    REQUIRE(integrate_transmission() ==
+            Catch::Approx(std::exp(-0.4)).epsilon(1e-13));
+
+    std::vector<sasktran2::raytracing::TracedRay> shorter_rays(1);
+    add_layer(shorter_rays[0], geometry, 0, 0, {1.0, 1.0, 1.0, 1.0});
+    integrator.initialize_geometry(shorter_rays, geometry);
+    initialize_source_geometry(source, shorter_rays);
+    integrator.initialize_atmosphere(*atmosphere);
+    REQUIRE(integrate_transmission() ==
+            Catch::Approx(std::exp(-0.16)).epsilon(1e-13));
 }
 
 TEST_CASE("Regular 2D integration rejects interior sources before mutation",
