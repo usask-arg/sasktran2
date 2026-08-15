@@ -498,7 +498,7 @@ void Sasktran2<NSTOKES>::calculate_radiance(
     // Initialize each source term with the atmosphere
     for (auto& source : m_source_terms) {
         source->set_wavelength_block_capacity(wavelength_batch_size);
-        source->initialize_atmosphere(atmosphere);
+        source->initialize_atmosphere_native(atmosphere);
     }
 
     m_source_integrator->initialize_atmosphere(atmosphere);
@@ -585,7 +585,7 @@ void Sasktran2<NSTOKES>::calculate_jvp(
     m_source_integrator->initialize_thread_storage(m_config.num_threads(), 1);
     for (auto& source : m_source_terms) {
         source->set_wavelength_block_capacity(wavelength_batch_size);
-        source->initialize_atmosphere(atmosphere);
+        source->initialize_atmosphere_native(atmosphere);
     }
     m_source_integrator->initialize_atmosphere(atmosphere);
     output.set_wavelength_block_capacity(wavelength_batch_size);
@@ -606,11 +606,11 @@ void Sasktran2<NSTOKES>::calculate_jvp(
         const int wavelength_threadidx = 0;
 #endif
         const sasktran2::WavelengthBlock<> block{wavelength, 1};
-        for (auto& source : m_source_terms) {
-            source->calculate(block, wavelength_threadidx);
-        }
         auto& native_tangent = native_tangents[wavelength_threadidx];
         output.native_tangent(wavelength, native_tangent);
+        for (auto& source : m_source_terms) {
+            source->calculate_jvp(block, wavelength_threadidx, native_tangent);
+        }
 #pragma omp parallel for num_threads(m_config.num_source_threads())            \
     schedule(dynamic)
         for (int ray = 0; ray < m_internal_viewing_geometry.num_rays(); ++ray) {
@@ -695,7 +695,7 @@ void Sasktran2<NSTOKES>::calculate_vjp(
             start,
             std::min(wavelength_batch_size, atmosphere.num_wavel() - start)};
         for (auto& source : m_source_terms) {
-            source->calculate(block, wavelength_threadidx);
+            source->calculate_vjp(block, wavelength_threadidx);
         }
         if (num_source_threads == 1) {
             native_gradients[wavelength_threadidx]
@@ -734,6 +734,13 @@ void Sasktran2<NSTOKES>::calculate_vjp(
                 reduced_gradient.leftCols(block.count) +=
                     native_gradients[thread].leftCols(block.count);
             }
+        }
+        // Globally coupled sources complete one adjoint after all LOS
+        // cotangents have reached their thread-local accumulators.
+        auto reduced_gradient_block = reduced_gradient.leftCols(block.count);
+        for (const auto& source : m_source_terms) {
+            source->finalize_vjp(block, wavelength_threadidx,
+                                 reduced_gradient_block);
         }
         output.accumulate_native_gradient(block, wavelength_threadidx,
                                           reduced_gradient);

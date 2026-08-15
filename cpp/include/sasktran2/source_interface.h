@@ -120,6 +120,13 @@ template <int NSTOKES> class SourceTermInterface {
     virtual void initialize_atmosphere(
         const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere){};
 
+    /** Initializes atmosphere state for matrix-free products. Sources may omit
+     * storage used only by the materialized-Jacobian path. */
+    virtual void initialize_atmosphere_native(
+        const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere) {
+        initialize_atmosphere(atmosphere);
+    }
+
     /** Sets the wavelength block capacity negotiated by the engine for the
      * current calculation. Sources may use this to size per-block storage. */
     virtual void set_wavelength_block_capacity(int block_capacity) {}
@@ -127,6 +134,28 @@ template <int NSTOKES> class SourceTermInterface {
     /** Triggers calculation for a contiguous block of wavelengths. */
     virtual void calculate(const sasktran2::WavelengthBlock<>& block,
                            int threadidx){};
+
+    /** Prepares source-wide primal and directional state before parallel LOS
+     * JVP evaluation. Sources with ray-local products may use the ordinary
+     * calculation path. */
+    virtual void calculate_jvp(const sasktran2::WavelengthBlock<>& block,
+                               int threadidx,
+                               Eigen::Ref<const Eigen::VectorXd>) {
+        calculate(block, threadidx);
+    }
+
+    /** Prepares source-wide primal and reverse state before parallel LOS VJP
+     * accumulation. Sources with ray-local products may use the ordinary
+     * calculation path. */
+    virtual void calculate_vjp(const sasktran2::WavelengthBlock<>& block,
+                               int threadidx) {
+        calculate(block, threadidx);
+    }
+
+    /** Finalizes source-wide reverse accumulation after all LOS contributions
+     * have been reduced into the native gradient. */
+    virtual void finalize_vjp(const sasktran2::WavelengthBlock<>&, int,
+                              Eigen::Ref<Eigen::MatrixXd>) const {}
 
     /** Maximum number of wavelengths this source can process together. */
     virtual int maximum_wavelength_block_size() const { return 1; }
