@@ -2134,10 +2134,10 @@ namespace sasktran2::successive_orders {
                     const int coefficient_offset =
                         location * m_num_phase_moments;
                     for (int degree = 0; degree < order; ++degree) {
-                        value += coefficient_gradient(coefficient_offset +
-                                                      degree) *
-                                 m_atmosphere->storage().d_leg_coeff(
-                                     degree, location, wavelength, group);
+                        value +=
+                            coefficient_gradient(coefficient_offset + degree) *
+                            m_atmosphere->storage().d_leg_coeff(
+                                degree, location, wavelength, group);
                     }
                     thread_gradient(native_offset + location) += value;
                 }

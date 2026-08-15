@@ -14,8 +14,7 @@ namespace sasktran2 {
 namespace sasktran2::successive_orders {
     /** Constructs the private C++ successive-orders implementation. */
     template <int NSTOKES>
-    std::unique_ptr<SourceTermInterface<NSTOKES>>
-    make_successive_orders_source(
+    std::unique_ptr<SourceTermInterface<NSTOKES>> make_successive_orders_source(
         const sasktran2::raytracing::RayTracerBase& raytracer,
         const sasktran2::Geometry1D& geometry);
 

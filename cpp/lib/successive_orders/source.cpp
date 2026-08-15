@@ -472,8 +472,7 @@ namespace sasktran2::successive_orders {
             auto gradient = native_gradient.col(0);
             warn_if_implicit_derivative_is_unchecked(m_solver_settings,
                                                      block.start, "VJP");
-            reverse(block.start, threadidx, work, work.los_cotangent,
-                    gradient);
+            reverse(block.start, threadidx, work, work.los_cotangent, gradient);
         }
 
         void start_of_ray_source(
@@ -718,8 +717,7 @@ namespace sasktran2::successive_orders {
                     native_gradient, work.transport_vjp_workspace);
             }
             Adapter::accumulate_vjp(*m_scattering_assembler, *m_atmosphere,
-                                    wavelength, work.gradient,
-                                    native_gradient);
+                                    wavelength, work.gradient, native_gradient);
             if (m_first_order.uses_compact_scalar_kernel()) {
                 if (work.transport_state_projected) {
                     m_first_order.accumulate_vjp_with_projected_transport(
@@ -732,9 +730,9 @@ namespace sasktran2::successive_orders {
                         work.gradient.forcing, native_gradient);
                 }
             } else {
-                m_first_order.accumulate_vjp(
-                    wavelength, threadidx, work.gradient.forcing,
-                    native_gradient);
+                m_first_order.accumulate_vjp(wavelength, threadidx,
+                                             work.gradient.forcing,
+                                             native_gradient);
             }
         }
 
@@ -893,8 +891,7 @@ namespace sasktran2::successive_orders {
     template class SuccessiveOrdersSource<3>;
 
     template <int NSTOKES>
-    std::unique_ptr<SourceTermInterface<NSTOKES>>
-    make_successive_orders_source(
+    std::unique_ptr<SourceTermInterface<NSTOKES>> make_successive_orders_source(
         const sasktran2::raytracing::RayTracerBase& raytracer,
         const sasktran2::Geometry1D& geometry) {
         return std::make_unique<SuccessiveOrdersSource<NSTOKES>>(raytracer,

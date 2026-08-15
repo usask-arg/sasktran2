@@ -454,37 +454,34 @@ namespace sasktran2::successive_orders {
 
         const auto& storage = atmosphere.storage();
         const int locations = storage.total_extinction.rows();
-            for (int point_index = 0;
-                 point_index < m_geometry->num_interior_points();
-                 ++point_index) {
-                for (const auto& weight : m_geometry->source_point(point_index)
-                                              .atmosphere_weights()) {
-                    for (int group = 0;
-                         group < atmosphere.num_scattering_deriv_groups();
-                         ++group) {
-                        double value = 0.0;
-                        const double delta_m_scale = delta_m_derivative_scale(
-                            storage, weight.index, wavelength, group);
-                        for (int degree = 0;
-                             degree < m_angular_basis->num_coefficients();
-                             ++degree) {
-                            const double coefficient_derivative =
-                                storage.d_leg_coeff(degree, weight.index,
-                                                    wavelength, group) -
-                                (2.0 * degree + 1.0) * delta_m_scale;
-                            value += atmospheric_coefficient_gradient(
-                                         point_index, degree) *
-                                     weight.weight * coefficient_derivative;
-                        }
-                        native_gradient(atmosphere.scat_deriv_start_index() +
-                                        group * locations + weight.index) +=
-                            value;
+        for (int point_index = 0;
+             point_index < m_geometry->num_interior_points(); ++point_index) {
+            for (const auto& weight :
+                 m_geometry->source_point(point_index).atmosphere_weights()) {
+                for (int group = 0;
+                     group < atmosphere.num_scattering_deriv_groups();
+                     ++group) {
+                    double value = 0.0;
+                    const double delta_m_scale = delta_m_derivative_scale(
+                        storage, weight.index, wavelength, group);
+                    for (int degree = 0;
+                         degree < m_angular_basis->num_coefficients();
+                         ++degree) {
+                        const double coefficient_derivative =
+                            storage.d_leg_coeff(degree, weight.index,
+                                                wavelength, group) -
+                            (2.0 * degree + 1.0) * delta_m_scale;
+                        value += atmospheric_coefficient_gradient(point_index,
+                                                                  degree) *
+                                 weight.weight * coefficient_derivative;
                     }
+                    native_gradient(atmosphere.scat_deriv_start_index() +
+                                    group * locations + weight.index) += value;
                 }
             }
+        }
         for (int ground_index = 0;
-             ground_index < m_geometry->num_ground_points();
-             ++ground_index) {
+             ground_index < m_geometry->num_ground_points(); ++ground_index) {
             const auto& angular = m_ground_geometry[ground_index];
             const int rows = static_cast<int>(angular.mu_out.size());
             const int columns = static_cast<int>(angular.mu_in.size());
@@ -831,43 +828,38 @@ namespace sasktran2::successive_orders {
 
         const auto& storage = atmosphere.storage();
         const int locations = storage.total_extinction.rows();
-            for (int point_index = 0;
-                 point_index < m_geometry->num_interior_points();
-                 ++point_index) {
-                for (const auto& weight : m_geometry->source_point(point_index)
-                                              .atmosphere_weights()) {
-                    for (int group = 0;
-                         group < atmosphere.num_scattering_deriv_groups();
-                         ++group) {
-                        double value = 0.0;
-                        const double delta_m_scale = delta_m_derivative_scale(
-                            storage, weight.index, wavelength, group);
-                        for (int coefficient = 0;
-                             coefficient <
-                             atmospheric_coefficient_gradient.cols();
-                             ++coefficient) {
-                            const int degree = coefficient / 4;
-                            const double delta_m_correction =
-                                delta_m_corrects_vector_component(coefficient)
-                                    ? (2.0 * degree + 1.0) * delta_m_scale
-                                    : 0.0;
-                            value +=
-                                atmospheric_coefficient_gradient(point_index,
-                                                                 coefficient) *
-                                weight.weight *
-                                (storage.d_leg_coeff(coefficient, weight.index,
-                                                     wavelength, group) -
-                                 delta_m_correction);
-                        }
-                        native_gradient(atmosphere.scat_deriv_start_index() +
-                                        group * locations + weight.index) +=
-                            value;
+        for (int point_index = 0;
+             point_index < m_geometry->num_interior_points(); ++point_index) {
+            for (const auto& weight :
+                 m_geometry->source_point(point_index).atmosphere_weights()) {
+                for (int group = 0;
+                     group < atmosphere.num_scattering_deriv_groups();
+                     ++group) {
+                    double value = 0.0;
+                    const double delta_m_scale = delta_m_derivative_scale(
+                        storage, weight.index, wavelength, group);
+                    for (int coefficient = 0;
+                         coefficient < atmospheric_coefficient_gradient.cols();
+                         ++coefficient) {
+                        const int degree = coefficient / 4;
+                        const double delta_m_correction =
+                            delta_m_corrects_vector_component(coefficient)
+                                ? (2.0 * degree + 1.0) * delta_m_scale
+                                : 0.0;
+                        value += atmospheric_coefficient_gradient(point_index,
+                                                                  coefficient) *
+                                 weight.weight *
+                                 (storage.d_leg_coeff(coefficient, weight.index,
+                                                      wavelength, group) -
+                                  delta_m_correction);
                     }
+                    native_gradient(atmosphere.scat_deriv_start_index() +
+                                    group * locations + weight.index) += value;
                 }
             }
+        }
         for (int ground_index = 0;
-             ground_index < m_geometry->num_ground_points();
-             ++ground_index) {
+             ground_index < m_geometry->num_ground_points(); ++ground_index) {
             const auto& angular = m_ground_geometry[ground_index];
             const int rows = static_cast<int>(angular.mu_out.size());
             const int columns = static_cast<int>(angular.mu_in.size());
