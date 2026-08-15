@@ -12,9 +12,21 @@ TEST_CASE("Atmosphere native revision is monotonic",
                                                     std::move(surface), true);
 
     REQUIRE(atmosphere.revision() == 0);
+    const auto instance_id = atmosphere.instance_id();
     atmosphere.mark_changed();
     atmosphere.mark_changed();
     REQUIRE(atmosphere.revision() == 2);
+    REQUIRE(atmosphere.instance_id() == instance_id);
+
+    sasktran2::atmosphere::AtmosphereGridStorageFull<1> second_storage(2, 3, 4);
+    sasktran2::atmosphere::Surface<1> second_surface(2);
+    sasktran2::atmosphere::Atmosphere<1> second_atmosphere(
+        std::move(second_storage), std::move(second_surface), true);
+    REQUIRE(second_atmosphere.instance_id() != instance_id);
+
+    const auto copied_atmosphere = atmosphere;
+    REQUIRE(copied_atmosphere.instance_id() != instance_id);
+    REQUIRE(copied_atmosphere.revision() == atmosphere.revision());
 }
 
 TEST_CASE("Validate Surface BRDF WF's in Single Scatter/DO",
