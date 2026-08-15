@@ -71,6 +71,26 @@ int sk_config_set_num_hr_full_incoming_points(Config* config, int num_points);
 int sk_config_get_initialize_hr_with_do(Config* config, int* initialize);
 int sk_config_set_initialize_hr_with_do(Config* config, int initialize);
 
+// C++ successive-orders configuration
+int sk_config_get_successive_orders_relative_tolerance(Config* config,
+                                                       double* tolerance);
+int sk_config_set_successive_orders_relative_tolerance(Config* config,
+                                                       double tolerance);
+int sk_config_get_successive_orders_absolute_tolerance(Config* config,
+                                                       double* tolerance);
+int sk_config_set_successive_orders_absolute_tolerance(Config* config,
+                                                       double tolerance);
+int sk_config_get_successive_orders_anderson_depth(Config* config, int* depth);
+int sk_config_set_successive_orders_anderson_depth(Config* config, int depth);
+int sk_config_get_successive_orders_damping(Config* config, double* damping);
+int sk_config_set_successive_orders_damping(Config* config, double damping);
+int sk_config_get_num_successive_orders_altitudes(Config* config,
+                                                  int* num_altitudes);
+int sk_config_get_successive_orders_altitude_grid_m(Config* config,
+                                                    double* altitude_grid_m);
+int sk_config_set_successive_orders_altitude_grid_m(
+    Config* config, const double* altitude_grid_m, int num_altitudes);
+
 // Source configuration methods
 int sk_config_get_occultation_source(Config* config, int* occultation_source);
 int sk_config_set_occultation_source(Config* config, int occultation_source);

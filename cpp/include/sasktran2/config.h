@@ -1,6 +1,8 @@
 #pragma once
 
 #include <spdlog/spdlog.h>
+#include <utility>
+#include <vector>
 
 namespace sasktran_disco {
     template <int NSTOKES, int CNSTR> class PersistentConfiguration;
@@ -52,14 +54,20 @@ namespace sasktran2 {
          *  'hr' Uses a successive orders of scattering method to calculate the
          * multiple scatter source.
          *
+         *  'twostream' Uses the two-stream approximation.
+         *
          *  'none' Removes the multiple scatter source from the calculation.
+         *
+         *  'successive_orders_cpp' Uses the self-contained C++ successive
+         * orders implementation.
          *
          */
         enum class MultipleScatterSource {
             discrete_ordinates = 0,
             hr = 1,
             twostream = 2,
-            none = 3
+            none = 3,
+            successive_orders_cpp = 4
         };
 
         /** Enum that determines the accuracy of the weighting function solution
@@ -457,6 +465,49 @@ namespace sasktran2 {
             m_hr_nspherical_iterations = n;
         }
 
+        /** Relative residual tolerance for the C++ successive-orders source.
+         * Set both tolerances to zero to use a fixed iteration count. */
+        double successive_orders_relative_tolerance() const {
+            return m_successive_orders_relative_tolerance;
+        }
+        void set_successive_orders_relative_tolerance(double tolerance) {
+            m_successive_orders_relative_tolerance = tolerance;
+        }
+
+        /** Absolute residual tolerance for the C++ successive-orders source. */
+        double successive_orders_absolute_tolerance() const {
+            return m_successive_orders_absolute_tolerance;
+        }
+        void set_successive_orders_absolute_tolerance(double tolerance) {
+            m_successive_orders_absolute_tolerance = tolerance;
+        }
+
+        /** Anderson history depth. Zero selects damped Picard iteration. */
+        int successive_orders_anderson_depth() const {
+            return m_successive_orders_anderson_depth;
+        }
+        void set_successive_orders_anderson_depth(int depth) {
+            m_successive_orders_anderson_depth = depth;
+        }
+
+        /** Fixed-point damping in the interval (0, 1]. */
+        double successive_orders_damping() const {
+            return m_successive_orders_damping;
+        }
+        void set_successive_orders_damping(double damping) {
+            m_successive_orders_damping = damping;
+        }
+
+        /** Explicit source altitude grid in metres. An empty grid selects the
+         * source's default atmosphere-derived grid. */
+        const std::vector<double>& successive_orders_altitude_grid_m() const {
+            return m_successive_orders_altitude_grid_m;
+        }
+        void set_successive_orders_altitude_grid_m(
+            std::vector<double> altitude_grid_m) {
+            m_successive_orders_altitude_grid_m = std::move(altitude_grid_m);
+        }
+
         /**
          *
          * @return The number of incoming points at each diffuse point in the HR
@@ -726,6 +777,12 @@ namespace sasktran2 {
 
         int m_hr_nspherical_iterations;
         int m_hr_num_incoming_points;
+
+        double m_successive_orders_relative_tolerance = 1.0e-6;
+        double m_successive_orders_absolute_tolerance = 1.0e-12;
+        int m_successive_orders_anderson_depth = 3;
+        double m_successive_orders_damping = 1.0;
+        std::vector<double> m_successive_orders_altitude_grid_m;
 
         bool m_apply_delta_scaling;
 
