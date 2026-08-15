@@ -498,7 +498,7 @@ void Sasktran2<NSTOKES>::calculate_radiance(
     // Initialize each source term with the atmosphere
     for (auto& source : m_source_terms) {
         source->set_wavelength_block_capacity(wavelength_batch_size);
-        source->initialize_atmosphere_native(atmosphere);
+        source->initialize_atmosphere(atmosphere);
     }
 
     m_source_integrator->initialize_atmosphere(atmosphere);
@@ -660,7 +660,7 @@ void Sasktran2<NSTOKES>::calculate_vjp(
         m_config.num_threads(), static_cast<int>(m_los_source_terms.size()));
     for (auto& source : m_source_terms) {
         source->set_wavelength_block_capacity(wavelength_batch_size);
-        source->initialize_atmosphere(atmosphere);
+        source->initialize_atmosphere_native(atmosphere);
     }
     m_source_integrator->initialize_atmosphere(atmosphere);
     output.set_wavelength_block_capacity(wavelength_batch_size);
