@@ -32,6 +32,13 @@ namespace sasktran2 {
         StreamingJacobian = 1,
         Native = 2
     };
+
+    /** Native derivative categories whose reverse assembly can be skipped
+     * when the output has no registered consumer for them. */
+    struct NativeVJPRequest {
+        bool scattering = true;
+        bool surface = true;
+    };
 } // namespace sasktran2
 
 /** Base interface class that provides source term functionality to the Engine
@@ -151,6 +158,10 @@ template <int NSTOKES> class SourceTermInterface {
                                int threadidx) {
         calculate(block, threadidx);
     }
+
+    /** Restricts optional reverse work to derivative categories consumed by
+     * the current output. Sources may ignore this hint. */
+    virtual void set_vjp_request(const sasktran2::NativeVJPRequest&) {}
 
     /** Finalizes source-wide reverse accumulation after all LOS contributions
      * have been reduced into the native gradient. */

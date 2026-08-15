@@ -1,4 +1,5 @@
 #include "sasktran2/output.h"
+#include "sasktran2/source_interface.h"
 
 namespace sasktran2 {
     namespace {
@@ -533,6 +534,21 @@ namespace sasktran2 {
         for (int stokes = 0; stokes < NSTOKES; ++stokes) {
             m_radiance(linear_index + stokes) = rotated(stokes);
         }
+    }
+
+    template <int NSTOKES>
+    NativeVJPRequest OutputVJP<NSTOKES>::native_vjp_request() const {
+        NativeVJPRequest request;
+        request.scattering = false;
+        const auto& mappings =
+            this->m_atmosphere->storage().derivative_mappings_const();
+        for (const auto& [name, unused] : m_derivative_gradients) {
+            (void)unused;
+            request.scattering = request.scattering ||
+                                 mappings.at(name).is_scattering_derivative();
+        }
+        request.surface = !m_surface_gradients.empty();
+        return request;
     }
 
     template <int NSTOKES>

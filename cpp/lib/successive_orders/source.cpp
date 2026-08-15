@@ -48,6 +48,8 @@ namespace sasktran2::successive_orders {
             Eigen::Ref<const Eigen::VectorXd> native_tangent) override;
         void calculate_vjp(const sasktran2::WavelengthBlock<>& block,
                            int threadidx) override;
+        void
+        set_vjp_request(const sasktran2::NativeVJPRequest& request) override;
         void finalize_vjp(
             const sasktran2::WavelengthBlock<>& block, int threadidx,
             Eigen::Ref<Eigen::MatrixXd> native_gradient) const override;
@@ -168,10 +170,12 @@ namespace sasktran2::successive_orders {
         accumulate_vjp(const Assembler& assembler,
                        const sasktran2::atmosphere::Atmosphere<1>& atmosphere,
                        int wavelength, const ProblemParameterData<1>& gradient,
-                       Eigen::Ref<Eigen::VectorXd> native_gradient) {
+                       Eigen::Ref<Eigen::VectorXd> native_gradient,
+                       const sasktran2::NativeVJPRequest& request) {
             assembler.accumulate_vjp(atmosphere, wavelength,
                                      gradient.atmospheric_coefficients,
-                                     gradient.ground_values, native_gradient);
+                                     gradient.ground_values, native_gradient,
+                                     request.scattering, request.surface);
         }
     };
 
@@ -193,10 +197,12 @@ namespace sasktran2::successive_orders {
         accumulate_vjp(const Assembler& assembler,
                        const sasktran2::atmosphere::Atmosphere<3>& atmosphere,
                        int wavelength, const ProblemParameterData<3>& gradient,
-                       Eigen::Ref<Eigen::VectorXd> native_gradient) {
+                       Eigen::Ref<Eigen::VectorXd> native_gradient,
+                       const sasktran2::NativeVJPRequest& request) {
             assembler.accumulate_vjp(atmosphere, wavelength,
                                      gradient.atmospheric_coefficients,
-                                     gradient.ground_values, native_gradient);
+                                     gradient.ground_values, native_gradient,
+                                     request.scattering, request.surface);
         }
     };
 
@@ -291,6 +297,11 @@ namespace sasktran2::successive_orders {
             m_solver_settings.validate();
             m_geometry_settings.validate();
             m_first_order.initialize_config(config);
+        }
+
+        void set_vjp_request(const sasktran2::NativeVJPRequest& request) {
+            m_vjp_request = request;
+            m_first_order.set_vjp_request(request);
         }
 
         void initialize_geometry(
@@ -472,7 +483,8 @@ namespace sasktran2::successive_orders {
             auto gradient = native_gradient.col(0);
             warn_if_implicit_derivative_is_unchecked(m_solver_settings,
                                                      block.start, "VJP");
-            reverse(block.start, threadidx, work, work.los_cotangent, gradient);
+            reverse(block.start, threadidx, work, work.los_cotangent, gradient,
+                    m_vjp_request);
         }
 
         void start_of_ray_source(
@@ -696,6 +708,7 @@ namespace sasktran2::successive_orders {
         void reverse(int wavelength, int threadidx, WavelengthState& work,
                      Eigen::Ref<const Eigen::VectorXd> los_cotangent,
                      Eigen::Ref<Eigen::VectorXd> native_gradient,
+                     const sasktran2::NativeVJPRequest& request,
                      bool emit_convergence_warning = true) {
             work.los_transport.template apply_vjp_stokes<NSTOKES>(
                 work.state, los_cotangent, work.state_cotangent,
@@ -717,22 +730,24 @@ namespace sasktran2::successive_orders {
                     native_gradient, work.transport_vjp_workspace);
             }
             Adapter::accumulate_vjp(*m_scattering_assembler, *m_atmosphere,
-                                    wavelength, work.gradient, native_gradient);
+                                    wavelength, work.gradient, native_gradient,
+                                    request);
             if (m_first_order.uses_compact_scalar_kernel()) {
                 if (work.transport_state_projected) {
                     m_first_order.accumulate_vjp_with_projected_transport(
                         wavelength, threadidx, work.layer_state_projection,
                         work.ground_state_projection, work.gradient.forcing,
-                        native_gradient);
+                        native_gradient, request.scattering, request.surface);
                 } else {
                     m_first_order.accumulate_vjp_with_transport(
                         wavelength, threadidx, work.state,
-                        work.gradient.forcing, native_gradient);
+                        work.gradient.forcing, native_gradient,
+                        request.scattering, request.surface);
                 }
             } else {
-                m_first_order.accumulate_vjp(wavelength, threadidx,
-                                             work.gradient.forcing,
-                                             native_gradient);
+                m_first_order.accumulate_vjp(
+                    wavelength, threadidx, work.gradient.forcing,
+                    native_gradient, request.scattering, request.surface);
             }
         }
 
@@ -743,6 +758,7 @@ namespace sasktran2::successive_orders {
             work.jacobian.resize(outputs, derivatives);
             work.los_cotangent.setZero();
             Eigen::VectorXd native_gradient(derivatives);
+            const sasktran2::NativeVJPRequest full_request;
             if (m_first_order.uses_compact_scalar_kernel() &&
                 !work.transport_state_projected) {
                 m_first_order.project_transport_state(
@@ -754,7 +770,7 @@ namespace sasktran2::successive_orders {
                 work.los_cotangent(output) = 1.0;
                 native_gradient.setZero();
                 reverse(wavelength, threadidx, work, work.los_cotangent,
-                        native_gradient, output == 0);
+                        native_gradient, full_request, output == 0);
                 work.jacobian.row(output) = native_gradient.transpose();
                 work.los_cotangent(output) = 0.0;
             }
@@ -769,6 +785,7 @@ namespace sasktran2::successive_orders {
         }
 
         const sasktran2::Config* m_config = nullptr;
+        sasktran2::NativeVJPRequest m_vjp_request;
         const Atmosphere* m_atmosphere = nullptr;
         std::uint64_t m_atmosphere_instance_id = 0;
         std::uint64_t m_atmosphere_revision = 0;
@@ -845,6 +862,12 @@ namespace sasktran2::successive_orders {
     void SuccessiveOrdersSource<NSTOKES>::calculate_vjp(
         const sasktran2::WavelengthBlock<>& block, int threadidx) {
         m_impl->calculate_vjp(block, threadidx);
+    }
+
+    template <int NSTOKES>
+    void SuccessiveOrdersSource<NSTOKES>::set_vjp_request(
+        const sasktran2::NativeVJPRequest& request) {
+        m_impl->set_vjp_request(request);
     }
 
     template <int NSTOKES>

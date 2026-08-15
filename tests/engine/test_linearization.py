@@ -509,6 +509,16 @@ def test_engine_native_products_match_materialized_jacobian():
     xr.testing.assert_allclose(lin.jvp(tangent), expected_jvp)
 
     cotangent = xr.ones_like(lin.value) * 1.7
+    selected_gradient = lin.vjp(cotangent, parameters=("extinction", "ssa"))
+    xr.testing.assert_allclose(
+        selected_gradient["extinction"],
+        (lin.jacobian["extinction"] * cotangent).sum(lin.value.dims),
+    )
+    xr.testing.assert_allclose(
+        selected_gradient["ssa"],
+        (lin.jacobian["ssa"] * cotangent).sum(lin.value.dims),
+    )
+
     gradient = lin.vjp(cotangent)
     xr.testing.assert_allclose(
         gradient["extinction"],

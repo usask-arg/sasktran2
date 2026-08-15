@@ -17,26 +17,41 @@ namespace sasktran2::solartransmission {
     template <typename S, int NSTOKES>
     void SingleScatterSource<S, NSTOKES>::initialize_atmosphere(
         const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere) {
+        initialize_atmosphere_impl(atmosphere, false);
+    };
+
+    template <typename S, int NSTOKES>
+    void SingleScatterSource<S, NSTOKES>::initialize_atmosphere_native(
+        const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere) {
+        initialize_atmosphere_impl(atmosphere, true);
+    };
+
+    template <typename S, int NSTOKES>
+    void SingleScatterSource<S, NSTOKES>::initialize_atmosphere_impl(
+        const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
+        bool native_products) {
         // Store the atmosphere for later
         m_atmosphere = &atmosphere;
         this->m_phase_handler.initialize_atmosphere(atmosphere);
 
         if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
-            if (atmosphere.num_deriv() > 0) {
+            if (!native_products && atmosphere.num_deriv() > 0) {
                 initialize_active_derivative_indices();
             } else {
                 m_active_derivative_indices.clear();
             }
 
-            initialize_wavelength_blocks(m_wavelength_batch_capacity);
+            if (m_wavelength_batch_capacity > 1 || !native_products) {
+                initialize_wavelength_blocks(m_wavelength_batch_capacity);
+            }
         }
 
         // Initialize some local memory storage
+        const int cache_derivatives =
+            native_products ? 0 : atmosphere.num_deriv();
         for (int i = 0; i < m_start_source_cache.size(); ++i) {
-            m_start_source_cache[i].resize(NSTOKES, atmosphere.num_deriv(),
-                                           false);
-            m_end_source_cache[i].resize(NSTOKES, atmosphere.num_deriv(),
-                                         false);
+            m_start_source_cache[i].resize(NSTOKES, cache_derivatives, false);
+            m_end_source_cache[i].resize(NSTOKES, cache_derivatives, false);
         }
     };
 
@@ -55,19 +70,21 @@ namespace sasktran2::solartransmission {
                                                0);
         m_active_wavelength_block_count.assign(config.num_wavelength_threads(),
                                                0);
+        m_phase_tangent_active.assign(config.num_wavelength_threads(), 0);
 
         m_start_source_cache.resize(config.num_threads());
         m_end_source_cache.resize(config.num_threads());
     }
 
     template <typename S, int NSTOKES>
-    void SingleScatterSource<S, NSTOKES>::calculate_single(int wavelidx,
-                                                           int threadidx) {
+    void SingleScatterSource<S, NSTOKES>::calculate_single(
+        int wavelidx, int threadidx, bool calculate_phase_derivatives) {
         ZoneScopedN("Single Scatter Source Calculation");
         m_active_wavelength_block_start[threadidx] = wavelidx;
         m_active_wavelength_block_count[threadidx] = 1;
         // Don't have to do anything here
-        m_phase_handler.calculate(wavelidx, threadidx);
+        m_phase_handler.calculate(wavelidx, threadidx,
+                                  calculate_phase_derivatives);
 
         // Calculate the solar transmission at each cell
         if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
@@ -136,7 +153,8 @@ namespace sasktran2::solartransmission {
     template <typename S, int NSTOKES>
     template <int N>
     void SingleScatterSource<S, NSTOKES>::calculate_block(
-        const sasktran2::WavelengthBlock<N>& batch, int threadidx) {
+        const sasktran2::WavelengthBlock<N>& batch, int threadidx,
+        bool calculate_phase_derivatives) {
         if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
             throw std::logic_error(
                 "Solar transmission tables do not support wavelength "
@@ -151,7 +169,8 @@ namespace sasktran2::solartransmission {
             m_active_wavelength_block_start[threadidx] = batch.start;
             m_active_wavelength_block_count[threadidx] = batch.count;
 
-            m_phase_handler.calculate_block(batch, threadidx);
+            m_phase_handler.calculate_block(batch, threadidx,
+                                            calculate_phase_derivatives);
             auto solar_trans =
                 wavelength_left_cols(m_solar_trans_batch[threadidx], batch);
             const auto extinction = wavelength_middle_cols(
@@ -237,9 +256,16 @@ namespace sasktran2::solartransmission {
 
             Eigen::Vector<double, NSTOKES> phase;
             Eigen::Vector<double, NSTOKES> phase_jvp;
-            m_phase_handler.scatter_jvp(wavel_threadidx, losidx, layeridx,
-                                        wavelidx, weights, is_entrance,
-                                        native_tangent, phase, phase_jvp);
+            if (m_phase_tangent_active.at(wavel_threadidx) != 0) {
+                m_phase_handler.scatter_jvp(wavel_threadidx, losidx, layeridx,
+                                            wavelidx, weights, is_entrance,
+                                            native_tangent, phase, phase_jvp);
+            } else {
+                phase = m_phase_handler.scatter_value(wavel_threadidx, losidx,
+                                                      layeridx, wavelidx,
+                                                      weights, is_entrance);
+                phase_jvp.setZero();
+            }
 
             const double scale = 1.0 / (EIGEN_PI * 4);
             const double amplitude = extinction * ssa * solar_trans * scale;
@@ -309,9 +335,11 @@ namespace sasktran2::solartransmission {
                 native_gradient(derivative.index()) -=
                     derivative.value() * solar_trans * solar_trans_cotangent;
             }
-            m_phase_handler.scatter_vjp(wavel_threadidx, losidx, layeridx,
-                                        wavelidx, weights, is_entrance,
-                                        amplitude * cotangent, native_gradient);
+            if (m_vjp_request.scattering) {
+                m_phase_handler.scatter_vjp(
+                    wavel_threadidx, losidx, layeridx, wavelidx, weights,
+                    is_entrance, amplitude * cotangent, native_gradient);
+            }
             return amplitude * phase;
         }
     }
@@ -321,7 +349,6 @@ namespace sasktran2::solartransmission {
         int wavelidx, int losidx, int wavel_threadidx, int threadidx,
         Eigen::Ref<const Eigen::VectorXd> native_tangent,
         sasktran2::RadianceJVP<NSTOKES>& source) const {
-        (void)threadidx;
         if constexpr (!std::is_same_v<S, SolarTransmissionExact>) {
             throw std::logic_error(
                 "Native JVP requires exact solar transmission");
@@ -413,15 +440,18 @@ namespace sasktran2::solartransmission {
                         solar_trans_cotangent;
                 }
             }
-            for (int derivative = 0;
-                 derivative < m_atmosphere->surface().num_deriv();
-                 ++derivative) {
-                const auto brdf_derivative = m_atmosphere->surface().d_brdf(
-                    wavelidx, mu_in, mu_out, phi_diff, derivative);
-                native_gradient(m_atmosphere->surface_deriv_start_index() +
-                                derivative) +=
-                    solar_trans * mu_in *
-                    cotangent.dot(brdf_derivative(Eigen::placeholders::all, 0));
+            if (m_vjp_request.surface) {
+                for (int derivative = 0;
+                     derivative < m_atmosphere->surface().num_deriv();
+                     ++derivative) {
+                    const auto brdf_derivative = m_atmosphere->surface().d_brdf(
+                        wavelidx, mu_in, mu_out, phi_diff, derivative);
+                    native_gradient(m_atmosphere->surface_deriv_start_index() +
+                                    derivative) +=
+                        solar_trans * mu_in *
+                        cotangent.dot(
+                            brdf_derivative(Eigen::placeholders::all, 0));
+                }
             }
         }
     }
@@ -1301,7 +1331,7 @@ namespace sasktran2::solartransmission {
 #define SASKTRAN2_INSTANTIATE_SINGLE_SCATTER_BLOCK(NSTOKES, BLOCK_SIZE)        \
     template void SingleScatterSource<SolarTransmissionExact, NSTOKES>::       \
         calculate_block<BLOCK_SIZE>(                                           \
-            const sasktran2::WavelengthBlock<BLOCK_SIZE>&, int);               \
+            const sasktran2::WavelengthBlock<BLOCK_SIZE>&, int, bool);         \
     template void SingleScatterSource<SolarTransmissionExact, NSTOKES>::       \
         end_of_ray_source_block<BLOCK_SIZE>(                                   \
             const sasktran2::WavelengthBlock<BLOCK_SIZE>&, int, int, int,      \

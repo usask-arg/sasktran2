@@ -426,6 +426,7 @@ namespace sasktran2::successive_orders {
         }
         m_atmosphere = nullptr;
         if (!m_use_compact_scalar) {
+            m_source.set_vjp_request(sasktran2::NativeVJPRequest{});
             m_source.initialize_atmosphere(atmosphere);
         }
         if (!m_use_compact_scalar) {
@@ -434,6 +435,7 @@ namespace sasktran2::successive_orders {
         for (auto& gradient : m_gradient_scratch) {
             gradient.resize(atmosphere.num_deriv(), 1);
         }
+        m_zero_native_tangent.setZero(atmosphere.num_deriv());
         if (m_use_compact_scalar) {
             const int coefficient_count =
                 atmosphere.storage().total_extinction.rows() *
@@ -545,6 +547,14 @@ namespace sasktran2::successive_orders {
             }
         }
         m_atmosphere = &atmosphere;
+    }
+
+    template <int NSTOKES>
+    void FirstOrderProvider<NSTOKES>::set_vjp_request(
+        const sasktran2::NativeVJPRequest& request) {
+        if (!m_use_compact_scalar) {
+            m_source.set_vjp_request(request);
+        }
     }
 
     template <int NSTOKES>
@@ -813,7 +823,8 @@ namespace sasktran2::successive_orders {
         const ScalarEndpoint& endpoint, double source_cotangent,
         Eigen::Ref<Eigen::VectorXd> native_gradient,
         Eigen::Ref<Eigen::VectorXd> solar_gradient,
-        Eigen::Ref<Eigen::VectorXd> coefficient_gradient) const {
+        Eigen::Ref<Eigen::VectorXd> coefficient_gradient,
+        bool accumulate_scattering) const {
         if (source_cotangent == 0.0) {
             return;
         }
@@ -841,14 +852,16 @@ namespace sasktran2::successive_orders {
             native_gradient(atmosphere_index) += weight * extinction_cotangent;
             native_gradient(m_atmosphere->ssa_deriv_start_index() +
                             atmosphere_index) += weight * albedo_cotangent;
-            const int order =
-                std::min(storage.max_order(atmosphere_index, wavelength),
-                         m_num_phase_moments);
-            const int coefficient_offset =
-                atmosphere_index * m_num_phase_moments;
-            const double coefficient_cotangent = weight * phase_cotangent;
-            phase_axpy(coefficient_cotangent, basis, order,
-                       coefficient_gradient.data() + coefficient_offset);
+            if (accumulate_scattering) {
+                const int order =
+                    std::min(storage.max_order(atmosphere_index, wavelength),
+                             m_num_phase_moments);
+                const int coefficient_offset =
+                    atmosphere_index * m_num_phase_moments;
+                const double coefficient_cotangent = weight * phase_cotangent;
+                phase_axpy(coefficient_cotangent, basis, order,
+                           coefficient_gradient.data() + coefficient_offset);
+            }
         }
         solar_gradient(solar_index) += solar_cotangent;
         (void)layer;
@@ -1710,27 +1723,32 @@ namespace sasktran2::successive_orders {
         Eigen::Ref<Eigen::VectorXd> native_gradient,
         const Eigen::VectorXd* transport_state,
         const Eigen::VectorXd* layer_state_projection,
-        const Eigen::VectorXd* ground_state_projection) {
+        const Eigen::VectorXd* ground_state_projection,
+        bool accumulate_scattering, bool accumulate_surface) {
         if (transport_state != nullptr || layer_state_projection != nullptr) {
             if (m_use_lower_interpolation) {
                 accumulate_scalar_vjp_impl<true, true>(
                     wavelength, wavelength_thread, forcing_cotangent,
                     native_gradient, transport_state, layer_state_projection,
-                    ground_state_projection);
+                    ground_state_projection, accumulate_scattering,
+                    accumulate_surface);
             } else {
                 accumulate_scalar_vjp_impl<true, false>(
                     wavelength, wavelength_thread, forcing_cotangent,
                     native_gradient, transport_state, layer_state_projection,
-                    ground_state_projection);
+                    ground_state_projection, accumulate_scattering,
+                    accumulate_surface);
             }
         } else if (m_use_lower_interpolation) {
             accumulate_scalar_vjp_impl<false, true>(
                 wavelength, wavelength_thread, forcing_cotangent,
-                native_gradient, nullptr, nullptr, nullptr);
+                native_gradient, nullptr, nullptr, nullptr,
+                accumulate_scattering, accumulate_surface);
         } else {
             accumulate_scalar_vjp_impl<false, false>(
                 wavelength, wavelength_thread, forcing_cotangent,
-                native_gradient, nullptr, nullptr, nullptr);
+                native_gradient, nullptr, nullptr, nullptr,
+                accumulate_scattering, accumulate_surface);
         }
     }
 
@@ -1742,7 +1760,8 @@ namespace sasktran2::successive_orders {
         Eigen::Ref<Eigen::VectorXd> native_gradient,
         const Eigen::VectorXd* transport_state,
         const Eigen::VectorXd* layer_state_projection,
-        const Eigen::VectorXd* ground_state_projection) {
+        const Eigen::VectorXd* ground_state_projection,
+        bool accumulate_scattering, bool accumulate_surface) {
         const int first_thread = wavelength_thread;
         const int last_thread = first_thread + m_num_source_threads;
         if (last_thread > static_cast<int>(m_gradient_scratch.size())) {
@@ -1752,7 +1771,9 @@ namespace sasktran2::successive_orders {
         for (int thread = first_thread; thread < last_thread; ++thread) {
             m_gradient_scratch[thread].setZero();
             m_solar_product_scratch[thread].setZero();
-            m_phase_product_scratch[thread].setZero();
+            if (accumulate_scattering) {
+                m_phase_product_scratch[thread].setZero();
+            }
         }
         const auto& rays = m_source_geometry->incoming_rays();
         const auto& interpolation = m_source_geometry->incoming_interpolation();
@@ -1903,16 +1924,19 @@ namespace sasktran2::successive_orders {
                     prefix_cotangent = forcing_gradient * ground_source;
                     solar_gradient(m_solar_offsets[ray]) +=
                         prefix * forcing_gradient * mu_in * brdf(0, 0);
-                    for (int derivative = 0;
-                         derivative < m_atmosphere->surface().num_deriv();
-                         ++derivative) {
-                        thread_gradient(
-                            m_atmosphere->surface_deriv_start_index() +
-                            derivative) += prefix * forcing_gradient *
-                                           solar(m_solar_offsets[ray]) * mu_in *
-                                           m_atmosphere->surface().d_brdf(
-                                               wavelength, mu_in, mu_out, phi,
-                                               derivative)(0, 0);
+                    if (accumulate_surface) {
+                        for (int derivative = 0;
+                             derivative < m_atmosphere->surface().num_deriv();
+                             ++derivative) {
+                            thread_gradient(
+                                m_atmosphere->surface_deriv_start_index() +
+                                derivative) += prefix * forcing_gradient *
+                                               solar(m_solar_offsets[ray]) *
+                                               mu_in *
+                                               m_atmosphere->surface().d_brdf(
+                                                   wavelength, mu_in, mu_out,
+                                                   phi, derivative)(0, 0);
+                        }
                     }
                 }
             }
@@ -2074,11 +2098,12 @@ namespace sasktran2::successive_orders {
                             wavelength, ray, layer, start_entrance,
                             exit_solar + 1, *start_weights, start,
                             start_cotangent, thread_gradient, solar_gradient,
-                            coefficient_gradient);
+                            coefficient_gradient, accumulate_scattering);
                         accumulate_scalar_endpoint_vjp(
                             wavelength, ray, layer, end_entrance, exit_solar,
                             *end_weights, end, end_cotangent, thread_gradient,
-                            solar_gradient, coefficient_gradient);
+                            solar_gradient, coefficient_gradient,
+                            accumulate_scattering);
                     }
                 }
                 layer_prefix_cotangent += prefix_cotangent * attenuation;
@@ -2100,7 +2125,8 @@ namespace sasktran2::successive_orders {
                         wavelength, ray, 0, false, m_solar_offsets[ray],
                         exit_weights, scratch.endpoints[0],
                         scratch.endpoint_cotangent(0), thread_gradient,
-                        solar_gradient, coefficient_gradient);
+                        solar_gradient, coefficient_gradient,
+                        accumulate_scattering);
                     for (int endpoint = 1; endpoint <= num_layers; ++endpoint) {
                         const auto entrance_weights =
                             traced_ray.entrance_weights(endpoint - 1);
@@ -2110,7 +2136,7 @@ namespace sasktran2::successive_orders {
                             scratch.endpoints[endpoint],
                             scratch.endpoint_cotangent(endpoint),
                             thread_gradient, solar_gradient,
-                            coefficient_gradient);
+                            coefficient_gradient, accumulate_scattering);
                     }
                 }
             }
@@ -2118,28 +2144,33 @@ namespace sasktran2::successive_orders {
 
         for (int thread = first_thread; thread < last_thread; ++thread) {
             auto thread_gradient = m_gradient_scratch[thread].col(0);
-            const auto& coefficient_gradient = m_phase_product_scratch[thread];
-            const int locations =
-                m_atmosphere->storage().total_extinction.rows();
-            for (int group = 0;
-                 group < m_atmosphere->num_scattering_deriv_groups(); ++group) {
-                const int native_offset =
-                    m_atmosphere->scat_deriv_start_index() + group * locations;
-                for (int location = 0; location < locations; ++location) {
-                    const int order =
-                        std::min(m_atmosphere->storage().d_max_order[group](
-                                     location, wavelength),
-                                 m_num_phase_moments);
-                    double value = 0.0;
-                    const int coefficient_offset =
-                        location * m_num_phase_moments;
-                    for (int degree = 0; degree < order; ++degree) {
-                        value +=
-                            coefficient_gradient(coefficient_offset + degree) *
-                            m_atmosphere->storage().d_leg_coeff(
-                                degree, location, wavelength, group);
+            if (accumulate_scattering) {
+                const auto& coefficient_gradient =
+                    m_phase_product_scratch[thread];
+                const int locations =
+                    m_atmosphere->storage().total_extinction.rows();
+                for (int group = 0;
+                     group < m_atmosphere->num_scattering_deriv_groups();
+                     ++group) {
+                    const int native_offset =
+                        m_atmosphere->scat_deriv_start_index() +
+                        group * locations;
+                    for (int location = 0; location < locations; ++location) {
+                        const int order =
+                            std::min(m_atmosphere->storage().d_max_order[group](
+                                         location, wavelength),
+                                     m_num_phase_moments);
+                        double value = 0.0;
+                        const int coefficient_offset =
+                            location * m_num_phase_moments;
+                        for (int degree = 0; degree < order; ++degree) {
+                            value += coefficient_gradient(coefficient_offset +
+                                                          degree) *
+                                     m_atmosphere->storage().d_leg_coeff(
+                                         degree, location, wavelength, group);
+                        }
+                        thread_gradient(native_offset + location) += value;
                     }
-                    thread_gradient(native_offset + location) += value;
                 }
             }
             auto& solar_gradient = m_solar_product_scratch[thread];
@@ -2271,7 +2302,8 @@ namespace sasktran2::successive_orders {
         int wavelength, int wavelength_thread,
         const Eigen::VectorXd& transport_state,
         Eigen::Ref<const Eigen::VectorXd> forcing_cotangent,
-        Eigen::Ref<Eigen::VectorXd> native_gradient) {
+        Eigen::Ref<Eigen::VectorXd> native_gradient, bool accumulate_scattering,
+        bool accumulate_surface) {
         validate_ready(wavelength, wavelength_thread);
         if (!m_use_compact_scalar || forcing_cotangent.size() != size() ||
             native_gradient.size() != m_atmosphere->num_deriv() ||
@@ -2282,7 +2314,8 @@ namespace sasktran2::successive_orders {
         }
         accumulate_scalar_vjp(wavelength, wavelength_thread, forcing_cotangent,
                               native_gradient, &transport_state, nullptr,
-                              nullptr);
+                              nullptr, accumulate_scattering,
+                              accumulate_surface);
     }
 
     template <int NSTOKES>
@@ -2291,7 +2324,8 @@ namespace sasktran2::successive_orders {
         const Eigen::VectorXd& layer_state_projection,
         const Eigen::VectorXd& ground_state_projection,
         Eigen::Ref<const Eigen::VectorXd> forcing_cotangent,
-        Eigen::Ref<Eigen::VectorXd> native_gradient) {
+        Eigen::Ref<Eigen::VectorXd> native_gradient, bool accumulate_scattering,
+        bool accumulate_surface) {
         validate_ready(wavelength, wavelength_thread);
         if (!m_use_compact_scalar || forcing_cotangent.size() != size() ||
             native_gradient.size() != m_atmosphere->num_deriv() ||
@@ -2304,7 +2338,8 @@ namespace sasktran2::successive_orders {
         }
         accumulate_scalar_vjp(wavelength, wavelength_thread, forcing_cotangent,
                               native_gradient, nullptr, &layer_state_projection,
-                              &ground_state_projection);
+                              &ground_state_projection, accumulate_scattering,
+                              accumulate_surface);
     }
 
     template <int NSTOKES>
@@ -2321,7 +2356,16 @@ namespace sasktran2::successive_orders {
             return;
         }
         const sasktran2::WavelengthBlock<> block{wavelength, 1};
-        m_source.calculate(block, wavelength_thread);
+        // This forcing is consumed only as a value. Calling the native JVP
+        // preparation with a zero direction suppresses the exact source's
+        // phase-derivative materialization, which otherwise scales with every
+        // atmospheric derivative even though it is discarded below.
+        if (m_atmosphere->num_deriv() == 0) {
+            m_source.calculate(block, wavelength_thread);
+        } else {
+            m_source.calculate_jvp(block, wavelength_thread,
+                                   m_zero_native_tangent);
+        }
 
 #pragma omp parallel for if (m_num_source_threads > 1)                         \
     num_threads(m_num_source_threads) schedule(dynamic)
@@ -2374,7 +2418,8 @@ namespace sasktran2::successive_orders {
     void FirstOrderProvider<NSTOKES>::accumulate_vjp(
         int wavelength, int wavelength_thread,
         Eigen::Ref<const Eigen::VectorXd> forcing_cotangent,
-        Eigen::Ref<Eigen::VectorXd> native_gradient) {
+        Eigen::Ref<Eigen::VectorXd> native_gradient, bool accumulate_scattering,
+        bool accumulate_surface) {
         validate_ready(wavelength, wavelength_thread);
         if (forcing_cotangent.size() != size() ||
             native_gradient.size() != m_atmosphere->num_deriv()) {
@@ -2387,7 +2432,8 @@ namespace sasktran2::successive_orders {
         if (m_use_compact_scalar) {
             accumulate_scalar_vjp(wavelength, wavelength_thread,
                                   forcing_cotangent, native_gradient, nullptr,
-                                  nullptr, nullptr);
+                                  nullptr, nullptr, accumulate_scattering,
+                                  accumulate_surface);
             return;
         }
         m_source.calculate_vjp(sasktran2::WavelengthBlock<>{wavelength, 1},

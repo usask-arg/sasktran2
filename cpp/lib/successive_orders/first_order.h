@@ -31,6 +31,7 @@ namespace sasktran2::successive_orders {
         void initialize_geometry(const SourceGeometry1D& source_geometry);
         void initialize_atmosphere(
             const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere);
+        void set_vjp_request(const sasktran2::NativeVJPRequest& request);
 
         int size() const { return m_num_rays * NSTOKES; }
 
@@ -67,20 +68,24 @@ namespace sasktran2::successive_orders {
         /** Accumulates the VJP of the first-order radiance. */
         void accumulate_vjp(int wavelength, int wavelength_thread,
                             Eigen::Ref<const Eigen::VectorXd> forcing_cotangent,
-                            Eigen::Ref<Eigen::VectorXd> native_gradient);
+                            Eigen::Ref<Eigen::VectorXd> native_gradient,
+                            bool accumulate_scattering = true,
+                            bool accumulate_surface = true);
 
         void accumulate_vjp_with_transport(
             int wavelength, int wavelength_thread,
             const Eigen::VectorXd& transport_state,
             Eigen::Ref<const Eigen::VectorXd> forcing_cotangent,
-            Eigen::Ref<Eigen::VectorXd> native_gradient);
+            Eigen::Ref<Eigen::VectorXd> native_gradient,
+            bool accumulate_scattering = true, bool accumulate_surface = true);
 
         void accumulate_vjp_with_projected_transport(
             int wavelength, int wavelength_thread,
             const Eigen::VectorXd& layer_state_projection,
             const Eigen::VectorXd& ground_state_projection,
             Eigen::Ref<const Eigen::VectorXd> forcing_cotangent,
-            Eigen::Ref<Eigen::VectorXd> native_gradient);
+            Eigen::Ref<Eigen::VectorXd> native_gradient,
+            bool accumulate_scattering = true, bool accumulate_surface = true);
 
         std::size_t workspace_bytes() const;
 
@@ -185,7 +190,8 @@ namespace sasktran2::successive_orders {
             Eigen::Ref<Eigen::VectorXd> native_gradient,
             const Eigen::VectorXd* transport_state,
             const Eigen::VectorXd* layer_state_projection,
-            const Eigen::VectorXd* ground_state_projection);
+            const Eigen::VectorXd* ground_state_projection,
+            bool accumulate_scattering, bool accumulate_surface);
         template <bool WITH_TRANSPORT, bool LOWER_INTERPOLATION>
         void accumulate_scalar_vjp_impl(
             int wavelength, int wavelength_thread,
@@ -193,7 +199,8 @@ namespace sasktran2::successive_orders {
             Eigen::Ref<Eigen::VectorXd> native_gradient,
             const Eigen::VectorXd* transport_state,
             const Eigen::VectorXd* layer_state_projection,
-            const Eigen::VectorXd* ground_state_projection);
+            const Eigen::VectorXd* ground_state_projection,
+            bool accumulate_scattering, bool accumulate_surface);
 
         ScalarEndpoint scalar_endpoint(
             int wavelength, int ray, int layer, bool entrance, int solar_index,
@@ -212,7 +219,8 @@ namespace sasktran2::successive_orders {
             const ScalarEndpoint& endpoint, double source_cotangent,
             Eigen::Ref<Eigen::VectorXd> native_gradient,
             Eigen::Ref<Eigen::VectorXd> solar_gradient,
-            Eigen::Ref<Eigen::VectorXd> coefficient_gradient) const;
+            Eigen::Ref<Eigen::VectorXd> coefficient_gradient,
+            bool accumulate_scattering) const;
 
         const sasktran2::Geometry1D& m_geometry;
         ExactSource m_source;
@@ -244,6 +252,7 @@ namespace sasktran2::successive_orders {
         mutable std::vector<sasktran2::WavelengthBlockDual<NSTOKES>>
             m_primal_scratch;
         mutable std::vector<Eigen::MatrixXd> m_gradient_scratch;
+        Eigen::VectorXd m_zero_native_tangent;
         mutable std::vector<
             Eigen::Matrix<double, NSTOKES, Eigen::Dynamic, Eigen::RowMajor>>
             m_vjp_radiance_scratch;
