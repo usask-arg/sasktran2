@@ -57,6 +57,34 @@ pub struct SafeFFIOutput(pub *mut ffi::OutputC);
 unsafe impl Send for SafeFFIOutput {}
 unsafe impl Sync for SafeFFIOutput {}
 
+pub struct SafeFFIJvpOutput(pub *mut ffi::OutputJVP);
+
+unsafe impl Send for SafeFFIJvpOutput {}
+unsafe impl Sync for SafeFFIJvpOutput {}
+
+pub struct SafeFFIVjpOutput(pub *mut ffi::OutputVJP);
+
+unsafe impl Send for SafeFFIVjpOutput {}
+unsafe impl Sync for SafeFFIVjpOutput {}
+
+fn rayon_for_each_worker<F>(num_items: usize, num_threads: usize, function: F) -> Result<()>
+where
+    F: Fn(usize, i32) -> Result<()> + Send + Sync,
+{
+    let thread_pool = threading::thread_pool()?;
+    thread_pool.install(|| {
+        (0..num_items).into_par_iter().try_for_each(|item| {
+            let thread_idx = current_thread_index()
+                .ok_or_else(|| anyhow::anyhow!("Rayon worker index is unavailable"))?
+                as i32;
+            if thread_idx >= num_threads as i32 {
+                return Err(anyhow::anyhow!("Thread index out of bounds"));
+            }
+            function(item, thread_idx)
+        })
+    })
+}
+
 fn safe_calc_block_thread(
     engine: &SafeFFIEngine,
     output: &SafeFFIOutput,
@@ -83,7 +111,61 @@ fn safe_calc_block_thread(
     }
 }
 
+fn safe_calc_jvp_wavelength_thread(
+    engine: &SafeFFIEngine,
+    output: &SafeFFIJvpOutput,
+    wavelength: i32,
+    thread_idx: i32,
+) -> Result<()> {
+    let result = unsafe {
+        ffi::sk_engine_calculate_jvp_wavelength_thread(engine.0, output.0, wavelength, thread_idx)
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!(
+            "Failed to calculate JVP wavelength: {}",
+            result
+        ))
+    }
+}
+
+fn safe_calc_vjp_block_thread(
+    engine: &SafeFFIEngine,
+    output: &SafeFFIVjpOutput,
+    wavelength_start: i32,
+    wavelength_count: i32,
+    thread_idx: i32,
+) -> Result<()> {
+    let result = unsafe {
+        ffi::sk_engine_calculate_vjp_block_thread(
+            engine.0,
+            output.0,
+            wavelength_start,
+            wavelength_count,
+            thread_idx,
+        )
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!(
+            "Failed to calculate VJP wavelength block: {}",
+            result
+        ))
+    }
+}
+
 impl<'a> Engine<'a> {
+    fn use_rayon_wavelength_threading(&self) -> Result<bool> {
+        Ok(
+            (self.config.threading_lib() == ThreadingLib::Rayon || !openmp_support_enabled())
+                && self.config.num_threads()? > 1
+                && self.config.threading_model()?
+                    == crate::bindings::config::ThreadingModel::Wavelength,
+        )
+    }
+
     /// Creates a new engine object
     pub fn new(
         config: &'a Config,
@@ -217,11 +299,7 @@ impl<'a> Engine<'a> {
 
         // Rayon partitions wavelengths, so only use it with wavelength
         // threading. Source threading remains inside the C++ engine.
-        let use_rayon_threading = (self.config.threading_lib() == ThreadingLib::Rayon
-            || !openmp_support_enabled())
-            && self.config.num_threads()? > 1
-            && self.config.threading_model()?
-                == crate::bindings::config::ThreadingModel::Wavelength;
+        let use_rayon_threading = self.use_rayon_wavelength_threading()?;
 
         if !use_rayon_threading {
             let result = unsafe {
@@ -346,11 +424,31 @@ impl<'a> Engine<'a> {
                 .with_surface_tangent(name, tangent)
                 .map_err(anyhow::Error::msg)?;
         }
-        let result = unsafe {
-            ffi::sk_engine_calculate_jvp(self.engine, atmosphere.atmosphere, output.output)
-        };
-        if result != 0 {
-            return Err(anyhow::anyhow!("Failed to calculate JVP: {}", result));
+        let use_rayon_threading = self.use_rayon_wavelength_threading()?
+            && self.linearization_backend(LinearizationMode::Jvp)? == LinearizationBackend::Native;
+        if !use_rayon_threading {
+            let result = unsafe {
+                ffi::sk_engine_calculate_jvp(self.engine, atmosphere.atmosphere, output.output)
+            };
+            if result != 0 {
+                return Err(anyhow::anyhow!("Failed to calculate JVP: {}", result));
+            }
+        } else {
+            let result = unsafe {
+                ffi::sk_engine_initialize_jvp(self.engine, atmosphere.atmosphere, output.output)
+            };
+            if result != 0 {
+                return Err(anyhow::anyhow!("Failed to initialize JVP: {}", result));
+            }
+            let engine = SafeFFIEngine(self.engine);
+            let output = SafeFFIJvpOutput(output.output);
+            rayon_for_each_worker(
+                atmosphere.num_wavel(),
+                self.config.num_threads()?,
+                |wavelength, thread_idx| {
+                    safe_calc_jvp_wavelength_thread(&engine, &output, wavelength as i32, thread_idx)
+                },
+            )?;
         }
         Ok(output)
     }
@@ -386,11 +484,59 @@ impl<'a> Engine<'a> {
                 .with_surface_gradient(name, *size)
                 .map_err(anyhow::Error::msg)?;
         }
-        let result = unsafe {
-            ffi::sk_engine_calculate_vjp(self.engine, atmosphere.atmosphere, output.output)
-        };
-        if result != 0 {
-            return Err(anyhow::anyhow!("Failed to calculate VJP: {}", result));
+        let use_rayon_threading = self.use_rayon_wavelength_threading()?
+            && self.linearization_backend(LinearizationMode::Vjp)? == LinearizationBackend::Native;
+        if !use_rayon_threading {
+            let result = unsafe {
+                ffi::sk_engine_calculate_vjp(self.engine, atmosphere.atmosphere, output.output)
+            };
+            if result != 0 {
+                return Err(anyhow::anyhow!("Failed to calculate VJP: {}", result));
+            }
+        } else {
+            let result = unsafe {
+                ffi::sk_engine_initialize_vjp(self.engine, atmosphere.atmosphere, output.output)
+            };
+            if result != 0 {
+                return Err(anyhow::anyhow!("Failed to initialize VJP: {}", result));
+            }
+            let num_wavel = atmosphere.num_wavel();
+            let batch_size = unsafe {
+                ffi::sk_engine_effective_wavelength_batch_size(self.engine, num_wavel as i32)
+            };
+            if batch_size < 1 {
+                return Err(anyhow::anyhow!(
+                    "Failed to determine VJP wavelength batch size: {}",
+                    batch_size
+                ));
+            }
+            let batch_size = batch_size as usize;
+            let num_batches = num_wavel.div_ceil(batch_size);
+            let engine = SafeFFIEngine(self.engine);
+            let safe_output = SafeFFIVjpOutput(output.output);
+            let worker_result = rayon_for_each_worker(
+                num_batches,
+                self.config.num_threads()?,
+                |batch_index, thread_idx| {
+                    let start = batch_index * batch_size;
+                    let count = (num_wavel - start).min(batch_size);
+                    safe_calc_vjp_block_thread(
+                        &engine,
+                        &safe_output,
+                        start as i32,
+                        count as i32,
+                        thread_idx,
+                    )
+                },
+            );
+            let finalize_result = unsafe { ffi::sk_output_vjp_finalize(output.output) };
+            worker_result?;
+            if finalize_result != 0 {
+                return Err(anyhow::anyhow!(
+                    "Failed to finalize VJP: {}",
+                    finalize_result
+                ));
+            }
         }
         Ok(output)
     }
