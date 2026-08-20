@@ -113,7 +113,3 @@ Typically solar refraction is unimportant until the solar zenith angle is above 
 {py:attr}`sasktran2.Config.solar_refraction`.  Note that currently this option is considered experimental, and only works when
 both the single scatter source and multiple scatter source are set to DiscreteOrdinates, and thus only works for nadir viewing
 applications.
-
-## Multiple Scatter Refraction
-Refraction effects during the multiple scatter calculation are usually negligible.  The option {py:attr}`sasktran2.Config.multiple_scatter_refraction`
-is included to estimate them.  The option only works when the multiple scatter source is set to SuccessiveOrders.

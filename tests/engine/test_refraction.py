@@ -100,7 +100,7 @@ def test_multiple_scatter_refraction_refractive_one():
 
     config = sk.Config()
     config.multiple_scatter_refraction = True
-    config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
+    config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrdersLegacy
 
     wavel = np.array([500.0])
     atmosphere = sk.Atmosphere(model_geometry, config, wavelengths_nm=wavel)
@@ -121,7 +121,7 @@ def test_multiple_scatter_refraction_refractive_one():
 
     config = sk.Config()
     config.multiple_scatter_refraction = False
-    config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
+    config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrdersLegacy
 
     atmosphere = sk.Atmosphere(model_geometry, config, wavelengths_nm=wavel)
 

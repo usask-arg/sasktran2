@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import pytest
 import sasktran2 as sk
 
@@ -74,6 +75,25 @@ def test_config_multiple_instances():
     assert config2.log_level == sk.LogLevel.Error
 
 
+def test_multiple_scatter_source_preserves_public_integer_values():
+    assert sk.MultipleScatterSource.DiscreteOrdinates == 0
+    assert sk.MultipleScatterSource.SuccessiveOrdersLegacy == 1
+    assert sk.MultipleScatterSource.TwoStream == 2
+    assert sk.MultipleScatterSource.NoSource == 3
+    assert sk.MultipleScatterSource.SuccessiveOrders == 4
+    assert not hasattr(sk.MultipleScatterSource, "SuccessiveOrdersCpp")
+
+    config = sk.Config()
+    config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrdersLegacy
+    assert (
+        config.multiple_scatter_source
+        == sk.MultipleScatterSource.SuccessiveOrdersLegacy
+    )
+
+    config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
+    assert config.multiple_scatter_source == sk.MultipleScatterSource.SuccessiveOrders
+
+
 def test_num_successive_order_points_round_trip():
     """The Python property maps to the pluralized native config field."""
     config = sk.Config()
@@ -92,3 +112,69 @@ def test_wavelength_batch_size_round_trip_and_validation():
 
     with pytest.raises(RuntimeError, match="at least 1"):
         config.wavelength_batch_size = 0
+
+
+def test_cpp_successive_orders_controls_round_trip_and_validation():
+    config = sk.Config()
+
+    assert config.num_successive_orders_iterations == 50
+    assert config.num_successive_orders_incoming == 110
+    assert config.num_successive_orders_outgoing == 110
+    assert config.successive_orders_relative_tolerance == 1.0e-6
+    assert config.successive_orders_absolute_tolerance == 1.0e-12
+    assert config.successive_orders_anderson_depth == 3
+    assert config.successive_orders_damping == 1.0
+
+    config.num_successive_orders_iterations = 31
+    config.num_successive_orders_incoming = 74
+    config.num_successive_orders_outgoing = 86
+    config.successive_orders_relative_tolerance = 2.0e-7
+    config.successive_orders_absolute_tolerance = 3.0e-13
+    config.successive_orders_anderson_depth = 4
+    config.successive_orders_damping = 0.85
+
+    assert config.num_successive_orders_iterations == 31
+    assert config.num_successive_orders_incoming == 74
+    assert config.num_successive_orders_outgoing == 86
+    assert config.successive_orders_relative_tolerance == 2.0e-7
+    assert config.successive_orders_absolute_tolerance == 3.0e-13
+    assert config.successive_orders_anderson_depth == 4
+    assert config.successive_orders_damping == 0.85
+
+    for invalid in (-1.0, np.nan, np.inf):
+        with pytest.raises(RuntimeError, match="finite and non-negative"):
+            config.successive_orders_relative_tolerance = invalid
+        with pytest.raises(RuntimeError, match="finite and non-negative"):
+            config.successive_orders_absolute_tolerance = invalid
+
+    for invalid in (0.0, -0.1, 1.1, np.nan, np.inf):
+        with pytest.raises(RuntimeError, match="interval"):
+            config.successive_orders_damping = invalid
+
+
+def test_cpp_successive_orders_altitude_grid_round_trip_and_validation():
+    config = sk.Config()
+    assert config.successive_orders_altitude_grid_m is None
+
+    expected = np.array([500.0, 2_500.0, 10_000.0])
+    config.successive_orders_altitude_grid_m = expected
+    np.testing.assert_array_equal(config.successive_orders_altitude_grid_m, expected)
+
+    returned = config.successive_orders_altitude_grid_m
+    returned[0] = -1.0
+    np.testing.assert_array_equal(config.successive_orders_altitude_grid_m, expected)
+
+    for invalid in (
+        np.array([[1_000.0, 2_000.0]]),
+        np.array([1_000.0, 1_000.0]),
+        np.array([2_000.0, 1_000.0]),
+        np.array([1_000.0, np.nan]),
+    ):
+        with pytest.raises(ValueError, match="successive_orders_altitude_grid_m"):
+            config.successive_orders_altitude_grid_m = invalid
+
+    config.successive_orders_altitude_grid_m = np.array([])
+    assert config.successive_orders_altitude_grid_m is None
+    config.successive_orders_altitude_grid_m = expected
+    config.successive_orders_altitude_grid_m = None
+    assert config.successive_orders_altitude_grid_m is None

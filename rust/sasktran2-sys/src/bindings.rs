@@ -763,6 +763,73 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn sk_config_get_successive_orders_relative_tolerance(
+        config: *mut Config,
+        tolerance: *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_set_successive_orders_relative_tolerance(
+        config: *mut Config,
+        tolerance: f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_get_successive_orders_absolute_tolerance(
+        config: *mut Config,
+        tolerance: *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_set_successive_orders_absolute_tolerance(
+        config: *mut Config,
+        tolerance: f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_get_successive_orders_anderson_depth(
+        config: *mut Config,
+        depth: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_set_successive_orders_anderson_depth(
+        config: *mut Config,
+        depth: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_get_successive_orders_damping(
+        config: *mut Config,
+        damping: *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_set_successive_orders_damping(
+        config: *mut Config,
+        damping: f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_get_num_successive_orders_altitudes(
+        config: *mut Config,
+        num_altitudes: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_get_successive_orders_altitude_grid_m(
+        config: *mut Config,
+        altitude_grid_m: *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_set_successive_orders_altitude_grid_m(
+        config: *mut Config,
+        altitude_grid_m: *const f64,
+        num_altitudes: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn sk_config_get_occultation_source(
         config: *mut Config,
         occultation_source: *mut ::std::os::raw::c_int,

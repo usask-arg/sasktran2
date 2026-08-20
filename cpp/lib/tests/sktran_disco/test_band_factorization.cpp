@@ -264,7 +264,7 @@ TEST_CASE("Runtime band factorization tuner covers every DISCO source path",
     SECTION("HR initialized with discrete ordinates is tuned") {
         sasktran2::Config config;
         config.set_num_do_streams(8);
-        config.set_multiple_scatter_source(Source::hr);
+        config.set_multiple_scatter_source(Source::successive_orders_legacy);
         config.set_initialize_hr_with_do(true);
 
         Tuner::resolve(config, 20);
@@ -276,7 +276,7 @@ TEST_CASE("Runtime band factorization tuner covers every DISCO source path",
     SECTION("HR without discrete-ordinates initialization is not tuned") {
         sasktran2::Config config;
         config.set_num_do_streams(8);
-        config.set_multiple_scatter_source(Source::hr);
+        config.set_multiple_scatter_source(Source::successive_orders_legacy);
         config.set_initialize_hr_with_do(false);
 
         Tuner::resolve(config, 20);

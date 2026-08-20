@@ -50,6 +50,15 @@ add_library(
   engine/engine.cpp
   hr/diffuse_point.cpp
   hr/diffuse_table.cpp
+  successive_orders/angular_basis.cpp
+  successive_orders/first_order.cpp
+  successive_orders/geometry.cpp
+  successive_orders/interpolation.cpp
+  successive_orders/problem.cpp
+  successive_orders/ray_transport.cpp
+  successive_orders/scattering.cpp
+  successive_orders/scattering_assembler.cpp
+  successive_orders/source.cpp
   derivative_mapping/derivative_mapping.cpp
   sktran_disco/sktran_do.cpp
   sktran_disco/sktran_do_geometrylayerarray.cpp

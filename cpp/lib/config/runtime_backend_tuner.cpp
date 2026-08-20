@@ -209,7 +209,8 @@ namespace sasktran2::detail {
         const bool uses_discrete_ordinates =
             multiple_scatter_source ==
                 Config::MultipleScatterSource::discrete_ordinates ||
-            (multiple_scatter_source == Config::MultipleScatterSource::hr &&
+            (multiple_scatter_source ==
+                 Config::MultipleScatterSource::successive_orders_legacy &&
              config.initialize_hr_with_do());
         if (!uses_discrete_ordinates || num_layers <= 0) {
             return;

@@ -39,7 +39,7 @@ def _setup_1d(
         default_num_wavelengths = 3
     elif source == "successive_orders":
         config.single_scatter_source = sk.SingleScatterSource.Exact
-        config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
+        config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrdersLegacy
         config.num_successive_orders_iterations = 3
         config.num_successive_orders_incoming = 26
         config.num_successive_orders_outgoing = 26

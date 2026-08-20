@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import numpy as np
+
 from sasktran2._core_rust import (
     EmissionSource,
     FluxType,
@@ -403,34 +405,113 @@ class Config:
     @property
     def num_successive_orders_iterations(self) -> int:
         """
-        The number of iterations to perform when using the successive orders of scattering multiple scatter
-        source.
+        The number of iterations used by the legacy successive-orders source and the maximum
+        number used by the C++ successive-orders source.
         """
         return self._config.num_successive_orders_iterations
 
     @num_successive_orders_iterations.setter
     def num_successive_orders_iterations(self, value: int):
         """
-        The number of iterations to perform when using the successive orders of scattering multiple scatter
-        source.
+        The number of iterations used by the legacy successive-orders source and the maximum
+        number used by the C++ successive-orders source.
         """
         self._config.num_successive_orders_iterations = value
 
     @property
+    def successive_orders_relative_tolerance(self) -> float:
+        """Relative residual tolerance for ``SuccessiveOrders``.
+
+        Set this and :attr:`successive_orders_absolute_tolerance` to zero to
+        use a fixed iteration count. Defaults to ``1e-6``.
+        """
+        return self._config.successive_orders_relative_tolerance
+
+    @successive_orders_relative_tolerance.setter
+    def successive_orders_relative_tolerance(self, value: float):
+        self._config.successive_orders_relative_tolerance = value
+
+    @property
+    def successive_orders_absolute_tolerance(self) -> float:
+        """Absolute residual tolerance for ``SuccessiveOrders``.
+
+        Defaults to ``1e-12``.
+        """
+        return self._config.successive_orders_absolute_tolerance
+
+    @successive_orders_absolute_tolerance.setter
+    def successive_orders_absolute_tolerance(self, value: float):
+        self._config.successive_orders_absolute_tolerance = value
+
+    @property
+    def successive_orders_anderson_depth(self) -> int:
+        """Anderson history depth for ``SuccessiveOrders``.
+
+        Zero selects damped Picard iteration. Defaults to 3.
+        """
+        return self._config.successive_orders_anderson_depth
+
+    @successive_orders_anderson_depth.setter
+    def successive_orders_anderson_depth(self, value: int):
+        self._config.successive_orders_anderson_depth = value
+
+    @property
+    def successive_orders_damping(self) -> float:
+        """Fixed-point damping for ``SuccessiveOrders`` in ``(0, 1]``."""
+        return self._config.successive_orders_damping
+
+    @successive_orders_damping.setter
+    def successive_orders_damping(self, value: float):
+        self._config.successive_orders_damping = value
+
+    @property
+    def successive_orders_altitude_grid_m(self) -> np.ndarray | None:
+        """Explicit source-altitude grid for ``SuccessiveOrders``, in metres.
+
+        ``None`` selects the atmosphere-derived default. Explicit values must
+        be finite, one-dimensional, and strictly increasing.
+        """
+        altitude_grid_m = self._config.successive_orders_altitude_grid_m
+        if altitude_grid_m is None:
+            return None
+        return np.asarray(altitude_grid_m, dtype=np.float64)
+
+    @successive_orders_altitude_grid_m.setter
+    def successive_orders_altitude_grid_m(self, value: np.ndarray | None):
+        if value is None:
+            self._config.successive_orders_altitude_grid_m = None
+            return
+
+        altitude_grid_m = np.asarray(value, dtype=np.float64)
+        if altitude_grid_m.ndim != 1:
+            msg = "successive_orders_altitude_grid_m must be one-dimensional"
+            raise ValueError(msg)
+        if altitude_grid_m.size == 0:
+            self._config.successive_orders_altitude_grid_m = None
+            return
+        if not np.all(np.isfinite(altitude_grid_m)):
+            msg = "successive_orders_altitude_grid_m must contain only finite values"
+            raise ValueError(msg)
+        if np.any(np.diff(altitude_grid_m) <= 0):
+            msg = "successive_orders_altitude_grid_m must be strictly increasing"
+            raise ValueError(msg)
+        self._config.successive_orders_altitude_grid_m = altitude_grid_m.tolist()
+
+    @property
     def init_successive_orders_with_discrete_ordinates(self) -> bool:
         """
-        If set to true, when using the successive orders source, it will be initialized with a source calculated with
+        If set to true, the legacy successive orders source is initialized with a source calculated with
         the discrete ordinates source instead of a single scattering source.  This greatly reduces the number
-        of iterations required for the method, as well as provides a better weighting function approximation.
+        of iterations required for the legacy method. This setting is not used by ``SuccessiveOrders``.
         """
         return self._config.init_successive_orders_with_discrete_ordinates
 
     @init_successive_orders_with_discrete_ordinates.setter
     def init_successive_orders_with_discrete_ordinates(self, value: bool):
         """
-        If set to true, when using the successive orders source, it will be initialized with a source calculated with
+        If set to true, the legacy successive orders source is initialized with a source calculated with
         the discrete ordinates source instead of a single scattering source.  This greatly reduces the number
-        of iterations required for the method, as well as provides a better weighting function approximation.
+        of iterations required for the legacy method. This setting is not used by ``SuccessiveOrders``.
         """
         self._config.init_successive_orders_with_discrete_ordinates = value
 

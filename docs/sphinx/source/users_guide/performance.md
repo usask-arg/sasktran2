@@ -35,11 +35,6 @@ This threading is usually significantly less efficient than the wavelength dimen
 multi-threading, but has the advantage that it works well for a small number of wavelengths, and also
 may use significantly less RAM.
 
-```{note}
-The `sk.ThreadingModel.Source` works well for the `sk.MultipleScatterSource.SuccessiveOrders` source,
-but may not offer much improvement for the `sk.MultipleScatterSource.DiscreteOrdinates` source.
-```
-
 ## Installation Method
 For maximum performance, we recommend installing SASKTRAN2 through the `conda` packages rather than
 the `pip` wheels.  The conda packages are able to use accelerated LAPACK/BLAS libraries for your system

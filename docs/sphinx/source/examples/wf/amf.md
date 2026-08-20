@@ -8,8 +8,7 @@ SASKTRAN2 contains built in capability to calculate box air mass factors.
 
 ```{note}
 Air mass factors in SASKTRAN2 are estimated using the analytic weighting function capability implemented inside the model.
-This means they are exact as long as the sources you are using are linearized, which is currently all sources except for
-`sk.MultipleScatterSource.SuccessiveOrders`.  If you use the successive orders source the AMFs are only approximate.
+This means they are exact to the accuracy of the analytic source linearizations.
 ```
 
 We can set up a standard nadir viewing
