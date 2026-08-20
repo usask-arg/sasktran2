@@ -11,6 +11,7 @@
 #include <sasktran2/wavelength_block.h>
 
 namespace sasktran2 {
+    struct NativeVJPRequest;
 
     /** Essentially a pure virtual void class to interface with SWIG, removing
      * the NSTOKES template.
@@ -401,6 +402,10 @@ namespace sasktran2 {
 
         void assign_native_value(int losidx, int wavelidx,
                                  const Eigen::Vector<double, NSTOKES>& value);
+
+        /** Returns the optional native derivative categories consumed by the
+         * registered output parameter mappings. */
+        NativeVJPRequest native_vjp_request() const;
 
         void accumulate_native_gradient(
             int wavelidx, int threadidx,

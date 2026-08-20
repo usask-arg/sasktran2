@@ -234,13 +234,14 @@ namespace sasktran2::solartransmission {
          *   @param threadidx The thread index
          *   @param wavelidx The wavelength index
          */
-        void calculate(int wavelidx, int threadidx);
+        void calculate(int wavelidx, int threadidx,
+                       bool calculate_derivatives = true);
 
         void initialize_wavelength_blocks(int batch_size);
 
         template <int N>
         void calculate_block(const sasktran2::WavelengthBlock<N>& batch,
-                             int threadidx);
+                             int threadidx, bool calculate_derivatives = true);
 
         /**
          * Calculates the phase function at a given point and puts it into
@@ -383,6 +384,13 @@ namespace sasktran2::solartransmission {
         }
 
         const double source_amplitude = k * ssa * solar_trans / (EIGEN_PI * 4);
+        if (!calculate_derivatives) {
+            source.value =
+                source_amplitude * phase_handler.scatter_value(
+                                       threadidx, losidx, layeridx, wavelidx,
+                                       index_weights, is_entrance);
+            return;
+        }
         const bool use_zero_safe_derivative_path =
             calculate_derivatives && (k == 0.0 || ssa == 0.0);
         if (!use_zero_safe_derivative_path) {
@@ -658,6 +666,8 @@ namespace sasktran2::solartransmission {
         int m_wavelength_batch_capacity = 1;
         std::vector<int> m_active_wavelength_block_start;
         std::vector<int> m_active_wavelength_block_count;
+        std::vector<unsigned char> m_phase_tangent_active;
+        sasktran2::NativeVJPRequest m_vjp_request;
         std::vector<std::vector<int>> m_index_map;
 
         PhaseHandler<NSTOKES> m_phase_handler;
@@ -681,7 +691,6 @@ namespace sasktran2::solartransmission {
             m_batch_source_cache;
         mutable std::vector<ExactIntegrationBlockScratch<NSTOKES>>
             m_batch_integration_cache;
-
         const Geometry& m_geometry;
         const Geometry1D* m_geometry_1d = nullptr;
         const Geometry2D* m_geometry_2d = nullptr;
@@ -771,6 +780,10 @@ namespace sasktran2::solartransmission {
             const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere)
             override;
 
+        void initialize_atmosphere_native(
+            const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere)
+            override;
+
         void set_wavelength_block_capacity(int block_capacity) override {
             if (block_capacity < 1) {
                 throw std::invalid_argument(
@@ -792,17 +805,21 @@ namespace sasktran2::solartransmission {
         }
 
       private:
-        void calculate_single(int wavelidx, int threadidx);
+        void initialize_atmosphere_impl(
+            const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
+            bool native_products);
+
+        void calculate_single(int wavelidx, int threadidx,
+                              bool calculate_phase_derivatives);
 
         void initialize_wavelength_blocks(int block_size);
 
         template <int N>
         void calculate_block(const sasktran2::WavelengthBlock<N>& block,
-                             int threadidx);
+                             int threadidx, bool calculate_phase_derivatives);
 
-      public:
-        void calculate(const sasktran2::WavelengthBlock<>& block,
-                       int threadidx) override {
+        void calculate_impl(const sasktran2::WavelengthBlock<>& block,
+                            int threadidx, bool calculate_phase_derivatives) {
             if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
                 sasktran2::dispatch_wavelength_block(
                     block, [&](const auto& fixed_block) {
@@ -810,17 +827,56 @@ namespace sasktran2::solartransmission {
                                           decltype(fixed_block)>::static_size ==
                                       1) {
                             if (m_wavelength_batch_capacity == 1) {
-                                calculate_single(fixed_block.start, threadidx);
+                                calculate_single(fixed_block.start, threadidx,
+                                                 calculate_phase_derivatives);
                             } else {
-                                calculate_block(fixed_block, threadidx);
+                                calculate_block(fixed_block, threadidx,
+                                                calculate_phase_derivatives);
                             }
                         } else {
-                            calculate_block(fixed_block, threadidx);
+                            calculate_block(fixed_block, threadidx,
+                                            calculate_phase_derivatives);
                         }
                     });
             } else {
-                calculate_single(block.start, threadidx);
+                calculate_single(block.start, threadidx,
+                                 calculate_phase_derivatives);
             }
+        }
+
+      public:
+        void calculate(const sasktran2::WavelengthBlock<>& block,
+                       int threadidx) override {
+            calculate_impl(block, threadidx, true);
+        }
+
+        void calculate_jvp(
+            const sasktran2::WavelengthBlock<>& block, int threadidx,
+            Eigen::Ref<const Eigen::VectorXd> native_tangent) override {
+            if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
+                const int count = m_atmosphere->num_scattering_deriv_groups() *
+                                  m_geometry.size();
+                const int offset = m_atmosphere->scat_deriv_start_index();
+                if (offset < 0 || count < 0 ||
+                    offset + count > native_tangent.size()) {
+                    throw std::invalid_argument(
+                        "Single-scatter JVP phase tangent range is invalid");
+                }
+                m_phase_tangent_active.at(threadidx) =
+                    native_tangent.segment(offset, count).isZero(0.0) ? 0 : 1;
+            }
+            calculate_impl(block, threadidx,
+                           m_phase_tangent_active.at(threadidx) != 0);
+        }
+
+        void calculate_vjp(const sasktran2::WavelengthBlock<>& block,
+                           int threadidx) override {
+            calculate_impl(block, threadidx, m_vjp_request.scattering);
+        }
+
+        void
+        set_vjp_request(const sasktran2::NativeVJPRequest& request) override {
+            m_vjp_request = request;
         }
 
         /** Calculates the integrated source term for a given layer.

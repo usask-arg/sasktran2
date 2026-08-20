@@ -674,6 +674,10 @@ void Sasktran2<NSTOKES>::calculate_vjp(
     output.set_wavelength_block_capacity(wavelength_batch_size);
     output.initialize(m_config, *m_geometry, m_internal_viewing_geometry,
                       atmosphere);
+    const auto vjp_request = output.native_vjp_request();
+    for (auto& source : m_source_terms) {
+        source->set_vjp_request(vjp_request);
+    }
 
     using StokesBlock =
         Eigen::Matrix<double, NSTOKES, Eigen::Dynamic, Eigen::RowMajor>;

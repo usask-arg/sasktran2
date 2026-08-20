@@ -52,7 +52,9 @@ namespace sasktran2::successive_orders {
             int wavelength,
             Eigen::Ref<const Eigen::MatrixXd> atmospheric_coefficient_gradient,
             Eigen::Ref<const Eigen::VectorXd> ground_value_gradient,
-            Eigen::Ref<Eigen::VectorXd> native_gradient) const;
+            Eigen::Ref<Eigen::VectorXd> native_gradient,
+            bool accumulate_scattering = true,
+            bool accumulate_surface = true) const;
 
         std::size_t storage_bytes() const;
 
@@ -127,7 +129,9 @@ namespace sasktran2::successive_orders {
             int wavelength,
             Eigen::Ref<const Eigen::MatrixXd> atmospheric_coefficient_gradient,
             Eigen::Ref<const Eigen::VectorXd> ground_value_gradient,
-            Eigen::Ref<Eigen::VectorXd> native_gradient) const;
+            Eigen::Ref<Eigen::VectorXd> native_gradient,
+            bool accumulate_scattering = true,
+            bool accumulate_surface = true) const;
 
         std::size_t storage_bytes() const;
 

@@ -214,14 +214,17 @@ namespace sasktran2::solartransmission {
     }
 
     template <int NSTOKES>
-    void PhaseHandler<NSTOKES>::calculate(int wavelidx, int threadidx) {
+    void PhaseHandler<NSTOKES>::calculate(int wavelidx, int threadidx,
+                                          bool calculate_derivatives) {
 
         // If we need to calculate the phase function, we do it
         if (m_config->singlescatter_phasemode() ==
             sasktran2::Config::SingleScatterPhaseMode::from_legendre) {
             // Set all elements with this threadidx to zero
             m_phase.chip(threadidx, 2).setZero();
-            m_d_phase.chip(threadidx, 3).setZero();
+            if (calculate_derivatives) {
+                m_d_phase.chip(threadidx, 3).setZero();
+            }
 
             Eigen::array<Eigen::Index, 3> dims = m_phase.dimensions();
             Eigen::array<Eigen::Index, 3> offsets = {0, 1, 0};
@@ -262,7 +265,8 @@ namespace sasktran2::solartransmission {
                             .dot(m_wigner_d02(Eigen::seq(0, max_order - 1),
                                               scat_index));
                 }
-                for (int d = 0; d < m_atmosphere->num_scattering_deriv_groups();
+                for (int d = 0; calculate_derivatives &&
+                                d < m_atmosphere->num_scattering_deriv_groups();
                      ++d) {
 
                     int d_max_order = m_atmosphere->storage().d_max_order[d](
@@ -334,7 +338,8 @@ namespace sasktran2::solartransmission {
     template <int NSTOKES>
     template <int N>
     void PhaseHandler<NSTOKES>::calculate_block(
-        const sasktran2::WavelengthBlock<N>& batch, int threadidx) {
+        const sasktran2::WavelengthBlock<N>& batch, int threadidx,
+        bool calculate_derivatives) {
         if (m_config->singlescatter_phasemode() !=
             sasktran2::Config::SingleScatterPhaseMode::from_legendre) {
             throw std::runtime_error("Phase mode not implemented");
@@ -349,7 +354,9 @@ namespace sasktran2::solartransmission {
         auto& phase = m_phase_batch[threadidx];
         auto& d_phase = m_d_phase_batch[threadidx];
         wavelength_left_cols(phase, batch).setZero();
-        wavelength_left_cols(d_phase, batch).setZero();
+        if (calculate_derivatives) {
+            wavelength_left_cols(d_phase, batch).setZero();
+        }
 
         const int num_internal =
             static_cast<int>(m_internal_to_geometry.size());
@@ -404,6 +411,7 @@ namespace sasktran2::solartransmission {
                 }
 
                 for (int derivative = 0;
+                     calculate_derivatives &&
                      derivative < m_atmosphere->num_scattering_deriv_groups();
                      ++derivative) {
                     const int derivative_max_order =
@@ -956,7 +964,7 @@ namespace sasktran2::solartransmission {
 
 #define SASKTRAN2_INSTANTIATE_PHASE_BLOCK(NSTOKES, N)                          \
     template void PhaseHandler<NSTOKES>::calculate_block<N>(                   \
-        const sasktran2::WavelengthBlock<N>&, int);                            \
+        const sasktran2::WavelengthBlock<N>&, int, bool);                      \
     template void                                                              \
     PhaseHandler<NSTOKES>::scatter_and_accumulate_derivative_block<N>(         \
         int, int, int, const raytracing::GridWeightStencilView&, bool,         \
