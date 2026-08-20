@@ -1161,10 +1161,41 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn sk_engine_initialize_jvp(
+        engine: *mut Engine,
+        atmosphere: *mut Atmosphere,
+        output: *mut OutputJVP,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_engine_calculate_jvp_wavelength_thread(
+        engine: *mut Engine,
+        output: *mut OutputJVP,
+        wavelength: ::std::os::raw::c_int,
+        thread_idx: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn sk_engine_calculate_vjp(
         engine: *mut Engine,
         atmosphere: *mut Atmosphere,
         output: *mut OutputVJP,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_engine_initialize_vjp(
+        engine: *mut Engine,
+        atmosphere: *mut Atmosphere,
+        output: *mut OutputVJP,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_engine_calculate_vjp_block_thread(
+        engine: *mut Engine,
+        output: *mut OutputVJP,
+        wavelength_start: ::std::os::raw::c_int,
+        wavelength_count: ::std::os::raw::c_int,
+        thread_idx: ::std::os::raw::c_int,
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {

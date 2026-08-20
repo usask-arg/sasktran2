@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import sasktran2 as sk
+import xarray as xr
 
 
 def _setup_1d(
@@ -373,6 +374,48 @@ def test_rayon_wavelength_batch_parity():
             rtol=5e-12,
             atol=2e-13,
         )
+
+
+@pytest.mark.parametrize("num_stokes", [1, 3])
+def test_rayon_native_jvp_vjp_match_single_thread(num_stokes):
+    """Rayon may schedule exact-single-scatter native products by wavelength."""
+    serial_engine, serial_atmosphere = _setup_1d(
+        "single_scatter", num_stokes, True, num_wavelengths=7
+    )
+    rayon_engine, rayon_atmosphere = _setup_1d(
+        "single_scatter",
+        num_stokes,
+        True,
+        num_wavelengths=7,
+        wavelength_batch_size=4,
+        num_threads=2,
+        threading_lib=sk.ThreadingLib.Rayon,
+        threading_model=sk.ThreadingModel.Wavelength,
+    )
+
+    serial = serial_engine.linearize(serial_atmosphere)
+    threaded = rayon_engine.linearize(rayon_atmosphere)
+    assert threaded.backends == {
+        "jvp": sk.LinearizationBackend.Native,
+        "vjp": sk.LinearizationBackend.Native,
+    }
+
+    tangent = threaded.tangent_template[["extinction", "ssa", "albedo"]]
+    tangent["extinction"].data[:] = np.linspace(0.2, 0.8, 25)
+    tangent["ssa"].data[:] = np.linspace(-0.3, 0.1, 25)
+    tangent["albedo"].data[:] = np.linspace(0.1, 0.7, 7)
+    for scale in (1.0, -0.4):
+        xr.testing.assert_allclose(
+            threaded.jvp(tangent * scale), serial.jvp(tangent * scale)
+        )
+
+    cotangent = xr.ones_like(threaded.value)
+    cotangent.data[:] = np.linspace(0.3, 1.1, cotangent.size).reshape(cotangent.shape)
+    for scale in (1.0, -0.4):
+        serial_gradient = serial.vjp(cotangent * scale)
+        threaded_gradient = threaded.vjp(cotangent * scale)
+        for name in tangent:
+            xr.testing.assert_allclose(threaded_gradient[name], serial_gradient[name])
 
 
 def test_unsupported_sources_fall_back_to_scalar_wavelengths():

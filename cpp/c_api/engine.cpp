@@ -250,6 +250,85 @@ int sk_engine_calculate_jvp(Engine* engine, Atmosphere* atmosphere,
     }
 }
 
+int sk_engine_initialize_jvp(Engine* engine, Atmosphere* atmosphere,
+                             OutputJVP* output) {
+    if (engine == nullptr || !engine->impl || engine->_config == nullptr ||
+        atmosphere == nullptr || !atmosphere->impl || output == nullptr ||
+        !output->impl) {
+        return -1;
+    }
+    try {
+        if (engine->_config->impl.num_stokes() == 1) {
+            auto* impl = dynamic_cast<Sasktran2<1>*>(engine->impl.get());
+            auto* native_atmosphere =
+                dynamic_cast<sasktran2::atmosphere::Atmosphere<1>*>(
+                    atmosphere->impl.get());
+            auto* native_output =
+                dynamic_cast<sasktran2::OutputJVP<1>*>(output->impl.get());
+            if (impl == nullptr || native_atmosphere == nullptr ||
+                native_output == nullptr) {
+                return -2;
+            }
+            impl->initialize_jvp(*native_atmosphere, *native_output);
+            return 0;
+        }
+        if (engine->_config->impl.num_stokes() == 3) {
+            auto* impl = dynamic_cast<Sasktran2<3>*>(engine->impl.get());
+            auto* native_atmosphere =
+                dynamic_cast<sasktran2::atmosphere::Atmosphere<3>*>(
+                    atmosphere->impl.get());
+            auto* native_output =
+                dynamic_cast<sasktran2::OutputJVP<3>*>(output->impl.get());
+            if (impl == nullptr || native_atmosphere == nullptr ||
+                native_output == nullptr) {
+                return -2;
+            }
+            impl->initialize_jvp(*native_atmosphere, *native_output);
+            return 0;
+        }
+        return -2;
+    } catch (const std::exception& error) {
+        spdlog::error("Error initializing JVP: {}", error.what());
+        return -3;
+    }
+}
+
+int sk_engine_calculate_jvp_wavelength_thread(Engine* engine, OutputJVP* output,
+                                              int wavelength, int thread_idx) {
+    if (engine == nullptr || !engine->impl || engine->_config == nullptr ||
+        output == nullptr || !output->impl) {
+        return -1;
+    }
+    try {
+        if (engine->_config->impl.num_stokes() == 1) {
+            auto* impl = dynamic_cast<Sasktran2<1>*>(engine->impl.get());
+            auto* native_output =
+                dynamic_cast<sasktran2::OutputJVP<1>*>(output->impl.get());
+            if (impl == nullptr || native_output == nullptr) {
+                return -2;
+            }
+            impl->calculate_jvp_wavelength_thread(*native_output, wavelength,
+                                                  thread_idx);
+            return 0;
+        }
+        if (engine->_config->impl.num_stokes() == 3) {
+            auto* impl = dynamic_cast<Sasktran2<3>*>(engine->impl.get());
+            auto* native_output =
+                dynamic_cast<sasktran2::OutputJVP<3>*>(output->impl.get());
+            if (impl == nullptr || native_output == nullptr) {
+                return -2;
+            }
+            impl->calculate_jvp_wavelength_thread(*native_output, wavelength,
+                                                  thread_idx);
+            return 0;
+        }
+        return -2;
+    } catch (const std::exception& error) {
+        spdlog::error("Error calculating JVP wavelength: {}", error.what());
+        return -3;
+    }
+}
+
 int sk_engine_calculate_vjp(Engine* engine, Atmosphere* atmosphere,
                             OutputVJP* output) {
     if (engine == nullptr || !engine->impl || engine->_config == nullptr ||
@@ -300,6 +379,88 @@ int sk_engine_calculate_vjp(Engine* engine, Atmosphere* atmosphere,
         return -2;
     } catch (const std::exception& error) {
         spdlog::error("Error calculating VJP: {}", error.what());
+        return -3;
+    }
+}
+
+int sk_engine_initialize_vjp(Engine* engine, Atmosphere* atmosphere,
+                             OutputVJP* output) {
+    if (engine == nullptr || !engine->impl || engine->_config == nullptr ||
+        atmosphere == nullptr || !atmosphere->impl || output == nullptr ||
+        !output->impl) {
+        return -1;
+    }
+    try {
+        if (engine->_config->impl.num_stokes() == 1) {
+            auto* impl = dynamic_cast<Sasktran2<1>*>(engine->impl.get());
+            auto* native_atmosphere =
+                dynamic_cast<sasktran2::atmosphere::Atmosphere<1>*>(
+                    atmosphere->impl.get());
+            auto* native_output =
+                dynamic_cast<sasktran2::OutputVJP<1>*>(output->impl.get());
+            if (impl == nullptr || native_atmosphere == nullptr ||
+                native_output == nullptr) {
+                return -2;
+            }
+            impl->initialize_vjp(*native_atmosphere, *native_output);
+            return 0;
+        }
+        if (engine->_config->impl.num_stokes() == 3) {
+            auto* impl = dynamic_cast<Sasktran2<3>*>(engine->impl.get());
+            auto* native_atmosphere =
+                dynamic_cast<sasktran2::atmosphere::Atmosphere<3>*>(
+                    atmosphere->impl.get());
+            auto* native_output =
+                dynamic_cast<sasktran2::OutputVJP<3>*>(output->impl.get());
+            if (impl == nullptr || native_atmosphere == nullptr ||
+                native_output == nullptr) {
+                return -2;
+            }
+            impl->initialize_vjp(*native_atmosphere, *native_output);
+            return 0;
+        }
+        return -2;
+    } catch (const std::exception& error) {
+        spdlog::error("Error initializing VJP: {}", error.what());
+        return -3;
+    }
+}
+
+int sk_engine_calculate_vjp_block_thread(Engine* engine, OutputVJP* output,
+                                         int wavelength_start,
+                                         int wavelength_count, int thread_idx) {
+    if (engine == nullptr || !engine->impl || engine->_config == nullptr ||
+        output == nullptr || !output->impl || wavelength_start < 0 ||
+        wavelength_count < 1 || thread_idx < 0) {
+        return -1;
+    }
+    try {
+        const sasktran2::WavelengthBlock block{wavelength_start,
+                                               wavelength_count};
+        if (engine->_config->impl.num_stokes() == 1) {
+            auto* impl = dynamic_cast<Sasktran2<1>*>(engine->impl.get());
+            auto* native_output =
+                dynamic_cast<sasktran2::OutputVJP<1>*>(output->impl.get());
+            if (impl == nullptr || native_output == nullptr) {
+                return -2;
+            }
+            impl->calculate_vjp_block_thread(*native_output, block, thread_idx);
+            return 0;
+        }
+        if (engine->_config->impl.num_stokes() == 3) {
+            auto* impl = dynamic_cast<Sasktran2<3>*>(engine->impl.get());
+            auto* native_output =
+                dynamic_cast<sasktran2::OutputVJP<3>*>(output->impl.get());
+            if (impl == nullptr || native_output == nullptr) {
+                return -2;
+            }
+            impl->calculate_vjp_block_thread(*native_output, block, thread_idx);
+            return 0;
+        }
+        return -2;
+    } catch (const std::exception& error) {
+        spdlog::error("Error calculating VJP wavelength block: {}",
+                      error.what());
         return -3;
     }
 }
