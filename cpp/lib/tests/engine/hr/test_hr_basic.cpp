@@ -87,7 +87,7 @@ TEST_CASE("Basic Calculation HR", "[sasktran2][engine][hr]") {
     // Construct the config
     sasktran2::Config config;
     config.set_multiple_scatter_source(
-        sasktran2::Config::MultipleScatterSource::hr);
+        sasktran2::Config::MultipleScatterSource::successive_orders_legacy);
     // config.set_num_do_streams(16);
 
     config.set_num_threads(1);

@@ -5,10 +5,11 @@ use sasktran2_rs::bindings::config;
 #[pyclass(eq, eq_int)]
 #[derive(PartialEq, Clone)]
 pub enum MultipleScatterSource {
-    DiscreteOrdinates,
-    SuccessiveOrders,
-    TwoStream,
-    NoSource,
+    DiscreteOrdinates = 0,
+    SuccessiveOrdersLegacy = 1,
+    TwoStream = 2,
+    NoSource = 3,
+    SuccessiveOrders = 4,
 }
 
 #[pyclass(eq, eq_int)]
@@ -115,11 +116,14 @@ impl PyConfig {
             config::MultipleScatterSource::DiscreteOrdinates => {
                 MultipleScatterSource::DiscreteOrdinates
             }
-            config::MultipleScatterSource::SuccessiveOrders => {
-                MultipleScatterSource::SuccessiveOrders
+            config::MultipleScatterSource::SuccessiveOrdersLegacy => {
+                MultipleScatterSource::SuccessiveOrdersLegacy
             }
             config::MultipleScatterSource::TwoStream => MultipleScatterSource::TwoStream,
             config::MultipleScatterSource::None => MultipleScatterSource::NoSource,
+            config::MultipleScatterSource::SuccessiveOrders => {
+                MultipleScatterSource::SuccessiveOrders
+            }
         }
     }
 
@@ -132,11 +136,14 @@ impl PyConfig {
             MultipleScatterSource::DiscreteOrdinates => {
                 config::MultipleScatterSource::DiscreteOrdinates
             }
-            MultipleScatterSource::SuccessiveOrders => {
-                config::MultipleScatterSource::SuccessiveOrders
+            MultipleScatterSource::SuccessiveOrdersLegacy => {
+                config::MultipleScatterSource::SuccessiveOrdersLegacy
             }
             MultipleScatterSource::TwoStream => config::MultipleScatterSource::TwoStream,
             MultipleScatterSource::NoSource => config::MultipleScatterSource::None,
+            MultipleScatterSource::SuccessiveOrders => {
+                config::MultipleScatterSource::SuccessiveOrders
+            }
         };
         self.config
             .with_multiple_scatter_source(source)
@@ -462,6 +469,84 @@ impl PyConfig {
             .with_num_successive_orders_iterations(num_iterations)
             .into_pyresult()?;
 
+        Ok(())
+    }
+
+    #[getter]
+    fn successive_orders_relative_tolerance(&self) -> PyResult<f64> {
+        self.config
+            .successive_orders_relative_tolerance()
+            .into_pyresult()
+    }
+
+    #[setter]
+    fn set_successive_orders_relative_tolerance(&mut self, tolerance: f64) -> PyResult<()> {
+        self.config
+            .with_successive_orders_relative_tolerance(tolerance)
+            .into_pyresult()?;
+        Ok(())
+    }
+
+    #[getter]
+    fn successive_orders_absolute_tolerance(&self) -> PyResult<f64> {
+        self.config
+            .successive_orders_absolute_tolerance()
+            .into_pyresult()
+    }
+
+    #[setter]
+    fn set_successive_orders_absolute_tolerance(&mut self, tolerance: f64) -> PyResult<()> {
+        self.config
+            .with_successive_orders_absolute_tolerance(tolerance)
+            .into_pyresult()?;
+        Ok(())
+    }
+
+    #[getter]
+    fn successive_orders_anderson_depth(&self) -> PyResult<usize> {
+        self.config
+            .successive_orders_anderson_depth()
+            .into_pyresult()
+    }
+
+    #[setter]
+    fn set_successive_orders_anderson_depth(&mut self, depth: usize) -> PyResult<()> {
+        self.config
+            .with_successive_orders_anderson_depth(depth)
+            .into_pyresult()?;
+        Ok(())
+    }
+
+    #[getter]
+    fn successive_orders_damping(&self) -> PyResult<f64> {
+        self.config.successive_orders_damping().into_pyresult()
+    }
+
+    #[setter]
+    fn set_successive_orders_damping(&mut self, damping: f64) -> PyResult<()> {
+        self.config
+            .with_successive_orders_damping(damping)
+            .into_pyresult()?;
+        Ok(())
+    }
+
+    #[getter]
+    fn successive_orders_altitude_grid_m(&self) -> PyResult<Option<Vec<f64>>> {
+        let altitude_grid_m = self
+            .config
+            .successive_orders_altitude_grid_m()
+            .into_pyresult()?;
+        Ok((!altitude_grid_m.is_empty()).then_some(altitude_grid_m))
+    }
+
+    #[setter]
+    fn set_successive_orders_altitude_grid_m(
+        &mut self,
+        altitude_grid_m: Option<Vec<f64>>,
+    ) -> PyResult<()> {
+        self.config
+            .with_successive_orders_altitude_grid_m(altitude_grid_m.as_deref().unwrap_or_default())
+            .into_pyresult()?;
         Ok(())
     }
 

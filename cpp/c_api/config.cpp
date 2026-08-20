@@ -2,6 +2,8 @@
 #include "sasktran2/config.h"
 #include "internal_types.h"
 #include <sasktran2.h>
+#include <algorithm>
+#include <cmath>
 
 extern "C" {
 Config* sk_config_create() { return new Config(); }
@@ -332,6 +334,126 @@ int sk_config_set_initialize_hr_with_do(Config* config, int initialize) {
     }
     config->impl.set_initialize_hr_with_do(initialize != 0);
     return 0; // Success
+}
+
+int sk_config_get_successive_orders_relative_tolerance(Config* config,
+                                                       double* tolerance) {
+    if (config == nullptr || tolerance == nullptr) {
+        return -1;
+    }
+    *tolerance = config->impl.successive_orders_relative_tolerance();
+    return 0;
+}
+
+int sk_config_set_successive_orders_relative_tolerance(Config* config,
+                                                       double tolerance) {
+    if (config == nullptr || !std::isfinite(tolerance) || tolerance < 0) {
+        return -1;
+    }
+    config->impl.set_successive_orders_relative_tolerance(tolerance);
+    return 0;
+}
+
+int sk_config_get_successive_orders_absolute_tolerance(Config* config,
+                                                       double* tolerance) {
+    if (config == nullptr || tolerance == nullptr) {
+        return -1;
+    }
+    *tolerance = config->impl.successive_orders_absolute_tolerance();
+    return 0;
+}
+
+int sk_config_set_successive_orders_absolute_tolerance(Config* config,
+                                                       double tolerance) {
+    if (config == nullptr || !std::isfinite(tolerance) || tolerance < 0) {
+        return -1;
+    }
+    config->impl.set_successive_orders_absolute_tolerance(tolerance);
+    return 0;
+}
+
+int sk_config_get_successive_orders_anderson_depth(Config* config, int* depth) {
+    if (config == nullptr || depth == nullptr) {
+        return -1;
+    }
+    *depth = config->impl.successive_orders_anderson_depth();
+    return 0;
+}
+
+int sk_config_set_successive_orders_anderson_depth(Config* config, int depth) {
+    if (config == nullptr || depth < 0) {
+        return -1;
+    }
+    config->impl.set_successive_orders_anderson_depth(depth);
+    return 0;
+}
+
+int sk_config_get_successive_orders_damping(Config* config, double* damping) {
+    if (config == nullptr || damping == nullptr) {
+        return -1;
+    }
+    *damping = config->impl.successive_orders_damping();
+    return 0;
+}
+
+int sk_config_set_successive_orders_damping(Config* config, double damping) {
+    if (config == nullptr || !std::isfinite(damping) || damping <= 0 ||
+        damping > 1) {
+        return -1;
+    }
+    config->impl.set_successive_orders_damping(damping);
+    return 0;
+}
+
+int sk_config_get_num_successive_orders_altitudes(Config* config,
+                                                  int* num_altitudes) {
+    if (config == nullptr || num_altitudes == nullptr) {
+        return -1;
+    }
+    *num_altitudes = static_cast<int>(
+        config->impl.successive_orders_altitude_grid_m().size());
+    return 0;
+}
+
+int sk_config_get_successive_orders_altitude_grid_m(Config* config,
+                                                    double* altitude_grid_m) {
+    if (config == nullptr) {
+        return -1;
+    }
+    const auto& configured_grid =
+        config->impl.successive_orders_altitude_grid_m();
+    if (!configured_grid.empty() && altitude_grid_m == nullptr) {
+        return -1;
+    }
+    if (!configured_grid.empty()) {
+        std::copy(configured_grid.begin(), configured_grid.end(),
+                  altitude_grid_m);
+    }
+    return 0;
+}
+
+int sk_config_set_successive_orders_altitude_grid_m(
+    Config* config, const double* altitude_grid_m, int num_altitudes) {
+    if (config == nullptr || num_altitudes < 0 ||
+        (num_altitudes > 0 && altitude_grid_m == nullptr)) {
+        return -1;
+    }
+    for (int altitude_index = 0; altitude_index < num_altitudes;
+         ++altitude_index) {
+        if (!std::isfinite(altitude_grid_m[altitude_index]) ||
+            (altitude_index > 0 && altitude_grid_m[altitude_index] <=
+                                       altitude_grid_m[altitude_index - 1])) {
+            return -2;
+        }
+    }
+    std::vector<double> configured_grid;
+    if (num_altitudes > 0) {
+        configured_grid.assign(altitude_grid_m,
+                               altitude_grid_m + num_altitudes);
+    }
+    config->impl.set_successive_orders_altitude_grid_m(
+        std::move(configured_grid));
+    return 0;
 }
 
 int sk_config_get_occultation_source(Config* config, int* occultation_source) {

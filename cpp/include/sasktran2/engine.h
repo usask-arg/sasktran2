@@ -69,6 +69,16 @@ template <int NSTOKES> class Sasktran2 : public Sasktran2Interface {
 
     std::vector<sasktran2::WavelengthBlockDual<NSTOKES>> m_thread_radiance;
 
+    // Persistent native-product storage permits an external scheduler to
+    // initialize a product once and dispatch independent wavelength blocks.
+    // The same storage is used by the ordinary OpenMP path.
+    mutable std::vector<Eigen::VectorXd> m_native_jvp_tangents;
+    mutable std::vector<Eigen::MatrixXd> m_native_vjp_gradients;
+    using NativeProductStokesBlock =
+        Eigen::Matrix<double, NSTOKES, Eigen::Dynamic, Eigen::RowMajor>;
+    mutable std::vector<NativeProductStokesBlock> m_native_vjp_radiance;
+    mutable std::vector<NativeProductStokesBlock> m_native_vjp_cotangent;
+
     // Thread storage to avoid reallocs on the derivatives of flux
     // Can't reuse radiance storage because flux NSTOKES is always 1 for flux
     std::vector<sasktran2::Dual<double, sasktran2::dualstorage::dense, 1>>
@@ -144,8 +154,23 @@ template <int NSTOKES> class Sasktran2 : public Sasktran2Interface {
                   sasktran2::OutputJVP<NSTOKES>& output) const;
 
     void
+    initialize_jvp(const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
+                   sasktran2::OutputJVP<NSTOKES>& output) const;
+
+    void calculate_jvp_wavelength_thread(sasktran2::OutputJVP<NSTOKES>& output,
+                                         int wavelength, int thread_idx) const;
+
+    void
     calculate_vjp(const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
                   sasktran2::OutputVJP<NSTOKES>& output) const;
+
+    void
+    initialize_vjp(const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
+                   sasktran2::OutputVJP<NSTOKES>& output) const;
+
+    void calculate_vjp_block_thread(sasktran2::OutputVJP<NSTOKES>& output,
+                                    const sasktran2::WavelengthBlock<>& block,
+                                    int thread_idx) const;
 
     int effective_wavelength_batch_size(int num_wavelengths) const;
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../geometry.h"
+#include <atomic>
 #include <cstdint>
 #include <sasktran2/config.h>
 #include <sasktran2/atmosphere/grid_storage.h>
@@ -26,6 +27,8 @@ namespace sasktran2::atmosphere {
      */
     template <int NSTOKES> class Atmosphere : public AtmosphereInterface {
       private:
+        inline static std::atomic<std::uint64_t> s_next_instance_id{1};
+
         std::shared_ptr<AtmosphereGridStorageFull<NSTOKES>>
             m_storage_holder; /** The internal storage object */
         std::shared_ptr<Surface<NSTOKES>> m_surface_holder; /** The surface */
@@ -39,6 +42,10 @@ namespace sasktran2::atmosphere {
                                                 emission derivatives */
         std::uint64_t m_revision = 0; /** Monotonic revision of the built native
                                          atmosphere state. */
+        const std::uint64_t m_instance_id = s_next_instance_id.fetch_add(
+            1, std::memory_order_relaxed); /** Stable identity that cannot be
+                                               confused by allocator address
+                                               reuse. */
 
       public:
         /** Directly constructs the atmosphere from it's base objects, taking
@@ -75,6 +82,32 @@ namespace sasktran2::atmosphere {
         Atmosphere(int nwavel, const sasktran2::Geometry& geometry,
                    const sasktran2::Config& config,
                    bool calculate_derivatives = false);
+
+        /** Copies the atmosphere view while assigning the new object a unique
+         * lifetime identity. Owned storage remains shared, matching the
+         * previous implicit-copy behavior. */
+        Atmosphere(const Atmosphere& other)
+            : m_storage_holder(other.m_storage_holder),
+              m_surface_holder(other.m_surface_holder),
+              m_storage(other.m_storage), m_surface(other.m_surface),
+              m_calculate_derivatives(other.m_calculate_derivatives),
+              m_include_emission_derivatives(
+                  other.m_include_emission_derivatives),
+              m_revision(other.m_revision) {}
+
+        /** Moves the atmosphere view while assigning the new object a unique
+         * lifetime identity. */
+        Atmosphere(Atmosphere&& other) noexcept
+            : m_storage_holder(std::move(other.m_storage_holder)),
+              m_surface_holder(std::move(other.m_surface_holder)),
+              m_storage(other.m_storage), m_surface(other.m_surface),
+              m_calculate_derivatives(other.m_calculate_derivatives),
+              m_include_emission_derivatives(
+                  other.m_include_emission_derivatives),
+              m_revision(other.m_revision) {}
+
+        Atmosphere& operator=(const Atmosphere&) = delete;
+        Atmosphere& operator=(Atmosphere&&) = delete;
 
         virtual ~Atmosphere() {}
 
@@ -151,5 +184,8 @@ namespace sasktran2::atmosphere {
 
         /** Revision of the native atmosphere state. */
         std::uint64_t revision() const { return m_revision; }
+
+        /** Identity of this native atmosphere lifetime. */
+        std::uint64_t instance_id() const { return m_instance_id; }
     };
 } // namespace sasktran2::atmosphere

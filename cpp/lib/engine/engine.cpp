@@ -4,6 +4,7 @@
 #include "sasktran2/raytracing.h"
 #include "sasktran2/runtime_backend_tuner.h"
 #include "sasktran2/source_interface.h"
+#include "../successive_orders/factory.h"
 #include "sktran_disco/twostream/cpp_source.h"
 #include "sktran_disco/twostream/meta.h"
 #include <memory>
@@ -307,12 +308,19 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
         m_los_source_terms.push_back(
             m_source_terms[m_source_terms.size() - 1].get());
     } else if (m_config.multiple_scatter_source() ==
-               sasktran2::Config::MultipleScatterSource::hr) {
+               sasktran2::Config::MultipleScatterSource::
+                   successive_orders_legacy) {
         m_source_terms.emplace_back(
             std::make_unique<sasktran2::hr::DiffuseTable<NSTOKES>>(
                 *m_raytracer, *m_geometry_1d));
         m_los_source_terms.push_back(
             m_source_terms[m_source_terms.size() - 1].get());
+    } else if (m_config.multiple_scatter_source() ==
+               sasktran2::Config::MultipleScatterSource::successive_orders) {
+        m_source_terms.emplace_back(
+            sasktran2::successive_orders::make_successive_orders_source<
+                NSTOKES>(*m_raytracer, *m_geometry_1d));
+        m_los_source_terms.push_back(m_source_terms.back().get());
     } else if (m_config.multiple_scatter_source() ==
                sasktran2::Config::MultipleScatterSource::twostream) {
         if constexpr (NSTOKES == 1) {
@@ -555,7 +563,7 @@ void Sasktran2<NSTOKES>::calculate_radiance(
 }
 
 template <int NSTOKES>
-void Sasktran2<NSTOKES>::calculate_jvp(
+void Sasktran2<NSTOKES>::initialize_jvp(
     const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
     sasktran2::OutputJVP<NSTOKES>& output) const {
 #ifdef SKTRAN_OPENMP_SUPPORT
@@ -585,17 +593,60 @@ void Sasktran2<NSTOKES>::calculate_jvp(
     m_source_integrator->initialize_thread_storage(m_config.num_threads(), 1);
     for (auto& source : m_source_terms) {
         source->set_wavelength_block_capacity(wavelength_batch_size);
-        source->initialize_atmosphere(atmosphere);
+        source->initialize_atmosphere_native(atmosphere);
     }
     m_source_integrator->initialize_atmosphere(atmosphere);
     output.set_wavelength_block_capacity(wavelength_batch_size);
     output.initialize(m_config, *m_geometry, m_internal_viewing_geometry,
                       atmosphere);
 
-    std::vector<Eigen::VectorXd> native_tangents(m_config.num_threads());
-    for (auto& tangent : native_tangents) {
+    m_native_jvp_tangents.resize(m_config.num_threads());
+    for (auto& tangent : m_native_jvp_tangents) {
         tangent.resize(atmosphere.num_deriv());
     }
+}
+
+template <int NSTOKES>
+void Sasktran2<NSTOKES>::calculate_jvp_wavelength_thread(
+    sasktran2::OutputJVP<NSTOKES>& output, int wavelength,
+    int wavelength_threadidx) const {
+    if (wavelength < 0 || wavelength >= output.num_wavel() ||
+        wavelength_threadidx < 0 ||
+        wavelength_threadidx >= m_config.num_wavelength_threads() ||
+        wavelength_threadidx >=
+            static_cast<int>(m_native_jvp_tangents.size())) {
+        throw std::invalid_argument(
+            "Invalid wavelength or worker for native JVP");
+    }
+    const sasktran2::WavelengthBlock<> block{wavelength, 1};
+    auto& native_tangent = m_native_jvp_tangents[wavelength_threadidx];
+    output.native_tangent(wavelength, native_tangent);
+    // Source-wide directional state must be complete before LOS workers
+    // consume it concurrently.
+    for (auto& source : m_source_terms) {
+        source->calculate_jvp(block, wavelength_threadidx, native_tangent);
+    }
+#pragma omp parallel for num_threads(m_config.num_source_threads())            \
+    schedule(dynamic)
+    for (int ray = 0; ray < m_internal_viewing_geometry.num_rays(); ++ray) {
+#ifdef SKTRAN_OPENMP_SUPPORT
+        const int ray_threadidx = omp_get_thread_num() + wavelength_threadidx;
+#else
+        const int ray_threadidx = wavelength_threadidx;
+#endif
+        sasktran2::RadianceJVP<NSTOKES> radiance;
+        m_source_integrator->integrate_jvp(
+            radiance, m_los_source_terms, wavelength, ray, wavelength_threadidx,
+            ray_threadidx, native_tangent);
+        output.assign_native(ray, wavelength, radiance.value, radiance.jvp);
+    }
+}
+
+template <int NSTOKES>
+void Sasktran2<NSTOKES>::calculate_jvp(
+    const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
+    sasktran2::OutputJVP<NSTOKES>& output) const {
+    initialize_jvp(atmosphere, output);
     const int num_wavelength_threads = m_config.num_wavelength_threads();
 #pragma omp parallel for num_threads(num_wavelength_threads)
     for (int wavelength = 0; wavelength < atmosphere.num_wavel();
@@ -605,32 +656,13 @@ void Sasktran2<NSTOKES>::calculate_jvp(
 #else
         const int wavelength_threadidx = 0;
 #endif
-        const sasktran2::WavelengthBlock<> block{wavelength, 1};
-        for (auto& source : m_source_terms) {
-            source->calculate(block, wavelength_threadidx);
-        }
-        auto& native_tangent = native_tangents[wavelength_threadidx];
-        output.native_tangent(wavelength, native_tangent);
-#pragma omp parallel for num_threads(m_config.num_source_threads())            \
-    schedule(dynamic)
-        for (int ray = 0; ray < m_internal_viewing_geometry.num_rays(); ++ray) {
-#ifdef SKTRAN_OPENMP_SUPPORT
-            const int ray_threadidx =
-                omp_get_thread_num() + wavelength_threadidx;
-#else
-            const int ray_threadidx = wavelength_threadidx;
-#endif
-            sasktran2::RadianceJVP<NSTOKES> radiance;
-            m_source_integrator->integrate_jvp(
-                radiance, m_los_source_terms, wavelength, ray,
-                wavelength_threadidx, ray_threadidx, native_tangent);
-            output.assign_native(ray, wavelength, radiance.value, radiance.jvp);
-        }
+        calculate_jvp_wavelength_thread(output, wavelength,
+                                        wavelength_threadidx);
     }
 }
 
 template <int NSTOKES>
-void Sasktran2<NSTOKES>::calculate_vjp(
+void Sasktran2<NSTOKES>::initialize_vjp(
     const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
     sasktran2::OutputVJP<NSTOKES>& output) const {
 #ifdef SKTRAN_OPENMP_SUPPORT
@@ -660,26 +692,101 @@ void Sasktran2<NSTOKES>::calculate_vjp(
         m_config.num_threads(), static_cast<int>(m_los_source_terms.size()));
     for (auto& source : m_source_terms) {
         source->set_wavelength_block_capacity(wavelength_batch_size);
-        source->initialize_atmosphere(atmosphere);
+        source->initialize_atmosphere_native(atmosphere);
     }
     m_source_integrator->initialize_atmosphere(atmosphere);
     output.set_wavelength_block_capacity(wavelength_batch_size);
     output.initialize(m_config, *m_geometry, m_internal_viewing_geometry,
                       atmosphere);
 
-    using StokesBlock =
-        Eigen::Matrix<double, NSTOKES, Eigen::Dynamic, Eigen::RowMajor>;
-    std::vector<Eigen::MatrixXd> native_gradients(m_config.num_threads());
-    std::vector<StokesBlock> radiance_storage(m_config.num_threads());
-    std::vector<StokesBlock> cotangent_storage(m_config.num_threads());
+    m_native_vjp_gradients.resize(m_config.num_threads());
+    m_native_vjp_radiance.resize(m_config.num_threads());
+    m_native_vjp_cotangent.resize(m_config.num_threads());
     for (int thread = 0; thread < m_config.num_threads(); ++thread) {
-        native_gradients[thread].resize(atmosphere.num_deriv(),
-                                        wavelength_batch_size);
-        radiance_storage[thread].resize(NSTOKES, wavelength_batch_size);
-        cotangent_storage[thread].resize(NSTOKES, wavelength_batch_size);
+        m_native_vjp_gradients[thread].resize(atmosphere.num_deriv(),
+                                              wavelength_batch_size);
+        m_native_vjp_radiance[thread].resize(NSTOKES, wavelength_batch_size);
+        m_native_vjp_cotangent[thread].resize(NSTOKES, wavelength_batch_size);
     }
-    const int num_wavelength_threads = m_config.num_wavelength_threads();
+}
+
+template <int NSTOKES>
+void Sasktran2<NSTOKES>::calculate_vjp_block_thread(
+    sasktran2::OutputVJP<NSTOKES>& output,
+    const sasktran2::WavelengthBlock<>& block, int wavelength_threadidx) const {
+    if (block.start < 0 || block.count < 1 ||
+        block.end() > output.num_wavel() || wavelength_threadidx < 0 ||
+        wavelength_threadidx >= m_config.num_wavelength_threads() ||
+        wavelength_threadidx >=
+            static_cast<int>(m_native_vjp_gradients.size()) ||
+        wavelength_threadidx >=
+            static_cast<int>(m_native_vjp_radiance.size()) ||
+        wavelength_threadidx >=
+            static_cast<int>(m_native_vjp_cotangent.size()) ||
+        block.count > m_native_vjp_gradients[wavelength_threadidx].cols()) {
+        throw std::invalid_argument(
+            "Invalid wavelength block or worker for native VJP");
+    }
+    for (auto& source : m_source_terms) {
+        source->calculate_vjp(block, wavelength_threadidx);
+    }
     const int num_source_threads = m_config.num_source_threads();
+    if (num_source_threads == 1) {
+        m_native_vjp_gradients[wavelength_threadidx]
+            .leftCols(block.count)
+            .setZero();
+    } else {
+        for (int thread = 0; thread < num_source_threads; ++thread) {
+            m_native_vjp_gradients[thread].leftCols(block.count).setZero();
+        }
+    }
+#pragma omp parallel for num_threads(num_source_threads) schedule(dynamic)
+    for (int ray = 0; ray < m_internal_viewing_geometry.num_rays(); ++ray) {
+#ifdef SKTRAN_OPENMP_SUPPORT
+        const int ray_threadidx = omp_get_thread_num() + wavelength_threadidx;
+#else
+        const int ray_threadidx = wavelength_threadidx;
+#endif
+        auto& radiance = m_native_vjp_radiance[ray_threadidx];
+        auto& cotangent = m_native_vjp_cotangent[ray_threadidx];
+        for (int lane = 0; lane < block.count; ++lane) {
+            cotangent.col(lane) =
+                output.native_cotangent(ray, block.wavelength(lane));
+        }
+        m_source_integrator->integrate_vjp_block(
+            radiance, m_los_source_terms, block, ray, wavelength_threadidx,
+            ray_threadidx, cotangent, m_native_vjp_gradients[ray_threadidx]);
+        for (int lane = 0; lane < block.count; ++lane) {
+            output.assign_native_value(ray, block.wavelength(lane),
+                                       radiance.col(lane));
+        }
+    }
+    auto& reduced_gradient = m_native_vjp_gradients[wavelength_threadidx];
+    if (num_source_threads > 1) {
+        for (int thread = 1; thread < num_source_threads; ++thread) {
+            reduced_gradient.leftCols(block.count) +=
+                m_native_vjp_gradients[thread].leftCols(block.count);
+        }
+    }
+    // Globally coupled sources complete one adjoint after all LOS cotangents
+    // have reached their thread-local accumulators.
+    auto reduced_gradient_block = reduced_gradient.leftCols(block.count);
+    for (const auto& source : m_source_terms) {
+        source->finalize_vjp(block, wavelength_threadidx,
+                             reduced_gradient_block);
+    }
+    output.accumulate_native_gradient(block, wavelength_threadidx,
+                                      reduced_gradient);
+}
+
+template <int NSTOKES>
+void Sasktran2<NSTOKES>::calculate_vjp(
+    const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
+    sasktran2::OutputVJP<NSTOKES>& output) const {
+    initialize_vjp(atmosphere, output);
+    const int wavelength_batch_size =
+        effective_wavelength_batch_size(atmosphere.num_wavel());
+    const int num_wavelength_threads = m_config.num_wavelength_threads();
     const int num_blocks =
         (atmosphere.num_wavel() + wavelength_batch_size - 1) /
         wavelength_batch_size;
@@ -694,49 +801,7 @@ void Sasktran2<NSTOKES>::calculate_vjp(
         const sasktran2::WavelengthBlock<> block{
             start,
             std::min(wavelength_batch_size, atmosphere.num_wavel() - start)};
-        for (auto& source : m_source_terms) {
-            source->calculate(block, wavelength_threadidx);
-        }
-        if (num_source_threads == 1) {
-            native_gradients[wavelength_threadidx]
-                .leftCols(block.count)
-                .setZero();
-        } else {
-            for (int thread = 0; thread < num_source_threads; ++thread) {
-                native_gradients[thread].leftCols(block.count).setZero();
-            }
-        }
-#pragma omp parallel for num_threads(num_source_threads) schedule(dynamic)
-        for (int ray = 0; ray < m_internal_viewing_geometry.num_rays(); ++ray) {
-#ifdef SKTRAN_OPENMP_SUPPORT
-            const int ray_threadidx =
-                omp_get_thread_num() + wavelength_threadidx;
-#else
-            const int ray_threadidx = wavelength_threadidx;
-#endif
-            auto& radiance = radiance_storage[ray_threadidx];
-            auto& cotangent = cotangent_storage[ray_threadidx];
-            for (int lane = 0; lane < block.count; ++lane) {
-                cotangent.col(lane) =
-                    output.native_cotangent(ray, block.wavelength(lane));
-            }
-            m_source_integrator->integrate_vjp_block(
-                radiance, m_los_source_terms, block, ray, wavelength_threadidx,
-                ray_threadidx, cotangent, native_gradients[ray_threadidx]);
-            for (int lane = 0; lane < block.count; ++lane) {
-                output.assign_native_value(ray, block.wavelength(lane),
-                                           radiance.col(lane));
-            }
-        }
-        auto& reduced_gradient = native_gradients[wavelength_threadidx];
-        if (num_source_threads > 1) {
-            for (int thread = 1; thread < num_source_threads; ++thread) {
-                reduced_gradient.leftCols(block.count) +=
-                    native_gradients[thread].leftCols(block.count);
-            }
-        }
-        output.accumulate_native_gradient(block, wavelength_threadidx,
-                                          reduced_gradient);
+        calculate_vjp_block_thread(output, block, wavelength_threadidx);
     }
 }
 

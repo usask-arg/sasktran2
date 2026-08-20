@@ -6,9 +6,10 @@ use sasktran2_sys::ffi;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MultipleScatterSource {
     DiscreteOrdinates = 0,
-    SuccessiveOrders = 1,
+    SuccessiveOrdersLegacy = 1,
     TwoStream = 2,
     None = 3,
+    SuccessiveOrders = 4,
 }
 
 #[repr(i32)]
@@ -648,6 +649,194 @@ impl Config {
         }
     }
 
+    pub fn successive_orders_relative_tolerance(&self) -> Result<f64> {
+        let mut tolerance = 0.0;
+        let error_code = unsafe {
+            ffi::sk_config_get_successive_orders_relative_tolerance(self.config, &mut tolerance)
+        };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting successive-orders relative tolerance: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(tolerance)
+        }
+    }
+
+    pub fn with_successive_orders_relative_tolerance(
+        &mut self,
+        tolerance: f64,
+    ) -> Result<&mut Self> {
+        let error_code = unsafe {
+            ffi::sk_config_set_successive_orders_relative_tolerance(self.config, tolerance)
+        };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Successive-orders relative tolerance must be finite and non-negative"
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn successive_orders_absolute_tolerance(&self) -> Result<f64> {
+        let mut tolerance = 0.0;
+        let error_code = unsafe {
+            ffi::sk_config_get_successive_orders_absolute_tolerance(self.config, &mut tolerance)
+        };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting successive-orders absolute tolerance: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(tolerance)
+        }
+    }
+
+    pub fn with_successive_orders_absolute_tolerance(
+        &mut self,
+        tolerance: f64,
+    ) -> Result<&mut Self> {
+        let error_code = unsafe {
+            ffi::sk_config_set_successive_orders_absolute_tolerance(self.config, tolerance)
+        };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Successive-orders absolute tolerance must be finite and non-negative"
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn successive_orders_anderson_depth(&self) -> Result<usize> {
+        let mut depth = 0i32;
+        let error_code =
+            unsafe { ffi::sk_config_get_successive_orders_anderson_depth(self.config, &mut depth) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting successive-orders Anderson depth: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(depth as usize)
+        }
+    }
+
+    pub fn with_successive_orders_anderson_depth(&mut self, depth: usize) -> Result<&mut Self> {
+        if depth > i32::MAX as usize {
+            return Err(anyhow!("Successive-orders Anderson depth is too large"));
+        }
+        let error_code = unsafe {
+            ffi::sk_config_set_successive_orders_anderson_depth(self.config, depth as i32)
+        };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Successive-orders Anderson depth must be non-negative"
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn successive_orders_damping(&self) -> Result<f64> {
+        let mut damping = 0.0;
+        let error_code =
+            unsafe { ffi::sk_config_get_successive_orders_damping(self.config, &mut damping) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting successive-orders damping: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(damping)
+        }
+    }
+
+    pub fn with_successive_orders_damping(&mut self, damping: f64) -> Result<&mut Self> {
+        let error_code =
+            unsafe { ffi::sk_config_set_successive_orders_damping(self.config, damping) };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Successive-orders damping must be finite and in the interval (0, 1]"
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
+    pub fn successive_orders_altitude_grid_m(&self) -> Result<Vec<f64>> {
+        let mut num_altitudes = 0i32;
+        let error_code = unsafe {
+            ffi::sk_config_get_num_successive_orders_altitudes(self.config, &mut num_altitudes)
+        };
+        if error_code != 0 || num_altitudes < 0 {
+            return Err(anyhow!(
+                "Error getting successive-orders altitude-grid size: error code {}",
+                error_code
+            ));
+        }
+
+        let mut altitude_grid_m = vec![0.0; num_altitudes as usize];
+        let destination = if altitude_grid_m.is_empty() {
+            std::ptr::null_mut()
+        } else {
+            altitude_grid_m.as_mut_ptr()
+        };
+        let error_code = unsafe {
+            ffi::sk_config_get_successive_orders_altitude_grid_m(self.config, destination)
+        };
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting successive-orders altitude grid: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(altitude_grid_m)
+        }
+    }
+
+    pub fn with_successive_orders_altitude_grid_m(
+        &mut self,
+        altitude_grid_m: &[f64],
+    ) -> Result<&mut Self> {
+        if altitude_grid_m.len() > i32::MAX as usize {
+            return Err(anyhow!(
+                "Successive-orders altitude grid contains too many points"
+            ));
+        }
+        let source = if altitude_grid_m.is_empty() {
+            std::ptr::null()
+        } else {
+            altitude_grid_m.as_ptr()
+        };
+        let error_code = unsafe {
+            ffi::sk_config_set_successive_orders_altitude_grid_m(
+                self.config,
+                source,
+                altitude_grid_m.len() as i32,
+            )
+        };
+
+        if error_code != 0 {
+            Err(anyhow!(
+                "Successive-orders altitude grid must be finite and strictly increasing"
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
     pub fn init_successive_orders_with_discrete_ordinates(&self) -> Result<bool> {
         let mut init = 0i32;
         let error_code =
@@ -1035,6 +1224,20 @@ mod tests {
         );
         assert_eq!(config.stokes_basis().unwrap(), StokesBasis::Standard);
         assert_eq!(config.log_level().unwrap(), LogLevel::Warn);
+        assert_eq!(
+            config.successive_orders_relative_tolerance().unwrap(),
+            1.0e-6
+        );
+        assert_eq!(
+            config.successive_orders_absolute_tolerance().unwrap(),
+            1.0e-12
+        );
+        assert_eq!(config.successive_orders_anderson_depth().unwrap(), 3);
+        assert_eq!(config.successive_orders_damping().unwrap(), 1.0);
+        assert!(config
+            .successive_orders_altitude_grid_m()
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -1065,6 +1268,14 @@ mod tests {
 
         config.with_threading_lib(ThreadingLib::Rayon).unwrap();
         assert_eq!(config.threading_lib(), ThreadingLib::Rayon);
+
+        config
+            .with_multiple_scatter_source(MultipleScatterSource::SuccessiveOrdersLegacy)
+            .unwrap();
+        assert_eq!(
+            config.multiple_scatter_source().unwrap(),
+            MultipleScatterSource::SuccessiveOrdersLegacy
+        );
 
         config
             .with_multiple_scatter_source(MultipleScatterSource::SuccessiveOrders)
@@ -1142,6 +1353,45 @@ mod tests {
 
         config.with_num_successive_orders_outgoing(30).unwrap();
         assert_eq!(config.num_successive_orders_outgoing().unwrap(), 30);
+
+        config
+            .with_successive_orders_relative_tolerance(2.0e-7)
+            .unwrap()
+            .with_successive_orders_absolute_tolerance(3.0e-13)
+            .unwrap()
+            .with_successive_orders_anderson_depth(4)
+            .unwrap()
+            .with_successive_orders_damping(0.85)
+            .unwrap()
+            .with_successive_orders_altitude_grid_m(&[500.0, 2_500.0, 10_000.0])
+            .unwrap();
+        assert_eq!(
+            config.successive_orders_relative_tolerance().unwrap(),
+            2.0e-7
+        );
+        assert_eq!(
+            config.successive_orders_absolute_tolerance().unwrap(),
+            3.0e-13
+        );
+        assert_eq!(config.successive_orders_anderson_depth().unwrap(), 4);
+        assert_eq!(config.successive_orders_damping().unwrap(), 0.85);
+        assert_eq!(
+            config.successive_orders_altitude_grid_m().unwrap(),
+            [500.0, 2_500.0, 10_000.0]
+        );
+
+        assert!(config
+            .with_successive_orders_relative_tolerance(f64::NAN)
+            .is_err());
+        assert!(config.with_successive_orders_damping(0.0).is_err());
+        assert!(config
+            .with_successive_orders_altitude_grid_m(&[2_000.0, 1_000.0])
+            .is_err());
+        config.with_successive_orders_altitude_grid_m(&[]).unwrap();
+        assert!(config
+            .successive_orders_altitude_grid_m()
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
