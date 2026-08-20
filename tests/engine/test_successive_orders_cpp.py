@@ -142,7 +142,7 @@ def _calculate(
 
 
 def test_scalar_1d_primal_is_finite_and_nonnegative():
-    config = _config(sk.MultipleScatterSource.SuccessiveOrdersCpp)
+    config = _config(sk.MultipleScatterSource.SuccessiveOrders)
     result = _calculate(config)
 
     assert result.radiance.shape == (WAVELENGTHS_NM.size, 2, 1)
@@ -161,12 +161,12 @@ def test_fixed_iteration_solution_agrees_with_legacy_successive_orders(
     absolute_tolerance: float,
 ):
     cpp_config = _config(
-        sk.MultipleScatterSource.SuccessiveOrdersCpp,
+        sk.MultipleScatterSource.SuccessiveOrders,
         num_stokes=num_stokes,
         iterations=3,
     )
     legacy_config = _config(
-        sk.MultipleScatterSource.SuccessiveOrders,
+        sk.MultipleScatterSource.SuccessiveOrdersLegacy,
         num_stokes=num_stokes,
         iterations=3,
     )
@@ -187,18 +187,18 @@ def test_fixed_iteration_solution_agrees_with_legacy_successive_orders(
 
 def test_explicit_midpoint_altitudes_preserve_default_and_coarse_grid_is_used():
     default_config = _config(
-        sk.MultipleScatterSource.SuccessiveOrdersCpp,
+        sk.MultipleScatterSource.SuccessiveOrders,
         iterations=3,
     )
     midpoint_config = _config(
-        sk.MultipleScatterSource.SuccessiveOrdersCpp,
+        sk.MultipleScatterSource.SuccessiveOrders,
         iterations=3,
     )
     midpoint_config.successive_orders_altitude_grid_m = (
         ALTITUDES_M[:-1] + ALTITUDES_M[1:]
     ) / 2.0
     coarse_config = _config(
-        sk.MultipleScatterSource.SuccessiveOrdersCpp,
+        sk.MultipleScatterSource.SuccessiveOrders,
         iterations=3,
     )
     coarse_config.successive_orders_altitude_grid_m = np.array(
@@ -215,7 +215,7 @@ def test_explicit_midpoint_altitudes_preserve_default_and_coarse_grid_is_used():
 
 
 def test_explicit_altitudes_must_be_inside_the_model_atmosphere():
-    config = _config(sk.MultipleScatterSource.SuccessiveOrdersCpp)
+    config = _config(sk.MultipleScatterSource.SuccessiveOrders)
     config.successive_orders_altitude_grid_m = np.array([-1.0, 10_000.0])
 
     with pytest.raises(RuntimeError, match="Failed to create Engine"):
@@ -224,15 +224,15 @@ def test_explicit_altitudes_must_be_inside_the_model_atmosphere():
 
 def test_zero_tolerances_use_the_configured_fixed_iteration_count():
     one_iteration = _config(
-        sk.MultipleScatterSource.SuccessiveOrdersCpp,
+        sk.MultipleScatterSource.SuccessiveOrders,
         iterations=1,
     )
     two_iterations = _config(
-        sk.MultipleScatterSource.SuccessiveOrdersCpp,
+        sk.MultipleScatterSource.SuccessiveOrders,
         iterations=2,
     )
     early_exit = _config(
-        sk.MultipleScatterSource.SuccessiveOrdersCpp,
+        sk.MultipleScatterSource.SuccessiveOrders,
         iterations=8,
         absolute_tolerance=1.0e100,
     )
@@ -248,7 +248,7 @@ def test_zero_tolerances_use_the_configured_fixed_iteration_count():
 
 def test_fixed_iteration_result_does_not_depend_on_engine_history():
     config = _config(
-        sk.MultipleScatterSource.SuccessiveOrdersCpp,
+        sk.MultipleScatterSource.SuccessiveOrders,
         iterations=3,
     )
     geometry = _geometry()
@@ -275,7 +275,7 @@ def test_fixed_iteration_result_does_not_depend_on_engine_history():
 @pytest.mark.parametrize("num_stokes", [1, 3])
 def test_native_jvp_vjp_match_finite_difference_jacobian_and_adjoint(num_stokes):
     config = _config(
-        sk.MultipleScatterSource.SuccessiveOrdersCpp,
+        sk.MultipleScatterSource.SuccessiveOrders,
         num_stokes=num_stokes,
         iterations=60,
         relative_tolerance=1.0e-11,
@@ -357,7 +357,7 @@ def test_native_jvp_vjp_match_finite_difference_jacobian_and_adjoint(num_stokes)
 @pytest.mark.parametrize("num_stokes", [1, 3])
 def test_delta_m_native_products_match_finite_difference_and_are_adjoint(num_stokes):
     config = _config(
-        sk.MultipleScatterSource.SuccessiveOrdersCpp,
+        sk.MultipleScatterSource.SuccessiveOrders,
         num_stokes=num_stokes,
         iterations=80,
         relative_tolerance=1.0e-11,
@@ -409,11 +409,11 @@ def test_delta_m_native_products_match_finite_difference_and_are_adjoint(num_sto
 )
 def test_scalar_threading_models_match_single_thread(threading_model):
     reference_config = _config(
-        sk.MultipleScatterSource.SuccessiveOrdersCpp,
+        sk.MultipleScatterSource.SuccessiveOrders,
         iterations=4,
     )
     threaded_config = _config(
-        sk.MultipleScatterSource.SuccessiveOrdersCpp,
+        sk.MultipleScatterSource.SuccessiveOrders,
         iterations=4,
     )
     threaded_config.num_threads = 2
@@ -431,7 +431,7 @@ def test_scalar_threading_models_match_single_thread(threading_model):
 @pytest.mark.parametrize("num_stokes", [1, 3])
 def test_threaded_native_products_are_adjoint(threading_model, num_stokes):
     config = _config(
-        sk.MultipleScatterSource.SuccessiveOrdersCpp,
+        sk.MultipleScatterSource.SuccessiveOrders,
         num_stokes=num_stokes,
         iterations=60,
         relative_tolerance=1.0e-11,
@@ -468,7 +468,7 @@ def test_threaded_native_products_are_adjoint(threading_model, num_stokes):
 
 def test_native_vjp_returns_a_finite_result_without_convergence():
     config = _config(
-        sk.MultipleScatterSource.SuccessiveOrdersCpp,
+        sk.MultipleScatterSource.SuccessiveOrders,
         iterations=1,
         relative_tolerance=1.0e-15,
         absolute_tolerance=1.0e-15,
@@ -488,7 +488,7 @@ def test_native_vjp_returns_a_finite_result_without_convergence():
 
 def test_homogeneous_scalar_fast_paths_preserve_native_adjoint():
     config = _config(
-        sk.MultipleScatterSource.SuccessiveOrdersCpp,
+        sk.MultipleScatterSource.SuccessiveOrders,
         iterations=60,
         relative_tolerance=1.0e-11,
         absolute_tolerance=1.0e-13,
@@ -529,7 +529,7 @@ def test_scalar_repeated_vjp_survives_atmosphere_and_engine_lifetimes():
     active calculation objects.
     """
     config = _config(
-        sk.MultipleScatterSource.SuccessiveOrdersCpp,
+        sk.MultipleScatterSource.SuccessiveOrders,
         iterations=40,
         relative_tolerance=1.0e-9,
         absolute_tolerance=1.0e-12,

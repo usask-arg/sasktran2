@@ -51,23 +51,23 @@ namespace sasktran2 {
          *  'discrete_ordinates' Uses the discrete ordinates method to calculate
          * the multiple scatter source.
          *
-         *  'hr' Uses a successive orders of scattering method to calculate the
-         * multiple scatter source.
+         *  'successive_orders_legacy' uses the legacy successive orders of
+         * scattering implementation.
          *
          *  'twostream' Uses the two-stream approximation.
          *
          *  'none' Removes the multiple scatter source from the calculation.
          *
-         *  'successive_orders_cpp' Uses the self-contained C++ successive
-         * orders implementation.
+         *  'successive_orders' uses the successive orders of scattering
+         * implementation.
          *
          */
         enum class MultipleScatterSource {
             discrete_ordinates = 0,
-            hr = 1,
+            successive_orders_legacy = 1,
             twostream = 2,
             none = 3,
-            successive_orders_cpp = 4
+            successive_orders = 4
         };
 
         /** Enum that determines the accuracy of the weighting function solution

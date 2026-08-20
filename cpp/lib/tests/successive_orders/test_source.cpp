@@ -19,7 +19,7 @@ namespace {
         config.set_single_scatter_source(
             sasktran2::Config::SingleScatterSource::exact);
         config.set_multiple_scatter_source(
-            sasktran2::Config::MultipleScatterSource::successive_orders_cpp);
+            sasktran2::Config::MultipleScatterSource::successive_orders);
         config.set_num_hr_incoming(14);
         config.set_num_hr_outgoing(14);
         config.set_num_hr_spherical_iterations(30);

@@ -77,16 +77,21 @@ def test_config_multiple_instances():
 
 def test_multiple_scatter_source_preserves_public_integer_values():
     assert sk.MultipleScatterSource.DiscreteOrdinates == 0
-    assert sk.MultipleScatterSource.SuccessiveOrders == 1
+    assert sk.MultipleScatterSource.SuccessiveOrdersLegacy == 1
     assert sk.MultipleScatterSource.TwoStream == 2
     assert sk.MultipleScatterSource.NoSource == 3
-    assert sk.MultipleScatterSource.SuccessiveOrdersCpp == 4
+    assert sk.MultipleScatterSource.SuccessiveOrders == 4
+    assert not hasattr(sk.MultipleScatterSource, "SuccessiveOrdersCpp")
 
     config = sk.Config()
-    config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrdersCpp
+    config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrdersLegacy
     assert (
-        config.multiple_scatter_source == sk.MultipleScatterSource.SuccessiveOrdersCpp
+        config.multiple_scatter_source
+        == sk.MultipleScatterSource.SuccessiveOrdersLegacy
     )
+
+    config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
+    assert config.multiple_scatter_source == sk.MultipleScatterSource.SuccessiveOrders
 
 
 def test_num_successive_order_points_round_trip():

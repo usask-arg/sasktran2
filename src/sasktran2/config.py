@@ -271,9 +271,6 @@ class Config:
             The successive orders of scattering method is used to estimate the multiple scatter
             signal
 
-        `sasktran2.MultipleScatterSource.SuccessiveOrdersCpp`
-            The self-contained C++ successive-orders implementation is used.
-
         """
         return self._config.multiple_scatter_source
 
@@ -291,9 +288,6 @@ class Config:
         `sasktran2.MultipleScatterSource.SuccessiveOrders`
             The successive orders of scattering method is used to estimate the multiple scatter
             signal
-
-        `sasktran2.MultipleScatterSource.SuccessiveOrdersCpp`
-            The self-contained C++ successive-orders implementation is used.
 
         """
         self._config.multiple_scatter_source = value
@@ -426,7 +420,7 @@ class Config:
 
     @property
     def successive_orders_relative_tolerance(self) -> float:
-        """Relative residual tolerance for ``SuccessiveOrdersCpp``.
+        """Relative residual tolerance for ``SuccessiveOrders``.
 
         Set this and :attr:`successive_orders_absolute_tolerance` to zero to
         use a fixed iteration count. Defaults to ``1e-6``.
@@ -439,7 +433,7 @@ class Config:
 
     @property
     def successive_orders_absolute_tolerance(self) -> float:
-        """Absolute residual tolerance for ``SuccessiveOrdersCpp``.
+        """Absolute residual tolerance for ``SuccessiveOrders``.
 
         Defaults to ``1e-12``.
         """
@@ -451,7 +445,7 @@ class Config:
 
     @property
     def successive_orders_anderson_depth(self) -> int:
-        """Anderson history depth for ``SuccessiveOrdersCpp``.
+        """Anderson history depth for ``SuccessiveOrders``.
 
         Zero selects damped Picard iteration. Defaults to 3.
         """
@@ -463,7 +457,7 @@ class Config:
 
     @property
     def successive_orders_damping(self) -> float:
-        """Fixed-point damping for ``SuccessiveOrdersCpp`` in ``(0, 1]``."""
+        """Fixed-point damping for ``SuccessiveOrders`` in ``(0, 1]``."""
         return self._config.successive_orders_damping
 
     @successive_orders_damping.setter
@@ -472,7 +466,7 @@ class Config:
 
     @property
     def successive_orders_altitude_grid_m(self) -> np.ndarray | None:
-        """Explicit source-altitude grid for ``SuccessiveOrdersCpp``, in metres.
+        """Explicit source-altitude grid for ``SuccessiveOrders``, in metres.
 
         ``None`` selects the atmosphere-derived default. Explicit values must
         be finite, one-dimensional, and strictly increasing.
@@ -508,7 +502,7 @@ class Config:
         """
         If set to true, the legacy successive orders source is initialized with a source calculated with
         the discrete ordinates source instead of a single scattering source.  This greatly reduces the number
-        of iterations required for the legacy method. This setting is not used by ``SuccessiveOrdersCpp``.
+        of iterations required for the legacy method. This setting is not used by ``SuccessiveOrders``.
         """
         return self._config.init_successive_orders_with_discrete_ordinates
 
@@ -517,7 +511,7 @@ class Config:
         """
         If set to true, the legacy successive orders source is initialized with a source calculated with
         the discrete ordinates source instead of a single scattering source.  This greatly reduces the number
-        of iterations required for the legacy method. This setting is not used by ``SuccessiveOrdersCpp``.
+        of iterations required for the legacy method. This setting is not used by ``SuccessiveOrders``.
         """
         self._config.init_successive_orders_with_discrete_ordinates = value
 

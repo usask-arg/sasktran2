@@ -87,7 +87,7 @@ TEST_CASE("HR_bench Vector", "[sasktran2][engine]") {
     sasktran2::Config config;
 
     config.set_multiple_scatter_source(
-        sasktran2::Config::MultipleScatterSource::hr);
+        sasktran2::Config::MultipleScatterSource::successive_orders_legacy);
     // config.set_initialize_hr_with_do(true);
     config.set_num_hr_spherical_iterations(50);
     config.set_wf_enabled(false);

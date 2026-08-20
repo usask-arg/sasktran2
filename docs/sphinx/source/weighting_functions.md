@@ -156,7 +156,6 @@ rather than automatically generated for maximum computational efficiency.  Gener
 calculation including full derivatives to be somewhere in the range of 2-5x slower than the calculation
 without derivatives.
 
-The accuracy of the weighting functions depends on which source terms are included in the calculation.
-With the exception of the `sk.MultipleScatterSource.SuccessiveOrders` source, all other sources are
-"perfectly linearized", which means that the weighting function calculation is accurate to relative machine
-precision.  Typically we estimate this to be around 6 decimal places for most applications.
+The source terms in SASKTRAN2 are fully linearized, which means that the weighting function
+calculation is accurate to relative machine precision. Typically we estimate this to be around
+6 decimal places for most applications.

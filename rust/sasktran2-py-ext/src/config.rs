@@ -5,11 +5,11 @@ use sasktran2_rs::bindings::config;
 #[pyclass(eq, eq_int)]
 #[derive(PartialEq, Clone)]
 pub enum MultipleScatterSource {
-    DiscreteOrdinates,
-    SuccessiveOrders,
-    TwoStream,
-    NoSource,
-    SuccessiveOrdersCpp,
+    DiscreteOrdinates = 0,
+    SuccessiveOrdersLegacy = 1,
+    TwoStream = 2,
+    NoSource = 3,
+    SuccessiveOrders = 4,
 }
 
 #[pyclass(eq, eq_int)]
@@ -116,13 +116,13 @@ impl PyConfig {
             config::MultipleScatterSource::DiscreteOrdinates => {
                 MultipleScatterSource::DiscreteOrdinates
             }
-            config::MultipleScatterSource::SuccessiveOrders => {
-                MultipleScatterSource::SuccessiveOrders
+            config::MultipleScatterSource::SuccessiveOrdersLegacy => {
+                MultipleScatterSource::SuccessiveOrdersLegacy
             }
             config::MultipleScatterSource::TwoStream => MultipleScatterSource::TwoStream,
             config::MultipleScatterSource::None => MultipleScatterSource::NoSource,
-            config::MultipleScatterSource::SuccessiveOrdersCpp => {
-                MultipleScatterSource::SuccessiveOrdersCpp
+            config::MultipleScatterSource::SuccessiveOrders => {
+                MultipleScatterSource::SuccessiveOrders
             }
         }
     }
@@ -136,13 +136,13 @@ impl PyConfig {
             MultipleScatterSource::DiscreteOrdinates => {
                 config::MultipleScatterSource::DiscreteOrdinates
             }
-            MultipleScatterSource::SuccessiveOrders => {
-                config::MultipleScatterSource::SuccessiveOrders
+            MultipleScatterSource::SuccessiveOrdersLegacy => {
+                config::MultipleScatterSource::SuccessiveOrdersLegacy
             }
             MultipleScatterSource::TwoStream => config::MultipleScatterSource::TwoStream,
             MultipleScatterSource::NoSource => config::MultipleScatterSource::None,
-            MultipleScatterSource::SuccessiveOrdersCpp => {
-                config::MultipleScatterSource::SuccessiveOrdersCpp
+            MultipleScatterSource::SuccessiveOrders => {
+                config::MultipleScatterSource::SuccessiveOrders
             }
         };
         self.config

@@ -6,10 +6,10 @@ use sasktran2_sys::ffi;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MultipleScatterSource {
     DiscreteOrdinates = 0,
-    SuccessiveOrders = 1,
+    SuccessiveOrdersLegacy = 1,
     TwoStream = 2,
     None = 3,
-    SuccessiveOrdersCpp = 4,
+    SuccessiveOrders = 4,
 }
 
 #[repr(i32)]
@@ -1270,19 +1270,19 @@ mod tests {
         assert_eq!(config.threading_lib(), ThreadingLib::Rayon);
 
         config
+            .with_multiple_scatter_source(MultipleScatterSource::SuccessiveOrdersLegacy)
+            .unwrap();
+        assert_eq!(
+            config.multiple_scatter_source().unwrap(),
+            MultipleScatterSource::SuccessiveOrdersLegacy
+        );
+
+        config
             .with_multiple_scatter_source(MultipleScatterSource::SuccessiveOrders)
             .unwrap();
         assert_eq!(
             config.multiple_scatter_source().unwrap(),
             MultipleScatterSource::SuccessiveOrders
-        );
-
-        config
-            .with_multiple_scatter_source(MultipleScatterSource::SuccessiveOrdersCpp)
-            .unwrap();
-        assert_eq!(
-            config.multiple_scatter_source().unwrap(),
-            MultipleScatterSource::SuccessiveOrdersCpp
         );
 
         config
