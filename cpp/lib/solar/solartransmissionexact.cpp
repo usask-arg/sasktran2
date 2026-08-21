@@ -194,7 +194,8 @@ namespace sasktran2::solartransmission {
                         ground_hit_flag[row] = true;
                         append_empty_row(row);
                     } else {
-                        m_raytracer_2d->trace_ray(ray_to_sun, traced_ray);
+                        m_raytracer_2d->trace_ray_optical_depth(ray_to_sun,
+                                                                traced_ray);
                         append_ray(row);
                     }
                     ++row;
@@ -205,7 +206,8 @@ namespace sasktran2::solartransmission {
                     ground_hit_flag[row] = true;
                     append_empty_row(row);
                 } else {
-                    m_raytracer_2d->trace_ray(ray_to_sun, traced_ray);
+                    m_raytracer_2d->trace_ray_optical_depth(ray_to_sun,
+                                                            traced_ray);
                     append_ray(row);
                 }
                 ++row;

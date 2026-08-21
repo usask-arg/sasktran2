@@ -70,6 +70,7 @@ pub mod ffi {
             result: Pin<&mut CppTraceResult2D>,
             index: usize,
             layer: &RustTraceLayer,
+            optical_depth_only: bool,
         );
     }
 
@@ -171,6 +172,7 @@ pub mod ffi {
             look_y: f64,
             look_z: f64,
             refractive_index: &[f64],
+            optical_depth_only: bool,
             result: Pin<&mut CppTraceResult2D>,
         ) -> Result<RustTraceSummary>;
     }
@@ -311,6 +313,7 @@ fn trace_structured_ray_2d_into_cpp_result(
     look_y: f64,
     look_z: f64,
     refractive_index: &[f64],
+    optical_depth_only: bool,
     mut result: Pin<&mut ffi::CppTraceResult2D>,
 ) -> Result<ffi::RustTraceSummary> {
     let profile = if refractive_index.is_empty() {
@@ -336,12 +339,12 @@ fn trace_structured_ray_2d_into_cpp_result(
                 tracer.tracer.primitives().len(),
             )
         });
-        tracer.tracer.trace_into(
+        tracer.tracer.trace_into_for_cpp(
             ray,
             &mut storage.result,
             &mut storage.scratch,
             TraceOptions2D {
-                solar: Some(tracer.solar),
+                solar: (!optical_depth_only).then_some(tracer.solar),
                 refraction: profile.as_ref(),
             },
         );
@@ -349,7 +352,12 @@ fn trace_structured_ray_2d_into_cpp_result(
         let summary = summary_to_ffi(&storage.result);
         ffi::prepare_trace_result_2d(result.as_mut(), &summary);
         for (index, layer) in storage.result.layers.iter().enumerate() {
-            ffi::set_trace_layer_2d(result.as_mut(), index, &layer_to_ffi(layer));
+            ffi::set_trace_layer_2d(
+                result.as_mut(),
+                index,
+                &layer_to_ffi(layer),
+                optical_depth_only,
+            );
         }
         summary
     }))

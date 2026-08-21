@@ -989,6 +989,16 @@ namespace sasktran2::raytracing {
         void trace_ray(const sasktran2::viewinggeometry::ViewingRay& ray,
                        TracedRay& tracedray) const;
 
+        /** Trace only the integrated atmosphere-grid optical-depth stencil.
+         *
+         * Endpoint geometry and solar-angle metadata are omitted. This is used
+         * while constructing exact solar-transmission matrices, whose consumer
+         * reads only `TracedRay::optical_depth_weights()`.
+         */
+        void trace_ray_optical_depth(
+            const sasktran2::viewinggeometry::ViewingRay& ray,
+            TracedRay& tracedray) const;
+
         void trace_ray(const sasktran2::viewinggeometry::ViewingRay& ray,
                        const Eigen::VectorXd& refractive_index,
                        TracedRay& tracedray) const;
@@ -996,7 +1006,8 @@ namespace sasktran2::raytracing {
       private:
         void trace_ray_impl(const sasktran2::viewinggeometry::ViewingRay& ray,
                             const Eigen::VectorXd* refractive_index,
-                            TracedRay& tracedray) const;
+                            TracedRay& tracedray,
+                            bool optical_depth_only) const;
 
         const sasktran2::Geometry2D& m_geometry;
         std::unique_ptr<RustRayTracer2DImpl> m_impl;
