@@ -264,8 +264,16 @@ TEST_CASE("Successive-orders 2D geometry uses an independent horizontal "
 
     REQUIRE(source_geometry.source_altitudes_m() ==
             std::vector<double>{500.0, 2000.0});
-    REQUIRE(source_geometry.source_horizontal_angles_rad() ==
-            std::vector<double>{-0.4, -0.2, 0.0, 0.2, 0.4});
+    const std::array<double, 5> expected_horizontal_angles = {-0.4, -0.2, 0.0,
+                                                              0.2, 0.4};
+    REQUIRE(source_geometry.source_horizontal_angles_rad().size() ==
+            expected_horizontal_angles.size());
+    for (std::size_t index = 0; index < expected_horizontal_angles.size();
+         ++index) {
+        REQUIRE(
+            source_geometry.source_horizontal_angles_rad()[index] ==
+            Catch::Approx(expected_horizontal_angles[index]).margin(1.0e-13));
+    }
     REQUIRE(source_geometry.num_interior_points() == 10);
     REQUIRE(source_geometry.num_ground_points() == 5);
     REQUIRE(source_geometry.num_points() == 15);
