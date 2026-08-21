@@ -545,6 +545,23 @@ namespace sasktran2::successive_orders {
         }
     }
 
+    void SourceGeometry1D::release_incoming_traced_rays() {
+        if (m_incoming_viewing.traced_rays.size() !=
+            m_incoming_interpolation.size()) {
+            throw std::logic_error(
+                "Successive-orders incoming geometry is inconsistent");
+        }
+        for (std::size_t ray = 0; ray < m_incoming_viewing.traced_rays.size();
+             ++ray) {
+            adopt_optical_depth_storage(m_incoming_viewing.traced_rays[ray],
+                                        m_incoming_interpolation[ray]);
+        }
+        m_incoming_viewing.traced_rays.clear();
+        m_incoming_viewing.traced_rays.shrink_to_fit();
+        m_incoming_viewing.flux_observers.clear();
+        m_incoming_viewing.flux_observers.shrink_to_fit();
+    }
+
     void SourceGeometry1D::initialize(
         const sasktran2::viewinggeometry::InternalViewingGeometry&
             internal_viewing,

@@ -22,8 +22,8 @@ namespace sasktran2::solartransmission {
             for (const auto& ray : rays) {
                 rows += ray.layers.size() + 1;
             }
-            if (rows > static_cast<std::size_t>(
-                           std::numeric_limits<int>::max())) {
+            if (rows >
+                static_cast<std::size_t>(std::numeric_limits<int>::max())) {
                 throw std::length_error(
                     "Solar-table endpoint count exceeds the public index "
                     "range");
@@ -31,8 +31,7 @@ namespace sasktran2::solartransmission {
             return static_cast<int>(rows);
         }
 
-        void consolidate_weights(
-            std::vector<std::pair<int, double>>& weights) {
+        void consolidate_weights(std::vector<std::pair<int, double>>& weights) {
             std::sort(weights.begin(), weights.end(),
                       [](const auto& left, const auto& right) {
                           return left.first < right.first;
@@ -99,12 +98,12 @@ namespace sasktran2::solartransmission {
 
         std::size_t lookup_index(int azimuth, int impact, int altitude,
                                  int side) const {
-            return (((static_cast<std::size_t>(azimuth) * m_num_impacts +
-                      impact) *
-                         m_radii.size() +
-                     altitude) *
-                        2 +
-                    side);
+            return (
+                ((static_cast<std::size_t>(azimuth) * m_num_impacts + impact) *
+                     m_radii.size() +
+                 altitude) *
+                    2 +
+                side);
         }
 
         int node(int azimuth, const SliceEntry& entry, int altitude) const {
@@ -128,8 +127,7 @@ namespace sasktran2::solartransmission {
                     "Solar-table segment count exceeds the compact offset "
                     "range");
             }
-            return static_cast<std::uint32_t>(
-                m_segment_weight_counts.size());
+            return static_cast<std::uint32_t>(m_segment_weight_counts.size());
         }
 
         int altitude_index(double radius) const {
@@ -148,9 +146,9 @@ namespace sasktran2::solartransmission {
                                 ? upper_index - 1
                                 : upper_index;
             }
-            const double tolerance =
-                std::max(1.0e-3, 128.0 * std::numeric_limits<double>::epsilon() *
-                                       m_radii[candidate]);
+            const double tolerance = std::max(
+                1.0e-3, 128.0 * std::numeric_limits<double>::epsilon() *
+                            m_radii[candidate]);
             return std::abs(radius - m_radii[candidate]) <= tolerance
                        ? candidate
                        : -1;
@@ -196,12 +194,11 @@ namespace sasktran2::solartransmission {
             const auto& refractive_index = m_geometry.refractive_index();
             const double top_radius = m_radii.back();
             const double top_parameter =
-                top_radius * (refracted ? refractive_index[m_radii.size() - 1]
-                                        : 1.0);
-            const double grazing_parameter =
-                std::min(std::nextafter(top_parameter, 0.0),
-                         m_radii.front() *
-                             (refracted ? refractive_index[0] : 1.0));
+                top_radius *
+                (refracted ? refractive_index[m_radii.size() - 1] : 1.0);
+            const double grazing_parameter = std::min(
+                std::nextafter(top_parameter, 0.0),
+                m_radii.front() * (refracted ? refractive_index[0] : 1.0));
 
             m_impact_parameters.clear();
             const int interior_count =
@@ -237,8 +234,9 @@ namespace sasktran2::solartransmission {
                 static_cast<std::size_t>(m_num_azimuths) * m_num_impacts;
             const std::size_t estimated_segments =
                 rays * static_cast<std::size_t>(
-                           3 * (m_geometry.num_altitudes() +
-                                m_geometry.num_horizontal_locations()) /
+                           3 *
+                           (m_geometry.num_altitudes() +
+                            m_geometry.num_horizontal_locations()) /
                            2);
             m_ray_segment_offsets.assign(rays + 1, 0);
             m_segment_weight_counts.clear();
@@ -273,9 +271,8 @@ namespace sasktran2::solartransmission {
             return result;
         }
 
-        void append_segment(
-            const sasktran2::raytracing::TracedRay& ray,
-            std::size_t layer_index, std::int32_t node_after) {
+        void append_segment(const sasktran2::raytracing::TracedRay& ray,
+                            std::size_t layer_index, std::int32_t node_after) {
             const auto weights = ray.optical_depth_weights(layer_index);
             if (weights.size() > maximum_segment_weights) {
                 throw std::logic_error(
@@ -313,15 +310,13 @@ namespace sasktran2::solartransmission {
                     ? m_geometry.refractive_index()[m_radii.size() - 1]
                     : 1.0;
             const double geometric_impact = impact / top_refractive_index;
-            const double toa_along_sun =
-                std::sqrt(std::max(0.0, top_radius * top_radius -
-                                            geometric_impact *
-                                                geometric_impact));
+            const double toa_along_sun = std::sqrt(
+                std::max(0.0, top_radius * top_radius -
+                                  geometric_impact * geometric_impact));
             const double observer_radius = top_radius + 1.0;
-            const double observer_along_sun =
-                std::sqrt(std::max(0.0, observer_radius * observer_radius -
-                                            geometric_impact *
-                                                geometric_impact));
+            const double observer_along_sun = std::sqrt(
+                std::max(0.0, observer_radius * observer_radius -
+                                  geometric_impact * geometric_impact));
             const Eigen::Vector3d transverse =
                 geometric_impact * impact_direction(azimuth);
             const Eigen::Vector3d toa_position =
@@ -397,10 +392,9 @@ namespace sasktran2::solartransmission {
         bool straight_ray_hits_ground(const Location& location) const {
             const double ground_radius = m_radii.front();
             const double projected_distance = location.position.dot(m_sun);
-            double discriminant =
-                projected_distance * projected_distance -
-                (location.position.squaredNorm() -
-                 ground_radius * ground_radius);
+            double discriminant = projected_distance * projected_distance -
+                                  (location.position.squaredNorm() -
+                                   ground_radius * ground_radius);
             const double scale =
                 std::max({1.0, projected_distance * projected_distance,
                           std::abs(location.position.squaredNorm() -
@@ -461,21 +455,19 @@ namespace sasktran2::solartransmission {
             if (cos_sza >= slice.back().cos_sza) {
                 return {{{&slice.back(), 1.0}, {&slice.back(), 0.0}}};
             }
-            const auto upper = std::upper_bound(
-                slice.begin(), slice.end(), cos_sza,
-                [](double value, const SliceEntry& entry) {
-                    return value < entry.cos_sza;
-                });
+            const auto upper =
+                std::upper_bound(slice.begin(), slice.end(), cos_sza,
+                                 [](double value, const SliceEntry& entry) {
+                                     return value < entry.cos_sza;
+                                 });
             const auto lower = upper - 1;
             const double width = upper->cos_sza - lower->cos_sza;
             if (std::abs(width) <=
                 32.0 * std::numeric_limits<double>::epsilon()) {
                 return {{{&*lower, 1.0}, {&*lower, 0.0}}};
             }
-            const double upper_weight =
-                (cos_sza - lower->cos_sza) / width;
-            return {{{&*lower, 1.0 - upper_weight},
-                     {&*upper, upper_weight}}};
+            const double upper_weight = (cos_sza - lower->cos_sza) / width;
+            return {{{&*lower, 1.0 - upper_weight}, {&*upper, upper_weight}}};
         }
 
         double visibility_limit(
@@ -487,18 +479,17 @@ namespace sasktran2::solartransmission {
             return result;
         }
 
-        Eigen::Vector3d node_propagation_direction(
-            int azimuth_index, const SliceEntry& entry,
-            int altitude_index) const {
+        Eigen::Vector3d node_propagation_direction(int azimuth_index,
+                                                   const SliceEntry& entry,
+                                                   int altitude_index) const {
             if (!m_config->solar_refraction()) {
                 return -m_sun;
             }
-            const double cos_sza =
-                std::clamp(entry.cos_sza, -1.0, 1.0);
+            const double cos_sza = std::clamp(entry.cos_sza, -1.0, 1.0);
             const double sin_sza =
                 std::sqrt(std::max(0.0, 1.0 - cos_sza * cos_sza));
-            const double azimuth = two_pi * azimuth_index /
-                                   static_cast<double>(m_num_azimuths);
+            const double azimuth =
+                two_pi * azimuth_index / static_cast<double>(m_num_azimuths);
             const Eigen::Vector3d transverse = impact_direction(azimuth);
             const Eigen::Vector3d radial =
                 cos_sza * m_sun + sin_sza * transverse;
@@ -506,10 +497,10 @@ namespace sasktran2::solartransmission {
                 -sin_sza * m_sun + cos_sza * transverse;
             const double refractive_index =
                 m_geometry.refractive_index()[altitude_index];
-            const double sin_alpha = std::clamp(
-                m_impact_parameters[entry.impact_index] /
-                    (refractive_index * m_radii[altitude_index]),
-                0.0, 1.0);
+            const double sin_alpha =
+                std::clamp(m_impact_parameters[entry.impact_index] /
+                               (refractive_index * m_radii[altitude_index]),
+                           0.0, 1.0);
             const double cos_alpha =
                 std::sqrt(std::max(0.0, 1.0 - sin_alpha * sin_alpha));
             const double radial_sign = entry.side == 0 ? -1.0 : 1.0;
@@ -552,18 +543,17 @@ namespace sasktran2::solartransmission {
             // The off-plane axis still scales with horizontal atmospheric
             // resolution, but half-resolution is a substantially better
             // setup/memory tradeoff for the smoothly interpolated OD field.
-            m_num_azimuths = std::max(
-                8, (m_geometry.num_horizontal_locations() + 1) / 2);
+            m_num_azimuths =
+                std::max(8, (m_geometry.num_horizontal_locations() + 1) / 2);
             construct_impact_grid();
             m_compact_indices =
                 m_geometry.size() <=
                 static_cast<int>(std::numeric_limits<std::uint16_t>::max()) + 1;
             m_num_nodes = 0;
             m_altitude_slices.assign(m_radii.size(), {});
-            m_node_lookup.assign(
-                static_cast<std::size_t>(m_num_azimuths) * m_num_impacts *
-                    m_radii.size() * 2,
-                -1);
+            m_node_lookup.assign(static_cast<std::size_t>(m_num_azimuths) *
+                                     m_num_impacts * m_radii.size() * 2,
+                                 -1);
             reserve_characteristics();
 
             for (int azimuth = 0; azimuth < m_num_azimuths; ++azimuth) {
@@ -583,20 +573,17 @@ namespace sasktran2::solartransmission {
 
         void interpolation_weights(
             const Location& location,
-            std::vector<std::pair<int, double>>& result,
-            bool& ground_hit,
+            std::vector<std::pair<int, double>>& result, bool& ground_hit,
             Eigen::Vector3d* solar_propagation_direction = nullptr) const {
             result.clear();
             const double radius = location.radius();
             const Eigen::Vector3d radial = location.position / radius;
-            const double cos_sza =
-                std::clamp(radial.dot(m_sun), -1.0, 1.0);
+            const double cos_sza = std::clamp(radial.dot(m_sun), -1.0, 1.0);
             const auto altitude = altitude_weights(radius);
 
-            ground_hit =
-                m_config->solar_refraction()
-                    ? cos_sza < visibility_limit(altitude) - 1.0e-12
-                    : straight_ray_hits_ground(location);
+            ground_hit = m_config->solar_refraction()
+                             ? cos_sza < visibility_limit(altitude) - 1.0e-12
+                             : straight_ray_hits_ground(location);
             if (ground_hit) {
                 if (solar_propagation_direction != nullptr) {
                     *solar_propagation_direction = -m_sun;
@@ -649,10 +636,9 @@ namespace sasktran2::solartransmission {
             }
             consolidate_weights(result);
             if (solar_propagation_direction != nullptr) {
-                *solar_propagation_direction =
-                    direction.squaredNorm() > 1.0e-28
-                        ? direction.normalized()
-                        : -m_sun;
+                *solar_propagation_direction = direction.squaredNorm() > 1.0e-28
+                                                   ? direction.normalized()
+                                                   : -m_sun;
             }
         }
 
@@ -691,13 +677,11 @@ namespace sasktran2::solartransmission {
                         ++row;
                     }
                     bool ground_hit = false;
-                    interpolation_weights(ray.layers[layer].entrance, weights,
-                                          ground_hit,
-                                          solar_propagation_directions ==
-                                                  nullptr
-                                              ? nullptr
-                                              : &(*solar_propagation_directions)
-                                                     [row]);
+                    interpolation_weights(
+                        ray.layers[layer].entrance, weights, ground_hit,
+                        solar_propagation_directions == nullptr
+                            ? nullptr
+                            : &(*solar_propagation_directions)[row]);
                     ground_hit_flag[row] = ground_hit;
                     interpolator.append_row(weights);
                     ++row;
@@ -708,7 +692,8 @@ namespace sasktran2::solartransmission {
                 "Geometry2D solar table interpolation: {} rows, {} entries, "
                 "{} ground-blocked rows",
                 interpolator.rows(), interpolator.non_zeros(),
-                std::count(ground_hit_flag.begin(), ground_hit_flag.end(), true));
+                std::count(ground_hit_flag.begin(), ground_hit_flag.end(),
+                           true));
         }
 
         void generate_solar_geometry(
@@ -730,17 +715,15 @@ namespace sasktran2::solartransmission {
                     if (layer == 0) {
                         bool ground_hit = false;
                         interpolation_weights(
-                            ray.layers[layer].exit, unused_weights,
-                            ground_hit,
+                            ray.layers[layer].exit, unused_weights, ground_hit,
                             &solar_propagation_directions[row]);
                         ground_hit_flag[row] = ground_hit;
                         ++row;
                     }
                     bool ground_hit = false;
-                    interpolation_weights(
-                        ray.layers[layer].entrance, unused_weights,
-                        ground_hit,
-                        &solar_propagation_directions[row]);
+                    interpolation_weights(ray.layers[layer].entrance,
+                                          unused_weights, ground_hit,
+                                          &solar_propagation_directions[row]);
                     ground_hit_flag[row] = ground_hit;
                     ++row;
                 }
@@ -781,10 +764,10 @@ namespace sasktran2::solartransmission {
             }
         }
 
-        void accumulate_transpose(
-            Eigen::Ref<const Eigen::VectorXd> table_cotangent,
-            Eigen::Ref<Eigen::VectorXd> extinction_cotangent,
-            double scale) const {
+        void
+        accumulate_transpose(Eigen::Ref<const Eigen::VectorXd> table_cotangent,
+                             Eigen::Ref<Eigen::VectorXd> extinction_cotangent,
+                             double scale) const {
             if (table_cotangent.size() != table_size() ||
                 extinction_cotangent.size() != atmosphere_size()) {
                 throw std::invalid_argument(
@@ -885,8 +868,7 @@ namespace sasktran2::solartransmission {
 
     void SolarTransmissionTable2D::accumulate_transpose(
         Eigen::Ref<const Eigen::VectorXd> table_cotangent,
-        Eigen::Ref<Eigen::VectorXd> extinction_cotangent,
-        double scale) const {
+        Eigen::Ref<Eigen::VectorXd> extinction_cotangent, double scale) const {
         m_impl->accumulate_transpose(table_cotangent, extinction_cotangent,
                                      scale);
     }

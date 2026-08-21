@@ -98,8 +98,8 @@ namespace {
         REQUIRE(row_offsets.back() == static_cast<int>(column_indices.size()));
         for (std::size_t row = 0; row < rays.size(); ++row) {
             const auto& ray = rays[row];
-            REQUIRE(ray.traced_ray != nullptr);
-            REQUIRE(ray.layers.size() == ray.traced_ray->layers.size());
+            REQUIRE((ray.traced_ray != nullptr || ray.layers.empty() ||
+                     !ray.optical_depth_weights.empty()));
             REQUIRE(ray.transport_value_offset ==
                     static_cast<std::size_t>(row_offsets[row]));
             REQUIRE(ray.transport_row_nnz ==
@@ -111,6 +111,12 @@ namespace {
             REQUIRE(std::adjacent_find(begin, end) == end);
             for (std::size_t layer = 0; layer < ray.layers.size(); ++layer) {
                 require_sorted(ray.atmosphere_for_layer(layer));
+                const auto optical_depth = ray.optical_depth_for_layer(layer);
+                for (std::size_t index = 1; index < optical_depth.size();
+                     ++index) {
+                    REQUIRE(optical_depth[index - 1].first <=
+                            optical_depth[index].first);
+                }
                 const auto source = ray.source_for_layer(layer);
                 for (const auto& weight : source) {
                     REQUIRE(weight.source_index >= 0);
@@ -193,8 +199,10 @@ TEST_CASE("Successive-orders 1D geometry compiles midpoint source and LOS "
             static_cast<std::size_t>(source_geometry.total_num_incoming()));
     for (std::size_t ray = 0; ray < source_geometry.incoming_rays().size();
          ++ray) {
-        REQUIRE(source_geometry.incoming_interpolation()[ray].traced_ray ==
-                &source_geometry.incoming_rays()[ray]);
+        REQUIRE(source_geometry.incoming_interpolation()[ray].layers.size() ==
+                source_geometry.incoming_rays()[ray].layers.size());
+        REQUIRE(source_geometry.incoming_interpolation()[ray].ground_is_hit() ==
+                source_geometry.incoming_rays()[ray].ground_is_hit);
     }
     for (const auto& point : source_geometry.source_points()) {
         require_sorted(point.atmosphere_weights());

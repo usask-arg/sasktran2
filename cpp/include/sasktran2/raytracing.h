@@ -197,6 +197,19 @@ namespace sasktran2::raytracing {
             return grid_weight_indices.size();
         }
 
+        /** Transfers the integrated optical-depth stencil out of this ray.
+         * All endpoint stencil views are invalidated. This is intended for
+         * construction-time conversion to a smaller runtime representation. */
+        void release_optical_depth_storage(std::vector<int>& indices,
+                                           std::vector<double>& weights) {
+            indices = std::move(grid_weight_indices);
+            weights = std::move(integrated_od_weights);
+            entrance_grid_weights.clear();
+            entrance_grid_weights.shrink_to_fit();
+            exit_grid_weights.clear();
+            exit_grid_weights.shrink_to_fit();
+        }
+
         /** Appends one layer's common node list and three aligned weight lists.
          *
          * The caller defines the node order and must use the same order in all

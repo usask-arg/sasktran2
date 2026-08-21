@@ -146,6 +146,10 @@ namespace sasktran2::successive_orders {
             return m_los_interpolation;
         }
 
+        /** Releases the construction-only diffuse traced layers after all
+         * scalar consumers have compiled their compact geometry. */
+        void release_incoming_traced_rays();
+
         /** CSR topology for outgoing-source transport to incoming rays. */
         const std::vector<int>& transport_row_offsets() const {
             return m_transport_row_offsets;

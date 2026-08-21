@@ -351,6 +351,9 @@ namespace sasktran2::successive_orders {
                 cotangent.setZero(output_size);
             }
             m_first_order.initialize_geometry(m_source_geometry);
+            if (m_first_order.can_release_incoming_geometry()) {
+                m_source_geometry.release_incoming_traced_rays();
+            }
             m_geometry_initialized = true;
         }
 
