@@ -674,9 +674,7 @@ def main() -> None:
         config = sk.Config()
         config.single_scatter_source = sk.SingleScatterSource.Exact
         if args.multiple_scattering == "successive-orders":
-            config.multiple_scatter_source = (
-                sk.MultipleScatterSource.SuccessiveOrdersCpp
-            )
+            config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
             config.num_sza = args.num_sza
             altitude_edges_m = np.linspace(
                 data.atmosphere_altitude_m[0],

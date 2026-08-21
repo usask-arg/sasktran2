@@ -987,7 +987,7 @@ class OrbitalPlaneEngine(Engine):
             or config.multiple_scatter_source
             not in (
                 sk.MultipleScatterSource.NoSource,
-                sk.MultipleScatterSource.SuccessiveOrdersCpp,
+                sk.MultipleScatterSource.SuccessiveOrders,
             )
             or config.emission_source
             not in (
@@ -1003,8 +1003,7 @@ class OrbitalPlaneEngine(Engine):
             )
             raise NotImplementedError(msg)
         if (
-            config.multiple_scatter_source
-            == sk.MultipleScatterSource.SuccessiveOrdersCpp
+            config.multiple_scatter_source == sk.MultipleScatterSource.SuccessiveOrders
             and config.multiple_scatter_refraction
         ):
             msg = (

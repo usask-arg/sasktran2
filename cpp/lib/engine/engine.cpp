@@ -48,11 +48,6 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::initialize() {
             throw std::invalid_argument(
                 "Geometry2D does not yet support flux observers");
         }
-        if (m_config.solar_refraction()) {
-            throw std::invalid_argument(
-                "Geometry2D supports line-of-sight refraction only; solar "
-                "refraction is not supported");
-        }
         if (m_config.multiple_scatter_source() ==
                 sasktran2::Config::MultipleScatterSource::successive_orders &&
             m_config.multiple_scatter_refraction()) {

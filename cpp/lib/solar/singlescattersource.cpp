@@ -32,8 +32,7 @@ namespace sasktran2::solartransmission {
         bool materialized_derivative_storage) {
         // Store the atmosphere for later
         m_atmosphere = &atmosphere;
-        this->m_phase_handler.initialize_atmosphere(atmosphere,
-                                                    !native_products);
+        this->m_phase_handler.initialize_atmosphere(atmosphere);
 
         if constexpr (compact_2d_table) {
             if (materialized_derivative_storage && atmosphere.num_deriv() > 0) {

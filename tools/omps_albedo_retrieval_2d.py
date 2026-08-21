@@ -31,7 +31,9 @@ from scipy.optimize import OptimizeResult, minimize
 class FixedManual(sk.constituent.Manual):
     """A native optical state that intentionally exposes no retrieval derivative."""
 
-    def register_derivative(self, atmo: sk.Atmosphere, name: str) -> None:  # noqa: ARG002
+    def register_derivative(
+        self, atmo: sk.Atmosphere, name: str
+    ) -> None:  # noqa: ARG002
         return
 
 
@@ -435,7 +437,7 @@ def main() -> None:
 
     config = sk.Config()
     config.single_scatter_source = sk.SingleScatterSource.Exact
-    config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrdersCpp
+    config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
     config.occultation_source = sk.OccultationSource.NoSource
     config.los_refraction = not args.no_refraction
     config.num_sza = args.num_sza

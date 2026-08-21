@@ -1294,7 +1294,7 @@ def test_successive_orders_runs_across_multiple_groups_without_single_scatter():
     config = sk.Config()
     config.num_threads = 1
     config.single_scatter_source = sk.SingleScatterSource.NoSource
-    config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrdersCpp
+    config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
     config.num_sza = 2
     config.successive_orders_altitude_grid_m = np.array([5_000.0, 25_000.0, 55_000.0])
     config.num_successive_orders_incoming = 6
@@ -1983,7 +1983,7 @@ def test_lambertian_surface_2d_parameter_layout(albedo, expected_dims):
     [
         (False, sk.MultipleScatterSource.NoSource),
         (True, sk.MultipleScatterSource.NoSource),
-        (False, sk.MultipleScatterSource.SuccessiveOrdersCpp),
+        (False, sk.MultipleScatterSource.SuccessiveOrders),
     ],
 )
 def test_lambertian_surface_2d_varies_at_ground_intersections_and_linearizes(
@@ -2032,7 +2032,7 @@ def test_lambertian_surface_2d_varies_at_ground_intersections_and_linearizes(
     config.single_scatter_source = sk.SingleScatterSource.Exact
     config.multiple_scatter_source = multiple_scatter
     config.los_refraction = refraction
-    if multiple_scatter == sk.MultipleScatterSource.SuccessiveOrdersCpp:
+    if multiple_scatter == sk.MultipleScatterSource.SuccessiveOrders:
         config.num_threads = 1
         config.num_sza = 2
         config.successive_orders_altitude_grid_m = np.array(
@@ -2054,7 +2054,7 @@ def test_lambertian_surface_2d_varies_at_ground_intersections_and_linearizes(
         extinction,
         (
             np.full_like(extinction, 0.5)
-            if multiple_scatter == sk.MultipleScatterSource.SuccessiveOrdersCpp
+            if multiple_scatter == sk.MultipleScatterSource.SuccessiveOrders
             else np.zeros_like(extinction)
         ),
     )
