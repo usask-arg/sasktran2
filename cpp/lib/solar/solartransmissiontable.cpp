@@ -3,6 +3,113 @@
 
 namespace sasktran2::solartransmission {
 
+    void SolarTableInterpolation::clear() {
+        std::vector<std::uint32_t>().swap(m_outer);
+        std::vector<std::uint32_t>().swap(m_inner);
+        std::vector<double>().swap(m_values);
+        m_rows = 0;
+        m_cols = 0;
+        m_next_row = 0;
+    }
+
+    void SolarTableInterpolation::initialize(Eigen::Index rows,
+                                             Eigen::Index cols,
+                                             Eigen::Index capacity) {
+        if (rows < 0 || cols < 0 || capacity < 0 ||
+            cols > static_cast<Eigen::Index>(
+                       std::numeric_limits<std::uint32_t>::max())) {
+            throw std::invalid_argument(
+                "Invalid compact solar interpolation dimensions");
+        }
+        m_rows = rows;
+        m_cols = cols;
+        m_next_row = 0;
+        m_outer.assign(static_cast<std::size_t>(rows) + 1, 0);
+        m_inner.clear();
+        m_values.clear();
+        m_inner.reserve(static_cast<std::size_t>(capacity));
+        m_values.reserve(static_cast<std::size_t>(capacity));
+    }
+
+    void SolarTableInterpolation::append_row(
+        const std::vector<std::pair<int, double>>& interpolation_weights) {
+        if (m_next_row >= m_rows) {
+            throw std::logic_error(
+                "Too many rows appended to compact solar interpolation");
+        }
+        m_outer[static_cast<std::size_t>(m_next_row)] =
+            static_cast<std::uint32_t>(m_values.size());
+        for (const auto& [column, value] : interpolation_weights) {
+            if (column < 0 || column >= m_cols || !std::isfinite(value)) {
+                throw std::invalid_argument(
+                    "Invalid compact solar interpolation entry");
+            }
+            if (value == 0.0) {
+                continue;
+            }
+            if (m_values.size() == std::numeric_limits<std::uint32_t>::max()) {
+                throw std::length_error(
+                    "Compact solar interpolation has too many entries");
+            }
+            m_inner.push_back(static_cast<std::uint32_t>(column));
+            m_values.push_back(value);
+        }
+        ++m_next_row;
+    }
+
+    void SolarTableInterpolation::finalize() {
+        if (m_next_row != m_rows) {
+            throw std::logic_error(
+                "Compact solar interpolation has missing rows");
+        }
+        m_outer[static_cast<std::size_t>(m_rows)] =
+            static_cast<std::uint32_t>(m_values.size());
+        m_inner.shrink_to_fit();
+        m_values.shrink_to_fit();
+    }
+
+    void SolarTableInterpolation::apply(
+        Eigen::Ref<const Eigen::VectorXd> table_values,
+        Eigen::Ref<Eigen::VectorXd> endpoint_values) const {
+        if (table_values.size() != m_cols || endpoint_values.size() != m_rows) {
+            throw std::invalid_argument(
+                "Invalid compact solar interpolation product dimensions");
+        }
+        for (Eigen::Index row = 0; row < m_rows; ++row) {
+            double result = 0.0;
+            const auto begin = m_outer[static_cast<std::size_t>(row)];
+            const auto end = m_outer[static_cast<std::size_t>(row) + 1];
+            for (std::uint32_t entry = begin; entry < end; ++entry) {
+                result += m_values[entry] * table_values(m_inner[entry]);
+            }
+            endpoint_values(row) = result;
+        }
+    }
+
+    void SolarTableInterpolation::apply_transpose(
+        Eigen::Ref<const Eigen::VectorXd> endpoint_values,
+        Eigen::Ref<Eigen::VectorXd> table_values) const {
+        if (endpoint_values.size() != m_rows || table_values.size() != m_cols) {
+            throw std::invalid_argument(
+                "Invalid compact solar interpolation transpose dimensions");
+        }
+        table_values.setZero();
+        for (Eigen::Index row = 0; row < m_rows; ++row) {
+            const double value = endpoint_values(row);
+            const auto begin = m_outer[static_cast<std::size_t>(row)];
+            const auto end = m_outer[static_cast<std::size_t>(row) + 1];
+            for (std::uint32_t entry = begin; entry < end; ++entry) {
+                table_values(m_inner[entry]) += m_values[entry] * value;
+            }
+        }
+    }
+
+    std::size_t SolarTableInterpolation::storage_bytes() const {
+        return m_outer.capacity() * sizeof(std::uint32_t) +
+               m_inner.capacity() * sizeof(std::uint32_t) +
+               m_values.capacity() * sizeof(double);
+    }
+
     void SolarTransmissionTable::initialize_geometry(
         const std::vector<sasktran2::raytracing::TracedRay>& integration_rays) {
         // find the min/max SZA from the LOS rays and generate the cos_sza_grid
@@ -128,5 +235,81 @@ namespace sasktran2::solartransmission {
             }
         }
         interpolator.setFromTriplets(tripletList.begin(), tripletList.end());
+    }
+
+    void SolarTransmissionTable::generate_interpolation(
+        const std::vector<sasktran2::raytracing::TracedRay>& rays,
+        SolarTableInterpolation& interpolator,
+        std::vector<bool>& ground_hit_flag,
+        std::vector<Eigen::Vector3d>* solar_propagation_directions) const {
+        Eigen::Index numpoints = 0;
+        for (const auto& ray : rays) {
+            numpoints += static_cast<Eigen::Index>(ray.layers.size()) + 1;
+        }
+        interpolator.initialize(numpoints,
+                                m_location_interpolator->num_interior_points(),
+                                numpoints * 4);
+        ground_hit_flag.assign(static_cast<std::size_t>(numpoints), false);
+        if (solar_propagation_directions != nullptr) {
+            solar_propagation_directions->assign(
+                static_cast<std::size_t>(numpoints),
+                -m_geometry.coordinates().sun_unit());
+        }
+
+        std::vector<std::pair<int, double>> weights;
+        int num_weights = 0;
+        for (const auto& ray : rays) {
+            if (ray.layers.empty()) {
+                weights.clear();
+                interpolator.append_row(weights);
+                continue;
+            }
+            for (int layer_index = 0; layer_index < ray.layers.size();
+                 ++layer_index) {
+                const auto& layer = ray.layers[layer_index];
+                if (layer_index == 0) {
+                    m_location_interpolator->interior_interpolation_weights(
+                        m_geometry.coordinates(), layer.exit, weights,
+                        num_weights);
+                    weights.resize(num_weights);
+                    interpolator.append_row(weights);
+                }
+                m_location_interpolator->interior_interpolation_weights(
+                    m_geometry.coordinates(), layer.entrance, weights,
+                    num_weights);
+                weights.resize(num_weights);
+                interpolator.append_row(weights);
+            }
+        }
+        interpolator.finalize();
+    }
+
+    void
+    SolarTransmissionTable::apply(Eigen::Ref<const Eigen::VectorXd> extinction,
+                                  Eigen::Ref<Eigen::VectorXd> table_od) const {
+        if (extinction.size() != m_geometry_matrix.cols() ||
+            table_od.size() != m_geometry_matrix.rows()) {
+            throw std::invalid_argument(
+                "Invalid 1D solar-table product dimensions");
+        }
+        table_od.noalias() = m_geometry_matrix * extinction;
+    }
+
+    void SolarTransmissionTable::accumulate_transpose(
+        Eigen::Ref<const Eigen::VectorXd> table_cotangent,
+        Eigen::Ref<Eigen::VectorXd> extinction_cotangent, double scale) const {
+        if (table_cotangent.size() != m_geometry_matrix.rows() ||
+            extinction_cotangent.size() != m_geometry_matrix.cols()) {
+            throw std::invalid_argument(
+                "Invalid 1D solar-table transpose dimensions");
+        }
+        extinction_cotangent.noalias() +=
+            scale * m_geometry_matrix.transpose() * table_cotangent;
+    }
+
+    std::size_t SolarTransmissionTable::storage_bytes() const {
+        return static_cast<std::size_t>(m_geometry_matrix.size()) *
+                   sizeof(double) +
+               m_ground_hit_flag.capacity() * sizeof(bool);
     }
 } // namespace sasktran2::solartransmission

@@ -191,6 +191,244 @@ def test_2d_successive_orders_rejects_diffuse_refraction():
         sk.Engine(config, geometry2d(), viewing_geometry())
 
 
+def test_2d_successive_orders_supports_solar_refraction():
+    geometry = geometry2d()
+    geometry.refractive_index = np.array([1.001, 1.0004, 1.0])
+
+    straight_config = successive_orders_config(
+        single_scatter_source=sk.SingleScatterSource.NoSource
+    )
+    refracted_config = successive_orders_config(
+        single_scatter_source=sk.SingleScatterSource.NoSource
+    )
+    refracted_config.solar_refraction = True
+
+    straight = (
+        sk.Engine(straight_config, geometry, viewing_geometry())
+        .calculate_radiance(atmosphere(geometry, straight_config))
+        .radiance.values
+    )
+    refracted = (
+        sk.Engine(refracted_config, geometry, viewing_geometry())
+        .calculate_radiance(atmosphere(geometry, refracted_config))
+        .radiance.values
+    )
+
+    assert np.all(np.isfinite(refracted))
+    assert not np.allclose(refracted, straight, rtol=1.0e-8, atol=0.0)
+
+    refracted_config.num_successive_orders_iterations = 60
+    refracted_config.successive_orders_relative_tolerance = 1.0e-11
+    refracted_config.successive_orders_absolute_tolerance = 1.0e-13
+    refracted_config.successive_orders_anderson_depth = 3
+    linearization = sk.Engine(refracted_config, geometry, viewing_geometry()).linearize(
+        atmosphere(
+            geometry,
+            refracted_config,
+            horizontal_slope=0.3,
+            calculate_derivatives=True,
+        )
+    )
+    tangent = linearization.tangent_template[["extinction"]]
+    tangent["extinction"].data[:] = np.linspace(
+        -2.0e-7, 3.0e-7, tangent["extinction"].size
+    ).reshape(tangent["extinction"].shape)
+    cotangent = xr.ones_like(linearization.value)
+    jvp = linearization.jvp(tangent)
+    gradient = linearization.vjp(cotangent, parameters=("extinction",))
+    np.testing.assert_allclose(
+        float((jvp * cotangent).sum()),
+        float((tangent["extinction"] * gradient["extinction"]).sum()),
+        rtol=3.0e-8,
+        atol=3.0e-11,
+    )
+
+
+def test_2d_successive_orders_unity_solar_refraction_matches_straight_paths():
+    geometry = geometry2d()
+    straight_config = successive_orders_config(
+        single_scatter_source=sk.SingleScatterSource.NoSource
+    )
+    refracted_config = successive_orders_config(
+        single_scatter_source=sk.SingleScatterSource.NoSource
+    )
+    refracted_config.solar_refraction = True
+
+    straight = (
+        sk.Engine(straight_config, geometry, viewing_geometry())
+        .calculate_radiance(atmosphere(geometry, straight_config))
+        .radiance.values
+    )
+    refracted = (
+        sk.Engine(refracted_config, geometry, viewing_geometry())
+        .calculate_radiance(atmosphere(geometry, refracted_config))
+        .radiance.values
+    )
+
+    np.testing.assert_allclose(refracted, straight, rtol=2.0e-12, atol=1.0e-14)
+
+
+@pytest.mark.parametrize(
+    "single_source",
+    [sk.SingleScatterSource.Exact, sk.SingleScatterSource.Table],
+)
+@pytest.mark.parametrize("num_stokes", [1, 3])
+def test_2d_single_scatter_supports_solar_refraction(single_source, num_stokes):
+    geometry = geometry2d()
+    geometry.refractive_index = np.array([1.001, 1.0004, 1.0])
+    straight_config = successive_orders_config(
+        num_stokes=num_stokes,
+        single_scatter_source=single_source,
+        multiple_scatter_source=sk.MultipleScatterSource.NoSource,
+    )
+    refracted_config = successive_orders_config(
+        num_stokes=num_stokes,
+        single_scatter_source=single_source,
+        multiple_scatter_source=sk.MultipleScatterSource.NoSource,
+    )
+    refracted_config.solar_refraction = True
+
+    straight = (
+        sk.Engine(straight_config, geometry, viewing_geometry())
+        .calculate_radiance(atmosphere(geometry, straight_config))
+        .radiance.values
+    )
+    refracted = (
+        sk.Engine(refracted_config, geometry, viewing_geometry())
+        .calculate_radiance(atmosphere(geometry, refracted_config))
+        .radiance.values
+    )
+
+    assert np.all(np.isfinite(refracted))
+    assert refracted[0, 0, 0] > 0.0
+    assert not np.allclose(refracted, straight, rtol=1.0e-8, atol=0.0)
+
+
+@pytest.mark.parametrize(
+    "single_source",
+    [sk.SingleScatterSource.Exact, sk.SingleScatterSource.Table],
+)
+@pytest.mark.parametrize("num_stokes", [1, 3])
+def test_2d_single_scatter_unity_solar_refraction_matches_straight(
+    single_source, num_stokes
+):
+    geometry = geometry2d()
+    straight_config = successive_orders_config(
+        num_stokes=num_stokes,
+        single_scatter_source=single_source,
+        multiple_scatter_source=sk.MultipleScatterSource.NoSource,
+    )
+    refracted_config = successive_orders_config(
+        num_stokes=num_stokes,
+        single_scatter_source=single_source,
+        multiple_scatter_source=sk.MultipleScatterSource.NoSource,
+    )
+    refracted_config.solar_refraction = True
+
+    straight = (
+        sk.Engine(straight_config, geometry, viewing_geometry())
+        .calculate_radiance(atmosphere(geometry, straight_config))
+        .radiance.values
+    )
+    refracted = (
+        sk.Engine(refracted_config, geometry, viewing_geometry())
+        .calculate_radiance(atmosphere(geometry, refracted_config))
+        .radiance.values
+    )
+
+    np.testing.assert_allclose(refracted, straight, rtol=2.0e-12, atol=1.0e-14)
+
+
+@pytest.mark.parametrize("num_stokes", [1, 3])
+def test_2d_table_single_scatter_native_products_are_adjoint(num_stokes):
+    geometry = geometry2d()
+    geometry.refractive_index = np.array([1.001, 1.0004, 1.0])
+    config = successive_orders_config(
+        num_stokes=num_stokes,
+        single_scatter_source=sk.SingleScatterSource.Table,
+        multiple_scatter_source=sk.MultipleScatterSource.NoSource,
+    )
+    config.solar_refraction = True
+    linearization = sk.Engine(config, geometry, viewing_geometry()).linearize(
+        atmosphere(
+            geometry,
+            config,
+            horizontal_slope=0.35,
+            calculate_derivatives=True,
+        )
+    )
+
+    assert linearization.backends == {
+        "jvp": sk.LinearizationBackend.Native,
+        "vjp": sk.LinearizationBackend.Native,
+    }
+    with pytest.raises(NotImplementedError, match="cannot materialize"):
+        _ = linearization.jacobian
+    tangent = linearization.tangent_template[["extinction", "ssa"]]
+    tangent["extinction"].data[:] = np.linspace(
+        -2.0e-7, 3.0e-7, tangent["extinction"].size
+    ).reshape(tangent["extinction"].shape)
+    tangent["ssa"].data[:] = np.linspace(-0.015, 0.02, tangent["ssa"].size).reshape(
+        tangent["ssa"].shape
+    )
+    cotangent = xr.ones_like(linearization.value)
+    jvp = linearization.jvp(tangent)
+
+    finite_difference_engine = sk.Engine(config, geometry, viewing_geometry())
+    epsilon = 1.0e-3
+
+    def perturbed_radiance(sign: float) -> xr.DataArray:
+        perturbed = atmosphere(
+            geometry,
+            config,
+            horizontal_slope=0.35,
+            calculate_derivatives=False,
+        )
+        perturbed.storage.total_extinction[:] += (
+            sign
+            * epsilon
+            * tangent["extinction"].values.reshape(
+                perturbed.storage.total_extinction.shape
+            )
+        )
+        perturbed.storage.ssa[:] += (
+            sign * epsilon * tangent["ssa"].values.reshape(perturbed.storage.ssa.shape)
+        )
+        return finite_difference_engine.calculate_radiance(perturbed).radiance
+
+    finite_difference = (perturbed_radiance(1.0) - perturbed_radiance(-1.0)) / (
+        2.0 * epsilon
+    )
+    xr.testing.assert_allclose(jvp, finite_difference, rtol=2.0e-7, atol=1.0e-12)
+
+    gradient = linearization.vjp(cotangent, parameters=("extinction", "ssa"))
+
+    np.testing.assert_allclose(
+        float((jvp * cotangent).sum()),
+        float(
+            (tangent["extinction"] * gradient["extinction"]).sum()
+            + (tangent["ssa"] * gradient["ssa"]).sum()
+        ),
+        rtol=3.0e-8,
+        atol=3.0e-11,
+    )
+
+
+def test_2d_table_single_scatter_can_share_solar_table_with_successive_orders():
+    geometry = geometry2d()
+    geometry.refractive_index = np.array([1.001, 1.0004, 1.0])
+    config = successive_orders_config(
+        single_scatter_source=sk.SingleScatterSource.Table
+    )
+    config.solar_refraction = True
+    result = sk.Engine(config, geometry, viewing_geometry()).calculate_radiance(
+        atmosphere(geometry, config, horizontal_slope=0.2)
+    )
+
+    assert np.all(np.isfinite(result.radiance.values))
+    assert result.radiance.values.item() > 0.0
+
+
 def test_2d_rejects_legacy_successive_orders_source():
     config = successive_orders_config(
         multiple_scatter_source=sk.MultipleScatterSource.SuccessiveOrdersLegacy

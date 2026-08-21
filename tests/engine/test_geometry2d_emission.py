@@ -350,5 +350,7 @@ def test_ground_surface_emission_is_attenuated_and_matches_1d():
 
 def test_geometry2d_engine_rejects_unimplemented_emission_sources():
     config = emission_config(sk.EmissionSource.TwoStream)
-    with pytest.raises(NotImplementedError, match="supports exact single scattering"):
+    with pytest.raises(
+        NotImplementedError, match="supports exact and table single scattering"
+    ):
         sk.Engine(config, geometry2d(), tangent_viewing_geometry())

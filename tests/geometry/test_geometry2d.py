@@ -28,6 +28,7 @@ def test_geometry2d_constructor_grids_shape_and_indexing():
         geometry.horizontal_angles(), np.array([-0.3, 0.0, 0.4, 0.7])
     )
     assert geometry.shape == (4, 3)
+    np.testing.assert_array_equal(geometry.refractive_index, np.ones(3))
 
     for horizontal_index in range(4):
         for altitude_index in range(3):
@@ -39,6 +40,17 @@ def test_geometry2d_constructor_grids_shape_and_indexing():
         geometry.location_index(3, 0)
     with pytest.raises(RuntimeError):
         geometry.location_index(0, 4)
+
+
+def test_geometry2d_refractive_index_is_mutable_and_assignable():
+    geometry = geometry2d()
+    profile = np.array([1.0003, 1.0001, 1.0])
+
+    geometry.refractive_index = profile
+    np.testing.assert_array_equal(geometry.refractive_index, profile)
+
+    geometry.refractive_index[:] = profile[::-1]
+    np.testing.assert_array_equal(geometry.refractive_index, profile[::-1])
 
 
 @pytest.mark.parametrize(

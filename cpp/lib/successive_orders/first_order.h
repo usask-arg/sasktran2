@@ -30,7 +30,10 @@ namespace sasktran2::successive_orders {
 #ifdef SKTRAN_RUST_SUPPORT
         FirstOrderProvider(
             const sasktran2::Geometry2D& geometry,
-            const sasktran2::raytracing::RustRayTracer2D& raytracer);
+            const sasktran2::raytracing::RustRayTracer2D& raytracer,
+            std::shared_ptr<
+                sasktran2::solartransmission::SolarTransmissionTable2D>
+                shared_solar_table = nullptr);
 #endif
 
         void initialize_config(const sasktran2::Config& config);
@@ -220,13 +223,27 @@ namespace sasktran2::successive_orders {
             Eigen::Ref<Eigen::VectorXd> solar_gradient,
             Eigen::Ref<Eigen::VectorXd> coefficient_gradient) const;
 
+        int phase_basis_slot(int ray, int solar_index) const {
+            return m_endpoint_phase_basis ? solar_index : ray;
+        }
+        int num_phase_basis_slots() const {
+            return m_endpoint_phase_basis ? m_solar_offsets.back() : m_num_rays;
+        }
+        bool ground_scattering_geometry(
+            int solar_index,
+            const sasktran2::raytracing::TracedLayer& ground_layer,
+            double& mu_in, double& mu_out, double& phi) const;
+
         const sasktran2::Geometry& m_geometry;
         const sasktran2::Geometry1D* m_geometry_1d = nullptr;
         ExactSource m_source;
-        std::unique_ptr<sasktran2::solartransmission::SolarTransmissionTable>
+        std::shared_ptr<
+            sasktran2::solartransmission::SolarTransmissionTableEvaluator>
             m_solar_table;
-        Eigen::SparseMatrix<double, Eigen::RowMajor> m_solar_interpolation;
+        sasktran2::solartransmission::SolarTableInterpolation
+            m_solar_interpolation;
         std::vector<bool> m_solar_ground_hit;
+        std::vector<Eigen::Vector3d> m_solar_propagation_directions;
         sasktran2::SourceIntegrator<NSTOKES> m_integrator;
         std::vector<SourceTermInterface<NSTOKES>*> m_source_terms;
         const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere =
@@ -241,6 +258,8 @@ namespace sasktran2::successive_orders {
         bool m_compact_scalar_requested = false;
         bool m_use_compact_scalar = false;
         bool m_use_lower_interpolation = false;
+        bool m_solar_refraction = false;
+        bool m_endpoint_phase_basis = false;
 
         std::vector<int> m_solar_offsets;
         std::vector<double> m_phase_basis;

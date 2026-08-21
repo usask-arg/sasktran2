@@ -142,6 +142,173 @@ TEST_CASE("Exact solar transmission matrix matches direct Geometry2D rays",
     REQUIRE(row == matrix.rows());
 }
 
+TEST_CASE("Geometry2D characteristic solar table follows exact endpoint OD",
+          "[sourceintegrator][singlescatter][geometry2d][solartable]") {
+    const auto geometry = geometry2d();
+    sasktran2::raytracing::RustRayTracer2D raytracer(geometry);
+    sasktran2::raytracing::TracedRay line_of_sight;
+    line_of_sight.layers.resize(1);
+    const double query_radius = earth_radius + 20.0;
+    const double impact_parameter = earth_radius + 10.0;
+    const double query_cos_sza =
+        -std::sqrt(1.0 - impact_parameter * impact_parameter /
+                             (query_radius * query_radius));
+    line_of_sight.layers[0].entrance.position =
+        geometry.coordinates().solar_coordinate_vector(query_cos_sza, 0.0,
+                                                       20.0);
+    line_of_sight.layers[0].exit = line_of_sight.layers[0].entrance;
+
+    sasktran2::Config config;
+    sasktran2::solartransmission::SolarTransmissionTable2D table(geometry,
+                                                                 raytracer);
+    table.initialize_config(config);
+    table.initialize_geometry({line_of_sight});
+    sasktran2::solartransmission::SolarTableInterpolation interpolation;
+    std::vector<bool> table_ground_hit;
+    table.generate_interpolation({line_of_sight}, interpolation,
+                                 table_ground_hit);
+
+    Eigen::VectorXd extinction(geometry.size());
+    for (int index = 0; index < geometry.size(); ++index) {
+        extinction[index] = 0.01 * (1.0 + 0.07 * index);
+    }
+    Eigen::VectorXd table_nodes(table.table_size());
+    table.apply(extinction, table_nodes);
+    Eigen::VectorXd table_od(interpolation.rows());
+    interpolation.apply(table_nodes, table_od);
+
+    sasktran2::solartransmission::SolarTransmissionExact exact(geometry,
+                                                               raytracer);
+    sasktran2::solartransmission::SolarGeometryMatrix exact_matrix;
+    std::vector<bool> exact_ground_hit;
+    exact.generate_geometry_matrix({line_of_sight}, exact_matrix,
+                                   exact_ground_hit);
+    Eigen::VectorXd exact_od(exact_matrix.rows());
+    exact_matrix.multiply(extinction, exact_od);
+
+    REQUIRE(table_ground_hit == exact_ground_hit);
+    for (int row = 0; row < exact_od.size(); ++row) {
+        if (!exact_ground_hit[row]) {
+            INFO("row " << row << ", exact " << exact_od[row] << ", table "
+                        << table_od[row]);
+            REQUIRE(table_od[row] ==
+                    Catch::Approx(exact_od[row]).epsilon(1e-11));
+        }
+    }
+
+    const Eigen::VectorXd endpoint_cotangent =
+        Eigen::VectorXd::LinSpaced(interpolation.rows(), -0.7, 1.1);
+    Eigen::VectorXd table_cotangent(table.table_size());
+    interpolation.apply_transpose(endpoint_cotangent, table_cotangent);
+    REQUIRE(endpoint_cotangent.dot(table_od) ==
+            Catch::Approx(table_cotangent.dot(table_nodes)).epsilon(1e-12));
+
+    Eigen::VectorXd extinction_cotangent =
+        Eigen::VectorXd::Zero(geometry.size());
+    table.accumulate_transpose(table_cotangent, extinction_cotangent, 1.0);
+    REQUIRE(table_cotangent.dot(table_nodes) ==
+            Catch::Approx(extinction_cotangent.dot(extinction)).epsilon(1e-12));
+}
+
+TEST_CASE("Geometry2D characteristic solar table follows refracted endpoint "
+          "OD",
+          "[sourceintegrator][singlescatter][geometry2d][solartable]") {
+    auto geometry = geometry2d();
+    geometry.refractive_index() = vector({1.0003, 1.0001, 1.0});
+    geometry.validate();
+    sasktran2::raytracing::RustRayTracer2D raytracer(geometry);
+
+    const double query_radius = earth_radius + 20.0;
+    const double impact_parameter =
+        (earth_radius + 10.0) * geometry.refractive_index()[1];
+    const auto& sun = geometry.coordinates().sun_unit();
+    Eigen::Vector3d impact_direction =
+        geometry.coordinates().reference_z() -
+        geometry.coordinates().reference_z().dot(sun) * sun;
+    impact_direction.normalize();
+    const double observer_radius = query_radius + 1.0;
+    sasktran2::viewinggeometry::ViewingRay incoming;
+    incoming.observer.position =
+        impact_parameter * impact_direction +
+        std::sqrt(observer_radius * observer_radius -
+                  impact_parameter * impact_parameter) *
+            sun;
+    incoming.look_away = -sun;
+    sasktran2::raytracing::TracedRay characteristic;
+    raytracer.trace_ray(incoming, geometry.refractive_index(), characteristic);
+    REQUIRE(!characteristic.ground_is_hit);
+
+    sasktran2::Location far_top;
+    double far_top_cos_sza = 1.0;
+    for (const auto& layer : characteristic.layers) {
+        const double radius_error =
+            std::abs(layer.exit.radius() - query_radius);
+        const double cos_sza = layer.exit.position.normalized().dot(sun);
+        if (radius_error < 1.0e-8 && cos_sza < far_top_cos_sza) {
+            far_top = layer.exit;
+            far_top_cos_sza = cos_sza;
+        }
+    }
+    REQUIRE(far_top_cos_sza < 0.0);
+
+    sasktran2::raytracing::TracedRay line_of_sight;
+    line_of_sight.layers.resize(1);
+    line_of_sight.layers[0].entrance = far_top;
+    line_of_sight.layers[0].exit = line_of_sight.layers[0].entrance;
+
+    sasktran2::Config config;
+    config.set_solar_refraction(true);
+    sasktran2::solartransmission::SolarTransmissionTable2D table(geometry,
+                                                                 raytracer);
+    table.initialize_config(config);
+    table.initialize_geometry({line_of_sight});
+    sasktran2::solartransmission::SolarTableInterpolation interpolation;
+    std::vector<bool> table_ground_hit;
+    std::vector<Eigen::Vector3d> solar_propagation_directions;
+    table.generate_interpolation({line_of_sight}, interpolation,
+                                 table_ground_hit,
+                                 &solar_propagation_directions);
+
+    Eigen::VectorXd extinction(geometry.size());
+    for (int index = 0; index < geometry.size(); ++index) {
+        extinction[index] = 0.01 * (1.0 + 0.07 * index);
+    }
+    Eigen::VectorXd table_nodes(table.table_size());
+    table.apply(extinction, table_nodes);
+    Eigen::VectorXd table_od(interpolation.rows());
+    interpolation.apply(table_nodes, table_od);
+
+    const double exact_od =
+        direct_path_weights(characteristic, geometry).dot(extinction);
+
+    CAPTURE(far_top_cos_sza, table_ground_hit);
+    REQUIRE(std::none_of(table_ground_hit.begin(), table_ground_hit.end(),
+                         [](bool value) { return value; }));
+    for (Eigen::Index row = 0; row < table_od.size(); ++row) {
+        REQUIRE(table_od[row] == Catch::Approx(exact_od).epsilon(1e-11));
+    }
+
+    REQUIRE(solar_propagation_directions.size() == 2);
+    for (const auto& direction : solar_propagation_directions) {
+        REQUIRE(direction.norm() == Catch::Approx(1.0).epsilon(1e-13));
+        REQUIRE(direction.dot(-sun) < 0.999999999);
+    }
+
+    sasktran2::solartransmission::SolarTransmissionExact exact(geometry,
+                                                               raytracer);
+    sasktran2::solartransmission::SolarGeometryMatrix exact_matrix;
+    auto exact_ground_hit = table_ground_hit;
+    exact.generate_refracted_geometry_matrix({line_of_sight},
+                                             solar_propagation_directions,
+                                             exact_matrix, exact_ground_hit);
+    Eigen::VectorXd retraced_od(exact_matrix.rows());
+    exact_matrix.multiply(extinction, retraced_od);
+    REQUIRE(exact_ground_hit == table_ground_hit);
+    for (Eigen::Index row = 0; row < retraced_od.size(); ++row) {
+        REQUIRE(retraced_od[row] == Catch::Approx(exact_od).epsilon(2e-10));
+    }
+}
+
 TEST_CASE("Exact Geometry2D solar shadow is stable at a grazing surface ray",
           "[sourceintegrator][singlescatter][geometry2d]") {
     constexpr double target_radius = 20.0;

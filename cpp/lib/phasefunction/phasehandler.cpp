@@ -33,14 +33,17 @@ namespace sasktran2::solartransmission {
     template <int NSTOKES>
     void PhaseHandler<NSTOKES>::initialize_geometry(
         const std::vector<sasktran2::raytracing::TracedRay>& los_rays,
-        const std::vector<std::vector<int>>& index_map) {
-        initialize_geometry_impl(los_rays, index_map);
+        const std::vector<std::vector<int>>& index_map,
+        const std::vector<Eigen::Vector3d>* solar_propagation_directions) {
+        initialize_geometry_impl(los_rays, index_map,
+                                 solar_propagation_directions);
     }
 
     template <int NSTOKES>
     void PhaseHandler<NSTOKES>::initialize_geometry_impl(
         const std::vector<sasktran2::raytracing::TracedRay>& los_rays,
-        const std::vector<std::vector<int>>& index_map) {
+        const std::vector<std::vector<int>>& index_map,
+        const std::vector<Eigen::Vector3d>* solar_propagation_directions) {
 
         ZoneScopedN("Phase Handler Initialize Geometry");
 
@@ -51,6 +54,19 @@ namespace sasktran2::solartransmission {
         std::size_t total_layers = 0;
         std::size_t num_endpoint_references = 0;
         std::size_t num_phase_entries = 0;
+        const bool endpoint_solar_geometry =
+            solar_propagation_directions != nullptr;
+        if (endpoint_solar_geometry) {
+            std::size_t endpoint_count = 0;
+            for (const auto& ray : los_rays) {
+                endpoint_count += ray.layers.size() + 1;
+            }
+            if (solar_propagation_directions->size() != endpoint_count) {
+                throw std::invalid_argument(
+                    "Single-scatter solar directions do not match the ray "
+                    "endpoint geometry");
+            }
+        }
         int counting_scatter_index = 0;
         std::vector<int> last_scatter_by_geometry(m_geometry.size(), -1);
         const auto count_endpoint =
@@ -84,23 +100,34 @@ namespace sasktran2::solartransmission {
             if (ray.layers.empty()) {
                 continue;
             }
-            for (std::size_t layer_index = 0; layer_index < ray.layers.size();
-                 ++layer_index) {
-                count_endpoint(ray.entrance_weights(layer_index));
-                const auto exit_weights = ray.exit_weights(layer_index);
-                const bool can_share_exit =
-                    layer_index > 0 &&
-                    same_nonzero_indices(exit_weights,
-                                         ray.entrance_weights(layer_index - 1));
-                if (!can_share_exit) {
-                    count_endpoint(exit_weights);
-                }
-                if (!ray.is_straight) {
+            if (endpoint_solar_geometry) {
+                for (std::size_t layer_index = 0;
+                     layer_index < ray.layers.size(); ++layer_index) {
+                    count_endpoint(ray.entrance_weights(layer_index));
+                    ++counting_scatter_index;
+                    count_endpoint(ray.exit_weights(layer_index));
                     ++counting_scatter_index;
                 }
-            }
-            if (ray.is_straight) {
-                ++counting_scatter_index;
+            } else {
+                for (std::size_t layer_index = 0;
+                     layer_index < ray.layers.size(); ++layer_index) {
+                    count_endpoint(ray.entrance_weights(layer_index));
+                    const auto exit_weights = ray.exit_weights(layer_index);
+                    const bool can_share_exit =
+                        layer_index > 0 &&
+                        same_nonzero_indices(
+                            exit_weights,
+                            ray.entrance_weights(layer_index - 1));
+                    if (!can_share_exit) {
+                        count_endpoint(exit_weights);
+                    }
+                    if (!ray.is_straight) {
+                        ++counting_scatter_index;
+                    }
+                }
+                if (ray.is_straight) {
+                    ++counting_scatter_index;
+                }
             }
             if (num_endpoint_references >
                 std::numeric_limits<std::uint32_t>::max()) {
@@ -149,6 +176,29 @@ namespace sasktran2::solartransmission {
             };
         double theta, C1, C2, S1, S2;
         int negation;
+        const auto append_scatter_angle = [&](const Eigen::Vector3d&
+                                                  solar_propagation,
+                                              const sasktran2::raytracing::
+                                                  TracedLayer& scatter_layer,
+                                              const sasktran2::raytracing::
+                                                  TracedRay& ray) {
+            const auto result =
+                m_geometry.coordinates().stokes_standard_to_observer_z(
+                    scatter_layer.average_look_away,
+                    ray.observer_and_look.observer.position);
+            math::stokes_scattering_factors(solar_propagation.normalized(),
+                                            -scatter_layer.average_look_away,
+                                            theta, C1, C2, S1, S2, negation);
+            if constexpr (NSTOKES == 3) {
+                const double adjusted_C2 =
+                    C2 * result.first - S2 * result.second;
+                const double adjusted_S2 =
+                    C2 * result.second + S2 * result.first;
+                m_scatter_angles.push_back({theta, adjusted_C2, adjusted_S2});
+            } else {
+                m_scatter_angles.push_back({theta});
+            }
+        };
         // First we need to iterate through and figure out how many internal
         // indices we will end up with and how many scatter angles we will need
 
@@ -157,6 +207,34 @@ namespace sasktran2::solartransmission {
 
             // Empty rays don't need to be considered
             if (ray.layers.size() == 0) {
+                continue;
+            }
+
+            if (endpoint_solar_geometry) {
+                for (int j = 0; j < ray.layers.size(); ++j) {
+                    const auto flat_layer = m_geometry_layer_offsets[i] +
+                                            static_cast<std::uint32_t>(j);
+                    const int exit_solar_index = index_map[i][j];
+                    const int entrance_solar_index = exit_solar_index + 1;
+
+                    append_scatter_angle(
+                        (*solar_propagation_directions)[entrance_solar_index],
+                        ray.layers[j], ray);
+                    m_geometry_entrance_offsets[flat_layer] =
+                        static_cast<std::uint32_t>(
+                            m_geometry_to_internal.size());
+                    append_endpoint(ray.entrance_weights(j));
+                    ++num_scatter;
+
+                    append_scatter_angle(
+                        (*solar_propagation_directions)[exit_solar_index],
+                        ray.layers[j], ray);
+                    m_geometry_exit_offsets[flat_layer] =
+                        static_cast<std::uint32_t>(
+                            m_geometry_to_internal.size());
+                    append_endpoint(ray.exit_weights(j));
+                    ++num_scatter;
+                }
                 continue;
             }
 

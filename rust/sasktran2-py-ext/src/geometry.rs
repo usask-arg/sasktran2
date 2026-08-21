@@ -136,6 +136,20 @@ impl PyGeometry2D {
         Ok(horizontal_angles.to_pyarray(py).to_owned())
     }
 
+    #[getter]
+    fn get_refractive_index<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyArray1<f64>>> {
+        let binding = &this.borrow().geometry;
+        let array = binding.refractive_index_mut().into_pyresult()?;
+        unsafe { Ok(PyArray1::borrow_from_array(&array, this.into_any())) }
+    }
+
+    #[setter]
+    fn set_refractive_index(&mut self, refractive_index: PyReadonlyArray1<f64>) -> PyResult<()> {
+        let mut view = self.geometry.refractive_index_mut().into_pyresult()?;
+        view.assign(&refractive_index.as_array());
+        Ok(())
+    }
+
     fn location_shape(&self) -> PyResult<(usize, usize)> {
         self.geometry.location_shape().into_pyresult()
     }

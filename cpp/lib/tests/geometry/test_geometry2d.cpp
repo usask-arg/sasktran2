@@ -68,8 +68,27 @@ TEST_CASE("Geometry2D construction and metadata",
     REQUIRE(geometry.cell_shape() == std::make_pair(2, 2));
     REQUIRE(geometry.altitude_grid().grid().isApprox(grid({0.0, 10.0, 20.0})));
     REQUIRE(geometry.horizontal_angle_grid().isApprox(grid({-0.5, 0.0, 0.5})));
+    REQUIRE(geometry.refractive_index().isOnes());
     REQUIRE(geometry.altitude_grid().interpolation_method() ==
             sasktran2::grids::interpolation::linear);
+}
+
+TEST_CASE("Geometry2D validates its altitude-only refractive index",
+          "[sasktran2][geometry][geometry2d][validation][refraction]") {
+    auto geometry = geometry2d();
+    geometry.refractive_index() << 1.0003, 1.0001, 1.0;
+    REQUIRE_NOTHROW(geometry.validate());
+
+    geometry.refractive_index().resize(2);
+    REQUIRE_THROWS_AS(geometry.validate(), std::runtime_error);
+
+    geometry.refractive_index().resize(3);
+    geometry.refractive_index() << 1.0, 0.0, 1.0;
+    REQUIRE_THROWS_AS(geometry.validate(), std::runtime_error);
+
+    geometry.refractive_index() << 1.0,
+        std::numeric_limits<double>::quiet_NaN(), 1.0;
+    REQUIRE_THROWS_AS(geometry.validate(), std::runtime_error);
 }
 
 TEST_CASE("Geometry2D accepts an explicit rotated coordinate basis",

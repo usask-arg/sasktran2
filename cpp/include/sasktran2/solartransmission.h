@@ -280,6 +280,79 @@ namespace sasktran2::solartransmission {
         }
     };
 
+    /** Compact row-major interpolation from solar-table nodes to ray
+     * endpoints.
+     *
+     * The rows are assembled in order and normally contain at most eight
+     * entries for a three-dimensional table. Keeping the construction in CSR
+     * form avoids the large temporary triplet list required by Eigen's sparse
+     * matrix builder for the hundreds of thousands of endpoints used by the
+     * successive-orders source.
+     */
+    class SolarTableInterpolation {
+      private:
+        std::vector<std::uint32_t> m_outer;
+        std::vector<std::uint32_t> m_inner;
+        std::vector<double> m_values;
+        Eigen::Index m_rows = 0;
+        Eigen::Index m_cols = 0;
+        Eigen::Index m_next_row = 0;
+
+      public:
+        void clear();
+        void initialize(Eigen::Index rows, Eigen::Index cols,
+                        Eigen::Index capacity);
+        void append_row(
+            const std::vector<std::pair<int, double>>& interpolation_weights);
+        void finalize();
+
+        Eigen::Index rows() const { return m_rows; }
+        Eigen::Index cols() const { return m_cols; }
+        Eigen::Index non_zeros() const {
+            return static_cast<Eigen::Index>(m_values.size());
+        }
+
+        void apply(Eigen::Ref<const Eigen::VectorXd> table_values,
+                   Eigen::Ref<Eigen::VectorXd> endpoint_values) const;
+        void apply_transpose(Eigen::Ref<const Eigen::VectorXd> endpoint_values,
+                             Eigen::Ref<Eigen::VectorXd> table_values) const;
+        std::size_t storage_bytes() const;
+    };
+
+    /** Geometry-only solar optical-depth table used by the compact scalar
+     * successive-orders source.
+     *
+     * Implementations may use a conventional geometry matrix or a
+     * characteristic sweep. The latter stores only incremental path stencils,
+     * which is substantially smaller than materializing cumulative
+     * atmosphere-to-sun rows at every source-ray endpoint.
+     */
+    class SolarTransmissionTableEvaluator {
+      public:
+        virtual ~SolarTransmissionTableEvaluator() = default;
+
+        virtual void initialize_config(const sasktran2::Config& config) = 0;
+        virtual void
+        initialize_geometry(const std::vector<sasktran2::raytracing::TracedRay>&
+                                integration_rays) = 0;
+        virtual void generate_interpolation(
+            const std::vector<sasktran2::raytracing::TracedRay>& rays,
+            SolarTableInterpolation& interpolator,
+            std::vector<bool>& ground_hit_flag,
+            std::vector<Eigen::Vector3d>* solar_propagation_directions =
+                nullptr) const = 0;
+
+        virtual Eigen::Index table_size() const = 0;
+        virtual Eigen::Index atmosphere_size() const = 0;
+        virtual void apply(Eigen::Ref<const Eigen::VectorXd> extinction,
+                           Eigen::Ref<Eigen::VectorXd> table_od) const = 0;
+        virtual void
+        accumulate_transpose(Eigen::Ref<const Eigen::VectorXd> table_cotangent,
+                             Eigen::Ref<Eigen::VectorXd> extinction_cotangent,
+                             double scale) const = 0;
+        virtual std::size_t storage_bytes() const = 0;
+    };
+
     class SolarTransmissionBase {
       protected:
         const Geometry& m_geometry;
@@ -335,10 +408,17 @@ namespace sasktran2::solartransmission {
             const std::vector<sasktran2::raytracing::TracedRay>& rays,
             SolarGeometryMatrix& od_matrix,
             std::vector<bool>& ground_hit_flag) const;
+
+        void generate_refracted_geometry_matrix(
+            const std::vector<sasktran2::raytracing::TracedRay>& rays,
+            const std::vector<Eigen::Vector3d>& solar_propagation_directions,
+            SolarGeometryMatrix& od_matrix,
+            std::vector<bool>& ground_hit_flag) const;
 #endif
     };
 
-    class SolarTransmissionTable : public SolarTransmissionExact {
+    class SolarTransmissionTable : public SolarTransmissionExact,
+                                   public SolarTransmissionTableEvaluator {
       private:
         std::unique_ptr<sasktran2::grids::SourceLocationInterpolator>
             m_location_interpolator;
@@ -366,10 +446,78 @@ namespace sasktran2::solartransmission {
             Eigen::SparseMatrix<double, Eigen::RowMajor>& interpolator,
             std::vector<bool>& ground_hit_flag) const;
 
+        void generate_interpolation(
+            const std::vector<sasktran2::raytracing::TracedRay>& rays,
+            SolarTableInterpolation& interpolator,
+            std::vector<bool>& ground_hit_flag,
+            std::vector<Eigen::Vector3d>* solar_propagation_directions =
+                nullptr) const override;
+        Eigen::Index table_size() const override {
+            return m_geometry_matrix.rows();
+        }
+        Eigen::Index atmosphere_size() const override {
+            return m_geometry_matrix.cols();
+        }
+        void apply(Eigen::Ref<const Eigen::VectorXd> extinction,
+                   Eigen::Ref<Eigen::VectorXd> table_od) const override;
+        void
+        accumulate_transpose(Eigen::Ref<const Eigen::VectorXd> table_cotangent,
+                             Eigen::Ref<Eigen::VectorXd> extinction_cotangent,
+                             double scale) const override;
+        std::size_t storage_bytes() const override;
+
         const Eigen::MatrixXd& geometry_matrix() const {
             return m_geometry_matrix;
         }
     };
+
+#ifdef SKTRAN_RUST_SUPPORT
+    /** Three-dimensional solar optical-depth table for a structured 2D
+     * atmosphere.
+     *
+     * Table locations are parameterized by altitude, solar zenith angle, and
+     * azimuth around the solar axis. Parallel rays are launched at the
+     * top-of-atmosphere chord and traced inward. Each ray stores only the
+     * incremental 2D cell-basis stencils; optical depth is accumulated by a
+     * forward sweep and its VJP by the corresponding reverse sweep.
+     */
+    class SolarTransmissionTable2D final
+        : public SolarTransmissionTableEvaluator {
+      private:
+        class Impl;
+        std::unique_ptr<Impl> m_impl;
+
+      public:
+        SolarTransmissionTable2D(
+            const Geometry2D& geometry,
+            const sasktran2::raytracing::RustRayTracer2D& raytracer);
+        ~SolarTransmissionTable2D() override;
+
+        void initialize_config(const sasktran2::Config& config) override;
+        void
+        initialize_geometry(const std::vector<sasktran2::raytracing::TracedRay>&
+                                integration_rays) override;
+        void generate_interpolation(
+            const std::vector<sasktran2::raytracing::TracedRay>& rays,
+            SolarTableInterpolation& interpolator,
+            std::vector<bool>& ground_hit_flag,
+            std::vector<Eigen::Vector3d>* solar_propagation_directions =
+                nullptr) const override;
+        void generate_solar_geometry(
+            const std::vector<sasktran2::raytracing::TracedRay>& rays,
+            std::vector<bool>& ground_hit_flag,
+            std::vector<Eigen::Vector3d>& solar_propagation_directions) const;
+        Eigen::Index table_size() const override;
+        Eigen::Index atmosphere_size() const override;
+        void apply(Eigen::Ref<const Eigen::VectorXd> extinction,
+                   Eigen::Ref<Eigen::VectorXd> table_od) const override;
+        void
+        accumulate_transpose(Eigen::Ref<const Eigen::VectorXd> table_cotangent,
+                             Eigen::Ref<Eigen::VectorXd> extinction_cotangent,
+                             double scale) const override;
+        std::size_t storage_bytes() const override;
+    };
+#endif
 
     /**
      * The PhaseHandler is responsible for constructing the phase function for
@@ -468,7 +616,9 @@ namespace sasktran2::solartransmission {
          */
         void initialize_geometry(
             const std::vector<sasktran2::raytracing::TracedRay>& los_rays,
-            const std::vector<std::vector<int>>& index_map);
+            const std::vector<std::vector<int>>& index_map,
+            const std::vector<Eigen::Vector3d>* solar_propagation_directions =
+                nullptr);
 
         /**
          *   Calculates the phase function from the legendre coefficients at the
@@ -561,7 +711,8 @@ namespace sasktran2::solartransmission {
 
         void initialize_geometry_impl(
             const std::vector<sasktran2::raytracing::TracedRay>& los_rays,
-            const std::vector<std::vector<int>>& index_map);
+            const std::vector<std::vector<int>>& index_map,
+            const std::vector<Eigen::Vector3d>* solar_propagation_directions);
 
         const int* geometry_internal_indices(int losidx, int layeridx,
                                              bool is_entrance) const {
@@ -894,7 +1045,21 @@ namespace sasktran2::solartransmission {
     template <typename S, int NSTOKES>
     class SingleScatterSource : public SourceTermInterface<NSTOKES> {
       private:
-        S m_solar_transmission;
+        static constexpr bool exact_transmission =
+            std::is_same_v<S, SolarTransmissionExact>;
+#ifdef SKTRAN_RUST_SUPPORT
+        static constexpr bool compact_2d_table =
+            std::is_same_v<S, SolarTransmissionTable2D>;
+#else
+        static constexpr bool compact_2d_table = false;
+#endif
+        static constexpr bool native_transmission_linearization =
+            exact_transmission || compact_2d_table;
+
+        std::shared_ptr<S> m_solar_transmission;
+#ifdef SKTRAN_RUST_SUPPORT
+        std::shared_ptr<SolarTransmissionTable2D> m_shared_solar_table_2d;
+#endif
         const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere;
 
         Eigen::MatrixXd m_geometry_matrix;
@@ -905,6 +1070,13 @@ namespace sasktran2::solartransmission {
         using RowMajorMatrix = Eigen::Matrix<double, Eigen::Dynamic,
                                              Eigen::Dynamic, Eigen::RowMajor>;
         std::vector<RowMajorMatrix> m_solar_trans_batch;
+        SolarTableInterpolation m_solar_interpolation;
+        std::vector<Eigen::Vector3d> m_solar_propagation_directions;
+        std::vector<Eigen::VectorXd> m_solar_table_product;
+        std::vector<Eigen::VectorXd> m_solar_trans_jvp;
+        mutable std::vector<Eigen::VectorXd> m_solar_endpoint_cotangent;
+        mutable Eigen::VectorXd m_solar_endpoint_cotangent_sum;
+        mutable Eigen::VectorXd m_solar_table_cotangent;
         int m_wavelength_batch_capacity = 1;
         std::vector<int> m_active_wavelength_block_start;
         std::vector<int> m_active_wavelength_block_count;
@@ -974,32 +1146,76 @@ namespace sasktran2::solartransmission {
 
         Eigen::Vector<double, NSTOKES> endpoint_source_vjp(
             int wavelidx, int losidx, int layeridx, int wavel_threadidx,
-            int solar_index,
+            int threadidx, int solar_index,
             const sasktran2::raytracing::GridWeightStencilView& weights,
             bool is_entrance, const Eigen::Vector<double, NSTOKES>& cotangent,
             Eigen::Ref<Eigen::VectorXd> native_gradient) const;
 
         double solar_transmission_value(int wavelidx, int threadidx,
                                         int solar_index) const;
+        double solar_transmission_tangent(
+            int wavelidx, int threadidx, int solar_index,
+            Eigen::Ref<const Eigen::VectorXd> native_tangent) const;
+        bool ground_scattering_geometry(int losidx, double& mu_in,
+                                        double& mu_out, double& phi_diff) const;
+
+#ifdef SKTRAN_RUST_SUPPORT
+        static std::shared_ptr<S> make_2d_transmission(
+            const Geometry2D& geometry,
+            const sasktran2::raytracing::RustRayTracer2D& raytracer,
+            const std::shared_ptr<SolarTransmissionTable2D>& shared_table) {
+            if constexpr (compact_2d_table) {
+                return shared_table != nullptr
+                           ? shared_table
+                           : std::make_shared<SolarTransmissionTable2D>(
+                                 geometry, raytracer);
+            } else {
+                if constexpr (exact_transmission) {
+                    return std::make_shared<S>(geometry, raytracer);
+                } else {
+                    return {};
+                }
+            }
+        }
+#endif
 
       public:
+        template <
+            typename T = S,
+            std::enable_if_t<std::is_same_v<T, SolarTransmissionExact> ||
+                                 std::is_same_v<T, SolarTransmissionTable>,
+                             int> = 0>
         SingleScatterSource(
             const Geometry1D& geometry,
             const sasktran2::raytracing::RayTracerBase& raytracer)
-            : m_solar_transmission(geometry, raytracer), m_geometry(geometry),
-              m_geometry_1d(&geometry), m_phase_handler(geometry) {
+            : m_solar_transmission(std::make_shared<S>(geometry, raytracer)),
+              m_geometry(geometry), m_geometry_1d(&geometry),
+              m_phase_handler(geometry) {
             initialize_fixed_dispatch();
         };
 
 #ifdef SKTRAN_RUST_SUPPORT
-        template <typename T = S,
-                  std::enable_if_t<std::is_same_v<T, SolarTransmissionExact>,
-                                   int> = 0>
+        template <
+            typename T = S,
+            std::enable_if_t<std::is_same_v<T, SolarTransmissionExact> ||
+                                 std::is_same_v<T, SolarTransmissionTable2D>,
+                             int> = 0>
         SingleScatterSource(
             const Geometry2D& geometry,
-            const sasktran2::raytracing::RustRayTracer2D& raytracer)
-            : m_solar_transmission(geometry, raytracer), m_geometry(geometry),
-              m_geometry_2d(&geometry), m_phase_handler(geometry) {
+            const sasktran2::raytracing::RustRayTracer2D& raytracer,
+            std::shared_ptr<SolarTransmissionTable2D> shared_table = nullptr)
+            : m_solar_transmission(
+                  make_2d_transmission(geometry, raytracer, shared_table)),
+              m_shared_solar_table_2d(std::move(shared_table)),
+              m_geometry(geometry), m_geometry_2d(&geometry),
+              m_phase_handler(geometry) {
+            if constexpr (compact_2d_table) {
+                m_shared_solar_table_2d = m_solar_transmission;
+            } else if (m_shared_solar_table_2d == nullptr) {
+                m_shared_solar_table_2d =
+                    std::make_shared<SolarTransmissionTable2D>(geometry,
+                                                               raytracer);
+            }
             initialize_fixed_dispatch();
         };
 #endif
@@ -1059,7 +1275,7 @@ namespace sasktran2::solartransmission {
       public:
         void calculate(const sasktran2::WavelengthBlock<>& block,
                        int threadidx) override {
-            if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
+            if constexpr (exact_transmission) {
                 sasktran2::dispatch_wavelength_block(
                     block, [&](const auto& fixed_block) {
                         if constexpr (std::decay_t<
@@ -1078,6 +1294,15 @@ namespace sasktran2::solartransmission {
                 calculate_single(block.start, threadidx);
             }
         }
+
+        void calculate_jvp(
+            const sasktran2::WavelengthBlock<>& block, int threadidx,
+            Eigen::Ref<const Eigen::VectorXd> native_tangent) override;
+        void calculate_vjp(const sasktran2::WavelengthBlock<>& block,
+                           int threadidx) override;
+        void finalize_vjp(
+            const sasktran2::WavelengthBlock<>& block, int threadidx,
+            Eigen::Ref<Eigen::MatrixXd> native_gradient) const override;
 
         /** Calculates the integrated source term for a given layer.
          *
@@ -1201,13 +1426,18 @@ namespace sasktran2::solartransmission {
         }
 
         bool supports_sparse_derivative_tracking() const override {
-            return std::is_same_v<S, SolarTransmissionExact>;
+            return exact_transmission;
         }
 
         bool supports_linearization(
             sasktran2::LinearizationMode mode) const override {
-            return mode == sasktran2::LinearizationMode::Jacobian ||
-                   std::is_same_v<S, SolarTransmissionExact>;
+            if constexpr (exact_transmission) {
+                return true;
+            }
+            if constexpr (compact_2d_table) {
+                return mode != sasktran2::LinearizationMode::Jacobian;
+            }
+            return mode == sasktran2::LinearizationMode::Jacobian;
         }
 
         void end_of_ray_source_jvp(

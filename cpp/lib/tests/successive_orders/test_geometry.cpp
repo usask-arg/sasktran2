@@ -1,5 +1,6 @@
 #include "../../successive_orders/geometry.h"
 
+#include <sasktran2/solartransmission.h>
 #include <sasktran2/test_helper.h>
 
 #include <algorithm>
@@ -292,6 +293,95 @@ TEST_CASE("Successive-orders 2D geometry uses an independent horizontal "
     REQUIRE_THROWS_WITH(
         refracted.initialize(los, settings),
         "Geometry2D successive orders does not support diffuse-ray refraction");
+}
+
+TEST_CASE("Successive-orders 2D solar table resolves source-ray endpoint OD",
+          "[successive_orders][geometry][geometry2d][solartable]") {
+    constexpr int num_altitudes = 16;
+    constexpr int num_horizontal = 8;
+    Eigen::VectorXd altitudes =
+        Eigen::VectorXd::LinSpaced(num_altitudes, 0.0, 80000.0);
+    Eigen::VectorXd horizontal =
+        Eigen::VectorXd::LinSpaced(num_horizontal, -0.4, 0.4);
+    sasktran2::Geometry2D geometry(0.6, 0.0, 6372000.0, std::move(altitudes),
+                                   std::move(horizontal),
+                                   sasktran2::grids::interpolation::linear);
+    sasktran2::raytracing::RustRayTracer2D raytracer(geometry);
+    const auto los = make_los_geometry(geometry, raytracer);
+
+    sasktran2::successive_orders::SourceGeometrySettings settings;
+    settings.num_incoming = 14;
+    settings.num_outgoing = 6;
+    settings.num_sza = 3;
+    settings.num_threads = 1;
+    settings.altitude_grid_m.resize(7);
+    for (int index = 0; index < 7; ++index) {
+        settings.altitude_grid_m[index] = (index + 0.5) * 80000.0 / 7.0;
+    }
+    sasktran2::successive_orders::SourceGeometry1D source_geometry(raytracer,
+                                                                   geometry);
+    source_geometry.initialize(los, settings);
+    const auto& rays = source_geometry.incoming_rays();
+
+    sasktran2::Config config;
+    sasktran2::solartransmission::SolarTransmissionTable2D table(geometry,
+                                                                 raytracer);
+    table.initialize_config(config);
+    table.initialize_geometry(rays);
+    sasktran2::solartransmission::SolarTableInterpolation interpolation;
+    std::vector<bool> table_ground_hit;
+    table.generate_interpolation(rays, interpolation, table_ground_hit);
+
+    sasktran2::solartransmission::SolarTransmissionExact exact(geometry,
+                                                               raytracer);
+    sasktran2::solartransmission::SolarGeometryMatrix exact_matrix;
+    std::vector<bool> exact_ground_hit;
+    exact.generate_geometry_matrix(rays, exact_matrix, exact_ground_hit);
+    REQUIRE(table_ground_hit == exact_ground_hit);
+
+    Eigen::VectorXd extinction(geometry.size());
+    for (int horizontal_index = 0; horizontal_index < num_horizontal;
+         ++horizontal_index) {
+        for (int altitude_index = 0; altitude_index < num_altitudes;
+             ++altitude_index) {
+            const double altitude =
+                geometry.altitude_grid().grid()[altitude_index];
+            const double angle =
+                geometry.horizontal_angle_grid()[horizontal_index];
+            extinction[geometry.location_index(altitude_index,
+                                               horizontal_index)] =
+                1.5e-5 * std::exp(-altitude / 18000.0) *
+                (1.0 + 0.2 * std::sin(2.0 * EIGEN_PI * angle / 0.8));
+        }
+    }
+    Eigen::VectorXd table_nodes(table.table_size());
+    Eigen::VectorXd table_od(interpolation.rows());
+    Eigen::VectorXd exact_od(exact_matrix.rows());
+    table.apply(extinction, table_nodes);
+    interpolation.apply(table_nodes, table_od);
+    exact_matrix.multiply(extinction, exact_od);
+
+    double maximum_absolute = 0.0;
+    double maximum_relative = 0.0;
+    double mean_absolute = 0.0;
+    int active = 0;
+    for (Eigen::Index row = 0; row < exact_od.size(); ++row) {
+        if (exact_ground_hit[row]) {
+            continue;
+        }
+        const double absolute = std::abs(table_od[row] - exact_od[row]);
+        maximum_absolute = std::max(maximum_absolute, absolute);
+        if (std::abs(exact_od[row]) > 1.0e-10) {
+            maximum_relative =
+                std::max(maximum_relative, absolute / std::abs(exact_od[row]));
+        }
+        mean_absolute += absolute;
+        ++active;
+    }
+    mean_absolute /= active;
+    CAPTURE(active, maximum_absolute, maximum_relative, mean_absolute);
+    REQUIRE(maximum_relative < 0.06);
+    REQUIRE(mean_absolute < 0.006);
 }
 #endif
 

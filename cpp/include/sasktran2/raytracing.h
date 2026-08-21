@@ -999,6 +999,11 @@ namespace sasktran2::raytracing {
             const sasktran2::viewinggeometry::ViewingRay& ray,
             TracedRay& tracedray) const;
 
+        void trace_ray_optical_depth(
+            const sasktran2::viewinggeometry::ViewingRay& ray,
+            const Eigen::VectorXd& refractive_index,
+            TracedRay& tracedray) const;
+
         void trace_ray(const sasktran2::viewinggeometry::ViewingRay& ray,
                        const Eigen::VectorXd& refractive_index,
                        TracedRay& tracedray) const;

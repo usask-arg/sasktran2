@@ -371,6 +371,7 @@ namespace sasktran2 {
       private:
         const grids::AltitudeGrid m_alt_grid;
         const Eigen::VectorXd m_horizontal_angles;
+        Eigen::VectorXd m_refractive_index;
 
       public:
         Geometry2D(double cos_sza, double saa, double earth_radius,
@@ -389,6 +390,14 @@ namespace sasktran2 {
         const Eigen::VectorXd& horizontal_angle_grid() const {
             return m_horizontal_angles;
         }
+
+        /** Altitude-only refractive-index profile used by solar rays. The 2D
+         * extinction field remains horizontally varying, while refraction is
+         * currently required to be spherically symmetric. */
+        const Eigen::VectorXd& refractive_index() const {
+            return m_refractive_index;
+        }
+        Eigen::VectorXd& refractive_index() { return m_refractive_index; }
 
         int num_atmosphere_dimensions() const override { return 2; }
         int size() const override;

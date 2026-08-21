@@ -732,20 +732,11 @@ def test_single_scatter_occultation_and_emission_sources_add_linearly():
     np.testing.assert_allclose(results["combined"].radiance, expected, rtol=1.0e-14)
 
 
-@pytest.mark.parametrize(
-    "single_scatter_source",
-    [
-        sk.SingleScatterSource.Table,
-        sk.SingleScatterSource.DiscreteOrdinates,
-    ],
-)
-def test_geometry2d_rejects_nonexact_single_scatter_sources(
-    single_scatter_source: sk.SingleScatterSource,
-):
+def test_geometry2d_rejects_unsupported_single_scatter_sources():
     config = single_scatter_config()
-    config.single_scatter_source = single_scatter_source
+    config.single_scatter_source = sk.SingleScatterSource.DiscreteOrdinates
 
-    with pytest.raises(NotImplementedError, match="exact single scattering"):
+    with pytest.raises(NotImplementedError, match="exact and table single scattering"):
         sk.Engine(config, geometry2d(), parity_viewing())
 
 

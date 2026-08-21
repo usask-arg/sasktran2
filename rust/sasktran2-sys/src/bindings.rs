@@ -74,6 +74,12 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn sk_geometry2d_get_refractive_index_ptr(
+        geometry: *const Geometry2D,
+        refractive_index: *mut *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn sk_geometry2d_get_location_index(
         geometry: *const Geometry2D,
         altitude_index: ::std::os::raw::c_int,

@@ -20,8 +20,9 @@ config.single_scatter_source = sk.SingleScatterSource.Exact
 ```
 
 here `Exact` refers to how the solar attenuation is calculated.  In the `Exact` mode, a ray is traced
-towards the sun everytime the single scatter source is required at a new point, i.e., the solar attenuation
-is calculated "exactly".
+towards the sun every time the single scatter source is required at a new point, i.e., the solar attenuation
+is calculated "exactly". With solar refraction in a 2D atmosphere, a shared characteristic table supplies
+the local bent direction and the optical depth along that characteristic is retraced at every point.
 
 The other available single scatter source,
 
@@ -30,10 +31,10 @@ config.single_scatter_source = sk.SingleScatterSource.Table
 ```
 
 differs in that the solar attenuation is pre-computed on an appropriate grid, and then interpolated whenever
-it is requested.  This can reduce accuracy in some cases, but also offer computational efficiency improvements.
-Generally the advantages of using `Table` over `Exact` are minimal, and we only recommended experimenting
-with the table option if you have a situation where many lines of sight are requested (>100) and the majority
-of the calculation time is suspected to be inside the single scatter source.
+it is requested. For a 2D atmosphere this is a three-dimensional table in altitude, solar zenith angle, and
+off-plane azimuth. It stores incremental characteristic stencils rather than a cumulative optical-depth row
+for every requested point. This can reduce accuracy in some cases, but substantially reduces setup time when
+many lines of sight are requested or when the table is shared with successive orders.
 
 Single scattering can be explicity disabled with
 
@@ -43,8 +44,9 @@ config.single_scatter_source = sk.SingleScatterSource.NoSource
 
 ## Additonal Notes
 
- - All available single scatter sources are perfectly linearized, capable of producing weighting functions to machine precision
- - The exact source has native JVP and VJP implementations; the table source currently uses the Jacobian-row contraction backend
+ - The exact source has native JVP and VJP implementations and can also materialize a complete Jacobian.
+ - The 2D table source has native JVP and VJP implementations. To retain its memory advantage it does not materialize a complete Jacobian; use {py:meth}`sasktran2.Engine.linearize` and its `jvp`/`vjp` methods.
+ - The 1D table source continues to use the materialized-Jacobian backend.
  - All single scatter sources support polarized calculations (`nstokes=3`)
 
 ## Relevant Configuration Options

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <sasktran2/source_interface.h>
+#include <sasktran2/solartransmission.h>
 
 #include <memory>
 
@@ -37,15 +38,21 @@ namespace sasktran2::successive_orders {
     template <int NSTOKES>
     std::unique_ptr<SourceTermInterface<NSTOKES>> make_successive_orders_source(
         const sasktran2::raytracing::RustRayTracer2D& raytracer,
-        const sasktran2::Geometry2D& geometry);
+        const sasktran2::Geometry2D& geometry,
+        std::shared_ptr<sasktran2::solartransmission::SolarTransmissionTable2D>
+            shared_solar_table = nullptr);
 
     extern template std::unique_ptr<SourceTermInterface<1>>
     make_successive_orders_source<1>(
         const sasktran2::raytracing::RustRayTracer2D&,
-        const sasktran2::Geometry2D&);
+        const sasktran2::Geometry2D&,
+        std::shared_ptr<
+            sasktran2::solartransmission::SolarTransmissionTable2D>);
     extern template std::unique_ptr<SourceTermInterface<3>>
     make_successive_orders_source<3>(
         const sasktran2::raytracing::RustRayTracer2D&,
-        const sasktran2::Geometry2D&);
+        const sasktran2::Geometry2D&,
+        std::shared_ptr<
+            sasktran2::solartransmission::SolarTransmissionTable2D>);
 #endif
 } // namespace sasktran2::successive_orders

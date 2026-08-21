@@ -328,6 +328,12 @@ namespace sasktran2::raytracing {
         trace_ray_impl(ray, nullptr, result, true);
     }
 
+    void RustRayTracer2D::trace_ray_optical_depth(
+        const sasktran2::viewinggeometry::ViewingRay& ray,
+        const Eigen::VectorXd& refractive_index, TracedRay& result) const {
+        trace_ray_impl(ray, &refractive_index, result, true);
+    }
+
     void RustRayTracer2D::trace_ray(
         const sasktran2::viewinggeometry::ViewingRay& ray,
         const Eigen::VectorXd& refractive_index, TracedRay& result) const {
