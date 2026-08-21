@@ -143,7 +143,9 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
                     sasktran2::solartransmission::SingleScatterSource<
                         sasktran2::solartransmission::SolarTransmissionExact,
                         NSTOKES>>(*m_geometry_2d, *m_raytracer_2d,
-                                  shared_solar_table));
+                                  m_config.solar_refraction()
+                                      ? shared_solar_table
+                                      : nullptr));
             m_los_source_terms.push_back(m_source_terms.back().get());
 #else
             throw std::invalid_argument(

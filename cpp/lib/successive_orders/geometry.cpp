@@ -16,6 +16,92 @@
 
 namespace sasktran2::successive_orders {
     namespace {
+        class GroundUnitSphere final : public sasktran2::math::UnitSphere {
+          public:
+            GroundUnitSphere(std::unique_ptr<const UnitSphere>&& sphere,
+                             const Eigen::Vector3d& location)
+                : m_full_sphere(std::move(sphere)) {
+                m_contributing_map.reserve(m_full_sphere->num_points() / 2);
+                for (int index = 0; index < m_full_sphere->num_points();
+                     ++index) {
+                    if (m_full_sphere->get_quad_position(index).dot(location) >
+                        0) {
+                        m_contributing_map.push_back(index);
+                        m_quadrature_normalization +=
+                            m_full_sphere->quadrature_weight(index);
+                    }
+                }
+            }
+
+            int num_points() const override {
+                return static_cast<int>(m_contributing_map.size());
+            }
+
+            Eigen::Vector3d get_quad_position(int index) const override {
+                return m_full_sphere->get_quad_position(
+                    m_contributing_map[index]);
+            }
+
+            double quadrature_weight(int index) const override {
+                return m_full_sphere->quadrature_weight(
+                           m_contributing_map[index]) /
+                       m_quadrature_normalization * 0.5;
+            }
+
+            void interpolate(const Eigen::Vector3d& direction,
+                             std::vector<std::pair<int, double>>& index_weights,
+                             int& num_interp) const override {
+                num_interp = std::min(3, num_points());
+                index_weights.assign(
+                    static_cast<std::size_t>(num_interp),
+                    {-1, std::numeric_limits<double>::infinity()});
+
+                // Select neighbors directly from the upward hemisphere.
+                // Filtering a full-sphere stencil after selection can discard
+                // every neighbor for near-horizon directions.
+                for (int local_index = 0; local_index < num_points();
+                     ++local_index) {
+                    const double squared_distance =
+                        (get_quad_position(local_index) - direction)
+                            .squaredNorm();
+                    for (int slot = 0; slot < num_interp; ++slot) {
+                        if (squared_distance < index_weights[slot].second) {
+                            for (int shifted = num_interp - 1; shifted > slot;
+                                 --shifted) {
+                                index_weights[shifted] =
+                                    index_weights[shifted - 1];
+                            }
+                            index_weights[slot] = {local_index,
+                                                   squared_distance};
+                            break;
+                        }
+                    }
+                }
+
+                double total_inverse_distance = 0.0;
+                for (int slot = 0; slot < num_interp; ++slot) {
+                    if (index_weights[slot].second < 1.0e-8) {
+                        for (auto& weight : index_weights) {
+                            weight.second = 0.0;
+                        }
+                        index_weights[slot].second = 1.0;
+                        return;
+                    }
+                    total_inverse_distance +=
+                        1.0 / std::sqrt(index_weights[slot].second);
+                }
+                for (auto& weight : index_weights) {
+                    weight.second = (1.0 / std::sqrt(weight.second)) /
+                                    total_inverse_distance;
+                }
+            }
+
+          private:
+            std::unique_ptr<const UnitSphere> m_full_sphere;
+            std::vector<int> m_contributing_map;
+            double m_quadrature_normalization = 0.0;
+        };
+
         class AltitudeAngleSourceLocationInterpolator final
             : public sasktran2::grids::SourceLocationInterpolator {
           public:
@@ -349,16 +435,14 @@ namespace sasktran2::successive_orders {
                 m_location_interpolator->ground_location(
                     m_geometry.coordinates(), ground_index);
             auto ground_grid = std::make_unique<AngularGridPair>();
-            ground_grid->incoming =
-                std::make_unique<sasktran2::math::UnitSphereGround>(
-                    std::make_unique<sasktran2::math::LebedevSphere>(
-                        m_settings.num_incoming),
-                    location);
-            ground_grid->outgoing =
-                std::make_unique<sasktran2::math::UnitSphereGround>(
-                    std::make_unique<sasktran2::math::LebedevSphere>(
-                        m_settings.num_outgoing),
-                    location);
+            ground_grid->incoming = std::make_unique<GroundUnitSphere>(
+                std::make_unique<sasktran2::math::LebedevSphere>(
+                    m_settings.num_incoming),
+                location);
+            ground_grid->outgoing = std::make_unique<GroundUnitSphere>(
+                std::make_unique<sasktran2::math::LebedevSphere>(
+                    m_settings.num_outgoing),
+                location);
             m_angular_grids.push_back(std::move(ground_grid));
         }
 

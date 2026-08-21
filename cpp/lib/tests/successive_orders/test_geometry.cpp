@@ -193,6 +193,31 @@ TEST_CASE("Successive-orders 1D geometry compiles midpoint source and LOS "
     REQUIRE(source_geometry.num_interior_points() == 2);
     REQUIRE(source_geometry.num_ground_points() == 1);
     REQUIRE(source_geometry.num_points() == 3);
+
+    const auto& ground_point =
+        source_geometry.source_point(source_geometry.num_interior_points());
+    const std::array<Eigen::Vector3d, 3> ground_directions{
+        Eigen::Vector3d::UnitZ(), Eigen::Vector3d::UnitX(),
+        -Eigen::Vector3d::UnitZ()};
+    for (const auto& direction : ground_directions) {
+        std::vector<std::pair<int, double>> weights;
+        int count = 0;
+        ground_point.outgoing_sphere().interpolate(direction, weights, count);
+        REQUIRE(count == 3);
+        REQUIRE(weights.size() == 3);
+        double total_weight = 0.0;
+        for (const auto& [index, weight] : weights) {
+            REQUIRE(index >= 0);
+            REQUIRE(index < ground_point.outgoing_sphere().num_points());
+            REQUIRE(std::isfinite(weight));
+            REQUIRE(weight >= 0.0);
+            REQUIRE(ground_point.outgoing_sphere().get_quad_position(index).dot(
+                        ground_point.location().position.normalized()) > 0.0);
+            total_weight += weight;
+        }
+        REQUIRE(total_weight == Catch::Approx(1.0).margin(1.0e-13));
+    }
+
     REQUIRE(source_geometry.incoming_point_offsets().size() == 4);
     REQUIRE(source_geometry.outgoing_point_offsets().size() == 4);
     REQUIRE(source_geometry.incoming_rays().size() ==

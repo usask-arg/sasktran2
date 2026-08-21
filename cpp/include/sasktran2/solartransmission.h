@@ -319,8 +319,7 @@ namespace sasktran2::solartransmission {
         std::size_t storage_bytes() const;
     };
 
-    /** Geometry-only solar optical-depth table used by the compact scalar
-     * successive-orders source.
+    /** Geometry-only solar optical-depth table shared by source terms.
      *
      * Implementations may use a conventional geometry matrix or a
      * characteristic sweep. The latter stores only incremental path stencils,
@@ -1059,6 +1058,7 @@ namespace sasktran2::solartransmission {
         std::shared_ptr<S> m_solar_transmission;
 #ifdef SKTRAN_RUST_SUPPORT
         std::shared_ptr<SolarTransmissionTable2D> m_shared_solar_table_2d;
+        const sasktran2::raytracing::RustRayTracer2D* m_raytracer_2d = nullptr;
 #endif
         const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere;
 
@@ -1207,14 +1207,10 @@ namespace sasktran2::solartransmission {
             : m_solar_transmission(
                   make_2d_transmission(geometry, raytracer, shared_table)),
               m_shared_solar_table_2d(std::move(shared_table)),
-              m_geometry(geometry), m_geometry_2d(&geometry),
-              m_phase_handler(geometry) {
+              m_raytracer_2d(&raytracer), m_geometry(geometry),
+              m_geometry_2d(&geometry), m_phase_handler(geometry) {
             if constexpr (compact_2d_table) {
                 m_shared_solar_table_2d = m_solar_transmission;
-            } else if (m_shared_solar_table_2d == nullptr) {
-                m_shared_solar_table_2d =
-                    std::make_shared<SolarTransmissionTable2D>(geometry,
-                                                               raytracer);
             }
             initialize_fixed_dispatch();
         };

@@ -991,8 +991,9 @@ namespace sasktran2::raytracing {
 
     /** Standalone Rust structured-2D ray tracer.
      *
-     * The refractive-index overload accepts one altitude-only profile for this
-     * ray. Profiles are not stored on Geometry2D and may differ between calls.
+     * The refractive-index overload accepts an explicit altitude-only profile
+     * for this ray. It is deliberately separate from Geometry2D's stored solar
+     * refractive-index profile so callers can choose which rays are bent.
      */
     class RustRayTracer2D {
       public:

@@ -69,6 +69,12 @@ namespace sasktran2::solartransmission {
         this->m_solar_transmission->initialize_config(config);
 #ifdef SKTRAN_RUST_SUPPORT
         if constexpr (exact_transmission) {
+            if (m_geometry_2d != nullptr && config.solar_refraction() &&
+                m_shared_solar_table_2d == nullptr) {
+                m_shared_solar_table_2d =
+                    std::make_shared<SolarTransmissionTable2D>(*m_geometry_2d,
+                                                               *m_raytracer_2d);
+            }
             if (m_shared_solar_table_2d != nullptr) {
                 m_shared_solar_table_2d->initialize_config(config);
             }

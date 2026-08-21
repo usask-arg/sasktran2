@@ -21,35 +21,6 @@ TEST_CASE("Lebedev Initialization", "[sasktran2][unitsphere]") {
         */
 }
 
-TEST_CASE("Ground sphere interpolation always uses upward neighbors",
-          "[sasktran2][unitsphere][ground]") {
-    sasktran2::math::UnitSphereGround ground(
-        std::make_unique<sasktran2::math::LebedevSphere>(26),
-        Eigen::Vector3d::UnitZ());
-
-    const std::array<Eigen::Vector3d, 3> directions{Eigen::Vector3d::UnitZ(),
-                                                    Eigen::Vector3d::UnitX(),
-                                                    -Eigen::Vector3d::UnitZ()};
-    for (const auto& direction : directions) {
-        std::vector<std::pair<int, double>> weights;
-        int count = 0;
-        ground.interpolate(direction, weights, count);
-
-        REQUIRE(count == 3);
-        REQUIRE(weights.size() == 3);
-        double total_weight = 0.0;
-        for (const auto& [index, weight] : weights) {
-            REQUIRE(index >= 0);
-            REQUIRE(index < ground.num_points());
-            REQUIRE(std::isfinite(weight));
-            REQUIRE(weight >= 0.0);
-            REQUIRE(ground.get_quad_position(index).z() > 0.0);
-            total_weight += weight;
-        }
-        REQUIRE(total_weight == Catch::Approx(1.0).margin(1.0e-13));
-    }
-}
-
 /*
 TEST_CASE("Spherical Harmonics Integration",
 "[sasktran2][unitsphere][spherical_harmonics]") { const int max_order = 8; const
