@@ -1160,6 +1160,45 @@ def test_exact_single_scattering_runs_across_multiple_groups():
     assert np.all(result.radiance.sel(stokes="I") > 0)
 
 
+def test_successive_orders_runs_across_multiple_groups_without_single_scatter():
+    class OverheadSolarHandler:
+        def target_solar_angles(self, *_args):
+            return 0.0, 0.0
+
+    geometry = orbital_geometry()
+    offsets_s = np.array([60, 0])
+    times = np.datetime64("2026-01-01", "ns") + offsets_s * np.timedelta64(1, "s")
+    viewing = limb_viewing(geometry, np.array([-0.2, 0.2]), times)
+    config = sk.Config()
+    config.num_threads = 1
+    config.single_scatter_source = sk.SingleScatterSource.NoSource
+    config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrdersCpp
+    config.num_sza = 2
+    config.successive_orders_altitude_grid_m = np.array([5_000.0, 25_000.0, 55_000.0])
+    config.num_successive_orders_incoming = 6
+    config.num_successive_orders_outgoing = 6
+    config.num_successive_orders_iterations = 2
+    config.successive_orders_relative_tolerance = 0.0
+    config.successive_orders_absolute_tolerance = 0.0
+    engine = sk.OrbitalPlaneEngine(
+        config,
+        geometry,
+        viewing,
+        time_group_duration_s=20,
+        solar_handler=OverheadSolarHandler(),
+    )
+    atmosphere = raw_atmosphere(geometry, config, calculate_derivatives=False)
+    atmosphere.storage.ssa[:] = 0.5
+    atmosphere.storage.solar_irradiance[:] = 1.0
+    atmosphere.leg_coeff.a1[0] = 1.0
+
+    result = engine.calculate_radiance(atmosphere)
+
+    np.testing.assert_array_equal(result.time, times)
+    assert np.all(np.isfinite(result.radiance))
+    assert np.all(result.radiance.sel(stokes="I") > 0)
+
+
 def test_engine_exposes_normalized_solar_and_execution_settings_without_mutation():
     geometry = orbital_geometry()
     viewing = limb_viewing(geometry, np.array([-0.1, 0.1]))
@@ -1286,7 +1325,7 @@ def test_engine_rejects_unsupported_config_before_calling_solar_handler():
     viewing = limb_viewing(geometry, np.array([0.0]))
     config = sk.Config()
     config.multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
-    with pytest.raises(NotImplementedError, match="multiple scattering disabled"):
+    with pytest.raises(NotImplementedError, match="successive-orders"):
         sk.OrbitalPlaneEngine(
             config,
             geometry,

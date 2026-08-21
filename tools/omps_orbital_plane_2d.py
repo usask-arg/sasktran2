@@ -52,6 +52,7 @@ class OmpsInputs:
     tangent_height_m: np.ndarray
     wavelengths_nm: np.ndarray
     observed_radiance: np.ndarray
+    observed_sun_normalized_radiance: np.ndarray
     atmosphere_altitude_m: np.ndarray
     pressure_pa: np.ndarray
     temperature_k: np.ndarray
@@ -65,6 +66,7 @@ class SelectedViewing:
     scan_indices: np.ndarray
     observed_tangent_altitude_m: np.ndarray
     observed_radiance: np.ndarray
+    observed_sun_normalized_radiance: np.ndarray
 
 
 @dataclass(frozen=True)
@@ -184,7 +186,7 @@ def _decode_utc(values: np.ndarray) -> np.ndarray:
 
 
 def load_omps_inputs(l1g_path: Path, anc_path: Path, slit: int) -> OmpsInputs:
-    """Load the center-slit geometry, radiance, and ancillary profiles."""
+    """Load center-slit geometry, measurements, and ancillary profiles."""
     if not l1g_path.exists():
         raise FileNotFoundError(l1g_path)
     if not anc_path.exists():
@@ -206,6 +208,14 @@ def load_omps_inputs(l1g_path: Path, anc_path: Path, slit: int) -> OmpsInputs:
         tangent_height_m = np.asarray(gridded["TangentHeight"][:, slit, :]) * 1e3
         wavelengths_nm = np.asarray(gridded["WavelengthGrid"][:]) * 1e3
         observed_radiance = np.asarray(gridded["Radiance"][:, slit, :, :])
+        normalized_name = (
+            "SunNormalizedRadiance"
+            if "SunNormalizedRadiance" in gridded
+            else "Reflectance"
+        )
+        observed_sun_normalized_radiance = np.asarray(
+            gridded[normalized_name][:, slit, :, :]
+        )
 
     with h5py.File(anc_path) as anc:
         atmosphere_altitude_m = np.asarray(anc["GEOLOCATION_DATA/Altitude"][:]) * 1e3
@@ -240,6 +250,7 @@ def load_omps_inputs(l1g_path: Path, anc_path: Path, slit: int) -> OmpsInputs:
         tangent_height_m=tangent_height_m,
         wavelengths_nm=wavelengths_nm,
         observed_radiance=observed_radiance,
+        observed_sun_normalized_radiance=observed_sun_normalized_radiance,
         atmosphere_altitude_m=atmosphere_altitude_m,
         pressure_pa=pressure_pa,
         temperature_k=temperature_k,
@@ -263,13 +274,14 @@ def select_viewing_geometry(
     wavelength_indices: np.ndarray,
     geoid: sk.Geodetic,
 ) -> SelectedViewing:
-    """Reconstruct ECEF rays and sample corresponding measured radiances."""
+    """Reconstruct ECEF rays and sample corresponding measurements."""
     observers: list[np.ndarray] = []
     look_directions: list[np.ndarray] = []
     times: list[np.datetime64] = []
     los_scan_indices: list[int] = []
     observed_altitudes: list[float] = []
     radiances: list[np.ndarray] = []
+    sun_normalized_radiances: list[np.ndarray] = []
 
     ray_geoid = sk.WGS84()
     for scan_index in scan_indices:
@@ -307,6 +319,13 @@ def select_viewing_geometry(
             profile_radiance = data.observed_radiance[scan_index, vertical_index, :]
             measured = profile_radiance[wavelength_indices].astype(np.float64)
             measured[measured <= 0] = np.nan
+            profile_sun_normalized = data.observed_sun_normalized_radiance[
+                scan_index, vertical_index, :
+            ]
+            measured_sun_normalized = profile_sun_normalized[wavelength_indices].astype(
+                np.float64
+            )
+            measured_sun_normalized[measured_sun_normalized <= 0] = np.nan
 
             observers.append(observer)
             look_directions.append(look)
@@ -314,6 +333,7 @@ def select_viewing_geometry(
             los_scan_indices.append(int(scan_index))
             observed_altitudes.append(float(tangent_altitude_m))
             radiances.append(measured)
+            sun_normalized_radiances.append(measured_sun_normalized)
 
     viewing = sk.OrbitalPlaneViewingGeometry(
         times,
@@ -327,6 +347,7 @@ def select_viewing_geometry(
         scan_indices=np.asarray(los_scan_indices),
         observed_tangent_altitude_m=np.asarray(observed_altitudes),
         observed_radiance=np.asarray(radiances).T,
+        observed_sun_normalized_radiance=np.asarray(sun_normalized_radiances).T,
     )
 
 
@@ -397,7 +418,8 @@ def make_atmosphere(
     atmosphere["rayleigh"] = sk.constituent.Rayleigh()
     ozone = sk.constituent.VMRAbsorber2D(sk.optical.O3DBM(), ozone_vmr)
     atmosphere["ozone"] = ozone
-    atmosphere["solar_irradiance"] = sk.constituent.SolarIrradiance()
+    # Keep the native default solar irradiance of one. The resulting engine
+    # output is directly comparable to OMPS SunNormalizedRadiance (L / E0).
     return atmosphere, ozone
 
 
@@ -409,20 +431,36 @@ def make_comparison(
     l1g_path: Path,
     anc_path: Path,
 ) -> xr.Dataset:
-    modeled = result["radiance"].sel(stokes="I", drop=True)
+    modeled_sun_normalized = result["radiance"].sel(stokes="I", drop=True)
+    solar_irradiance = xr.DataArray(
+        sk.solar.SolarModel().irradiance(modeled_sun_normalized.wavelength.values),
+        dims=("wavelength",),
+        coords={"wavelength": modeled_sun_normalized.wavelength},
+    )
     comparison = xr.Dataset(
         {
-            "modeled_radiance": modeled,
+            "modeled_sun_normalized_radiance": modeled_sun_normalized,
+            "observed_sun_normalized_radiance": (
+                ("wavelength", "los"),
+                selected.observed_sun_normalized_radiance,
+            ),
+            "modeled_radiance": modeled_sun_normalized * solar_irradiance,
             "observed_radiance": (
                 ("wavelength", "los"),
                 selected.observed_radiance,
             ),
+            "generic_solar_irradiance": solar_irradiance,
         }
     )
-    comparison["model_minus_observation"] = (
-        comparison.modeled_radiance - comparison.observed_radiance
+    comparison["sun_normalized_model_minus_observation"] = (
+        comparison.modeled_sun_normalized_radiance
+        - comparison.observed_sun_normalized_radiance
     )
-    comparison["model_to_observation_ratio"] = (
+    comparison["sun_normalized_model_to_observation_ratio"] = (
+        comparison.modeled_sun_normalized_radiance
+        / comparison.observed_sun_normalized_radiance
+    )
+    comparison["radiance_model_to_observation_ratio"] = (
         comparison.modeled_radiance / comparison.observed_radiance
     )
     comparison = comparison.assign_coords(
@@ -444,6 +482,10 @@ def make_comparison(
         ancillary_mapping=(
             "Nearest ordered OMPS 35-km tangent slice for every generated orbital row"
         ),
+        modeled_measurement=(
+            "Sun-normalized radiance calculated with unit incident solar irradiance"
+        ),
+        observed_normalized_dataset="GRIDDED_DATA/SunNormalizedRadiance",
         num_generated_orbital_positions=len(nearest_anc_scan),
     )
     return comparison
@@ -477,7 +519,43 @@ def parse_args() -> argparse.Namespace:
         default=5.0,
         help="Extra internal-grid margin before and after every time group",
     )
-    parser.add_argument("--time-group-duration-s", type=float, default=40.0)
+    parser.add_argument(
+        "--time-group-duration-s",
+        type=float,
+        help=(
+            "Time-bin width; defaults to 40 s for single scattering and "
+            "240 s for successive orders"
+        ),
+    )
+    parser.add_argument(
+        "--multiple-scattering",
+        choices=("none", "successive-orders"),
+        default="none",
+    )
+    parser.add_argument(
+        "--num-sza",
+        type=int,
+        default=5,
+        help="Number of horizontal source columns for 2D successive orders",
+    )
+    parser.add_argument(
+        "--successive-orders-altitude-points",
+        type=int,
+        default=25,
+        help="Number of midpoint altitude source levels",
+    )
+    parser.add_argument(
+        "--successive-orders-angular-points",
+        type=int,
+        default=110,
+        help="Incoming and outgoing unit-sphere angular points",
+    )
+    parser.add_argument(
+        "--successive-orders-iterations",
+        type=int,
+        default=50,
+        help="Maximum successive-orders fixed-point iterations",
+    )
     parser.add_argument(
         "--repeat-calculations",
         type=int,
@@ -510,6 +588,15 @@ def parse_args() -> argparse.Namespace:
         help="Print one diagnostic line for every time group",
     )
     parser.add_argument(
+        "--solar-source",
+        choices=("astropy", "omps"),
+        default="astropy",
+        help=(
+            "Use an Astropy solar ephemeris, or the OMPS 35-km solar-angle "
+            "fields. The ephemeris avoids zero OMPS azimuths at dark orbit ends."
+        ),
+    )
+    parser.add_argument(
         "--derivative-details",
         action="store_true",
         help="Print the storage used by every derivative mapping",
@@ -535,6 +622,14 @@ def main() -> None:
             raise ValueError("Minimum tangent altitude must not exceed the maximum")
         if args.repeat_calculations < 0:
             raise ValueError("repeat-calculations must be non-negative")
+        if args.num_sza < 1:
+            raise ValueError("num-sza must be positive")
+        if args.successive_orders_altitude_points < 2:
+            raise ValueError("successive-orders-altitude-points must be at least 2")
+        if args.successive_orders_angular_points < 1:
+            raise ValueError("successive-orders-angular-points must be positive")
+        if args.successive_orders_iterations < 1:
+            raise ValueError("successive-orders-iterations must be positive")
         if (
             not np.isfinite(args.repeat_ozone_scale_step)
             or args.repeat_ozone_scale_step < 0
@@ -578,7 +673,28 @@ def main() -> None:
     with profiler.phase("construct atmosphere"):
         config = sk.Config()
         config.single_scatter_source = sk.SingleScatterSource.Exact
-        config.multiple_scatter_source = sk.MultipleScatterSource.NoSource
+        if args.multiple_scattering == "successive-orders":
+            config.multiple_scatter_source = (
+                sk.MultipleScatterSource.SuccessiveOrdersCpp
+            )
+            config.num_sza = args.num_sza
+            altitude_edges_m = np.linspace(
+                data.atmosphere_altitude_m[0],
+                data.atmosphere_altitude_m[-1],
+                args.successive_orders_altitude_points + 1,
+            )
+            config.successive_orders_altitude_grid_m = 0.5 * (
+                altitude_edges_m[:-1] + altitude_edges_m[1:]
+            )
+            config.num_successive_orders_incoming = (
+                args.successive_orders_angular_points
+            )
+            config.num_successive_orders_outgoing = (
+                args.successive_orders_angular_points
+            )
+            config.num_successive_orders_iterations = args.successive_orders_iterations
+        else:
+            config.multiple_scatter_source = sk.MultipleScatterSource.NoSource
         config.occultation_source = sk.OccultationSource.NoSource
         config.los_refraction = not args.no_refraction
 
@@ -593,16 +709,24 @@ def main() -> None:
         )
 
     with profiler.phase("construct orbital engine"):
-        solar_handler = OmpsSolarHandler(
-            data.times,
-            data.solar_zenith_35km_deg,
-            data.solar_azimuth_35km_deg,
-        )
+        time_group_duration_s = args.time_group_duration_s
+        if time_group_duration_s is None:
+            time_group_duration_s = (
+                240.0 if args.multiple_scattering == "successive-orders" else 40.0
+            )
+        if args.solar_source == "astropy":
+            solar_handler = sk.solar.SolarGeometryHandlerAstropy()
+        else:
+            solar_handler = OmpsSolarHandler(
+                data.times,
+                data.solar_zenith_35km_deg,
+                data.solar_azimuth_35km_deg,
+            )
         engine = sk.OrbitalPlaneEngine(
             config,
             geometry,
             selected.viewing,
-            time_group_duration_s=args.time_group_duration_s,
+            time_group_duration_s=time_group_duration_s,
             group_padding_angle=np.deg2rad(args.group_padding_deg),
             solar_handler=solar_handler,
             derivative_execution=args.derivative_execution,
@@ -677,6 +801,19 @@ def main() -> None:
         f"{args.tangent_altitude_max_km:g} km"
     )
     print(f"OMPS wavelengths [nm]: {wavelengths_nm.tolist()}")
+    print(f"Solar geometry source: {args.solar_source}")
+    print(
+        f"Multiple scattering: {args.multiple_scattering}; "
+        f"time groups={time_group_duration_s:g} s"
+    )
+    if args.multiple_scattering == "successive-orders":
+        print(
+            "Successive orders: "
+            f"num_sza={args.num_sza}; "
+            f"source altitudes={args.successive_orders_altitude_points}; "
+            f"angular points={args.successive_orders_angular_points}; "
+            f"maximum iterations={args.successive_orders_iterations}"
+        )
     print(
         "Geometry: "
         f"{geometry.shape[0]} orbital positions x {geometry.shape[1]} altitudes; "
@@ -693,7 +830,10 @@ def main() -> None:
             f"{args.repeat_ozone_scale_step:.3g} per iteration; "
             "pressure, temperature, and refracted paths were unchanged."
         )
-        print(f"  Maximum radiance changes from the initial state: {repeated_changes}")
+        print(
+            "  Maximum sun-normalized radiance changes from the initial state: "
+            f"{repeated_changes}"
+        )
     if linearization is not None and vjp is not None:
         print(f"  VJP backend: {linearization.backends['vjp'].value}")
         print(f"  VJP parameter shapes: { {name: vjp[name].shape for name in vjp} }")
@@ -711,13 +851,15 @@ def main() -> None:
                 f"edge clipping={diagnostic['edge_clipping']}"
             )
     for wavelength in wavelengths_nm:
-        observed = comparison.observed_radiance.sel(wavelength=wavelength)
-        modeled = comparison.modeled_radiance.sel(wavelength=wavelength)
+        observed = comparison.observed_sun_normalized_radiance.sel(
+            wavelength=wavelength
+        )
+        modeled = comparison.modeled_sun_normalized_radiance.sel(wavelength=wavelength)
         print(
             f"  {wavelength:.3f} nm: "
             f"mean observed={float(observed.mean(skipna=True)):.6e}, "
             f"mean modeled={float(modeled.mean(skipna=True)):.6e} "
-            "W m-2 nm-1 sr-1"
+            "sun-normalized radiance"
         )
 
     if args.output is not None:

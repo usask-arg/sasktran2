@@ -217,9 +217,7 @@ class LambertianSurface2D(Constituent):
             return
 
         if self._albedo.ndim == 1:
-            mapping.interpolator = np.ones(
-                (atmo.num_wavel, num_orbital_positions)
-            )
+            mapping.interpolator = np.ones((atmo.num_wavel, num_orbital_positions))
             dims = ("orbital_position",)
             shape = (num_orbital_positions,)
             coords = {"orbital_position": atmo.model_geometry.orbital_positions}

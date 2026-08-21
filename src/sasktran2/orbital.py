@@ -120,19 +120,38 @@ def _structural_config_signature(config: sk.Config) -> tuple:
         "wavelength_batch_size",
         "threading_model",
         "num_stokes",
+        "num_streams",
         "single_scatter_source",
         "occultation_source",
         "emission_source",
         "multiple_scatter_source",
+        "multiple_scatter_refraction",
         "stokes_basis",
         "delta_m_scaling",
         "los_refraction",
         "solar_refraction",
         "output_los_optical_depth",
         "num_singlescatter_moments",
+        "num_sza",
+        "num_successive_orders_iterations",
+        "successive_orders_relative_tolerance",
+        "successive_orders_absolute_tolerance",
+        "successive_orders_anderson_depth",
+        "successive_orders_damping",
+        "successive_orders_altitude_grid_m",
+        "init_successive_orders_with_discrete_ordinates",
+        "num_successive_order_points",
+        "num_successive_orders_incoming",
+        "num_successive_orders_outgoing",
         "spectral_grid_mode",
     )
-    return tuple(getattr(config, field) for field in fields)
+    values = []
+    for field in fields:
+        value = getattr(config, field)
+        if isinstance(value, np.ndarray):
+            value = tuple(value.tolist())
+        values.append(value)
+    return tuple(values)
 
 
 class OrbitalPlaneGeometry(Geometry2D):
@@ -787,7 +806,11 @@ class OrbitalPlaneEngine(Engine):
         if (
             config.single_scatter_source
             not in (sk.SingleScatterSource.NoSource, sk.SingleScatterSource.Exact)
-            or config.multiple_scatter_source != sk.MultipleScatterSource.NoSource
+            or config.multiple_scatter_source
+            not in (
+                sk.MultipleScatterSource.NoSource,
+                sk.MultipleScatterSource.SuccessiveOrdersCpp,
+            )
             or config.emission_source
             not in (
                 sk.EmissionSource.NoSource,
@@ -796,9 +819,19 @@ class OrbitalPlaneEngine(Engine):
             )
         ):
             msg = (
-                "OrbitalPlaneEngine supports exact single scattering, occultation, "
-                "standard emission, and volume emission rate sources with multiple "
-                "scattering disabled"
+                "OrbitalPlaneEngine supports exact single scattering, "
+                "successive-orders multiple scattering, occultation, standard "
+                "emission, and volume emission rate sources"
+            )
+            raise NotImplementedError(msg)
+        if (
+            config.multiple_scatter_source
+            == sk.MultipleScatterSource.SuccessiveOrdersCpp
+            and config.multiple_scatter_refraction
+        ):
+            msg = (
+                "OrbitalPlaneEngine successive orders does not support "
+                "diffuse-ray refraction"
             )
             raise NotImplementedError(msg)
         if config.solar_refraction:
@@ -821,7 +854,10 @@ class OrbitalPlaneEngine(Engine):
             group_padding_angle,
             max_horizontal_scale_residual,
         )
-        scattering = config.single_scatter_source != sk.SingleScatterSource.NoSource
+        scattering = (
+            config.single_scatter_source != sk.SingleScatterSource.NoSource
+            or config.multiple_scatter_source != sk.MultipleScatterSource.NoSource
+        )
         if solar_handler is not None and sun_vectors_ecef is not None:
             msg = "Specify either solar_handler or sun_vectors_ecef, not both"
             raise ValueError(msg)

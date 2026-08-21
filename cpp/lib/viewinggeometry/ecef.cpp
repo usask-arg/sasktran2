@@ -5,8 +5,7 @@ namespace sasktran2::viewinggeometry {
                                    Eigen::Vector3d look_direction)
         : m_observer_position(std::move(observer_position)),
           m_look_direction(std::move(look_direction)) {
-        if (!m_observer_position.allFinite() ||
-            !m_look_direction.allFinite() ||
+        if (!m_observer_position.allFinite() || !m_look_direction.allFinite() ||
             m_observer_position.norm() == 0.0 ||
             m_look_direction.norm() == 0.0) {
             throw std::invalid_argument(
@@ -15,8 +14,8 @@ namespace sasktran2::viewinggeometry {
         m_look_direction.normalize();
     }
 
-    ViewingRay ECEFViewingRay::construct_ray(
-        const sasktran2::Coordinates& geometry) {
+    ViewingRay
+    ECEFViewingRay::construct_ray(const sasktran2::Coordinates& geometry) {
         ViewingRay result;
         result.observer.position = m_observer_position;
         result.look_away = m_look_direction;
@@ -37,7 +36,5 @@ namespace sasktran2::viewinggeometry {
         return result;
     }
 
-    std::string ECEFViewingRay::to_string() const {
-        return "ECEFViewingRay";
-    }
+    std::string ECEFViewingRay::to_string() const { return "ECEFViewingRay"; }
 } // namespace sasktran2::viewinggeometry

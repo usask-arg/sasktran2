@@ -210,6 +210,44 @@ TEST_CASE("Geometry2D characteristic solar table follows exact endpoint OD",
             Catch::Approx(extinction_cotangent.dot(extinction)).epsilon(1e-12));
 }
 
+TEST_CASE("Geometry2D solar table permits azimuth-local finite-window topology",
+          "[sourceintegrator][singlescatter][geometry2d][solartable]") {
+    constexpr int num_altitudes = 81;
+    constexpr int num_horizontal = 68;
+    Eigen::VectorXd altitudes =
+        Eigen::VectorXd::LinSpaced(num_altitudes, 0.0, 80000.0);
+    Eigen::VectorXd horizontal =
+        Eigen::VectorXd::LinSpaced(num_horizontal, -0.9, 0.25);
+    sasktran2::Geometry2D geometry(0.35, 0.8, 6372000.0, std::move(altitudes),
+                                   std::move(horizontal),
+                                   sasktran2::grids::interpolation::linear);
+    sasktran2::raytracing::RustRayTracer2D raytracer(geometry);
+
+    std::vector<sasktran2::raytracing::TracedRay> queries;
+    constexpr int num_azimuths = (num_horizontal + 1) / 2;
+    for (int azimuth_index = 0; azimuth_index < num_azimuths; ++azimuth_index) {
+        sasktran2::raytracing::TracedRay query;
+        query.layers.resize(1);
+        query.layers[0].entrance.position =
+            geometry.coordinates().solar_coordinate_vector(
+                -0.07908409944216922,
+                2.0 * EIGEN_PI * azimuth_index / num_azimuths, 20000.0);
+        query.layers[0].exit = query.layers[0].entrance;
+        queries.push_back(std::move(query));
+    }
+
+    sasktran2::Config config;
+    sasktran2::solartransmission::SolarTransmissionTable2D table(geometry,
+                                                                 raytracer);
+    table.initialize_config(config);
+    table.initialize_geometry(queries);
+    sasktran2::solartransmission::SolarTableInterpolation interpolation;
+    std::vector<bool> ground_hit;
+    REQUIRE_NOTHROW(
+        table.generate_interpolation(queries, interpolation, ground_hit));
+    REQUIRE(interpolation.rows() == 2 * num_azimuths);
+}
+
 TEST_CASE("Geometry2D characteristic solar table follows refracted endpoint "
           "OD",
           "[sourceintegrator][singlescatter][geometry2d][solartable]") {
