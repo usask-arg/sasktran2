@@ -18,7 +18,7 @@ config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
 ## Advantages
 
  - Fully accounts for sphericity of the atmosphere
- - Supports full weighting-function calculations
+ - Supports full weighting-function calculations and memory-efficient native JVP/VJP products
 
 ## Disadvantages
 
@@ -41,6 +41,31 @@ iterations.
 The explicit {py:attr}`sasktran2.Config.successive_orders_altitude_grid_m`
 option decouples the source grid from the atmosphere altitude grid. When it is
 not set, the source uses the midpoints of the atmosphere layers.
+
+## Structured 2D Geometry
+
+The successive-orders source supports horizontally varying atmospheres defined
+with {py:class}`sasktran2.Geometry2D`. Its source grid is independent of the
+atmosphere grid:
+
+- {py:attr}`sasktran2.Config.num_sza` selects the number of evenly spaced
+  horizontal source columns spanning the atmosphere's horizontal-angle grid.
+- {py:attr}`sasktran2.Config.successive_orders_altitude_grid_m` selects the
+  vertical source locations. When it is not set, atmosphere-layer midpoints are
+  used.
+
+The incoming direct beam is obtained from a solar-characteristic table
+parameterized by altitude, solar zenith angle, and off-plane azimuth. Setting
+{py:attr}`sasktran2.Config.solar_refraction` bends these solar characteristics
+using the refractive-index profile stored on the geometry. When exact or table
+single scattering is also enabled, the sources share this table.
+
+Geometry2D successive orders provides native JVP and VJP calculations, which
+avoid allocating the complete structured radiance Jacobian. Refraction of the
+diffuse multiple-scatter rays is not yet supported, so
+{py:attr}`sasktran2.Config.multiple_scatter_refraction` must remain disabled.
+Line-of-sight refraction and flux observers are also not supported with
+Geometry2D.
 
 ## Relevant Configuration Options
 

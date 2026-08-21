@@ -367,18 +367,20 @@ class Config:
     @property
     def multiple_scatter_refraction(self) -> bool:
         """
-        Controls whether or not refraction is enabled for the solar line of sight rays. Requires
-        the refractive index to be set in the Geometry object for refraction to work.  Only has an effect
-        when the single scatter source term is set to Table.  Defaults to False.
+        Controls whether refraction is enabled for diffuse rays used by the multiple scatter source.
+        Requires the refractive index to be set in the Geometry object. Geometry2D successive orders
+        does not currently support diffuse-ray refraction; ``solar_refraction`` independently controls
+        refraction of its incoming direct solar beam. Defaults to False.
         """
         return self._config.multiple_scatter_refraction
 
     @multiple_scatter_refraction.setter
     def multiple_scatter_refraction(self, value: bool):
         """
-        Controls whether or not refraction is enabled for the solar line of sight rays. Requires
-        the refractive index to be set in the Geometry object for refraction to work.  Only has an effect
-        when the single scatter source term is set to Table.  Defaults to False.
+        Controls whether refraction is enabled for diffuse rays used by the multiple scatter source.
+        Requires the refractive index to be set in the Geometry object. Geometry2D successive orders
+        does not currently support diffuse-ray refraction; ``solar_refraction`` independently controls
+        refraction of its incoming direct solar beam. Defaults to False.
         """
         self._config.multiple_scatter_refraction = value
 

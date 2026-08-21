@@ -196,7 +196,7 @@ impl<'a> Engine<'a> {
         })
     }
 
-    /// Creates a transmission-only engine on a structured 2D geometry.
+    /// Creates an engine on a structured 2D geometry.
     pub fn new_2d(
         config: &'a Config,
         geometry: &'a Geometry2D,
@@ -213,9 +213,7 @@ impl<'a> Engine<'a> {
         };
 
         if engine.is_null() {
-            return Err(anyhow::anyhow!(
-                "Failed to create transmission-only Geometry2D Engine"
-            ));
+            return Err(anyhow::anyhow!("Failed to create Geometry2D Engine"));
         }
 
         Ok(Engine {
@@ -875,6 +873,20 @@ mod tests {
 
         config
             .with_single_scatter_source(SingleScatterSource::SolarTable)
+            .unwrap();
+        let engine = Engine::new_2d(&config, &geometry, &viewing_geometry).unwrap();
+        assert!(!engine.engine.is_null());
+        drop(engine);
+
+        config
+            .with_multiple_scatter_source(MultipleScatterSource::SuccessiveOrders)
+            .unwrap();
+        let engine = Engine::new_2d(&config, &geometry, &viewing_geometry).unwrap();
+        assert!(!engine.engine.is_null());
+        drop(engine);
+
+        config
+            .with_multiple_scatter_source(MultipleScatterSource::SuccessiveOrdersLegacy)
             .unwrap();
         assert!(Engine::new_2d(&config, &geometry, &viewing_geometry).is_err());
 

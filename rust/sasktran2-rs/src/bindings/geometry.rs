@@ -356,6 +356,31 @@ mod tests {
     }
 
     #[test]
+    fn test_geometry2d_refractive_index() {
+        let geometry = Geometry2D::new(
+            0.5,
+            0.1,
+            6_371_000.0,
+            vec![0.0, 10_000.0, 20_000.0],
+            vec![-0.2, 0.2],
+            InterpolationMethod::Linear,
+        )
+        .unwrap();
+
+        {
+            let mut refractive_index = geometry.refractive_index_mut().unwrap();
+            assert_eq!(refractive_index.to_vec(), vec![1.0, 1.0, 1.0]);
+            refractive_index[0] = 1.0003;
+            refractive_index[1] = 1.0001;
+        }
+
+        assert_eq!(
+            geometry.refractive_index_mut().unwrap().to_vec(),
+            vec![1.0003, 1.0001, 1.0]
+        );
+    }
+
+    #[test]
     fn test_geometry2d_rejects_invalid_grids() {
         assert!(
             Geometry2D::new(
