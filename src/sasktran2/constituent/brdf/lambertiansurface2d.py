@@ -220,7 +220,7 @@ class LambertianSurface2D(Constituent):
             mapping.interpolator = np.ones((atmo.num_wavel, num_orbital_positions))
             dims = ("orbital_position",)
             shape = (num_orbital_positions,)
-            coords = {"orbital_position": atmo.model_geometry.orbital_positions}
+            coords = atmo.model_geometry._xarray_orbital_coordinates()
         else:
             num_spectral = self._albedo.shape[1]
             interpolator = np.zeros(
@@ -249,7 +249,7 @@ class LambertianSurface2D(Constituent):
             else:
                 spectral_coord = np.arange(num_spectral)
             coords = {
-                "orbital_position": atmo.model_geometry.orbital_positions,
+                **atmo.model_geometry._xarray_orbital_coordinates(),
                 spectral_dim: spectral_coord,
             }
         mapping.interp_dim = f"{name}_orbital_surface"

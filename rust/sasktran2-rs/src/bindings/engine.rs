@@ -319,6 +319,26 @@ impl<'a> Engine<'a> {
     }
 
     pub fn calculate_radiance(&self, atmosphere: &Atmosphere) -> Result<Output> {
+        let derivative_names = atmosphere
+            .storage
+            .derivative_mapping_names()
+            .map_err(|e| anyhow::anyhow!(e))?;
+        let surface_names = atmosphere
+            .surface
+            .derivative_mapping_names()
+            .map_err(|e| anyhow::anyhow!(e))?;
+        self.calculate_radiance_with_mappings(atmosphere, &derivative_names, &surface_names)
+    }
+
+    /// Calculate radiance while allocating only the requested derivative
+    /// outputs. An empty pair of mapping collections is a true radiance-only
+    /// calculation even when the atmosphere contains derivative mappings.
+    pub fn calculate_radiance_with_mappings(
+        &self,
+        atmosphere: &Atmosphere,
+        derivative_names: &[String],
+        surface_names: &[String],
+    ) -> Result<Output> {
         crate::threading::set_num_threads(self.config.num_threads()?)?;
 
         let num_stokes = self.config.num_stokes()?;
@@ -329,13 +349,8 @@ impl<'a> Engine<'a> {
 
         let mut output = Output::new(num_wavel, num_los, num_flux, num_flux_types, num_stokes);
 
-        let deriv_names = atmosphere
-            .storage
-            .derivative_mapping_names()
-            .map_err(|e| anyhow::anyhow!(e))?;
-
         // Assign the memory for the derivatives
-        for deriv_name in deriv_names.iter() {
+        for deriv_name in derivative_names {
             let mapping = atmosphere
                 .storage
                 .get_derivative_mapping(deriv_name)
@@ -345,11 +360,13 @@ impl<'a> Engine<'a> {
             output.with_derivative(deriv_name, num_deriv_output);
         }
 
-        let deriv_names = atmosphere
-            .surface
-            .derivative_mapping_names()
-            .map_err(|e| anyhow::anyhow!(e))?;
-        for deriv_name in deriv_names.iter() {
+        for deriv_name in surface_names {
+            // Resolve the name here so an invalid selection fails before the
+            // native calculation instead of creating an unattached output.
+            atmosphere
+                .surface
+                .get_derivative_mapping(deriv_name)
+                .map_err(|e| anyhow::anyhow!(e))?;
             output.with_surface_derivative(deriv_name);
         }
 
@@ -945,6 +962,13 @@ mod tests {
 
         config
             .with_multiple_scatter_source(MultipleScatterSource::SuccessiveOrdersLegacy)
+            .unwrap();
+        assert!(Engine::new_2d(&config, &geometry, &viewing_geometry).is_err());
+
+        config
+            .with_multiple_scatter_source(MultipleScatterSource::None)
+            .unwrap()
+            .with_single_scatter_source(SingleScatterSource::DiscreteOrdinates)
             .unwrap();
         assert!(Engine::new_2d(&config, &geometry, &viewing_geometry).is_err());
 

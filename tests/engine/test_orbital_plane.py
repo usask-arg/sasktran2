@@ -170,6 +170,128 @@ def test_viewing_geometry_constructs_geoid_following_atmosphere_grid():
         assert geoid.altitude == pytest.approx(0.0, abs=1e-5)
 
 
+def test_constructed_grid_exposes_geoid_and_vertical_slice_provenance():
+    source_geometry = orbital_geometry()
+    times = np.array(
+        [
+            "2026-01-01T00:00:00",
+            "2026-01-01T00:00:02",
+            "2026-01-01T00:00:30",
+            "2026-01-01T00:01:00",
+        ],
+        dtype="datetime64[ns]",
+    )
+    vertical_slice = np.array([10, 10, 20, 30])
+    viewing = limb_viewing(
+        source_geometry,
+        np.array([-0.31, -0.29, 0.0, 0.3]),
+        times=times,
+        vertical_slice=vertical_slice,
+    )
+    geometry = viewing.construct_atmosphere_geometry(
+        ALTITUDES_M, 0.02, path_padding_angle=0.1
+    )
+
+    grid = geometry.grid_dataset
+    anchors = geometry.vertical_slice_anchors
+    assert grid.sizes == {
+        "orbital_position": geometry.shape[0],
+        "xyz": 3,
+        "altitude": len(ALTITUDES_M),
+    }
+    assert {
+        "along_track_angle_rad",
+        "geodetic_latitude_deg",
+        "geodetic_longitude_deg",
+        "reference_time",
+    } <= set(grid.coords)
+    np.testing.assert_array_equal(grid.altitude, ALTITUDES_M)
+    np.testing.assert_allclose(grid.ground_track_ecef_m, geometry.ground_track_ecef_m)
+    np.testing.assert_array_equal(anchors.vertical_slice, [10, 20, 30])
+    np.testing.assert_array_equal(
+        anchors.reference_time,
+        np.array(
+            [
+                "2026-01-01T00:00:01",
+                "2026-01-01T00:00:30",
+                "2026-01-01T00:01:00",
+            ],
+            dtype="datetime64[ns]",
+        ),
+    )
+    assert np.all(np.diff(anchors.along_track_angle_rad) >= 0)
+    assert grid.reference_time[0] == anchors.reference_time[0]
+    assert grid.reference_time[-1] == anchors.reference_time[-1]
+
+    geoid = sk.WGS84()
+    for index, location in enumerate(geometry.ground_track_ecef_m):
+        geoid.from_xyz(location)
+        assert grid.geodetic_latitude_deg[index] == pytest.approx(
+            geoid.latitude, abs=2e-11
+        )
+        longitude_difference = (
+            grid.geodetic_longitude_deg[index] - geoid.longitude + 180
+        ) % 360 - 180
+        assert longitude_difference == pytest.approx(0.0, abs=2e-11)
+
+    config = transmission_config()
+    engine = sk.OrbitalPlaneEngine(
+        config,
+        geometry,
+        viewing,
+        time_group_duration_s=120,
+        max_horizontal_scale_residual=None,
+    )
+    template = engine.linearize(raw_atmosphere(geometry, config)).tangent_template
+    for coordinate in (
+        "along_track_angle_rad",
+        "geodetic_latitude_deg",
+        "geodetic_longitude_deg",
+        "reference_time",
+    ):
+        assert coordinate in template.extinction.coords
+        xr.testing.assert_equal(
+            template.extinction.coords[coordinate], grid.coords[coordinate]
+        )
+
+
+def test_project_ground_track_returns_interpolation_coordinates_and_order_policy():
+    angles = np.linspace(0.0, 2 * np.pi, 73)
+    directions = np.column_stack(
+        (np.sin(angles), np.zeros_like(angles), np.cos(angles))
+    )
+    geometry = sk.OrbitalPlaneGeometry(
+        EARTH_RADIUS_M,
+        ALTITUDES_M,
+        EARTH_RADIUS_M * directions,
+    )
+
+    increasing = geometry.project_ground_track(
+        geometry.ground_track_ecef_m[[0, 1]], order="increasing"
+    )
+    decreasing = geometry.project_ground_track(
+        geometry.ground_track_ecef_m[[-1, -2]], order="decreasing"
+    )
+
+    np.testing.assert_allclose(
+        increasing.along_track_angle_rad, geometry.cumulative_angles[:2], atol=2e-14
+    )
+    np.testing.assert_allclose(
+        decreasing.along_track_angle_rad,
+        geometry.cumulative_angles[[-1, -2]],
+        atol=2e-14,
+    )
+    np.testing.assert_allclose(increasing.cross_track_angle_rad, 0.0, atol=2e-8)
+    np.testing.assert_allclose(decreasing.cross_track_angle_rad, 0.0, atol=2e-8)
+    assert bool(increasing.at_track_edge[0])
+    assert bool(decreasing.at_track_edge[0])
+
+    with pytest.raises(ValueError, match="order"):
+        geometry.project_ground_track(directions[:1], order="sideways")
+    with pytest.raises(ValueError, match="shape"):
+        geometry.project_ground_track(np.ones((2, 2)))
+
+
 def test_geoid_resampling_preserves_the_selected_radial_directions():
     source_geometry = orbital_geometry()
     viewing = limb_viewing(source_geometry, np.array([-0.35, 0.27]))
@@ -1523,8 +1645,15 @@ def test_eager_jacobian_memory_guard_leaves_native_vjp_available():
 
     estimate = engine.estimate_eager_jacobian_bytes(atmosphere)
     assert estimate > engine.max_eager_jacobian_bytes
-    with pytest.raises(MemoryError, match="calculate_derivatives=False"):
+    with pytest.raises(MemoryError, match="derivatives=False"):
         engine.calculate_radiance(atmosphere)
+
+    radiance_only = engine.calculate_radiance(atmosphere, derivatives=False)
+    assert "radiance" in radiance_only
+    assert not any(name.startswith("wf_") for name in radiance_only.data_vars)
+    for diagnostics in engine.group_diagnostics:
+        assert diagnostics["resident_volume_derivative_mappings"] == []
+        assert diagnostics["resident_surface_derivative_mappings"] == []
 
     linearization = engine.linearize(atmosphere)
     result = linearization.vjp(xr.ones_like(linearization.value))
@@ -1707,6 +1836,101 @@ def test_resident_and_streaming_vjp_agree_and_keep_group_engines():
     np.testing.assert_allclose(
         results["resident"], results["streaming"], rtol=2e-11, atol=1e-12
     )
+
+
+def test_resident_group_workspaces_contain_only_selected_derivative_mappings():
+    geometry = orbital_geometry()
+    viewing = limb_viewing(geometry, np.array([-0.2, 0.15]))
+    config = transmission_config()
+    engine = sk.OrbitalPlaneEngine(
+        config,
+        geometry,
+        viewing,
+        time_group_duration_s=20,
+        derivative_execution="resident",
+    )
+    linearization = engine.linearize(raw_atmosphere(geometry, config))
+    cotangent = xr.ones_like(linearization.value)
+
+    linearization.vjp(cotangent, parameters=["extinction"])
+    first_identities = [
+        item["atmosphere_workspace_identity"] for item in engine.group_diagnostics
+    ]
+    for diagnostics in engine.group_diagnostics:
+        assert diagnostics["resident_volume_derivative_mappings"] == ["wf_extinction"]
+        assert diagnostics["resident_surface_derivative_mappings"] == []
+
+    linearization.vjp(cotangent, parameters=["extinction"])
+    assert [
+        item["atmosphere_workspace_identity"] for item in engine.group_diagnostics
+    ] == first_identities
+
+    linearization.vjp(cotangent, parameters=["ssa"])
+    for diagnostics in engine.group_diagnostics:
+        assert diagnostics["resident_volume_derivative_mappings"] == ["wf_ssa"]
+
+    tangent = linearization.tangent_template[["extinction"]]
+    tangent.extinction.values[:] = 1.0
+    linearization.jvp(tangent)
+    for diagnostics in engine.group_diagnostics:
+        assert diagnostics["resident_volume_derivative_mappings"] == ["wf_extinction"]
+
+
+def test_orbital_aerosol_altitude_auxiliary_parameter_is_adjoint_and_selected():
+    geometry = orbital_geometry()
+    viewing = limb_viewing(geometry, np.array([-0.15, 0.12]))
+    config = transmission_config()
+    optical_property = sk.optical.HenyeyGreenstein(
+        db=xr.Dataset(
+            {
+                "xs_total": (
+                    ("radius", "wavelength_nm"),
+                    np.array([[2.0e-12, 3.0e-12], [6.0e-12, 8.0e-12]]),
+                ),
+                "ssa": (
+                    ("radius", "wavelength_nm"),
+                    np.array([[1.0e-12, 1.5e-12], [3.0e-12, 4.0e-12]]),
+                ),
+                "asymmetry_parameter": (
+                    ("radius", "wavelength_nm"),
+                    np.array([[0.4, 0.45], [0.6, 0.65]]),
+                ),
+            },
+            coords={"radius": [1.0, 3.0], "wavelength_nm": [500.0, 600.0]},
+        ),
+        max_num_moments=16,
+    )
+    atmosphere = sk.Atmosphere(
+        geometry,
+        config,
+        wavelengths_nm=np.array([550.0]),
+        legendre_derivative=False,
+    )
+    atmosphere["aerosol"] = sk.constituent.NumberDensityScatterer2D(
+        optical_property,
+        np.full(geometry.shape, 2.0e6),
+        radius=np.linspace(1.2, 2.0, geometry.shape[1]),
+    )
+    engine = sk.OrbitalPlaneEngine(config, geometry, viewing, time_group_duration_s=20)
+    linearization = engine.linearize(atmosphere)
+
+    assert linearization.parameter_dims["aerosol_radius"] == ("altitude",)
+    tangent = linearization.tangent_template[["aerosol_radius"]]
+    tangent.aerosol_radius.values[:] = np.linspace(-0.2, 0.3, geometry.shape[1])
+    cotangent = xr.ones_like(linearization.value)
+    jvp = linearization.jvp(tangent)
+    gradient = linearization.vjp(cotangent, parameters=["aerosol_radius"])
+    np.testing.assert_allclose(
+        (jvp * cotangent).sum(),
+        (tangent.aerosol_radius * gradient.aerosol_radius).sum(),
+        rtol=2e-11,
+        atol=1e-14,
+    )
+    for diagnostics in engine.group_diagnostics:
+        assert diagnostics["resident_volume_derivative_mappings"] == [
+            "wf_aerosol_radius"
+        ]
+        assert diagnostics["resident_surface_derivative_mappings"] == []
 
 
 def test_derivative_execution_must_be_resident_or_streaming():

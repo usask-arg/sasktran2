@@ -215,6 +215,7 @@ class OrbitalPlaneGeometry(Geometry2D):
             interpolation_method,
             surface_radii_m,
         )
+        self._anchor_vertical_slice_labels: np.ndarray | None = None
 
     def altitudes(self) -> np.ndarray:
         return self._geometry.altitudes()
@@ -234,6 +235,171 @@ class OrbitalPlaneGeometry(Geometry2D):
     @property
     def cumulative_angles(self) -> np.ndarray:
         return self._geometry.cumulative_angles()
+
+    @property
+    def geodetic_latitude_deg(self) -> np.ndarray | None:
+        """Grid geodetic latitude, or ``None`` for an explicit spherical grid."""
+        coordinates = np.asarray(self._geometry.geodetic_coordinates_degrees())
+        if coordinates.size == 0:
+            return None
+        return coordinates[:, 0].copy()
+
+    @property
+    def geodetic_longitude_deg(self) -> np.ndarray | None:
+        """Grid geodetic longitude, or ``None`` for an explicit spherical grid."""
+        coordinates = np.asarray(self._geometry.geodetic_coordinates_degrees())
+        if coordinates.size == 0:
+            return None
+        return coordinates[:, 1].copy()
+
+    @property
+    def reference_times(self) -> np.ndarray | None:
+        """Slice-time interpolation at every atmosphere-grid position.
+
+        Values are clamped to the first and last vertical-slice mean timestamp
+        through the path-padding portions of a viewing-constructed grid.
+        Explicitly constructed spherical grids have no time provenance.
+        """
+        values = np.asarray(self._geometry.grid_reference_times_ns(), dtype=np.int64)
+        if values.size == 0:
+            return None
+        return values.astype("datetime64[ns]")
+
+    @property
+    def vertical_slice_anchors(self) -> xr.Dataset:
+        """Construction anchors linking vertical slices to the master track."""
+        codes = np.asarray(
+            self._geometry.anchor_vertical_slice_indices(), dtype=np.int64
+        )
+        if codes.size == 0:
+            return xr.Dataset(coords={"vertical_slice_anchor": np.arange(0)})
+        labels = (
+            codes
+            if self._anchor_vertical_slice_labels is None
+            else self._anchor_vertical_slice_labels
+        )
+        return xr.Dataset(
+            coords={
+                "vertical_slice_anchor": np.arange(codes.size),
+                "xyz": ["x", "y", "z"],
+                "vertical_slice": ("vertical_slice_anchor", labels.copy()),
+                "reference_time": (
+                    "vertical_slice_anchor",
+                    np.asarray(
+                        self._geometry.anchor_reference_times_ns(), dtype=np.int64
+                    ).astype("datetime64[ns]"),
+                ),
+                "along_track_angle_rad": (
+                    "vertical_slice_anchor",
+                    np.asarray(self._geometry.anchor_along_track_angles()).copy(),
+                ),
+            },
+            data_vars={
+                "ground_track_ecef_m": (
+                    ("vertical_slice_anchor", "xyz"),
+                    np.asarray(self._geometry.anchor_ground_track_ecef()).copy(),
+                )
+            },
+        )
+
+    def _xarray_orbital_coordinates(self) -> dict:
+        coordinates: dict = {
+            "orbital_position": self.orbital_positions,
+            "along_track_angle_rad": (
+                "orbital_position",
+                self.cumulative_angles.copy(),
+            ),
+        }
+        latitude = self.geodetic_latitude_deg
+        longitude = self.geodetic_longitude_deg
+        reference_time = self.reference_times
+        if latitude is not None:
+            coordinates["geodetic_latitude_deg"] = (
+                "orbital_position",
+                latitude,
+            )
+            coordinates["geodetic_longitude_deg"] = (
+                "orbital_position",
+                longitude,
+            )
+        if reference_time is not None:
+            coordinates["reference_time"] = (
+                "orbital_position",
+                reference_time,
+            )
+        return coordinates
+
+    @property
+    def grid_dataset(self) -> xr.Dataset:
+        """Labeled master atmosphere grid and its construction provenance."""
+        coordinates = self._xarray_orbital_coordinates()
+        coordinates.update(
+            {
+                "altitude": self.altitudes().copy(),
+                "xyz": ["x", "y", "z"],
+            }
+        )
+        return xr.Dataset(
+            coords=coordinates,
+            data_vars={
+                "ground_track_ecef_m": (
+                    ("orbital_position", "xyz"),
+                    self.ground_track_ecef_m.copy(),
+                ),
+                "surface_radius_m": (
+                    "orbital_position",
+                    self.surface_radii_m.copy(),
+                ),
+            },
+        )
+
+    def project_ground_track(
+        self,
+        ecef_positions_m: np.ndarray,
+        *,
+        order: Literal["independent", "increasing", "decreasing"] = "independent",
+    ) -> xr.Dataset:
+        """Project ECEF positions onto the ordered master ground track.
+
+        ``order="increasing"`` or ``"decreasing"`` constrains every search to
+        the remaining portion of the track. This disambiguates repeated ECEF
+        locations on full-orbit or self-crossing grids and is the appropriate
+        mode for an ancillary product already ordered along the orbit.
+        """
+        try:
+            positions = np.asarray(ecef_positions_m, dtype=np.float64)
+        except (TypeError, ValueError) as error:
+            msg = "ecef_positions_m must be floating-point ECEF vectors"
+            raise ValueError(msg) from error
+        if positions.ndim == 1:
+            positions = positions[np.newaxis, :]
+        if positions.ndim != 2 or positions.shape[1:] != (3,):
+            msg = (
+                "ecef_positions_m must have shape (position, 3) or (3,); "
+                f"got {positions.shape}"
+            )
+            raise ValueError(msg)
+        if np.any(~np.isfinite(positions)) or np.any(
+            np.linalg.norm(positions, axis=1) == 0
+        ):
+            msg = "ecef_positions_m must contain finite, non-zero vectors"
+            raise ValueError(msg)
+        if order not in ("independent", "increasing", "decreasing"):
+            msg = "order must be 'independent', 'increasing', or 'decreasing'"
+            raise ValueError(msg)
+        segment, fraction, angle, residual, at_edge = (
+            self._geometry.project_ground_track(np.ascontiguousarray(positions), order)
+        )
+        return xr.Dataset(
+            coords={"position": np.arange(len(positions))},
+            data_vars={
+                "segment_index": ("position", np.asarray(segment)),
+                "segment_fraction": ("position", np.asarray(fraction)),
+                "along_track_angle_rad": ("position", np.asarray(angle)),
+                "cross_track_angle_rad": ("position", np.asarray(residual)),
+                "at_track_edge": ("position", np.asarray(at_edge)),
+            },
+        )
 
     @property
     def earth_radius_m(self) -> float:
@@ -481,6 +647,18 @@ class OrbitalPlaneViewingGeometry(ViewingGeometryContainer):
             interpolation_method,
             max_orbital_positions,
             selected_geoid._internal,
+        )
+        anchor_codes = np.asarray(
+            result._geometry.anchor_vertical_slice_indices(), dtype=np.int64
+        )
+        label_by_code = {
+            int(code): int(label)
+            for code, label in zip(
+                self._vertical_slice_codes, self._vertical_slice, strict=True
+            )
+        }
+        result._anchor_vertical_slice_labels = np.asarray(
+            [label_by_code[int(code)] for code in anchor_codes], dtype=np.int64
         )
         return result
 
@@ -1018,8 +1196,8 @@ class OrbitalPlaneEngine(Engine):
             msg = (
                 "The requested eager orbital Jacobian is estimated to require at "
                 f"least {estimate / 1024**3:.2f} GiB, exceeding the configured "
-                f"{limit / 1024**3:.2f} GiB limit. Use an atmosphere with "
-                "calculate_derivatives=False for radiance only, use linearize() "
+                f"{limit / 1024**3:.2f} GiB limit. Use "
+                "calculate_radiance(..., derivatives=False) for radiance only, use linearize() "
                 "for JVP/VJP retrieval operations, or explicitly set "
                 "max_eager_jacobian_bytes=None when constructing the engine."
             )
@@ -1074,17 +1252,26 @@ class OrbitalPlaneEngine(Engine):
             )
             raise sk.StaleLinearizationError(msg)
 
-    def _calculate_radiance(self, atmosphere, internal_atmosphere=None):
+    def _calculate_radiance(
+        self,
+        atmosphere,
+        internal_atmosphere=None,
+        *,
+        include_derivatives: bool = True,
+    ):
         self._validate_orbital_atmosphere(atmosphere)
         if internal_atmosphere is None:
             internal_atmosphere = atmosphere.internal_object()
-            self._enforce_eager_jacobian_limit(atmosphere)
+            if include_derivatives:
+                self._enforce_eager_jacobian_limit(atmosphere)
             self._prepare_refraction(atmosphere)
             self._prepare_surface(atmosphere)
-        else:
+        elif include_derivatives:
             self._enforce_eager_jacobian_limit(atmosphere)
         return super()._calculate_radiance(
-            atmosphere, internal_atmosphere=internal_atmosphere
+            atmosphere,
+            internal_atmosphere=internal_atmosphere,
+            include_derivatives=include_derivatives,
         )
 
     def linearize(self, atmosphere: sk.Atmosphere):

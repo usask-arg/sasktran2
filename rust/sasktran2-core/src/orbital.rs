@@ -138,16 +138,41 @@ pub fn locate_track_coordinate_in_range(
     minimum_angle: f64,
     maximum_angle: f64,
 ) -> Result<TrackCoordinate, String> {
+    locate_track_coordinate_in_range_near(
+        target,
+        track,
+        cumulative,
+        minimum_angle,
+        maximum_angle,
+        None,
+    )
+}
+
+/// Locate a direction in a cumulative-coordinate interval and use an expected
+/// coordinate to break spatially coincident ties. This is useful when mapping
+/// an ordered sequence across a closed or self-crossing track.
+pub fn locate_track_coordinate_in_range_near(
+    target: Vec3,
+    track: &[Vec3],
+    cumulative: &[f64],
+    minimum_angle: f64,
+    maximum_angle: f64,
+    expected_angle: Option<f64>,
+) -> Result<TrackCoordinate, String> {
     if !minimum_angle.is_finite()
         || !maximum_angle.is_finite()
         || minimum_angle > maximum_angle
         || minimum_angle < cumulative[0]
         || maximum_angle > *cumulative.last().unwrap()
+        || expected_angle.is_some_and(|expected| {
+            !expected.is_finite() || expected < minimum_angle || expected > maximum_angle
+        })
     {
         return Err("The track-coordinate search interval is invalid".to_string());
     }
     let mut best = None;
     let mut best_residual = f64::INFINITY;
+    let mut best_expected_distance = f64::INFINITY;
     for segment in 0..track.len() - 1 {
         let segment_start = cumulative[segment].max(minimum_angle);
         let segment_end = cumulative[segment + 1].min(maximum_angle);
@@ -162,12 +187,22 @@ pub fn locate_track_coordinate_in_range(
         let clamped = along.clamp(minimum_offset, maximum_offset);
         let candidate = clamped.cos() * track[segment] + clamped.sin() * tangent;
         let residual = angular_separation(target, candidate);
-        if residual < best_residual {
+        let angle = cumulative[segment] + clamped;
+        let expected_distance = expected_angle.map_or(0.0, |expected| (angle - expected).abs());
+        let is_better = if expected_angle.is_some() {
+            residual < best_residual - 1e-10
+                || ((residual - best_residual).abs() <= 1e-10
+                    && expected_distance < best_expected_distance)
+        } else {
+            residual < best_residual
+        };
+        if is_better {
             best_residual = residual;
+            best_expected_distance = expected_distance;
             best = Some(TrackCoordinate {
                 segment,
                 fraction: clamped / length,
-                angle: cumulative[segment] + clamped,
+                angle,
             });
         }
     }
@@ -371,6 +406,29 @@ mod tests {
         assert!((total - TWO_PI).abs() < 2e-12);
         assert!((last.angle - total).abs() < 1e-12);
         assert!((ranged.angle - total).abs() < 1e-12);
+    }
+
+    #[test]
+    fn ranged_preference_supports_reverse_order_on_a_closed_track() {
+        let track = (0..=72)
+            .map(|index| {
+                let angle = index as f64 * TWO_PI / 72.0;
+                Vec3::new(angle.sin(), 0.0, angle.cos())
+            })
+            .collect::<Vec<_>>();
+        let cumulative = cumulative_track_angles(&track).unwrap();
+        let total = *cumulative.last().unwrap();
+        let coordinate = locate_track_coordinate_in_range_near(
+            track[0],
+            &track,
+            &cumulative,
+            0.0,
+            total,
+            Some(total),
+        )
+        .unwrap();
+
+        assert!((coordinate.angle - total).abs() < 1e-12);
     }
 
     #[test]

@@ -51,6 +51,13 @@ atmosphere.temperature_k = temperature_k
 result = engine.calculate_radiance(atmosphere)
 ```
 
+A derivative-enabled atmosphere does not force every forward call to allocate
+weighting functions. Use
+``engine.calculate_radiance(atmosphere, derivatives=False)`` to obtain the same
+radiance (and requested LOS optical depth) without group derivative workspaces
+or a stitched Jacobian. The atmosphere remains derivative enabled and can be
+passed to ``linearize()`` afterward.
+
 By default, both forward and derivative calculations use resident group
 engines. This is intended for retrievals: after the first calculation, optical
 state updates reuse the local engines, atmosphere allocations, traced paths,
@@ -149,6 +156,38 @@ plane. ``max_orbital_positions`` protects against accidentally requesting an
 enormous grid with a very small angular spacing; set it to ``None`` only when a
 larger allocation is intentional.
 
+The constructed grid carries its mapping back to the measurements. The
+``geometry.grid_dataset`` dataset contains the ECEF surface point, surface
+radius, cumulative along-track angle, geodetic latitude/longitude, and an
+interpolated reference time for every ``orbital_position``. Reference time is
+linearly interpolated between vertical-slice mean times and clamped through the
+two padding regions. ``geometry.vertical_slice_anchors`` retains each original
+slice identifier, mean timestamp, ECEF anchor, and along-track coordinate.
+These auxiliary coordinates are also attached to orbital-position retrieval
+parameters in ``linearization.tangent_template`` and the eager Jacobian.
+
+Ancillary locations can be mapped onto the same grid without reimplementing
+the track logic:
+
+```python
+mapping = geometry.project_ground_track(
+    ancillary_ground_locations_ecef_m,
+    order="increasing",
+)
+ancillary_on_grid = np.interp(
+    geometry.cumulative_angles,
+    mapping.along_track_angle_rad,
+    ancillary_values,
+)
+```
+
+The result includes the containing segment, its interpolation fraction, the
+along-track coordinate, cross-track angular residual, and an edge flag.
+``order="increasing"`` or ``"decreasing"`` constrains successive searches to
+the remaining ordered track, disambiguating closed-orbit endpoints and
+self-crossings. Use ``"independent"`` only when the inputs have no meaningful
+sequence.
+
 When line-of-sight refraction is enabled, an explicit
 `atmosphere.refractive_index` takes precedence. Otherwise the engine evaluates
 Ciddor refractivity in Rust at 600 nm and 400 ppm CO2 by default, treating
@@ -197,15 +236,32 @@ An eager full orbital Jacobian can be much larger than a VJP. By default,
 ``calculate_radiance`` with a derivative-enabled atmosphere and the lazy
 ``linearization.jacobian`` property are rejected when their stitched derivative
 payload is estimated to exceed 2 GiB. Use
-``Atmosphere(..., calculate_derivatives=False)`` for radiance-only work or
+``calculate_radiance(..., derivatives=False)`` for radiance-only work or
 ``linearize()`` followed by JVP/VJP for retrievals. Advanced callers can inspect
 ``engine.estimate_eager_jacobian_bytes(atmosphere)`` and explicitly disable the
 guard with ``max_eager_jacobian_bytes=None``.
 
-The orbital engine supports exact single scattering, occultation/transmission,
-standard emission, volume-emission-rate calculations, limb rays, and
-surface-intersecting ECEF rays. Multiple scattering, flux observers, and
-solar-path refraction are not supported. `LambertianSurface2D` accepts scalar,
+For JVP and VJP products, Rust copies only the derivative mappings named by the
+supplied tangent or requested VJP parameters into each local group atmosphere.
+Repeated calls with the same selection reuse that resident allocation. The
+active names are exposed as ``resident_volume_derivative_mappings`` and
+``resident_surface_derivative_mappings`` in ``group_diagnostics``. This makes a
+one-parameter or small-block retrieval independent of unrelated mappings that
+remain registered on the master atmosphere.
+
+``NumberDensityScatterer2D`` and ``ExtinctionScatterer2D`` preserve the input
+topology of optical-property arguments such as aerosol radius: scalar inputs
+produce scalar retrieval parameters, ``(altitude,)`` inputs produce altitude
+profiles shared along track, and ``(orbital_position, altitude)`` inputs remain
+fully two dimensional. Optical calculations broadcast the first two forms at
+the native boundary; VJPs sum the local contributions back to the supplied
+parameter grid.
+
+The orbital engine supports exact single scattering, successive-orders
+multiple scattering, occultation/transmission, standard emission,
+volume-emission-rate calculations, limb rays, and surface-intersecting ECEF
+rays. Flux observers, diffuse-ray refraction, and solar-path refraction are not
+supported. `LambertianSurface2D` accepts scalar,
 gray along-track, and along-track/spectral albedo fields. Rust gathers the
 actual group rows without averaging, and the native ground source linearly
 interpolates albedo at each traced surface intersection. Its eager Jacobian,

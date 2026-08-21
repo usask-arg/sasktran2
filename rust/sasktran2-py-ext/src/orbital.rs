@@ -23,6 +23,14 @@ use sasktran2_rs::bindings::output::{JvpOutput, Output, VjpOutput};
 use sasktran2_rs::bindings::prelude::Stokes;
 use sasktran2_rs::bindings::viewing_geometry::ViewingGeometry;
 
+type PyTrackProjection<'py> = (
+    Bound<'py, PyArray1<i64>>,
+    Bound<'py, PyArray1<f64>>,
+    Bound<'py, PyArray1<f64>>,
+    Bound<'py, PyArray1<f64>>,
+    Bound<'py, PyArray1<bool>>,
+);
+
 fn normalize(value: Vector3<f64>, name: &str) -> PyResult<Vector3<f64>> {
     let norm = value.norm();
     if !value.iter().all(|item| item.is_finite()) || !norm.is_finite() || norm == 0.0 {
@@ -94,6 +102,15 @@ fn geoid_surface_point_from_direction(
     Ok(direction / inverse_radius_squared.sqrt())
 }
 
+#[derive(Clone)]
+struct OrbitalGridProvenance {
+    vertical_slice_indices: Array1<i64>,
+    reference_times_ns: Array1<i64>,
+    along_track_angles: Array1<f64>,
+    ground_track_ecef_m: Array2<f64>,
+    grid_reference_times_ns: Array1<i64>,
+}
+
 #[pyclass(unsendable)]
 pub struct PyOrbitalPlaneGeometry {
     earth_radius_m: f64,
@@ -105,6 +122,7 @@ pub struct PyOrbitalPlaneGeometry {
     interpolation_method: InterpolationMethod,
     geoid_equatorial_radius_m: Option<f64>,
     geoid_flattening_factor: Option<f64>,
+    provenance: Option<OrbitalGridProvenance>,
 }
 
 impl PyOrbitalPlaneGeometry {
@@ -115,6 +133,7 @@ impl PyOrbitalPlaneGeometry {
         interpolation_method: InterpolationMethod,
         surface_radii_m: Option<Array1<f64>>,
         geoid_parameters: Option<(f64, f64)>,
+        provenance: Option<OrbitalGridProvenance>,
     ) -> PyResult<Self> {
         if !earth_radius_m.is_finite() || earth_radius_m <= 0.0 {
             return Err(PyValueError::new_err(
@@ -185,6 +204,7 @@ impl PyOrbitalPlaneGeometry {
             interpolation_method,
             geoid_equatorial_radius_m: geoid_parameters.map(|value| value.0),
             geoid_flattening_factor: geoid_parameters.map(|value| value.1),
+            provenance,
         })
     }
 }
@@ -216,6 +236,7 @@ impl PyOrbitalPlaneGeometry {
             interpolation_method(&interpolation),
             surface_radii_m,
             None,
+            None,
         )
     }
 
@@ -233,6 +254,156 @@ impl PyOrbitalPlaneGeometry {
 
     fn surface_radii<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
         self.surface_radii_m.to_pyarray(py)
+    }
+
+    fn geodetic_coordinates_degrees<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
+        let Some(equatorial_radius_m) = self.geoid_equatorial_radius_m else {
+            return Array2::zeros((0, 2)).to_pyarray(py);
+        };
+        let flattening_factor = self.geoid_flattening_factor.unwrap();
+        let polar_radius_m = equatorial_radius_m * (1.0 - flattening_factor);
+        let mut result = Array2::zeros((self.ground_track_ecef_m.nrows(), 2));
+        for index in 0..self.ground_track_ecef_m.nrows() {
+            let point = row_vector(&self.ground_track_ecef_m, index);
+            let horizontal = point.x.hypot(point.y);
+            result[[index, 0]] = (point.z * equatorial_radius_m.powi(2))
+                .atan2(horizontal * polar_radius_m.powi(2))
+                .to_degrees();
+            result[[index, 1]] = point.y.atan2(point.x).to_degrees();
+        }
+        result.to_pyarray(py)
+    }
+
+    fn anchor_vertical_slice_indices<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<i64>> {
+        self.provenance
+            .as_ref()
+            .map_or_else(
+                || Array1::zeros(0),
+                |value| value.vertical_slice_indices.clone(),
+            )
+            .to_pyarray(py)
+    }
+
+    fn anchor_reference_times_ns<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<i64>> {
+        self.provenance
+            .as_ref()
+            .map_or_else(
+                || Array1::zeros(0),
+                |value| value.reference_times_ns.clone(),
+            )
+            .to_pyarray(py)
+    }
+
+    fn anchor_along_track_angles<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        self.provenance
+            .as_ref()
+            .map_or_else(
+                || Array1::zeros(0),
+                |value| value.along_track_angles.clone(),
+            )
+            .to_pyarray(py)
+    }
+
+    fn anchor_ground_track_ecef<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
+        self.provenance
+            .as_ref()
+            .map_or_else(
+                || Array2::zeros((0, 3)),
+                |value| value.ground_track_ecef_m.clone(),
+            )
+            .to_pyarray(py)
+    }
+
+    fn grid_reference_times_ns<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<i64>> {
+        self.provenance
+            .as_ref()
+            .map_or_else(
+                || Array1::zeros(0),
+                |value| value.grid_reference_times_ns.clone(),
+            )
+            .to_pyarray(py)
+    }
+
+    #[pyo3(signature = (ecef_positions_m, order="independent"))]
+    fn project_ground_track<'py>(
+        &self,
+        py: Python<'py>,
+        ecef_positions_m: PyReadonlyArray2<f64>,
+        order: &str,
+    ) -> PyResult<PyTrackProjection<'py>> {
+        let positions = ecef_positions_m.as_array().to_owned();
+        if positions.ncols() != 3 {
+            return Err(PyValueError::new_err(
+                "ecef_positions_m must have shape (position, 3)",
+            ));
+        }
+        if !matches!(order, "independent" | "increasing" | "decreasing") {
+            return Err(PyValueError::new_err(
+                "order must be 'independent', 'increasing', or 'decreasing'",
+            ));
+        }
+        let core_track = self
+            .track_directions
+            .iter()
+            .copied()
+            .map(core_vector)
+            .collect::<Vec<_>>();
+        let cumulative = self.cumulative_angles.as_slice().unwrap();
+        let final_angle = *cumulative.last().unwrap();
+        let mut minimum_angle = cumulative[0];
+        let mut maximum_angle = final_angle;
+        let mut segments = Array1::zeros(positions.nrows());
+        let mut fractions = Array1::zeros(positions.nrows());
+        let mut angles = Array1::zeros(positions.nrows());
+        let mut residuals = Array1::zeros(positions.nrows());
+        let mut at_track_edge = Array1::from_elem(positions.nrows(), false);
+        for index in 0..positions.nrows() {
+            let target = normalize(row_vector(&positions, index), "ecef_positions_m")?;
+            let coordinate = match order {
+                "increasing" => orbital_core::locate_track_coordinate_in_range_near(
+                    core_vector(target),
+                    &core_track,
+                    cumulative,
+                    minimum_angle,
+                    final_angle,
+                    Some(minimum_angle),
+                )
+                .map_err(PyValueError::new_err)?,
+                "decreasing" => orbital_core::locate_track_coordinate_in_range_near(
+                    core_vector(target),
+                    &core_track,
+                    cumulative,
+                    cumulative[0],
+                    maximum_angle,
+                    Some(maximum_angle),
+                )
+                .map_err(PyValueError::new_err)?,
+                _ => orbital_core::locate_track_coordinate(
+                    core_vector(target),
+                    &core_track,
+                    cumulative,
+                ),
+            };
+            if order == "increasing" {
+                minimum_angle = coordinate.angle;
+            } else if order == "decreasing" {
+                maximum_angle = coordinate.angle;
+            }
+            let projected = interpolate_ground_track(self, coordinate.angle).normalize();
+            segments[index] = coordinate.segment as i64;
+            fractions[index] = coordinate.fraction;
+            angles[index] = coordinate.angle;
+            residuals[index] = projected.dot(&target).clamp(-1.0, 1.0).acos();
+            at_track_edge[index] = (coordinate.angle - cumulative[0]).abs() <= 1e-12
+                || (coordinate.angle - final_angle).abs() <= 1e-12;
+        }
+        Ok((
+            segments.to_pyarray(py),
+            fractions.to_pyarray(py),
+            angles.to_pyarray(py),
+            residuals.to_pyarray(py),
+            at_track_edge.to_pyarray(py),
+        ))
     }
 
     fn location_shape(&self) -> (usize, usize) {
@@ -318,6 +489,49 @@ fn vertical_slice_time_groups(
             observations
         })
         .collect())
+}
+
+fn interpolate_grid_reference_times(
+    grid_angles: &Array1<f64>,
+    anchor_angles: &[f64],
+    anchor_times_ns: &[i64],
+) -> Array1<i64> {
+    debug_assert_eq!(anchor_angles.len(), anchor_times_ns.len());
+    let mut unique_angles = Vec::new();
+    let mut unique_times = Vec::new();
+    let mut index = 0;
+    while index < anchor_angles.len() {
+        let angle = anchor_angles[index];
+        let mut sum = anchor_times_ns[index] as i128;
+        let mut count = 1_i128;
+        index += 1;
+        while index < anchor_angles.len() && (anchor_angles[index] - angle).abs() <= 1e-12 {
+            sum += anchor_times_ns[index] as i128;
+            count += 1;
+            index += 1;
+        }
+        unique_angles.push(angle);
+        unique_times.push(sum.div_euclid(count) as i64);
+    }
+    if unique_angles.len() == 1 {
+        return Array1::from_elem(grid_angles.len(), unique_times[0]);
+    }
+    Array1::from_iter(grid_angles.iter().map(|&angle| {
+        if angle <= unique_angles[0] {
+            return unique_times[0];
+        }
+        let final_index = unique_angles.len() - 1;
+        if angle >= unique_angles[final_index] {
+            return unique_times[final_index];
+        }
+        let upper = unique_angles.partition_point(|candidate| *candidate < angle);
+        let lower = upper - 1;
+        let fraction =
+            (angle - unique_angles[lower]) / (unique_angles[upper] - unique_angles[lower]);
+        let delta = unique_times[upper] as i128 - unique_times[lower] as i128;
+        let offset = (delta as f64 * fraction).round() as i128;
+        (unique_times[lower] as i128 + offset) as i64
+    }))
 }
 
 #[pymethods]
@@ -476,6 +690,7 @@ impl PyOrbitalPlaneViewingGeometry {
         let mut directions: Vec<Vector3<f64>> = Vec::with_capacity(slices.len());
         let mut slice_extents: Vec<f64> = Vec::with_capacity(slices.len());
         let mut slice_tangents: Vec<Vector3<f64>> = Vec::with_capacity(slices.len());
+        let mut slice_anchor_directions: Vec<Vector3<f64>> = Vec::with_capacity(slices.len());
         for slice in &slices {
             let direction = normalize(
                 slice
@@ -485,6 +700,7 @@ impl PyOrbitalPlaneViewingGeometry {
                     .fold(Vector3::zeros(), |sum, value| sum + value),
                 "vertical-slice mean tangent location",
             )?;
+            slice_anchor_directions.push(direction);
             let extent = slice
                 .observation_indices
                 .iter()
@@ -694,14 +910,63 @@ impl PyOrbitalPlaneViewingGeometry {
             }
         }
         let mean_radius = sampled_radii.sum() / sampled_radii.len() as f64;
-        PyOrbitalPlaneGeometry::from_arrays(
+        let mut geometry = PyOrbitalPlaneGeometry::from_arrays(
             mean_radius,
             altitude_grid_m,
             sampled_surface,
             interpolation_method(&interpolation),
             Some(sampled_radii),
             Some((geoid.equatorial_radius_m, geoid.flattening_factor)),
-        )
+            None,
+        )?;
+
+        let core_track = geometry
+            .track_directions
+            .iter()
+            .copied()
+            .map(core_vector)
+            .collect::<Vec<_>>();
+        let cumulative = geometry.cumulative_angles.as_slice().unwrap();
+        let mut minimum_angle = cumulative[0];
+        let mut anchor_angles = Vec::with_capacity(slices.len());
+        let mut anchor_surface = Array2::zeros((slices.len(), 3));
+        for (index, direction) in slice_anchor_directions.iter().enumerate() {
+            let coordinate = orbital_core::locate_track_coordinate_in_range_near(
+                core_vector(*direction),
+                &core_track,
+                cumulative,
+                minimum_angle,
+                *cumulative.last().unwrap(),
+                Some(minimum_angle),
+            )
+            .map_err(PyValueError::new_err)?;
+            minimum_angle = coordinate.angle;
+            anchor_angles.push(coordinate.angle);
+            let point = geoid_surface_point_from_direction(
+                *direction,
+                geoid.equatorial_radius_m,
+                geoid.flattening_factor,
+            )?;
+            for component in 0..3 {
+                anchor_surface[[index, component]] = point[component];
+            }
+        }
+        let anchor_times = slices
+            .iter()
+            .map(|slice| slice.reference_time_ns)
+            .collect::<Vec<_>>();
+        geometry.provenance = Some(OrbitalGridProvenance {
+            vertical_slice_indices: Array1::from_iter(slices.iter().map(|slice| slice.index)),
+            reference_times_ns: Array1::from_vec(anchor_times.clone()),
+            along_track_angles: Array1::from_vec(anchor_angles.clone()),
+            ground_track_ecef_m: anchor_surface,
+            grid_reference_times_ns: interpolate_grid_reference_times(
+                &geometry.cumulative_angles,
+                &anchor_angles,
+                &anchor_times,
+            ),
+        });
+        Ok(geometry)
     }
 }
 
@@ -1458,34 +1723,69 @@ fn build_group_engine(
 
 fn mapping_signature(
     master: &Atmosphere,
-    include_derivatives: bool,
+    volume_mappings: &[String],
+    surface_mappings: &[String],
     lambertian_surface: Option<&LambertianSurfaceState>,
 ) -> PyResult<AtmosphereSignature> {
+    let available_volume = master
+        .storage
+        .derivative_mapping_names()
+        .map_err(PyRuntimeError::new_err)?
+        .into_iter()
+        .collect::<HashSet<_>>();
+    let available_surface = master
+        .surface
+        .derivative_mapping_names()
+        .map_err(PyRuntimeError::new_err)?
+        .into_iter()
+        .collect::<HashSet<_>>();
+    if let Some(name) = volume_mappings
+        .iter()
+        .find(|name| !available_volume.contains(*name))
+    {
+        return Err(PyValueError::new_err(format!(
+            "Unknown orbital volume derivative mapping {name:?}"
+        )));
+    }
+    if let Some(name) = surface_mappings
+        .iter()
+        .find(|name| !available_surface.contains(*name))
+    {
+        return Err(PyValueError::new_err(format!(
+            "Unknown orbital surface derivative mapping {name:?}"
+        )));
+    }
+    let mut volume_mappings = volume_mappings.to_vec();
+    volume_mappings.sort_unstable();
+    volume_mappings.dedup();
+    let mut surface_mappings = surface_mappings.to_vec();
+    surface_mappings.sort_unstable();
+    surface_mappings.dedup();
+    let spatial_surface_derivative = lambertian_surface
+        .and_then(|surface| surface.derivative_name.as_ref())
+        .filter(|name| surface_mappings.contains(name))
+        .cloned();
     Ok(AtmosphereSignature {
         num_wavel: master.num_wavel(),
         num_location: master.num_location(),
         num_legendre_storage: master.storage.leg_coeff.dim().0,
-        volume_mappings: if include_derivatives {
-            master
-                .storage
-                .derivative_mapping_names()
-                .map_err(PyRuntimeError::new_err)?
-        } else {
-            Vec::new()
-        },
-        surface_mappings: if include_derivatives {
-            master
-                .surface
-                .derivative_mapping_names()
-                .map_err(PyRuntimeError::new_err)?
-        } else {
-            Vec::new()
-        },
+        volume_mappings,
+        surface_mappings,
         spatial_surface_rows: lambertian_surface.map_or(0, |surface| surface.field.nrows()),
-        spatial_surface_derivative: include_derivatives
-            .then(|| lambertian_surface.and_then(|surface| surface.derivative_name.clone()))
-            .flatten(),
+        spatial_surface_derivative,
     })
+}
+
+fn all_mapping_names(master: &Atmosphere) -> PyResult<(Vec<String>, Vec<String>)> {
+    let volume = master
+        .storage
+        .derivative_mapping_names()
+        .map_err(PyRuntimeError::new_err)?;
+    let surface = master
+        .surface
+        .derivative_mapping_names()
+        .map_err(PyRuntimeError::new_err)?;
+    Ok((volume, surface))
 }
 
 fn global_location_indices(group: &GroupLayout, num_altitudes: usize) -> Vec<usize> {
@@ -1502,9 +1802,15 @@ fn update_group_atmosphere(
     group: &mut GroupEngine,
     master: &Atmosphere,
     lambertian_surface: Option<&LambertianSurfaceState>,
-    include_derivatives: bool,
+    volume_mappings: &[String],
+    surface_mappings: &[String],
 ) -> PyResult<()> {
-    let signature = mapping_signature(master, include_derivatives, lambertian_surface)?;
+    let signature = mapping_signature(
+        master,
+        volume_mappings,
+        surface_mappings,
+        lambertian_surface,
+    )?;
     let local_indices = global_location_indices(
         &group.layout,
         group.geometry.location_shape().into_pyresult()?.1,
@@ -1989,6 +2295,7 @@ impl PyOrbitalPlaneEngine {
     ) -> PyResult<Py<crate::output::PyOutput>> {
         self.validate_master(py, &atmosphere.atmosphere)?;
         let master = &atmosphere.atmosphere;
+        let (volume_mappings, surface_mappings) = all_mapping_names(master)?;
         let num_stokes = master.num_stokes();
         let mut combined = Output::new(master.num_wavel(), self.num_observations, 0, 0, num_stokes);
         let include_los_optical_depth = self
@@ -1999,28 +2306,20 @@ impl PyOrbitalPlaneEngine {
             .into_pyresult()?;
         let mut combined_los_optical_depth = include_los_optical_depth
             .then(|| Array2::zeros((master.num_wavel(), self.num_observations)));
-        for name in master
-            .storage
-            .derivative_mapping_names()
-            .map_err(PyRuntimeError::new_err)?
-        {
+        for name in &volume_mappings {
             let size = master
                 .storage
-                .get_derivative_mapping(&name)
+                .get_derivative_mapping(name)
                 .map_err(PyRuntimeError::new_err)?
                 .num_output();
-            combined.with_derivative(&name, size);
+            combined.with_derivative(name, size);
         }
-        for name in master
-            .surface
-            .derivative_mapping_names()
-            .map_err(PyRuntimeError::new_err)?
-        {
+        for name in &surface_mappings {
             if self
                 .lambertian_surface
                 .as_ref()
                 .and_then(|surface| surface.derivative_name.as_ref())
-                == Some(&name)
+                == Some(name)
             {
                 let surface = self.lambertian_surface.as_ref().unwrap();
                 let spectral_size = surface.spectral_interpolator.ncols();
@@ -2029,13 +2328,19 @@ impl PyOrbitalPlaneEngine {
                 } else {
                     spectral_size
                 };
-                combined.with_derivative(&mapped_surface_output_name(&name), parameter_size);
+                combined.with_derivative(&mapped_surface_output_name(name), parameter_size);
             } else {
-                combined.with_surface_derivative(&name);
+                combined.with_surface_derivative(name);
             }
         }
         for group in &mut self.groups {
-            update_group_atmosphere(group, master, self.lambertian_surface.as_ref(), true)?;
+            update_group_atmosphere(
+                group,
+                master,
+                self.lambertian_surface.as_ref(),
+                &volume_mappings,
+                &surface_mappings,
+            )?;
             let local_indices = global_location_indices(&group.layout, self.num_altitudes);
             let output = group
                 .engine
@@ -2167,6 +2472,59 @@ impl PyOrbitalPlaneEngine {
         Py::new(py, crate::output::PyOutput { output: combined })
     }
 
+    fn _calculate_radiance_only(
+        &mut self,
+        py: Python,
+        atmosphere: PyRef<'_, crate::atmosphere::PyAtmosphere>,
+    ) -> PyResult<Py<crate::output::PyOutput>> {
+        self.validate_master(py, &atmosphere.atmosphere)?;
+        let master = &atmosphere.atmosphere;
+        let mut combined = Output::new(
+            master.num_wavel(),
+            self.num_observations,
+            0,
+            0,
+            master.num_stokes(),
+        );
+        let include_los_optical_depth = self
+            ._config
+            .borrow(py)
+            .config
+            .output_los_optical_depth()
+            .into_pyresult()?;
+        let mut combined_los_optical_depth = include_los_optical_depth
+            .then(|| Array2::zeros((master.num_wavel(), self.num_observations)));
+        for group in &mut self.groups {
+            update_group_atmosphere(group, master, self.lambertian_surface.as_ref(), &[], &[])?;
+            let output = group
+                .engine
+                .calculate_radiance_with_mappings(group.atmosphere.as_ref().unwrap(), &[], &[])
+                .into_pyresult()?;
+            let local_los_optical_depth =
+                include_los_optical_depth.then(|| output.los_optical_depth());
+            for (local_los, &global_los) in group.layout.observation_indices.iter().enumerate() {
+                combined
+                    .radiance
+                    .slice_mut(s![.., global_los, ..])
+                    .assign(&output.radiance.slice(s![.., local_los, ..]));
+                if let (Some(combined_od), Some(local_od)) = (
+                    combined_los_optical_depth.as_mut(),
+                    local_los_optical_depth.as_ref(),
+                ) {
+                    combined_od
+                        .column_mut(global_los)
+                        .assign(&local_od.column(local_los));
+                }
+            }
+        }
+        if let Some(los_optical_depth) = combined_los_optical_depth {
+            combined
+                .set_los_optical_depth(los_optical_depth)
+                .map_err(PyRuntimeError::new_err)?;
+        }
+        Py::new(py, crate::output::PyOutput { output: combined })
+    }
+
     fn _supports_linearization(&self, mode: u8) -> PyResult<bool> {
         let mode = match mode {
             0 => LinearizationMode::Jacobian,
@@ -2221,6 +2579,10 @@ impl PyOrbitalPlaneEngine {
         let volume = array_dict(derivative_tangents)?;
         let surface = array_dict(surface_tangents)?;
         let master = &atmosphere.atmosphere;
+        let mut volume_mappings = volume.keys().cloned().collect::<Vec<_>>();
+        volume_mappings.sort_unstable();
+        let mut surface_mappings = surface.keys().cloned().collect::<Vec<_>>();
+        surface_mappings.sort_unstable();
         let mut combined = JvpOutput::new(
             master.num_wavel(),
             self.num_observations,
@@ -2228,7 +2590,7 @@ impl PyOrbitalPlaneEngine {
         );
         if volume.is_empty() && surface.is_empty() {
             for group in &mut self.groups {
-                update_group_atmosphere(group, master, self.lambertian_surface.as_ref(), false)?;
+                update_group_atmosphere(group, master, self.lambertian_surface.as_ref(), &[], &[])?;
                 let output = group
                     .engine
                     .calculate_radiance(group.atmosphere.as_ref().unwrap())
@@ -2244,7 +2606,13 @@ impl PyOrbitalPlaneEngine {
             return Py::new(py, crate::output::PyJvpOutput { output: combined });
         }
         for group in &mut self.groups {
-            update_group_atmosphere(group, master, self.lambertian_surface.as_ref(), true)?;
+            update_group_atmosphere(
+                group,
+                master,
+                self.lambertian_surface.as_ref(),
+                &volume_mappings,
+                &surface_mappings,
+            )?;
             let local_indices = global_location_indices(&group.layout, self.num_altitudes);
             let mut local_volume = HashMap::with_capacity(volume.len());
             for (name, tangent) in &volume {
@@ -2353,6 +2721,10 @@ impl PyOrbitalPlaneEngine {
         }
         let derivative_sizes = size_dict(derivative_sizes)?;
         let surface_sizes = size_dict(surface_sizes)?;
+        let mut volume_mappings = derivative_sizes.keys().cloned().collect::<Vec<_>>();
+        volume_mappings.sort_unstable();
+        let mut surface_mappings = surface_sizes.keys().cloned().collect::<Vec<_>>();
+        surface_mappings.sort_unstable();
         let mut combined = VjpOutput::new(&cotangent);
         for (name, size) in &derivative_sizes {
             combined
@@ -2370,8 +2742,13 @@ impl PyOrbitalPlaneEngine {
             let streamed_atmosphere = if self.stream_derivatives {
                 let resident_atmosphere = group.atmosphere.take();
                 let resident_signature = group.atmosphere_signature.take();
-                let update_result =
-                    update_group_atmosphere(group, master, self.lambertian_surface.as_ref(), true);
+                let update_result = update_group_atmosphere(
+                    group,
+                    master,
+                    self.lambertian_surface.as_ref(),
+                    &volume_mappings,
+                    &surface_mappings,
+                );
                 let derivative_atmosphere = group.atmosphere.take();
                 group.atmosphere_signature.take();
                 group.atmosphere = resident_atmosphere;
@@ -2381,7 +2758,13 @@ impl PyOrbitalPlaneEngine {
                     PyRuntimeError::new_err("Failed to build a derivative group atmosphere")
                 })?)
             } else {
-                update_group_atmosphere(group, master, self.lambertian_surface.as_ref(), true)?;
+                update_group_atmosphere(
+                    group,
+                    master,
+                    self.lambertian_surface.as_ref(),
+                    &volume_mappings,
+                    &surface_mappings,
+                )?;
                 None
             };
             let local_indices = global_location_indices(&group.layout, self.num_altitudes);
@@ -2735,6 +3118,20 @@ impl PyOrbitalPlaneEngine {
                     group.atmosphere.as_ref().map_or(0, |atmosphere| {
                         atmosphere.storage.total_extinction.as_ptr() as usize
                     }),
+                )?;
+                dict.set_item(
+                    "resident_volume_derivative_mappings",
+                    group
+                        .atmosphere_signature
+                        .as_ref()
+                        .map_or_else(Vec::new, |signature| signature.volume_mappings.clone()),
+                )?;
+                dict.set_item(
+                    "resident_surface_derivative_mappings",
+                    group
+                        .atmosphere_signature
+                        .as_ref()
+                        .map_or_else(Vec::new, |signature| signature.surface_mappings.clone()),
                 )?;
                 Ok(dict.into_any().unbind())
             })

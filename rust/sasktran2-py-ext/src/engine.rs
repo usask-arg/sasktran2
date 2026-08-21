@@ -82,6 +82,19 @@ impl PyEngine {
         Py::new(py, crate::output::PyOutput { output })
     }
 
+    fn _calculate_radiance_only(
+        &self,
+        py: Python,
+        atmosphere: PyRef<crate::atmosphere::PyAtmosphere>,
+    ) -> PyResult<Py<crate::output::PyOutput>> {
+        let output = self
+            .engine
+            .calculate_radiance_with_mappings(&atmosphere.atmosphere, &[], &[])
+            .into_pyresult()?;
+
+        Py::new(py, crate::output::PyOutput { output })
+    }
+
     fn _set_2d_refractive_profiles(&mut self, profiles: PyReadonlyArray2<f64>) -> PyResult<()> {
         self.engine
             .set_2d_refractive_profiles(profiles.as_array())

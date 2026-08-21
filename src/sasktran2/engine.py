@@ -166,7 +166,12 @@ class Engine:
         self._geometry = geometry
         self._viewing_geometry = viewing_geometry
 
-    def calculate_radiance(self, atmosphere: sk.Atmosphere) -> xr.Dataset:
+    def calculate_radiance(
+        self,
+        atmosphere: sk.Atmosphere,
+        *,
+        derivatives: bool | None = None,
+    ) -> xr.Dataset:
         """
         Performs the radiative transfer calculation for a given atmosphere
 
@@ -174,13 +179,26 @@ class Engine:
         ----------
         atmosphere : sk.Atmosphere
             The atmosphere object containing the atmospheric profile and constituents
+        derivatives : bool, optional
+            Whether to calculate and return the registered radiance derivatives.
+            The default follows ``atmosphere.calculate_derivatives``. Set this
+            to ``False`` for a radiance-only calculation without derivative
+            output allocations while retaining a derivative-enabled atmosphere
+            for later JVP or VJP calls.
 
         Returns
         -------
         xr.Dataset
             An xarray dataset containing the radiance and derivatives
         """
-        result, _ = self._calculate_radiance(atmosphere)
+        if derivatives is None:
+            derivatives = atmosphere.calculate_derivatives
+        elif not isinstance(derivatives, bool | np.bool_):
+            msg = "derivatives must be a boolean or None"
+            raise TypeError(msg)
+        result, _ = self._calculate_radiance(
+            atmosphere, include_derivatives=bool(derivatives)
+        )
         return result
 
     def linearize(self, atmosphere: sk.Atmosphere) -> Linearization:
@@ -399,6 +417,13 @@ class Engine:
                     )
                     if len(coordinate) == size:
                         coords[dim] = coordinate
+                        orbital_coordinates = getattr(
+                            atmosphere.model_geometry,
+                            "_xarray_orbital_coordinates",
+                            None,
+                        )
+                        if callable(orbital_coordinates):
+                            coords.update(orbital_coordinates())
             return xr.DataArray(np.zeros(shape), dims=dims, coords=coords)
 
         def register(
@@ -452,6 +477,9 @@ class Engine:
                     "altitude",
                 )
                 shape = tuple(structured_shape)
+            elif mapping.interp_dim == "dummy" and size == 1:
+                dims = ()
+                shape = ()
             else:
                 dims = (mapping.interp_dim,)
                 shape = (size,)
@@ -539,12 +567,18 @@ class Engine:
         self,
         atmosphere: sk.Atmosphere,
         internal_atmosphere=None,
+        *,
+        include_derivatives: bool = True,
     ) -> tuple[xr.Dataset, dict[str, _ParameterSpec]]:
         self._validate_atmosphere_geometry(atmosphere)
 
         if internal_atmosphere is None:
             internal_atmosphere = atmosphere.internal_object()
-        output = self._engine.calculate_radiance(internal_atmosphere)
+        output = (
+            self._engine.calculate_radiance(internal_atmosphere)
+            if include_derivatives
+            else self._engine._calculate_radiance_only(internal_atmosphere)
+        )
 
         out_ds = xr.Dataset()
         radiance_derivative_specs: dict[str, _ParameterSpec] = {}
@@ -616,6 +650,8 @@ class Engine:
                 v,
                 ["wavelength", "los", "stokes"],
             )
+            if mapping.interp_dim == "dummy" and "dummy" in mapped_derivative.dims:
+                mapped_derivative = mapped_derivative.isel(dummy=0, drop=True)
 
             if name in out_ds:
                 out_ds[name] += mapped_derivative
@@ -708,6 +744,13 @@ class Engine:
                     "orbital_positions",
                     np.arange(out_ds.sizes["orbital_position"]),
                 )
+                orbital_coordinates = getattr(
+                    atmosphere.model_geometry,
+                    "_xarray_orbital_coordinates",
+                    None,
+                )
+                if callable(orbital_coordinates):
+                    out_ds = out_ds.assign_coords(orbital_coordinates())
 
         if self._config.output_los_optical_depth:
             los_od = output.los_optical_depth
