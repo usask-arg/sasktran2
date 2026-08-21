@@ -218,6 +218,7 @@ namespace sasktran2::successive_orders {
         m_solar_interpolation.clear();
         m_solar_ground_hit.clear();
         m_solar_propagation_directions.clear();
+        m_ground_horizontal_weights.clear();
         m_num_threads = config.num_threads();
         m_num_source_threads = config.num_source_threads();
         m_num_wavelength_threads = config.num_wavelength_threads();
@@ -281,9 +282,24 @@ namespace sasktran2::successive_orders {
         m_solar_interpolation.clear();
         m_solar_ground_hit.clear();
         m_solar_propagation_directions.clear();
+        m_ground_horizontal_weights.clear();
         const auto& viewing = source_geometry.incoming_viewing_geometry();
         m_num_rays = static_cast<int>(viewing.traced_rays.size());
         m_source_geometry = &source_geometry;
+        m_ground_horizontal_weights.resize(viewing.traced_rays.size());
+        if (m_geometry_1d == nullptr) {
+            const auto& geometry_2d =
+                static_cast<const sasktran2::Geometry2D&>(m_geometry);
+            for (std::size_t ray_index = 0;
+                 ray_index < viewing.traced_rays.size(); ++ray_index) {
+                const auto& ray = viewing.traced_rays[ray_index];
+                if (ray.ground_is_hit && !ray.layers.empty()) {
+                    geometry_2d.assign_horizontal_interpolation_weights(
+                        ray.layers.front().exit,
+                        m_ground_horizontal_weights[ray_index]);
+                }
+            }
+        }
         m_use_compact_scalar =
             m_compact_scalar_requested &&
             std::all_of(viewing.traced_rays.begin(), viewing.traced_rays.end(),
@@ -1097,7 +1113,8 @@ namespace sasktran2::successive_orders {
                 if (ground_scattering_geometry(m_solar_offsets[ray], ground,
                                                mu_in, mu_out, phi)) {
                     const auto brdf = m_atmosphere->surface().brdf(
-                        wavelength, mu_in, mu_out, phi);
+                        wavelength, mu_in, mu_out, phi,
+                        m_ground_horizontal_weights[ray]);
                     radiance += prefix * solar(m_solar_offsets[ray]) * mu_in *
                                 brdf(0, 0);
                 }
@@ -1319,7 +1336,8 @@ namespace sasktran2::successive_orders {
                 if (ground_scattering_geometry(m_solar_offsets[ray], ground,
                                                mu_in, mu_out, phi)) {
                     const auto brdf = m_atmosphere->surface().brdf(
-                        wavelength, mu_in, mu_out, phi);
+                        wavelength, mu_in, mu_out, phi,
+                        m_ground_horizontal_weights[ray]);
                     radiance += prefix * solar(m_solar_offsets[ray]) * mu_in *
                                 brdf(0, 0);
                 }
@@ -1483,7 +1501,8 @@ namespace sasktran2::successive_orders {
                 if (ground_scattering_geometry(m_solar_offsets[ray], ground,
                                                mu_in, mu_out, phi)) {
                     const auto brdf = m_atmosphere->surface().brdf(
-                        wavelength, mu_in, mu_out, phi);
+                        wavelength, mu_in, mu_out, phi,
+                        m_ground_horizontal_weights[ray]);
                     double brdf_tangent = 0.0;
                     for (int derivative = 0;
                          derivative < m_atmosphere->surface().num_deriv();
@@ -1492,9 +1511,9 @@ namespace sasktran2::successive_orders {
                             native_tangent(
                                 m_atmosphere->surface_deriv_start_index() +
                                 derivative) *
-                            m_atmosphere->surface().d_brdf(wavelength, mu_in,
-                                                           mu_out, phi,
-                                                           derivative)(0, 0);
+                            m_atmosphere->surface().d_brdf(
+                                wavelength, mu_in, mu_out, phi, derivative,
+                                m_ground_horizontal_weights[ray])(0, 0);
                     }
                     const double ground_source =
                         solar(m_solar_offsets[ray]) * mu_in * brdf(0, 0);
@@ -1887,7 +1906,8 @@ namespace sasktran2::successive_orders {
                 if (ground_scattering_geometry(m_solar_offsets[ray], *ground,
                                                mu_in, mu_out, phi)) {
                     const auto brdf = m_atmosphere->surface().brdf(
-                        wavelength, mu_in, mu_out, phi);
+                        wavelength, mu_in, mu_out, phi,
+                        m_ground_horizontal_weights[ray]);
                     double brdf_tangent = 0.0;
                     for (int derivative = 0;
                          derivative < m_atmosphere->surface().num_deriv();
@@ -1896,9 +1916,9 @@ namespace sasktran2::successive_orders {
                             native_tangent(
                                 m_atmosphere->surface_deriv_start_index() +
                                 derivative) *
-                            m_atmosphere->surface().d_brdf(wavelength, mu_in,
-                                                           mu_out, phi,
-                                                           derivative)(0, 0);
+                            m_atmosphere->surface().d_brdf(
+                                wavelength, mu_in, mu_out, phi, derivative,
+                                m_ground_horizontal_weights[ray])(0, 0);
                     }
                     const double ground_source =
                         solar(m_solar_offsets[ray]) * mu_in * brdf(0, 0);
@@ -2110,7 +2130,8 @@ namespace sasktran2::successive_orders {
                 if (ground_scattering_geometry(m_solar_offsets[ray], *ground,
                                                mu_in, mu_out, phi)) {
                     const auto brdf = m_atmosphere->surface().brdf(
-                        wavelength, mu_in, mu_out, phi);
+                        wavelength, mu_in, mu_out, phi,
+                        m_ground_horizontal_weights[ray]);
                     const double ground_source =
                         solar(m_solar_offsets[ray]) * mu_in * brdf(0, 0);
                     prefix_cotangent = forcing_gradient * ground_source;
@@ -2121,11 +2142,12 @@ namespace sasktran2::successive_orders {
                          ++derivative) {
                         thread_gradient(
                             m_atmosphere->surface_deriv_start_index() +
-                            derivative) += prefix * forcing_gradient *
-                                           solar(m_solar_offsets[ray]) * mu_in *
-                                           m_atmosphere->surface().d_brdf(
-                                               wavelength, mu_in, mu_out, phi,
-                                               derivative)(0, 0);
+                            derivative) +=
+                            prefix * forcing_gradient *
+                            solar(m_solar_offsets[ray]) * mu_in *
+                            m_atmosphere->surface().d_brdf(
+                                wavelength, mu_in, mu_out, phi, derivative,
+                                m_ground_horizontal_weights[ray])(0, 0);
                     }
                 }
             }

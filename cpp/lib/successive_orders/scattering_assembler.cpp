@@ -313,7 +313,8 @@ namespace sasktran2::successive_orders {
                     const auto brdf = atmosphere.surface().brdf(
                         wavelength, angular.mu_in(input),
                         angular.mu_out(output),
-                        angular.phi_difference(output, input));
+                        angular.phi_difference(output, input),
+                        m_geometry->ground_horizontal_weights(ground_index));
                     values(offset + output * columns + input) =
                         angular.weighted_mu_in(input) * brdf(0, 0);
                 }
@@ -422,7 +423,9 @@ namespace sasktran2::successive_orders {
                                 wavelength, angular.mu_in(input),
                                 angular.mu_out(output),
                                 angular.phi_difference(output, input),
-                                derivative);
+                                derivative,
+                                m_geometry->ground_horizontal_weights(
+                                    ground_index));
                         ground_value_tangent(offset + output * columns +
                                              input) +=
                             direction * angular.weighted_mu_in(input) *
@@ -496,7 +499,9 @@ namespace sasktran2::successive_orders {
                                 wavelength, angular.mu_in(input),
                                 angular.mu_out(output),
                                 angular.phi_difference(output, input),
-                                derivative);
+                                derivative,
+                                m_geometry->ground_horizontal_weights(
+                                    ground_index));
                         value += ground_value_gradient(
                                      offset + output * columns + input) *
                                  angular.weighted_mu_in(input) *
@@ -674,7 +679,8 @@ namespace sasktran2::successive_orders {
                     const auto brdf = atmosphere.surface().brdf(
                         wavelength, angular.mu_in(input),
                         angular.mu_out(output),
-                        angular.phi_difference(output, input));
+                        angular.phi_difference(output, input),
+                        m_geometry->ground_horizontal_weights(ground_index));
                     // Match the legacy HR ground convention: the BRDF only
                     // contributes to I <- I for vector radiance.
                     block(3 * output, 3 * input) =
@@ -797,7 +803,9 @@ namespace sasktran2::successive_orders {
                                 wavelength, angular.mu_in(input),
                                 angular.mu_out(output),
                                 angular.phi_difference(output, input),
-                                derivative);
+                                derivative,
+                                m_geometry->ground_horizontal_weights(
+                                    ground_index));
                         block(3 * output, 3 * input) +=
                             direction * angular.weighted_mu_in(input) *
                             derivative_brdf(0, 0);
@@ -877,7 +885,9 @@ namespace sasktran2::successive_orders {
                                 wavelength, angular.mu_in(input),
                                 angular.mu_out(output),
                                 angular.phi_difference(output, input),
-                                derivative);
+                                derivative,
+                                m_geometry->ground_horizontal_weights(
+                                    ground_index));
                         value += block_gradient(3 * output, 3 * input) *
                                  angular.weighted_mu_in(input) *
                                  derivative_brdf(0, 0);

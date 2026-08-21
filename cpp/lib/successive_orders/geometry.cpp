@@ -448,6 +448,8 @@ namespace sasktran2::successive_orders {
 
         m_source_points.clear();
         m_source_points.resize(total_points);
+        m_ground_horizontal_weights.clear();
+        m_ground_horizontal_weights.resize(m_num_ground_points);
         for (int point_index = 0; point_index < m_num_interior_points;
              ++point_index) {
             auto& point = m_source_points[point_index];
@@ -472,6 +474,11 @@ namespace sasktran2::successive_orders {
             point.m_outgoing_sphere =
                 m_angular_grids[ground_index + 1]->outgoing.get();
             point.m_is_ground = true;
+            if (m_geometry_2d != nullptr) {
+                m_geometry_2d->assign_horizontal_interpolation_weights(
+                    point.location(),
+                    m_ground_horizontal_weights[ground_index]);
+            }
         }
 
         m_incoming_point_offsets.assign(

@@ -1754,9 +1754,17 @@ def test_lambertian_surface_2d_parameter_layout(albedo, expected_dims):
         assert linearization.tangent_template.surface_albedo.shape == np.shape(albedo)
 
 
-@pytest.mark.parametrize("refraction", [False, True])
+@pytest.mark.parametrize(
+    ("refraction", "multiple_scatter"),
+    [
+        (False, sk.MultipleScatterSource.NoSource),
+        (True, sk.MultipleScatterSource.NoSource),
+        (False, sk.MultipleScatterSource.SuccessiveOrdersCpp),
+    ],
+)
 def test_lambertian_surface_2d_varies_at_ground_intersections_and_linearizes(
     refraction,
+    multiple_scatter,
 ):
     geometry = orbital_geometry()
     lower_indices = np.array([24, 39])
@@ -1798,8 +1806,19 @@ def test_lambertian_surface_2d_varies_at_ground_intersections_and_linearizes(
     )
     config = sk.Config()
     config.single_scatter_source = sk.SingleScatterSource.Exact
-    config.multiple_scatter_source = sk.MultipleScatterSource.NoSource
+    config.multiple_scatter_source = multiple_scatter
     config.los_refraction = refraction
+    if multiple_scatter == sk.MultipleScatterSource.SuccessiveOrdersCpp:
+        config.num_threads = 1
+        config.num_sza = 2
+        config.successive_orders_altitude_grid_m = np.array(
+            [5_000.0, 25_000.0, 55_000.0]
+        )
+        config.num_successive_orders_incoming = 6
+        config.num_successive_orders_outgoing = 6
+        config.num_successive_orders_iterations = 2
+        config.successive_orders_relative_tolerance = 0.0
+        config.successive_orders_absolute_tolerance = 0.0
     atmosphere = sk.Atmosphere(
         geometry,
         config,
@@ -1809,7 +1828,11 @@ def test_lambertian_surface_2d_varies_at_ground_intersections_and_linearizes(
     extinction = np.full((*geometry.shape, 2), 1.0e-8)
     atmosphere["optics"] = sk.constituent.Manual(
         extinction,
-        np.zeros_like(extinction),
+        (
+            np.full_like(extinction, 0.5)
+            if multiple_scatter == sk.MultipleScatterSource.SuccessiveOrdersCpp
+            else np.zeros_like(extinction)
+        ),
     )
     spatial_albedo = np.linspace(0.1, 0.7, geometry.shape[0])
     albedo = np.column_stack((spatial_albedo, 0.8 - 0.5 * spatial_albedo))
@@ -1834,7 +1857,7 @@ def test_lambertian_surface_2d_varies_at_ground_intersections_and_linearizes(
         lower_indices, :
     ] + fractions[:, np.newaxis] * albedo[upper_indices, :]
     expected_ratio = expected_albedo[1, :] / expected_albedo[0, :]
-    if not refraction:
+    if not refraction and multiple_scatter == sk.MultipleScatterSource.NoSource:
         np.testing.assert_allclose(
             measured[:, 1] / measured[:, 0], expected_ratio, rtol=2.0e-5
         )

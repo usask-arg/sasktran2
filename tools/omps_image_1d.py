@@ -310,20 +310,20 @@ def main() -> None:
             )
         )
         modeled[:, los_indices] = sun_normalized_radiance
-        policy_fields["policy_tangent_altitude_m"][los_indices] = (
-            policies.tangent_altitude_m
-        )
-        policy_fields["tangent_altitude_residual_m"][los_indices] = (
-            policies.tangent_altitude_residual_m
-        )
+        policy_fields["policy_tangent_altitude_m"][
+            los_indices
+        ] = policies.tangent_altitude_m
+        policy_fields["tangent_altitude_residual_m"][
+            los_indices
+        ] = policies.tangent_altitude_residual_m
         policy_fields["solar_azimuth_deg"][los_indices] = policies.solar_azimuth_deg
         policy_fields["viewing_azimuth_deg"][los_indices] = policies.viewing_azimuth_deg
-        policy_fields["relative_azimuth_deg"][los_indices] = (
-            policies.relative_azimuth_deg
-        )
-        policy_fields["scattering_angle_deg"][los_indices] = (
-            policies.scattering_angle_deg
-        )
+        policy_fields["relative_azimuth_deg"][
+            los_indices
+        ] = policies.relative_azimuth_deg
+        policy_fields["scattering_angle_deg"][
+            los_indices
+        ] = policies.scattering_angle_deg
         policy_fields["cos_sza"][los_indices] = policies.cos_sza
         policy_fields["image_earth_radius_m"][los_indices] = policies.earth_radius_m
         ephemeris_sza_deg[los_indices] = image_sza_deg

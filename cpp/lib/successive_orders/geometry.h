@@ -124,6 +124,10 @@ namespace sasktran2::successive_orders {
         const SourcePoint& source_point(int index) const {
             return m_source_points.at(index);
         }
+        const std::vector<std::pair<int, double>>&
+        ground_horizontal_weights(int ground_index) const {
+            return m_ground_horizontal_weights.at(ground_index);
+        }
         const std::vector<int>& incoming_point_offsets() const {
             return m_incoming_point_offsets;
         }
@@ -225,6 +229,8 @@ namespace sasktran2::successive_orders {
         std::vector<double> m_source_altitudes_m;
         std::vector<double> m_source_cos_sza;
         std::vector<double> m_source_horizontal_angles_rad;
+        std::vector<std::vector<std::pair<int, double>>>
+            m_ground_horizontal_weights;
         int m_num_interior_points = 0;
         int m_num_ground_points = 0;
 

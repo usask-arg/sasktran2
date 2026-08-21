@@ -264,6 +264,8 @@ namespace sasktran2::successive_orders {
             m_solar_interpolation;
         std::vector<bool> m_solar_ground_hit;
         std::vector<Eigen::Vector3d> m_solar_propagation_directions;
+        std::vector<std::vector<std::pair<int, double>>>
+            m_ground_horizontal_weights;
         sasktran2::SourceIntegrator<NSTOKES> m_integrator;
         std::vector<SourceTermInterface<NSTOKES>*> m_source_terms;
         const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere =
