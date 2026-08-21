@@ -6,6 +6,7 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <numeric>
 #include <stdexcept>
 
 namespace {
@@ -24,6 +25,26 @@ namespace {
         raytracer.trace_ray(ray, result.traced_rays.front());
         return result;
     }
+
+#ifdef SKTRAN_RUST_SUPPORT
+    Eigen::VectorXd horizontal_angle_grid() {
+        return (Eigen::Vector3d() << -0.4, 0.0, 0.4).finished();
+    }
+
+    sasktran2::viewinggeometry::InternalViewingGeometry
+    make_los_geometry(const sasktran2::Geometry2D& geometry,
+                      const sasktran2::raytracing::RustRayTracer2D& raytracer) {
+        sasktran2::viewinggeometry::InternalViewingGeometry result;
+        result.traced_rays.resize(1);
+        sasktran2::viewinggeometry::ViewingRay ray;
+        ray.observer.position =
+            (geometry.coordinates().earth_radius() + 4000.0) *
+            geometry.coordinates().unit_vector_from_angles(0.0, 0.0);
+        ray.look_away = -ray.observer.position.normalized();
+        raytracer.trace_ray(ray, result.traced_rays.front());
+        return result;
+    }
+#endif
 
     class ThrowingRayTracer final
         : public sasktran2::raytracing::RayTracerBase {
@@ -187,6 +208,92 @@ TEST_CASE("Successive-orders 1D geometry compiles midpoint source and LOS "
                               source_geometry.los_transport_column_indices(),
                               source_geometry.total_num_outgoing());
 }
+
+#ifdef SKTRAN_RUST_SUPPORT
+TEST_CASE("Successive-orders 2D geometry uses an independent horizontal "
+          "source grid",
+          "[successive_orders][geometry][geometry2d]") {
+    sasktran2::Geometry2D geometry(0.6, 0.0, 6372000.0, altitude_grid(),
+                                   horizontal_angle_grid(),
+                                   sasktran2::grids::interpolation::linear);
+    sasktran2::raytracing::RustRayTracer2D raytracer(geometry);
+    const auto los = make_los_geometry(geometry, raytracer);
+
+    sasktran2::successive_orders::SourceGeometrySettings settings;
+    settings.num_incoming = 6;
+    settings.num_outgoing = 6;
+    settings.num_sza = 5;
+    settings.num_threads = 1;
+    sasktran2::successive_orders::SourceGeometry1D source_geometry(raytracer,
+                                                                   geometry);
+    source_geometry.initialize(los, settings);
+
+    REQUIRE(source_geometry.source_altitudes_m() ==
+            std::vector<double>{500.0, 2000.0});
+    REQUIRE(source_geometry.source_horizontal_angles_rad() ==
+            std::vector<double>{-0.4, -0.2, 0.0, 0.2, 0.4});
+    REQUIRE(source_geometry.num_interior_points() == 10);
+    REQUIRE(source_geometry.num_ground_points() == 5);
+    REQUIRE(source_geometry.num_points() == 15);
+
+    for (int horizontal = 0; horizontal < 5; ++horizontal) {
+        for (int altitude = 0; altitude < 2; ++altitude) {
+            const int point_index = altitude + 2 * horizontal;
+            const auto& point = source_geometry.source_point(point_index);
+            REQUIRE(
+                geometry.altitude_at(point.location()) ==
+                Catch::Approx(source_geometry.source_altitudes_m()[altitude])
+                    .margin(1.0e-8));
+            REQUIRE(
+                geometry.horizontal_angle_at(point.location()) ==
+                Catch::Approx(
+                    source_geometry.source_horizontal_angles_rad()[horizontal])
+                    .margin(1.0e-13));
+
+            std::vector<double> atmosphere_weights(geometry.size(), 0.0);
+            for (const auto& weight : point.atmosphere_weights()) {
+                atmosphere_weights[weight.index] += weight.weight;
+            }
+            REQUIRE(std::accumulate(atmosphere_weights.begin(),
+                                    atmosphere_weights.end(),
+                                    0.0) == Catch::Approx(1.0).margin(1.0e-13));
+        }
+    }
+
+    // The source column at -0.2 radians lies halfway between atmosphere
+    // columns. Combined with the midpoint altitude, it samples four native
+    // atmosphere locations with equal weight.
+    std::vector<double> midpoint_weights(geometry.size(), 0.0);
+    for (const auto& weight :
+         source_geometry.source_point(2).atmosphere_weights()) {
+        midpoint_weights[weight.index] += weight.weight;
+    }
+    REQUIRE(midpoint_weights[geometry.location_index(0, 0)] ==
+            Catch::Approx(0.25).margin(1.0e-13));
+    REQUIRE(midpoint_weights[geometry.location_index(1, 0)] ==
+            Catch::Approx(0.25).margin(1.0e-13));
+    REQUIRE(midpoint_weights[geometry.location_index(0, 1)] ==
+            Catch::Approx(0.25).margin(1.0e-13));
+    REQUIRE(midpoint_weights[geometry.location_index(1, 1)] ==
+            Catch::Approx(0.25).margin(1.0e-13));
+
+    require_compiled_topology(source_geometry.incoming_interpolation(),
+                              source_geometry.transport_row_offsets(),
+                              source_geometry.transport_column_indices(),
+                              source_geometry.total_num_outgoing());
+    require_compiled_topology(source_geometry.los_interpolation(),
+                              source_geometry.los_transport_row_offsets(),
+                              source_geometry.los_transport_column_indices(),
+                              source_geometry.total_num_outgoing());
+
+    settings.include_refraction = true;
+    sasktran2::successive_orders::SourceGeometry1D refracted(raytracer,
+                                                             geometry);
+    REQUIRE_THROWS_WITH(
+        refracted.initialize(los, settings),
+        "Geometry2D successive orders does not support diffuse-ray refraction");
+}
+#endif
 
 TEST_CASE("Successive-orders default source grid preserves nonuniform midpoint "
           "interpolation",

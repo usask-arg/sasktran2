@@ -691,6 +691,9 @@ namespace sasktran2::solartransmission {
         std::vector<sasktran2::raytracing::LayerGeometry> m_los_end_layers;
 
         void initialize_active_derivative_indices();
+        void initialize_atmosphere_impl(
+            const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
+            bool materialized_derivative_storage);
 
         void initialize_fixed_dispatch() {
             if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
@@ -768,6 +771,9 @@ namespace sasktran2::solartransmission {
          *
          */
         void initialize_atmosphere(
+            const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere)
+            override;
+        void initialize_atmosphere_native(
             const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere)
             override;
 

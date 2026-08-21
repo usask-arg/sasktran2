@@ -102,15 +102,20 @@ namespace sasktran2::solartransmission {
 
         od_matrix.resize(numpoints, m_geometry.size());
         ground_hit_flag.assign(numpoints, false);
-
-        std::vector<Eigen::Triplet<double>> triplets;
-        triplets.reserve(static_cast<std::size_t>(numpoints) * 16);
+        od_matrix.reserve(static_cast<Eigen::Index>(numpoints) * 16);
 
         sasktran2::viewinggeometry::ViewingRay ray_to_sun;
         ray_to_sun.look_away = m_geometry.coordinates().sun_unit();
         raytracing::TracedRay traced_ray;
+        std::vector<std::pair<int, double>> row_weights;
+        row_weights.reserve(static_cast<std::size_t>(
+                                m_geometry_2d->altitude_grid().grid().size() +
+                                m_geometry_2d->horizontal_angle_grid().size()) *
+                            4);
 
         const auto append_ray = [&](int row) {
+            od_matrix.startVec(row);
+            row_weights.clear();
             for (std::size_t layer_index = 0;
                  layer_index < traced_ray.layers.size(); ++layer_index) {
                 const auto weights =
@@ -118,11 +123,32 @@ namespace sasktran2::solartransmission {
                 for (std::size_t index = 0; index < weights.size(); ++index) {
                     const auto weight = weights[index];
                     if (weight.second != 0.0) {
-                        triplets.emplace_back(row, weight.first, weight.second);
+                        row_weights.push_back(weight);
                     }
                 }
             }
+
+            std::sort(row_weights.begin(), row_weights.end(),
+                      [](const auto& left, const auto& right) {
+                          return left.first < right.first;
+                      });
+            for (std::size_t begin = 0; begin < row_weights.size();) {
+                const int column = row_weights[begin].first;
+                double value = 0.0;
+                std::size_t end = begin;
+                while (end < row_weights.size() &&
+                       row_weights[end].first == column) {
+                    value += row_weights[end].second;
+                    ++end;
+                }
+                if (value != 0.0) {
+                    od_matrix.insertBackByOuterInner(row, column) = value;
+                }
+                begin = end;
+            }
         };
+
+        const auto append_empty_row = [&](int row) { od_matrix.startVec(row); };
 
         int row = 0;
         for (const auto& ray : rays) {
@@ -133,6 +159,7 @@ namespace sasktran2::solartransmission {
                     ray_to_sun.observer = layer.exit;
                     if (solar_ray_hits_ground(layer.exit, *m_geometry_2d)) {
                         ground_hit_flag[row] = true;
+                        append_empty_row(row);
                     } else {
                         m_raytracer_2d->trace_ray(ray_to_sun, traced_ray);
                         append_ray(row);
@@ -143,6 +170,7 @@ namespace sasktran2::solartransmission {
                 ray_to_sun.observer = layer.entrance;
                 if (solar_ray_hits_ground(layer.entrance, *m_geometry_2d)) {
                     ground_hit_flag[row] = true;
+                    append_empty_row(row);
                 } else {
                     m_raytracer_2d->trace_ray(ray_to_sun, traced_ray);
                     append_ray(row);
@@ -150,7 +178,8 @@ namespace sasktran2::solartransmission {
                 ++row;
             }
         }
-        od_matrix.setFromTriplets(triplets.begin(), triplets.end());
+        od_matrix.finalize();
+        od_matrix.data().squeeze();
     }
 #endif
 } // namespace sasktran2::solartransmission

@@ -34,8 +34,6 @@ namespace sasktran2::math {
         double m_quadrature_normalization;
 
         std::vector<int> m_contributing_map;
-        std::vector<int> m_reverse_contributing_map;
-        std::vector<bool> m_is_full_sphere_looking_up;
 
       public:
         UnitSphereGround(std::unique_ptr<const UnitSphere>&& sphere,

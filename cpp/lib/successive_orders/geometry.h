@@ -14,7 +14,7 @@ namespace sasktran2::grids {
 }
 
 namespace sasktran2::successive_orders {
-    /** Geometry-only configuration for the one-dimensional source grid. */
+    /** Geometry-only configuration for the successive-orders source grid. */
     struct SourceGeometrySettings {
         int num_incoming = 110;
         int num_outgoing = 110;
@@ -63,7 +63,7 @@ namespace sasktran2::successive_orders {
         bool m_is_ground = false;
     };
 
-    /** Immutable one-dimensional source geometry and interpolation topology.
+    /** Immutable source geometry and interpolation topology.
      *
      * Atmospheric optical properties are intentionally absent. Incoming rays
      * are traced once and both incoming-ray and LOS source interpolation are
@@ -74,6 +74,11 @@ namespace sasktran2::successive_orders {
       public:
         SourceGeometry1D(const sasktran2::raytracing::RayTracerBase& raytracer,
                          const sasktran2::Geometry1D& geometry);
+#ifdef SKTRAN_RUST_SUPPORT
+        SourceGeometry1D(
+            const sasktran2::raytracing::RustRayTracer2D& raytracer,
+            const sasktran2::Geometry2D& geometry);
+#endif
         ~SourceGeometry1D();
 
         SourceGeometry1D(const SourceGeometry1D&) = delete;
@@ -92,6 +97,9 @@ namespace sasktran2::successive_orders {
         }
         const std::vector<double>& source_cos_sza() const {
             return m_source_cos_sza;
+        }
+        const std::vector<double>& source_horizontal_angles_rad() const {
+            return m_source_horizontal_angles_rad;
         }
 
         int num_interior_points() const { return m_num_interior_points; }
@@ -191,9 +199,17 @@ namespace sasktran2::successive_orders {
         compile_transport_topology(std::vector<RayInterpolation>& interpolation,
                                    std::vector<int>& row_offsets,
                                    std::vector<int>& column_indices);
+        void
+        trace_ray(const sasktran2::viewinggeometry::ViewingRay& viewing_ray,
+                  sasktran2::raytracing::TracedRay& traced_ray) const;
 
-        const sasktran2::raytracing::RayTracerBase& m_raytracer;
-        const sasktran2::Geometry1D& m_geometry;
+        const sasktran2::Geometry& m_geometry;
+        const sasktran2::Geometry1D* m_geometry_1d = nullptr;
+        const sasktran2::Geometry2D* m_geometry_2d = nullptr;
+        const sasktran2::raytracing::RayTracerBase* m_raytracer_1d = nullptr;
+#ifdef SKTRAN_RUST_SUPPORT
+        const sasktran2::raytracing::RustRayTracer2D* m_raytracer_2d = nullptr;
+#endif
         SourceGeometrySettings m_settings;
 
         std::unique_ptr<sasktran2::grids::SourceLocationInterpolator>
@@ -204,6 +220,7 @@ namespace sasktran2::successive_orders {
         std::vector<int> m_outgoing_point_offsets;
         std::vector<double> m_source_altitudes_m;
         std::vector<double> m_source_cos_sza;
+        std::vector<double> m_source_horizontal_angles_rad;
         int m_num_interior_points = 0;
         int m_num_ground_points = 0;
 

@@ -17,12 +17,25 @@ namespace sasktran2::solartransmission {
     template <typename S, int NSTOKES>
     void SingleScatterSource<S, NSTOKES>::initialize_atmosphere(
         const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere) {
+        initialize_atmosphere_impl(atmosphere, true);
+    }
+
+    template <typename S, int NSTOKES>
+    void SingleScatterSource<S, NSTOKES>::initialize_atmosphere_native(
+        const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere) {
+        initialize_atmosphere_impl(atmosphere, false);
+    }
+
+    template <typename S, int NSTOKES>
+    void SingleScatterSource<S, NSTOKES>::initialize_atmosphere_impl(
+        const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
+        bool materialized_derivative_storage) {
         // Store the atmosphere for later
         m_atmosphere = &atmosphere;
         this->m_phase_handler.initialize_atmosphere(atmosphere);
 
         if constexpr (std::is_same_v<S, SolarTransmissionExact>) {
-            if (atmosphere.num_deriv() > 0) {
+            if (materialized_derivative_storage && atmosphere.num_deriv() > 0) {
                 initialize_active_derivative_indices();
             } else {
                 m_active_derivative_indices.clear();

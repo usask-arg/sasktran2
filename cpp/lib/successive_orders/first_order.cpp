@@ -155,9 +155,21 @@ namespace sasktran2::successive_orders {
     FirstOrderProvider<NSTOKES>::FirstOrderProvider(
         const sasktran2::Geometry1D& geometry,
         const sasktran2::raytracing::RayTracerBase& raytracer)
+        : m_geometry(geometry), m_geometry_1d(&geometry),
+          m_source(geometry, raytracer),
+          m_solar_table(std::make_unique<
+                        sasktran2::solartransmission::SolarTransmissionTable>(
+              geometry, raytracer)),
+          m_integrator(false), m_source_terms{&m_source} {}
+
+#ifdef SKTRAN_RUST_SUPPORT
+    template <int NSTOKES>
+    FirstOrderProvider<NSTOKES>::FirstOrderProvider(
+        const sasktran2::Geometry2D& geometry,
+        const sasktran2::raytracing::RustRayTracer2D& raytracer)
         : m_geometry(geometry), m_source(geometry, raytracer),
-          m_solar_table(geometry, raytracer), m_integrator(false),
-          m_source_terms{&m_source} {}
+          m_integrator(false), m_source_terms{&m_source} {}
+#endif
 
     template <int NSTOKES>
     void FirstOrderProvider<NSTOKES>::initialize_config(
@@ -200,7 +212,8 @@ namespace sasktran2::successive_orders {
         m_num_wavelength_threads = config.num_wavelength_threads();
         m_num_phase_moments = config.num_singlescatter_moments();
         m_compact_scalar_requested =
-            NSTOKES == 1 && !config.multiple_scatter_refraction() &&
+            m_geometry_1d != nullptr && NSTOKES == 1 &&
+            !config.multiple_scatter_refraction() &&
             config.singlescatter_phasemode() ==
                 sasktran2::Config::SingleScatterPhaseMode::from_legendre;
         m_use_compact_scalar = false;
@@ -211,7 +224,7 @@ namespace sasktran2::successive_orders {
                 "thread counts");
         }
         if (m_compact_scalar_requested) {
-            m_solar_table.initialize_config(config);
+            m_solar_table->initialize_config(config);
         } else {
             m_source.initialize_config(config);
             m_source.set_wavelength_block_capacity(1);
@@ -267,11 +280,12 @@ namespace sasktran2::successive_orders {
                 "contains a refracted incoming ray");
         }
         m_use_lower_interpolation =
-            m_geometry.altitude_grid().interpolation_method() ==
-            sasktran2::grids::interpolation::lower;
+            m_geometry_1d != nullptr &&
+            m_geometry_1d->altitude_grid().interpolation_method() ==
+                sasktran2::grids::interpolation::lower;
         if (m_use_compact_scalar) {
-            m_solar_table.initialize_geometry(viewing.traced_rays);
-            m_solar_table.generate_interpolation_matrix(
+            m_solar_table->initialize_geometry(viewing.traced_rays);
+            m_solar_table->generate_interpolation_matrix(
                 viewing.traced_rays, m_solar_interpolation, m_solar_ground_hit);
             m_solar_interpolation.makeCompressed();
         } else {
@@ -402,7 +416,7 @@ namespace sasktran2::successive_orders {
             for (int thread = 0; thread < m_num_threads; ++thread) {
                 m_solar_product_scratch[thread].resize(solar_offset);
                 m_solar_table_product_scratch[thread].resize(
-                    m_solar_table.geometry_matrix().rows());
+                    m_solar_table->geometry_matrix().rows());
                 auto& vjp = m_scalar_vjp_scratch[thread];
                 vjp.optical_depth.resize(maximum_layers);
                 vjp.attenuation.resize(maximum_layers);
@@ -426,7 +440,10 @@ namespace sasktran2::successive_orders {
         }
         m_atmosphere = nullptr;
         if (!m_use_compact_scalar) {
-            m_source.initialize_atmosphere(atmosphere);
+            // Successive orders evaluates this private exact source only via
+            // its primal, JVP, and VJP hooks. Avoid the large per-layer active
+            // derivative lists used exclusively by materialized Jacobians.
+            m_source.initialize_atmosphere_native(atmosphere);
         }
         if (!m_use_compact_scalar) {
             m_integrator.initialize_atmosphere(atmosphere);
@@ -579,7 +596,7 @@ namespace sasktran2::successive_orders {
         if (m_cached_solar_active.at(wavelength) == 0) {
             auto& table = m_solar_table_product_scratch[wavelength_thread];
             table.noalias() =
-                m_solar_table.geometry_matrix() *
+                m_solar_table->geometry_matrix() *
                 m_atmosphere->storage().total_extinction.col(wavelength);
             const double irradiance =
                 m_atmosphere->storage().solar_irradiance(wavelength);
@@ -1365,8 +1382,8 @@ namespace sasktran2::successive_orders {
         auto& solar_tangent = m_solar_product_scratch[wavelength_thread];
         auto& table_tangent = m_solar_table_product_scratch[wavelength_thread];
         const Eigen::Index solar_columns =
-            m_solar_table.geometry_matrix().cols();
-        table_tangent.noalias() = m_solar_table.geometry_matrix() *
+            m_solar_table->geometry_matrix().cols();
+        table_tangent.noalias() = m_solar_table->geometry_matrix() *
                                   native_tangent.head(solar_columns);
         solar_tangent.noalias() = m_solar_interpolation * table_tangent;
         solar_tangent.array() *= -solar.array();
@@ -2148,9 +2165,9 @@ namespace sasktran2::successive_orders {
             table_gradient.noalias() =
                 m_solar_interpolation.transpose() * solar_gradient;
             const Eigen::Index solar_columns =
-                m_solar_table.geometry_matrix().cols();
+                m_solar_table->geometry_matrix().cols();
             thread_gradient.head(solar_columns).noalias() -=
-                m_solar_table.geometry_matrix().transpose() * table_gradient;
+                m_solar_table->geometry_matrix().transpose() * table_gradient;
             native_gradient += thread_gradient;
         }
     }

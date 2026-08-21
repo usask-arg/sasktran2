@@ -26,8 +26,10 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::initialize() {
                  sasktran2::Config::SingleScatterSource::none &&
              m_config.single_scatter_source() !=
                  sasktran2::Config::SingleScatterSource::exact) ||
-            m_config.multiple_scatter_source() !=
-                sasktran2::Config::MultipleScatterSource::none ||
+            (m_config.multiple_scatter_source() !=
+                 sasktran2::Config::MultipleScatterSource::none &&
+             m_config.multiple_scatter_source() !=
+                 sasktran2::Config::MultipleScatterSource::successive_orders) ||
             (m_config.emission_source() !=
                  sasktran2::Config::EmissionSource::none &&
              m_config.emission_source() !=
@@ -36,8 +38,8 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::initialize() {
                  sasktran2::Config::EmissionSource::volume_emission_rate)) {
             throw std::invalid_argument(
                 "Geometry2D currently supports exact single scattering, "
-                "occultation, standard emission, and volume emission rate "
-                "sources, with multiple scattering disabled");
+                "successive-orders multiple scattering, occultation, "
+                "standard emission, and volume emission rate sources");
         }
         if (!m_viewing_geometry.flux_observers().empty()) {
             throw std::invalid_argument(
@@ -47,6 +49,13 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::initialize() {
             throw std::invalid_argument(
                 "Geometry2D engine integration does not yet accept per-ray "
                 "refractive-index profiles");
+        }
+        if (m_config.multiple_scatter_source() ==
+                sasktran2::Config::MultipleScatterSource::successive_orders &&
+            m_config.multiple_scatter_refraction()) {
+            throw std::invalid_argument(
+                "Geometry2D successive orders does not support diffuse-ray "
+                "refraction");
         }
     }
 
@@ -141,6 +150,18 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
                     NSTOKES, sasktran2::Config::EmissionSource::
                                  volume_emission_rate>>());
             m_los_source_terms.push_back(m_source_terms.back().get());
+        }
+        if (m_config.multiple_scatter_source() ==
+            sasktran2::Config::MultipleScatterSource::successive_orders) {
+#ifdef SKTRAN_RUST_SUPPORT
+            m_source_terms.emplace_back(
+                sasktran2::successive_orders::make_successive_orders_source<
+                    NSTOKES>(*m_raytracer_2d, *m_geometry_2d));
+            m_los_source_terms.push_back(m_source_terms.back().get());
+#else
+            throw std::invalid_argument(
+                "Geometry2D successive orders requires Rust support");
+#endif
         }
         for (auto& source : m_source_terms) {
             source->initialize_config(m_config);

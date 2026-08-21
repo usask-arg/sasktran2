@@ -9,7 +9,7 @@
 #include <vector>
 
 namespace sasktran2 {
-    class Geometry1D;
+    class Geometry;
 }
 
 namespace sasktran2::grids {
@@ -137,7 +137,7 @@ namespace sasktran2::successive_orders {
     /** Compiles deterministic interpolation metadata for one traced ray. */
     void compile_ray_interpolation(
         const sasktran2::raytracing::TracedRay& ray,
-        const sasktran2::Geometry1D& geometry,
+        const sasktran2::Geometry& geometry,
         sasktran2::grids::SourceLocationInterpolator& location_interpolator,
         const std::vector<SourcePoint>& source_points, RayInterpolation& result,
         InterpolationScratch& scratch);

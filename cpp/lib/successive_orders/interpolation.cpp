@@ -86,7 +86,7 @@ namespace sasktran2::successive_orders {
 
         Eigen::Vector3d
         deterministic_horizontal(const Eigen::Vector3d& local_up,
-                                 const sasktran2::Geometry1D& geometry) {
+                                 const sasktran2::Geometry& geometry) {
             constexpr double singular_squared_tolerance = 1.0e-24;
             Eigen::Vector3d horizontal =
                 geometry.coordinates().reference_x() -
@@ -105,7 +105,7 @@ namespace sasktran2::successive_orders {
 
         Eigen::Vector3d
         horizontal_solar_reference(const Eigen::Vector3d& local_up,
-                                   const sasktran2::Geometry1D& geometry) {
+                                   const sasktran2::Geometry& geometry) {
             constexpr double singular_squared_tolerance = 1.0e-24;
             Eigen::Vector3d horizontal =
                 geometry.coordinates().sun_unit() -
@@ -120,7 +120,7 @@ namespace sasktran2::successive_orders {
         rotate_unit_vector(const Eigen::Vector3d& vector,
                            const Eigen::Vector3d& initial_position,
                            const Eigen::Vector3d& new_position,
-                           const sasktran2::Geometry1D& geometry) {
+                           const sasktran2::Geometry& geometry) {
             const double vector_norm = vector.norm();
             const double initial_norm = initial_position.norm();
             const double new_norm = new_position.norm();
@@ -165,7 +165,7 @@ namespace sasktran2::successive_orders {
         void compile_source_weights(
             const Eigen::Vector3d& direction,
             const sasktran2::Location& interpolation_location, bool ground,
-            const sasktran2::Geometry1D& geometry,
+            const sasktran2::Geometry& geometry,
             sasktran2::grids::SourceLocationInterpolator& location_interpolator,
             const std::vector<SourcePoint>& source_points,
             std::vector<SourceInterpolationWeight>& result,
@@ -284,7 +284,7 @@ namespace sasktran2::successive_orders {
 
     void compile_ray_interpolation(
         const sasktran2::raytracing::TracedRay& ray,
-        const sasktran2::Geometry1D& geometry,
+        const sasktran2::Geometry& geometry,
         sasktran2::grids::SourceLocationInterpolator& location_interpolator,
         const std::vector<SourcePoint>& source_points, RayInterpolation& result,
         InterpolationScratch& scratch) {

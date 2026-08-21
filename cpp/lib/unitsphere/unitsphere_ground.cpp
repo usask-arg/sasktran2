@@ -1,5 +1,9 @@
 #include <sasktran2/math/unitsphere.h>
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
+
 namespace sasktran2::math {
     UnitSphereGround::UnitSphereGround(
         std::unique_ptr<const UnitSphere>&& sphere,
@@ -8,8 +12,6 @@ namespace sasktran2::math {
         Eigen::Vector3d quad;
 
         m_contributing_map.reserve(m_full_sphere->num_points() / 2);
-        m_reverse_contributing_map.resize(m_full_sphere->num_points());
-        m_is_full_sphere_looking_up.resize(m_full_sphere->num_points());
 
         m_quadrature_normalization = 0.0;
 
@@ -19,17 +21,10 @@ namespace sasktran2::math {
 
             if (quad.dot(location) > 0) {
                 // Looking up
-                m_is_full_sphere_looking_up[i] = true;
-
-                m_reverse_contributing_map[i] = m_contributing_map.size();
                 m_contributing_map.push_back(i);
 
                 m_quadrature_normalization +=
                     m_full_sphere->quadrature_weight(i);
-            } else {
-                m_is_full_sphere_looking_up[i] = false;
-                m_reverse_contributing_map[i] =
-                    -1; // Value should never be used
             }
         }
     }
@@ -51,36 +46,43 @@ namespace sasktran2::math {
         const Eigen::Vector3d& direction,
         std::vector<std::pair<int, double>>& index_weights,
         int& num_interp) const {
-        // Start by interpolating over the full sphere
-        m_full_sphere->interpolate(direction, index_weights, num_interp);
+        num_interp = std::min(3, num_points());
+        index_weights.assign(static_cast<std::size_t>(num_interp),
+                             {-1, std::numeric_limits<double>::infinity()});
 
-        // Now go through every interpolation index and see if they are outside
-        // the boundaries
-        double total_weight = 0;
-        for (int i = 0; i < index_weights.size(); ++i) {
-            if (!m_is_full_sphere_looking_up[index_weights[i].first]) {
-                // Have to remove this index from the interpolator
-                // Rather than removing it we just set the index to 0 and weight
-                // to 0
-                index_weights[i].first = 0;
-                index_weights[i].second = 0;
-            } else {
-                // remap the index
-                index_weights[i].first =
-                    m_reverse_contributing_map[index_weights[i].first];
+        // Select neighbors directly from the upward hemisphere. Filtering a
+        // full-sphere stencil after selection can discard every neighbor for
+        // near-horizon directions.
+        for (int local_index = 0; local_index < num_points(); ++local_index) {
+            double squared_distance =
+                (get_quad_position(local_index) - direction).squaredNorm();
+            for (int slot = 0; slot < num_interp; ++slot) {
+                if (squared_distance < index_weights[slot].second) {
+                    for (int shifted = num_interp - 1; shifted > slot;
+                         --shifted) {
+                        index_weights[shifted] = index_weights[shifted - 1];
+                    }
+                    index_weights[slot] = {local_index, squared_distance};
+                    break;
+                }
             }
-            total_weight += index_weights[i].second;
         }
 
-        // Renormalize the weights
-        // and remap the indicies
-        if (total_weight > 0) {
-            for (int i = 0; i < index_weights.size(); ++i) {
-                index_weights[i].second /= total_weight;
+        double total_inverse_distance = 0.0;
+        for (int slot = 0; slot < num_interp; ++slot) {
+            if (index_weights[slot].second < 1.0e-8) {
+                for (auto& weight : index_weights) {
+                    weight.second = 0.0;
+                }
+                index_weights[slot].second = 1.0;
+                return;
             }
-        } else {
-            // TODO: Why does this happen?
-            spdlog::warn("Ground Interpolation failed");
+            total_inverse_distance +=
+                1.0 / std::sqrt(index_weights[slot].second);
+        }
+        for (auto& weight : index_weights) {
+            weight.second =
+                (1.0 / std::sqrt(weight.second)) / total_inverse_distance;
         }
     }
 

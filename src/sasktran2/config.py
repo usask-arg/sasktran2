@@ -387,7 +387,8 @@ class Config:
         """
         The number of solar zenith angle discretizations to use when calculating the multiple scatter source.
         For the discrete ordinates source, this determines the number of independent discrete ordinates calculations to perform.
-        In the successive orders of scattering source, this is directly the number of discretizations.
+        For the successive-orders source with Geometry1D, this is the number of solar-zenith-angle discretizations.
+        With Geometry2D, it is the number of evenly spaced horizontal source columns spanning the atmosphere grid.
         Defaults to 1, indicating that the multiple scatter source is estimated only at the reference point.
         """
         return self._config.num_sza
@@ -397,7 +398,8 @@ class Config:
         """
         The number of solar zenith angle discretizations to use when calculating the multiple scatter source.
         For the discrete ordinates source, this determines the number of independent discrete ordinates calculations to perform.
-        In the successive orders of scattering source, this is directly the number of discretizations.
+        For the successive-orders source with Geometry1D, this is the number of solar-zenith-angle discretizations.
+        With Geometry2D, it is the number of evenly spaced horizontal source columns spanning the atmosphere grid.
         Defaults to 1, indicating that the multiple scatter source is estimated only at the reference point.
         """
         self._config.num_sza = value

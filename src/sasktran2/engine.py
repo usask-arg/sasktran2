@@ -103,7 +103,11 @@ class Engine:
                     sk.SingleScatterSource.NoSource,
                     sk.SingleScatterSource.Exact,
                 )
-                or config.multiple_scatter_source != sk.MultipleScatterSource.NoSource
+                or config.multiple_scatter_source
+                not in (
+                    sk.MultipleScatterSource.NoSource,
+                    sk.MultipleScatterSource.SuccessiveOrders,
+                )
                 or config.emission_source
                 not in (
                     sk.EmissionSource.NoSource,
@@ -113,8 +117,8 @@ class Engine:
             ):
                 msg = (
                     "Geometry2D Engine currently supports exact single scattering, "
-                    "occultation, standard emission, and volume emission rate "
-                    "sources with multiple scattering disabled"
+                    "successive-orders multiple scattering, occultation, standard "
+                    "emission, and volume emission rate sources"
                 )
                 raise NotImplementedError(msg)
             if viewing_geometry.flux_observers:
@@ -124,6 +128,16 @@ class Engine:
                 msg = (
                     "Geometry2D Engine does not yet accept per-ray refractive-index "
                     "profiles"
+                )
+                raise NotImplementedError(msg)
+            if (
+                config.multiple_scatter_source
+                == sk.MultipleScatterSource.SuccessiveOrders
+                and config.multiple_scatter_refraction
+            ):
+                msg = (
+                    "Geometry2D successive orders does not support diffuse-ray "
+                    "refraction"
                 )
                 raise NotImplementedError(msg)
 

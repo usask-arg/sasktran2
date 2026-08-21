@@ -10,6 +10,7 @@
 #include <Eigen/SparseCore>
 
 #include <cstddef>
+#include <memory>
 #include <vector>
 
 namespace sasktran2::successive_orders {
@@ -26,6 +27,11 @@ namespace sasktran2::successive_orders {
         FirstOrderProvider(
             const sasktran2::Geometry1D& geometry,
             const sasktran2::raytracing::RayTracerBase& raytracer);
+#ifdef SKTRAN_RUST_SUPPORT
+        FirstOrderProvider(
+            const sasktran2::Geometry2D& geometry,
+            const sasktran2::raytracing::RustRayTracer2D& raytracer);
+#endif
 
         void initialize_config(const sasktran2::Config& config);
         void initialize_geometry(const SourceGeometry1D& source_geometry);
@@ -214,9 +220,11 @@ namespace sasktran2::successive_orders {
             Eigen::Ref<Eigen::VectorXd> solar_gradient,
             Eigen::Ref<Eigen::VectorXd> coefficient_gradient) const;
 
-        const sasktran2::Geometry1D& m_geometry;
+        const sasktran2::Geometry& m_geometry;
+        const sasktran2::Geometry1D* m_geometry_1d = nullptr;
         ExactSource m_source;
-        sasktran2::solartransmission::SolarTransmissionTable m_solar_table;
+        std::unique_ptr<sasktran2::solartransmission::SolarTransmissionTable>
+            m_solar_table;
         Eigen::SparseMatrix<double, Eigen::RowMajor> m_solar_interpolation;
         std::vector<bool> m_solar_ground_hit;
         sasktran2::SourceIntegrator<NSTOKES> m_integrator;
