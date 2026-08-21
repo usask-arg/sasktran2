@@ -27,8 +27,8 @@ namespace sasktran2 {
          * 'exact' causes solar rays to be traced for each integration point
          * along the line of sight
          *
-         * 'solartable' Creates a solar transmission table at a set of grid
-         * points.  NOT YET IMPLEMENTED.
+         * 'solartable' creates a solar transmission table at a set of grid
+         * points and interpolates it to the line-of-sight integration points.
          *
          * 'discrete_ordinates' Lets the discrete ordinates solution include the
          * single scatter term.  Only has an effect in Plane Parallel or

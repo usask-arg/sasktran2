@@ -121,8 +121,35 @@ namespace sasktran2::rust::raytracer {
             m_result.reserve_grid_weights(summary.num_layers * 4);
         }
 
-        void set_layer(std::size_t index, const RustTraceLayer& rust_layer) {
+        void set_layer(std::size_t index, const RustTraceLayer& rust_layer,
+                       bool optical_depth_only) {
             auto& layer = m_result.layers[index];
+            const int altitude_cell = rust_layer.cell_altitude_index;
+            const int horizontal_cell = rust_layer.cell_horizontal_index;
+            // One structured 2D layer is confined to one cell. All endpoint
+            // and integrated-OD weights use the same four cell corners in
+            // altitude-fastest order:
+            //   (h0,a0), (h0,a1), (h1,a0), (h1,a1).
+            // Geometry2D::location_index uses the same flattening convention.
+            const std::array<int, 4> indices = {
+                m_geometry.location_index(altitude_cell, horizontal_cell),
+                m_geometry.location_index(altitude_cell + 1, horizontal_cell),
+                m_geometry.location_index(altitude_cell, horizontal_cell + 1),
+                m_geometry.location_index(altitude_cell + 1,
+                                          horizontal_cell + 1)};
+            const std::array<double, 4> od_weights = {
+                rust_layer.integrated_od_weight_0,
+                rust_layer.integrated_od_weight_1,
+                rust_layer.integrated_od_weight_2,
+                rust_layer.integrated_od_weight_3};
+            if (optical_depth_only) {
+                constexpr std::array<double, 4> unused_endpoint_weights = {
+                    0.0, 0.0, 0.0, 0.0};
+                m_result.set_layer_weights(index, indices,
+                                           unused_endpoint_weights,
+                                           unused_endpoint_weights, od_weights);
+                return;
+            }
 
             layer.type = static_cast<sasktran2::raytracing::LayerType>(
                 rust_layer.layer_type);
@@ -157,25 +184,12 @@ namespace sasktran2::rust::raytracer {
             layer.cos_sza_exit = rust_layer.cos_sza_exit;
             layer.saz_entrance = rust_layer.saz_entrance;
             layer.saz_exit = rust_layer.saz_exit;
-            const int altitude_cell = rust_layer.cell_altitude_index;
-            const int horizontal_cell = rust_layer.cell_horizontal_index;
             const auto entrance_coordinates =
                 m_geometry.cell_interpolation_coordinates(
                     layer.entrance, altitude_cell, horizontal_cell);
             const auto exit_coordinates =
                 m_geometry.cell_interpolation_coordinates(
                     layer.exit, altitude_cell, horizontal_cell);
-            // One structured 2D layer is confined to one cell. All endpoint
-            // and integrated-OD weights use the same four cell corners in
-            // altitude-fastest order:
-            //   (h0,a0), (h0,a1), (h1,a0), (h1,a1).
-            // Geometry2D::location_index uses the same flattening convention.
-            const std::array<int, 4> indices = {
-                m_geometry.location_index(altitude_cell, horizontal_cell),
-                m_geometry.location_index(altitude_cell + 1, horizontal_cell),
-                m_geometry.location_index(altitude_cell, horizontal_cell + 1),
-                m_geometry.location_index(altitude_cell + 1,
-                                          horizontal_cell + 1)};
             const auto interpolation_weights = [](const auto& coordinates) {
                 // coordinates = (altitude upper fraction,
                 //                horizontal upper fraction).
@@ -190,11 +204,6 @@ namespace sasktran2::rust::raytracer {
             const auto entrance_weights =
                 interpolation_weights(entrance_coordinates);
             const auto exit_weights = interpolation_weights(exit_coordinates);
-            const std::array<double, 4> od_weights = {
-                rust_layer.integrated_od_weight_0,
-                rust_layer.integrated_od_weight_1,
-                rust_layer.integrated_od_weight_2,
-                rust_layer.integrated_od_weight_3};
             m_result.set_layer_weights(index, indices, entrance_weights,
                                        exit_weights, od_weights);
             layer.entrance.lower_alt_index = altitude_cell;
@@ -223,8 +232,9 @@ namespace sasktran2::rust::raytracer {
     }
 
     void set_trace_layer_2d(CppTraceResult2D& result, std::size_t index,
-                            const RustTraceLayer& layer) {
-        result.set_layer(index, layer);
+                            const RustTraceLayer& layer,
+                            bool optical_depth_only) {
+        result.set_layer(index, layer, optical_depth_only);
     }
 
     void set_trace_layers(CppTraceResult& result,
@@ -309,18 +319,31 @@ namespace sasktran2::raytracing {
     void RustRayTracer2D::trace_ray(
         const sasktran2::viewinggeometry::ViewingRay& ray,
         TracedRay& result) const {
-        trace_ray_impl(ray, nullptr, result);
+        trace_ray_impl(ray, nullptr, result, false);
+    }
+
+    void RustRayTracer2D::trace_ray_optical_depth(
+        const sasktran2::viewinggeometry::ViewingRay& ray,
+        TracedRay& result) const {
+        trace_ray_impl(ray, nullptr, result, true);
+    }
+
+    void RustRayTracer2D::trace_ray_optical_depth(
+        const sasktran2::viewinggeometry::ViewingRay& ray,
+        const Eigen::VectorXd& refractive_index, TracedRay& result) const {
+        trace_ray_impl(ray, &refractive_index, result, true);
     }
 
     void RustRayTracer2D::trace_ray(
         const sasktran2::viewinggeometry::ViewingRay& ray,
         const Eigen::VectorXd& refractive_index, TracedRay& result) const {
-        trace_ray_impl(ray, &refractive_index, result);
+        trace_ray_impl(ray, &refractive_index, result, false);
     }
 
     void RustRayTracer2D::trace_ray_impl(
         const sasktran2::viewinggeometry::ViewingRay& ray,
-        const Eigen::VectorXd* refractive_index, TracedRay& result) const {
+        const Eigen::VectorXd* refractive_index, TracedRay& result,
+        bool optical_depth_only) const {
         if (refractive_index != nullptr &&
             refractive_index->size() != m_geometry.num_altitudes()) {
             throw std::invalid_argument(
@@ -339,7 +362,7 @@ namespace sasktran2::raytracing {
             *m_impl->rust_tracer, ray.observer.position.x(),
             ray.observer.position.y(), ray.observer.position.z(),
             ray.look_away.x(), ray.look_away.y(), ray.look_away.z(), profile,
-            cpp_result);
+            optical_depth_only, cpp_result);
     }
 
 } // namespace sasktran2::raytracing

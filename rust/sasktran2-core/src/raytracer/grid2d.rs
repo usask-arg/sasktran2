@@ -83,13 +83,6 @@ impl AngularBasis {
     pub fn angular_normal(self, angle: f64) -> Vec3 {
         angle.cos() * self.reference_x - angle.sin() * self.reference_z
     }
-
-    #[inline(always)]
-    fn raw_angle(self, point: Vec3) -> f64 {
-        point
-            .dot(self.reference_x)
-            .atan2(point.dot(self.reference_z))
-    }
 }
 
 /// Spherical grid that is finite in altitude and non-periodic in one
@@ -205,29 +198,55 @@ impl StructuredGrid2D {
         point.norm() - self.earth_radius
     }
 
-    pub fn horizontal_angle_at(&self, point: Vec3) -> f64 {
-        let raw = self.basis.raw_angle(point);
+    #[inline(always)]
+    pub(crate) fn horizontal_angle_from_projections(
+        &self,
+        reference_x: f64,
+        reference_z: f64,
+    ) -> f64 {
+        let raw = reference_x.atan2(reference_z);
         let center = (self.horizontal_angles[0]
             + self.horizontal_angles[self.horizontal_angles.len() - 1])
             / 2.0;
         unwrap_angle_near(raw, center)
     }
 
-    pub fn locate_indices(&self, point: Vec3, epsilon: f64) -> Option<(usize, usize)> {
-        let altitude_index = locate_axis_cell(&self.altitudes, self.altitude_at(point), epsilon)?;
-        let horizontal_index = locate_extended_axis_cell(
-            &self.horizontal_angles,
-            self.horizontal_angle_at(point),
-            epsilon,
-        );
+    #[inline(always)]
+    pub fn horizontal_angle_at(&self, point: Vec3) -> f64 {
+        self.horizontal_angle_from_projections(
+            point.dot(self.basis.reference_x()),
+            point.dot(self.basis.reference_z()),
+        )
+    }
+
+    #[inline(always)]
+    pub(crate) fn locate_indices_at_coordinates(
+        &self,
+        altitude: f64,
+        horizontal_angle: f64,
+        epsilon: f64,
+    ) -> Option<(usize, usize)> {
+        let altitude_index = locate_axis_cell(&self.altitudes, altitude, epsilon)?;
+        let horizontal_index =
+            locate_extended_axis_cell(&self.horizontal_angles, horizontal_angle, epsilon);
         Some((altitude_index, horizontal_index))
     }
 
-    pub fn interpolation_weights_at(&self, point: Vec3) -> InterpolationStencil {
+    pub fn locate_indices(&self, point: Vec3, epsilon: f64) -> Option<(usize, usize)> {
+        self.locate_indices_at_coordinates(
+            self.altitude_at(point),
+            self.horizontal_angle_at(point),
+            epsilon,
+        )
+    }
+
+    pub(crate) fn interpolation_weights_at_coordinates(
+        &self,
+        altitude: f64,
+        horizontal_angle: f64,
+    ) -> InterpolationStencil {
         const LOCATION_EPSILON: f64 = 1e-8;
 
-        let altitude = self.altitude_at(point);
-        let horizontal_angle = self.horizontal_angle_at(point);
         let altitude_weights = axis_interpolation_weights(
             &self.altitudes,
             altitude,
@@ -251,6 +270,13 @@ impl StructuredGrid2D {
             }
         }
         result
+    }
+
+    pub fn interpolation_weights_at(&self, point: Vec3) -> InterpolationStencil {
+        self.interpolation_weights_at_coordinates(
+            self.altitude_at(point),
+            self.horizontal_angle_at(point),
+        )
     }
 
     /// Bilinear basis weights for a point interpreted from one specified

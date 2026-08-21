@@ -28,8 +28,10 @@ each option.
 
 ## Setting the Refractive Index
 Refractive effects in the atmosphere require knowledge of the refractive index of air.
-The refractive index is set through the {py:attr}`sasktran2.Geometry1D.refractive_index` property, which is
-the air refractive index on an altitude grid.
+The refractive index is set through the {py:attr}`sasktran2.Geometry1D.refractive_index` or
+{py:attr}`sasktran2.Geometry2D.refractive_index` property, which is the air refractive index on an altitude grid.
+For a 2D atmosphere the extinction and scattering fields may vary horizontally, but the refractive index is currently
+required to be altitude-only.
 In SASKTRAN2 refraction is considered a geometry (wavelength independent effect) for computational efficiency reasons.
 If wavelength dependent refractive index calculations are important for your application, the model can be reset and executed
 for a single wavelength at a time.
@@ -110,6 +112,14 @@ plt.plot((refracted["radiance"] / unrefracted["radiance"]).to_numpy().flatten(),
 ## Solar Refraction
 Solar refraction refers to refraction of the incoming solar beam, it is most important for twilight conditions where the sun is low in the sky.
 Typically solar refraction is unimportant until the solar zenith angle is above 85 degrees.  The option is controlled by
-{py:attr}`sasktran2.Config.solar_refraction`.  Note that currently this option is considered experimental, and only works when
-both the single scatter source and multiple scatter source are set to DiscreteOrdinates, and thus only works for nadir viewing
-applications.
+{py:attr}`sasktran2.Config.solar_refraction`.
+
+For a {py:class}`sasktran2.Geometry2D` calculation, solar refraction is supported by both the exact and table single-scatter
+sources and by the successive-orders multiple-scatter source. The direct beam is represented by a three-dimensional
+solar-characteristic table parameterized by altitude, solar zenith angle, and off-plane azimuth. The exact single-scatter
+source uses the table to obtain the local bent direction and retraces the optical depth from every line-of-sight integration
+point; the table source interpolates both quantities. When exact/table single scattering and successive orders are enabled
+together, they share the same characteristic table.
+
+This setting bends the direct solar beam only. Refraction of the diffuse rays used by successive orders is controlled by
+{py:attr}`sasktran2.Config.multiple_scatter_refraction` and is not currently supported with `Geometry2D`.

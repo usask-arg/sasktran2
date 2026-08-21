@@ -2,7 +2,6 @@
 
 #include <sasktran2/test_helper.h>
 
-#include <array>
 #include <cmath>
 #include <vector>
 
@@ -22,30 +21,24 @@ namespace {
             atmosphere.storage().ssa.col(0) << 0.8, 0.6, 0.4;
             atmosphere.storage().ssa.col(1) << 0.35, 0.55, 0.75;
 
-            traced_rays.resize(2);
-            traced_rays[0].layers.resize(2);
-            traced_rays[0].ground_is_hit = true;
-            set_layer_weights(traced_rays[0], 0, {0, 1}, {0.7, 0.2});
-            set_layer_weights(traced_rays[0], 1, {1, 2}, {0.4, 1.1});
-
-            traced_rays[1].layers.resize(1);
-            set_layer_weights(traced_rays[1], 0, {0, 2}, {0.3, 0.5});
-
             interpolation.resize(2);
-            interpolation[0].traced_ray = &traced_rays[0];
-            interpolation[0].layers = {{0, 2, 0, 2}, {2, 2, 2, 2}};
+            interpolation[0].layers = {{0, 2, 0, 2, 0, 2}, {2, 2, 2, 2, 2, 2}};
             interpolation[0].atmosphere_weights = {
                 {0, 0.25}, {1, 0.75}, {1, 0.4}, {2, 0.6}};
             interpolation[0].source_weights = {
                 {0, 0.25, 0}, {2, 0.75, 2}, {1, 0.6, 1}, {2, 0.4, 2}};
+            interpolation[0].optical_depth_indices = {0, 1, 1, 2};
+            interpolation[0].optical_depth_weights = {0.7, 0.2, 0.4, 1.1};
             interpolation[0].ground_weights = {{0, 0.2, 0}, {3, 0.8, 3}};
+            interpolation[0].ground_hit = true;
             interpolation[0].transport_value_offset = 0;
             interpolation[0].transport_row_nnz = 4;
 
-            interpolation[1].traced_ray = &traced_rays[1];
-            interpolation[1].layers = {{0, 2, 0, 2}};
+            interpolation[1].layers = {{0, 2, 0, 2, 0, 2}};
             interpolation[1].atmosphere_weights = {{0, 0.5}, {2, 0.5}};
             interpolation[1].source_weights = {{1, 0.7, 0}, {3, 0.3, 1}};
+            interpolation[1].optical_depth_indices = {0, 2};
+            interpolation[1].optical_depth_weights = {0.3, 0.5};
             interpolation[1].transport_value_offset = 4;
             interpolation[1].transport_row_nnz = 2;
         }
@@ -67,23 +60,11 @@ namespace {
                             atmosphere.ssa_deriv_start_index(), num_locations);
         }
 
-        std::vector<sasktran2::raytracing::TracedRay> traced_rays;
         std::vector<sasktran2::successive_orders::RayInterpolation>
             interpolation;
         const std::vector<int> row_offsets{0, 4, 6};
         const std::vector<int> column_indices{0, 1, 2, 3, 1, 3};
         sasktran2::atmosphere::Atmosphere<1> atmosphere;
-
-      private:
-        static void
-        set_layer_weights(sasktran2::raytracing::TracedRay& ray,
-                          std::size_t layer, const std::array<int, 2>& indices,
-                          const std::array<double, 2>& optical_depth_weights) {
-            const std::array<double, 2> entrance{0.5, 0.5};
-            const std::array<double, 2> exit{0.5, 0.5};
-            ray.set_layer_weights(layer, indices, entrance, exit,
-                                  optical_depth_weights);
-        }
     };
 
     Eigen::VectorXd expected_values_at_wavelength_one() {

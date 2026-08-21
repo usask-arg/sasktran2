@@ -126,7 +126,7 @@ template <int NSTOKES> class Sasktran2 : public Sasktran2Interface {
         initialize();
     }
 
-    /** Constructs the transmission-only structured 2D model. */
+    /** Constructs the structured 2D model. */
     Sasktran2(const sasktran2::Config& config,
               const sasktran2::Geometry2D* geometry,
               const sasktran2::viewinggeometry::ViewingGeometryContainer&

@@ -27,6 +27,14 @@ namespace sasktran2::successive_orders {
         SuccessiveOrdersSource(
             const sasktran2::raytracing::RayTracerBase& raytracer,
             const sasktran2::Geometry1D& geometry);
+#ifdef SKTRAN_RUST_SUPPORT
+        SuccessiveOrdersSource(
+            const sasktran2::raytracing::RustRayTracer2D& raytracer,
+            const sasktran2::Geometry2D& geometry,
+            std::shared_ptr<
+                sasktran2::solartransmission::SolarTransmissionTable2D>
+                shared_solar_table = nullptr);
+#endif
         ~SuccessiveOrdersSource() override;
 
         SuccessiveOrdersSource(const SuccessiveOrdersSource&) = delete;
@@ -58,7 +66,14 @@ namespace sasktran2::successive_orders {
         bool supports_linearization(
             sasktran2::LinearizationMode mode) const override;
         bool supports_geometry_dimension(int dimension) const override {
-            return dimension == 1;
+            if (dimension == 1) {
+                return true;
+            }
+#ifdef SKTRAN_RUST_SUPPORT
+            return dimension == 2;
+#else
+            return false;
+#endif
         }
         bool supports_sparse_derivative_tracking() const override {
             return true;
@@ -267,6 +282,18 @@ namespace sasktran2::successive_orders {
             : m_source_geometry(raytracer, geometry),
               m_first_order(geometry, raytracer) {}
 
+#ifdef SKTRAN_RUST_SUPPORT
+        SuccessiveOrdersImplementation(
+            const sasktran2::raytracing::RustRayTracer2D& raytracer,
+            const sasktran2::Geometry2D& geometry,
+            std::shared_ptr<
+                sasktran2::solartransmission::SolarTransmissionTable2D>
+                shared_solar_table = nullptr)
+            : m_source_geometry(raytracer, geometry),
+              m_first_order(geometry, raytracer,
+                            std::move(shared_solar_table)) {}
+#endif
+
         void initialize_config(const sasktran2::Config& config) {
             invalidate_geometry();
             m_config = &config;
@@ -324,6 +351,9 @@ namespace sasktran2::successive_orders {
                 cotangent.setZero(output_size);
             }
             m_first_order.initialize_geometry(m_source_geometry);
+            if (m_first_order.can_release_incoming_geometry()) {
+                m_source_geometry.release_incoming_traced_rays();
+            }
             m_geometry_initialized = true;
         }
 
@@ -806,6 +836,17 @@ namespace sasktran2::successive_orders {
         const sasktran2::Geometry1D& geometry)
         : m_impl(std::make_unique<Impl>(raytracer, geometry)) {}
 
+#ifdef SKTRAN_RUST_SUPPORT
+    template <int NSTOKES>
+    SuccessiveOrdersSource<NSTOKES>::SuccessiveOrdersSource(
+        const sasktran2::raytracing::RustRayTracer2D& raytracer,
+        const sasktran2::Geometry2D& geometry,
+        std::shared_ptr<sasktran2::solartransmission::SolarTransmissionTable2D>
+            shared_solar_table)
+        : m_impl(std::make_unique<Impl>(raytracer, geometry,
+                                        std::move(shared_solar_table))) {}
+#endif
+
     template <int NSTOKES>
     SuccessiveOrdersSource<NSTOKES>::~SuccessiveOrdersSource() = default;
 
@@ -906,5 +947,30 @@ namespace sasktran2::successive_orders {
     make_successive_orders_source<3>(
         const sasktran2::raytracing::RayTracerBase&,
         const sasktran2::Geometry1D&);
+
+#ifdef SKTRAN_RUST_SUPPORT
+    template <int NSTOKES>
+    std::unique_ptr<SourceTermInterface<NSTOKES>> make_successive_orders_source(
+        const sasktran2::raytracing::RustRayTracer2D& raytracer,
+        const sasktran2::Geometry2D& geometry,
+        std::shared_ptr<sasktran2::solartransmission::SolarTransmissionTable2D>
+            shared_solar_table) {
+        return std::make_unique<SuccessiveOrdersSource<NSTOKES>>(
+            raytracer, geometry, std::move(shared_solar_table));
+    }
+
+    template std::unique_ptr<SourceTermInterface<1>>
+    make_successive_orders_source<1>(
+        const sasktran2::raytracing::RustRayTracer2D&,
+        const sasktran2::Geometry2D&,
+        std::shared_ptr<
+            sasktran2::solartransmission::SolarTransmissionTable2D>);
+    template std::unique_ptr<SourceTermInterface<3>>
+    make_successive_orders_source<3>(
+        const sasktran2::raytracing::RustRayTracer2D&,
+        const sasktran2::Geometry2D&,
+        std::shared_ptr<
+            sasktran2::solartransmission::SolarTransmissionTable2D>);
+#endif
 
 } // namespace sasktran2::successive_orders

@@ -16,5 +16,6 @@ namespace sasktran2::rust::raytracer {
     void prepare_trace_result_2d(CppTraceResult2D& result,
                                  const RustTraceSummary& summary);
     void set_trace_layer_2d(CppTraceResult2D& result, std::size_t index,
-                            const RustTraceLayer& layer);
+                            const RustTraceLayer& layer,
+                            bool optical_depth_only);
 } // namespace sasktran2::rust::raytracer

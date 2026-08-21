@@ -38,6 +38,7 @@ add_library(
   raytracing/rust_raytracer.cpp
   solar/solartransmissionexact.cpp
   solar/solartransmissiontable.cpp
+  solar/solartransmissiontable2d.cpp
   solar/singlescattersource.cpp
   solar/occultation.cpp
   emission/emission_source.cpp

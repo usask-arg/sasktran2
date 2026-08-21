@@ -9,7 +9,7 @@
 #include <vector>
 
 namespace sasktran2 {
-    class Geometry1D;
+    class Geometry;
 }
 
 namespace sasktran2::grids {
@@ -85,21 +85,24 @@ namespace sasktran2::successive_orders {
         std::uint32_t atmosphere_count = 0;
         std::uint32_t source_offset = 0;
         std::uint32_t source_count = 0;
+        std::uint32_t optical_depth_offset = 0;
+        std::uint32_t optical_depth_count = 0;
     };
 
     /** Compiled source interpolation for one traced ray.
      *
-     * The pointed-to ray owns the optical-depth, entrance, and exit stencils.
-     * Incoming diffuse rays are owned by SourceGeometry1D; LOS rays remain
-     * owned by the engine's InternalViewingGeometry. Both owners must outlive
-     * this metadata.
+     * Optical-depth stencils are retained directly so transport calculations
+     * do not need the much larger traced-layer geometry after setup.
      */
     struct RayInterpolation {
         const sasktran2::raytracing::TracedRay* traced_ray = nullptr;
         std::vector<LayerInterpolation> layers;
         std::vector<InterpolationWeight> atmosphere_weights;
         std::vector<SourceInterpolationWeight> source_weights;
+        std::vector<int> optical_depth_indices;
+        std::vector<double> optical_depth_weights;
         std::vector<SourceInterpolationWeight> ground_weights;
+        bool ground_hit = false;
 
         /** Offset of this row in SourceGeometry1D::transport_column_indices. */
         std::size_t transport_value_offset = 0;
@@ -116,13 +119,25 @@ namespace sasktran2::successive_orders {
             const auto& layer = layers[layer_index];
             return {source_weights, layer.source_offset, layer.source_count};
         }
+        sasktran2::raytracing::GridWeightStencilView
+        optical_depth_for_layer(std::size_t layer_index) const {
+            const auto& layer = layers[layer_index];
+            if (!optical_depth_indices.empty()) {
+                return {
+                    optical_depth_indices.data() + layer.optical_depth_offset,
+                    optical_depth_weights.data() + layer.optical_depth_offset,
+                    layer.optical_depth_count};
+            }
+            if (traced_ray != nullptr) {
+                return traced_ray->optical_depth_weights(layer_index);
+            }
+            return {};
+        }
         InterpolationView<SourceInterpolationWeight> ground() const {
             return InterpolationView<SourceInterpolationWeight>(ground_weights);
         }
 
-        bool ground_is_hit() const {
-            return traced_ray != nullptr && traced_ray->ground_is_hit;
-        }
+        bool ground_is_hit() const { return ground_hit; }
     };
 
     /** Reusable temporary storage for compiling ray interpolation. */
@@ -137,10 +152,15 @@ namespace sasktran2::successive_orders {
     /** Compiles deterministic interpolation metadata for one traced ray. */
     void compile_ray_interpolation(
         const sasktran2::raytracing::TracedRay& ray,
-        const sasktran2::Geometry1D& geometry,
+        const sasktran2::Geometry& geometry,
         sasktran2::grids::SourceLocationInterpolator& location_interpolator,
         const std::vector<SourcePoint>& source_points, RayInterpolation& result,
         InterpolationScratch& scratch);
+
+    /** Moves the OD stencil buffers from a construction-time traced ray into
+     * its compact runtime interpolation record. */
+    void adopt_optical_depth_storage(sasktran2::raytracing::TracedRay& ray,
+                                     RayInterpolation& interpolation);
 
     /** Builds one sorted unique CSR row and assigns local slots to its source
      * interpolation entries. */

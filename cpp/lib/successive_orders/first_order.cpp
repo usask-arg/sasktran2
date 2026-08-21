@@ -155,9 +155,30 @@ namespace sasktran2::successive_orders {
     FirstOrderProvider<NSTOKES>::FirstOrderProvider(
         const sasktran2::Geometry1D& geometry,
         const sasktran2::raytracing::RayTracerBase& raytracer)
-        : m_geometry(geometry), m_source(geometry, raytracer),
-          m_solar_table(geometry, raytracer), m_integrator(false),
-          m_source_terms{&m_source} {}
+        : m_geometry(geometry), m_geometry_1d(&geometry),
+          m_source(geometry, raytracer),
+          m_solar_table(std::make_shared<
+                        sasktran2::solartransmission::SolarTransmissionTable>(
+              geometry, raytracer)),
+          m_integrator(false), m_source_terms{&m_source} {}
+
+#ifdef SKTRAN_RUST_SUPPORT
+    template <int NSTOKES>
+    FirstOrderProvider<NSTOKES>::FirstOrderProvider(
+        const sasktran2::Geometry2D& geometry,
+        const sasktran2::raytracing::RustRayTracer2D& raytracer,
+        std::shared_ptr<sasktran2::solartransmission::SolarTransmissionTable2D>
+            shared_solar_table)
+        : m_geometry(geometry),
+          m_source(geometry, raytracer, shared_solar_table),
+          m_solar_table(
+              shared_solar_table != nullptr
+                  ? std::move(shared_solar_table)
+                  : std::make_shared<
+                        sasktran2::solartransmission::SolarTransmissionTable2D>(
+                        geometry, raytracer)),
+          m_integrator(false), m_source_terms{&m_source} {}
+#endif
 
     template <int NSTOKES>
     void FirstOrderProvider<NSTOKES>::initialize_config(
@@ -193,12 +214,16 @@ namespace sasktran2::successive_orders {
         m_unique_endpoint_weights.clear();
         m_scalar_packed_rays.clear();
         m_scalar_packed_layers.clear();
-        m_solar_interpolation.resize(0, 0);
+        m_scalar_ground_geometry.clear();
+        m_solar_interpolation.clear();
         m_solar_ground_hit.clear();
+        m_solar_propagation_directions.clear();
         m_num_threads = config.num_threads();
         m_num_source_threads = config.num_source_threads();
         m_num_wavelength_threads = config.num_wavelength_threads();
         m_num_phase_moments = config.num_singlescatter_moments();
+        m_solar_refraction = config.solar_refraction();
+        m_endpoint_phase_basis = false;
         m_compact_scalar_requested =
             NSTOKES == 1 && !config.multiple_scatter_refraction() &&
             config.singlescatter_phasemode() ==
@@ -211,7 +236,7 @@ namespace sasktran2::successive_orders {
                 "thread counts");
         }
         if (m_compact_scalar_requested) {
-            m_solar_table.initialize_config(config);
+            m_solar_table->initialize_config(config);
         } else {
             m_source.initialize_config(config);
             m_source.set_wavelength_block_capacity(1);
@@ -252,8 +277,10 @@ namespace sasktran2::successive_orders {
         m_unique_endpoint_weights.clear();
         m_scalar_packed_rays.clear();
         m_scalar_packed_layers.clear();
-        m_solar_interpolation.resize(0, 0);
+        m_scalar_ground_geometry.clear();
+        m_solar_interpolation.clear();
         m_solar_ground_hit.clear();
+        m_solar_propagation_directions.clear();
         const auto& viewing = source_geometry.incoming_viewing_geometry();
         m_num_rays = static_cast<int>(viewing.traced_rays.size());
         m_source_geometry = &source_geometry;
@@ -267,13 +294,14 @@ namespace sasktran2::successive_orders {
                 "contains a refracted incoming ray");
         }
         m_use_lower_interpolation =
-            m_geometry.altitude_grid().interpolation_method() ==
-            sasktran2::grids::interpolation::lower;
+            m_geometry_1d != nullptr &&
+            m_geometry_1d->altitude_grid().interpolation_method() ==
+                sasktran2::grids::interpolation::lower;
         if (m_use_compact_scalar) {
-            m_solar_table.initialize_geometry(viewing.traced_rays);
-            m_solar_table.generate_interpolation_matrix(
-                viewing.traced_rays, m_solar_interpolation, m_solar_ground_hit);
-            m_solar_interpolation.makeCompressed();
+            m_solar_table->initialize_geometry(viewing.traced_rays);
+            m_solar_table->generate_interpolation(
+                viewing.traced_rays, m_solar_interpolation, m_solar_ground_hit,
+                m_solar_refraction ? &m_solar_propagation_directions : nullptr);
         } else {
             m_source.initialize_geometry(viewing);
         }
@@ -304,26 +332,62 @@ namespace sasktran2::successive_orders {
             m_solar_offsets.resize(static_cast<std::size_t>(m_num_rays) + 1);
             int solar_offset = 0;
             int maximum_layers = 0;
-            m_phase_basis.reserve(static_cast<std::size_t>(m_num_rays) *
-                                  m_num_phase_moments);
-            const auto& sun = m_geometry.coordinates().sun_unit();
             for (int ray = 0; ray < m_num_rays; ++ray) {
                 const auto& traced_ray = viewing.traced_rays[ray];
                 m_solar_offsets[ray] = solar_offset;
                 solar_offset += static_cast<int>(traced_ray.layers.size()) + 1;
                 maximum_layers = std::max(
                     maximum_layers, static_cast<int>(traced_ray.layers.size()));
-                const double cosine =
-                    traced_ray.layers.empty()
-                        ? 1.0
-                        : std::clamp(
-                              sun.dot(
-                                  traced_ray.layers.front().average_look_away),
-                              -1.0, 1.0);
-                append_legendre_basis(cosine, m_num_phase_moments,
-                                      m_phase_basis);
             }
             m_solar_offsets[m_num_rays] = solar_offset;
+            m_endpoint_phase_basis = m_solar_refraction;
+            if (m_endpoint_phase_basis &&
+                m_solar_propagation_directions.size() !=
+                    static_cast<std::size_t>(solar_offset)) {
+                throw std::logic_error(
+                    "Refracted successive-orders solar directions do not "
+                    "match the source endpoints");
+            }
+            m_phase_basis.reserve(
+                static_cast<std::size_t>(num_phase_basis_slots()) *
+                m_num_phase_moments);
+            const auto& sun = m_geometry.coordinates().sun_unit();
+            for (int ray = 0; ray < m_num_rays; ++ray) {
+                const auto& traced_ray = viewing.traced_rays[ray];
+                if (!m_endpoint_phase_basis) {
+                    const double cosine =
+                        traced_ray.layers.empty()
+                            ? 1.0
+                            : std::clamp(sun.dot(traced_ray.layers.front()
+                                                     .average_look_away),
+                                         -1.0, 1.0);
+                    append_legendre_basis(cosine, m_num_phase_moments,
+                                          m_phase_basis);
+                    continue;
+                }
+                if (traced_ray.layers.empty()) {
+                    append_legendre_basis(1.0, m_num_phase_moments,
+                                          m_phase_basis);
+                    continue;
+                }
+                const int offset = m_solar_offsets[ray];
+                const auto append_endpoint_basis =
+                    [&](int solar_index, const Eigen::Vector3d& look_away) {
+                        const double cosine = std::clamp(
+                            -m_solar_propagation_directions[solar_index].dot(
+                                look_away),
+                            -1.0, 1.0);
+                        append_legendre_basis(cosine, m_num_phase_moments,
+                                              m_phase_basis);
+                    };
+                append_endpoint_basis(
+                    offset, traced_ray.layers.front().average_look_away);
+                for (int layer = 0; layer < traced_ray.layers.size(); ++layer) {
+                    append_endpoint_basis(
+                        offset + layer + 1,
+                        traced_ray.layers[layer].average_look_away);
+                }
+            }
             if (!m_use_lower_interpolation) {
                 m_endpoint_slots.assign(solar_offset, -1);
                 m_unique_endpoint_offsets.push_back(0);
@@ -385,6 +449,15 @@ namespace sasktran2::successive_orders {
                     }
                     packed_ray.layer_end = static_cast<std::uint32_t>(
                         m_scalar_packed_layers.size());
+                    if (traced_ray.ground_is_hit &&
+                        !traced_ray.layers.empty()) {
+                        const auto& ground_layer = traced_ray.layers.front();
+                        packed_ray.ground_geometry = static_cast<std::int32_t>(
+                            m_scalar_ground_geometry.size());
+                        m_scalar_ground_geometry.push_back(
+                            {ground_layer.exit.position.normalized(),
+                             ground_layer.average_look_away});
+                    }
                 }
             }
             const int unique_endpoints =
@@ -402,7 +475,7 @@ namespace sasktran2::successive_orders {
             for (int thread = 0; thread < m_num_threads; ++thread) {
                 m_solar_product_scratch[thread].resize(solar_offset);
                 m_solar_table_product_scratch[thread].resize(
-                    m_solar_table.geometry_matrix().rows());
+                    m_solar_table->table_size());
                 auto& vjp = m_scalar_vjp_scratch[thread];
                 vjp.optical_depth.resize(maximum_layers);
                 vjp.attenuation.resize(maximum_layers);
@@ -426,7 +499,10 @@ namespace sasktran2::successive_orders {
         }
         m_atmosphere = nullptr;
         if (!m_use_compact_scalar) {
-            m_source.initialize_atmosphere(atmosphere);
+            // Successive orders evaluates this private exact source only via
+            // its primal, JVP, and VJP hooks. Avoid the large per-layer active
+            // derivative lists used exclusively by materialized Jacobians.
+            m_source.initialize_atmosphere_native(atmosphere);
         }
         if (!m_use_compact_scalar) {
             m_integrator.initialize_atmosphere(atmosphere);
@@ -449,7 +525,8 @@ namespace sasktran2::successive_orders {
                                          atmosphere.num_wavel());
             m_uniform_phase_active.assign(atmosphere.num_wavel(), 0);
             m_uniform_phase_values.resize(
-                static_cast<std::size_t>(atmosphere.num_wavel()) * m_num_rays);
+                static_cast<std::size_t>(atmosphere.num_wavel()) *
+                num_phase_basis_slots());
             m_uniform_albedo_active.assign(atmosphere.num_wavel(), 0);
             m_uniform_albedo_values.resize(atmosphere.num_wavel());
             const auto& storage = atmosphere.storage();
@@ -496,13 +573,16 @@ namespace sasktran2::successive_orders {
                         [static_cast<std::size_t>(wavelength) * locations];
                     const double* coefficients =
                         &storage.leg_coeff(0, 0, wavelength);
-                    for (int ray = 0; ray < m_num_rays; ++ray) {
-                        const double* basis =
-                            m_phase_basis.data() +
-                            static_cast<std::size_t>(ray) * m_num_phase_moments;
-                        m_uniform_phase_values
-                            [static_cast<std::size_t>(wavelength) * m_num_rays +
-                             ray] = phase_dot(coefficients, basis, order);
+                    const int phase_slots = num_phase_basis_slots();
+                    for (int slot = 0; slot < phase_slots; ++slot) {
+                        const double* basis = m_phase_basis.data() +
+                                              static_cast<std::size_t>(slot) *
+                                                  m_num_phase_moments;
+                        m_uniform_phase_values[static_cast<std::size_t>(
+                                                   wavelength) *
+                                                   phase_slots +
+                                               slot] =
+                            phase_dot(coefficients, basis, order);
                     }
                 }
             }
@@ -578,12 +658,12 @@ namespace sasktran2::successive_orders {
         auto& transmission = m_cached_solar_transmission.at(wavelength);
         if (m_cached_solar_active.at(wavelength) == 0) {
             auto& table = m_solar_table_product_scratch[wavelength_thread];
-            table.noalias() =
-                m_solar_table.geometry_matrix() *
-                m_atmosphere->storage().total_extinction.col(wavelength);
+            m_solar_table->apply(
+                m_atmosphere->storage().total_extinction.col(wavelength),
+                table);
             const double irradiance =
                 m_atmosphere->storage().solar_irradiance(wavelength);
-            transmission.noalias() = m_solar_interpolation * table;
+            m_solar_interpolation.apply(table, transmission);
             transmission.array() = (-transmission.array()).exp() * irradiance;
             for (int row = 0; row < m_solar_interpolation.rows(); ++row) {
                 if (m_solar_ground_hit[row]) {
@@ -622,10 +702,12 @@ namespace sasktran2::successive_orders {
     }
 
     template <int NSTOKES>
+    template <typename Weights>
     typename FirstOrderProvider<NSTOKES>::ScalarEndpoint
-    FirstOrderProvider<NSTOKES>::scalar_endpoint(
-        int wavelength, int ray, int layer, bool entrance, int solar_index,
-        const sasktran2::raytracing::GridWeightStencilView& weights) const {
+    FirstOrderProvider<NSTOKES>::scalar_endpoint(int wavelength, int ray,
+                                                 int layer, bool entrance,
+                                                 int solar_index,
+                                                 const Weights& weights) const {
         ScalarEndpoint result;
         const auto& storage = m_atmosphere->storage();
         const int endpoint_slot =
@@ -639,15 +721,17 @@ namespace sasktran2::successive_orders {
             result.albedo =
                 m_endpoint_medium_cache[wavelength].albedo(endpoint_slot);
         }
+        const int phase_slot = phase_basis_slot(ray, solar_index);
+        const int phase_slots = num_phase_basis_slots();
         const double* basis =
             m_phase_basis.data() +
-            static_cast<std::size_t>(ray) * m_num_phase_moments;
+            static_cast<std::size_t>(phase_slot) * m_num_phase_moments;
         const bool uniform_phase = m_uniform_phase_active[wavelength] != 0;
         if (uniform_phase) {
             result.phase =
                 m_uniform_phase_values[static_cast<std::size_t>(wavelength) *
-                                           m_num_rays +
-                                       ray];
+                                           phase_slots +
+                                       phase_slot];
         }
         if (use_endpoint_medium && uniform_phase) {
             return result;
@@ -682,12 +766,11 @@ namespace sasktran2::successive_orders {
     }
 
     template <int NSTOKES>
-    template <bool USE_ENDPOINT_MEDIUM>
+    template <bool USE_ENDPOINT_MEDIUM, typename Weights>
     typename FirstOrderProvider<NSTOKES>::ScalarValueTangent
     FirstOrderProvider<NSTOKES>::scalar_endpoint_jvp(
         int wavelength, int wavelength_thread, int ray, int layer,
-        bool entrance, int solar_index,
-        const sasktran2::raytracing::GridWeightStencilView& weights,
+        bool entrance, int solar_index, const Weights& weights,
         const double* __restrict extinction_direction,
         const double* __restrict albedo_direction,
         const double* __restrict solar_tangent, bool uniform_albedo_direction,
@@ -697,9 +780,11 @@ namespace sasktran2::successive_orders {
         const auto& coefficient_tangent =
             m_phase_product_scratch[wavelength_thread];
         const auto& tangent_orders = m_phase_order_scratch[wavelength_thread];
+        const int phase_slot = phase_basis_slot(ray, solar_index);
+        const int phase_slots = num_phase_basis_slots();
         const double* basis =
             m_phase_basis.data() +
-            static_cast<std::size_t>(ray) * m_num_phase_moments;
+            static_cast<std::size_t>(phase_slot) * m_num_phase_moments;
         double extinction = 0.0;
         double extinction_tangent = 0.0;
         double albedo = 0.0;
@@ -711,8 +796,8 @@ namespace sasktran2::successive_orders {
         if (uniform_phase) {
             phase =
                 m_uniform_phase_values[static_cast<std::size_t>(wavelength) *
-                                           m_num_rays +
-                                       ray];
+                                           phase_slots +
+                                       phase_slot];
         }
         if constexpr (USE_ENDPOINT_MEDIUM) {
             const int endpoint_slot = m_endpoint_slots[solar_index];
@@ -807,11 +892,11 @@ namespace sasktran2::successive_orders {
     }
 
     template <int NSTOKES>
+    template <typename Weights>
     void FirstOrderProvider<NSTOKES>::accumulate_scalar_endpoint_vjp(
         int wavelength, int ray, int layer, bool entrance, int solar_index,
-        const sasktran2::raytracing::GridWeightStencilView& weights,
-        const ScalarEndpoint& endpoint, double source_cotangent,
-        Eigen::Ref<Eigen::VectorXd> native_gradient,
+        const Weights& weights, const ScalarEndpoint& endpoint,
+        double source_cotangent, Eigen::Ref<Eigen::VectorXd> native_gradient,
         Eigen::Ref<Eigen::VectorXd> solar_gradient,
         Eigen::Ref<Eigen::VectorXd> coefficient_gradient) const {
         if (source_cotangent == 0.0) {
@@ -830,9 +915,10 @@ namespace sasktran2::successive_orders {
         const double phase_cotangent = scale * endpoint.extinction *
                                        endpoint.albedo *
                                        endpoint.solar_transmission;
+        const int phase_slot = phase_basis_slot(ray, solar_index);
         const double* basis =
             m_phase_basis.data() +
-            static_cast<std::size_t>(ray) * m_num_phase_moments;
+            static_cast<std::size_t>(phase_slot) * m_num_phase_moments;
         for (std::size_t index = 0; index < weights.size(); ++index) {
             const auto [atmosphere_index, weight] = weights[index];
             if (weight == 0.0) {
@@ -853,6 +939,23 @@ namespace sasktran2::successive_orders {
         solar_gradient(solar_index) += solar_cotangent;
         (void)layer;
         (void)entrance;
+    }
+
+    template <int NSTOKES>
+    bool FirstOrderProvider<NSTOKES>::ground_scattering_geometry(
+        int solar_index, const ScalarGroundGeometry& ground, double& mu_in,
+        double& mu_out, double& phi) const {
+        Eigen::Vector3d direction_to_sun = m_geometry.coordinates().sun_unit();
+        if (!m_solar_propagation_directions.empty()) {
+            direction_to_sun = -m_solar_propagation_directions[solar_index];
+        }
+        sasktran2::Location ground_location;
+        ground_location.position = ground.up;
+        sasktran2::raytracing::calculate_csz_saz(
+            direction_to_sun.normalized(), ground_location, ground.look_away,
+            mu_in, phi, m_geometry.coordinates().geometry_type());
+        mu_out = -ground.up.dot(ground.look_away.normalized());
+        return mu_in > 0.0;
     }
 
     template <int NSTOKES>
@@ -881,7 +984,6 @@ namespace sasktran2::successive_orders {
     void FirstOrderProvider<NSTOKES>::calculate_scalar_uniform_impl(
         int wavelength, int wavelength_thread,
         Eigen::Ref<Eigen::VectorXd> forcing, TransportOperator* transport) {
-        const auto& rays = m_source_geometry->incoming_rays();
         const auto& interpolation = m_source_geometry->incoming_interpolation();
         const auto& extinction = m_atmosphere->storage().total_extinction;
         const auto& ssa = m_atmosphere->storage().ssa;
@@ -904,7 +1006,6 @@ namespace sasktran2::successive_orders {
     num_threads(m_num_source_threads) schedule(dynamic)
         for (int ray = 0; ray < m_num_rays; ++ray) {
             const auto& packed_ray = m_scalar_packed_rays[ray];
-            const auto& traced_ray = rays[ray];
             const auto& ray_interpolation = interpolation[ray];
             const double phase_scale =
                 m_uniform_phase_values[static_cast<std::size_t>(wavelength) *
@@ -927,7 +1028,7 @@ namespace sasktran2::successive_orders {
                 const auto local_layer = static_cast<std::size_t>(
                     flat_layer - packed_ray.layer_begin);
                 const auto optical_depth_weights =
-                    traced_ray.optical_depth_weights(local_layer);
+                    ray_interpolation.optical_depth_for_layer(local_layer);
                 const auto atmosphere_weights =
                     ray_interpolation.atmosphere_for_layer(local_layer);
                 double optical_depth = 0.0;
@@ -987,15 +1088,16 @@ namespace sasktran2::successive_orders {
                         source.row_inner_index) += source.weight * prefix;
                 }
             }
-            if (traced_ray.ground_is_hit && !traced_ray.layers.empty()) {
-                const auto& ground_layer = traced_ray.layers.front();
-                const double mu_in = ground_layer.exit.cos_zenith_angle(
-                    m_geometry.coordinates().sun_unit());
-                if (mu_in > 0.0) {
-                    const double mu_out = -ground_layer.exit.cos_zenith_angle(
-                        ground_layer.average_look_away);
+            if (packed_ray.ground_geometry >= 0) {
+                const auto& ground =
+                    m_scalar_ground_geometry[packed_ray.ground_geometry];
+                double mu_in;
+                double mu_out;
+                double phi;
+                if (ground_scattering_geometry(m_solar_offsets[ray], ground,
+                                               mu_in, mu_out, phi)) {
                     const auto brdf = m_atmosphere->surface().brdf(
-                        wavelength, mu_in, mu_out, ground_layer.saz_exit);
+                        wavelength, mu_in, mu_out, phi);
                     radiance += prefix * solar(m_solar_offsets[ray]) * mu_in *
                                 brdf(0, 0);
                 }
@@ -1013,7 +1115,8 @@ namespace sasktran2::successive_orders {
         int wavelength, int wavelength_thread,
         Eigen::Ref<Eigen::VectorXd> forcing, TransportOperator* transport) {
         if constexpr (!LOWER_INTERPOLATION) {
-            if (m_uniform_phase_active[wavelength] != 0) {
+            if (m_uniform_phase_active[wavelength] != 0 &&
+                !m_endpoint_phase_basis) {
                 calculate_scalar_uniform_impl<WITH_TRANSPORT>(
                     wavelength, wavelength_thread, forcing, transport);
                 return;
@@ -1041,19 +1144,40 @@ namespace sasktran2::successive_orders {
 #pragma omp parallel for if (m_num_source_threads > 1)                         \
     num_threads(m_num_source_threads) schedule(dynamic)
         for (int ray = 0; ray < m_num_rays; ++ray) {
-            const auto& traced_ray = rays[ray];
             const auto& ray_interpolation = interpolation[ray];
+            const ScalarPackedRay* packed_ray = nullptr;
+            if constexpr (!LOWER_INTERPOLATION) {
+                packed_ray = &m_scalar_packed_rays[ray];
+            }
             const int flat_layer_offset = m_solar_offsets[ray] - ray;
             double prefix = 1.0;
             double radiance = 0.0;
             ScalarEndpoint shared_endpoint;
             bool have_shared_endpoint = false;
-            for (int layer = static_cast<int>(traced_ray.layers.size()) - 1;
+            for (int layer =
+                     static_cast<int>(ray_interpolation.layers.size()) - 1;
                  layer >= 0; --layer) {
-                const auto& traced_layer = traced_ray.layers[layer];
+                double source_quad_start;
+                double source_quad_end;
+                double layer_distance;
+                if constexpr (LOWER_INTERPOLATION) {
+                    const auto& traced_layer = rays[ray].layers[layer];
+                    layer_distance = traced_layer.layer_distance;
+                    source_quad_start =
+                        layer_distance * traced_layer.od_quad_start_fraction;
+                    source_quad_end =
+                        layer_distance * traced_layer.od_quad_end_fraction;
+                } else {
+                    const auto& packed_layer =
+                        m_scalar_packed_layers[packed_ray->layer_begin + layer];
+                    source_quad_start = packed_layer.source_quad_start;
+                    source_quad_end = packed_layer.source_quad_end;
+                    layer_distance = source_quad_start + source_quad_end;
+                }
                 double optical_depth = 0.0;
                 double albedo = uniform_albedo_value;
-                const auto od_weights = traced_ray.optical_depth_weights(layer);
+                const auto od_weights =
+                    ray_interpolation.optical_depth_for_layer(layer);
                 for (std::size_t index = 0; index < od_weights.size();
                      ++index) {
                     const auto [atmosphere_index, weight] = od_weights[index];
@@ -1089,17 +1213,19 @@ namespace sasktran2::successive_orders {
                             source.weight * source_factor;
                     }
                 }
-                if (traced_layer.layer_distance < minimum_layer_distance_m) {
+                if (layer_distance < minimum_layer_distance_m) {
                     have_shared_endpoint = false;
                 }
-                if (traced_layer.layer_distance >= minimum_layer_distance_m) {
-                    auto entrance_weights = traced_ray.entrance_weights(layer);
-                    auto exit_weights = traced_ray.exit_weights(layer);
-                    const auto* start_weights = &entrance_weights;
-                    const auto* end_weights = &exit_weights;
-                    bool start_entrance = true;
-                    bool end_entrance = false;
+                if (layer_distance >= minimum_layer_distance_m) {
                     if constexpr (LOWER_INTERPOLATION) {
+                        const auto& traced_layer = rays[ray].layers[layer];
+                        auto entrance_weights =
+                            rays[ray].entrance_weights(layer);
+                        auto exit_weights = rays[ray].exit_weights(layer);
+                        const auto* start_weights = &entrance_weights;
+                        const auto* end_weights = &exit_weights;
+                        bool start_entrance = true;
+                        bool end_entrance = false;
                         if (traced_layer.r_exit > traced_layer.r_entrance) {
                             end_weights = &entrance_weights;
                             end_entrance = true;
@@ -1107,38 +1233,57 @@ namespace sasktran2::successive_orders {
                             start_weights = &exit_weights;
                             start_entrance = false;
                         }
-                    }
-                    const int exit_solar = m_solar_offsets[ray] + layer;
-                    auto start =
-                        have_shared_endpoint && !LOWER_INTERPOLATION
-                            ? shared_endpoint
-                            : scalar_endpoint(wavelength, ray, layer,
-                                              start_entrance, exit_solar + 1,
-                                              *start_weights);
-                    auto end =
-                        scalar_endpoint(wavelength, ray, layer, end_entrance,
-                                        exit_solar, *end_weights);
-                    if (!(have_shared_endpoint && !LOWER_INTERPOLATION)) {
+                        const int exit_solar = m_solar_offsets[ray] + layer;
+                        auto start = scalar_endpoint(
+                            wavelength, ray, layer, start_entrance,
+                            exit_solar + 1, *start_weights);
+                        auto end = scalar_endpoint(wavelength, ray, layer,
+                                                   end_entrance, exit_solar,
+                                                   *end_weights);
                         start.solar_transmission = solar(exit_solar + 1);
                         start.source = start.extinction * start.albedo *
                                        start.solar_transmission * start.phase *
                                        inverse_four_pi;
+                        end.solar_transmission = solar(exit_solar);
+                        end.source = end.extinction * end.albedo *
+                                     end.solar_transmission * end.phase *
+                                     inverse_four_pi;
+                        radiance += prefix * factor *
+                                    (start.source * source_quad_start +
+                                     end.source * source_quad_end);
+                    } else {
+                        const int exit_solar = m_solar_offsets[ray] + layer;
+                        auto start =
+                            have_shared_endpoint
+                                ? shared_endpoint
+                                : scalar_endpoint(
+                                      wavelength, ray, layer, true,
+                                      exit_solar + 1,
+                                      endpoint_weights(exit_solar + 1));
+                        auto end = scalar_endpoint(
+                            wavelength, ray, layer, false, exit_solar,
+                            endpoint_weights(exit_solar));
+                        if (!have_shared_endpoint) {
+                            start.solar_transmission = solar(exit_solar + 1);
+                            start.source = start.extinction * start.albedo *
+                                           start.solar_transmission *
+                                           start.phase * inverse_four_pi;
+                        }
+                        end.solar_transmission = solar(exit_solar);
+                        end.source = end.extinction * end.albedo *
+                                     end.solar_transmission * end.phase *
+                                     inverse_four_pi;
+                        radiance += prefix * factor *
+                                    (start.source * source_quad_start +
+                                     end.source * source_quad_end);
+                        shared_endpoint = end;
                     }
-                    end.solar_transmission = solar(exit_solar);
-                    end.source = end.extinction * end.albedo *
-                                 end.solar_transmission * end.phase *
-                                 inverse_four_pi;
-                    radiance +=
-                        prefix * factor * traced_layer.layer_distance *
-                        (start.source * traced_layer.od_quad_start_fraction +
-                         end.source * traced_layer.od_quad_end_fraction);
-                    shared_endpoint = end;
                     have_shared_endpoint = true;
                 }
                 prefix *= attenuation;
             }
             if constexpr (WITH_TRANSPORT) {
-                if (traced_ray.ground_is_hit) {
+                if (ray_interpolation.ground_is_hit()) {
                     for (const auto& source :
                          ray_interpolation.ground_weights) {
                         transport->values()(
@@ -1147,15 +1292,34 @@ namespace sasktran2::successive_orders {
                     }
                 }
             }
-            if (traced_ray.ground_is_hit && !traced_ray.layers.empty()) {
-                const auto& ground_layer = traced_ray.layers.front();
-                const double mu_in = ground_layer.exit.cos_zenith_angle(
-                    m_geometry.coordinates().sun_unit());
-                if (mu_in > 0.0) {
-                    const double mu_out = -ground_layer.exit.cos_zenith_angle(
-                        ground_layer.average_look_away);
+            if constexpr (LOWER_INTERPOLATION) {
+                const auto& traced_ray = rays[ray];
+                if (traced_ray.ground_is_hit && !traced_ray.layers.empty()) {
+                    const auto& ground_layer = traced_ray.layers.front();
+                    ScalarGroundGeometry ground{
+                        ground_layer.exit.position.normalized(),
+                        ground_layer.average_look_away};
+                    double mu_in;
+                    double mu_out;
+                    double phi;
+                    if (ground_scattering_geometry(m_solar_offsets[ray], ground,
+                                                   mu_in, mu_out, phi)) {
+                        const auto brdf = m_atmosphere->surface().brdf(
+                            wavelength, mu_in, mu_out, phi);
+                        radiance += prefix * solar(m_solar_offsets[ray]) *
+                                    mu_in * brdf(0, 0);
+                    }
+                }
+            } else if (packed_ray->ground_geometry >= 0) {
+                const auto& ground =
+                    m_scalar_ground_geometry[packed_ray->ground_geometry];
+                double mu_in;
+                double mu_out;
+                double phi;
+                if (ground_scattering_geometry(m_solar_offsets[ray], ground,
+                                               mu_in, mu_out, phi)) {
                     const auto brdf = m_atmosphere->surface().brdf(
-                        wavelength, mu_in, mu_out, ground_layer.saz_exit);
+                        wavelength, mu_in, mu_out, phi);
                     radiance += prefix * solar(m_solar_offsets[ray]) * mu_in *
                                 brdf(0, 0);
                 }
@@ -1208,7 +1372,7 @@ namespace sasktran2::successive_orders {
         const Eigen::VectorXd& ground_state_projection,
         Eigen::VectorXd& direct_transport_tangent,
         Eigen::Ref<Eigen::VectorXd> forcing_tangent) {
-        const auto& rays = m_source_geometry->incoming_rays();
+        const auto& interpolation = m_source_geometry->incoming_interpolation();
         const auto& solar = m_cached_solar_transmission[wavelength];
         const auto& endpoint_medium = m_endpoint_medium_cache[wavelength];
         const auto& layer_cache = m_scalar_layer_cache[wavelength];
@@ -1306,19 +1470,18 @@ namespace sasktran2::successive_orders {
                     prefix_tangent * attenuation + prefix * attenuation_tangent;
                 prefix *= attenuation;
             }
-            const auto& traced_ray = rays[ray];
-            if (traced_ray.ground_is_hit) {
+            if (interpolation[ray].ground_is_hit()) {
                 direct_transport_tangent(ray) +=
                     ground_state_projection(ray) * prefix_tangent;
             }
-            if (traced_ray.ground_is_hit && !traced_ray.layers.empty()) {
-                const auto& ground_layer = traced_ray.layers.front();
-                const double mu_in = ground_layer.exit.cos_zenith_angle(
-                    m_geometry.coordinates().sun_unit());
-                if (mu_in > 0.0) {
-                    const double mu_out = -ground_layer.exit.cos_zenith_angle(
-                        ground_layer.average_look_away);
-                    const double phi = ground_layer.saz_exit;
+            if (packed_ray.ground_geometry >= 0) {
+                const auto& ground =
+                    m_scalar_ground_geometry[packed_ray.ground_geometry];
+                double mu_in;
+                double mu_out;
+                double phi;
+                if (ground_scattering_geometry(m_solar_offsets[ray], ground,
+                                               mu_in, mu_out, phi)) {
                     const auto brdf = m_atmosphere->surface().brdf(
                         wavelength, mu_in, mu_out, phi);
                     double brdf_tangent = 0.0;
@@ -1364,11 +1527,9 @@ namespace sasktran2::successive_orders {
             ensure_solar_transmission(wavelength, wavelength_thread);
         auto& solar_tangent = m_solar_product_scratch[wavelength_thread];
         auto& table_tangent = m_solar_table_product_scratch[wavelength_thread];
-        const Eigen::Index solar_columns =
-            m_solar_table.geometry_matrix().cols();
-        table_tangent.noalias() = m_solar_table.geometry_matrix() *
-                                  native_tangent.head(solar_columns);
-        solar_tangent.noalias() = m_solar_interpolation * table_tangent;
+        const Eigen::Index solar_columns = m_solar_table->atmosphere_size();
+        m_solar_table->apply(native_tangent.head(solar_columns), table_tangent);
+        m_solar_interpolation.apply(table_tangent, solar_tangent);
         solar_tangent.array() *= -solar.array();
         auto& coefficient_tangent = m_phase_product_scratch[wavelength_thread];
         auto& tangent_orders = m_phase_order_scratch[wavelength_thread];
@@ -1461,8 +1622,9 @@ namespace sasktran2::successive_orders {
         }
         if constexpr (WITH_TRANSPORT && !LOWER_INTERPOLATION) {
             if (m_uniform_phase_active[wavelength] != 0 &&
-                !phase_tangent_active && proportional_extinction_direction &&
-                uniform_albedo && uniform_albedo_direction) {
+                !m_endpoint_phase_basis && !phase_tangent_active &&
+                proportional_extinction_direction && uniform_albedo &&
+                uniform_albedo_direction) {
                 if (layer_state_projection == nullptr ||
                     ground_state_projection == nullptr ||
                     direct_transport_tangent == nullptr) {
@@ -1540,17 +1702,37 @@ namespace sasktran2::successive_orders {
 #pragma omp parallel for if (m_num_source_threads > 1)                         \
     num_threads(m_num_source_threads) schedule(dynamic)
         for (int ray = 0; ray < m_num_rays; ++ray) {
-            const auto& traced_ray = rays[ray];
             const auto& ray_interpolation = interpolation[ray];
+            const ScalarPackedRay* packed_ray = nullptr;
+            if constexpr (!LOWER_INTERPOLATION) {
+                packed_ray = &m_scalar_packed_rays[ray];
+            }
             const int flat_layer_offset = m_solar_offsets[ray] - ray;
             double prefix = 1.0;
             double prefix_tangent = 0.0;
             double radiance_tangent = 0.0;
             ScalarValueTangent shared_endpoint;
             bool have_shared_endpoint = false;
-            for (int layer = static_cast<int>(traced_ray.layers.size()) - 1;
+            for (int layer =
+                     static_cast<int>(ray_interpolation.layers.size()) - 1;
                  layer >= 0; --layer) {
-                const auto& traced_layer = traced_ray.layers[layer];
+                double source_quad_start;
+                double source_quad_end;
+                double layer_distance;
+                if constexpr (LOWER_INTERPOLATION) {
+                    const auto& traced_layer = rays[ray].layers[layer];
+                    layer_distance = traced_layer.layer_distance;
+                    source_quad_start =
+                        layer_distance * traced_layer.od_quad_start_fraction;
+                    source_quad_end =
+                        layer_distance * traced_layer.od_quad_end_fraction;
+                } else {
+                    const auto& packed_layer =
+                        m_scalar_packed_layers[packed_ray->layer_begin + layer];
+                    source_quad_start = packed_layer.source_quad_start;
+                    source_quad_end = packed_layer.source_quad_end;
+                    layer_distance = source_quad_start + source_quad_end;
+                }
                 const int flat_layer = flat_layer_offset + layer;
                 const double optical_depth =
                     layer_cache.optical_depth(flat_layer);
@@ -1561,8 +1743,9 @@ namespace sasktran2::successive_orders {
                 double albedo = uniform_albedo_value;
                 double albedo_tangent =
                     uniform_albedo_direction ? uniform_albedo_tangent : 0.0;
-                const auto od_weights = traced_ray.optical_depth_weights(layer);
                 if (!proportional_extinction_direction) {
+                    const auto od_weights =
+                        ray_interpolation.optical_depth_for_layer(layer);
                     for (std::size_t index = 0; index < od_weights.size();
                          ++index) {
                         const auto [atmosphere_index, weight] =
@@ -1599,17 +1782,21 @@ namespace sasktran2::successive_orders {
                     direct_transport_direction[ray] +=
                         layer_state[flat_layer] * source_factor_tangent;
                 }
-                if (traced_layer.layer_distance < minimum_layer_distance_m) {
+                if (layer_distance < minimum_layer_distance_m) {
                     have_shared_endpoint = false;
                 }
-                if (traced_layer.layer_distance >= minimum_layer_distance_m) {
-                    auto entrance_weights = traced_ray.entrance_weights(layer);
-                    auto exit_weights = traced_ray.exit_weights(layer);
-                    const auto* start_weights = &entrance_weights;
-                    const auto* end_weights = &exit_weights;
-                    bool start_entrance = true;
-                    bool end_entrance = false;
+                if (layer_distance >= minimum_layer_distance_m) {
+                    ScalarValueTangent start;
+                    ScalarValueTangent end;
                     if constexpr (LOWER_INTERPOLATION) {
+                        const auto& traced_layer = rays[ray].layers[layer];
+                        auto entrance_weights =
+                            rays[ray].entrance_weights(layer);
+                        auto exit_weights = rays[ray].exit_weights(layer);
+                        const auto* start_weights = &entrance_weights;
+                        const auto* end_weights = &exit_weights;
+                        bool start_entrance = true;
+                        bool end_entrance = false;
                         if (traced_layer.r_exit > traced_layer.r_entrance) {
                             end_weights = &entrance_weights;
                             end_entrance = true;
@@ -1617,38 +1804,52 @@ namespace sasktran2::successive_orders {
                             start_weights = &exit_weights;
                             start_entrance = false;
                         }
+                        const int exit_solar = m_solar_offsets[ray] + layer;
+                        start = scalar_endpoint_jvp<false>(
+                            wavelength, wavelength_thread, ray, layer,
+                            start_entrance, exit_solar + 1, *start_weights,
+                            extinction_direction, albedo_direction,
+                            solar_direction, uniform_albedo_direction,
+                            uniform_albedo_tangent, phase_tangent_active);
+                        end = scalar_endpoint_jvp<false>(
+                            wavelength, wavelength_thread, ray, layer,
+                            end_entrance, exit_solar, *end_weights,
+                            extinction_direction, albedo_direction,
+                            solar_direction, uniform_albedo_direction,
+                            uniform_albedo_tangent, phase_tangent_active);
+                    } else {
+                        const int exit_solar = m_solar_offsets[ray] + layer;
+                        start =
+                            have_shared_endpoint
+                                ? shared_endpoint
+                                : scalar_endpoint_jvp<true>(
+                                      wavelength, wavelength_thread, ray, layer,
+                                      true, exit_solar + 1,
+                                      endpoint_weights(exit_solar + 1),
+                                      extinction_direction, albedo_direction,
+                                      solar_direction, uniform_albedo_direction,
+                                      uniform_albedo_tangent,
+                                      phase_tangent_active);
+                        end = scalar_endpoint_jvp<true>(
+                            wavelength, wavelength_thread, ray, layer, false,
+                            exit_solar, endpoint_weights(exit_solar),
+                            extinction_direction, albedo_direction,
+                            solar_direction, uniform_albedo_direction,
+                            uniform_albedo_tangent, phase_tangent_active);
                     }
-                    const int exit_solar = m_solar_offsets[ray] + layer;
-                    const auto start =
-                        have_shared_endpoint && !LOWER_INTERPOLATION
-                            ? shared_endpoint
-                            : scalar_endpoint_jvp<!LOWER_INTERPOLATION>(
-                                  wavelength, wavelength_thread, ray, layer,
-                                  start_entrance, exit_solar + 1,
-                                  *start_weights, extinction_direction,
-                                  albedo_direction, solar_direction,
-                                  uniform_albedo_direction,
-                                  uniform_albedo_tangent, phase_tangent_active);
-                    const auto end = scalar_endpoint_jvp<!LOWER_INTERPOLATION>(
-                        wavelength, wavelength_thread, ray, layer, end_entrance,
-                        exit_solar, *end_weights, extinction_direction,
-                        albedo_direction, solar_direction,
-                        uniform_albedo_direction, uniform_albedo_tangent,
-                        phase_tangent_active);
                     const double factor_tangent =
                         constant_source_factor_derivative(optical_depth,
                                                           factor) *
                         optical_depth_tangent;
                     const double endpoint_value =
-                        (start.value * traced_layer.od_quad_start_fraction +
-                         end.value * traced_layer.od_quad_end_fraction) *
-                        traced_layer.layer_distance;
+                        start.value * source_quad_start +
+                        end.value * source_quad_end;
                     const double endpoint_tangent =
-                        start.tangent * traced_layer.od_quad_start +
-                        end.tangent * traced_layer.od_quad_end;
+                        start.tangent * source_quad_start +
+                        end.tangent * source_quad_end;
                     const double optical_endpoint_value =
-                        start.value * traced_layer.od_quad_start +
-                        end.value * traced_layer.od_quad_end;
+                        start.value * source_quad_start +
+                        end.value * source_quad_end;
                     radiance_tangent +=
                         prefix_tangent * factor * endpoint_value +
                         prefix * (factor * endpoint_tangent +
@@ -1661,19 +1862,30 @@ namespace sasktran2::successive_orders {
                 prefix *= attenuation;
             }
             if constexpr (WITH_TRANSPORT) {
-                if (traced_ray.ground_is_hit) {
+                if (ray_interpolation.ground_is_hit()) {
                     direct_transport_direction[ray] +=
                         ground_state[ray] * prefix_tangent;
                 }
             }
-            if (traced_ray.ground_is_hit && !traced_ray.layers.empty()) {
-                const auto& ground_layer = traced_ray.layers.front();
-                const double mu_in = ground_layer.exit.cos_zenith_angle(
-                    m_geometry.coordinates().sun_unit());
-                if (mu_in > 0.0) {
-                    const double mu_out = -ground_layer.exit.cos_zenith_angle(
-                        ground_layer.average_look_away);
-                    const double phi = ground_layer.saz_exit;
+            ScalarGroundGeometry local_ground;
+            const ScalarGroundGeometry* ground = nullptr;
+            if constexpr (LOWER_INTERPOLATION) {
+                const auto& traced_ray = rays[ray];
+                if (traced_ray.ground_is_hit && !traced_ray.layers.empty()) {
+                    const auto& layer = traced_ray.layers.front();
+                    local_ground = {layer.exit.position.normalized(),
+                                    layer.average_look_away};
+                    ground = &local_ground;
+                }
+            } else if (packed_ray->ground_geometry >= 0) {
+                ground = &m_scalar_ground_geometry[packed_ray->ground_geometry];
+            }
+            if (ground != nullptr) {
+                double mu_in;
+                double mu_out;
+                double phi;
+                if (ground_scattering_geometry(m_solar_offsets[ray], *ground,
+                                               mu_in, mu_out, phi)) {
                     const auto brdf = m_atmosphere->surface().brdf(
                         wavelength, mu_in, mu_out, phi);
                     double brdf_tangent = 0.0;
@@ -1789,7 +2001,6 @@ namespace sasktran2::successive_orders {
             auto& solar_gradient = m_solar_product_scratch[thread];
             auto& coefficient_gradient = m_phase_product_scratch[thread];
             auto& scratch = m_scalar_vjp_scratch[thread];
-            const auto& traced_ray = rays[ray];
             const auto& ray_interpolation = interpolation[ray];
             const ScalarPackedRay* packed_ray = nullptr;
             if constexpr (!LOWER_INTERPOLATION) {
@@ -1804,9 +2015,7 @@ namespace sasktran2::successive_orders {
                     : m_source_geometry->transport_columns_for_ray(ray);
             const int* transport_column_data = transport_columns.data();
             const int num_layers =
-                LOWER_INTERPOLATION ? static_cast<int>(traced_ray.layers.size())
-                                    : static_cast<int>(packed_ray->layer_end -
-                                                       packed_ray->layer_begin);
+                static_cast<int>(ray_interpolation.layers.size());
             double prefix = 1.0;
             for (int layer = num_layers - 1; layer >= 0; --layer) {
                 double optical_depth = 0.0;
@@ -1819,7 +2028,7 @@ namespace sasktran2::successive_orders {
                     attenuation = 1.0 - factor * optical_depth;
                 } else {
                     const auto od_weights =
-                        traced_ray.optical_depth_weights(layer);
+                        ray_interpolation.optical_depth_for_layer(layer);
                     for (std::size_t index = 0; index < od_weights.size();
                          ++index) {
                         const auto [atmosphere_index, weight] =
@@ -1853,13 +2062,6 @@ namespace sasktran2::successive_orders {
             if constexpr (!LOWER_INTERPOLATION) {
                 if (num_layers > 0) {
                     scratch.endpoint_cotangent.head(num_layers + 1).setZero();
-                    const double phase =
-                        uniform_phase
-                            ? m_uniform_phase_values[static_cast<std::size_t>(
-                                                         wavelength) *
-                                                         m_num_rays +
-                                                     ray]
-                            : 0.0;
                     for (int endpoint = 0; endpoint <= num_layers; ++endpoint) {
                         const int solar_index = m_solar_offsets[ray] + endpoint;
                         auto& value = scratch.endpoints[endpoint];
@@ -1868,12 +2070,12 @@ namespace sasktran2::successive_orders {
                             value.extinction =
                                 endpoint_medium->extinction(slot);
                             value.albedo = endpoint_medium->albedo(slot);
-                            value.phase = phase;
+                            value.phase = m_uniform_phase_values
+                                [static_cast<std::size_t>(wavelength) *
+                                     num_phase_basis_slots() +
+                                 phase_basis_slot(ray, solar_index)];
                         } else {
-                            const auto weights =
-                                endpoint == 0
-                                    ? traced_ray.exit_weights(0)
-                                    : traced_ray.entrance_weights(endpoint - 1);
+                            const auto weights = endpoint_weights(solar_index);
                             value = scalar_endpoint(
                                 wavelength, ray,
                                 endpoint == 0 ? 0 : endpoint - 1, endpoint != 0,
@@ -1888,14 +2090,25 @@ namespace sasktran2::successive_orders {
             }
             const double forcing_gradient = forcing_cotangent(ray);
             double prefix_cotangent = 0.0;
-            if (traced_ray.ground_is_hit && !traced_ray.layers.empty()) {
-                const auto& ground_layer = traced_ray.layers.front();
-                const double mu_in = ground_layer.exit.cos_zenith_angle(
-                    m_geometry.coordinates().sun_unit());
-                if (mu_in > 0.0) {
-                    const double mu_out = -ground_layer.exit.cos_zenith_angle(
-                        ground_layer.average_look_away);
-                    const double phi = ground_layer.saz_exit;
+            ScalarGroundGeometry local_ground;
+            const ScalarGroundGeometry* ground = nullptr;
+            if constexpr (LOWER_INTERPOLATION) {
+                const auto& traced_ray = rays[ray];
+                if (traced_ray.ground_is_hit && !traced_ray.layers.empty()) {
+                    const auto& layer = traced_ray.layers.front();
+                    local_ground = {layer.exit.position.normalized(),
+                                    layer.average_look_away};
+                    ground = &local_ground;
+                }
+            } else if (packed_ray->ground_geometry >= 0) {
+                ground = &m_scalar_ground_geometry[packed_ray->ground_geometry];
+            }
+            if (ground != nullptr) {
+                double mu_in;
+                double mu_out;
+                double phi;
+                if (ground_scattering_geometry(m_solar_offsets[ray], *ground,
+                                               mu_in, mu_out, phi)) {
                     const auto brdf = m_atmosphere->surface().brdf(
                         wavelength, mu_in, mu_out, phi);
                     const double ground_source =
@@ -1917,7 +2130,7 @@ namespace sasktran2::successive_orders {
                 }
             }
             if constexpr (WITH_TRANSPORT) {
-                if (traced_ray.ground_is_hit) {
+                if (ray_interpolation.ground_is_hit()) {
                     if (ground_state != nullptr) {
                         prefix_cotangent +=
                             ground_state[ray] * forcing_gradient;
@@ -1941,7 +2154,7 @@ namespace sasktran2::successive_orders {
                 double source_quad_start;
                 double source_quad_end;
                 if constexpr (LOWER_INTERPOLATION) {
-                    traced_layer = &traced_ray.layers[layer];
+                    traced_layer = &rays[ray].layers[layer];
                     layer_distance = traced_layer->layer_distance;
                     source_quad_start = traced_layer->od_quad_start;
                     source_quad_end = traced_layer->od_quad_end;
@@ -2000,14 +2213,16 @@ namespace sasktran2::successive_orders {
                 }
                 if (layer_distance >= minimum_layer_distance_m &&
                     forcing_gradient != 0.0) {
-                    const auto entrance_weights =
-                        traced_ray.entrance_weights(layer);
-                    const auto exit_weights = traced_ray.exit_weights(layer);
+                    sasktran2::raytracing::GridWeightStencilView
+                        entrance_weights;
+                    sasktran2::raytracing::GridWeightStencilView exit_weights;
                     const auto* start_weights = &entrance_weights;
                     const auto* end_weights = &exit_weights;
                     bool start_entrance = true;
                     bool end_entrance = false;
                     if constexpr (LOWER_INTERPOLATION) {
+                        entrance_weights = rays[ray].entrance_weights(layer);
+                        exit_weights = rays[ray].exit_weights(layer);
                         if (traced_layer->r_exit > traced_layer->r_entrance) {
                             end_weights = &entrance_weights;
                             end_entrance = true;
@@ -2084,7 +2299,8 @@ namespace sasktran2::successive_orders {
                 layer_prefix_cotangent += prefix_cotangent * attenuation;
                 attenuation_cotangent += prefix_cotangent * layer_prefix;
                 optical_depth_cotangent -= attenuation * attenuation_cotangent;
-                const auto od_weights = traced_ray.optical_depth_weights(layer);
+                const auto od_weights =
+                    ray_interpolation.optical_depth_for_layer(layer);
                 for (std::size_t index = 0; index < od_weights.size();
                      ++index) {
                     const auto [atmosphere_index, weight] = od_weights[index];
@@ -2095,18 +2311,16 @@ namespace sasktran2::successive_orders {
             }
             if constexpr (!LOWER_INTERPOLATION) {
                 if (num_layers > 0) {
-                    const auto exit_weights = traced_ray.exit_weights(0);
                     accumulate_scalar_endpoint_vjp(
                         wavelength, ray, 0, false, m_solar_offsets[ray],
-                        exit_weights, scratch.endpoints[0],
-                        scratch.endpoint_cotangent(0), thread_gradient,
-                        solar_gradient, coefficient_gradient);
+                        endpoint_weights(m_solar_offsets[ray]),
+                        scratch.endpoints[0], scratch.endpoint_cotangent(0),
+                        thread_gradient, solar_gradient, coefficient_gradient);
                     for (int endpoint = 1; endpoint <= num_layers; ++endpoint) {
-                        const auto entrance_weights =
-                            traced_ray.entrance_weights(endpoint - 1);
+                        const int solar_index = m_solar_offsets[ray] + endpoint;
                         accumulate_scalar_endpoint_vjp(
-                            wavelength, ray, endpoint - 1, true,
-                            m_solar_offsets[ray] + endpoint, entrance_weights,
+                            wavelength, ray, endpoint - 1, true, solar_index,
+                            endpoint_weights(solar_index),
                             scratch.endpoints[endpoint],
                             scratch.endpoint_cotangent(endpoint),
                             thread_gradient, solar_gradient,
@@ -2145,12 +2359,11 @@ namespace sasktran2::successive_orders {
             auto& solar_gradient = m_solar_product_scratch[thread];
             auto& table_gradient = m_solar_table_product_scratch[thread];
             solar_gradient.array() *= solar.array();
-            table_gradient.noalias() =
-                m_solar_interpolation.transpose() * solar_gradient;
-            const Eigen::Index solar_columns =
-                m_solar_table.geometry_matrix().cols();
-            thread_gradient.head(solar_columns).noalias() -=
-                m_solar_table.geometry_matrix().transpose() * table_gradient;
+            m_solar_interpolation.apply_transpose(solar_gradient,
+                                                  table_gradient);
+            const Eigen::Index solar_columns = m_solar_table->atmosphere_size();
+            m_solar_table->accumulate_transpose(
+                table_gradient, thread_gradient.head(solar_columns), -1.0);
             native_gradient += thread_gradient;
         }
     }
@@ -2430,7 +2643,10 @@ namespace sasktran2::successive_orders {
 
     template <int NSTOKES>
     std::size_t FirstOrderProvider<NSTOKES>::workspace_bytes() const {
-        std::size_t result = 0;
+        std::size_t result = m_solar_interpolation.storage_bytes();
+        if (m_solar_table != nullptr) {
+            result += m_solar_table->storage_bytes();
+        }
         for (const auto& scratch : m_primal_scratch) {
             result += static_cast<std::size_t>(scratch.value.size() +
                                                scratch.deriv.size()) *
@@ -2469,8 +2685,10 @@ namespace sasktran2::successive_orders {
         result += m_uniform_phase_values.capacity() * sizeof(double);
         result += m_uniform_albedo_active.capacity() * sizeof(unsigned char);
         result += m_uniform_albedo_values.capacity() * sizeof(double);
-        result += m_scalar_packed_rays.capacity() * sizeof(ScalarPackedRay) +
-                  m_scalar_packed_layers.capacity() * sizeof(ScalarPackedLayer);
+        result +=
+            m_scalar_packed_rays.capacity() * sizeof(ScalarPackedRay) +
+            m_scalar_packed_layers.capacity() * sizeof(ScalarPackedLayer) +
+            m_scalar_ground_geometry.capacity() * sizeof(ScalarGroundGeometry);
         for (const auto& transmission : m_cached_solar_transmission) {
             result +=
                 static_cast<std::size_t>(transmission.size()) * sizeof(double);

@@ -102,8 +102,13 @@ class Engine:
                 not in (
                     sk.SingleScatterSource.NoSource,
                     sk.SingleScatterSource.Exact,
+                    sk.SingleScatterSource.Table,
                 )
-                or config.multiple_scatter_source != sk.MultipleScatterSource.NoSource
+                or config.multiple_scatter_source
+                not in (
+                    sk.MultipleScatterSource.NoSource,
+                    sk.MultipleScatterSource.SuccessiveOrders,
+                )
                 or config.emission_source
                 not in (
                     sk.EmissionSource.NoSource,
@@ -112,9 +117,10 @@ class Engine:
                 )
             ):
                 msg = (
-                    "Geometry2D Engine currently supports exact single scattering, "
+                    "Geometry2D Engine currently supports exact and table single "
+                    "scattering, successive-orders multiple scattering, "
                     "occultation, standard emission, and volume emission rate "
-                    "sources with multiple scattering disabled"
+                    "sources"
                 )
                 raise NotImplementedError(msg)
             if viewing_geometry.flux_observers:
@@ -124,6 +130,16 @@ class Engine:
                 msg = (
                     "Geometry2D Engine does not yet accept per-ray refractive-index "
                     "profiles"
+                )
+                raise NotImplementedError(msg)
+            if (
+                config.multiple_scatter_source
+                == sk.MultipleScatterSource.SuccessiveOrders
+                and config.multiple_scatter_refraction
+            ):
+                msg = (
+                    "Geometry2D successive orders does not support diffuse-ray "
+                    "refraction"
                 )
                 raise NotImplementedError(msg)
 
@@ -177,9 +193,14 @@ class Engine:
                 "calculate_derivatives=True"
             )
             raise ValueError(msg)
-        if not self._engine._supports_linearization(0):
-            msg = "The configured engine does not support full-Jacobian linearization"
+        derivative_backends = {
+            mode: self._engine._linearization_backend(mode_index)
+            for mode, mode_index in (("jvp", 1), ("vjp", 2))
+        }
+        if any(backend == 0 for backend in derivative_backends.values()):
+            msg = "The configured engine does not support JVP/VJP linearization"
             raise NotImplementedError(msg)
+        jacobian_supported = self._engine._supports_linearization(0)
 
         native_atmosphere = atmosphere.internal_object()
         revision = atmosphere.revision
@@ -191,11 +212,17 @@ class Engine:
             2: LinearizationBackend.Native,
         }
         backends = {
-            mode: backend_names[self._engine._linearization_backend(mode_index)]
-            for mode, mode_index in (("jvp", 1), ("vjp", 2))
+            mode: backend_names[backend]
+            for mode, backend in derivative_backends.items()
         }
 
         def load_jacobian() -> xr.Dataset:
+            if not jacobian_supported:
+                msg = (
+                    "The configured engine supports derivative products but "
+                    "cannot materialize the full Jacobian"
+                )
+                raise NotImplementedError(msg)
             result, _ = self._calculate_radiance(
                 atmosphere, internal_atmosphere=native_atmosphere
             )

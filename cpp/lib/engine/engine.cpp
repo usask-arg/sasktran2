@@ -25,9 +25,13 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::initialize() {
         if ((m_config.single_scatter_source() !=
                  sasktran2::Config::SingleScatterSource::none &&
              m_config.single_scatter_source() !=
-                 sasktran2::Config::SingleScatterSource::exact) ||
-            m_config.multiple_scatter_source() !=
-                sasktran2::Config::MultipleScatterSource::none ||
+                 sasktran2::Config::SingleScatterSource::exact &&
+             m_config.single_scatter_source() !=
+                 sasktran2::Config::SingleScatterSource::solartable) ||
+            (m_config.multiple_scatter_source() !=
+                 sasktran2::Config::MultipleScatterSource::none &&
+             m_config.multiple_scatter_source() !=
+                 sasktran2::Config::MultipleScatterSource::successive_orders) ||
             (m_config.emission_source() !=
                  sasktran2::Config::EmissionSource::none &&
              m_config.emission_source() !=
@@ -35,9 +39,10 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::initialize() {
              m_config.emission_source() !=
                  sasktran2::Config::EmissionSource::volume_emission_rate)) {
             throw std::invalid_argument(
-                "Geometry2D currently supports exact single scattering, "
-                "occultation, standard emission, and volume emission rate "
-                "sources, with multiple scattering disabled");
+                "Geometry2D currently supports exact and table single "
+                "scattering, "
+                "successive-orders multiple scattering, occultation, "
+                "standard emission, and volume emission rate sources");
         }
         if (!m_viewing_geometry.flux_observers().empty()) {
             throw std::invalid_argument(
@@ -47,6 +52,13 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::initialize() {
             throw std::invalid_argument(
                 "Geometry2D engine integration does not yet accept per-ray "
                 "refractive-index profiles");
+        }
+        if (m_config.multiple_scatter_source() ==
+                sasktran2::Config::MultipleScatterSource::successive_orders &&
+            m_config.multiple_scatter_refraction()) {
+            throw std::invalid_argument(
+                "Geometry2D successive orders does not support diffuse-ray "
+                "refraction");
         }
     }
 
@@ -106,6 +118,23 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_integrator() {
 template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
 
     if (m_geometry_2d != nullptr) {
+#ifdef SKTRAN_RUST_SUPPORT
+        std::shared_ptr<sasktran2::solartransmission::SolarTransmissionTable2D>
+            shared_solar_table;
+        const bool needs_solar_table =
+            m_config.single_scatter_source() ==
+                sasktran2::Config::SingleScatterSource::solartable ||
+            (m_config.single_scatter_source() ==
+                 sasktran2::Config::SingleScatterSource::exact &&
+             m_config.solar_refraction()) ||
+            m_config.multiple_scatter_source() ==
+                sasktran2::Config::MultipleScatterSource::successive_orders;
+        if (needs_solar_table) {
+            shared_solar_table = std::make_shared<
+                sasktran2::solartransmission::SolarTransmissionTable2D>(
+                *m_geometry_2d, *m_raytracer_2d);
+        }
+#endif
         if (m_config.single_scatter_source() ==
             sasktran2::Config::SingleScatterSource::exact) {
 #ifdef SKTRAN_RUST_SUPPORT
@@ -113,11 +142,29 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
                 std::make_unique<
                     sasktran2::solartransmission::SingleScatterSource<
                         sasktran2::solartransmission::SolarTransmissionExact,
-                        NSTOKES>>(*m_geometry_2d, *m_raytracer_2d));
+                        NSTOKES>>(*m_geometry_2d, *m_raytracer_2d,
+                                  m_config.solar_refraction()
+                                      ? shared_solar_table
+                                      : nullptr));
             m_los_source_terms.push_back(m_source_terms.back().get());
 #else
             throw std::invalid_argument(
                 "Geometry2D exact single scattering requires Rust support");
+#endif
+        }
+        if (m_config.single_scatter_source() ==
+            sasktran2::Config::SingleScatterSource::solartable) {
+#ifdef SKTRAN_RUST_SUPPORT
+            m_source_terms.emplace_back(
+                std::make_unique<
+                    sasktran2::solartransmission::SingleScatterSource<
+                        sasktran2::solartransmission::SolarTransmissionTable2D,
+                        NSTOKES>>(*m_geometry_2d, *m_raytracer_2d,
+                                  shared_solar_table));
+            m_los_source_terms.push_back(m_source_terms.back().get());
+#else
+            throw std::invalid_argument(
+                "Geometry2D table single scattering requires Rust support");
 #endif
         }
         if (m_config.occultation_source() ==
@@ -141,6 +188,19 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
                     NSTOKES, sasktran2::Config::EmissionSource::
                                  volume_emission_rate>>());
             m_los_source_terms.push_back(m_source_terms.back().get());
+        }
+        if (m_config.multiple_scatter_source() ==
+            sasktran2::Config::MultipleScatterSource::successive_orders) {
+#ifdef SKTRAN_RUST_SUPPORT
+            m_source_terms.emplace_back(
+                sasktran2::successive_orders::make_successive_orders_source<
+                    NSTOKES>(*m_raytracer_2d, *m_geometry_2d,
+                             shared_solar_table));
+            m_los_source_terms.push_back(m_source_terms.back().get());
+#else
+            throw std::invalid_argument(
+                "Geometry2D successive orders requires Rust support");
+#endif
         }
         for (auto& source : m_source_terms) {
             source->initialize_config(m_config);

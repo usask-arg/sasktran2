@@ -86,7 +86,7 @@ namespace sasktran2::successive_orders {
 
         Eigen::Vector3d
         deterministic_horizontal(const Eigen::Vector3d& local_up,
-                                 const sasktran2::Geometry1D& geometry) {
+                                 const sasktran2::Geometry& geometry) {
             constexpr double singular_squared_tolerance = 1.0e-24;
             Eigen::Vector3d horizontal =
                 geometry.coordinates().reference_x() -
@@ -105,7 +105,7 @@ namespace sasktran2::successive_orders {
 
         Eigen::Vector3d
         horizontal_solar_reference(const Eigen::Vector3d& local_up,
-                                   const sasktran2::Geometry1D& geometry) {
+                                   const sasktran2::Geometry& geometry) {
             constexpr double singular_squared_tolerance = 1.0e-24;
             Eigen::Vector3d horizontal =
                 geometry.coordinates().sun_unit() -
@@ -120,7 +120,7 @@ namespace sasktran2::successive_orders {
         rotate_unit_vector(const Eigen::Vector3d& vector,
                            const Eigen::Vector3d& initial_position,
                            const Eigen::Vector3d& new_position,
-                           const sasktran2::Geometry1D& geometry) {
+                           const sasktran2::Geometry& geometry) {
             const double vector_norm = vector.norm();
             const double initial_norm = initial_position.norm();
             const double new_norm = new_position.norm();
@@ -165,7 +165,7 @@ namespace sasktran2::successive_orders {
         void compile_source_weights(
             const Eigen::Vector3d& direction,
             const sasktran2::Location& interpolation_location, bool ground,
-            const sasktran2::Geometry1D& geometry,
+            const sasktran2::Geometry& geometry,
             sasktran2::grids::SourceLocationInterpolator& location_interpolator,
             const std::vector<SourcePoint>& source_points,
             std::vector<SourceInterpolationWeight>& result,
@@ -284,12 +284,13 @@ namespace sasktran2::successive_orders {
 
     void compile_ray_interpolation(
         const sasktran2::raytracing::TracedRay& ray,
-        const sasktran2::Geometry1D& geometry,
+        const sasktran2::Geometry& geometry,
         sasktran2::grids::SourceLocationInterpolator& location_interpolator,
         const std::vector<SourcePoint>& source_points, RayInterpolation& result,
         InterpolationScratch& scratch) {
         result = {};
         result.traced_ray = &ray;
+        result.ground_hit = ray.ground_is_hit;
         result.layers.resize(ray.layers.size());
         result.atmosphere_weights.reserve(ray.layers.size() * 2);
         // The common one-SZA grid uses at most two altitude locations and
@@ -301,6 +302,10 @@ namespace sasktran2::successive_orders {
              ++layer_index) {
             const auto& traced_layer = ray.layers[layer_index];
             auto& interpolation = result.layers[layer_index];
+
+            interpolation.optical_depth_offset =
+                traced_layer.grid_weight_offset;
+            interpolation.optical_depth_count = traced_layer.grid_weight_count;
 
             sasktran2::Location midpoint;
             midpoint.position = 0.5 * (traced_layer.entrance.position +
@@ -338,6 +343,24 @@ namespace sasktran2::successive_orders {
                 ground_location, true, geometry, location_interpolator,
                 source_points, result.ground_weights, scratch);
         }
+    }
+
+    void adopt_optical_depth_storage(sasktran2::raytracing::TracedRay& ray,
+                                     RayInterpolation& interpolation) {
+        if (interpolation.traced_ray != &ray ||
+            !interpolation.optical_depth_indices.empty() ||
+            !interpolation.optical_depth_weights.empty()) {
+            throw std::invalid_argument(
+                "Invalid successive-orders OD stencil ownership transfer");
+        }
+        ray.release_optical_depth_storage(interpolation.optical_depth_indices,
+                                          interpolation.optical_depth_weights);
+        if (interpolation.optical_depth_indices.size() !=
+            interpolation.optical_depth_weights.size()) {
+            throw std::logic_error(
+                "Successive-orders OD stencil arrays have different sizes");
+        }
+        interpolation.traced_ray = nullptr;
     }
 
     void compile_transport_row(RayInterpolation& interpolation,

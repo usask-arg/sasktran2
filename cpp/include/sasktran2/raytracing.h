@@ -197,6 +197,19 @@ namespace sasktran2::raytracing {
             return grid_weight_indices.size();
         }
 
+        /** Transfers the integrated optical-depth stencil out of this ray.
+         * All endpoint stencil views are invalidated. This is intended for
+         * construction-time conversion to a smaller runtime representation. */
+        void release_optical_depth_storage(std::vector<int>& indices,
+                                           std::vector<double>& weights) {
+            indices = std::move(grid_weight_indices);
+            weights = std::move(integrated_od_weights);
+            entrance_grid_weights.clear();
+            entrance_grid_weights.shrink_to_fit();
+            exit_grid_weights.clear();
+            exit_grid_weights.shrink_to_fit();
+        }
+
         /** Appends one layer's common node list and three aligned weight lists.
          *
          * The caller defines the node order and must use the same order in all
@@ -978,8 +991,9 @@ namespace sasktran2::raytracing {
 
     /** Standalone Rust structured-2D ray tracer.
      *
-     * The refractive-index overload accepts one altitude-only profile for this
-     * ray. Profiles are not stored on Geometry2D and may differ between calls.
+     * The refractive-index overload accepts an explicit altitude-only profile
+     * for this ray. It is deliberately separate from Geometry2D's stored solar
+     * refractive-index profile so callers can choose which rays are bent.
      */
     class RustRayTracer2D {
       public:
@@ -989,6 +1003,21 @@ namespace sasktran2::raytracing {
         void trace_ray(const sasktran2::viewinggeometry::ViewingRay& ray,
                        TracedRay& tracedray) const;
 
+        /** Trace only the integrated atmosphere-grid optical-depth stencil.
+         *
+         * Endpoint geometry and solar-angle metadata are omitted. This is used
+         * while constructing exact solar-transmission matrices, whose consumer
+         * reads only `TracedRay::optical_depth_weights()`.
+         */
+        void trace_ray_optical_depth(
+            const sasktran2::viewinggeometry::ViewingRay& ray,
+            TracedRay& tracedray) const;
+
+        void trace_ray_optical_depth(
+            const sasktran2::viewinggeometry::ViewingRay& ray,
+            const Eigen::VectorXd& refractive_index,
+            TracedRay& tracedray) const;
+
         void trace_ray(const sasktran2::viewinggeometry::ViewingRay& ray,
                        const Eigen::VectorXd& refractive_index,
                        TracedRay& tracedray) const;
@@ -996,7 +1025,8 @@ namespace sasktran2::raytracing {
       private:
         void trace_ray_impl(const sasktran2::viewinggeometry::ViewingRay& ray,
                             const Eigen::VectorXd* refractive_index,
-                            TracedRay& tracedray) const;
+                            TracedRay& tracedray,
+                            bool optical_depth_only) const;
 
         const sasktran2::Geometry2D& m_geometry;
         std::unique_ptr<RustRayTracer2DImpl> m_impl;

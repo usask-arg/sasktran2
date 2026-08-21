@@ -16,6 +16,240 @@
 
 namespace sasktran2::successive_orders {
     namespace {
+        class GroundUnitSphere final : public sasktran2::math::UnitSphere {
+          public:
+            GroundUnitSphere(std::unique_ptr<const UnitSphere>&& sphere,
+                             const Eigen::Vector3d& location)
+                : m_full_sphere(std::move(sphere)) {
+                m_contributing_map.reserve(m_full_sphere->num_points() / 2);
+                for (int index = 0; index < m_full_sphere->num_points();
+                     ++index) {
+                    if (m_full_sphere->get_quad_position(index).dot(location) >
+                        0) {
+                        m_contributing_map.push_back(index);
+                        m_quadrature_normalization +=
+                            m_full_sphere->quadrature_weight(index);
+                    }
+                }
+            }
+
+            int num_points() const override {
+                return static_cast<int>(m_contributing_map.size());
+            }
+
+            Eigen::Vector3d get_quad_position(int index) const override {
+                return m_full_sphere->get_quad_position(
+                    m_contributing_map[index]);
+            }
+
+            double quadrature_weight(int index) const override {
+                return m_full_sphere->quadrature_weight(
+                           m_contributing_map[index]) /
+                       m_quadrature_normalization * 0.5;
+            }
+
+            void interpolate(const Eigen::Vector3d& direction,
+                             std::vector<std::pair<int, double>>& index_weights,
+                             int& num_interp) const override {
+                num_interp = std::min(3, num_points());
+                index_weights.assign(
+                    static_cast<std::size_t>(num_interp),
+                    {-1, std::numeric_limits<double>::infinity()});
+
+                // Select neighbors directly from the upward hemisphere.
+                // Filtering a full-sphere stencil after selection can discard
+                // every neighbor for near-horizon directions.
+                for (int local_index = 0; local_index < num_points();
+                     ++local_index) {
+                    const double squared_distance =
+                        (get_quad_position(local_index) - direction)
+                            .squaredNorm();
+                    for (int slot = 0; slot < num_interp; ++slot) {
+                        if (squared_distance < index_weights[slot].second) {
+                            for (int shifted = num_interp - 1; shifted > slot;
+                                 --shifted) {
+                                index_weights[shifted] =
+                                    index_weights[shifted - 1];
+                            }
+                            index_weights[slot] = {local_index,
+                                                   squared_distance};
+                            break;
+                        }
+                    }
+                }
+
+                double total_inverse_distance = 0.0;
+                for (int slot = 0; slot < num_interp; ++slot) {
+                    if (index_weights[slot].second < 1.0e-8) {
+                        for (auto& weight : index_weights) {
+                            weight.second = 0.0;
+                        }
+                        index_weights[slot].second = 1.0;
+                        return;
+                    }
+                    total_inverse_distance +=
+                        1.0 / std::sqrt(index_weights[slot].second);
+                }
+                for (auto& weight : index_weights) {
+                    weight.second = (1.0 / std::sqrt(weight.second)) /
+                                    total_inverse_distance;
+                }
+            }
+
+          private:
+            std::unique_ptr<const UnitSphere> m_full_sphere;
+            std::vector<int> m_contributing_map;
+            double m_quadrature_normalization = 0.0;
+        };
+
+        class AltitudeAngleSourceLocationInterpolator final
+            : public sasktran2::grids::SourceLocationInterpolator {
+          public:
+            AltitudeAngleSourceLocationInterpolator(
+                sasktran2::grids::AltitudeGrid&& altitude_grid,
+                const sasktran2::Geometry2D& geometry,
+                int num_horizontal_points)
+                : SourceLocationInterpolator(std::move(altitude_grid)),
+                  m_geometry(geometry), m_horizontal_grid(make_horizontal_grid(
+                                            geometry, num_horizontal_points)) {}
+
+            const Eigen::VectorXd& horizontal_grid() const {
+                return m_horizontal_grid.grid();
+            }
+
+            int num_interior_points() const override {
+                return static_cast<int>(m_altitude_grid.grid().size() *
+                                        m_horizontal_grid.grid().size());
+            }
+
+            int num_ground_points() const override {
+                return static_cast<int>(m_horizontal_grid.grid().size());
+            }
+
+            Eigen::Vector3d
+            grid_location(const sasktran2::Coordinates& coordinates,
+                          int location_index) const override {
+                if (location_index < 0 ||
+                    location_index >= num_interior_points()) {
+                    throw std::out_of_range(
+                        "Successive-orders 2D source location is out of "
+                        "range");
+                }
+                const int num_altitudes =
+                    static_cast<int>(m_altitude_grid.grid().size());
+                const int altitude_index = location_index % num_altitudes;
+                const int horizontal_index = location_index / num_altitudes;
+                const double radius = coordinates.earth_radius() +
+                                      m_altitude_grid.grid()[altitude_index];
+                return radius *
+                       coordinates.unit_vector_from_angles(
+                           m_horizontal_grid.grid()[horizontal_index], 0.0);
+            }
+
+            Eigen::Vector3d
+            ground_location(const sasktran2::Coordinates& coordinates,
+                            int ground_index) const override {
+                if (ground_index < 0 || ground_index >= num_ground_points()) {
+                    throw std::out_of_range(
+                        "Successive-orders 2D ground location is out of "
+                        "range");
+                }
+                const double surface_radius =
+                    coordinates.earth_radius() +
+                    m_geometry.altitude_grid().grid()[0];
+                return surface_radius *
+                       coordinates.unit_vector_from_angles(
+                           m_horizontal_grid.grid()[ground_index], 0.0);
+            }
+
+            void interior_interpolation_weights(
+                const sasktran2::Coordinates&,
+                const sasktran2::Location& location,
+                std::vector<std::pair<int, double>>& weights,
+                int& num_interp) override {
+                std::array<int, 2> altitude_indices;
+                std::array<int, 2> horizontal_indices;
+                std::array<double, 2> altitude_weights;
+                std::array<double, 2> horizontal_weights;
+                int num_altitudes = 0;
+                int num_horizontal = 0;
+                m_altitude_grid.calculate_interpolation_weights(
+                    m_geometry.altitude_at(location), altitude_indices,
+                    altitude_weights, num_altitudes);
+                m_horizontal_grid.calculate_interpolation_weights(
+                    m_geometry.horizontal_angle_at(location),
+                    horizontal_indices, horizontal_weights, num_horizontal);
+
+                num_interp = num_altitudes * num_horizontal;
+                weights.resize(static_cast<std::size_t>(num_interp));
+                for (int horizontal = 0; horizontal < num_horizontal;
+                     ++horizontal) {
+                    for (int altitude = 0; altitude < num_altitudes;
+                         ++altitude) {
+                        const int output =
+                            altitude + horizontal * num_altitudes;
+                        weights[output] = {interior_linear_index(
+                                               altitude_indices[altitude],
+                                               horizontal_indices[horizontal]),
+                                           altitude_weights[altitude] *
+                                               horizontal_weights[horizontal]};
+                    }
+                }
+            }
+
+            void ground_interpolation_weights(
+                const sasktran2::Coordinates&,
+                const sasktran2::Location& location,
+                std::vector<std::pair<int, double>>& weights,
+                int& num_interp) const override {
+                std::array<int, 2> horizontal_indices;
+                std::array<double, 2> horizontal_weights;
+                m_horizontal_grid.calculate_interpolation_weights(
+                    m_geometry.horizontal_angle_at(location),
+                    horizontal_indices, horizontal_weights, num_interp);
+                weights.resize(static_cast<std::size_t>(num_interp));
+                for (int horizontal = 0; horizontal < num_interp;
+                     ++horizontal) {
+                    weights[horizontal] = {num_interior_points() +
+                                               horizontal_indices[horizontal],
+                                           horizontal_weights[horizontal]};
+                }
+            }
+
+          private:
+            static sasktran2::grids::Grid
+            make_horizontal_grid(const sasktran2::Geometry2D& geometry,
+                                 int num_horizontal_points) {
+                const auto& atmosphere_angles =
+                    geometry.horizontal_angle_grid();
+                Eigen::VectorXd horizontal_angles(num_horizontal_points);
+                if (num_horizontal_points == 1) {
+                    horizontal_angles[0] =
+                        0.5 * (atmosphere_angles[0] +
+                               atmosphere_angles[atmosphere_angles.size() - 1]);
+                } else {
+                    horizontal_angles.setLinSpaced(
+                        num_horizontal_points, atmosphere_angles[0],
+                        atmosphere_angles[atmosphere_angles.size() - 1]);
+                }
+                return sasktran2::grids::Grid(
+                    std::move(horizontal_angles),
+                    sasktran2::grids::gridspacing::automatic,
+                    sasktran2::grids::outofbounds::extend,
+                    sasktran2::grids::interpolation::linear);
+            }
+
+            int interior_linear_index(int altitude_index,
+                                      int horizontal_index) const {
+                return altitude_index +
+                       horizontal_index *
+                           static_cast<int>(m_altitude_grid.grid().size());
+            }
+
+            const sasktran2::Geometry2D& m_geometry;
+            const sasktran2::grids::Grid m_horizontal_grid;
+        };
+
         std::vector<InterpolationWeight>
         sorted_weights(const std::vector<std::pair<int, double>>& weights) {
             std::vector<InterpolationWeight> result;
@@ -77,12 +311,23 @@ namespace sasktran2::successive_orders {
     SourceGeometry1D::SourceGeometry1D(
         const sasktran2::raytracing::RayTracerBase& raytracer,
         const sasktran2::Geometry1D& geometry)
-        : m_raytracer(raytracer), m_geometry(geometry) {}
+        : m_geometry(geometry), m_geometry_1d(&geometry),
+          m_raytracer_1d(&raytracer) {}
+
+#ifdef SKTRAN_RUST_SUPPORT
+    SourceGeometry1D::SourceGeometry1D(
+        const sasktran2::raytracing::RustRayTracer2D& raytracer,
+        const sasktran2::Geometry2D& geometry)
+        : m_geometry(geometry), m_geometry_2d(&geometry),
+          m_raytracer_2d(&raytracer) {}
+#endif
 
     SourceGeometry1D::~SourceGeometry1D() = default;
 
     sasktran2::grids::AltitudeGrid SourceGeometry1D::make_altitude_grid() {
-        const auto& atmosphere_altitudes = m_geometry.altitude_grid().grid();
+        const auto& atmosphere_altitudes =
+            m_geometry_1d != nullptr ? m_geometry_1d->altitude_grid().grid()
+                                     : m_geometry_2d->altitude_grid().grid();
         Eigen::VectorXd altitudes;
         // Atmosphere layer midpoints inherit arbitrary spacing from the
         // atmosphere grid. Let Grid retain the constant fast path only when
@@ -131,6 +376,10 @@ namespace sasktran2::successive_orders {
     sasktran2::grids::Grid SourceGeometry1D::make_cos_sza_grid(
         const sasktran2::viewinggeometry::InternalViewingGeometry&
             internal_viewing) {
+        if (m_geometry_1d == nullptr) {
+            throw std::logic_error(
+                "Cannot construct an SZA source grid for Geometry2D");
+        }
         Eigen::VectorXd cos_sza;
         const auto geometry_type = m_geometry.coordinates().geometry_type();
         const auto bounds = sasktran2::raytracing::min_max_cos_sza_of_all_rays(
@@ -186,16 +435,14 @@ namespace sasktran2::successive_orders {
                 m_location_interpolator->ground_location(
                     m_geometry.coordinates(), ground_index);
             auto ground_grid = std::make_unique<AngularGridPair>();
-            ground_grid->incoming =
-                std::make_unique<sasktran2::math::UnitSphereGround>(
-                    std::make_unique<sasktran2::math::LebedevSphere>(
-                        m_settings.num_incoming),
-                    location);
-            ground_grid->outgoing =
-                std::make_unique<sasktran2::math::UnitSphereGround>(
-                    std::make_unique<sasktran2::math::LebedevSphere>(
-                        m_settings.num_outgoing),
-                    location);
+            ground_grid->incoming = std::make_unique<GroundUnitSphere>(
+                std::make_unique<sasktran2::math::LebedevSphere>(
+                    m_settings.num_incoming),
+                location);
+            ground_grid->outgoing = std::make_unique<GroundUnitSphere>(
+                std::make_unique<sasktran2::math::LebedevSphere>(
+                    m_settings.num_outgoing),
+                location);
             m_angular_grids.push_back(std::move(ground_grid));
         }
 
@@ -291,8 +538,7 @@ namespace sasktran2::successive_orders {
                         point.incoming_offset() + direction_index;
                     auto& traced_ray =
                         m_incoming_viewing.traced_rays[ray_index];
-                    m_raytracer.trace_ray(viewing_ray, traced_ray,
-                                          m_settings.include_refraction);
+                    trace_ray(viewing_ray, traced_ray);
                     compile_ray_interpolation(
                         traced_ray, m_geometry, *m_location_interpolator,
                         m_source_points, m_incoming_interpolation[ray_index],
@@ -383,18 +629,54 @@ namespace sasktran2::successive_orders {
         }
     }
 
+    void SourceGeometry1D::release_incoming_traced_rays() {
+        if (m_incoming_viewing.traced_rays.size() !=
+            m_incoming_interpolation.size()) {
+            throw std::logic_error(
+                "Successive-orders incoming geometry is inconsistent");
+        }
+        for (std::size_t ray = 0; ray < m_incoming_viewing.traced_rays.size();
+             ++ray) {
+            adopt_optical_depth_storage(m_incoming_viewing.traced_rays[ray],
+                                        m_incoming_interpolation[ray]);
+        }
+        m_incoming_viewing.traced_rays.clear();
+        m_incoming_viewing.traced_rays.shrink_to_fit();
+        m_incoming_viewing.flux_observers.clear();
+        m_incoming_viewing.flux_observers.shrink_to_fit();
+    }
+
     void SourceGeometry1D::initialize(
         const sasktran2::viewinggeometry::InternalViewingGeometry&
             internal_viewing,
         const SourceGeometrySettings& settings) {
         settings.validate();
+        if (m_geometry_2d != nullptr && settings.include_refraction) {
+            throw std::invalid_argument(
+                "Geometry2D successive orders does not support diffuse-ray "
+                "refraction");
+        }
         m_settings = settings;
 
         auto altitude_grid = make_altitude_grid();
-        auto cos_sza_grid = make_cos_sza_grid(internal_viewing);
-        m_location_interpolator = std::make_unique<
-            sasktran2::grids::AltitudeSZASourceLocationInterpolator>(
-            std::move(altitude_grid), std::move(cos_sza_grid));
+        if (m_geometry_1d != nullptr) {
+            auto cos_sza_grid = make_cos_sza_grid(internal_viewing);
+            m_location_interpolator = std::make_unique<
+                sasktran2::grids::AltitudeSZASourceLocationInterpolator>(
+                std::move(altitude_grid), std::move(cos_sza_grid));
+            m_source_horizontal_angles_rad.clear();
+        } else {
+            m_source_cos_sza.clear();
+            auto interpolator =
+                std::make_unique<AltitudeAngleSourceLocationInterpolator>(
+                    std::move(altitude_grid), *m_geometry_2d,
+                    m_settings.num_sza);
+            const auto& horizontal_grid = interpolator->horizontal_grid();
+            m_source_horizontal_angles_rad.assign(horizontal_grid.data(),
+                                                  horizontal_grid.data() +
+                                                      horizontal_grid.size());
+            m_location_interpolator = std::move(interpolator);
+        }
 
         construct_source_points();
         trace_and_compile_incoming();
@@ -405,6 +687,24 @@ namespace sasktran2::successive_orders {
         compile_transport_topology(m_los_interpolation,
                                    m_los_transport_row_offsets,
                                    m_los_transport_column_indices);
+    }
+
+    void SourceGeometry1D::trace_ray(
+        const sasktran2::viewinggeometry::ViewingRay& viewing_ray,
+        sasktran2::raytracing::TracedRay& traced_ray) const {
+        if (m_raytracer_1d != nullptr) {
+            m_raytracer_1d->trace_ray(viewing_ray, traced_ray,
+                                      m_settings.include_refraction);
+            return;
+        }
+#ifdef SKTRAN_RUST_SUPPORT
+        if (m_raytracer_2d != nullptr) {
+            m_raytracer_2d->trace_ray(viewing_ray, traced_ray);
+            return;
+        }
+#endif
+        throw std::logic_error(
+            "Successive-orders source geometry has no ray tracer");
     }
 
 } // namespace sasktran2::successive_orders

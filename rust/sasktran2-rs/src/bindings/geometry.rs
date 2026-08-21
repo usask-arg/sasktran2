@@ -155,6 +155,43 @@ impl Geometry2D {
         Ok(Array1::from(horizontal_angles))
     }
 
+    pub fn refractive_index(&self) -> Result<ArrayView1<'_, f64>> {
+        let (_, num_altitudes) = self.location_shape()?;
+        let mut refractive_index_ptr = std::ptr::null();
+        let result = unsafe {
+            ffi::sk_geometry2d_get_refractive_index_ptr(self.geometry, &mut refractive_index_ptr)
+        };
+        if result != 0 || refractive_index_ptr.is_null() {
+            return Err(anyhow!("Failed to get Geometry2D refractive index"));
+        }
+        unsafe {
+            Ok(ArrayView1::from_shape_ptr(
+                num_altitudes,
+                refractive_index_ptr,
+            ))
+        }
+    }
+
+    pub fn refractive_index_mut(&mut self) -> Result<ArrayViewMut1<'_, f64>> {
+        let (_, num_altitudes) = self.location_shape()?;
+        let mut refractive_index_ptr = std::ptr::null_mut();
+        let result = unsafe {
+            ffi::sk_geometry2d_get_refractive_index_mut_ptr(
+                self.geometry,
+                &mut refractive_index_ptr,
+            )
+        };
+        if result != 0 || refractive_index_ptr.is_null() {
+            return Err(anyhow!("Failed to get Geometry2D refractive index"));
+        }
+        unsafe {
+            Ok(ArrayViewMut1::from_shape_ptr(
+                num_altitudes,
+                refractive_index_ptr,
+            ))
+        }
+    }
+
     pub fn location_index(&self, altitude_index: usize, horizontal_index: usize) -> Result<usize> {
         let altitude_index =
             i32::try_from(altitude_index).map_err(|_| anyhow!("Altitude index is too large"))?;
@@ -336,6 +373,31 @@ mod tests {
         assert_eq!(geometry.location_index(2, 3).unwrap(), 11);
         assert!(geometry.location_index(3, 0).is_err());
         assert!(geometry.location_index(0, 4).is_err());
+    }
+
+    #[test]
+    fn test_geometry2d_refractive_index() {
+        let mut geometry = Geometry2D::new(
+            0.5,
+            0.1,
+            6_371_000.0,
+            vec![0.0, 10_000.0, 20_000.0],
+            vec![-0.2, 0.2],
+            InterpolationMethod::Linear,
+        )
+        .unwrap();
+
+        {
+            let mut refractive_index = geometry.refractive_index_mut().unwrap();
+            assert_eq!(refractive_index.to_vec(), vec![1.0, 1.0, 1.0]);
+            refractive_index[0] = 1.0003;
+            refractive_index[1] = 1.0001;
+        }
+
+        assert_eq!(
+            geometry.refractive_index().unwrap().to_vec(),
+            vec![1.0003, 1.0001, 1.0]
+        );
     }
 
     #[test]

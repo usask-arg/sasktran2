@@ -10,6 +10,7 @@
 #include <Eigen/SparseCore>
 
 #include <cstddef>
+#include <memory>
 #include <vector>
 
 namespace sasktran2::successive_orders {
@@ -26,6 +27,14 @@ namespace sasktran2::successive_orders {
         FirstOrderProvider(
             const sasktran2::Geometry1D& geometry,
             const sasktran2::raytracing::RayTracerBase& raytracer);
+#ifdef SKTRAN_RUST_SUPPORT
+        FirstOrderProvider(
+            const sasktran2::Geometry2D& geometry,
+            const sasktran2::raytracing::RustRayTracer2D& raytracer,
+            std::shared_ptr<
+                sasktran2::solartransmission::SolarTransmissionTable2D>
+                shared_solar_table = nullptr);
+#endif
 
         void initialize_config(const sasktran2::Config& config);
         void initialize_geometry(const SourceGeometry1D& source_geometry);
@@ -39,6 +48,9 @@ namespace sasktran2::successive_orders {
                        Eigen::Ref<Eigen::VectorXd> forcing);
 
         bool uses_compact_scalar_kernel() const { return m_use_compact_scalar; }
+        bool can_release_incoming_geometry() const {
+            return m_use_compact_scalar && !m_use_lower_interpolation;
+        }
 
         void calculate_with_transport(int wavelength, int wavelength_thread,
                                       TransportOperator& transport,
@@ -139,6 +151,12 @@ namespace sasktran2::successive_orders {
         struct ScalarPackedRay {
             std::uint32_t layer_begin = 0;
             std::uint32_t layer_end = 0;
+            std::int32_t ground_geometry = -1;
+        };
+
+        struct ScalarGroundGeometry {
+            Eigen::Vector3d up;
+            Eigen::Vector3d look_away;
         };
 
         void calculate_scalar(int wavelength, int wavelength_thread,
@@ -195,30 +213,57 @@ namespace sasktran2::successive_orders {
             const Eigen::VectorXd* layer_state_projection,
             const Eigen::VectorXd* ground_state_projection);
 
-        ScalarEndpoint scalar_endpoint(
-            int wavelength, int ray, int layer, bool entrance, int solar_index,
-            const sasktran2::raytracing::GridWeightStencilView& weights) const;
-        template <bool USE_ENDPOINT_MEDIUM>
+        template <typename Weights>
+        ScalarEndpoint scalar_endpoint(int wavelength, int ray, int layer,
+                                       bool entrance, int solar_index,
+                                       const Weights& weights) const;
+        template <bool USE_ENDPOINT_MEDIUM, typename Weights>
         ScalarValueTangent scalar_endpoint_jvp(
             int wavelength, int wavelength_thread, int ray, int layer,
-            bool entrance, int solar_index,
-            const sasktran2::raytracing::GridWeightStencilView& weights,
+            bool entrance, int solar_index, const Weights& weights,
             const double* extinction_direction, const double* albedo_direction,
             const double* solar_tangent, bool uniform_albedo_direction,
             double uniform_albedo_tangent, bool phase_tangent_active) const;
+        template <typename Weights>
         void accumulate_scalar_endpoint_vjp(
             int wavelength, int ray, int layer, bool entrance, int solar_index,
-            const sasktran2::raytracing::GridWeightStencilView& weights,
-            const ScalarEndpoint& endpoint, double source_cotangent,
+            const Weights& weights, const ScalarEndpoint& endpoint,
+            double source_cotangent,
             Eigen::Ref<Eigen::VectorXd> native_gradient,
             Eigen::Ref<Eigen::VectorXd> solar_gradient,
             Eigen::Ref<Eigen::VectorXd> coefficient_gradient) const;
 
-        const sasktran2::Geometry1D& m_geometry;
+        InterpolationView<InterpolationWeight>
+        endpoint_weights(int solar_index) const {
+            const int slot = m_endpoint_slots[solar_index];
+            return {
+                m_unique_endpoint_weights,
+                static_cast<std::size_t>(m_unique_endpoint_offsets[slot]),
+                static_cast<std::size_t>(m_unique_endpoint_offsets[slot + 1] -
+                                         m_unique_endpoint_offsets[slot])};
+        }
+
+        int phase_basis_slot(int ray, int solar_index) const {
+            return m_endpoint_phase_basis ? solar_index : ray;
+        }
+        int num_phase_basis_slots() const {
+            return m_endpoint_phase_basis ? m_solar_offsets.back() : m_num_rays;
+        }
+        bool ground_scattering_geometry(int solar_index,
+                                        const ScalarGroundGeometry& ground,
+                                        double& mu_in, double& mu_out,
+                                        double& phi) const;
+
+        const sasktran2::Geometry& m_geometry;
+        const sasktran2::Geometry1D* m_geometry_1d = nullptr;
         ExactSource m_source;
-        sasktran2::solartransmission::SolarTransmissionTable m_solar_table;
-        Eigen::SparseMatrix<double, Eigen::RowMajor> m_solar_interpolation;
+        std::shared_ptr<
+            sasktran2::solartransmission::SolarTransmissionTableEvaluator>
+            m_solar_table;
+        sasktran2::solartransmission::SolarTableInterpolation
+            m_solar_interpolation;
         std::vector<bool> m_solar_ground_hit;
+        std::vector<Eigen::Vector3d> m_solar_propagation_directions;
         sasktran2::SourceIntegrator<NSTOKES> m_integrator;
         std::vector<SourceTermInterface<NSTOKES>*> m_source_terms;
         const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere =
@@ -233,6 +278,8 @@ namespace sasktran2::successive_orders {
         bool m_compact_scalar_requested = false;
         bool m_use_compact_scalar = false;
         bool m_use_lower_interpolation = false;
+        bool m_solar_refraction = false;
+        bool m_endpoint_phase_basis = false;
 
         std::vector<int> m_solar_offsets;
         std::vector<double> m_phase_basis;
@@ -241,6 +288,7 @@ namespace sasktran2::successive_orders {
         std::vector<InterpolationWeight> m_unique_endpoint_weights;
         std::vector<ScalarPackedRay> m_scalar_packed_rays;
         std::vector<ScalarPackedLayer> m_scalar_packed_layers;
+        std::vector<ScalarGroundGeometry> m_scalar_ground_geometry;
         mutable std::vector<sasktran2::WavelengthBlockDual<NSTOKES>>
             m_primal_scratch;
         mutable std::vector<Eigen::MatrixXd> m_gradient_scratch;

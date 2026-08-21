@@ -121,6 +121,42 @@ TEST_CASE("RustRayTracer2D traces radial layers and exposes 2D cells",
     }
 }
 
+TEST_CASE("RustRayTracer2D optical-depth-only traces preserve OD stencils",
+          "[raytracing][rust][geometry2d]") {
+    auto geo = geometry();
+    sasktran2::raytracing::RustRayTracer2D tracer(geo);
+    const auto oblique_ray =
+        ray(15.0 * radial_direction(-0.75), Eigen::Vector3d::UnitX());
+    sasktran2::raytracing::TracedRay full;
+    sasktran2::raytracing::TracedRay optical_depth_only;
+    tracer.trace_ray(oblique_ray, full);
+    tracer.trace_ray_optical_depth(oblique_ray, optical_depth_only);
+
+    REQUIRE(optical_depth_only.ground_is_hit == full.ground_is_hit);
+    REQUIRE(optical_depth_only.layers.size() == full.layers.size());
+    for (std::size_t layer_index = 0; layer_index < full.layers.size();
+         ++layer_index) {
+        const auto expected = full.optical_depth_weights(layer_index);
+        const auto actual =
+            optical_depth_only.optical_depth_weights(layer_index);
+        REQUIRE(actual.size() == expected.size());
+        for (std::size_t weight_index = 0; weight_index < expected.size();
+             ++weight_index) {
+            REQUIRE(actual[weight_index].first == expected[weight_index].first);
+            require_close(actual[weight_index].second,
+                          expected[weight_index].second);
+            require_close(
+                optical_depth_only.entrance_weights(layer_index)[weight_index]
+                    .second,
+                0.0);
+            require_close(
+                optical_depth_only.exit_weights(layer_index)[weight_index]
+                    .second,
+                0.0);
+        }
+    }
+}
+
 TEST_CASE(
     "RustRayTracer2D preserves each Geometry2D altitude interpolation mode",
     "[raytracing][rust][geometry2d]") {

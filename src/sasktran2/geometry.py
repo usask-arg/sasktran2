@@ -123,6 +123,15 @@ class Geometry2D:
         return self._geometry.horizontal_angles()
 
     @property
+    def refractive_index(self) -> np.ndarray:
+        """Altitude-only refractive-index profile used by solar rays."""
+        return self._geometry.refractive_index
+
+    @refractive_index.setter
+    def refractive_index(self, value: np.ndarray) -> None:
+        self._geometry.refractive_index = value
+
+    @property
     def shape(self) -> tuple[int, int]:
         """Location shape ordered as ``(horizontal, altitude)``."""
         return self._geometry.location_shape()

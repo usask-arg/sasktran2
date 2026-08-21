@@ -1,6 +1,7 @@
 use crate::prelude::*;
 use numpy::PyArray1;
 use numpy::{PyReadonlyArray1, ToPyArray};
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use sasktran2_rs::bindings::geometry;
 
@@ -134,6 +135,36 @@ impl PyGeometry2D {
     fn horizontal_angles<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray1<f64>>> {
         let horizontal_angles = self.geometry.horizontal_angles().into_pyresult()?;
         Ok(horizontal_angles.to_pyarray(py).to_owned())
+    }
+
+    #[getter]
+    fn get_refractive_index<'py>(this: Bound<'py, Self>) -> PyResult<Bound<'py, PyArray1<f64>>> {
+        let binding = &this.borrow().geometry;
+        let array = binding.refractive_index().into_pyresult()?;
+        unsafe { Ok(PyArray1::borrow_from_array(&array, this.into_any())) }
+    }
+
+    #[setter]
+    fn set_refractive_index(&mut self, refractive_index: PyReadonlyArray1<f64>) -> PyResult<()> {
+        let values = refractive_index.as_array();
+        let (_, num_altitudes) = self.geometry.location_shape().into_pyresult()?;
+        if values.len() != num_altitudes {
+            return Err(PyValueError::new_err(format!(
+                "Geometry2D refractive_index requires {num_altitudes} values, received {}",
+                values.len()
+            )));
+        }
+        if values
+            .iter()
+            .any(|value| !value.is_finite() || *value <= 0.0)
+        {
+            return Err(PyValueError::new_err(
+                "Geometry2D refractive_index values must be finite and positive",
+            ));
+        }
+        let mut view = self.geometry.refractive_index_mut().into_pyresult()?;
+        view.assign(&values);
+        Ok(())
     }
 
     fn location_shape(&self) -> PyResult<(usize, usize)> {

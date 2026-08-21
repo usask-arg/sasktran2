@@ -166,6 +166,7 @@ namespace sasktran2 {
           m_alt_grid(std::move(altitude_grid), grids::gridspacing::automatic,
                      grids::outofbounds::extend, altitude_interpolation),
           m_horizontal_angles(std::move(horizontal_angle_grid)) {
+        m_refractive_index = Eigen::VectorXd::Ones(m_alt_grid.grid().size());
         validate();
     }
 
@@ -383,6 +384,19 @@ namespace sasktran2 {
         if (coordinates().earth_radius() + altitudes[0] <= 0.0) {
             spdlog::critical(
                 "Invalid 2D altitude grid: radii must be positive");
+            validation::throw_configuration_error();
+        }
+        if (m_refractive_index.size() != altitudes.size()) {
+            spdlog::critical(
+                "Invalid 2D refractive-index size: {} values for {} altitudes",
+                m_refractive_index.size(), altitudes.size());
+            validation::throw_configuration_error();
+        }
+        if (!m_refractive_index.allFinite() ||
+            (m_refractive_index.array() <= 0.0).any()) {
+            spdlog::critical(
+                "Invalid 2D refractive index: values must be finite and "
+                "positive");
             validation::throw_configuration_error();
         }
 

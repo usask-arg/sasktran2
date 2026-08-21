@@ -38,6 +38,12 @@ int sk_geometry2d_get_altitudes(const Geometry2D* geometry, double* altitudes);
 int sk_geometry2d_get_horizontal_angles(const Geometry2D* geometry,
                                         double* horizontal_angles);
 
+int sk_geometry2d_get_refractive_index_ptr(const Geometry2D* geometry,
+                                           const double** refractive_index);
+
+int sk_geometry2d_get_refractive_index_mut_ptr(Geometry2D* geometry,
+                                               double** refractive_index);
+
 int sk_geometry2d_get_location_index(const Geometry2D* geometry,
                                      int altitude_index, int horizontal_index,
                                      int* location_index);

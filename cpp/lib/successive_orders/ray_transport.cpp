@@ -28,11 +28,10 @@ namespace sasktran2::successive_orders {
             return result;
         }
 
-        double optical_depth(const sasktran2::raytracing::TracedRay& ray,
-                             int layer_index,
+        double optical_depth(const RayInterpolation& ray, int layer_index,
                              Eigen::Ref<const Eigen::VectorXd> extinction) {
             double result = 0.0;
-            const auto weights = ray.optical_depth_weights(layer_index);
+            const auto weights = ray.optical_depth_for_layer(layer_index);
             for (std::size_t index = 0; index < weights.size(); ++index) {
                 const auto [atmosphere_index, weight] = weights[index];
                 result += weight * extinction(atmosphere_index);
@@ -41,11 +40,10 @@ namespace sasktran2::successive_orders {
         }
 
         double
-        optical_depth_tangent(const sasktran2::raytracing::TracedRay& ray,
-                              int layer_index,
+        optical_depth_tangent(const RayInterpolation& ray, int layer_index,
                               Eigen::Ref<const Eigen::VectorXd> tangent) {
             double result = 0.0;
-            const auto weights = ray.optical_depth_weights(layer_index);
+            const auto weights = ray.optical_depth_for_layer(layer_index);
             for (std::size_t index = 0; index < weights.size(); ++index) {
                 const auto [atmosphere_index, weight] = weights[index];
                 result += weight * tangent(atmosphere_index);
@@ -82,8 +80,15 @@ namespace sasktran2::successive_orders {
         }
         for (std::size_t row = 0; row < rays.size(); ++row) {
             const auto& ray = rays[row];
-            if (ray.traced_ray == nullptr ||
-                ray.layers.size() != ray.traced_ray->layers.size()) {
+            const bool owns_optical_depth =
+                !ray.optical_depth_indices.empty() ||
+                !ray.optical_depth_weights.empty();
+            if ((ray.optical_depth_indices.size() !=
+                 ray.optical_depth_weights.size()) ||
+                (!ray.layers.empty() && !owns_optical_depth &&
+                 ray.traced_ray == nullptr) ||
+                (ray.traced_ray != nullptr &&
+                 ray.layers.size() != ray.traced_ray->layers.size())) {
                 throw std::invalid_argument(
                     "invalid successive-orders compiled ray interpolation");
             }
@@ -150,7 +155,6 @@ namespace sasktran2::successive_orders {
 
         for (int row = 0; row < num_rays(); ++row) {
             const auto& interpolation = (*m_rays)[row];
-            const auto& ray = *interpolation.traced_ray;
             double transmission_before = 1.0;
             for (int layer_index =
                      static_cast<int>(interpolation.layers.size()) - 1;
@@ -160,7 +164,7 @@ namespace sasktran2::successive_orders {
                 const auto source_weights =
                     interpolation.source_for_layer(layer_index);
                 const double layer_optical_depth =
-                    optical_depth(ray, layer_index, extinction);
+                    optical_depth(interpolation, layer_index, extinction);
                 const double layer_transmission =
                     std::exp(-layer_optical_depth);
                 const double albedo =
@@ -204,7 +208,6 @@ namespace sasktran2::successive_orders {
 
         for (int row = 0; row < num_rays(); ++row) {
             const auto& interpolation = (*m_rays)[row];
-            const auto& ray = *interpolation.traced_ray;
             double transmission_before = 1.0;
             double cumulative_tangent = 0.0;
             for (int layer_index =
@@ -215,9 +218,9 @@ namespace sasktran2::successive_orders {
                 const auto source_weights =
                     interpolation.source_for_layer(layer_index);
                 const double layer_optical_depth =
-                    optical_depth(ray, layer_index, extinction);
-                const double layer_tangent =
-                    optical_depth_tangent(ray, layer_index, native_tangent);
+                    optical_depth(interpolation, layer_index, extinction);
+                const double layer_tangent = optical_depth_tangent(
+                    interpolation, layer_index, native_tangent);
                 const double layer_transmission =
                     std::exp(-layer_optical_depth);
                 const double albedo =
@@ -273,7 +276,6 @@ namespace sasktran2::successive_orders {
 
         for (int row = 0; row < num_rays(); ++row) {
             const auto& interpolation = (*m_rays)[row];
-            const auto& ray = *interpolation.traced_ray;
             const int num_layers =
                 static_cast<int>(interpolation.layers.size());
             double transmission_before = 1.0;
@@ -284,7 +286,7 @@ namespace sasktran2::successive_orders {
                 const auto source_weights =
                     interpolation.source_for_layer(layer_index);
                 workspace.optical_depth(layer_index) =
-                    optical_depth(ray, layer_index, extinction);
+                    optical_depth(interpolation, layer_index, extinction);
                 workspace.albedo(layer_index) =
                     interpolate(atmosphere_weights, ssa, wavelength);
                 workspace.transmission_before(layer_index) =
@@ -335,7 +337,8 @@ namespace sasktran2::successive_orders {
                     cumulative_cotangent + factor_cotangent *
                                                transmission_before * albedo *
                                                layer_transmission;
-                const auto od_weights = ray.optical_depth_weights(layer_index);
+                const auto od_weights =
+                    interpolation.optical_depth_for_layer(layer_index);
                 for (std::size_t index = 0; index < od_weights.size();
                      ++index) {
                     const auto [atmosphere_index, weight] = od_weights[index];
