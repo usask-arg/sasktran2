@@ -155,11 +155,31 @@ impl Geometry2D {
         Ok(Array1::from(horizontal_angles))
     }
 
-    pub fn refractive_index_mut(&self) -> Result<ArrayViewMut1<'_, f64>> {
+    pub fn refractive_index(&self) -> Result<ArrayView1<'_, f64>> {
+        let (_, num_altitudes) = self.location_shape()?;
+        let mut refractive_index_ptr = std::ptr::null();
+        let result = unsafe {
+            ffi::sk_geometry2d_get_refractive_index_ptr(self.geometry, &mut refractive_index_ptr)
+        };
+        if result != 0 || refractive_index_ptr.is_null() {
+            return Err(anyhow!("Failed to get Geometry2D refractive index"));
+        }
+        unsafe {
+            Ok(ArrayView1::from_shape_ptr(
+                num_altitudes,
+                refractive_index_ptr,
+            ))
+        }
+    }
+
+    pub fn refractive_index_mut(&mut self) -> Result<ArrayViewMut1<'_, f64>> {
         let (_, num_altitudes) = self.location_shape()?;
         let mut refractive_index_ptr = std::ptr::null_mut();
         let result = unsafe {
-            ffi::sk_geometry2d_get_refractive_index_ptr(self.geometry, &mut refractive_index_ptr)
+            ffi::sk_geometry2d_get_refractive_index_mut_ptr(
+                self.geometry,
+                &mut refractive_index_ptr,
+            )
         };
         if result != 0 || refractive_index_ptr.is_null() {
             return Err(anyhow!("Failed to get Geometry2D refractive index"));
@@ -357,7 +377,7 @@ mod tests {
 
     #[test]
     fn test_geometry2d_refractive_index() {
-        let geometry = Geometry2D::new(
+        let mut geometry = Geometry2D::new(
             0.5,
             0.1,
             6_371_000.0,
@@ -375,7 +395,7 @@ mod tests {
         }
 
         assert_eq!(
-            geometry.refractive_index_mut().unwrap().to_vec(),
+            geometry.refractive_index().unwrap().to_vec(),
             vec![1.0003, 1.0001, 1.0]
         );
     }

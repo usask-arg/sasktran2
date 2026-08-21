@@ -107,9 +107,33 @@ namespace sasktran2::solartransmission {
         }
 
         int node(int azimuth, const SliceEntry& entry, int altitude) const {
-            return m_node_lookup[lookup_index(
+            int result = m_node_lookup[lookup_index(
                 azimuth, static_cast<int>(entry.impact_index), altitude,
                 static_cast<int>(entry.side))];
+            if (result >= 0) {
+                return result;
+            }
+
+            const double shell_parameter =
+                m_radii[altitude] *
+                (m_config->solar_refraction()
+                     ? m_geometry.refractive_index()[altitude]
+                     : 1.0);
+            const double impact = m_impact_parameters[entry.impact_index];
+            const double parameter_tolerance =
+                64.0 * std::numeric_limits<double>::epsilon() *
+                std::max({1.0, std::abs(shell_parameter), std::abs(impact)});
+            constexpr double tangent_cos_tolerance = 1.0e-10;
+            if (std::abs(impact - shell_parameter) <= parameter_tolerance &&
+                std::abs(entry.cos_sza) <= tangent_cos_tolerance) {
+                // Exact shell tangencies have one physical node. Cartesian
+                // roundoff can label it side 0 in one azimuth plane and side 1
+                // in another, so use whichever label that plane recorded.
+                result = m_node_lookup[lookup_index(
+                    azimuth, static_cast<int>(entry.impact_index), altitude,
+                    1 - static_cast<int>(entry.side))];
+            }
+            return result;
         }
 
         std::uint32_t segment_atmosphere_index(std::size_t segment,

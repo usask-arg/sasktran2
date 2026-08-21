@@ -429,6 +429,45 @@ def test_2d_table_single_scatter_can_share_solar_table_with_successive_orders():
     assert result.radiance.values.item() > 0.0
 
 
+@pytest.mark.parametrize(
+    ("single_source", "multiple_source"),
+    [
+        (sk.SingleScatterSource.Table, sk.MultipleScatterSource.NoSource),
+        (
+            sk.SingleScatterSource.NoSource,
+            sk.MultipleScatterSource.SuccessiveOrders,
+        ),
+    ],
+)
+def test_2d_solar_table_has_stable_tangent_topology(single_source, multiple_source):
+    altitude_grid_m = np.linspace(0.0, 80_000.0, 80)
+    horizontal_grid = np.linspace(-0.4, 0.4, 40)
+    geometry = sk.Geometry2D(
+        cos_sza=0.15,
+        solar_azimuth=0.25,
+        earth_radius_m=EARTH_RADIUS_M,
+        altitude_grid_m=altitude_grid_m,
+        horizontal_angle_grid_radians=horizontal_grid,
+    )
+    viewing = sk.ViewingGeometry()
+    viewing.add_ray(
+        sk.TangentAltitude(
+            tangent_altitude_m=20_000.0,
+            observer_altitude_m=150_000.0,
+            horizontal_angle_radians=-0.3,
+            viewing_azimuth_radians=0.0,
+        )
+    )
+    config = successive_orders_config(
+        single_scatter_source=single_source,
+        multiple_scatter_source=multiple_source,
+    )
+    config.num_sza = 5
+    config.successive_orders_altitude_grid_m = np.linspace(1_000.0, 79_000.0, 25)
+
+    sk.Engine(config, geometry, viewing)
+
+
 def test_2d_rejects_legacy_successive_orders_source():
     config = successive_orders_config(
         multiple_scatter_source=sk.MultipleScatterSource.SuccessiveOrdersLegacy

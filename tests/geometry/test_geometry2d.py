@@ -54,6 +54,24 @@ def test_geometry2d_refractive_index_is_mutable_and_assignable():
 
 
 @pytest.mark.parametrize(
+    ("profile", "message"),
+    [
+        (np.ones(2), "requires 3 values"),
+        (np.array([1.0, np.nan, 1.0]), "finite and positive"),
+        (np.array([1.0, 0.0, 1.0]), "finite and positive"),
+        (np.array([1.0, -1.0, 1.0]), "finite and positive"),
+    ],
+)
+def test_geometry2d_refractive_index_assignment_is_validated(profile, message):
+    geometry = geometry2d()
+
+    with pytest.raises(ValueError, match=message):
+        geometry.refractive_index = profile
+
+    np.testing.assert_array_equal(geometry.refractive_index, np.ones(3))
+
+
+@pytest.mark.parametrize(
     "interpolation_method",
     [
         sk.InterpolationMethod.LinearInterpolation,
