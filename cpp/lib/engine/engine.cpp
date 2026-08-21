@@ -536,6 +536,43 @@ void Sasktran2<NSTOKES>::assign_2d_surface_interpolation_weights(
 }
 
 template <int NSTOKES>
+void Sasktran2<NSTOKES>::assign_2d_horizontal_edge_usage(
+    Eigen::Ref<RowMajorIntMatrix> usage) const {
+    if (m_geometry_2d == nullptr) {
+        throw std::logic_error(
+            "Horizontal edge usage requires a Geometry2D engine");
+    }
+    if (usage.rows() != m_internal_viewing_geometry.num_rays() ||
+        usage.cols() != 2) {
+        throw std::invalid_argument(
+            "Horizontal edge usage buffer has incorrect dimensions");
+    }
+
+    usage.setZero();
+    const auto& horizontal_grid = m_geometry_2d->horizontal_angle_grid();
+    const double lower = horizontal_grid[0];
+    const double upper = horizontal_grid[horizontal_grid.size() - 1];
+    constexpr double angular_tolerance_rad = 1e-8;
+
+    for (int ray_index = 0; ray_index < m_internal_viewing_geometry.num_rays();
+         ++ray_index) {
+        const auto& ray = m_internal_viewing_geometry.traced_rays[ray_index];
+        for (const auto& layer : ray.layers) {
+            for (const auto* location : {&layer.entrance, &layer.exit}) {
+                const double angle =
+                    m_geometry_2d->horizontal_angle_at(*location);
+                if (angle < lower - angular_tolerance_rad) {
+                    usage(ray_index, 0) = 1;
+                }
+                if (angle > upper + angular_tolerance_rad) {
+                    usage(ray_index, 1) = 1;
+                }
+            }
+        }
+    }
+}
+
+template <int NSTOKES>
 void Sasktran2<NSTOKES>::validate_input_atmosphere(
     const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere) const {
     if (m_geometry_2d != nullptr && m_config.los_refraction() &&

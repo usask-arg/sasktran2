@@ -297,6 +297,34 @@ impl<'a> Engine<'a> {
         }
     }
 
+    pub fn horizontal_edge_usage(&self) -> Result<Array2<i32>> {
+        match self.geometry {
+            EngineGeometry::TwoDimensional(_) => {}
+            EngineGeometry::OneDimensional(_) => {
+                return Err(anyhow::anyhow!(
+                    "Horizontal edge usage requires a Geometry2D engine"
+                ));
+            }
+        }
+        let num_rays = self.viewing_geometry.num_rays()?;
+        let mut usage = Array2::zeros((num_rays, 2));
+        let result = unsafe {
+            ffi::sk_engine_get_2d_horizontal_edge_usage(
+                self.engine,
+                usage.as_mut_ptr(),
+                num_rays as i32,
+            )
+        };
+        if result == 0 {
+            Ok(usage)
+        } else {
+            Err(anyhow::anyhow!(
+                "Failed to obtain Geometry2D horizontal edge usage: {}",
+                result
+            ))
+        }
+    }
+
     pub fn linearization_backend(&self, mode: LinearizationMode) -> Result<LinearizationBackend> {
         let mut backend = 0i32;
         let result =

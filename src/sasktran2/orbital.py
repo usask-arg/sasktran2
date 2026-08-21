@@ -595,8 +595,9 @@ class OrbitalPlaneViewingGeometry(ViewingGeometryContainer):
             Along-track angular padding placed before the first and after the
             last nominal tangent location, in radians. The default is 5
             degrees. A group that requires atmosphere beyond this margin uses
-            the existing clamped edge behavior and reports it through
-            ``group_diagnostics``.
+            the existing clamped edge behavior. ``group_diagnostics`` reports
+            master-grid truncation as ``edge_clipping`` and actual traced LOS
+            use of an extended edge cell as ``path_edge_clipping``.
         geoid
             Optional override for the geoid stored on this viewing geometry.
         max_orbital_positions
@@ -1340,7 +1341,11 @@ class OrbitalPlaneEngine(Engine):
         grid window. ``ray_horizontal_angles`` and
         ``ray_out_of_plane_angles`` show the transformed tangent locations;
         ``horizontal_angles`` and ``horizontal_distances_m`` describe the
-        projected internal grid.
+        projected internal grid. ``edge_clipping`` reports a requested group
+        window truncated by the master orbital grid. ``path_edge_clipping``
+        and ``path_edge_clipping_per_los`` report traced atmospheric path
+        segments that actually use a local grid's extended horizontal edge
+        cells, including after a refractive geometry refresh.
         """
         diagnostics = self._engine.group_diagnostics()
         for item in diagnostics:

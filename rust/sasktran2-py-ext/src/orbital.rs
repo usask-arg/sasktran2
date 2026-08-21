@@ -2346,28 +2346,87 @@ impl PyOrbitalPlaneEngine {
                 .engine
                 .calculate_radiance(group.atmosphere.as_ref().unwrap())
                 .into_pyresult()?;
-            let uniform_surface_jvp = if let Some(surface) = self.lambertian_surface.as_ref() {
+            let local_surface_jacobians = if let Some(surface) = self.lambertian_surface.as_ref() {
                 if let Some(master_name) = surface.derivative_name.as_ref() {
-                    let mut tangents = HashMap::with_capacity(group.layout.grid_indices.len());
-                    for local_horizontal in 0..group.layout.grid_indices.len() {
-                        tangents.insert(
-                            local_surface_mapping_name(master_name, local_horizontal),
-                            Array1::ones(master.num_wavel()),
-                        );
+                    let num_local_horizontal = group.layout.grid_indices.len();
+                    let num_local_los = group.layout.observation_indices.len();
+                    let output_size = master.num_wavel() * num_local_los * master.num_stokes();
+                    let mut jacobians = Vec::with_capacity(num_local_horizontal);
+                    let use_vjp = num_local_horizontal > output_size
+                        && group
+                            .engine
+                            .supports_linearization(LinearizationMode::Vjp)
+                            .into_pyresult()?;
+                    if !use_vjp {
+                        for local_horizontal in 0..num_local_horizontal {
+                            let mut tangents = HashMap::with_capacity(1);
+                            tangents.insert(
+                                local_surface_mapping_name(master_name, local_horizontal),
+                                Array1::ones(master.num_wavel()),
+                            );
+                            jacobians.push(
+                                group
+                                    .engine
+                                    .calculate_jvp(
+                                        group.atmosphere.as_ref().unwrap(),
+                                        &HashMap::new(),
+                                        &tangents,
+                                    )
+                                    .into_pyresult()?
+                                    .jvp
+                                    .clone(),
+                            );
+                        }
+                    } else {
+                        jacobians.resize_with(num_local_horizontal, || {
+                            Array3::zeros((master.num_wavel(), num_local_los, master.num_stokes()))
+                        });
+                        let mut local_surface_sizes = HashMap::with_capacity(num_local_horizontal);
+                        for local_horizontal in 0..num_local_horizontal {
+                            local_surface_sizes.insert(
+                                local_surface_mapping_name(master_name, local_horizontal),
+                                master.num_wavel(),
+                            );
+                        }
+                        let mut cotangent =
+                            Array3::zeros((master.num_wavel(), num_local_los, master.num_stokes()));
+                        for wavelength in 0..master.num_wavel() {
+                            for local_los in 0..num_local_los {
+                                for stokes in 0..master.num_stokes() {
+                                    cotangent.fill(0.0);
+                                    cotangent[[wavelength, local_los, stokes]] = 1.0;
+                                    let vjp = group
+                                        .engine
+                                        .calculate_vjp(
+                                            group.atmosphere.as_ref().unwrap(),
+                                            &cotangent,
+                                            &HashMap::new(),
+                                            &local_surface_sizes,
+                                        )
+                                        .into_pyresult()?;
+                                    for (local_horizontal, jacobian) in
+                                        jacobians.iter_mut().enumerate()
+                                    {
+                                        let local_name = local_surface_mapping_name(
+                                            master_name,
+                                            local_horizontal,
+                                        );
+                                        let gradient = vjp
+                                            .surface_gradients
+                                            .get(&local_name)
+                                            .ok_or_else(|| {
+                                                PyRuntimeError::new_err(format!(
+                                                    "Missing local spatial surface VJP {local_name:?}"
+                                                ))
+                                            })?;
+                                        jacobian[[wavelength, local_los, stokes]] =
+                                            gradient[wavelength];
+                                    }
+                                }
+                            }
+                        }
                     }
-                    let jvp = group
-                        .engine
-                        .calculate_jvp(
-                            group.atmosphere.as_ref().unwrap(),
-                            &HashMap::new(),
-                            &tangents,
-                        )
-                        .into_pyresult()?;
-                    let weights = group
-                        .engine
-                        .surface_interpolation_weights()
-                        .into_pyresult()?;
-                    Some((jvp, weights))
+                    Some(jacobians)
                 } else {
                     None
                 }
@@ -2430,15 +2489,13 @@ impl PyOrbitalPlaneEngine {
                         .get_mut(&mapped_surface_output_name(master_name))
                         .unwrap();
                     let spectral_size = surface.spectral_interpolator.ncols();
-                    let uniform_surface = uniform_surface_jvp.as_ref().ok_or_else(|| {
-                        PyRuntimeError::new_err("Missing uniform spatial surface JVP")
-                    })?;
-                    let derivative = &uniform_surface.0.jvp;
                     for local_horizontal in 0..group.layout.grid_indices.len() {
-                        let horizontal_weight = uniform_surface.1[[local_los, local_horizontal]];
-                        if horizontal_weight == 0.0 {
-                            continue;
-                        }
+                        let derivative = local_surface_jacobians
+                            .as_ref()
+                            .and_then(|jacobians| jacobians.get(local_horizontal))
+                            .ok_or_else(|| {
+                                PyRuntimeError::new_err("Missing local spatial surface JVP block")
+                            })?;
                         let global_horizontal = group.layout.grid_indices[local_horizontal];
                         for wavelength in 0..master.num_wavel() {
                             for spectral_parameter in 0..spectral_size {
@@ -2447,9 +2504,8 @@ impl PyOrbitalPlaneEngine {
                                 } else {
                                     spectral_parameter
                                 };
-                                let weight = surface.spectral_interpolator
-                                    [[wavelength, spectral_parameter]]
-                                    * horizontal_weight;
+                                let weight =
+                                    surface.spectral_interpolator[[wavelength, spectral_parameter]];
                                 if weight != 0.0 {
                                     target
                                         .slice_mut(s![parameter, wavelength, global_los, ..])
@@ -2914,6 +2970,15 @@ impl PyOrbitalPlaneEngine {
             .map(|(index, group)| {
                 let dict = PyDict::new(py);
                 let reference_y = group.layout.reference_z.cross(&group.layout.reference_x);
+                let path_edge_usage = group.engine.horizontal_edge_usage().into_pyresult()?;
+                let path_edge_clipping_per_los = path_edge_usage
+                    .outer_iter()
+                    .map(|row| (row[0] != 0, row[1] != 0))
+                    .collect::<Vec<_>>();
+                let path_edge_clipping = (
+                    path_edge_clipping_per_los.iter().any(|value| value.0),
+                    path_edge_clipping_per_los.iter().any(|value| value.1),
+                );
                 dict.set_item("group_index", index)?;
                 dict.set_item("observation_indices", &group.layout.observation_indices)?;
                 dict.set_item(
@@ -3109,6 +3174,12 @@ impl PyOrbitalPlaneEngine {
                 dict.set_item(
                     "edge_clipping",
                     (group.layout.clipped_start, group.layout.clipped_end),
+                )?;
+                dict.set_item("path_edge_clipping", path_edge_clipping)?;
+                dict.set_item("path_edge_clipping_per_los", path_edge_clipping_per_los)?;
+                dict.set_item(
+                    "uses_extended_horizontal_edge",
+                    path_edge_clipping.0 || path_edge_clipping.1,
                 )?;
                 dict.set_item("window_expanded", group.layout.window_expanded)?;
                 dict.set_item("geometry_refresh_count", group.geometry_refresh_count)?;

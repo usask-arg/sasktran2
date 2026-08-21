@@ -479,6 +479,7 @@ namespace sasktran2::successive_orders {
                            int threadidx) {
             validate_single_wavelength_block(block);
             prepare_primal(block.start, threadidx);
+            wavelength_state(block.start, threadidx).jacobian.resize(0, 0);
             reset_vjp_cotangents(threadidx);
         }
 

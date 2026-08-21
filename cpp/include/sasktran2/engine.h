@@ -190,6 +190,16 @@ template <int NSTOKES> class Sasktran2 : public Sasktran2Interface {
     void assign_2d_surface_interpolation_weights(
         Eigen::Ref<RowMajorMatrix> weights) const;
 
+    using RowMajorIntMatrix =
+        Eigen::Matrix<int, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+
+    /** Report use of Geometry2D's extended horizontal edge cells by traced
+     * LOS paths. Columns are `(before_first_node, after_last_node)` and rows
+     * are viewing rays. Only the portions of rays inside the atmosphere are
+     * considered. */
+    void
+    assign_2d_horizontal_edge_usage(Eigen::Ref<RowMajorIntMatrix> usage) const;
+
     /** Replace the per-ray refractive profiles used by a structured 2D
      * engine and rebuild all geometry-dependent integration/source data.
      * `profiles` is `(num_los, num_altitudes)`.

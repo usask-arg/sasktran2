@@ -1096,6 +1096,33 @@ def test_group_padding_extends_selected_internal_window():
     assert padded.group_padding_angle == pytest.approx(padding)
     assert default_padded.group_padding_angle == pytest.approx(padding)
     assert default_padded.group_diagnostics[0]["grid_indices"] == padded_indices
+    assert padded_diagnostic["path_edge_clipping"] == (False, False)
+    assert padded_diagnostic["path_edge_clipping_per_los"] == [(False, False)]
+    assert padded_diagnostic["uses_extended_horizontal_edge"] is False
+
+
+def test_group_diagnostics_report_actual_extended_horizontal_edge_usage():
+    source_geometry = orbital_geometry()
+    viewing = limb_viewing(source_geometry, np.array([0.0]))
+    geometry = viewing.construct_atmosphere_geometry(
+        ALTITUDES_M,
+        0.025,
+        path_padding_angle=0.0,
+        geoid=sk.SphericalGeoid(EARTH_RADIUS_M),
+    )
+    engine = sk.OrbitalPlaneEngine(
+        transmission_config(),
+        geometry,
+        viewing,
+        time_group_duration_s=60,
+        group_padding_angle=0.0,
+    )
+
+    diagnostic = engine.group_diagnostics[0]
+    assert diagnostic["edge_clipping"] == (True, True)
+    assert diagnostic["path_edge_clipping"] == (True, True)
+    assert diagnostic["path_edge_clipping_per_los"] == [(True, True)]
+    assert diagnostic["uses_extended_horizontal_edge"] is True
 
 
 @pytest.mark.parametrize("value", [True, -0.1, np.pi, np.inf])
@@ -2040,24 +2067,34 @@ def test_lambertian_surface_2d_varies_at_ground_intersections_and_linearizes(
         )
         config.num_successive_orders_incoming = 6
         config.num_successive_orders_outgoing = 6
-        config.num_successive_orders_iterations = 2
-        config.successive_orders_relative_tolerance = 0.0
-        config.successive_orders_absolute_tolerance = 0.0
+        config.num_successive_orders_iterations = 60
+        config.successive_orders_relative_tolerance = 1.0e-11
+        config.successive_orders_absolute_tolerance = 1.0e-13
+        config.successive_orders_anderson_depth = 3
     atmosphere = sk.Atmosphere(
         geometry,
         config,
         wavelengths_nm=np.array([500.0, 600.0]),
         legendre_derivative=False,
     )
-    extinction = np.full((*geometry.shape, 2), 1.0e-8)
-    atmosphere["optics"] = sk.constituent.Manual(
-        extinction,
+    extinction = np.full(
+        (*geometry.shape, 2),
         (
-            np.full_like(extinction, 0.5)
+            1.0e-5
             if multiple_scatter == sk.MultipleScatterSource.SuccessiveOrders
-            else np.zeros_like(extinction)
+            else 1.0e-8
         ),
     )
+    if multiple_scatter == sk.MultipleScatterSource.SuccessiveOrders:
+        legendre_moments = np.zeros(
+            (atmosphere.storage.leg_coeff.shape[0], *extinction.shape)
+        )
+        legendre_moments[0] = 1.0
+        ssa = np.full_like(extinction, 0.9)
+    else:
+        legendre_moments = None
+        ssa = np.zeros_like(extinction)
+    atmosphere["optics"] = sk.constituent.Manual(extinction, ssa, legendre_moments)
     spatial_albedo = np.linspace(0.1, 0.7, geometry.shape[0])
     albedo = np.column_stack((spatial_albedo, 0.8 - 0.5 * spatial_albedo))
     surface = sk.constituent.LambertianSurface2D(albedo)
@@ -2108,6 +2145,21 @@ def test_lambertian_surface_2d_varies_at_ground_intersections_and_linearizes(
         ("orbital_position", "surface_wavelength")
     )
     np.testing.assert_allclose(jvp, eager_jvp, rtol=2.0e-11, atol=1.0e-13)
+    if multiple_scatter == sk.MultipleScatterSource.SuccessiveOrders:
+        direct_nodes = {*lower_indices, *upper_indices}
+        remote_sensitivity = np.abs(result.wf_surface_albedo.values[:, 0, 0, 0, 0])
+        remote_sensitivity[list(direct_nodes)] = 0.0
+        remote_index = int(np.argmax(remote_sensitivity))
+        assert remote_sensitivity[remote_index] > 1.0e-8
+        remote_tangent = xr.zeros_like(linearization.tangent_template)
+        remote_tangent["surface_albedo"].values[remote_index, 0] = 1.0
+        remote_jvp = linearization.jvp(remote_tangent)
+        remote_eager_jvp = (
+            result.wf_surface_albedo * remote_tangent.surface_albedo
+        ).sum(("orbital_position", "surface_wavelength"))
+        np.testing.assert_allclose(
+            remote_jvp, remote_eager_jvp, rtol=1.0e-9, atol=1.0e-12
+        )
     cotangent = xr.zeros_like(linearization.value)
     cotangent.values[:] = np.array([[[0.7], [-0.4]], [[-0.2], [0.9]]])
     gradient = linearization.vjp(cotangent, parameters=("surface_albedo",))

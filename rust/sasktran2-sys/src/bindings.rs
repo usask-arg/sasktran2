@@ -1200,6 +1200,13 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn sk_engine_get_2d_horizontal_edge_usage(
+        engine: *mut Engine,
+        usage: *mut ::std::os::raw::c_int,
+        num_rays: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn sk_engine_effective_wavelength_batch_size(
         engine: *mut Engine,
         num_wavelengths: ::std::os::raw::c_int,

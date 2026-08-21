@@ -199,8 +199,9 @@ its optical atmosphere. Exact solar paths remain straight, and
 Use `engine.group_diagnostics` to inspect each group's observation and master
 grid indices, reference time and basis, local mean Earth radius, projected
 horizontal angles and distances, tangent-altitude and horizontal-scale
-residuals, plane-fit residual, edge clipping, window expansion status,
-geometry refresh count, and persistent engine/workspace identities.
+residuals, plane-fit residual, edge clipping, traced-path edge usage, window
+expansion status, geometry refresh count, and persistent engine/workspace
+identities.
 ``maximum_relative_horizontal_scale_residual`` measures the complete local
 horizontal-distance error, including fitted-plane angular distortion and the
 group's mean-radius approximation over the entire selected window. The default
@@ -212,8 +213,11 @@ Dynamic post-refraction window expansion is not needed for the normal path:
 the fixed ``group_padding_angle`` is included when each internal engine is
 constructed and remains resident with it. ``window_expanded`` therefore stays
 false in this version. A path that exceeds even that margin uses the structured
-grid's extended horizontal edge cell; choose the group and master padding large
-enough to keep ``edge_clipping`` false for retrieval work.
+grid's extended horizontal edge cell. ``edge_clipping`` reports truncation of
+the requested group window at the master grid, while ``path_edge_clipping`` and
+``path_edge_clipping_per_los`` report actual traced atmospheric segments beyond
+the local grid, including after refraction changes. Choose the group and master
+padding large enough to keep both kinds of clipping false for retrieval work.
 
 Configuration values that determine native engine structure are frozen at
 engine construction. Mutating sources, Stokes dimension, refraction mode,

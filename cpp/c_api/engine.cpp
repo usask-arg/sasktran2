@@ -177,6 +177,34 @@ int sk_engine_get_2d_surface_interpolation_weights(Engine* engine,
     }
 }
 
+int sk_engine_get_2d_horizontal_edge_usage(Engine* engine, int* usage,
+                                           int num_rays) {
+    if (engine == nullptr || !engine->impl || usage == nullptr ||
+        num_rays < 0) {
+        return -1;
+    }
+    try {
+        using RowMajorIntMatrix =
+            Eigen::Matrix<int, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+        Eigen::Map<RowMajorIntMatrix> mapped(usage, num_rays, 2);
+        if (engine->_config->impl.num_stokes() == 1) {
+            auto* impl = dynamic_cast<Sasktran2<1>*>(engine->impl.get());
+            impl->assign_2d_horizontal_edge_usage(mapped);
+            return 0;
+        }
+        if (engine->_config->impl.num_stokes() == 3) {
+            auto* impl = dynamic_cast<Sasktran2<3>*>(engine->impl.get());
+            impl->assign_2d_horizontal_edge_usage(mapped);
+            return 0;
+        }
+        return -2;
+    } catch (const std::exception& error) {
+        spdlog::error("Error obtaining Geometry2D horizontal edge usage: {}",
+                      error.what());
+        return -3;
+    }
+}
+
 int sk_engine_effective_wavelength_batch_size(Engine* engine,
                                               int num_wavelengths) {
     try {
