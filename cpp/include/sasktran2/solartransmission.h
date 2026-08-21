@@ -8,6 +8,8 @@
 #include <sasktran2/config.h>
 #include <sasktran2/dual.h>
 #include <array>
+#include <cstdint>
+#include <limits>
 
 namespace sasktran2::solartransmission {
     /** Generates one row of what is known as the geometry matrix.  The optical
@@ -32,6 +34,251 @@ namespace sasktran2::solartransmission {
             }
         }
     }
+
+    /** Row-major solar geometry storage with a compact exact-2D mode.
+     *
+     * Exact 2D calculations commonly have hundreds of thousands of rows but
+     * only a few thousand atmosphere columns. Eigen uses the same index type
+     * for both dimensions, so its inner indices remain 32 bit. The compact
+     * mode keeps row offsets as size_t while storing column indices as uint16.
+     * Grids wider than the compact index range transparently use Eigen's
+     * standard sparse representation.
+     */
+    class SolarGeometryMatrix {
+      public:
+        using StandardMatrix = Eigen::SparseMatrix<double, Eigen::RowMajor>;
+
+        class InnerIterator {
+          private:
+            const double* m_values = nullptr;
+            const std::uint16_t* m_compact_indices = nullptr;
+            const int* m_standard_indices = nullptr;
+            std::size_t m_position = 0;
+            std::size_t m_end = 0;
+
+          public:
+            InnerIterator(const SolarGeometryMatrix& matrix, Eigen::Index row) {
+                if (matrix.m_compact) {
+                    m_position = matrix.m_compact_outer[row];
+                    m_end = matrix.m_compact_outer[row + 1];
+                    m_values = matrix.m_compact_values.data();
+                    m_compact_indices = matrix.m_compact_inner.data();
+                } else {
+                    const auto* outer = matrix.m_standard.outerIndexPtr();
+                    m_position = static_cast<std::size_t>(outer[row]);
+                    const auto* inner_nonzeros =
+                        matrix.m_standard.innerNonZeroPtr();
+                    m_end = inner_nonzeros == nullptr
+                                ? static_cast<std::size_t>(outer[row + 1])
+                                : m_position + static_cast<std::size_t>(
+                                                   inner_nonzeros[row]);
+                    m_values = matrix.m_standard.valuePtr();
+                    m_standard_indices = matrix.m_standard.innerIndexPtr();
+                }
+            }
+
+            explicit operator bool() const { return m_position < m_end; }
+            InnerIterator& operator++() {
+                ++m_position;
+                return *this;
+            }
+            Eigen::Index index() const {
+                return m_compact_indices == nullptr
+                           ? m_standard_indices[m_position]
+                           : m_compact_indices[m_position];
+            }
+            double value() const { return m_values[m_position]; }
+        };
+
+      private:
+        StandardMatrix m_standard;
+        std::vector<double> m_compact_values;
+        std::vector<std::uint16_t> m_compact_inner;
+        std::vector<std::size_t> m_compact_outer;
+        Eigen::Index m_compact_rows = 0;
+        Eigen::Index m_compact_cols = 0;
+        bool m_compact = false;
+
+        void reserve_capacity(Eigen::Index capacity) {
+            if (m_compact) {
+                m_compact_values.reserve(static_cast<std::size_t>(capacity));
+                m_compact_inner.reserve(static_cast<std::size_t>(capacity));
+            } else {
+                auto& storage = m_standard.data();
+                storage.reserve(capacity - storage.size());
+            }
+        }
+
+      public:
+        StandardMatrix& use_standard() {
+            m_compact = false;
+            std::vector<double>().swap(m_compact_values);
+            std::vector<std::uint16_t>().swap(m_compact_inner);
+            std::vector<std::size_t>().swap(m_compact_outer);
+            m_compact_rows = 0;
+            m_compact_cols = 0;
+            return m_standard;
+        }
+
+        const StandardMatrix& standard() const { return m_standard; }
+
+        void initialize_exact(Eigen::Index rows, Eigen::Index cols,
+                              Eigen::Index initial_capacity) {
+            m_compact = cols <= static_cast<Eigen::Index>(
+                                    std::numeric_limits<std::uint16_t>::max()) +
+                                    1;
+            if (!m_compact) {
+                auto& standard = use_standard();
+                standard.resize(rows, cols);
+                standard.reserve(initial_capacity);
+                return;
+            }
+
+            m_standard = StandardMatrix{};
+            m_compact_rows = rows;
+            m_compact_cols = cols;
+            m_compact_values.clear();
+            m_compact_inner.clear();
+            m_compact_outer.assign(static_cast<std::size_t>(rows) + 1, 0);
+            reserve_capacity(initial_capacity);
+        }
+
+        void ensure_capacity(Eigen::Index additional) {
+            const Eigen::Index required = non_zeros() + additional;
+            const Eigen::Index allocated = allocated_size();
+            if (required <= allocated) {
+                return;
+            }
+            const Eigen::Index grown = allocated + allocated / 2;
+            reserve_capacity(std::max(required, grown));
+        }
+
+        void start_row(Eigen::Index row) {
+            if (m_compact) {
+                m_compact_outer[row] = m_compact_values.size();
+            } else {
+                m_standard.startVec(row);
+            }
+        }
+
+        void insert_back(Eigen::Index row, Eigen::Index column, double value) {
+            if (m_compact) {
+                m_compact_inner.push_back(static_cast<std::uint16_t>(column));
+                m_compact_values.push_back(value);
+            } else {
+                m_standard.insertBackByOuterInner(row, column) = value;
+            }
+        }
+
+        void finalize() {
+            if (m_compact) {
+                m_compact_outer[m_compact_rows] = m_compact_values.size();
+            } else {
+                m_standard.finalize();
+                m_standard.data().squeeze();
+            }
+        }
+
+        Eigen::Index rows() const {
+            return m_compact ? m_compact_rows : m_standard.rows();
+        }
+        Eigen::Index cols() const {
+            return m_compact ? m_compact_cols : m_standard.cols();
+        }
+        Eigen::Index non_zeros() const {
+            return m_compact
+                       ? static_cast<Eigen::Index>(m_compact_values.size())
+                       : m_standard.nonZeros();
+        }
+        Eigen::Index allocated_size() const {
+            return m_compact
+                       ? static_cast<Eigen::Index>(m_compact_values.capacity())
+                       : m_standard.data().allocatedSize();
+        }
+        Eigen::Index row_nonzeros(Eigen::Index row) const {
+            if (m_compact) {
+                return static_cast<Eigen::Index>(m_compact_outer[row + 1] -
+                                                 m_compact_outer[row]);
+            }
+            return m_standard.innerVector(row).nonZeros();
+        }
+        bool is_compact() const { return m_compact; }
+
+        template <typename Vector>
+        double row_dot(Eigen::Index row, const Vector& vector) const {
+            double result = 0.0;
+            if (m_compact) {
+                const auto begin = m_compact_outer[row];
+                const auto end = m_compact_outer[row + 1];
+                for (std::size_t position = begin; position < end; ++position) {
+                    result += m_compact_values[position] *
+                              vector(m_compact_inner[position]);
+                }
+                return result;
+            }
+
+            for (StandardMatrix::InnerIterator entry(m_standard, row); entry;
+                 ++entry) {
+                result += entry.value() * vector(entry.index());
+            }
+            return result;
+        }
+
+        template <typename Vector>
+        void accumulate_row(Eigen::Index row, double scale,
+                            Vector& vector) const {
+            if (m_compact) {
+                const auto begin = m_compact_outer[row];
+                const auto end = m_compact_outer[row + 1];
+                for (std::size_t position = begin; position < end; ++position) {
+                    vector(m_compact_inner[position]) +=
+                        scale * m_compact_values[position];
+                }
+                return;
+            }
+
+            for (StandardMatrix::InnerIterator entry(m_standard, row); entry;
+                 ++entry) {
+                vector(entry.index()) += scale * entry.value();
+            }
+        }
+
+        template <typename Rhs, typename Destination>
+        void multiply(const Rhs& rhs, Destination& destination) const {
+            if (!m_compact) {
+                destination.noalias() = m_standard * rhs;
+                return;
+            }
+
+            if (rhs.cols() == 1) {
+                for (Eigen::Index row = 0; row < m_compact_rows; ++row) {
+                    double result = 0.0;
+                    const auto begin = m_compact_outer[row];
+                    const auto end = m_compact_outer[row + 1];
+                    for (std::size_t position = begin; position < end;
+                         ++position) {
+                        result += m_compact_values[position] *
+                                  rhs(m_compact_inner[position], 0);
+                    }
+                    destination(row, 0) = result;
+                }
+                return;
+            }
+
+            destination.setZero();
+            for (Eigen::Index row = 0; row < m_compact_rows; ++row) {
+                const auto begin = m_compact_outer[row];
+                const auto end = m_compact_outer[row + 1];
+                for (std::size_t position = begin; position < end; ++position) {
+                    const auto column = m_compact_inner[position];
+                    const double value = m_compact_values[position];
+                    for (Eigen::Index lane = 0; lane < rhs.cols(); ++lane) {
+                        destination(row, lane) += value * rhs(column, lane);
+                    }
+                }
+            }
+        }
+    };
 
     class SolarTransmissionBase {
       protected:
@@ -86,7 +333,7 @@ namespace sasktran2::solartransmission {
 
         void generate_geometry_matrix(
             const std::vector<sasktran2::raytracing::TracedRay>& rays,
-            Eigen::SparseMatrix<double, Eigen::RowMajor>& od_matrix,
+            SolarGeometryMatrix& od_matrix,
             std::vector<bool>& ground_hit_flag) const;
 #endif
     };
@@ -147,7 +394,7 @@ namespace sasktran2::solartransmission {
      * m_internal_to_cos_scatter.  This combination lets us calculate the phase
      * function.  But to actually use it, we need to map the entrance and exit
      * points of the ray to the internal indices.  This is done through the
-     * m_geometry_entrance_to_internal and m_geometry_exit_to_internal
+     * packed entrance/exit ranges and m_geometry_to_internal
      *
      * @tparam NSTOKES
      */
@@ -185,14 +432,10 @@ namespace sasktran2::solartransmission {
         std::vector<int> m_active_wavelength_block_start;
         std::vector<int> m_active_wavelength_block_count;
 
-        std::vector<std::vector<std::vector<int>>>
-            m_geometry_entrance_to_internal; /** Mapping from layer entrances to
-                                                internal,
-                                                [los][layer][interp_index] */
-        std::vector<std::vector<std::vector<int>>>
-            m_geometry_exit_to_internal;         /** Mapping from layer exits to
-                                                    internal, [los][layer][interp_index]
-                                                  */
+        std::vector<std::uint32_t> m_geometry_layer_offsets;
+        std::vector<std::uint32_t> m_geometry_entrance_offsets;
+        std::vector<std::uint32_t> m_geometry_exit_offsets;
+        std::vector<int> m_geometry_to_internal;
         std::vector<int> m_internal_to_geometry; /** Maps the internal index
                                                       to the geometry index */
         std::vector<int>
@@ -320,6 +563,16 @@ namespace sasktran2::solartransmission {
             const std::vector<sasktran2::raytracing::TracedRay>& los_rays,
             const std::vector<std::vector<int>>& index_map);
 
+        const int* geometry_internal_indices(int losidx, int layeridx,
+                                             bool is_entrance) const {
+            const auto flat_layer = m_geometry_layer_offsets[losidx] +
+                                    static_cast<std::uint32_t>(layeridx);
+            const auto offset = is_entrance
+                                    ? m_geometry_entrance_offsets[flat_layer]
+                                    : m_geometry_exit_offsets[flat_layer];
+            return m_geometry_to_internal.data() + offset;
+        }
+
         void
         scatter_impl(int wavelidx, int losidx, int layeridx,
                      const raytracing::GridWeightStencilView& index_weights,
@@ -329,17 +582,16 @@ namespace sasktran2::solartransmission {
     };
 
     template <int NSTOKES>
-    inline void scattering_source(
-        const PhaseHandler<NSTOKES>& phase_handler, int threadidx, int losidx,
-        int layeridx, int wavelidx,
-        const raytracing::GridWeightStencilView& index_weights,
-        bool is_entrance, double solar_trans,
-        const atmosphere::Atmosphere<NSTOKES>& atmosphere,
-        Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
-            solar_trans_iter,
-        bool calculate_derivatives,
-        sasktran2::Dual<double, sasktran2::dualstorage::dense, NSTOKES>&
-            source) {
+    inline void
+    scattering_source(const PhaseHandler<NSTOKES>& phase_handler, int threadidx,
+                      int losidx, int layeridx, int wavelidx,
+                      const raytracing::GridWeightStencilView& index_weights,
+                      bool is_entrance, double solar_trans,
+                      const atmosphere::Atmosphere<NSTOKES>& atmosphere,
+                      SolarGeometryMatrix::InnerIterator solar_trans_iter,
+                      bool calculate_derivatives,
+                      sasktran2::Dual<double, sasktran2::dualstorage::dense,
+                                      NSTOKES>& source) {
         const auto& storage = atmosphere.storage();
         source.value.setZero();
 
@@ -458,8 +710,7 @@ namespace sasktran2::solartransmission {
         const raytracing::GridWeightStencilView& index_weights,
         bool is_entrance, double solar_trans,
         const atmosphere::Atmosphere<NSTOKES>& atmosphere,
-        Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
-            solar_trans_iter,
+        SolarGeometryMatrix::InnerIterator solar_trans_iter,
         double derivative_scale, Target& target) {
         const auto& storage = atmosphere.storage();
         double ssa = 0.0;
@@ -562,8 +813,7 @@ namespace sasktran2::solartransmission {
         const Eigen::Ref<const Eigen::Matrix<double, 1, N, Eigen::RowMajor>>&
             solar_trans,
         const atmosphere::Atmosphere<NSTOKES>& atmosphere,
-        Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
-            solar_trans_iter,
+        SolarGeometryMatrix::InnerIterator solar_trans_iter,
         const Eigen::Ref<const Eigen::Matrix<double, 1, N, Eigen::RowMajor>>&
             derivative_scale,
         sasktran2::WavelengthBlockDual<NSTOKES>& target,
@@ -648,7 +898,7 @@ namespace sasktran2::solartransmission {
         const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere;
 
         Eigen::MatrixXd m_geometry_matrix;
-        Eigen::SparseMatrix<double, Eigen::RowMajor> m_geometry_sparse;
+        SolarGeometryMatrix m_geometry_sparse;
         std::vector<bool> m_ground_hit_flag;
 
         std::vector<Eigen::VectorXd> m_solar_trans;

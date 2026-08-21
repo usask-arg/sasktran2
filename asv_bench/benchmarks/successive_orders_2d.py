@@ -18,19 +18,15 @@ NUM_LOS_VERTICAL = 60
 NUM_ANGULAR = 110
 NUM_THREADS = 1
 
-ATMOSPHERE_HORIZONTAL_ANGLES_RAD = np.linspace(
-    -0.4, 0.4, NUM_ATMOSPHERE_HORIZONTAL
+ATMOSPHERE_HORIZONTAL_ANGLES_RAD = np.linspace(-0.4, 0.4, NUM_ATMOSPHERE_HORIZONTAL)
+ATMOSPHERE_ALTITUDES_M = np.linspace(0.0, TOP_ALTITUDE_M, NUM_ATMOSPHERE_VERTICAL)
+SOURCE_ALTITUDES_M = (np.arange(NUM_SOURCE_VERTICAL, dtype=np.float64) + 0.5) * (
+    TOP_ALTITUDE_M / NUM_SOURCE_VERTICAL
 )
-ATMOSPHERE_ALTITUDES_M = np.linspace(
-    0.0, TOP_ALTITUDE_M, NUM_ATMOSPHERE_VERTICAL
-)
-SOURCE_ALTITUDES_M = (
-    np.arange(NUM_SOURCE_VERTICAL, dtype=np.float64) + 0.5
-) * (TOP_ALTITUDE_M / NUM_SOURCE_VERTICAL)
 LOS_HORIZONTAL_ANGLES_RAD = np.linspace(-0.2, 0.2, NUM_LOS_HORIZONTAL)
-LOS_TANGENT_ALTITUDES_M = (
-    np.arange(NUM_LOS_VERTICAL, dtype=np.float64) + 0.5
-) * (TOP_ALTITUDE_M / NUM_LOS_VERTICAL)
+LOS_TANGENT_ALTITUDES_M = (np.arange(NUM_LOS_VERTICAL, dtype=np.float64) + 0.5) * (
+    TOP_ALTITUDE_M / NUM_LOS_VERTICAL
+)
 
 
 class SuccessiveOrders2DRepeatedVJP:
@@ -115,9 +111,9 @@ class SuccessiveOrders2DRepeatedVJP:
         self._engine = sk.Engine(config, geometry, viewing)
         self._linearization = self._engine.linearize(atmosphere)
         self._cotangent = xr.ones_like(self._linearization.value)
-        self._cotangent.data[:] = np.linspace(
-            0.5, 1.5, self._cotangent.size
-        ).reshape(self._cotangent.shape)
+        self._cotangent.data[:] = np.linspace(0.5, 1.5, self._cotangent.size).reshape(
+            self._cotangent.shape
+        )
         self._update_index = 0
 
     def _change_atmosphere(self):
@@ -132,9 +128,7 @@ class SuccessiveOrders2DRepeatedVJP:
         self._atmosphere.mark_changed()
 
     def time_vjp_repeated_same_atmosphere(self):
-        self._linearization.vjp(
-            self._cotangent, parameters=("extinction", "ssa")
-        )
+        self._linearization.vjp(self._cotangent, parameters=("extinction", "ssa"))
 
     def time_linearize_changed_atmosphere(self):
         self._change_atmosphere()
@@ -143,9 +137,7 @@ class SuccessiveOrders2DRepeatedVJP:
     def time_linearize_and_vjp_changed_atmosphere(self):
         self._change_atmosphere()
         self._linearization = self._engine.linearize(self._atmosphere)
-        self._linearization.vjp(
-            self._cotangent, parameters=("extinction", "ssa")
-        )
+        self._linearization.vjp(self._cotangent, parameters=("extinction", "ssa"))
 
     def peakmem_retained_linearization(self):
         pass
@@ -153,6 +145,4 @@ class SuccessiveOrders2DRepeatedVJP:
     def peakmem_vjp_changed_atmosphere(self):
         self._change_atmosphere()
         self._linearization = self._engine.linearize(self._atmosphere)
-        self._linearization.vjp(
-            self._cotangent, parameters=("extinction", "ssa")
-        )
+        self._linearization.vjp(self._cotangent, parameters=("extinction", "ssa"))

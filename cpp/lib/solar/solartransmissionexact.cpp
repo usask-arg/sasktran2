@@ -1,5 +1,7 @@
 #include <sasktran2/solartransmission.h>
 
+#include <spdlog/spdlog.h>
+
 namespace {
     bool solar_ray_hits_ground(const sasktran2::Location& location,
                                const sasktran2::Geometry2D& geometry) {
@@ -93,16 +95,27 @@ namespace sasktran2::solartransmission {
 #ifdef SKTRAN_RUST_SUPPORT
     void SolarTransmissionExact::generate_geometry_matrix(
         const std::vector<sasktran2::raytracing::TracedRay>& rays,
-        Eigen::SparseMatrix<double, Eigen::RowMajor>& od_matrix,
+        SolarGeometryMatrix& od_matrix,
         std::vector<bool>& ground_hit_flag) const {
         int numpoints = 0;
         for (const auto& ray : rays) {
             numpoints += static_cast<int>(ray.layers.size()) + 1;
         }
 
-        od_matrix.resize(numpoints, m_geometry.size());
         ground_hit_flag.assign(numpoints, false);
-        od_matrix.reserve(static_cast<Eigen::Index>(numpoints) * 16);
+        // A straight path through a structured grid usually accumulates about
+        // one sparse coefficient per point along its dominant grid dimension.
+        // Reserving at that scale avoids Eigen's doubling growth for large 2D
+        // matrices while the bounded-growth fallback below handles longer
+        // paths without assuming a hard upper limit.
+        const Eigen::Index dominant_grid_size =
+            std::max(m_geometry_2d->altitude_grid().grid().size(),
+                     m_geometry_2d->horizontal_angle_grid().size());
+        const Eigen::Index initial_entries_per_row = std::max<Eigen::Index>(
+            16, dominant_grid_size - dominant_grid_size / 16);
+        od_matrix.initialize_exact(numpoints, m_geometry.size(),
+                                   static_cast<Eigen::Index>(numpoints) *
+                                       initial_entries_per_row);
 
         sasktran2::viewinggeometry::ViewingRay ray_to_sun;
         ray_to_sun.look_away = m_geometry.coordinates().sun_unit();
@@ -113,8 +126,17 @@ namespace sasktran2::solartransmission {
                                 m_geometry_2d->horizontal_angle_grid().size()) *
                             4);
 
+        const auto ensure_entry_capacity = [&](Eigen::Index additional) {
+            // Eigen doubles compressed storage when insertBack exhausts its
+            // reservation. Large 2D calculations can therefore retain almost
+            // twice their final matrix size because shrinking reallocations are
+            // commonly kept in place by the system allocator. Grow explicitly
+            // by 50% instead, bounding unused retained capacity without adding
+            // a counting/tracing pass.
+            od_matrix.ensure_capacity(additional);
+        };
+
         const auto append_ray = [&](int row) {
-            od_matrix.startVec(row);
             row_weights.clear();
             for (std::size_t layer_index = 0;
                  layer_index < traced_ray.layers.size(); ++layer_index) {
@@ -132,6 +154,7 @@ namespace sasktran2::solartransmission {
                       [](const auto& left, const auto& right) {
                           return left.first < right.first;
                       });
+            std::size_t write = 0;
             for (std::size_t begin = 0; begin < row_weights.size();) {
                 const int column = row_weights[begin].first;
                 double value = 0.0;
@@ -142,13 +165,23 @@ namespace sasktran2::solartransmission {
                     ++end;
                 }
                 if (value != 0.0) {
-                    od_matrix.insertBackByOuterInner(row, column) = value;
+                    row_weights[write++] = {column, value};
                 }
                 begin = end;
             }
+            row_weights.resize(write);
+
+            ensure_entry_capacity(
+                static_cast<Eigen::Index>(row_weights.size()));
+            od_matrix.start_row(row);
+            for (const auto& [column, value] : row_weights) {
+                od_matrix.insert_back(row, column, value);
+            }
         };
 
-        const auto append_empty_row = [&](int row) { od_matrix.startVec(row); };
+        const auto append_empty_row = [&](int row) {
+            od_matrix.start_row(row);
+        };
 
         int row = 0;
         for (const auto& ray : rays) {
@@ -178,8 +211,14 @@ namespace sasktran2::solartransmission {
                 ++row;
             }
         }
+        const Eigen::Index construction_capacity = od_matrix.allocated_size();
         od_matrix.finalize();
-        od_matrix.data().squeeze();
+        spdlog::debug(
+            "Geometry2D exact solar matrix: {} rows, {} nonzeros, {} peak "
+            "construction entries, {} ground-blocked rows, compact storage {}",
+            od_matrix.rows(), od_matrix.non_zeros(), construction_capacity,
+            std::count(ground_hit_flag.begin(), ground_hit_flag.end(), true),
+            od_matrix.is_compact());
     }
 #endif
 } // namespace sasktran2::solartransmission

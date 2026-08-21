@@ -44,6 +44,46 @@ namespace {
     }
 } // namespace
 
+TEST_CASE("Solar geometry storage uses compact indices with a wide fallback",
+          "[sourceintegrator][singlescatter]") {
+    for (const Eigen::Index columns : {Eigen::Index{10}, Eigen::Index{65537}}) {
+        sasktran2::solartransmission::SolarGeometryMatrix matrix;
+        matrix.initialize_exact(2, columns, 4);
+        REQUIRE(matrix.is_compact() == (columns == 10));
+
+        matrix.start_row(0);
+        matrix.insert_back(0, 0, 2.0);
+        matrix.insert_back(0, columns - 1, 3.0);
+        matrix.start_row(1);
+        matrix.insert_back(1, 1, -4.0);
+        matrix.finalize();
+
+        Eigen::VectorXd input = Eigen::VectorXd::Zero(columns);
+        input[0] = 5.0;
+        input[1] = 7.0;
+        input[columns - 1] = 11.0;
+        REQUIRE(matrix.row_dot(0, input) == Catch::Approx(43.0));
+
+        Eigen::VectorXd product(2);
+        matrix.multiply(input, product);
+        REQUIRE(product[0] == Catch::Approx(43.0));
+        REQUIRE(product[1] == Catch::Approx(-28.0));
+
+        Eigen::VectorXd accumulated = Eigen::VectorXd::Zero(columns);
+        matrix.accumulate_row(0, 0.5, accumulated);
+        REQUIRE(accumulated[0] == Catch::Approx(1.0));
+        REQUIRE(accumulated[columns - 1] == Catch::Approx(1.5));
+
+        int entries = 0;
+        for (sasktran2::solartransmission::SolarGeometryMatrix::InnerIterator
+                 entry(matrix, 0);
+             entry; ++entry) {
+            ++entries;
+        }
+        REQUIRE(entries == 2);
+    }
+}
+
 #ifdef SKTRAN_RUST_SUPPORT
 TEST_CASE("Exact solar transmission matrix matches direct Geometry2D rays",
           "[sourceintegrator][singlescatter][geometry2d]") {
@@ -58,7 +98,7 @@ TEST_CASE("Exact solar transmission matrix matches direct Geometry2D rays",
 
     sasktran2::solartransmission::SolarTransmissionExact transmission(
         geometry, raytracer);
-    Eigen::SparseMatrix<double, Eigen::RowMajor> matrix;
+    sasktran2::solartransmission::SolarGeometryMatrix matrix;
     std::vector<bool> ground_hit;
     transmission.generate_geometry_matrix({line_of_sight}, matrix, ground_hit);
 
@@ -79,8 +119,8 @@ TEST_CASE("Exact solar transmission matrix matches direct Geometry2D rays",
             REQUIRE(ground_hit[row] == traced_solar_ray.ground_is_hit);
 
             Eigen::VectorXd actual = Eigen::VectorXd::Zero(geometry.size());
-            for (Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
-                     entry(matrix, row);
+            for (sasktran2::solartransmission::SolarGeometryMatrix::
+                     InnerIterator entry(matrix, row);
                  entry; ++entry) {
                 actual[entry.index()] = entry.value();
             }
@@ -120,14 +160,14 @@ TEST_CASE("Exact Geometry2D solar shadow is stable at a grazing surface ray",
 
     sasktran2::solartransmission::SolarTransmissionExact transmission(
         geometry, raytracer);
-    Eigen::SparseMatrix<double, Eigen::RowMajor> matrix;
+    sasktran2::solartransmission::SolarGeometryMatrix matrix;
     std::vector<bool> ground_hit;
     transmission.generate_geometry_matrix({line_of_sight}, matrix, ground_hit);
 
     REQUIRE(ground_hit.size() == 2);
     REQUIRE(ground_hit[0]);
     REQUIRE(ground_hit[1]);
-    REQUIRE(matrix.nonZeros() == 0);
+    REQUIRE(matrix.non_zeros() == 0);
 }
 
 TEST_CASE("Geometry2D exact single scatter is invariant across thread models",

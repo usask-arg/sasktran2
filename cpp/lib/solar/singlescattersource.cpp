@@ -87,7 +87,7 @@ namespace sasktran2::solartransmission {
             // Faster to use the dense matrix if most of the elements are
             // nonzero
             if (m_geometry_matrix.size() > 0 &&
-                double(m_geometry_sparse.nonZeros()) /
+                double(m_geometry_sparse.non_zeros()) /
                         double(m_geometry_matrix.size()) >
                     DENSE_GEOMETRY_THRESHOLD) {
                 m_solar_trans[threadidx].noalias() =
@@ -95,18 +95,21 @@ namespace sasktran2::solartransmission {
                     m_atmosphere->storage().total_extinction(
                         Eigen::placeholders::all, wavelidx);
             } else {
-                m_solar_trans[threadidx].noalias() =
-                    m_geometry_sparse *
+                m_solar_trans[threadidx].resize(m_geometry_sparse.rows());
+                const auto extinction =
                     m_atmosphere->storage().total_extinction(
                         Eigen::placeholders::all, wavelidx);
+                m_geometry_sparse.multiply(extinction,
+                                           m_solar_trans[threadidx]);
             }
         }
 
         if constexpr (std::is_same_v<S, SolarTransmissionTable>) {
             m_solar_trans[threadidx].noalias() =
-                m_geometry_sparse * (m_solar_transmission.geometry_matrix() *
-                                     m_atmosphere->storage().total_extinction(
-                                         Eigen::placeholders::all, wavelidx));
+                m_geometry_sparse.standard() *
+                (m_solar_transmission.geometry_matrix() *
+                 m_atmosphere->storage().total_extinction(
+                     Eigen::placeholders::all, wavelidx));
         }
 
         m_solar_trans[threadidx] =
@@ -170,12 +173,12 @@ namespace sasktran2::solartransmission {
             const auto extinction = wavelength_middle_cols(
                 m_atmosphere->storage().total_extinction, batch);
             if (m_geometry_matrix.size() > 0 &&
-                double(m_geometry_sparse.nonZeros()) /
+                double(m_geometry_sparse.non_zeros()) /
                         double(m_geometry_matrix.size()) >
                     DENSE_GEOMETRY_THRESHOLD) {
                 solar_trans.noalias() = m_geometry_matrix * extinction;
             } else {
-                solar_trans.noalias() = m_geometry_sparse * extinction;
+                m_geometry_sparse.multiply(extinction, solar_trans);
             }
             solar_trans = (-solar_trans.array()).exp().matrix();
             for (int lane = 0; lane < batch.count; ++lane) {
@@ -239,13 +242,8 @@ namespace sasktran2::solartransmission {
 
             const double solar_trans = solar_transmission_value(
                 wavelidx, wavel_threadidx, solar_index);
-            double solar_od_jvp = 0.0;
-            for (Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
-                     derivative(m_geometry_sparse, solar_index);
-                 derivative; ++derivative) {
-                solar_od_jvp +=
-                    derivative.value() * native_tangent(derivative.index());
-            }
+            const double solar_od_jvp =
+                m_geometry_sparse.row_dot(solar_index, native_tangent);
             const double solar_trans_jvp = -solar_trans * solar_od_jvp;
 
             Eigen::Vector<double, NSTOKES> phase;
@@ -316,12 +314,9 @@ namespace sasktran2::solartransmission {
                 native_gradient(m_atmosphere->ssa_deriv_start_index() +
                                 weight.first) += weight.second * ssa_cotangent;
             }
-            for (Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
-                     derivative(m_geometry_sparse, solar_index);
-                 derivative; ++derivative) {
-                native_gradient(derivative.index()) -=
-                    derivative.value() * solar_trans * solar_trans_cotangent;
-            }
+            m_geometry_sparse.accumulate_row(
+                solar_index, -solar_trans * solar_trans_cotangent,
+                native_gradient);
             m_phase_handler.scatter_vjp(wavel_threadidx, losidx, layeridx,
                                         wavelidx, weights, is_entrance,
                                         amplitude * cotangent, native_gradient);
@@ -357,12 +352,8 @@ namespace sasktran2::solartransmission {
             double solar_od_jvp = 0.0;
             if (m_config->wf_precision() !=
                 sasktran2::Config::WeightingFunctionPrecision::limited) {
-                for (Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
-                         derivative(m_geometry_sparse, solar_index);
-                     derivative; ++derivative) {
-                    solar_od_jvp +=
-                        derivative.value() * native_tangent(derivative.index());
-                }
+                solar_od_jvp =
+                    m_geometry_sparse.row_dot(solar_index, native_tangent);
             }
             const double solar_trans_jvp = -solar_trans * solar_od_jvp;
             const auto brdf =
@@ -418,13 +409,9 @@ namespace sasktran2::solartransmission {
                 mu_in * cotangent.dot(brdf(Eigen::placeholders::all, 0));
             if (m_config->wf_precision() !=
                 sasktran2::Config::WeightingFunctionPrecision::limited) {
-                for (Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
-                         derivative(m_geometry_sparse, solar_index);
-                     derivative; ++derivative) {
-                    native_gradient(derivative.index()) -=
-                        derivative.value() * solar_trans *
-                        solar_trans_cotangent;
-                }
+                m_geometry_sparse.accumulate_row(
+                    solar_index, -solar_trans * solar_trans_cotangent,
+                    native_gradient);
             }
             for (int derivative = 0;
                  derivative < m_atmosphere->surface().num_deriv();
@@ -489,9 +476,8 @@ namespace sasktran2::solartransmission {
                             limited) {
                         // Have to apply the solar transmission derivative
                         // factors
-                        for (Eigen::SparseMatrix<double,
-                                                 Eigen::RowMajor>::InnerIterator
-                                 it(m_geometry_sparse, exit_index);
+                        for (SolarGeometryMatrix::InnerIterator it(
+                                 m_geometry_sparse, exit_index);
                              it; ++it) {
                             source.deriv(Eigen::placeholders::all,
                                          it.index()) -=
@@ -558,9 +544,8 @@ namespace sasktran2::solartransmission {
                 }
                 if (m_config->wf_precision() !=
                     sasktran2::Config::WeightingFunctionPrecision::limited) {
-                    for (Eigen::SparseMatrix<double,
-                                             Eigen::RowMajor>::InnerIterator
-                             derivative(m_geometry_sparse, exit_index);
+                    for (SolarGeometryMatrix::InnerIterator derivative(
+                             m_geometry_sparse, exit_index);
                          derivative; ++derivative) {
                         source.derivative(derivative.index(), batch)
                             .col(lane) -= derivative.value() * source_value;
@@ -597,8 +582,8 @@ namespace sasktran2::solartransmission {
         if (m_config->wf_precision() !=
             sasktran2::Config::WeightingFunctionPrecision::limited) {
             const int exit_index = m_index_map[losidx][0];
-            for (Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
-                     derivative(m_geometry_sparse, exit_index);
+            for (SolarGeometryMatrix::InnerIterator derivative(
+                     m_geometry_sparse, exit_index);
                  derivative; ++derivative) {
                 derivative_indices.push_back(derivative.index());
             }
@@ -660,7 +645,8 @@ namespace sasktran2::solartransmission {
                     this->m_solar_transmission.generate_geometry_matrix(
                         internal_viewing.traced_rays, m_geometry_matrix,
                         m_ground_hit_flag);
-                    m_geometry_sparse = m_geometry_matrix.sparseView();
+                    m_geometry_sparse.use_standard() =
+                        m_geometry_matrix.sparseView();
                 } else {
 #ifdef SKTRAN_RUST_SUPPORT
                     // Higher-dimensional solar paths remain sparse.
@@ -678,7 +664,7 @@ namespace sasktran2::solartransmission {
         }
         if constexpr (std::is_same_v<S, SolarTransmissionTable>) {
             this->m_solar_transmission.generate_interpolation_matrix(
-                internal_viewing.traced_rays, m_geometry_sparse,
+                internal_viewing.traced_rays, m_geometry_sparse.use_standard(),
                 m_ground_hit_flag);
         }
 
@@ -734,12 +720,12 @@ namespace sasktran2::solartransmission {
                 std::vector<int>& result) {
                 result.clear();
                 result.reserve(
-                    m_geometry_sparse.innerVector(solar_index).nonZeros() +
+                    m_geometry_sparse.row_nonzeros(solar_index) +
                     geometry_weights.size() *
                         (2 + m_atmosphere->num_scattering_deriv_groups()));
 
-                for (Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator
-                         it(m_geometry_sparse, solar_index);
+                for (SolarGeometryMatrix::InnerIterator it(m_geometry_sparse,
+                                                           solar_index);
                      it; ++it) {
                     result.push_back(it.index());
                 }
@@ -862,16 +848,16 @@ namespace sasktran2::solartransmission {
                     m_phase_handler, wavel_threadidx, losidx, layeridx,
                     wavelidx, *start_weights, start_is_entrance,
                     solar_trans_entrance, *m_atmosphere,
-                    Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
-                        m_geometry_sparse, entrance_index),
+                    SolarGeometryMatrix::InnerIterator(m_geometry_sparse,
+                                                       entrance_index),
                     source_factor * layer.od_quad_start, source);
             const Eigen::Vector<double, NSTOKES> end_value =
                 accumulate_exact_scattering_source(
                     m_phase_handler, wavel_threadidx, losidx, layeridx,
                     wavelidx, *end_weights, end_is_entrance, solar_trans_exit,
                     *m_atmosphere,
-                    Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
-                        m_geometry_sparse, exit_index),
+                    SolarGeometryMatrix::InnerIterator(m_geometry_sparse,
+                                                       exit_index),
                     source_factor * layer.od_quad_end, source);
 
             const Eigen::Vector<double, NSTOKES> source_value =
@@ -900,52 +886,48 @@ namespace sasktran2::solartransmission {
 
         if (use_lower_interpolation) {
             if (layer.r_exit > layer.r_entrance) {
-                scattering_source(
-                    m_phase_handler, wavel_threadidx, losidx, layeridx,
-                    wavelidx, entrance_weights, true, solar_trans_entrance,
-                    *m_atmosphere,
-                    Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
-                        m_geometry_sparse, entrance_index),
-                    calculate_derivatives, start_phase);
+                scattering_source(m_phase_handler, wavel_threadidx, losidx,
+                                  layeridx, wavelidx, entrance_weights, true,
+                                  solar_trans_entrance, *m_atmosphere,
+                                  SolarGeometryMatrix::InnerIterator(
+                                      m_geometry_sparse, entrance_index),
+                                  calculate_derivatives, start_phase);
 
-                scattering_source(
-                    m_phase_handler, wavel_threadidx, losidx, layeridx,
-                    wavelidx, entrance_weights, true, solar_trans_exit,
-                    *m_atmosphere,
-                    Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
-                        m_geometry_sparse, exit_index),
-                    calculate_derivatives, end_phase);
+                scattering_source(m_phase_handler, wavel_threadidx, losidx,
+                                  layeridx, wavelidx, entrance_weights, true,
+                                  solar_trans_exit, *m_atmosphere,
+                                  SolarGeometryMatrix::InnerIterator(
+                                      m_geometry_sparse, exit_index),
+                                  calculate_derivatives, end_phase);
             } else {
-                scattering_source(
-                    m_phase_handler, wavel_threadidx, losidx, layeridx,
-                    wavelidx, exit_weights, false, solar_trans_entrance,
-                    *m_atmosphere,
-                    Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
-                        m_geometry_sparse, entrance_index),
-                    calculate_derivatives, start_phase);
+                scattering_source(m_phase_handler, wavel_threadidx, losidx,
+                                  layeridx, wavelidx, exit_weights, false,
+                                  solar_trans_entrance, *m_atmosphere,
+                                  SolarGeometryMatrix::InnerIterator(
+                                      m_geometry_sparse, entrance_index),
+                                  calculate_derivatives, start_phase);
 
-                scattering_source(
-                    m_phase_handler, wavel_threadidx, losidx, layeridx,
-                    wavelidx, exit_weights, false, solar_trans_exit,
-                    *m_atmosphere,
-                    Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
-                        m_geometry_sparse, exit_index),
-                    calculate_derivatives, end_phase);
+                scattering_source(m_phase_handler, wavel_threadidx, losidx,
+                                  layeridx, wavelidx, exit_weights, false,
+                                  solar_trans_exit, *m_atmosphere,
+                                  SolarGeometryMatrix::InnerIterator(
+                                      m_geometry_sparse, exit_index),
+                                  calculate_derivatives, end_phase);
             }
         } else {
-            scattering_source(
-                m_phase_handler, wavel_threadidx, losidx, layeridx, wavelidx,
-                entrance_weights, true, solar_trans_entrance, *m_atmosphere,
-                Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
-                    m_geometry_sparse, entrance_index),
-                calculate_derivatives, start_phase);
+            scattering_source(m_phase_handler, wavel_threadidx, losidx,
+                              layeridx, wavelidx, entrance_weights, true,
+                              solar_trans_entrance, *m_atmosphere,
+                              SolarGeometryMatrix::InnerIterator(
+                                  m_geometry_sparse, entrance_index),
+                              calculate_derivatives, start_phase);
 
-            scattering_source(
-                m_phase_handler, wavel_threadidx, losidx, layeridx, wavelidx,
-                exit_weights, false, solar_trans_exit, *m_atmosphere,
-                Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
-                    m_geometry_sparse, exit_index),
-                calculate_derivatives, end_phase);
+            scattering_source(m_phase_handler, wavel_threadidx, losidx,
+                              layeridx, wavelidx, exit_weights, false,
+                              solar_trans_exit, *m_atmosphere,
+                              SolarGeometryMatrix::InnerIterator(
+                                  m_geometry_sparse, exit_index),
+                              calculate_derivatives, end_phase);
         }
 
         double source_factor1;
@@ -1266,8 +1248,8 @@ namespace sasktran2::solartransmission {
                 m_phase_handler, wavel_threadidx, losidx, layeridx, batch,
                 *start_weights, start_is_entrance, solar_trans_entrance,
                 *m_atmosphere,
-                Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
-                    m_geometry_sparse, entrance_index),
+                SolarGeometryMatrix::InnerIterator(m_geometry_sparse,
+                                                   entrance_index),
                 start_derivative_scale, source, start_cache);
             const auto start_value =
                 wavelength_left_cols(start_cache.endpoint_source, batch);
@@ -1279,8 +1261,8 @@ namespace sasktran2::solartransmission {
             accumulate_exact_scattering_source_block<NSTOKES, N>(
                 m_phase_handler, wavel_threadidx, losidx, layeridx, batch,
                 *end_weights, end_is_entrance, solar_trans_exit, *m_atmosphere,
-                Eigen::SparseMatrix<double, Eigen::RowMajor>::InnerIterator(
-                    m_geometry_sparse, exit_index),
+                SolarGeometryMatrix::InnerIterator(m_geometry_sparse,
+                                                   exit_index),
                 end_derivative_scale, source, end_cache);
             const auto end_value =
                 wavelength_left_cols(end_cache.endpoint_source, batch);
