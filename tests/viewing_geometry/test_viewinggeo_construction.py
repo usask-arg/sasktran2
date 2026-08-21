@@ -28,6 +28,7 @@ def test_geometry_relative_tangent_ray_is_public_and_introspectable():
         observer_altitude_m=200_000.0,
         horizontal_angle_radians=0.25,
         viewing_azimuth_radians=np.pi / 3.0,
+        tangent_out_of_plane_angle_radians=-0.04,
     )
     viewing_geo = sk.ViewingGeometry()
     viewing_geo.add_ray(ray)
@@ -36,6 +37,7 @@ def test_geometry_relative_tangent_ray_is_public_and_introspectable():
     assert ray.tangent_altitude_m == 20_000.0
     assert ray.observer_altitude_m == 200_000.0
     assert ray.horizontal_angle_radians == 0.25
+    assert ray.tangent_out_of_plane_angle_radians == -0.04
     assert ray.viewing_azimuth_radians == np.pi / 3.0
     assert "horizontal_angle_radians: 0.25" in repr(ray)
 
@@ -48,6 +50,7 @@ def test_geometry_relative_tangent_ray_is_public_and_introspectable():
         {"observer_altitude_m": 10_000.0},
         {"observer_altitude_m": np.inf},
         {"horizontal_angle_radians": np.nan},
+        {"tangent_out_of_plane_angle_radians": np.nan},
         {"viewing_azimuth_radians": np.inf},
     ],
 )

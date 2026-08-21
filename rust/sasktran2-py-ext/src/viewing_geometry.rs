@@ -42,17 +42,26 @@ pub struct PyTangentAltitude {
     tangent_altitude_m: f64,
     observer_altitude_m: f64,
     horizontal_angle_radians: f64,
+    tangent_out_of_plane_angle_radians: f64,
     viewing_azimuth_radians: f64,
 }
 
 #[pymethods]
 impl PyTangentAltitude {
     #[new]
+    #[pyo3(signature = (
+        tangent_altitude_m,
+        observer_altitude_m,
+        horizontal_angle_radians,
+        viewing_azimuth_radians,
+        tangent_out_of_plane_angle_radians=0.0,
+    ))]
     fn new(
         tangent_altitude_m: f64,
         observer_altitude_m: f64,
         horizontal_angle_radians: f64,
         viewing_azimuth_radians: f64,
+        tangent_out_of_plane_angle_radians: f64,
     ) -> PyResult<Self> {
         if !tangent_altitude_m.is_finite() || tangent_altitude_m < 0.0 {
             return Err(PyValueError::new_err(
@@ -64,13 +73,17 @@ impl PyTangentAltitude {
                 "observer_altitude_m must be finite and greater than or equal to tangent_altitude_m",
             ));
         }
-        if !horizontal_angle_radians.is_finite() || !viewing_azimuth_radians.is_finite() {
+        if !horizontal_angle_radians.is_finite()
+            || !tangent_out_of_plane_angle_radians.is_finite()
+            || !viewing_azimuth_radians.is_finite()
+        {
             return Err(PyValueError::new_err("viewing angles must be finite"));
         }
         Ok(Self {
             tangent_altitude_m,
             observer_altitude_m,
             horizontal_angle_radians,
+            tangent_out_of_plane_angle_radians,
             viewing_azimuth_radians,
         })
     }
@@ -159,6 +172,7 @@ impl PyViewingGeometry {
                     ray.tangent_altitude_m,
                     ray.observer_altitude_m,
                     ray.horizontal_angle_radians,
+                    ray.tangent_out_of_plane_angle_radians,
                     ray.viewing_azimuth_radians,
                 )
                 .into_pyresult()?;

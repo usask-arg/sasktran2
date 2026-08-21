@@ -8,6 +8,8 @@ Model Geometry
 
     sasktran2.Geometry1D
     sasktran2.Geometry2D
+    sasktran2.OrbitalPlaneGeometry
+    sasktran2.OrbitalPlaneViewingGeometry
 
 Geometry2D capabilities
 -----------------------
@@ -22,9 +24,12 @@ surface constituents may be used, but the surface itself is spatially uniform.
 
 Solar-ray refraction is supported by the exact and table single-scatter
 sources and by the direct-beam calculation used by successive orders. Other
-multiple-scatter sources, flux observers, line-of-sight refraction,
-successive-orders diffuse-ray refraction, and horizontally varying surfaces
-are not yet supported with :class:`sasktran2.Geometry2D`.
+multiple-scatter sources, flux observers, successive-orders diffuse-ray
+refraction, and a public horizontally varying surface state are not supported
+by the ordinary :class:`sasktran2.Geometry2D` engine.
+The :class:`sasktran2.OrbitalPlaneEngine` adds per-ray line-of-sight refraction
+and a fully along-track/spectral Lambertian field, interpolated at each traced
+surface intersection, while retaining local Geometry2D engines.
 
 Geometry2D engine calculations use the Rust-backed 2D ray tracer and therefore
 require Rust component support. The ``SKTRAN_USE_RUST_RAYTRACER`` CMake option

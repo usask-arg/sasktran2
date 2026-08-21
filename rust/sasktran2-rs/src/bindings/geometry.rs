@@ -1,6 +1,7 @@
 use crate::prelude::*;
 use sasktran2_sys::ffi;
 
+#[derive(Clone, Copy)]
 #[repr(i32)]
 pub enum InterpolationMethod {
     Shell = 0,
@@ -8,6 +9,7 @@ pub enum InterpolationMethod {
     Lower = 2,
 }
 
+#[derive(Clone, Copy)]
 pub enum GeometryType {
     PlaneParallel = 0,
     PseudoSpherical = 1,
@@ -112,6 +114,38 @@ impl Geometry2D {
         };
         if geometry.is_null() {
             return Err(anyhow!("Failed to create Geometry2D"));
+        }
+        Ok(Self { geometry })
+    }
+
+    pub fn new_ecef(
+        earth_radius: f64,
+        altitude_grid_values: Vec<f64>,
+        horizontal_angle_grid_values: Vec<f64>,
+        altitude_interp_method: InterpolationMethod,
+        reference_z: [f64; 3],
+        reference_x: [f64; 3],
+        sun_unit: [f64; 3],
+    ) -> Result<Self> {
+        let num_altitudes = i32::try_from(altitude_grid_values.len())
+            .map_err(|_| anyhow!("Altitude grid is too large"))?;
+        let num_horizontal_locations = i32::try_from(horizontal_angle_grid_values.len())
+            .map_err(|_| anyhow!("Horizontal angle grid is too large"))?;
+        let geometry = unsafe {
+            ffi::sk_geometry2d_create_ecef(
+                earth_radius,
+                altitude_grid_values.as_ptr(),
+                num_altitudes,
+                horizontal_angle_grid_values.as_ptr(),
+                num_horizontal_locations,
+                altitude_interp_method as i32,
+                reference_z.as_ptr(),
+                reference_x.as_ptr(),
+                sun_unit.as_ptr(),
+            )
+        };
+        if geometry.is_null() {
+            return Err(anyhow!("Failed to create ECEF Geometry2D"));
         }
         Ok(Self { geometry })
     }

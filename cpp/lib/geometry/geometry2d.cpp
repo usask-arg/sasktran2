@@ -275,6 +275,19 @@ namespace sasktran2 {
         return unwrap_angle_near(raw_angle, center);
     }
 
+    void Geometry2D::assign_horizontal_interpolation_weights(
+        const Location& location,
+        std::vector<std::pair<int, double>>& index_weights) const {
+        const auto horizontal_weights = axis_interpolation_weights(
+            m_horizontal_angles, horizontal_angle_at(location),
+            grids::interpolation::linear, angular_tolerance_rad);
+        index_weights.resize(horizontal_weights.size);
+        for (int index = 0; index < horizontal_weights.size; ++index) {
+            index_weights[index] = {horizontal_weights.indices[index],
+                                    horizontal_weights.weights[index]};
+        }
+    }
+
     std::pair<double, double>
     Geometry2D::cell_interpolation_coordinates(const Location& location,
                                                int altitude_cell,

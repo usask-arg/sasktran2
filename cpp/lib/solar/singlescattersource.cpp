@@ -32,7 +32,8 @@ namespace sasktran2::solartransmission {
         bool materialized_derivative_storage) {
         // Store the atmosphere for later
         m_atmosphere = &atmosphere;
-        this->m_phase_handler.initialize_atmosphere(atmosphere);
+        this->m_phase_handler.initialize_atmosphere(atmosphere,
+                                                    !native_products);
 
         if constexpr (compact_2d_table) {
             if (materialized_derivative_storage && atmosphere.num_deriv() > 0) {
@@ -498,8 +499,9 @@ namespace sasktran2::solartransmission {
                 solar_trans_jvp = solar_transmission_tangent(
                     wavelidx, wavel_threadidx, solar_index, native_tangent);
             }
-            const auto brdf =
-                m_atmosphere->surface().brdf(wavelidx, mu_in, mu_out, phi_diff);
+            const auto brdf = m_atmosphere->surface().brdf(
+                wavelidx, mu_in, mu_out, phi_diff,
+                m_los_surface_interpolation_weights.at(losidx));
             Eigen::Matrix<double, NSTOKES, NSTOKES> brdf_jvp =
                 Eigen::Matrix<double, NSTOKES, NSTOKES>::Zero();
             for (int derivative = 0;
@@ -508,8 +510,9 @@ namespace sasktran2::solartransmission {
                 brdf_jvp +=
                     native_tangent(m_atmosphere->surface_deriv_start_index() +
                                    derivative) *
-                    m_atmosphere->surface().d_brdf(wavelidx, mu_in, mu_out,
-                                                   phi_diff, derivative);
+                    m_atmosphere->surface().d_brdf(
+                        wavelidx, mu_in, mu_out, phi_diff, derivative,
+                        m_los_surface_interpolation_weights.at(losidx));
             }
             source.value +=
                 solar_trans * mu_in * brdf(Eigen::placeholders::all, 0);
@@ -541,8 +544,9 @@ namespace sasktran2::solartransmission {
             const int solar_index = m_index_map[losidx][0];
             const double solar_trans = solar_transmission_value(
                 wavelidx, wavel_threadidx, solar_index);
-            const auto brdf =
-                m_atmosphere->surface().brdf(wavelidx, mu_in, mu_out, phi_diff);
+            const auto brdf = m_atmosphere->surface().brdf(
+                wavelidx, mu_in, mu_out, phi_diff,
+                m_los_surface_interpolation_weights.at(losidx));
             const double solar_trans_cotangent =
                 mu_in * cotangent.dot(brdf(Eigen::placeholders::all, 0));
             if (m_config->wf_precision() !=
@@ -561,7 +565,8 @@ namespace sasktran2::solartransmission {
                  derivative < m_atmosphere->surface().num_deriv();
                  ++derivative) {
                 const auto brdf_derivative = m_atmosphere->surface().d_brdf(
-                    wavelidx, mu_in, mu_out, phi_diff, derivative);
+                    wavelidx, mu_in, mu_out, phi_diff, derivative,
+                    m_los_surface_interpolation_weights.at(losidx));
                 native_gradient(m_atmosphere->surface_deriv_start_index() +
                                 derivative) +=
                     solar_trans * mu_in *
@@ -584,7 +589,9 @@ namespace sasktran2::solartransmission {
             }
 
             Eigen::Matrix<double, NSTOKES, NSTOKES> brdf =
-                m_atmosphere->surface().brdf(wavelidx, mu_in, mu_out, phi_diff);
+                m_atmosphere->surface().brdf(
+                    wavelidx, mu_in, mu_out, phi_diff,
+                    m_los_surface_interpolation_weights.at(losidx));
 
             int exit_index = m_index_map[losidx][0];
 
@@ -623,8 +630,9 @@ namespace sasktran2::solartransmission {
                 for (int k = 0; k < m_atmosphere->surface().num_deriv(); ++k) {
                     // And then the surface derivative factors
                     Eigen::Matrix<double, NSTOKES, NSTOKES> brdf_deriv =
-                        m_atmosphere->surface().d_brdf(wavelidx, mu_in, mu_out,
-                                                       phi_diff, k);
+                        m_atmosphere->surface().d_brdf(
+                            wavelidx, mu_in, mu_out, phi_diff, k,
+                            m_los_surface_interpolation_weights.at(losidx));
 
                     source.deriv(Eigen::placeholders::all,
                                  m_atmosphere->surface_deriv_start_index() +
@@ -664,7 +672,8 @@ namespace sasktran2::solartransmission {
             for (int lane = 0; lane < batch.count; ++lane) {
                 const int wavelength = batch.wavelength(lane);
                 const auto brdf = m_atmosphere->surface().brdf(
-                    wavelength, mu_in, mu_out, phi_diff);
+                    wavelength, mu_in, mu_out, phi_diff,
+                    m_los_surface_interpolation_weights.at(losidx));
                 const Eigen::Vector<double, NSTOKES> source_value =
                     solar_trans(lane) * brdf(Eigen::placeholders::all, 0) *
                     mu_in;
@@ -686,7 +695,8 @@ namespace sasktran2::solartransmission {
                      derivative < m_atmosphere->surface().num_deriv();
                      ++derivative) {
                     const auto brdf_derivative = m_atmosphere->surface().d_brdf(
-                        wavelength, mu_in, mu_out, phi_diff, derivative);
+                        wavelength, mu_in, mu_out, phi_diff, derivative,
+                        m_los_surface_interpolation_weights.at(losidx));
                     source
                         .derivative(m_atmosphere->surface_deriv_start_index() +
                                         derivative,
@@ -854,12 +864,20 @@ namespace sasktran2::solartransmission {
 
         m_los_ground_is_hit.resize(internal_viewing.traced_rays.size());
         m_los_end_layers.resize(internal_viewing.traced_rays.size());
+        m_los_surface_interpolation_weights.clear();
+        m_los_surface_interpolation_weights.resize(
+            internal_viewing.traced_rays.size());
         for (std::size_t ray_index = 0;
              ray_index < internal_viewing.traced_rays.size(); ++ray_index) {
             const auto& ray = internal_viewing.traced_rays[ray_index];
             m_los_ground_is_hit[ray_index] = ray.ground_is_hit;
             if (!ray.layers.empty()) {
                 m_los_end_layers[ray_index] = ray.layers.front();
+                if (ray.ground_is_hit && m_geometry_2d != nullptr) {
+                    m_geometry_2d->assign_horizontal_interpolation_weights(
+                        ray.layers.front().exit,
+                        m_los_surface_interpolation_weights[ray_index]);
+                }
             }
         }
     }

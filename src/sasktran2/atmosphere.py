@@ -284,8 +284,14 @@ class Atmosphere:
         self._applied_delta_m_order = None
         self._nwavel = nwavel
         self._derivative_output_shapes = {}
+        self._surface_derivative_output_layouts = {}
         self._spatial_state_derivatives = set()
         self._native_input_cache = None
+        self._refractive_index = None
+        self._orbital_lambertian_surface = None
+        self._orbital_lambertian_spectral_interpolator = None
+        self._orbital_lambertian_spatial_parameters = False
+        self._orbital_lambertian_derivative_name = None
 
     @property
     def num_wavel(self) -> int:
@@ -326,6 +332,12 @@ class Atmosphere:
     def derivative_output_shape(self, mapping_name: str) -> tuple[int, ...] | None:
         """Structured parameter shape for a native-location derivative mapping."""
         return self._derivative_output_shapes.get(mapping_name)
+
+    def surface_derivative_output_layout(
+        self, mapping_name: str
+    ) -> tuple[tuple[str, ...], tuple[int, ...], dict[str, np.ndarray]] | None:
+        """Structured layout for a spatial surface derivative mapping."""
+        return self._surface_derivative_output_layouts.get(mapping_name)
 
     @property
     def applied_delta_m_order(self) -> int | None:
@@ -448,6 +460,27 @@ class Atmosphere:
         np.array
         """
         return self._equation_of_state.pressure_pa
+
+    @property
+    def refractive_index(self) -> np.ndarray | None:
+        """Optional geometry refractive index on the atmospheric grid.
+
+        Orbital atmospheres accept either an altitude-only profile or a native
+        ``(orbital_position, altitude)`` field. When present it overrides the
+        Ciddor index calculated from pressure and temperature.
+        """
+        return self._refractive_index
+
+    @refractive_index.setter
+    def refractive_index(self, value: np.ndarray | None) -> None:
+        if value is None:
+            self._refractive_index = None
+            return
+        value = self._validate_state(value, "refractive_index")
+        if np.any(~np.isfinite(value)) or np.any(value <= 0):
+            msg = "refractive_index must be finite and positive"
+            raise ValueError(msg)
+        self._refractive_index = value
 
     @property
     def specific_humidity(self) -> np.array:
@@ -660,6 +693,11 @@ class Atmosphere:
         """
         self.storage.set_zero()
         self.surface.set_zero()
+        self._surface_derivative_output_layouts = {}
+        self._orbital_lambertian_surface = None
+        self._orbital_lambertian_spectral_interpolator = None
+        self._orbital_lambertian_spatial_parameters = False
+        self._orbital_lambertian_derivative_name = None
 
     @property
     def deriv_mappings(self) -> dict:
@@ -741,6 +779,13 @@ class Atmosphere:
             # constituent fails, the next call must rebuild from zero rather
             # than accumulating on a partially populated atmosphere.
             self._storage_needs_reset = True
+            # This field is populated only by LambertianSurface2D. Clear it on
+            # every rebuild so replacing that constituent with an ordinary
+            # surface cannot leave stale orbital albedo attached to the state.
+            self._orbital_lambertian_surface = None
+            self._orbital_lambertian_spectral_interpolator = None
+            self._orbital_lambertian_spatial_parameters = False
+            self._orbital_lambertian_derivative_name = None
 
             profile_atmosphere = self
             try:
@@ -771,6 +816,11 @@ class Atmosphere:
                 self._zero_storage()
                 self._derivs = {}
                 self._derivative_output_shapes = {}
+                self._surface_derivative_output_layouts = {}
+                self._orbital_lambertian_surface = None
+                self._orbital_lambertian_spectral_interpolator = None
+                self._orbital_lambertian_spatial_parameters = False
+                self._orbital_lambertian_derivative_name = None
                 raise
             finally:
                 self._native_input_cache = None

@@ -90,6 +90,7 @@ pub struct AtmosphereStorageInputs<'py> {
     pub calculate_pressure_derivative: bool,
     pub calculate_temperature_derivative: bool,
     pub calculate_specific_humidity_derivative: bool,
+    pub is_native_2d: bool,
     pub py_altitude_m: PyReadonlyArray1<'py, f64>,
     pub py_pressure_pa: Option<PyReadonlyArray1<'py, f64>>,
     pub py_temperature_k: Option<PyReadonlyArray1<'py, f64>>,
@@ -162,6 +163,10 @@ impl<'py> StorageInputs for AtmosphereStorageInputs<'py> {
 
     fn calculate_specific_humidity_derivative(&self) -> bool {
         self.calculate_specific_humidity_derivative
+    }
+
+    fn is_native_2d(&self) -> bool {
+        self.is_native_2d
     }
 
     fn num_singlescatter_moments(&self) -> usize {
@@ -266,6 +271,10 @@ impl<'py> AtmosphereStorage<'py> {
             .unwrap()
             .extract()
             .unwrap_or(false);
+        let is_native_2d = atmo
+            .getattr("_spatial_layout")?
+            .getattr("is_2d")?
+            .extract::<bool>()?;
 
         // Get the rust atmosphere object
         let rust_obj = atmo.call_method0("_into_rust_object").map_err(|_| {
@@ -292,6 +301,7 @@ impl<'py> AtmosphereStorage<'py> {
                 calculate_pressure_derivative,
                 calculate_temperature_derivative,
                 calculate_specific_humidity_derivative,
+                is_native_2d,
                 py_altitude_m: altitudes_m,
                 py_pressure_pa: pressure_pa_array,
                 py_temperature_k: temperature_k_array,

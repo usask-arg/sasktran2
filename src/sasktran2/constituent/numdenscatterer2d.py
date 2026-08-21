@@ -69,10 +69,16 @@ class NumberDensityScatterer2D(Constituent):
         if 0 in value.shape:
             msg = f"{name} horizontal and altitude dimensions must both be non-empty"
             raise ValueError(msg)
+        if np.any(~np.isfinite(value)) or np.any(value < 0):
+            msg = f"{name} must contain finite, non-negative values"
+            raise ValueError(msg)
         return np.ascontiguousarray(value)
 
     def _validate_aux_input(self, value: np.ndarray, name: str) -> np.ndarray:
         value = np.asarray(value, dtype=np.float64)
+        if np.any(~np.isfinite(value)):
+            msg = f"{name} must contain finite values"
+            raise ValueError(msg)
         if value.ndim == 0:
             return np.full(self._volume_shape, value.item(), dtype=np.float64)
         if value.shape != self._volume_shape:
@@ -131,6 +137,9 @@ class NumberDensityScatterer2D(Constituent):
                 f"got {number_density.shape}"
             )
             raise ValueError(msg)
+        if np.any(~np.isfinite(number_density)) or np.any(number_density < 0):
+            msg = "number_density must contain finite, non-negative values"
+            raise ValueError(msg)
         self._constituent.number_density = np.ascontiguousarray(number_density).reshape(
             -1
         )
@@ -145,6 +154,9 @@ class NumberDensityScatterer2D(Constituent):
                 f"{self._volume_shape} != {atmo.volume_shape}"
             )
             raise ValueError(msg)
+        self._validate_native_profile(self.number_density, "number_density")
+        for name, value in self._kwargs.items():
+            self._validate_aux_input(value, name)
 
     def add_to_atmosphere(self, atmo: Atmosphere) -> None:
         self._validate_atmosphere(atmo)
@@ -207,6 +219,7 @@ class ExtinctionScatterer2D(NumberDensityScatterer2D):
         self._sync_constituent_state()
 
     def _update_number_density(self, atmo: Atmosphere) -> None:
+        self._validate_native_profile(self._extinction_per_m, "extinction_per_m")
         native_altitudes = np.asarray(atmo._native_altitudes(), dtype=np.float64)
         factors = np.asarray(
             self._optical_property.cross_sections(
@@ -265,6 +278,9 @@ class ExtinctionScatterer2D(NumberDensityScatterer2D):
                 f"extinction_per_m must retain shape {self._volume_shape}; "
                 f"got {extinction_per_m.shape}"
             )
+            raise ValueError(msg)
+        if np.any(~np.isfinite(extinction_per_m)) or np.any(extinction_per_m < 0):
+            msg = "extinction_per_m must contain finite, non-negative values"
             raise ValueError(msg)
         self._extinction_per_m = np.ascontiguousarray(extinction_per_m)
 

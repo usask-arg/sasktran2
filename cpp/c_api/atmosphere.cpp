@@ -352,6 +352,50 @@ int sk_surface_set_brdf(Surface* surface, BRDF* brdf, double* brdf_args) {
     return 0;
 }
 
+int sk_surface_set_spatial_lambertian(Surface* surface, const double* albedo,
+                                      int num_horizontal, int num_wavel) {
+    if (surface == nullptr || albedo == nullptr || num_horizontal < 2 ||
+        num_wavel < 1 || surface->impl == nullptr) {
+        return -1;
+    }
+    using RowMajorMatrix =
+        Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+    const Eigen::Map<const RowMajorMatrix> albedo_map(albedo, num_horizontal,
+                                                      num_wavel);
+    try {
+        if (auto* impl = dynamic_cast<sasktran2::atmosphere::Surface<1>*>(
+                surface->impl.get())) {
+            impl->set_spatial_lambertian_albedo(albedo_map);
+            return 0;
+        }
+        if (auto* impl = dynamic_cast<sasktran2::atmosphere::Surface<3>*>(
+                surface->impl.get())) {
+            impl->set_spatial_lambertian_albedo(albedo_map);
+            return 0;
+        }
+    } catch (const std::exception&) {
+        return -3;
+    }
+    return -2;
+}
+
+int sk_surface_clear_spatial_lambertian(Surface* surface) {
+    if (surface == nullptr || surface->impl == nullptr) {
+        return -1;
+    }
+    if (auto* impl = dynamic_cast<sasktran2::atmosphere::Surface<1>*>(
+            surface->impl.get())) {
+        impl->clear_spatial_lambertian_albedo();
+        return 0;
+    }
+    if (auto* impl = dynamic_cast<sasktran2::atmosphere::Surface<3>*>(
+            surface->impl.get())) {
+        impl->clear_spatial_lambertian_albedo();
+        return 0;
+    }
+    return -2;
+}
+
 int sk_surface_get_derivative_mapping(Surface* storage, const char* name,
                                       SurfaceDerivativeMapping** mapping) {
     if (storage == nullptr) {

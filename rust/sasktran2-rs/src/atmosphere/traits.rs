@@ -49,6 +49,13 @@ pub trait StorageInputs {
     /// True if the user requests calculation of altitude derivatives
     fn calculate_specific_humidity_derivative(&self) -> bool;
 
+    /// True when native atmospheric locations contain a horizontal as well as
+    /// vertical coordinate. Pointwise state chain rules can then stay on the
+    /// native grid instead of being represented by dense diagonal matrices.
+    fn is_native_2d(&self) -> bool {
+        false
+    }
+
     // Geometry properties
     /// Altitudes in meters of the grid
     fn altitude_m(&self) -> ArrayView1<'_, f64>;
@@ -122,6 +129,10 @@ impl StorageInputs for UpsampledStorageInputs<'_> {
 
     fn calculate_specific_humidity_derivative(&self) -> bool {
         self.base.calculate_specific_humidity_derivative()
+    }
+
+    fn is_native_2d(&self) -> bool {
+        self.base.is_native_2d()
     }
 
     fn altitude_m(&self) -> ArrayView1<'_, f64> {

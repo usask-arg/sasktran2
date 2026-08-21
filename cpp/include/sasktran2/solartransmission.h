@@ -576,6 +576,7 @@ namespace sasktran2::solartransmission {
         std::vector<RowMajorMatrix> m_phase_batch;
         std::vector<RowMajorMatrix> m_d_phase_batch;
         int m_wavelength_batch_capacity = 0;
+        bool m_cache_phase_derivatives = true;
         std::vector<int> m_active_wavelength_block_start;
         std::vector<int> m_active_wavelength_block_count;
 
@@ -605,7 +606,8 @@ namespace sasktran2::solartransmission {
          *  @param atmosphere The atmosphere object
          */
         void initialize_atmosphere(
-            const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere);
+            const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
+            bool cache_phase_derivatives = true);
 
         /**
          * Initializes the phase handler with the geometry object
@@ -722,6 +724,10 @@ namespace sasktran2::solartransmission {
                                     : m_geometry_exit_offsets[flat_layer];
             return m_geometry_to_internal.data() + offset;
         }
+
+        double scattering_derivative_value(int derivative, int component,
+                                           int internal_index,
+                                           int wavelidx) const;
 
         void
         scatter_impl(int wavelidx, int losidx, int layeridx,
@@ -1111,6 +1117,8 @@ namespace sasktran2::solartransmission {
 
         std::vector<bool> m_los_ground_is_hit;
         std::vector<sasktran2::raytracing::LayerGeometry> m_los_end_layers;
+        std::vector<std::vector<std::pair<int, double>>>
+            m_los_surface_interpolation_weights;
 
         void initialize_active_derivative_indices();
         void initialize_atmosphere_impl(

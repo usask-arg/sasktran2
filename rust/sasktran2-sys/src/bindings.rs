@@ -52,6 +52,19 @@ unsafe extern "C" {
     ) -> *mut Geometry2D;
 }
 unsafe extern "C" {
+    pub fn sk_geometry2d_create_ecef(
+        earth_radius: f64,
+        altitude_grid_values: *const f64,
+        num_altitudes: ::std::os::raw::c_int,
+        horizontal_angle_grid_values: *const f64,
+        num_horizontal_locations: ::std::os::raw::c_int,
+        altitude_interp_method: ::std::os::raw::c_int,
+        reference_z: *const f64,
+        reference_x: *const f64,
+        sun_unit: *const f64,
+    ) -> *mut Geometry2D;
+}
+unsafe extern "C" {
     pub fn sk_geometry2d_destroy(geometry: *mut Geometry2D);
 }
 unsafe extern "C" {
@@ -308,6 +321,11 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn sk_surface_deriv_mapping_clear_interpolator(
+        mapping: *mut SurfaceDerivativeMapping,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn sk_surface_deriv_mapping_get_interp_dim(
         mapping: *mut SurfaceDerivativeMapping,
         name: *mut *const ::std::os::raw::c_char,
@@ -447,6 +465,18 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    #[doc = " Copy a C-row-major [horizontal, wavelength] Lambertian albedo field."]
+    pub fn sk_surface_set_spatial_lambertian(
+        surface: *mut Surface,
+        albedo: *const f64,
+        num_horizontal: ::std::os::raw::c_int,
+        num_wavel: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_surface_clear_spatial_lambertian(surface: *mut Surface) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn sk_surface_get_derivative_mapping(
         storage: *mut Surface,
         name: *const ::std::os::raw::c_char,
@@ -481,6 +511,13 @@ unsafe extern "C" {
     pub fn sk_viewing_geometry_destroy(geometry: *mut ViewingGeometry);
 }
 unsafe extern "C" {
+    pub fn sk_viewing_geometry_add_ecef_ray(
+        geometry: *mut ViewingGeometry,
+        observer_position_ecef_m: *const f64,
+        look_direction_ecef: *const f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn sk_viewing_geometry_add_ground_viewing_solar(
         geometry: *mut ViewingGeometry,
         cos_sza: f64,
@@ -504,6 +541,7 @@ unsafe extern "C" {
         tangent_altitude_m: f64,
         observer_altitude_m: f64,
         horizontal_angle_radians: f64,
+        tangent_out_of_plane_angle_radians: f64,
         viewing_azimuth_radians: f64,
     ) -> ::std::os::raw::c_int;
 }
@@ -1143,6 +1181,22 @@ unsafe extern "C" {
         atmosphere: *mut Atmosphere,
         output: *mut OutputC,
         only_initialize: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_engine_set_2d_refractive_profiles(
+        engine: *mut Engine,
+        profiles: *const f64,
+        num_rays: ::std::os::raw::c_int,
+        num_altitudes: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_engine_get_2d_surface_interpolation_weights(
+        engine: *mut Engine,
+        weights: *mut f64,
+        num_rays: ::std::os::raw::c_int,
+        num_horizontal: ::std::os::raw::c_int,
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {

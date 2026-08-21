@@ -154,6 +154,35 @@ def test_number_density_scatterer_2d_rejects_non_native_shapes(number_density):
         )
 
 
+@pytest.mark.parametrize("bad_value", [np.nan, np.inf, -1.0])
+def test_number_density_scatterer_2d_rejects_invalid_physical_values(bad_value):
+    number_density = _number_density()
+    number_density[0, 0] = bad_value
+    with pytest.raises(ValueError, match="finite, non-negative"):
+        sk.constituent.NumberDensityScatterer2D(
+            _constant_optical_property(), number_density
+        )
+
+    constituent = sk.constituent.NumberDensityScatterer2D(
+        _constant_optical_property(), _number_density(), particle_size=2.0
+    )
+    with pytest.raises(ValueError, match=r"particle_size.*finite"):
+        constituent.particle_size = np.nan
+
+
+def test_number_density_in_place_invalid_value_is_rechecked_on_materialization():
+    geometry = _geometry2d()
+    atmosphere = _atmosphere(geometry, derivatives=False)
+    constituent = sk.constituent.NumberDensityScatterer2D(
+        _constant_optical_property(), _number_density()
+    )
+    atmosphere["aerosol"] = constituent
+    constituent.number_density[0, 0] = -1.0
+
+    with pytest.raises(ValueError, match="finite, non-negative"):
+        atmosphere.internal_object()
+
+
 def test_number_density_scatterer_2d_validates_setters_aux_inputs_and_atmosphere():
     constituent = sk.constituent.NumberDensityScatterer2D(
         _constant_optical_property(), _number_density(), particle_size=2.0

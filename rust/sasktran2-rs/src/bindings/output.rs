@@ -227,6 +227,7 @@ pub struct Output {
     pub d_flux_surf: HashMap<String, Array3<f64>>,
 
     pub flux: Array3<f64>,
+    los_optical_depth_override: Option<Array2<f64>>,
 }
 
 impl Output {
@@ -269,6 +270,7 @@ impl Output {
             d_flux: HashMap::new(),
             d_flux_surf: HashMap::new(),
             flux,
+            los_optical_depth_override: None,
         }
     }
 
@@ -385,7 +387,23 @@ impl Output {
         self
     }
 
+    pub fn set_los_optical_depth(&mut self, values: Array2<f64>) -> Result<(), String> {
+        if values.dim() != (self.num_wavel, self.num_los) {
+            return Err(format!(
+                "LOS optical-depth shape {:?} does not match ({}, {})",
+                values.dim(),
+                self.num_wavel,
+                self.num_los
+            ));
+        }
+        self.los_optical_depth_override = Some(values);
+        Ok(())
+    }
+
     pub fn los_optical_depth(&self) -> Array2<f64> {
+        if let Some(values) = &self.los_optical_depth_override {
+            return values.clone();
+        }
         let mut internal: *mut f64 = std::ptr::null_mut();
         let internal_view = unsafe {
             ffi::sk_output_get_los_optical_depth(self.output, &mut internal);
@@ -439,6 +457,17 @@ mod tests {
     fn test_output_dimensions() {
         let output = Output::new(5, 8, 0, 2, 2);
         assert_eq!(output.radiance.shape(), &[5, 8, 2]);
+    }
+
+    #[test]
+    fn los_optical_depth_override_validates_and_owns_its_shape() {
+        let mut output = Output::new(2, 3, 0, 0, 1);
+        assert!(output.set_los_optical_depth(Array2::zeros((3, 2))).is_err());
+
+        let expected = Array2::from_shape_vec((2, 3), (0..6).map(f64::from).collect()).unwrap();
+        output.set_los_optical_depth(expected.clone()).unwrap();
+
+        assert_eq!(output.los_optical_depth(), expected);
     }
 
     #[test]

@@ -53,6 +53,12 @@ struct Geometry2D {
                const double* altitude_grid_values, int num_altitudes,
                const double* horizontal_angle_grid_values,
                int num_horizontal_locations, int altitude_interp_method);
+
+    Geometry2D(double earth_radius, const double* altitude_grid_values,
+               int num_altitudes, const double* horizontal_angle_grid_values,
+               int num_horizontal_locations, int altitude_interp_method,
+               const double* reference_z, const double* reference_x,
+               const double* sun_unit);
 };
 
 struct AtmosphereStorage {

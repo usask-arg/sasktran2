@@ -173,6 +173,7 @@ impl Constituent for Rayleigh {
         let (inputs, outputs, derivative_generator) = storage.split_inputs_outputs_deriv();
 
         let outputs = outputs.view();
+        let compact_native_state_derivatives = inputs.is_native_2d();
 
         let air_dens = inputs.air_numberdensity_dict();
         let wavelengths_nm = inputs
@@ -189,8 +190,7 @@ impl Constituent for Rayleigh {
 
         for (deriv_name, deriv_val) in deriv_names.iter().zip(deriv_vals.iter()) {
             if (*deriv_name == "pressure_pa" && !inputs.calculate_pressure_derivative())
-                || (*deriv_name == "temperature_k"
-                    && !inputs.calculate_temperature_derivative())
+                || (*deriv_name == "temperature_k" && !inputs.calculate_temperature_derivative())
             {
                 continue;
             }
@@ -200,12 +200,16 @@ impl Constituent for Rayleigh {
                 .with_scatterer();
             {
                 let mut deriv_view = deriv.mut_view();
+                let scat_factor = deriv_view
+                    .scat_factor
+                    .as_mut()
+                    .ok_or_else(|| anyhow::anyhow!("Rayleigh derivative missing scat_factor"))?;
 
                 thread_pool.install(|| {
                     Zip::indexed(deriv_view.d_extinction.columns_mut())
                         .and(deriv_view.d_ssa.columns_mut())
                         .and(deriv_view.d_legendre.unwrap().axis_iter_mut(Axis(2)))
-                        .and(deriv_view.scat_factor.unwrap().columns_mut())
+                        .and(scat_factor.columns_mut())
                         .and(outputs.legendre.axis_iter(Axis(2)))
                         .par_for_each(
                             |i, d_k_row, d_ssa_row, mut d_leg_row, scat_f_row, leg_row| {
@@ -248,10 +252,23 @@ impl Constituent for Rayleigh {
                             },
                         );
                 });
+
+                if compact_native_state_derivatives {
+                    Zip::from(deriv_view.d_extinction.rows_mut())
+                        .and(deriv_view.d_ssa.rows_mut())
+                        .and(scat_factor.rows_mut())
+                        .and(*deriv_val)
+                        .for_each(|mut d_extinction, mut d_ssa, mut scat_factor, factor| {
+                            d_extinction *= *factor;
+                            d_ssa *= *factor;
+                            scat_factor *= *factor;
+                        });
+                }
             }
             deriv.set_interp_dim("altitude");
-            let interpolator: Array2<f64> = Array2::from_diag(deriv_val);
-            deriv.set_interpolator(&interpolator);
+            if !compact_native_state_derivatives {
+                deriv.set_interpolator(&Array2::from_diag(deriv_val));
+            }
             let assign_name = "wf_".to_owned() + deriv_name;
             deriv.set_assign_name(&assign_name);
         }

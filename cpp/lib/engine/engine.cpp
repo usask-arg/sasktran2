@@ -48,10 +48,10 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::initialize() {
             throw std::invalid_argument(
                 "Geometry2D does not yet support flux observers");
         }
-        if (m_config.los_refraction()) {
+        if (m_config.solar_refraction()) {
             throw std::invalid_argument(
-                "Geometry2D engine integration does not yet accept per-ray "
-                "refractive-index profiles");
+                "Geometry2D supports line-of-sight refraction only; solar "
+                "refraction is not supported");
         }
         if (m_config.multiple_scatter_source() ==
                 sasktran2::Config::MultipleScatterSource::successive_orders &&
@@ -416,8 +416,14 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::calculate_geometry() {
             const auto& viewing_ray = m_viewing_geometry.observer_rays()[i];
             auto ray = viewing_ray->construct_ray(m_geometry->coordinates());
 #ifdef SKTRAN_RUST_SUPPORT
-            m_raytracer_2d->trace_ray(
-                ray, m_internal_viewing_geometry.traced_rays[i]);
+            if (!m_refractive_profiles_2d.empty()) {
+                m_raytracer_2d->trace_ray(
+                    ray, m_refractive_profiles_2d[i],
+                    m_internal_viewing_geometry.traced_rays[i]);
+            } else {
+                m_raytracer_2d->trace_ray(
+                    ray, m_internal_viewing_geometry.traced_rays[i]);
+            }
 #endif
         }
 
@@ -478,8 +484,71 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::calculate_geometry() {
 }
 
 template <int NSTOKES>
+void Sasktran2<NSTOKES>::set_2d_refractive_profiles(
+    const Eigen::Ref<const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic,
+                                         Eigen::RowMajor>>& profiles) {
+    if (m_geometry_2d == nullptr) {
+        throw std::invalid_argument(
+            "Per-ray refractive profiles are only valid for Geometry2D");
+    }
+    const Eigen::Index expected_rays =
+        static_cast<Eigen::Index>(m_viewing_geometry.observer_rays().size());
+    if (profiles.rows() != expected_rays ||
+        profiles.cols() != m_geometry_2d->num_altitudes()) {
+        throw std::invalid_argument(
+            "Geometry2D refractive profiles must have shape (num_los, "
+            "num_altitudes)");
+    }
+    if (!profiles.allFinite() || (profiles.array() <= 0.0).any()) {
+        throw std::invalid_argument(
+            "Geometry2D refractive profiles must be finite and positive");
+    }
+
+    m_refractive_profiles_2d.resize(static_cast<std::size_t>(profiles.rows()));
+    for (Eigen::Index ray = 0; ray < profiles.rows(); ++ray) {
+        m_refractive_profiles_2d[static_cast<std::size_t>(ray)] =
+            profiles.row(ray).transpose();
+    }
+    calculate_geometry();
+}
+
+template <int NSTOKES>
+void Sasktran2<NSTOKES>::assign_2d_surface_interpolation_weights(
+    Eigen::Ref<RowMajorMatrix> weights) const {
+    if (m_geometry_2d == nullptr) {
+        throw std::logic_error(
+            "Surface interpolation weights require a Geometry2D engine");
+    }
+    if (weights.rows() != m_internal_viewing_geometry.num_rays() ||
+        weights.cols() != m_geometry_2d->num_horizontal_locations()) {
+        throw std::invalid_argument(
+            "Surface interpolation weight buffer has incorrect dimensions");
+    }
+    weights.setZero();
+    std::vector<std::pair<int, double>> stencil;
+    for (int ray_index = 0; ray_index < m_internal_viewing_geometry.num_rays();
+         ++ray_index) {
+        const auto& ray = m_internal_viewing_geometry.traced_rays[ray_index];
+        if (!ray.ground_is_hit || ray.layers.empty()) {
+            continue;
+        }
+        m_geometry_2d->assign_horizontal_interpolation_weights(
+            ray.layers.front().exit, stencil);
+        for (const auto& [horizontal_index, weight] : stencil) {
+            weights(ray_index, horizontal_index) += weight;
+        }
+    }
+}
+
+template <int NSTOKES>
 void Sasktran2<NSTOKES>::validate_input_atmosphere(
     const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere) const {
+    if (m_geometry_2d != nullptr && m_config.los_refraction() &&
+        m_refractive_profiles_2d.empty()) {
+        throw std::runtime_error(
+            "Geometry2D line-of-sight refraction requires one refractive-"
+            "index profile per viewing ray");
+    }
     if (m_config.input_validation_mode() ==
         sasktran2::Config::InputValidationMode::disabled) {
         return;

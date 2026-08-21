@@ -40,6 +40,33 @@ Geometry2D::Geometry2D(double cos_sza, double saa, double earth_radius,
     }
 }
 
+Geometry2D::Geometry2D(double earth_radius, const double* altitude_grid_values,
+                       int num_altitudes,
+                       const double* horizontal_angle_grid_values,
+                       int num_horizontal_locations, int altitude_interp_method,
+                       const double* reference_z, const double* reference_x,
+                       const double* sun_unit) {
+    try {
+        const Eigen::VectorXd altitude_grid = Eigen::Map<const Eigen::VectorXd>(
+            altitude_grid_values, num_altitudes);
+        const Eigen::VectorXd horizontal_angle_grid =
+            Eigen::Map<const Eigen::VectorXd>(horizontal_angle_grid_values,
+                                              num_horizontal_locations);
+        sasktran2::Coordinates coordinates(
+            Eigen::Map<const Eigen::Vector3d>(reference_z),
+            Eigen::Map<const Eigen::Vector3d>(reference_x),
+            Eigen::Map<const Eigen::Vector3d>(sun_unit), earth_radius,
+            sasktran2::geometrytype::spherical);
+        impl = std::make_unique<sasktran2::Geometry2D>(
+            std::move(coordinates), Eigen::VectorXd(altitude_grid),
+            Eigen::VectorXd(horizontal_angle_grid),
+            static_cast<sasktran2::grids::interpolation>(
+                altitude_interp_method));
+    } catch (const std::exception&) {
+        impl = nullptr;
+    }
+}
+
 extern "C" {
 Geometry1D* sk_geometry1d_create(double cos_sza, double saa,
                                  double earth_radius, double* grid_values,
@@ -96,6 +123,28 @@ sk_geometry2d_create(double cos_sza, double saa, double earth_radius,
         new Geometry2D(cos_sza, saa, earth_radius, altitude_grid_values,
                        num_altitudes, horizontal_angle_grid_values,
                        num_horizontal_locations, altitude_interp_method);
+    if (geometry->impl == nullptr) {
+        delete geometry;
+        return nullptr;
+    }
+    return geometry;
+}
+
+Geometry2D* sk_geometry2d_create_ecef(
+    double earth_radius, const double* altitude_grid_values, int num_altitudes,
+    const double* horizontal_angle_grid_values, int num_horizontal_locations,
+    int altitude_interp_method, const double* reference_z,
+    const double* reference_x, const double* sun_unit) {
+    if (altitude_grid_values == nullptr ||
+        horizontal_angle_grid_values == nullptr || reference_z == nullptr ||
+        reference_x == nullptr || sun_unit == nullptr || num_altitudes < 0 ||
+        num_horizontal_locations < 0) {
+        return nullptr;
+    }
+    auto* geometry = new Geometry2D(
+        earth_radius, altitude_grid_values, num_altitudes,
+        horizontal_angle_grid_values, num_horizontal_locations,
+        altitude_interp_method, reference_z, reference_x, sun_unit);
     if (geometry->impl == nullptr) {
         delete geometry;
         return nullptr;

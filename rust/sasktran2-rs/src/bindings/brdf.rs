@@ -22,6 +22,9 @@ pub trait IsCBRDF {
     /// The raw ffi object
     fn as_cbrdf(&self) -> *mut ffi::BRDF;
 
+    /// Concrete BRDF family used by callers that must restrict supported types.
+    fn kind(&self) -> BrdfKind;
+
     /// The number of arguments for the BRDF, needed to allocate memory
     /// e.g. a Lambertian BRDF has 1 argument, the albedo, other BRDFs may have more
     fn num_args(&self) -> Result<usize> {
@@ -37,6 +40,13 @@ pub trait IsCBRDF {
 
         Ok(num_args as usize)
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BrdfKind {
+    Lambertian,
+    SnowKokhanovsky,
+    Modis,
 }
 
 /// A lambertian BRDF, implemented on the c++ side
@@ -60,6 +70,10 @@ impl IsCBRDF for Lambertian {
     fn as_cbrdf(&self) -> *mut ffi::BRDF {
         self.internal.brdf
     }
+
+    fn kind(&self) -> BrdfKind {
+        BrdfKind::Lambertian
+    }
 }
 
 /// A Kokhanovsky BRDF, implemented on the c++ side
@@ -81,6 +95,10 @@ impl SnowKokhanovsky {
 impl IsCBRDF for SnowKokhanovsky {
     fn as_cbrdf(&self) -> *mut ffi::BRDF {
         self.internal.brdf
+    }
+
+    fn kind(&self) -> BrdfKind {
+        BrdfKind::SnowKokhanovsky
     }
 }
 
@@ -104,5 +122,9 @@ impl MODIS {
 impl IsCBRDF for MODIS {
     fn as_cbrdf(&self) -> *mut ffi::BRDF {
         self.internal.brdf
+    }
+
+    fn kind(&self) -> BrdfKind {
+        BrdfKind::Modis
     }
 }

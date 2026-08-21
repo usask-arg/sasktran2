@@ -1234,10 +1234,12 @@ mod tests {
         );
         assert_eq!(config.successive_orders_anderson_depth().unwrap(), 3);
         assert_eq!(config.successive_orders_damping().unwrap(), 1.0);
-        assert!(config
-            .successive_orders_altitude_grid_m()
-            .unwrap()
-            .is_empty());
+        assert!(
+            config
+                .successive_orders_altitude_grid_m()
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -1380,18 +1382,24 @@ mod tests {
             [500.0, 2_500.0, 10_000.0]
         );
 
-        assert!(config
-            .with_successive_orders_relative_tolerance(f64::NAN)
-            .is_err());
+        assert!(
+            config
+                .with_successive_orders_relative_tolerance(f64::NAN)
+                .is_err()
+        );
         assert!(config.with_successive_orders_damping(0.0).is_err());
-        assert!(config
-            .with_successive_orders_altitude_grid_m(&[2_000.0, 1_000.0])
-            .is_err());
+        assert!(
+            config
+                .with_successive_orders_altitude_grid_m(&[2_000.0, 1_000.0])
+                .is_err()
+        );
         config.with_successive_orders_altitude_grid_m(&[]).unwrap();
-        assert!(config
-            .successive_orders_altitude_grid_m()
-            .unwrap()
-            .is_empty());
+        assert!(
+            config
+                .successive_orders_altitude_grid_m()
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

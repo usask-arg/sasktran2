@@ -47,6 +47,11 @@ from .linearization import (
     LinearizationBackend,
     StaleLinearizationError,
 )
+from .orbital import (
+    OrbitalPlaneEngine,
+    OrbitalPlaneGeometry,
+    OrbitalPlaneViewingGeometry,
+)
 from .viewinggeo.wrappers import (
     FluxObserverSolar,
     GroundViewingSolar,

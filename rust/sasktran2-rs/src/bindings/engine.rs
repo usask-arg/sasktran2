@@ -7,7 +7,7 @@ use super::geometry::{Geometry1D, Geometry2D};
 use super::output::{JvpOutput, Output, VjpOutput};
 use super::prelude::*;
 use super::viewing_geometry::ViewingGeometry;
-use ndarray::{Array1, Array3};
+use ndarray::{Array1, Array2, Array3, ArrayView2};
 use rayon::current_thread_index;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use sasktran2_sys::ffi;
@@ -234,6 +234,64 @@ impl<'a> Engine<'a> {
         } else {
             Err(anyhow::anyhow!(
                 "Failed to query linearization support: {}",
+                result
+            ))
+        }
+    }
+
+    /// Refresh a structured-2D engine with one altitude-only refractive
+    /// profile per line of sight. The C++ engine retains its allocations and
+    /// rebuilds only geometry-dependent state.
+    pub fn set_2d_refractive_profiles(&mut self, profiles: ArrayView2<'_, f64>) -> Result<()> {
+        if !matches!(self.geometry, EngineGeometry::TwoDimensional(_)) {
+            return Err(anyhow::anyhow!(
+                "Per-ray refractive profiles require a Geometry2D engine"
+            ));
+        }
+        let profiles = profiles.as_standard_layout();
+        let shape = profiles.shape();
+        let result = unsafe {
+            ffi::sk_engine_set_2d_refractive_profiles(
+                self.engine,
+                profiles.as_ptr(),
+                shape[0] as i32,
+                shape[1] as i32,
+            )
+        };
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!(
+                "Failed to set Geometry2D refractive profiles: {}",
+                result
+            ))
+        }
+    }
+
+    pub fn surface_interpolation_weights(&self) -> Result<Array2<f64>> {
+        let num_horizontal = match self.geometry {
+            EngineGeometry::TwoDimensional(geometry) => geometry.location_shape()?.0,
+            EngineGeometry::OneDimensional(_) => {
+                return Err(anyhow::anyhow!(
+                    "Surface interpolation weights require a Geometry2D engine"
+                ));
+            }
+        };
+        let num_rays = self.viewing_geometry.num_rays()?;
+        let mut weights = Array2::zeros((num_rays, num_horizontal));
+        let result = unsafe {
+            ffi::sk_engine_get_2d_surface_interpolation_weights(
+                self.engine,
+                weights.as_mut_ptr(),
+                num_rays as i32,
+                num_horizontal as i32,
+            )
+        };
+        if result == 0 {
+            Ok(weights)
+        } else {
+            Err(anyhow::anyhow!(
+                "Failed to obtain Geometry2D surface interpolation weights: {}",
                 result
             ))
         }

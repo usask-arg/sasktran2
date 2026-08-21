@@ -80,6 +80,37 @@ TEST_CASE("Geometry-relative tangent angles follow the Geometry2D plane",
     }
 }
 
+TEST_CASE("Geometry-relative tangent ray preserves an out-of-plane location",
+          "[sasktran2][viewinggeometry][tangentaltitude]") {
+    sasktran2::Coordinates coordinates(0.2, 0.9, earth_radius_m);
+    const double horizontal_angle = -0.3;
+    const double out_of_plane_angle = 0.08;
+    const double viewing_azimuth = -0.4;
+    sasktran2::viewinggeometry::TangentAltitude policy(
+        tangent_altitude_m, viewing_azimuth, observer_altitude_m,
+        horizontal_angle, out_of_plane_angle);
+
+    const auto ray = policy.construct_ray(coordinates);
+    const auto tangent_basis =
+        coordinates.local_x_y_from_angles(horizontal_angle, out_of_plane_angle);
+    const Eigen::Vector3d expected_direction =
+        coordinates.unit_vector_from_angles(horizontal_angle,
+                                            out_of_plane_angle);
+    const Eigen::Vector3d expected_look =
+        std::cos(viewing_azimuth) * tangent_basis.first +
+        std::sin(viewing_azimuth) * tangent_basis.second;
+    const double observer_to_tangent =
+        std::sqrt(std::pow(earth_radius_m + observer_altitude_m, 2) -
+                  std::pow(earth_radius_m + tangent_altitude_m, 2));
+    const Eigen::Vector3d tangent =
+        ray.observer.position + observer_to_tangent * ray.look_away;
+
+    REQUIRE(tangent.normalized().isApprox(expected_direction, 1e-13));
+    REQUIRE(tangent.norm() ==
+            Catch::Approx(earth_radius_m + tangent_altitude_m));
+    REQUIRE(ray.look_away.isApprox(expected_look, 1e-13));
+}
+
 TEST_CASE("Geometry-relative tangent ray is independent of solar angles",
           "[sasktran2][viewinggeometry][tangentaltitude]") {
     sasktran2::Coordinates first_coordinates(0.8, 0.0, earth_radius_m);

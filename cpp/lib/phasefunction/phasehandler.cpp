@@ -363,10 +363,14 @@ namespace sasktran2::solartransmission {
 
     template <int NSTOKES>
     void PhaseHandler<NSTOKES>::initialize_atmosphere(
-        const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere) {
+        const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
+        bool cache_phase_derivatives) {
         m_atmosphere = &atmosphere;
+        m_cache_phase_derivatives = cache_phase_derivatives;
 
-        int numderiv = m_atmosphere->num_scattering_deriv_groups();
+        const int numderiv = cache_phase_derivatives
+                                 ? m_atmosphere->num_scattering_deriv_groups()
+                                 : 0;
 
         if constexpr (NSTOKES == 1) {
             m_d_phase.resize(1, (int)m_internal_to_geometry.size(), numderiv,
@@ -475,7 +479,7 @@ namespace sasktran2::solartransmission {
         const int num_internal =
             static_cast<int>(m_internal_to_geometry.size());
         const int num_derivatives =
-            m_atmosphere == nullptr
+            m_atmosphere == nullptr || !m_cache_phase_derivatives
                 ? 0
                 : m_atmosphere->num_scattering_deriv_groups();
 
@@ -884,31 +888,6 @@ namespace sasktran2::solartransmission {
         const int* internal_indices =
             geometry_internal_indices(losidx, layeridx, is_entrance);
 
-        const int batch_lane =
-            m_wavelength_batch_capacity > 1
-                ? wavelidx - m_active_wavelength_block_start.at(threadidx)
-                : 0;
-        if (m_wavelength_batch_capacity > 1 &&
-            (batch_lane < 0 ||
-             batch_lane >= m_active_wavelength_block_count.at(threadidx))) {
-            throw std::out_of_range(
-                "Phase wavelength is outside the active block");
-        }
-        const int num_internal =
-            static_cast<int>(m_internal_to_geometry.size());
-        const int num_phase_components = NSTOKES == 1 ? 1 : 2;
-        const auto derivative_value = [&](int derivative, int component,
-                                          int internal_index) {
-            if (m_wavelength_batch_capacity > 1) {
-                const int row =
-                    (derivative * num_phase_components + component) *
-                        num_internal +
-                    internal_index;
-                return m_d_phase_batch[threadidx](row, batch_lane);
-            }
-            return m_d_phase(component, internal_index, derivative, threadidx);
-        };
-
         for (int derivative = 0;
              derivative < m_atmosphere->num_scattering_deriv_groups();
              ++derivative) {
@@ -926,13 +905,15 @@ namespace sasktran2::solartransmission {
                     native_tangent(derivative_start + weight.first) *
                     weight.second;
                 phase_jvp(0) +=
-                    direction * derivative_value(derivative, 0, internal_index);
+                    direction * scattering_derivative_value(
+                                    derivative, 0, internal_index, wavelidx);
                 if constexpr (NSTOKES == 3) {
                     const auto& scatter_angle = m_scatter_angles
                         [m_internal_to_cos_scatter[internal_index]];
                     const double polarized =
-                        direction *
-                        derivative_value(derivative, 1, internal_index);
+                        direction * scattering_derivative_value(derivative, 1,
+                                                                internal_index,
+                                                                wavelidx);
                     phase_jvp(1) -= scatter_angle[1] * polarized;
                     phase_jvp(2) -= scatter_angle[2] * polarized;
                 }
@@ -948,30 +929,7 @@ namespace sasktran2::solartransmission {
         Eigen::Ref<Eigen::VectorXd> native_gradient) const {
         const int* internal_indices =
             geometry_internal_indices(losidx, layeridx, is_entrance);
-        const int batch_lane =
-            m_wavelength_batch_capacity > 1
-                ? wavelidx - m_active_wavelength_block_start.at(threadidx)
-                : 0;
-        if (m_wavelength_batch_capacity > 1 &&
-            (batch_lane < 0 ||
-             batch_lane >= m_active_wavelength_block_count.at(threadidx))) {
-            throw std::out_of_range(
-                "Phase wavelength is outside the active block");
-        }
-        const int num_internal =
-            static_cast<int>(m_internal_to_geometry.size());
-        const int num_phase_components = NSTOKES == 1 ? 1 : 2;
-        const auto derivative_phase = [&](int derivative, int component,
-                                          int internal_index) {
-            if (m_wavelength_batch_capacity > 1) {
-                const int row =
-                    (derivative * num_phase_components + component) *
-                        num_internal +
-                    internal_index;
-                return m_d_phase_batch[threadidx](row, batch_lane);
-            }
-            return m_d_phase(component, internal_index, derivative, threadidx);
-        };
+        (void)threadidx;
         for (int derivative = 0;
              derivative < m_atmosphere->num_scattering_deriv_groups();
              ++derivative) {
@@ -987,18 +945,54 @@ namespace sasktran2::solartransmission {
                 const int internal_index = internal_indices[internal_offset++];
                 double derivative_value =
                     phase_cotangent(0) *
-                    derivative_phase(derivative, 0, internal_index);
+                    scattering_derivative_value(derivative, 0, internal_index,
+                                                wavelidx);
                 if constexpr (NSTOKES == 3) {
                     const auto& scatter_angle = m_scatter_angles
                         [m_internal_to_cos_scatter[internal_index]];
                     derivative_value +=
                         (-scatter_angle[1] * phase_cotangent(1) -
                          scatter_angle[2] * phase_cotangent(2)) *
-                        derivative_phase(derivative, 1, internal_index);
+                        scattering_derivative_value(derivative, 1,
+                                                    internal_index, wavelidx);
                 }
                 native_gradient(derivative_start + weight.first) +=
                     weight.second * derivative_value;
             }
+        }
+    }
+
+    template <int NSTOKES>
+    double PhaseHandler<NSTOKES>::scattering_derivative_value(
+        int derivative, int component, int internal_index, int wavelidx) const {
+        const int atmosphere_index = m_internal_to_geometry[internal_index];
+        const int scatter_index = m_internal_to_cos_scatter[internal_index];
+        const int max_order = m_atmosphere->storage().d_max_order[derivative](
+            atmosphere_index, wavelidx);
+        if (max_order <= 0) {
+            return 0.0;
+        }
+        if constexpr (NSTOKES == 1) {
+            (void)component;
+            return Eigen::Map<const Eigen::VectorXd>(
+                       &m_atmosphere->storage().d_leg_coeff(
+                           0, atmosphere_index, wavelidx, derivative),
+                       max_order)
+                .dot(m_wigner_d00(Eigen::seq(0, max_order - 1), scatter_index));
+        } else {
+            const int coefficient_offset = component == 0 ? 0 : 3;
+            const auto coefficients =
+                Eigen::Map<const Eigen::VectorXd, 0, Eigen::InnerStride<4>>(
+                    &m_atmosphere->storage().d_leg_coeff(coefficient_offset,
+                                                         atmosphere_index,
+                                                         wavelidx, derivative),
+                    max_order);
+            if (component == 0) {
+                return coefficients.dot(
+                    m_wigner_d00(Eigen::seq(0, max_order - 1), scatter_index));
+            }
+            return coefficients.dot(
+                m_wigner_d02(Eigen::seq(0, max_order - 1), scatter_index));
         }
     }
 

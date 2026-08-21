@@ -111,6 +111,31 @@ def test_vmr_setter_rejects_shape_changes():
         constituent.vmr = np.ones((1, 9))
 
 
+@pytest.mark.parametrize("bad_value", [np.nan, np.inf, -1e-6])
+def test_vmr_rejects_non_finite_and_negative_values(bad_value):
+    vmr = _vmr()
+    vmr[0, 0] = bad_value
+    with pytest.raises(ValueError, match="finite, non-negative"):
+        sk.constituent.VMRAbsorber2D(_ConstantAbsorber(), vmr)
+
+    constituent = sk.constituent.VMRAbsorber2D(_ConstantAbsorber(), _vmr())
+    replacement = _vmr()
+    replacement[0, 0] = bad_value
+    with pytest.raises(ValueError, match="finite, non-negative"):
+        constituent.vmr = replacement
+
+
+def test_vmr_in_place_invalid_value_is_rechecked_on_materialization():
+    geometry = _geometry2d()
+    atmosphere = _atmosphere(geometry, calculate_derivatives=False)
+    constituent = sk.constituent.VMRAbsorber2D(_ConstantAbsorber(), _vmr())
+    atmosphere["gas"] = constituent
+    constituent.vmr[0, 0] = np.nan
+
+    with pytest.raises(ValueError, match="finite, non-negative"):
+        atmosphere.internal_object()
+
+
 def test_requires_geometry2d_and_matching_native_shape():
     constituent = sk.constituent.VMRAbsorber2D(_ConstantAbsorber(), _vmr())
     geometry1d = sk.Geometry1D(
@@ -303,9 +328,8 @@ def test_native_pressure_derivative_matches_storage_difference():
     horizontal_index = 1
     altitude_index = 1
     location_index = geometry.location_index(altitude_index, horizontal_index)
-    analytic = (
-        mapping.d_extinction * mapping.interpolator[:, location_index, np.newaxis]
-    )
+    analytic = np.zeros_like(mapping.d_extinction)
+    analytic[location_index] = mapping.d_extinction[location_index]
 
     delta = 0.1
     atmosphere.pressure_pa[horizontal_index, altitude_index] += delta

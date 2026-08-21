@@ -11,6 +11,7 @@ mod engine;
 mod geodetic;
 mod geometry;
 mod optical;
+mod orbital;
 mod output;
 mod photchem;
 mod pyrebasis;
@@ -67,6 +68,7 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Geometry objects
     m.add_class::<geometry::PyGeometry1D>()?;
     m.add_class::<geometry::PyGeometry2D>()?;
+    m.add_class::<orbital::PyOrbitalPlaneGeometry>()?;
     m.add_class::<geometry::GeometryType>()?;
     m.add_class::<geometry::InterpolationMethod>()?;
 
@@ -77,11 +79,15 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<viewing_geometry::PySolarAnglesObserverLocation>()?;
     m.add_class::<viewing_geometry::PyFluxObserverSolar>()?;
     m.add_class::<viewing_geometry::PyViewingGeometry>()?;
+    m.add_class::<orbital::PyOrbitalPlaneViewingGeometry>()?;
     m.add_class::<output::PyJvpOutput>()?;
     m.add_class::<output::PyVjpOutput>()?;
 
     // Engine
     m.add_class::<engine::PyEngine>()?;
+    m.add_class::<orbital::PyOrbitalPlaneEngine>()?;
+    m.add_function(wrap_pyfunction!(orbital::orbital_group_reference_data, m)?)?;
+    m.add_function(wrap_pyfunction!(orbital::orbital_ciddor_index, m)?)?;
 
     // Atmosphere objects
     m.add_class::<atmosphere::PyAtmosphereStorage>()?;

@@ -83,6 +83,10 @@ class TangentAltitude:
         Line-of-sight azimuth in the local tangent plane, in radians, following
         the convention above. Angles are periodic and are not restricted to a
         particular wrapped interval.
+    tangent_out_of_plane_angle_radians : float, optional
+        Angular displacement of the tangent location away from the Geometry2D
+        reference plane. This is primarily used when transforming an ECEF ray
+        into a fitted local 2D coordinate frame. The default is zero.
 
     Notes
     -----
@@ -129,17 +133,20 @@ class TangentAltitude:
         observer_altitude_m: float,
         horizontal_angle_radians: float,
         viewing_azimuth_radians: float,
+        tangent_out_of_plane_angle_radians: float = 0.0,
     ):
         self._internal = PyTangentAltitude(
             tangent_altitude_m,
             observer_altitude_m,
             horizontal_angle_radians,
             viewing_azimuth_radians,
+            tangent_out_of_plane_angle_radians,
         )
         self._tangent_altitude_m = tangent_altitude_m
         self._observer_altitude_m = observer_altitude_m
         self._horizontal_angle_radians = horizontal_angle_radians
         self._viewing_azimuth_radians = viewing_azimuth_radians
+        self._tangent_out_of_plane_angle_radians = tangent_out_of_plane_angle_radians
 
     @property
     def tangent_altitude_m(self) -> float:
@@ -161,12 +168,19 @@ class TangentAltitude:
         """Line-of-sight azimuth in the local tangent plane."""
         return self._viewing_azimuth_radians
 
+    @property
+    def tangent_out_of_plane_angle_radians(self) -> float:
+        """Tangent-location displacement from the Geometry2D plane."""
+        return self._tangent_out_of_plane_angle_radians
+
     def __repr__(self):
         return (
             "Tangent Viewing Ray: "
             f"tangent_altitude_m: {self._tangent_altitude_m}, "
             f"observer_altitude_m: {self._observer_altitude_m}, "
             f"horizontal_angle_radians: {self._horizontal_angle_radians}, "
+            "tangent_out_of_plane_angle_radians: "
+            f"{self._tangent_out_of_plane_angle_radians}, "
             f"viewing_azimuth_radians: {self._viewing_azimuth_radians}"
         )
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
@@ -15,20 +16,32 @@ from sasktran2.linearization import (
 )
 from sasktran2.viewinggeo.base import ViewingGeometryContainer
 
+_ORBITAL_MAPPED_SURFACE_PREFIX = "__orbital_mapped_surface__"
+
 
 def map_surface_derivative(
-    mapping, np_deriv: np.ndarray, dims: list[str]
+    mapping,
+    np_deriv: np.ndarray,
+    dims: list[str],
+    structured_layout: (
+        tuple[tuple[str, ...], tuple[int, ...], dict[str, np.ndarray]] | None
+    ) = None,
 ) -> xr.DataArray:
     if mapping.interpolator is None or len(mapping.interpolator) == 0:
         return xr.DataArray(np_deriv, dims=dims)
+    mapped = np.einsum(
+        "ij..., il->lij...",
+        np_deriv,
+        mapping.interpolator,
+        optimize=True,
+    )
+    if structured_layout is None:
+        return xr.DataArray(mapped, dims=[mapping.interp_dim, *dims])
+    parameter_dims, parameter_shape, coords = structured_layout
     return xr.DataArray(
-        np.einsum(
-            "ij..., il->lij...",
-            np_deriv,
-            mapping.interpolator,
-            optimize=True,
-        ),
-        dims=[mapping.interp_dim, *dims],
+        mapped.reshape((*parameter_shape, *mapped.shape[1:])),
+        dims=[*parameter_dims, *dims],
+        coords=coords,
     )
 
 
@@ -49,9 +62,12 @@ def atmosphere_derivative_dataarray(
     if len(output_shape) != 2:
         msg = f"Unsupported structured atmosphere derivative shape: {output_shape}"
         raise ValueError(msg)
+    horizontal_dimension = getattr(
+        atmosphere.model_geometry, "horizontal_dimension", "horizontal_angle"
+    )
     return xr.DataArray(
         derivative.reshape((*output_shape, *derivative.shape[1:])),
-        dims=["horizontal_angle", "altitude", *trailing_dims],
+        dims=[horizontal_dimension, "altitude", *trailing_dims],
     )
 
 
@@ -186,6 +202,16 @@ class Engine:
         Linearization
             The radiance and local derivative operations.
         """
+        return self._linearize(atmosphere)
+
+    def _linearize(
+        self,
+        atmosphere: sk.Atmosphere,
+        *,
+        internal_atmosphere=None,
+        validate_session: Callable[[], None] | None = None,
+    ) -> Linearization:
+        """Construct a linearization from an optional materialized atmosphere."""
         self._validate_atmosphere_geometry(atmosphere)
         if not atmosphere.calculate_derivatives:
             msg = (
@@ -202,7 +228,11 @@ class Engine:
             raise NotImplementedError(msg)
         jacobian_supported = self._engine._supports_linearization(0)
 
-        native_atmosphere = atmosphere.internal_object()
+        native_atmosphere = (
+            atmosphere.internal_object()
+            if internal_atmosphere is None
+            else internal_atmosphere
+        )
         revision = atmosphere.revision
         initial_output = self._engine._calculate_jvp(native_atmosphere, {}, {})
         value = self._radiance_dataarray(initial_output.radiance, atmosphere)
@@ -217,6 +247,8 @@ class Engine:
         }
 
         def load_jacobian() -> xr.Dataset:
+            if validate_session is not None:
+                validate_session()
             if not jacobian_supported:
                 msg = (
                     "The configured engine supports derivative products but "
@@ -247,6 +279,8 @@ class Engine:
             return xr.Dataset(jacobian)
 
         def evaluate_jvp(tangent: xr.Dataset) -> xr.DataArray:
+            if validate_session is not None:
+                validate_session()
             volume_tangents: dict[str, np.ndarray] = {}
             surface_tangents: dict[str, np.ndarray] = {}
             for parameter in tangent.data_vars:
@@ -265,6 +299,8 @@ class Engine:
         def evaluate_vjp(
             cotangent: xr.DataArray, parameters: tuple[str, ...]
         ) -> xr.Dataset:
+            if validate_session is not None:
+                validate_session()
             if not parameters:
                 return xr.Dataset()
             volume_sizes = {
@@ -353,6 +389,16 @@ class Engine:
                     coordinate = atmosphere.model_geometry.horizontal_angles()
                     if len(coordinate) == size:
                         coords[dim] = coordinate
+                elif dim == "orbital_position" and isinstance(
+                    atmosphere.model_geometry, sk.Geometry2D
+                ):
+                    coordinate = getattr(
+                        atmosphere.model_geometry,
+                        "orbital_positions",
+                        np.arange(size),
+                    )
+                    if len(coordinate) == size:
+                        coords[dim] = coordinate
             return xr.DataArray(np.zeros(shape), dims=dims, coords=coords)
 
         def register(
@@ -397,7 +443,14 @@ class Engine:
             )
             structured_shape = atmosphere.derivative_output_shape(internal_name)
             if structured_shape is not None:
-                dims = ("horizontal_angle", "altitude")
+                dims = (
+                    getattr(
+                        atmosphere.model_geometry,
+                        "horizontal_dimension",
+                        "horizontal_angle",
+                    ),
+                    "altitude",
+                )
                 shape = tuple(structured_shape)
             else:
                 dims = (mapping.interp_dim,)
@@ -418,7 +471,14 @@ class Engine:
         for internal_name in atmosphere.surface.derivative_mapping_names():
             mapping = atmosphere.surface.get_derivative_mapping(internal_name)
             interpolator = np.asarray(mapping.interpolator)
-            if interpolator.size:
+            structured_layout = atmosphere.surface_derivative_output_layout(
+                internal_name
+            )
+            if structured_layout is not None:
+                dims, shape, coords = structured_layout
+                size = int(np.prod(shape))
+                spec = _ParameterSpec(dims)
+            elif interpolator.size:
                 size = int(interpolator.shape[1])
                 if mapping.interp_dim == "dummy" or size == 1:
                     dims: tuple[str, ...] = ()
@@ -436,7 +496,11 @@ class Engine:
                 internal_name,
                 internal_name,
                 spec,
-                template_for(dims, shape),
+                (
+                    xr.DataArray(np.zeros(shape), dims=dims, coords=coords)
+                    if structured_layout is not None
+                    else template_for(dims, shape)
+                ),
                 surface=True,
             )
             surface_sizes[internal_name] = size
@@ -513,6 +577,34 @@ class Engine:
         out_ds.coords["stokes"] = ["I", "Q", "U", "V"][: len(out_ds.stokes)]
 
         for k, v in output.d_radiance.items():
+            if k.startswith(_ORBITAL_MAPPED_SURFACE_PREFIX):
+                name = k.removeprefix(_ORBITAL_MAPPED_SURFACE_PREFIX)
+                mapping = atmosphere.surface.get_derivative_mapping(name)
+                structured_layout = atmosphere.surface_derivative_output_layout(name)
+                if structured_layout is None:
+                    mapped_derivative = xr.DataArray(
+                        v,
+                        dims=[mapping.interp_dim, "wavelength", "los", "stokes"],
+                    )
+                    if mapping.interp_dim == "dummy":
+                        mapped_derivative = mapped_derivative.isel(dummy=0)
+                    spec = _ParameterSpec(tuple(mapped_derivative.dims[:-3]))
+                else:
+                    parameter_dims, parameter_shape, coords = structured_layout
+                    mapped_derivative = xr.DataArray(
+                        v.reshape((*parameter_shape, *v.shape[1:])),
+                        dims=[
+                            *parameter_dims,
+                            "wavelength",
+                            "los",
+                            "stokes",
+                        ],
+                        coords=coords,
+                    )
+                    spec = _ParameterSpec(parameter_dims)
+                out_ds[name] = mapped_derivative
+                radiance_derivative_specs[name] = spec
+                continue
             mapping = atmosphere.storage.get_derivative_mapping(k)
 
             name = k if mapping.assign_name == "" else mapping.assign_name
@@ -541,13 +633,19 @@ class Engine:
             mapping = atmosphere.surface.get_derivative_mapping(k)
 
             mapped_derivative = map_surface_derivative(
-                mapping, v, ["wavelength", "los", "stokes"]
+                mapping,
+                v,
+                ["wavelength", "los", "stokes"],
+                atmosphere.surface_derivative_output_layout(k),
             )
             if mapping.interp_dim == "dummy":
                 mapped_derivative = mapped_derivative.isel(**{mapping.interp_dim: 0})
             out_ds[k] = mapped_derivative
 
-            if mapping.interpolator is None or len(mapping.interpolator) == 0:
+            structured_layout = atmosphere.surface_derivative_output_layout(k)
+            if structured_layout is not None:
+                spec = _ParameterSpec(structured_layout[0])
+            elif mapping.interpolator is None or len(mapping.interpolator) == 0:
                 spec = _ParameterSpec(("wavelength",), ("wavelength",))
             else:
                 spec = _ParameterSpec(tuple(mapped_derivative.dims[:-3]))
@@ -583,7 +681,10 @@ class Engine:
                 name = f"{base_name}_{flux_type}_flux"
 
                 mapped_derivative = map_surface_derivative(
-                    mapping, v[i], ["wavelength", "flux_location"]
+                    mapping,
+                    v[i],
+                    ["wavelength", "flux_location"],
+                    atmosphere.surface_derivative_output_layout(k),
                 )
                 if mapping.interp_dim == "dummy":
                     mapped_derivative = mapped_derivative.isel(
@@ -601,6 +702,12 @@ class Engine:
                 )
             if "altitude" in out_ds.dims:
                 out_ds.coords["altitude"] = atmosphere.model_geometry.altitudes()
+            if "orbital_position" in out_ds.dims:
+                out_ds.coords["orbital_position"] = getattr(
+                    atmosphere.model_geometry,
+                    "orbital_positions",
+                    np.arange(out_ds.sizes["orbital_position"]),
+                )
 
         if self._config.output_los_optical_depth:
             los_od = output.los_optical_depth
