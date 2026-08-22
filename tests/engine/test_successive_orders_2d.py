@@ -143,6 +143,32 @@ def test_2d_successive_orders_uses_horizontal_atmospheric_structure():
     )
 
 
+def test_2d_successive_orders_accepts_explicit_horizontal_source_angles():
+    geometry = geometry2d()
+    config = successive_orders_config(
+        single_scatter_source=sk.SingleScatterSource.NoSource
+    )
+    config.num_sza = 99
+    config.successive_orders_horizontal_angle_grid_radians = np.array(
+        [-0.55, -0.1, 0.2, 0.5]
+    )
+
+    result = sk.Engine(config, geometry, viewing_geometry()).calculate_radiance(
+        atmosphere(geometry, config)
+    )
+
+    assert np.all(np.isfinite(result.radiance.values))
+    assert result.radiance.values.item() > 0.0
+
+
+def test_2d_successive_orders_rejects_source_angles_outside_geometry():
+    config = successive_orders_config()
+    config.successive_orders_horizontal_angle_grid_radians = np.array([-0.7, 0.0])
+
+    with pytest.raises(ValueError, match="must lie inside the Geometry2D"):
+        sk.Engine(config, geometry2d(), viewing_geometry())
+
+
 def test_2d_successive_orders_native_products_are_adjoint():
     geometry = geometry2d()
     config = successive_orders_config(

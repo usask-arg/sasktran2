@@ -218,6 +218,7 @@ namespace sasktran2::successive_orders {
         m_solar_interpolation.clear();
         m_solar_ground_hit.clear();
         m_solar_propagation_directions.clear();
+        m_ground_horizontal_weights.clear();
         m_num_threads = config.num_threads();
         m_num_source_threads = config.num_source_threads();
         m_num_wavelength_threads = config.num_wavelength_threads();
@@ -281,9 +282,24 @@ namespace sasktran2::successive_orders {
         m_solar_interpolation.clear();
         m_solar_ground_hit.clear();
         m_solar_propagation_directions.clear();
+        m_ground_horizontal_weights.clear();
         const auto& viewing = source_geometry.incoming_viewing_geometry();
         m_num_rays = static_cast<int>(viewing.traced_rays.size());
         m_source_geometry = &source_geometry;
+        m_ground_horizontal_weights.resize(viewing.traced_rays.size());
+        if (m_geometry_1d == nullptr) {
+            const auto& geometry_2d =
+                static_cast<const sasktran2::Geometry2D&>(m_geometry);
+            for (std::size_t ray_index = 0;
+                 ray_index < viewing.traced_rays.size(); ++ray_index) {
+                const auto& ray = viewing.traced_rays[ray_index];
+                if (ray.ground_is_hit && !ray.layers.empty()) {
+                    geometry_2d.assign_horizontal_interpolation_weights(
+                        ray.layers.front().exit,
+                        m_ground_horizontal_weights[ray_index]);
+                }
+            }
+        }
         m_use_compact_scalar =
             m_compact_scalar_requested &&
             std::all_of(viewing.traced_rays.begin(), viewing.traced_rays.end(),
@@ -959,6 +975,47 @@ namespace sasktran2::successive_orders {
     }
 
     template <int NSTOKES>
+    double FirstOrderProvider<NSTOKES>::ground_transport_albedo(int wavelength,
+                                                                int ray) const {
+        if (!m_atmosphere->surface().has_spatial_lambertian_albedo()) {
+            return 1.0;
+        }
+        return m_atmosphere->surface().spatial_lambertian_albedo(
+            wavelength, m_ground_horizontal_weights[ray]);
+    }
+
+    template <int NSTOKES>
+    double FirstOrderProvider<NSTOKES>::ground_transport_albedo_tangent(
+        int ray, Eigen::Ref<const Eigen::VectorXd> native_tangent) const {
+        if (!m_atmosphere->surface().has_spatial_lambertian_albedo()) {
+            return 0.0;
+        }
+        double result = 0.0;
+        for (const auto& [horizontal_index, weight] :
+             m_ground_horizontal_weights[ray]) {
+            result += weight *
+                      native_tangent(m_atmosphere->surface_deriv_start_index() +
+                                     horizontal_index);
+        }
+        return result;
+    }
+
+    template <int NSTOKES>
+    void FirstOrderProvider<NSTOKES>::accumulate_ground_transport_albedo_vjp(
+        int ray, double albedo_cotangent,
+        Eigen::Ref<Eigen::VectorXd> native_gradient) const {
+        if (!m_atmosphere->surface().has_spatial_lambertian_albedo() ||
+            albedo_cotangent == 0.0) {
+            return;
+        }
+        for (const auto& [horizontal_index, weight] :
+             m_ground_horizontal_weights[ray]) {
+            native_gradient(m_atmosphere->surface_deriv_start_index() +
+                            horizontal_index) += weight * albedo_cotangent;
+        }
+    }
+
+    template <int NSTOKES>
     void FirstOrderProvider<NSTOKES>::calculate_scalar(
         int wavelength, int wavelength_thread,
         Eigen::Ref<Eigen::VectorXd> forcing, TransportOperator* transport) {
@@ -1082,10 +1139,16 @@ namespace sasktran2::successive_orders {
                 prefix *= transfer.attenuation;
             }
             if constexpr (WITH_TRANSPORT) {
-                for (const auto& source : ray_interpolation.ground_weights) {
-                    transport->values()(
-                        ray_interpolation.transport_value_offset +
-                        source.row_inner_index) += source.weight * prefix;
+                if (ray_interpolation.ground_is_hit()) {
+                    const double ground_albedo =
+                        ground_transport_albedo(wavelength, ray);
+                    for (const auto& source :
+                         ray_interpolation.ground_weights) {
+                        transport->values()(
+                            ray_interpolation.transport_value_offset +
+                            source.row_inner_index) +=
+                            source.weight * prefix * ground_albedo;
+                    }
                 }
             }
             if (packed_ray.ground_geometry >= 0) {
@@ -1097,7 +1160,8 @@ namespace sasktran2::successive_orders {
                 if (ground_scattering_geometry(m_solar_offsets[ray], ground,
                                                mu_in, mu_out, phi)) {
                     const auto brdf = m_atmosphere->surface().brdf(
-                        wavelength, mu_in, mu_out, phi);
+                        wavelength, mu_in, mu_out, phi,
+                        m_ground_horizontal_weights[ray]);
                     radiance += prefix * solar(m_solar_offsets[ray]) * mu_in *
                                 brdf(0, 0);
                 }
@@ -1284,11 +1348,14 @@ namespace sasktran2::successive_orders {
             }
             if constexpr (WITH_TRANSPORT) {
                 if (ray_interpolation.ground_is_hit()) {
+                    const double ground_albedo =
+                        ground_transport_albedo(wavelength, ray);
                     for (const auto& source :
                          ray_interpolation.ground_weights) {
                         transport->values()(
                             ray_interpolation.transport_value_offset +
-                            source.row_inner_index) += source.weight * prefix;
+                            source.row_inner_index) +=
+                            source.weight * prefix * ground_albedo;
                     }
                 }
             }
@@ -1319,7 +1386,8 @@ namespace sasktran2::successive_orders {
                 if (ground_scattering_geometry(m_solar_offsets[ray], ground,
                                                mu_in, mu_out, phi)) {
                     const auto brdf = m_atmosphere->surface().brdf(
-                        wavelength, mu_in, mu_out, phi);
+                        wavelength, mu_in, mu_out, phi,
+                        m_ground_horizontal_weights[ray]);
                     radiance += prefix * solar(m_solar_offsets[ray]) * mu_in *
                                 brdf(0, 0);
                 }
@@ -1471,8 +1539,14 @@ namespace sasktran2::successive_orders {
                 prefix *= attenuation;
             }
             if (interpolation[ray].ground_is_hit()) {
+                const double ground_albedo =
+                    ground_transport_albedo(wavelength, ray);
+                const double ground_albedo_tangent =
+                    ground_transport_albedo_tangent(ray, native_tangent);
                 direct_transport_tangent(ray) +=
-                    ground_state_projection(ray) * prefix_tangent;
+                    ground_state_projection(ray) *
+                    (ground_albedo * prefix_tangent +
+                     prefix * ground_albedo_tangent);
             }
             if (packed_ray.ground_geometry >= 0) {
                 const auto& ground =
@@ -1483,7 +1557,8 @@ namespace sasktran2::successive_orders {
                 if (ground_scattering_geometry(m_solar_offsets[ray], ground,
                                                mu_in, mu_out, phi)) {
                     const auto brdf = m_atmosphere->surface().brdf(
-                        wavelength, mu_in, mu_out, phi);
+                        wavelength, mu_in, mu_out, phi,
+                        m_ground_horizontal_weights[ray]);
                     double brdf_tangent = 0.0;
                     for (int derivative = 0;
                          derivative < m_atmosphere->surface().num_deriv();
@@ -1492,9 +1567,9 @@ namespace sasktran2::successive_orders {
                             native_tangent(
                                 m_atmosphere->surface_deriv_start_index() +
                                 derivative) *
-                            m_atmosphere->surface().d_brdf(wavelength, mu_in,
-                                                           mu_out, phi,
-                                                           derivative)(0, 0);
+                            m_atmosphere->surface().d_brdf(
+                                wavelength, mu_in, mu_out, phi, derivative,
+                                m_ground_horizontal_weights[ray])(0, 0);
                     }
                     const double ground_source =
                         solar(m_solar_offsets[ray]) * mu_in * brdf(0, 0);
@@ -1863,8 +1938,13 @@ namespace sasktran2::successive_orders {
             }
             if constexpr (WITH_TRANSPORT) {
                 if (ray_interpolation.ground_is_hit()) {
+                    const double ground_albedo =
+                        ground_transport_albedo(wavelength, ray);
+                    const double ground_albedo_tangent =
+                        ground_transport_albedo_tangent(ray, native_tangent);
                     direct_transport_direction[ray] +=
-                        ground_state[ray] * prefix_tangent;
+                        ground_state[ray] * (ground_albedo * prefix_tangent +
+                                             prefix * ground_albedo_tangent);
                 }
             }
             ScalarGroundGeometry local_ground;
@@ -1887,7 +1967,8 @@ namespace sasktran2::successive_orders {
                 if (ground_scattering_geometry(m_solar_offsets[ray], *ground,
                                                mu_in, mu_out, phi)) {
                     const auto brdf = m_atmosphere->surface().brdf(
-                        wavelength, mu_in, mu_out, phi);
+                        wavelength, mu_in, mu_out, phi,
+                        m_ground_horizontal_weights[ray]);
                     double brdf_tangent = 0.0;
                     for (int derivative = 0;
                          derivative < m_atmosphere->surface().num_deriv();
@@ -1896,9 +1977,9 @@ namespace sasktran2::successive_orders {
                             native_tangent(
                                 m_atmosphere->surface_deriv_start_index() +
                                 derivative) *
-                            m_atmosphere->surface().d_brdf(wavelength, mu_in,
-                                                           mu_out, phi,
-                                                           derivative)(0, 0);
+                            m_atmosphere->surface().d_brdf(
+                                wavelength, mu_in, mu_out, phi, derivative,
+                                m_ground_horizontal_weights[ray])(0, 0);
                     }
                     const double ground_source =
                         solar(m_solar_offsets[ray]) * mu_in * brdf(0, 0);
@@ -2110,7 +2191,8 @@ namespace sasktran2::successive_orders {
                 if (ground_scattering_geometry(m_solar_offsets[ray], *ground,
                                                mu_in, mu_out, phi)) {
                     const auto brdf = m_atmosphere->surface().brdf(
-                        wavelength, mu_in, mu_out, phi);
+                        wavelength, mu_in, mu_out, phi,
+                        m_ground_horizontal_weights[ray]);
                     const double ground_source =
                         solar(m_solar_offsets[ray]) * mu_in * brdf(0, 0);
                     prefix_cotangent = forcing_gradient * ground_source;
@@ -2121,29 +2203,36 @@ namespace sasktran2::successive_orders {
                          ++derivative) {
                         thread_gradient(
                             m_atmosphere->surface_deriv_start_index() +
-                            derivative) += prefix * forcing_gradient *
-                                           solar(m_solar_offsets[ray]) * mu_in *
-                                           m_atmosphere->surface().d_brdf(
-                                               wavelength, mu_in, mu_out, phi,
-                                               derivative)(0, 0);
+                            derivative) +=
+                            prefix * forcing_gradient *
+                            solar(m_solar_offsets[ray]) * mu_in *
+                            m_atmosphere->surface().d_brdf(
+                                wavelength, mu_in, mu_out, phi, derivative,
+                                m_ground_horizontal_weights[ray])(0, 0);
                     }
                 }
             }
             if constexpr (WITH_TRANSPORT) {
                 if (ray_interpolation.ground_is_hit()) {
+                    double ground_value = 0.0;
                     if (ground_state != nullptr) {
-                        prefix_cotangent +=
-                            ground_state[ray] * forcing_gradient;
+                        ground_value = ground_state[ray];
                     } else {
                         for (const auto& source :
                              ray_interpolation.ground_weights) {
-                            prefix_cotangent +=
-                                source.weight * forcing_gradient *
-                                (*transport_state)(
-                                    transport_column_data
-                                        [source.row_inner_index]);
+                            ground_value += source.weight *
+                                            (*transport_state)(
+                                                transport_column_data
+                                                    [source.row_inner_index]);
                         }
                     }
+                    const double ground_albedo =
+                        ground_transport_albedo(wavelength, ray);
+                    prefix_cotangent +=
+                        ground_albedo * ground_value * forcing_gradient;
+                    accumulate_ground_transport_albedo_vjp(
+                        ray, prefix * ground_value * forcing_gradient,
+                        thread_gradient);
                 }
             }
 

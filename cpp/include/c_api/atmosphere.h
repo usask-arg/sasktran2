@@ -177,6 +177,12 @@ void sk_surface_destroy(Surface* surface);
 
 int sk_surface_set_brdf(Surface* surface, BRDF* brdf, double* brdf_args);
 
+/** Copy a C-row-major [horizontal, wavelength] Lambertian albedo field. */
+int sk_surface_set_spatial_lambertian(Surface* surface, const double* albedo,
+                                      int num_horizontal, int num_wavel);
+
+int sk_surface_clear_spatial_lambertian(Surface* surface);
+
 int sk_surface_get_derivative_mapping(Surface* storage, const char* name,
                                       SurfaceDerivativeMapping** mapping);
 

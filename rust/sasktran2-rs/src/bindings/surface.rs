@@ -1,4 +1,4 @@
-use super::brdf::{IsCBRDF, Lambertian};
+use super::brdf::{BrdfKind, IsCBRDF, Lambertian};
 use super::deriv_mapping::SurfaceDerivativeMapping;
 use super::prelude::*;
 use ndarray::*;
@@ -9,6 +9,7 @@ pub struct Surface {
     pub surface: *mut ffi::Surface,
     pub emission: Array1<f64>,
     pub brdf_args: Array2<f64>,
+    pub brdf_kind: BrdfKind,
 }
 
 impl Surface {
@@ -21,6 +22,7 @@ impl Surface {
             },
             emission,
             brdf_args: Array2::zeros((0, num_wavel).f()),
+            brdf_kind: BrdfKind::Lambertian,
         };
 
         // Set the default brdf to be lambertian
@@ -40,7 +42,42 @@ impl Surface {
         if result != 0 {
             return Err(anyhow!("Failed to set BRDF for surface: {}", result));
         }
+        self.brdf_kind = brdf.kind();
 
+        Ok(())
+    }
+
+    pub fn set_spatial_lambertian(&mut self, albedo: ArrayView2<'_, f64>) -> Result<()> {
+        if albedo.nrows() < 2 || albedo.ncols() != self.emission.len() {
+            return Err(anyhow!(
+                "Spatial Lambertian albedo must have shape (horizontal >= 2, {})",
+                self.emission.len()
+            ));
+        }
+        let albedo = albedo.as_standard_layout();
+        let result = unsafe {
+            ffi::sk_surface_set_spatial_lambertian(
+                self.surface,
+                albedo.as_ptr(),
+                albedo.nrows() as i32,
+                albedo.ncols() as i32,
+            )
+        };
+        if result != 0 {
+            return Err(anyhow!(
+                "Failed to set spatial Lambertian surface: {result}"
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn clear_spatial_lambertian(&mut self) -> Result<()> {
+        let result = unsafe { ffi::sk_surface_clear_spatial_lambertian(self.surface) };
+        if result != 0 {
+            return Err(anyhow!(
+                "Failed to clear spatial Lambertian surface: {result}"
+            ));
+        }
         Ok(())
     }
 

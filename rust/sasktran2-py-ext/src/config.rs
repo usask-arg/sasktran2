@@ -551,6 +551,28 @@ impl PyConfig {
     }
 
     #[getter]
+    fn successive_orders_horizontal_angle_grid_radians(&self) -> PyResult<Option<Vec<f64>>> {
+        let horizontal_angle_grid_radians = self
+            .config
+            .successive_orders_horizontal_angle_grid_radians()
+            .into_pyresult()?;
+        Ok((!horizontal_angle_grid_radians.is_empty()).then_some(horizontal_angle_grid_radians))
+    }
+
+    #[setter]
+    fn set_successive_orders_horizontal_angle_grid_radians(
+        &mut self,
+        horizontal_angle_grid_radians: Option<Vec<f64>>,
+    ) -> PyResult<()> {
+        self.config
+            .with_successive_orders_horizontal_angle_grid_radians(
+                horizontal_angle_grid_radians.as_deref().unwrap_or_default(),
+            )
+            .into_pyresult()?;
+        Ok(())
+    }
+
+    #[getter]
     fn init_successive_orders_with_discrete_ordinates(&self) -> PyResult<bool> {
         self.config
             .init_successive_orders_with_discrete_ordinates()

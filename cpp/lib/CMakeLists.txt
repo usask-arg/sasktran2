@@ -28,6 +28,7 @@ add_library(
   geometry/geometry2d.cpp
   geometry/geodetic.cpp
   viewinggeometry/tangentaltitude.cpp
+  viewinggeometry/ecef.cpp
   viewinggeometry/groundviewing.cpp
   viewinggeometry/tangentaltitudesolar.cpp
   viewinggeometry/viewinggeometrycontainer.cpp

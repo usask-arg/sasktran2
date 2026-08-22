@@ -222,6 +222,14 @@ def test_explicit_altitudes_must_be_inside_the_model_atmosphere():
         sk.Engine(config, _geometry(), _viewing_geometry())
 
 
+def test_explicit_horizontal_source_angles_require_geometry2d():
+    config = _config(sk.MultipleScatterSource.SuccessiveOrders)
+    config.successive_orders_horizontal_angle_grid_radians = np.array([-0.1, 0.1])
+
+    with pytest.raises(ValueError, match="supported only with Geometry2D"):
+        sk.Engine(config, _geometry(), _viewing_geometry())
+
+
 def test_zero_tolerances_use_the_configured_fixed_iteration_count():
     one_iteration = _config(
         sk.MultipleScatterSource.SuccessiveOrders,

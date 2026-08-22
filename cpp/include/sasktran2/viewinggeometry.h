@@ -72,6 +72,24 @@ namespace sasktran2::viewinggeometry {
         virtual ~ViewingGeometryBase(){};
     };
 
+    /** A line of sight already expressed in the geometry's Cartesian frame.
+     * This is primarily used by orbital calculations whose observers and look
+     * directions are naturally supplied in ECEF coordinates. */
+    class ECEFViewingRay : public ViewingGeometryBase {
+      private:
+        Eigen::Vector3d m_observer_position;
+        Eigen::Vector3d m_look_direction;
+
+      public:
+        ECEFViewingRay(Eigen::Vector3d observer_position,
+                       Eigen::Vector3d look_direction);
+
+        ViewingRay
+        construct_ray(const sasktran2::Coordinates& geometry) override final;
+
+        std::string to_string() const override final;
+    };
+
     /**
      *  Allows for conversion between user specified coordinates (such as SZA,
      * lat/lon, etc) and internal coordinates for flux observers

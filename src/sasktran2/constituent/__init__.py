@@ -4,6 +4,7 @@ from __future__ import annotations
 from .amf import AirMassFactor
 from .brdf.kokhanovsky import SnowKokhanovsky
 from .brdf.lambertiansurface import LambertianSurface
+from .brdf.lambertiansurface2d import LambertianSurface2D
 from .brdf.modis import MODIS
 from .collisioninducedabsorber import CollisionInducedAbsorber
 from .emission import SurfaceThermalEmission, ThermalEmission

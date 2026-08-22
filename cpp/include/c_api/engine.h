@@ -22,6 +22,14 @@ Engine* sk_engine_create_2d(Config* engine, Geometry2D* geometry,
 
 int sk_engine_calculate_radiance(Engine* engine, Atmosphere* atmosphere,
                                  OutputC* output, int only_initialize);
+int sk_engine_set_2d_refractive_profiles(Engine* engine, const double* profiles,
+                                         int num_rays, int num_altitudes);
+int sk_engine_get_2d_surface_interpolation_weights(Engine* engine,
+                                                   double* weights,
+                                                   int num_rays,
+                                                   int num_horizontal);
+int sk_engine_get_2d_horizontal_edge_usage(Engine* engine, int* usage,
+                                           int num_rays);
 int sk_engine_effective_wavelength_batch_size(Engine* engine,
                                               int num_wavelengths);
 int sk_engine_supports_linearization(Engine* engine, int mode, int* supported);

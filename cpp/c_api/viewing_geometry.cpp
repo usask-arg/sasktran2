@@ -8,6 +8,24 @@ ViewingGeometry* sk_viewing_geometry_create() { return new ViewingGeometry(); }
 
 void sk_viewing_geometry_destroy(ViewingGeometry* storage) { delete storage; }
 
+int sk_viewing_geometry_add_ecef_ray(ViewingGeometry* geometry,
+                                     const double* observer_position_ecef_m,
+                                     const double* look_direction_ecef) {
+    if (geometry == nullptr || observer_position_ecef_m == nullptr ||
+        look_direction_ecef == nullptr) {
+        return -1;
+    }
+    try {
+        geometry->impl.observer_rays().emplace_back(
+            std::make_unique<sasktran2::viewinggeometry::ECEFViewingRay>(
+                Eigen::Map<const Eigen::Vector3d>(observer_position_ecef_m),
+                Eigen::Map<const Eigen::Vector3d>(look_direction_ecef)));
+    } catch (const std::invalid_argument&) {
+        return -2;
+    }
+    return 0;
+}
+
 void sk_viewing_geometry_add_ground_viewing_solar(ViewingGeometry* geometry,
                                                   double cos_sza,
                                                   double relative_azimuth_angle,
@@ -32,11 +50,10 @@ int sk_viewing_geometry_add_tangent_altitude_solar(
     return 0; // Success
 }
 
-int sk_viewing_geometry_add_tangent_altitude(ViewingGeometry* geometry,
-                                             double tangent_altitude_m,
-                                             double observer_altitude_m,
-                                             double horizontal_angle_radians,
-                                             double viewing_azimuth_radians) {
+int sk_viewing_geometry_add_tangent_altitude(
+    ViewingGeometry* geometry, double tangent_altitude_m,
+    double observer_altitude_m, double horizontal_angle_radians,
+    double tangent_out_of_plane_angle_radians, double viewing_azimuth_radians) {
     if (geometry == nullptr) {
         return -1;
     }
@@ -44,7 +61,8 @@ int sk_viewing_geometry_add_tangent_altitude(ViewingGeometry* geometry,
         geometry->impl.observer_rays().emplace_back(
             std::make_unique<sasktran2::viewinggeometry::TangentAltitude>(
                 tangent_altitude_m, viewing_azimuth_radians,
-                observer_altitude_m, horizontal_angle_radians, 0.0));
+                observer_altitude_m, horizontal_angle_radians,
+                tangent_out_of_plane_angle_radians));
     } catch (const std::invalid_argument&) {
         return -2;
     }

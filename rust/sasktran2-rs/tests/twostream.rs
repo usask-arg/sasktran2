@@ -633,10 +633,12 @@ fn twostream_spherical_thin_layer_jacobian_matches_finite_difference() -> Result
             .fill(upper_extinction);
         let output = engine.calculate_radiance(&atmosphere)?;
         assert!(output.radiance.iter().all(|value| value.is_finite()));
-        assert!(output
-            .d_radiance
-            .values()
-            .all(|values| values.iter().all(|value| value.is_finite())));
+        assert!(
+            output
+                .d_radiance
+                .values()
+                .all(|values| values.iter().all(|value| value.is_finite()))
+        );
 
         if upper_extinction > 0.0 {
             let analytic = output.d_radiance["wf_extinction"][[level, wave, los, 0]];

@@ -27,6 +27,12 @@ sk_geometry2d_create(double cos_sza, double saa, double earth_radius,
                      const double* horizontal_angle_grid_values,
                      int num_horizontal_locations, int altitude_interp_method);
 
+Geometry2D* sk_geometry2d_create_ecef(
+    double earth_radius, const double* altitude_grid_values, int num_altitudes,
+    const double* horizontal_angle_grid_values, int num_horizontal_locations,
+    int altitude_interp_method, const double* reference_z,
+    const double* reference_x, const double* sun_unit);
+
 void sk_geometry2d_destroy(Geometry2D* geometry);
 
 int sk_geometry2d_get_location_shape(const Geometry2D* geometry,

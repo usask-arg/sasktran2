@@ -326,7 +326,7 @@ def test_rayleigh_native_2d_state_keeps_independent_location_derivatives():
 
     mapping_name = "wf_rayleigh_pressure_pa"
     mapping = atmosphere.storage.get_derivative_mapping(mapping_name)
-    assert mapping.interpolator.shape == (6, 6)
+    assert mapping.interpolator.shape == (0, 0)
     assert mapping.interp_dim == "location"
     assert atmosphere.derivative_output_shape(mapping_name) == (2, 3)
 
@@ -403,9 +403,8 @@ def test_native_pressure_derivative_is_local_and_matches_finite_difference():
     location_index = atmosphere.model_geometry.location_index(
         altitude_index, horizontal_index
     )
-    analytic = (
-        mapping.d_extinction * mapping.interpolator[:, location_index, np.newaxis]
-    )
+    analytic = np.zeros_like(mapping.d_extinction)
+    analytic[location_index] = mapping.d_extinction[location_index]
 
     delta = 0.1
     atmosphere.pressure_pa[horizontal_index, altitude_index] += delta

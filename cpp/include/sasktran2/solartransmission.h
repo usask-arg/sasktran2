@@ -1111,6 +1111,8 @@ namespace sasktran2::solartransmission {
 
         std::vector<bool> m_los_ground_is_hit;
         std::vector<sasktran2::raytracing::LayerGeometry> m_los_end_layers;
+        std::vector<std::vector<std::pair<int, double>>>
+            m_los_surface_interpolation_weights;
 
         void initialize_active_derivative_indices();
         void initialize_atmosphere_impl(

@@ -296,6 +296,15 @@ int sk_surface_deriv_mapping_set_interpolator(SurfaceDerivativeMapping* mapping,
     return 0;
 }
 
+int sk_surface_deriv_mapping_clear_interpolator(
+    SurfaceDerivativeMapping* mapping) {
+    if (mapping == nullptr || mapping->impl == nullptr) {
+        return -1;
+    }
+    mapping->impl->clear_interpolator();
+    return 0;
+}
+
 int sk_surface_deriv_mapping_get_interpolator(SurfaceDerivativeMapping* mapping,
                                               double** interpolator, int* dim1,
                                               int* dim2) {

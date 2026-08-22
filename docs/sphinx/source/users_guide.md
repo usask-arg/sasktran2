@@ -33,6 +33,9 @@
 [Ray Tracing and Refraction](users_guide/refraction.md)
 : Including refractive effects in the ray-tracing
 
+[Orbital-Plane 2D Calculations](users_guide/orbital_plane.md)
+: Grouping timestamped ECEF limb measurements into persistent local 2D engines
+
 [Photochemical Emission](users_guide/volume_emission.md)
 : Photochemical emission support as a source term
 
@@ -55,6 +58,7 @@ users_guide/aerosols.md
 users_guide/flux.md
 users_guide/mie.md
 users_guide/refraction.md
+users_guide/orbital_plane.md
 users_guide/polarization.md
 users_guide/brdf.md
 users_guide/performance.md

@@ -253,6 +253,12 @@ namespace sasktran2::successive_orders {
                                         const ScalarGroundGeometry& ground,
                                         double& mu_in, double& mu_out,
                                         double& phi) const;
+        double ground_transport_albedo(int wavelength, int ray) const;
+        double ground_transport_albedo_tangent(
+            int ray, Eigen::Ref<const Eigen::VectorXd> native_tangent) const;
+        void accumulate_ground_transport_albedo_vjp(
+            int ray, double albedo_cotangent,
+            Eigen::Ref<Eigen::VectorXd> native_gradient) const;
 
         const sasktran2::Geometry& m_geometry;
         const sasktran2::Geometry1D* m_geometry_1d = nullptr;
@@ -264,6 +270,8 @@ namespace sasktran2::successive_orders {
             m_solar_interpolation;
         std::vector<bool> m_solar_ground_hit;
         std::vector<Eigen::Vector3d> m_solar_propagation_directions;
+        std::vector<std::vector<std::pair<int, double>>>
+            m_ground_horizontal_weights;
         sasktran2::SourceIntegrator<NSTOKES> m_integrator;
         std::vector<SourceTermInterface<NSTOKES>*> m_source_terms;
         const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere =

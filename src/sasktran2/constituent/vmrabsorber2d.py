@@ -27,6 +27,14 @@ class VMRAbsorber2D(Constituent):
 
     _constituent: PyVMRAbsorber2D
 
+    @staticmethod
+    def _validate_vmr(vmr: np.ndarray) -> np.ndarray:
+        vmr = np.asarray(vmr, dtype=np.float64)
+        if np.any(~np.isfinite(vmr)) or np.any(vmr < 0):
+            msg = "vmr must contain finite, non-negative values"
+            raise ValueError(msg)
+        return vmr
+
     def __init__(self, optical_property: OpticalProperty, vmr: np.ndarray) -> None:
         super().__init__()
         vmr = np.asarray(vmr, dtype=np.float64)
@@ -36,6 +44,7 @@ class VMRAbsorber2D(Constituent):
         if 0 in vmr.shape:
             msg = "vmr horizontal and altitude dimensions must both be non-empty"
             raise ValueError(msg)
+        vmr = self._validate_vmr(vmr)
 
         self._volume_shape = vmr.shape
         self._constituent = PyVMRAbsorber2D(
@@ -58,6 +67,7 @@ class VMRAbsorber2D(Constituent):
         if vmr.shape != self._volume_shape:
             msg = f"vmr must retain shape {self._volume_shape}; got {vmr.shape}"
             raise ValueError(msg)
+        vmr = self._validate_vmr(vmr)
         self._constituent.vmr = np.ascontiguousarray(vmr).reshape(-1)
 
     def _validate_atmosphere(self, atmo: Atmosphere) -> None:
@@ -70,6 +80,7 @@ class VMRAbsorber2D(Constituent):
                 f"{self._volume_shape} != {atmo.volume_shape}"
             )
             raise ValueError(msg)
+        self._validate_vmr(self.vmr)
 
     def add_to_atmosphere(self, atmo: Atmosphere) -> None:
         self._validate_atmosphere(atmo)

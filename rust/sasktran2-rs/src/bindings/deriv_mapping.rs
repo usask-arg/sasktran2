@@ -244,6 +244,12 @@ impl SurfaceDerivativeMapping {
         }
     }
 
+    pub fn clear_interpolator(&mut self) {
+        unsafe {
+            ffi::sk_surface_deriv_mapping_clear_interpolator(self.mapping);
+        }
+    }
+
     pub fn get_interpolator(&self) -> Option<ArrayView2<'_, f64>> {
         let mut interpolator: *mut f64 = std::ptr::null_mut();
         let mut dim1: i32 = 0;

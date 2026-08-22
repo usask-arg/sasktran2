@@ -1,4 +1,4 @@
-use numpy::{PyReadonlyArray1, PyReadonlyArray3};
+use numpy::{PyReadonlyArray1, PyReadonlyArray2, PyReadonlyArray3};
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyDict};
 use sasktran2_rs::bindings::engine::{self, LinearizationMode};
@@ -80,6 +80,25 @@ impl PyEngine {
             .into_pyresult()?;
 
         Py::new(py, crate::output::PyOutput { output })
+    }
+
+    fn _calculate_radiance_only(
+        &self,
+        py: Python,
+        atmosphere: PyRef<crate::atmosphere::PyAtmosphere>,
+    ) -> PyResult<Py<crate::output::PyOutput>> {
+        let output = self
+            .engine
+            .calculate_radiance_with_mappings(&atmosphere.atmosphere, &[], &[])
+            .into_pyresult()?;
+
+        Py::new(py, crate::output::PyOutput { output })
+    }
+
+    fn _set_2d_refractive_profiles(&mut self, profiles: PyReadonlyArray2<f64>) -> PyResult<()> {
+        self.engine
+            .set_2d_refractive_profiles(profiles.as_array())
+            .into_pyresult()
     }
 
     fn _supports_linearization(&self, mode: u8) -> PyResult<bool> {

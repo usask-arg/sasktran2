@@ -132,9 +132,8 @@ def test_number_density_scatterer_2d_preserves_native_shape_and_mutability():
 
     assert constituent.volume_spatial_mode == "native_2d"
     np.testing.assert_array_equal(constituent.number_density, number_density)
-    np.testing.assert_array_equal(
-        constituent.particle_size, np.full(number_density.shape, 2.0)
-    )
+    assert constituent.particle_size.shape == ()
+    assert constituent.particle_size == 2.0
 
     constituent.number_density[1, 2] *= 2.0
     assert constituent.number_density[1, 2] == 2.0 * number_density[1, 2]
@@ -152,6 +151,35 @@ def test_number_density_scatterer_2d_rejects_non_native_shapes(number_density):
         sk.constituent.NumberDensityScatterer2D(
             _constant_optical_property(), number_density
         )
+
+
+@pytest.mark.parametrize("bad_value", [np.nan, np.inf, -1.0])
+def test_number_density_scatterer_2d_rejects_invalid_physical_values(bad_value):
+    number_density = _number_density()
+    number_density[0, 0] = bad_value
+    with pytest.raises(ValueError, match="finite, non-negative"):
+        sk.constituent.NumberDensityScatterer2D(
+            _constant_optical_property(), number_density
+        )
+
+    constituent = sk.constituent.NumberDensityScatterer2D(
+        _constant_optical_property(), _number_density(), particle_size=2.0
+    )
+    with pytest.raises(ValueError, match=r"particle_size.*finite"):
+        constituent.particle_size = np.nan
+
+
+def test_number_density_in_place_invalid_value_is_rechecked_on_materialization():
+    geometry = _geometry2d()
+    atmosphere = _atmosphere(geometry, derivatives=False)
+    constituent = sk.constituent.NumberDensityScatterer2D(
+        _constant_optical_property(), _number_density()
+    )
+    atmosphere["aerosol"] = constituent
+    constituent.number_density[0, 0] = -1.0
+
+    with pytest.raises(ValueError, match="finite, non-negative"):
+        atmosphere.internal_object()
 
 
 def test_number_density_scatterer_2d_validates_setters_aux_inputs_and_atmosphere():
@@ -174,6 +202,105 @@ def test_number_density_scatterer_2d_validates_setters_aux_inputs_and_atmosphere
     )
     with pytest.raises(ValueError, match="does not match"):
         atmosphere2d.internal_object()
+
+
+@pytest.mark.parametrize(
+    ("radius", "expected_dim", "expected_size"),
+    [
+        (1.5, "dummy", 1),
+        (np.array([1.2, 1.5, 1.8]), "altitude", 3),
+        (np.array([[1.2, 1.4, 1.6], [1.8, 2.0, 2.2]]), "location", 6),
+    ],
+)
+def test_scatterer_2d_auxiliary_derivative_retains_input_topology(
+    radius, expected_dim, expected_size
+):
+    config = _single_scatter_config()
+    geometry = _geometry2d()
+    atmosphere = sk.Atmosphere(
+        geometry,
+        config,
+        wavelengths_nm=WAVELENGTHS_NM,
+        legendre_derivative=False,
+    )
+    constituent = sk.constituent.NumberDensityScatterer2D(
+        _radius_dependent_optical_property(), _number_density(), radius=radius
+    )
+    atmosphere["aerosol"] = constituent
+    atmosphere.internal_object()
+
+    mapping = atmosphere.storage.get_derivative_mapping("wf_aerosol_radius")
+    assert mapping.interp_dim == expected_dim
+    if expected_dim == "location":
+        assert mapping.interpolator.shape == (0, 0)
+        assert atmosphere.derivative_output_shape("wf_aerosol_radius") == geometry.shape
+    else:
+        assert mapping.interpolator.shape == (np.prod(geometry.shape), expected_size)
+        assert atmosphere.derivative_output_shape("wf_aerosol_radius") is None
+
+    linearization = sk.Engine(config, geometry, _viewing_geometry()).linearize(
+        atmosphere
+    )
+    expected_dims = {
+        "dummy": (),
+        "altitude": ("altitude",),
+        "location": ("horizontal_angle", "altitude"),
+    }[expected_dim]
+    assert linearization.parameter_dims["aerosol_radius"] == expected_dims
+    assert linearization.tangent_template.aerosol_radius.shape == np.shape(radius)
+
+
+def test_scatterer_2d_altitude_auxiliary_expands_for_optics_and_vjp_sums_back():
+    config = _single_scatter_config()
+    geometry = _geometry2d()
+    altitude_radius = np.array([1.2, 1.5, 1.8])
+    atmosphere = sk.Atmosphere(
+        geometry,
+        config,
+        wavelengths_nm=WAVELENGTHS_NM,
+        legendre_derivative=False,
+    )
+    atmosphere["background"] = sk.constituent.NumberDensityScatterer2D(
+        _background_optical_property(), np.full(geometry.shape, 2.0e6)
+    )
+    atmosphere["aerosol"] = sk.constituent.NumberDensityScatterer2D(
+        _radius_dependent_optical_property(),
+        _number_density(),
+        radius=altitude_radius,
+    )
+    engine = sk.Engine(config, geometry, _viewing_geometry())
+    linearization = engine.linearize(atmosphere)
+    cotangent = xr.ones_like(linearization.value)
+    profile_gradient = linearization.vjp(
+        cotangent, parameters=["aerosol_radius"]
+    ).aerosol_radius
+
+    native_atmosphere = sk.Atmosphere(
+        geometry,
+        config,
+        wavelengths_nm=WAVELENGTHS_NM,
+        legendre_derivative=False,
+    )
+    native_atmosphere["background"] = sk.constituent.NumberDensityScatterer2D(
+        _background_optical_property(), np.full(geometry.shape, 2.0e6)
+    )
+    native_atmosphere["aerosol"] = sk.constituent.NumberDensityScatterer2D(
+        _radius_dependent_optical_property(),
+        _number_density(),
+        radius=np.broadcast_to(altitude_radius, geometry.shape).copy(),
+    )
+    native_gradient = (
+        engine.linearize(native_atmosphere)
+        .vjp(cotangent, parameters=["aerosol_radius"])
+        .aerosol_radius
+    )
+
+    np.testing.assert_allclose(
+        profile_gradient,
+        native_gradient.sum("horizontal_angle"),
+        rtol=2e-12,
+        atol=1e-18,
+    )
 
 
 def test_number_density_scatterer_2d_populates_native_optical_storage():

@@ -39,6 +39,26 @@ impl ViewingGeometry {
         }
     }
 
+    pub fn add_ecef_ray(
+        &mut self,
+        observer_position_ecef_m: [f64; 3],
+        look_direction_ecef: [f64; 3],
+    ) -> Result<()> {
+        let result = unsafe {
+            ffi::sk_viewing_geometry_add_ecef_ray(
+                self.viewing_geometry,
+                observer_position_ecef_m.as_ptr(),
+                look_direction_ecef.as_ptr(),
+            )
+        };
+        match result {
+            0 => Ok(()),
+            -1 => Err(anyhow!("Cannot add a ray to a null viewing geometry")),
+            -2 => Err(anyhow!("Invalid ECEF viewing ray")),
+            _ => Err(anyhow!("Failed to add ECEF viewing ray: {}", result)),
+        }
+    }
+
     pub fn add_flux_observer_solar(&mut self, cos_sza: f64, observer_altitude: f64) {
         unsafe {
             let _ = ffi::sk_viewing_geometry_add_flux_observer_solar(
@@ -72,6 +92,7 @@ impl ViewingGeometry {
         tangent_altitude_m: f64,
         observer_altitude_m: f64,
         horizontal_angle_radians: f64,
+        tangent_out_of_plane_angle_radians: f64,
         viewing_azimuth_radians: f64,
     ) -> Result<()> {
         let error_code = unsafe {
@@ -80,6 +101,7 @@ impl ViewingGeometry {
                 tangent_altitude_m,
                 observer_altitude_m,
                 horizontal_angle_radians,
+                tangent_out_of_plane_angle_radians,
                 viewing_azimuth_radians,
             )
         };
@@ -195,7 +217,7 @@ mod tests {
         let mut viewing_geometry = ViewingGeometry::new();
 
         viewing_geometry
-            .add_tangent_altitude(30_000.0, 700_000.0, 0.25, 0.4)
+            .add_tangent_altitude(30_000.0, 700_000.0, 0.25, -0.05, 0.4)
             .unwrap();
 
         assert_eq!(viewing_geometry.num_rays().unwrap(), 1);
@@ -207,7 +229,7 @@ mod tests {
 
         assert!(
             viewing_geometry
-                .add_tangent_altitude(30_000.0, 20_000.0, 0.0, 0.0)
+                .add_tangent_altitude(30_000.0, 20_000.0, 0.0, 0.0, 0.0)
                 .is_err()
         );
         assert_eq!(viewing_geometry.num_rays().unwrap(), 0);

@@ -28,9 +28,13 @@ class NumberDensityScatterer2D(Constituent):
         Particle number density in ``m^-3`` with shape
         ``(horizontal, altitude)``.
     **kwargs
-        Additional spatial inputs for ``optical_property``. Each input must be
-        either a scalar or an array with the same shape as ``number_density``.
-        Scalars are applied uniformly to all locations.
+        Additional spatial inputs for ``optical_property``. Each input may be
+        a scalar, an altitude-only ``(altitude,)`` profile, or a native array
+        with the same shape as ``number_density``. Scalar and altitude-only
+        inputs retain their public shape and are broadcast only when optical
+        properties are evaluated. Their derivatives retain the same parameter
+        topology, so a VJP sums native-location contributions back to the
+        scalar or altitude grid.
     """
 
     _constituent: PyNumberDensityScatterer2D
@@ -69,23 +73,35 @@ class NumberDensityScatterer2D(Constituent):
         if 0 in value.shape:
             msg = f"{name} horizontal and altitude dimensions must both be non-empty"
             raise ValueError(msg)
+        if np.any(~np.isfinite(value)) or np.any(value < 0):
+            msg = f"{name} must contain finite, non-negative values"
+            raise ValueError(msg)
         return np.ascontiguousarray(value)
 
     def _validate_aux_input(self, value: np.ndarray, name: str) -> np.ndarray:
         value = np.asarray(value, dtype=np.float64)
-        if value.ndim == 0:
-            return np.full(self._volume_shape, value.item(), dtype=np.float64)
-        if value.shape != self._volume_shape:
+        if np.any(~np.isfinite(value)):
+            msg = f"{name} must contain finite values"
+            raise ValueError(msg)
+        valid_shapes = ((), (self._volume_shape[1],), self._volume_shape)
+        if value.shape not in valid_shapes:
             msg = (
-                f"{name} must be scalar or have shape {self._volume_shape}; "
-                f"got {value.shape}"
+                f"{name} must be scalar, have shape ({self._volume_shape[1]},), "
+                f"or have shape {self._volume_shape}; got {value.shape}"
             )
             raise ValueError(msg)
-        return np.ascontiguousarray(value)
+        return np.array(value, dtype=np.float64, order="C", copy=True)
+
+    def _expanded_aux_input(self, value: np.ndarray) -> np.ndarray:
+        if value.ndim == 0:
+            return np.full(self._volume_shape, value.item(), dtype=np.float64)
+        if value.ndim == 1:
+            return np.broadcast_to(value, self._volume_shape)
+        return value
 
     def _flat_kwargs(self) -> dict[str, np.ndarray]:
         return {
-            name: np.ascontiguousarray(value).reshape(-1)
+            name: np.ascontiguousarray(self._expanded_aux_input(value)).reshape(-1)
             for name, value in self._kwargs.items()
         }
 
@@ -108,7 +124,15 @@ class NumberDensityScatterer2D(Constituent):
 
     def __setattr__(self, name: str, value: Any) -> None:
         if name in self.__dict__.get("_kwargs", {}):
-            self._kwargs[name] = self._validate_aux_input(value, name)
+            validated = self._validate_aux_input(value, name)
+            expected_shape = self._kwargs[name].shape
+            if validated.shape != expected_shape:
+                msg = (
+                    f"{name} must retain its original shape {expected_shape}; "
+                    f"got {validated.shape}"
+                )
+                raise ValueError(msg)
+            self._kwargs[name] = validated
             self._sync_constituent_state()
         else:
             super().__setattr__(name, value)
@@ -131,6 +155,9 @@ class NumberDensityScatterer2D(Constituent):
                 f"got {number_density.shape}"
             )
             raise ValueError(msg)
+        if np.any(~np.isfinite(number_density)) or np.any(number_density < 0):
+            msg = "number_density must contain finite, non-negative values"
+            raise ValueError(msg)
         self._constituent.number_density = np.ascontiguousarray(number_density).reshape(
             -1
         )
@@ -145,6 +172,9 @@ class NumberDensityScatterer2D(Constituent):
                 f"{self._volume_shape} != {atmo.volume_shape}"
             )
             raise ValueError(msg)
+        self._validate_native_profile(self.number_density, "number_density")
+        for name, value in self._kwargs.items():
+            self._validate_aux_input(value, name)
 
     def add_to_atmosphere(self, atmo: Atmosphere) -> None:
         self._validate_atmosphere(atmo)
@@ -155,6 +185,30 @@ class NumberDensityScatterer2D(Constituent):
         self._validate_atmosphere(atmo)
         self._sync_constituent_state()
         self._constituent.register_derivative(atmo, name)
+
+        # The native optical kernels evaluate one auxiliary value at every
+        # atmosphere location. Map those local derivatives back to the shape
+        # the caller supplied instead of exposing an unnecessarily expanded
+        # native 2D retrieval parameter.
+        mapping_names = set(atmo.storage.derivative_mapping_names())
+        num_altitudes = self._volume_shape[1]
+        locations = np.arange(atmo.num_locations)
+        for aux_name, value in self._kwargs.items():
+            mapping_name = f"wf_{name}_{aux_name}"
+            if mapping_name not in mapping_names:
+                continue
+            mapping = atmo.storage.get_derivative_mapping(mapping_name)
+            if value.ndim == 0:
+                mapping.interpolator = np.ones((atmo.num_locations, 1))
+                mapping.interp_dim = "dummy"
+            elif value.ndim == 1:
+                broadcast = np.zeros((atmo.num_locations, num_altitudes))
+                broadcast[locations, locations % num_altitudes] = 1.0
+                mapping.interpolator = broadcast
+                mapping.interp_dim = "altitude"
+            else:
+                mapping.clear_interpolator()
+                mapping.interp_dim = "location"
 
 
 class ExtinctionScatterer2D(NumberDensityScatterer2D):
@@ -176,8 +230,8 @@ class ExtinctionScatterer2D(NumberDensityScatterer2D):
     extinction_wavelength_nm : float
         Wavelength in nanometres at which ``extinction_per_m`` is specified.
     **kwargs
-        Additional optical-property inputs. Shape rules are identical to
-        :class:`NumberDensityScatterer2D`.
+        Additional optical-property inputs. Shape and derivative-topology
+        rules are identical to :class:`NumberDensityScatterer2D`.
     """
 
     def __init__(
@@ -207,6 +261,7 @@ class ExtinctionScatterer2D(NumberDensityScatterer2D):
         self._sync_constituent_state()
 
     def _update_number_density(self, atmo: Atmosphere) -> None:
+        self._validate_native_profile(self._extinction_per_m, "extinction_per_m")
         native_altitudes = np.asarray(atmo._native_altitudes(), dtype=np.float64)
         factors = np.asarray(
             self._optical_property.cross_sections(
@@ -265,6 +320,9 @@ class ExtinctionScatterer2D(NumberDensityScatterer2D):
                 f"extinction_per_m must retain shape {self._volume_shape}; "
                 f"got {extinction_per_m.shape}"
             )
+            raise ValueError(msg)
+        if np.any(~np.isfinite(extinction_per_m)) or np.any(extinction_per_m < 0):
+            msg = "extinction_per_m must contain finite, non-negative values"
             raise ValueError(msg)
         self._extinction_per_m = np.ascontiguousarray(extinction_per_m)
 

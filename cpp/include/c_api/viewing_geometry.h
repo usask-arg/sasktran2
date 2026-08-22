@@ -10,6 +10,10 @@ ViewingGeometry* sk_viewing_geometry_create();
 
 void sk_viewing_geometry_destroy(ViewingGeometry* geometry);
 
+int sk_viewing_geometry_add_ecef_ray(ViewingGeometry* geometry,
+                                     const double* observer_position_ecef_m,
+                                     const double* look_direction_ecef);
+
 void sk_viewing_geometry_add_ground_viewing_solar(ViewingGeometry* geometry,
                                                   double cos_sza,
                                                   double relative_azimuth_angle,
@@ -20,11 +24,10 @@ int sk_viewing_geometry_add_tangent_altitude_solar(
     ViewingGeometry* geometry, double tangent_altitude_m,
     double relative_azimuth_angle, double observeraltitude, double cos_sza);
 
-int sk_viewing_geometry_add_tangent_altitude(ViewingGeometry* geometry,
-                                             double tangent_altitude_m,
-                                             double observer_altitude_m,
-                                             double horizontal_angle_radians,
-                                             double viewing_azimuth_radians);
+int sk_viewing_geometry_add_tangent_altitude(
+    ViewingGeometry* geometry, double tangent_altitude_m,
+    double observer_altitude_m, double horizontal_angle_radians,
+    double tangent_out_of_plane_angle_radians, double viewing_azimuth_radians);
 
 int sk_viewing_geometry_add_solar_angles_observer_location(
     ViewingGeometry* geometry, double cos_sza, double relative_azimuth_angle,

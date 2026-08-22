@@ -444,6 +444,66 @@ TEST_CASE("Scalar scattering assembler maps atmosphere points and legacy "
             scattering.memory_usage().angular_basis_bytes);
 }
 
+TEST_CASE("Spatial Lambertian ground source points use unit albedo",
+          "[successive_orders][scattering_assembler][ground][linearization]") {
+    SECTION("scalar") {
+        AssemblyFixture fixture;
+        Eigen::MatrixXd albedo(2, AssemblyFixture::num_wavelengths);
+        albedo << 0.15, 0.25, 0.65, 0.75;
+        fixture.atmosphere.surface().set_spatial_lambertian_albedo(albedo);
+        ScalarScatteringAssembler assembler(fixture.source_geometry, 3);
+        auto first = assembler.create_operator();
+        assembler.assemble_values(fixture.atmosphere, 1, first);
+
+        fixture.atmosphere.surface().set_spatial_lambertian_albedo(
+            Eigen::MatrixXd::Constant(2, AssemblyFixture::num_wavelengths,
+                                      0.95));
+        auto second = assembler.create_operator();
+        assembler.assemble_values(fixture.atmosphere, 1, second);
+        REQUIRE(first.ground_values().isApprox(second.ground_values(), 0.0));
+
+        Eigen::VectorXd tangent =
+            Eigen::VectorXd::Zero(fixture.atmosphere.num_deriv());
+        tangent.segment(fixture.atmosphere.surface_deriv_start_index(), 2)
+            << 0.3,
+            -0.2;
+        Eigen::MatrixXd coefficient_tangent;
+        Eigen::VectorXd ground_tangent;
+        assembler.assemble_jvp(fixture.atmosphere, 1, tangent,
+                               coefficient_tangent, ground_tangent);
+        REQUIRE(ground_tangent.isZero());
+
+        Eigen::VectorXd native_gradient =
+            Eigen::VectorXd::Zero(fixture.atmosphere.num_deriv());
+        assembler.accumulate_vjp(
+            fixture.atmosphere, 1,
+            Eigen::MatrixXd::Zero(fixture.source_geometry.num_interior_points(),
+                                  assembler.num_coefficients()),
+            Eigen::VectorXd::Ones(assembler.ground_value_size()),
+            native_gradient);
+        REQUIRE(native_gradient
+                    .segment(fixture.atmosphere.surface_deriv_start_index(), 2)
+                    .isZero());
+    }
+
+    SECTION("vector") {
+        VectorAssemblyFixture fixture;
+        Eigen::MatrixXd albedo(2, VectorAssemblyFixture::num_wavelengths);
+        albedo << 0.15, 0.25, 0.65, 0.75;
+        fixture.atmosphere.surface().set_spatial_lambertian_albedo(albedo);
+        VectorScatteringAssembler assembler(fixture.source_geometry, 3);
+        auto first = assembler.create_operator();
+        assembler.assemble_values(fixture.atmosphere, 1, first);
+
+        fixture.atmosphere.surface().set_spatial_lambertian_albedo(
+            Eigen::MatrixXd::Constant(2, VectorAssemblyFixture::num_wavelengths,
+                                      0.95));
+        auto second = assembler.create_operator();
+        assembler.assemble_values(fixture.atmosphere, 1, second);
+        REQUIRE(first.ground_values().isApprox(second.ground_values(), 0.0));
+    }
+}
+
 TEST_CASE("Ground scattering supplies finite azimuths for vertical directions",
           "[successive_orders][scattering_assembler][ground]") {
     SECTION("scalar") {

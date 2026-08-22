@@ -305,6 +305,8 @@ namespace sasktran2::successive_orders {
                 config.multiple_scatter_refraction();
             m_geometry_settings.altitude_grid_m =
                 config.successive_orders_altitude_grid_m();
+            m_geometry_settings.horizontal_angle_grid_radians =
+                config.successive_orders_horizontal_angle_grid_radians();
 
             m_solver_settings.maximum_iterations =
                 config.num_hr_spherical_iterations();
@@ -479,6 +481,7 @@ namespace sasktran2::successive_orders {
                            int threadidx) {
             validate_single_wavelength_block(block);
             prepare_primal(block.start, threadidx);
+            wavelength_state(block.start, threadidx).jacobian.resize(0, 0);
             reset_vjp_cotangents(threadidx);
         }
 

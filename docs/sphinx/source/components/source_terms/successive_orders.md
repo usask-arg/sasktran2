@@ -49,7 +49,13 @@ with {py:class}`sasktran2.Geometry2D`. Its source grid is independent of the
 atmosphere grid:
 
 - {py:attr}`sasktran2.Config.num_sza` selects the number of evenly spaced
-  horizontal source columns spanning the atmosphere's horizontal-angle grid.
+  horizontal source columns spanning the atmosphere's horizontal-angle grid
+  when no explicit horizontal source grid is supplied.
+- {py:attr}`sasktran2.Config.successive_orders_horizontal_angle_grid_radians`
+  selects the exact local Geometry2D angles of the horizontal source columns.
+  In an orbital-plane engine, zero is the center of each group's fitted local
+  plane. The supplied points must lie within every local group's horizontal
+  grid.
 - {py:attr}`sasktran2.Config.successive_orders_altitude_grid_m` selects the
   vertical source locations. When it is not set, atmosphere-layer midpoints are
   used.
@@ -82,6 +88,7 @@ Geometry2D.
   sasktran2.Config.successive_orders_anderson_depth
   sasktran2.Config.successive_orders_damping
   sasktran2.Config.successive_orders_altitude_grid_m
+  sasktran2.Config.successive_orders_horizontal_angle_grid_radians
   sasktran2.Config.num_stokes
 
 ```

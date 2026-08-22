@@ -427,6 +427,13 @@ namespace sasktran2 {
         double altitude_at(const Location& location) const;
         double horizontal_angle_at(const Location& location) const;
 
+        /** Assign the linear horizontal interpolation stencil for a location.
+         * The returned indices address horizontal_angle_grid() directly. Edge
+         * locations use the existing clamped/extended Geometry2D behavior. */
+        void assign_horizontal_interpolation_weights(
+            const Location& location,
+            std::vector<std::pair<int, double>>& index_weights) const;
+
         /** Returns `(altitude_upper, horizontal_upper)` for a location
          * interpreted within one specified cell.
          *

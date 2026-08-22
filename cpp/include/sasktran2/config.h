@@ -508,6 +508,19 @@ namespace sasktran2 {
             m_successive_orders_altitude_grid_m = std::move(altitude_grid_m);
         }
 
+        /** Explicit horizontal-angle source grid for Geometry2D successive
+         * orders, in radians. An empty grid selects the evenly spaced grid
+         * controlled by num_do_sza(). */
+        const std::vector<double>&
+        successive_orders_horizontal_angle_grid_radians() const {
+            return m_successive_orders_horizontal_angle_grid_radians;
+        }
+        void set_successive_orders_horizontal_angle_grid_radians(
+            std::vector<double> horizontal_angle_grid_radians) {
+            m_successive_orders_horizontal_angle_grid_radians =
+                std::move(horizontal_angle_grid_radians);
+        }
+
         /**
          *
          * @return The number of incoming points at each diffuse point in the HR
@@ -783,6 +796,7 @@ namespace sasktran2 {
         int m_successive_orders_anderson_depth = 3;
         double m_successive_orders_damping = 1.0;
         std::vector<double> m_successive_orders_altitude_grid_m;
+        std::vector<double> m_successive_orders_horizontal_angle_grid_radians;
 
         bool m_apply_delta_scaling;
 

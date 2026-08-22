@@ -34,6 +34,8 @@ fn slice_to_pyarray<'py>(py: Python<'py>, slice: &[f64; 3]) -> PyResult<Bound<'p
 #[pyclass(unsendable)]
 pub struct PyGeodetic {
     pub output: geodetic::Geodetic,
+    pub equatorial_radius_m: f64,
+    pub flattening_factor: f64,
 }
 
 #[pymethods]
@@ -42,7 +44,11 @@ impl PyGeodetic {
     fn new(equatorial_radius: f64, flattening_factor: f64) -> PyResult<Self> {
         let output =
             geodetic::Geodetic::new(equatorial_radius, flattening_factor).into_pyresult()?;
-        Ok(Self { output })
+        Ok(Self {
+            output,
+            equatorial_radius_m: equatorial_radius,
+            flattening_factor,
+        })
     }
 
     #[getter]

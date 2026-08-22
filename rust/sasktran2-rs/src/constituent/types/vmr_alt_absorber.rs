@@ -145,6 +145,7 @@ where
     );
 
     let eqn_state = inputs.dry_air_numberdensity_dict();
+    let compact_native_state_derivatives = inputs.is_native_2d();
     let number_density = eqn_state
         .get("N")
         .ok_or_else(|| anyhow!("Number density for N not found in air_numberdensity_dict"))?;
@@ -223,10 +224,15 @@ where
                 &outputs.ssa,
                 &outputs.total_extinction,
             )?;
+            if compact_native_state_derivatives {
+                scale_absorber_derivatives(&mut mapping_view, &(vmr * state_factor));
+            }
         }
         mapping.set_interp_dim("altitude");
         mapping.set_assign_name(&format!("wf_{deriv_name}"));
-        mapping.set_interpolator(&Array2::from_diag(&(vmr * state_factor)));
+        if !compact_native_state_derivatives {
+            mapping.set_interpolator(&Array2::from_diag(&(vmr * state_factor)));
+        }
     }
 
     if !state_derivatives.is_empty() {
@@ -245,10 +251,15 @@ where
                     &outputs.ssa,
                     &outputs.total_extinction,
                 )?;
+                if compact_native_state_derivatives {
+                    scale_absorber_derivatives(&mut mapping_view, &(vmr * number_density));
+                }
             }
             mapping.set_interp_dim("altitude");
             mapping.set_assign_name(&format!("wf_{key}"));
-            mapping.set_interpolator(&Array2::from_diag(&(vmr * number_density)));
+            if !compact_native_state_derivatives {
+                mapping.set_interpolator(&Array2::from_diag(&(vmr * number_density)));
+            }
         }
     }
 

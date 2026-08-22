@@ -379,6 +379,8 @@ namespace sasktran2 {
             m_interpolator = interpolator;
         }
 
+        void clear_interpolator() { m_interpolator.reset(); }
+
         /**
          * @brief Get the interp dim object
          *

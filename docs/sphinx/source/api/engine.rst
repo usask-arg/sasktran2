@@ -7,3 +7,4 @@ Engine
     :toctree: generated/
 
     sasktran2.Engine
+    sasktran2.OrbitalPlaneEngine

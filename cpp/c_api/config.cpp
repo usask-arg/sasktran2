@@ -456,6 +456,58 @@ int sk_config_set_successive_orders_altitude_grid_m(
     return 0;
 }
 
+int sk_config_get_num_successive_orders_horizontal_angles(Config* config,
+                                                          int* num_angles) {
+    if (config == nullptr || num_angles == nullptr) {
+        return -1;
+    }
+    *num_angles = static_cast<int>(
+        config->impl.successive_orders_horizontal_angle_grid_radians().size());
+    return 0;
+}
+
+int sk_config_get_successive_orders_horizontal_angle_grid_radians(
+    Config* config, double* horizontal_angle_grid_radians) {
+    if (config == nullptr) {
+        return -1;
+    }
+    const auto& configured_grid =
+        config->impl.successive_orders_horizontal_angle_grid_radians();
+    if (!configured_grid.empty() && horizontal_angle_grid_radians == nullptr) {
+        return -1;
+    }
+    if (!configured_grid.empty()) {
+        std::copy(configured_grid.begin(), configured_grid.end(),
+                  horizontal_angle_grid_radians);
+    }
+    return 0;
+}
+
+int sk_config_set_successive_orders_horizontal_angle_grid_radians(
+    Config* config, const double* horizontal_angle_grid_radians,
+    int num_angles) {
+    if (config == nullptr || num_angles < 0 ||
+        (num_angles > 0 && horizontal_angle_grid_radians == nullptr)) {
+        return -1;
+    }
+    for (int angle_index = 0; angle_index < num_angles; ++angle_index) {
+        if (!std::isfinite(horizontal_angle_grid_radians[angle_index]) ||
+            (angle_index > 0 &&
+             horizontal_angle_grid_radians[angle_index] <=
+                 horizontal_angle_grid_radians[angle_index - 1])) {
+            return -2;
+        }
+    }
+    std::vector<double> configured_grid;
+    if (num_angles > 0) {
+        configured_grid.assign(horizontal_angle_grid_radians,
+                               horizontal_angle_grid_radians + num_angles);
+    }
+    config->impl.set_successive_orders_horizontal_angle_grid_radians(
+        std::move(configured_grid));
+    return 0;
+}
+
 int sk_config_get_occultation_source(Config* config, int* occultation_source) {
     if (config == nullptr || occultation_source == nullptr) {
         return -1; // Error: null pointer

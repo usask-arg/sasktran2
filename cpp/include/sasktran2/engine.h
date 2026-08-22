@@ -39,6 +39,13 @@ template <int NSTOKES> class Sasktran2 : public Sasktran2Interface {
     const sasktran2::Geometry1D* m_geometry_1d = nullptr;
     const sasktran2::Geometry2D* m_geometry_2d = nullptr;
 
+    /** Optional altitude-only refractive-index profile for every structured
+     * 2D line of sight. Profiles are deliberately engine state rather than
+     * Geometry2D state because an orbital calculation may select a different
+     * atmospheric column for every ray and refresh it between retrieval
+     * iterations. */
+    std::vector<Eigen::VectorXd> m_refractive_profiles_2d;
+
     std::unique_ptr<const sasktran2::raytracing::RayTracerBase>
         m_raytracer; /**< Ray tracer that is internally constructed */
 #ifdef SKTRAN_RUST_SUPPORT
@@ -173,6 +180,34 @@ template <int NSTOKES> class Sasktran2 : public Sasktran2Interface {
                                     int thread_idx) const;
 
     int effective_wavelength_batch_size(int num_wavelengths) const;
+
+    using RowMajorMatrix =
+        Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+
+    /** Copy current ground-intersection horizontal stencils. Rows are LOS
+     * rays and columns are Geometry2D horizontal nodes. Non-ground rays have
+     * all-zero rows. */
+    void assign_2d_surface_interpolation_weights(
+        Eigen::Ref<RowMajorMatrix> weights) const;
+
+    using RowMajorIntMatrix =
+        Eigen::Matrix<int, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+
+    /** Report use of Geometry2D's extended horizontal edge cells by traced
+     * LOS paths. Columns are `(before_first_node, after_last_node)` and rows
+     * are viewing rays. Only the portions of rays inside the atmosphere are
+     * considered. */
+    void
+    assign_2d_horizontal_edge_usage(Eigen::Ref<RowMajorIntMatrix> usage) const;
+
+    /** Replace the per-ray refractive profiles used by a structured 2D
+     * engine and rebuild all geometry-dependent integration/source data.
+     * `profiles` is `(num_los, num_altitudes)`.
+     */
+    void set_2d_refractive_profiles(
+        const Eigen::Ref<const Eigen::Matrix<double, Eigen::Dynamic,
+                                             Eigen::Dynamic, Eigen::RowMajor>>&
+            profiles);
 
     /** Reports whether the complete line-of-sight model supports a native
      * derivative execution mode. */

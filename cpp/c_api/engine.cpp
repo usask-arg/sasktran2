@@ -118,6 +118,93 @@ int sk_engine_calculate_radiance(Engine* engine, Atmosphere* atmosphere,
     return engine->calculate_radiance(atmosphere, output, only_initialize);
 }
 
+int sk_engine_set_2d_refractive_profiles(Engine* engine, const double* profiles,
+                                         int num_rays, int num_altitudes) {
+    if (engine == nullptr || !engine->impl || profiles == nullptr ||
+        num_rays < 0 || num_altitudes < 0) {
+        return -1;
+    }
+    try {
+        using RowMajorMatrix = Eigen::Matrix<double, Eigen::Dynamic,
+                                             Eigen::Dynamic, Eigen::RowMajor>;
+        const Eigen::Map<const RowMajorMatrix> mapped(profiles, num_rays,
+                                                      num_altitudes);
+        if (engine->_config->impl.num_stokes() == 1) {
+            auto* impl = dynamic_cast<Sasktran2<1>*>(engine->impl.get());
+            impl->set_2d_refractive_profiles(mapped);
+            return 0;
+        }
+        if (engine->_config->impl.num_stokes() == 3) {
+            auto* impl = dynamic_cast<Sasktran2<3>*>(engine->impl.get());
+            impl->set_2d_refractive_profiles(mapped);
+            return 0;
+        }
+        return -2;
+    } catch (const std::exception& error) {
+        spdlog::error("Error setting Geometry2D refractive profiles: {}",
+                      error.what());
+        return -3;
+    }
+}
+
+int sk_engine_get_2d_surface_interpolation_weights(Engine* engine,
+                                                   double* weights,
+                                                   int num_rays,
+                                                   int num_horizontal) {
+    if (engine == nullptr || !engine->impl || weights == nullptr ||
+        num_rays < 0 || num_horizontal < 0) {
+        return -1;
+    }
+    try {
+        using RowMajorMatrix = Eigen::Matrix<double, Eigen::Dynamic,
+                                             Eigen::Dynamic, Eigen::RowMajor>;
+        Eigen::Map<RowMajorMatrix> mapped(weights, num_rays, num_horizontal);
+        if (engine->_config->impl.num_stokes() == 1) {
+            auto* impl = dynamic_cast<Sasktran2<1>*>(engine->impl.get());
+            impl->assign_2d_surface_interpolation_weights(mapped);
+            return 0;
+        }
+        if (engine->_config->impl.num_stokes() == 3) {
+            auto* impl = dynamic_cast<Sasktran2<3>*>(engine->impl.get());
+            impl->assign_2d_surface_interpolation_weights(mapped);
+            return 0;
+        }
+        return -2;
+    } catch (const std::exception& error) {
+        spdlog::error("Error obtaining Geometry2D surface weights: {}",
+                      error.what());
+        return -3;
+    }
+}
+
+int sk_engine_get_2d_horizontal_edge_usage(Engine* engine, int* usage,
+                                           int num_rays) {
+    if (engine == nullptr || !engine->impl || usage == nullptr ||
+        num_rays < 0) {
+        return -1;
+    }
+    try {
+        using RowMajorIntMatrix =
+            Eigen::Matrix<int, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+        Eigen::Map<RowMajorIntMatrix> mapped(usage, num_rays, 2);
+        if (engine->_config->impl.num_stokes() == 1) {
+            auto* impl = dynamic_cast<Sasktran2<1>*>(engine->impl.get());
+            impl->assign_2d_horizontal_edge_usage(mapped);
+            return 0;
+        }
+        if (engine->_config->impl.num_stokes() == 3) {
+            auto* impl = dynamic_cast<Sasktran2<3>*>(engine->impl.get());
+            impl->assign_2d_horizontal_edge_usage(mapped);
+            return 0;
+        }
+        return -2;
+    } catch (const std::exception& error) {
+        spdlog::error("Error obtaining Geometry2D horizontal edge usage: {}",
+                      error.what());
+        return -3;
+    }
+}
+
 int sk_engine_effective_wavelength_batch_size(Engine* engine,
                                               int num_wavelengths) {
     try {

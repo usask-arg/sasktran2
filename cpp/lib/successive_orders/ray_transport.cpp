@@ -50,6 +50,51 @@ namespace sasktran2::successive_orders {
             }
             return result;
         }
+
+        template <int NSTOKES>
+        double ground_transport_albedo(
+            const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
+            int wavelength, const RayInterpolation& ray) {
+            if (!atmosphere.surface().has_spatial_lambertian_albedo()) {
+                return 1.0;
+            }
+            return atmosphere.surface().spatial_lambertian_albedo(
+                wavelength, ray.ground_horizontal());
+        }
+
+        template <int NSTOKES>
+        double ground_transport_albedo_tangent(
+            const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
+            const RayInterpolation& ray,
+            Eigen::Ref<const Eigen::VectorXd> native_tangent) {
+            if (!atmosphere.surface().has_spatial_lambertian_albedo()) {
+                return 0.0;
+            }
+            double result = 0.0;
+            for (const auto& [horizontal_index, weight] :
+                 ray.ground_horizontal()) {
+                result += weight * native_tangent(
+                                       atmosphere.surface_deriv_start_index() +
+                                       horizontal_index);
+            }
+            return result;
+        }
+
+        template <int NSTOKES>
+        void accumulate_ground_transport_albedo_vjp(
+            const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
+            const RayInterpolation& ray, double albedo_cotangent,
+            Eigen::Ref<Eigen::VectorXd> native_gradient) {
+            if (!atmosphere.surface().has_spatial_lambertian_albedo() ||
+                albedo_cotangent == 0.0) {
+                return;
+            }
+            for (const auto& [horizontal_index, weight] :
+                 ray.ground_horizontal()) {
+                native_gradient(atmosphere.surface_deriv_start_index() +
+                                horizontal_index) += weight * albedo_cotangent;
+            }
+        }
     } // namespace
 
     void RayTransportWorkspace::resize(int maximum_layers) {
@@ -181,9 +226,11 @@ namespace sasktran2::successive_orders {
             }
 
             if (interpolation.ground_is_hit()) {
+                const double ground_albedo = ground_transport_albedo(
+                    atmosphere, wavelength, interpolation);
                 for (const auto& source : interpolation.ground()) {
                     values(offsets[row] + source.row_inner_index) +=
-                        source.weight * transmission_before;
+                        source.weight * transmission_before * ground_albedo;
                 }
             }
         }
@@ -244,8 +291,14 @@ namespace sasktran2::successive_orders {
             }
 
             if (interpolation.ground_is_hit()) {
+                const double ground_albedo = ground_transport_albedo(
+                    atmosphere, wavelength, interpolation);
+                const double ground_albedo_tangent =
+                    ground_transport_albedo_tangent(atmosphere, interpolation,
+                                                    native_tangent);
                 const double factor_tangent =
-                    -transmission_before * cumulative_tangent;
+                    transmission_before * (ground_albedo_tangent -
+                                           ground_albedo * cumulative_tangent);
                 for (const auto& source : interpolation.ground()) {
                     value_tangent(offsets[row] + source.row_inner_index) +=
                         source.weight * factor_tangent;
@@ -307,13 +360,19 @@ namespace sasktran2::successive_orders {
 
             double cumulative_cotangent = 0.0;
             if (interpolation.ground_is_hit()) {
+                const double ground_albedo = ground_transport_albedo(
+                    atmosphere, wavelength, interpolation);
                 double ground_cotangent = 0.0;
                 for (const auto& source : interpolation.ground()) {
                     ground_cotangent +=
                         source.weight *
                         value_gradient(offsets[row] + source.row_inner_index);
                 }
-                cumulative_cotangent = -transmission_before * ground_cotangent;
+                cumulative_cotangent =
+                    -transmission_before * ground_albedo * ground_cotangent;
+                accumulate_ground_transport_albedo_vjp(
+                    atmosphere, interpolation,
+                    transmission_before * ground_cotangent, native_gradient);
             }
 
             // Reverse the observer-to-end source traversal. A layer optical

@@ -7,7 +7,7 @@ use super::geometry::{Geometry1D, Geometry2D};
 use super::output::{JvpOutput, Output, VjpOutput};
 use super::prelude::*;
 use super::viewing_geometry::ViewingGeometry;
-use ndarray::{Array1, Array3};
+use ndarray::{Array1, Array2, Array3, ArrayView2};
 use rayon::current_thread_index;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use sasktran2_sys::ffi;
@@ -239,6 +239,92 @@ impl<'a> Engine<'a> {
         }
     }
 
+    /// Refresh a structured-2D engine with one altitude-only refractive
+    /// profile per line of sight. The C++ engine retains its allocations and
+    /// rebuilds only geometry-dependent state.
+    pub fn set_2d_refractive_profiles(&mut self, profiles: ArrayView2<'_, f64>) -> Result<()> {
+        if !matches!(self.geometry, EngineGeometry::TwoDimensional(_)) {
+            return Err(anyhow::anyhow!(
+                "Per-ray refractive profiles require a Geometry2D engine"
+            ));
+        }
+        let profiles = profiles.as_standard_layout();
+        let shape = profiles.shape();
+        let result = unsafe {
+            ffi::sk_engine_set_2d_refractive_profiles(
+                self.engine,
+                profiles.as_ptr(),
+                shape[0] as i32,
+                shape[1] as i32,
+            )
+        };
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!(
+                "Failed to set Geometry2D refractive profiles: {}",
+                result
+            ))
+        }
+    }
+
+    pub fn surface_interpolation_weights(&self) -> Result<Array2<f64>> {
+        let num_horizontal = match self.geometry {
+            EngineGeometry::TwoDimensional(geometry) => geometry.location_shape()?.0,
+            EngineGeometry::OneDimensional(_) => {
+                return Err(anyhow::anyhow!(
+                    "Surface interpolation weights require a Geometry2D engine"
+                ));
+            }
+        };
+        let num_rays = self.viewing_geometry.num_rays()?;
+        let mut weights = Array2::zeros((num_rays, num_horizontal));
+        let result = unsafe {
+            ffi::sk_engine_get_2d_surface_interpolation_weights(
+                self.engine,
+                weights.as_mut_ptr(),
+                num_rays as i32,
+                num_horizontal as i32,
+            )
+        };
+        if result == 0 {
+            Ok(weights)
+        } else {
+            Err(anyhow::anyhow!(
+                "Failed to obtain Geometry2D surface interpolation weights: {}",
+                result
+            ))
+        }
+    }
+
+    pub fn horizontal_edge_usage(&self) -> Result<Array2<i32>> {
+        match self.geometry {
+            EngineGeometry::TwoDimensional(_) => {}
+            EngineGeometry::OneDimensional(_) => {
+                return Err(anyhow::anyhow!(
+                    "Horizontal edge usage requires a Geometry2D engine"
+                ));
+            }
+        }
+        let num_rays = self.viewing_geometry.num_rays()?;
+        let mut usage = Array2::zeros((num_rays, 2));
+        let result = unsafe {
+            ffi::sk_engine_get_2d_horizontal_edge_usage(
+                self.engine,
+                usage.as_mut_ptr(),
+                num_rays as i32,
+            )
+        };
+        if result == 0 {
+            Ok(usage)
+        } else {
+            Err(anyhow::anyhow!(
+                "Failed to obtain Geometry2D horizontal edge usage: {}",
+                result
+            ))
+        }
+    }
+
     pub fn linearization_backend(&self, mode: LinearizationMode) -> Result<LinearizationBackend> {
         let mut backend = 0i32;
         let result =
@@ -261,6 +347,26 @@ impl<'a> Engine<'a> {
     }
 
     pub fn calculate_radiance(&self, atmosphere: &Atmosphere) -> Result<Output> {
+        let derivative_names = atmosphere
+            .storage
+            .derivative_mapping_names()
+            .map_err(|e| anyhow::anyhow!(e))?;
+        let surface_names = atmosphere
+            .surface
+            .derivative_mapping_names()
+            .map_err(|e| anyhow::anyhow!(e))?;
+        self.calculate_radiance_with_mappings(atmosphere, &derivative_names, &surface_names)
+    }
+
+    /// Calculate radiance while allocating only the requested derivative
+    /// outputs. An empty pair of mapping collections is a true radiance-only
+    /// calculation even when the atmosphere contains derivative mappings.
+    pub fn calculate_radiance_with_mappings(
+        &self,
+        atmosphere: &Atmosphere,
+        derivative_names: &[String],
+        surface_names: &[String],
+    ) -> Result<Output> {
         crate::threading::set_num_threads(self.config.num_threads()?)?;
 
         let num_stokes = self.config.num_stokes()?;
@@ -271,13 +377,8 @@ impl<'a> Engine<'a> {
 
         let mut output = Output::new(num_wavel, num_los, num_flux, num_flux_types, num_stokes);
 
-        let deriv_names = atmosphere
-            .storage
-            .derivative_mapping_names()
-            .map_err(|e| anyhow::anyhow!(e))?;
-
         // Assign the memory for the derivatives
-        for deriv_name in deriv_names.iter() {
+        for deriv_name in derivative_names {
             let mapping = atmosphere
                 .storage
                 .get_derivative_mapping(deriv_name)
@@ -287,11 +388,13 @@ impl<'a> Engine<'a> {
             output.with_derivative(deriv_name, num_deriv_output);
         }
 
-        let deriv_names = atmosphere
-            .surface
-            .derivative_mapping_names()
-            .map_err(|e| anyhow::anyhow!(e))?;
-        for deriv_name in deriv_names.iter() {
+        for deriv_name in surface_names {
+            // Resolve the name here so an invalid selection fails before the
+            // native calculation instead of creating an unattached output.
+            atmosphere
+                .surface
+                .get_derivative_mapping(deriv_name)
+                .map_err(|e| anyhow::anyhow!(e))?;
             output.with_surface_derivative(deriv_name);
         }
 
@@ -887,6 +990,13 @@ mod tests {
 
         config
             .with_multiple_scatter_source(MultipleScatterSource::SuccessiveOrdersLegacy)
+            .unwrap();
+        assert!(Engine::new_2d(&config, &geometry, &viewing_geometry).is_err());
+
+        config
+            .with_multiple_scatter_source(MultipleScatterSource::None)
+            .unwrap()
+            .with_single_scatter_source(SingleScatterSource::DiscreteOrdinates)
             .unwrap();
         assert!(Engine::new_2d(&config, &geometry, &viewing_geometry).is_err());
 

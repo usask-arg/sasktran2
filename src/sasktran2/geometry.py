@@ -139,3 +139,7 @@ class Geometry2D:
     def location_index(self, altitude_index: int, horizontal_index: int) -> int:
         """Return the altitude-fastest flattened location index."""
         return self._geometry.location_index(altitude_index, horizontal_index)
+
+    @property
+    def horizontal_dimension(self) -> str:
+        return "horizontal_angle"

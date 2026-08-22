@@ -310,12 +310,17 @@ namespace sasktran2::successive_orders {
             const int offset = m_ground_value_offsets[ground_index];
             for (int output = 0; output < rows; ++output) {
                 for (int input = 0; input < columns; ++input) {
-                    const auto brdf = atmosphere.surface().brdf(
-                        wavelength, angular.mu_in(input),
-                        angular.mu_out(output),
-                        angular.phi_difference(output, input));
+                    double brdf_00 = 1.0 / EIGEN_PI;
+                    if (!atmosphere.surface().has_spatial_lambertian_albedo()) {
+                        brdf_00 = atmosphere.surface().brdf(
+                            wavelength, angular.mu_in(input),
+                            angular.mu_out(output),
+                            angular.phi_difference(output, input),
+                            m_geometry->ground_horizontal_weights(
+                                ground_index))(0, 0);
+                    }
                     values(offset + output * columns + input) =
-                        angular.weighted_mu_in(input) * brdf(0, 0);
+                        angular.weighted_mu_in(input) * brdf_00;
                 }
             }
         }
@@ -402,6 +407,13 @@ namespace sasktran2::successive_orders {
             }
         }
 
+        // Spatial Lambertian albedo is applied by each ray at its physical
+        // ground intersection. The ground source points therefore represent
+        // unit-albedo angular redistribution and have no albedo derivative.
+        if (atmosphere.surface().has_spatial_lambertian_albedo()) {
+            return;
+        }
+
         for (int ground_index = 0;
              ground_index < m_geometry->num_ground_points(); ++ground_index) {
             const auto& angular = m_ground_geometry[ground_index];
@@ -422,7 +434,9 @@ namespace sasktran2::successive_orders {
                                 wavelength, angular.mu_in(input),
                                 angular.mu_out(output),
                                 angular.phi_difference(output, input),
-                                derivative);
+                                derivative,
+                                m_geometry->ground_horizontal_weights(
+                                    ground_index));
                         ground_value_tangent(offset + output * columns +
                                              input) +=
                             direction * angular.weighted_mu_in(input) *
@@ -480,6 +494,9 @@ namespace sasktran2::successive_orders {
                 }
             }
         }
+        if (atmosphere.surface().has_spatial_lambertian_albedo()) {
+            return;
+        }
         for (int ground_index = 0;
              ground_index < m_geometry->num_ground_points(); ++ground_index) {
             const auto& angular = m_ground_geometry[ground_index];
@@ -496,7 +513,9 @@ namespace sasktran2::successive_orders {
                                 wavelength, angular.mu_in(input),
                                 angular.mu_out(output),
                                 angular.phi_difference(output, input),
-                                derivative);
+                                derivative,
+                                m_geometry->ground_horizontal_weights(
+                                    ground_index));
                         value += ground_value_gradient(
                                      offset + output * columns + input) *
                                  angular.weighted_mu_in(input) *
@@ -671,14 +690,19 @@ namespace sasktran2::successive_orders {
                 3 * columns);
             for (int output = 0; output < rows; ++output) {
                 for (int input = 0; input < columns; ++input) {
-                    const auto brdf = atmosphere.surface().brdf(
-                        wavelength, angular.mu_in(input),
-                        angular.mu_out(output),
-                        angular.phi_difference(output, input));
+                    double brdf_00 = 1.0 / EIGEN_PI;
+                    if (!atmosphere.surface().has_spatial_lambertian_albedo()) {
+                        brdf_00 = atmosphere.surface().brdf(
+                            wavelength, angular.mu_in(input),
+                            angular.mu_out(output),
+                            angular.phi_difference(output, input),
+                            m_geometry->ground_horizontal_weights(
+                                ground_index))(0, 0);
+                    }
                     // Match the legacy HR ground convention: the BRDF only
                     // contributes to I <- I for vector radiance.
                     block(3 * output, 3 * input) =
-                        angular.weighted_mu_in(input) * brdf(0, 0);
+                        angular.weighted_mu_in(input) * brdf_00;
                 }
             }
         }
@@ -774,6 +798,10 @@ namespace sasktran2::successive_orders {
             }
         }
 
+        if (atmosphere.surface().has_spatial_lambertian_albedo()) {
+            return;
+        }
+
         for (int ground_index = 0;
              ground_index < m_geometry->num_ground_points(); ++ground_index) {
             const auto& angular = m_ground_geometry[ground_index];
@@ -797,7 +825,9 @@ namespace sasktran2::successive_orders {
                                 wavelength, angular.mu_in(input),
                                 angular.mu_out(output),
                                 angular.phi_difference(output, input),
-                                derivative);
+                                derivative,
+                                m_geometry->ground_horizontal_weights(
+                                    ground_index));
                         block(3 * output, 3 * input) +=
                             direction * angular.weighted_mu_in(input) *
                             derivative_brdf(0, 0);
@@ -858,6 +888,9 @@ namespace sasktran2::successive_orders {
                 }
             }
         }
+        if (atmosphere.surface().has_spatial_lambertian_albedo()) {
+            return;
+        }
         for (int ground_index = 0;
              ground_index < m_geometry->num_ground_points(); ++ground_index) {
             const auto& angular = m_ground_geometry[ground_index];
@@ -877,7 +910,9 @@ namespace sasktran2::successive_orders {
                                 wavelength, angular.mu_in(input),
                                 angular.mu_out(output),
                                 angular.phi_difference(output, input),
-                                derivative);
+                                derivative,
+                                m_geometry->ground_horizontal_weights(
+                                    ground_index));
                         value += block_gradient(3 * output, 3 * input) *
                                  angular.weighted_mu_in(input) *
                                  derivative_brdf(0, 0);

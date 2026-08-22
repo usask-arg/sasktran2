@@ -108,10 +108,12 @@ namespace sasktran2::successive_orders {
             AltitudeAngleSourceLocationInterpolator(
                 sasktran2::grids::AltitudeGrid&& altitude_grid,
                 const sasktran2::Geometry2D& geometry,
-                int num_horizontal_points)
+                int num_horizontal_points,
+                const std::vector<double>& horizontal_angle_grid_radians)
                 : SourceLocationInterpolator(std::move(altitude_grid)),
                   m_geometry(geometry), m_horizontal_grid(make_horizontal_grid(
-                                            geometry, num_horizontal_points)) {}
+                                            geometry, num_horizontal_points,
+                                            horizontal_angle_grid_radians)) {}
 
             const Eigen::VectorXd& horizontal_grid() const {
                 return m_horizontal_grid.grid();
@@ -217,20 +219,45 @@ namespace sasktran2::successive_orders {
             }
 
           private:
-            static sasktran2::grids::Grid
-            make_horizontal_grid(const sasktran2::Geometry2D& geometry,
-                                 int num_horizontal_points) {
+            static sasktran2::grids::Grid make_horizontal_grid(
+                const sasktran2::Geometry2D& geometry,
+                int num_horizontal_points,
+                const std::vector<double>& horizontal_angle_grid_radians) {
                 const auto& atmosphere_angles =
                     geometry.horizontal_angle_grid();
-                Eigen::VectorXd horizontal_angles(num_horizontal_points);
-                if (num_horizontal_points == 1) {
-                    horizontal_angles[0] =
-                        0.5 * (atmosphere_angles[0] +
-                               atmosphere_angles[atmosphere_angles.size() - 1]);
+                Eigen::VectorXd horizontal_angles;
+                if (!horizontal_angle_grid_radians.empty()) {
+                    horizontal_angles.resize(static_cast<Eigen::Index>(
+                        horizontal_angle_grid_radians.size()));
+                    const double lower = atmosphere_angles[0];
+                    const double upper =
+                        atmosphere_angles[atmosphere_angles.size() - 1];
+                    for (std::size_t index = 0;
+                         index < horizontal_angle_grid_radians.size();
+                         ++index) {
+                        const double angle =
+                            horizontal_angle_grid_radians[index];
+                        if (angle < lower || angle > upper) {
+                            throw std::invalid_argument(
+                                "Successive-orders source horizontal angles "
+                                "must lie inside the Geometry2D horizontal "
+                                "angle range");
+                        }
+                        horizontal_angles[static_cast<Eigen::Index>(index)] =
+                            angle;
+                    }
                 } else {
-                    horizontal_angles.setLinSpaced(
-                        num_horizontal_points, atmosphere_angles[0],
-                        atmosphere_angles[atmosphere_angles.size() - 1]);
+                    horizontal_angles.resize(num_horizontal_points);
+                    if (num_horizontal_points == 1) {
+                        horizontal_angles[0] =
+                            0.5 *
+                            (atmosphere_angles[0] +
+                             atmosphere_angles[atmosphere_angles.size() - 1]);
+                    } else {
+                        horizontal_angles.setLinSpaced(
+                            num_horizontal_points, atmosphere_angles[0],
+                            atmosphere_angles[atmosphere_angles.size() - 1]);
+                    }
                 }
                 return sasktran2::grids::Grid(
                     std::move(horizontal_angles),
@@ -305,6 +332,17 @@ namespace sasktran2::successive_orders {
         if (num_threads <= 0) {
             throw std::invalid_argument(
                 "Successive-orders geometry requires at least one thread");
+        }
+        for (std::size_t index = 0;
+             index < horizontal_angle_grid_radians.size(); ++index) {
+            const double angle = horizontal_angle_grid_radians[index];
+            if (!std::isfinite(angle) ||
+                (index != 0 &&
+                 angle <= horizontal_angle_grid_radians[index - 1])) {
+                throw std::invalid_argument(
+                    "Successive-orders source horizontal angles must be "
+                    "finite and strictly increasing");
+            }
         }
     }
 
@@ -448,6 +486,8 @@ namespace sasktran2::successive_orders {
 
         m_source_points.clear();
         m_source_points.resize(total_points);
+        m_ground_horizontal_weights.clear();
+        m_ground_horizontal_weights.resize(m_num_ground_points);
         for (int point_index = 0; point_index < m_num_interior_points;
              ++point_index) {
             auto& point = m_source_points[point_index];
@@ -472,6 +512,11 @@ namespace sasktran2::successive_orders {
             point.m_outgoing_sphere =
                 m_angular_grids[ground_index + 1]->outgoing.get();
             point.m_is_ground = true;
+            if (m_geometry_2d != nullptr) {
+                m_geometry_2d->assign_horizontal_interpolation_weights(
+                    point.location(),
+                    m_ground_horizontal_weights[ground_index]);
+            }
         }
 
         m_incoming_point_offsets.assign(
@@ -660,6 +705,11 @@ namespace sasktran2::successive_orders {
 
         auto altitude_grid = make_altitude_grid();
         if (m_geometry_1d != nullptr) {
+            if (!m_settings.horizontal_angle_grid_radians.empty()) {
+                throw std::invalid_argument(
+                    "An explicit successive-orders horizontal-angle grid is "
+                    "supported only with Geometry2D");
+            }
             auto cos_sza_grid = make_cos_sza_grid(internal_viewing);
             m_location_interpolator = std::make_unique<
                 sasktran2::grids::AltitudeSZASourceLocationInterpolator>(
@@ -670,7 +720,8 @@ namespace sasktran2::successive_orders {
             auto interpolator =
                 std::make_unique<AltitudeAngleSourceLocationInterpolator>(
                     std::move(altitude_grid), *m_geometry_2d,
-                    m_settings.num_sza);
+                    m_settings.num_sza,
+                    m_settings.horizontal_angle_grid_radians);
             const auto& horizontal_grid = interpolator->horizontal_grid();
             m_source_horizontal_angles_rad.assign(horizontal_grid.data(),
                                                   horizontal_grid.data() +

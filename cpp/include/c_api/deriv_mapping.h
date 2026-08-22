@@ -75,6 +75,9 @@ int sk_surface_deriv_mapping_set_interpolator(SurfaceDerivativeMapping* mapping,
                                               double* interpolator, int dim1,
                                               int dim2);
 
+int sk_surface_deriv_mapping_clear_interpolator(
+    SurfaceDerivativeMapping* mapping);
+
 int sk_surface_deriv_mapping_get_interp_dim(SurfaceDerivativeMapping* mapping,
                                             const char** name);
 

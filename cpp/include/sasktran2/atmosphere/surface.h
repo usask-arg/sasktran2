@@ -383,6 +383,7 @@ namespace sasktran2::atmosphere {
         Eigen::Map<Eigen::MatrixXd> m_brdf_args;
         std::vector<Eigen::MatrixXd> m_d_brdf_args;
         Eigen::Map<Eigen::VectorXd> m_emission;
+        std::optional<Eigen::MatrixXd> m_spatial_lambertian_albedo;
 
         std::map<std::string, SurfaceDerivativeMapping>
             m_derivative_mappings; /** Derivatives
@@ -432,8 +433,29 @@ namespace sasktran2::atmosphere {
                                                      double mu_in,
                                                      double mu_out,
                                                      double phi_diff) const {
+            if (m_spatial_lambertian_albedo.has_value()) {
+                throw std::logic_error(
+                    "A spatial Lambertian surface requires horizontal "
+                    "interpolation weights");
+            }
             return m_brdf_object->brdf(mu_in, mu_out, phi_diff,
                                        m_brdf_args.col(wavel_idx));
+        }
+
+        /** Evaluate a horizontally varying Lambertian BRDF. */
+        Eigen::Matrix<double, NSTOKES, NSTOKES>
+        brdf(int wavel_idx, double mu_in, double mu_out, double phi_diff,
+             const std::vector<std::pair<int, double>>& horizontal_weights)
+            const {
+            if (!m_spatial_lambertian_albedo.has_value()) {
+                return brdf(wavel_idx, mu_in, mu_out, phi_diff);
+            }
+            const double albedo =
+                spatial_lambertian_albedo(wavel_idx, horizontal_weights);
+            Eigen::Matrix<double, NSTOKES, NSTOKES> result;
+            result.setZero();
+            result(0, 0) = albedo / EIGEN_PI;
+            return result;
         }
 
         /**
@@ -450,10 +472,42 @@ namespace sasktran2::atmosphere {
         Eigen::Matrix<double, NSTOKES, NSTOKES>
         d_brdf(int wavel_idx, double mu_in, double mu_out, double phi_diff,
                int deriv_index) const {
+            if (m_spatial_lambertian_albedo.has_value()) {
+                throw std::logic_error(
+                    "A spatial Lambertian surface derivative requires "
+                    "horizontal interpolation weights");
+            }
             return m_brdf_object->d_brdf(
                 deriv_index, mu_in, mu_out, phi_diff,
                 m_brdf_args.col(wavel_idx),
                 m_d_brdf_args[deriv_index].col(wavel_idx));
+        }
+
+        /** Derivative of the horizontally varying Lambertian BRDF with
+         * respect to one local horizontal albedo node. */
+        Eigen::Matrix<double, NSTOKES, NSTOKES>
+        d_brdf(int wavel_idx, double mu_in, double mu_out, double phi_diff,
+               int deriv_index,
+               const std::vector<std::pair<int, double>>& horizontal_weights)
+            const {
+            if (!m_spatial_lambertian_albedo.has_value()) {
+                return d_brdf(wavel_idx, mu_in, mu_out, phi_diff, deriv_index);
+            }
+            if (deriv_index < 0 ||
+                deriv_index >= m_spatial_lambertian_albedo->rows()) {
+                throw std::out_of_range(
+                    "Spatial Lambertian derivative index out of range");
+            }
+            double derivative = 0.0;
+            for (const auto& [horizontal_index, weight] : horizontal_weights) {
+                if (horizontal_index == deriv_index) {
+                    derivative += weight;
+                }
+            }
+            Eigen::Matrix<double, NSTOKES, NSTOKES> result;
+            result.setZero();
+            result(0, 0) = derivative / EIGEN_PI;
+            return result;
         }
 
         /**
@@ -461,7 +515,11 @@ namespace sasktran2::atmosphere {
          *
          * @return int
          */
-        int num_deriv() const { return (int)m_brdf_object->num_deriv(); }
+        int num_deriv() const {
+            return m_spatial_lambertian_albedo.has_value()
+                       ? static_cast<int>(m_spatial_lambertian_albedo->rows())
+                       : static_cast<int>(m_brdf_object->num_deriv());
+        }
 
         /**
          * @brief Maximum azimuthal order in the BRDF expansion
@@ -515,6 +573,8 @@ namespace sasktran2::atmosphere {
          * @param brdf
          */
         void set_brdf_object(std::shared_ptr<brdf::BRDF<NSTOKES>> brdf) {
+            m_spatial_lambertian_albedo.reset();
+            m_derivative_mappings.clear();
             m_brdf_object = std::move(brdf);
             allocate(m_num_wavel);
         }
@@ -527,12 +587,78 @@ namespace sasktran2::atmosphere {
         void
         set_brdf_object_with_memory(std::shared_ptr<brdf::BRDF<NSTOKES>> brdf,
                                     Eigen::Map<Eigen::MatrixXd> brdf_args) {
+            m_spatial_lambertian_albedo.reset();
+            m_derivative_mappings.clear();
             m_brdf_object = std::move(brdf);
             // placement new into the map
             new (&m_brdf_args) Eigen::Map<Eigen::MatrixXd>(
                 brdf_args.data(), m_brdf_object->num_args(), m_num_wavel);
             // Only need to alloc the derivatives, not the full object
             alloc_derivatives();
+        }
+
+        /** Copy a horizontal-by-wavelength Lambertian albedo field into the
+         * native surface. The ordinary BRDF argument memory remains available
+         * for compatibility but is not used while this mode is active. */
+        void set_spatial_lambertian_albedo(const Eigen::MatrixXd& albedo) {
+            if (albedo.rows() < 2 || albedo.cols() != m_num_wavel ||
+                !albedo.allFinite() || (albedo.array() < 0.0).any() ||
+                (albedo.array() > 1.0).any()) {
+                throw std::invalid_argument(
+                    "Spatial Lambertian albedo must have at least two "
+                    "horizontal rows, one column per wavelength, and finite "
+                    "values in [0, 1]");
+            }
+            if (dynamic_cast<brdf::Lambertian<NSTOKES>*>(m_brdf_object.get()) ==
+                nullptr) {
+                throw std::invalid_argument(
+                    "Spatial surface storage currently supports Lambertian "
+                    "BRDFs only");
+            }
+            const bool derivative_shape_changed =
+                !m_spatial_lambertian_albedo.has_value() ||
+                m_spatial_lambertian_albedo->rows() != albedo.rows();
+            m_spatial_lambertian_albedo = albedo;
+            if (derivative_shape_changed) {
+                m_derivative_mappings.clear();
+            }
+        }
+
+        void clear_spatial_lambertian_albedo() {
+            if (m_spatial_lambertian_albedo.has_value()) {
+                m_spatial_lambertian_albedo.reset();
+                m_derivative_mappings.clear();
+            }
+        }
+
+        /** Whether this surface stores a horizontally varying Lambertian
+         * albedo field. */
+        bool has_spatial_lambertian_albedo() const {
+            return m_spatial_lambertian_albedo.has_value();
+        }
+
+        /** Interpolate the spatial Lambertian albedo itself, rather than its
+         * BRDF value, at one horizontal location. */
+        double
+        spatial_lambertian_albedo(int wavel_idx,
+                                  const std::vector<std::pair<int, double>>&
+                                      horizontal_weights) const {
+            if (!m_spatial_lambertian_albedo.has_value() || wavel_idx < 0 ||
+                wavel_idx >= m_num_wavel || horizontal_weights.empty()) {
+                throw std::invalid_argument(
+                    "Invalid spatial Lambertian albedo interpolation request");
+            }
+            double albedo = 0.0;
+            for (const auto& [horizontal_index, weight] : horizontal_weights) {
+                if (horizontal_index < 0 ||
+                    horizontal_index >= m_spatial_lambertian_albedo->rows()) {
+                    throw std::out_of_range(
+                        "Spatial Lambertian horizontal index out of range");
+                }
+                albedo += weight * (*m_spatial_lambertian_albedo)(
+                                       horizontal_index, wavel_idx);
+            }
+            return albedo;
         }
 
         /**
@@ -570,8 +696,7 @@ namespace sasktran2::atmosphere {
                 // constructor
                 auto [new_it, inserted] = m_derivative_mappings.emplace(
                     std::piecewise_construct, std::forward_as_tuple(name),
-                    std::forward_as_tuple(m_num_wavel,
-                                          m_brdf_object->num_args()));
+                    std::forward_as_tuple(m_num_wavel, num_deriv()));
                 return new_it->second;
             }
         }
