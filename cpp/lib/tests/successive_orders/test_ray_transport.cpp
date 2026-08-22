@@ -112,6 +112,62 @@ TEST_CASE("Successive-orders packed ray transport assembles layer and ground "
                                         2.0e-14));
 }
 
+TEST_CASE("Successive-orders ray transport applies spatial albedo at the "
+          "ground intersection",
+          "[successive_orders][ray_transport][ground][linearization]") {
+    RayTransportFixture fixture;
+    constexpr int wavelength = 1;
+    Eigen::MatrixXd albedo(3, num_wavelengths);
+    albedo << 0.1, 0.2, 0.3, 0.4, 0.7, 0.8;
+    fixture.atmosphere.surface().set_spatial_lambertian_albedo(albedo);
+    fixture.interpolation[0].ground_horizontal_weights = {{0, 0.25}, {2, 0.75}};
+    const auto map = fixture.make_map();
+
+    sasktran2::successive_orders::TransportOperator transport(map.sparsity());
+    map.assemble_values(fixture.atmosphere, wavelength, transport);
+    const double layer_zero_od = 0.7 * 0.1 + 0.2 * 0.4;
+    const double layer_one_od = 0.4 * 0.4 + 1.1 * 0.7;
+    const double transmission = std::exp(-(layer_zero_od + layer_one_od));
+    const double intersection_albedo = 0.25 * 0.2 + 0.75 * 0.8;
+    REQUIRE(transport.values()(3) ==
+            Catch::Approx(0.8 * transmission * intersection_albedo)
+                .epsilon(2.0e-14));
+
+    Eigen::VectorXd tangent =
+        Eigen::VectorXd::Zero(fixture.atmosphere.num_deriv());
+    tangent(fixture.atmosphere.surface_deriv_start_index()) = 0.4;
+    tangent(fixture.atmosphere.surface_deriv_start_index() + 2) = -0.2;
+    Eigen::VectorXd analytic(map.sparsity().nonzeros());
+    map.assemble_jvp(fixture.atmosphere, wavelength, tangent, analytic);
+
+    constexpr double step = 1.0e-6;
+    sasktran2::successive_orders::TransportOperator above(map.sparsity());
+    sasktran2::successive_orders::TransportOperator below(map.sparsity());
+    Eigen::MatrixXd direction = Eigen::MatrixXd::Zero(3, num_wavelengths);
+    direction(0, wavelength) = 0.4;
+    direction(2, wavelength) = -0.2;
+    fixture.atmosphere.surface().set_spatial_lambertian_albedo(
+        albedo + step * direction);
+    map.assemble_values(fixture.atmosphere, wavelength, above);
+    fixture.atmosphere.surface().set_spatial_lambertian_albedo(
+        albedo - step * direction);
+    map.assemble_values(fixture.atmosphere, wavelength, below);
+    fixture.atmosphere.surface().set_spatial_lambertian_albedo(albedo);
+    const Eigen::VectorXd finite_difference =
+        (above.values() - below.values()) / (2.0 * step);
+    REQUIRE(analytic.isApprox(finite_difference, 2.0e-9));
+
+    const Eigen::VectorXd value_gradient =
+        (Eigen::VectorXd(6) << 0.2, -0.35, 0.5, 0.1, -0.4, 0.3).finished();
+    Eigen::VectorXd native_gradient =
+        Eigen::VectorXd::Zero(fixture.atmosphere.num_deriv());
+    sasktran2::successive_orders::RayTransportWorkspace workspace;
+    map.accumulate_vjp(fixture.atmosphere, wavelength, value_gradient,
+                       native_gradient, workspace);
+    REQUIRE(analytic.dot(value_gradient) ==
+            Catch::Approx(tangent.dot(native_gradient)).epsilon(2.0e-13));
+}
+
 TEST_CASE("Successive-orders packed ray transport JVP matches finite "
           "differences",
           "[successive_orders][ray_transport][linearization]") {

@@ -450,21 +450,8 @@ namespace sasktran2::atmosphere {
             if (!m_spatial_lambertian_albedo.has_value()) {
                 return brdf(wavel_idx, mu_in, mu_out, phi_diff);
             }
-            if (wavel_idx < 0 || wavel_idx >= m_num_wavel ||
-                horizontal_weights.empty()) {
-                throw std::invalid_argument(
-                    "Invalid spatial Lambertian interpolation request");
-            }
-            double albedo = 0.0;
-            for (const auto& [horizontal_index, weight] : horizontal_weights) {
-                if (horizontal_index < 0 ||
-                    horizontal_index >= m_spatial_lambertian_albedo->rows()) {
-                    throw std::out_of_range(
-                        "Spatial Lambertian horizontal index out of range");
-                }
-                albedo += weight * (*m_spatial_lambertian_albedo)(
-                                       horizontal_index, wavel_idx);
-            }
+            const double albedo =
+                spatial_lambertian_albedo(wavel_idx, horizontal_weights);
             Eigen::Matrix<double, NSTOKES, NSTOKES> result;
             result.setZero();
             result(0, 0) = albedo / EIGEN_PI;
@@ -642,6 +629,36 @@ namespace sasktran2::atmosphere {
                 m_spatial_lambertian_albedo.reset();
                 m_derivative_mappings.clear();
             }
+        }
+
+        /** Whether this surface stores a horizontally varying Lambertian
+         * albedo field. */
+        bool has_spatial_lambertian_albedo() const {
+            return m_spatial_lambertian_albedo.has_value();
+        }
+
+        /** Interpolate the spatial Lambertian albedo itself, rather than its
+         * BRDF value, at one horizontal location. */
+        double
+        spatial_lambertian_albedo(int wavel_idx,
+                                  const std::vector<std::pair<int, double>>&
+                                      horizontal_weights) const {
+            if (!m_spatial_lambertian_albedo.has_value() || wavel_idx < 0 ||
+                wavel_idx >= m_num_wavel || horizontal_weights.empty()) {
+                throw std::invalid_argument(
+                    "Invalid spatial Lambertian albedo interpolation request");
+            }
+            double albedo = 0.0;
+            for (const auto& [horizontal_index, weight] : horizontal_weights) {
+                if (horizontal_index < 0 ||
+                    horizontal_index >= m_spatial_lambertian_albedo->rows()) {
+                    throw std::out_of_range(
+                        "Spatial Lambertian horizontal index out of range");
+                }
+                albedo += weight * (*m_spatial_lambertian_albedo)(
+                                       horizontal_index, wavel_idx);
+            }
+            return albedo;
         }
 
         /**

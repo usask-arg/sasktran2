@@ -1435,35 +1435,17 @@ fn make_layouts(
         .map(|ray| ray.tangent_coordinate.clone())
         .collect::<Vec<_>>();
 
-    let minimum_surface_radius = geometry
-        .surface_radii_m
-        .iter()
-        .copied()
-        .fold(f64::INFINITY, f64::min);
-    let maximum_surface_radius = geometry
-        .surface_radii_m
-        .iter()
-        .copied()
-        .fold(f64::NEG_INFINITY, f64::max);
-    let top_radius =
-        maximum_surface_radius + geometry.altitude_grid_m[geometry.altitude_grid_m.len() - 1];
-    let horizon = 2.0
-        * (minimum_surface_radius / top_radius)
-            .clamp(-1.0, 1.0)
-            .acos();
     let mut result = Vec::with_capacity(grouped.len());
     for (group_index, observations) in grouped.into_iter().enumerate() {
         let min_angle = observations
             .iter()
             .map(|&index| tangent_coordinates[index].angle)
             .fold(f64::INFINITY, f64::min)
-            - horizon
             - group_padding_angle;
         let max_angle = observations
             .iter()
             .map(|&index| tangent_coordinates[index].angle)
             .fold(f64::NEG_INFINITY, f64::max)
-            + horizon
             + group_padding_angle;
         let mut start = geometry
             .cumulative_angles
@@ -1501,7 +1483,7 @@ fn make_layouts(
         let reference_position = interpolate_ground_track(geometry, reference_angle);
         // A local Geometry2D has one spherical radius. Choose the least-squares
         // radius at the actual observation tangent locations, not over the much
-        // wider horizon and padding window. Tangent altitude is conserved
+        // wider padding window. Tangent altitude is conserved
         // separately by the ray policy; this radius minimizes the remaining
         // angular-to-horizontal-distance scale error over the measured segment.
         let observation_surface_radii_m = observations
@@ -1945,6 +1927,14 @@ fn update_group_atmosphere(
             destination.clear_interpolator();
         }
     }
+    // Derivative mappings own their phase-function perturbations, while the
+    // native source implementations consume a compact scattering-derivative
+    // table on AtmosphereGridStorage. The master atmosphere builds that table
+    // after registering its constituents, but gathering mappings into this
+    // persistent local atmosphere does not do so automatically. Rebuild it
+    // after every gather so both the group membership and the copied phase
+    // coefficients follow the current atmospheric state.
+    local.storage.finalize_scattering_derivatives();
     for name in &signature.surface_mappings {
         if lambertian_surface.and_then(|surface| surface.derivative_name.as_ref()) == Some(name) {
             for local_horizontal in 0..group.layout.grid_indices.len() {

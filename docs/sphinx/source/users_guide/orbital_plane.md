@@ -23,7 +23,7 @@ viewing = sk.OrbitalPlaneViewingGeometry.from_tangent_locations(
 geometry = viewing.construct_atmosphere_geometry(
     altitude_grid_m,
     along_track_angle_delta=0.01,  # radians
-    path_padding_angle=np.deg2rad(5),
+    path_padding_angle=np.deg2rad(10),
     max_orbital_positions=100_000,
 )
 
@@ -33,7 +33,7 @@ engine = sk.OrbitalPlaneEngine(
     geometry,
     viewing,
     time_group_duration_s=30,
-    group_padding_angle=np.deg2rad(5),
+    group_padding_angle=np.deg2rad(10),
     max_horizontal_scale_residual=0.01,
     solar_handler=solar_handler,
     derivative_execution="resident",
@@ -121,16 +121,16 @@ The constructed master grid follows the selected geoid at zero altitude and
 preserves each sampled normalized ECEF direction by intersecting that radial
 line directly with the reference ellipsoid. It is
 extended beyond the first and last nominal tangent locations by
-`path_padding_angle` on each end. The default is 5 degrees. If a boundary
-group's limb or straight solar paths need more atmosphere than this,
+`path_padding_angle` on each end. The default is 10 degrees. If a boundary
+group's paths need more atmosphere than this,
 `edge_clipping` in `group_diagnostics` reports the clamped edge.
 `geometry.surface_radii_m` contains the geocentric geoid radius at every
 orbital position. Each time group's native 2D calculation remains locally
 spherical. Its constant radius is the mean interpolated geoid radius at the
 actual observation tangent locations, which is the least-squares choice for
 the local conversion from angular separation to horizontal distance. The value
-is reported as `earth_radius_m` in `group_diagnostics`. The wider horizon and
-padding window does not affect this radius.
+is reported as `earth_radius_m` in `group_diagnostics`. The wider padding
+window does not affect this radius.
 
 The original ECEF LOS is not passed unchanged into that approximate sphere.
 Rust first derives the LOS's tangent altitude, tangent latitude/longitude, and
@@ -141,10 +141,11 @@ the vertical tangent coordinate and horizontal geoid location are conserved
 explicitly, while the single group radius only controls the residual path and
 horizontal-distance approximation. The per-ray policy values and the remaining
 surface-radius scale residual are available in `group_diagnostics`.
-Independently, every retained group expands its required limb/solar-path window
-by ``group_padding_angle`` before and after the selected interval. This margin
-is user configurable and defaults to 5 degrees. ``padding_angle`` in the group
-diagnostics reports the applied value. At a physical end of the master grid,
+Independently, every retained group expands the interval between its first and
+last tangent locations by ``group_padding_angle`` on each side. No additional
+horizon margin is added. This margin is user configurable and defaults to 10
+degrees. ``padding_angle`` in the group diagnostics reports the applied value.
+At a physical end of the master grid,
 the window still clamps and reports ``edge_clipping``; increase the master
 ``path_padding_angle`` as well when those boundary groups need the full margin.
 Atmospheric altitudes are interpreted as heights above the geoid. For a
@@ -270,4 +271,6 @@ gray along-track, and along-track/spectral albedo fields. Rust gathers the
 actual group rows without averaging, and the native ground source linearly
 interpolates albedo at each traced surface intersection. Its eager Jacobian,
 JVP, and VJP use the same current traced stencil, including after a refractive
-geometry refresh.
+geometry refresh. In successive-orders calculations, discrete ground source
+points use a unit Lambertian albedo; every ground-terminating transport ray
+then applies the interpolated albedo at its physical surface intersection.

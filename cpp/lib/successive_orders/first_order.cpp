@@ -975,6 +975,47 @@ namespace sasktran2::successive_orders {
     }
 
     template <int NSTOKES>
+    double FirstOrderProvider<NSTOKES>::ground_transport_albedo(int wavelength,
+                                                                int ray) const {
+        if (!m_atmosphere->surface().has_spatial_lambertian_albedo()) {
+            return 1.0;
+        }
+        return m_atmosphere->surface().spatial_lambertian_albedo(
+            wavelength, m_ground_horizontal_weights[ray]);
+    }
+
+    template <int NSTOKES>
+    double FirstOrderProvider<NSTOKES>::ground_transport_albedo_tangent(
+        int ray, Eigen::Ref<const Eigen::VectorXd> native_tangent) const {
+        if (!m_atmosphere->surface().has_spatial_lambertian_albedo()) {
+            return 0.0;
+        }
+        double result = 0.0;
+        for (const auto& [horizontal_index, weight] :
+             m_ground_horizontal_weights[ray]) {
+            result += weight *
+                      native_tangent(m_atmosphere->surface_deriv_start_index() +
+                                     horizontal_index);
+        }
+        return result;
+    }
+
+    template <int NSTOKES>
+    void FirstOrderProvider<NSTOKES>::accumulate_ground_transport_albedo_vjp(
+        int ray, double albedo_cotangent,
+        Eigen::Ref<Eigen::VectorXd> native_gradient) const {
+        if (!m_atmosphere->surface().has_spatial_lambertian_albedo() ||
+            albedo_cotangent == 0.0) {
+            return;
+        }
+        for (const auto& [horizontal_index, weight] :
+             m_ground_horizontal_weights[ray]) {
+            native_gradient(m_atmosphere->surface_deriv_start_index() +
+                            horizontal_index) += weight * albedo_cotangent;
+        }
+    }
+
+    template <int NSTOKES>
     void FirstOrderProvider<NSTOKES>::calculate_scalar(
         int wavelength, int wavelength_thread,
         Eigen::Ref<Eigen::VectorXd> forcing, TransportOperator* transport) {
@@ -1098,10 +1139,16 @@ namespace sasktran2::successive_orders {
                 prefix *= transfer.attenuation;
             }
             if constexpr (WITH_TRANSPORT) {
-                for (const auto& source : ray_interpolation.ground_weights) {
-                    transport->values()(
-                        ray_interpolation.transport_value_offset +
-                        source.row_inner_index) += source.weight * prefix;
+                if (ray_interpolation.ground_is_hit()) {
+                    const double ground_albedo =
+                        ground_transport_albedo(wavelength, ray);
+                    for (const auto& source :
+                         ray_interpolation.ground_weights) {
+                        transport->values()(
+                            ray_interpolation.transport_value_offset +
+                            source.row_inner_index) +=
+                            source.weight * prefix * ground_albedo;
+                    }
                 }
             }
             if (packed_ray.ground_geometry >= 0) {
@@ -1301,11 +1348,14 @@ namespace sasktran2::successive_orders {
             }
             if constexpr (WITH_TRANSPORT) {
                 if (ray_interpolation.ground_is_hit()) {
+                    const double ground_albedo =
+                        ground_transport_albedo(wavelength, ray);
                     for (const auto& source :
                          ray_interpolation.ground_weights) {
                         transport->values()(
                             ray_interpolation.transport_value_offset +
-                            source.row_inner_index) += source.weight * prefix;
+                            source.row_inner_index) +=
+                            source.weight * prefix * ground_albedo;
                     }
                 }
             }
@@ -1489,8 +1539,14 @@ namespace sasktran2::successive_orders {
                 prefix *= attenuation;
             }
             if (interpolation[ray].ground_is_hit()) {
+                const double ground_albedo =
+                    ground_transport_albedo(wavelength, ray);
+                const double ground_albedo_tangent =
+                    ground_transport_albedo_tangent(ray, native_tangent);
                 direct_transport_tangent(ray) +=
-                    ground_state_projection(ray) * prefix_tangent;
+                    ground_state_projection(ray) *
+                    (ground_albedo * prefix_tangent +
+                     prefix * ground_albedo_tangent);
             }
             if (packed_ray.ground_geometry >= 0) {
                 const auto& ground =
@@ -1882,8 +1938,13 @@ namespace sasktran2::successive_orders {
             }
             if constexpr (WITH_TRANSPORT) {
                 if (ray_interpolation.ground_is_hit()) {
+                    const double ground_albedo =
+                        ground_transport_albedo(wavelength, ray);
+                    const double ground_albedo_tangent =
+                        ground_transport_albedo_tangent(ray, native_tangent);
                     direct_transport_direction[ray] +=
-                        ground_state[ray] * prefix_tangent;
+                        ground_state[ray] * (ground_albedo * prefix_tangent +
+                                             prefix * ground_albedo_tangent);
                 }
             }
             ScalarGroundGeometry local_ground;
@@ -2153,19 +2214,25 @@ namespace sasktran2::successive_orders {
             }
             if constexpr (WITH_TRANSPORT) {
                 if (ray_interpolation.ground_is_hit()) {
+                    double ground_value = 0.0;
                     if (ground_state != nullptr) {
-                        prefix_cotangent +=
-                            ground_state[ray] * forcing_gradient;
+                        ground_value = ground_state[ray];
                     } else {
                         for (const auto& source :
                              ray_interpolation.ground_weights) {
-                            prefix_cotangent +=
-                                source.weight * forcing_gradient *
-                                (*transport_state)(
-                                    transport_column_data
-                                        [source.row_inner_index]);
+                            ground_value += source.weight *
+                                            (*transport_state)(
+                                                transport_column_data
+                                                    [source.row_inner_index]);
                         }
                     }
+                    const double ground_albedo =
+                        ground_transport_albedo(wavelength, ray);
+                    prefix_cotangent +=
+                        ground_albedo * ground_value * forcing_gradient;
+                    accumulate_ground_transport_albedo_vjp(
+                        ray, prefix * ground_value * forcing_gradient,
+                        thread_gradient);
                 }
             }
 

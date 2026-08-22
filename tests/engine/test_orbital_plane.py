@@ -594,21 +594,29 @@ def test_viewing_geometry_subsets_and_splits_preserve_observation_order():
         viewing.split(1.5, time_group_duration_s=20)
 
 
-def test_viewing_geometry_uses_user_specified_path_padding():
+def test_viewing_geometry_uses_ten_degree_default_and_user_path_padding():
     source_geometry = orbital_geometry()
     viewing = limb_viewing(source_geometry, np.array([-0.3, 0.3]))
     delta = 0.01
-    padding = np.deg2rad(5.0)
+    padding = np.deg2rad(10.0)
     geometry = viewing.construct_atmosphere_geometry(
         ALTITUDES_M,
         delta,
         path_padding_angle=padding,
         geoid=sk.SphericalGeoid(EARTH_RADIUS_M),
     )
+    default_geometry = viewing.construct_atmosphere_geometry(
+        ALTITUDES_M,
+        delta,
+        geoid=sk.SphericalGeoid(EARTH_RADIUS_M),
+    )
 
     expected_span = 0.6 + 2 * padding
     assert geometry.cumulative_angles[-1] == pytest.approx(expected_span)
     assert geometry.shape[0] == int(np.ceil(expected_span / delta)) + 1
+    np.testing.assert_allclose(
+        default_geometry.cumulative_angles, geometry.cumulative_angles
+    )
 
 
 def test_viewing_geometry_supports_zero_path_padding():
@@ -1072,7 +1080,7 @@ def test_group_padding_extends_selected_internal_window():
         time_group_duration_s=60,
         group_padding_angle=0.0,
     )
-    padding = np.deg2rad(5.0)
+    padding = np.deg2rad(10.0)
     padded = sk.OrbitalPlaneEngine(
         transmission_config(),
         geometry,
@@ -1090,6 +1098,7 @@ def test_group_padding_extends_selected_internal_window():
     unpadded_indices = unpadded.group_diagnostics[0]["grid_indices"]
     padded_diagnostic = padded.group_diagnostics[0]
     padded_indices = padded_diagnostic["grid_indices"]
+    assert len(unpadded_indices) == 2
     assert padded_indices[0] < unpadded_indices[0]
     assert padded_indices[-1] > unpadded_indices[-1]
     assert padded_diagnostic["padding_angle"] == pytest.approx(padding)
@@ -1119,7 +1128,7 @@ def test_group_diagnostics_report_actual_extended_horizontal_edge_usage():
     )
 
     diagnostic = engine.group_diagnostics[0]
-    assert diagnostic["edge_clipping"] == (True, True)
+    assert diagnostic["edge_clipping"] == (False, False)
     assert diagnostic["path_edge_clipping"] == (True, True)
     assert diagnostic["path_edge_clipping_per_los"] == [(True, True)]
     assert diagnostic["uses_extended_horizontal_edge"] is True
@@ -1960,6 +1969,85 @@ def test_orbital_aerosol_altitude_auxiliary_parameter_is_adjoint_and_selected():
         assert diagnostics["resident_surface_derivative_mappings"] == []
 
 
+@pytest.mark.parametrize("altitude_m", [20_000.0, 35_000.0])
+def test_orbital_aerosol_extinction_jvp_matches_finite_difference_with_phase_mixing(
+    altitude_m,
+):
+    geometry = orbital_geometry()
+    viewing = limb_viewing(geometry, np.array([0.0]))
+    config = sk.Config()
+    config.single_scatter_source = sk.SingleScatterSource.Exact
+    config.multiple_scatter_source = sk.MultipleScatterSource.NoSource
+    config.los_refraction = False
+    config.num_singlescatter_moments = 16
+
+    optical_wavelengths = np.array([499.0, 501.0])
+    aerosol_optical = sk.optical.HenyeyGreenstein.from_parameters(
+        wavelength_nm=optical_wavelengths,
+        xs_total=np.full(2, 2.0e-12),
+        ssa=np.full(2, 1.8e-12),
+        g=np.full(2, 0.7),
+        max_num_moments=16,
+    )
+    background_optical = sk.optical.HenyeyGreenstein.from_parameters(
+        wavelength_nm=optical_wavelengths,
+        xs_total=np.full(2, 1.0e-12),
+        ssa=np.full(2, 0.7e-12),
+        g=np.full(2, -0.2),
+        max_num_moments=16,
+    )
+    atmosphere = sk.Atmosphere(
+        geometry,
+        config,
+        wavelengths_nm=np.array([500.0]),
+        legendre_derivative=False,
+    )
+    aerosol = sk.constituent.ExtinctionScatterer2D(
+        aerosol_optical,
+        np.full(geometry.shape, 1.0e-7),
+        500.0,
+    )
+    atmosphere["aerosol"] = aerosol
+    atmosphere["background"] = sk.constituent.NumberDensityScatterer2D(
+        background_optical,
+        np.full(geometry.shape, 2.0e6),
+    )
+    engine = sk.OrbitalPlaneEngine(
+        config,
+        geometry,
+        viewing,
+        time_group_duration_s=60,
+        sun_vectors_ecef=np.array([[0.0, 0.0, 1.0]]),
+    )
+
+    horizontal_index = geometry.shape[0] // 2
+    altitude_index = int(np.flatnonzero(altitude_m == ALTITUDES_M)[0])
+    linearization = engine.linearize(atmosphere)
+    tangent = linearization.tangent_template[["aerosol_extinction"]] * 0.0
+    tangent.aerosol_extinction.values[horizontal_index, altitude_index] = 1.0
+    analytic = linearization.jvp(tangent)
+    cotangent = xr.ones_like(linearization.value)
+    gradient = linearization.vjp(cotangent, parameters=("aerosol_extinction",))
+
+    delta = 1.0e-10
+    original = aerosol.extinction_per_m[horizontal_index, altitude_index]
+    aerosol.extinction_per_m[horizontal_index, altitude_index] = original + delta
+    above = engine.calculate_radiance(atmosphere).radiance
+    aerosol.extinction_per_m[horizontal_index, altitude_index] = original - delta
+    below = engine.calculate_radiance(atmosphere).radiance
+    aerosol.extinction_per_m[horizontal_index, altitude_index] = original
+    finite_difference = (above - below) / (2.0 * delta)
+
+    assert np.any(np.abs(finite_difference) > 0.0)
+    np.testing.assert_allclose(analytic, finite_difference, rtol=2.0e-6, atol=1.0e-10)
+    np.testing.assert_allclose(
+        gradient.aerosol_extinction.values[horizontal_index, altitude_index],
+        (finite_difference * cotangent).sum().item(),
+        rtol=2.0e-6,
+        atol=1.0e-10,
+    )
+
+
 def test_derivative_execution_must_be_resident_or_streaming():
     geometry = orbital_geometry()
     viewing = limb_viewing(geometry, np.array([0.0]))
@@ -2003,6 +2091,135 @@ def test_lambertian_surface_2d_parameter_layout(albedo, expected_dims):
     assert linearization.parameter_dims["surface_albedo"] == expected_dims
     if expected_dims:
         assert linearization.tangent_template.surface_albedo.shape == np.shape(albedo)
+
+
+def test_lambertian_surface_2d_translation_preserves_spatial_spectral_interpolation():
+    geometry = orbital_geometry()
+    lower_indices = np.array([24, 39])
+    upper_indices = lower_indices + 1
+    fractions = np.array([0.35, 0.65])
+    lower_directions = geometry.ground_track_ecef_m[lower_indices]
+    lower_directions /= np.linalg.norm(lower_directions, axis=1)[:, np.newaxis]
+    upper_directions = geometry.ground_track_ecef_m[upper_indices]
+    upper_directions /= np.linalg.norm(upper_directions, axis=1)[:, np.newaxis]
+    separation = np.arccos(np.sum(lower_directions * upper_directions, axis=1))
+    target_directions = (
+        np.sin((1.0 - fractions) * separation)[:, np.newaxis]
+        / np.sin(separation)[:, np.newaxis]
+        * lower_directions
+        + np.sin(fractions * separation)[:, np.newaxis]
+        / np.sin(separation)[:, np.newaxis]
+        * upper_directions
+    )
+    target_positions = EARTH_RADIUS_M * target_directions
+    observer_angles = np.array([-0.23, 0.23])
+    observer_directions = np.column_stack(
+        (
+            np.sin(observer_angles),
+            np.zeros_like(observer_angles),
+            np.cos(observer_angles),
+        )
+    )
+    observers = (EARTH_RADIUS_M + 100_000.0) * observer_directions
+    looks = target_positions - observers
+    looks /= np.linalg.norm(looks, axis=1)[:, np.newaxis]
+    viewing = sk.OrbitalPlaneViewingGeometry(
+        np.array(
+            ["2026-01-01T00:00:00", "2026-01-01T00:00:10"],
+            dtype="datetime64[ns]",
+        ),
+        observers,
+        looks,
+        vertical_slice=np.arange(len(observers)),
+    )
+
+    config = sk.Config()
+    config.single_scatter_source = sk.SingleScatterSource.Exact
+    config.multiple_scatter_source = sk.MultipleScatterSource.NoSource
+    atmosphere_wavelengths = np.array([450.0, 500.0, 550.0])
+    atmosphere = sk.Atmosphere(
+        geometry,
+        config,
+        wavelengths_nm=atmosphere_wavelengths,
+        legendre_derivative=False,
+    )
+    atmosphere["optics"] = sk.constituent.Manual(
+        np.full((*geometry.shape, len(atmosphere_wavelengths)), 1.0e-8),
+        np.zeros((*geometry.shape, len(atmosphere_wavelengths))),
+    )
+    source_albedo = np.column_stack(
+        (
+            np.linspace(0.08, 0.38, geometry.shape[0]),
+            np.linspace(0.58, 0.88, geometry.shape[0]),
+        )
+    )
+    surface = sk.constituent.LambertianSurface2D(
+        source_albedo,
+        wavelengths_nm=np.array([400.0, 600.0]),
+    )
+    atmosphere["surface"] = surface
+    engine = sk.OrbitalPlaneEngine(
+        config,
+        geometry,
+        viewing,
+        time_group_duration_s=5,
+        group_padding_angle=np.deg2rad(25.0),
+        sun_vectors_ecef=np.array([[0.0, 0.0, 1.0], [0.0, 0.0, 1.0]]),
+    )
+
+    assert len(engine.group_diagnostics) == 2
+    assert set(engine.group_diagnostics[0]["grid_indices"]) & set(
+        engine.group_diagnostics[1]["grid_indices"]
+    )
+    spatial_radiance = engine.calculate_radiance(atmosphere).radiance.values[:, :, 0]
+    surface.albedo = np.ones_like(source_albedo)
+    unit_albedo_radiance = engine.calculate_radiance(atmosphere).radiance.values[
+        :, :, 0
+    ]
+
+    spectral_weights = np.array(
+        [
+            [0.75, 0.25],
+            [0.50, 0.50],
+            [0.25, 0.75],
+        ]
+    )
+    native_albedo = source_albedo @ spectral_weights.T
+    expected = (1.0 - fractions[:, np.newaxis]) * native_albedo[
+        lower_indices
+    ] + fractions[:, np.newaxis] * native_albedo[upper_indices]
+    np.testing.assert_allclose(
+        (spatial_radiance / unit_albedo_radiance).T,
+        expected,
+        rtol=2.0e-13,
+        atol=2.0e-14,
+    )
+
+    surface.albedo = source_albedo
+    linearization = engine.linearize(atmosphere)
+    direction = np.zeros_like(source_albedo)
+    direction[lower_indices] = np.array([[0.3, -0.1], [-0.2, 0.4]])
+    direction[upper_indices] = np.array([[-0.15, 0.2], [0.1, -0.3]])
+    tangent = linearization.tangent_template[["surface_albedo"]] * 0.0
+    tangent.surface_albedo.values[:] = direction
+    jvp = linearization.jvp(tangent)
+    cotangent = xr.ones_like(linearization.value)
+    gradient = linearization.vjp(cotangent, parameters=("surface_albedo",))
+    np.testing.assert_allclose(
+        (jvp * cotangent).sum(),
+        (tangent.surface_albedo * gradient.surface_albedo).sum(),
+        rtol=2.0e-12,
+        atol=2.0e-14,
+    )
+
+    step = 1.0e-5
+    surface.albedo = source_albedo + step * direction
+    above = engine.calculate_radiance(atmosphere).radiance
+    surface.albedo = source_albedo - step * direction
+    below = engine.calculate_radiance(atmosphere).radiance
+    surface.albedo = source_albedo
+    finite_difference = (above - below) / (2.0 * step)
+    np.testing.assert_allclose(jvp, finite_difference, rtol=2.0e-8, atol=2.0e-12)
 
 
 @pytest.mark.parametrize(
@@ -2166,6 +2383,16 @@ def test_lambertian_surface_2d_varies_at_ground_intersections_and_linearizes(
     lhs = float((jvp * cotangent).sum())
     rhs = float((tangent.surface_albedo * gradient.surface_albedo).sum())
     assert lhs == pytest.approx(rhs, rel=2.0e-11, abs=1.0e-13)
+    if multiple_scatter == sk.MultipleScatterSource.SuccessiveOrders:
+        step = 1.0e-4
+        direction = tangent.surface_albedo.values
+        surface.albedo = albedo + step * direction
+        above = engine.calculate_radiance(atmosphere).radiance
+        surface.albedo = albedo - step * direction
+        below = engine.calculate_radiance(atmosphere).radiance
+        surface.albedo = albedo
+        finite_difference = (above - below) / (2.0 * step)
+        np.testing.assert_allclose(jvp, finite_difference, rtol=2.0e-6, atol=1.0e-10)
 
 
 def test_solar_handler_is_evaluated_at_group_mean_sample_times():

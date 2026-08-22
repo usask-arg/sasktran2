@@ -102,6 +102,7 @@ namespace sasktran2::successive_orders {
         std::vector<int> optical_depth_indices;
         std::vector<double> optical_depth_weights;
         std::vector<SourceInterpolationWeight> ground_weights;
+        std::vector<std::pair<int, double>> ground_horizontal_weights;
         bool ground_hit = false;
 
         /** Offset of this row in SourceGeometry1D::transport_column_indices. */
@@ -135,6 +136,10 @@ namespace sasktran2::successive_orders {
         }
         InterpolationView<SourceInterpolationWeight> ground() const {
             return InterpolationView<SourceInterpolationWeight>(ground_weights);
+        }
+
+        const std::vector<std::pair<int, double>>& ground_horizontal() const {
+            return ground_horizontal_weights;
         }
 
         bool ground_is_hit() const { return ground_hit; }

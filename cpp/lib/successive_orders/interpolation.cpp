@@ -338,6 +338,12 @@ namespace sasktran2::successive_orders {
             const auto& ground_layer = ray.layers.front();
             sasktran2::Location ground_location;
             ground_location.position = ground_layer.exit.position;
+            if (const auto* geometry_2d =
+                    dynamic_cast<const sasktran2::Geometry2D*>(&geometry);
+                geometry_2d != nullptr) {
+                geometry_2d->assign_horizontal_interpolation_weights(
+                    ground_location, result.ground_horizontal_weights);
+            }
             compile_source_weights(
                 -usable_layer_direction(ground_layer.average_look_away, ray),
                 ground_location, true, geometry, location_interpolator,

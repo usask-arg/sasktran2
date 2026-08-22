@@ -569,7 +569,7 @@ class OrbitalPlaneViewingGeometry(ViewingGeometryContainer):
         along_track_angle_delta: float,
         interpolation_method: sk.InterpolationMethod = sk.InterpolationMethod.LinearInterpolation,
         *,
-        path_padding_angle: float = np.deg2rad(5.0),
+        path_padding_angle: float = np.deg2rad(10.0),
         geoid: sk.Geodetic | None = None,
         max_orbital_positions: int | None = 100_000,
     ) -> OrbitalPlaneGeometry:
@@ -593,7 +593,7 @@ class OrbitalPlaneViewingGeometry(ViewingGeometryContainer):
             Vertical interpolation used by each local ``Geometry2D`` engine.
         path_padding_angle
             Along-track angular padding placed before the first and after the
-            last nominal tangent location, in radians. The default is 5
+            last nominal tangent location, in radians. The default is 10
             degrees. A group that requires atmosphere beyond this margin uses
             the existing clamped edge behavior. ``group_diagnostics`` reports
             master-grid truncation as ``edge_clipping`` and actual traced LOS
@@ -828,9 +828,9 @@ class OrbitalPlaneEngine(Engine):
         complete vertical slice is assigned by its mean sample time and is never
         split between groups.
     group_padding_angle
-        Extra angular margin, in radians, added before and after the path and
-        solar-horizon window selected for every internal group. The default is
-        five degrees.
+        Extra angular margin, in radians, added before the first and after the
+        last tangent location in every internal group. No separate horizon
+        margin is added. The default is ten degrees on each side.
     max_horizontal_scale_residual
         Maximum permitted relative difference between a master-grid horizontal
         segment length and its locally spherical 2D representation. The default
@@ -866,7 +866,7 @@ class OrbitalPlaneEngine(Engine):
         viewing_geometry: OrbitalPlaneViewingGeometry,
         *,
         time_group_duration_s: float,
-        group_padding_angle: float = np.deg2rad(5.0),
+        group_padding_angle: float = np.deg2rad(10.0),
         max_horizontal_scale_residual: float | None = 0.01,
         solar_handler=None,
         sun_vectors_ecef: np.ndarray | None = None,

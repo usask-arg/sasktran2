@@ -512,11 +512,11 @@ def parse_args() -> argparse.Namespace:
         default=[350.0, 500.0, 675.0],
     )
     parser.add_argument("--along-track-angle-deg", type=float, default=1.0)
-    parser.add_argument("--path-padding-deg", type=float, default=5.0)
+    parser.add_argument("--path-padding-deg", type=float, default=10.0)
     parser.add_argument(
         "--group-padding-deg",
         type=float,
-        default=5.0,
+        default=10.0,
         help="Extra internal-grid margin before and after every time group",
     )
     parser.add_argument(
