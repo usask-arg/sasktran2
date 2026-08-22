@@ -139,6 +139,7 @@ def _structural_config_signature(config: sk.Config) -> tuple:
         "successive_orders_anderson_depth",
         "successive_orders_damping",
         "successive_orders_altitude_grid_m",
+        "successive_orders_horizontal_angle_grid_radians",
         "init_successive_orders_with_discrete_ordinates",
         "num_successive_order_points",
         "num_successive_orders_incoming",
@@ -1025,6 +1026,7 @@ class OrbitalPlaneEngine(Engine):
             group_local_up,
             group_local_north,
             group_local_east,
+            group_horizontal_angle_bounds,
         ) = orbital_group_reference_data(
             geometry._geometry,
             viewing_geometry._viewing_geometry,
@@ -1032,6 +1034,29 @@ class OrbitalPlaneEngine(Engine):
             group_padding_angle,
             max_horizontal_scale_residual,
         )
+        horizontal_source_angles = (
+            config.successive_orders_horizontal_angle_grid_radians
+        )
+        if (
+            config.multiple_scatter_source == sk.MultipleScatterSource.SuccessiveOrders
+            and horizontal_source_angles is not None
+        ):
+            outside = (
+                horizontal_source_angles[np.newaxis, :]
+                < group_horizontal_angle_bounds[:, :1]
+            ) | (
+                horizontal_source_angles[np.newaxis, :]
+                > group_horizontal_angle_bounds[:, 1:]
+            )
+            if np.any(outside):
+                group_index = int(np.flatnonzero(np.any(outside, axis=1))[0])
+                lower, upper = group_horizontal_angle_bounds[group_index]
+                msg = (
+                    "successive_orders_horizontal_angle_grid_radians must lie "
+                    f"inside every local group grid; group {group_index} spans "
+                    f"[{lower}, {upper}] radians"
+                )
+                raise ValueError(msg)
         scattering = (
             config.single_scatter_source != sk.SingleScatterSource.NoSource
             or config.multiple_scatter_source != sk.MultipleScatterSource.NoSource

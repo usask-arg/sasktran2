@@ -158,6 +158,36 @@ class Engine:
                     "refraction"
                 )
                 raise NotImplementedError(msg)
+            horizontal_source_angles = (
+                config.successive_orders_horizontal_angle_grid_radians
+            )
+            if (
+                config.multiple_scatter_source
+                == sk.MultipleScatterSource.SuccessiveOrders
+                and horizontal_source_angles is not None
+            ):
+                horizontal_grid = geometry.horizontal_angles()
+                outside = (horizontal_source_angles < horizontal_grid[0]) | (
+                    horizontal_source_angles > horizontal_grid[-1]
+                )
+                if np.any(outside):
+                    msg = (
+                        "successive_orders_horizontal_angle_grid_radians must lie "
+                        "inside the Geometry2D horizontal angle range "
+                        f"[{horizontal_grid[0]}, {horizontal_grid[-1]}]"
+                    )
+                    raise ValueError(msg)
+        elif (
+            isinstance(geometry, sk.Geometry1D)
+            and config.multiple_scatter_source
+            == sk.MultipleScatterSource.SuccessiveOrders
+            and config.successive_orders_horizontal_angle_grid_radians is not None
+        ):
+            msg = (
+                "successive_orders_horizontal_angle_grid_radians is supported "
+                "only with Geometry2D"
+            )
+            raise ValueError(msg)
 
         self._engine = PyEngine(
             config._config, geometry._geometry, viewing_geometry._viewing_geometry

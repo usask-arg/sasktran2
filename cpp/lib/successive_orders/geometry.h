@@ -26,6 +26,10 @@ namespace sasktran2::successive_orders {
          * midpoint. */
         std::vector<double> altitude_grid_m;
 
+        /** Empty selects an evenly spaced Geometry2D horizontal grid with
+         * num_sza points. Values are local Geometry2D angles in radians. */
+        std::vector<double> horizontal_angle_grid_radians;
+
         void validate() const;
     };
 

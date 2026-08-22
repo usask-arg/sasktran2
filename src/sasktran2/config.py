@@ -390,7 +390,8 @@ class Config:
         The number of solar zenith angle discretizations to use when calculating the multiple scatter source.
         For the discrete ordinates source, this determines the number of independent discrete ordinates calculations to perform.
         For the successive-orders source with Geometry1D, this is the number of solar-zenith-angle discretizations.
-        With Geometry2D, it is the number of evenly spaced horizontal source columns spanning the atmosphere grid.
+        With Geometry2D, it is the number of evenly spaced horizontal source columns spanning the atmosphere grid unless
+        ``successive_orders_horizontal_angle_grid_radians`` is supplied.
         Defaults to 1, indicating that the multiple scatter source is estimated only at the reference point.
         """
         return self._config.num_sza
@@ -401,7 +402,8 @@ class Config:
         The number of solar zenith angle discretizations to use when calculating the multiple scatter source.
         For the discrete ordinates source, this determines the number of independent discrete ordinates calculations to perform.
         For the successive-orders source with Geometry1D, this is the number of solar-zenith-angle discretizations.
-        With Geometry2D, it is the number of evenly spaced horizontal source columns spanning the atmosphere grid.
+        With Geometry2D, it is the number of evenly spaced horizontal source columns spanning the atmosphere grid unless
+        ``successive_orders_horizontal_angle_grid_radians`` is supplied.
         Defaults to 1, indicating that the multiple scatter source is estimated only at the reference point.
         """
         self._config.num_sza = value
@@ -500,6 +502,56 @@ class Config:
             msg = "successive_orders_altitude_grid_m must be strictly increasing"
             raise ValueError(msg)
         self._config.successive_orders_altitude_grid_m = altitude_grid_m.tolist()
+
+    @property
+    def successive_orders_horizontal_angle_grid_radians(
+        self,
+    ) -> np.ndarray | None:
+        """Explicit Geometry2D horizontal source grid for ``SuccessiveOrders``.
+
+        Values are local :class:`Geometry2D` horizontal angles in radians and
+        must be finite and strictly increasing. They must lie inside the
+        horizontal range of every engine that uses the configuration. For an
+        :class:`OrbitalPlaneEngine`, zero is the center of each group's fitted
+        local plane. ``None`` selects the existing evenly spaced grid controlled
+        by :attr:`num_sza`. This option is not valid with ``Geometry1D``.
+        """
+        horizontal_angles = self._config.successive_orders_horizontal_angle_grid_radians
+        if horizontal_angles is None:
+            return None
+        return np.asarray(horizontal_angles, dtype=np.float64)
+
+    @successive_orders_horizontal_angle_grid_radians.setter
+    def successive_orders_horizontal_angle_grid_radians(self, value: np.ndarray | None):
+        if value is None:
+            self._config.successive_orders_horizontal_angle_grid_radians = None
+            return
+
+        horizontal_angles = np.asarray(value, dtype=np.float64)
+        if horizontal_angles.ndim != 1:
+            msg = (
+                "successive_orders_horizontal_angle_grid_radians must be "
+                "one-dimensional"
+            )
+            raise ValueError(msg)
+        if horizontal_angles.size == 0:
+            self._config.successive_orders_horizontal_angle_grid_radians = None
+            return
+        if not np.all(np.isfinite(horizontal_angles)):
+            msg = (
+                "successive_orders_horizontal_angle_grid_radians must contain "
+                "only finite values"
+            )
+            raise ValueError(msg)
+        if np.any(np.diff(horizontal_angles) <= 0):
+            msg = (
+                "successive_orders_horizontal_angle_grid_radians must be "
+                "strictly increasing"
+            )
+            raise ValueError(msg)
+        self._config.successive_orders_horizontal_angle_grid_radians = (
+            horizontal_angles.tolist()
+        )
 
     @property
     def init_successive_orders_with_discrete_ordinates(self) -> bool:

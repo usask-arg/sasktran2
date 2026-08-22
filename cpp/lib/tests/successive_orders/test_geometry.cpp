@@ -336,6 +336,45 @@ TEST_CASE("Successive-orders 2D geometry uses an independent horizontal "
         "Geometry2D successive orders does not support diffuse-ray refraction");
 }
 
+TEST_CASE("Successive-orders 2D geometry accepts explicit horizontal source "
+          "angles",
+          "[successive_orders][geometry][geometry2d]") {
+    sasktran2::Geometry2D geometry(0.6, 0.0, 6372000.0, altitude_grid(),
+                                   horizontal_angle_grid(),
+                                   sasktran2::grids::interpolation::linear);
+    sasktran2::raytracing::RustRayTracer2D raytracer(geometry);
+    const auto los = make_los_geometry(geometry, raytracer);
+
+    sasktran2::successive_orders::SourceGeometrySettings settings;
+    settings.num_incoming = 6;
+    settings.num_outgoing = 6;
+    settings.num_sza = 99;
+    settings.horizontal_angle_grid_radians = {-0.35, -0.05, 0.12, 0.38};
+    sasktran2::successive_orders::SourceGeometry1D source_geometry(raytracer,
+                                                                   geometry);
+    source_geometry.initialize(los, settings);
+
+    REQUIRE(source_geometry.source_horizontal_angles_rad() ==
+            settings.horizontal_angle_grid_radians);
+    REQUIRE(source_geometry.num_interior_points() == 8);
+    REQUIRE(source_geometry.num_ground_points() == 4);
+
+    settings.horizontal_angle_grid_radians = {-0.3, -0.3};
+    sasktran2::successive_orders::SourceGeometry1D unordered(raytracer,
+                                                             geometry);
+    REQUIRE_THROWS_WITH(
+        unordered.initialize(los, settings),
+        "Successive-orders source horizontal angles must be finite and "
+        "strictly increasing");
+
+    settings.horizontal_angle_grid_radians = {-0.5, 0.0};
+    sasktran2::successive_orders::SourceGeometry1D outside(raytracer, geometry);
+    REQUIRE_THROWS_WITH(
+        outside.initialize(los, settings),
+        "Successive-orders source horizontal angles must lie inside the "
+        "Geometry2D horizontal angle range");
+}
+
 TEST_CASE("Successive-orders 2D solar table resolves source-ray endpoint OD",
           "[successive_orders][geometry][geometry2d][solartable]") {
     constexpr int num_altitudes = 16;
@@ -551,6 +590,26 @@ TEST_CASE("Successive-orders pseudospherical geometry avoids duplicate SZA "
     REQUIRE(source_geometry.source_cos_sza() == std::vector<double>{0.4});
     REQUIRE(source_geometry.num_interior_points() == 2);
     REQUIRE(source_geometry.num_ground_points() == 1);
+}
+
+TEST_CASE("Successive-orders 1D rejects a Geometry2D horizontal source grid",
+          "[successive_orders][geometry]") {
+    sasktran2::Geometry1D geometry(0.4, 0.0, 6372000.0, altitude_grid(),
+                                   sasktran2::grids::interpolation::linear,
+                                   sasktran2::geometrytype::spherical);
+    sasktran2::raytracing::SphericalShellRayTracer raytracer(geometry);
+    const auto los = make_los_geometry(geometry, raytracer);
+
+    sasktran2::successive_orders::SourceGeometrySettings settings;
+    settings.num_incoming = 6;
+    settings.num_outgoing = 6;
+    settings.horizontal_angle_grid_radians = {-0.1, 0.1};
+    sasktran2::successive_orders::SourceGeometry1D source_geometry(raytracer,
+                                                                   geometry);
+    REQUIRE_THROWS_WITH(
+        source_geometry.initialize(los, settings),
+        "An explicit successive-orders horizontal-angle grid is supported "
+        "only with Geometry2D");
 }
 
 TEST_CASE("Successive-orders geometry propagates incoming ray-tracing errors "

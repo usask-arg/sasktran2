@@ -880,6 +880,25 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn sk_config_get_num_successive_orders_horizontal_angles(
+        config: *mut Config,
+        num_angles: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_get_successive_orders_horizontal_angle_grid_radians(
+        config: *mut Config,
+        horizontal_angle_grid_radians: *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_set_successive_orders_horizontal_angle_grid_radians(
+        config: *mut Config,
+        horizontal_angle_grid_radians: *const f64,
+        num_angles: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn sk_config_get_occultation_source(
         config: *mut Config,
         occultation_source: *mut ::std::os::raw::c_int,

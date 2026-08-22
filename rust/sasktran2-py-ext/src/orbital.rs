@@ -1033,6 +1033,7 @@ type GroupReferenceData<'py> = (
     Bound<'py, PyArray2<f64>>,
     Bound<'py, PyArray2<f64>>,
     Bound<'py, PyArray2<f64>>,
+    Bound<'py, PyArray2<f64>>,
 );
 
 #[derive(Clone, PartialEq, Eq)]
@@ -1596,6 +1597,7 @@ pub fn orbital_group_reference_data<'py>(
     let mut local_up = Array2::zeros((groups.len(), 3));
     let mut local_north = Array2::zeros((groups.len(), 3));
     let mut local_east = Array2::zeros((groups.len(), 3));
+    let mut horizontal_angle_bounds = Array2::zeros((groups.len(), 2));
     let mut reference_geoid = Geodetic::new(
         geometry
             .geoid_equatorial_radius_m
@@ -1604,6 +1606,9 @@ pub fn orbital_group_reference_data<'py>(
     )
     .into_pyresult()?;
     for (index, group) in groups.iter().enumerate() {
+        horizontal_angle_bounds[[index, 0]] = group.horizontal_angles[0];
+        horizontal_angle_bounds[[index, 1]] =
+            group.horizontal_angles[group.horizontal_angles.len() - 1];
         positions.row_mut(index).assign(&Array1::from_vec(
             vector_array(group.reference_position).to_vec(),
         ));
@@ -1638,6 +1643,7 @@ pub fn orbital_group_reference_data<'py>(
         local_up.to_pyarray(py),
         local_north.to_pyarray(py),
         local_east.to_pyarray(py),
+        horizontal_angle_bounds.to_pyarray(py),
     ))
 }
 

@@ -1332,6 +1332,7 @@ def test_successive_orders_runs_across_multiple_groups_without_single_scatter():
     config.single_scatter_source = sk.SingleScatterSource.NoSource
     config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
     config.num_sza = 2
+    config.successive_orders_horizontal_angle_grid_radians = np.array([-0.1, 0.1])
     config.successive_orders_altitude_grid_m = np.array([5_000.0, 25_000.0, 55_000.0])
     config.num_successive_orders_incoming = 6
     config.num_successive_orders_outgoing = 6
@@ -1355,6 +1356,16 @@ def test_successive_orders_runs_across_multiple_groups_without_single_scatter():
     np.testing.assert_array_equal(result.time, times)
     assert np.all(np.isfinite(result.radiance))
     assert np.all(result.radiance.sel(stokes="I") > 0)
+
+    config.successive_orders_horizontal_angle_grid_radians = np.array([-0.3, 0.1])
+    with pytest.raises(ValueError, match="inside every local group grid"):
+        sk.OrbitalPlaneEngine(
+            config,
+            geometry,
+            viewing,
+            time_group_duration_s=20,
+            solar_handler=OverheadSolarHandler(),
+        )
 
 
 def test_engine_exposes_normalized_solar_and_execution_settings_without_mutation():
