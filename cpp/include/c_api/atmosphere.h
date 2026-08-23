@@ -151,8 +151,13 @@ int sk_atmosphere_apply_delta_m_scaling(Atmosphere* atmosphere, int order);
 
 int sk_atmosphere_mark_changed(Atmosphere* atmosphere);
 
+int sk_atmosphere_mark_surface_changed(Atmosphere* atmosphere);
+
 int sk_atmosphere_get_revision(Atmosphere* atmosphere,
                                unsigned long long* revision);
+
+int sk_atmosphere_get_volume_revision(Atmosphere* atmosphere,
+                                      unsigned long long* revision);
 
 int sk_atmosphere_get_instance_id(Atmosphere* atmosphere,
                                   unsigned long long* instance_id);

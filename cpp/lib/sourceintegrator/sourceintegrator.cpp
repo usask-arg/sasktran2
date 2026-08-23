@@ -49,7 +49,7 @@ namespace sasktran2 {
         if (atmo.revision() != 0 && m_atmosphere == &atmo &&
             m_has_atmosphere_revision &&
             m_atmosphere_instance_id == atmo.instance_id() &&
-            m_atmosphere_revision == atmo.revision() &&
+            m_atmosphere_volume_revision == atmo.volume_revision() &&
             m_atmosphere_block_capacity == m_wavelength_block_capacity) {
             return;
         }
@@ -87,7 +87,7 @@ namespace sasktran2 {
 
         m_atmosphere = &atmo;
         m_atmosphere_instance_id = atmo.instance_id();
-        m_atmosphere_revision = atmo.revision();
+        m_atmosphere_volume_revision = atmo.volume_revision();
         m_atmosphere_block_capacity = m_wavelength_block_capacity;
         m_has_atmosphere_revision = true;
 

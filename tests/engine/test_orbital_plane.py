@@ -2025,6 +2025,72 @@ def test_resident_group_workspaces_contain_only_selected_derivative_mappings():
     ]
 
 
+def test_surface_only_update_preserves_group_volume_state():
+    geometry = orbital_geometry()
+    viewing = limb_viewing(geometry, np.array([-0.1, 0.1]))
+    config = sk.Config()
+    config.single_scatter_source = sk.SingleScatterSource.Exact
+    config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
+    config.num_sza = 2
+    config.successive_orders_altitude_grid_m = np.array([5_000.0, 25_000.0, 55_000.0])
+    config.num_successive_orders_incoming = 6
+    config.num_successive_orders_outgoing = 6
+    config.num_successive_orders_iterations = 40
+    config.successive_orders_relative_tolerance = 1.0e-11
+    config.successive_orders_absolute_tolerance = 1.0e-13
+
+    atmosphere = sk.Atmosphere(
+        geometry,
+        config,
+        wavelengths_nm=np.array([600.0]),
+        legendre_derivative=False,
+    )
+    extinction = np.full((*geometry.shape, 1), 1.0e-5)
+    ssa = np.full_like(extinction, 0.9)
+    legendre = np.zeros((atmosphere.storage.leg_coeff.shape[0], *extinction.shape))
+    legendre[0] = 1.0
+    optics = sk.constituent.Manual(extinction, ssa, legendre)
+    atmosphere["optics"] = optics
+    surface = sk.constituent.LambertianSurface2D(
+        np.linspace(0.1, 0.3, geometry.shape[0])
+    )
+    atmosphere["surface"] = surface
+    engine = sk.OrbitalPlaneEngine(
+        config,
+        geometry,
+        viewing,
+        time_group_duration_s=60,
+        sun_vectors_ecef=np.array([[0.0, 0.0, 1.0]]),
+    )
+
+    first = engine.linearize(atmosphere, prepare_parameters=("surface_albedo",))
+    first_diagnostics = engine.group_diagnostics
+    assert all(item["volume_update_count"] == 1 for item in first_diagnostics)
+    assert all(item["surface_only_update_count"] == 0 for item in first_diagnostics)
+
+    surface.albedo = np.linspace(0.2, 0.4, geometry.shape[0])
+    second = engine.linearize(atmosphere, prepare_parameters=("surface_albedo",))
+    second_diagnostics = engine.group_diagnostics
+    assert [item["volume_update_count"] for item in second_diagnostics] == [
+        item["volume_update_count"] for item in first_diagnostics
+    ]
+    assert [item["surface_only_update_count"] for item in second_diagnostics] == [
+        item["surface_only_update_count"] + 1 for item in first_diagnostics
+    ]
+    assert not np.array_equal(first.value.values, second.value.values)
+
+    optics.extinction[...] *= 1.2
+    third = engine.linearize(atmosphere, prepare_parameters=("surface_albedo",))
+    third_diagnostics = engine.group_diagnostics
+    assert [item["volume_update_count"] for item in third_diagnostics] == [
+        item["volume_update_count"] + 1 for item in second_diagnostics
+    ]
+    assert [item["surface_only_update_count"] for item in third_diagnostics] == [
+        item["surface_only_update_count"] for item in second_diagnostics
+    ]
+    assert not np.array_equal(second.value.values, third.value.values)
+
+
 def test_composite_group_wavelength_scheduler_matches_serial_products():
     geometry = orbital_geometry()
     viewing = limb_viewing(geometry, np.array([-0.2, 0.0, 0.2]))

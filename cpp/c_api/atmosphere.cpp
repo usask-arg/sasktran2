@@ -531,6 +531,23 @@ int sk_atmosphere_mark_changed(Atmosphere* atmosphere) {
     return -2;
 }
 
+int sk_atmosphere_mark_surface_changed(Atmosphere* atmosphere) {
+    if (atmosphere == nullptr || atmosphere->impl == nullptr) {
+        return -1;
+    }
+    if (auto* impl = dynamic_cast<sasktran2::atmosphere::Atmosphere<1>*>(
+            atmosphere->impl.get())) {
+        impl->mark_surface_changed();
+        return 0;
+    }
+    if (auto* impl = dynamic_cast<sasktran2::atmosphere::Atmosphere<3>*>(
+            atmosphere->impl.get())) {
+        impl->mark_surface_changed();
+        return 0;
+    }
+    return -2;
+}
+
 int sk_atmosphere_get_revision(Atmosphere* atmosphere,
                                unsigned long long* revision) {
     if (atmosphere == nullptr || atmosphere->impl == nullptr ||
@@ -545,6 +562,25 @@ int sk_atmosphere_get_revision(Atmosphere* atmosphere,
     if (auto* impl = dynamic_cast<sasktran2::atmosphere::Atmosphere<3>*>(
             atmosphere->impl.get())) {
         *revision = static_cast<unsigned long long>(impl->revision());
+        return 0;
+    }
+    return -2;
+}
+
+int sk_atmosphere_get_volume_revision(Atmosphere* atmosphere,
+                                      unsigned long long* revision) {
+    if (atmosphere == nullptr || atmosphere->impl == nullptr ||
+        revision == nullptr) {
+        return -1;
+    }
+    if (auto* impl = dynamic_cast<sasktran2::atmosphere::Atmosphere<1>*>(
+            atmosphere->impl.get())) {
+        *revision = static_cast<unsigned long long>(impl->volume_revision());
+        return 0;
+    }
+    if (auto* impl = dynamic_cast<sasktran2::atmosphere::Atmosphere<3>*>(
+            atmosphere->impl.get())) {
+        *revision = static_cast<unsigned long long>(impl->volume_revision());
         return 0;
     }
     return -2;

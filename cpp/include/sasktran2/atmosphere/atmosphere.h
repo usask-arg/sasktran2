@@ -42,6 +42,11 @@ namespace sasktran2::atmosphere {
                                                 emission derivatives */
         std::uint64_t m_revision = 0; /** Monotonic revision of the built native
                                          atmosphere state. */
+        std::uint64_t m_volume_revision =
+            0; /** Monotonic revision of volume optical and emission state.
+                   Surface-only changes deliberately leave this unchanged so
+                   ray optical-depth and solar-transmission caches can remain
+                   valid. */
         const std::uint64_t m_instance_id = s_next_instance_id.fetch_add(
             1, std::memory_order_relaxed); /** Stable identity that cannot be
                                                confused by allocator address
@@ -93,7 +98,8 @@ namespace sasktran2::atmosphere {
               m_calculate_derivatives(other.m_calculate_derivatives),
               m_include_emission_derivatives(
                   other.m_include_emission_derivatives),
-              m_revision(other.m_revision) {}
+              m_revision(other.m_revision),
+              m_volume_revision(other.m_volume_revision) {}
 
         /** Moves the atmosphere view while assigning the new object a unique
          * lifetime identity. */
@@ -104,7 +110,8 @@ namespace sasktran2::atmosphere {
               m_calculate_derivatives(other.m_calculate_derivatives),
               m_include_emission_derivatives(
                   other.m_include_emission_derivatives),
-              m_revision(other.m_revision) {}
+              m_revision(other.m_revision),
+              m_volume_revision(other.m_volume_revision) {}
 
         Atmosphere& operator=(const Atmosphere&) = delete;
         Atmosphere& operator=(Atmosphere&&) = delete;
@@ -179,11 +186,20 @@ namespace sasktran2::atmosphere {
             return m_include_emission_derivatives;
         }
 
-        /** Marks the native atmosphere state as changed. */
-        void mark_changed() { ++m_revision; }
+        /** Marks volume and surface native atmosphere state as changed. */
+        void mark_changed() {
+            ++m_revision;
+            ++m_volume_revision;
+        }
+
+        /** Marks only native surface state as changed. */
+        void mark_surface_changed() { ++m_revision; }
 
         /** Revision of the native atmosphere state. */
         std::uint64_t revision() const { return m_revision; }
+
+        /** Revision of volume optical and emission state. */
+        std::uint64_t volume_revision() const { return m_volume_revision; }
 
         /** Identity of this native atmosphere lifetime. */
         std::uint64_t instance_id() const { return m_instance_id; }

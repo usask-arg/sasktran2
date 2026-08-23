@@ -78,7 +78,7 @@ namespace sasktran2 {
         const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere =
             nullptr;
         std::uint64_t m_atmosphere_instance_id = 0;
-        std::uint64_t m_atmosphere_revision = 0;
+        std::uint64_t m_atmosphere_volume_revision = 0;
         int m_atmosphere_block_capacity = 0;
         bool m_has_atmosphere_revision = false;
         int m_num_geometry_locations = 0;

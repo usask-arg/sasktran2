@@ -395,12 +395,17 @@ namespace sasktran2::successive_orders {
             // Preserve directly-mutable C++ Atmosphere behavior at revision
             // zero. Python constituent builds and explicitly tracked native
             // storage opt into cache reuse by calling mark_changed().
-            if (atmosphere.revision() != 0 && m_atmosphere == &atmosphere &&
+            const bool tracked_atmosphere =
+                atmosphere.revision() != 0 && m_atmosphere == &atmosphere &&
                 m_has_atmosphere_revision &&
-                m_atmosphere_instance_id == atmosphere.instance_id() &&
+                m_atmosphere_instance_id == atmosphere.instance_id();
+            if (tracked_atmosphere &&
                 m_atmosphere_revision == atmosphere.revision()) {
                 return;
             }
+            const bool volume_changed =
+                !tracked_atmosphere ||
+                m_atmosphere_volume_revision != atmosphere.volume_revision();
             m_atmosphere = nullptr;
             // Scalar workspaces are compact enough to retain one complete
             // state per wavelength. Vector workspaces stay thread-local, but
@@ -426,10 +431,11 @@ namespace sasktran2::successive_orders {
             for (auto& state : m_wavelength_state) {
                 state->active_wavelength = -1;
             }
-            m_first_order.initialize_atmosphere(atmosphere);
+            m_first_order.initialize_atmosphere(atmosphere, volume_changed);
             m_atmosphere = &atmosphere;
             m_atmosphere_instance_id = atmosphere.instance_id();
             m_atmosphere_revision = atmosphere.revision();
+            m_atmosphere_volume_revision = atmosphere.volume_revision();
             m_has_atmosphere_revision = true;
         }
 
@@ -837,6 +843,7 @@ namespace sasktran2::successive_orders {
         const Atmosphere* m_atmosphere = nullptr;
         std::uint64_t m_atmosphere_instance_id = 0;
         std::uint64_t m_atmosphere_revision = 0;
+        std::uint64_t m_atmosphere_volume_revision = 0;
         bool m_has_atmosphere_revision = false;
         SourceGeometrySettings m_geometry_settings;
         FixedPointSettings m_solver_settings;

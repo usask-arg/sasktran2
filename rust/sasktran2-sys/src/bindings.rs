@@ -440,7 +440,17 @@ unsafe extern "C" {
     pub fn sk_atmosphere_mark_changed(atmosphere: *mut Atmosphere) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn sk_atmosphere_mark_surface_changed(atmosphere: *mut Atmosphere)
+        -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn sk_atmosphere_get_revision(
+        atmosphere: *mut Atmosphere,
+        revision: *mut ::std::os::raw::c_ulonglong,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_atmosphere_get_volume_revision(
         atmosphere: *mut Atmosphere,
         revision: *mut ::std::os::raw::c_ulonglong,
     ) -> ::std::os::raw::c_int;

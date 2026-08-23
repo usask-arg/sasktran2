@@ -1668,6 +1668,8 @@ struct GroupEngine {
     atmosphere_signature: Option<AtmosphereSignature>,
     atmosphere_content_key: Option<AtmosphereContentKey>,
     atmosphere_update_count: usize,
+    volume_update_count: usize,
+    surface_only_update_count: usize,
     vjp_cotangent: Option<Array3<f64>>,
     last_refractive_profiles: Option<Array2<f64>>,
     geometry_refresh_count: usize,
@@ -1722,6 +1724,8 @@ fn build_group_engine(
         atmosphere_signature: None,
         atmosphere_content_key: None,
         atmosphere_update_count: 0,
+        volume_update_count: 0,
+        surface_only_update_count: 0,
         vjp_cotangent: None,
         last_refractive_profiles: None,
         geometry_refresh_count: 0,
@@ -1805,6 +1809,75 @@ fn global_location_indices(group: &GroupLayout, num_altitudes: usize) -> Vec<usi
         .collect()
 }
 
+fn group_volume_state_matches(group: &GroupEngine, master: &Atmosphere) -> bool {
+    let Some(local) = group.atmosphere.as_ref() else {
+        return false;
+    };
+    let Some(signature) = group.atmosphere_signature.as_ref() else {
+        return false;
+    };
+    // Comparing native derivative mappings is substantially more involved
+    // than the compact value state. Conservatively rebuild whenever volume
+    // mappings are resident; the surface-only retrieval path has none.
+    if !signature.volume_mappings.is_empty()
+        || !local.storage.solar_irradiance.iter().copied().eq(master
+            .storage
+            .solar_irradiance
+            .iter()
+            .copied())
+    {
+        return false;
+    }
+    group
+        .local_indices
+        .iter()
+        .enumerate()
+        .all(|(local_index, &global_index)| {
+            local
+                .storage
+                .total_extinction
+                .row(local_index)
+                .iter()
+                .copied()
+                .eq(master
+                    .storage
+                    .total_extinction
+                    .row(global_index)
+                    .iter()
+                    .copied())
+                && local.storage.ssa.row(local_index).iter().copied().eq(master
+                    .storage
+                    .ssa
+                    .row(global_index)
+                    .iter()
+                    .copied())
+                && local
+                    .storage
+                    .emission_source
+                    .row(local_index)
+                    .iter()
+                    .copied()
+                    .eq(master
+                        .storage
+                        .emission_source
+                        .row(global_index)
+                        .iter()
+                        .copied())
+                && local
+                    .storage
+                    .leg_coeff
+                    .slice(s![.., local_index, ..])
+                    .iter()
+                    .copied()
+                    .eq(master
+                        .storage
+                        .leg_coeff
+                        .slice(s![.., global_index, ..])
+                        .iter()
+                        .copied())
+        })
+}
+
 fn update_group_atmosphere(
     group: &mut GroupEngine,
     master: &Atmosphere,
@@ -1853,33 +1926,36 @@ fn update_group_atmosphere(
         group.atmosphere_signature = Some(signature.clone());
         group.atmosphere_content_key = None;
     }
+    let volume_changed = !group_volume_state_matches(group, master);
     let local = group.atmosphere.as_mut().unwrap();
-    for (local_index, &global_index) in local_indices.iter().enumerate() {
+    if volume_changed {
+        for (local_index, &global_index) in local_indices.iter().enumerate() {
+            local
+                .storage
+                .total_extinction
+                .row_mut(local_index)
+                .assign(&master.storage.total_extinction.row(global_index));
+            local
+                .storage
+                .ssa
+                .row_mut(local_index)
+                .assign(&master.storage.ssa.row(global_index));
+            local
+                .storage
+                .emission_source
+                .row_mut(local_index)
+                .assign(&master.storage.emission_source.row(global_index));
+            local
+                .storage
+                .leg_coeff
+                .slice_mut(s![.., local_index, ..])
+                .assign(&master.storage.leg_coeff.slice(s![.., global_index, ..]));
+        }
         local
             .storage
-            .total_extinction
-            .row_mut(local_index)
-            .assign(&master.storage.total_extinction.row(global_index));
-        local
-            .storage
-            .ssa
-            .row_mut(local_index)
-            .assign(&master.storage.ssa.row(global_index));
-        local
-            .storage
-            .emission_source
-            .row_mut(local_index)
-            .assign(&master.storage.emission_source.row(global_index));
-        local
-            .storage
-            .leg_coeff
-            .slice_mut(s![.., local_index, ..])
-            .assign(&master.storage.leg_coeff.slice(s![.., global_index, ..]));
+            .solar_irradiance
+            .assign(&master.storage.solar_irradiance);
     }
-    local
-        .storage
-        .solar_irradiance
-        .assign(&master.storage.solar_irradiance);
     if master.surface.brdf_kind != BrdfKind::Lambertian {
         return Err(PyValueError::new_err(
             "OrbitalPlaneEngine v1 supports Lambertian surfaces only",
@@ -1911,64 +1987,67 @@ fn update_group_atmosphere(
     }
     local.surface.emission.assign(&master.surface.emission);
 
-    for name in &signature.volume_mappings {
-        let source = master
-            .storage
-            .get_derivative_mapping(name)
-            .map_err(PyRuntimeError::new_err)?;
-        let mut destination = local
-            .storage
-            .get_derivative_mapping(name)
-            .map_err(PyRuntimeError::new_err)?;
-        for (local_index, &global_index) in local_indices.iter().enumerate() {
-            destination
-                .d_extinction()
-                .row_mut(local_index)
-                .assign(&source.d_extinction().row(global_index));
-            destination
-                .d_ssa()
-                .row_mut(local_index)
-                .assign(&source.d_ssa().row(global_index));
-            destination
-                .d_emission()
-                .row_mut(local_index)
-                .assign(&source.d_emission().row(global_index));
-            destination
-                .scat_factor()
-                .row_mut(local_index)
-                .assign(&source.scat_factor().row(global_index));
-            destination
-                .d_leg_coeff()
-                .slice_mut(s![.., local_index, ..])
-                .assign(&source.d_leg_coeff().slice(s![.., global_index, ..]));
-        }
-        destination.set_assign_name(&source.get_assign_name());
-        destination.set_interp_dim(&source.get_interp_dim());
-        destination.set_log_radiance_space(source.log_radiance_space());
-        if let Some(source_interpolator) = source.get_interpolator() {
-            let mut gathered = Array2::zeros((local_indices.len(), source_interpolator.ncols()));
+    if volume_changed {
+        for name in &signature.volume_mappings {
+            let source = master
+                .storage
+                .get_derivative_mapping(name)
+                .map_err(PyRuntimeError::new_err)?;
+            let mut destination = local
+                .storage
+                .get_derivative_mapping(name)
+                .map_err(PyRuntimeError::new_err)?;
             for (local_index, &global_index) in local_indices.iter().enumerate() {
-                gathered
+                destination
+                    .d_extinction()
                     .row_mut(local_index)
-                    .assign(&source_interpolator.row(global_index));
+                    .assign(&source.d_extinction().row(global_index));
+                destination
+                    .d_ssa()
+                    .row_mut(local_index)
+                    .assign(&source.d_ssa().row(global_index));
+                destination
+                    .d_emission()
+                    .row_mut(local_index)
+                    .assign(&source.d_emission().row(global_index));
+                destination
+                    .scat_factor()
+                    .row_mut(local_index)
+                    .assign(&source.scat_factor().row(global_index));
+                destination
+                    .d_leg_coeff()
+                    .slice_mut(s![.., local_index, ..])
+                    .assign(&source.d_leg_coeff().slice(s![.., global_index, ..]));
             }
-            destination.set_interpolator(&mut gathered);
-        } else {
-            // Keep native orbital mappings local. Expanding this identity-like
-            // gather to (local locations, all orbital locations) creates a
-            // large dense matrix in every resident group engine. The orbital
-            // JVP/VJP/Jacobian paths gather or scatter these mappings directly.
-            destination.clear_interpolator();
+            destination.set_assign_name(&source.get_assign_name());
+            destination.set_interp_dim(&source.get_interp_dim());
+            destination.set_log_radiance_space(source.log_radiance_space());
+            if let Some(source_interpolator) = source.get_interpolator() {
+                let mut gathered =
+                    Array2::zeros((local_indices.len(), source_interpolator.ncols()));
+                for (local_index, &global_index) in local_indices.iter().enumerate() {
+                    gathered
+                        .row_mut(local_index)
+                        .assign(&source_interpolator.row(global_index));
+                }
+                destination.set_interpolator(&mut gathered);
+            } else {
+                // Keep native orbital mappings local. Expanding this identity-like
+                // gather to (local locations, all orbital locations) creates a
+                // large dense matrix in every resident group engine. The orbital
+                // JVP/VJP/Jacobian paths gather or scatter these mappings directly.
+                destination.clear_interpolator();
+            }
         }
+        // Derivative mappings own their phase-function perturbations, while the
+        // native source implementations consume a compact scattering-derivative
+        // table on AtmosphereGridStorage. The master atmosphere builds that table
+        // after registering its constituents, but gathering mappings into this
+        // persistent local atmosphere does not do so automatically. Rebuild it
+        // after every volume gather so both group membership and copied phase
+        // coefficients follow the current atmospheric state.
+        local.storage.finalize_scattering_derivatives();
     }
-    // Derivative mappings own their phase-function perturbations, while the
-    // native source implementations consume a compact scattering-derivative
-    // table on AtmosphereGridStorage. The master atmosphere builds that table
-    // after registering its constituents, but gathering mappings into this
-    // persistent local atmosphere does not do so automatically. Rebuild it
-    // after every gather so both the group membership and the copied phase
-    // coefficients follow the current atmospheric state.
-    local.storage.finalize_scattering_derivatives();
     for name in &signature.surface_mappings {
         if lambertian_surface.and_then(|surface| surface.derivative_name.as_ref()) == Some(name) {
             for local_horizontal in 0..group.layout.grid_indices.len() {
@@ -2010,7 +2089,13 @@ fn update_group_atmosphere(
             destination.set_interpolator(&mut interpolator);
         }
     }
-    local.mark_changed().into_pyresult()?;
+    if volume_changed {
+        local.mark_changed().into_pyresult()?;
+        group.volume_update_count += 1;
+    } else {
+        local.mark_surface_changed().into_pyresult()?;
+        group.surface_only_update_count += 1;
+    }
     group.atmosphere_content_key = Some(content_key);
     group.atmosphere_update_count += 1;
     Ok(())
@@ -3428,6 +3513,8 @@ impl PyOrbitalPlaneEngine {
                     },
                 )?;
                 dict.set_item("atmosphere_update_count", group.atmosphere_update_count)?;
+                dict.set_item("volume_update_count", group.volume_update_count)?;
+                dict.set_item("surface_only_update_count", group.surface_only_update_count)?;
                 dict.set_item(
                     "composite_wavelength_scheduler",
                     composite_wavelength_threads.is_some(),
