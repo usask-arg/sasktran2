@@ -1060,7 +1060,12 @@ namespace sasktran2::solartransmission {
         std::shared_ptr<SolarTransmissionTable2D> m_shared_solar_table_2d;
         const sasktran2::raytracing::RustRayTracer2D* m_raytracer_2d = nullptr;
 #endif
-        const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere;
+        const sasktran2::atmosphere::Atmosphere<NSTOKES>* m_atmosphere =
+            nullptr;
+        bool m_native_volume_linearization_active = true;
+        std::uint64_t m_atmosphere_instance_id = 0;
+        std::uint64_t m_atmosphere_volume_revision = 0;
+        bool m_has_atmosphere_volume_revision = false;
 
         Eigen::MatrixXd m_geometry_matrix;
         SolarGeometryMatrix m_geometry_sparse;
@@ -1246,6 +1251,11 @@ namespace sasktran2::solartransmission {
                 throw std::invalid_argument(
                     "Single scatter wavelength block capacity must be "
                     "positive");
+            }
+            if (block_capacity != m_wavelength_batch_capacity) {
+                std::fill(m_active_wavelength_block_count.begin(),
+                          m_active_wavelength_block_count.end(), 0);
+                m_has_atmosphere_volume_revision = false;
             }
             m_wavelength_batch_capacity = block_capacity;
         }

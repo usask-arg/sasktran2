@@ -30,9 +30,29 @@ namespace sasktran2::solartransmission {
     void SingleScatterSource<S, NSTOKES>::initialize_atmosphere_impl(
         const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere,
         bool materialized_derivative_storage) {
+        const bool reusable_volume_state =
+            atmosphere.revision() != 0 && m_has_atmosphere_volume_revision &&
+            m_atmosphere_instance_id == atmosphere.instance_id() &&
+            m_atmosphere_volume_revision == atmosphere.volume_revision();
+        if (!reusable_volume_state) {
+            std::fill(m_active_wavelength_block_count.begin(),
+                      m_active_wavelength_block_count.end(), 0);
+        }
         // Store the atmosphere for later
         m_atmosphere = &atmosphere;
-        this->m_phase_handler.initialize_atmosphere(atmosphere);
+        m_atmosphere_instance_id = atmosphere.instance_id();
+        m_atmosphere_volume_revision = atmosphere.volume_revision();
+        m_has_atmosphere_volume_revision = atmosphere.revision() != 0;
+        // Composite engines materialize only the derivative mappings selected
+        // for a native product. If no volume mapping is resident, atmospheric
+        // single-scatter derivatives cannot contribute to the requested JVP
+        // or VJP; ground BRDF derivatives remain active independently.
+        m_native_volume_linearization_active =
+            materialized_derivative_storage ||
+            !atmosphere.storage().derivative_mappings_const().empty();
+        if (!reusable_volume_state) {
+            this->m_phase_handler.initialize_atmosphere(atmosphere);
+        }
 
         if constexpr (compact_2d_table) {
             if (materialized_derivative_storage && atmosphere.num_deriv() > 0) {
@@ -49,7 +69,9 @@ namespace sasktran2::solartransmission {
                 m_active_derivative_indices.clear();
             }
 
-            initialize_wavelength_blocks(m_wavelength_batch_capacity);
+            if (!reusable_volume_state) {
+                initialize_wavelength_blocks(m_wavelength_batch_capacity);
+            }
         }
 
         // Initialize some local memory storage
@@ -103,6 +125,10 @@ namespace sasktran2::solartransmission {
     void SingleScatterSource<S, NSTOKES>::calculate_single(int wavelidx,
                                                            int threadidx) {
         ZoneScopedN("Single Scatter Source Calculation");
+        if (m_active_wavelength_block_start[threadidx] == wavelidx &&
+            m_active_wavelength_block_count[threadidx] == 1) {
+            return;
+        }
         m_active_wavelength_block_start[threadidx] = wavelidx;
         m_active_wavelength_block_count[threadidx] = 1;
         // Don't have to do anything here
@@ -201,6 +227,10 @@ namespace sasktran2::solartransmission {
                     "Wavelength batch exceeds single scatter storage "
                     "capacity");
             }
+            if (m_active_wavelength_block_start[threadidx] == batch.start &&
+                m_active_wavelength_block_count[threadidx] == batch.count) {
+                return;
+            }
             m_active_wavelength_block_start[threadidx] = batch.start;
             m_active_wavelength_block_count[threadidx] = batch.count;
 
@@ -289,6 +319,9 @@ namespace sasktran2::solartransmission {
                 throw std::invalid_argument(
                     "Invalid Geometry2D table single-scatter JVP block");
             }
+            if (!m_native_volume_linearization_active) {
+                return;
+            }
             auto& table_tangent = m_solar_table_product[threadidx];
             table_tangent.resize(m_solar_transmission->table_size());
             m_solar_transmission->apply(
@@ -334,6 +367,9 @@ namespace sasktran2::solartransmission {
                 throw std::invalid_argument(
                     "Invalid Geometry2D table single-scatter VJP result");
             }
+            if (!m_native_volume_linearization_active) {
+                return;
+            }
             m_solar_endpoint_cotangent_sum.setZero(
                 m_solar_interpolation.rows());
             const int last_thread = threadidx + m_config->num_source_threads();
@@ -375,18 +411,30 @@ namespace sasktran2::solartransmission {
                 extinction += storage.total_extinction(weight.first, wavelidx) *
                               weight.second;
                 ssa += storage.ssa(weight.first, wavelidx) * weight.second;
-                extinction_jvp += native_tangent(weight.first) * weight.second;
-                ssa_jvp +=
-                    native_tangent(m_atmosphere->ssa_deriv_start_index() +
-                                   weight.first) *
-                    weight.second;
+                if (m_native_volume_linearization_active) {
+                    extinction_jvp +=
+                        native_tangent(weight.first) * weight.second;
+                    ssa_jvp +=
+                        native_tangent(m_atmosphere->ssa_deriv_start_index() +
+                                       weight.first) *
+                        weight.second;
+                }
             }
 
             const double solar_trans = solar_transmission_value(
                 wavelidx, wavel_threadidx, solar_index);
+            if (!m_native_volume_linearization_active) {
+                const auto phase = m_phase_handler.scatter_value(
+                    wavel_threadidx, losidx, layeridx, wavelidx, weights,
+                    is_entrance);
+                result.value =
+                    extinction * ssa * solar_trans / (EIGEN_PI * 4) * phase;
+                result.jvp.setZero();
+                return;
+            }
+
             const double solar_trans_jvp = solar_transmission_tangent(
                 wavelidx, wavel_threadidx, solar_index, native_tangent);
-
             Eigen::Vector<double, NSTOKES> phase;
             Eigen::Vector<double, NSTOKES> phase_jvp;
             m_phase_handler.scatter_jvp(wavel_threadidx, losidx, layeridx,
@@ -493,8 +541,9 @@ namespace sasktran2::solartransmission {
             const double solar_trans = solar_transmission_value(
                 wavelidx, wavel_threadidx, solar_index);
             double solar_trans_jvp = 0.0;
-            if (m_config->wf_precision() !=
-                sasktran2::Config::WeightingFunctionPrecision::limited) {
+            if (m_native_volume_linearization_active &&
+                m_config->wf_precision() !=
+                    sasktran2::Config::WeightingFunctionPrecision::limited) {
                 solar_trans_jvp = solar_transmission_tangent(
                     wavelidx, wavel_threadidx, solar_index, native_tangent);
             }
@@ -548,8 +597,9 @@ namespace sasktran2::solartransmission {
                 m_los_surface_interpolation_weights.at(losidx));
             const double solar_trans_cotangent =
                 mu_in * cotangent.dot(brdf(Eigen::placeholders::all, 0));
-            if (m_config->wf_precision() !=
-                sasktran2::Config::WeightingFunctionPrecision::limited) {
+            if (m_native_volume_linearization_active &&
+                m_config->wf_precision() !=
+                    sasktran2::Config::WeightingFunctionPrecision::limited) {
                 const double solar_od_cotangent =
                     -solar_trans * solar_trans_cotangent;
                 if constexpr (compact_2d_table) {
@@ -773,6 +823,8 @@ namespace sasktran2::solartransmission {
         const sasktran2::viewinggeometry::InternalViewingGeometry&
             internal_viewing) {
         ZoneScopedN("Initialize Single Scatter Source Geometry");
+        std::fill(m_active_wavelength_block_count.begin(),
+                  m_active_wavelength_block_count.end(), 0);
         m_traced_rays = &internal_viewing.traced_rays;
         this->m_solar_transmission->initialize_geometry(
             internal_viewing.traced_rays);
@@ -1259,12 +1311,6 @@ namespace sasktran2::solartransmission {
                 factor = -std::expm1(-od) / od;
                 factor_derivative = 1 / od - factor * (1 + 1 / od);
             }
-            double od_jvp = 0.0;
-            for (auto derivative = shell_od.derivative_iterator(); derivative;
-                 ++derivative) {
-                od_jvp +=
-                    derivative.value() * native_tangent(derivative.index());
-            }
             // Match the established source-value quadrature exactly.  The
             // optical-depth endpoint coefficients are not source blending
             // weights for lower interpolation: one is the full path length
@@ -1274,12 +1320,22 @@ namespace sasktran2::solartransmission {
                 (start.value * layer.od_quad_start_fraction +
                  end.value * layer.od_quad_end_fraction) *
                 layer.layer_distance;
+            source.value += factor * endpoint_value;
+            if (!m_native_volume_linearization_active) {
+                return;
+            }
+
+            double od_jvp = 0.0;
+            for (auto derivative = shell_od.derivative_iterator(); derivative;
+                 ++derivative) {
+                od_jvp +=
+                    derivative.value() * native_tangent(derivative.index());
+            }
             const auto optical_depth_endpoint_value =
                 start.value * layer.od_quad_start +
                 end.value * layer.od_quad_end;
             const auto endpoint_jvp =
                 start.jvp * layer.od_quad_start + end.jvp * layer.od_quad_end;
-            source.value += factor * endpoint_value;
             source.jvp +=
                 factor * endpoint_jvp +
                 factor_derivative * od_jvp * optical_depth_endpoint_value;
@@ -1301,6 +1357,9 @@ namespace sasktran2::solartransmission {
                 "Native VJP requires exact solar transmission");
         } else {
             if (layer.layer_distance < MINIMUM_SHELL_SIZE_M) {
+                return;
+            }
+            if (!m_native_volume_linearization_active) {
                 return;
             }
             const int exit_index = m_index_map[losidx][layeridx];

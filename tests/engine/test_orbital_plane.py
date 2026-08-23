@@ -2090,6 +2090,18 @@ def test_surface_only_update_preserves_group_volume_state():
     ]
     assert not np.array_equal(second.value.values, third.value.values)
 
+    fresh_engine = sk.OrbitalPlaneEngine(
+        config,
+        geometry,
+        viewing,
+        time_group_duration_s=60,
+        sun_vectors_ecef=np.array([[0.0, 0.0, 1.0]]),
+    )
+    fresh_third = fresh_engine.linearize(
+        atmosphere, prepare_parameters=("surface_albedo",)
+    )
+    xr.testing.assert_allclose(third.value, fresh_third.value, rtol=2.0e-11)
+
 
 def test_composite_group_wavelength_scheduler_matches_serial_products():
     geometry = orbital_geometry()
