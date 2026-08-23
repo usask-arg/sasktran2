@@ -248,6 +248,160 @@ TEST_CASE("Geometry2D solar table permits azimuth-local finite-window topology",
     REQUIRE(interpolation.rows() == 2 * num_azimuths);
 }
 
+TEST_CASE("Geometry2D solar table interpolates an azimuth-local shell-crossing "
+          "gap",
+          "[sourceintegrator][singlescatter][geometry2d][solartable]") {
+    // Reduced from the high-SZA final time group of an OMPS orbital-plane
+    // calculation. One off-plane characteristic misses this far-side shell
+    // crossing even though the neighboring characteristics in that azimuth
+    // plane remain valid interpolation nodes.
+    Eigen::VectorXd altitudes = Eigen::VectorXd::LinSpaced(81, 500.0, 80500.0);
+    Eigen::VectorXd horizontal(18);
+    horizontal << -0.15707249909324214, -0.13962148634892896,
+        -0.12216995304054604, -0.10471839510657402, -0.08726555521991633,
+        -0.0698127714529716, -0.05235964029640497, -0.034906379204992954,
+        -0.017453112724842415, 0.0, 0.01745299241956929, 0.03490598281398394,
+        0.05235897258070354, 0.06981196208857511, 0.08726495170676239,
+        0.10471794180429507, 0.12217093274961874, 0.1396239249101459;
+    sasktran2::Geometry2D geometry(0.06722708902977514, 2.806877591558785,
+                                   6357595.44403317, std::move(altitudes),
+                                   std::move(horizontal),
+                                   sasktran2::grids::interpolation::linear);
+    sasktran2::raytracing::RustRayTracer2D raytracer(geometry);
+
+    constexpr int num_azimuths = 9;
+    sasktran2::raytracing::TracedRay query;
+    query.layers.resize(1);
+    query.layers[0].entrance.position =
+        geometry.coordinates().solar_coordinate_vector(
+            -0.0177337365238761, 2.0 * EIGEN_PI / num_azimuths, 1500.0);
+    query.layers[0].exit = query.layers[0].entrance;
+
+    sasktran2::Config config;
+    sasktran2::solartransmission::SolarTransmissionTable2D table(geometry,
+                                                                 raytracer);
+    table.initialize_config(config);
+    table.initialize_geometry({query});
+    sasktran2::solartransmission::SolarTableInterpolation interpolation;
+    std::vector<bool> ground_hit;
+    REQUIRE_NOTHROW(
+        table.generate_interpolation({query}, interpolation, ground_hit));
+    REQUIRE(interpolation.rows() == 2);
+    REQUIRE(std::none_of(ground_hit.begin(), ground_hit.end(),
+                         [](bool value) { return value; }));
+
+    Eigen::VectorXd extinction(geometry.size());
+    for (int horizontal_index = 0;
+         horizontal_index < geometry.num_horizontal_locations();
+         ++horizontal_index) {
+        for (int altitude_index = 0; altitude_index < geometry.num_altitudes();
+             ++altitude_index) {
+            const double altitude =
+                geometry.altitude_grid().grid()[altitude_index];
+            const double angle =
+                geometry.horizontal_angle_grid()[horizontal_index];
+            extinction[geometry.location_index(altitude_index,
+                                               horizontal_index)] =
+                1.0e-5 * std::exp(-(altitude - 500.0) / 7000.0) *
+                (1.0 + 0.1 * std::sin(4.0 * angle));
+        }
+    }
+    Eigen::VectorXd table_nodes(table.table_size());
+    Eigen::VectorXd table_od(interpolation.rows());
+    table.apply(extinction, table_nodes);
+    interpolation.apply(table_nodes, table_od);
+
+    sasktran2::solartransmission::SolarTransmissionExact exact(geometry,
+                                                               raytracer);
+    sasktran2::solartransmission::SolarGeometryMatrix exact_matrix;
+    std::vector<bool> exact_ground_hit;
+    exact.generate_geometry_matrix({query}, exact_matrix, exact_ground_hit);
+    Eigen::VectorXd exact_od(exact_matrix.rows());
+    exact_matrix.multiply(extinction, exact_od);
+    REQUIRE(ground_hit == exact_ground_hit);
+    const double relative_error = (table_od - exact_od).cwiseAbs().maxCoeff() /
+                                  exact_od.cwiseAbs().maxCoeff();
+    CAPTURE(table_od.transpose(), exact_od.transpose(), relative_error);
+    REQUIRE(relative_error < 1.0e-6);
+
+    const Eigen::Vector2d endpoint_cotangent(0.7, -0.3);
+    Eigen::VectorXd table_cotangent(table.table_size());
+    interpolation.apply_transpose(endpoint_cotangent, table_cotangent);
+    Eigen::VectorXd table_gradient = Eigen::VectorXd::Zero(geometry.size());
+    table.accumulate_transpose(table_cotangent, table_gradient, 1.0);
+    Eigen::VectorXd exact_gradient = Eigen::VectorXd::Zero(geometry.size());
+    for (Eigen::Index row = 0; row < exact_matrix.rows(); ++row) {
+        for (sasktran2::solartransmission::SolarGeometryMatrix::InnerIterator
+                 value(exact_matrix, row);
+             value; ++value) {
+            exact_gradient[value.index()] +=
+                endpoint_cotangent[row] * value.value();
+        }
+    }
+    const double relative_gradient_error =
+        (table_gradient - exact_gradient).norm() / exact_gradient.norm();
+    CAPTURE(relative_gradient_error);
+    REQUIRE(relative_gradient_error < 1.0e-4);
+    REQUIRE(endpoint_cotangent.dot(table_od) ==
+            Catch::Approx(table_gradient.dot(extinction)).epsilon(1.0e-12));
+}
+
+TEST_CASE("Geometry2D solar table completes an azimuth-local surface tangent",
+          "[sourceintegrator][singlescatter][geometry2d][solartable]") {
+    Eigen::VectorXd altitudes = Eigen::VectorXd::LinSpaced(81, 500.0, 80500.0);
+    Eigen::VectorXd horizontal(26);
+    horizontal << -0.22687388786483126, -0.20942296752292075,
+        -0.19197206009364517, -0.17452116267172288, -0.15707027233969004,
+        -0.13961938617145178, -0.12216850123584493, -0.104716918569682,
+        -0.08726460712167375, -0.06981241610955545, -0.05235947810698597,
+        -0.034906301152543374, -0.017453217776235524, 0.0, 0.017453236429728323,
+        0.034906401529258245, 0.052359269565022806, 0.06981192937150443,
+        0.08726465540793593, 0.10471607914063315, 0.1221674704049722,
+        0.1396181704573594, 0.15706761621702, 0.17451769934386843,
+        0.19196668818341656, 0.2094140853642529;
+    sasktran2::Geometry2D geometry(0.16217357907765928, 0.31908455164488897,
+                                   6360006.564655005, std::move(altitudes),
+                                   std::move(horizontal),
+                                   sasktran2::grids::interpolation::linear);
+    sasktran2::raytracing::RustRayTracer2D raytracer(geometry);
+
+    constexpr int num_azimuths = 13;
+    sasktran2::raytracing::TracedRay query;
+    query.layers.resize(1);
+    query.layers[0].entrance.position =
+        geometry.coordinates().solar_coordinate_vector(
+            1.0e-12, 12.0 * 2.0 * EIGEN_PI / num_azimuths, 500.0);
+    query.layers[0].exit = query.layers[0].entrance;
+
+    sasktran2::Config config;
+    sasktran2::solartransmission::SolarTransmissionTable2D table(geometry,
+                                                                 raytracer);
+    table.initialize_config(config);
+    table.initialize_geometry({query});
+    sasktran2::solartransmission::SolarTableInterpolation interpolation;
+    std::vector<bool> ground_hit;
+    REQUIRE_NOTHROW(
+        table.generate_interpolation({query}, interpolation, ground_hit));
+    REQUIRE(std::none_of(ground_hit.begin(), ground_hit.end(),
+                         [](bool value) { return value; }));
+
+    const Eigen::VectorXd extinction =
+        Eigen::VectorXd::Constant(geometry.size(), 1.0e-5);
+    Eigen::VectorXd table_nodes(table.table_size());
+    Eigen::VectorXd table_od(interpolation.rows());
+    table.apply(extinction, table_nodes);
+    interpolation.apply(table_nodes, table_od);
+    sasktran2::solartransmission::SolarTransmissionExact exact(geometry,
+                                                               raytracer);
+    sasktran2::solartransmission::SolarGeometryMatrix exact_matrix;
+    std::vector<bool> exact_ground_hit;
+    exact.generate_geometry_matrix({query}, exact_matrix, exact_ground_hit);
+    Eigen::VectorXd exact_od(exact_matrix.rows());
+    exact_matrix.multiply(extinction, exact_od);
+    REQUIRE(ground_hit == exact_ground_hit);
+    REQUIRE(table_od.isApprox(exact_od, 1.0e-6));
+}
+
 TEST_CASE("Geometry2D characteristic solar table follows refracted endpoint "
           "OD",
           "[sourceintegrator][singlescatter][geometry2d][solartable]") {

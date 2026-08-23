@@ -71,6 +71,15 @@ namespace sasktran2::solartransmission {
         Eigen::Vector3d m_azimuth_quarter;
         std::vector<double> m_radii;
         std::vector<double> m_impact_parameters;
+        // Each azimuth plane owns its sampled characteristic slice. A
+        // structured trace can occasionally coalesce a shell crossing with an
+        // angular-boundary event in one plane but not its neighbors, so the
+        // valid interpolation topology is not guaranteed to be identical in
+        // every plane.
+        std::vector<std::vector<SliceEntry>> m_azimuth_altitude_slices;
+        // Union topology used as the common impact/SZA interpolation axis.
+        // Missing plane-local nodes are completed with direct rays before the
+        // temporary per-plane slices are released.
         std::vector<std::vector<SliceEntry>> m_altitude_slices;
 
         int m_num_azimuths = 0;
@@ -106,14 +115,20 @@ namespace sasktran2::solartransmission {
                 side);
         }
 
-        int node(int azimuth, const SliceEntry& entry, int altitude) const {
-            int result = m_node_lookup[lookup_index(
-                azimuth, static_cast<int>(entry.impact_index), altitude,
-                static_cast<int>(entry.side))];
-            if (result >= 0) {
-                return result;
-            }
+        std::size_t slice_index(int azimuth, int altitude) const {
+            return static_cast<std::size_t>(azimuth) * m_radii.size() +
+                   altitude;
+        }
 
+        std::vector<SliceEntry>& slice(int azimuth, int altitude) {
+            return m_azimuth_altitude_slices[slice_index(azimuth, altitude)];
+        }
+
+        const std::vector<SliceEntry>& slice(int azimuth, int altitude) const {
+            return m_azimuth_altitude_slices[slice_index(azimuth, altitude)];
+        }
+
+        bool is_shell_tangent(const SliceEntry& entry, int altitude) const {
             const double shell_parameter =
                 m_radii[altitude] *
                 (m_config->solar_refraction()
@@ -124,8 +139,37 @@ namespace sasktran2::solartransmission {
                 64.0 * std::numeric_limits<double>::epsilon() *
                 std::max({1.0, std::abs(shell_parameter), std::abs(impact)});
             constexpr double tangent_cos_tolerance = 1.0e-10;
-            if (std::abs(impact - shell_parameter) <= parameter_tolerance &&
-                std::abs(entry.cos_sza) <= tangent_cos_tolerance) {
+            return std::abs(impact - shell_parameter) <= parameter_tolerance &&
+                   std::abs(entry.cos_sza) <= tangent_cos_tolerance;
+        }
+
+        double surface_parameter() const {
+            return m_radii.front() * (m_config->solar_refraction()
+                                          ? m_geometry.refractive_index()[0]
+                                          : 1.0);
+        }
+
+        bool is_surface_blocked_far_side(const SliceEntry& entry) const {
+            if (entry.side == 0) {
+                return false;
+            }
+            const double impact = m_impact_parameters[entry.impact_index];
+            const double surface = surface_parameter();
+            const double tolerance =
+                64.0 * std::numeric_limits<double>::epsilon() *
+                std::max({1.0, std::abs(surface), std::abs(impact)});
+            return impact <= surface + tolerance;
+        }
+
+        int node(int azimuth, const SliceEntry& entry, int altitude) const {
+            int result = m_node_lookup[lookup_index(
+                azimuth, static_cast<int>(entry.impact_index), altitude,
+                static_cast<int>(entry.side))];
+            if (result >= 0) {
+                return result;
+            }
+
+            if (is_shell_tangent(entry, altitude)) {
                 // Exact shell tangencies have one physical node. Cartesian
                 // roundoff can label it side 0 in one azimuth plane and side 1
                 // in another, so use whichever label that plane recorded.
@@ -220,9 +264,18 @@ namespace sasktran2::solartransmission {
             const double top_parameter =
                 top_radius *
                 (refracted ? refractive_index[m_radii.size() - 1] : 1.0);
-            const double grazing_parameter = std::min(
-                std::nextafter(top_parameter, 0.0),
-                m_radii.front() * (refracted ? refractive_index[0] : 1.0));
+            const double surface = surface_parameter();
+            // Keep the horizon-limit characteristic unambiguously above the
+            // surface. At exact tangency, roundoff can make one azimuth plane
+            // stop at the ground while another continues to the far side.
+            // The exact surface characteristic is still added below from the
+            // altitude grid and supplies the illuminated tangent node.
+            const double grazing_clearance = std::max(
+                1.0e-3, 256.0 * std::numeric_limits<double>::epsilon() *
+                            std::abs(surface));
+            const double grazing_parameter =
+                std::min(std::nextafter(top_parameter, 0.0),
+                         surface + grazing_clearance);
 
             m_impact_parameters.clear();
             const int interior_count =
@@ -366,11 +419,9 @@ namespace sasktran2::solartransmission {
             const int top_altitude = static_cast<int>(m_radii.size()) - 1;
             allocate_node(azimuth_index, impact_index, top_altitude, 0);
             crossings[top_altitude] = 1;
-            if (azimuth_index == 0) {
-                m_altitude_slices[top_altitude].push_back(
-                    {toa_position.normalized().dot(m_sun),
-                     static_cast<std::uint32_t>(impact_index), 0});
-            }
+            slice(azimuth_index, top_altitude)
+                .push_back({toa_position.normalized().dot(m_sun),
+                            static_cast<std::uint32_t>(impact_index), 0});
 
             for (std::size_t reverse_index = traced.layers.size();
                  reverse_index-- > 0;) {
@@ -381,12 +432,10 @@ namespace sasktran2::solartransmission {
                     const int side = crossings[altitude]++;
                     node_after = allocate_node(azimuth_index, impact_index,
                                                altitude, side);
-                    if (azimuth_index == 0) {
-                        m_altitude_slices[altitude].push_back(
-                            {layer.exit.position.normalized().dot(m_sun),
-                             static_cast<std::uint32_t>(impact_index),
-                             static_cast<std::uint8_t>(side)});
-                    }
+                    slice(azimuth_index, altitude)
+                        .push_back({layer.exit.position.normalized().dot(m_sun),
+                                    static_cast<std::uint32_t>(impact_index),
+                                    static_cast<std::uint8_t>(side)});
                 }
                 append_segment(traced, reverse_index, node_after);
             }
@@ -394,8 +443,11 @@ namespace sasktran2::solartransmission {
         }
 
         void finalize_slices() {
-            for (auto& slice : m_altitude_slices) {
-                std::sort(slice.begin(), slice.end(),
+            m_altitude_slices.assign(m_radii.size(), {});
+            std::vector<std::uint8_t> seen(
+                static_cast<std::size_t>(m_num_impacts) * 2, 0);
+            for (auto& current_slice : m_azimuth_altitude_slices) {
+                std::sort(current_slice.begin(), current_slice.end(),
                           [](const SliceEntry& left, const SliceEntry& right) {
                               if (left.cos_sza != right.cos_sza) {
                                   return left.cos_sza < right.cos_sza;
@@ -405,11 +457,57 @@ namespace sasktran2::solartransmission {
                               }
                               return left.side < right.side;
                           });
-                if (slice.empty()) {
+                if (current_slice.empty()) {
                     throw std::runtime_error(
                         "Solar characteristic table has an empty altitude "
                         "slice");
                 }
+            }
+
+            for (int altitude = 0; altitude < static_cast<int>(m_radii.size());
+                 ++altitude) {
+                std::fill(seen.begin(), seen.end(), 0);
+                auto& union_slice = m_altitude_slices[altitude];
+                for (int azimuth = 0; azimuth < m_num_azimuths; ++azimuth) {
+                    for (auto entry : slice(azimuth, altitude)) {
+                        if (is_surface_blocked_far_side(entry)) {
+                            continue;
+                        }
+                        if (!m_config->solar_refraction()) {
+                            const double ratio = std::clamp(
+                                m_impact_parameters[entry.impact_index] /
+                                    m_radii[altitude],
+                                0.0, 1.0);
+                            const double magnitude =
+                                std::sqrt(std::max(0.0, 1.0 - ratio * ratio));
+                            entry.cos_sza =
+                                entry.side == 0 ? magnitude : -magnitude;
+                        }
+                        if (is_shell_tangent(entry, altitude)) {
+                            // A shell tangent is one physical node even when
+                            // Cartesian roundoff gives different side labels
+                            // in different azimuth planes.
+                            entry.side = 0;
+                        }
+                        const std::size_t key =
+                            static_cast<std::size_t>(entry.impact_index) * 2 +
+                            entry.side;
+                        if (seen[key] == 0) {
+                            seen[key] = 1;
+                            union_slice.push_back(entry);
+                        }
+                    }
+                }
+                std::sort(union_slice.begin(), union_slice.end(),
+                          [](const SliceEntry& left, const SliceEntry& right) {
+                              if (left.cos_sza != right.cos_sza) {
+                                  return left.cos_sza < right.cos_sza;
+                              }
+                              if (left.impact_index != right.impact_index) {
+                                  return left.impact_index < right.impact_index;
+                              }
+                              return left.side < right.side;
+                          });
             }
         }
 
@@ -532,6 +630,91 @@ namespace sasktran2::solartransmission {
                 .normalized();
         }
 
+        bool append_completed_node(int azimuth_index, const SliceEntry& entry,
+                                   int altitude_index) {
+            const auto exact_lookup = lookup_index(
+                azimuth_index, static_cast<int>(entry.impact_index),
+                altitude_index, static_cast<int>(entry.side));
+            const int existing = node(azimuth_index, entry, altitude_index);
+            if (existing >= 0) {
+                // Materialize tangent-side aliases so subsequent lookup does
+                // not depend on which side label survived in this plane.
+                m_node_lookup[exact_lookup] = existing;
+                return false;
+            }
+
+            const double azimuth =
+                two_pi * azimuth_index / static_cast<double>(m_num_azimuths);
+            Location location;
+            location.position =
+                m_geometry.coordinates().solar_coordinate_vector(
+                    entry.cos_sza, azimuth,
+                    m_radii[altitude_index] -
+                        m_geometry.coordinates().earth_radius());
+
+            sasktran2::viewinggeometry::ViewingRay ray_to_sun;
+            ray_to_sun.observer = location;
+            ray_to_sun.look_away =
+                m_config->solar_refraction()
+                    ? -node_propagation_direction(azimuth_index, entry,
+                                                  altitude_index)
+                    : m_sun;
+            sasktran2::raytracing::TracedRay traced;
+            if (m_config->solar_refraction()) {
+                m_raytracer.trace_ray_optical_depth(
+                    ray_to_sun, m_geometry.refractive_index(), traced);
+            } else {
+                m_raytracer.trace_ray_optical_depth(ray_to_sun, traced);
+            }
+            // Keep the traced layers even if the tracer labels this direct
+            // completion as a ground hit. Entries on the union interpolation
+            // topology are known to exist in another azimuth plane; the
+            // remaining discrepancy is precisely the plane-local tangent or
+            // boundary classification that this completion resolves.
+
+            const int completed_node = allocate_node(
+                azimuth_index, static_cast<int>(entry.impact_index),
+                altitude_index, static_cast<int>(entry.side));
+            for (std::size_t layer = 0; layer < traced.layers.size(); ++layer) {
+                append_segment(
+                    traced, layer,
+                    layer + 1 == traced.layers.size() ? completed_node : -1);
+            }
+            if (!traced.layers.empty()) {
+                m_ray_segment_offsets.push_back(current_segment_offset());
+            }
+            return true;
+        }
+
+        int complete_azimuth_topology() {
+            int completed = 0;
+            for (int altitude = 0; altitude < static_cast<int>(m_radii.size());
+                 ++altitude) {
+                for (const auto& entry : m_altitude_slices[altitude]) {
+                    for (int azimuth = 0; azimuth < m_num_azimuths; ++azimuth) {
+                        completed +=
+                            append_completed_node(azimuth, entry, altitude) ? 1
+                                                                            : 0;
+                    }
+                }
+            }
+            for (int altitude = 0; altitude < static_cast<int>(m_radii.size());
+                 ++altitude) {
+                for (const auto& entry : m_altitude_slices[altitude]) {
+                    for (int azimuth = 0; azimuth < m_num_azimuths; ++azimuth) {
+                        if (node(azimuth, entry, altitude) < 0) {
+                            throw std::logic_error(
+                                "Solar characteristic table could not "
+                                "complete its azimuth topology");
+                        }
+                    }
+                }
+            }
+            m_azimuth_altitude_slices.clear();
+            m_azimuth_altitude_slices.shrink_to_fit();
+            return completed;
+        }
+
       public:
         Impl(const Geometry2D& geometry,
              const sasktran2::raytracing::RustRayTracer2D& raytracer)
@@ -574,7 +757,8 @@ namespace sasktran2::solartransmission {
                 m_geometry.size() <=
                 static_cast<int>(std::numeric_limits<std::uint16_t>::max()) + 1;
             m_num_nodes = 0;
-            m_altitude_slices.assign(m_radii.size(), {});
+            m_azimuth_altitude_slices.assign(
+                static_cast<std::size_t>(m_num_azimuths) * m_radii.size(), {});
             m_node_lookup.assign(static_cast<std::size_t>(m_num_azimuths) *
                                      m_num_impacts * m_radii.size() * 2,
                                  -1);
@@ -586,12 +770,14 @@ namespace sasktran2::solartransmission {
                 }
             }
             finalize_slices();
+            const int completed_nodes = complete_azimuth_topology();
             m_initialized = true;
 
             spdlog::debug(
                 "Geometry2D solar characteristic table: {} azimuths, {} "
-                "impact rays, {} nodes, {} segments, compact indices {}",
-                m_num_azimuths, m_num_impacts, m_num_nodes,
+                "impact rays, {} nodes ({} completed), {} segments, compact "
+                "indices {}",
+                m_num_azimuths, m_num_impacts, m_num_nodes, completed_nodes,
                 m_segment_weight_counts.size(), m_compact_indices);
         }
 
@@ -835,8 +1021,11 @@ namespace sasktran2::solartransmission {
                 m_segment_weights.capacity() * sizeof(double) +
                 m_segment_nodes.capacity() * sizeof(std::int32_t) +
                 m_node_lookup.capacity() * sizeof(std::int32_t);
-            for (const auto& slice : m_altitude_slices) {
-                result += slice.capacity() * sizeof(SliceEntry);
+            for (const auto& current_slice : m_azimuth_altitude_slices) {
+                result += current_slice.capacity() * sizeof(SliceEntry);
+            }
+            for (const auto& current_slice : m_altitude_slices) {
+                result += current_slice.capacity() * sizeof(SliceEntry);
             }
             return result;
         }
