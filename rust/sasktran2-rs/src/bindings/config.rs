@@ -484,10 +484,7 @@ impl Config {
     pub fn los_refraction_max_tangent_altitude_m(&self) -> Result<f64> {
         let mut altitude_m = 0.0;
         let error_code = unsafe {
-            ffi::sk_config_get_los_refraction_max_tangent_altitude_m(
-                self.config,
-                &mut altitude_m,
-            )
+            ffi::sk_config_get_los_refraction_max_tangent_altitude_m(self.config, &mut altitude_m)
         };
         if error_code != 0 {
             Err(anyhow!(
@@ -504,10 +501,7 @@ impl Config {
         altitude_m: f64,
     ) -> Result<&mut Self> {
         let error_code = unsafe {
-            ffi::sk_config_set_los_refraction_max_tangent_altitude_m(
-                self.config,
-                altitude_m,
-            )
+            ffi::sk_config_set_los_refraction_max_tangent_altitude_m(self.config, altitude_m)
         };
         if error_code != 0 {
             Err(anyhow!(
@@ -1422,10 +1416,12 @@ mod tests {
 
         config.with_los_refraction(true).unwrap();
         assert!(config.los_refraction().unwrap());
-        assert!(config
-            .los_refraction_max_tangent_altitude_m()
-            .unwrap()
-            .is_infinite());
+        assert!(
+            config
+                .los_refraction_max_tangent_altitude_m()
+                .unwrap()
+                .is_infinite()
+        );
         config
             .with_los_refraction_max_tangent_altitude_m(25_000.0)
             .unwrap();
@@ -1433,12 +1429,16 @@ mod tests {
             config.los_refraction_max_tangent_altitude_m().unwrap(),
             25_000.0
         );
-        assert!(config
-            .with_los_refraction_max_tangent_altitude_m(-1.0)
-            .is_err());
-        assert!(config
-            .with_los_refraction_max_tangent_altitude_m(f64::NAN)
-            .is_err());
+        assert!(
+            config
+                .with_los_refraction_max_tangent_altitude_m(-1.0)
+                .is_err()
+        );
+        assert!(
+            config
+                .with_los_refraction_max_tangent_altitude_m(f64::NAN)
+                .is_err()
+        );
 
         config.with_output_los_optical_depth(true).unwrap();
         assert!(config.output_los_optical_depth().unwrap());

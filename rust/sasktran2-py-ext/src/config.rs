@@ -407,10 +407,7 @@ impl PyConfig {
     }
 
     #[setter]
-    fn set_los_refraction_max_tangent_altitude_m(
-        &mut self,
-        altitude_m: f64,
-    ) -> PyResult<()> {
+    fn set_los_refraction_max_tangent_altitude_m(&mut self, altitude_m: f64) -> PyResult<()> {
         self.config
             .with_los_refraction_max_tangent_altitude_m(altitude_m)
             .into_pyresult()?;

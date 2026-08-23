@@ -1614,6 +1614,44 @@ def test_refraction_tangent_altitude_limit_traces_high_los_straight():
     )
 
 
+def test_parallel_group_refraction_refresh_matches_serial():
+    geometry = orbital_geometry()
+    viewing = limb_viewing(geometry, np.array([-0.45, -0.15, 0.15, 0.45]))
+    horizontal_scale = np.linspace(0.9, 1.1, geometry.shape[0])[:, np.newaxis]
+    base_profile = 1.0 + horizontal_scale * (2.7e-4 * np.exp(-ALTITUDES_M / 8_000.0))
+    changed_profile = base_profile + horizontal_scale * np.linspace(
+        0.0, 2.0e-8, geometry.shape[1]
+    )
+
+    def calculate(num_threads: int) -> tuple[np.ndarray, np.ndarray, list[dict]]:
+        config = transmission_config(refraction=True)
+        config.num_threads = num_threads
+        config.threading_lib = sk.ThreadingLib.Rayon
+        config.threading_model = sk.ThreadingModel.Wavelength
+        atmosphere = raw_atmosphere(geometry, config, calculate_derivatives=False)
+        atmosphere.refractive_index = base_profile
+        engine = sk.OrbitalPlaneEngine(
+            config,
+            geometry,
+            viewing,
+            time_group_duration_s=20,
+        )
+        initial = engine.calculate_radiance(atmosphere).radiance.values.copy()
+        atmosphere.refractive_index = changed_profile
+        changed = engine.calculate_radiance(atmosphere).radiance.values.copy()
+        return initial, changed, engine.group_diagnostics
+
+    serial_initial, serial_changed, serial_diagnostics = calculate(1)
+    parallel_initial, parallel_changed, parallel_diagnostics = calculate(2)
+
+    np.testing.assert_array_equal(parallel_initial, serial_initial)
+    np.testing.assert_array_equal(parallel_changed, serial_changed)
+    assert not np.array_equal(serial_initial, serial_changed)
+    assert len(serial_diagnostics) == len(parallel_diagnostics) == 4
+    assert all(item["geometry_refresh_count"] == 2 for item in serial_diagnostics)
+    assert all(item["geometry_refresh_count"] == 2 for item in parallel_diagnostics)
+
+
 def test_native_refractive_index_change_retraces_only_affected_group():
     geometry = orbital_geometry()
     viewing = limb_viewing(geometry, np.array([-0.3, 0.3]))

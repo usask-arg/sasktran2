@@ -18,7 +18,7 @@ use sasktran2_rs::bindings::brdf::BrdfKind;
 use sasktran2_rs::bindings::config::{Config, ThreadingModel};
 use sasktran2_rs::bindings::engine::{
     Engine, LinearizationMode, calculate_prepared_jvps, calculate_prepared_radiances,
-    calculate_prepared_vjps,
+    calculate_prepared_vjps, set_2d_refractive_profiles_parallel,
 };
 use sasktran2_rs::bindings::geodetic::Geodetic;
 use sasktran2_rs::bindings::geometry::{Geometry2D, InterpolationMethod};
@@ -2289,6 +2289,7 @@ impl PyOrbitalPlaneEngine {
 
     fn _prepare_refraction(
         &mut self,
+        py: Python<'_>,
         pressure_pa: Option<PyReadonlyArray2<f64>>,
         temperature_k: Option<PyReadonlyArray2<f64>>,
         specific_humidity: Option<PyReadonlyArray2<f64>>,
@@ -2346,7 +2347,9 @@ impl PyOrbitalPlaneEngine {
             )?
         };
 
-        for group in &mut self.groups {
+        let mut changed_indices = Vec::new();
+        let mut changed_profiles = Vec::new();
+        for (group_index, group) in self.groups.iter().enumerate() {
             let mut profiles =
                 Array2::zeros((group.layout.observation_indices.len(), self.num_altitudes));
             for (local_ray, ray) in group.layout.ray_policies.iter().enumerate() {
@@ -2362,6 +2365,46 @@ impl PyOrbitalPlaneEngine {
                 );
             }
             if group.last_refractive_profiles.as_ref() != Some(&profiles) {
+                changed_indices.push(group_index);
+                changed_profiles.push(profiles);
+            }
+        }
+
+        let composite_threads = self.composite_wavelength_threads(py)?;
+        if let Some(num_threads) = composite_threads.filter(|_| changed_indices.len() > 1) {
+            let engines = changed_indices
+                .iter()
+                .map(|&index| &self.groups[index].engine)
+                .collect::<Vec<_>>();
+            let results =
+                set_2d_refractive_profiles_parallel(&engines, &changed_profiles, num_threads)
+                    .into_pyresult()?;
+            let mut first_error = None;
+            for ((group_index, profiles), result) in changed_indices
+                .into_iter()
+                .zip(changed_profiles)
+                .zip(results)
+            {
+                match result {
+                    Ok(()) => {
+                        let group = &mut self.groups[group_index];
+                        group.last_refractive_profiles = Some(profiles);
+                        group.geometry_refresh_count += 1;
+                        self.state_generation = self.state_generation.wrapping_add(1);
+                    }
+                    Err(error) => {
+                        if first_error.is_none() {
+                            first_error = Some(error);
+                        }
+                    }
+                }
+            }
+            if let Some(error) = first_error {
+                return Err(PyRuntimeError::new_err(error.to_string()));
+            }
+        } else {
+            for (group_index, profiles) in changed_indices.into_iter().zip(changed_profiles) {
+                let group = &mut self.groups[group_index];
                 group
                     .engine
                     .set_2d_refractive_profiles(profiles.view())
@@ -3377,8 +3420,7 @@ impl PyOrbitalPlaneEngine {
                             .ray_policies
                             .iter()
                             .filter(|ray| {
-                                ray.tangent_altitude_m
-                                    <= self.max_refraction_tangent_altitude_m
+                                ray.tangent_altitude_m <= self.max_refraction_tangent_altitude_m
                             })
                             .count()
                     } else {

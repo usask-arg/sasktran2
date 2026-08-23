@@ -11,7 +11,7 @@ use ndarray::{Array1, Array2, Array3, ArrayView2};
 use rayon::current_thread_index;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use sasktran2_sys::ffi;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]
@@ -176,6 +176,11 @@ struct VjpBlockTask {
     wavelength_count: usize,
 }
 
+struct RefractiveProfileTask {
+    engine: SafeFFIEngine,
+    profile_index: usize,
+}
+
 /// Execute already-initialized radiance outputs over one shared pool of
 /// `(engine, wavelength block)` tasks. This is intended for composite engines
 /// whose children share a wavelength-threaded configuration.
@@ -299,6 +304,86 @@ pub fn calculate_prepared_vjps(
     }
     worker_result?;
     finalize_result
+}
+
+/// Refresh independent structured-2D engines on the shared Rayon pool.
+///
+/// Every engine must be unique because the underlying C++ call mutates its
+/// geometry-dependent state. Per-engine results are retained so a composite
+/// caller can update the cache metadata for every successful refresh even if
+/// another group rejects its profile.
+pub fn set_2d_refractive_profiles_parallel(
+    engines: &[&Engine<'_>],
+    profiles: &[Array2<f64>],
+    num_threads: usize,
+) -> Result<Vec<Result<()>>> {
+    if engines.len() != profiles.len() {
+        return Err(anyhow::anyhow!(
+            "Refractive-profile engine/profile counts do not match"
+        ));
+    }
+    if num_threads == 0 {
+        return Err(anyhow::anyhow!(
+            "Refractive-profile thread count must be positive"
+        ));
+    }
+
+    let mut engine_addresses = HashSet::with_capacity(engines.len());
+    let mut tasks = Vec::with_capacity(engines.len());
+    for (profile_index, (engine, profile)) in engines.iter().zip(profiles).enumerate() {
+        if !matches!(&engine.geometry, EngineGeometry::TwoDimensional(_)) {
+            return Err(anyhow::anyhow!(
+                "Per-ray refractive profiles require Geometry2D engines"
+            ));
+        }
+        if !engine_addresses.insert(engine.engine as usize) {
+            return Err(anyhow::anyhow!(
+                "Parallel refractive-profile refresh requires unique engines"
+            ));
+        }
+        if !profile.is_standard_layout() {
+            return Err(anyhow::anyhow!(
+                "Parallel refractive profiles must use standard row-major layout"
+            ));
+        }
+        if profile.nrows() > i32::MAX as usize || profile.ncols() > i32::MAX as usize {
+            return Err(anyhow::anyhow!(
+                "Parallel refractive-profile dimensions exceed the C API range"
+            ));
+        }
+        tasks.push(RefractiveProfileTask {
+            engine: SafeFFIEngine(engine.engine),
+            profile_index,
+        });
+    }
+
+    crate::threading::set_num_threads(num_threads)?;
+    let thread_pool = threading::thread_pool()?;
+    Ok(thread_pool.install(|| {
+        tasks
+            .into_par_iter()
+            .map(|task| {
+                let profile = &profiles[task.profile_index];
+                let result = unsafe {
+                    ffi::sk_engine_set_2d_refractive_profiles(
+                        task.engine.0,
+                        profile.as_ptr(),
+                        profile.nrows() as i32,
+                        profile.ncols() as i32,
+                    )
+                };
+                if result == 0 {
+                    Ok(())
+                } else {
+                    Err(anyhow::anyhow!(
+                        "Failed to set Geometry2D refractive profiles for engine {}: {}",
+                        task.profile_index,
+                        result
+                    ))
+                }
+            })
+            .collect()
+    }))
 }
 
 impl<'a> Engine<'a> {
