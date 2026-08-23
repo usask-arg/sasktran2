@@ -558,6 +558,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--num-threads", type=int, default=1)
     parser.add_argument(
+        "--max-refraction-tangent-altitude-km",
+        type=float,
+        default=25.0,
+        help="Trace higher-tangent-altitude LOS without refraction; use inf for no cutoff",
+    )
+    parser.add_argument(
         "--repeat-calculations",
         type=int,
         default=2,
@@ -634,6 +640,13 @@ def main() -> None:
         if args.num_threads < 1:
             raise ValueError("num-threads must be positive")
         if (
+            np.isnan(args.max_refraction_tangent_altitude_km)
+            or args.max_refraction_tangent_altitude_km < 0
+        ):
+            raise ValueError(
+                "max-refraction-tangent-altitude-km must be non-negative or inf"
+            )
+        if (
             not np.isfinite(args.repeat_ozone_scale_step)
             or args.repeat_ozone_scale_step < 0
         ):
@@ -700,6 +713,9 @@ def main() -> None:
             config.multiple_scatter_source = sk.MultipleScatterSource.NoSource
         config.occultation_source = sk.OccultationSource.NoSource
         config.los_refraction = not args.no_refraction
+        config.los_refraction_max_tangent_altitude_m = (
+            args.max_refraction_tangent_altitude_km * 1.0e3
+        )
 
         atmosphere, ozone = make_atmosphere(
             geometry,
@@ -818,7 +834,8 @@ def main() -> None:
             f"source altitudes={args.successive_orders_altitude_points}; "
             f"angular points={args.successive_orders_angular_points}; "
             f"maximum iterations={args.successive_orders_iterations}; "
-            f"threads={args.num_threads}"
+            f"threads={args.num_threads}; max refracted tangent altitude="
+            f"{args.max_refraction_tangent_altitude_km:g} km"
         )
     print(
         "Geometry: "

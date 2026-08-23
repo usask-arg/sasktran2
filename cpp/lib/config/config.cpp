@@ -1,6 +1,8 @@
 #include <sasktran2/config.h>
 #include <sasktran2/validation/validation.h>
 
+#include <cmath>
+
 namespace sasktran2 {
     Config::Config()
         : m_nthreads(1), m_wavelength_batch_size(1), m_nstokes(1),
@@ -56,6 +58,15 @@ namespace sasktran2 {
             spdlog::critical("Invalid wavelength batch size: {}, must be at "
                              "least 1",
                              m_wavelength_batch_size);
+            sasktran2::validation::throw_configuration_error();
+        }
+
+        if (std::isnan(m_los_refraction_max_tangent_altitude_m) ||
+            m_los_refraction_max_tangent_altitude_m < 0) {
+            spdlog::critical(
+                "Invalid maximum LOS refraction tangent altitude: {}, must "
+                "be non-negative or infinity",
+                m_los_refraction_max_tangent_altitude_m);
             sasktran2::validation::throw_configuration_error();
         }
 

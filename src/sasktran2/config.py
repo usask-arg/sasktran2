@@ -333,6 +333,21 @@ class Config:
         self._config.los_refraction = value
 
     @property
+    def los_refraction_max_tangent_altitude_m(self) -> float:
+        """Maximum nominal tangent altitude at which LOS refraction is applied.
+
+        Rays above this altitude are traced without refraction. The default is
+        infinity, which preserves refraction for every LOS. This cutoff is
+        primarily intended for limb-viewing calculations where bending becomes
+        negligible at high tangent altitudes.
+        """
+        return self._config.los_refraction_max_tangent_altitude_m
+
+    @los_refraction_max_tangent_altitude_m.setter
+    def los_refraction_max_tangent_altitude_m(self, value: float):
+        self._config.los_refraction_max_tangent_altitude_m = value
+
+    @property
     def solar_refraction(self) -> bool:
         """
         Controls whether or not refraction is enabled for the solar rays. Requires

@@ -558,6 +558,27 @@ int sk_config_set_los_refraction(Config* config, int refraction) {
     return 0; // Success
 }
 
+int sk_config_get_los_refraction_max_tangent_altitude_m(Config* config,
+                                                        double* altitude_m) {
+    if (config == nullptr || altitude_m == nullptr) {
+        return -1;
+    }
+    *altitude_m = config->impl.los_refraction_max_tangent_altitude_m();
+    return 0;
+}
+
+int sk_config_set_los_refraction_max_tangent_altitude_m(Config* config,
+                                                        double altitude_m) {
+    if (config == nullptr) {
+        return -1;
+    }
+    if (std::isnan(altitude_m) || altitude_m < 0.0) {
+        return -2;
+    }
+    config->impl.set_los_refraction_max_tangent_altitude_m(altitude_m);
+    return 0;
+}
+
 int sk_config_get_solar_refraction(Config* config, int* refraction) {
     if (config == nullptr || refraction == nullptr) {
         return -1; // Error: null pointer

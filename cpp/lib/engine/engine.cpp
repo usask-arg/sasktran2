@@ -396,7 +396,8 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::construct_source_terms() {
     }
 }
 
-template <int NSTOKES> void Sasktran2<NSTOKES>::calculate_geometry() {
+template <int NSTOKES>
+void Sasktran2<NSTOKES>::calculate_geometry(bool refresh_los_sources) {
     FrameMarkStart("Geometry");
     ZoneScopedN("calculate_geometry");
 
@@ -411,7 +412,11 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::calculate_geometry() {
             const auto& viewing_ray = m_viewing_geometry.observer_rays()[i];
             auto ray = viewing_ray->construct_ray(m_geometry->coordinates());
 #ifdef SKTRAN_RUST_SUPPORT
-            if (!m_refractive_profiles_2d.empty()) {
+            const bool refract_ray =
+                !m_refractive_profiles_2d.empty() &&
+                !m_refractive_profiles_2d[i].array().isApproxToConstant(1.0,
+                                                                        0.0);
+            if (refract_ray) {
                 m_raytracer_2d->trace_ray(
                     ray, m_refractive_profiles_2d[i],
                     m_internal_viewing_geometry.traced_rays[i]);
@@ -425,7 +430,11 @@ template <int NSTOKES> void Sasktran2<NSTOKES>::calculate_geometry() {
         m_source_integrator->initialize_geometry(
             m_internal_viewing_geometry.traced_rays, *m_geometry_2d);
         for (auto& source : m_source_terms) {
-            source->initialize_geometry(m_internal_viewing_geometry);
+            if (refresh_los_sources) {
+                source->refresh_los_geometry(m_internal_viewing_geometry);
+            } else {
+                source->initialize_geometry(m_internal_viewing_geometry);
+            }
         }
 
         FrameMarkEnd("Geometry");
@@ -504,7 +513,7 @@ void Sasktran2<NSTOKES>::set_2d_refractive_profiles(
         m_refractive_profiles_2d[static_cast<std::size_t>(ray)] =
             profiles.row(ray).transpose();
     }
-    calculate_geometry();
+    calculate_geometry(true);
 }
 
 template <int NSTOKES>

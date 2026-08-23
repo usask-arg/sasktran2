@@ -740,6 +740,19 @@ namespace sasktran2::successive_orders {
                                    m_los_transport_column_indices);
     }
 
+    void SourceGeometry1D::refresh_los(
+        const sasktran2::viewinggeometry::InternalViewingGeometry&
+            internal_viewing) {
+        if (m_location_interpolator == nullptr || m_source_points.empty()) {
+            throw std::logic_error("Cannot refresh successive-orders LOS "
+                                   "geometry before initialization");
+        }
+        compile_los_interpolation(internal_viewing);
+        compile_transport_topology(m_los_interpolation,
+                                   m_los_transport_row_offsets,
+                                   m_los_transport_column_indices);
+    }
+
     void SourceGeometry1D::trace_ray(
         const sasktran2::viewinggeometry::ViewingRay& viewing_ray,
         sasktran2::raytracing::TracedRay& traced_ray) const {

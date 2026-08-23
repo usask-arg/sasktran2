@@ -28,6 +28,7 @@ def limb_viewing(
     angles: np.ndarray,
     times: np.ndarray | None = None,
     vertical_slice: np.ndarray | None = None,
+    tangent_altitude_m: float | np.ndarray = 20_000.0,
 ) -> sk.OrbitalPlaneViewingGeometry:
     if times is None:
         times = np.datetime64("2026-01-01T00:00:00", "ns") + np.arange(
@@ -41,7 +42,10 @@ def limb_viewing(
     track /= np.linalg.norm(track, axis=1)[:, np.newaxis]
     cumulative = geometry.cumulative_angles
     requested = angles + 0.8
-    for coordinate in requested:
+    tangent_altitudes = np.broadcast_to(
+        np.asarray(tangent_altitude_m, dtype=np.float64), requested.shape
+    )
+    for coordinate, tangent_altitude in zip(requested, tangent_altitudes, strict=True):
         upper = np.searchsorted(cumulative, coordinate, side="right")
         upper = np.clip(upper, 1, len(cumulative) - 1)
         fraction = (coordinate - cumulative[upper - 1]) / (
@@ -54,7 +58,7 @@ def limb_viewing(
         if np.linalg.norm(forward) < 1e-8:
             forward = np.cross(np.array([1.0, 0.0, 0.0]), up)
         forward /= np.linalg.norm(forward)
-        tangent_radius = EARTH_RADIUS_M + 20_000.0
+        tangent_radius = EARTH_RADIUS_M + tangent_altitude
         observer_radius = EARTH_RADIUS_M + 700_000.0
         distance = np.sqrt(observer_radius**2 - tangent_radius**2)
         tangent = tangent_radius * up
@@ -1570,6 +1574,44 @@ def test_refraction_cache_reuses_engines_and_retraces_changed_profiles():
     changed = engine.calculate_radiance(atmosphere).radiance.values
     assert all(item["geometry_refresh_count"] == 2 for item in engine.group_diagnostics)
     assert not np.array_equal(first, changed)
+
+
+def test_refraction_tangent_altitude_limit_traces_high_los_straight():
+    geometry = orbital_geometry()
+    viewing = limb_viewing(
+        geometry,
+        np.array([-0.05, 0.05]),
+        tangent_altitude_m=np.array([20_000.0, 35_000.0]),
+    )
+    profile = 1.0 + 2.7e-4 * np.exp(-ALTITUDES_M / 8_000.0)
+
+    def calculate(*, refraction: bool, limit_m: float) -> tuple[np.ndarray, list[dict]]:
+        config = transmission_config(refraction=refraction)
+        config.los_refraction_max_tangent_altitude_m = limit_m
+        atmosphere = raw_atmosphere(geometry, config, calculate_derivatives=False)
+        atmosphere.refractive_index = profile
+        engine = sk.OrbitalPlaneEngine(
+            config,
+            geometry,
+            viewing,
+            time_group_duration_s=120,
+        )
+        return (
+            engine.calculate_radiance(atmosphere).radiance.values,
+            engine.group_diagnostics,
+        )
+
+    limited, diagnostics = calculate(refraction=True, limit_m=25_000.0)
+    fully_refracted, _ = calculate(refraction=True, limit_m=np.inf)
+    straight, _ = calculate(refraction=False, limit_m=25_000.0)
+
+    np.testing.assert_allclose(limited[:, 0, :], fully_refracted[:, 0, :])
+    np.testing.assert_allclose(limited[:, 1, :], straight[:, 1, :])
+    assert not np.array_equal(limited[:, 0, :], straight[:, 0, :])
+    assert sum(item["refracted_observation_count"] for item in diagnostics) == 1
+    assert all(
+        item["max_refraction_tangent_altitude_m"] == 25_000.0 for item in diagnostics
+    )
 
 
 def test_native_refractive_index_change_retraces_only_affected_group():

@@ -107,6 +107,10 @@ int sk_config_set_emission_source(Config* config, int emission_source);
 // Refraction configuration methods
 int sk_config_get_los_refraction(Config* config, int* refraction);
 int sk_config_set_los_refraction(Config* config, int refraction);
+int sk_config_get_los_refraction_max_tangent_altitude_m(Config* config,
+                                                        double* altitude_m);
+int sk_config_set_los_refraction_max_tangent_altitude_m(Config* config,
+                                                        double altitude_m);
 int sk_config_get_solar_refraction(Config* config, int* refraction);
 int sk_config_set_solar_refraction(Config* config, int refraction);
 int sk_config_get_multiple_scatter_refraction(Config* config, int* refraction);

@@ -94,7 +94,7 @@ template <int NSTOKES> class Sasktran2 : public Sasktran2Interface {
     /** Internal method to calculate all terms inside the engine that are only
      * geometry dependent
      */
-    void calculate_geometry();
+    void calculate_geometry(bool refresh_los_sources = false);
 
     /** Internal method to construct the internal ray tracer
      */

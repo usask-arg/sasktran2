@@ -2187,6 +2187,7 @@ pub struct PyOrbitalPlaneEngine {
     refraction_wavelength_nm: f64,
     refraction_co2_ppm: f64,
     los_refraction: bool,
+    max_refraction_tangent_altitude_m: f64,
     stream_derivatives: bool,
     lambertian_surface: Option<LambertianSurfaceState>,
     surface_generation: u64,
@@ -2258,6 +2259,10 @@ impl PyOrbitalPlaneEngine {
             groups.push(build_group_engine(config_ref, &geometry, layout, sun)?);
         }
         let los_refraction = config.config.los_refraction().into_pyresult()?;
+        let max_refraction_tangent_altitude_m = config
+            .config
+            .los_refraction_max_tangent_altitude_m()
+            .into_pyresult()?;
         let num_observations = viewing.times_ns.len();
         let num_orbital_positions = geometry.track_directions.len();
         let num_altitudes = geometry.altitude_grid_m.len();
@@ -2271,6 +2276,7 @@ impl PyOrbitalPlaneEngine {
             refraction_wavelength_nm,
             refraction_co2_ppm,
             los_refraction,
+            max_refraction_tangent_altitude_m,
             stream_derivatives,
             lambertian_surface: None,
             surface_generation: 0,
@@ -2344,6 +2350,10 @@ impl PyOrbitalPlaneEngine {
             let mut profiles =
                 Array2::zeros((group.layout.observation_indices.len(), self.num_altitudes));
             for (local_ray, ray) in group.layout.ray_policies.iter().enumerate() {
+                if ray.tangent_altitude_m > self.max_refraction_tangent_altitude_m {
+                    profiles.row_mut(local_ray).fill(1.0);
+                    continue;
+                }
                 let left = index.row(ray.refractive_profile_segment);
                 let right = index.row(ray.refractive_profile_segment + 1);
                 profiles.row_mut(local_ray).assign(
@@ -3355,6 +3365,26 @@ impl PyOrbitalPlaneEngine {
                 )?;
                 dict.set_item("window_expanded", group.layout.window_expanded)?;
                 dict.set_item("geometry_refresh_count", group.geometry_refresh_count)?;
+                dict.set_item(
+                    "max_refraction_tangent_altitude_m",
+                    self.max_refraction_tangent_altitude_m,
+                )?;
+                dict.set_item(
+                    "refracted_observation_count",
+                    if self.los_refraction {
+                        group
+                            .layout
+                            .ray_policies
+                            .iter()
+                            .filter(|ray| {
+                                ray.tangent_altitude_m
+                                    <= self.max_refraction_tangent_altitude_m
+                            })
+                            .count()
+                    } else {
+                        0
+                    },
+                )?;
                 dict.set_item("atmosphere_update_count", group.atmosphere_update_count)?;
                 dict.set_item(
                     "composite_wavelength_scheduler",

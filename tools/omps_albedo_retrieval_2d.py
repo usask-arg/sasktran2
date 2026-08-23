@@ -387,6 +387,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--angular-points", type=int, default=110)
     parser.add_argument("--maximum-orders", type=int, default=50)
     parser.add_argument("--num-threads", type=int, default=1)
+    parser.add_argument(
+        "--max-refraction-tangent-altitude-km",
+        type=float,
+        default=25.0,
+        help="Trace higher-tangent-altitude LOS without refraction; use inf for no cutoff",
+    )
     parser.add_argument("--initial-albedo", type=float, default=0.1)
     parser.add_argument(
         "--smoothness",
@@ -419,6 +425,13 @@ def main() -> None:
         raise ValueError("maximum-iterations must be positive")
     if args.num_threads < 1:
         raise ValueError("num-threads must be positive")
+    if (
+        np.isnan(args.max_refraction_tangent_altitude_km)
+        or args.max_refraction_tangent_altitude_km < 0
+    ):
+        raise ValueError(
+            "max-refraction-tangent-altitude-km must be non-negative or inf"
+        )
 
     data = load_omps_inputs(args.l1g, args.anc, args.slit)
     if args.num_scans is None:
@@ -455,6 +468,9 @@ def main() -> None:
     config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
     config.occultation_source = sk.OccultationSource.NoSource
     config.los_refraction = not args.no_refraction
+    config.los_refraction_max_tangent_altitude_m = (
+        args.max_refraction_tangent_altitude_km * 1.0e3
+    )
     config.num_sza = args.num_sza
     altitude_edges = np.linspace(
         data.atmosphere_altitude_m[0],
@@ -526,6 +542,10 @@ def main() -> None:
         f"optimization elapsed={elapsed:.3f} s"
     )
     print(f"Composite group/wavelength threads: {args.num_threads}")
+    print(
+        "Maximum refracted tangent altitude: "
+        f"{args.max_refraction_tangent_altitude_km:g} km"
+    )
     print(
         "Model/observation ratio percentiles [5, 25, 50, 75, 95]:\n"
         f"  initial: {np.percentile(initial_ratio, [5, 25, 50, 75, 95]).tolist()}\n"

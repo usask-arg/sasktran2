@@ -45,6 +45,9 @@ namespace sasktran2::successive_orders {
         void initialize_geometry(
             const sasktran2::viewinggeometry::InternalViewingGeometry&
                 internal_viewing) override;
+        void refresh_los_geometry(
+            const sasktran2::viewinggeometry::InternalViewingGeometry&
+                internal_viewing) override;
         void initialize_atmosphere(
             const sasktran2::atmosphere::Atmosphere<NSTOKES>& atmosphere)
             override;
@@ -345,8 +348,6 @@ namespace sasktran2::successive_orders {
             m_scattering_assembler = std::make_unique<Assembler>(
                 m_source_geometry, m_config->num_do_streams());
 
-            create_wavelength_states(m_config->num_wavelength_threads());
-
             const int output_size = m_los_map->num_rays() * NSTOKES;
             m_thread_los_cotangent.resize(m_config->num_threads());
             for (auto& cotangent : m_thread_los_cotangent) {
@@ -357,6 +358,32 @@ namespace sasktran2::successive_orders {
                 m_source_geometry.release_incoming_traced_rays();
             }
             m_geometry_initialized = true;
+        }
+
+        void refresh_los_geometry(
+            const sasktran2::viewinggeometry::InternalViewingGeometry&
+                internal_viewing) {
+            if (!m_geometry_initialized) {
+                initialize_geometry(internal_viewing);
+                return;
+            }
+
+            m_atmosphere = nullptr;
+            m_has_atmosphere_revision = false;
+            m_wavelength_state.clear();
+            m_vector_state_cache.clear();
+            m_source_geometry.refresh_los(internal_viewing);
+            m_los_map = std::make_unique<RayTransportMap>(
+                m_source_geometry.los_interpolation(),
+                m_source_geometry.total_num_outgoing(),
+                m_source_geometry.los_transport_row_offsets(),
+                m_source_geometry.los_transport_column_indices());
+
+            const int output_size = m_los_map->num_rays() * NSTOKES;
+            m_thread_los_cotangent.resize(m_config->num_threads());
+            for (auto& cotangent : m_thread_los_cotangent) {
+                cotangent.setZero(output_size);
+            }
         }
 
         void initialize_atmosphere(const Atmosphere& atmosphere) {
@@ -385,6 +412,11 @@ namespace sasktran2::successive_orders {
                     create_wavelength_states(atmosphere.num_wavel());
                 }
             } else {
+                if (static_cast<int>(m_wavelength_state.size()) !=
+                    m_config->num_wavelength_threads()) {
+                    create_wavelength_states(
+                        m_config->num_wavelength_threads());
+                }
                 if (static_cast<int>(m_vector_state_cache.size()) !=
                     atmosphere.num_wavel()) {
                     m_vector_state_cache.clear();
@@ -864,6 +896,13 @@ namespace sasktran2::successive_orders {
         const sasktran2::viewinggeometry::InternalViewingGeometry&
             internal_viewing) {
         m_impl->initialize_geometry(internal_viewing);
+    }
+
+    template <int NSTOKES>
+    void SuccessiveOrdersSource<NSTOKES>::refresh_los_geometry(
+        const sasktran2::viewinggeometry::InternalViewingGeometry&
+            internal_viewing) {
+        m_impl->refresh_los_geometry(internal_viewing);
     }
 
     template <int NSTOKES>

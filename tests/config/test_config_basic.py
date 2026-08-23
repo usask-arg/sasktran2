@@ -114,6 +114,20 @@ def test_wavelength_batch_size_round_trip_and_validation():
         config.wavelength_batch_size = 0
 
 
+def test_los_refraction_tangent_altitude_limit_round_trip_and_validation():
+    config = sk.Config()
+
+    assert np.isinf(config.los_refraction_max_tangent_altitude_m)
+    config.los_refraction_max_tangent_altitude_m = 25_000.0
+    assert config.los_refraction_max_tangent_altitude_m == 25_000.0
+    config.los_refraction_max_tangent_altitude_m = np.inf
+    assert np.isinf(config.los_refraction_max_tangent_altitude_m)
+
+    for invalid in (-1.0, np.nan):
+        with pytest.raises(RuntimeError, match="non-negative or infinity"):
+            config.los_refraction_max_tangent_altitude_m = invalid
+
+
 def test_cpp_successive_orders_controls_round_trip_and_validation():
     config = sk.Config()
 

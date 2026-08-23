@@ -130,6 +130,7 @@ def _structural_config_signature(config: sk.Config) -> tuple:
         "stokes_basis",
         "delta_m_scaling",
         "los_refraction",
+        "los_refraction_max_tangent_altitude_m",
         "solar_refraction",
         "output_los_optical_depth",
         "num_singlescatter_moments",

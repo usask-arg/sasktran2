@@ -941,6 +941,18 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn sk_config_get_los_refraction_max_tangent_altitude_m(
+        config: *mut Config,
+        altitude_m: *mut f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_set_los_refraction_max_tangent_altitude_m(
+        config: *mut Config,
+        altitude_m: f64,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn sk_config_get_solar_refraction(
         config: *mut Config,
         refraction: *mut ::std::os::raw::c_int,

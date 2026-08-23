@@ -400,6 +400,24 @@ impl PyConfig {
     }
 
     #[getter]
+    fn los_refraction_max_tangent_altitude_m(&self) -> PyResult<f64> {
+        self.config
+            .los_refraction_max_tangent_altitude_m()
+            .into_pyresult()
+    }
+
+    #[setter]
+    fn set_los_refraction_max_tangent_altitude_m(
+        &mut self,
+        altitude_m: f64,
+    ) -> PyResult<()> {
+        self.config
+            .with_los_refraction_max_tangent_altitude_m(altitude_m)
+            .into_pyresult()?;
+        Ok(())
+    }
+
+    #[getter]
     fn get_output_los_optical_depth(&self) -> PyResult<bool> {
         self.config.output_los_optical_depth().into_pyresult()
     }

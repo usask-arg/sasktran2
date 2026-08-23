@@ -114,6 +114,18 @@ template <int NSTOKES> class SourceTermInterface {
         const sasktran2::viewinggeometry::InternalViewingGeometry&
             internal_viewing){};
 
+    /** Refresh geometry that depends only on the observer line of sight.
+     *
+     * The default conservatively rebuilds the complete source geometry.
+     * Sources with an expensive observer-independent transport grid may
+     * override this hook and retain that grid when only LOS rays change.
+     */
+    virtual void refresh_los_geometry(
+        const sasktran2::viewinggeometry::InternalViewingGeometry&
+            internal_viewing) {
+        initialize_geometry(internal_viewing);
+    }
+
     /**
      *
      */

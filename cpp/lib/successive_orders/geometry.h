@@ -95,6 +95,12 @@ namespace sasktran2::successive_orders {
                        internal_viewing,
                    const SourceGeometrySettings& settings);
 
+        /** Recompile only observer-LOS interpolation and transport topology.
+         * Source points and diffuse incoming rays are unchanged. */
+        void
+        refresh_los(const sasktran2::viewinggeometry::InternalViewingGeometry&
+                        internal_viewing);
+
         const SourceGeometrySettings& settings() const { return m_settings; }
         const std::vector<double>& source_altitudes_m() const {
             return m_source_altitudes_m;
