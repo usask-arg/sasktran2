@@ -1870,7 +1870,14 @@ def test_resident_and_streaming_vjp_agree_and_keep_group_engines():
             derivative_execution=execution,
         )
         identities = [item["engine_identity"] for item in engine.group_diagnostics]
-        linearization = engine.linearize(raw_atmosphere(geometry, config))
+        linearization = engine.linearize(
+            raw_atmosphere(geometry, config), prepare_parameters=("extinction",)
+        )
+        if execution == "streaming":
+            assert all(
+                not item["resident_volume_derivative_mappings"]
+                for item in engine.group_diagnostics
+            )
         if cotangent is None:
             cotangent = xr.ones_like(linearization.value)
         results[execution] = linearization.vjp(
@@ -1896,21 +1903,27 @@ def test_resident_group_workspaces_contain_only_selected_derivative_mappings():
         time_group_duration_s=20,
         derivative_execution="resident",
     )
-    linearization = engine.linearize(raw_atmosphere(geometry, config))
+    atmosphere = raw_atmosphere(geometry, config)
+    linearization = engine.linearize(atmosphere, prepare_parameters=["extinction"])
     cotangent = xr.ones_like(linearization.value)
-
-    linearization.vjp(cotangent, parameters=["extinction"])
     first_identities = [
         item["atmosphere_workspace_identity"] for item in engine.group_diagnostics
+    ]
+    first_update_counts = [
+        item["atmosphere_update_count"] for item in engine.group_diagnostics
     ]
     for diagnostics in engine.group_diagnostics:
         assert diagnostics["resident_volume_derivative_mappings"] == ["wf_extinction"]
         assert diagnostics["resident_surface_derivative_mappings"] == []
 
     linearization.vjp(cotangent, parameters=["extinction"])
+    linearization.vjp(cotangent, parameters=["extinction"])
     assert [
         item["atmosphere_workspace_identity"] for item in engine.group_diagnostics
     ] == first_identities
+    assert [
+        item["atmosphere_update_count"] for item in engine.group_diagnostics
+    ] == first_update_counts
 
     linearization.vjp(cotangent, parameters=["ssa"])
     for diagnostics in engine.group_diagnostics:
@@ -1921,6 +1934,76 @@ def test_resident_group_workspaces_contain_only_selected_derivative_mappings():
     linearization.jvp(tangent)
     for diagnostics in engine.group_diagnostics:
         assert diagnostics["resident_volume_derivative_mappings"] == ["wf_extinction"]
+
+    changed_counts = [
+        item["atmosphere_update_count"] for item in engine.group_diagnostics
+    ]
+    atmosphere.mark_changed()
+    engine.linearize(atmosphere, prepare_parameters=["extinction"])
+    assert [item["atmosphere_update_count"] for item in engine.group_diagnostics] == [
+        count + 1 for count in changed_counts
+    ]
+
+
+def test_composite_group_wavelength_scheduler_matches_serial_products():
+    geometry = orbital_geometry()
+    viewing = limb_viewing(geometry, np.array([-0.2, 0.0, 0.2]))
+
+    def calculate(num_threads: int):
+        config = transmission_config()
+        config.num_threads = num_threads
+        config.threading_lib = sk.ThreadingLib.OpenMP
+        config.threading_model = sk.ThreadingModel.Wavelength
+        config.wavelength_batch_size = 2
+        atmosphere = sk.Atmosphere(
+            geometry,
+            config,
+            wavelengths_nm=np.array([450.0, 500.0, 550.0]),
+            legendre_derivative=False,
+        )
+        atmosphere.storage.total_extinction[:] = np.linspace(
+            0.8e-5,
+            1.2e-5,
+            atmosphere.num_locations,
+        )[:, np.newaxis]
+        atmosphere.storage.ssa[:] = 0.0
+        engine = sk.OrbitalPlaneEngine(
+            config,
+            geometry,
+            viewing,
+            time_group_duration_s=20,
+        )
+        linearization = engine.linearize(atmosphere, prepare_parameters=("extinction",))
+        tangent = linearization.tangent_template[["extinction"]]
+        tangent.extinction.values[:] = np.linspace(
+            -0.4, 0.7, tangent.extinction.size
+        ).reshape(tangent.extinction.shape)
+        cotangent = xr.ones_like(linearization.value)
+        cotangent.values[:] = np.linspace(-0.5, 0.8, cotangent.size).reshape(
+            cotangent.shape
+        )
+        return (
+            linearization.value.copy(),
+            linearization.jvp(tangent),
+            linearization.vjp(cotangent, parameters=("extinction",)).extinction,
+            engine.group_diagnostics,
+        )
+
+    serial_value, serial_jvp, serial_vjp, serial_diagnostics = calculate(1)
+    threaded_value, threaded_jvp, threaded_vjp, threaded_diagnostics = calculate(2)
+
+    xr.testing.assert_allclose(threaded_value, serial_value, rtol=1e-13, atol=1e-14)
+    xr.testing.assert_allclose(threaded_jvp, serial_jvp, rtol=1e-13, atol=1e-14)
+    xr.testing.assert_allclose(threaded_vjp, serial_vjp, rtol=1e-13, atol=1e-14)
+    assert all(
+        not diagnostics["composite_wavelength_scheduler"]
+        for diagnostics in serial_diagnostics
+    )
+    assert all(
+        diagnostics["composite_wavelength_scheduler"]
+        and diagnostics["composite_wavelength_threads"] == 2
+        for diagnostics in threaded_diagnostics
+    )
 
 
 def test_orbital_aerosol_altitude_auxiliary_parameter_is_adjoint_and_selected():
@@ -2358,8 +2441,11 @@ def test_lambertian_surface_2d_varies_at_ground_intersections_and_linearizes(
         "stokes",
     )
 
-    linearization = engine.linearize(atmosphere)
-    tangent = xr.zeros_like(linearization.tangent_template)
+    linearization = engine.linearize(atmosphere, prepare_parameters=("surface_albedo",))
+    prepared_update_counts = [
+        item["atmosphere_update_count"] for item in engine.group_diagnostics
+    ]
+    tangent = xr.zeros_like(linearization.tangent_template[["surface_albedo"]])
     tangent["surface_albedo"].values[lower_indices, :] = [
         [0.3, -0.1],
         [-0.2, 0.4],
@@ -2379,7 +2465,9 @@ def test_lambertian_surface_2d_varies_at_ground_intersections_and_linearizes(
         remote_sensitivity[list(direct_nodes)] = 0.0
         remote_index = int(np.argmax(remote_sensitivity))
         assert remote_sensitivity[remote_index] > 1.0e-8
-        remote_tangent = xr.zeros_like(linearization.tangent_template)
+        remote_tangent = xr.zeros_like(
+            linearization.tangent_template[["surface_albedo"]]
+        )
         remote_tangent["surface_albedo"].values[remote_index, 0] = 1.0
         remote_jvp = linearization.jvp(remote_tangent)
         remote_eager_jvp = (
@@ -2391,6 +2479,9 @@ def test_lambertian_surface_2d_varies_at_ground_intersections_and_linearizes(
     cotangent = xr.zeros_like(linearization.value)
     cotangent.values[:] = np.array([[[0.7], [-0.4]], [[-0.2], [0.9]]])
     gradient = linearization.vjp(cotangent, parameters=("surface_albedo",))
+    assert [
+        item["atmosphere_update_count"] for item in engine.group_diagnostics
+    ] == prepared_update_counts
     lhs = float((jvp * cotangent).sum())
     rhs = float((tangent.surface_albedo * gradient.surface_albedo).sum())
     assert lhs == pytest.approx(rhs, rel=2.0e-11, abs=1.0e-13)
@@ -2403,7 +2494,12 @@ def test_lambertian_surface_2d_varies_at_ground_intersections_and_linearizes(
         below = engine.calculate_radiance(atmosphere).radiance
         surface.albedo = albedo
         finite_difference = (above - below) / (2.0 * step)
-        np.testing.assert_allclose(jvp, finite_difference, rtol=2.0e-6, atol=1.0e-10)
+        # Reusing the converged successive-orders primal changes the warm-start
+        # sequence relative to the two perturbed forward solves. Their
+        # absolute solver tolerance is 1e-13, which is amplified by the 1e-4
+        # finite-difference step; retain a tight derivative check while
+        # allowing that numerical floor.
+        np.testing.assert_allclose(jvp, finite_difference, rtol=3.0e-6, atol=1.0e-9)
 
 
 def test_solar_handler_is_evaluated_at_group_mean_sample_times():

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import operator
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import Literal
 
 import numpy as np
@@ -17,6 +17,7 @@ from sasktran2._core_rust import (
 )
 from sasktran2.engine import Engine
 from sasktran2.geometry import Geometry2D
+from sasktran2.linearization import _selected_parameters
 from sasktran2.viewinggeo.base import ViewingGeometryContainer
 
 _DEFAULT_MAX_EAGER_JACOBIAN_BYTES = 2 * 1024**3
@@ -1299,12 +1300,33 @@ class OrbitalPlaneEngine(Engine):
             include_derivatives=include_derivatives,
         )
 
-    def linearize(self, atmosphere: sk.Atmosphere):
+    def linearize(
+        self,
+        atmosphere: sk.Atmosphere,
+        *,
+        prepare_parameters: Iterable[str] | None = None,
+    ):
+        """Construct a retrieval linearization for the orbital atmosphere.
+
+        ``prepare_parameters`` optionally prepares the named resident group
+        workspaces during the primal calculation. This avoids repeating the
+        successive-orders forward solve in the first matching JVP or VJP;
+        other registered parameters remain available lazily. Streaming mode
+        validates but does not retain the preparation hint.
+        """
         self._validate_orbital_atmosphere(atmosphere)
         internal_atmosphere = atmosphere.internal_object()
         self._prepare_refraction(atmosphere)
         self._prepare_surface(atmosphere)
         state_generation = self._engine.state_generation()
+        prepared_parameters = prepare_parameters
+        if self._derivative_execution == "streaming" and prepare_parameters is not None:
+            _selected_parameters(
+                prepare_parameters,
+                self._linearization_registry(atmosphere).specs,
+                operation="linearization preparation",
+            )
+            prepared_parameters = None
 
         def validate_session() -> None:
             self._validate_linearization_session(state_generation)
@@ -1313,6 +1335,7 @@ class OrbitalPlaneEngine(Engine):
             atmosphere,
             internal_atmosphere=internal_atmosphere,
             validate_session=validate_session,
+            prepare_parameters=prepared_parameters,
         )
 
     @property

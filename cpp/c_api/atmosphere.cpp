@@ -550,6 +550,25 @@ int sk_atmosphere_get_revision(Atmosphere* atmosphere,
     return -2;
 }
 
+int sk_atmosphere_get_instance_id(Atmosphere* atmosphere,
+                                  unsigned long long* instance_id) {
+    if (atmosphere == nullptr || atmosphere->impl == nullptr ||
+        instance_id == nullptr) {
+        return -1;
+    }
+    if (auto* impl = dynamic_cast<sasktran2::atmosphere::Atmosphere<1>*>(
+            atmosphere->impl.get())) {
+        *instance_id = static_cast<unsigned long long>(impl->instance_id());
+        return 0;
+    }
+    if (auto* impl = dynamic_cast<sasktran2::atmosphere::Atmosphere<3>*>(
+            atmosphere->impl.get())) {
+        *instance_id = static_cast<unsigned long long>(impl->instance_id());
+        return 0;
+    }
+    return -2;
+}
+
 int sk_atmosphere_storage_finalize_scattering_derivatives(
     AtmosphereStorage* storage) {
     if (storage == nullptr) {

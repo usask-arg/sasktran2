@@ -15,6 +15,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+import psutil
 import sasktran2 as sk
 import xarray as xr
 from omps_orbital_plane_2d import (
@@ -45,6 +46,7 @@ class Evaluation:
     gradient: np.ndarray
     modeled: xr.DataArray
     elapsed_s: float
+    rss_bytes: int
 
 
 class AlbedoObjective:
@@ -74,7 +76,9 @@ class AlbedoObjective:
 
         started = time.perf_counter()
         self.surface.albedo = albedo
-        linearization = self.engine.linearize(self.atmosphere)
+        linearization = self.engine.linearize(
+            self.atmosphere, prepare_parameters=("surface_albedo",)
+        )
         modeled = linearization.value.sel(stokes="I", drop=True)
         modeled_values = np.asarray(modeled.values[0], dtype=np.float64)
 
@@ -117,6 +121,7 @@ class AlbedoObjective:
             gradient=gradient,
             modeled=modeled.copy(deep=True),
             elapsed_s=time.perf_counter() - started,
+            rss_bytes=int(psutil.Process().memory_info().rss),
         )
         self.history.append(evaluation)
         self._last_x = albedo.copy()
@@ -127,7 +132,8 @@ class AlbedoObjective:
             f"ratio median={np.median(ratio):.6f}; "
             f"albedo=[{albedo.min():.4f}, {albedo.max():.4f}]; "
             f"|gradient|inf={np.max(np.abs(gradient)):.3e}; "
-            f"{evaluation.elapsed_s:.3f} s",
+            f"{evaluation.elapsed_s:.3f} s; "
+            f"RSS={evaluation.rss_bytes / 1024**3:.3f} GiB",
             flush=True,
         )
         return evaluation
@@ -284,6 +290,10 @@ def make_output(
                 "evaluation",
                 np.asarray([evaluation.elapsed_s for evaluation in history]),
             ),
+            "evaluation_rss_bytes": (
+                "evaluation",
+                np.asarray([evaluation.rss_bytes for evaluation in history]),
+            ),
         },
         coords={
             "orbital_position": geometry.orbital_positions,
@@ -376,6 +386,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-altitude-points", type=int, default=25)
     parser.add_argument("--angular-points", type=int, default=110)
     parser.add_argument("--maximum-orders", type=int, default=50)
+    parser.add_argument("--num-threads", type=int, default=1)
     parser.add_argument("--initial-albedo", type=float, default=0.1)
     parser.add_argument(
         "--smoothness",
@@ -406,6 +417,8 @@ def main() -> None:
         raise ValueError("smoothness must be non-negative")
     if args.maximum_iterations < 1:
         raise ValueError("maximum-iterations must be positive")
+    if args.num_threads < 1:
+        raise ValueError("num-threads must be positive")
 
     data = load_omps_inputs(args.l1g, args.anc, args.slit)
     if args.num_scans is None:
@@ -436,6 +449,8 @@ def main() -> None:
     )
 
     config = sk.Config()
+    config.num_threads = args.num_threads
+    config.threading_model = sk.ThreadingModel.Wavelength
     config.single_scatter_source = sk.SingleScatterSource.Exact
     config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
     config.occultation_source = sk.OccultationSource.NoSource
@@ -510,6 +525,7 @@ def main() -> None:
         f"Iterations={result.nit}; evaluations={result.nfev}; "
         f"optimization elapsed={elapsed:.3f} s"
     )
+    print(f"Composite group/wavelength threads: {args.num_threads}")
     print(
         "Model/observation ratio percentiles [5, 25, 50, 75, 95]:\n"
         f"  initial: {np.percentile(initial_ratio, [5, 25, 50, 75, 95]).tolist()}\n"

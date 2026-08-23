@@ -95,6 +95,16 @@ impl Atmosphere {
         Ok(revision)
     }
 
+    pub fn instance_id(&self) -> Result<u64> {
+        let mut instance_id = 0u64;
+        let result =
+            unsafe { ffi::sk_atmosphere_get_instance_id(self.atmosphere, &mut instance_id) };
+        if result != 0 {
+            return Err(anyhow!("Error getting atmosphere instance ID: {}", result));
+        }
+        Ok(instance_id)
+    }
+
     /// Number of stokes parameters
     pub fn num_stokes(&self) -> usize {
         self.nstokes
@@ -133,6 +143,7 @@ mod tests {
 
         // check that atmosphere storage is not null
         assert!(!atmosphere.atmosphere.is_null());
+        assert_ne!(atmosphere.instance_id().unwrap(), 0);
         assert_eq!(atmosphere.revision().unwrap(), 0);
         atmosphere.mark_changed().unwrap();
         assert_eq!(atmosphere.revision().unwrap(), 1);

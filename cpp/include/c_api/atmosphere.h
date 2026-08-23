@@ -154,6 +154,9 @@ int sk_atmosphere_mark_changed(Atmosphere* atmosphere);
 int sk_atmosphere_get_revision(Atmosphere* atmosphere,
                                unsigned long long* revision);
 
+int sk_atmosphere_get_instance_id(Atmosphere* atmosphere,
+                                  unsigned long long* instance_id);
+
 // ---------------------
 // SURFACE METHODS
 // ---------------------

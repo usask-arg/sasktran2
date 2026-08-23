@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 import numpy as np
@@ -12,6 +12,7 @@ from sasktran2.linearization import (
     Linearization,
     LinearizationBackend,
     _ParameterSpec,
+    _selected_parameters,
     _semantic_parameter_name,
 )
 from sasktran2.viewinggeo.base import ViewingGeometryContainer
@@ -231,7 +232,12 @@ class Engine:
         )
         return result
 
-    def linearize(self, atmosphere: sk.Atmosphere) -> Linearization:
+    def linearize(
+        self,
+        atmosphere: sk.Atmosphere,
+        *,
+        prepare_parameters: Iterable[str] | None = None,
+    ) -> Linearization:
         """Construct the local linear radiance model for an atmosphere.
 
         JVP and VJP operations use the most specialized backend supported by
@@ -244,13 +250,20 @@ class Engine:
         atmosphere : sk.Atmosphere
             Atmosphere defining the linearization point. It must have been
             constructed with calculate_derivatives=True.
+        prepare_parameters : iterable of str, optional
+            Parameters expected in the first derivative product. Supplying
+            this hint lets composite engines prepare and retain only those
+            derivative workspaces while calculating the radiance value, so a
+            following JVP or VJP can reuse source terms. It does not restrict
+            the parameters exposed by the returned linearization. By default,
+            derivative workspaces remain lazy.
 
         Returns
         -------
         Linearization
             The radiance and local derivative operations.
         """
-        return self._linearize(atmosphere)
+        return self._linearize(atmosphere, prepare_parameters=prepare_parameters)
 
     def _linearize(
         self,
@@ -258,6 +271,7 @@ class Engine:
         *,
         internal_atmosphere=None,
         validate_session: Callable[[], None] | None = None,
+        prepare_parameters: Iterable[str] | None = None,
     ) -> Linearization:
         """Construct a linearization from an optional materialized atmosphere."""
         self._validate_atmosphere_geometry(atmosphere)
@@ -281,10 +295,45 @@ class Engine:
             if internal_atmosphere is None
             else internal_atmosphere
         )
-        revision = atmosphere.revision
-        initial_output = self._engine._calculate_jvp(native_atmosphere, {}, {})
-        value = self._radiance_dataarray(initial_output.radiance, atmosphere)
         registry = self._linearization_registry(atmosphere)
+        prepared_parameters = (
+            _selected_parameters(
+                prepare_parameters,
+                registry.specs,
+                operation="linearization preparation",
+            )
+            if prepare_parameters is not None
+            else ()
+        )
+        prepared_volume_mappings = list(
+            dict.fromkeys(
+                name
+                for parameter in prepared_parameters
+                for name in registry.volume_names.get(parameter, ())
+            )
+        )
+        prepared_surface_mappings = list(
+            dict.fromkeys(
+                name
+                for parameter in prepared_parameters
+                for name in registry.surface_names.get(parameter, ())
+            )
+        )
+        revision = atmosphere.revision
+        prepared_volume_tangents = {
+            name: np.zeros(registry.volume_sizes[name], dtype=np.float64)
+            for name in prepared_volume_mappings
+        }
+        prepared_surface_tangents = {
+            name: np.zeros(registry.surface_sizes[name], dtype=np.float64)
+            for name in prepared_surface_mappings
+        }
+        initial_output = self._engine._calculate_jvp(
+            native_atmosphere,
+            prepared_volume_tangents,
+            prepared_surface_tangents,
+        )
+        value = self._radiance_dataarray(initial_output.radiance, atmosphere)
         backend_names = {
             1: LinearizationBackend.StreamingJacobian,
             2: LinearizationBackend.Native,

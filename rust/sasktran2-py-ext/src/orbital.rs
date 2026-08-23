@@ -15,8 +15,11 @@ use sasktran2_core::orbital as orbital_core;
 use sasktran2_core::raytracer::Vec3;
 use sasktran2_rs::bindings::atmosphere::Atmosphere;
 use sasktran2_rs::bindings::brdf::BrdfKind;
-use sasktran2_rs::bindings::config::Config;
-use sasktran2_rs::bindings::engine::{Engine, LinearizationMode};
+use sasktran2_rs::bindings::config::{Config, ThreadingModel};
+use sasktran2_rs::bindings::engine::{
+    Engine, LinearizationMode, calculate_prepared_jvps, calculate_prepared_radiances,
+    calculate_prepared_vjps,
+};
 use sasktran2_rs::bindings::geodetic::Geodetic;
 use sasktran2_rs::bindings::geometry::{Geometry2D, InterpolationMethod};
 use sasktran2_rs::bindings::output::{JvpOutput, Output, VjpOutput};
@@ -1047,6 +1050,13 @@ struct AtmosphereSignature {
     spatial_surface_derivative: Option<String>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct AtmosphereContentKey {
+    master_instance_id: u64,
+    master_revision: u64,
+    surface_generation: u64,
+}
+
 #[derive(PartialEq)]
 struct LambertianSurfaceState {
     field: Array2<f64>,
@@ -1653,8 +1663,12 @@ struct GroupEngine {
     geometry: Box<Geometry2D>,
     _viewing: Box<ViewingGeometry>,
     layout: GroupLayout,
+    local_indices: Vec<usize>,
     atmosphere: Option<Atmosphere>,
     atmosphere_signature: Option<AtmosphereSignature>,
+    atmosphere_content_key: Option<AtmosphereContentKey>,
+    atmosphere_update_count: usize,
+    vjp_cotangent: Option<Array3<f64>>,
     last_refractive_profiles: Option<Array2<f64>>,
     geometry_refresh_count: usize,
 }
@@ -1697,13 +1711,18 @@ fn build_group_engine(
         std::mem::transmute::<&ViewingGeometry, &'static ViewingGeometry>(viewing.as_ref())
     };
     let engine = Engine::new_2d(config, geometry_ref, viewing_ref).into_pyresult()?;
+    let local_indices = global_location_indices(&layout, orbital_geometry.altitude_grid_m.len());
     Ok(GroupEngine {
         engine,
         geometry,
         _viewing: viewing,
         layout,
+        local_indices,
         atmosphere: None,
         atmosphere_signature: None,
+        atmosphere_content_key: None,
+        atmosphere_update_count: 0,
+        vjp_cotangent: None,
         last_refractive_profiles: None,
         geometry_refresh_count: 0,
     })
@@ -1790,6 +1809,7 @@ fn update_group_atmosphere(
     group: &mut GroupEngine,
     master: &Atmosphere,
     lambertian_surface: Option<&LambertianSurfaceState>,
+    surface_generation: u64,
     volume_mappings: &[String],
     surface_mappings: &[String],
 ) -> PyResult<()> {
@@ -1799,10 +1819,17 @@ fn update_group_atmosphere(
         surface_mappings,
         lambertian_surface,
     )?;
-    let local_indices = global_location_indices(
-        &group.layout,
-        group.geometry.location_shape().into_pyresult()?.1,
-    );
+    let content_key = AtmosphereContentKey {
+        master_instance_id: master.instance_id().into_pyresult()?,
+        master_revision: master.revision().into_pyresult()?,
+        surface_generation,
+    };
+    if group.atmosphere_signature.as_ref() == Some(&signature)
+        && group.atmosphere_content_key == Some(content_key)
+    {
+        return Ok(());
+    }
+    let local_indices = &group.local_indices;
     if group.atmosphere_signature.as_ref() != Some(&signature) {
         let stokes = match master.num_stokes() {
             1 => Stokes::Stokes1,
@@ -1824,6 +1851,7 @@ fn update_group_atmosphere(
             None,
         ));
         group.atmosphere_signature = Some(signature.clone());
+        group.atmosphere_content_key = None;
     }
     let local = group.atmosphere.as_mut().unwrap();
     for (local_index, &global_index) in local_indices.iter().enumerate() {
@@ -1983,6 +2011,120 @@ fn update_group_atmosphere(
         }
     }
     local.mark_changed().into_pyresult()?;
+    group.atmosphere_content_key = Some(content_key);
+    group.atmosphere_update_count += 1;
+    Ok(())
+}
+
+fn group_vjp_sizes(
+    group: &GroupEngine,
+    master: &Atmosphere,
+    derivative_sizes: &HashMap<String, usize>,
+    surface_sizes: &HashMap<String, usize>,
+    lambertian_surface: Option<&LambertianSurfaceState>,
+    num_orbital_positions: usize,
+) -> PyResult<(HashMap<String, usize>, HashMap<String, usize>)> {
+    let mut local_derivative_sizes = HashMap::with_capacity(derivative_sizes.len());
+    for (name, size) in derivative_sizes {
+        let mapping = master
+            .storage
+            .get_derivative_mapping(name)
+            .map_err(PyRuntimeError::new_err)?;
+        local_derivative_sizes.insert(
+            name.clone(),
+            if mapping.get_interpolator().is_some() {
+                *size
+            } else {
+                group.local_indices.len()
+            },
+        );
+    }
+    let mut local_surface_sizes = surface_sizes.clone();
+    if let Some(surface_state) = lambertian_surface
+        && let Some(master_name) = surface_state.derivative_name.as_ref()
+        && let Some(size) = surface_sizes.get(master_name)
+    {
+        let spectral_size = surface_state.spectral_interpolator.ncols();
+        let expected = if surface_state.spatial_parameters {
+            num_orbital_positions * spectral_size
+        } else {
+            spectral_size
+        };
+        if *size != expected {
+            return Err(PyValueError::new_err(format!(
+                "Orbital surface VJP size for {master_name:?} is {size}; expected {expected}"
+            )));
+        }
+        local_surface_sizes.remove(master_name);
+        for local_horizontal in 0..group.layout.grid_indices.len() {
+            local_surface_sizes.insert(
+                local_surface_mapping_name(master_name, local_horizontal),
+                master.num_wavel(),
+            );
+        }
+    }
+    Ok((local_derivative_sizes, local_surface_sizes))
+}
+
+fn accumulate_group_vjp(
+    combined: &mut VjpOutput,
+    output: &VjpOutput,
+    group: &GroupEngine,
+    master: &Atmosphere,
+    surface_sizes: &HashMap<String, usize>,
+    lambertian_surface: Option<&LambertianSurfaceState>,
+) -> PyResult<()> {
+    for (local_los, &global_los) in group.layout.observation_indices.iter().enumerate() {
+        combined
+            .radiance
+            .slice_mut(s![.., global_los, ..])
+            .assign(&output.radiance.slice(s![.., local_los, ..]));
+    }
+    for (name, gradient) in &output.derivative_gradients {
+        let mapping = master
+            .storage
+            .get_derivative_mapping(name)
+            .map_err(PyRuntimeError::new_err)?;
+        let target = combined.derivative_gradients.get_mut(name).unwrap();
+        if mapping.get_interpolator().is_some() {
+            *target += gradient;
+        } else {
+            for (local_parameter, &global_parameter) in group.local_indices.iter().enumerate() {
+                target[global_parameter] += gradient[local_parameter];
+            }
+        }
+    }
+    for (name, gradient) in &output.surface_gradients {
+        if name.starts_with(ORBITAL_SURFACE_MAPPING_PREFIX) {
+            continue;
+        }
+        *combined.surface_gradients.get_mut(name).unwrap() += gradient;
+    }
+    if let Some(surface_state) = lambertian_surface
+        && let Some(master_name) = surface_state.derivative_name.as_ref()
+        && surface_sizes.contains_key(master_name)
+    {
+        let target = combined.surface_gradients.get_mut(master_name).unwrap();
+        let spectral_size = surface_state.spectral_interpolator.ncols();
+        for (local_horizontal, &global_horizontal) in group.layout.grid_indices.iter().enumerate() {
+            let local_name = local_surface_mapping_name(master_name, local_horizontal);
+            let gradient = output.surface_gradients.get(&local_name).ok_or_else(|| {
+                PyRuntimeError::new_err(format!("Missing local spatial surface VJP {local_name:?}"))
+            })?;
+            for wavelength in 0..master.num_wavel() {
+                for spectral_parameter in 0..spectral_size {
+                    let parameter = if surface_state.spatial_parameters {
+                        global_horizontal * spectral_size + spectral_parameter
+                    } else {
+                        spectral_parameter
+                    };
+                    target[parameter] += surface_state.spectral_interpolator
+                        [[wavelength, spectral_parameter]]
+                        * gradient[wavelength];
+                }
+            }
+        }
+    }
     Ok(())
 }
 
@@ -2047,6 +2189,7 @@ pub struct PyOrbitalPlaneEngine {
     los_refraction: bool,
     stream_derivatives: bool,
     lambertian_surface: Option<LambertianSurfaceState>,
+    surface_generation: u64,
     state_generation: u64,
     _config: Py<PyConfig>,
     _geometry: Py<PyOrbitalPlaneGeometry>,
@@ -2130,6 +2273,7 @@ impl PyOrbitalPlaneEngine {
             los_refraction,
             stream_derivatives,
             lambertian_surface: None,
+            surface_generation: 0,
             state_generation: 0,
             _config: config.into(),
             _geometry: geometry.into(),
@@ -2229,6 +2373,7 @@ impl PyOrbitalPlaneEngine {
     ) -> PyResult<()> {
         let Some(albedo) = albedo else {
             if self.lambertian_surface.take().is_some() {
+                self.surface_generation = self.surface_generation.wrapping_add(1);
                 self.state_generation = self.state_generation.wrapping_add(1);
             }
             return Ok(());
@@ -2275,6 +2420,7 @@ impl PyOrbitalPlaneEngine {
         };
         if self.lambertian_surface.as_ref() != Some(&next_surface) {
             self.lambertian_surface = Some(next_surface);
+            self.surface_generation = self.surface_generation.wrapping_add(1);
             self.state_generation = self.state_generation.wrapping_add(1);
         }
         Ok(())
@@ -2334,10 +2480,11 @@ impl PyOrbitalPlaneEngine {
                 group,
                 master,
                 self.lambertian_surface.as_ref(),
+                self.surface_generation,
                 &volume_mappings,
                 &surface_mappings,
             )?;
-            let local_indices = global_location_indices(&group.layout, self.num_altitudes);
+            let local_indices = &group.local_indices;
             let output = group
                 .engine
                 .calculate_radiance(group.atmosphere.as_ref().unwrap())
@@ -2546,12 +2693,8 @@ impl PyOrbitalPlaneEngine {
             .into_pyresult()?;
         let mut combined_los_optical_depth = include_los_optical_depth
             .then(|| Array2::zeros((master.num_wavel(), self.num_observations)));
-        for group in &mut self.groups {
-            update_group_atmosphere(group, master, self.lambertian_surface.as_ref(), &[], &[])?;
-            let output = group
-                .engine
-                .calculate_radiance_with_mappings(group.atmosphere.as_ref().unwrap(), &[], &[])
-                .into_pyresult()?;
+        let outputs = self.calculate_group_primals(py, master, &[], &[])?;
+        for (group, output) in self.groups.iter().zip(&outputs) {
             let local_los_optical_depth =
                 include_los_optical_depth.then(|| output.los_optical_depth());
             for (local_los, &global_los) in group.layout.observation_indices.iter().enumerate() {
@@ -2641,12 +2784,8 @@ impl PyOrbitalPlaneEngine {
             master.num_stokes(),
         );
         if volume.is_empty() && surface.is_empty() {
-            for group in &mut self.groups {
-                update_group_atmosphere(group, master, self.lambertian_surface.as_ref(), &[], &[])?;
-                let output = group
-                    .engine
-                    .calculate_radiance(group.atmosphere.as_ref().unwrap())
-                    .into_pyresult()?;
+            let outputs = self.calculate_group_primals(py, master, &[], &[])?;
+            for (group, output) in self.groups.iter().zip(&outputs) {
                 for (local_los, &global_los) in group.layout.observation_indices.iter().enumerate()
                 {
                     combined
@@ -2657,15 +2796,25 @@ impl PyOrbitalPlaneEngine {
             }
             return Py::new(py, crate::output::PyJvpOutput { output: combined });
         }
+        let composite_threads = self.composite_wavelength_threads(py)?.filter(|_| {
+            self.groups.iter().all(|group| {
+                matches!(
+                    group.engine.linearization_backend(LinearizationMode::Jvp),
+                    Ok(sasktran2_rs::bindings::engine::LinearizationBackend::Native)
+                )
+            })
+        });
+        let mut outputs = Vec::with_capacity(self.groups.len());
         for group in &mut self.groups {
             update_group_atmosphere(
                 group,
                 master,
                 self.lambertian_surface.as_ref(),
+                self.surface_generation,
                 &volume_mappings,
                 &surface_mappings,
             )?;
-            let local_indices = global_location_indices(&group.layout, self.num_altitudes);
+            let local_indices = &group.local_indices;
             let mut local_volume = HashMap::with_capacity(volume.len());
             for (name, tangent) in &volume {
                 let mapping = master
@@ -2728,14 +2877,36 @@ impl PyOrbitalPlaneEngine {
                     );
                 }
             }
-            let output = group
-                .engine
-                .calculate_jvp(
-                    group.atmosphere.as_ref().unwrap(),
-                    &local_volume,
-                    &local_surface,
-                )
+            outputs.push(if composite_threads.is_some() {
+                group
+                    .engine
+                    .initialize_jvp(
+                        group.atmosphere.as_ref().unwrap(),
+                        &local_volume,
+                        &local_surface,
+                    )
+                    .into_pyresult()?
+            } else {
+                group
+                    .engine
+                    .calculate_jvp(
+                        group.atmosphere.as_ref().unwrap(),
+                        &local_volume,
+                        &local_surface,
+                    )
+                    .into_pyresult()?
+            });
+        }
+        if let Some(num_threads) = composite_threads {
+            let engines = self
+                .groups
+                .iter()
+                .map(|group| &group.engine)
+                .collect::<Vec<_>>();
+            calculate_prepared_jvps(&engines, &outputs, master.num_wavel(), num_threads)
                 .into_pyresult()?;
+        }
+        for (group, output) in self.groups.iter().zip(&outputs) {
             for (local_los, &global_los) in group.layout.observation_indices.iter().enumerate() {
                 combined
                     .radiance
@@ -2789,22 +2960,102 @@ impl PyOrbitalPlaneEngine {
                 .map_err(PyRuntimeError::new_err)?;
         }
         let master = &atmosphere.atmosphere;
+        let composite_threads = if self.stream_derivatives {
+            None
+        } else {
+            self.composite_wavelength_threads(py)?.filter(|_| {
+                self.groups.iter().all(|group| {
+                    matches!(
+                        group.engine.linearization_backend(LinearizationMode::Vjp),
+                        Ok(sasktran2_rs::bindings::engine::LinearizationBackend::Native)
+                    )
+                })
+            })
+        };
+        if let Some(num_threads) = composite_threads {
+            let mut outputs = Vec::with_capacity(self.groups.len());
+            for group in &mut self.groups {
+                update_group_atmosphere(
+                    group,
+                    master,
+                    self.lambertian_surface.as_ref(),
+                    self.surface_generation,
+                    &volume_mappings,
+                    &surface_mappings,
+                )?;
+                let (local_derivative_sizes, local_surface_sizes) = group_vjp_sizes(
+                    group,
+                    master,
+                    &derivative_sizes,
+                    &surface_sizes,
+                    self.lambertian_surface.as_ref(),
+                    self.num_orbital_positions,
+                )?;
+                let local_cotangent = group.vjp_cotangent.get_or_insert_with(|| {
+                    Array3::zeros((
+                        master.num_wavel(),
+                        group.layout.observation_indices.len(),
+                        master.num_stokes(),
+                    ))
+                });
+                for (local_los, &global_los) in group.layout.observation_indices.iter().enumerate()
+                {
+                    local_cotangent
+                        .slice_mut(s![.., local_los, ..])
+                        .assign(&cotangent.slice(s![.., global_los, ..]));
+                }
+                outputs.push(
+                    group
+                        .engine
+                        .initialize_vjp(
+                            group.atmosphere.as_ref().unwrap(),
+                            local_cotangent,
+                            &local_derivative_sizes,
+                            &local_surface_sizes,
+                        )
+                        .into_pyresult()?,
+                );
+            }
+            let engines = self
+                .groups
+                .iter()
+                .map(|group| &group.engine)
+                .collect::<Vec<_>>();
+            calculate_prepared_vjps(&engines, &outputs, master.num_wavel(), num_threads)
+                .into_pyresult()?;
+            for (group, output) in self.groups.iter().zip(&outputs) {
+                accumulate_group_vjp(
+                    &mut combined,
+                    output,
+                    group,
+                    master,
+                    &surface_sizes,
+                    self.lambertian_surface.as_ref(),
+                )?;
+            }
+            return Py::new(py, crate::output::PyVjpOutput { output: combined });
+        }
+
         let config = self._config.borrow(py);
         for group in &mut self.groups {
             let streamed_atmosphere = if self.stream_derivatives {
                 let resident_atmosphere = group.atmosphere.take();
                 let resident_signature = group.atmosphere_signature.take();
+                let resident_content_key = group.atmosphere_content_key.take();
                 let update_result = update_group_atmosphere(
                     group,
                     master,
                     self.lambertian_surface.as_ref(),
+                    self.surface_generation,
                     &volume_mappings,
                     &surface_mappings,
                 );
                 let derivative_atmosphere = group.atmosphere.take();
                 group.atmosphere_signature.take();
+                group.atmosphere_content_key.take();
                 group.atmosphere = resident_atmosphere;
                 group.atmosphere_signature = resident_signature;
+                group.atmosphere_content_key = resident_content_key;
                 update_result?;
                 Some(derivative_atmosphere.ok_or_else(|| {
                     PyRuntimeError::new_err("Failed to build a derivative group atmosphere")
@@ -2814,56 +3065,27 @@ impl PyOrbitalPlaneEngine {
                     group,
                     master,
                     self.lambertian_surface.as_ref(),
+                    self.surface_generation,
                     &volume_mappings,
                     &surface_mappings,
                 )?;
                 None
             };
-            let local_indices = global_location_indices(&group.layout, self.num_altitudes);
-            let mut local_derivative_sizes = HashMap::with_capacity(derivative_sizes.len());
-            for (name, size) in &derivative_sizes {
-                let mapping = master
-                    .storage
-                    .get_derivative_mapping(name)
-                    .map_err(PyRuntimeError::new_err)?;
-                local_derivative_sizes.insert(
-                    name.clone(),
-                    if mapping.get_interpolator().is_some() {
-                        *size
-                    } else {
-                        local_indices.len()
-                    },
-                );
-            }
-            let mut local_surface_sizes = surface_sizes.clone();
-            if let Some(surface_state) = self.lambertian_surface.as_ref()
-                && let Some(master_name) = surface_state.derivative_name.as_ref()
-                && let Some(size) = surface_sizes.get(master_name)
-            {
-                let spectral_size = surface_state.spectral_interpolator.ncols();
-                let expected = if surface_state.spatial_parameters {
-                    self.num_orbital_positions * spectral_size
-                } else {
-                    spectral_size
-                };
-                if *size != expected {
-                    return Err(PyValueError::new_err(format!(
-                        "Orbital surface VJP size for {master_name:?} is {size}; expected {expected}"
-                    )));
-                }
-                local_surface_sizes.remove(master_name);
-                for local_horizontal in 0..group.layout.grid_indices.len() {
-                    local_surface_sizes.insert(
-                        local_surface_mapping_name(master_name, local_horizontal),
-                        master.num_wavel(),
-                    );
-                }
-            }
-            let mut local_cotangent = Array3::zeros((
-                master.num_wavel(),
-                group.layout.observation_indices.len(),
-                master.num_stokes(),
-            ));
+            let (local_derivative_sizes, local_surface_sizes) = group_vjp_sizes(
+                group,
+                master,
+                &derivative_sizes,
+                &surface_sizes,
+                self.lambertian_surface.as_ref(),
+                self.num_orbital_positions,
+            )?;
+            let local_cotangent = group.vjp_cotangent.get_or_insert_with(|| {
+                Array3::zeros((
+                    master.num_wavel(),
+                    group.layout.observation_indices.len(),
+                    master.num_stokes(),
+                ))
+            });
             for (local_los, &global_los) in group.layout.observation_indices.iter().enumerate() {
                 local_cotangent
                     .slice_mut(s![.., local_los, ..])
@@ -2884,7 +3106,7 @@ impl PyOrbitalPlaneEngine {
                 derivative_engine
                     .calculate_vjp(
                         streamed_atmosphere.as_ref().unwrap(),
-                        &local_cotangent,
+                        local_cotangent,
                         &local_derivative_sizes,
                         &local_surface_sizes,
                     )
@@ -2894,72 +3116,26 @@ impl PyOrbitalPlaneEngine {
                     .engine
                     .calculate_vjp(
                         group.atmosphere.as_ref().unwrap(),
-                        &local_cotangent,
+                        local_cotangent,
                         &local_derivative_sizes,
                         &local_surface_sizes,
                     )
                     .into_pyresult()?
             };
-            for (local_los, &global_los) in group.layout.observation_indices.iter().enumerate() {
-                combined
-                    .radiance
-                    .slice_mut(s![.., global_los, ..])
-                    .assign(&output.radiance.slice(s![.., local_los, ..]));
-            }
-            for (name, gradient) in &output.derivative_gradients {
-                let mapping = master
-                    .storage
-                    .get_derivative_mapping(name)
-                    .map_err(PyRuntimeError::new_err)?;
-                let target = combined.derivative_gradients.get_mut(name).unwrap();
-                if mapping.get_interpolator().is_some() {
-                    *target += gradient;
-                } else {
-                    for (local_parameter, &global_parameter) in local_indices.iter().enumerate() {
-                        target[global_parameter] += gradient[local_parameter];
-                    }
-                }
-            }
-            for (name, gradient) in &output.surface_gradients {
-                if name.starts_with(ORBITAL_SURFACE_MAPPING_PREFIX) {
-                    continue;
-                }
-                *combined.surface_gradients.get_mut(name).unwrap() += gradient;
-            }
-            if let Some(surface_state) = self.lambertian_surface.as_ref()
-                && let Some(master_name) = surface_state.derivative_name.as_ref()
-                && surface_sizes.contains_key(master_name)
-            {
-                let target = combined.surface_gradients.get_mut(master_name).unwrap();
-                let spectral_size = surface_state.spectral_interpolator.ncols();
-                for (local_horizontal, &global_horizontal) in
-                    group.layout.grid_indices.iter().enumerate()
-                {
-                    let local_name = local_surface_mapping_name(master_name, local_horizontal);
-                    let gradient = output.surface_gradients.get(&local_name).ok_or_else(|| {
-                        PyRuntimeError::new_err(format!(
-                            "Missing local spatial surface VJP {local_name:?}"
-                        ))
-                    })?;
-                    for wavelength in 0..master.num_wavel() {
-                        for spectral_parameter in 0..spectral_size {
-                            let parameter = if surface_state.spatial_parameters {
-                                global_horizontal * spectral_size + spectral_parameter
-                            } else {
-                                spectral_parameter
-                            };
-                            target[parameter] += surface_state.spectral_interpolator
-                                [[wavelength, spectral_parameter]]
-                                * gradient[wavelength];
-                        }
-                    }
-                }
-            }
+            accumulate_group_vjp(
+                &mut combined,
+                &output,
+                group,
+                master,
+                &surface_sizes,
+                self.lambertian_surface.as_ref(),
+            )?;
         }
         Py::new(py, crate::output::PyVjpOutput { output: combined })
     }
 
     fn group_diagnostics(&self, py: Python) -> PyResult<Vec<Py<PyAny>>> {
+        let composite_wavelength_threads = self.composite_wavelength_threads(py)?;
         self.groups
             .iter()
             .enumerate()
@@ -3179,6 +3355,15 @@ impl PyOrbitalPlaneEngine {
                 )?;
                 dict.set_item("window_expanded", group.layout.window_expanded)?;
                 dict.set_item("geometry_refresh_count", group.geometry_refresh_count)?;
+                dict.set_item("atmosphere_update_count", group.atmosphere_update_count)?;
+                dict.set_item(
+                    "composite_wavelength_scheduler",
+                    composite_wavelength_threads.is_some(),
+                )?;
+                dict.set_item(
+                    "composite_wavelength_threads",
+                    composite_wavelength_threads.unwrap_or(1),
+                )?;
                 dict.set_item("engine_identity", group.engine.engine as usize)?;
                 dict.set_item(
                     "atmosphere_workspace_identity",
@@ -3207,6 +3392,70 @@ impl PyOrbitalPlaneEngine {
 }
 
 impl PyOrbitalPlaneEngine {
+    fn composite_wavelength_threads(&self, py: Python<'_>) -> PyResult<Option<usize>> {
+        let config = self._config.borrow(py);
+        let num_threads = config.config.num_threads().into_pyresult()?;
+        let threading_model = config.config.threading_model().into_pyresult()?;
+        Ok(
+            (num_threads > 1 && threading_model == ThreadingModel::Wavelength)
+                .then_some(num_threads),
+        )
+    }
+
+    fn calculate_group_primals(
+        &mut self,
+        py: Python<'_>,
+        master: &Atmosphere,
+        volume_mappings: &[String],
+        surface_mappings: &[String],
+    ) -> PyResult<Vec<Output>> {
+        let composite_threads = self.composite_wavelength_threads(py)?;
+        for group in &mut self.groups {
+            update_group_atmosphere(
+                group,
+                master,
+                self.lambertian_surface.as_ref(),
+                self.surface_generation,
+                volume_mappings,
+                surface_mappings,
+            )?;
+        }
+        if let Some(num_threads) = composite_threads {
+            let outputs = self
+                .groups
+                .iter()
+                .map(|group| {
+                    group
+                        .engine
+                        .initialize_radiance_only(group.atmosphere.as_ref().unwrap())
+                        .into_pyresult()
+                })
+                .collect::<PyResult<Vec<_>>>()?;
+            let engines = self
+                .groups
+                .iter()
+                .map(|group| &group.engine)
+                .collect::<Vec<_>>();
+            calculate_prepared_radiances(&engines, &outputs, master.num_wavel(), num_threads)
+                .into_pyresult()?;
+            Ok(outputs)
+        } else {
+            self.groups
+                .iter()
+                .map(|group| {
+                    group
+                        .engine
+                        .calculate_radiance_with_mappings(
+                            group.atmosphere.as_ref().unwrap(),
+                            &[],
+                            &[],
+                        )
+                        .into_pyresult()
+                })
+                .collect()
+        }
+    }
+
     fn validate_master(&self, py: Python<'_>, master: &Atmosphere) -> PyResult<()> {
         let current_num_stokes = self
             ._config

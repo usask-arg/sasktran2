@@ -556,6 +556,7 @@ def parse_args() -> argparse.Namespace:
         default=50,
         help="Maximum successive-orders fixed-point iterations",
     )
+    parser.add_argument("--num-threads", type=int, default=1)
     parser.add_argument(
         "--repeat-calculations",
         type=int,
@@ -630,6 +631,8 @@ def main() -> None:
             raise ValueError("successive-orders-angular-points must be positive")
         if args.successive_orders_iterations < 1:
             raise ValueError("successive-orders-iterations must be positive")
+        if args.num_threads < 1:
+            raise ValueError("num-threads must be positive")
         if (
             not np.isfinite(args.repeat_ozone_scale_step)
             or args.repeat_ozone_scale_step < 0
@@ -672,6 +675,8 @@ def main() -> None:
 
     with profiler.phase("construct atmosphere"):
         config = sk.Config()
+        config.num_threads = args.num_threads
+        config.threading_model = sk.ThreadingModel.Wavelength
         config.single_scatter_source = sk.SingleScatterSource.Exact
         if args.multiple_scattering == "successive-orders":
             config.multiple_scatter_source = sk.MultipleScatterSource.SuccessiveOrders
@@ -775,10 +780,12 @@ def main() -> None:
                     f"interpolator={interpolator.nbytes / 1024**2:.1f} MiB"
                 )
         with profiler.phase("create linearization"):
-            linearization = engine.linearize(derivative_atmosphere)
+            linearization = engine.linearize(
+                derivative_atmosphere, prepare_parameters=("ozone_vmr",)
+            )
         cotangent = xr.ones_like(linearization.value)
         with profiler.phase("one VJP"):
-            vjp = linearization.vjp(cotangent)
+            vjp = linearization.vjp(cotangent, parameters=("ozone_vmr",))
 
     comparison = make_comparison(
         result,
@@ -810,7 +817,8 @@ def main() -> None:
             f"num_sza={args.num_sza}; "
             f"source altitudes={args.successive_orders_altitude_points}; "
             f"angular points={args.successive_orders_angular_points}; "
-            f"maximum iterations={args.successive_orders_iterations}"
+            f"maximum iterations={args.successive_orders_iterations}; "
+            f"threads={args.num_threads}"
         )
     print(
         "Geometry: "

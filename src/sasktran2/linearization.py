@@ -104,6 +104,8 @@ def _parameter_template(block: xr.DataArray, spec: _ParameterSpec) -> xr.DataArr
 def _selected_parameters(
     parameters: Iterable[str] | None,
     specs: Mapping[str, _ParameterSpec],
+    *,
+    operation: str = "VJP",
 ) -> tuple[str, ...]:
     if parameters is None:
         return tuple(specs)
@@ -112,16 +114,16 @@ def _selected_parameters(
 
     selected = tuple(parameters)
     if any(not isinstance(name, str) for name in selected):
-        msg = "VJP parameter names must be strings"
+        msg = f"{operation} parameter names must be strings"
         raise TypeError(msg)
     if len(set(selected)) != len(selected):
-        msg = "VJP parameter names must not contain duplicates"
+        msg = f"{operation} parameter names must not contain duplicates"
         raise ValueError(msg)
 
     unknown = set(selected) - set(specs)
     if unknown:
         names = ", ".join(sorted(unknown))
-        msg = f"Unknown VJP parameter(s): {names}"
+        msg = f"Unknown {operation} parameter(s): {names}"
         raise ValueError(msg)
     return selected
 

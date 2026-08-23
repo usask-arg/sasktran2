@@ -446,6 +446,12 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn sk_atmosphere_get_instance_id(
+        atmosphere: *mut Atmosphere,
+        instance_id: *mut ::std::os::raw::c_ulonglong,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     #[doc = " @brief Creates a new Surface object.\n\n @param nwavel Number of wavelengths.\n @param nstokes Number of Stokes parameters.\n @param emission Pointer to emission data. [nwavel]\n @return Pointer to a new Surface object."]
     pub fn sk_surface_create(
         nwavel: ::std::os::raw::c_int,
