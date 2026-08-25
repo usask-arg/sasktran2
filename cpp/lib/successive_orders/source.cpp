@@ -127,18 +127,27 @@ namespace sasktran2::successive_orders {
     };
 
     namespace {
+        // Solver tolerances may deliberately be much tighter than radiometric
+        // accuracy requirements. Only warn when the unresolved fixed-point
+        // update is large enough to plausibly change the diffuse radiance at
+        // the approximately 0.1% level. The absolute floor handles vanishing
+        // states without tying warning behavior back to the solver settings.
         void warn_if_not_converged(const FixedPointDiagnostics& diagnostics,
                                    const FixedPointSettings& settings,
                                    int wavelength, const char* calculation) {
-            if (settings.convergence_enabled() && !diagnostics.converged()) {
+            if (settings.convergence_enabled() &&
+                diagnostics.warrants_convergence_warning()) {
                 spdlog::warn(
                     "C++ successive-orders {} did not converge at wavelength "
-                    "index {} after {} iterations (residual {}, threshold "
-                    "{}). Returning the current result; its accuracy may be "
-                    "reduced.",
+                    "index {} after {} iterations (residual {}, requested "
+                    "threshold {}, estimated relative unresolved state {}, "
+                    "warning threshold {}). Returning the current result; "
+                    "its accuracy may be reduced.",
                     calculation, wavelength, diagnostics.iterations,
                     diagnostics.residual_norm,
-                    diagnostics.convergence_threshold);
+                    diagnostics.convergence_threshold,
+                    diagnostics.relative_residual(),
+                    FixedPointDiagnostics::material_warning_relative_tolerance);
             }
         }
 

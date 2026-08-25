@@ -4,6 +4,9 @@
 
 #include <Eigen/LU>
 
+#include <utility>
+#include <vector>
+
 namespace {
     sasktran2::successive_orders::FixedPointSettings test_settings() {
         sasktran2::successive_orders::FixedPointSettings settings;
@@ -78,6 +81,36 @@ TEST_CASE("Successive-orders zero tolerances preserve fixed iteration mode",
     REQUIRE_FALSE(diagnostics.converged());
     REQUIRE(diagnostics.iterations == 4);
     REQUIRE(state(0) == Catch::Approx(1.875));
+}
+
+TEST_CASE("Successive-orders diagnostics separate material residuals from "
+          "solver tolerance",
+          "[successive_orders][solver]") {
+    auto settings = test_settings();
+    settings.maximum_iterations = 1;
+    settings.relative_tolerance = 1.0e-12;
+    settings.absolute_tolerance = 0.0;
+    settings.anderson_depth = 0;
+
+    sasktran2::successive_orders::FixedPointWorkspace workspace;
+    for (const auto& test_case : std::vector<std::pair<double, bool>>{
+             {5.0e-4, false}, {2.0e-3, true}}) {
+        const double increment = test_case.first;
+        const bool materially_unconverged = test_case.second;
+        Eigen::VectorXd state = Eigen::VectorXd::Ones(1);
+        const auto diagnostics =
+            sasktran2::successive_orders::FixedPointSolver::solve(
+                state,
+                [increment](const Eigen::VectorXd&, Eigen::VectorXd& output) {
+                    output(0) = 1.0 + increment;
+                },
+                settings, workspace);
+
+        REQUIRE_FALSE(diagnostics.converged());
+        REQUIRE(diagnostics.state_scale == Catch::Approx(1.0 + increment));
+        REQUIRE(diagnostics.warrants_convergence_warning() ==
+                materially_unconverged);
+    }
 }
 
 TEST_CASE("Successive-orders damped Anderson uses undamped state history",

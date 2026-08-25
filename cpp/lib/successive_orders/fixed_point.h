@@ -47,14 +47,39 @@ namespace sasktran2::successive_orders {
     enum class FixedPointTermination { tolerance, maximum_iterations };
 
     struct FixedPointDiagnostics {
+        static constexpr double material_warning_relative_tolerance = 1.0e-3;
+        static constexpr double material_warning_absolute_tolerance = 1.0e-12;
+
         FixedPointTermination termination =
             FixedPointTermination::maximum_iterations;
         int iterations = 0;
         double residual_norm = std::numeric_limits<double>::infinity();
+        double state_scale = 0.0;
         double convergence_threshold = 0.0;
 
         bool converged() const {
             return termination == FixedPointTermination::tolerance;
+        }
+
+        bool residual_exceeds(double relative_tolerance,
+                              double absolute_tolerance) const {
+            return residual_norm >
+                   absolute_tolerance + relative_tolerance * state_scale;
+        }
+
+        double relative_residual() const {
+            if (state_scale > 0.0) {
+                return residual_norm / state_scale;
+            }
+            return residual_norm == 0.0
+                       ? 0.0
+                       : std::numeric_limits<double>::infinity();
+        }
+
+        bool warrants_convergence_warning() const {
+            return !converged() &&
+                   residual_exceeds(material_warning_relative_tolerance,
+                                    material_warning_absolute_tolerance);
         }
     };
 
@@ -150,14 +175,14 @@ namespace sasktran2::successive_orders {
                 }
                 workspace.m_residual.noalias() = workspace.m_mapped - state;
 
-                const double state_scale =
+                diagnostics.state_scale =
                     std::max(state.lpNorm<Eigen::Infinity>(),
                              workspace.m_mapped.lpNorm<Eigen::Infinity>());
                 diagnostics.residual_norm =
                     workspace.m_residual.lpNorm<Eigen::Infinity>();
                 diagnostics.convergence_threshold =
                     settings.absolute_tolerance +
-                    settings.relative_tolerance * state_scale;
+                    settings.relative_tolerance * diagnostics.state_scale;
                 diagnostics.iterations = iteration + 1;
 
                 if (!std::isfinite(diagnostics.residual_norm) ||
