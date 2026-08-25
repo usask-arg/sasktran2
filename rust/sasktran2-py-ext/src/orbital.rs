@@ -6,6 +6,7 @@ use numpy::{PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2, ToPyArray};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyDict};
+use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 
 use crate::config::PyConfig;
 use crate::geodetic::PyGeodetic;
@@ -1677,16 +1678,17 @@ struct GroupEngine {
 
 fn build_group_engine(
     config: &'static Config,
-    orbital_geometry: &PyOrbitalPlaneGeometry,
+    altitude_grid_m: &[f64],
+    interpolation_method: InterpolationMethod,
     layout: GroupLayout,
     sun: Vector3<f64>,
 ) -> PyResult<GroupEngine> {
     let geometry = Box::new(
         Geometry2D::new_ecef(
             layout.earth_radius_m,
-            orbital_geometry.altitude_grid_m.to_vec(),
+            altitude_grid_m.to_vec(),
             layout.horizontal_angles.clone(),
-            orbital_geometry.interpolation_method,
+            interpolation_method,
             vector_array(layout.reference_z),
             vector_array(layout.reference_x),
             vector_array(sun),
@@ -1713,7 +1715,7 @@ fn build_group_engine(
         std::mem::transmute::<&ViewingGeometry, &'static ViewingGeometry>(viewing.as_ref())
     };
     let engine = Engine::new_2d(config, geometry_ref, viewing_ref).into_pyresult()?;
-    let local_indices = global_location_indices(&layout, orbital_geometry.altitude_grid_m.len());
+    let local_indices = global_location_indices(&layout, altitude_grid_m.len());
     Ok(GroupEngine {
         engine,
         geometry,
@@ -1730,6 +1732,53 @@ fn build_group_engine(
         last_refractive_profiles: None,
         geometry_refresh_count: 0,
     })
+}
+
+// Every newly built group owns independent geometry, viewing geometry, and
+// engine allocations. Moving the group does not move the boxed C++ referents,
+// the engine field is dropped before those referents, and no group is accessed
+// concurrently during or after this one-time ownership transfer. The C++
+// objects have no thread-affine destruction requirement. Mutable atmosphere
+// and derivative workspaces are still empty when this wrapper is constructed.
+struct SendGroupEngine(GroupEngine);
+
+// SAFETY: the invariants above are established by build_group_engine, and this
+// private wrapper is only created for the scoped construction result below.
+unsafe impl Send for SendGroupEngine {}
+
+fn build_group_engines_parallel(
+    config: &'static Config,
+    altitude_grid_m: &[f64],
+    interpolation_method: InterpolationMethod,
+    layouts: Vec<GroupLayout>,
+    sun_vectors: Vec<Vector3<f64>>,
+    num_threads: usize,
+) -> PyResult<Vec<GroupEngine>> {
+    // Construction concurrency is intentionally local. The shared SASKTRAN2
+    // Rayon pool must retain the Config thread count used by later radiance and
+    // derivative calculations, even when there are fewer groups than threads.
+    let thread_pool = sasktran2_rs::util::create_pool(num_threads).into_pyresult()?;
+
+    // Config is immutable for the lifetime of the orbital engine and every
+    // child constructor only reads it. Pass its address instead of capturing a
+    // non-Send raw-pointer wrapper in the Rayon closure.
+    let config_address = config as *const Config as usize;
+    let groups = thread_pool.install(|| {
+        layouts
+            .into_par_iter()
+            .zip(sun_vectors.into_par_iter())
+            .map(|(layout, sun)| {
+                // SAFETY: the constructor's Python Config borrow remains live,
+                // is not mutated while the GIL-held constructor is running, and
+                // this scoped pool completes before that borrow can end. The
+                // completed PyOrbitalPlaneEngine then retains the Config.
+                let config = unsafe { &*(config_address as *const Config) };
+                build_group_engine(config, altitude_grid_m, interpolation_method, layout, sun)
+                    .map(SendGroupEngine)
+            })
+            .collect::<PyResult<Vec<_>>>()
+    })?;
+    Ok(groups.into_iter().map(|group| group.0).collect())
 }
 
 fn mapping_signature(
@@ -2338,11 +2387,42 @@ impl PyOrbitalPlaneEngine {
             ));
         }
         let config_ref = unsafe { std::mem::transmute::<&Config, &'static Config>(&config.config) };
-        let mut groups = Vec::with_capacity(layouts.len());
-        for (index, layout) in layouts.into_iter().enumerate() {
-            let sun = normalize(row_vector(&sun_vectors, index), "sun_vectors_ecef")?;
-            groups.push(build_group_engine(config_ref, &geometry, layout, sun)?);
-        }
+        let suns = (0..layouts.len())
+            .map(|index| normalize(row_vector(&sun_vectors, index), "sun_vectors_ecef"))
+            .collect::<PyResult<Vec<_>>>()?;
+        let num_threads = config.config.num_threads().into_pyresult()?;
+        let threading_model = config.config.threading_model().into_pyresult()?;
+        let groups = if num_threads > 1
+            && threading_model == ThreadingModel::Wavelength
+            && layouts.len() > 1
+        {
+            build_group_engines_parallel(
+                config_ref,
+                geometry.altitude_grid_m.as_slice().ok_or_else(|| {
+                    PyRuntimeError::new_err("Orbital altitude grid is not contiguous")
+                })?,
+                geometry.interpolation_method,
+                layouts,
+                suns,
+                num_threads.min(sun_vectors.nrows()),
+            )?
+        } else {
+            layouts
+                .into_iter()
+                .zip(suns)
+                .map(|(layout, sun)| {
+                    build_group_engine(
+                        config_ref,
+                        geometry.altitude_grid_m.as_slice().ok_or_else(|| {
+                            PyRuntimeError::new_err("Orbital altitude grid is not contiguous")
+                        })?,
+                        geometry.interpolation_method,
+                        layout,
+                        sun,
+                    )
+                })
+                .collect::<PyResult<Vec<_>>>()?
+        };
         let los_refraction = config.config.los_refraction().into_pyresult()?;
         let max_refraction_tangent_altitude_m = config
             .config

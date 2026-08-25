@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import gc
+
 import numpy as np
 import pytest
 import sasktran2 as sk
@@ -2103,14 +2105,14 @@ def test_surface_only_update_preserves_group_volume_state():
     xr.testing.assert_allclose(third.value, fresh_third.value, rtol=2.0e-11)
 
 
-def test_composite_group_wavelength_scheduler_matches_serial_products():
+def test_parallel_group_construction_and_scheduler_match_serial_products_repeatedly():
     geometry = orbital_geometry()
     viewing = limb_viewing(geometry, np.array([-0.2, 0.0, 0.2]))
 
     def calculate(num_threads: int):
         config = transmission_config()
         config.num_threads = num_threads
-        config.threading_lib = sk.ThreadingLib.OpenMP
+        config.threading_lib = sk.ThreadingLib.Rayon
         config.threading_model = sk.ThreadingModel.Wavelength
         config.wavelength_batch_size = 2
         atmosphere = sk.Atmosphere(
@@ -2148,20 +2150,30 @@ def test_composite_group_wavelength_scheduler_matches_serial_products():
         )
 
     serial_value, serial_jvp, serial_vjp, serial_diagnostics = calculate(1)
-    threaded_value, threaded_jvp, threaded_vjp, threaded_diagnostics = calculate(2)
-
-    xr.testing.assert_allclose(threaded_value, serial_value, rtol=1e-13, atol=1e-14)
-    xr.testing.assert_allclose(threaded_jvp, serial_jvp, rtol=1e-13, atol=1e-14)
-    xr.testing.assert_allclose(threaded_vjp, serial_vjp, rtol=1e-13, atol=1e-14)
     assert all(
         not diagnostics["composite_wavelength_scheduler"]
         for diagnostics in serial_diagnostics
     )
-    assert all(
-        diagnostics["composite_wavelength_scheduler"]
-        and diagnostics["composite_wavelength_threads"] == 2
-        for diagnostics in threaded_diagnostics
-    )
+
+    # Repeatedly transfer the independently constructed native group engines
+    # from Rayon workers, exercise every native product, and destroy the whole
+    # object graph before constructing the next engine. Four threads with only
+    # three groups also exercises a construction pool smaller than the shared
+    # calculation pool.
+    for num_threads in (2, 4, 2, 4, 2, 4):
+        threaded_value, threaded_jvp, threaded_vjp, threaded_diagnostics = calculate(
+            num_threads
+        )
+        xr.testing.assert_allclose(threaded_value, serial_value, rtol=1e-13, atol=1e-14)
+        xr.testing.assert_allclose(threaded_jvp, serial_jvp, rtol=1e-13, atol=1e-14)
+        xr.testing.assert_allclose(threaded_vjp, serial_vjp, rtol=1e-13, atol=1e-14)
+        assert all(
+            diagnostics["composite_wavelength_scheduler"]
+            and diagnostics["composite_wavelength_threads"] == num_threads
+            for diagnostics in threaded_diagnostics
+        )
+        del threaded_value, threaded_jvp, threaded_vjp, threaded_diagnostics
+        gc.collect()
 
 
 def test_orbital_aerosol_altitude_auxiliary_parameter_is_adjoint_and_selected():
