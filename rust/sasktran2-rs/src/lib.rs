@@ -7,6 +7,7 @@ pub mod threading;
 pub mod atmosphere;
 pub mod bindings;
 pub mod constituent;
+pub mod continuum;
 pub mod interpolation;
 pub mod mie;
 pub mod optical;

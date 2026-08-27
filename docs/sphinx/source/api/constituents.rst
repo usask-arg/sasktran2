@@ -17,6 +17,7 @@ Constituents
     sasktran2.constituent.GaussianHeightExtinction
     sasktran2.constituent.MonochromaticVolumeEmissionRate
     sasktran2.constituent.Manual
+    sasktran2.continuum.MTCKDContinuum
 
 .. _constituents_api_brdf:
 

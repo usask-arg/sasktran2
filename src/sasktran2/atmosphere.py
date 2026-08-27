@@ -154,6 +154,9 @@ class _ExpandedProfileAtmosphere:
     def _native_state_equation(self) -> EquationOfState:
         return self._native_inputs.state_equation
 
+    def __getitem__(self, name: str):
+        return self._atmosphere[name]
+
     def __getattr__(self, name):
         return getattr(self._atmosphere, name)
 

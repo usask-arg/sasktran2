@@ -6,6 +6,7 @@ mod brdf;
 mod common;
 mod config;
 mod constituent;
+mod continuum;
 mod derivative_mapping;
 mod engine;
 mod geodetic;
@@ -113,6 +114,8 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Information functions
     m.add_function(wrap_pyfunction!(common::openmp_support_enabled, m)?)?;
     m.add_function(wrap_pyfunction!(common::lto_test, m)?)?;
+    m.add_function(wrap_pyfunction!(continuum::mt_ckd_py, m)?)?;
+    m.add_function(wrap_pyfunction!(continuum::mt_ckd_linearized_py, m)?)?;
 
     // rebasis
     m.add_class::<pyrebasis::basis::PyBasis>()?;
