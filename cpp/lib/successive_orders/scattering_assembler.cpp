@@ -160,6 +160,18 @@ namespace sasktran2::successive_orders {
         const SourceGeometry1D& geometry, int num_coefficients)
         : m_geometry(&geometry), m_layout(make_layout(geometry)),
           m_angular_basis(make_basis(geometry, num_coefficients)) {
+        if (geometry.settings().use_reduced_horizon_quadrature) {
+            m_point_angular_bases.reserve(geometry.num_interior_points());
+            m_point_angular_bases.push_back(m_angular_basis);
+            for (int point_index = 1;
+                 point_index < geometry.num_interior_points(); ++point_index) {
+                const auto& point = geometry.source_point(point_index);
+                m_point_angular_bases.push_back(
+                    std::make_shared<const ScalarAngularBasis>(
+                        point.incoming_sphere(), point.outgoing_sphere(),
+                        num_coefficients));
+            }
+        }
         for (int point_index = 0; point_index < geometry.num_interior_points();
              ++point_index) {
             const auto& point = geometry.source_point(point_index);
@@ -231,6 +243,9 @@ namespace sasktran2::successive_orders {
     }
 
     ScatteringOperator<1> ScalarScatteringAssembler::create_operator() const {
+        if (!m_point_angular_bases.empty()) {
+            return {m_layout, m_point_angular_bases, true};
+        }
         return {m_layout, m_angular_basis};
     }
 
@@ -529,8 +544,15 @@ namespace sasktran2::successive_orders {
     }
 
     std::size_t ScalarScatteringAssembler::storage_bytes() const {
+        std::size_t angular_bytes = m_angular_basis->storage_bytes();
+        if (!m_point_angular_bases.empty()) {
+            angular_bytes = 0;
+            for (const auto& basis : m_point_angular_bases) {
+                angular_bytes += basis->storage_bytes();
+            }
+        }
         std::size_t result =
-            m_layout.storage_bytes() + m_angular_basis->storage_bytes() +
+            m_layout.storage_bytes() + angular_bytes +
             m_ground_value_offsets.capacity() * sizeof(int) +
             m_ground_geometry.capacity() * sizeof(GroundAngularGeometry);
         for (const auto& geometry : m_ground_geometry) {
@@ -549,11 +571,23 @@ namespace sasktran2::successive_orders {
             throw std::invalid_argument(
                 "invalid vector successive-orders coefficient count");
         }
-
         const auto& atmospheric_point = geometry.source_point(0);
         m_angular_basis = std::make_shared<const VectorAngularBasis>(
             atmospheric_point.incoming_sphere(),
             atmospheric_point.outgoing_sphere(), num_coefficients);
+
+        if (geometry.settings().use_reduced_horizon_quadrature) {
+            m_point_angular_bases.reserve(geometry.num_interior_points());
+            m_point_angular_bases.push_back(m_angular_basis);
+            for (int point_index = 1;
+                 point_index < geometry.num_interior_points(); ++point_index) {
+                const auto& point = geometry.source_point(point_index);
+                m_point_angular_bases.push_back(
+                    std::make_shared<const VectorAngularBasis>(
+                        point.incoming_sphere(), point.outgoing_sphere(),
+                        num_coefficients));
+            }
+        }
 
         for (int point_index = 0; point_index < geometry.num_interior_points();
              ++point_index) {
@@ -614,6 +648,9 @@ namespace sasktran2::successive_orders {
     }
 
     ScatteringOperator<3> VectorScatteringAssembler::create_operator() const {
+        if (!m_point_angular_bases.empty()) {
+            return ScatteringOperator<3>(m_layout, m_point_angular_bases, true);
+        }
         return ScatteringOperator<3>(m_layout, m_angular_basis);
     }
 
@@ -925,8 +962,15 @@ namespace sasktran2::successive_orders {
     }
 
     std::size_t VectorScatteringAssembler::storage_bytes() const {
+        std::size_t angular_bytes = m_angular_basis->storage_bytes();
+        if (!m_point_angular_bases.empty()) {
+            angular_bytes = 0;
+            for (const auto& basis : m_point_angular_bases) {
+                angular_bytes += basis->storage_bytes();
+            }
+        }
         std::size_t result =
-            m_layout.storage_bytes() + m_angular_basis->storage_bytes() +
+            m_layout.storage_bytes() + angular_bytes +
             m_ground_value_offsets.capacity() * sizeof(int) +
             m_ground_geometry.capacity() * sizeof(GroundAngularGeometry);
         for (const auto& geometry : m_ground_geometry) {

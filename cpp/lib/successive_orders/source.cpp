@@ -315,6 +315,8 @@ namespace sasktran2::successive_orders {
             m_geometry_settings.num_threads = config.num_threads();
             m_geometry_settings.include_refraction =
                 config.multiple_scatter_refraction();
+            m_geometry_settings.use_reduced_horizon_quadrature =
+                config.successive_orders_reduced_horizon_quadrature();
             m_geometry_settings.altitude_grid_m =
                 config.successive_orders_altitude_grid_m();
             m_geometry_settings.horizontal_angle_grid_radians =

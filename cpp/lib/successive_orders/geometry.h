@@ -21,6 +21,7 @@ namespace sasktran2::successive_orders {
         int num_sza = 1;
         int num_threads = 1;
         bool include_refraction = false;
+        bool use_reduced_horizon_quadrature = false;
 
         /** Empty selects one source altitude at each atmosphere-layer
          * midpoint. */
@@ -200,8 +201,8 @@ namespace sasktran2::successive_orders {
 
       private:
         struct AngularGridPair {
-            std::unique_ptr<const sasktran2::math::UnitSphere> incoming;
-            std::unique_ptr<const sasktran2::math::UnitSphere> outgoing;
+            std::shared_ptr<const sasktran2::math::UnitSphere> incoming;
+            std::shared_ptr<const sasktran2::math::UnitSphere> outgoing;
         };
 
         sasktran2::grids::AltitudeGrid make_altitude_grid();

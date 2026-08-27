@@ -151,6 +151,40 @@ def test_scalar_1d_primal_is_finite_and_nonnegative():
     assert np.max(result.radiance.values) > 1.0e-6
 
 
+def test_reduced_horizon_vector_primal_supports_arbitrary_incoming_count():
+    config = _config(
+        sk.MultipleScatterSource.SuccessiveOrders,
+        num_stokes=3,
+        iterations=3,
+    )
+    config.num_successive_orders_incoming = 37
+    config.successive_orders_reduced_horizon_quadrature = True
+    result = _calculate(config).radiance
+
+    assert result.shape == (WAVELENGTHS_NM.size, 2, 3)
+    assert np.all(np.isfinite(result))
+    assert np.any(np.abs(result.sel(stokes="Q")) > 1.0e-8)
+    assert np.any(np.abs(result.sel(stokes="U")) > 1.0e-8)
+
+
+def test_reduced_horizon_uses_nonzero_geometry1d_lower_boundary():
+    config = _config(sk.MultipleScatterSource.SuccessiveOrders, iterations=2)
+    geometry = sk.Geometry1D(
+        cos_sza=0.55,
+        solar_azimuth=0.15,
+        earth_radius_m=EARTH_RADIUS_M,
+        altitude_grid_m=ALTITUDES_M + 5_000.0,
+        interpolation_method=sk.InterpolationMethod.LinearInterpolation,
+        geometry_type=sk.GeometryType.Spherical,
+    )
+
+    result = _calculate(config, geometry=geometry).radiance
+
+    assert result.shape == (WAVELENGTHS_NM.size, 2, 1)
+    assert np.all(np.isfinite(result))
+    assert np.max(result.values) > 1.0e-6
+
+
 @pytest.mark.parametrize(
     ("num_stokes", "relative_tolerance", "absolute_tolerance"),
     [(1, 2.0e-3, 2.0e-7), (3, 2.0e-3, 2.0e-7)],
@@ -170,6 +204,7 @@ def test_fixed_iteration_solution_agrees_with_legacy_successive_orders(
         num_stokes=num_stokes,
         iterations=3,
     )
+    cpp_config.successive_orders_reduced_horizon_quadrature = False
 
     cpp = _calculate(cpp_config, surface_albedo=0.0).radiance
     legacy = _calculate(legacy_config, surface_albedo=0.0).radiance

@@ -116,6 +116,11 @@ namespace sasktran2::successive_orders {
         ScatteringOperator(
             ScatteringBlockLayout layout,
             std::shared_ptr<const ScalarAngularBasis> angular_basis);
+        ScatteringOperator(
+            ScatteringBlockLayout layout,
+            std::vector<std::shared_ptr<const ScalarAngularBasis>>
+                angular_bases,
+            bool point_bases_share_synthesis = false);
 
         const ScatteringBlockLayout& layout() const { return m_layout; }
         const std::vector<int>& input_offsets() const {
@@ -192,6 +197,8 @@ namespace sasktran2::successive_orders {
 
         ScatteringBlockLayout m_layout;
         std::shared_ptr<const ScalarAngularBasis> m_basis;
+        std::vector<std::shared_ptr<const ScalarAngularBasis>> m_point_bases;
+        bool m_point_bases_share_synthesis = false;
         Eigen::MatrixXd m_atmospheric_coefficients;
         std::vector<int> m_ground_value_offsets;
         Eigen::VectorXd m_ground_values;
@@ -212,6 +219,7 @@ namespace sasktran2::successive_orders {
         Eigen::MatrixXd m_auxiliary_input;
         Eigen::MatrixXd m_auxiliary_output;
         VectorAngularWorkspace m_angular;
+        VectorAngularWorkspace m_point_angular;
     };
 
     /** Coefficient-space I/Q/U atmospheric scattering with dense boundaries. */
@@ -223,6 +231,11 @@ namespace sasktran2::successive_orders {
         ScatteringOperator(
             ScatteringBlockLayout layout,
             std::shared_ptr<const VectorAngularBasis> angular_basis);
+        ScatteringOperator(
+            ScatteringBlockLayout layout,
+            std::vector<std::shared_ptr<const VectorAngularBasis>>
+                angular_bases,
+            bool point_bases_share_synthesis = false);
 
         const ScatteringBlockLayout& layout() const { return m_layout; }
         const std::vector<int>& input_offsets() const {
@@ -293,6 +306,8 @@ namespace sasktran2::successive_orders {
 
         ScatteringBlockLayout m_layout;
         std::shared_ptr<const VectorAngularBasis> m_basis;
+        std::vector<std::shared_ptr<const VectorAngularBasis>> m_point_bases;
+        bool m_point_bases_share_synthesis = false;
         std::vector<int> m_ground_value_offsets;
         Eigen::MatrixXd m_atmospheric_coefficients;
         Eigen::VectorXd m_ground_values;

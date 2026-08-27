@@ -19,6 +19,16 @@ namespace sasktran2::grids {
 namespace sasktran2::successive_orders {
     class SourcePoint;
 
+    /** Unit tangent direction toward the local solar azimuth.
+     *
+     * The coordinate basis supplies a deterministic tangent fallback at exact
+     * solar zenith and nadir. The construction is equivariant under rigid
+     * rotations of the complete geometry.
+     */
+    Eigen::Vector3d
+    solar_horizontal_reference(const Eigen::Vector3d& local_up,
+                               const sasktran2::Geometry& geometry);
+
     /** Small C++17-compatible view over immutable packed interpolation data. */
     template <typename T> class InterpolationView {
       public:

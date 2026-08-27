@@ -9,6 +9,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 #ifdef SKTRAN_OPENMP_SUPPORT
 #include <omp.h>
@@ -16,6 +17,298 @@
 
 namespace sasktran2::successive_orders {
     namespace {
+        std::pair<std::vector<double>, std::vector<double>>
+        gauss_legendre_rule(int order) {
+            if (order < 1) {
+                throw std::invalid_argument(
+                    "Gauss-Legendre order must be positive");
+            }
+            std::vector<double> roots(static_cast<std::size_t>(order));
+            std::vector<double> weights(static_cast<std::size_t>(order));
+            const int symmetric_count = (order + 1) / 2;
+            constexpr int maximum_iterations = 64;
+            constexpr double tolerance =
+                8.0 * std::numeric_limits<double>::epsilon();
+            for (int index = 0; index < symmetric_count; ++index) {
+                double root =
+                    std::cos(EIGEN_PI * (index + 0.75) / (order + 0.5));
+                bool converged = false;
+                for (int iteration = 0; iteration < maximum_iterations;
+                     ++iteration) {
+                    double polynomial = 1.0;
+                    double previous = 0.0;
+                    for (int degree = 1; degree <= order; ++degree) {
+                        const double before_previous = previous;
+                        previous = polynomial;
+                        polynomial = ((2.0 * degree - 1.0) * root * previous -
+                                      (degree - 1.0) * before_previous) /
+                                     degree;
+                    }
+                    const double derivative = order *
+                                              (root * polynomial - previous) /
+                                              (root * root - 1.0);
+                    const double next = root - polynomial / derivative;
+                    if (std::abs(next - root) <=
+                        tolerance * std::max(1.0, std::abs(next))) {
+                        root = next;
+                        converged = true;
+                        break;
+                    }
+                    root = next;
+                }
+                if (!converged) {
+                    throw std::runtime_error(
+                        "Gauss-Legendre node generation did not converge");
+                }
+
+                double polynomial = 1.0;
+                double previous = 0.0;
+                for (int degree = 1; degree <= order; ++degree) {
+                    const double before_previous = previous;
+                    previous = polynomial;
+                    polynomial = ((2.0 * degree - 1.0) * root * previous -
+                                  (degree - 1.0) * before_previous) /
+                                 degree;
+                }
+                const double derivative = order *
+                                          (root * polynomial - previous) /
+                                          (root * root - 1.0);
+                const double weight =
+                    2.0 / ((1.0 - root * root) * derivative * derivative);
+                roots[index] = -root;
+                roots[order - 1 - index] = root;
+                weights[index] = weight;
+                weights[order - 1 - index] = weight;
+            }
+            return {std::move(roots), std::move(weights)};
+        }
+
+        std::pair<int, int> reduced_horizon_ring_counts(int npoints) {
+            if (npoints < 6) {
+                throw std::invalid_argument(
+                    "Reduced-horizon quadrature requires at least 6 nodes");
+            }
+            // Preserve the empirically selected 7+6 split at 110 nodes while
+            // scaling polar and azimuthal resolution together as sqrt(N).
+            const int desired_total = std::max(
+                2,
+                static_cast<int>(std::lround(
+                    13.0 * std::sqrt(static_cast<double>(npoints) / 110.0))));
+            const int total = std::min(desired_total, npoints / 3);
+            return {(total + 1) / 2, total / 2};
+        }
+
+        /** A minimally rotated Lebedev rule used by the reduced-horizon
+         * vector solver.
+         *
+         * Lebedev rules contain nodes on the coordinate poles. Those nodes
+         * make the meridian reference frame singular and require an expensive
+         * point-by-point correction after spin-harmonic synthesis. A rigid
+         * rotation preserves every quadrature weight and degree-of-exactness
+         * guarantee while moving the nodes away from the singular frame.
+         */
+        class PoleAvoidingLebedevSphere final
+            : public sasktran2::math::UnitSphere {
+          public:
+            explicit PoleAvoidingLebedevSphere(int npoints)
+                : m_sphere(npoints),
+                  m_rotation(
+                      (Eigen::AngleAxisd(0.01, Eigen::Vector3d::UnitZ()) *
+                       Eigen::AngleAxisd(0.01, Eigen::Vector3d::UnitY()))
+                          .toRotationMatrix()) {}
+
+            int num_points() const override { return m_sphere.num_points(); }
+
+            Eigen::Vector3d get_quad_position(int index) const override {
+                return m_rotation * m_sphere.get_quad_position(index);
+            }
+
+            double quadrature_weight(int index) const override {
+                return m_sphere.quadrature_weight(index);
+            }
+
+            void interpolate(const Eigen::Vector3d& direction,
+                             std::vector<std::pair<int, double>>& index_weights,
+                             int& num_interp) const override {
+                m_sphere.interpolate(m_rotation.transpose() * direction,
+                                     index_weights, num_interp);
+            }
+
+          private:
+            sasktran2::math::LebedevSphere m_sphere;
+            Eigen::Matrix3d m_rotation;
+        };
+
+        class ReducedHorizonSphere final : public sasktran2::math::UnitSphere {
+          public:
+            ReducedHorizonSphere(const Eigen::Vector3d& location,
+                                 double surface_radius, int npoints,
+                                 const sasktran2::Geometry& geometry) {
+                if (npoints < 6 || surface_radius <= 0.0 ||
+                    location.norm() <= surface_radius) {
+                    throw std::invalid_argument(
+                        "Reduced-horizon quadrature requires at least 6 nodes "
+                        "at an interior spherical location");
+                }
+
+                const Eigen::Vector3d vertical = location.normalized();
+                const Eigen::Vector3d horizontal_x =
+                    solar_horizontal_reference(vertical, geometry);
+                const Eigen::Vector3d horizontal_y =
+                    vertical.cross(horizontal_x);
+                const double radius = location.norm();
+                const double horizon_mu = -std::sqrt(
+                    std::max(0.0, 1.0 - surface_radius * surface_radius /
+                                            (radius * radius)));
+
+                struct Ring {
+                    double mu;
+                    double mu_weight;
+                    double score;
+                    double remainder;
+                    int azimuths;
+                };
+                const auto [ground_ring_count, space_ring_count] =
+                    reduced_horizon_ring_counts(npoints);
+                std::vector<Ring> rings;
+                rings.reserve(static_cast<std::size_t>(ground_ring_count +
+                                                       space_ring_count));
+                const auto append_interval = [&rings](double lower,
+                                                      double upper,
+                                                      const auto& roots,
+                                                      const auto& weights) {
+                    for (std::size_t index = 0; index < roots.size(); ++index) {
+                        const double mu =
+                            0.5 *
+                            ((upper - lower) * roots[index] + lower + upper);
+                        rings.push_back(
+                            {mu, 0.5 * (upper - lower) * weights[index],
+                             std::sqrt(std::max(0.0, 1.0 - mu * mu)), 0.0, 3});
+                    }
+                };
+
+                auto [ground_roots, ground_weights] =
+                    gauss_legendre_rule(ground_ring_count);
+                auto [space_roots, space_weights] =
+                    gauss_legendre_rule(space_ring_count);
+                append_interval(-1.0, horizon_mu, ground_roots, ground_weights);
+                append_interval(horizon_mu, 1.0, space_roots, space_weights);
+
+                constexpr int minimum_azimuths = 3;
+                int remaining =
+                    npoints - minimum_azimuths * static_cast<int>(rings.size());
+                double total_score = 0.0;
+                for (const auto& ring : rings) {
+                    total_score += ring.score;
+                }
+                int allocated = 0;
+                for (auto& ring : rings) {
+                    const double exact = remaining * ring.score / total_score;
+                    const int additional = static_cast<int>(std::floor(exact));
+                    ring.azimuths += additional;
+                    ring.remainder = exact - additional;
+                    allocated += additional;
+                }
+                std::vector<int> remainder_order(rings.size());
+                for (std::size_t index = 0; index < rings.size(); ++index) {
+                    remainder_order[index] = static_cast<int>(index);
+                }
+                std::stable_sort(remainder_order.begin(), remainder_order.end(),
+                                 [&rings](int left, int right) {
+                                     return rings[left].remainder >
+                                            rings[right].remainder;
+                                 });
+                for (int index = 0; index < remaining - allocated; ++index) {
+                    ++rings[remainder_order[index]].azimuths;
+                }
+
+                m_positions.resize(3, npoints);
+                m_weights.resize(npoints);
+                constexpr double golden_fraction =
+                    0.5 * (3.0 - 2.2360679774997896964);
+                int output = 0;
+                for (std::size_t ring_index = 0; ring_index < rings.size();
+                     ++ring_index) {
+                    const auto& ring = rings[ring_index];
+                    const double radial =
+                        std::sqrt(std::max(0.0, 1.0 - ring.mu * ring.mu));
+                    const double phase =
+                        std::fmod(ring_index * golden_fraction, 1.0);
+                    for (int azimuth = 0; azimuth < ring.azimuths; ++azimuth) {
+                        const double phi =
+                            2.0 * EIGEN_PI * (azimuth + phase) / ring.azimuths;
+                        m_positions.col(output) =
+                            radial * std::cos(phi) * horizontal_x +
+                            radial * std::sin(phi) * horizontal_y +
+                            ring.mu * vertical;
+                        m_weights[output] =
+                            ring.mu_weight / (2.0 * ring.azimuths);
+                        ++output;
+                    }
+                }
+                if (output != npoints) {
+                    throw std::logic_error(
+                        "Reduced-horizon quadrature node allocation failed");
+                }
+            }
+
+            int num_points() const override {
+                return static_cast<int>(m_weights.size());
+            }
+
+            Eigen::Vector3d get_quad_position(int index) const override {
+                return m_positions.col(index);
+            }
+
+            double quadrature_weight(int index) const override {
+                return m_weights[index];
+            }
+
+            void interpolate(const Eigen::Vector3d& direction,
+                             std::vector<std::pair<int, double>>& index_weights,
+                             int& num_interp) const override {
+                num_interp = 3;
+                index_weights.assign(
+                    3, {-1, std::numeric_limits<double>::infinity()});
+                for (int index = 0; index < num_points(); ++index) {
+                    const double squared_distance =
+                        (get_quad_position(index) - direction).squaredNorm();
+                    for (int slot = 0; slot < num_interp; ++slot) {
+                        if (squared_distance < index_weights[slot].second) {
+                            for (int shifted = num_interp - 1; shifted > slot;
+                                 --shifted) {
+                                index_weights[shifted] =
+                                    index_weights[shifted - 1];
+                            }
+                            index_weights[slot] = {index, squared_distance};
+                            break;
+                        }
+                    }
+                }
+
+                double total_inverse_distance = 0.0;
+                for (int slot = 0; slot < num_interp; ++slot) {
+                    if (index_weights[slot].second < 1.0e-8) {
+                        for (auto& weight : index_weights) {
+                            weight.second = 0.0;
+                        }
+                        index_weights[slot].second = 1.0;
+                        return;
+                    }
+                    total_inverse_distance +=
+                        1.0 / std::sqrt(index_weights[slot].second);
+                }
+                for (auto& weight : index_weights) {
+                    weight.second = (1.0 / std::sqrt(weight.second)) /
+                                    total_inverse_distance;
+                }
+            }
+
+          private:
+            Eigen::MatrixXd m_positions;
+            Eigen::VectorXd m_weights;
+        };
+
         class GroundUnitSphere final : public sasktran2::math::UnitSphere {
           public:
             GroundUnitSphere(std::unique_ptr<const UnitSphere>&& sphere,
@@ -455,35 +748,6 @@ namespace sasktran2::successive_orders {
             checked_add(m_num_interior_points, m_num_ground_points,
                         "Successive-orders source point count");
 
-        m_angular_grids.clear();
-        m_angular_grids.reserve(static_cast<std::size_t>(m_num_ground_points) +
-                                1);
-        auto volume_grid = std::make_unique<AngularGridPair>();
-        volume_grid->incoming =
-            std::make_unique<sasktran2::math::LebedevSphere>(
-                m_settings.num_incoming);
-        volume_grid->outgoing =
-            std::make_unique<sasktran2::math::LebedevSphere>(
-                m_settings.num_outgoing);
-        m_angular_grids.push_back(std::move(volume_grid));
-
-        for (int ground_index = 0; ground_index < m_num_ground_points;
-             ++ground_index) {
-            const Eigen::Vector3d location =
-                m_location_interpolator->ground_location(
-                    m_geometry.coordinates(), ground_index);
-            auto ground_grid = std::make_unique<AngularGridPair>();
-            ground_grid->incoming = std::make_unique<GroundUnitSphere>(
-                std::make_unique<sasktran2::math::LebedevSphere>(
-                    m_settings.num_incoming),
-                location);
-            ground_grid->outgoing = std::make_unique<GroundUnitSphere>(
-                std::make_unique<sasktran2::math::LebedevSphere>(
-                    m_settings.num_outgoing),
-                location);
-            m_angular_grids.push_back(std::move(ground_grid));
-        }
-
         m_source_points.clear();
         m_source_points.resize(total_points);
         m_ground_horizontal_weights.clear();
@@ -493,8 +757,6 @@ namespace sasktran2::successive_orders {
             auto& point = m_source_points[point_index];
             point.m_location.position = m_location_interpolator->grid_location(
                 m_geometry.coordinates(), point_index);
-            point.m_incoming_sphere = m_angular_grids[0]->incoming.get();
-            point.m_outgoing_sphere = m_angular_grids[0]->outgoing.get();
             point.m_is_ground = false;
         }
         for (int ground_index = 0; ground_index < m_num_ground_points;
@@ -507,16 +769,94 @@ namespace sasktran2::successive_orders {
             // lower boundary because of Cartesian roundoff.
             point.m_location.position +=
                 0.01 * point.m_location.position.normalized();
-            point.m_incoming_sphere =
-                m_angular_grids[ground_index + 1]->incoming.get();
-            point.m_outgoing_sphere =
-                m_angular_grids[ground_index + 1]->outgoing.get();
             point.m_is_ground = true;
             if (m_geometry_2d != nullptr) {
                 m_geometry_2d->assign_horizontal_interpolation_weights(
                     point.location(),
                     m_ground_horizontal_weights[ground_index]);
             }
+        }
+
+        m_angular_grids.clear();
+        m_angular_grids.reserve(
+            static_cast<std::size_t>(m_num_ground_points) +
+            (m_settings.use_reduced_horizon_quadrature
+                 ? static_cast<std::size_t>(m_num_interior_points)
+                 : 1));
+        std::shared_ptr<const sasktran2::math::UnitSphere> volume_outgoing;
+        if (m_settings.use_reduced_horizon_quadrature) {
+            volume_outgoing = std::make_shared<const PoleAvoidingLebedevSphere>(
+                m_settings.num_outgoing);
+        } else {
+            volume_outgoing =
+                std::make_shared<const sasktran2::math::LebedevSphere>(
+                    m_settings.num_outgoing);
+        }
+        double surface_radius = 0.0;
+        if (m_settings.use_reduced_horizon_quadrature) {
+            const auto& altitude_grid =
+                m_geometry_1d != nullptr
+                    ? m_geometry_1d->altitude_grid().grid()
+                    : m_geometry_2d->altitude_grid().grid();
+            surface_radius =
+                m_geometry.coordinates().earth_radius() + altitude_grid[0];
+            for (int point_index = 0; point_index < m_num_interior_points;
+                 ++point_index) {
+                auto grid = std::make_unique<AngularGridPair>();
+                grid->incoming = std::make_shared<ReducedHorizonSphere>(
+                    m_source_points[point_index].location().position,
+                    surface_radius, m_settings.num_incoming, m_geometry);
+                grid->outgoing = volume_outgoing;
+                m_source_points[point_index].m_incoming_sphere =
+                    grid->incoming.get();
+                m_source_points[point_index].m_outgoing_sphere =
+                    grid->outgoing.get();
+                m_angular_grids.push_back(std::move(grid));
+            }
+        } else {
+            auto grid = std::make_unique<AngularGridPair>();
+            grid->incoming =
+                std::make_shared<const sasktran2::math::LebedevSphere>(
+                    m_settings.num_incoming);
+            grid->outgoing = volume_outgoing;
+            for (int point_index = 0; point_index < m_num_interior_points;
+                 ++point_index) {
+                m_source_points[point_index].m_incoming_sphere =
+                    grid->incoming.get();
+                m_source_points[point_index].m_outgoing_sphere =
+                    grid->outgoing.get();
+            }
+            m_angular_grids.push_back(std::move(grid));
+        }
+
+        for (int ground_index = 0; ground_index < m_num_ground_points;
+             ++ground_index) {
+            const int point_index = m_num_interior_points + ground_index;
+            const Eigen::Vector3d location =
+                m_location_interpolator->ground_location(
+                    m_geometry.coordinates(), ground_index);
+            auto ground_grid = std::make_unique<AngularGridPair>();
+            if (m_settings.use_reduced_horizon_quadrature) {
+                ground_grid->incoming = std::make_shared<GroundUnitSphere>(
+                    std::make_unique<ReducedHorizonSphere>(
+                        m_source_points[point_index].location().position,
+                        surface_radius, m_settings.num_incoming, m_geometry),
+                    location);
+            } else {
+                ground_grid->incoming = std::make_shared<GroundUnitSphere>(
+                    std::make_unique<sasktran2::math::LebedevSphere>(
+                        m_settings.num_incoming),
+                    location);
+            }
+            ground_grid->outgoing = std::make_shared<GroundUnitSphere>(
+                std::make_unique<sasktran2::math::LebedevSphere>(
+                    m_settings.num_outgoing),
+                location);
+            m_source_points[point_index].m_incoming_sphere =
+                ground_grid->incoming.get();
+            m_source_points[point_index].m_outgoing_sphere =
+                ground_grid->outgoing.get();
+            m_angular_grids.push_back(std::move(ground_grid));
         }
 
         m_incoming_point_offsets.assign(
@@ -702,6 +1042,11 @@ namespace sasktran2::successive_orders {
                 "refraction");
         }
         m_settings = settings;
+        m_settings.use_reduced_horizon_quadrature =
+            settings.use_reduced_horizon_quadrature &&
+            m_geometry.coordinates().geometry_type() ==
+                sasktran2::geometrytype::spherical &&
+            !settings.include_refraction && settings.num_incoming >= 6;
 
         auto altitude_grid = make_altitude_grid();
         if (m_geometry_1d != nullptr) {
@@ -713,7 +1058,8 @@ namespace sasktran2::successive_orders {
             auto cos_sza_grid = make_cos_sza_grid(internal_viewing);
             m_location_interpolator = std::make_unique<
                 sasktran2::grids::AltitudeSZASourceLocationInterpolator>(
-                std::move(altitude_grid), std::move(cos_sza_grid));
+                std::move(altitude_grid), std::move(cos_sza_grid),
+                m_geometry_1d->altitude_grid().grid()[0]);
             m_source_horizontal_angles_rad.clear();
         } else {
             m_source_cos_sza.clear();

@@ -87,6 +87,8 @@ namespace sasktran2::successive_orders {
         const SourceGeometry1D* m_geometry;
         ScatteringBlockLayout m_layout;
         std::shared_ptr<const ScalarAngularBasis> m_angular_basis;
+        std::vector<std::shared_ptr<const ScalarAngularBasis>>
+            m_point_angular_bases;
         std::vector<int> m_ground_value_offsets;
         std::vector<GroundAngularGeometry> m_ground_geometry;
     };
@@ -162,6 +164,8 @@ namespace sasktran2::successive_orders {
         const SourceGeometry1D* m_geometry;
         ScatteringBlockLayout m_layout;
         std::shared_ptr<const VectorAngularBasis> m_angular_basis;
+        std::vector<std::shared_ptr<const VectorAngularBasis>>
+            m_point_angular_bases;
         std::vector<int> m_ground_value_offsets;
         std::vector<GroundAngularGeometry> m_ground_geometry;
     };

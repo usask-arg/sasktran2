@@ -102,20 +102,22 @@ namespace sasktran2::successive_orders {
             }
             return horizontal.normalized();
         }
+    } // namespace
 
-        Eigen::Vector3d
-        horizontal_solar_reference(const Eigen::Vector3d& local_up,
-                                   const sasktran2::Geometry& geometry) {
-            constexpr double singular_squared_tolerance = 1.0e-24;
-            Eigen::Vector3d horizontal =
-                geometry.coordinates().sun_unit() -
-                local_up * local_up.dot(geometry.coordinates().sun_unit());
-            if (horizontal.squaredNorm() <= singular_squared_tolerance) {
-                return deterministic_horizontal(local_up, geometry);
-            }
-            return horizontal.normalized();
+    Eigen::Vector3d
+    solar_horizontal_reference(const Eigen::Vector3d& local_up,
+                               const sasktran2::Geometry& geometry) {
+        constexpr double singular_squared_tolerance = 1.0e-24;
+        Eigen::Vector3d horizontal =
+            geometry.coordinates().sun_unit() -
+            local_up * local_up.dot(geometry.coordinates().sun_unit());
+        if (horizontal.squaredNorm() <= singular_squared_tolerance) {
+            return deterministic_horizontal(local_up, geometry);
         }
+        return horizontal.normalized();
+    }
 
+    namespace {
         Eigen::Vector3d
         rotate_unit_vector(const Eigen::Vector3d& vector,
                            const Eigen::Vector3d& initial_position,
@@ -149,13 +151,13 @@ namespace sasktran2::successive_orders {
             const Eigen::Vector3d initial_horizontal =
                 (unit_vector - mu * initial_up).normalized();
             const Eigen::Vector3d initial_solar =
-                horizontal_solar_reference(initial_up, geometry);
+                solar_horizontal_reference(initial_up, geometry);
             const double solar_azimuth = std::atan2(
                 initial_up.cross(initial_solar).dot(initial_horizontal),
                 initial_solar.dot(initial_horizontal));
 
             const Eigen::Vector3d new_solar =
-                horizontal_solar_reference(new_up, geometry);
+                solar_horizontal_reference(new_up, geometry);
             const Eigen::Vector3d new_horizontal =
                 Eigen::AngleAxis<double>(solar_azimuth, new_up) * new_solar;
             const double sin_zenith = std::sqrt(std::max(0.0, 1.0 - mu * mu));

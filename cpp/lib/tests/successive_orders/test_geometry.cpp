@@ -243,6 +243,272 @@ TEST_CASE("Successive-orders 1D geometry compiles midpoint source and LOS "
                               source_geometry.total_num_outgoing());
 }
 
+TEST_CASE("Successive-orders reduced-horizon grid supports arbitrary practical "
+          "incoming counts",
+          "[successive_orders][geometry][reduced_horizon]") {
+    sasktran2::Geometry1D geometry(0.4, 0.0, 6372000.0, altitude_grid(),
+                                   sasktran2::grids::interpolation::linear,
+                                   sasktran2::geometrytype::spherical);
+    sasktran2::raytracing::SphericalShellRayTracer raytracer(geometry);
+    const auto los = make_los_geometry(geometry, raytracer);
+
+    struct Budget {
+        int points;
+        int ground_rings;
+        int space_rings;
+    };
+    constexpr std::array<Budget, 4> budgets{Budget{6, 1, 1}, Budget{37, 4, 4},
+                                            Budget{110, 7, 6},
+                                            Budget{257, 10, 10}};
+    const double surface_radius = geometry.coordinates().earth_radius();
+    const auto unique_count = [](std::vector<double> values) {
+        std::sort(values.begin(), values.end());
+        const auto end = std::unique(
+            values.begin(), values.end(), [](double left, double right) {
+                return std::abs(left - right) < 1.0e-12;
+            });
+        return static_cast<int>(std::distance(values.begin(), end));
+    };
+
+    for (const auto& budget : budgets) {
+        DYNAMIC_SECTION(budget.points << " incoming nodes") {
+            sasktran2::successive_orders::SourceGeometrySettings settings;
+            settings.num_incoming = budget.points;
+            settings.num_outgoing = 14;
+            settings.num_threads = 1;
+            settings.use_reduced_horizon_quadrature = true;
+            sasktran2::successive_orders::SourceGeometry1D source_geometry(
+                raytracer, geometry);
+            source_geometry.initialize(los, settings);
+
+            REQUIRE(source_geometry.num_interior_points() == 2);
+            REQUIRE(&source_geometry.source_point(0).incoming_sphere() !=
+                    &source_geometry.source_point(1).incoming_sphere());
+            REQUIRE(&source_geometry.source_point(0).outgoing_sphere() ==
+                    &source_geometry.source_point(1).outgoing_sphere());
+
+            for (int direction = 0;
+                 direction < source_geometry.source_point(0).num_outgoing();
+                 ++direction) {
+                const auto position = source_geometry.source_point(0)
+                                          .outgoing_sphere()
+                                          .get_quad_position(direction);
+                REQUIRE(position.head<2>().norm() > 1.0e-8);
+            }
+
+            for (int point_index = 0;
+                 point_index < source_geometry.num_interior_points();
+                 ++point_index) {
+                const auto& point = source_geometry.source_point(point_index);
+                REQUIRE(point.num_incoming() == budget.points);
+                const Eigen::Vector3d vertical =
+                    point.location().position.normalized();
+                const double radius = point.location().position.norm();
+                const double horizon_mu = -std::sqrt(
+                    1.0 - surface_radius * surface_radius / (radius * radius));
+                std::vector<double> ground_mu;
+                std::vector<double> space_mu;
+                double weight_sum = 0.0;
+                for (int direction = 0; direction < point.num_incoming();
+                     ++direction) {
+                    const double mu = point.incoming_sphere()
+                                          .get_quad_position(direction)
+                                          .dot(vertical);
+                    const double weight =
+                        point.incoming_sphere().quadrature_weight(direction);
+                    REQUIRE(weight > 0.0);
+                    weight_sum += weight;
+                    (mu < horizon_mu ? ground_mu : space_mu).push_back(mu);
+                    REQUIRE(
+                        source_geometry
+                            .incoming_interpolation()[point.incoming_offset() +
+                                                      direction]
+                            .ground_is_hit() == (mu < horizon_mu));
+                }
+                REQUIRE(unique_count(std::move(ground_mu)) ==
+                        budget.ground_rings);
+                REQUIRE(unique_count(std::move(space_mu)) ==
+                        budget.space_rings);
+                REQUIRE(weight_sum == Catch::Approx(1.0).margin(2.0e-14));
+                const int exact_degree =
+                    2 * std::min(budget.ground_rings, budget.space_rings) - 1;
+                for (int degree = 0; degree <= exact_degree; ++degree) {
+                    double actual_moment = 0.0;
+                    for (int direction = 0; direction < point.num_incoming();
+                         ++direction) {
+                        const double mu = point.incoming_sphere()
+                                              .get_quad_position(direction)
+                                              .dot(vertical);
+                        actual_moment +=
+                            point.incoming_sphere().quadrature_weight(
+                                direction) *
+                            std::pow(mu, degree);
+                    }
+                    const double expected_moment =
+                        degree % 2 == 0 ? 1.0 / (degree + 1.0) : 0.0;
+                    REQUIRE(actual_moment ==
+                            Catch::Approx(expected_moment).margin(2.0e-13));
+                }
+            }
+
+            const auto& ground = source_geometry.source_point(
+                source_geometry.num_interior_points());
+            double ground_weight_sum = 0.0;
+            for (int direction = 0; direction < ground.num_incoming();
+                 ++direction) {
+                REQUIRE(
+                    ground.incoming_sphere().get_quad_position(direction).dot(
+                        ground.location().position) > 0.0);
+                const double weight =
+                    ground.incoming_sphere().quadrature_weight(direction);
+                REQUIRE(weight > 0.0);
+                ground_weight_sum += weight;
+            }
+            REQUIRE(ground_weight_sum == Catch::Approx(0.5).margin(2.0e-14));
+        }
+    }
+
+    sasktran2::successive_orders::SourceGeometrySettings settings;
+    settings.use_reduced_horizon_quadrature = true;
+    settings.num_incoming = 5;
+    REQUIRE_NOTHROW(settings.validate());
+}
+
+TEST_CASE("Successive-orders reduced-horizon grid uses the Geometry1D lower "
+          "boundary",
+          "[successive_orders][geometry][reduced_horizon]") {
+    Eigen::VectorXd altitudes(3);
+    altitudes << 5000.0, 7000.0, 10000.0;
+    sasktran2::Geometry1D geometry(0.4, 0.0, 6372000.0, std::move(altitudes),
+                                   sasktran2::grids::interpolation::linear,
+                                   sasktran2::geometrytype::spherical);
+    sasktran2::raytracing::SphericalShellRayTracer raytracer(geometry);
+
+    sasktran2::successive_orders::SourceGeometrySettings settings;
+    settings.num_incoming = 37;
+    settings.num_outgoing = 14;
+    settings.num_threads = 1;
+    settings.use_reduced_horizon_quadrature = true;
+    sasktran2::successive_orders::SourceGeometry1D source_geometry(raytracer,
+                                                                   geometry);
+    sasktran2::viewinggeometry::InternalViewingGeometry viewing;
+    source_geometry.initialize(viewing, settings);
+
+    const double surface_radius = geometry.coordinates().earth_radius() +
+                                  geometry.altitude_grid().grid()[0];
+    REQUIRE(source_geometry.settings().use_reduced_horizon_quadrature);
+    for (int ground_index = 0;
+         ground_index < source_geometry.num_ground_points(); ++ground_index) {
+        const auto& ground = source_geometry.source_point(
+            source_geometry.num_interior_points() + ground_index);
+        REQUIRE(ground.location().position.norm() ==
+                Catch::Approx(surface_radius + 0.01).margin(1.0e-8));
+    }
+}
+
+TEST_CASE("Successive-orders reduced-horizon incoming grid rotates with its "
+          "coordinate system including at the solar poles",
+          "[successive_orders][geometry][reduced_horizon]") {
+    constexpr std::array<double, 3> solar_cosines{0.4, 1.0, -1.0};
+    for (const double cos_sza : solar_cosines) {
+        DYNAMIC_SECTION("cos_sza=" << cos_sza) {
+            Eigen::VectorXd base_altitudes(3);
+            base_altitudes << 0.0, 1000.0, 3000.0;
+            sasktran2::Geometry1D base_geometry(
+                cos_sza, 0.2, 6372000.0, std::move(base_altitudes),
+                sasktran2::grids::interpolation::linear,
+                sasktran2::geometrytype::spherical);
+
+            const Eigen::Matrix3d rotation =
+                (Eigen::AngleAxisd(0.7, Eigen::Vector3d::UnitY()) *
+                 Eigen::AngleAxisd(-0.3, Eigen::Vector3d::UnitX()))
+                    .toRotationMatrix();
+            sasktran2::Coordinates rotated_coordinates(
+                rotation * base_geometry.coordinates().reference_z(),
+                rotation * base_geometry.coordinates().reference_x(),
+                rotation * base_geometry.coordinates().sun_unit(),
+                base_geometry.coordinates().earth_radius(),
+                sasktran2::geometrytype::spherical);
+            Eigen::VectorXd rotated_altitudes(3);
+            rotated_altitudes << 0.0, 1000.0, 3000.0;
+            sasktran2::grids::AltitudeGrid rotated_altitude_grid(
+                std::move(rotated_altitudes),
+                sasktran2::grids::gridspacing::automatic,
+                sasktran2::grids::outofbounds::extend,
+                sasktran2::grids::interpolation::linear);
+            sasktran2::Geometry1D rotated_geometry(
+                std::move(rotated_coordinates),
+                std::move(rotated_altitude_grid));
+
+            sasktran2::raytracing::SphericalShellRayTracer base_raytracer(
+                base_geometry);
+            sasktran2::raytracing::SphericalShellRayTracer rotated_raytracer(
+                rotated_geometry);
+            sasktran2::successive_orders::SourceGeometrySettings settings;
+            settings.num_incoming = 37;
+            settings.num_outgoing = 14;
+            settings.num_threads = 1;
+            settings.use_reduced_horizon_quadrature = true;
+            sasktran2::successive_orders::SourceGeometry1D base_source(
+                base_raytracer, base_geometry);
+            sasktran2::successive_orders::SourceGeometry1D rotated_source(
+                rotated_raytracer, rotated_geometry);
+            sasktran2::viewinggeometry::InternalViewingGeometry viewing;
+            base_source.initialize(viewing, settings);
+            rotated_source.initialize(viewing, settings);
+
+            REQUIRE(base_source.num_points() == rotated_source.num_points());
+            for (int point_index = 0; point_index < base_source.num_points();
+                 ++point_index) {
+                const auto& base_point = base_source.source_point(point_index);
+                const auto& rotated_point =
+                    rotated_source.source_point(point_index);
+                REQUIRE(base_point.num_incoming() ==
+                        rotated_point.num_incoming());
+                REQUIRE((rotation * base_point.location().position -
+                         rotated_point.location().position)
+                            .norm() < 1.0e-8);
+                for (int direction = 0; direction < base_point.num_incoming();
+                     ++direction) {
+                    REQUIRE((rotation *
+                                 base_point.incoming_sphere().get_quad_position(
+                                     direction) -
+                             rotated_point.incoming_sphere().get_quad_position(
+                                 direction))
+                                .norm() < 1.0e-11);
+                    REQUIRE(base_point.incoming_sphere().quadrature_weight(
+                                direction) ==
+                            Catch::Approx(rotated_point.incoming_sphere()
+                                              .quadrature_weight(direction))
+                                .margin(2.0e-15));
+                }
+            }
+        }
+    }
+}
+
+TEST_CASE("Successive-orders reduced-horizon preference falls back for "
+          "diffuse refraction",
+          "[successive_orders][geometry][reduced_horizon]") {
+    sasktran2::Geometry1D geometry(0.4, 0.0, 6372000.0, altitude_grid(),
+                                   sasktran2::grids::interpolation::linear,
+                                   sasktran2::geometrytype::spherical);
+    sasktran2::raytracing::SphericalShellRayTracer raytracer(geometry);
+    const auto los = make_los_geometry(geometry, raytracer);
+
+    sasktran2::successive_orders::SourceGeometrySettings settings;
+    settings.num_incoming = 6;
+    settings.num_outgoing = 6;
+    settings.num_threads = 1;
+    settings.include_refraction = true;
+    settings.use_reduced_horizon_quadrature = true;
+    sasktran2::successive_orders::SourceGeometry1D source_geometry(raytracer,
+                                                                   geometry);
+    source_geometry.initialize(los, settings);
+
+    REQUIRE_FALSE(source_geometry.settings().use_reduced_horizon_quadrature);
+}
+
 #ifdef SKTRAN_RUST_SUPPORT
 TEST_CASE("Successive-orders 2D geometry uses an independent horizontal "
           "source grid",
@@ -334,6 +600,57 @@ TEST_CASE("Successive-orders 2D geometry uses an independent horizontal "
     REQUIRE_THROWS_WITH(
         refracted.initialize(los, settings),
         "Geometry2D successive orders does not support diffuse-ray refraction");
+}
+
+TEST_CASE("Successive-orders reduced-horizon grid follows the Geometry2D "
+          "ground boundary",
+          "[successive_orders][geometry][geometry2d][reduced_horizon]") {
+    sasktran2::Geometry2D geometry(0.6, 0.0, 6372000.0, altitude_grid(),
+                                   horizontal_angle_grid(),
+                                   sasktran2::grids::interpolation::linear);
+    sasktran2::raytracing::RustRayTracer2D raytracer(geometry);
+    const auto los = make_los_geometry(geometry, raytracer);
+
+    sasktran2::successive_orders::SourceGeometrySettings settings;
+    settings.num_incoming = 37;
+    settings.num_outgoing = 14;
+    settings.num_sza = 3;
+    settings.num_threads = 1;
+    settings.use_reduced_horizon_quadrature = true;
+    sasktran2::successive_orders::SourceGeometry1D source_geometry(raytracer,
+                                                                   geometry);
+    source_geometry.initialize(los, settings);
+
+    const double surface_radius = geometry.coordinates().earth_radius() +
+                                  geometry.altitude_grid().grid()[0];
+    REQUIRE(source_geometry.num_interior_points() == 6);
+    for (int point_index = 0;
+         point_index < source_geometry.num_interior_points(); ++point_index) {
+        const auto& point = source_geometry.source_point(point_index);
+        REQUIRE(point.num_incoming() == settings.num_incoming);
+        REQUIRE(point.num_outgoing() == settings.num_outgoing);
+        const Eigen::Vector3d vertical = point.location().position.normalized();
+        const double radius = point.location().position.norm();
+        const double horizon_mu = -std::sqrt(
+            1.0 - surface_radius * surface_radius / (radius * radius));
+        double weight_sum = 0.0;
+        for (int direction = 0; direction < point.num_incoming(); ++direction) {
+            const double mu =
+                point.incoming_sphere().get_quad_position(direction).dot(
+                    vertical);
+            weight_sum += point.incoming_sphere().quadrature_weight(direction);
+            REQUIRE(source_geometry
+                        .incoming_interpolation()[point.incoming_offset() +
+                                                  direction]
+                        .ground_is_hit() == (mu < horizon_mu));
+        }
+        REQUIRE(weight_sum == Catch::Approx(1.0).margin(2.0e-14));
+    }
+
+    require_compiled_topology(source_geometry.incoming_interpolation(),
+                              source_geometry.transport_row_offsets(),
+                              source_geometry.transport_column_indices(),
+                              source_geometry.total_num_outgoing());
 }
 
 TEST_CASE("Successive-orders 2D geometry accepts explicit horizontal source "
@@ -493,9 +810,12 @@ TEST_CASE("Successive-orders default source grid preserves nonuniform midpoint "
     sasktran2::successive_orders::SourceGeometrySettings settings;
     settings.num_incoming = 6;
     settings.num_outgoing = 6;
+    settings.use_reduced_horizon_quadrature = true;
     sasktran2::successive_orders::SourceGeometry1D source_geometry(raytracer,
                                                                    geometry);
     source_geometry.initialize(los, settings);
+
+    REQUIRE_FALSE(source_geometry.settings().use_reduced_horizon_quadrature);
 
     REQUIRE(source_geometry.source_altitudes_m() ==
             std::vector<double>{500.0, 2000.0, 4500.0});

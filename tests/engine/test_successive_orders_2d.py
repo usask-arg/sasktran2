@@ -143,6 +143,30 @@ def test_2d_successive_orders_uses_horizontal_atmospheric_structure():
     )
 
 
+@pytest.mark.parametrize("num_stokes", [1, 3])
+def test_2d_reduced_horizon_supports_arbitrary_incoming_count(num_stokes: int):
+    geometry = geometry2d()
+    config = successive_orders_config(
+        num_stokes=num_stokes,
+        single_scatter_source=sk.SingleScatterSource.NoSource,
+    )
+    config.num_sza = 3
+    config.num_successive_orders_incoming = 37
+    config.num_successive_orders_outgoing = 14
+    config.successive_orders_reduced_horizon_quadrature = True
+    engine = sk.Engine(config, geometry, viewing_geometry())
+    uniform = engine.calculate_radiance(atmosphere(geometry, config)).radiance.values
+    varying = engine.calculate_radiance(
+        atmosphere(geometry, config, horizontal_slope=0.8)
+    ).radiance.values
+
+    assert uniform.shape == (1, 1, num_stokes)
+    assert np.all(np.isfinite(uniform))
+    assert np.all(np.isfinite(varying))
+    assert uniform[0, 0, 0] > 0.0
+    assert not np.isclose(varying[0, 0, 0], uniform[0, 0, 0], rtol=1.0e-4)
+
+
 def test_2d_successive_orders_accepts_explicit_horizontal_source_angles():
     geometry = geometry2d()
     config = successive_orders_config(
@@ -169,11 +193,21 @@ def test_2d_successive_orders_rejects_source_angles_outside_geometry():
         sk.Engine(config, geometry2d(), viewing_geometry())
 
 
-def test_2d_successive_orders_native_products_are_adjoint():
+@pytest.mark.parametrize(
+    ("num_stokes", "reduced_horizon"), [(1, False), (1, True), (3, True)]
+)
+def test_2d_successive_orders_native_products_are_adjoint(
+    num_stokes: int, reduced_horizon: bool
+):
     geometry = geometry2d()
     config = successive_orders_config(
-        single_scatter_source=sk.SingleScatterSource.NoSource
+        num_stokes=num_stokes, single_scatter_source=sk.SingleScatterSource.NoSource
     )
+    if reduced_horizon:
+        config.num_sza = 3
+        config.num_successive_orders_incoming = 37
+        config.num_successive_orders_outgoing = 14
+        config.successive_orders_reduced_horizon_quadrature = True
     config.num_successive_orders_iterations = 60
     config.successive_orders_relative_tolerance = 1.0e-11
     config.successive_orders_absolute_tolerance = 1.0e-13

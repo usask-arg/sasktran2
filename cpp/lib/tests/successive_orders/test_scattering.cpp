@@ -32,6 +32,65 @@ namespace {
         scattering.set_ground_block(0, ground);
         return scattering;
     }
+
+    sasktran2::successive_orders::ScatteringOperator<1>
+    scalar_point_basis_operator() {
+        constexpr int atmospheric_points = 2;
+        constexpr int ground_points = 1;
+        constexpr int num_coefficients = 5;
+        sasktran2::math::LebedevSphere incoming(14);
+        sasktran2::math::LebedevSphere outgoing(26);
+        std::vector<std::shared_ptr<
+            const sasktran2::successive_orders::ScalarAngularBasis>>
+            bases;
+        for (int point = 0; point < atmospheric_points; ++point) {
+            bases.push_back(
+                std::make_shared<
+                    const sasktran2::successive_orders::ScalarAngularBasis>(
+                    incoming, outgoing, num_coefficients));
+        }
+        sasktran2::successive_orders::ScatteringBlockLayout layout(
+            atmospheric_points, ground_points, incoming.num_points(),
+            outgoing.num_points(), 3, 2, 1);
+        sasktran2::successive_orders::ScatteringOperator<1> scattering(
+            std::move(layout), std::move(bases));
+
+        Eigen::MatrixXd coefficients(atmospheric_points, num_coefficients);
+        coefficients << 1.0, 0.35, -0.2, 0.08, 0.01, 0.9, -0.15, 0.12, 0.03,
+            -0.005;
+        scattering.set_atmospheric_coefficients(coefficients);
+        Eigen::MatrixXd ground(2, 3);
+        ground << 0.2, -0.1, 0.5, 0.4, 0.3, -0.25;
+        scattering.set_ground_block(0, ground);
+        return scattering;
+    }
+
+    sasktran2::successive_orders::ScatteringOperator<3>
+    vector_point_basis_operator() {
+        constexpr int atmospheric_points = 2;
+        constexpr int ground_points = 1;
+        constexpr int num_coefficients = 3;
+        sasktran2::math::LebedevSphere incoming(6);
+        sasktran2::math::LebedevSphere outgoing(14);
+        std::vector<std::shared_ptr<
+            const sasktran2::successive_orders::VectorAngularBasis>>
+            bases;
+        for (int point = 0; point < atmospheric_points; ++point) {
+            bases.push_back(
+                std::make_shared<
+                    const sasktran2::successive_orders::VectorAngularBasis>(
+                    incoming, outgoing, num_coefficients));
+        }
+        sasktran2::successive_orders::ScatteringBlockLayout layout(
+            atmospheric_points, ground_points, incoming.num_points(),
+            outgoing.num_points(), 1, 2, 3);
+        sasktran2::successive_orders::ScatteringOperator<3> scattering(
+            std::move(layout), std::move(bases));
+        scattering.set_atmospheric_coefficients(
+            Eigen::MatrixXd::Random(atmospheric_points, 4 * num_coefficients));
+        scattering.set_ground_block(0, Eigen::MatrixXd::Random(6, 3));
+        return scattering;
+    }
 } // namespace
 
 TEST_CASE("Successive-orders scattering layout is point-major with explicit "
@@ -140,6 +199,50 @@ TEST_CASE("Scalar successive-orders scattering JVP and VJP include phase and "
     REQUIRE(forward == Catch::Approx(reverse).epsilon(3.0e-12));
 }
 
+TEST_CASE("Scalar successive-orders point angular bases preserve forward and "
+          "reverse products",
+          "[successive_orders][scattering]") {
+    auto scattering = scalar_point_basis_operator();
+    auto workspace = scattering.make_workspace();
+    const Eigen::VectorXd incoming =
+        Eigen::VectorXd::Random(scattering.input_size());
+    const Eigen::VectorXd incoming_tangent =
+        Eigen::VectorXd::Random(scattering.input_size());
+    const Eigen::MatrixXd coefficient_tangent =
+        Eigen::MatrixXd::Random(scattering.atmospheric_coefficients().rows(),
+                                scattering.atmospheric_coefficients().cols());
+    const Eigen::VectorXd ground_tangent =
+        Eigen::VectorXd::Random(scattering.ground_value_size());
+    const Eigen::VectorXd outgoing_cotangent =
+        Eigen::VectorXd::Random(scattering.output_size());
+
+    Eigen::VectorXd outgoing(scattering.output_size());
+    Eigen::VectorXd incoming_transpose(scattering.input_size());
+    scattering.apply(incoming, outgoing, workspace);
+    scattering.apply_transpose(outgoing_cotangent, incoming_transpose,
+                               workspace);
+    REQUIRE(outgoing.dot(outgoing_cotangent) ==
+            Catch::Approx(incoming.dot(incoming_transpose)).epsilon(2.0e-12));
+
+    Eigen::VectorXd outgoing_tangent(scattering.output_size());
+    scattering.apply_jvp(incoming, incoming_tangent, coefficient_tangent,
+                         ground_tangent, outgoing_tangent, workspace);
+    Eigen::VectorXd incoming_gradient(scattering.input_size());
+    Eigen::MatrixXd coefficient_gradient(
+        scattering.atmospheric_coefficients().rows(),
+        scattering.atmospheric_coefficients().cols());
+    Eigen::VectorXd ground_gradient(scattering.ground_value_size());
+    scattering.apply_vjp(incoming, outgoing_cotangent, incoming_gradient,
+                         coefficient_gradient, ground_gradient, workspace);
+    REQUIRE(
+        outgoing_tangent.dot(outgoing_cotangent) ==
+        Catch::Approx(
+            incoming_tangent.dot(incoming_gradient) +
+            (coefficient_tangent.array() * coefficient_gradient.array()).sum() +
+            ground_tangent.dot(ground_gradient))
+            .epsilon(3.0e-12));
+}
+
 TEST_CASE("Scalar successive-orders scattering skips inactive parameter "
           "directions exactly",
           "[successive_orders][scattering][jvp]") {
@@ -229,6 +332,51 @@ TEST_CASE("Coefficient vector successive-orders scattering products are dual",
             (atmospheric_tangent.array() * atmospheric_gradient.array()).sum() +
             ground_tangent.dot(ground_gradient))
             .epsilon(3.0e-13));
+}
+
+TEST_CASE("Vector successive-orders point angular bases preserve forward and "
+          "reverse products",
+          "[successive_orders][scattering][vector]") {
+    auto scattering = vector_point_basis_operator();
+    auto workspace = scattering.make_workspace();
+    const Eigen::VectorXd incoming =
+        Eigen::VectorXd::Random(scattering.input_size());
+    const Eigen::VectorXd incoming_tangent =
+        Eigen::VectorXd::Random(scattering.input_size());
+    const Eigen::MatrixXd coefficient_tangent =
+        Eigen::MatrixXd::Random(scattering.atmospheric_coefficients().rows(),
+                                scattering.atmospheric_coefficients().cols());
+    const Eigen::VectorXd ground_tangent =
+        Eigen::VectorXd::Random(scattering.ground_value_size());
+    const Eigen::VectorXd outgoing_cotangent =
+        Eigen::VectorXd::Random(scattering.output_size());
+
+    Eigen::VectorXd outgoing(scattering.output_size());
+    Eigen::VectorXd incoming_transpose(scattering.input_size());
+    scattering.apply(incoming, outgoing, workspace);
+    scattering.apply_transpose(outgoing_cotangent, incoming_transpose,
+                               workspace);
+    REQUIRE(outgoing.dot(outgoing_cotangent) ==
+            Catch::Approx(incoming.dot(incoming_transpose)).epsilon(2.0e-12));
+
+    Eigen::VectorXd outgoing_tangent(scattering.output_size());
+    scattering.apply_jvp(incoming, incoming_tangent, coefficient_tangent,
+                         ground_tangent, outgoing_tangent, workspace);
+    Eigen::VectorXd incoming_gradient(scattering.input_size());
+    Eigen::MatrixXd coefficient_gradient(
+        scattering.atmospheric_coefficients().rows(),
+        scattering.atmospheric_coefficients().cols());
+    Eigen::VectorXd ground_gradient(scattering.ground_value_size());
+    scattering.apply_vjp(incoming, outgoing_cotangent, incoming_gradient,
+                         coefficient_gradient, ground_gradient, workspace);
+    REQUIRE(
+        outgoing_tangent.dot(outgoing_cotangent) ==
+        Catch::Approx(
+            incoming_tangent.dot(incoming_gradient) +
+            (coefficient_tangent.array() * coefficient_gradient.array()).sum() +
+            ground_tangent.dot(ground_gradient))
+            .epsilon(3.0e-12));
+    REQUIRE(scattering.memory_usage().angular_basis_bytes > 0);
 }
 
 TEST_CASE("Successive-orders scattering rejects mismatched dimensions",
