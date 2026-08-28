@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -10,6 +11,7 @@ import yaml
 from packaging import version
 
 APPDIRS = appdirs.AppDirs(appname="sasktran2", appauthor="usask-arg")
+DATABASE_ROOT_ENV_VAR = "SASKTRAN2_DATABASE_ROOT"
 
 
 def user_config_file_location() -> Path:
@@ -54,11 +56,15 @@ def save_user_config(user_config: dict):
 
 
 def database_root() -> Path:
-    dir = load_user_config().get("database_root", None)
+    environment_root = os.environ.get(DATABASE_ROOT_ENV_VAR)
+    if environment_root:
+        return Path(environment_root)
 
-    if dir is None:
+    configured_root = load_user_config().get("database_root", None)
+
+    if configured_root is None:
         return Path(APPDIRS.user_data_dir).joinpath("database")
-    return Path(dir)
+    return Path(configured_root)
 
 
 def are_extended_db_downloaded() -> bool:
