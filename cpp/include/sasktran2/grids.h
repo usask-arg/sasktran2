@@ -197,13 +197,15 @@ namespace sasktran2::grids {
         : public SourceLocationInterpolator {
       private:
         const Grid m_cos_sza_grid;
+        const double m_ground_altitude;
 
         int interior_linear_index(int alt_index, int sza_index);
         int ground_linear_index(int sza_index) const;
 
       public:
         AltitudeSZASourceLocationInterpolator(AltitudeGrid&& altitude_grid,
-                                              Grid&& cos_sza_grid);
+                                              Grid&& cos_sza_grid,
+                                              double ground_altitude = 0.0);
 
         int num_interior_points() const override;
         int num_ground_points() const override;

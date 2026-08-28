@@ -486,6 +486,21 @@ class Config:
         self._config.successive_orders_damping = value
 
     @property
+    def successive_orders_reduced_horizon_quadrature(self) -> bool:
+        """Prefer the horizon-fitted successive-orders incoming rule.
+
+        Enabled by default. It is selected automatically for spherical
+        Geometry1D and Geometry2D with any incoming-ray count of at least six
+        and no diffuse-ray refraction. Unsupported configurations fall back to
+        the legacy Lebedev rule. Set this to ``False`` to force Lebedev.
+        """
+        return self._config.successive_orders_reduced_horizon_quadrature
+
+    @successive_orders_reduced_horizon_quadrature.setter
+    def successive_orders_reduced_horizon_quadrature(self, value: bool):
+        self._config.successive_orders_reduced_horizon_quadrature = value
+
+    @property
     def successive_orders_altitude_grid_m(self) -> np.ndarray | None:
         """Explicit source-altitude grid for ``SuccessiveOrders``, in metres.
 

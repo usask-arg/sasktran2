@@ -363,6 +363,47 @@ namespace sasktran2::successive_orders {
         m_ground_values.setZero();
     }
 
+    ScatteringOperator<1>::ScatteringOperator(
+        ScatteringBlockLayout layout,
+        std::vector<std::shared_ptr<const ScalarAngularBasis>> angular_bases,
+        bool point_bases_share_synthesis)
+        : m_layout(std::move(layout)),
+          m_basis(angular_bases.empty() ? nullptr : angular_bases.front()),
+          m_point_bases(std::move(angular_bases)),
+          m_point_bases_share_synthesis(point_bases_share_synthesis),
+          m_atmospheric_coefficients(
+              m_layout.atmospheric_blocks(),
+              m_basis == nullptr ? 0 : m_basis->num_coefficients()),
+          m_ground_value_offsets(
+              make_dense_value_offsets(m_layout, m_layout.atmospheric_blocks(),
+                                       m_layout.ground_blocks())),
+          m_ground_values(m_ground_value_offsets.back()) {
+        if (m_basis == nullptr ||
+            m_point_bases.size() !=
+                static_cast<std::size_t>(m_layout.atmospheric_blocks())) {
+            throw std::invalid_argument(
+                "scalar successive-orders point angular bases do not match "
+                "the atmospheric layout");
+        }
+        if (m_layout.stokes_components() != 1) {
+            throw std::invalid_argument(
+                "scalar successive-orders scattering requires NSTOKES=1");
+        }
+        for (int block = 0; block < m_layout.atmospheric_blocks(); ++block) {
+            const auto& basis = m_point_bases[block];
+            if (basis == nullptr ||
+                basis->num_coefficients() != m_basis->num_coefficients() ||
+                m_layout.input_block_size(block) != basis->input_size() ||
+                m_layout.output_block_size(block) != basis->output_size()) {
+                throw std::invalid_argument(
+                    "scalar successive-orders atmospheric block does not "
+                    "match its point angular basis");
+            }
+        }
+        m_atmospheric_coefficients.setZero();
+        m_ground_values.setZero();
+    }
+
     void
     ScatteringOperator<1>::set_active_coefficients(int active_coefficients) {
         if (active_coefficients < 1 ||
@@ -455,6 +496,12 @@ namespace sasktran2::successive_orders {
         result.layout_bytes = m_layout.storage_bytes() +
                               m_ground_value_offsets.capacity() * sizeof(int);
         result.angular_basis_bytes = m_basis->storage_bytes();
+        if (!m_point_bases.empty()) {
+            result.angular_basis_bytes = 0;
+            for (const auto& basis : m_point_bases) {
+                result.angular_basis_bytes += basis->storage_bytes();
+            }
+        }
         result.atmospheric_value_bytes =
             static_cast<std::size_t>(m_atmospheric_coefficients.size()) *
             sizeof(double);
@@ -482,10 +529,39 @@ namespace sasktran2::successive_orders {
         if (m_layout.atmospheric_blocks() != 0) {
             pack_atmospheric_blocks(m_layout, incoming,
                                     workspace.m_atmospheric_input);
-            m_basis->apply_active(
-                workspace.m_atmospheric_input, m_atmospheric_coefficients,
-                m_active_coefficients, workspace.m_atmospheric_output,
-                workspace.m_moments);
+            if (m_point_bases.empty()) {
+                m_basis->apply_active(
+                    workspace.m_atmospheric_input, m_atmospheric_coefficients,
+                    m_active_coefficients, workspace.m_atmospheric_output,
+                    workspace.m_moments);
+            } else if (m_point_bases_share_synthesis) {
+                const int active_modes =
+                    m_active_coefficients * m_active_coefficients;
+                workspace.m_moments.resize(m_layout.atmospheric_blocks(),
+                                           active_modes);
+                for (int point = 0; point < m_layout.atmospheric_blocks();
+                     ++point) {
+                    m_point_bases[point]->analyze_active(
+                        workspace.m_atmospheric_input.middleRows(point, 1),
+                        m_atmospheric_coefficients.middleRows(point, 1),
+                        m_active_coefficients, workspace.m_auxiliary_moments);
+                    workspace.m_moments.row(point) =
+                        workspace.m_auxiliary_moments.row(0);
+                }
+                m_basis->synthesize_active(workspace.m_moments,
+                                           m_active_coefficients,
+                                           workspace.m_atmospheric_output);
+            } else {
+                for (int point = 0; point < m_layout.atmospheric_blocks();
+                     ++point) {
+                    m_point_bases[point]->apply_active(
+                        workspace.m_atmospheric_input.middleRows(point, 1),
+                        m_atmospheric_coefficients.middleRows(point, 1),
+                        m_active_coefficients,
+                        workspace.m_atmospheric_output.middleRows(point, 1),
+                        workspace.m_auxiliary_moments);
+                }
+            }
             unpack_atmospheric_blocks(m_layout, workspace.m_atmospheric_output,
                                       outgoing);
         }
@@ -503,10 +579,22 @@ namespace sasktran2::successive_orders {
         if (m_layout.atmospheric_blocks() != 0) {
             pack_atmospheric_output_blocks(m_layout, outgoing,
                                            workspace.m_atmospheric_output);
-            m_basis->apply_transpose_active(
-                workspace.m_atmospheric_output, m_atmospheric_coefficients,
-                m_active_coefficients, workspace.m_atmospheric_input,
-                workspace.m_moments);
+            if (m_point_bases.empty()) {
+                m_basis->apply_transpose_active(
+                    workspace.m_atmospheric_output, m_atmospheric_coefficients,
+                    m_active_coefficients, workspace.m_atmospheric_input,
+                    workspace.m_moments);
+            } else {
+                for (int point = 0; point < m_layout.atmospheric_blocks();
+                     ++point) {
+                    m_point_bases[point]->apply_transpose_active(
+                        workspace.m_atmospheric_output.middleRows(point, 1),
+                        m_atmospheric_coefficients.middleRows(point, 1),
+                        m_active_coefficients,
+                        workspace.m_atmospheric_input.middleRows(point, 1),
+                        workspace.m_moments);
+                }
+            }
             unpack_atmospheric_input_blocks(
                 m_layout, workspace.m_atmospheric_input, incoming);
         }
@@ -549,11 +637,25 @@ namespace sasktran2::successive_orders {
                     break;
                 }
             }
-            m_basis->apply_jvp_active(
-                workspace.m_atmospheric_input, workspace.m_auxiliary_input,
-                m_atmospheric_coefficients, coefficient_tangent,
-                active_coefficients, workspace.m_atmospheric_output,
-                workspace.m_moments, workspace.m_auxiliary_moments);
+            if (m_point_bases.empty()) {
+                m_basis->apply_jvp_active(
+                    workspace.m_atmospheric_input, workspace.m_auxiliary_input,
+                    m_atmospheric_coefficients, coefficient_tangent,
+                    active_coefficients, workspace.m_atmospheric_output,
+                    workspace.m_moments, workspace.m_auxiliary_moments);
+            } else {
+                for (int point = 0; point < m_layout.atmospheric_blocks();
+                     ++point) {
+                    m_point_bases[point]->apply_jvp_active(
+                        workspace.m_atmospheric_input.middleRows(point, 1),
+                        workspace.m_auxiliary_input.middleRows(point, 1),
+                        m_atmospheric_coefficients.middleRows(point, 1),
+                        coefficient_tangent.middleRows(point, 1),
+                        active_coefficients,
+                        workspace.m_atmospheric_output.middleRows(point, 1),
+                        workspace.m_moments, workspace.m_auxiliary_moments);
+                }
+            }
             unpack_atmospheric_blocks(m_layout, workspace.m_atmospheric_output,
                                       outgoing_tangent);
         }
@@ -587,11 +689,24 @@ namespace sasktran2::successive_orders {
                                     workspace.m_atmospheric_input);
             pack_atmospheric_output_blocks(m_layout, outgoing_cotangent,
                                            workspace.m_atmospheric_output);
-            m_basis->apply_vjp(
-                workspace.m_atmospheric_input, m_atmospheric_coefficients,
-                workspace.m_atmospheric_output, workspace.m_auxiliary_input,
-                coefficient_gradient, workspace.m_moments,
-                workspace.m_auxiliary_moments);
+            if (m_point_bases.empty()) {
+                m_basis->apply_vjp(
+                    workspace.m_atmospheric_input, m_atmospheric_coefficients,
+                    workspace.m_atmospheric_output, workspace.m_auxiliary_input,
+                    coefficient_gradient, workspace.m_moments,
+                    workspace.m_auxiliary_moments);
+            } else {
+                for (int point = 0; point < m_layout.atmospheric_blocks();
+                     ++point) {
+                    m_point_bases[point]->apply_vjp(
+                        workspace.m_atmospheric_input.middleRows(point, 1),
+                        m_atmospheric_coefficients.middleRows(point, 1),
+                        workspace.m_atmospheric_output.middleRows(point, 1),
+                        workspace.m_auxiliary_input.middleRows(point, 1),
+                        coefficient_gradient.middleRows(point, 1),
+                        workspace.m_moments, workspace.m_auxiliary_moments);
+                }
+            }
             unpack_atmospheric_input_blocks(
                 m_layout, workspace.m_auxiliary_input, incoming_cotangent);
         }
@@ -615,7 +730,7 @@ namespace sasktran2::successive_orders {
                    m_atmospheric_input.size() + m_atmospheric_output.size() +
                    m_auxiliary_input.size() + m_auxiliary_output.size()) *
                    sizeof(double) +
-               m_angular.storage_bytes();
+               m_angular.storage_bytes() + m_point_angular.storage_bytes();
     }
 
     ScatteringOperator<3>::ScatteringOperator(
@@ -644,6 +759,47 @@ namespace sasktran2::successive_orders {
                 throw std::invalid_argument(
                     "vector successive-orders atmospheric block does not "
                     "match its angular basis");
+            }
+        }
+        m_atmospheric_coefficients.setZero();
+        m_ground_values.setZero();
+    }
+
+    ScatteringOperator<3>::ScatteringOperator(
+        ScatteringBlockLayout layout,
+        std::vector<std::shared_ptr<const VectorAngularBasis>> angular_bases,
+        bool point_bases_share_synthesis)
+        : m_layout(std::move(layout)),
+          m_basis(angular_bases.empty() ? nullptr : angular_bases.front()),
+          m_point_bases(std::move(angular_bases)),
+          m_point_bases_share_synthesis(point_bases_share_synthesis),
+          m_ground_value_offsets(
+              make_dense_value_offsets(m_layout, m_layout.atmospheric_blocks(),
+                                       m_layout.ground_blocks())),
+          m_atmospheric_coefficients(
+              m_layout.atmospheric_blocks(),
+              m_basis == nullptr ? 0 : 4 * m_basis->num_coefficients()),
+          m_ground_values(m_ground_value_offsets.back()) {
+        if (m_basis == nullptr ||
+            m_point_bases.size() !=
+                static_cast<std::size_t>(m_layout.atmospheric_blocks())) {
+            throw std::invalid_argument(
+                "vector successive-orders point angular bases do not match "
+                "the atmospheric layout");
+        }
+        if (m_layout.stokes_components() != 3) {
+            throw std::invalid_argument(
+                "vector successive-orders scattering requires NSTOKES=3");
+        }
+        for (int block = 0; block < m_layout.atmospheric_blocks(); ++block) {
+            const auto& basis = m_point_bases[block];
+            if (basis == nullptr ||
+                basis->num_coefficients() != m_basis->num_coefficients() ||
+                m_layout.input_block_size(block) != basis->input_size() ||
+                m_layout.output_block_size(block) != basis->output_size()) {
+                throw std::invalid_argument(
+                    "vector successive-orders atmospheric block does not "
+                    "match its point angular basis");
             }
         }
         m_atmospheric_coefficients.setZero();
@@ -730,6 +886,12 @@ namespace sasktran2::successive_orders {
         result.layout_bytes = m_layout.storage_bytes() +
                               m_ground_value_offsets.capacity() * sizeof(int);
         result.angular_basis_bytes = m_basis->storage_bytes();
+        if (!m_point_bases.empty()) {
+            result.angular_basis_bytes = 0;
+            for (const auto& basis : m_point_bases) {
+                result.angular_basis_bytes += basis->storage_bytes();
+            }
+        }
         result.atmospheric_value_bytes =
             static_cast<std::size_t>(m_atmospheric_coefficients.size()) *
             sizeof(double);
@@ -767,14 +929,58 @@ namespace sasktran2::successive_orders {
                                  ScatteringWorkspace<3>& workspace) const {
         validate_input_output(incoming.size(), outgoing.size());
         prepare_workspace(workspace);
-        pack_atmospheric_blocks(m_layout, incoming,
-                                workspace.m_atmospheric_input);
-        m_basis->apply_active(workspace.m_atmospheric_input,
-                              m_atmospheric_coefficients, m_active_coefficients,
-                              workspace.m_atmospheric_output,
-                              workspace.m_angular);
-        unpack_atmospheric_blocks(m_layout, workspace.m_atmospheric_output,
-                                  outgoing);
+        if (m_layout.atmospheric_blocks() != 0) {
+            pack_atmospheric_blocks(m_layout, incoming,
+                                    workspace.m_atmospheric_input);
+            if (m_point_bases.empty()) {
+                m_basis->apply_active(
+                    workspace.m_atmospheric_input, m_atmospheric_coefficients,
+                    m_active_coefficients, workspace.m_atmospheric_output,
+                    workspace.m_angular);
+            } else if (m_point_bases_share_synthesis) {
+                const int active_modes =
+                    m_active_coefficients * m_active_coefficients;
+                for (auto& moments : workspace.m_angular.moments) {
+                    moments.resize(m_layout.atmospheric_blocks(), active_modes);
+                }
+                for (int point = 0; point < m_layout.atmospheric_blocks();
+                     ++point) {
+                    m_point_bases[point]->analyze_active(
+                        workspace.m_atmospheric_input.middleRows(point, 1),
+                        m_active_coefficients, workspace.m_point_angular);
+                    for (int moment = 0; moment < 6; ++moment) {
+                        workspace.m_angular.moments[moment].row(point) =
+                            workspace.m_point_angular.moments[moment].row(0);
+                    }
+                }
+                m_basis->multiply_coefficients_active(
+                    m_atmospheric_coefficients, m_active_coefficients,
+                    workspace.m_angular);
+                m_basis->synthesize_active(workspace.m_atmospheric_output,
+                                           m_active_coefficients,
+                                           workspace.m_angular);
+                for (int point = 0; point < m_layout.atmospheric_blocks();
+                     ++point) {
+                    m_point_bases[point]->add_frame_corrections_active(
+                        workspace.m_atmospheric_input.middleRows(point, 1),
+                        m_atmospheric_coefficients.middleRows(point, 1),
+                        m_active_coefficients,
+                        workspace.m_atmospheric_output.middleRows(point, 1));
+                }
+            } else {
+                for (int point = 0; point < m_layout.atmospheric_blocks();
+                     ++point) {
+                    m_point_bases[point]->apply_active(
+                        workspace.m_atmospheric_input.middleRows(point, 1),
+                        m_atmospheric_coefficients.middleRows(point, 1),
+                        m_active_coefficients,
+                        workspace.m_atmospheric_output.middleRows(point, 1),
+                        workspace.m_point_angular);
+                }
+            }
+            unpack_atmospheric_blocks(m_layout, workspace.m_atmospheric_output,
+                                      outgoing);
+        }
         apply_dense_blocks(m_layout, m_layout.atmospheric_blocks(),
                            m_ground_value_offsets, m_ground_values, incoming,
                            outgoing);
@@ -786,14 +992,28 @@ namespace sasktran2::successive_orders {
         ScatteringWorkspace<3>& workspace) const {
         validate_input_output(incoming.size(), outgoing.size());
         prepare_workspace(workspace);
-        pack_atmospheric_output_blocks(m_layout, outgoing,
-                                       workspace.m_atmospheric_output);
-        m_basis->apply_transpose_active(
-            workspace.m_atmospheric_output, m_atmospheric_coefficients,
-            m_active_coefficients, workspace.m_atmospheric_input,
-            workspace.m_angular);
-        unpack_atmospheric_input_blocks(m_layout, workspace.m_atmospheric_input,
-                                        incoming);
+        if (m_layout.atmospheric_blocks() != 0) {
+            pack_atmospheric_output_blocks(m_layout, outgoing,
+                                           workspace.m_atmospheric_output);
+            if (m_point_bases.empty()) {
+                m_basis->apply_transpose_active(
+                    workspace.m_atmospheric_output, m_atmospheric_coefficients,
+                    m_active_coefficients, workspace.m_atmospheric_input,
+                    workspace.m_angular);
+            } else {
+                for (int point = 0; point < m_layout.atmospheric_blocks();
+                     ++point) {
+                    m_point_bases[point]->apply_transpose_active(
+                        workspace.m_atmospheric_output.middleRows(point, 1),
+                        m_atmospheric_coefficients.middleRows(point, 1),
+                        m_active_coefficients,
+                        workspace.m_atmospheric_input.middleRows(point, 1),
+                        workspace.m_angular);
+                }
+            }
+            unpack_atmospheric_input_blocks(
+                m_layout, workspace.m_atmospheric_input, incoming);
+        }
         apply_dense_blocks_transpose(m_layout, m_layout.atmospheric_blocks(),
                                      m_ground_value_offsets, m_ground_values,
                                      outgoing, incoming);
@@ -815,32 +1035,60 @@ namespace sasktran2::successive_orders {
         }
         validate_dense_tangent(m_ground_values, ground_value_tangent);
         prepare_workspace(workspace);
-        pack_atmospheric_blocks(m_layout, incoming_tangent,
-                                workspace.m_auxiliary_input);
-        m_basis->apply_active(workspace.m_auxiliary_input,
-                              m_atmospheric_coefficients, m_active_coefficients,
-                              workspace.m_atmospheric_output,
-                              workspace.m_angular);
-        if (!coefficient_tangent.isZero(0.0)) {
+        if (m_layout.atmospheric_blocks() != 0) {
+            pack_atmospheric_blocks(m_layout, incoming_tangent,
+                                    workspace.m_auxiliary_input);
             int active_coefficients = m_active_coefficients;
-            for (int degree = m_basis->num_coefficients() - 1;
-                 degree >= m_active_coefficients; --degree) {
-                if (!coefficient_tangent.middleCols(4 * degree, 4)
-                         .isZero(0.0)) {
-                    active_coefficients = degree + 1;
-                    break;
+            if (!coefficient_tangent.isZero(0.0)) {
+                for (int degree = m_basis->num_coefficients() - 1;
+                     degree >= m_active_coefficients; --degree) {
+                    if (!coefficient_tangent.middleCols(4 * degree, 4)
+                             .isZero(0.0)) {
+                        active_coefficients = degree + 1;
+                        break;
+                    }
                 }
             }
-            pack_atmospheric_blocks(m_layout, incoming,
-                                    workspace.m_atmospheric_input);
-            m_basis->apply_active(workspace.m_atmospheric_input,
-                                  coefficient_tangent, active_coefficients,
-                                  workspace.m_auxiliary_output,
-                                  workspace.m_angular);
-            workspace.m_atmospheric_output += workspace.m_auxiliary_output;
+            if (m_point_bases.empty()) {
+                m_basis->apply_active(
+                    workspace.m_auxiliary_input, m_atmospheric_coefficients,
+                    m_active_coefficients, workspace.m_atmospheric_output,
+                    workspace.m_angular);
+            } else {
+                for (int point = 0; point < m_layout.atmospheric_blocks();
+                     ++point) {
+                    m_point_bases[point]->apply_active(
+                        workspace.m_auxiliary_input.middleRows(point, 1),
+                        m_atmospheric_coefficients.middleRows(point, 1),
+                        m_active_coefficients,
+                        workspace.m_atmospheric_output.middleRows(point, 1),
+                        workspace.m_angular);
+                }
+            }
+            if (!coefficient_tangent.isZero(0.0)) {
+                pack_atmospheric_blocks(m_layout, incoming,
+                                        workspace.m_atmospheric_input);
+                if (m_point_bases.empty()) {
+                    m_basis->apply_active(
+                        workspace.m_atmospheric_input, coefficient_tangent,
+                        active_coefficients, workspace.m_auxiliary_output,
+                        workspace.m_angular);
+                } else {
+                    for (int point = 0; point < m_layout.atmospheric_blocks();
+                         ++point) {
+                        m_point_bases[point]->apply_active(
+                            workspace.m_atmospheric_input.middleRows(point, 1),
+                            coefficient_tangent.middleRows(point, 1),
+                            active_coefficients,
+                            workspace.m_auxiliary_output.middleRows(point, 1),
+                            workspace.m_angular);
+                    }
+                }
+                workspace.m_atmospheric_output += workspace.m_auxiliary_output;
+            }
+            unpack_atmospheric_blocks(m_layout, workspace.m_atmospheric_output,
+                                      outgoing_tangent);
         }
-        unpack_atmospheric_blocks(m_layout, workspace.m_atmospheric_output,
-                                  outgoing_tangent);
         apply_dense_blocks_jvp(m_layout, m_layout.atmospheric_blocks(),
                                m_ground_value_offsets, m_ground_values,
                                ground_value_tangent, incoming, incoming_tangent,
@@ -866,19 +1114,39 @@ namespace sasktran2::successive_orders {
         coefficient_gradient.setZero();
         ground_value_gradient.setZero();
         prepare_workspace(workspace);
-        pack_atmospheric_blocks(m_layout, incoming,
-                                workspace.m_atmospheric_input);
-        pack_atmospheric_output_blocks(m_layout, outgoing_cotangent,
-                                       workspace.m_atmospheric_output);
-        m_basis->apply_transpose_active(
-            workspace.m_atmospheric_output, m_atmospheric_coefficients,
-            m_active_coefficients, workspace.m_auxiliary_input,
-            workspace.m_angular);
-        unpack_atmospheric_input_blocks(m_layout, workspace.m_auxiliary_input,
-                                        incoming_cotangent);
-        m_basis->accumulate_coefficient_vjp(
-            workspace.m_atmospheric_input, workspace.m_atmospheric_output,
-            coefficient_gradient, workspace.m_angular);
+        if (m_layout.atmospheric_blocks() != 0) {
+            pack_atmospheric_blocks(m_layout, incoming,
+                                    workspace.m_atmospheric_input);
+            pack_atmospheric_output_blocks(m_layout, outgoing_cotangent,
+                                           workspace.m_atmospheric_output);
+            if (m_point_bases.empty()) {
+                m_basis->apply_transpose_active(
+                    workspace.m_atmospheric_output, m_atmospheric_coefficients,
+                    m_active_coefficients, workspace.m_auxiliary_input,
+                    workspace.m_angular);
+                m_basis->accumulate_coefficient_vjp(
+                    workspace.m_atmospheric_input,
+                    workspace.m_atmospheric_output, coefficient_gradient,
+                    workspace.m_angular);
+            } else {
+                for (int point = 0; point < m_layout.atmospheric_blocks();
+                     ++point) {
+                    m_point_bases[point]->apply_transpose_active(
+                        workspace.m_atmospheric_output.middleRows(point, 1),
+                        m_atmospheric_coefficients.middleRows(point, 1),
+                        m_active_coefficients,
+                        workspace.m_auxiliary_input.middleRows(point, 1),
+                        workspace.m_angular);
+                    m_point_bases[point]->accumulate_coefficient_vjp(
+                        workspace.m_atmospheric_input.middleRows(point, 1),
+                        workspace.m_atmospheric_output.middleRows(point, 1),
+                        coefficient_gradient.middleRows(point, 1),
+                        workspace.m_angular);
+                }
+            }
+            unpack_atmospheric_input_blocks(
+                m_layout, workspace.m_auxiliary_input, incoming_cotangent);
+        }
         apply_dense_blocks_vjp(m_layout, m_layout.atmospheric_blocks(),
                                m_ground_value_offsets, m_ground_values,
                                incoming, outgoing_cotangent, incoming_cotangent,

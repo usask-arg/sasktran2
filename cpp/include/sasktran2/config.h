@@ -500,6 +500,18 @@ namespace sasktran2 {
             m_successive_orders_damping = damping;
         }
 
+        /** Prefer the horizon-fitted incoming quadrature for successive
+         * orders. It is selected automatically for spherical Geometry1D and
+         * Geometry2D with at least six incoming nodes and no diffuse-ray
+         * refraction. Unsupported configurations fall back to Lebedev.
+         * Disable this option to force the legacy Lebedev rule. */
+        bool successive_orders_reduced_horizon_quadrature() const {
+            return m_successive_orders_reduced_horizon_quadrature;
+        }
+        void set_successive_orders_reduced_horizon_quadrature(bool enabled) {
+            m_successive_orders_reduced_horizon_quadrature = enabled;
+        }
+
         /** Explicit source altitude grid in metres. An empty grid selects the
          * source's default atmosphere-derived grid. */
         const std::vector<double>& successive_orders_altitude_grid_m() const {
@@ -808,6 +820,7 @@ namespace sasktran2 {
         double m_successive_orders_absolute_tolerance = 1.0e-12;
         int m_successive_orders_anderson_depth = 3;
         double m_successive_orders_damping = 1.0;
+        bool m_successive_orders_reduced_horizon_quadrature = true;
         std::vector<double> m_successive_orders_altitude_grid_m;
         std::vector<double> m_successive_orders_horizontal_angle_grid_radians;
 

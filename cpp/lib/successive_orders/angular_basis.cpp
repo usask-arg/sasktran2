@@ -143,21 +143,51 @@ namespace sasktran2::successive_orders {
         Eigen::Ref<Eigen::MatrixXd> outgoing,
         Eigen::MatrixXd& moment_workspace) const {
         validate_blocks(incoming, coefficients, outgoing);
+        analyze_active(incoming, coefficients, active_coefficients,
+                       moment_workspace);
+        synthesize_active(moment_workspace, active_coefficients, outgoing);
+    }
+
+    void ScalarAngularBasis::analyze_active(
+        Eigen::Ref<const Eigen::MatrixXd> incoming,
+        Eigen::Ref<const Eigen::MatrixXd> coefficients, int active_coefficients,
+        Eigen::MatrixXd& moments) const {
+        if (incoming.rows() != coefficients.rows() ||
+            incoming.cols() != input_size() ||
+            coefficients.cols() != num_coefficients()) {
+            throw std::invalid_argument(
+                "invalid scalar successive-orders analysis dimensions");
+        }
         if (active_coefficients < 1 ||
             active_coefficients > num_coefficients()) {
             throw std::invalid_argument(
                 "invalid active scalar scattering coefficient count");
         }
         const int active_modes = active_coefficients * active_coefficients;
-        moment_workspace.resize(incoming.rows(), active_modes);
-        moment_workspace.noalias() =
+        moments.resize(incoming.rows(), active_modes);
+        moments.noalias() =
             incoming * m_analysis.topRows(active_modes).transpose();
         for (int mode = 0; mode < active_modes; ++mode) {
-            moment_workspace.col(mode).array() *=
+            moments.col(mode).array() *=
                 coefficients.col(m_mode_degrees[mode]).array();
         }
+    }
+
+    void ScalarAngularBasis::synthesize_active(
+        Eigen::Ref<const Eigen::MatrixXd> moments, int active_coefficients,
+        Eigen::Ref<Eigen::MatrixXd> outgoing) const {
+        if (active_coefficients < 1 ||
+            active_coefficients > num_coefficients() ||
+            moments.cols() != active_coefficients * active_coefficients ||
+            outgoing.rows() != moments.rows() ||
+            outgoing.cols() != output_size()) {
+            throw std::invalid_argument(
+                "invalid scalar successive-orders synthesis dimensions");
+        }
         outgoing.noalias() =
-            moment_workspace * m_synthesis.leftCols(active_modes).transpose();
+            moments *
+            m_synthesis.leftCols(active_coefficients * active_coefficients)
+                .transpose();
     }
 
     void ScalarAngularBasis::apply_transpose(
@@ -423,7 +453,7 @@ namespace sasktran2::successive_orders {
                 FrameCorrection correction;
                 correction.input_index = input_index;
                 correction.output_index = output_index;
-                correction.values.assign(
+                std::vector<double> dense_correction(
                     static_cast<std::size_t>(num_coefficients) * 4 * 9, 0.0);
                 double theta = 0.0;
                 double c1 = 0.0;
@@ -536,18 +566,38 @@ namespace sasktran2::successive_orders {
                                                    output_stokes) *
                                                       3 +
                                                   input_stokes;
-                                correction.values[index] =
+                                dense_correction[index] =
                                     weight *
                                         expected(output_stokes, input_stokes) -
                                     factored[output_stokes];
-                                nonzero = nonzero ||
-                                          std::abs(correction.values[index]) >
-                                              1.0e-15;
+                                nonzero =
+                                    nonzero ||
+                                    std::abs(dense_correction[index]) > 1.0e-15;
                             }
                         }
                     }
                 }
                 if (nonzero) {
+                    for (int coefficient_index = 0;
+                         coefficient_index < 4 * num_coefficients;
+                         ++coefficient_index) {
+                        for (int output_stokes = 0; output_stokes < 3;
+                             ++output_stokes) {
+                            for (int input_stokes = 0; input_stokes < 3;
+                                 ++input_stokes) {
+                                const double value =
+                                    dense_correction[(coefficient_index * 3 +
+                                                      output_stokes) *
+                                                         3 +
+                                                     input_stokes];
+                                if (value != 0.0) {
+                                    correction.terms.push_back(
+                                        {coefficient_index, output_stokes,
+                                         input_stokes, value});
+                                }
+                            }
+                        }
+                    }
                     m_frame_corrections.push_back(std::move(correction));
                 }
             }
@@ -566,7 +616,8 @@ namespace sasktran2::successive_orders {
         std::size_t correction_bytes =
             m_frame_corrections.capacity() * sizeof(FrameCorrection);
         for (const auto& correction : m_frame_corrections) {
-            correction_bytes += correction.values.capacity() * sizeof(double);
+            correction_bytes +=
+                correction.terms.capacity() * sizeof(FrameCorrectionTerm);
         }
         return values * sizeof(double) +
                m_mode_degrees.capacity() * sizeof(int) + correction_bytes;
@@ -590,6 +641,50 @@ namespace sasktran2::successive_orders {
                                      int active_modes,
                                      VectorAngularWorkspace& workspace) const {
         const int blocks = static_cast<int>(incoming.rows());
+        for (auto& moment : workspace.moments) {
+            moment.setZero(blocks, active_modes);
+        }
+        if (blocks == 1) {
+            // Point-specific horizon bases are applied one row at a time.
+            // Traverse each column of the column-major analysis matrices once
+            // and update all coupled Stokes moments while it is hot in cache.
+            // This also avoids packing the interleaved incoming Stokes row.
+            for (int direction = 0; direction < input_directions();
+                 ++direction) {
+                const double intensity = incoming(0, 3 * direction);
+                const double q = incoming(0, 3 * direction + 1);
+                const double u = incoming(0, 3 * direction + 2);
+
+                const auto intensity_real =
+                    m_analysis_real[0].col(direction).head(active_modes);
+                const auto intensity_imaginary =
+                    m_analysis_imaginary[0].col(direction).head(active_modes);
+                workspace.moments[0].row(0).transpose().array() +=
+                    intensity * intensity_real.array();
+                workspace.moments[1].row(0).transpose().array() +=
+                    intensity * intensity_imaginary.array();
+
+                const auto plus_real =
+                    m_analysis_real[1].col(direction).head(active_modes);
+                const auto plus_imaginary =
+                    m_analysis_imaginary[1].col(direction).head(active_modes);
+                workspace.moments[2].row(0).transpose().array() +=
+                    q * plus_real.array() - u * plus_imaginary.array();
+                workspace.moments[3].row(0).transpose().array() +=
+                    q * plus_imaginary.array() + u * plus_real.array();
+
+                const auto minus_real =
+                    m_analysis_real[2].col(direction).head(active_modes);
+                const auto minus_imaginary =
+                    m_analysis_imaginary[2].col(direction).head(active_modes);
+                workspace.moments[4].row(0).transpose().array() +=
+                    q * minus_real.array() + u * minus_imaginary.array();
+                workspace.moments[5].row(0).transpose().array() +=
+                    q * minus_imaginary.array() - u * minus_real.array();
+            }
+            return;
+        }
+
         for (int component = 0; component < 3; ++component) {
             workspace.stokes_input[component].resize(blocks,
                                                      input_directions());
@@ -602,10 +697,6 @@ namespace sasktran2::successive_orders {
                         incoming(block, 3 * direction + component);
                 }
             }
-        }
-
-        for (auto& moment : workspace.moments) {
-            moment.resize(blocks, active_modes);
         }
         workspace.moments[0].noalias() =
             workspace.stokes_input[0] *
@@ -646,15 +737,47 @@ namespace sasktran2::successive_orders {
         Eigen::Ref<Eigen::MatrixXd> outgoing,
         VectorAngularWorkspace& workspace) const {
         validate_blocks(incoming, coefficients, outgoing);
+        analyze_active(incoming, active_coefficients, workspace);
+        multiply_coefficients_active(coefficients, active_coefficients,
+                                     workspace);
+        synthesize_active(outgoing, active_coefficients, workspace);
+        add_frame_corrections_active(incoming, coefficients,
+                                     active_coefficients, outgoing);
+    }
+
+    void VectorAngularBasis::analyze_active(
+        Eigen::Ref<const Eigen::MatrixXd> incoming, int active_coefficients,
+        VectorAngularWorkspace& workspace) const {
+        if (incoming.cols() != input_size()) {
+            throw std::invalid_argument(
+                "invalid vector successive-orders analysis dimensions");
+        }
         if (active_coefficients < 1 ||
             active_coefficients > num_coefficients()) {
             throw std::invalid_argument(
                 "invalid active vector scattering coefficient count");
         }
-        const int blocks = static_cast<int>(incoming.rows());
         const int active_modes = active_coefficients * active_coefficients;
         analyze(incoming, active_modes, workspace);
+    }
 
+    void VectorAngularBasis::multiply_coefficients_active(
+        Eigen::Ref<const Eigen::MatrixXd> coefficients, int active_coefficients,
+        VectorAngularWorkspace& workspace) const {
+        const int blocks = static_cast<int>(coefficients.rows());
+        const int active_modes = active_coefficients * active_coefficients;
+        if (active_coefficients < 1 ||
+            active_coefficients > num_coefficients() ||
+            coefficients.cols() != 4 * num_coefficients()) {
+            throw std::invalid_argument(
+                "invalid vector successive-orders coefficient dimensions");
+        }
+        for (const auto& moments : workspace.moments) {
+            if (moments.rows() != blocks || moments.cols() != active_modes) {
+                throw std::invalid_argument(
+                    "invalid vector successive-orders moment dimensions");
+            }
+        }
         for (int block = 0; block < blocks; ++block) {
             for (int mode = 0; mode < active_modes; ++mode) {
                 const int degree = m_mode_degrees[mode];
@@ -686,7 +809,25 @@ namespace sasktran2::successive_orders {
                     0.5 * ((a2 - a3) * plus_imag + (a2 + a3) * minus_imag);
             }
         }
+    }
 
+    void VectorAngularBasis::synthesize_active(
+        Eigen::Ref<Eigen::MatrixXd> outgoing, int active_coefficients,
+        VectorAngularWorkspace& workspace) const {
+        const int blocks = static_cast<int>(outgoing.rows());
+        const int active_modes = active_coefficients * active_coefficients;
+        if (active_coefficients < 1 ||
+            active_coefficients > num_coefficients() ||
+            outgoing.cols() != output_size()) {
+            throw std::invalid_argument(
+                "invalid vector successive-orders synthesis dimensions");
+        }
+        for (const auto& moments : workspace.moments) {
+            if (moments.rows() != blocks || moments.cols() != active_modes) {
+                throw std::invalid_argument(
+                    "invalid vector successive-orders moment dimensions");
+            }
+        }
         outgoing.setZero();
         workspace.stacked_moments.resize(2 * blocks, active_modes);
         for (int channel = 0; channel < 3; ++channel) {
@@ -721,6 +862,18 @@ namespace sasktran2::successive_orders {
                     }
                 }
             }
+        }
+    }
+
+    void VectorAngularBasis::add_frame_corrections_active(
+        Eigen::Ref<const Eigen::MatrixXd> incoming,
+        Eigen::Ref<const Eigen::MatrixXd> coefficients, int active_coefficients,
+        Eigen::Ref<Eigen::MatrixXd> outgoing) const {
+        validate_blocks(incoming, coefficients, outgoing);
+        if (active_coefficients < 1 ||
+            active_coefficients > num_coefficients()) {
+            throw std::invalid_argument(
+                "invalid active vector scattering coefficient count");
         }
         apply_frame_corrections(incoming, coefficients, active_coefficients,
                                 outgoing);
@@ -931,30 +1084,35 @@ namespace sasktran2::successive_orders {
         Eigen::Ref<const Eigen::MatrixXd> incoming,
         Eigen::Ref<const Eigen::MatrixXd> coefficients, int active_coefficients,
         Eigen::Ref<Eigen::MatrixXd> outgoing) const {
-        for (int degree = 0; degree < active_coefficients; ++degree) {
-            for (int family = 0; family < 4; ++family) {
-                const int coefficient_index = 4 * degree + family;
-                if (coefficients.col(coefficient_index).isZero(0.0)) {
-                    continue;
-                }
-                const int matrix_start = coefficient_index * 9;
-                const auto coefficient_values =
-                    coefficients.col(coefficient_index).array();
-                for (const auto& correction : m_frame_corrections) {
-                    const int input_start = 3 * correction.input_index;
-                    const int output_start = 3 * correction.output_index;
-                    for (int row = 0; row < 3; ++row) {
-                        for (int column = 0; column < 3; ++column) {
-                            const double value =
-                                correction
-                                    .values[matrix_start + 3 * row + column];
-                            if (value != 0.0) {
-                                outgoing.col(output_start + row).array() +=
-                                    value * coefficient_values *
-                                    incoming.col(input_start + column).array();
-                            }
-                        }
+        const int active_coefficient_values = 4 * active_coefficients;
+        if (incoming.rows() != 1) {
+            for (const auto& correction : m_frame_corrections) {
+                const int input_start = 3 * correction.input_index;
+                const int output_start = 3 * correction.output_index;
+                for (const auto& term : correction.terms) {
+                    if (term.coefficient_index >= active_coefficient_values) {
+                        break;
                     }
+                    outgoing.col(output_start + term.output_stokes).array() +=
+                        term.value *
+                        coefficients.col(term.coefficient_index).array() *
+                        incoming.col(input_start + term.input_stokes).array();
+                }
+            }
+            return;
+        }
+        for (Eigen::Index block = 0; block < incoming.rows(); ++block) {
+            for (const auto& correction : m_frame_corrections) {
+                const int input_start = 3 * correction.input_index;
+                const int output_start = 3 * correction.output_index;
+                for (const auto& term : correction.terms) {
+                    if (term.coefficient_index >= active_coefficient_values) {
+                        break;
+                    }
+                    outgoing(block, output_start + term.output_stokes) +=
+                        term.value *
+                        coefficients(block, term.coefficient_index) *
+                        incoming(block, input_start + term.input_stokes);
                 }
             }
         }
@@ -964,30 +1122,35 @@ namespace sasktran2::successive_orders {
         Eigen::Ref<const Eigen::MatrixXd> outgoing,
         Eigen::Ref<const Eigen::MatrixXd> coefficients, int active_coefficients,
         Eigen::Ref<Eigen::MatrixXd> incoming) const {
-        for (int degree = 0; degree < active_coefficients; ++degree) {
-            for (int family = 0; family < 4; ++family) {
-                const int coefficient_index = 4 * degree + family;
-                if (coefficients.col(coefficient_index).isZero(0.0)) {
-                    continue;
-                }
-                const int matrix_start = coefficient_index * 9;
-                const auto coefficient_values =
-                    coefficients.col(coefficient_index).array();
-                for (const auto& correction : m_frame_corrections) {
-                    const int input_start = 3 * correction.input_index;
-                    const int output_start = 3 * correction.output_index;
-                    for (int row = 0; row < 3; ++row) {
-                        for (int column = 0; column < 3; ++column) {
-                            const double value =
-                                correction
-                                    .values[matrix_start + 3 * row + column];
-                            if (value != 0.0) {
-                                incoming.col(input_start + column).array() +=
-                                    value * coefficient_values *
-                                    outgoing.col(output_start + row).array();
-                            }
-                        }
+        const int active_coefficient_values = 4 * active_coefficients;
+        if (incoming.rows() != 1) {
+            for (const auto& correction : m_frame_corrections) {
+                const int input_start = 3 * correction.input_index;
+                const int output_start = 3 * correction.output_index;
+                for (const auto& term : correction.terms) {
+                    if (term.coefficient_index >= active_coefficient_values) {
+                        break;
                     }
+                    incoming.col(input_start + term.input_stokes).array() +=
+                        term.value *
+                        coefficients.col(term.coefficient_index).array() *
+                        outgoing.col(output_start + term.output_stokes).array();
+                }
+            }
+            return;
+        }
+        for (Eigen::Index block = 0; block < incoming.rows(); ++block) {
+            for (const auto& correction : m_frame_corrections) {
+                const int input_start = 3 * correction.input_index;
+                const int output_start = 3 * correction.output_index;
+                for (const auto& term : correction.terms) {
+                    if (term.coefficient_index >= active_coefficient_values) {
+                        break;
+                    }
+                    incoming(block, input_start + term.input_stokes) +=
+                        term.value *
+                        coefficients(block, term.coefficient_index) *
+                        outgoing(block, output_start + term.output_stokes);
                 }
             }
         }
@@ -997,28 +1160,31 @@ namespace sasktran2::successive_orders {
         Eigen::Ref<const Eigen::MatrixXd> incoming,
         Eigen::Ref<const Eigen::MatrixXd> outgoing_cotangent,
         Eigen::Ref<Eigen::MatrixXd> coefficient_gradient) const {
-        for (int degree = 0; degree < num_coefficients(); ++degree) {
-            for (int family = 0; family < 4; ++family) {
-                const int coefficient_index = 4 * degree + family;
-                const int matrix_start = coefficient_index * 9;
-                for (const auto& correction : m_frame_corrections) {
-                    const int input_start = 3 * correction.input_index;
-                    const int output_start = 3 * correction.output_index;
-                    for (int row = 0; row < 3; ++row) {
-                        for (int column = 0; column < 3; ++column) {
-                            const double value =
-                                correction
-                                    .values[matrix_start + 3 * row + column];
-                            if (value != 0.0) {
-                                coefficient_gradient.col(coefficient_index)
-                                    .array() +=
-                                    value *
-                                    incoming.col(input_start + column).array() *
-                                    outgoing_cotangent.col(output_start + row)
-                                        .array();
-                            }
-                        }
-                    }
+        if (incoming.rows() != 1) {
+            for (const auto& correction : m_frame_corrections) {
+                const int input_start = 3 * correction.input_index;
+                const int output_start = 3 * correction.output_index;
+                for (const auto& term : correction.terms) {
+                    coefficient_gradient.col(term.coefficient_index).array() +=
+                        term.value *
+                        incoming.col(input_start + term.input_stokes).array() *
+                        outgoing_cotangent
+                            .col(output_start + term.output_stokes)
+                            .array();
+                }
+            }
+            return;
+        }
+        for (Eigen::Index block = 0; block < incoming.rows(); ++block) {
+            for (const auto& correction : m_frame_corrections) {
+                const int input_start = 3 * correction.input_index;
+                const int output_start = 3 * correction.output_index;
+                for (const auto& term : correction.terms) {
+                    coefficient_gradient(block, term.coefficient_index) +=
+                        term.value *
+                        incoming(block, input_start + term.input_stokes) *
+                        outgoing_cotangent(block,
+                                           output_start + term.output_stokes);
                 }
             }
         }

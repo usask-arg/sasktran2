@@ -405,6 +405,25 @@ int sk_config_set_successive_orders_damping(Config* config, double damping) {
     return 0;
 }
 
+int sk_config_get_successive_orders_reduced_horizon_quadrature(Config* config,
+                                                               int* enabled) {
+    if (config == nullptr || enabled == nullptr) {
+        return -1;
+    }
+    *enabled =
+        config->impl.successive_orders_reduced_horizon_quadrature() ? 1 : 0;
+    return 0;
+}
+
+int sk_config_set_successive_orders_reduced_horizon_quadrature(Config* config,
+                                                               int enabled) {
+    if (config == nullptr) {
+        return -1;
+    }
+    config->impl.set_successive_orders_reduced_horizon_quadrature(enabled != 0);
+    return 0;
+}
+
 int sk_config_get_num_successive_orders_altitudes(Config* config,
                                                   int* num_altitudes) {
     if (config == nullptr || num_altitudes == nullptr) {

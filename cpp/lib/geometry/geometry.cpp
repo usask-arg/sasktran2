@@ -163,7 +163,8 @@ namespace sasktran2 {
 
         Eigen::Vector3d normal = m_sun_unit.cross(m_z_unit);
 
-        if (normal.norm() == 0) {
+        constexpr double singular_squared_tolerance = 1.0e-24;
+        if (normal.squaredNorm() <= singular_squared_tolerance) {
             // Special case where sun is parallel to z-axis
             normal = m_y_unit;
         } else {

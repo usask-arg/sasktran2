@@ -1,12 +1,22 @@
 #include <sasktran2/grids.h>
 #include <sasktran2/geometry.h>
 
+#include <cmath>
+#include <stdexcept>
+
 namespace sasktran2::grids {
     AltitudeSZASourceLocationInterpolator::
         AltitudeSZASourceLocationInterpolator(AltitudeGrid&& altitude_grid,
-                                              Grid&& sza_grid)
+                                              Grid&& sza_grid,
+                                              double ground_altitude)
         : SourceLocationInterpolator(std::move(altitude_grid)),
-          m_cos_sza_grid(sza_grid) {}
+          m_cos_sza_grid(std::move(sza_grid)),
+          m_ground_altitude(ground_altitude) {
+        if (!std::isfinite(m_ground_altitude)) {
+            throw std::invalid_argument(
+                "Source ground altitude must be finite");
+        }
+    }
 
     int AltitudeSZASourceLocationInterpolator::num_ground_points() const {
         return (int)m_cos_sza_grid.grid().size();
@@ -29,7 +39,7 @@ namespace sasktran2::grids {
     Eigen::Vector3d AltitudeSZASourceLocationInterpolator::ground_location(
         const sasktran2::Coordinates& coords, int ground_index) const {
         return coords.solar_coordinate_vector(
-            m_cos_sza_grid.grid()(ground_index), 0.0, 0);
+            m_cos_sza_grid.grid()(ground_index), 0.0, m_ground_altitude);
     }
 
     int AltitudeSZASourceLocationInterpolator::interior_linear_index(

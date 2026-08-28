@@ -806,6 +806,44 @@ impl Config {
         }
     }
 
+    pub fn successive_orders_reduced_horizon_quadrature(&self) -> Result<bool> {
+        let mut enabled = 0i32;
+        let error_code = unsafe {
+            ffi::sk_config_get_successive_orders_reduced_horizon_quadrature(
+                self.config,
+                &mut enabled,
+            )
+        };
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error getting successive-orders reduced-horizon quadrature: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(enabled != 0)
+        }
+    }
+
+    pub fn with_successive_orders_reduced_horizon_quadrature(
+        &mut self,
+        enabled: bool,
+    ) -> Result<&mut Self> {
+        let error_code = unsafe {
+            ffi::sk_config_set_successive_orders_reduced_horizon_quadrature(
+                self.config,
+                if enabled { 1 } else { 0 },
+            )
+        };
+        if error_code != 0 {
+            Err(anyhow!(
+                "Error setting successive-orders reduced-horizon quadrature: error code {}",
+                error_code
+            ))
+        } else {
+            Ok(self)
+        }
+    }
+
     pub fn successive_orders_altitude_grid_m(&self) -> Result<Vec<f64>> {
         let mut num_altitudes = 0i32;
         let error_code = unsafe {
@@ -1332,6 +1370,11 @@ mod tests {
         assert_eq!(config.successive_orders_damping().unwrap(), 1.0);
         assert!(
             config
+                .successive_orders_reduced_horizon_quadrature()
+                .unwrap()
+        );
+        assert!(
+            config
                 .successive_orders_altitude_grid_m()
                 .unwrap()
                 .is_empty()
@@ -1448,6 +1491,15 @@ mod tests {
 
         config.with_multiple_scatter_refraction(true).unwrap();
         assert!(config.multiple_scatter_refraction().unwrap());
+
+        config
+            .with_successive_orders_reduced_horizon_quadrature(false)
+            .unwrap();
+        assert!(
+            !config
+                .successive_orders_reduced_horizon_quadrature()
+                .unwrap()
+        );
 
         config.with_do_backprop(true).unwrap();
         assert!(config.do_backprop().unwrap());

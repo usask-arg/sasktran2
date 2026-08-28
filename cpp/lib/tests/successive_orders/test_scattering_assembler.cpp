@@ -734,6 +734,77 @@ TEST_CASE("Vector scattering assembler matches legacy atmospheric and ground "
                 sizeof(double));
 }
 
+TEST_CASE("Reduced-horizon vector scattering uses each point's angular grid",
+          "[successive_orders][scattering_assembler][vector]"
+          "[reduced_horizon]") {
+    Eigen::VectorXd altitudes(3);
+    altitudes << 0.0, 1000.0, 2000.0;
+    sasktran2::Geometry1D geometry(0.6, 0.2, 6372000.0, std::move(altitudes),
+                                   sasktran2::grids::interpolation::linear,
+                                   sasktran2::geometrytype::spherical);
+    sasktran2::raytracing::SphericalShellRayTracer raytracer(geometry);
+    SourceGeometry1D source_geometry(raytracer, geometry);
+    SourceGeometrySettings settings;
+    settings.num_incoming = 37;
+    settings.num_outgoing = 6;
+    settings.num_sza = 1;
+    settings.num_threads = 1;
+    settings.altitude_grid_m = {500.0, 1500.0};
+    settings.use_reduced_horizon_quadrature = true;
+    sasktran2::viewinggeometry::InternalViewingGeometry viewing;
+    source_geometry.initialize(viewing, settings);
+
+    constexpr int num_coefficients = 3;
+    sasktran2::atmosphere::Atmosphere<3> atmosphere(
+        sasktran2::atmosphere::AtmosphereGridStorageFull<3>(1, geometry.size(),
+                                                            num_coefficients),
+        sasktran2::atmosphere::Surface<3>(1), false);
+    for (int location = 0; location < geometry.size(); ++location) {
+        for (int coefficient = 0; coefficient < 4 * num_coefficients;
+             ++coefficient) {
+            atmosphere.storage().leg_coeff(coefficient, location, 0) =
+                0.08 + 0.013 * coefficient + 0.021 * location;
+        }
+    }
+    atmosphere.surface().brdf_args().setConstant(0.24);
+
+    VectorScatteringAssembler assembler(source_geometry, num_coefficients);
+    auto scattering = assembler.create_operator();
+    assembler.assemble_values(atmosphere, 0, scattering);
+
+    REQUIRE(source_geometry.num_interior_points() == 2);
+    for (int point_index = 0;
+         point_index < source_geometry.num_interior_points(); ++point_index) {
+        const auto& point = source_geometry.source_point(point_index);
+        sasktran2::hr::IncomingOutgoingSpherePair<3> legacy(
+            num_coefficients,
+            std::make_unique<CopiedUnitSphere>(point.incoming_sphere()),
+            std::make_unique<CopiedUnitSphere>(point.outgoing_sphere()));
+        std::vector<std::pair<int, double>> weights;
+        for (const auto& weight : point.atmosphere_weights()) {
+            weights.emplace_back(weight.index, weight.weight);
+        }
+        Eigen::MatrixXd expected(3 * point.num_outgoing(),
+                                 3 * point.num_incoming());
+        legacy.calculate_scattering_matrix(atmosphere.storage(), 0, weights,
+                                           expected.data());
+        const Eigen::MatrixXd actual =
+            materialize_atmospheric_block(scattering, point_index);
+        const double maximum_error = (actual - expected).cwiseAbs().maxCoeff();
+        INFO("point=" << point_index << " max error=" << maximum_error);
+        // The fused point-analysis kernel accumulates directions in a
+        // different order than the dense reference. Use an explicit absolute
+        // bound so near-zero matrix entries are assessed meaningfully.
+        REQUIRE(maximum_error < 5.0e-13);
+    }
+
+    const VectorAngularBasis one_basis(
+        source_geometry.source_point(0).incoming_sphere(),
+        source_geometry.source_point(0).outgoing_sphere(), num_coefficients);
+    REQUIRE(scattering.memory_usage().angular_basis_bytes >
+            one_basis.storage_bytes());
+}
+
 TEST_CASE("Vector scattering assembler native JVP matches finite differences",
           "[successive_orders][scattering_assembler][vector][jvp]") {
     VectorAssemblyFixture fixture;

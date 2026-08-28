@@ -877,6 +877,18 @@ unsafe extern "C" {
     ) -> ::std::os::raw::c_int;
 }
 unsafe extern "C" {
+    pub fn sk_config_get_successive_orders_reduced_horizon_quadrature(
+        config: *mut Config,
+        enabled: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
+    pub fn sk_config_set_successive_orders_reduced_horizon_quadrature(
+        config: *mut Config,
+        enabled: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+unsafe extern "C" {
     pub fn sk_config_get_num_successive_orders_altitudes(
         config: *mut Config,
         num_altitudes: *mut ::std::os::raw::c_int,

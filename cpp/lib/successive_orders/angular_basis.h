@@ -51,6 +51,17 @@ namespace sasktran2::successive_orders {
                           Eigen::Ref<Eigen::MatrixXd> outgoing,
                           Eigen::MatrixXd& moment_workspace) const;
 
+        /** Analyze point-local radiances and apply their phase coefficients.
+         * This split form allows point-specific incoming bases to share one
+         * batched outgoing synthesis. */
+        void analyze_active(Eigen::Ref<const Eigen::MatrixXd> incoming,
+                            Eigen::Ref<const Eigen::MatrixXd> coefficients,
+                            int active_coefficients,
+                            Eigen::MatrixXd& moments) const;
+        void synthesize_active(Eigen::Ref<const Eigen::MatrixXd> moments,
+                               int active_coefficients,
+                               Eigen::Ref<Eigen::MatrixXd> outgoing) const;
+
         /** Applies the transpose with respect to angular radiances. */
         void apply_transpose(Eigen::Ref<const Eigen::MatrixXd> outgoing,
                              Eigen::Ref<const Eigen::MatrixXd> coefficients,
@@ -153,6 +164,23 @@ namespace sasktran2::successive_orders {
                           Eigen::Ref<Eigen::MatrixXd> outgoing,
                           VectorAngularWorkspace& workspace) const;
 
+        /** Split transform used to batch a shared outgoing synthesis across
+         * point-specific incoming bases. */
+        void analyze_active(Eigen::Ref<const Eigen::MatrixXd> incoming,
+                            int active_coefficients,
+                            VectorAngularWorkspace& workspace) const;
+        void multiply_coefficients_active(
+            Eigen::Ref<const Eigen::MatrixXd> coefficients,
+            int active_coefficients, VectorAngularWorkspace& workspace) const;
+        void synthesize_active(Eigen::Ref<Eigen::MatrixXd> outgoing,
+                               int active_coefficients,
+                               VectorAngularWorkspace& workspace) const;
+        void add_frame_corrections_active(
+            Eigen::Ref<const Eigen::MatrixXd> incoming,
+            Eigen::Ref<const Eigen::MatrixXd> coefficients,
+            int active_coefficients,
+            Eigen::Ref<Eigen::MatrixXd> outgoing) const;
+
         void
         apply_transpose_active(Eigen::Ref<const Eigen::MatrixXd> outgoing,
                                Eigen::Ref<const Eigen::MatrixXd> coefficients,
@@ -167,11 +195,17 @@ namespace sasktran2::successive_orders {
             VectorAngularWorkspace& workspace) const;
 
       private:
+        struct FrameCorrectionTerm {
+            int coefficient_index = 0;
+            int output_stokes = 0;
+            int input_stokes = 0;
+            double value = 0.0;
+        };
+
         struct FrameCorrection {
             int input_index = 0;
             int output_index = 0;
-            // [degree, Greek family, output Stokes, input Stokes]
-            std::vector<double> values;
+            std::vector<FrameCorrectionTerm> terms;
         };
 
         void validate_blocks(Eigen::Ref<const Eigen::MatrixXd> incoming,

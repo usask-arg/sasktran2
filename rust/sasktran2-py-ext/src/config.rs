@@ -546,6 +546,21 @@ impl PyConfig {
     }
 
     #[getter]
+    fn successive_orders_reduced_horizon_quadrature(&self) -> PyResult<bool> {
+        self.config
+            .successive_orders_reduced_horizon_quadrature()
+            .into_pyresult()
+    }
+
+    #[setter]
+    fn set_successive_orders_reduced_horizon_quadrature(&mut self, enabled: bool) -> PyResult<()> {
+        self.config
+            .with_successive_orders_reduced_horizon_quadrature(enabled)
+            .into_pyresult()?;
+        Ok(())
+    }
+
+    #[getter]
     fn successive_orders_altitude_grid_m(&self) -> PyResult<Option<Vec<f64>>> {
         let altitude_grid_m = self
             .config
