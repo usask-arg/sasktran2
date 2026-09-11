@@ -1,4 +1,4 @@
-use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1};
+use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1};
 use pyo3::prelude::*;
 use sasktran2_rs::math::wigner::WignerDCalculator;
 
@@ -20,30 +20,40 @@ impl WignerD {
         py: Python<'py>,
         theta: PyReadonlyArray1<f64>,
         l: i32,
-    ) -> PyResult<Bound<'py, PyArray1<f64>>> {
-        let theta = theta.as_slice()?;
-        let result: Vec<f64> = theta.iter().map(|&theta| self.wigner.d(theta, l)).collect();
-
-        let py_result = PyArray1::zeros(py, (result.len(),), false);
-        unsafe {
-            py_result.as_slice_mut()?.copy_from_slice(&result);
-        }
-        Ok(py_result)
+    ) -> Bound<'py, PyArray1<f64>> {
+        theta
+            .as_array()
+            .mapv(|theta| self.wigner.d(theta, l))
+            .into_pyarray(py)
     }
 
+    /// Evaluate the requested orders at one angle (radians), preserving their order.
     fn d_vec<'py>(
         &self,
         py: Python<'py>,
         theta: f64,
         l_values: PyReadonlyArray1<i32>,
-    ) -> PyResult<Bound<'py, PyArray1<f64>>> {
-        let l_values = l_values.as_slice()?;
+    ) -> Bound<'py, PyArray1<f64>> {
+        let l_values = l_values.as_array();
+        let num_orders = l_values.iter().copied().max().unwrap_or(-1).max(-1) as i64 + 1;
+        let mut values = vec![0.0; num_orders as usize];
+        self.wigner.vector_d(theta, &mut values);
+        l_values
+            .mapv(|l| if l < 0 { 0.0 } else { values[l as usize] })
+            .into_pyarray(py)
+    }
 
-        let py_result = PyArray1::zeros(py, (l_values.len(),), false);
-
-        unsafe {
-            self.wigner.vector_d(theta, py_result.as_slice_mut()?);
-        }
-        Ok(py_result)
+    /// Evaluate orders 0..num_orders at every angle (radians).
+    /// The result has shape (num_orders, len(theta)).
+    fn d_all<'py>(
+        &self,
+        py: Python<'py>,
+        theta: PyReadonlyArray1<f64>,
+        num_orders: usize,
+    ) -> Bound<'py, PyArray2<f64>> {
+        let cos_theta = theta.as_array().mapv(f64::cos);
+        self.wigner
+            .matrix_d(cos_theta.view(), num_orders)
+            .into_pyarray(py)
     }
 }

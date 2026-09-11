@@ -3,6 +3,7 @@
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2, ArrayViewMut1, Zip};
 use num::abs;
 use num::complex::Complex64;
+use rayon::prelude::*;
 
 pub struct MieOutput {
     pub Qext: Array1<f64>,
@@ -169,25 +170,20 @@ fn tau_pi_matrices(cos_angles: ArrayView1<f64>, max_order: usize) -> (Array2<f64
     for n in 3..N + 1 {
         let nf = n as f64;
 
-        // Copy out rows that we need for reads
-        let pi_n2 = pi.slice(ndarray::s![n - 2, ..]).to_owned();
-        let pi_n3 = pi.slice(ndarray::s![n - 3, ..]).to_owned();
-
-        // Compute new values into a temporary buffer
-        Zip::from(pi.slice_mut(ndarray::s![n - 1, ..]))
-            .and(&pi_n2)
-            .and(&pi_n3)
+        // The recurrence only reads earlier rows; split the view to avoid
+        // allocating copies of four angular rows at every order.
+        let (previous, mut current) = pi.view_mut().split_at(ndarray::Axis(0), n - 1);
+        Zip::from(current.row_mut(0))
+            .and(previous.row(n - 2))
+            .and(previous.row(n - 3))
             .and(cos_angles)
             .for_each(|r, &p2, &p3, &a| {
                 *r = ((2.0 * nf - 1.0) * a * p2 - nf * p3) / (nf - 1.0);
             });
 
-        // Repeat the pattern for tau
-        let pi_n1_read = pi.slice(ndarray::s![n - 1, ..]).to_owned();
-        let pi_n2_read = pi.slice(ndarray::s![n - 2, ..]).to_owned();
-        Zip::from(tau.slice_mut(ndarray::s![n - 1, ..]))
-            .and(&pi_n1_read)
-            .and(&pi_n2_read)
+        Zip::from(tau.row_mut(n - 1))
+            .and(pi.row(n - 1))
+            .and(pi.row(n - 2))
             .and(cos_angles)
             .for_each(|r, &p1, &p2, &a| {
                 *r = nf * a * p1 - (nf + 1.0) * p2;
@@ -316,58 +312,87 @@ pub fn mie(
     refractive_index: Complex64,
     cos_angles: ArrayView1<f64>,
 ) -> MieOutput {
+    mie_with_threads(size_param, refractive_index, cos_angles, false)
+}
+
+/// Parallel work uses the caller's Rayon pool; the standalone Mie API stays serial.
+pub(super) fn mie_with_threads(
+    size_param: ArrayView1<f64>,
+    refractive_index: Complex64,
+    cos_angles: ArrayView1<f64>,
+    parallel: bool,
+) -> MieOutput {
     let mut output = MieOutput::new(size_param, refractive_index, cos_angles);
 
     let max_x = output
         .size_param
-        .clone()
-        .into_iter()
+        .iter()
+        .copied()
         .reduce(f64::max)
         .unwrap_or(0.0);
 
     let N = max_order(max_x);
 
-    // Local memory
-    let mut Dn = Array1::<Complex64>::zeros(N);
-    let mut An = Array1::<Complex64>::zeros(N);
-    let mut Bn = Array1::<Complex64>::zeros(N);
-
     let (tau, pi) = tau_pi_matrices(cos_angles, N);
-
-    Zip::indexed(size_param)
-        .and(&mut output.Qext)
-        .and(&mut output.Qsca)
-        .for_each(|i, &x, Qext, Qsca| {
-            let S1_slice = output.S1.slice_mut(ndarray::s![i, ..]);
-            let S2_slice = output.S2.slice_mut(ndarray::s![i, ..]);
+    let workspace = || {
+        (
+            Array1::<Complex64>::zeros(N),
+            Array1::<Complex64>::zeros(N),
+            Array1::<Complex64>::zeros(N),
+        )
+    };
+    let calculate =
+        |(Dn, An, Bn): &mut (Array1<Complex64>, Array1<Complex64>, Array1<Complex64>),
+         (&x, Qext, Qsca, S1_slice, S2_slice): (
+            &f64,
+            &mut f64,
+            &mut f64,
+            ArrayViewMut1<Complex64>,
+            ArrayViewMut1<Complex64>,
+        )| {
             if refractive_index.norm() * x < 0.1 {
                 (*Qext, *Qsca) = small_Q_S(refractive_index, x, cos_angles, S1_slice, S2_slice);
             } else {
                 let current_N = max_order(x);
-
-                let An_slice = An.slice_mut(ndarray::s![..current_N]);
-                let Bn_slice = Bn.slice_mut(ndarray::s![..current_N]);
-                let Dn_slice = Dn.slice_mut(ndarray::s![..current_N]);
-
-                calc_Dn(refractive_index, x, current_N, Dn_slice);
-                let Dn_slice = Dn.slice(ndarray::s![..current_N]);
-
-                An_Bn(refractive_index, x, current_N, An_slice, Bn_slice, Dn_slice);
-                let An_slice = An.slice(ndarray::s![..current_N]);
-                let Bn_slice = Bn.slice(ndarray::s![..current_N]);
-
+                calc_Dn(
+                    refractive_index,
+                    x,
+                    current_N,
+                    Dn.slice_mut(ndarray::s![..current_N]),
+                );
+                An_Bn(
+                    refractive_index,
+                    x,
+                    current_N,
+                    An.slice_mut(ndarray::s![..current_N]),
+                    Bn.slice_mut(ndarray::s![..current_N]),
+                    Dn.slice(ndarray::s![..current_N]),
+                );
                 (*Qext, *Qsca) = regular_Q_S(
                     x,
                     current_N,
-                    An_slice,
-                    Bn_slice,
+                    An.slice(ndarray::s![..current_N]),
+                    Bn.slice(ndarray::s![..current_N]),
                     tau.view(),
                     pi.view(),
                     S1_slice,
                     S2_slice,
                 );
             }
-        });
+        };
+    let rows = Zip::from(size_param)
+        .and(&mut output.Qext)
+        .and(&mut output.Qsca)
+        .and(output.S1.outer_iter_mut())
+        .and(output.S2.outer_iter_mut());
+    if parallel {
+        rows.into_par_iter()
+            .with_min_len(16)
+            .for_each_init(workspace, calculate);
+    } else {
+        let mut workspace = workspace();
+        rows.for_each(|x, qext, qsca, s1, s2| calculate(&mut workspace, (x, qext, qsca, s1, s2)));
+    }
 
     output
 }

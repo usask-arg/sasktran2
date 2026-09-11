@@ -411,6 +411,14 @@ def integrate_mie_cpp(
     num_coeffs=64,
     num_threads=1,
 ) -> xr.Dataset:
+    """Integrate Mie properties and Greek coefficients for several size distributions.
+
+    ``num_threads`` controls a private Rust worker pool shared by particle-size
+    calculations and distribution integration. The default, 1, runs serially;
+    0 selects Rayon's automatic thread count. Wavelengths are evaluated in order,
+    reusing the angular basis and worker pool. Radii and wavelengths are in nm;
+    returned cross sections are in square metres.
+    """
     from scipy.special import roots_legendre
 
     nodes, weights = roots_legendre(num_coeffs)

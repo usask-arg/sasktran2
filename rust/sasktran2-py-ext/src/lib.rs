@@ -109,6 +109,7 @@ fn _core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Wigner
     m.add_class::<accel::wigner::WignerD>()?;
+    m.add_function(wrap_pyfunction!(accel::greek::compute_greek_coefficients, m)?)?;
 
     // Information functions
     m.add_function(wrap_pyfunction!(common::openmp_support_enabled, m)?)?;

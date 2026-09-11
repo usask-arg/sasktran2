@@ -2,7 +2,7 @@
 
 use crate::prelude::*;
 use numpy::*;
-use pyo3::{prelude::*, types::PyComplex};
+use pyo3::{exceptions::PyValueError, prelude::*, types::PyComplex};
 use sasktran2_rs::optical::mie::integrator;
 use sasktran2_rs::optical::mie::mie_f::{MieOutput, mie};
 
@@ -115,7 +115,7 @@ impl PyMieIntegrator {
         wavelength: f64,
         refractive_index: Bound<'py, PyComplex>,
         size_param: PyReadonlyArray1<f64>,         // [size_param]
-        pdf: PyReadonlyArray2<f64>,                // [size_param, distribution]
+        pdf: PyReadonlyArray2<f64>,                // [distribution, size_param]
         size_weights: PyReadonlyArray1<f64>,       // [size_param]
         angle_weights: PyReadonlyArray1<f64>,      // [angle]
         mut xs_total: PyReadwriteArray1<f64>,      // [distribution]
@@ -130,7 +130,7 @@ impl PyMieIntegrator {
         mut lm_a4: PyReadwriteArray2<f64>,         // [distribution, legendre]
         mut lm_b1: PyReadwriteArray2<f64>,         // [distribution, legendre]
         mut lm_b2: PyReadwriteArray2<f64>,         // [distribution, legendre]
-    ) {
+    ) -> PyResult<()> {
         let refractive_index_re = refractive_index.real();
         let refractive_index_im = refractive_index.imag();
 
@@ -157,6 +157,6 @@ impl PyMieIntegrator {
                 lm_b1.as_array_mut(),
                 lm_b2.as_array_mut(),
             )
-            .unwrap();
+            .map_err(|err| PyValueError::new_err(err.to_string()))
     }
 }

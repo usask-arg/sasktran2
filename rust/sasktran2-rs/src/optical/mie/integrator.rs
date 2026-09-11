@@ -1,21 +1,24 @@
-#![allow(non_snake_case)]
-
 use num::complex::Complex64;
+use rayon::prelude::*;
 
-use crate::math::wigner::WignerDCalculator;
+use crate::math::greek::GreekTransform;
 use crate::prelude::*;
 
 use super::mie_f;
 
 pub struct MieIntegrator {
     cos_angles: Array1<f64>,
-    _num_legendre: usize,
-    _num_threads: usize,
+    num_legendre: usize,
+    pool: Option<rayon::ThreadPool>,
+    transform: GreekTransform,
+}
 
-    lpoly_00: Array2<f64>,
-    lpoly_22: Array2<f64>,
-    lpoly_2m2: Array2<f64>,
-    lpoly_02: Array2<f64>,
+struct DistributionRow<'a> {
+    xs_total: &'a mut f64,
+    xs_scattering: &'a mut f64,
+    pdf: ArrayView1<'a, f64>,
+    phase: [ArrayViewMut1<'a, f64>; 4],
+    coefficients: [ArrayViewMut1<'a, f64>; 6],
 }
 
 impl MieIntegrator {
@@ -24,40 +27,23 @@ impl MieIntegrator {
         num_legendre: usize,
         num_threads: usize,
     ) -> Result<Self> {
-        // Construct wigner polynomials
-        let wigner_00 = WignerDCalculator::new(0, 0);
-        let wigner_22 = WignerDCalculator::new(2, 2);
-        let wigner_2m2 = WignerDCalculator::new(2, -2);
-        let wigner_02 = WignerDCalculator::new(0, 2);
-
-        let mut lpoly_00 = Array2::zeros((cos_angles.len(), num_legendre));
-        let mut lpoly_22 = Array2::zeros((cos_angles.len(), num_legendre));
-        let mut lpoly_2m2 = Array2::zeros((cos_angles.len(), num_legendre));
-        let mut lpoly_02 = Array2::zeros((cos_angles.len(), num_legendre));
-
-        Zip::from(cos_angles)
-            .and(lpoly_00.axis_iter_mut(Axis(0)))
-            .and(lpoly_22.axis_iter_mut(Axis(0)))
-            .and(lpoly_2m2.axis_iter_mut(Axis(0)))
-            .and(lpoly_02.axis_iter_mut(Axis(0)))
-            .for_each(
-                |cos_theta, mut lpoly_00, mut lpoly_22, mut lpoly_2m2, mut lpoly_02| {
-                    let theta = (*cos_theta).acos();
-                    wigner_00.vector_d(theta, lpoly_00.as_slice_mut().unwrap());
-                    wigner_22.vector_d(theta, lpoly_22.as_slice_mut().unwrap());
-                    wigner_2m2.vector_d(theta, lpoly_2m2.as_slice_mut().unwrap());
-                    wigner_02.vector_d(theta, lpoly_02.as_slice_mut().unwrap());
-                },
-            );
-
+        anyhow::ensure!(
+            cos_angles.iter().all(|x| x.is_finite() && x.abs() <= 1.0),
+            "cos_angles must be finite and within [-1, 1]"
+        );
+        // A private pool honors this integrator's thread count without changing
+        // the engine/global Rayon settings. One thread avoids dispatch overhead;
+        // zero uses Rayon's automatic thread count.
+        let pool = if num_threads == 1 {
+            None
+        } else {
+            Some(crate::util::create_pool(num_threads)?)
+        };
         Ok(Self {
             cos_angles: cos_angles.into_owned(),
-            _num_legendre: num_legendre,
-            _num_threads: num_threads,
-            lpoly_00,
-            lpoly_22,
-            lpoly_2m2,
-            lpoly_02,
+            num_legendre,
+            pool,
+            transform: GreekTransform::new(cos_angles, num_legendre),
         })
     }
 
@@ -66,133 +52,161 @@ impl MieIntegrator {
         &self,
         wavelength: f64,
         refractive_index: Complex64,
-        size_param: ArrayView1<f64>,       // [size_param]
-        pdf: ArrayView2<f64>,              // [size_param, distribution]
-        size_weights: ArrayView1<f64>,     // [size_param]
-        angle_weights: ArrayView1<f64>,    // [angle]
-        xs_total: ArrayViewMut1<f64>,      // [distribution]
-        xs_scattering: ArrayViewMut1<f64>, // [distribution]
-        mut p11: ArrayViewMut2<f64>,       // [distribution, angle]
-        mut p12: ArrayViewMut2<f64>,       // [distribution, angle]
-        mut p33: ArrayViewMut2<f64>,       // [distribution, angle]
-        mut p34: ArrayViewMut2<f64>,       // [distribution, angle]
-        mut lm_a1: ArrayViewMut2<f64>,     // [distribution, legendre]
-        mut lm_a2: ArrayViewMut2<f64>,     // [distribution, legendre]
-        mut lm_a3: ArrayViewMut2<f64>,     // [distribution, legendre]
-        mut lm_a4: ArrayViewMut2<f64>,     // [distribution, legendre]
-        mut lm_b1: ArrayViewMut2<f64>,     // [distribution, legendre]
-        mut lm_b2: ArrayViewMut2<f64>,     // [distribution, legendre]
+        size_param: ArrayView1<f64>,           // [size_param]
+        pdf: ArrayView2<f64>,                  // [distribution, size_param]
+        size_weights: ArrayView1<f64>,         // [size_param]
+        angle_weights: ArrayView1<f64>,        // [angle]
+        mut xs_total: ArrayViewMut1<f64>,      // [distribution]
+        mut xs_scattering: ArrayViewMut1<f64>, // [distribution]
+        mut p11: ArrayViewMut2<f64>,           // [distribution, angle]
+        mut p12: ArrayViewMut2<f64>,           // [distribution, angle]
+        mut p33: ArrayViewMut2<f64>,           // [distribution, angle]
+        mut p34: ArrayViewMut2<f64>,           // [distribution, angle]
+        mut lm_a1: ArrayViewMut2<f64>,         // [distribution, legendre]
+        mut lm_a2: ArrayViewMut2<f64>,         // [distribution, legendre]
+        mut lm_a3: ArrayViewMut2<f64>,         // [distribution, legendre]
+        mut lm_a4: ArrayViewMut2<f64>,         // [distribution, legendre]
+        mut lm_b1: ArrayViewMut2<f64>,         // [distribution, legendre]
+        mut lm_b2: ArrayViewMut2<f64>,         // [distribution, legendre]
     ) -> Result<()> {
+        let num_distributions = pdf.nrows();
+        let num_angles = self.cos_angles.len();
+        anyhow::ensure!(
+            pdf.ncols() == size_param.len() && size_weights.len() == size_param.len(),
+            "pdf must have shape (distribution, size_param), matching size_weights"
+        );
+        anyhow::ensure!(
+            angle_weights.len() == num_angles
+                && xs_total.len() == num_distributions
+                && xs_scattering.len() == num_distributions,
+            "angle weights or cross section output dimensions do not match"
+        );
+        for shape in [p11.dim(), p12.dim(), p33.dim(), p34.dim()] {
+            anyhow::ensure!(
+                shape == (num_distributions, num_angles),
+                "phase outputs must have shape (distribution, angle)"
+            );
+        }
+        for shape in [
+            lm_a1.dim(),
+            lm_a2.dim(),
+            lm_a3.dim(),
+            lm_a4.dim(),
+            lm_b1.dim(),
+            lm_b2.dim(),
+        ] {
+            anyhow::ensure!(
+                shape == (num_distributions, self.num_legendre),
+                "coefficient outputs must have shape (distribution, legendre)"
+            );
+        }
         let k = 2.0 * std::f64::consts::PI / wavelength;
         let c = 4.0 * std::f64::consts::PI / (2.0 * k * k);
+        let calculate_mie = || {
+            mie_f::mie_with_threads(
+                size_param,
+                refractive_index,
+                self.cos_angles.view(),
+                self.pool.is_some(),
+            )
+        };
+        let output = if let Some(pool) = &self.pool {
+            pool.install(calculate_mie)
+        } else {
+            calculate_mie()
+        };
 
-        // Alloc arrays for the Mie parameters and do the calculation
-        let output = mie_f::mie(size_param, refractive_index, self.cos_angles.view());
-
-        Zip::indexed(xs_total)
-            .and(xs_scattering)
-            .for_each(|i, xs_total, xs_scattering| {
-                // Index everything that we need
-                let pdf = pdf.index_axis(Axis(0), i);
-                let mut p11 = p11.index_axis_mut(Axis(0), i);
-                let mut p12 = p12.index_axis_mut(Axis(0), i);
-                let mut p33 = p33.index_axis_mut(Axis(0), i);
-                let mut p34 = p34.index_axis_mut(Axis(0), i);
-                let mut lm_a1 = lm_a1.index_axis_mut(Axis(0), i);
-                let mut lm_a2 = lm_a2.index_axis_mut(Axis(0), i);
-                let mut lm_a3 = lm_a3.index_axis_mut(Axis(0), i);
-                let mut lm_a4 = lm_a4.index_axis_mut(Axis(0), i);
-                let mut lm_b1 = lm_b1.index_axis_mut(Axis(0), i);
-                let mut lm_b2 = lm_b2.index_axis_mut(Axis(0), i);
-
-                // First we go through the size parameters to calculate the cross sections
-                Zip::indexed(size_param)
-                    .and(size_weights)
-                    .and(pdf)
-                    .for_each(|j, &size_param, &size_weight, &pdf| {
-                        *xs_total += size_weight
-                            * pdf
-                            * std::f64::consts::PI
-                            * output.Qext[j]
-                            * (size_param * wavelength / (2.0 * std::f64::consts::PI)).powf(2.0);
-
-                        *xs_scattering += size_weight
-                            * pdf
-                            * std::f64::consts::PI
-                            * output.Qsca[j]
-                            * (size_param * wavelength / (2.0 * std::f64::consts::PI)).powf(2.0);
-                    });
-
-                // And the phase normalization factor
-                let phase_norm = c / *xs_scattering;
-
-                // Then we go through and calculate the phase functions
-                Zip::indexed(size_weights)
-                    .and(pdf)
-                    .for_each(|j, &size_weight, &pdf| {
-                        let S1 = output.S1.slice(ndarray::s![j, ..]);
-                        let S2 = output.S2.slice(ndarray::s![j, ..]);
-
-                        Zip::from(S1)
-                            .and(S2)
-                            .and(&mut p11)
-                            .and(&mut p12)
-                            .and(&mut p33)
-                            .and(&mut p34)
-                            .for_each(|s1, s2, p11, p12, p33, p34| {
-                                *p11 += phase_norm
-                                    * size_weight
-                                    * pdf
-                                    * (s1.norm_sqr() + s2.norm_sqr());
-                                *p12 += phase_norm
-                                    * size_weight
-                                    * pdf
-                                    * (s1.norm_sqr() - s2.norm_sqr());
-                                *p33 += phase_norm
-                                    * size_weight
-                                    * pdf
-                                    * (s1 * s2.conj() + s2 * s1.conj()).re;
-                                *p34 += phase_norm
-                                    * size_weight
-                                    * pdf
-                                    * (s1 * s2.conj() - s2 * s1.conj()).im;
-                            });
-                    });
-
-                // Then with the phase function calculated we can calculate the legendre polynomials
-                Zip::indexed(&mut lm_a1)
-                    .and(&mut lm_a2)
-                    .and(&mut lm_a3)
-                    .and(&mut lm_b1)
-                    .and(&mut lm_b2)
-                    .for_each(|l, lm_a1, lm_a2, lm_a3, lm_b1, lm_b2| {
-                        let l_weight = 1.0 / (2.0 / (2.0 * l as f64 + 1.0));
-
-                        Zip::indexed(angle_weights).for_each(|j, w| {
-                            let w = *w * l_weight;
-                            let lpoly_00 = self.lpoly_00[[j, l]];
-                            let lpoly_22 = self.lpoly_22[[j, l]];
-                            let lpoly_2m2 = self.lpoly_2m2[[j, l]];
-                            let lpoly_02 = self.lpoly_02[[j, l]];
-
-                            let p11 = p11[[j]];
-                            let p12 = p12[[j]];
-                            let p33 = p33[[j]];
-                            let p34 = p34[[j]];
-
-                            let temp1 = w * lpoly_22 * (p11 + p33);
-                            let temp2 = w * lpoly_2m2 * (p11 - p33);
-
-                            *lm_a1 += w * lpoly_00 * p11;
-                            *lm_a2 += (temp1 + temp2) / 2.0;
-                            *lm_a3 += (temp1 - temp2) / 2.0;
-                            lm_a4[l] += w * lpoly_00 * p33;
-
-                            *lm_b1 += w * lpoly_02 * p12;
-                            *lm_b2 += -w * lpoly_02 * p34;
+        // Split every output into disjoint distribution rows before dispatch.
+        // Reductions within a row keep their serial order, independent of the
+        // number of workers, and accept both C/F layouts and strided views.
+        let phase_rows = p11
+            .outer_iter_mut()
+            .zip(p12.outer_iter_mut())
+            .zip(p33.outer_iter_mut())
+            .zip(p34.outer_iter_mut())
+            .map(|(((a, b), c), d)| [a, b, c, d]);
+        let coefficient_rows = lm_a1
+            .outer_iter_mut()
+            .zip(lm_a2.outer_iter_mut())
+            .zip(lm_a3.outer_iter_mut())
+            .zip(lm_a4.outer_iter_mut())
+            .zip(lm_b1.outer_iter_mut())
+            .zip(lm_b2.outer_iter_mut())
+            .map(|(((((a, b), c), d), e), f)| [a, b, c, d, e, f]);
+        let rows: Vec<_> = xs_total
+            .iter_mut()
+            .zip(xs_scattering.iter_mut())
+            .zip(pdf.outer_iter())
+            .zip(phase_rows)
+            .zip(coefficient_rows)
+            .map(
+                |((((xs_total, xs_scattering), pdf), phase), coefficients)| DistributionRow {
+                    xs_total,
+                    xs_scattering,
+                    pdf,
+                    phase,
+                    coefficients,
+                },
+            )
+            .collect();
+        let integrate_row = |row: DistributionRow<'_>| {
+            let DistributionRow {
+                xs_total,
+                xs_scattering,
+                pdf,
+                phase: [mut p11, mut p12, mut p33, mut p34],
+                coefficients,
+            } = row;
+            Zip::indexed(size_param)
+                .and(size_weights)
+                .and(pdf)
+                .for_each(|j, &size_param, &size_weight, &pdf| {
+                    let area_weight =
+                        size_weight * pdf * std::f64::consts::PI * (size_param / k).powi(2);
+                    *xs_total += area_weight * output.Qext[j];
+                    *xs_scattering += area_weight * output.Qsca[j];
+                });
+            let phase_norm = c / *xs_scattering;
+            Zip::indexed(size_weights)
+                .and(pdf)
+                .for_each(|j, &size_weight, &pdf| {
+                    let weight = phase_norm * size_weight * pdf;
+                    Zip::from(output.S1.row(j))
+                        .and(output.S2.row(j))
+                        .and(&mut p11)
+                        .and(&mut p12)
+                        .and(&mut p33)
+                        .and(&mut p34)
+                        .for_each(|s1, s2, p11, p12, p33, p34| {
+                            let s1_norm = s1.norm_sqr();
+                            let s2_norm = s2.norm_sqr();
+                            let cross = s1 * s2.conj();
+                            *p11 += weight * (s1_norm + s2_norm);
+                            *p12 += weight * (s1_norm - s2_norm);
+                            *p33 += weight * 2.0 * cross.re;
+                            *p34 += weight * 2.0 * cross.im;
                         });
-                    });
-            });
+                });
+            let projected = self.transform.project(
+                [
+                    p11.view(),
+                    p12.view(),
+                    p11.view(),
+                    p33.view(),
+                    p34.view(),
+                    p33.view(),
+                ],
+                angle_weights,
+            );
+            for (mut output, values) in coefficients.into_iter().zip(projected) {
+                output += &values;
+            }
+        };
+        if let Some(pool) = &self.pool {
+            pool.install(|| rows.into_par_iter().for_each(integrate_row));
+        } else {
+            rows.into_iter().for_each(integrate_row);
+        }
         Ok(())
     }
 }
