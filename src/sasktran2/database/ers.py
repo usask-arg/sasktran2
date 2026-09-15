@@ -5,7 +5,10 @@ from __future__ import annotations
 import hashlib
 import shutil
 import tempfile
+import time
+import urllib.error
 import urllib.request
+from http.client import IncompleteRead
 from pathlib import Path
 
 import xarray as xr
@@ -14,6 +17,7 @@ from .base import CachedDatabase
 
 _RECORD_ID = "10022129"
 _FILES = {"v07": ("CAIRT_ERS_v07.nc", "71a5ed74d7056538cfd6a99d20ca3599")}
+_RETRYABLE_HTTP_CODES = {408, 500, 502, 503, 504}
 
 
 def _md5(path: Path) -> str:
@@ -24,8 +28,36 @@ def _md5(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _download(url: str, stream):
+    """Retry transient failures, discarding any partially downloaded bytes."""
+    for attempt in range(3):
+        stream.seek(0)
+        stream.truncate()
+        try:
+            with urllib.request.urlopen(url, timeout=60) as response:
+                shutil.copyfileobj(response, stream)
+            return
+        except (
+            urllib.error.URLError,
+            TimeoutError,
+            ConnectionError,
+            IncompleteRead,
+        ) as error:
+            if isinstance(error, urllib.error.HTTPError):
+                if error.code not in _RETRYABLE_HTTP_CODES:
+                    raise
+                error.close()
+            if attempt == 2:
+                raise
+            time.sleep(2**attempt)
+
+
 class ERSDatabase(CachedDatabase):
     """Cache only the ERS NetCDF, verifying the published file checksum.
+
+    Transient server and connection failures are retried up to twice, with
+    one- and two-second backoffs. Each request has a 60-second timeout.
+    Persistent failures and checksum mismatches propagate to the caller.
 
     Parameters
     ----------
@@ -71,8 +103,7 @@ class ERSDatabase(CachedDatabase):
         try:
             with tempfile.NamedTemporaryFile(dir=self._db_root, delete=False) as stream:
                 temporary = Path(stream.name)
-                with urllib.request.urlopen(url, timeout=60) as response:
-                    shutil.copyfileobj(response, stream)
+                _download(url, stream)
             self._verify(temporary)
             temporary.replace(destination)
         finally:

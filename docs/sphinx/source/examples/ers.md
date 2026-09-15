@@ -1,5 +1,7 @@
 ---
 file_format: mystnb
+mystnb:
+  execution_raise_on_error: true
 ---
 
 (_example_ers)=
@@ -55,8 +57,9 @@ profiles[["o3_mean", "o3_std", "temperature_k", "pressure_pa"]]
 The first call downloads only the 4.9 MB NetCDF into
 `<database_root>/climatology/ers/v07/CAIRT_ERS_v07.nc`. Later calls verify its
 checksum and use the cache. The plot archive is not downloaded, and the optional
-`zenodo-get` dependency is not needed. Download failures propagate, and incomplete
-downloads are not retained as valid cache files.
+`zenodo-get` dependency is not needed. Transient server and connection failures
+are retried up to twice. Persistent failures propagate, and incomplete downloads
+are not retained as valid cache files.
 
 The returned xarray dataset is loaded into memory with no open file handle.
 Its altitude coordinate is `altitude_m` in metres. Gas means and standard

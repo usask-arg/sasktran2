@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import urllib.error
 from unittest.mock import Mock
 
 import numpy as np
@@ -362,6 +363,70 @@ def test_failed_download_does_not_leave_a_cache(tmp_path, monkeypatch, failure):
     db = ers_database.ERSDatabase(db_root=tmp_path)
     with pytest.raises(OSError, match=r"checksum mismatch|interrupted download"):
         db.path()
+    assert list((tmp_path / "climatology/ers/v07").iterdir()) == []
+
+
+@pytest.mark.parametrize("failure", ["gateway_timeout", "connection_error"])
+def test_transient_download_failure_is_retried(
+    local_file, tmp_path, monkeypatch, failure
+):
+    payload = local_file.read_bytes()
+    digest = hashlib.md5(payload, usedforsecurity=False).hexdigest()
+    monkeypatch.setitem(ers_database._FILES, "v07", ("CAIRT_ERS_v07.nc", digest))
+    error = (
+        urllib.error.HTTPError("https://zenodo.org", 504, "Gateway Time-out", {}, None)
+        if failure == "gateway_timeout"
+        else urllib.error.URLError("connection reset")
+    )
+    download = Mock(side_effect=[error, io.BytesIO(payload)])
+    delay = Mock()
+    monkeypatch.setattr(ers_database.urllib.request, "urlopen", download)
+    monkeypatch.setattr(ers_database.time, "sleep", delay)
+    db = ers_database.ERSDatabase(db_root=tmp_path)
+    assert db.path().read_bytes() == payload
+    assert download.call_count == 2
+    delay.assert_called_once_with(1)
+
+
+def test_retry_discards_partial_download(local_file, tmp_path, monkeypatch):
+    payload = local_file.read_bytes()
+    digest = hashlib.md5(payload, usedforsecurity=False).hexdigest()
+    monkeypatch.setitem(ers_database._FILES, "v07", ("CAIRT_ERS_v07.nc", digest))
+
+    class PartialResponse(io.BytesIO):
+        def read(self, *args, **kwargs):
+            if self.tell():
+                msg = "stream timed out"
+                raise TimeoutError(msg)
+            return super().read(*args, **kwargs)
+
+    download = Mock(side_effect=[PartialResponse(b"partial data"), io.BytesIO(payload)])
+    monkeypatch.setattr(ers_database.urllib.request, "urlopen", download)
+    monkeypatch.setattr(ers_database.time, "sleep", Mock())
+    db = ers_database.ERSDatabase(db_root=tmp_path)
+    assert db.path().read_bytes() == payload
+    assert download.call_count == 2
+
+
+@pytest.mark.parametrize(("status", "attempts"), [(504, 3), (404, 1)])
+def test_download_retries_are_bounded_and_only_transient(
+    tmp_path, monkeypatch, status, attempts
+):
+    download = Mock(
+        side_effect=urllib.error.HTTPError(
+            "https://zenodo.org", status, "download failed", {}, None
+        )
+    )
+    delay = Mock()
+    monkeypatch.setattr(ers_database.urllib.request, "urlopen", download)
+    monkeypatch.setattr(ers_database.time, "sleep", delay)
+    db = ers_database.ERSDatabase(db_root=tmp_path)
+    with pytest.raises(urllib.error.HTTPError, match=str(status)):
+        db.path()
+    assert download.call_count == attempts
+    assert [call.args[0] for call in delay.call_args_list] == (
+        [1, 2] if attempts == 3 else []
+    )
     assert list((tmp_path / "climatology/ers/v07").iterdir()) == []
 
 
