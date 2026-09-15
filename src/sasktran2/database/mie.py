@@ -57,7 +57,9 @@ class MieDatabase(CachedDatabase, OpticalDatabaseGenericScattererRust):
             options are ["sasktran_legacy", "sasktran2", "sasktran2_cpp"]. "sasktran_legacy"
             requires the module `sasktran` to be installed.
         num_threads: int, optional
-            The number of threads to use for the calculation, by default 1. Only current works in the sasktran2_cpp backend
+            Number of Rust workers for particle-size calculations and distribution
+            integration, by default 1. Zero selects the automatic thread count.
+            Applies to the sasktran2_cpp backend.
         kwargs
             Additional arguments to pass to the particle size distribution, these should match the psize_distribution.args() method
         """

@@ -69,6 +69,12 @@ The database is a function of wavelength, and any arguments of the particle size
 When it is created for the first time the local database will be generated. Any subsequent instantiations of the
 object will re-use the cached database.
 
+Set `num_threads=4` when constructing `MieDatabase` to use four Rust workers
+during database generation. Workers calculate particle sizes and integrate
+distributions in parallel, sharing the precomputed angular basis. The default
+is one thread; `num_threads=0` selects Rayon's automatic thread count. The same
+option is available in `sasktran2.mie.distribution.integrate_mie_cpp`.
+
 
 We can look at the created database
 ```{code-cell}
