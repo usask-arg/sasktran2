@@ -1,3 +1,7 @@
+---
+file_format: mystnb
+---
+
 (_example_ers)=
 # CAIRT Extended Reference Scenarios
 
@@ -31,9 +35,10 @@ and 70–90°N. A request for 50°N raises an error; explicitly select the 45°N
 for that reference scenario. Local times are overpass times, so they should not
 be interpreted as universal day/night categories, especially near the poles.
 
-```python
+```{code-cell}
 import numpy as np
 import sasktran2 as sk
+import matplotlib.pyplot as plt
 
 scenario = {
     "month": 7,
@@ -44,7 +49,7 @@ scenario = {
 }
 
 profiles = sk.climatology.ers.profile(species=["O3", "NO2"], **scenario)
-print(profiles[["o3_mean", "o3_std", "temperature_k", "pressure_pa"]])
+profiles[["o3_mean", "o3_std", "temperature_k", "pressure_pa"]]
 ```
 
 The first call downloads only the 4.9 MB NetCDF into
@@ -63,9 +68,91 @@ Only variables with a given scenario dimension depend on that choice. For
 example, CFC11 has monthly profiles without a local-time dimension, whereas
 NO additionally depends on solar activity and SO2 depends on volcanism.
 
+## Plot the selected gas profiles
+
+We can plot the July northern-midlatitude profiles over the altitude range used
+in the radiance example below. Shading shows one climatological standard
+deviation about the mean, with the lower edge limited to zero for display.
+This spread describes variability, not uncertainty in the mean.
+
+```{code-cell}
+lower_atmosphere = profiles.sel(altitude_m=slice(0, 80000))
+altitude_km = lower_atmosphere.altitude_m / 1000
+
+fig, axes = plt.subplots(1, 2, figsize=(9, 5), sharey=True)
+for ax, gas, scale, label in zip(
+    axes,
+    ["o3", "no2"],
+    [1e6, 1e9],
+    ["O$_3$ VMR [ppmv]", "NO$_2$ VMR [ppbv]"],
+):
+    mean = lower_atmosphere[f"{gas}_mean"] * scale
+    spread = lower_atmosphere[f"{gas}_std"] * scale
+    ax.plot(mean, altitude_km, label="Mean")
+    ax.fill_betweenx(
+        altitude_km,
+        np.maximum(mean - spread, 0),
+        mean + spread,
+        alpha=0.2,
+        label="Mean ± one standard deviation",
+    )
+    ax.set_xlabel(label)
+    ax.set_xlim(left=0)
+    ax.grid(alpha=0.3)
+
+axes[0].set_ylabel("Altitude [km]")
+axes[0].set_ylim(0, 80)
+axes[0].legend(fontsize="small")
+fig.suptitle("July, 35–55°N, 09:30 local time")
+fig.tight_layout()
+plt.show()
+```
+
+## Compare seasons and local times
+
+Each curve below is an exact supplied scenario. On the left we vary the month
+at 09:30; on the right we compare the two local times in July. The latitude band,
+solar activity, and volcanic state stay fixed.
+
+```{code-cell}
+fig, axes = plt.subplots(1, 2, figsize=(9, 5), sharey=True)
+
+for month, label in [(1, "January"), (4, "April"), (7, "July"), (10, "October")]:
+    seasonal = sk.climatology.ers.profile(
+        species="O3", **{**scenario, "month": month}
+    ).sel(altitude_m=slice(0, 60000))
+    axes[0].plot(
+        seasonal.o3_mean * 1e6, seasonal.altitude_m / 1000, label=label
+    )
+
+for hour, label in [(9.5, "09:30"), (21.5, "21:30")]:
+    overpass = sk.climatology.ers.profile(
+        species="NO2", **{**scenario, "local_time_hours": hour}
+    ).sel(altitude_m=slice(0, 60000))
+    axes[1].plot(
+        overpass.no2_mean * 1e9, overpass.altitude_m / 1000, label=label
+    )
+
+axes[0].set_title("Seasonal O$_3$ at 09:30")
+axes[0].set_xlabel("O$_3$ VMR [ppmv]")
+axes[0].set_ylabel("Altitude [km]")
+axes[1].set_title("July NO$_2$ at two local times")
+axes[1].set_xlabel("NO$_2$ VMR [ppbv]")
+axes[0].set_ylim(0, 60)
+for ax in axes:
+    ax.set_xlim(left=0)
+    ax.legend()
+    ax.grid(alpha=0.3)
+fig.suptitle("ERS reference scenarios, 35–55°N")
+fig.tight_layout()
+plt.show()
+```
+
 ## Create an atmosphere
 
-```python
+The same scenario can initialize an atmosphere for a spectrum calculation.
+
+```{code-cell}
 config = sk.Config()
 config.multiple_scatter_source = sk.MultipleScatterSource.DiscreteOrdinates
 config.num_streams = 4
@@ -79,7 +166,7 @@ geometry = sk.Geometry1D(
     geometry_type=sk.GeometryType.Spherical,
 )
 atmosphere = sk.Atmosphere(
-    geometry, config, wavelengths_nm=np.array([350.0, 500.0, 600.0])
+    geometry, config, wavelengths_nm=np.arange(300.0, 801.0, 5.0)
 )
 
 sk.climatology.ers.add_to_atmosphere(
@@ -93,6 +180,21 @@ viewing = sk.ViewingGeometry()
 viewing.add_ray(sk.GroundViewingSolar(0.6, 0, 0.8, 200000))
 engine = sk.Engine(config, geometry, viewing)
 radiance = engine.calculate_radiance(atmosphere)
+```
+
+The following spectrum includes ERS O3 and NO2 absorption and Rayleigh
+scattering. SASKTRAN2 assumes unit incident solar irradiance here, so the plotted
+radiance is normalized by that irradiance.
+
+```{code-cell}
+fig, ax = plt.subplots(figsize=(8, 4))
+radiance["radiance"].isel(los=0, stokes=0).plot(ax=ax, x="wavelength")
+ax.set_xlabel("Wavelength [nm]")
+ax.set_ylabel("Solar-normalized radiance [sr$^{-1}$]")
+ax.set_title("ERS July, 35–55°N: O$_3$, NO$_2$, and Rayleigh scattering")
+ax.grid(alpha=0.3)
+fig.tight_layout()
+plt.show()
 ```
 
 Geometry and solar angles remain caller choices; selecting ERS local time does
@@ -113,7 +215,7 @@ pressure constant; it does not infer a physical extrapolation.
 
 A single gas can also be constructed on the full native ERS grid:
 
-```python
+```{code-cell}
 ozone = sk.climatology.ers.constituent("O3", sk.optical.O3DBM(), **scenario)
 ```
 
@@ -135,12 +237,21 @@ An explicit local file bypasses the pinned checksum check and records its
 actual checksum, so subsets and modified files can be used deliberately.
 The only supported schema/version is `version="v07"`.
 
-```python
-raw = sk.climatology.ers.load_dataset(path="/path/to/CAIRT_ERS_v07.nc")
-selected = sk.climatology.ers.profile(
-    path="/path/to/CAIRT_ERS_v07.nc", **scenario
+To demonstrate local-file access, reuse the cache populated above. Selecting
+the July southern-polar scenario also exposes two known data-quality flags.
+
+```{code-cell}
+from sasktran2.database.ers import ERSDatabase
+
+cached_path = ERSDatabase().path()
+raw = sk.climatology.ers.load_dataset(path=cached_path)
+polar_profiles = sk.climatology.ers.profile(
+    path=cached_path,
+    species=["H2O", "O"],
+    **{**scenario, "latitude_degrees": -80},
 )
-print(selected["h2o_mean"].attrs["quality_flags"])
+for name in ["h2o_mean", "o_mean"]:
+    print(f"{name}: {polar_profiles[name].attrs['quality_flags']}")
 ```
 
 Raw access preserves the source coordinates and values. Selected profile access
