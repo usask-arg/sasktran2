@@ -30,6 +30,7 @@ object takes precedence over both global settings.
     :toctree: generated/
 
     sasktran2.database.MieDatabase
+    sasktran2.database.StratosphericAerosolDatabase
 ```
 
 ## Solar Databases

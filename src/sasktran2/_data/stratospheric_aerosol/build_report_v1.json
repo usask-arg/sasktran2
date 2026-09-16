@@ -1,0 +1,5429 @@
+{
+  "catalogue_sha256": "3c949e2eeaff85318de9dc197cf3bf717d87a1f2bf748a7667cc633a55e6557f",
+  "archive_profiles": 82225,
+  "screened_profiles": 23379,
+  "sources": [
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201706-fv0001.nc",
+      "psd_sha256": "f7fcc0e8988117c97ce6d965c121a57b0eb53b38ee6fe07691ecb83ac1a53def",
+      "sage_file": "g3b_smnc_6.0.0_201706.nc",
+      "sage_sha256": "d7dc3bc46c9e29e4736103992f97d873f47e1dc705512d42102b41961a27ca5f",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201707-fv0001.nc",
+      "psd_sha256": "de0e16f3a182806df9f2a48ab070a86def5e242b2f9ab47f4544d4073144029c",
+      "sage_file": "g3b_smnc_6.0.0_201707.nc",
+      "sage_sha256": "90bf58f3fdbf1e4ce3badaac2f551ccd14f4684e0c480d1061556a70c19380c1",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201708-fv0001.nc",
+      "psd_sha256": "4402fc68ac07018c12df433e9d29f44c34dc49c1a5acfdcbe09827f46b57c8de",
+      "sage_file": "g3b_smnc_6.0.0_201708.nc",
+      "sage_sha256": "5082796d3516391f5f7aa39a7993ed2b6de39a1b557e71cabea42d670fc8fc4f",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201709-fv0001.nc",
+      "psd_sha256": "6a2d1ac3d4f28774ed6d7d11f7841900851b71fc53d32e60cdac1b9489739d39",
+      "sage_file": "g3b_smnc_6.0.0_201709.nc",
+      "sage_sha256": "6f5e8f83c0c385b2a86656ee9322f64851df3a3d594207cb8fa1467c6a695650",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201710-fv0001.nc",
+      "psd_sha256": "ae5f68a0f2af8358cb381cd96cf2dd9f4db83dca39c245c20e5a9dc9860116da",
+      "sage_file": "g3b_smnc_6.0.0_201710.nc",
+      "sage_sha256": "6220de0c6d7e6035bcd333cc59db0584476a80509cb999c1fb8b28e409e89cbf",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201711-fv0001.nc",
+      "psd_sha256": "24f3ae9b746527b9c802d88e7af96052dc2604cabf9d990e01f7cd5a2b123875",
+      "sage_file": "g3b_smnc_6.0.0_201711.nc",
+      "sage_sha256": "d590ef14d52aa3c0665a4d5c545e2ed715f36c53896ba4223ec1560e68cc0972",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201712-fv0001.nc",
+      "psd_sha256": "3d087e0a06b79fde6937f2320e54568d86da248c11607b0f7f11de431de871fc",
+      "sage_file": "g3b_smnc_6.0.0_201712.nc",
+      "sage_sha256": "bd08f0590052c82bf8ba8924022db5585fe7e71f77499f464f6372d1f6b73bf4",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201801-fv0001.nc",
+      "psd_sha256": "3bff2379626a7416f010cfb1c5eef87248992464f4918831cf87a674321cc45a",
+      "sage_file": "g3b_smnc_6.0.0_201801.nc",
+      "sage_sha256": "6dfd5be508a96d7dd1762366503314e7684b86a538621e584a55926caa8a6ff6",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201802-fv0001.nc",
+      "psd_sha256": "d8796a5653d27a4cd41bd433ae4b7e6a5fcd8b416eda25b9518b62ac636ee446",
+      "sage_file": "g3b_smnc_6.0.0_201802.nc",
+      "sage_sha256": "6a4bae627bfe8c9e827d93957990ca437e3e72fe19e3fd6cce6f499298fb08b8",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201803-fv0001.nc",
+      "psd_sha256": "e451261adf2951228a9e558bd80f4a292acbcf76ea1c2c8100867914a5743f68",
+      "sage_file": "g3b_smnc_6.0.0_201803.nc",
+      "sage_sha256": "8832a1f72504320fa0915c12914c620a4e21324290b24aaeab3c547e3acfe15a",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201804-fv0001.nc",
+      "psd_sha256": "5162e074b550a894639e28a02263baeb67e890a73a4ec1e676f17609175cdd16",
+      "sage_file": "g3b_smnc_6.0.0_201804.nc",
+      "sage_sha256": "ea933453ada29d9d0aec459167aabdf84847c6bafb2213ef1e488ff9553237a0",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201805-fv0001.nc",
+      "psd_sha256": "f5c0e529a26caa119e97e7d8d304fe7214846e9fe3991d852b02822950be98da",
+      "sage_file": "g3b_smnc_6.0.0_201805.nc",
+      "sage_sha256": "c8b749caa54fae047fcb2bfe4ed243e2ff12b70c9e40703183ee29bd5ee7af5a",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201806-fv0001.nc",
+      "psd_sha256": "2a8b09d8b6416747634308601740cfda595b28ebce89ddf569c5f9ab8f87f40f",
+      "sage_file": "g3b_smnc_6.0.0_201806.nc",
+      "sage_sha256": "c61186cc164186ce1e05d850b6a824d4dc739a9941f2715b62a1c738ec928143",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201807-fv0001.nc",
+      "psd_sha256": "f160e9fd83cf808b80dcf9a20769a68191b68d8248a260ff1f6d1ea7b7c18201",
+      "sage_file": "g3b_smnc_6.0.0_201807.nc",
+      "sage_sha256": "754504c702ca3c66962b627bf5293ebc65803ef85c5153ede1d40b13ca9ccbea",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201808-fv0001.nc",
+      "psd_sha256": "2005d41fcd1bb7ec6e14c7dc0a36a94dda4d6d9a2e695fa1334dd904286bf1d8",
+      "sage_file": "g3b_smnc_6.0.0_201808.nc",
+      "sage_sha256": "8ea69fbf269c28564a3321cef41df530dba25b9904b146aed25ea7646bcfc038",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201809-fv0001.nc",
+      "psd_sha256": "bf6fa01a9373c8603fa3364392c2a53e5ba17899d57d259040dc8fda869f1dc5",
+      "sage_file": "g3b_smnc_6.0.0_201809.nc",
+      "sage_sha256": "163e99b4c0f1a35d357bdf2982ed682f3159b7468a430928def2880a7e54706c",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201810-fv0001.nc",
+      "psd_sha256": "e901cd422e6a092dbf81bf185e9c8e86a290417a968695cddace3d01eb732ad8",
+      "sage_file": "g3b_smnc_6.0.0_201810.nc",
+      "sage_sha256": "7a2b76a7fdf39bf38c03ad9714050a99f4603611a4b4504bed2d93ab9bd7f946",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201811-fv0001.nc",
+      "psd_sha256": "ed78d5a62235738208b4e3020fb5ffb25046aa1127da3d7d65076f3e2b43c093",
+      "sage_file": "g3b_smnc_6.0.0_201811.nc",
+      "sage_sha256": "e5f0d5aba4d4fe9cec90189c8870cd1907afd1de2b9036825a18132c6be77273",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201812-fv0001.nc",
+      "psd_sha256": "48ff4727dac6b8367e4b15527bb37294ced596eef95922124dc2adcd1fc461c1",
+      "sage_file": "g3b_smnc_6.0.0_201812.nc",
+      "sage_sha256": "f96d328bf3af73f5aaadbd6cce24dbc073ab38b8ff0211321a5e2ee207e241bf",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201901-fv0001.nc",
+      "psd_sha256": "231abce98395db9f6f3cbb7dfd0a640178ca8f5494838a0c8e9b4400a6322ca8",
+      "sage_file": "g3b_smnc_6.0.0_201901.nc",
+      "sage_sha256": "7fc4ffdc5517e475ba3f31539cfcb3ef9ce91ada9d60fb2212382fc4d70f16d2",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201902-fv0001.nc",
+      "psd_sha256": "f326809d629e6dc4f4860ee5f95e8ece986edec3ffa46a8c914a31577fdfc1bc",
+      "sage_file": "g3b_smnc_6.0.0_201902.nc",
+      "sage_sha256": "d8e6fc0bbf33f3a16052e6a82c2763d91750eab7eb8c762ae446031d3ffee1fd",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201903-fv0001.nc",
+      "psd_sha256": "1c6e12186af6926dac5a22c8f5d0a41488eb33ed28954f6e66abc1a672eb4b18",
+      "sage_file": "g3b_smnc_6.0.0_201903.nc",
+      "sage_sha256": "518eece0b55d54ba7a9a81e033137d6f1851ee364a4cc4d1773f0e314c47d060",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201904-fv0001.nc",
+      "psd_sha256": "26ede9bdbbc89f22f56be4a135622606999f052c8009262041e136e68a5fa67d",
+      "sage_file": "g3b_smnc_6.0.0_201904.nc",
+      "sage_sha256": "e85fe67456e42e584c36e9beca3e1a2e3a9f493bced60d949c8c60e518625041",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201905-fv0001.nc",
+      "psd_sha256": "faed78dd81bd7829ff3190c00bf24fb4c05f201d49a28ad161c482ab5589dfe6",
+      "sage_file": "g3b_smnc_6.0.0_201905.nc",
+      "sage_sha256": "6772b8163556a1a41186a9bed4fa12b5377811e0ba03da83e0c81316e8ea7d11",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201906-fv0001.nc",
+      "psd_sha256": "7fcedf2e071dd1f9c0be17331391f44e08b8d719cdcf337abfb0bd26d4bd69be",
+      "sage_file": "g3b_smnc_6.0.0_201906.nc",
+      "sage_sha256": "871fa7a11575eeaec3ed86792c6317c94a4e447fd46119a2ef1797d1cea15adb",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201907-fv0001.nc",
+      "psd_sha256": "17286fe7fb2c4c879d2100e6ce582dedd4e6d335bf3f81914eb4bf92b4887e9e",
+      "sage_file": "g3b_smnc_6.0.0_201907.nc",
+      "sage_sha256": "70793f3639fb8e56db8a3b58ae959c9ca7bc6422629576197d1674c00ee0398e",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201908-fv0001.nc",
+      "psd_sha256": "7bf8cf721fb05fdc7e0f2af52550a12f6af134204d17f71971fb4ef7ff8311cb",
+      "sage_file": "g3b_smnc_6.0.0_201908.nc",
+      "sage_sha256": "6a43d2cb6d7f867577c7146baaf124cfceafdd31fd914c5ad5c97be233618b46",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201909-fv0001.nc",
+      "psd_sha256": "80664004daa2e26ff05ce4ed9ad54630210b85ff22e9ff1beac79d13ef5aef1c",
+      "sage_file": "g3b_smnc_6.0.0_201909.nc",
+      "sage_sha256": "5794c48b81396974785468a4eaae9a7c19a9d3cf59644b28fdba37fec4d20d41",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201910-fv0001.nc",
+      "psd_sha256": "c1c6740227e4175d42bcffab13ade02bd2024399eaacbe40b2edcd1d3ae759a5",
+      "sage_file": "g3b_smnc_6.0.0_201910.nc",
+      "sage_sha256": "5d92aef9968cfdc28522fc7e10a6d2890a3e787c9104bae4b5a80b8022826a80",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201911-fv0001.nc",
+      "psd_sha256": "8c9d65b4ad5ee2af1e667e88d84edeed0938dabf546b49f30ae586cee55a8437",
+      "sage_file": "g3b_smnc_6.0.0_201911.nc",
+      "sage_sha256": "9ce3f736a051e421298b60ec16ce7f01e802820154b43892e208cd5edf103305",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201912-fv0001.nc",
+      "psd_sha256": "fab25ac1129a89a93ea660f1130e15c627042e5528ae878260d2ba84cc9b20da",
+      "sage_file": "g3b_smnc_6.0.0_201912.nc",
+      "sage_sha256": "549c9a97420731ce9e39b96a6c32f56e9907c1642607b54a1f31a83b850aa01d",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202001-fv0001.nc",
+      "psd_sha256": "f6afbe68ee1e497d937796333498c0d415c1839f0509e81487878993ab62cac9",
+      "sage_file": "g3b_smnc_6.0.0_202001.nc",
+      "sage_sha256": "5ac8bd725be184b8d1599dc0b73d4d560a42773e62a4ae379a75a015ee98bffa",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202002-fv0001.nc",
+      "psd_sha256": "5386a3cdc98e575f1cb8275fb4af7e1bf4ce2c1de6f77142b32afcaedd74d357",
+      "sage_file": "g3b_smnc_6.0.0_202002.nc",
+      "sage_sha256": "ea0f2da81e5b9fbb630c88fea7cf51d8b2c269a5a56f5a57d8421b9b63881882",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202003-fv0001.nc",
+      "psd_sha256": "23aab7efbb11f0112929ad43f6ee1344827d768ea009aea807af2669aa1f450b",
+      "sage_file": "g3b_smnc_6.0.0_202003.nc",
+      "sage_sha256": "f2f20e6a1b0929eab7b5613c09144d9331b8f090cd211ec8149ee74399eb635f",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202004-fv0001.nc",
+      "psd_sha256": "a9f474ee17d835a3d454990158192e413e9b69e804c31b63347e458c77276d01",
+      "sage_file": "g3b_smnc_6.0.0_202004.nc",
+      "sage_sha256": "5cec1c4d39ee8e06945756b021f16ce049b88c69fda4e930b19f6180e2c08a18",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202005-fv0001.nc",
+      "psd_sha256": "db78eba1347e6ecae6309e69c7776dd2aaa9884371c76afbc90c740413eadd00",
+      "sage_file": "g3b_smnc_6.0.0_202005.nc",
+      "sage_sha256": "264fa7697e764aead6da8381d69a3d8762d8e3d0e677e8033f400a76761b1711",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202006-fv0001.nc",
+      "psd_sha256": "aa6bc12cc089f4f6c8b843a3eed62f321bb731936362a099a482f523f627c961",
+      "sage_file": "g3b_smnc_6.0.0_202006.nc",
+      "sage_sha256": "fddf51d2fe79272ca46206fd346d2d50bd8c8ed9861f6b998d90f5b4d104a7d0",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202007-fv0001.nc",
+      "psd_sha256": "b6cfb6f7c932c8388ca2bfce9a088decfe2b7a45193542ad0bf32d2151e0bb55",
+      "sage_file": "g3b_smnc_6.0.0_202007.nc",
+      "sage_sha256": "61de18619500ed6f662a1b792eb1aab609bc4bddef176eeb007dbf24da497d84",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202008-fv0001.nc",
+      "psd_sha256": "a7bd3d30c193c57f9a7ba31631540176f88edffb3aeb0ca4739cadb30bff9666",
+      "sage_file": "g3b_smnc_6.0.0_202008.nc",
+      "sage_sha256": "379e8c35f64ca50d73a1b2ef53d52b7a0e6597d108f89397e9680d4786e39eeb",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202009-fv0001.nc",
+      "psd_sha256": "1ac76f2a4741a3af5ccb2f2e4bf7b365195643d73f399301d9f750873d009e65",
+      "sage_file": "g3b_smnc_6.0.0_202009.nc",
+      "sage_sha256": "182693b4aee6ac8cf289d89bc512a6cb18398e15d21c14554f20d80437a875e3",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202010-fv0001.nc",
+      "psd_sha256": "2a6edfb0edf765bc36d204887823ca910889c6b31510ea4fad5ba4d84026dc8d",
+      "sage_file": "g3b_smnc_6.0.0_202010.nc",
+      "sage_sha256": "226f780f088e886284ab17db0e01783441443e2ba9b158eced959c3fb054a358",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202011-fv0001.nc",
+      "psd_sha256": "447e3614afe112d896450f82d0069f2f1bcc9d9a0e41d6e2ff6609322003397b",
+      "sage_file": "g3b_smnc_6.0.0_202011.nc",
+      "sage_sha256": "f7635f12d2aff42f9c434ce69312b5562f31583eb77880408dc66ddc1f7fee8c",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202012-fv0001.nc",
+      "psd_sha256": "404c86bd8af10325c2ad5831452aaac07ec048cf15c52a660227ce2fd982fa6c",
+      "sage_file": "g3b_smnc_6.0.0_202012.nc",
+      "sage_sha256": "bab1585ebe1860bb25d76736e248057838f7d09cfba62765ab75cb4c948689f1",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202101-fv0001.nc",
+      "psd_sha256": "578d92bf8ef505a33bb02bd98dbcd4188340feb0f68bdb5a555d643825b81431",
+      "sage_file": "g3b_smnc_6.0.0_202101.nc",
+      "sage_sha256": "f86ea06a85f73b0a76ca16587f1f60210808dafed2c10795e680c3dc7d758200",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202102-fv0001.nc",
+      "psd_sha256": "550d7513dc08a630b15ca8f385138d6c2d1658397f450e3d1c2a65769225b18d",
+      "sage_file": "g3b_smnc_6.0.0_202102.nc",
+      "sage_sha256": "bddab258aed0fd5bc69ea2445b7e64ac217d7f3b5e4a771c37e1ad0d266fabb5",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202103-fv0001.nc",
+      "psd_sha256": "0440a3b466a9521ea92daec2d3833364786fe371a5ea1b25e5aaab1f3074ae18",
+      "sage_file": "g3b_smnc_6.0.0_202103.nc",
+      "sage_sha256": "e3962a52dccf9ed2759bb8c4391791a03bab630d66d93411649195450b707d90",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202104-fv0001.nc",
+      "psd_sha256": "7a9bd3872937f6717bad284cbe2aecfd5abc3a5a534fb5ff50f8854a7541c80f",
+      "sage_file": "g3b_smnc_6.0.0_202104.nc",
+      "sage_sha256": "65ae2bcf885bcde29b148975b7c15dc6b60c4d690a102c0dd6defb8fc10fd391",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202105-fv0001.nc",
+      "psd_sha256": "a8ecd39f4cf621c7f66771a95d140b84d30a96a109fd0e0d4618cabc7e3fa7ae",
+      "sage_file": "g3b_smnc_6.0.0_202105.nc",
+      "sage_sha256": "3b88945d62d061ea47d0b7f8450dfb4741371696f0063503b1045c5057d5e7f4",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202106-fv0001.nc",
+      "psd_sha256": "52c3ab0c3f33fe6b61d2d7fa29741061c23098944c4d73289fe566bf431eba87",
+      "sage_file": "g3b_smnc_6.0.0_202106.nc",
+      "sage_sha256": "4b20467986156429e40f6cc2c56bdbb6ba5d4ac4859c756c0eafef667a69c5ef",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202107-fv0001.nc",
+      "psd_sha256": "885f375e448dfd0347d4c0616c09349bd6a0aeb815d95203241f18d0420d5345",
+      "sage_file": "g3b_smnc_6.0.0_202107.nc",
+      "sage_sha256": "53da850f2839880a2a5c95c8676eba4a27eaab712e81f0d0918e903ccee73335",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202108-fv0001.nc",
+      "psd_sha256": "3a28fe026283befe0d5af6a1e0857eb9e51b490bcbc4174fa09391e444285ac6",
+      "sage_file": "g3b_smnc_6.0.0_202108.nc",
+      "sage_sha256": "fa057be8de32d1fd0b9b12b4de9c579bc6b427d86991ed5667424ae8b211cd8d",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202109-fv0001.nc",
+      "psd_sha256": "135af9b8984a05599f4e926db15200f215483265f3b9087851c66ae2033c02f6",
+      "sage_file": "g3b_smnc_6.0.0_202109.nc",
+      "sage_sha256": "38d58cc44aa89d91af3b8fa221f82079e8bca98e4ca2812757c06e371871b289",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202110-fv0001.nc",
+      "psd_sha256": "f116a676868df62d27859328f1613152429d1d90fb08288c152247a5a027df34",
+      "sage_file": "g3b_smnc_6.0.0_202110.nc",
+      "sage_sha256": "6b353e8e9f9f1080f8fbebe9b35a049c941209141692f3a28b73bd49fa3444e6",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202111-fv0001.nc",
+      "psd_sha256": "33cde0c4e157db87cdd46b95aebd741ab30098f9739b373f4890af0474d55bf2",
+      "sage_file": "g3b_smnc_6.0.0_202111.nc",
+      "sage_sha256": "f9e7b64fa231d34ea15681a0a3e1565e73f5f6323c9c419770e098a887971a4f",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202112-fv0001.nc",
+      "psd_sha256": "3e7647e8cc5c4b8e6b316e9b44399de6822bd91cc4c16c7a880fd982a7f58d3b",
+      "sage_file": "g3b_smnc_6.0.0_202112.nc",
+      "sage_sha256": "78b64c00f4ef1757efc2684241fd07b3422cff71d91ed1d5ed5f3e00a644beac",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202201-fv0001.nc",
+      "psd_sha256": "4d24250f8c7b0c93dbba3b46c184cc9c793a209692df891c6541222065391445",
+      "sage_file": "g3b_smnc_6.0.0_202201.nc",
+      "sage_sha256": "9477956f0ad0f7d3c1481c8a08de13f2791408324f42612afa41d105648582dd",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202202-fv0001.nc",
+      "psd_sha256": "ee22961136d2558aa23766678843ac78db04bbf4531859f693448f77948e4f30",
+      "sage_file": "g3b_smnc_6.0.0_202202.nc",
+      "sage_sha256": "b7e1adad98b34643a45a4a80f6584517b256f5561dde93a67e262d9dbbf0564a",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202203-fv0001.nc",
+      "psd_sha256": "d84d868fb7c41cc61382c5d2f83ced2af713bf690353066c0a20e6af06cabe4c",
+      "sage_file": "g3b_smnc_6.0.0_202203.nc",
+      "sage_sha256": "33077857a573d062f3230db49bfffc3cfeb0d0291edf789e56984bd23d17be17",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202204-fv0001.nc",
+      "psd_sha256": "cb9c5b0693178924ed5f6034bd10f8a1c11e1383ee673ed79e8369cf608dd2c4",
+      "sage_file": "g3b_smnc_6.0.0_202204.nc",
+      "sage_sha256": "461001692f01b14e3bddeee27179a1aec936d5255e7a2243f315c518de6076de",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202205-fv0001.nc",
+      "psd_sha256": "7c45813084485b88f769321be5b1161f227061bec97bef2e09f35aa7ae7d7bb8",
+      "sage_file": "g3b_smnc_6.0.0_202205.nc",
+      "sage_sha256": "92593641e401c22ef62dffc62a2615b8d48ddb0d73ee56349a001a61c975d5ac",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202206-fv0001.nc",
+      "psd_sha256": "c03b26a5465205b6d1a594ded3b01e285ab3164b1766f16a7e2b71993254207f",
+      "sage_file": "g3b_smnc_6.0.0_202206.nc",
+      "sage_sha256": "dbebb8d42c303bb373c6e256df91a2a7f36df9c91a0c3c653eee174e8a5ee64a",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202207-fv0001.nc",
+      "psd_sha256": "df5dba3d61f8c8d044e0d988d70ce123536cb8534fc6affdda9209316666f540",
+      "sage_file": "g3b_smnc_6.0.0_202207.nc",
+      "sage_sha256": "cfe0d21684a6c39b5117bc52addbe4469fde24bd691eb59a6f11f49277d440d3",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202208-fv0001.nc",
+      "psd_sha256": "41772414bf64b05333303e40b8a3ab7264a2e2b3987c8a855846754fff511aeb",
+      "sage_file": "g3b_smnc_6.0.0_202208.nc",
+      "sage_sha256": "42e0ef8a196e5afd8d97c6879ae5ee56babdb62c9593f21717181102e17fd4ea",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202209-fv0001.nc",
+      "psd_sha256": "7aa6ab11c7a74c37654bb2fdef3a5d869c04206f6921de9f00735dff1a2beb8e",
+      "sage_file": "g3b_smnc_6.0.0_202209.nc",
+      "sage_sha256": "ba4f23b22e676dbd72d6a9347f16118e514a0bc404e978cefd775ad64e7da457",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202210-fv0001.nc",
+      "psd_sha256": "a90e1cc9d2b5af93e2d85e1c1e558f7cffea6a9ec8e60e2161f167fce896b787",
+      "sage_file": "g3b_smnc_6.0.0_202210.nc",
+      "sage_sha256": "e130e1bd78e241e8752d34712448c6614ad62cd7947da993398b62ee06c9f6b0",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202211-fv0001.nc",
+      "psd_sha256": "4dda0e163e9a32b6069fd68273e5ca24c7142f2cd07a802a38cd3d2d0882f6c9",
+      "sage_file": "g3b_smnc_6.0.0_202211.nc",
+      "sage_sha256": "b9812a4f12b884dc3fb066fa6aa3f91721e855b159910ea1f31f61413bff53a3",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202212-fv0001.nc",
+      "psd_sha256": "fd05741cbe03b7b4b63cc1538874815602cbea5184b7303c0852dfbfbf6e3f45",
+      "sage_file": "g3b_smnc_6.0.0_202212.nc",
+      "sage_sha256": "0e8393e96f272aca0fd10de0e6abb8df927bcd88470883490663ab2d0bf42689",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202301-fv0001.nc",
+      "psd_sha256": "ed242a88d63fc1c9ef302c981fa8a8b5299e24b596c906e618ad5fd47c5dd1a1",
+      "sage_file": "g3b_smnc_6.0.0_202301.nc",
+      "sage_sha256": "ccc759904bb3fd0426aadc4f7f490866ad4867d6242b2ce2240a11132fe0d45e",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202302-fv0001.nc",
+      "psd_sha256": "caa26ea2584dcf86cc0506f558a58e2a24edbc5d68a52eef4a8edd3dd3bbe36b",
+      "sage_file": "g3b_smnc_6.0.0_202302.nc",
+      "sage_sha256": "1c95ec192cad9f6878be3ade9b46ca8e91d993db3f98f6ad3a376961aafb9c14",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202303-fv0001.nc",
+      "psd_sha256": "9d3d05286097051d09db414701fa43275a68d876190720de90bcf093173e740a",
+      "sage_file": "g3b_smnc_6.0.0_202303.nc",
+      "sage_sha256": "3aea016f803e6d60dc212cadfb235a9f9c140cecabccce99ab880938ed91ef3a",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202304-fv0001.nc",
+      "psd_sha256": "0903189280c8dc9f0d0d96fc1a1445340f609ba46599968b04b5101830abcb82",
+      "sage_file": "g3b_smnc_6.0.0_202304.nc",
+      "sage_sha256": "722f879808c7950a43d02b6f5265a87670c82c0d5f11c185e0dc2b48ee6ba8f5",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202305-fv0001.nc",
+      "psd_sha256": "6b2681f1e8d5cb26d6489809ffe9e38bdbc8d6c2496593aa935df3cd91b2cc55",
+      "sage_file": "g3b_smnc_6.0.0_202305.nc",
+      "sage_sha256": "cdd2a3897b847d62dca23f8c7bfe51242b96e490d0ef9a49f0adca60f80e63c5",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202306-fv0001.nc",
+      "psd_sha256": "398018d10b7e3f0ae48a2155289f8c82c1bac19d38debb68d1fdc831bd073b26",
+      "sage_file": "g3b_smnc_6.0.0_202306.nc",
+      "sage_sha256": "a9e86597daab8254eef7bbbfc11624588d36d9e015fd95875444860830d0b6e1",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202307-fv0001.nc",
+      "psd_sha256": "7c6edb91e6dc0e103418b267756360120efb7197a7fb0d2e3856970e64d10d50",
+      "sage_file": "g3b_smnc_6.0.0_202307.nc",
+      "sage_sha256": "103c1d3e188dea89f2533eae58033debe6f101ba300bcc31b210593ad6d0bebf",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202308-fv0001.nc",
+      "psd_sha256": "c1bf2e5ff79071c3b78aae1d73fa88c331ef2d86e998046cac977f30839d81c5",
+      "sage_file": "g3b_smnc_6.0.0_202308.nc",
+      "sage_sha256": "73c87ff242191c69dcb6e82d9ea75bc0f83beb521342af6c3a15211d390c304b",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202309-fv0001.nc",
+      "psd_sha256": "8577d8a8e6833787d6cc29c2398b3202cab8ec9135009cab826b17591c074533",
+      "sage_file": "g3b_smnc_6.0.0_202309.nc",
+      "sage_sha256": "f783d587f63be852f70e27bfcee5f51dee2af7c8fc0b2a1c0854d6fc40fddef2",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202310-fv0001.nc",
+      "psd_sha256": "b4df9eb1946191185b1e0c95c435e0f5c7361285468b9378b3b9c361e477ba62",
+      "sage_file": "g3b_smnc_6.0.0_202310.nc",
+      "sage_sha256": "feb8cc445a6e21af50261ba85d0768a943acc0eeb92a50d71644b616ab54c7c5",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202311-fv0001.nc",
+      "psd_sha256": "0b1cbbd2ecaf15e493a7942666600722f74be774da19702f015a1213ba84020c",
+      "sage_file": "g3b_smnc_6.0.0_202311.nc",
+      "sage_sha256": "e30a0107c78b991edecfc78c104552ca9bb3732a8a021ac20db35668ef5ecb9b",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202312-fv0001.nc",
+      "psd_sha256": "5db0b81c0640d5440e5617c97fc620b5899c4a43d3565e831379e0fa430e75a1",
+      "sage_file": "g3b_smnc_6.0.0_202312.nc",
+      "sage_sha256": "663f86f7a3ca990e8c51c65779068b13c5f80ebf344ef53cf1db2a61917f5915",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202401-fv0001.nc",
+      "psd_sha256": "d56c0e5b83a24ce1a0a191679fd6d19617643eee1fc5f52f82974fb3c20f15e1",
+      "sage_file": "g3b_smnc_6.0.0_202401.nc",
+      "sage_sha256": "99635eefc5196664150b95139de03a7b83b58d00a0fb1d3f9c1b60bd29cb2409",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202402-fv0001.nc",
+      "psd_sha256": "55fcd117dff0100fccc64e5e77eac6937326b0eac7dcebd33dd0bd5824457f86",
+      "sage_file": "g3b_smnc_6.0.0_202402.nc",
+      "sage_sha256": "adfb5ec2d538c3a987c0eaff4c679184d7b969aaf784557e1850549300b98991",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202403-fv0001.nc",
+      "psd_sha256": "0ff2d9ed7bea34a39c78d7762dffe5ff236b7f7dd6d0377ddb93a61430c50c39",
+      "sage_file": "g3b_smnc_6.0.0_202403.nc",
+      "sage_sha256": "b8360e59657fa430e8152f8cf97d37adc2d0eebd325dfa176907740d3e56a335",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202404-fv0001.nc",
+      "psd_sha256": "d88a94c38c6dc9385fcbaee960218ab20d9024e2e9519bb832defbefba677c0a",
+      "sage_file": "g3b_smnc_6.0.0_202404.nc",
+      "sage_sha256": "3861ccae411a2c3c6309b4ca73a4a5724095bdde3e99994a5c49b14535fae028",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202405-fv0001.nc",
+      "psd_sha256": "a0d86d58cfb1b0d08eb6425b5b729d67c163783a493d02c45f0ec6f146dc7626",
+      "sage_file": "g3b_smnc_6.0.0_202405.nc",
+      "sage_sha256": "6296699ca02d5740d930ce792d768cf4fb2d9e08feeb37df4fb6d47c6146a991",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202406-fv0001.nc",
+      "psd_sha256": "5684055cf30b339521b17e8e4b219897fcb3d5d6a725711d1213da0a6de43479",
+      "sage_file": "g3b_smnc_6.0.0_202406.nc",
+      "sage_sha256": "6ccf6f1b143668984232fb1062099ef614cb7b78881abc7827e06041366d10fa",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202407-fv0001.nc",
+      "psd_sha256": "02fd25132aa58fbff7dce35b9fd7b444a5040e049c97c21a2ad60b0722512224",
+      "sage_file": "g3b_smnc_6.0.0_202407.nc",
+      "sage_sha256": "7b647749cd485bb6918481223f36b69f170e0146406249337f3ffd38cdcdeb13",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202408-fv0001.nc",
+      "psd_sha256": "66104e541c6b76afb86745d97162f7477a8480681635ace499bfe009f4a6a9f0",
+      "sage_file": "g3b_smnc_6.0.0_202408.nc",
+      "sage_sha256": "c2cb79ffdef867358baa8a566629e620e60c2b549111ebf179d5477d00a1d961",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202409-fv0001.nc",
+      "psd_sha256": "098eea70e1743f9856c586a200958efdb70dc571b9cb6f9010d7e081113603c2",
+      "sage_file": "g3b_smnc_6.0.0_202409.nc",
+      "sage_sha256": "32a54b28a8daef305f16096ecc79bc4b07cb2ba1a4d19712180b6a7e44b25d64",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202410-fv0001.nc",
+      "psd_sha256": "b5b47e01bc35fc1a5b66774722c760c43f9966fd75dc05212c231f4b9a144024",
+      "sage_file": "g3b_smnc_6.0.0_202410.nc",
+      "sage_sha256": "b92e6dc505915da6ac13cb2072440c65855a096b59d403141ed6b0748dcfaf17",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202411-fv0001.nc",
+      "psd_sha256": "a7ba370540934f3a058cc51ae620d7ac9a002e6262d2ab47548e8cb30912c0f3",
+      "sage_file": "g3b_smnc_6.0.0_202411.nc",
+      "sage_sha256": "7d9145e4a10da381473ac0bd0400b57d5e9f757d4f29f430c0d79249ad895c2e",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202412-fv0001.nc",
+      "psd_sha256": "5c3f09ad7a7b6c0f3a86f131bab7675b80c99ca660ee9013ed30d136256af75f",
+      "sage_file": "g3b_smnc_6.0.0_202412.nc",
+      "sage_sha256": "de2b160821f11bed79da7e5685fc7d2ce12be73f9fad274eedc130a462c8962f",
+      "sage_version": "6.0.0"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202501-fv0001.nc",
+      "psd_sha256": "c4375e5a5a684890965c9c08a99106e03a8760a44028fb99d80cdd82000a0afc",
+      "sage_file": "g3b_smnc_6.0.1_202501.nc",
+      "sage_sha256": "19340c41e0ec04fb1b3ce663cba4e2f5efb4473f279fdf2c57415cf95f4ddb33",
+      "sage_version": "6.0.1"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202502-fv0001.nc",
+      "psd_sha256": "b90231e03a76030fd39a2b66dffb1a5b0f6bf9a63420036c4b1112b0818121a0",
+      "sage_file": "g3b_smnc_6.0.1_202502.nc",
+      "sage_sha256": "86147a32841c558ba9fbc063e65a0d9dc892ae53a245b6239308c7f115a04070",
+      "sage_version": "6.0.1"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202503-fv0001.nc",
+      "psd_sha256": "27f24352e2650569886533a5a0eb780a48c605407872e858a1b92ff0d2b89395",
+      "sage_file": "g3b_smnc_6.0.1_202503.nc",
+      "sage_sha256": "52f4f1cc8addfbd52b1d734a8f5d1c0f592407e8736a1bd6d302c813ec751fe5",
+      "sage_version": "6.0.1"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202504-fv0001.nc",
+      "psd_sha256": "4d475042ee4cd84293334a94758629820bd84d75db3efea5f99ae78fa852d0df",
+      "sage_file": "g3b_smnc_6.0.1_202504.nc",
+      "sage_sha256": "6b1cccde42d88e05bcbc8e181f8f5e19146dbccd03574f53fbe49428a4600c5c",
+      "sage_version": "6.0.1"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202505-fv0001.nc",
+      "psd_sha256": "c22d4972c9c6204ae5a633b592464863e4b54c67dcc85911f8707e754995ec08",
+      "sage_file": "g3b_smnc_6.0.2_202505.nc",
+      "sage_sha256": "25de7205a7bcf832ac02a462b646d08d246385af7b40737d011ffb9ca1cfeefd",
+      "sage_version": "6.0.2"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202506-fv0001.nc",
+      "psd_sha256": "a95bbd38a653124ffd7d5a32a71671cfa306f7b73c808b24ab3b365b40d59734",
+      "sage_file": "g3b_smnc_6.0.3_202506.nc",
+      "sage_sha256": "bcc3ef3be5fe8728a05b7cf4691bfe66ff3cd89f5fd62209bf3dc9de11e26dc2",
+      "sage_version": "6.0.3"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202507-fv0001.nc",
+      "psd_sha256": "3052fc34dfdb6785c6a94880ae3495c0125762102c9cc458162127ed9e1f98cd",
+      "sage_file": "g3b_smnc_6.0.3_202507.nc",
+      "sage_sha256": "544266abbab32585bcfed62e9a73ed7db188445daa96c2401c1af550d6adbe6d",
+      "sage_version": "6.0.3"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202508-fv0001.nc",
+      "psd_sha256": "b5447bc894281ff4af1d7f8869178173e431349ce4f6f576250bd44df370e1c8",
+      "sage_file": "g3b_smnc_6.0.3_202508.nc",
+      "sage_sha256": "305b2eff2a8c61f87d9cb35040479316f42c8d5b6677a3bdff4343ca4e1b57e4",
+      "sage_version": "6.0.3"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202509-fv0001.nc",
+      "psd_sha256": "be200c00b1a121a3cf4a71c0f386ab884df739a413d0a276ea3df2deb2257a4a",
+      "sage_file": "g3b_smnc_6.0.3_202509.nc",
+      "sage_sha256": "d7bfe55b88484743f655bf04143b39bf20f921e51cb201c73c3f71dd5b128c4e",
+      "sage_version": "6.0.3"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202510-fv0001.nc",
+      "psd_sha256": "5ed253e2d30be168205f57ffaf982dc1aabdfdcea374edfe57d9997f4dee2fc1",
+      "sage_file": "g3b_smnc_6.0.3_202510.nc",
+      "sage_sha256": "5415f57a0b3c4d13f80522e1e8251958a193812fee8c0c50c7b5112a47066163",
+      "sage_version": "6.0.3"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202511-fv0001.nc",
+      "psd_sha256": "1b46d3b7339006eadac42ad52c3df7e8d8b782297a1e73595ee1142cac66503a",
+      "sage_file": "g3b_smnc_6.0.3_202511.nc",
+      "sage_sha256": "218ccb723538011bcc95ca3768375cd03f4c12549b23f92896875a272dda91ff",
+      "sage_version": "6.0.3"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202512-fv0001.nc",
+      "psd_sha256": "83a8b2dc2a5259ce8411d832e113ae1e16ddf52484d9f61bbc824a81f517def9",
+      "sage_file": "g3b_smnc_6.0.3_202512.nc",
+      "sage_sha256": "74dbecd3baa74ecd8a27d204f615bc52dbc036cfc0008f9d51bcc373c85f9523",
+      "sage_version": "6.0.3"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202601-fv0001.nc",
+      "psd_sha256": "e728a1b9a10190ae686b226928122293feb8c740388dea8dc935d6cc7ed124a2",
+      "sage_file": "g3b_smnc_6.0.3_202601.nc",
+      "sage_sha256": "a3cb97de9eff8d1e1299a35b4a82491b8a13e2aca47caedbf52512f93c32e2d4",
+      "sage_version": "6.0.3"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202602-fv0001.nc",
+      "psd_sha256": "4da7a2e686a55d86205622b989a50d451fc253299814beedd1c55e2b85b6d1b0",
+      "sage_file": "g3b_smnc_6.0.3_202602.nc",
+      "sage_sha256": "cc4e6dd8f016149f8b06eae53df91460ae3115f8c890e86f525596c9b825c209",
+      "sage_version": "6.0.3"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202603-fv0001.nc",
+      "psd_sha256": "6c51ca759ea4e246ab640917443db9971ed51d4decd4371eb6f37acafcd92586",
+      "sage_file": "g3b_smnc_6.0.3_202603.nc",
+      "sage_sha256": "dafac15427620a5d22482c6e2ea253aab7b221d1f19a94d6f15ab72344968822",
+      "sage_version": "6.0.3"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202604-fv0001.nc",
+      "psd_sha256": "3e5830b0d8df7a307829b5944934886ef5fe28a3c755b7a938c73683698593a0",
+      "sage_file": "g3b_smnc_6.0.3_202604.nc",
+      "sage_sha256": "d4bd3adc4dffc2c8e55716a39a9aa0de869dfaaeb08c9ebcc331c8fa94fa14d4",
+      "sage_version": "6.0.3"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202605-fv0001.nc",
+      "psd_sha256": "c9918dff741cc537e1abfce510a84c2f85fe2430a59142be34bfa1010ff7594d",
+      "sage_file": "g3b_smnc_6.0.3_202605.nc",
+      "sage_sha256": "35180ddd7e877972f54d2b41e8a2db8720c769ed5e834a5d17796e2f46ca4fe5",
+      "sage_version": "6.0.3"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202606-fv0001.nc",
+      "psd_sha256": "927aeb50b4774695b9614f4047d74140e480895d3525d955d12dae038bd2d791",
+      "sage_file": "g3b_smnc_6.0.3_202606.nc",
+      "sage_sha256": "ff358d77a96b09a9f1c9704bb53f4e487d94a03516d7cd197a54fd0909043cd3",
+      "sage_version": "6.0.3"
+    },
+    {
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202607-fv0001.nc",
+      "psd_sha256": "704066e71a336b39d628dedbe69f020628cacf26420d5f550d9191ef6101604e",
+      "sage_file": "g3b_smnc_6.0.3_202607.nc",
+      "sage_sha256": "575e4734fd42a157fddf8c1109d6c89664b88e77fbc3af41af8102f93da4439f",
+      "sage_version": "6.0.3"
+    }
+  ],
+  "bands": {
+    "sh_midlat": {
+      "population": 4198,
+      "regular_loading_aod_cutoffs": [
+        0.0015389242907986045,
+        0.0029556008055806157
+      ],
+      "reference_upper_scale_height_m": 2800.0,
+      "calibration": {
+        "raw_27_30": {
+          "scale_height_m": 2828.5003695531373,
+          "monthly_rates": [
+            {
+              "month": "2017-06",
+              "count": 27,
+              "decay_rate_per_km": 0.4181938171386719
+            },
+            {
+              "month": "2017-07",
+              "count": 67,
+              "decay_rate_per_km": 0.32948827743530273
+            },
+            {
+              "month": "2017-08",
+              "count": 49,
+              "decay_rate_per_km": 0.4035806655883789
+            },
+            {
+              "month": "2017-09",
+              "count": 13,
+              "decay_rate_per_km": 0.48092079162597656
+            },
+            {
+              "month": "2017-10",
+              "count": 28,
+              "decay_rate_per_km": 0.34447971979777015
+            },
+            {
+              "month": "2017-11",
+              "count": 26,
+              "decay_rate_per_km": 0.36234410603841144
+            },
+            {
+              "month": "2017-12",
+              "count": 7,
+              "decay_rate_per_km": 0.33792877197265625
+            },
+            {
+              "month": "2018-04",
+              "count": 8,
+              "decay_rate_per_km": 0.3631283442179362
+            },
+            {
+              "month": "2018-05",
+              "count": 20,
+              "decay_rate_per_km": 0.2733592987060547
+            },
+            {
+              "month": "2018-06",
+              "count": 127,
+              "decay_rate_per_km": 0.33655357360839844
+            },
+            {
+              "month": "2018-07",
+              "count": 87,
+              "decay_rate_per_km": 0.41876220703125
+            },
+            {
+              "month": "2018-08",
+              "count": 40,
+              "decay_rate_per_km": 0.5197063446044923
+            },
+            {
+              "month": "2019-01",
+              "count": 16,
+              "decay_rate_per_km": 0.3115347226460775
+            },
+            {
+              "month": "2019-03",
+              "count": 21,
+              "decay_rate_per_km": 0.4128742218017578
+            },
+            {
+              "month": "2019-04",
+              "count": 29,
+              "decay_rate_per_km": 0.2659332275390625
+            },
+            {
+              "month": "2019-05",
+              "count": 41,
+              "decay_rate_per_km": 0.3361209869384766
+            },
+            {
+              "month": "2019-06",
+              "count": 45,
+              "decay_rate_per_km": 0.27377166748046877
+            },
+            {
+              "month": "2019-07",
+              "count": 60,
+              "decay_rate_per_km": 0.3337467511494955
+            },
+            {
+              "month": "2019-08",
+              "count": 109,
+              "decay_rate_per_km": 0.37107499440511066
+            },
+            {
+              "month": "2019-09",
+              "count": 16,
+              "decay_rate_per_km": 0.2777080535888672
+            },
+            {
+              "month": "2019-11",
+              "count": 7,
+              "decay_rate_per_km": 0.009657669067382812
+            },
+            {
+              "month": "2020-01",
+              "count": 6,
+              "decay_rate_per_km": 0.2429802417755127
+            },
+            {
+              "month": "2020-05",
+              "count": 10,
+              "decay_rate_per_km": 0.28541812896728513
+            },
+            {
+              "month": "2020-06",
+              "count": 12,
+              "decay_rate_per_km": 0.3178410530090332
+            },
+            {
+              "month": "2020-08",
+              "count": 16,
+              "decay_rate_per_km": 0.4804651737213135
+            },
+            {
+              "month": "2020-09",
+              "count": 9,
+              "decay_rate_per_km": 0.3456230163574219
+            },
+            {
+              "month": "2020-10",
+              "count": 6,
+              "decay_rate_per_km": 0.43817996978759766
+            },
+            {
+              "month": "2020-11",
+              "count": 26,
+              "decay_rate_per_km": 0.4430122375488281
+            },
+            {
+              "month": "2021-01",
+              "count": 17,
+              "decay_rate_per_km": 0.4472794532775879
+            },
+            {
+              "month": "2021-03",
+              "count": 14,
+              "decay_rate_per_km": 0.5073472340901692
+            },
+            {
+              "month": "2021-04",
+              "count": 33,
+              "decay_rate_per_km": 0.4156536102294922
+            },
+            {
+              "month": "2021-05",
+              "count": 25,
+              "decay_rate_per_km": 0.30317258834838867
+            },
+            {
+              "month": "2021-06",
+              "count": 86,
+              "decay_rate_per_km": 0.4048685232798258
+            },
+            {
+              "month": "2021-07",
+              "count": 71,
+              "decay_rate_per_km": 0.34923362731933594
+            },
+            {
+              "month": "2021-08",
+              "count": 101,
+              "decay_rate_per_km": 0.4631019592285156
+            },
+            {
+              "month": "2021-09",
+              "count": 44,
+              "decay_rate_per_km": 0.45391063690185546
+            },
+            {
+              "month": "2021-10",
+              "count": 29,
+              "decay_rate_per_km": 0.4405040740966797
+            },
+            {
+              "month": "2021-11",
+              "count": 76,
+              "decay_rate_per_km": 0.5188795725504558
+            },
+            {
+              "month": "2021-12",
+              "count": 17,
+              "decay_rate_per_km": 0.4868017832438151
+            },
+            {
+              "month": "2022-01",
+              "count": 26,
+              "decay_rate_per_km": 0.3619745572408041
+            },
+            {
+              "month": "2022-03",
+              "count": 30,
+              "decay_rate_per_km": 0.4592981974283854
+            },
+            {
+              "month": "2022-04",
+              "count": 25,
+              "decay_rate_per_km": 0.25090376536051434
+            },
+            {
+              "month": "2023-09",
+              "count": 7,
+              "decay_rate_per_km": 0.3173351287841797
+            },
+            {
+              "month": "2023-10",
+              "count": 12,
+              "decay_rate_per_km": 0.16068458557128906
+            },
+            {
+              "month": "2023-11",
+              "count": 19,
+              "decay_rate_per_km": 0.35490989685058594
+            },
+            {
+              "month": "2023-12",
+              "count": 13,
+              "decay_rate_per_km": 0.32177575429280597
+            },
+            {
+              "month": "2024-01",
+              "count": 15,
+              "decay_rate_per_km": 0.41194597880045575
+            },
+            {
+              "month": "2024-02",
+              "count": 8,
+              "decay_rate_per_km": 0.40215134620666504
+            },
+            {
+              "month": "2024-03",
+              "count": 22,
+              "decay_rate_per_km": 0.488112211227417
+            },
+            {
+              "month": "2024-04",
+              "count": 76,
+              "decay_rate_per_km": 0.25578999519348145
+            },
+            {
+              "month": "2024-05",
+              "count": 48,
+              "decay_rate_per_km": 0.35217857360839844
+            },
+            {
+              "month": "2024-06",
+              "count": 18,
+              "decay_rate_per_km": 0.5653214454650879
+            },
+            {
+              "month": "2025-07",
+              "count": 10,
+              "decay_rate_per_km": 0.21164178848266602
+            },
+            {
+              "month": "2025-08",
+              "count": 7,
+              "decay_rate_per_km": 0.22896051406860352
+            },
+            {
+              "month": "2025-09",
+              "count": 6,
+              "decay_rate_per_km": 0.009949684143066406
+            },
+            {
+              "month": "2025-10",
+              "count": 32,
+              "decay_rate_per_km": 0.250046968460083
+            },
+            {
+              "month": "2025-11",
+              "count": 18,
+              "decay_rate_per_km": 0.3672647476196289
+            },
+            {
+              "month": "2025-12",
+              "count": 21,
+              "decay_rate_per_km": 0.29529533386230467
+            },
+            {
+              "month": "2026-01",
+              "count": 27,
+              "decay_rate_per_km": 0.30922279357910154
+            },
+            {
+              "month": "2026-02",
+              "count": 24,
+              "decay_rate_per_km": 0.41461896896362305
+            },
+            {
+              "month": "2026-03",
+              "count": 23,
+              "decay_rate_per_km": 0.36979246139526367
+            },
+            {
+              "month": "2026-04",
+              "count": 66,
+              "decay_rate_per_km": 0.18185272216796874
+            },
+            {
+              "month": "2026-05",
+              "count": 52,
+              "decay_rate_per_km": 0.31303230921427405
+            },
+            {
+              "month": "2026-06",
+              "count": 22,
+              "decay_rate_per_km": 0.520793088277181
+            }
+          ],
+          "n_profiles": 2099,
+          "n_non_decreasing_profiles": 101,
+          "monthly_decay_rate_quartiles_per_km": [
+            0.3012032747268677,
+            0.3535442352294922,
+            0.4236166477203369
+          ]
+        },
+        "raw_26_29": {
+          "scale_height_m": 2988.4406885255903,
+          "monthly_rates": [
+            {
+              "month": "2017-06",
+              "count": 27,
+              "decay_rate_per_km": 0.2662982940673828
+            },
+            {
+              "month": "2017-07",
+              "count": 67,
+              "decay_rate_per_km": 0.31401939392089845
+            },
+            {
+              "month": "2017-08",
+              "count": 49,
+              "decay_rate_per_km": 0.29924535751342773
+            },
+            {
+              "month": "2017-09",
+              "count": 13,
+              "decay_rate_per_km": 0.3813319206237793
+            },
+            {
+              "month": "2017-10",
+              "count": 28,
+              "decay_rate_per_km": 0.3476374944051107
+            },
+            {
+              "month": "2017-11",
+              "count": 26,
+              "decay_rate_per_km": 0.370054817199707
+            },
+            {
+              "month": "2017-12",
+              "count": 7,
+              "decay_rate_per_km": 0.39357344309488934
+            },
+            {
+              "month": "2018-04",
+              "count": 8,
+              "decay_rate_per_km": 0.21480035781860352
+            },
+            {
+              "month": "2018-05",
+              "count": 20,
+              "decay_rate_per_km": 0.12633371353149414
+            },
+            {
+              "month": "2018-06",
+              "count": 127,
+              "decay_rate_per_km": 0.25690507888793945
+            },
+            {
+              "month": "2018-07",
+              "count": 87,
+              "decay_rate_per_km": 0.3776877721150716
+            },
+            {
+              "month": "2018-08",
+              "count": 40,
+              "decay_rate_per_km": 0.4277229309082031
+            },
+            {
+              "month": "2019-01",
+              "count": 16,
+              "decay_rate_per_km": 0.3953413009643555
+            },
+            {
+              "month": "2019-03",
+              "count": 21,
+              "decay_rate_per_km": 0.35348033905029297
+            },
+            {
+              "month": "2019-04",
+              "count": 29,
+              "decay_rate_per_km": 0.23093223571777344
+            },
+            {
+              "month": "2019-05",
+              "count": 41,
+              "decay_rate_per_km": 0.23679733276367188
+            },
+            {
+              "month": "2019-06",
+              "count": 45,
+              "decay_rate_per_km": 0.18986663818359376
+            },
+            {
+              "month": "2019-07",
+              "count": 60,
+              "decay_rate_per_km": 0.3013609568277995
+            },
+            {
+              "month": "2019-08",
+              "count": 109,
+              "decay_rate_per_km": 0.38848018646240234
+            },
+            {
+              "month": "2019-09",
+              "count": 16,
+              "decay_rate_per_km": 0.17607158025105796
+            },
+            {
+              "month": "2019-11",
+              "count": 7,
+              "decay_rate_per_km": -0.05265998840332031
+            },
+            {
+              "month": "2020-01",
+              "count": 6,
+              "decay_rate_per_km": 0.3916164398193359
+            },
+            {
+              "month": "2020-05",
+              "count": 10,
+              "decay_rate_per_km": 0.20992485682169598
+            },
+            {
+              "month": "2020-06",
+              "count": 12,
+              "decay_rate_per_km": 0.2797999382019043
+            },
+            {
+              "month": "2020-08",
+              "count": 16,
+              "decay_rate_per_km": 0.4655406634012858
+            },
+            {
+              "month": "2020-09",
+              "count": 9,
+              "decay_rate_per_km": 0.42422231038411456
+            },
+            {
+              "month": "2020-10",
+              "count": 6,
+              "decay_rate_per_km": 0.4748133023579915
+            },
+            {
+              "month": "2020-11",
+              "count": 26,
+              "decay_rate_per_km": 0.46547781626383467
+            },
+            {
+              "month": "2021-01",
+              "count": 17,
+              "decay_rate_per_km": 0.4731721878051758
+            },
+            {
+              "month": "2021-03",
+              "count": 14,
+              "decay_rate_per_km": 0.40102648735046387
+            },
+            {
+              "month": "2021-04",
+              "count": 33,
+              "decay_rate_per_km": 0.3030418395996094
+            },
+            {
+              "month": "2021-05",
+              "count": 25,
+              "decay_rate_per_km": 0.35101668039957684
+            },
+            {
+              "month": "2021-06",
+              "count": 86,
+              "decay_rate_per_km": 0.26307249069213867
+            },
+            {
+              "month": "2021-07",
+              "count": 71,
+              "decay_rate_per_km": 0.25582542419433596
+            },
+            {
+              "month": "2021-08",
+              "count": 101,
+              "decay_rate_per_km": 0.3519287109375
+            },
+            {
+              "month": "2021-09",
+              "count": 44,
+              "decay_rate_per_km": 0.4565267562866211
+            },
+            {
+              "month": "2021-10",
+              "count": 29,
+              "decay_rate_per_km": 0.37171411514282227
+            },
+            {
+              "month": "2021-11",
+              "count": 76,
+              "decay_rate_per_km": 0.43780155181884767
+            },
+            {
+              "month": "2021-12",
+              "count": 17,
+              "decay_rate_per_km": 0.4690898259480794
+            },
+            {
+              "month": "2022-01",
+              "count": 26,
+              "decay_rate_per_km": 0.4401733875274658
+            },
+            {
+              "month": "2022-03",
+              "count": 30,
+              "decay_rate_per_km": 0.42911624908447266
+            },
+            {
+              "month": "2022-04",
+              "count": 25,
+              "decay_rate_per_km": 0.25304832458496096
+            },
+            {
+              "month": "2023-09",
+              "count": 7,
+              "decay_rate_per_km": 0.21651395161946616
+            },
+            {
+              "month": "2023-10",
+              "count": 12,
+              "decay_rate_per_km": 0.32743589083353675
+            },
+            {
+              "month": "2023-11",
+              "count": 19,
+              "decay_rate_per_km": 0.29482078552246094
+            },
+            {
+              "month": "2023-12",
+              "count": 13,
+              "decay_rate_per_km": 0.2727044423421224
+            },
+            {
+              "month": "2024-01",
+              "count": 15,
+              "decay_rate_per_km": 0.3679847717285156
+            },
+            {
+              "month": "2024-02",
+              "count": 8,
+              "decay_rate_per_km": 0.39369831085205076
+            },
+            {
+              "month": "2024-03",
+              "count": 22,
+              "decay_rate_per_km": 0.3750553925832113
+            },
+            {
+              "month": "2024-04",
+              "count": 76,
+              "decay_rate_per_km": 0.2947225570678711
+            },
+            {
+              "month": "2024-05",
+              "count": 48,
+              "decay_rate_per_km": 0.221630859375
+            },
+            {
+              "month": "2024-06",
+              "count": 18,
+              "decay_rate_per_km": 0.4485624313354492
+            },
+            {
+              "month": "2025-07",
+              "count": 10,
+              "decay_rate_per_km": 0.1318515141805013
+            },
+            {
+              "month": "2025-08",
+              "count": 7,
+              "decay_rate_per_km": 0.3847095489501953
+            },
+            {
+              "month": "2025-09",
+              "count": 6,
+              "decay_rate_per_km": 0.06537103652954102
+            },
+            {
+              "month": "2025-10",
+              "count": 32,
+              "decay_rate_per_km": 0.2330942153930664
+            },
+            {
+              "month": "2025-11",
+              "count": 18,
+              "decay_rate_per_km": 0.35200540224711097
+            },
+            {
+              "month": "2025-12",
+              "count": 21,
+              "decay_rate_per_km": 0.27919960021972656
+            },
+            {
+              "month": "2026-01",
+              "count": 27,
+              "decay_rate_per_km": 0.22431516647338867
+            },
+            {
+              "month": "2026-02",
+              "count": 24,
+              "decay_rate_per_km": 0.3408956527709961
+            },
+            {
+              "month": "2026-03",
+              "count": 23,
+              "decay_rate_per_km": 0.3283496856689453
+            },
+            {
+              "month": "2026-04",
+              "count": 66,
+              "decay_rate_per_km": 0.14970955848693848
+            },
+            {
+              "month": "2026-05",
+              "count": 52,
+              "decay_rate_per_km": 0.18191687266031903
+            },
+            {
+              "month": "2026-06",
+              "count": 22,
+              "decay_rate_per_km": 0.37045135498046877
+            }
+          ],
+          "n_profiles": 2099,
+          "n_non_decreasing_profiles": 150,
+          "monthly_decay_rate_quartiles_per_km": [
+            0.2489855766296387,
+            0.3346226692199707,
+            0.39210569063822426
+          ]
+        },
+        "raw_26_30": {
+          "scale_height_m": 2997.1252324841835,
+          "monthly_rates": [
+            {
+              "month": "2017-06",
+              "count": 27,
+              "decay_rate_per_km": 0.30976835886637366
+            },
+            {
+              "month": "2017-07",
+              "count": 67,
+              "decay_rate_per_km": 0.31736388206481936
+            },
+            {
+              "month": "2017-08",
+              "count": 49,
+              "decay_rate_per_km": 0.34455760320027673
+            },
+            {
+              "month": "2017-09",
+              "count": 13,
+              "decay_rate_per_km": 0.4332399368286133
+            },
+            {
+              "month": "2017-10",
+              "count": 28,
+              "decay_rate_per_km": 0.30566352889651344
+            },
+            {
+              "month": "2017-11",
+              "count": 26,
+              "decay_rate_per_km": 0.35209052903311594
+            },
+            {
+              "month": "2017-12",
+              "count": 7,
+              "decay_rate_per_km": 0.3325519561767578
+            },
+            {
+              "month": "2018-04",
+              "count": 8,
+              "decay_rate_per_km": 0.2951059341430664
+            },
+            {
+              "month": "2018-05",
+              "count": 20,
+              "decay_rate_per_km": 0.19741328557332358
+            },
+            {
+              "month": "2018-06",
+              "count": 127,
+              "decay_rate_per_km": 0.3067485173543294
+            },
+            {
+              "month": "2018-07",
+              "count": 87,
+              "decay_rate_per_km": 0.401695171991984
+            },
+            {
+              "month": "2018-08",
+              "count": 40,
+              "decay_rate_per_km": 0.48977715174357095
+            },
+            {
+              "month": "2019-01",
+              "count": 16,
+              "decay_rate_per_km": 0.3851611614227295
+            },
+            {
+              "month": "2019-03",
+              "count": 21,
+              "decay_rate_per_km": 0.3541938463846842
+            },
+            {
+              "month": "2019-04",
+              "count": 29,
+              "decay_rate_per_km": 0.22819209098815918
+            },
+            {
+              "month": "2019-05",
+              "count": 41,
+              "decay_rate_per_km": 0.25097696781158446
+            },
+            {
+              "month": "2019-06",
+              "count": 45,
+              "decay_rate_per_km": 0.22421174389975412
+            },
+            {
+              "month": "2019-07",
+              "count": 60,
+              "decay_rate_per_km": 0.32293927669525146
+            },
+            {
+              "month": "2019-08",
+              "count": 109,
+              "decay_rate_per_km": 0.3824652671813965
+            },
+            {
+              "month": "2019-09",
+              "count": 16,
+              "decay_rate_per_km": 0.20571808020273843
+            },
+            {
+              "month": "2019-11",
+              "count": 7,
+              "decay_rate_per_km": -0.004352537790934245
+            },
+            {
+              "month": "2020-01",
+              "count": 6,
+              "decay_rate_per_km": 0.37407227697826567
+            },
+            {
+              "month": "2020-05",
+              "count": 10,
+              "decay_rate_per_km": 0.2450009232475644
+            },
+            {
+              "month": "2020-06",
+              "count": 12,
+              "decay_rate_per_km": 0.29493306080500287
+            },
+            {
+              "month": "2020-08",
+              "count": 16,
+              "decay_rate_per_km": 0.45869226115090506
+            },
+            {
+              "month": "2020-09",
+              "count": 9,
+              "decay_rate_per_km": 0.41036442347935265
+            },
+            {
+              "month": "2020-10",
+              "count": 6,
+              "decay_rate_per_km": 0.44616345564524335
+            },
+            {
+              "month": "2020-11",
+              "count": 26,
+              "decay_rate_per_km": 0.47271615266799927
+            },
+            {
+              "month": "2021-01",
+              "count": 17,
+              "decay_rate_per_km": 0.45777182351975215
+            },
+            {
+              "month": "2021-03",
+              "count": 14,
+              "decay_rate_per_km": 0.41446350812911986
+            },
+            {
+              "month": "2021-04",
+              "count": 33,
+              "decay_rate_per_km": 0.3761129379272461
+            },
+            {
+              "month": "2021-05",
+              "count": 25,
+              "decay_rate_per_km": 0.3615107536315918
+            },
+            {
+              "month": "2021-06",
+              "count": 86,
+              "decay_rate_per_km": 0.3291871207101005
+            },
+            {
+              "month": "2021-07",
+              "count": 71,
+              "decay_rate_per_km": 0.32815565381731304
+            },
+            {
+              "month": "2021-08",
+              "count": 101,
+              "decay_rate_per_km": 0.3970871789114816
+            },
+            {
+              "month": "2021-09",
+              "count": 44,
+              "decay_rate_per_km": 0.43885379745846703
+            },
+            {
+              "month": "2021-10",
+              "count": 29,
+              "decay_rate_per_km": 0.40761232376098633
+            },
+            {
+              "month": "2021-11",
+              "count": 76,
+              "decay_rate_per_km": 0.4714412450790405
+            },
+            {
+              "month": "2021-12",
+              "count": 17,
+              "decay_rate_per_km": 0.4756815433502197
+            },
+            {
+              "month": "2022-01",
+              "count": 26,
+              "decay_rate_per_km": 0.4551667923019046
+            },
+            {
+              "month": "2022-03",
+              "count": 30,
+              "decay_rate_per_km": 0.4652600685755412
+            },
+            {
+              "month": "2022-04",
+              "count": 25,
+              "decay_rate_per_km": 0.23849455515543622
+            },
+            {
+              "month": "2023-09",
+              "count": 7,
+              "decay_rate_per_km": 0.23722728093465167
+            },
+            {
+              "month": "2023-10",
+              "count": 12,
+              "decay_rate_per_km": 0.3111242850621541
+            },
+            {
+              "month": "2023-11",
+              "count": 19,
+              "decay_rate_per_km": 0.33725702194940477
+            },
+            {
+              "month": "2023-12",
+              "count": 13,
+              "decay_rate_per_km": 0.34982188542683923
+            },
+            {
+              "month": "2024-01",
+              "count": 15,
+              "decay_rate_per_km": 0.4273202896118164
+            },
+            {
+              "month": "2024-02",
+              "count": 8,
+              "decay_rate_per_km": 0.43031952778498334
+            },
+            {
+              "month": "2024-03",
+              "count": 22,
+              "decay_rate_per_km": 0.40989460945129397
+            },
+            {
+              "month": "2024-04",
+              "count": 76,
+              "decay_rate_per_km": 0.29053487777709963
+            },
+            {
+              "month": "2024-05",
+              "count": 48,
+              "decay_rate_per_km": 0.31698760986328123
+            },
+            {
+              "month": "2024-06",
+              "count": 18,
+              "decay_rate_per_km": 0.5125963347298759
+            },
+            {
+              "month": "2025-07",
+              "count": 10,
+              "decay_rate_per_km": 0.15900757312774658
+            },
+            {
+              "month": "2025-08",
+              "count": 7,
+              "decay_rate_per_km": 0.32652854919433594
+            },
+            {
+              "month": "2025-09",
+              "count": 6,
+              "decay_rate_per_km": 0.034261039325169156
+            },
+            {
+              "month": "2025-10",
+              "count": 32,
+              "decay_rate_per_km": 0.21816635131835938
+            },
+            {
+              "month": "2025-11",
+              "count": 18,
+              "decay_rate_per_km": 0.3347541604723249
+            },
+            {
+              "month": "2025-12",
+              "count": 21,
+              "decay_rate_per_km": 0.2799265725272042
+            },
+            {
+              "month": "2026-01",
+              "count": 27,
+              "decay_rate_per_km": 0.3051151548113142
+            },
+            {
+              "month": "2026-02",
+              "count": 24,
+              "decay_rate_per_km": 0.3280098756154378
+            },
+            {
+              "month": "2026-03",
+              "count": 23,
+              "decay_rate_per_km": 0.3279910087585449
+            },
+            {
+              "month": "2026-04",
+              "count": 66,
+              "decay_rate_per_km": 0.17748430569966633
+            },
+            {
+              "month": "2026-05",
+              "count": 52,
+              "decay_rate_per_km": 0.23683478037516276
+            },
+            {
+              "month": "2026-06",
+              "count": 22,
+              "decay_rate_per_km": 0.4524947688693092
+            }
+          ],
+          "n_profiles": 2099,
+          "n_non_decreasing_profiles": 61,
+          "monthly_decay_rate_quartiles_per_km": [
+            0.29383351504802707,
+            0.3336530583245414,
+            0.41138919464179446
+          ]
+        },
+        "smoothed_27_30": {
+          "scale_height_m": 3081.272101419251,
+          "monthly_rates": [
+            {
+              "month": "2017-06",
+              "count": 27,
+              "decay_rate_per_km": 0.3580230077107747
+            },
+            {
+              "month": "2017-07",
+              "count": 67,
+              "decay_rate_per_km": 0.33002980550130206
+            },
+            {
+              "month": "2017-08",
+              "count": 49,
+              "decay_rate_per_km": 0.36183802286783856
+            },
+            {
+              "month": "2017-09",
+              "count": 13,
+              "decay_rate_per_km": 0.41573524475097656
+            },
+            {
+              "month": "2017-10",
+              "count": 28,
+              "decay_rate_per_km": 0.3032402992248535
+            },
+            {
+              "month": "2017-11",
+              "count": 26,
+              "decay_rate_per_km": 0.3142720858256022
+            },
+            {
+              "month": "2017-12",
+              "count": 7,
+              "decay_rate_per_km": 0.36009788513183594
+            },
+            {
+              "month": "2018-04",
+              "count": 8,
+              "decay_rate_per_km": 0.36062647501627604
+            },
+            {
+              "month": "2018-05",
+              "count": 20,
+              "decay_rate_per_km": 0.26891179084777833
+            },
+            {
+              "month": "2018-06",
+              "count": 127,
+              "decay_rate_per_km": 0.31282679239908856
+            },
+            {
+              "month": "2018-07",
+              "count": 87,
+              "decay_rate_per_km": 0.40474843978881836
+            },
+            {
+              "month": "2018-08",
+              "count": 40,
+              "decay_rate_per_km": 0.5325270970662435
+            },
+            {
+              "month": "2019-01",
+              "count": 16,
+              "decay_rate_per_km": 0.29410155614217126
+            },
+            {
+              "month": "2019-03",
+              "count": 21,
+              "decay_rate_per_km": 0.3550579071044922
+            },
+            {
+              "month": "2019-04",
+              "count": 29,
+              "decay_rate_per_km": 0.2740016937255859
+            },
+            {
+              "month": "2019-05",
+              "count": 41,
+              "decay_rate_per_km": 0.2845907211303711
+            },
+            {
+              "month": "2019-06",
+              "count": 45,
+              "decay_rate_per_km": 0.2442485809326172
+            },
+            {
+              "month": "2019-07",
+              "count": 60,
+              "decay_rate_per_km": 0.3241771697998047
+            },
+            {
+              "month": "2019-08",
+              "count": 109,
+              "decay_rate_per_km": 0.3697025299072266
+            },
+            {
+              "month": "2019-09",
+              "count": 16,
+              "decay_rate_per_km": 0.2847339630126953
+            },
+            {
+              "month": "2019-11",
+              "count": 7,
+              "decay_rate_per_km": -0.0044002532958984375
+            },
+            {
+              "month": "2020-01",
+              "count": 6,
+              "decay_rate_per_km": 0.2922336578369141
+            },
+            {
+              "month": "2020-05",
+              "count": 10,
+              "decay_rate_per_km": 0.2686920166015625
+            },
+            {
+              "month": "2020-06",
+              "count": 12,
+              "decay_rate_per_km": 0.28025074005126954
+            },
+            {
+              "month": "2020-08",
+              "count": 16,
+              "decay_rate_per_km": 0.45130532582600913
+            },
+            {
+              "month": "2020-09",
+              "count": 9,
+              "decay_rate_per_km": 0.3125138282775879
+            },
+            {
+              "month": "2020-10",
+              "count": 6,
+              "decay_rate_per_km": 0.4110908508300781
+            },
+            {
+              "month": "2020-11",
+              "count": 26,
+              "decay_rate_per_km": 0.3964148203531901
+            },
+            {
+              "month": "2021-01",
+              "count": 17,
+              "decay_rate_per_km": 0.4361119270324707
+            },
+            {
+              "month": "2021-03",
+              "count": 14,
+              "decay_rate_per_km": 0.40753765106201173
+            },
+            {
+              "month": "2021-04",
+              "count": 33,
+              "decay_rate_per_km": 0.39081160227457684
+            },
+            {
+              "month": "2021-05",
+              "count": 25,
+              "decay_rate_per_km": 0.2795295715332031
+            },
+            {
+              "month": "2021-06",
+              "count": 86,
+              "decay_rate_per_km": 0.37434978485107423
+            },
+            {
+              "month": "2021-07",
+              "count": 71,
+              "decay_rate_per_km": 0.3130645751953125
+            },
+            {
+              "month": "2021-08",
+              "count": 101,
+              "decay_rate_per_km": 0.4098777770996094
+            },
+            {
+              "month": "2021-09",
+              "count": 44,
+              "decay_rate_per_km": 0.43783321380615237
+            },
+            {
+              "month": "2021-10",
+              "count": 29,
+              "decay_rate_per_km": 0.4118499755859375
+            },
+            {
+              "month": "2021-11",
+              "count": 76,
+              "decay_rate_per_km": 0.4893603006998698
+            },
+            {
+              "month": "2021-12",
+              "count": 17,
+              "decay_rate_per_km": 0.5368671417236328
+            },
+            {
+              "month": "2022-01",
+              "count": 26,
+              "decay_rate_per_km": 0.3353157043457031
+            },
+            {
+              "month": "2022-03",
+              "count": 30,
+              "decay_rate_per_km": 0.4161441802978516
+            },
+            {
+              "month": "2022-04",
+              "count": 25,
+              "decay_rate_per_km": 0.2146158218383789
+            },
+            {
+              "month": "2023-09",
+              "count": 7,
+              "decay_rate_per_km": 0.27939910888671876
+            },
+            {
+              "month": "2023-10",
+              "count": 12,
+              "decay_rate_per_km": 0.26043176651000977
+            },
+            {
+              "month": "2023-11",
+              "count": 19,
+              "decay_rate_per_km": 0.3300041198730469
+            },
+            {
+              "month": "2023-12",
+              "count": 13,
+              "decay_rate_per_km": 0.27788581848144533
+            },
+            {
+              "month": "2024-01",
+              "count": 15,
+              "decay_rate_per_km": 0.4031806945800781
+            },
+            {
+              "month": "2024-02",
+              "count": 8,
+              "decay_rate_per_km": 0.4175395965576172
+            },
+            {
+              "month": "2024-03",
+              "count": 22,
+              "decay_rate_per_km": 0.42291984558105467
+            },
+            {
+              "month": "2024-04",
+              "count": 76,
+              "decay_rate_per_km": 0.24532032012939453
+            },
+            {
+              "month": "2024-05",
+              "count": 48,
+              "decay_rate_per_km": 0.31290416717529296
+            },
+            {
+              "month": "2024-06",
+              "count": 18,
+              "decay_rate_per_km": 0.5742218971252442
+            },
+            {
+              "month": "2025-07",
+              "count": 10,
+              "decay_rate_per_km": 0.19191789627075195
+            },
+            {
+              "month": "2025-08",
+              "count": 7,
+              "decay_rate_per_km": 0.25161218643188477
+            },
+            {
+              "month": "2025-09",
+              "count": 6,
+              "decay_rate_per_km": 0.031995296478271484
+            },
+            {
+              "month": "2025-10",
+              "count": 32,
+              "decay_rate_per_km": 0.2215416431427002
+            },
+            {
+              "month": "2025-11",
+              "count": 18,
+              "decay_rate_per_km": 0.28722667694091797
+            },
+            {
+              "month": "2025-12",
+              "count": 21,
+              "decay_rate_per_km": 0.2943767547607422
+            },
+            {
+              "month": "2026-01",
+              "count": 27,
+              "decay_rate_per_km": 0.3067336082458496
+            },
+            {
+              "month": "2026-02",
+              "count": 24,
+              "decay_rate_per_km": 0.34602781931559246
+            },
+            {
+              "month": "2026-03",
+              "count": 23,
+              "decay_rate_per_km": 0.3249053955078125
+            },
+            {
+              "month": "2026-04",
+              "count": 66,
+              "decay_rate_per_km": 0.1995372772216797
+            },
+            {
+              "month": "2026-05",
+              "count": 52,
+              "decay_rate_per_km": 0.28322410583496094
+            },
+            {
+              "month": "2026-06",
+              "count": 22,
+              "decay_rate_per_km": 0.48424855868021643
+            }
+          ],
+          "n_profiles": 2099,
+          "n_non_decreasing_profiles": 79,
+          "monthly_decay_rate_quartiles_per_km": [
+            0.28007044792175295,
+            0.3245412826538086,
+            0.4054457426071167
+          ]
+        }
+      }
+    },
+    "tropical": {
+      "population": 7956,
+      "regular_loading_aod_cutoffs": [
+        0.0020337208406999707,
+        0.004927809350192547
+      ],
+      "reference_upper_scale_height_m": 3600.0,
+      "calibration": {
+        "raw_27_30": {
+          "scale_height_m": 3554.0049846235884,
+          "monthly_rates": [
+            {
+              "month": "2017-06",
+              "count": 113,
+              "decay_rate_per_km": 0.1665797233581543
+            },
+            {
+              "month": "2017-07",
+              "count": 15,
+              "decay_rate_per_km": 0.29807281494140625
+            },
+            {
+              "month": "2017-08",
+              "count": 66,
+              "decay_rate_per_km": 0.1719651222229004
+            },
+            {
+              "month": "2017-09",
+              "count": 69,
+              "decay_rate_per_km": 0.17580318450927734
+            },
+            {
+              "month": "2017-10",
+              "count": 41,
+              "decay_rate_per_km": 0.16466522216796875
+            },
+            {
+              "month": "2017-11",
+              "count": 66,
+              "decay_rate_per_km": 0.20682744979858397
+            },
+            {
+              "month": "2017-12",
+              "count": 6,
+              "decay_rate_per_km": 0.24979877471923828
+            },
+            {
+              "month": "2018-01",
+              "count": 22,
+              "decay_rate_per_km": 0.3594546318054199
+            },
+            {
+              "month": "2018-02",
+              "count": 13,
+              "decay_rate_per_km": 0.3189670562744141
+            },
+            {
+              "month": "2018-06",
+              "count": 9,
+              "decay_rate_per_km": 0.44208335876464844
+            },
+            {
+              "month": "2018-08",
+              "count": 11,
+              "decay_rate_per_km": 0.40097618103027344
+            },
+            {
+              "month": "2018-09",
+              "count": 27,
+              "decay_rate_per_km": 0.41149234771728516
+            },
+            {
+              "month": "2018-10",
+              "count": 52,
+              "decay_rate_per_km": 0.3647600173950195
+            },
+            {
+              "month": "2018-11",
+              "count": 29,
+              "decay_rate_per_km": 0.39243507385253906
+            },
+            {
+              "month": "2018-12",
+              "count": 6,
+              "decay_rate_per_km": 0.6591904163360596
+            },
+            {
+              "month": "2019-01",
+              "count": 33,
+              "decay_rate_per_km": 0.28635215759277344
+            },
+            {
+              "month": "2019-02",
+              "count": 17,
+              "decay_rate_per_km": 0.32495784759521484
+            },
+            {
+              "month": "2019-03",
+              "count": 61,
+              "decay_rate_per_km": 0.24047978719075522
+            },
+            {
+              "month": "2019-04",
+              "count": 80,
+              "decay_rate_per_km": 0.24711408615112304
+            },
+            {
+              "month": "2019-05",
+              "count": 19,
+              "decay_rate_per_km": 0.1912511189778646
+            },
+            {
+              "month": "2019-06",
+              "count": 158,
+              "decay_rate_per_km": 0.220565128326416
+            },
+            {
+              "month": "2019-07",
+              "count": 20,
+              "decay_rate_per_km": 0.22623424530029296
+            },
+            {
+              "month": "2019-08",
+              "count": 136,
+              "decay_rate_per_km": 0.21457716623942058
+            },
+            {
+              "month": "2019-09",
+              "count": 25,
+              "decay_rate_per_km": 0.09183883666992188
+            },
+            {
+              "month": "2019-11",
+              "count": 25,
+              "decay_rate_per_km": 0.12431144714355469
+            },
+            {
+              "month": "2020-01",
+              "count": 33,
+              "decay_rate_per_km": 0.20587984720865884
+            },
+            {
+              "month": "2020-02",
+              "count": 10,
+              "decay_rate_per_km": 0.2561029434204102
+            },
+            {
+              "month": "2020-03",
+              "count": 14,
+              "decay_rate_per_km": 0.22579097747802734
+            },
+            {
+              "month": "2020-04",
+              "count": 55,
+              "decay_rate_per_km": 0.18100929260253906
+            },
+            {
+              "month": "2020-05",
+              "count": 8,
+              "decay_rate_per_km": 0.211383056640625
+            },
+            {
+              "month": "2020-06",
+              "count": 145,
+              "decay_rate_per_km": 0.36052513122558594
+            },
+            {
+              "month": "2020-07",
+              "count": 14,
+              "decay_rate_per_km": 0.41174996693929033
+            },
+            {
+              "month": "2020-08",
+              "count": 162,
+              "decay_rate_per_km": 0.37711262702941895
+            },
+            {
+              "month": "2020-09",
+              "count": 105,
+              "decay_rate_per_km": 0.30049705505371094
+            },
+            {
+              "month": "2020-10",
+              "count": 115,
+              "decay_rate_per_km": 0.26831690470377606
+            },
+            {
+              "month": "2020-11",
+              "count": 174,
+              "decay_rate_per_km": 0.26493295033772785
+            },
+            {
+              "month": "2020-12",
+              "count": 6,
+              "decay_rate_per_km": 0.39508419036865233
+            },
+            {
+              "month": "2021-01",
+              "count": 86,
+              "decay_rate_per_km": 0.2624170780181885
+            },
+            {
+              "month": "2021-02",
+              "count": 27,
+              "decay_rate_per_km": 0.22374598185221353
+            },
+            {
+              "month": "2021-03",
+              "count": 87,
+              "decay_rate_per_km": 0.23329385121663412
+            },
+            {
+              "month": "2021-04",
+              "count": 122,
+              "decay_rate_per_km": 0.21723461151123047
+            },
+            {
+              "month": "2021-05",
+              "count": 22,
+              "decay_rate_per_km": 0.24422276814778648
+            },
+            {
+              "month": "2021-06",
+              "count": 191,
+              "decay_rate_per_km": 0.2223367691040039
+            },
+            {
+              "month": "2021-07",
+              "count": 34,
+              "decay_rate_per_km": 0.2808297475179037
+            },
+            {
+              "month": "2021-08",
+              "count": 183,
+              "decay_rate_per_km": 0.40736045837402346
+            },
+            {
+              "month": "2021-09",
+              "count": 80,
+              "decay_rate_per_km": 0.45930965741475427
+            },
+            {
+              "month": "2021-10",
+              "count": 102,
+              "decay_rate_per_km": 0.5320131778717041
+            },
+            {
+              "month": "2021-11",
+              "count": 89,
+              "decay_rate_per_km": 0.5010051727294922
+            },
+            {
+              "month": "2021-12",
+              "count": 5,
+              "decay_rate_per_km": 0.5006599426269531
+            },
+            {
+              "month": "2022-01",
+              "count": 98,
+              "decay_rate_per_km": 0.3070713996887207
+            },
+            {
+              "month": "2022-02",
+              "count": 26,
+              "decay_rate_per_km": 0.4869438807169596
+            },
+            {
+              "month": "2022-03",
+              "count": 5,
+              "decay_rate_per_km": 0.5421607971191407
+            },
+            {
+              "month": "2022-08",
+              "count": 6,
+              "decay_rate_per_km": 0.40798139572143555
+            },
+            {
+              "month": "2022-10",
+              "count": 6,
+              "decay_rate_per_km": 0.4348875045776367
+            },
+            {
+              "month": "2023-04",
+              "count": 17,
+              "decay_rate_per_km": 0.11899503072102864
+            },
+            {
+              "month": "2023-06",
+              "count": 40,
+              "decay_rate_per_km": 0.2532989501953125
+            },
+            {
+              "month": "2023-08",
+              "count": 44,
+              "decay_rate_per_km": 0.18816852569580078
+            },
+            {
+              "month": "2023-09",
+              "count": 24,
+              "decay_rate_per_km": 0.1413745880126953
+            },
+            {
+              "month": "2023-10",
+              "count": 27,
+              "decay_rate_per_km": 0.17004871368408203
+            },
+            {
+              "month": "2023-11",
+              "count": 15,
+              "decay_rate_per_km": 0.22499561309814453
+            },
+            {
+              "month": "2023-12",
+              "count": 8,
+              "decay_rate_per_km": 0.1317414919535319
+            },
+            {
+              "month": "2024-01",
+              "count": 10,
+              "decay_rate_per_km": 0.28400254249572754
+            },
+            {
+              "month": "2024-02",
+              "count": 10,
+              "decay_rate_per_km": 0.5089764595031738
+            },
+            {
+              "month": "2024-03",
+              "count": 20,
+              "decay_rate_per_km": 0.3473176956176758
+            },
+            {
+              "month": "2024-04",
+              "count": 50,
+              "decay_rate_per_km": 0.3815224965413412
+            },
+            {
+              "month": "2024-05",
+              "count": 11,
+              "decay_rate_per_km": 0.40865087509155273
+            },
+            {
+              "month": "2024-06",
+              "count": 7,
+              "decay_rate_per_km": 0.41925493876139325
+            },
+            {
+              "month": "2024-08",
+              "count": 7,
+              "decay_rate_per_km": 0.2890334129333496
+            },
+            {
+              "month": "2024-10",
+              "count": 6,
+              "decay_rate_per_km": 0.2660543441772461
+            },
+            {
+              "month": "2024-11",
+              "count": 7,
+              "decay_rate_per_km": 0.2687110900878906
+            },
+            {
+              "month": "2025-02",
+              "count": 7,
+              "decay_rate_per_km": 0.1469885508219401
+            },
+            {
+              "month": "2025-03",
+              "count": 8,
+              "decay_rate_per_km": 0.1498434066772461
+            },
+            {
+              "month": "2025-04",
+              "count": 13,
+              "decay_rate_per_km": 0.2639760971069336
+            },
+            {
+              "month": "2025-06",
+              "count": 43,
+              "decay_rate_per_km": 0.28191566467285156
+            },
+            {
+              "month": "2025-08",
+              "count": 41,
+              "decay_rate_per_km": 0.2770881652832031
+            },
+            {
+              "month": "2025-09",
+              "count": 23,
+              "decay_rate_per_km": 0.287841796875
+            },
+            {
+              "month": "2025-10",
+              "count": 24,
+              "decay_rate_per_km": 0.2828531265258789
+            },
+            {
+              "month": "2025-11",
+              "count": 13,
+              "decay_rate_per_km": 0.230897585550944
+            },
+            {
+              "month": "2026-01",
+              "count": 44,
+              "decay_rate_per_km": 0.3715476989746094
+            },
+            {
+              "month": "2026-02",
+              "count": 16,
+              "decay_rate_per_km": 0.44837837219238286
+            },
+            {
+              "month": "2026-03",
+              "count": 77,
+              "decay_rate_per_km": 0.34765625
+            },
+            {
+              "month": "2026-04",
+              "count": 77,
+              "decay_rate_per_km": 0.3636199951171875
+            },
+            {
+              "month": "2026-05",
+              "count": 12,
+              "decay_rate_per_km": 0.35849086443583167
+            },
+            {
+              "month": "2026-06",
+              "count": 97,
+              "decay_rate_per_km": 0.501772403717041
+            }
+          ],
+          "n_profiles": 3978,
+          "n_non_decreasing_profiles": 63,
+          "monthly_decay_rate_quartiles_per_km": [
+            0.22189385890960694,
+            0.2813727060953776,
+            0.3842506408691406
+          ]
+        },
+        "raw_26_29": {
+          "scale_height_m": 4420.653544603382,
+          "monthly_rates": [
+            {
+              "month": "2017-06",
+              "count": 113,
+              "decay_rate_per_km": 0.14180850982666016
+            },
+            {
+              "month": "2017-07",
+              "count": 15,
+              "decay_rate_per_km": 0.22513723373413086
+            },
+            {
+              "month": "2017-08",
+              "count": 66,
+              "decay_rate_per_km": 0.14078083038330078
+            },
+            {
+              "month": "2017-09",
+              "count": 69,
+              "decay_rate_per_km": 0.13556671142578125
+            },
+            {
+              "month": "2017-10",
+              "count": 41,
+              "decay_rate_per_km": 0.11461830139160156
+            },
+            {
+              "month": "2017-11",
+              "count": 66,
+              "decay_rate_per_km": 0.12402596473693847
+            },
+            {
+              "month": "2017-12",
+              "count": 6,
+              "decay_rate_per_km": 0.22598390579223632
+            },
+            {
+              "month": "2018-01",
+              "count": 22,
+              "decay_rate_per_km": 0.1803743362426758
+            },
+            {
+              "month": "2018-02",
+              "count": 13,
+              "decay_rate_per_km": 0.15993728637695312
+            },
+            {
+              "month": "2018-06",
+              "count": 9,
+              "decay_rate_per_km": 0.32065296173095703
+            },
+            {
+              "month": "2018-08",
+              "count": 11,
+              "decay_rate_per_km": 0.3289928436279297
+            },
+            {
+              "month": "2018-09",
+              "count": 27,
+              "decay_rate_per_km": 0.3686981201171875
+            },
+            {
+              "month": "2018-10",
+              "count": 52,
+              "decay_rate_per_km": 0.33086633682250977
+            },
+            {
+              "month": "2018-11",
+              "count": 29,
+              "decay_rate_per_km": 0.3549041748046875
+            },
+            {
+              "month": "2018-12",
+              "count": 6,
+              "decay_rate_per_km": 0.5290228525797527
+            },
+            {
+              "month": "2019-01",
+              "count": 33,
+              "decay_rate_per_km": 0.27411460876464844
+            },
+            {
+              "month": "2019-02",
+              "count": 17,
+              "decay_rate_per_km": 0.30146217346191406
+            },
+            {
+              "month": "2019-03",
+              "count": 61,
+              "decay_rate_per_km": 0.22271728515625
+            },
+            {
+              "month": "2019-04",
+              "count": 80,
+              "decay_rate_per_km": 0.21673615773518878
+            },
+            {
+              "month": "2019-05",
+              "count": 19,
+              "decay_rate_per_km": 0.20268869400024414
+            },
+            {
+              "month": "2019-06",
+              "count": 158,
+              "decay_rate_per_km": 0.20520165761311848
+            },
+            {
+              "month": "2019-07",
+              "count": 20,
+              "decay_rate_per_km": 0.1607513427734375
+            },
+            {
+              "month": "2019-08",
+              "count": 136,
+              "decay_rate_per_km": 0.2043405532836914
+            },
+            {
+              "month": "2019-09",
+              "count": 25,
+              "decay_rate_per_km": 0.19324779510498047
+            },
+            {
+              "month": "2019-11",
+              "count": 25,
+              "decay_rate_per_km": 0.16001129150390625
+            },
+            {
+              "month": "2020-01",
+              "count": 33,
+              "decay_rate_per_km": 0.2196208953857422
+            },
+            {
+              "month": "2020-02",
+              "count": 10,
+              "decay_rate_per_km": 0.1907639503479004
+            },
+            {
+              "month": "2020-03",
+              "count": 14,
+              "decay_rate_per_km": 0.23050975799560547
+            },
+            {
+              "month": "2020-04",
+              "count": 55,
+              "decay_rate_per_km": 0.156146240234375
+            },
+            {
+              "month": "2020-05",
+              "count": 8,
+              "decay_rate_per_km": 0.09882968266805013
+            },
+            {
+              "month": "2020-06",
+              "count": 145,
+              "decay_rate_per_km": 0.1904315948486328
+            },
+            {
+              "month": "2020-07",
+              "count": 14,
+              "decay_rate_per_km": 0.34815613428751624
+            },
+            {
+              "month": "2020-08",
+              "count": 162,
+              "decay_rate_per_km": 0.2616276741027832
+            },
+            {
+              "month": "2020-09",
+              "count": 105,
+              "decay_rate_per_km": 0.2229452133178711
+            },
+            {
+              "month": "2020-10",
+              "count": 115,
+              "decay_rate_per_km": 0.2264378865559896
+            },
+            {
+              "month": "2020-11",
+              "count": 174,
+              "decay_rate_per_km": 0.2406579653422038
+            },
+            {
+              "month": "2020-12",
+              "count": 6,
+              "decay_rate_per_km": 0.27005227406819665
+            },
+            {
+              "month": "2021-01",
+              "count": 86,
+              "decay_rate_per_km": 0.2402181625366211
+            },
+            {
+              "month": "2021-02",
+              "count": 27,
+              "decay_rate_per_km": 0.20209932327270508
+            },
+            {
+              "month": "2021-03",
+              "count": 87,
+              "decay_rate_per_km": 0.22020912170410156
+            },
+            {
+              "month": "2021-04",
+              "count": 122,
+              "decay_rate_per_km": 0.19334969520568848
+            },
+            {
+              "month": "2021-05",
+              "count": 22,
+              "decay_rate_per_km": 0.1866302013397217
+            },
+            {
+              "month": "2021-06",
+              "count": 191,
+              "decay_rate_per_km": 0.18994808197021484
+            },
+            {
+              "month": "2021-07",
+              "count": 34,
+              "decay_rate_per_km": 0.22786483764648438
+            },
+            {
+              "month": "2021-08",
+              "count": 183,
+              "decay_rate_per_km": 0.21951560974121093
+            },
+            {
+              "month": "2021-09",
+              "count": 80,
+              "decay_rate_per_km": 0.24423255920410156
+            },
+            {
+              "month": "2021-10",
+              "count": 102,
+              "decay_rate_per_km": 0.2572460174560547
+            },
+            {
+              "month": "2021-11",
+              "count": 89,
+              "decay_rate_per_km": 0.2931938171386719
+            },
+            {
+              "month": "2021-12",
+              "count": 5,
+              "decay_rate_per_km": 0.3694292704264323
+            },
+            {
+              "month": "2022-01",
+              "count": 98,
+              "decay_rate_per_km": 0.3788910388946533
+            },
+            {
+              "month": "2022-02",
+              "count": 26,
+              "decay_rate_per_km": 0.4690704345703125
+            },
+            {
+              "month": "2022-03",
+              "count": 5,
+              "decay_rate_per_km": 0.33226776123046875
+            },
+            {
+              "month": "2022-08",
+              "count": 6,
+              "decay_rate_per_km": 0.4024430910746256
+            },
+            {
+              "month": "2022-10",
+              "count": 6,
+              "decay_rate_per_km": 0.3656788349151611
+            },
+            {
+              "month": "2023-04",
+              "count": 17,
+              "decay_rate_per_km": 0.13815927505493164
+            },
+            {
+              "month": "2023-06",
+              "count": 40,
+              "decay_rate_per_km": 0.1706978480021159
+            },
+            {
+              "month": "2023-08",
+              "count": 44,
+              "decay_rate_per_km": 0.14900531768798828
+            },
+            {
+              "month": "2023-09",
+              "count": 24,
+              "decay_rate_per_km": 0.11502726872762045
+            },
+            {
+              "month": "2023-10",
+              "count": 27,
+              "decay_rate_per_km": 0.2236180305480957
+            },
+            {
+              "month": "2023-11",
+              "count": 15,
+              "decay_rate_per_km": 0.2242603302001953
+            },
+            {
+              "month": "2023-12",
+              "count": 8,
+              "decay_rate_per_km": 0.17935872077941895
+            },
+            {
+              "month": "2024-01",
+              "count": 10,
+              "decay_rate_per_km": 0.1333740552266439
+            },
+            {
+              "month": "2024-02",
+              "count": 10,
+              "decay_rate_per_km": 0.3321172396341959
+            },
+            {
+              "month": "2024-03",
+              "count": 20,
+              "decay_rate_per_km": 0.30622138977050783
+            },
+            {
+              "month": "2024-04",
+              "count": 50,
+              "decay_rate_per_km": 0.3130613327026367
+            },
+            {
+              "month": "2024-05",
+              "count": 11,
+              "decay_rate_per_km": 0.3405771255493164
+            },
+            {
+              "month": "2024-06",
+              "count": 7,
+              "decay_rate_per_km": 0.3333136240641276
+            },
+            {
+              "month": "2024-08",
+              "count": 7,
+              "decay_rate_per_km": 0.20769977569580078
+            },
+            {
+              "month": "2024-10",
+              "count": 6,
+              "decay_rate_per_km": 0.2336592674255371
+            },
+            {
+              "month": "2024-11",
+              "count": 7,
+              "decay_rate_per_km": 0.3176422119140625
+            },
+            {
+              "month": "2025-02",
+              "count": 7,
+              "decay_rate_per_km": 0.25150108337402344
+            },
+            {
+              "month": "2025-03",
+              "count": 8,
+              "decay_rate_per_km": 0.17508665720621747
+            },
+            {
+              "month": "2025-04",
+              "count": 13,
+              "decay_rate_per_km": 0.14812850952148438
+            },
+            {
+              "month": "2025-06",
+              "count": 43,
+              "decay_rate_per_km": 0.20717811584472656
+            },
+            {
+              "month": "2025-08",
+              "count": 41,
+              "decay_rate_per_km": 0.22572962443033853
+            },
+            {
+              "month": "2025-09",
+              "count": 23,
+              "decay_rate_per_km": 0.27934799194335935
+            },
+            {
+              "month": "2025-10",
+              "count": 24,
+              "decay_rate_per_km": 0.23793377876281738
+            },
+            {
+              "month": "2025-11",
+              "count": 13,
+              "decay_rate_per_km": 0.32531108856201174
+            },
+            {
+              "month": "2026-01",
+              "count": 44,
+              "decay_rate_per_km": 0.38416059811909997
+            },
+            {
+              "month": "2026-02",
+              "count": 16,
+              "decay_rate_per_km": 0.3935378392537435
+            },
+            {
+              "month": "2026-03",
+              "count": 77,
+              "decay_rate_per_km": 0.3458580017089844
+            },
+            {
+              "month": "2026-04",
+              "count": 77,
+              "decay_rate_per_km": 0.35375137329101564
+            },
+            {
+              "month": "2026-05",
+              "count": 12,
+              "decay_rate_per_km": 0.3915572166442871
+            },
+            {
+              "month": "2026-06",
+              "count": 97,
+              "decay_rate_per_km": 0.41233348846435547
+            }
+          ],
+          "n_profiles": 3978,
+          "n_non_decreasing_profiles": 63,
+          "monthly_decay_rate_quartiles_per_km": [
+            0.19031071662902832,
+            0.22621089617411294,
+            0.32623152732849126
+          ]
+        },
+        "raw_26_30": {
+          "scale_height_m": 3937.299406131065,
+          "monthly_rates": [
+            {
+              "month": "2017-06",
+              "count": 113,
+              "decay_rate_per_km": 0.15355913979666574
+            },
+            {
+              "month": "2017-07",
+              "count": 15,
+              "decay_rate_per_km": 0.2546525001525879
+            },
+            {
+              "month": "2017-08",
+              "count": 66,
+              "decay_rate_per_km": 0.15834086736043296
+            },
+            {
+              "month": "2017-09",
+              "count": 69,
+              "decay_rate_per_km": 0.15256675084431964
+            },
+            {
+              "month": "2017-10",
+              "count": 41,
+              "decay_rate_per_km": 0.13519671303885322
+            },
+            {
+              "month": "2017-11",
+              "count": 66,
+              "decay_rate_per_km": 0.16220738887786865
+            },
+            {
+              "month": "2017-12",
+              "count": 6,
+              "decay_rate_per_km": 0.20293144271487282
+            },
+            {
+              "month": "2018-01",
+              "count": 22,
+              "decay_rate_per_km": 0.28079457055954704
+            },
+            {
+              "month": "2018-02",
+              "count": 13,
+              "decay_rate_per_km": 0.2377351760864258
+            },
+            {
+              "month": "2018-06",
+              "count": 9,
+              "decay_rate_per_km": 0.4035732405526298
+            },
+            {
+              "month": "2018-08",
+              "count": 11,
+              "decay_rate_per_km": 0.34476757049560547
+            },
+            {
+              "month": "2018-09",
+              "count": 27,
+              "decay_rate_per_km": 0.39551321665445965
+            },
+            {
+              "month": "2018-10",
+              "count": 52,
+              "decay_rate_per_km": 0.34507770538330074
+            },
+            {
+              "month": "2018-11",
+              "count": 29,
+              "decay_rate_per_km": 0.37112313225155785
+            },
+            {
+              "month": "2018-12",
+              "count": 6,
+              "decay_rate_per_km": 0.5812620094844273
+            },
+            {
+              "month": "2019-01",
+              "count": 33,
+              "decay_rate_per_km": 0.3026771545410156
+            },
+            {
+              "month": "2019-02",
+              "count": 17,
+              "decay_rate_per_km": 0.27456680933634436
+            },
+            {
+              "month": "2019-03",
+              "count": 61,
+              "decay_rate_per_km": 0.23777389526367188
+            },
+            {
+              "month": "2019-04",
+              "count": 80,
+              "decay_rate_per_km": 0.22424158312025524
+            },
+            {
+              "month": "2019-05",
+              "count": 19,
+              "decay_rate_per_km": 0.21640996932983397
+            },
+            {
+              "month": "2019-06",
+              "count": 158,
+              "decay_rate_per_km": 0.21539641561962308
+            },
+            {
+              "month": "2019-07",
+              "count": 20,
+              "decay_rate_per_km": 0.2099443759237017
+            },
+            {
+              "month": "2019-08",
+              "count": 136,
+              "decay_rate_per_km": 0.20812400182088217
+            },
+            {
+              "month": "2019-09",
+              "count": 25,
+              "decay_rate_per_km": 0.13161706924438477
+            },
+            {
+              "month": "2019-11",
+              "count": 25,
+              "decay_rate_per_km": 0.18419079780578612
+            },
+            {
+              "month": "2020-01",
+              "count": 33,
+              "decay_rate_per_km": 0.23959316526140484
+            },
+            {
+              "month": "2020-02",
+              "count": 10,
+              "decay_rate_per_km": 0.22299864292144775
+            },
+            {
+              "month": "2020-03",
+              "count": 14,
+              "decay_rate_per_km": 0.21084360281626385
+            },
+            {
+              "month": "2020-04",
+              "count": 55,
+              "decay_rate_per_km": 0.1731884138924735
+            },
+            {
+              "month": "2020-05",
+              "count": 8,
+              "decay_rate_per_km": 0.13849425883520217
+            },
+            {
+              "month": "2020-06",
+              "count": 145,
+              "decay_rate_per_km": 0.28460278511047366
+            },
+            {
+              "month": "2020-07",
+              "count": 14,
+              "decay_rate_per_km": 0.3927820801734924
+            },
+            {
+              "month": "2020-08",
+              "count": 162,
+              "decay_rate_per_km": 0.3214839696884155
+            },
+            {
+              "month": "2020-09",
+              "count": 105,
+              "decay_rate_per_km": 0.26470604964665
+            },
+            {
+              "month": "2020-10",
+              "count": 115,
+              "decay_rate_per_km": 0.24489494164784747
+            },
+            {
+              "month": "2020-11",
+              "count": 174,
+              "decay_rate_per_km": 0.2549854744048346
+            },
+            {
+              "month": "2020-12",
+              "count": 6,
+              "decay_rate_per_km": 0.3218071142832438
+            },
+            {
+              "month": "2021-01",
+              "count": 86,
+              "decay_rate_per_km": 0.24861601420811244
+            },
+            {
+              "month": "2021-02",
+              "count": 27,
+              "decay_rate_per_km": 0.19590552647908527
+            },
+            {
+              "month": "2021-03",
+              "count": 87,
+              "decay_rate_per_km": 0.23557214736938475
+            },
+            {
+              "month": "2021-04",
+              "count": 122,
+              "decay_rate_per_km": 0.20979426304499307
+            },
+            {
+              "month": "2021-05",
+              "count": 22,
+              "decay_rate_per_km": 0.21130197388785227
+            },
+            {
+              "month": "2021-06",
+              "count": 191,
+              "decay_rate_per_km": 0.20658727373395647
+            },
+            {
+              "month": "2021-07",
+              "count": 34,
+              "decay_rate_per_km": 0.27909444967905683
+            },
+            {
+              "month": "2021-08",
+              "count": 183,
+              "decay_rate_per_km": 0.3182938893636068
+            },
+            {
+              "month": "2021-09",
+              "count": 80,
+              "decay_rate_per_km": 0.3430844148000081
+            },
+            {
+              "month": "2021-10",
+              "count": 102,
+              "decay_rate_per_km": 0.4077268282572428
+            },
+            {
+              "month": "2021-11",
+              "count": 89,
+              "decay_rate_per_km": 0.37412781374795095
+            },
+            {
+              "month": "2021-12",
+              "count": 5,
+              "decay_rate_per_km": 0.4169025421142578
+            },
+            {
+              "month": "2022-01",
+              "count": 98,
+              "decay_rate_per_km": 0.32075547036670504
+            },
+            {
+              "month": "2022-02",
+              "count": 26,
+              "decay_rate_per_km": 0.4797419190406799
+            },
+            {
+              "month": "2022-03",
+              "count": 5,
+              "decay_rate_per_km": 0.4754387537638346
+            },
+            {
+              "month": "2022-08",
+              "count": 6,
+              "decay_rate_per_km": 0.4076782862345378
+            },
+            {
+              "month": "2022-10",
+              "count": 6,
+              "decay_rate_per_km": 0.38385170698165894
+            },
+            {
+              "month": "2023-04",
+              "count": 17,
+              "decay_rate_per_km": 0.11367535591125488
+            },
+            {
+              "month": "2023-06",
+              "count": 40,
+              "decay_rate_per_km": 0.19266154425484794
+            },
+            {
+              "month": "2023-08",
+              "count": 44,
+              "decay_rate_per_km": 0.17432306834629605
+            },
+            {
+              "month": "2023-09",
+              "count": 24,
+              "decay_rate_per_km": 0.13458871841430664
+            },
+            {
+              "month": "2023-10",
+              "count": 27,
+              "decay_rate_per_km": 0.19816466740199498
+            },
+            {
+              "month": "2023-11",
+              "count": 15,
+              "decay_rate_per_km": 0.20778853552682058
+            },
+            {
+              "month": "2023-12",
+              "count": 8,
+              "decay_rate_per_km": 0.1408825874328613
+            },
+            {
+              "month": "2024-01",
+              "count": 10,
+              "decay_rate_per_km": 0.17166080928984143
+            },
+            {
+              "month": "2024-02",
+              "count": 10,
+              "decay_rate_per_km": 0.4063938856124878
+            },
+            {
+              "month": "2024-03",
+              "count": 20,
+              "decay_rate_per_km": 0.3258981704711914
+            },
+            {
+              "month": "2024-04",
+              "count": 50,
+              "decay_rate_per_km": 0.3393990857260568
+            },
+            {
+              "month": "2024-05",
+              "count": 11,
+              "decay_rate_per_km": 0.36180750528971356
+            },
+            {
+              "month": "2024-06",
+              "count": 7,
+              "decay_rate_per_km": 0.40139102935791016
+            },
+            {
+              "month": "2024-08",
+              "count": 7,
+              "decay_rate_per_km": 0.2751299222310384
+            },
+            {
+              "month": "2024-10",
+              "count": 6,
+              "decay_rate_per_km": 0.23062258674984887
+            },
+            {
+              "month": "2024-11",
+              "count": 7,
+              "decay_rate_per_km": 0.29336321353912354
+            },
+            {
+              "month": "2025-02",
+              "count": 7,
+              "decay_rate_per_km": 0.252821683883667
+            },
+            {
+              "month": "2025-03",
+              "count": 8,
+              "decay_rate_per_km": 0.19503642604464577
+            },
+            {
+              "month": "2025-04",
+              "count": 13,
+              "decay_rate_per_km": 0.25212081273396814
+            },
+            {
+              "month": "2025-06",
+              "count": 43,
+              "decay_rate_per_km": 0.2514461278915405
+            },
+            {
+              "month": "2025-08",
+              "count": 41,
+              "decay_rate_per_km": 0.2533098856608073
+            },
+            {
+              "month": "2025-09",
+              "count": 23,
+              "decay_rate_per_km": 0.28470849990844727
+            },
+            {
+              "month": "2025-10",
+              "count": 24,
+              "decay_rate_per_km": 0.24669575691223145
+            },
+            {
+              "month": "2025-11",
+              "count": 13,
+              "decay_rate_per_km": 0.2753791809082031
+            },
+            {
+              "month": "2026-01",
+              "count": 44,
+              "decay_rate_per_km": 0.3897143602371216
+            },
+            {
+              "month": "2026-02",
+              "count": 16,
+              "decay_rate_per_km": 0.44373551805814104
+            },
+            {
+              "month": "2026-03",
+              "count": 77,
+              "decay_rate_per_km": 0.3389310836791992
+            },
+            {
+              "month": "2026-04",
+              "count": 77,
+              "decay_rate_per_km": 0.36248524983723956
+            },
+            {
+              "month": "2026-05",
+              "count": 12,
+              "decay_rate_per_km": 0.36859625294094994
+            },
+            {
+              "month": "2026-06",
+              "count": 97,
+              "decay_rate_per_km": 0.46024765968322756
+            }
+          ],
+          "n_profiles": 3978,
+          "n_non_decreasing_profiles": 19,
+          "monthly_decay_rate_quartiles_per_km": [
+            0.20804013524736678,
+            0.25398119290669763,
+            0.3448451042175293
+          ]
+        },
+        "smoothed_27_30": {
+          "scale_height_m": 3903.7240540763405,
+          "monthly_rates": [
+            {
+              "month": "2017-06",
+              "count": 113,
+              "decay_rate_per_km": 0.15427627563476562
+            },
+            {
+              "month": "2017-07",
+              "count": 15,
+              "decay_rate_per_km": 0.2759136199951172
+            },
+            {
+              "month": "2017-08",
+              "count": 66,
+              "decay_rate_per_km": 0.15666141510009768
+            },
+            {
+              "month": "2017-09",
+              "count": 69,
+              "decay_rate_per_km": 0.16094462076822916
+            },
+            {
+              "month": "2017-10",
+              "count": 41,
+              "decay_rate_per_km": 0.14424514770507812
+            },
+            {
+              "month": "2017-11",
+              "count": 66,
+              "decay_rate_per_km": 0.18839073181152344
+            },
+            {
+              "month": "2017-12",
+              "count": 6,
+              "decay_rate_per_km": 0.2883208592732747
+            },
+            {
+              "month": "2018-01",
+              "count": 22,
+              "decay_rate_per_km": 0.3410186767578125
+            },
+            {
+              "month": "2018-02",
+              "count": 13,
+              "decay_rate_per_km": 0.2900729179382324
+            },
+            {
+              "month": "2018-06",
+              "count": 9,
+              "decay_rate_per_km": 0.3970947265625
+            },
+            {
+              "month": "2018-08",
+              "count": 11,
+              "decay_rate_per_km": 0.3653535842895508
+            },
+            {
+              "month": "2018-09",
+              "count": 27,
+              "decay_rate_per_km": 0.4081245422363281
+            },
+            {
+              "month": "2018-10",
+              "count": 52,
+              "decay_rate_per_km": 0.34367761611938474
+            },
+            {
+              "month": "2018-11",
+              "count": 29,
+              "decay_rate_per_km": 0.36973419189453127
+            },
+            {
+              "month": "2018-12",
+              "count": 6,
+              "decay_rate_per_km": 0.6296710014343262
+            },
+            {
+              "month": "2019-01",
+              "count": 33,
+              "decay_rate_per_km": 0.30979347229003906
+            },
+            {
+              "month": "2019-02",
+              "count": 17,
+              "decay_rate_per_km": 0.29903411865234375
+            },
+            {
+              "month": "2019-03",
+              "count": 61,
+              "decay_rate_per_km": 0.23194313049316406
+            },
+            {
+              "month": "2019-04",
+              "count": 80,
+              "decay_rate_per_km": 0.22679532368977864
+            },
+            {
+              "month": "2019-05",
+              "count": 19,
+              "decay_rate_per_km": 0.1906585693359375
+            },
+            {
+              "month": "2019-06",
+              "count": 158,
+              "decay_rate_per_km": 0.20692729949951172
+            },
+            {
+              "month": "2019-07",
+              "count": 20,
+              "decay_rate_per_km": 0.23961544036865234
+            },
+            {
+              "month": "2019-08",
+              "count": 136,
+              "decay_rate_per_km": 0.2024381160736084
+            },
+            {
+              "month": "2019-09",
+              "count": 25,
+              "decay_rate_per_km": 0.05963897705078125
+            },
+            {
+              "month": "2019-11",
+              "count": 25,
+              "decay_rate_per_km": 0.1356205940246582
+            },
+            {
+              "month": "2020-01",
+              "count": 33,
+              "decay_rate_per_km": 0.19596595764160157
+            },
+            {
+              "month": "2020-02",
+              "count": 10,
+              "decay_rate_per_km": 0.242379093170166
+            },
+            {
+              "month": "2020-03",
+              "count": 14,
+              "decay_rate_per_km": 0.21181125640869142
+            },
+            {
+              "month": "2020-04",
+              "count": 55,
+              "decay_rate_per_km": 0.1758441925048828
+            },
+            {
+              "month": "2020-05",
+              "count": 8,
+              "decay_rate_per_km": 0.17419910430908203
+            },
+            {
+              "month": "2020-06",
+              "count": 145,
+              "decay_rate_per_km": 0.3369026184082031
+            },
+            {
+              "month": "2020-07",
+              "count": 14,
+              "decay_rate_per_km": 0.37869326273600257
+            },
+            {
+              "month": "2020-08",
+              "count": 162,
+              "decay_rate_per_km": 0.3459163188934326
+            },
+            {
+              "month": "2020-09",
+              "count": 105,
+              "decay_rate_per_km": 0.2734642028808594
+            },
+            {
+              "month": "2020-10",
+              "count": 115,
+              "decay_rate_per_km": 0.24926122029622397
+            },
+            {
+              "month": "2020-11",
+              "count": 174,
+              "decay_rate_per_km": 0.25019407272338867
+            },
+            {
+              "month": "2020-12",
+              "count": 6,
+              "decay_rate_per_km": 0.3396994908650716
+            },
+            {
+              "month": "2021-01",
+              "count": 86,
+              "decay_rate_per_km": 0.2542571067810059
+            },
+            {
+              "month": "2021-02",
+              "count": 27,
+              "decay_rate_per_km": 0.19774564107259116
+            },
+            {
+              "month": "2021-03",
+              "count": 87,
+              "decay_rate_per_km": 0.22190513610839843
+            },
+            {
+              "month": "2021-04",
+              "count": 122,
+              "decay_rate_per_km": 0.20186066627502441
+            },
+            {
+              "month": "2021-05",
+              "count": 22,
+              "decay_rate_per_km": 0.23494466145833331
+            },
+            {
+              "month": "2021-06",
+              "count": 191,
+              "decay_rate_per_km": 0.2054920196533203
+            },
+            {
+              "month": "2021-07",
+              "count": 34,
+              "decay_rate_per_km": 0.2803762118021647
+            },
+            {
+              "month": "2021-08",
+              "count": 183,
+              "decay_rate_per_km": 0.3762359619140625
+            },
+            {
+              "month": "2021-09",
+              "count": 80,
+              "decay_rate_per_km": 0.4415576934814453
+            },
+            {
+              "month": "2021-10",
+              "count": 102,
+              "decay_rate_per_km": 0.4728420257568359
+            },
+            {
+              "month": "2021-11",
+              "count": 89,
+              "decay_rate_per_km": 0.4605108896891276
+            },
+            {
+              "month": "2021-12",
+              "count": 5,
+              "decay_rate_per_km": 0.4488496780395508
+            },
+            {
+              "month": "2022-01",
+              "count": 98,
+              "decay_rate_per_km": 0.2970381577809652
+            },
+            {
+              "month": "2022-02",
+              "count": 26,
+              "decay_rate_per_km": 0.4687199592590332
+            },
+            {
+              "month": "2022-03",
+              "count": 5,
+              "decay_rate_per_km": 0.5635900497436523
+            },
+            {
+              "month": "2022-08",
+              "count": 6,
+              "decay_rate_per_km": 0.37768802642822263
+            },
+            {
+              "month": "2022-10",
+              "count": 6,
+              "decay_rate_per_km": 0.3878094355265299
+            },
+            {
+              "month": "2023-04",
+              "count": 17,
+              "decay_rate_per_km": 0.13343143463134766
+            },
+            {
+              "month": "2023-06",
+              "count": 40,
+              "decay_rate_per_km": 0.19756415685017903
+            },
+            {
+              "month": "2023-08",
+              "count": 44,
+              "decay_rate_per_km": 0.1561320622762044
+            },
+            {
+              "month": "2023-09",
+              "count": 24,
+              "decay_rate_per_km": 0.12298545837402344
+            },
+            {
+              "month": "2023-10",
+              "count": 27,
+              "decay_rate_per_km": 0.15862464904785156
+            },
+            {
+              "month": "2023-11",
+              "count": 15,
+              "decay_rate_per_km": 0.19216537475585938
+            },
+            {
+              "month": "2023-12",
+              "count": 8,
+              "decay_rate_per_km": 0.10788790384928384
+            },
+            {
+              "month": "2024-01",
+              "count": 10,
+              "decay_rate_per_km": 0.22646594047546387
+            },
+            {
+              "month": "2024-02",
+              "count": 10,
+              "decay_rate_per_km": 0.4836484909057617
+            },
+            {
+              "month": "2024-03",
+              "count": 20,
+              "decay_rate_per_km": 0.3024494171142578
+            },
+            {
+              "month": "2024-04",
+              "count": 50,
+              "decay_rate_per_km": 0.34199962615966795
+            },
+            {
+              "month": "2024-05",
+              "count": 11,
+              "decay_rate_per_km": 0.3673076629638672
+            },
+            {
+              "month": "2024-06",
+              "count": 7,
+              "decay_rate_per_km": 0.3995655059814453
+            },
+            {
+              "month": "2024-08",
+              "count": 7,
+              "decay_rate_per_km": 0.27100982666015627
+            },
+            {
+              "month": "2024-10",
+              "count": 6,
+              "decay_rate_per_km": 0.24404964447021485
+            },
+            {
+              "month": "2024-11",
+              "count": 7,
+              "decay_rate_per_km": 0.24016284942626953
+            },
+            {
+              "month": "2025-02",
+              "count": 7,
+              "decay_rate_per_km": 0.21665128072102866
+            },
+            {
+              "month": "2025-03",
+              "count": 8,
+              "decay_rate_per_km": 0.1092977523803711
+            },
+            {
+              "month": "2025-04",
+              "count": 13,
+              "decay_rate_per_km": 0.2121567726135254
+            },
+            {
+              "month": "2025-06",
+              "count": 43,
+              "decay_rate_per_km": 0.2580741882324219
+            },
+            {
+              "month": "2025-08",
+              "count": 41,
+              "decay_rate_per_km": 0.24633102416992186
+            },
+            {
+              "month": "2025-09",
+              "count": 23,
+              "decay_rate_per_km": 0.2632160186767578
+            },
+            {
+              "month": "2025-10",
+              "count": 24,
+              "decay_rate_per_km": 0.25230305989583335
+            },
+            {
+              "month": "2025-11",
+              "count": 13,
+              "decay_rate_per_km": 0.205596923828125
+            },
+            {
+              "month": "2026-01",
+              "count": 44,
+              "decay_rate_per_km": 0.35810489654541017
+            },
+            {
+              "month": "2026-02",
+              "count": 16,
+              "decay_rate_per_km": 0.4270195960998535
+            },
+            {
+              "month": "2026-03",
+              "count": 77,
+              "decay_rate_per_km": 0.3231700897216797
+            },
+            {
+              "month": "2026-04",
+              "count": 77,
+              "decay_rate_per_km": 0.3421134948730469
+            },
+            {
+              "month": "2026-05",
+              "count": 12,
+              "decay_rate_per_km": 0.3364708423614502
+            },
+            {
+              "month": "2026-06",
+              "count": 97,
+              "decay_rate_per_km": 0.47345771789550783
+            }
+          ],
+          "n_profiles": 3978,
+          "n_non_decreasing_profiles": 55,
+          "monthly_decay_rate_quartiles_per_km": [
+            0.2022937536239624,
+            0.2561656475067139,
+            0.348963463306427
+          ]
+        }
+      }
+    },
+    "nh_midlat": {
+      "population": 3203,
+      "regular_loading_aod_cutoffs": [
+        0.0015748989768326282,
+        0.0022499444428831336
+      ],
+      "reference_upper_scale_height_m": 2800.0,
+      "calibration": {
+        "raw_27_30": {
+          "scale_height_m": 2764.0463654831615,
+          "monthly_rates": [
+            {
+              "month": "2017-09",
+              "count": 8,
+              "decay_rate_per_km": 0.37443939844767254
+            },
+            {
+              "month": "2017-10",
+              "count": 10,
+              "decay_rate_per_km": 0.2875218391418457
+            },
+            {
+              "month": "2017-11",
+              "count": 43,
+              "decay_rate_per_km": 0.2439708709716797
+            },
+            {
+              "month": "2017-12",
+              "count": 60,
+              "decay_rate_per_km": 0.24807453155517578
+            },
+            {
+              "month": "2018-01",
+              "count": 89,
+              "decay_rate_per_km": 0.48149585723876953
+            },
+            {
+              "month": "2018-02",
+              "count": 19,
+              "decay_rate_per_km": 0.4347070058186849
+            },
+            {
+              "month": "2018-03",
+              "count": 60,
+              "decay_rate_per_km": 0.38511880238850915
+            },
+            {
+              "month": "2018-04",
+              "count": 21,
+              "decay_rate_per_km": 0.39417037963867185
+            },
+            {
+              "month": "2018-05",
+              "count": 20,
+              "decay_rate_per_km": 0.4970920880635579
+            },
+            {
+              "month": "2018-06",
+              "count": 19,
+              "decay_rate_per_km": 0.46100521087646484
+            },
+            {
+              "month": "2018-07",
+              "count": 7,
+              "decay_rate_per_km": 0.3990345001220703
+            },
+            {
+              "month": "2018-08",
+              "count": 24,
+              "decay_rate_per_km": 0.40332984924316406
+            },
+            {
+              "month": "2018-09",
+              "count": 9,
+              "decay_rate_per_km": 0.2501837412516276
+            },
+            {
+              "month": "2018-10",
+              "count": 32,
+              "decay_rate_per_km": 0.34156293869018556
+            },
+            {
+              "month": "2018-11",
+              "count": 55,
+              "decay_rate_per_km": 0.39803123474121094
+            },
+            {
+              "month": "2018-12",
+              "count": 19,
+              "decay_rate_per_km": 0.39936574300130206
+            },
+            {
+              "month": "2019-11",
+              "count": 22,
+              "decay_rate_per_km": 0.18274188041687012
+            },
+            {
+              "month": "2019-12",
+              "count": 27,
+              "decay_rate_per_km": 0.2696277618408203
+            },
+            {
+              "month": "2020-01",
+              "count": 30,
+              "decay_rate_per_km": 0.31308492024739587
+            },
+            {
+              "month": "2020-02",
+              "count": 10,
+              "decay_rate_per_km": 0.43326473236083984
+            },
+            {
+              "month": "2020-03",
+              "count": 17,
+              "decay_rate_per_km": 0.2570838928222656
+            },
+            {
+              "month": "2020-04",
+              "count": 24,
+              "decay_rate_per_km": 0.15323400497436523
+            },
+            {
+              "month": "2020-05",
+              "count": 7,
+              "decay_rate_per_km": 0.2875531514485677
+            },
+            {
+              "month": "2020-06",
+              "count": 45,
+              "decay_rate_per_km": 0.31427351633707684
+            },
+            {
+              "month": "2020-07",
+              "count": 14,
+              "decay_rate_per_km": 0.1597299575805664
+            },
+            {
+              "month": "2020-08",
+              "count": 49,
+              "decay_rate_per_km": 0.36214669545491535
+            },
+            {
+              "month": "2020-09",
+              "count": 27,
+              "decay_rate_per_km": 0.4176470438639323
+            },
+            {
+              "month": "2020-10",
+              "count": 46,
+              "decay_rate_per_km": 0.28727595011393225
+            },
+            {
+              "month": "2020-11",
+              "count": 56,
+              "decay_rate_per_km": 0.3351475397745768
+            },
+            {
+              "month": "2020-12",
+              "count": 41,
+              "decay_rate_per_km": 0.35428428649902344
+            },
+            {
+              "month": "2021-01",
+              "count": 28,
+              "decay_rate_per_km": 0.4300118923187256
+            },
+            {
+              "month": "2021-03",
+              "count": 13,
+              "decay_rate_per_km": 0.39394187927246094
+            },
+            {
+              "month": "2021-04",
+              "count": 45,
+              "decay_rate_per_km": 0.36799049377441406
+            },
+            {
+              "month": "2021-06",
+              "count": 45,
+              "decay_rate_per_km": 0.36143016815185547
+            },
+            {
+              "month": "2021-08",
+              "count": 33,
+              "decay_rate_per_km": 0.4420611063639323
+            },
+            {
+              "month": "2021-09",
+              "count": 15,
+              "decay_rate_per_km": 0.36989307403564453
+            },
+            {
+              "month": "2021-10",
+              "count": 47,
+              "decay_rate_per_km": 0.29433746337890626
+            },
+            {
+              "month": "2021-11",
+              "count": 42,
+              "decay_rate_per_km": 0.2928473949432373
+            },
+            {
+              "month": "2021-12",
+              "count": 15,
+              "decay_rate_per_km": 0.2857370376586914
+            },
+            {
+              "month": "2022-01",
+              "count": 6,
+              "decay_rate_per_km": 0.14946444829305014
+            },
+            {
+              "month": "2022-03",
+              "count": 15,
+              "decay_rate_per_km": 0.43757057189941406
+            },
+            {
+              "month": "2022-04",
+              "count": 7,
+              "decay_rate_per_km": 0.005574226379394531
+            },
+            {
+              "month": "2022-06",
+              "count": 13,
+              "decay_rate_per_km": 0.40647411346435547
+            },
+            {
+              "month": "2022-07",
+              "count": 8,
+              "decay_rate_per_km": 0.5257134437561035
+            },
+            {
+              "month": "2022-08",
+              "count": 12,
+              "decay_rate_per_km": 0.49436219533284503
+            },
+            {
+              "month": "2022-09",
+              "count": 11,
+              "decay_rate_per_km": 0.5809545516967773
+            },
+            {
+              "month": "2022-10",
+              "count": 10,
+              "decay_rate_per_km": 0.43682972590128577
+            },
+            {
+              "month": "2023-09",
+              "count": 10,
+              "decay_rate_per_km": 0.3943154017130534
+            },
+            {
+              "month": "2023-10",
+              "count": 11,
+              "decay_rate_per_km": 0.2070140838623047
+            },
+            {
+              "month": "2023-11",
+              "count": 82,
+              "decay_rate_per_km": 0.20128726959228516
+            },
+            {
+              "month": "2023-12",
+              "count": 46,
+              "decay_rate_per_km": 0.37878519694010415
+            },
+            {
+              "month": "2024-01",
+              "count": 15,
+              "decay_rate_per_km": 0.24183019002278647
+            },
+            {
+              "month": "2024-04",
+              "count": 5,
+              "decay_rate_per_km": 0.6837306976318359
+            },
+            {
+              "month": "2024-09",
+              "count": 7,
+              "decay_rate_per_km": 0.4335646629333496
+            },
+            {
+              "month": "2024-11",
+              "count": 11,
+              "decay_rate_per_km": 0.19966936111450195
+            },
+            {
+              "month": "2025-02",
+              "count": 8,
+              "decay_rate_per_km": 0.35078859329223633
+            },
+            {
+              "month": "2025-03",
+              "count": 27,
+              "decay_rate_per_km": 0.3547691345214844
+            },
+            {
+              "month": "2025-04",
+              "count": 7,
+              "decay_rate_per_km": 0.5286040306091309
+            },
+            {
+              "month": "2025-05",
+              "count": 10,
+              "decay_rate_per_km": 0.33338146209716796
+            },
+            {
+              "month": "2025-10",
+              "count": 9,
+              "decay_rate_per_km": 0.2796516418457031
+            },
+            {
+              "month": "2025-11",
+              "count": 20,
+              "decay_rate_per_km": 0.08238585789998373
+            },
+            {
+              "month": "2025-12",
+              "count": 7,
+              "decay_rate_per_km": 0.4853477478027344
+            }
+          ],
+          "n_profiles": 1601,
+          "n_non_decreasing_profiles": 98,
+          "monthly_decay_rate_quartiles_per_km": [
+            0.2811729907989502,
+            0.3617884318033854,
+            0.42692068020502727
+          ]
+        },
+        "raw_26_29": {
+          "scale_height_m": 3469.4124746144234,
+          "monthly_rates": [
+            {
+              "month": "2017-09",
+              "count": 8,
+              "decay_rate_per_km": 0.31913137435913086
+            },
+            {
+              "month": "2017-10",
+              "count": 10,
+              "decay_rate_per_km": 0.25987784067789715
+            },
+            {
+              "month": "2017-11",
+              "count": 43,
+              "decay_rate_per_km": 0.19958877563476562
+            },
+            {
+              "month": "2017-12",
+              "count": 60,
+              "decay_rate_per_km": 0.21811644236246747
+            },
+            {
+              "month": "2018-01",
+              "count": 89,
+              "decay_rate_per_km": 0.3578389485677083
+            },
+            {
+              "month": "2018-02",
+              "count": 19,
+              "decay_rate_per_km": 0.27014808654785155
+            },
+            {
+              "month": "2018-03",
+              "count": 60,
+              "decay_rate_per_km": 0.3134307861328125
+            },
+            {
+              "month": "2018-04",
+              "count": 21,
+              "decay_rate_per_km": 0.42128944396972656
+            },
+            {
+              "month": "2018-05",
+              "count": 20,
+              "decay_rate_per_km": 0.46363798777262366
+            },
+            {
+              "month": "2018-06",
+              "count": 19,
+              "decay_rate_per_km": 0.4401162465413411
+            },
+            {
+              "month": "2018-07",
+              "count": 7,
+              "decay_rate_per_km": 0.48355960845947266
+            },
+            {
+              "month": "2018-08",
+              "count": 24,
+              "decay_rate_per_km": 0.3980901718139649
+            },
+            {
+              "month": "2018-09",
+              "count": 9,
+              "decay_rate_per_km": 0.24033832550048828
+            },
+            {
+              "month": "2018-10",
+              "count": 32,
+              "decay_rate_per_km": 0.27910842895507815
+            },
+            {
+              "month": "2018-11",
+              "count": 55,
+              "decay_rate_per_km": 0.3456961313883464
+            },
+            {
+              "month": "2018-12",
+              "count": 19,
+              "decay_rate_per_km": 0.3122725486755371
+            },
+            {
+              "month": "2019-11",
+              "count": 22,
+              "decay_rate_per_km": 0.1353321075439453
+            },
+            {
+              "month": "2019-12",
+              "count": 27,
+              "decay_rate_per_km": 0.1921513875325521
+            },
+            {
+              "month": "2020-01",
+              "count": 30,
+              "decay_rate_per_km": 0.22774243354797363
+            },
+            {
+              "month": "2020-02",
+              "count": 10,
+              "decay_rate_per_km": 0.36060333251953125
+            },
+            {
+              "month": "2020-03",
+              "count": 17,
+              "decay_rate_per_km": 0.15728139877319336
+            },
+            {
+              "month": "2020-04",
+              "count": 24,
+              "decay_rate_per_km": 0.2831798394521078
+            },
+            {
+              "month": "2020-05",
+              "count": 7,
+              "decay_rate_per_km": 0.3510888417561849
+            },
+            {
+              "month": "2020-06",
+              "count": 45,
+              "decay_rate_per_km": 0.36244964599609375
+            },
+            {
+              "month": "2020-07",
+              "count": 14,
+              "decay_rate_per_km": 0.25151848793029785
+            },
+            {
+              "month": "2020-08",
+              "count": 49,
+              "decay_rate_per_km": 0.3787555694580078
+            },
+            {
+              "month": "2020-09",
+              "count": 27,
+              "decay_rate_per_km": 0.40079911549886066
+            },
+            {
+              "month": "2020-10",
+              "count": 46,
+              "decay_rate_per_km": 0.22471230824788413
+            },
+            {
+              "month": "2020-11",
+              "count": 56,
+              "decay_rate_per_km": 0.23583377202351888
+            },
+            {
+              "month": "2020-12",
+              "count": 41,
+              "decay_rate_per_km": 0.3108940124511719
+            },
+            {
+              "month": "2021-01",
+              "count": 28,
+              "decay_rate_per_km": 0.3571032683054606
+            },
+            {
+              "month": "2021-03",
+              "count": 13,
+              "decay_rate_per_km": 0.2263040542602539
+            },
+            {
+              "month": "2021-04",
+              "count": 45,
+              "decay_rate_per_km": 0.2629690170288086
+            },
+            {
+              "month": "2021-06",
+              "count": 45,
+              "decay_rate_per_km": 0.30685679117838544
+            },
+            {
+              "month": "2021-08",
+              "count": 33,
+              "decay_rate_per_km": 0.3556011199951172
+            },
+            {
+              "month": "2021-09",
+              "count": 15,
+              "decay_rate_per_km": 0.23363876342773438
+            },
+            {
+              "month": "2021-10",
+              "count": 47,
+              "decay_rate_per_km": 0.27095603942871094
+            },
+            {
+              "month": "2021-11",
+              "count": 42,
+              "decay_rate_per_km": 0.24725262324015299
+            },
+            {
+              "month": "2021-12",
+              "count": 15,
+              "decay_rate_per_km": 0.26975472768147785
+            },
+            {
+              "month": "2022-01",
+              "count": 6,
+              "decay_rate_per_km": 0.08487586975097657
+            },
+            {
+              "month": "2022-03",
+              "count": 15,
+              "decay_rate_per_km": 0.3917989730834961
+            },
+            {
+              "month": "2022-04",
+              "count": 7,
+              "decay_rate_per_km": 0.17746353149414062
+            },
+            {
+              "month": "2022-06",
+              "count": 13,
+              "decay_rate_per_km": 0.4201348622639974
+            },
+            {
+              "month": "2022-07",
+              "count": 8,
+              "decay_rate_per_km": 0.3685634613037109
+            },
+            {
+              "month": "2022-08",
+              "count": 12,
+              "decay_rate_per_km": 0.5486753781636555
+            },
+            {
+              "month": "2022-09",
+              "count": 11,
+              "decay_rate_per_km": 0.4810028076171875
+            },
+            {
+              "month": "2022-10",
+              "count": 10,
+              "decay_rate_per_km": 0.49566809336344403
+            },
+            {
+              "month": "2023-09",
+              "count": 10,
+              "decay_rate_per_km": 0.3539421081542969
+            },
+            {
+              "month": "2023-10",
+              "count": 11,
+              "decay_rate_per_km": 0.10463619232177734
+            },
+            {
+              "month": "2023-11",
+              "count": 82,
+              "decay_rate_per_km": 0.1548914909362793
+            },
+            {
+              "month": "2023-12",
+              "count": 46,
+              "decay_rate_per_km": 0.249388853708903
+            },
+            {
+              "month": "2024-01",
+              "count": 15,
+              "decay_rate_per_km": 0.4653746287027995
+            },
+            {
+              "month": "2024-04",
+              "count": 5,
+              "decay_rate_per_km": 0.6198387145996094
+            },
+            {
+              "month": "2024-09",
+              "count": 7,
+              "decay_rate_per_km": 0.22058804829915366
+            },
+            {
+              "month": "2024-11",
+              "count": 11,
+              "decay_rate_per_km": 0.14551687240600586
+            },
+            {
+              "month": "2025-02",
+              "count": 8,
+              "decay_rate_per_km": 0.12666220664978028
+            },
+            {
+              "month": "2025-03",
+              "count": 27,
+              "decay_rate_per_km": 0.1651763916015625
+            },
+            {
+              "month": "2025-04",
+              "count": 7,
+              "decay_rate_per_km": 0.43867937723795575
+            },
+            {
+              "month": "2025-05",
+              "count": 10,
+              "decay_rate_per_km": 0.39309539794921877
+            },
+            {
+              "month": "2025-10",
+              "count": 9,
+              "decay_rate_per_km": 0.24602737426757812
+            },
+            {
+              "month": "2025-11",
+              "count": 20,
+              "decay_rate_per_km": 0.25514634450276696
+            },
+            {
+              "month": "2025-12",
+              "count": 7,
+              "decay_rate_per_km": 0.29328664143880206
+            }
+          ],
+          "n_profiles": 1601,
+          "n_non_decreasing_profiles": 120,
+          "monthly_decay_rate_quartiles_per_km": [
+            0.22921651601791382,
+            0.28823324044545495,
+            0.3762075424194336
+          ]
+        },
+        "raw_26_30": {
+          "scale_height_m": 2905.9593969760676,
+          "monthly_rates": [
+            {
+              "month": "2017-09",
+              "count": 8,
+              "decay_rate_per_km": 0.3246692021687826
+            },
+            {
+              "month": "2017-10",
+              "count": 10,
+              "decay_rate_per_km": 0.38636326789855957
+            },
+            {
+              "month": "2017-11",
+              "count": 43,
+              "decay_rate_per_km": 0.2329424222310384
+            },
+            {
+              "month": "2017-12",
+              "count": 60,
+              "decay_rate_per_km": 0.22641010625021799
+            },
+            {
+              "month": "2018-01",
+              "count": 89,
+              "decay_rate_per_km": 0.3926889101664225
+            },
+            {
+              "month": "2018-02",
+              "count": 19,
+              "decay_rate_per_km": 0.3890519142150879
+            },
+            {
+              "month": "2018-03",
+              "count": 60,
+              "decay_rate_per_km": 0.37105188483283635
+            },
+            {
+              "month": "2018-04",
+              "count": 21,
+              "decay_rate_per_km": 0.3875895227704729
+            },
+            {
+              "month": "2018-05",
+              "count": 20,
+              "decay_rate_per_km": 0.4596355642591204
+            },
+            {
+              "month": "2018-06",
+              "count": 19,
+              "decay_rate_per_km": 0.42635202407836914
+            },
+            {
+              "month": "2018-07",
+              "count": 7,
+              "decay_rate_per_km": 0.4411914348602295
+            },
+            {
+              "month": "2018-08",
+              "count": 24,
+              "decay_rate_per_km": 0.4075177113215129
+            },
+            {
+              "month": "2018-09",
+              "count": 9,
+              "decay_rate_per_km": 0.27459685007731116
+            },
+            {
+              "month": "2018-10",
+              "count": 32,
+              "decay_rate_per_km": 0.3643056551615397
+            },
+            {
+              "month": "2018-11",
+              "count": 55,
+              "decay_rate_per_km": 0.3773679256439209
+            },
+            {
+              "month": "2018-12",
+              "count": 19,
+              "decay_rate_per_km": 0.3919390950884138
+            },
+            {
+              "month": "2019-11",
+              "count": 22,
+              "decay_rate_per_km": 0.1826624075571696
+            },
+            {
+              "month": "2019-12",
+              "count": 27,
+              "decay_rate_per_km": 0.25657929692949566
+            },
+            {
+              "month": "2020-01",
+              "count": 30,
+              "decay_rate_per_km": 0.25209663595472065
+            },
+            {
+              "month": "2020-02",
+              "count": 10,
+              "decay_rate_per_km": 0.38368042310078937
+            },
+            {
+              "month": "2020-03",
+              "count": 17,
+              "decay_rate_per_km": 0.23115191459655762
+            },
+            {
+              "month": "2020-04",
+              "count": 24,
+              "decay_rate_per_km": 0.2793412639981224
+            },
+            {
+              "month": "2020-05",
+              "count": 7,
+              "decay_rate_per_km": 0.33548037211100257
+            },
+            {
+              "month": "2020-06",
+              "count": 45,
+              "decay_rate_per_km": 0.34559130668640137
+            },
+            {
+              "month": "2020-07",
+              "count": 14,
+              "decay_rate_per_km": 0.23105638367789133
+            },
+            {
+              "month": "2020-08",
+              "count": 49,
+              "decay_rate_per_km": 0.37855865841820124
+            },
+            {
+              "month": "2020-09",
+              "count": 27,
+              "decay_rate_per_km": 0.4200869560241699
+            },
+            {
+              "month": "2020-10",
+              "count": 46,
+              "decay_rate_per_km": 0.26734113693237305
+            },
+            {
+              "month": "2020-11",
+              "count": 56,
+              "decay_rate_per_km": 0.3021011749903361
+            },
+            {
+              "month": "2020-12",
+              "count": 41,
+              "decay_rate_per_km": 0.34431753158569334
+            },
+            {
+              "month": "2021-01",
+              "count": 28,
+              "decay_rate_per_km": 0.38514792919158936
+            },
+            {
+              "month": "2021-03",
+              "count": 13,
+              "decay_rate_per_km": 0.29715447425842284
+            },
+            {
+              "month": "2021-04",
+              "count": 45,
+              "decay_rate_per_km": 0.3453896840413412
+            },
+            {
+              "month": "2021-06",
+              "count": 45,
+              "decay_rate_per_km": 0.34392333030700684
+            },
+            {
+              "month": "2021-08",
+              "count": 33,
+              "decay_rate_per_km": 0.3713417053222656
+            },
+            {
+              "month": "2021-09",
+              "count": 15,
+              "decay_rate_per_km": 0.34851846694946287
+            },
+            {
+              "month": "2021-10",
+              "count": 47,
+              "decay_rate_per_km": 0.27982775370279944
+            },
+            {
+              "month": "2021-11",
+              "count": 42,
+              "decay_rate_per_km": 0.2822988986968994
+            },
+            {
+              "month": "2021-12",
+              "count": 15,
+              "decay_rate_per_km": 0.3248910903930664
+            },
+            {
+              "month": "2022-01",
+              "count": 6,
+              "decay_rate_per_km": 0.17073343197504678
+            },
+            {
+              "month": "2022-03",
+              "count": 15,
+              "decay_rate_per_km": 0.3437337875366211
+            },
+            {
+              "month": "2022-04",
+              "count": 7,
+              "decay_rate_per_km": 0.21238585880824498
+            },
+            {
+              "month": "2022-06",
+              "count": 13,
+              "decay_rate_per_km": 0.4316307135990688
+            },
+            {
+              "month": "2022-07",
+              "count": 8,
+              "decay_rate_per_km": 0.44742982728140696
+            },
+            {
+              "month": "2022-08",
+              "count": 12,
+              "decay_rate_per_km": 0.5331670840581259
+            },
+            {
+              "month": "2022-09",
+              "count": 11,
+              "decay_rate_per_km": 0.5520633379618327
+            },
+            {
+              "month": "2022-10",
+              "count": 10,
+              "decay_rate_per_km": 0.47330098152160643
+            },
+            {
+              "month": "2023-09",
+              "count": 10,
+              "decay_rate_per_km": 0.3595325708389282
+            },
+            {
+              "month": "2023-10",
+              "count": 11,
+              "decay_rate_per_km": 0.14125967025756836
+            },
+            {
+              "month": "2023-11",
+              "count": 82,
+              "decay_rate_per_km": 0.18821751503717332
+            },
+            {
+              "month": "2023-12",
+              "count": 46,
+              "decay_rate_per_km": 0.33280465602874754
+            },
+            {
+              "month": "2024-01",
+              "count": 15,
+              "decay_rate_per_km": 0.30304201443990075
+            },
+            {
+              "month": "2024-04",
+              "count": 5,
+              "decay_rate_per_km": 0.6411520185924712
+            },
+            {
+              "month": "2024-09",
+              "count": 7,
+              "decay_rate_per_km": 0.2903578758239746
+            },
+            {
+              "month": "2024-11",
+              "count": 11,
+              "decay_rate_per_km": 0.17074400583902993
+            },
+            {
+              "month": "2025-02",
+              "count": 8,
+              "decay_rate_per_km": 0.15089530604226248
+            },
+            {
+              "month": "2025-03",
+              "count": 27,
+              "decay_rate_per_km": 0.2698335647583008
+            },
+            {
+              "month": "2025-04",
+              "count": 7,
+              "decay_rate_per_km": 0.5102805637177967
+            },
+            {
+              "month": "2025-05",
+              "count": 10,
+              "decay_rate_per_km": 0.4004334330558777
+            },
+            {
+              "month": "2025-10",
+              "count": 9,
+              "decay_rate_per_km": 0.21644229888916017
+            },
+            {
+              "month": "2025-11",
+              "count": 20,
+              "decay_rate_per_km": 0.15967158476511636
+            },
+            {
+              "month": "2025-12",
+              "count": 7,
+              "decay_rate_per_km": 0.3645442008972168
+            }
+          ],
+          "n_profiles": 1601,
+          "n_non_decreasing_profiles": 58,
+          "monthly_decay_rate_quartiles_per_km": [
+            0.267964243888855,
+            0.3441204309463501,
+            0.38868631635393414
+          ]
+        },
+        "smoothed_27_30": {
+          "scale_height_m": 2967.0876629504437,
+          "monthly_rates": [
+            {
+              "month": "2017-09",
+              "count": 8,
+              "decay_rate_per_km": 0.3286235809326172
+            },
+            {
+              "month": "2017-10",
+              "count": 10,
+              "decay_rate_per_km": 0.31972622871398926
+            },
+            {
+              "month": "2017-11",
+              "count": 43,
+              "decay_rate_per_km": 0.23528480529785156
+            },
+            {
+              "month": "2017-12",
+              "count": 60,
+              "decay_rate_per_km": 0.22304582595825195
+            },
+            {
+              "month": "2018-01",
+              "count": 89,
+              "decay_rate_per_km": 0.4472999572753906
+            },
+            {
+              "month": "2018-02",
+              "count": 19,
+              "decay_rate_per_km": 0.3392486572265625
+            },
+            {
+              "month": "2018-03",
+              "count": 60,
+              "decay_rate_per_km": 0.37238287925720215
+            },
+            {
+              "month": "2018-04",
+              "count": 21,
+              "decay_rate_per_km": 0.36957263946533203
+            },
+            {
+              "month": "2018-05",
+              "count": 20,
+              "decay_rate_per_km": 0.48312878608703613
+            },
+            {
+              "month": "2018-06",
+              "count": 19,
+              "decay_rate_per_km": 0.44690628051757814
+            },
+            {
+              "month": "2018-07",
+              "count": 7,
+              "decay_rate_per_km": 0.49182968139648436
+            },
+            {
+              "month": "2018-08",
+              "count": 24,
+              "decay_rate_per_km": 0.39229631423950195
+            },
+            {
+              "month": "2018-09",
+              "count": 9,
+              "decay_rate_per_km": 0.25702476501464844
+            },
+            {
+              "month": "2018-10",
+              "count": 32,
+              "decay_rate_per_km": 0.33662624359130855
+            },
+            {
+              "month": "2018-11",
+              "count": 55,
+              "decay_rate_per_km": 0.38166465759277346
+            },
+            {
+              "month": "2018-12",
+              "count": 19,
+              "decay_rate_per_km": 0.3952220916748047
+            },
+            {
+              "month": "2019-11",
+              "count": 22,
+              "decay_rate_per_km": 0.19191400210062665
+            },
+            {
+              "month": "2019-12",
+              "count": 27,
+              "decay_rate_per_km": 0.25514373779296873
+            },
+            {
+              "month": "2020-01",
+              "count": 30,
+              "decay_rate_per_km": 0.28547077178955077
+            },
+            {
+              "month": "2020-02",
+              "count": 10,
+              "decay_rate_per_km": 0.40458710988362634
+            },
+            {
+              "month": "2020-03",
+              "count": 17,
+              "decay_rate_per_km": 0.2733912467956543
+            },
+            {
+              "month": "2020-04",
+              "count": 24,
+              "decay_rate_per_km": 0.170640230178833
+            },
+            {
+              "month": "2020-05",
+              "count": 7,
+              "decay_rate_per_km": 0.24349308013916016
+            },
+            {
+              "month": "2020-06",
+              "count": 45,
+              "decay_rate_per_km": 0.30232906341552734
+            },
+            {
+              "month": "2020-07",
+              "count": 14,
+              "decay_rate_per_km": 0.19829702377319336
+            },
+            {
+              "month": "2020-08",
+              "count": 49,
+              "decay_rate_per_km": 0.33992691040039064
+            },
+            {
+              "month": "2020-09",
+              "count": 27,
+              "decay_rate_per_km": 0.39928436279296875
+            },
+            {
+              "month": "2020-10",
+              "count": 46,
+              "decay_rate_per_km": 0.2718213717142741
+            },
+            {
+              "month": "2020-11",
+              "count": 56,
+              "decay_rate_per_km": 0.3166211605072021
+            },
+            {
+              "month": "2020-12",
+              "count": 41,
+              "decay_rate_per_km": 0.33743540445963544
+            },
+            {
+              "month": "2021-01",
+              "count": 28,
+              "decay_rate_per_km": 0.4146099090576172
+            },
+            {
+              "month": "2021-03",
+              "count": 13,
+              "decay_rate_per_km": 0.3360248565673828
+            },
+            {
+              "month": "2021-04",
+              "count": 45,
+              "decay_rate_per_km": 0.33640527725219727
+            },
+            {
+              "month": "2021-06",
+              "count": 45,
+              "decay_rate_per_km": 0.37693071365356445
+            },
+            {
+              "month": "2021-08",
+              "count": 33,
+              "decay_rate_per_km": 0.39026679992675783
+            },
+            {
+              "month": "2021-09",
+              "count": 15,
+              "decay_rate_per_km": 0.3580155372619629
+            },
+            {
+              "month": "2021-10",
+              "count": 47,
+              "decay_rate_per_km": 0.28151512145996094
+            },
+            {
+              "month": "2021-11",
+              "count": 42,
+              "decay_rate_per_km": 0.2732073783874512
+            },
+            {
+              "month": "2021-12",
+              "count": 15,
+              "decay_rate_per_km": 0.3250923156738281
+            },
+            {
+              "month": "2022-01",
+              "count": 6,
+              "decay_rate_per_km": 0.1721351146697998
+            },
+            {
+              "month": "2022-03",
+              "count": 15,
+              "decay_rate_per_km": 0.4075473785400391
+            },
+            {
+              "month": "2022-04",
+              "count": 7,
+              "decay_rate_per_km": 0.17925529479980468
+            },
+            {
+              "month": "2022-06",
+              "count": 13,
+              "decay_rate_per_km": 0.46270275115966797
+            },
+            {
+              "month": "2022-07",
+              "count": 8,
+              "decay_rate_per_km": 0.4324043273925781
+            },
+            {
+              "month": "2022-08",
+              "count": 12,
+              "decay_rate_per_km": 0.4456520080566406
+            },
+            {
+              "month": "2022-09",
+              "count": 11,
+              "decay_rate_per_km": 0.5154628753662109
+            },
+            {
+              "month": "2022-10",
+              "count": 10,
+              "decay_rate_per_km": 0.4200119972229004
+            },
+            {
+              "month": "2023-09",
+              "count": 10,
+              "decay_rate_per_km": 0.3632090091705322
+            },
+            {
+              "month": "2023-10",
+              "count": 11,
+              "decay_rate_per_km": 0.16336584091186523
+            },
+            {
+              "month": "2023-11",
+              "count": 82,
+              "decay_rate_per_km": 0.19178444544474282
+            },
+            {
+              "month": "2023-12",
+              "count": 46,
+              "decay_rate_per_km": 0.3555405298868815
+            },
+            {
+              "month": "2024-01",
+              "count": 15,
+              "decay_rate_per_km": 0.2209758758544922
+            },
+            {
+              "month": "2024-04",
+              "count": 5,
+              "decay_rate_per_km": 0.6407375335693359
+            },
+            {
+              "month": "2024-09",
+              "count": 7,
+              "decay_rate_per_km": 0.38255844116210935
+            },
+            {
+              "month": "2024-11",
+              "count": 11,
+              "decay_rate_per_km": 0.1412043571472168
+            },
+            {
+              "month": "2025-02",
+              "count": 8,
+              "decay_rate_per_km": 0.28996829986572265
+            },
+            {
+              "month": "2025-03",
+              "count": 27,
+              "decay_rate_per_km": 0.33467864990234375
+            },
+            {
+              "month": "2025-04",
+              "count": 7,
+              "decay_rate_per_km": 0.5540313720703125
+            },
+            {
+              "month": "2025-05",
+              "count": 10,
+              "decay_rate_per_km": 0.3585855484008789
+            },
+            {
+              "month": "2025-10",
+              "count": 9,
+              "decay_rate_per_km": 0.24159812927246094
+            },
+            {
+              "month": "2025-11",
+              "count": 20,
+              "decay_rate_per_km": 0.09493732452392578
+            },
+            {
+              "month": "2025-12",
+              "count": 7,
+              "decay_rate_per_km": 0.40401268005371094
+            }
+          ],
+          "n_profiles": 1601,
+          "n_non_decreasing_profiles": 76,
+          "monthly_decay_rate_quartiles_per_km": [
+            0.26072391668955486,
+            0.337030824025472,
+            0.3982687950134277
+          ]
+        }
+      }
+    }
+  },
+  "scenarios": [
+    {
+      "scenario": "sh_midlat_low",
+      "latitude_band": "sh_midlat",
+      "loading": "low",
+      "selection_aod_18_30": 0.001478295074775815,
+      "loading_percentile": 7.146260123868508,
+      "candidate_count": 252,
+      "spectral_fractional_residual": 0.06662699899419837,
+      "reference_upper_scale_height_m": 2800.0,
+      "event_id": "2018011034SS",
+      "datetime": "2018-01-10T17:17:57.000000000",
+      "latitude_degrees": -38.17631530761719,
+      "longitude_degrees": 30.81879425048828,
+      "tropopause_altitude_m": 13721.11988067627,
+      "observed_bottom_m": 15000.0,
+      "observed_top_m": 30500.0,
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201801-fv0001.nc",
+      "psd_sha256": "3bff2379626a7416f010cfb1c5eef87248992464f4918831cf87a674321cc45a",
+      "sage_file": "g3b_smnc_6.0.0_201801.nc",
+      "sage_sha256": "6dfd5be508a96d7dd1762366503314e7684b86a538621e584a55926caa8a6ff6",
+      "sage_version": "6.0.0"
+    },
+    {
+      "scenario": "sh_midlat_typical",
+      "latitude_band": "sh_midlat",
+      "loading": "typical",
+      "selection_aod_18_30": 0.0027553255204111338,
+      "loading_percentile": 52.78704144830871,
+      "candidate_count": 252,
+      "spectral_fractional_residual": 0.04209675069642729,
+      "reference_upper_scale_height_m": 2800.0,
+      "event_id": "2021080914SR",
+      "datetime": "2021-08-09T07:20:30.000000000",
+      "latitude_degrees": -37.27788543701172,
+      "longitude_degrees": -6.340798854827881,
+      "tropopause_altitude_m": 13214.097023010254,
+      "observed_bottom_m": 14500.0,
+      "observed_top_m": 30000.0,
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202108-fv0001.nc",
+      "psd_sha256": "3a28fe026283befe0d5af6a1e0857eb9e51b490bcbc4174fa09391e444285ac6",
+      "sage_file": "g3b_smnc_6.0.0_202108.nc",
+      "sage_sha256": "fa057be8de32d1fd0b9b12b4de9c579bc6b427d86991ed5667424ae8b211cd8d",
+      "sage_version": "6.0.0"
+    },
+    {
+      "scenario": "sh_midlat_elevated",
+      "latitude_band": "sh_midlat",
+      "loading": "elevated",
+      "selection_aod_18_30": 0.005242268554866314,
+      "loading_percentile": 90.09051929490234,
+      "candidate_count": 252,
+      "spectral_fractional_residual": 0.06737345063255798,
+      "reference_upper_scale_height_m": 2800.0,
+      "event_id": "2023080213SR",
+      "datetime": "2023-08-02T04:50:25.000000000",
+      "latitude_degrees": -44.58277130126953,
+      "longitude_degrees": 37.46367263793945,
+      "tropopause_altitude_m": 10674.938201904297,
+      "observed_bottom_m": 12000.0,
+      "observed_top_m": 30000.0,
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202308-fv0001.nc",
+      "psd_sha256": "c1bf2e5ff79071c3b78aae1d73fa88c331ef2d86e998046cac977f30839d81c5",
+      "sage_file": "g3b_smnc_6.0.0_202308.nc",
+      "sage_sha256": "73c87ff242191c69dcb6e82d9ea75bc0f83beb521342af6c3a15211d390c304b",
+      "sage_version": "6.0.0"
+    },
+    {
+      "scenario": "sh_midlat_extreme",
+      "latitude_band": "sh_midlat",
+      "loading": "extreme",
+      "selection_aod_18_30": 0.017686016857624054,
+      "loading_percentile": 98.85659838018104,
+      "candidate_count": 42,
+      "spectral_fractional_residual": 0.027849930008278716,
+      "reference_upper_scale_height_m": 2800.0,
+      "event_id": "2022072632SR",
+      "datetime": "2022-07-26T16:32:48.000000000",
+      "latitude_degrees": -43.21696090698242,
+      "longitude_degrees": -137.3095245361328,
+      "tropopause_altitude_m": 7193.869590759277,
+      "observed_bottom_m": 8500.0,
+      "observed_top_m": 30000.0,
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202207-fv0001.nc",
+      "psd_sha256": "df5dba3d61f8c8d044e0d988d70ce123536cb8534fc6affdda9209316666f540",
+      "sage_file": "g3b_smnc_6.0.0_202207.nc",
+      "sage_sha256": "cfe0d21684a6c39b5117bc52addbe4469fde24bd691eb59a6f11f49277d440d3",
+      "sage_version": "6.0.0"
+    },
+    {
+      "scenario": "tropical_low",
+      "latitude_band": "tropical",
+      "loading": "low",
+      "selection_aod_18_30": 0.0021127364598214626,
+      "loading_percentile": 12.066365007541478,
+      "candidate_count": 478,
+      "spectral_fractional_residual": 0.025918589238232998,
+      "reference_upper_scale_height_m": 3600.0,
+      "event_id": "2017082143SS",
+      "datetime": "2017-08-21T21:56:39.000000000",
+      "latitude_degrees": -7.1133952140808105,
+      "longitude_degrees": -59.91966247558594,
+      "tropopause_altitude_m": 16269.36149597168,
+      "observed_bottom_m": 17500.0,
+      "observed_top_m": 34500.0,
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-201708-fv0001.nc",
+      "psd_sha256": "4402fc68ac07018c12df433e9d29f44c34dc49c1a5acfdcbe09827f46b57c8de",
+      "sage_file": "g3b_smnc_6.0.0_201708.nc",
+      "sage_sha256": "5082796d3516391f5f7aa39a7993ed2b6de39a1b557e71cabea42d670fc8fc4f",
+      "sage_version": "6.0.0"
+    },
+    {
+      "scenario": "tropical_typical",
+      "latitude_band": "tropical",
+      "loading": "typical",
+      "selection_aod_18_30": 0.004109946545213461,
+      "loading_percentile": 47.59929612870789,
+      "candidate_count": 478,
+      "spectral_fractional_residual": 0.0192199128105532,
+      "reference_upper_scale_height_m": 3600.0,
+      "event_id": "2020081726SR",
+      "datetime": "2020-08-17T19:27:13.000000000",
+      "latitude_degrees": -2.021916627883911,
+      "longitude_degrees": 159.6433868408203,
+      "tropopause_altitude_m": 15961.857795715332,
+      "observed_bottom_m": 17000.0,
+      "observed_top_m": 35000.0,
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202008-fv0001.nc",
+      "psd_sha256": "a7bd3d30c193c57f9a7ba31631540176f88edffb3aeb0ca4739cadb30bff9666",
+      "sage_file": "g3b_smnc_6.0.0_202008.nc",
+      "sage_sha256": "379e8c35f64ca50d73a1b2ef53d52b7a0e6597d108f89397e9680d4786e39eeb",
+      "sage_version": "6.0.0"
+    },
+    {
+      "scenario": "tropical_elevated",
+      "latitude_band": "tropical",
+      "loading": "elevated",
+      "selection_aod_18_30": 0.0098847895860672,
+      "loading_percentile": 87.82051282051282,
+      "candidate_count": 478,
+      "spectral_fractional_residual": 0.034272242938934494,
+      "reference_upper_scale_height_m": 3600.0,
+      "event_id": "2023061401SR",
+      "datetime": "2023-06-14T00:31:31.000000000",
+      "latitude_degrees": -3.775958776473999,
+      "longitude_degrees": 83.78704833984375,
+      "tropopause_altitude_m": 16701.56478881836,
+      "observed_bottom_m": 18000.0,
+      "observed_top_m": 33500.0,
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202306-fv0001.nc",
+      "psd_sha256": "398018d10b7e3f0ae48a2155289f8c82c1bac19d38debb68d1fdc831bd073b26",
+      "sage_file": "g3b_smnc_6.0.0_202306.nc",
+      "sage_sha256": "a9e86597daab8254eef7bbbfc11624588d36d9e015fd95875444860830d0b6e1",
+      "sage_version": "6.0.0"
+    },
+    {
+      "scenario": "tropical_extreme",
+      "latitude_band": "tropical",
+      "loading": "extreme",
+      "selection_aod_18_30": 0.021173497661948204,
+      "loading_percentile": 99.25842131724485,
+      "candidate_count": 80,
+      "spectral_fractional_residual": 0.06431190080259451,
+      "reference_upper_scale_height_m": 3600.0,
+      "event_id": "2022041707SR",
+      "datetime": "2022-04-17T04:25:37.000000000",
+      "latitude_degrees": -0.3319686949253082,
+      "longitude_degrees": 23.571523666381836,
+      "tropopause_altitude_m": 16508.819580078125,
+      "observed_bottom_m": 18000.0,
+      "observed_top_m": 31000.0,
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202204-fv0001.nc",
+      "psd_sha256": "cb9c5b0693178924ed5f6034bd10f8a1c11e1383ee673ed79e8369cf608dd2c4",
+      "sage_file": "g3b_smnc_6.0.0_202204.nc",
+      "sage_sha256": "461001692f01b14e3bddeee27179a1aec936d5255e7a2243f315c518de6076de",
+      "sage_version": "6.0.0"
+    },
+    {
+      "scenario": "nh_midlat_low",
+      "latitude_band": "nh_midlat",
+      "loading": "low",
+      "selection_aod_18_30": 0.0015439308481290936,
+      "loading_percentile": 7.930065563534186,
+      "candidate_count": 192,
+      "spectral_fractional_residual": 0.05561517497589895,
+      "reference_upper_scale_height_m": 2800.0,
+      "event_id": "2021060217SS",
+      "datetime": "2021-06-02T06:30:23.000000000",
+      "latitude_degrees": 46.079837799072266,
+      "longitude_degrees": -163.00013732910156,
+      "tropopause_altitude_m": 12760.909080505371,
+      "observed_bottom_m": 14000.0,
+      "observed_top_m": 30000.0,
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202106-fv0001.nc",
+      "psd_sha256": "52c3ab0c3f33fe6b61d2d7fa29741061c23098944c4d73289fe566bf431eba87",
+      "sage_file": "g3b_smnc_6.0.0_202106.nc",
+      "sage_sha256": "4b20467986156429e40f6cc2c56bdbb6ba5d4ac4859c756c0eafef667a69c5ef",
+      "sage_version": "6.0.0"
+    },
+    {
+      "scenario": "nh_midlat_typical",
+      "latitude_band": "nh_midlat",
+      "loading": "typical",
+      "selection_aod_18_30": 0.0021326090209186077,
+      "loading_percentile": 51.63908835466749,
+      "candidate_count": 193,
+      "spectral_fractional_residual": 0.039862808846286964,
+      "reference_upper_scale_height_m": 2800.0,
+      "event_id": "2021091331SR",
+      "datetime": "2021-09-13T12:12:33.000000000",
+      "latitude_degrees": 37.765342712402344,
+      "longitude_degrees": -96.96676635742188,
+      "tropopause_altitude_m": 15476.787567138672,
+      "observed_bottom_m": 16500.0,
+      "observed_top_m": 30000.0,
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202109-fv0001.nc",
+      "psd_sha256": "135af9b8984a05599f4e926db15200f215483265f3b9087851c66ae2033c02f6",
+      "sage_file": "g3b_smnc_6.0.0_202109.nc",
+      "sage_sha256": "38d58cc44aa89d91af3b8fa221f82079e8bca98e4ca2812757c06e371871b289",
+      "sage_version": "6.0.0"
+    },
+    {
+      "scenario": "nh_midlat_elevated",
+      "latitude_band": "nh_midlat",
+      "loading": "elevated",
+      "selection_aod_18_30": 0.003018501680344343,
+      "loading_percentile": 91.57040274742428,
+      "candidate_count": 192,
+      "spectral_fractional_residual": 0.05145941446982082,
+      "reference_upper_scale_height_m": 2800.0,
+      "event_id": "2025101730SR",
+      "datetime": "2025-10-17T22:52:34.000000000",
+      "latitude_degrees": 35.43894577026367,
+      "longitude_degrees": 110.08477020263672,
+      "tropopause_altitude_m": 16420.49217224121,
+      "observed_bottom_m": 17500.0,
+      "observed_top_m": 30500.0,
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202510-fv0001.nc",
+      "psd_sha256": "5ed253e2d30be168205f57ffaf982dc1aabdfdcea374edfe57d9997f4dee2fc1",
+      "sage_file": "g3b_smnc_6.0.3_202510.nc",
+      "sage_sha256": "5415f57a0b3c4d13f80522e1e8251958a193812fee8c0c50c7b5112a47066163",
+      "sage_version": "6.0.3"
+    },
+    {
+      "scenario": "nh_midlat_extreme",
+      "latitude_band": "nh_midlat",
+      "loading": "extreme",
+      "selection_aod_18_30": 0.003831772133708,
+      "loading_percentile": 99.28192319700281,
+      "candidate_count": 32,
+      "spectral_fractional_residual": 0.020016712470755937,
+      "reference_upper_scale_height_m": 2800.0,
+      "event_id": "2024111526SS",
+      "datetime": "2024-11-15T09:50:13.000000000",
+      "latitude_degrees": 36.76341247558594,
+      "longitude_degrees": 103.99564361572266,
+      "tropopause_altitude_m": 11334.25521850586,
+      "observed_bottom_m": 12500.0,
+      "observed_top_m": 32000.0,
+      "psd_file": "AEROSOL-PSD-L2-SAGE-III-ISS-SASK-V1.0.0-202411-fv0001.nc",
+      "psd_sha256": "a7ba370540934f3a058cc51ae620d7ac9a002e6262d2ab47548e8cb30912c0f3",
+      "sage_file": "g3b_smnc_6.0.0_202411.nc",
+      "sage_sha256": "7d9145e4a10da381473ac0bd0400b57d5e9f757d4f29f430c0d79249ad895c2e",
+      "sage_version": "6.0.0"
+    }
+  ],
+  "calibration_background_flags": "flag 2 in all four near-IR channels throughout 26\u201330 km",
+  "selection_screen": "All 18\u201330 km levels: positive extinction; finite radius 10.01\u2013589.99 nm; nonnegative formal errors below 50%; flags 2/3 in four near-IR channels; 1 km above aerosol tropopause; spectral residual <30%",
+  "selection_weighting": "Observation-weighted loading quantiles; actual paired profile nearest candidate median log extinction and radius",
+  "references": [
+    "https://doi.org/10.1029/JD092iD03p03051",
+    "https://doi.org/10.1364/AO.8.000893",
+    "https://doi.org/10.5194/amtd-5-5993-2012"
+  ],
+  "spectral_check_optical_table_file": "244b6cb00e9e6b24f309cfc5f8a33983bf05eed9.nc",
+  "spectral_check_optical_table_sha256": "d409c67c0625688390e55d2ace5b04f890b4550f0c3a4d3a837adc0756f4ffd5"
+}
